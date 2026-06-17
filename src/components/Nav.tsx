@@ -7,40 +7,34 @@ import { clsx } from "clsx";
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/flows", label: "Flow Feed" },
+  { href: "/flows", label: "Flows" },
   { href: "/heatmap", label: "Heatmaps" },
-  { href: "/terminal", label: "AI Terminal" },
+  { href: "/terminal", label: "Largo" },
   { href: "/nighthawk", label: "Night Hawk" },
 ];
 
 export function Nav() {
   const path = usePathname();
+  const isHome = path === "/";
 
   return (
-    <nav className="sticky top-0 z-50 flex items-center justify-between px-8 py-4 border-b border-surface-2 bg-black/95 backdrop-blur-md">
-      {/* Logo */}
-      <Link href="/" className="flex flex-col leading-none group">
-        <span className="font-display text-2xl tracking-[4px] text-white group-hover:text-white/90 transition-colors">
+    <nav className={clsx("nav-bar", isHome && "bg-transparent border-bull/10")}>
+      <Link href="/" className="group relative">
+        <span className="font-anton text-xl md:text-2xl tracking-[0.2em] text-white group-hover:text-bull transition-colors">
           BLACKOUT
         </span>
-        <span className="text-[10px] tracking-[5px] text-text-muted font-light mt-[-3px]">
-          TRADING
+        <span className="block font-mono text-[8px] tracking-[0.4em] text-bull uppercase -mt-0.5">
+          Trading
         </span>
       </Link>
 
-      {/* Links — only show when signed in */}
       <SignedIn>
-        <ul className="hidden md:flex items-center gap-8">
+        <ul className="hidden md:flex items-center gap-6 lg:gap-8">
           {NAV_LINKS.map(({ href, label }) => (
             <li key={href}>
               <Link
                 href={href}
-                className={clsx(
-                  "text-[11px] tracking-[2px] uppercase transition-colors",
-                  path.startsWith(href)
-                    ? "text-white"
-                    : "text-text-secondary hover:text-text-primary"
-                )}
+                className={clsx("nav-link", path.startsWith(href) && "nav-link-active")}
               >
                 {label}
               </Link>
@@ -49,28 +43,21 @@ export function Nav() {
         </ul>
       </SignedIn>
 
-      {/* Auth buttons */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 md:gap-5">
         <SignedOut>
-          <Link
-            href="/sign-in"
-            className="text-[11px] tracking-[2px] uppercase text-text-secondary hover:text-white transition-colors"
-          >
+          <Link href="/sign-in" className="nav-link hidden sm:inline">
             Sign In
           </Link>
-          <Link
-            href="/sign-up"
-            className="bg-white text-black px-5 py-2 text-[11px] tracking-[2px] uppercase font-bold hover:bg-white/90 transition-opacity"
-          >
-            Join Now
+          <Link href="/sign-up" className="btn-primary-sm glitch-hover">
+            Join →
           </Link>
         </SignedOut>
         <SignedIn>
           <UserButton
             appearance={{
               elements: {
-                avatarBox: "w-8 h-8",
-                userButtonPopoverCard: "bg-surface-2 border border-border text-text-primary",
+                avatarBox: "w-8 h-8 ring-2 ring-bull/50",
+                userButtonPopoverCard: "bg-grey-900 border border-grey-700",
               },
             }}
           />

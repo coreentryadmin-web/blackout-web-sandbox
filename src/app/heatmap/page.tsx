@@ -8,12 +8,12 @@ export default async function HeatmapPage() {
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="page-shell">
       <Nav />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-baseline gap-4 mb-8">
-          <h1 className="font-display text-4xl tracking-[3px] text-white">HEATMAPS</h1>
-          <span className="text-[10px] tracking-[2px] text-text-muted uppercase">Sector & Stock Performance</span>
+      <main className="page-main">
+        <div className="page-header">
+          <h1 className="page-title">HEATMAPS</h1>
+          <span className="page-subtitle">Sector & Stock Performance</span>
         </div>
         <Heatmap />
       </main>

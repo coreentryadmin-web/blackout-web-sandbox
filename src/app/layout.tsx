@@ -1,22 +1,39 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { IMAGES } from "@/lib/images";
+import { SITE } from "@/lib/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BlackOut Trading — Trade. Execute. Dominate.",
-  description:
-    "Institutional-grade options flow, AI market intelligence, live SPX analysis, and Night Hawk swing scanner.",
+  metadataBase: new URL(SITE.url),
+  title: `${SITE.name} — ${SITE.tagline}`,
+  description: SITE.description,
   openGraph: {
-    title: "BlackOut Trading",
-    description: "Trade. Execute. Dominate.",
-    siteName: "BlackOut Trading",
+    title: SITE.name,
+    description: SITE.tagline,
+    siteName: SITE.name,
+    url: SITE.url,
+    images: [
+      {
+        url: IMAGES.ogImage,
+        width: 1200,
+        height: 630,
+        alt: `${SITE.legalName} Community`,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE.name,
+    description: SITE.tagline,
+    images: [IMAGES.ogImage],
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="void-bg antialiased">
         <ClerkProvider>{children}</ClerkProvider>
       </body>
     </html>

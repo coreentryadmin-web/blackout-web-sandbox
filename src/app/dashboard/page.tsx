@@ -1,7 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Nav } from "@/components/Nav";
+import { PageBanner } from "@/components/PageBanner";
 import { SpxDashboard } from "@/components/SpxDashboard";
+import { IMAGES } from "@/lib/images";
 
 export const revalidate = 0;
 
@@ -10,12 +12,19 @@ export default async function DashboardPage() {
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="page-shell">
       <Nav />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-baseline gap-4 mb-8">
-          <h1 className="font-display text-4xl tracking-[3px] text-white">SPX DASHBOARD</h1>
-          <span className="text-[10px] tracking-[2px] text-text-muted uppercase">Live</span>
+      <main className="page-main">
+        <PageBanner
+          src={IMAGES.spxSniper}
+          alt="SPX Sniper Bot — Precision. Patience. Profit."
+        />
+        <div className="page-header">
+          <h1 className="page-title">SPX DASHBOARD</h1>
+          <span className="badge-live">
+            <span className="badge-live-dot" />
+            Live
+          </span>
         </div>
         <SpxDashboard />
       </main>

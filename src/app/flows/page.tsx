@@ -8,13 +8,13 @@ export default async function FlowsPage() {
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="page-shell">
       <Nav />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-baseline gap-4 mb-8">
-          <h1 className="font-display text-4xl tracking-[3px] text-white">FLOW FEED</h1>
-          <span className="inline-flex items-center gap-1.5 text-[10px] tracking-[2px] text-bull uppercase">
-            <span className="w-1.5 h-1.5 rounded-full bg-bull animate-pulse" />
+      <main className="page-main">
+        <div className="page-header">
+          <h1 className="page-title">FLOW FEED</h1>
+          <span className="badge-live">
+            <span className="badge-live-dot" />
             Live
           </span>
         </div>
