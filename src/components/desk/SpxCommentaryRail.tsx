@@ -111,9 +111,6 @@ export function SpxCommentaryRail({
           <span className="font-syne text-base tracking-[0.15em] uppercase text-purple-light block font-bold">
             Live Desk AI
           </span>
-          <span className="font-mono text-[10px] tracking-[0.2em] text-grey-500 mt-0.5 block">
-            Claude · full desk intel · GEX · tape · levels · news
-          </span>
         </div>
         {loading && (
           <span className="ml-auto font-mono text-[8px] text-grey-500 animate-pulse">
