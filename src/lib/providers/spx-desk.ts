@@ -1,4 +1,4 @@
-import { polygonConfigured } from "./config";
+import { polygonConfigured, engineIntelOverlayEnabled } from "./config";
 import {
   fetchIndexDailyBars,
   fetchIndexEma,
@@ -159,6 +159,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const today = todayEtYmd();
   const fromWeek = priorEtYmd(10);
 
+  const intelPromise = engineIntelOverlayEnabled()
+    ? fetchEngine<Record<string, unknown>>("/spx/state").catch(() => null)
+    : Promise.resolve(null);
+
   const [
     snaps,
     minuteBars,
@@ -192,7 +196,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchUwNope("SPX"),
     fetchUwIvRank("SPX"),
     fetchUwFlow0dte("SPX"),
-    fetchEngine<Record<string, unknown>>("/spx/state").catch(() => null),
+    intelPromise,
   ]);
 
   const spxSnap = snaps[SPX];

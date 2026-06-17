@@ -9,6 +9,7 @@ import { FlowVolumeChart } from "@/components/embeds/FlowVolumeChart";
 import { TradingViewWidget } from "@/components/embeds/TradingViewWidget";
 
 const PREMIUM_FILTERS = [100_000, 200_000, 500_000, 1_000_000] as const;
+const FLOW_REST_POLL_MS = 30_000;
 
 export function FlowFeed() {
   const [alerts, setAlerts] = useState<FlowAlert[]>([]);
@@ -53,7 +54,7 @@ export function FlowFeed() {
       return () => ws.close();
     }
 
-    const interval = setInterval(loadFlows, 4_000);
+    const interval = setInterval(loadFlows, FLOW_REST_POLL_MS);
     return () => clearInterval(interval);
   }, [loadFlows]);
 

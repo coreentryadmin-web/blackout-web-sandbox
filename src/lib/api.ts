@@ -280,7 +280,7 @@ export interface FlowAlert {
   alerted_at: string;
 }
 
-/** Website-first: Unusual Whales direct. Engine DB is fallback only. */
+/** Flow tape — engine Postgres ingest first, UW direct fallback. */
 export async function fetchFlows(params?: {
   limit?: number;
   ticker?: string;
@@ -292,15 +292,9 @@ export async function fetchFlows(params?: {
   if (params?.min_premium) qs.set("min_premium", String(params.min_premium));
   const query = qs.toString();
 
-  try {
-    return await marketFetch<{ flows: FlowAlert[]; count: number }>(
-      `/flows${query ? `?${query}` : ""}`
-    );
-  } catch {
-    return intelFetch<{ flows: FlowAlert[]; count: number }>(
-      `/flows/recent${query ? `?${query}` : ""}`
-    );
-  }
+  return marketFetch<{ flows: FlowAlert[]; count: number; source?: string }>(
+    `/flows${query ? `?${query}` : ""}`
+  );
 }
 
 // ── Night Hawk (BlackOut intel only) ──────────────────────────────────────────
