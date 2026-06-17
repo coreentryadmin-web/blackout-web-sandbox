@@ -12,6 +12,7 @@ export async function GET() {  const db = await pingDatabase();
     unusual_whales: uwConfigured(),
     finnhub: finnhubConfigured(),
     postgres: db.ok,
+    postgres_mode: db.mode ?? null,
     postgres_error: db.error ?? null,
   });
 }

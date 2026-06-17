@@ -1,21 +1,17 @@
 import { Pool, type QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
+let poolInit: Promise<Pool> | null = null;
+let activeMode: "private" | "public" | "unknown" = "unknown";
 
 export function dbConfigured(): boolean {
-  return Boolean(resolveDatabaseUrl());
+  return Boolean(
+    process.env.DATABASE_URL?.trim() || process.env.DATABASE_PUBLIC_URL?.trim()
+  );
 }
 
-function resolveDatabaseUrl(): string | undefined {
-  const privateUrl = process.env.DATABASE_URL?.trim();
-  const publicUrl = process.env.DATABASE_PUBLIC_URL?.trim();
-
-  // Railway private network is unavailable during `next build` — use public URL briefly.
-  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
-  if (isBuild && publicUrl) return publicUrl;
-
-  // Runtime: private URL (no egress). Never prefer public at runtime.
-  return privateUrl || publicUrl || undefined;
+export function databaseConnectionMode(): "private" | "public" | "unknown" {
+  return activeMode;
 }
 
 function poolSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
@@ -26,25 +22,80 @@ function poolSsl(connectionString: string): false | { rejectUnauthorized: boolea
   return { rejectUnauthorized: false };
 }
 
-export function getPool(): Pool {
-  const connectionString = resolveDatabaseUrl();
-  if (!connectionString) throw new Error("DATABASE_URL not set");
+function connectionCandidates(): Array<{ url: string; mode: "private" | "public" }> {
+  const privateUrl = process.env.DATABASE_URL?.trim();
+  const publicUrl = process.env.DATABASE_PUBLIC_URL?.trim();
+  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
 
-  if (!pool) {
-    pool = new Pool({
-      connectionString,
-      max: 8,
-      ssl: poolSsl(connectionString),
-      connectionTimeoutMillis: 15_000,
+  if (isBuild && publicUrl) return [{ url: publicUrl, mode: "public" }];
+
+  const out: Array<{ url: string; mode: "private" | "public" }> = [];
+  if (privateUrl) out.push({ url: privateUrl, mode: "private" });
+  if (publicUrl && publicUrl !== privateUrl) {
+    out.push({ url: publicUrl, mode: "public" });
+  }
+  return out;
+}
+
+async function createPool(): Promise<Pool> {
+  const candidates = connectionCandidates();
+  if (!candidates.length) throw new Error("DATABASE_URL not set");
+
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    const test = new Pool({
+      connectionString: candidate.url,
+      max: 1,
+      ssl: poolSsl(candidate.url),
+      connectionTimeoutMillis: 10_000,
+    });
+    try {
+      await test.query("SELECT 1");
+      await test.end();
+
+      activeMode = candidate.mode;
+      if (candidate.mode === "public") {
+        console.warn(
+          "[db] Private Postgres DNS failed — using DATABASE_PUBLIC_URL. " +
+            "Switch blackout-web to Railway V2 runtime for free private networking."
+        );
+      }
+
+      return new Pool({
+        connectionString: candidate.url,
+        max: 8,
+        ssl: poolSsl(candidate.url),
+        connectionTimeoutMillis: 15_000,
+      });
+    } catch (error) {
+      lastError = error;
+      await test.end().catch(() => undefined);
+      console.warn(
+        `[db] ${candidate.mode} connect failed:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(message || "Database connection failed");
+}
+
+async function getPool(): Promise<Pool> {
+  if (pool) return pool;
+  if (!poolInit) {
+    poolInit = createPool().then((p) => {
+      pool = p;
+      return p;
     });
   }
-  return pool;
+  return poolInit;
 }
 
 let schemaReady: Promise<void> | null = null;
 
 async function runMigrations(): Promise<void> {
-  const p = getPool();
+  const p = await getPool();
   await p.query(`
     CREATE TABLE IF NOT EXISTS flow_alerts (
       id BIGSERIAL PRIMARY KEY,
@@ -85,25 +136,31 @@ export async function ensureSchema(): Promise<void> {
     await schemaReady;
   } catch (error) {
     schemaReady = null;
+    pool = null;
+    poolInit = null;
     throw error;
   }
 }
 
-export async function pingDatabase(): Promise<{ ok: boolean; error?: string }> {
+export async function pingDatabase(): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: string;
+}> {
   if (!dbConfigured()) return { ok: false, error: "DATABASE_URL not set" };
   try {
     await ensureSchema();
-    await getPool().query("SELECT 1");
-    return { ok: true };
+    await (await getPool()).query("SELECT 1");
+    return { ok: true, mode: activeMode };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, error: message };
+    return { ok: false, error: message, mode: activeMode };
   }
 }
 
 export async function getMeta(key: string): Promise<string | null> {
   await ensureSchema();
-  const res = await getPool().query<{ value: string }>(
+  const res = await (await getPool()).query<{ value: string }>(
     "SELECT value FROM platform_meta WHERE key = $1",
     [key]
   );
@@ -112,7 +169,7 @@ export async function getMeta(key: string): Promise<string | null> {
 
 export async function setMeta(key: string, value: string): Promise<void> {
   await ensureSchema();
-  await getPool().query(
+  await (await getPool()).query(
     `INSERT INTO platform_meta (key, value, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
@@ -154,7 +211,7 @@ export async function fetchRecentFlows(params: {
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   values.push(params.limit);
 
-  const res = await getPool().query<QueryResultRow>(
+  const res = await (await getPool()).query<QueryResultRow>(
     `
     SELECT ticker,
            COALESCE(total_premium, 0) AS premium,
@@ -214,7 +271,7 @@ export async function insertFlowAlert(row: {
   raw_payload: unknown;
 }): Promise<boolean> {
   await ensureSchema();
-  const res = await getPool().query(
+  const res = await (await getPool()).query(
     `
     INSERT INTO flow_alerts (
       alert_id, ticker, strike, expiry, option_type,
