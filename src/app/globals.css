@@ -778,14 +778,14 @@ body {
   }
 
   .spx-sniper-command {
-    @apply relative overflow-hidden border border-bull/35 bg-black/55 backdrop-blur-md px-5 py-5 md:px-7 md:py-6;
+    @apply relative overflow-hidden border border-bull/35 bg-zinc-950/90 backdrop-blur-md px-5 py-5 md:px-7 md:py-6;
     box-shadow:
       0 0 60px rgba(34, 197, 94, 0.14),
-      inset 0 0 48px rgba(34, 197, 94, 0.06);
+      inset 0 0 48px rgba(34, 197, 94, 0.04);
   }
 
   .spx-sniper-command-grid {
-    @apply absolute inset-0 opacity-[0.22] pointer-events-none;
+    @apply absolute inset-0 opacity-[0.14] pointer-events-none z-0;
     background:
       linear-gradient(rgba(34, 197, 94, 0.08) 1px, transparent 1px),
       linear-gradient(90deg, rgba(34, 197, 94, 0.08) 1px, transparent 1px);
@@ -799,26 +799,51 @@ body {
   }
 
   .spx-sniper-command-glow {
-    @apply absolute pointer-events-none rounded-full blur-3xl opacity-40;
-    width: 42%;
-    height: 70%;
-    top: 10%;
-    left: 28%;
-    background: radial-gradient(circle, rgba(34, 197, 94, 0.35) 0%, transparent 70%);
+    @apply absolute pointer-events-none rounded-full blur-3xl z-0;
+    width: 38%;
+    height: 55%;
+    top: 18%;
+    left: 32%;
+    background: radial-gradient(circle, rgba(34, 197, 94, 0.22) 0%, transparent 70%);
     animation: spx-command-pulse 4s ease-in-out infinite;
   }
 
   @keyframes spx-command-pulse {
-    0%, 100% { opacity: 0.28; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(1.06); }
+    0%, 100% { opacity: 0.15; transform: scale(1); }
+    50% { opacity: 0.28; transform: scale(1.04); }
+  }
+
+  .spx-hero-tagline {
+    @apply text-zinc-300;
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.9);
+  }
+
+  .spx-hero-desk-tick {
+    @apply text-zinc-400;
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.85);
+  }
+
+  .spx-hero-stat-pill {
+    @apply rounded border bg-zinc-950/95 px-3 py-2 min-w-[76px];
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 2px 8px rgba(0, 0, 0, 0.45);
+  }
+
+  .spx-hero-stat-label {
+    @apply text-[9px] font-mono font-medium uppercase tracking-[0.2em] text-zinc-400 mb-1;
+  }
+
+  .spx-hero-stat-value {
+    @apply text-sm font-mono font-semibold tabular-nums truncate leading-none;
   }
 
   .spx-command-live {
-    @apply inline-flex items-center gap-1.5 font-mono text-[9px] tracking-[0.25em] uppercase text-grey-500 px-2.5 py-1 border border-grey-800/80 bg-black/50;
+    @apply inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.22em] uppercase text-zinc-400 px-3 py-1.5 border border-grey-700 bg-zinc-950/90;
   }
 
   .spx-command-live-on {
-    @apply text-bull border-bull/35 bg-bull/5;
+    @apply text-emerald-300 border-emerald-500/45 bg-emerald-950/40;
   }
 
   .spx-sniper-command .spx-sniper-title {

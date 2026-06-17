@@ -30,7 +30,7 @@ export function SpxSniperHeader({ desk, live }: Props) {
                 <span className="text-white">-</span>
                 <span className="text-gradient-fire">SNIPER</span>
               </h1>
-              <p className="font-mono text-[9px] tracking-[0.35em] text-grey-400 uppercase mt-1.5">
+              <p className="spx-hero-tagline font-mono text-[10px] tracking-[0.32em] uppercase mt-1.5">
                 Precision · Patience · 0DTE Structure
               </p>
             </div>
@@ -95,7 +95,7 @@ export function SpxSniperHeader({ desk, live }: Props) {
         </div>
 
         {live && desk?.as_of && (
-          <p className="mt-4 font-mono text-[8px] text-grey-600 tracking-wider">
+          <p className="spx-hero-desk-tick mt-4 font-mono text-[10px] tracking-wider">
             Desk · {new Date(desk.as_of).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
           </p>
         )}
@@ -104,16 +104,30 @@ export function SpxSniperHeader({ desk, live }: Props) {
   );
 }
 
-const PILL_TONE: Record<string, string> = {
-  bull: "text-bull border-bull/30",
-  bear: "text-bear border-bear/30",
-  support: "text-emerald-400 border-emerald-500/30",
-  resistance: "text-rose-400 border-rose-500/30",
-  orange: "text-orange-400 border-orange-500/30",
-  violet: "text-violet-300 border-violet-500/30",
-  magenta: "text-fuchsia-400 border-fuchsia-500/30",
-  cyan: "text-cyan-400 border-cyan-500/30",
-  gold: "text-amber-300 border-amber-500/30",
+const PILL_BORDER: Record<string, string> = {
+  bull: "border-emerald-500/40",
+  bear: "border-rose-500/40",
+  support: "border-emerald-500/35",
+  resistance: "border-rose-500/35",
+  orange: "border-orange-500/40",
+  violet: "border-violet-500/40",
+  magenta: "border-fuchsia-500/40",
+  cyan: "border-cyan-500/40",
+  gold: "border-amber-500/40",
+  neutral: "border-grey-700",
+};
+
+const VALUE_TONE: Record<string, string> = {
+  bull: "text-emerald-300",
+  bear: "text-rose-300",
+  support: "text-emerald-300",
+  resistance: "text-rose-300",
+  orange: "text-orange-300",
+  violet: "text-violet-200",
+  magenta: "text-fuchsia-300",
+  cyan: "text-cyan-300",
+  gold: "text-amber-200",
+  neutral: "text-zinc-100",
 };
 
 function StatPill({
@@ -130,15 +144,15 @@ function StatPill({
   capitalize?: boolean;
 }) {
   return (
-    <div className={clsx("spx-stat-pill spx-stat-pill-dark", PILL_TONE[tone], hot && "spx-stat-pill-glow")}>
-      <p className="text-[7px] tracking-widest uppercase text-grey-500 mb-0.5">{label}</p>
-      <p
-        className={clsx(
-          "font-mono text-[11px] font-semibold tabular-nums truncate",
-          cap && "capitalize",
-          PILL_TONE[tone]?.split(" ")[0] ?? "text-white"
-        )}
-      >
+    <div
+      className={clsx(
+        "spx-hero-stat-pill",
+        PILL_BORDER[tone] ?? PILL_BORDER.neutral,
+        hot && "spx-stat-pill-glow"
+      )}
+    >
+      <p className="spx-hero-stat-label">{label}</p>
+      <p className={clsx("spx-hero-stat-value", cap && "capitalize", VALUE_TONE[tone] ?? VALUE_TONE.neutral)}>
         {value}
       </p>
     </div>
