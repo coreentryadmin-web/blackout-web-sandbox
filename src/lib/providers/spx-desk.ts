@@ -9,6 +9,7 @@ import {
 } from "./gamma-desk";
 import {
   computeVixTermStructure,
+  fetchBenzingaNews,
   fetchIndexDailyBars,
   fetchIndexEma,
   fetchIndexMinuteBars,
@@ -78,6 +79,12 @@ export type SpxTapeItem = {
   detail: string;
 };
 
+export type DeskNewsHeadline = {
+  title: string;
+  published: string;
+  tickers: string[];
+};
+
 export type SpxDeskPayload = {
   available: boolean;
   as_of: string;
@@ -133,6 +140,7 @@ export type SpxDeskPayload = {
   oi_changes: OiChangeItem[];
   iv_term_structure: IvTermPoint[];
   macro_events: MacroEvent[];
+  news_headlines: DeskNewsHeadline[];
 };
 
 function level(
@@ -262,6 +270,7 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     oi_changes: [],
     iv_term_structure: [],
     macro_events: [],
+    news_headlines: [],
   };
 }
 
@@ -302,6 +311,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     ivTerm,
     sectors,
     macroEvents,
+    newsRaw,
     intel,
   ] = await Promise.all([
     fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
@@ -327,6 +337,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchUwIvTermStructure("SPX"),
     fetchSectorPerformance().catch(() => []),
     fetchEconomicCalendarToday().catch(() => []),
+    fetchBenzingaNews(15).catch(() => []),
     intelPromise,
   ]);
 
@@ -380,6 +391,20 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   }));
 
   const unifiedTape = buildUnifiedTape(spxFlows, darkPool);
+
+  const newsHeadlines: DeskNewsHeadline[] = (newsRaw ?? [])
+    .map((a) => ({
+      title: a.title,
+      published: a.published,
+      tickers: a.tickers ?? [],
+    }))
+    .filter((n) => n.title)
+    .sort((a, b) => {
+      const relevant = (tickers: string[]) =>
+        tickers.some((t) => /SPX|SPY|VIX|QQQ|\bES\b/i.test(t)) ? 1 : 0;
+      return relevant(b.tickers) - relevant(a.tickers);
+    })
+    .slice(0, 10);
 
   const levels = buildLevels({
     price,
@@ -457,5 +482,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     oi_changes: oiChanges ?? [],
     iv_term_structure: ivTerm ?? [],
     macro_events: macroEvents ?? [],
+    news_headlines: newsHeadlines,
   };
 }

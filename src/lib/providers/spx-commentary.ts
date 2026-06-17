@@ -15,6 +15,14 @@ function fmt(n: number | null | undefined, d = 2): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+function fmtPrem(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
 function computeDelta(
   desk: SpxDeskPayload,
   prev?: Partial<SpxDeskPayload> | null
@@ -43,8 +51,16 @@ function computeDelta(
     lines.push(`GEX king moved: ${fmt(prev.gex_king)} → ${fmt(desk.gex_king)}`);
   }
 
+  if (prev.gamma_flip != null && desk.gamma_flip != null && prev.gamma_flip !== desk.gamma_flip) {
+    lines.push(`γ flip level: ${fmt(prev.gamma_flip)} → ${fmt(desk.gamma_flip)}`);
+  }
+
   if (prev.tide_bias && desk.tide_bias && prev.tide_bias !== desk.tide_bias) {
     lines.push(`Market tide: ${prev.tide_bias} → ${desk.tide_bias}`);
+  }
+
+  if (prev.dark_pool?.bias && desk.dark_pool?.bias && prev.dark_pool.bias !== desk.dark_pool.bias) {
+    lines.push(`Dark pool bias: ${prev.dark_pool.bias} → ${desk.dark_pool.bias}`);
   }
 
   if (prev.hod != null && desk.hod != null && desk.hod > prev.hod + 0.25) {
@@ -61,56 +77,135 @@ function computeDelta(
   return lines;
 }
 
+/** Full desk intel for Claude — mirrors everything on the SPX dashboard. */
 function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
+  const netPrem = desk.net_prem_ticks ?? [];
+  const lastNetPrem = netPrem.length ? netPrem[netPrem.length - 1]?.net : null;
+
   return {
-    price: desk.price,
-    change_pct: desk.spx_change_pct,
-    vix: desk.vix,
-    vix_change_pct: desk.vix_change_pct,
-    above_vwap: desk.above_vwap,
-    lod: desk.lod,
-    hod: desk.hod,
-    vwap: desk.vwap,
-    pdh: desk.pdh,
-    pdl: desk.pdl,
-    ema20: desk.ema20,
-    ema50: desk.ema50,
-    ema200: desk.ema200,
-    sma50: desk.sma50,
-    sma200: desk.sma200,
-    tick: desk.tick,
-    trin: desk.trin,
-    add: desk.add,
-    gex_net: desk.gex_net,
-    gex_king: desk.gex_king,
-    max_pain: desk.max_pain,
-    gamma_flip: desk.gamma_flip,
-    gamma_regime: desk.gamma_regime,
-    above_gamma_flip: desk.above_gamma_flip,
-    gex_walls: desk.gex_walls?.slice(0, 5),
-    flow_0dte_call: desk.flow_0dte_call_premium,
-    flow_0dte_put: desk.flow_0dte_put_premium,
-    flow_0dte_net: desk.flow_0dte_net,
-    tide_bias: desk.tide_bias,
-    tide_call: desk.tide_call_premium,
-    tide_put: desk.tide_put_premium,
-    nope: desk.nope,
-    nope_net_delta: desk.nope_net_delta,
-    iv_rank: desk.uw_iv_rank,
-    regime: desk.regime,
-    vix_term: desk.vix_term,
+    as_of: desk.as_of,
+    source: desk.source,
+
+    price_action: {
+      price: desk.price,
+      change_pct: desk.spx_change_pct,
+      above_vwap: desk.above_vwap,
+      lod: desk.lod,
+      hod: desk.hod,
+      vwap: desk.vwap,
+      pdh: desk.pdh,
+      pdl: desk.pdl,
+      regime: desk.regime,
+    },
+
+    moving_averages: {
+      ema20: desk.ema20,
+      ema50: desk.ema50,
+      ema200: desk.ema200,
+      sma50: desk.sma50,
+      sma200: desk.sma200,
+    },
+
+    internals: {
+      tick: desk.tick,
+      trin: desk.trin,
+      add: desk.add,
+    },
+
+    volatility: {
+      vix: desk.vix,
+      vix_change_pct: desk.vix_change_pct,
+      iv_rank: desk.uw_iv_rank,
+      vix_term: desk.vix_term,
+      iv_term_structure: desk.iv_term_structure,
+    },
+
+    dealer_gex: {
+      gex_net: desk.gex_net,
+      gex_king: desk.gex_king,
+      max_pain: desk.max_pain,
+      gamma_flip: desk.gamma_flip,
+      above_gamma_flip: desk.above_gamma_flip,
+      gamma_regime: desk.gamma_regime,
+      gex_walls: desk.gex_walls,
+    },
+
+    flow_0dte: {
+      call_premium: desk.flow_0dte_call_premium,
+      put_premium: desk.flow_0dte_put_premium,
+      net: desk.flow_0dte_net,
+      pcr:
+        desk.flow_0dte_call_premium && desk.flow_0dte_call_premium > 0
+          ? (desk.flow_0dte_put_premium ?? 0) / desk.flow_0dte_call_premium
+          : null,
+    },
+
+    market_tide: {
+      bias: desk.tide_bias,
+      call_premium: desk.tide_call_premium,
+      put_premium: desk.tide_put_premium,
+      net: desk.tide_net,
+    },
+
+    nope: {
+      nope: desk.nope,
+      net_delta: desk.nope_net_delta,
+    },
+
     dark_pool: desk.dark_pool
       ? {
           bias: desk.dark_pool.bias,
-          total: desk.dark_pool.total_premium,
-          prints: desk.dark_pool.prints.length,
+          total_premium: desk.dark_pool.total_premium,
+          call_premium: desk.dark_pool.call_premium,
+          put_premium: desk.dark_pool.put_premium,
+          pcr: desk.dark_pool.pcr,
+          prints: desk.dark_pool.prints.map((p) => ({
+            time: p.executed_at,
+            strike: p.strike,
+            premium: p.premium,
+            side: p.side,
+          })),
         }
       : null,
-    recent_flows: desk.spx_flows?.slice(0, 5),
-    tape_highlights: desk.unified_tape?.slice(0, 5),
-    oi_changes: desk.oi_changes?.slice(0, 4),
-    macro_today: desk.macro_events?.slice(0, 3),
-    key_levels: desk.levels?.slice(0, 8),
+
+    spx_option_flows: (desk.spx_flows ?? []).map((f) => ({
+      type: f.option_type,
+      strike: f.strike,
+      expiry: f.expiry,
+      premium: f.premium,
+      direction: f.direction,
+      time: f.alerted_at,
+    })),
+
+    live_tape: (desk.unified_tape ?? []).map((t) => ({
+      kind: t.kind,
+      time: t.time,
+      label: t.label,
+      premium: t.premium,
+      detail: t.detail,
+    })),
+
+    oi_changes: desk.oi_changes,
+
+    net_premium_velocity: {
+      spy_last_tick: lastNetPrem,
+      recent_ticks: netPrem.slice(-12).map((t) => ({ time: t.time, net: t.net })),
+    },
+
+    sector_rotation: {
+      leaders: (desk.sector_heat ?? []).slice(0, 4),
+      laggards: [...(desk.sector_heat ?? [])].sort((a, b) => a.change_pct - b.change_pct).slice(0, 4),
+    },
+
+    macro_calendar_today: desk.macro_events,
+
+    news_headlines: (desk.news_headlines ?? []).map((n) => ({
+      title: n.title,
+      tickers: n.tickers,
+      published: n.published,
+    })),
+
+    key_levels_ladder: desk.levels,
   };
 }
 
@@ -140,11 +235,14 @@ export async function generateSpxCommentary(
   previous?: Partial<SpxDeskPayload> | null
 ): Promise<SpxCommentaryResult | null> {
   const delta = computeDelta(desk, previous);
+  const ctx = deskContext(desk);
 
   const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a 0DTE SPX index options desk. Write a live desk commentary update for members watching the dashboard.
 
+You receive the FULL desk snapshot below: price structure, dealer/GEX, dark pool prints, SPX option flow, unified tape, 0DTE flow, market tide, NOPE, VIX term, sector rotation, OI changes, net premium velocity (SPY), macro calendar, and Benzinga headlines. Use ALL relevant sections — synthesize across sources.
+
 CURRENT DESK (JSON):
-${JSON.stringify(deskContext(desk), null, 0)}
+${JSON.stringify(ctx)}
 
 WHAT CHANGED SINCE LAST UPDATE:
 ${delta.map((d) => `- ${d}`).join("\n")}
@@ -153,18 +251,19 @@ Respond with ONLY valid JSON (no markdown fences):
 {
   "headline": "One punchy line — max 12 words",
   "bias": "bullish" | "bearish" | "neutral",
-  "body": "3-5 short bullet lines separated by \\n. Cover: price vs VWAP, dealer/GEX/dark pool context, 0DTE flow bias, recent tape, what changed, what to expect next 15-30 min. Mentor voice — direct, no hype, no disclaimers.",
+  "body": "4-6 short bullet lines separated by \\n. Cover: price vs VWAP/levels, dealer/GEX/γ flip, dark pool + flow tape, 0DTE bias, VIX/IV context, sector rotation if notable, headline catalyst if any, what changed, next 15-30 min playbook. Mentor voice — direct, no hype, no disclaimers.",
   "watch": ["level or trigger 1", "level or trigger 2", "level or trigger 3"],
   "changed": ["what shifted 1", "what shifted 2"]
 }
 
 Rules:
-- SPX index prices only. Round to .00.
-- Cite real numbers from the desk data.
-- If flow/GEX missing, say "dealer data loading" — do not invent.
-- Max 120 words in body.`;
+- SPX index prices only for levels. Round to .00.
+- Cite real numbers from the JSON — premiums as ${fmtPrem(1_500_000)} style when large.
+- If a section is null/empty, skip it — do not invent data.
+- Reference news only if provided in news_headlines.
+- Max 150 words in body.`;
 
-  const raw = await anthropicText(prompt, 700);
+  const raw = await anthropicText(prompt, 1000);
   if (!raw) return null;
 
   const parsed = parseCommentaryJson(raw);
