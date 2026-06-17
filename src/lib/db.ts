@@ -170,6 +170,56 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_open_play_session_status
     ON spx_open_play(session_date, status);
   `);
+  await p.query(`
+    ALTER TABLE spx_open_play
+    ADD COLUMN IF NOT EXISTS option_strike NUMERIC,
+    ADD COLUMN IF NOT EXISTS option_type TEXT,
+    ADD COLUMN IF NOT EXISTS option_label TEXT,
+    ADD COLUMN IF NOT EXISTS option_premium TEXT;
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS spx_play_outcomes (
+      id BIGSERIAL PRIMARY KEY,
+      open_play_id BIGINT NOT NULL,
+      session_date DATE NOT NULL,
+      direction TEXT NOT NULL,
+      entry_path TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      score INT NOT NULL,
+      confidence INT NOT NULL,
+      entry_price NUMERIC NOT NULL,
+      exit_price NUMERIC,
+      stop NUMERIC,
+      target NUMERIC,
+      mfe_pts NUMERIC DEFAULT 0,
+      mae_pts NUMERIC DEFAULT 0,
+      trim_done BOOLEAN DEFAULT FALSE,
+      pnl_pts NUMERIC,
+      outcome TEXT NOT NULL DEFAULT 'open',
+      exit_action TEXT,
+      headline TEXT NOT NULL,
+      factors JSONB,
+      confirmations JSONB,
+      mtf JSONB,
+      claude JSONB,
+      option_ticket JSONB,
+      opened_at TIMESTAMPTZ NOT NULL,
+      closed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_open_play
+    ON spx_play_outcomes(open_play_id);
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_closed
+    ON spx_play_outcomes(closed_at DESC) WHERE outcome <> 'open';
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_entry_path
+    ON spx_play_outcomes(entry_path, outcome);
+  `);
 }
 
 export async function ensureSchema(): Promise<void> {
@@ -436,12 +486,17 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
   mae_pts: number;
   opened_at: string;
   status: "open" | "closed";
+  option_strike?: number | null;
+  option_type?: string | null;
+  option_label?: string | null;
+  option_premium?: string | null;
 } | null> {
   await ensureSchema();
   const res = await (await getPool()).query(
     `
     SELECT id, session_date, direction, entry_price, stop, target, grade, headline,
-           trim_done, mfe_pts, mae_pts, opened_at, status
+           trim_done, mfe_pts, mae_pts, opened_at, status,
+           option_strike, option_type, option_label, option_premium
     FROM spx_open_play
     WHERE session_date = $1::date AND status = 'open'
     ORDER BY opened_at DESC
@@ -465,6 +520,10 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
     mae_pts: Number(r.mae_pts ?? 0),
     opened_at: new Date(String(r.opened_at)).toISOString(),
     status: "open",
+    option_strike: r.option_strike != null ? Number(r.option_strike) : null,
+    option_type: r.option_type != null ? String(r.option_type) : null,
+    option_label: r.option_label != null ? String(r.option_label) : null,
+    option_premium: r.option_premium != null ? String(r.option_premium) : null,
   };
 }
 
@@ -477,6 +536,10 @@ export async function insertOpenSpxPlay(row: {
   grade: string;
   headline: string;
   opened_at: string;
+  option_strike?: number | null;
+  option_type?: string | null;
+  option_label?: string | null;
+  option_premium?: string | null;
 }): Promise<number> {
   await ensureSchema();
   await (await getPool()).query(
@@ -486,9 +549,10 @@ export async function insertOpenSpxPlay(row: {
   const res = await (await getPool()).query<{ id: string }>(
     `
     INSERT INTO spx_open_play (
-      session_date, direction, entry_price, stop, target, grade, headline, opened_at, status
+      session_date, direction, entry_price, stop, target, grade, headline, opened_at, status,
+      option_strike, option_type, option_label, option_premium
     )
-    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,'open')
+    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11,$12)
     RETURNING id
     `,
     [
@@ -500,6 +564,10 @@ export async function insertOpenSpxPlay(row: {
       row.grade,
       row.headline,
       row.opened_at,
+      row.option_strike ?? null,
+      row.option_type ?? null,
+      row.option_label ?? null,
+      row.option_premium ?? null,
     ]
   );
   return Number(res.rows[0]?.id ?? 0);
@@ -553,4 +621,162 @@ export async function closeOpenSpxPlayRow(id: number): Promise<void> {
     `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE id = $1 AND status = 'open'`,
     [id]
   );
+}
+
+function mapPlayOutcomeRow(r: QueryResultRow): import("@/lib/spx-play-outcomes").PlayOutcomeRow {
+  return {
+    id: Number(r.id),
+    open_play_id: Number(r.open_play_id),
+    session_date: String(r.session_date).slice(0, 10),
+    direction: r.direction === "short" ? "short" : "long",
+    entry_path: r.entry_path === "watch_promote" ? "watch_promote" : "cold_buy",
+    grade: String(r.grade),
+    score: Number(r.score),
+    confidence: Number(r.confidence),
+    entry_price: Number(r.entry_price),
+    exit_price: r.exit_price != null ? Number(r.exit_price) : null,
+    stop: r.stop != null ? Number(r.stop) : null,
+    target: r.target != null ? Number(r.target) : null,
+    mfe_pts: Number(r.mfe_pts ?? 0),
+    mae_pts: Number(r.mae_pts ?? 0),
+    trim_done: Boolean(r.trim_done),
+    pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+    outcome: String(r.outcome) as "open" | "win" | "loss" | "breakeven",
+    exit_action:
+      r.exit_action != null ? (String(r.exit_action) as import("@/lib/spx-play-outcomes").PlayExitAction) : null,
+    headline: String(r.headline),
+    opened_at: new Date(String(r.opened_at)).toISOString(),
+    closed_at: r.closed_at != null ? new Date(String(r.closed_at)).toISOString() : null,
+  };
+}
+
+export async function insertPlayOutcomeEntry(row: {
+  open_play_id: number;
+  session_date: string;
+  direction: string;
+  entry_path: string;
+  grade: string;
+  score: number;
+  confidence: number;
+  entry_price: number;
+  stop: number | null;
+  target: number | null;
+  headline: string;
+  factors: unknown;
+  confirmations: unknown;
+  mtf: unknown;
+  claude: unknown;
+  option_ticket: unknown;
+  opened_at: string;
+}): Promise<number> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{ id: string }>(
+    `
+    INSERT INTO spx_play_outcomes (
+      open_play_id, session_date, direction, entry_path, grade, score, confidence,
+      entry_price, stop, target, headline, factors, confirmations, mtf, claude,
+      option_ticket, opened_at, outcome
+    )
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open')
+    RETURNING id
+    `,
+    [
+      row.open_play_id,
+      row.session_date,
+      row.direction,
+      row.entry_path,
+      row.grade,
+      row.score,
+      row.confidence,
+      row.entry_price,
+      row.stop,
+      row.target,
+      row.headline,
+      JSON.stringify(row.factors ?? []),
+      JSON.stringify(row.confirmations ?? null),
+      JSON.stringify(row.mtf ?? null),
+      JSON.stringify(row.claude ?? null),
+      JSON.stringify(row.option_ticket ?? null),
+      row.opened_at,
+    ]
+  );
+  return Number(res.rows[0]?.id ?? 0);
+}
+
+export async function closePlayOutcomeRow(
+  openPlayId: number,
+  close: {
+    exit_price: number;
+    exit_action: string;
+    mfe_pts: number;
+    mae_pts: number;
+    trim_done: boolean;
+    pnl_pts: number;
+    outcome: string;
+    closed_at: string;
+  }
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_play_outcomes
+    SET exit_price = $2,
+        exit_action = $3,
+        mfe_pts = $4,
+        mae_pts = $5,
+        trim_done = $6,
+        pnl_pts = $7,
+        outcome = $8,
+        closed_at = $9::timestamptz
+    WHERE open_play_id = $1 AND outcome = 'open'
+    `,
+    [
+      openPlayId,
+      close.exit_price,
+      close.exit_action,
+      close.mfe_pts,
+      close.mae_pts,
+      close.trim_done,
+      close.pnl_pts,
+      close.outcome,
+      close.closed_at,
+    ]
+  );
+}
+
+export async function fetchClosedPlayOutcomes(limit = 500): Promise<
+  import("@/lib/spx-play-outcomes").PlayOutcomeRow[]
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, open_play_id, session_date, direction, entry_path, grade, score, confidence,
+           entry_price, exit_price, stop, target, mfe_pts, mae_pts, trim_done, pnl_pts,
+           outcome, exit_action, headline, opened_at, closed_at
+    FROM spx_play_outcomes
+    WHERE outcome <> 'open'
+    ORDER BY closed_at DESC NULLS LAST
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows.map(mapPlayOutcomeRow);
+}
+
+export async function fetchRecentPlayOutcomeRows(limit = 50): Promise<
+  import("@/lib/spx-play-outcomes").PlayOutcomeRow[]
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, open_play_id, session_date, direction, entry_path, grade, score, confidence,
+           entry_price, exit_price, stop, target, mfe_pts, mae_pts, trim_done, pnl_pts,
+           outcome, exit_action, headline, opened_at, closed_at
+    FROM spx_play_outcomes
+    ORDER BY opened_at DESC
+    LIMIT $1
+    `,
+    [limit]
+  );
+  return res.rows.map(mapPlayOutcomeRow);
 }

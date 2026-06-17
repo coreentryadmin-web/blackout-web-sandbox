@@ -57,11 +57,14 @@ export function evaluatePlayGates(
     last_sell_was_loss: boolean;
     last_direction: "long" | "short" | null;
   },
-  confirmations?: PlayConfirmationResult | null
+  confirmations?: PlayConfirmationResult | null,
+  opts?: { min_score_boost?: number }
 ): PlayGateResult {
   const blocks: string[] = [];
   const warnings: string[] = [];
   const abs = Math.abs(confluence.score);
+  const scoreBoost = opts?.min_score_boost ?? 0;
+  const fullMin = playFullMinScore() + scoreBoost;
   const dir = confluence.bias === "bullish" ? "long" : confluence.bias === "bearish" ? "short" : null;
 
   if (!desk.market_open) {
@@ -103,8 +106,12 @@ export function evaluatePlayGates(
     blocks.push(`Score ${abs} too low — quality setups only`);
   }
 
+  if (scoreBoost > 0) {
+    warnings.push(`Adaptive score floor +${scoreBoost} (telemetry)`);
+  }
+
   let entry_mode: PlayGateResult["entry_mode"] = "none";
-  if (abs >= playFullMinScore() && confluence.conflicts <= 1) {
+  if (abs >= fullMin && confluence.conflicts <= 1) {
     entry_mode = "full";
   } else if (!playOnlyFullEntry() && abs >= playStarterMinScore() && confluence.conflicts <= 1) {
     entry_mode = "starter";

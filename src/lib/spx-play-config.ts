@@ -92,3 +92,27 @@ export function gradeRank(grade: string): number {
   const ranks: Record<string, number> = { D: 0, C: 1, B: 2, A: 3, "A+": 4 };
   return ranks[grade.toUpperCase()] ?? 0;
 }
+
+export function playOptionChainRequired(): boolean {
+  return flag(process.env.SPX_OPTION_CHAIN_REQUIRED, true);
+}
+
+export function outcomeAdaptiveMinTrades(): number {
+  return num(process.env.SPX_OUTCOME_MIN_TRADES, 8);
+}
+
+export function outcomeAdaptiveMinDays(): number {
+  return num(process.env.SPX_OUTCOME_MIN_DAYS, 14);
+}
+
+export function outcomeMinWinRate(): number {
+  return num(process.env.SPX_ADAPTIVE_MIN_WIN_RATE, 0.45);
+}
+
+export function promoteUnderperformGap(): number {
+  return num(process.env.SPX_PROMOTE_UNDERPERFORM_GAP, 0.15);
+}
+
+export function promoteUnderperformScoreBoost(): number {
+  return num(process.env.SPX_PROMOTE_SCORE_BOOST, 5);
+}

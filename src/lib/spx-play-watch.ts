@@ -1,0 +1,134 @@
+import { dbConfigured, getMeta, setMeta } from "@/lib/db";
+import type { SpxPlayDirection } from "@/lib/spx-signals";
+import { playMtfBufferPts } from "@/lib/spx-play-config";
+
+export type WatchRecord = {
+  setup_key: string;
+  direction: SpxPlayDirection;
+  first_at: string;
+  level: number;
+  price: number;
+  grade: string;
+  score: number;
+  headline: string;
+  hybrid_ok: boolean;
+  consumed: boolean;
+};
+
+const WATCH_KEY = "spx_watch_record";
+const memoryWatch: { record: WatchRecord | null } = { record: null };
+
+function watchMaxAgeMin(): number {
+  return Number(process.env.SPX_WATCH_ENTRY_MAX_AGE_MINUTES ?? 30);
+}
+
+function watchMaxDriftPts(): number {
+  return Number(process.env.SPX_WATCH_ENTRY_MAX_PRICE_DRIFT_PTS ?? 10);
+}
+
+export function watchSetupKey(direction: SpxPlayDirection): string {
+  return `0dte:${direction}`;
+}
+
+export async function loadWatchRecord(): Promise<WatchRecord | null> {
+  if (memoryWatch.record && !memoryWatch.record.consumed) {
+    return memoryWatch.record;
+  }
+  if (!dbConfigured()) return memoryWatch.record?.consumed ? null : memoryWatch.record;
+
+  const raw = await getMeta(WATCH_KEY);
+  if (!raw) return null;
+  try {
+    const rec = JSON.parse(raw) as WatchRecord;
+    if (rec.consumed) return null;
+    memoryWatch.record = rec;
+    return rec;
+  } catch {
+    return null;
+  }
+}
+
+export async function recordWatch(rec: Omit<WatchRecord, "consumed" | "first_at"> & { first_at?: string }): Promise<void> {
+  const existing = await loadWatchRecord();
+  const row: WatchRecord = {
+    ...rec,
+    first_at: existing?.setup_key === rec.setup_key ? existing.first_at : rec.first_at ?? new Date().toISOString(),
+    consumed: false,
+  };
+  memoryWatch.record = row;
+  if (!dbConfigured()) return;
+  await setMeta(WATCH_KEY, JSON.stringify(row));
+}
+
+export async function consumeWatchRecord(): Promise<void> {
+  if (memoryWatch.record) {
+    memoryWatch.record = { ...memoryWatch.record, consumed: true };
+  }
+  if (!dbConfigured()) return;
+  const rec = await loadWatchRecord();
+  if (rec) await setMeta(WATCH_KEY, JSON.stringify({ ...rec, consumed: true }));
+  memoryWatch.record = null;
+}
+
+export async function clearWatchRecord(): Promise<void> {
+  memoryWatch.record = null;
+  if (!dbConfigured()) return;
+  await setMeta(WATCH_KEY, "");
+}
+
+export type WatchPromoteResult = {
+  eligible: boolean;
+  reason: string;
+  record: WatchRecord | null;
+};
+
+export async function evaluateWatchPromote(params: {
+  direction: SpxPlayDirection;
+  price: number;
+  level: number;
+  hybridHardOk: boolean;
+  score: number;
+  fullMinScore: number;
+}): Promise<WatchPromoteResult> {
+  const rec = await loadWatchRecord();
+  if (!rec) {
+    return { eligible: false, reason: "No prior WATCH on file", record: null };
+  }
+
+  if (rec.direction !== params.direction) {
+    return { eligible: false, reason: "WATCH direction mismatch", record: rec };
+  }
+
+  if (params.score < params.fullMinScore) {
+    return { eligible: false, reason: `Score ${params.score} below entry threshold`, record: rec };
+  }
+
+  if (!params.hybridHardOk) {
+    return { eligible: false, reason: "MTF hard confirm required for promote", record: rec };
+  }
+
+  const ageMin = (Date.now() - new Date(rec.first_at).getTime()) / 60_000;
+  if (ageMin > watchMaxAgeMin()) {
+    await clearWatchRecord();
+    return { eligible: false, reason: `WATCH expired (${watchMaxAgeMin()}m)`, record: null };
+  }
+
+  const drift = Math.abs(params.price - rec.price);
+  if (drift > watchMaxDriftPts()) {
+    return { eligible: false, reason: `Price drift ${drift.toFixed(1)} pts`, record: rec };
+  }
+
+  const buf = playMtfBufferPts();
+  if (params.direction === "long" && params.price < params.level - buf) {
+    return { eligible: false, reason: "Lost watch level (long)", record: rec };
+  }
+  if (params.direction === "short" && params.price > params.level + buf) {
+    return { eligible: false, reason: "Lost watch level (short)", record: rec };
+  }
+
+  if (!rec.hybrid_ok) {
+    return { eligible: false, reason: "Prior WATCH lacked MTF confirm", record: rec };
+  }
+
+  return { eligible: true, reason: "WATCH→ENTRY promote", record: rec };
+}

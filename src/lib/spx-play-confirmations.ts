@@ -1,6 +1,7 @@
 import type { SpxConfluence } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PlayTechnicals } from "@/lib/spx-play-technicals";
+import { evaluateMtfHybrid, keyLevelForDirection } from "@/lib/spx-play-mtf";
 import { playMinConfirmationsRequired, playStructureProximityPts } from "@/lib/spx-play-config";
 
 export type PlayConfirmationCheck = {
@@ -104,24 +105,27 @@ export function evaluatePlayConfirmations(
     return { passed: false, passed_count: 0, total: 0, checks: [] };
   }
 
-  const m3Ok = direction === "long" ? technicals.mtf.m3_confirms_long : technicals.mtf.m3_confirms_short;
+  const keyLevel = keyLevelForDirection(desk, direction, confluence);
+  const hybrid = evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score);
+
+  const m3Ok = hybrid.t2_confirm_3m || (hybrid.ok && hybrid.soft_5m);
   checks.push({
     label: "3m MTF",
     required: true,
     passed: m3Ok,
     detail: m3Ok
-      ? `3m close confirms ${direction} (${technicals.m3_close?.toFixed(2)})`
-      : "3m close has not confirmed direction",
+      ? `3m hold @ ${keyLevel.toFixed(2)} · close ${technicals.m3_close?.toFixed(2) ?? "—"}${hybrid.soft_5m ? " (soft)" : ""}`
+      : hybrid.failure_reason ?? "3m close has not confirmed direction",
   });
 
-  const m5Ok = direction === "long" ? technicals.mtf.m5_confirms_long : technicals.mtf.m5_confirms_short;
+  const m5Ok = hybrid.t3_regime_5m || (hybrid.ok && hybrid.soft_5m);
   checks.push({
     label: "5m trend",
     required: true,
     passed: m5Ok,
     detail: m5Ok
-      ? `5m ${technicals.m5_trend} · RSI ${technicals.m5_rsi?.toFixed(0) ?? "—"}`
-      : `5m trend ${technicals.m5_trend} opposes ${direction}`,
+      ? `${hybrid.summary} · RSI ${technicals.m5_rsi?.toFixed(0) ?? "—"}`
+      : `5m ${technicals.m5_trend} opposes ${direction}`,
   });
 
   const struct = structureAligned(desk, direction);

@@ -5,6 +5,7 @@ import {
   setMeta,
 } from "@/lib/db";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
+import type { PlayCloseSnapshot } from "@/lib/spx-play-outcomes";
 
 export type OpenPlayRow = {
   id: number;
@@ -20,6 +21,10 @@ export type OpenPlayRow = {
   mae_pts: number;
   opened_at: string;
   status: "open" | "closed";
+  option_strike?: number | null;
+  option_type?: string | null;
+  option_label?: string | null;
+  option_premium?: string | null;
 };
 
 export type PlaySessionMeta = {
@@ -111,8 +116,16 @@ export async function updateOpenPlay(
 
 export async function closeOpenPlay(
   id: number,
-  outcome: { was_loss: boolean; direction: SpxPlayDirection }
+  outcome: {
+    was_loss: boolean;
+    direction: SpxPlayDirection;
+    close?: PlayCloseSnapshot;
+  }
 ): Promise<void> {
+  if (outcome.close) {
+    const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
+    await recordPlayClose(id, outcome.close);
+  }
   MEMORY_OPEN.row = null;
   if (dbConfigured()) {
     const { closeOpenSpxPlayRow } = await import("@/lib/db");

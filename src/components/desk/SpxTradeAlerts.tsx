@@ -131,11 +131,21 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
               <div className="min-w-0 flex-1">
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
                 <p className="spx-trade-alert-headline">{play.headline}</p>
+                {play.option_ticket && play.action === "BUY" && (
+                  <p className="font-mono text-sm text-emerald-200 mt-1 tabular-nums">
+                    {play.option_ticket.contract_label} · ${play.option_ticket.premium_range}
+                    {play.option_ticket.delta != null
+                      ? ` · Δ ${Math.abs(play.option_ticket.delta).toFixed(2)}`
+                      : ""}
+                  </p>
+                )}
                 <p className="spx-trade-alert-thesis">{play.thesis}</p>
                 {play.grade && play.action !== "SCANNING" && (
                   <p className="font-mono text-[10px] text-grey-400 mt-2 uppercase tracking-widest">
                     Grade {play.grade}
                     {play.open_play ? ` · open ${play.open_play.direction}` : ""}
+                    {play.watch?.active ? " · WATCH active" : ""}
+                    {play.watch?.promote_ready ? " · promote ready" : ""}
                   </p>
                 )}
               </div>
@@ -202,6 +212,23 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                   <p className="text-grey-500 pt-1">
                     5m {play.technicals.m5_trend} · RSI {play.technicals.m5_rsi?.toFixed(0) ?? "—"} · 3m{" "}
                     {play.technicals.m3_close?.toFixed(2) ?? "—"}
+                    {play.technicals.mtf_summary ? ` · ${play.technicals.mtf_summary}` : ""}
+                  </p>
+                )}
+                {play.watch?.active && (
+                  <p className="text-orange-300/80 pt-1">
+                    WATCH since {play.watch.since ? new Date(play.watch.since).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "—"} · {play.watch.reason}
+                  </p>
+                )}
+                {play.telemetry?.adaptive_active && (
+                  <p className="font-mono text-[9px] text-grey-600 pt-2">
+                    Telemetry: {play.telemetry.summary}
+                    {play.telemetry.cold_buy_win_rate != null
+                      ? ` · cold ${(play.telemetry.cold_buy_win_rate * 100).toFixed(0)}%`
+                      : ""}
+                    {play.telemetry.promote_win_rate != null
+                      ? ` · promote ${(play.telemetry.promote_win_rate * 100).toFixed(0)}%`
+                      : ""}
                   </p>
                 )}
                 {play.gates.blocks.slice(0, 2).map((b) => (
