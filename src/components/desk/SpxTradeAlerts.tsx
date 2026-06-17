@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxPlayPayload, SpxPlayAction } from "@/lib/spx-play-engine";
 import { useSpxPlay } from "@/hooks/useSpxPlay";
+import { useStablePlayConfirmations } from "@/hooks/useStablePlayConfirmations";
 import { fmtPrice } from "@/lib/api";
 
 type Props = {
@@ -76,6 +77,7 @@ function playId(p: SpxPlayPayload): string {
 
 export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }: Props) {
   const { play, playRefreshing } = useSpxPlay(sessionActive);
+  const confirmationLayer = useStablePlayConfirmations(play);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const lastIdRef = useRef<string>("");
 
@@ -97,6 +99,12 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     : "—";
 
   const panelRefreshing = (refreshing || playRefreshing) && play && play.action !== "SCANNING";
+
+  const showConfirmationPanel =
+    Boolean(confirmationLayer) &&
+    (play?.action === "SCANNING" ||
+      play?.action === "WATCHING" ||
+      (!play && playRefreshing));
 
   return (
     <section
@@ -193,15 +201,23 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
             )}
           </div>
 
-          {(play.gates.blocks.length > 0 || play.gates.warnings.length > 0 || play.confirmations) &&
-            (play.action === "SCANNING" || play.action === "WATCHING") && (
-              <div className="spx-trade-confirmations">
-                {play.confirmations && (
-                  <p className="spx-trade-confirmations-title">
-                    Confirmations {play.confirmations.passed_count}/{play.confirmations.total}
-                  </p>
+          {showConfirmationPanel && confirmationLayer && (
+              <div
+                className={clsx(
+                  "spx-trade-confirmations",
+                  playRefreshing && "spx-trade-confirmations-refreshing"
                 )}
-                {play.confirmations?.checks.map((c) => (
+              >
+                <p className="spx-trade-confirmations-title">
+                  Confirmations {confirmationLayer.confirmations.passed_count}/
+                  {confirmationLayer.confirmations.total}
+                  {playRefreshing && (
+                    <span className="ml-2 text-grey-500 font-normal normal-case tracking-normal">
+                      · updating
+                    </span>
+                  )}
+                </p>
+                {confirmationLayer.confirmations.checks.map((c) => (
                   <p
                     key={c.label}
                     className={c.passed ? "spx-trade-confirmation-pass" : "spx-trade-confirmation-fail"}
@@ -209,37 +225,40 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     {c.passed ? "✓" : "✗"} {c.label}: {c.detail}
                   </p>
                 ))}
-                {play.technicals && (
+                {confirmationLayer.technicals && (
                   <p className="spx-trade-confirmation-meta">
-                    5m {play.technicals.m5_trend} · RSI {play.technicals.m5_rsi?.toFixed(0) ?? "—"} · 3m{" "}
-                    {play.technicals.m3_close?.toFixed(2) ?? "—"}
-                    {play.technicals.mtf_summary ? ` · ${play.technicals.mtf_summary}` : ""}
+                    5m {confirmationLayer.technicals.m5_trend} · RSI{" "}
+                    {confirmationLayer.technicals.m5_rsi?.toFixed(0) ?? "—"} · 3m{" "}
+                    {confirmationLayer.technicals.m3_close?.toFixed(2) ?? "—"}
+                    {confirmationLayer.technicals.mtf_summary
+                      ? ` · ${confirmationLayer.technicals.mtf_summary}`
+                      : ""}
                   </p>
                 )}
-                {play.watch?.active && (
+                {confirmationLayer.watch?.active && (
                   <p className="spx-trade-confirmation-meta text-amber-300/90">
                     WATCH since{" "}
-                    {play.watch.since
-                      ? new Date(play.watch.since).toLocaleTimeString("en-US", {
+                    {confirmationLayer.watch.since
+                      ? new Date(confirmationLayer.watch.since).toLocaleTimeString("en-US", {
                           hour: "numeric",
                           minute: "2-digit",
                         })
                       : "—"}{" "}
-                    · {play.watch.reason}
+                    · {confirmationLayer.watch.reason}
                   </p>
                 )}
-                {play.telemetry?.adaptive_active && (
+                {confirmationLayer.telemetry?.adaptive_active && (
                   <p className="spx-trade-confirmation-meta text-violet-300/80">
-                    Telemetry: {play.telemetry.summary}
-                    {play.telemetry.cold_buy_win_rate != null
-                      ? ` · cold ${(play.telemetry.cold_buy_win_rate * 100).toFixed(0)}%`
+                    Telemetry: {confirmationLayer.telemetry.summary}
+                    {confirmationLayer.telemetry.cold_buy_win_rate != null
+                      ? ` · cold ${(confirmationLayer.telemetry.cold_buy_win_rate * 100).toFixed(0)}%`
                       : ""}
-                    {play.telemetry.promote_win_rate != null
-                      ? ` · promote ${(play.telemetry.promote_win_rate * 100).toFixed(0)}%`
+                    {confirmationLayer.telemetry.promote_win_rate != null
+                      ? ` · promote ${(confirmationLayer.telemetry.promote_win_rate * 100).toFixed(0)}%`
                       : ""}
                   </p>
                 )}
-                {play.gates.blocks.slice(0, 2).map((b) => (
+                {confirmationLayer.gates.blocks.slice(0, 2).map((b) => (
                   <p key={b} className="spx-trade-block-warn">
                     ⛔ {b}
                   </p>
