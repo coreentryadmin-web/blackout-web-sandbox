@@ -811,6 +811,61 @@ body {
     @apply grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-4 items-stretch;
   }
 
+  .spx-sniper-triple {
+    @apply xl:grid-cols-[280px_1fr_300px];
+  }
+
+  .spx-technicals-panel {
+    @apply flex flex-col border border-bull/25 bg-black/55 backdrop-blur-md min-h-[400px] xl:min-h-[640px] xl:max-h-[640px] overflow-hidden;
+  }
+
+  .spx-technicals-header {
+    @apply flex items-center gap-2 shrink-0 px-4 py-3 border-b border-grey-800/80;
+  }
+
+  .spx-technicals-body {
+    @apply flex-1 overflow-y-auto px-3 py-3 space-y-4;
+  }
+
+  .spx-technicals-section-title {
+    @apply font-mono text-[8px] tracking-[0.35em] uppercase text-grey-500 mb-2;
+  }
+
+  .spx-tech-row {
+    @apply flex items-center justify-between gap-2 py-1.5 px-2 border-l-2 border-transparent;
+  }
+
+  .spx-tech-row-support { @apply border-l-bull/40; }
+  .spx-tech-row-resistance { @apply border-l-bear/40; }
+
+  .spx-tech-label {
+    @apply text-[10px] font-mono uppercase tracking-wider text-grey-400;
+  }
+
+  .spx-tech-value {
+    @apply font-mono text-[11px] tabular-nums;
+  }
+
+  .spx-level-row {
+    @apply flex items-center gap-2 py-1.5 px-2 text-[10px] border-b border-grey-900/80;
+  }
+
+  .spx-level-label {
+    @apply font-mono uppercase tracking-wider text-grey-500 w-20 shrink-0;
+  }
+
+  .spx-level-value {
+    @apply font-mono text-white tabular-nums flex-1;
+  }
+
+  .spx-level-dist {
+    @apply font-mono tabular-nums text-[9px];
+  }
+
+  .spx-level-support { @apply border-l-2 border-bull/30; }
+  .spx-level-resistance { @apply border-l-2 border-bear/30; }
+  .spx-level-neutral { @apply border-l-2 border-grey-700; }
+
   .spx-sniper-chart-col {
     @apply min-h-[640px];
   }

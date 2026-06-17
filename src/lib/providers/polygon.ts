@@ -151,3 +151,91 @@ export async function fetchBenzingaNews(limit = 12) {
     url: String(article.url ?? article.benzinga_url ?? ""),
   }));
 }
+
+// ── SPX structure (indices) ───────────────────────────────────────────────────
+
+type AggBar = { t?: number; o: number; h: number; l: number; c: number; v?: number };
+
+function mapAggBars(results: Array<Record<string, unknown>> | undefined): AggBar[] {
+  return (results ?? []).map((r) => ({
+    t: Number(r.t),
+    o: Number(r.o),
+    h: Number(r.h),
+    l: Number(r.l),
+    c: Number(r.c),
+    v: r.v != null ? Number(r.v) : undefined,
+  }));
+}
+
+export async function fetchIndexMinuteBars(symbol: string, from: string, to: string) {
+  const sym = symbol.toUpperCase();
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    `/v2/aggs/ticker/${sym}/range/1/minute/${from}/${to}`,
+    { limit: "5000", sort: "asc" }
+  );
+  return mapAggBars(data.results);
+}
+
+export async function fetchIndexDailyBars(symbol: string, from: string, to: string) {
+  const sym = symbol.toUpperCase();
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    `/v2/aggs/ticker/${sym}/range/1/day/${from}/${to}`,
+    { limit: "10", sort: "asc" }
+  );
+  return mapAggBars(data.results);
+}
+
+type IndicatorValues = { values?: Array<{ value?: number }> };
+
+async function latestIndicator(
+  path: string,
+  params: Record<string, string>
+): Promise<number | null> {
+  try {
+    const data = await polygonGet<{ results?: IndicatorValues }>(path, params);
+    const v = data.results?.values?.[0]?.value;
+    return v != null ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchIndexEma(
+  symbol: string,
+  window: number,
+  timespan: "minute" | "hour" | "day" = "minute"
+) {
+  const sym = symbol.toUpperCase();
+  return latestIndicator(`/v1/indicators/ema/${sym}`, {
+    window: String(window),
+    timespan,
+    series_type: "close",
+    order: "desc",
+    limit: "1",
+  });
+}
+
+export async function fetchIndexSma(
+  symbol: string,
+  window: number,
+  timespan: "minute" | "hour" | "day" = "day"
+) {
+  const sym = symbol.toUpperCase();
+  return latestIndicator(`/v1/indicators/sma/${sym}`, {
+    window: String(window),
+    timespan,
+    series_type: "close",
+    order: "desc",
+    limit: "1",
+  });
+}
+
+export async function fetchIndexVwap(symbol: string, timespan: "minute" | "day" = "minute") {
+  const sym = symbol.toUpperCase();
+  return latestIndicator(`/v1/indicators/vwap/${sym}`, {
+    timespan,
+    order: "desc",
+    limit: "1",
+  });
+}
+

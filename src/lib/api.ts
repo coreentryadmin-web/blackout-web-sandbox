@@ -130,6 +130,51 @@ export async function fetchSpxIndices() {
   }>("/indices");
 }
 
+export type SpxDeskLevel = {
+  label: string;
+  value: number | null;
+  kind: "support" | "resistance" | "neutral";
+  distance_pct: number | null;
+};
+
+export type SpxDeskPayload = {
+  available: boolean;
+  as_of: string;
+  source: string;
+  price: number;
+  spx_change_pct: number;
+  vix: number | null;
+  vix_change_pct: number;
+  above_vwap: boolean;
+  lod: number | null;
+  hod: number | null;
+  vwap: number | null;
+  pdh: number | null;
+  pdl: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  ema200: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  tick: number | null;
+  trin: number | null;
+  gex_net: number | null;
+  gex_king: number | null;
+  max_pain: number | null;
+  gamma_flip: number | null;
+  flow_0dte_call_premium: number | null;
+  flow_0dte_put_premium: number | null;
+  flow_0dte_net: number | null;
+  tide_bias: string | null;
+  nope: number | null;
+  uw_iv_rank: number | null;
+  regime: string;
+  levels: SpxDeskLevel[];
+};
+
+/** Full SPX-Sniper desk — Polygon structure + UW dealer/flow + optional engine overlay */
+export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
+
 /** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */
 export async function fetchSpxState(): Promise<SpxState> {
   const [indicesRes, intelRes] = await Promise.allSettled([
