@@ -14,11 +14,11 @@ export function marketDataConfigured(): boolean {
   return polygonConfigured() || uwConfigured() || finnhubConfigured();
 }
 
-/** Full SPX desk cache (UW + Polygon). Default 8s — client polls slower than pulse. */
+/** Full SPX desk cache (UW + Polygon). Default 10s — matches client full-desk poll. */
 export function deskCacheTtlMs(): number {
   const raw = process.env.SPX_DESK_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 8;
-  if (!Number.isFinite(sec) || sec < 0) return 8_000;
+  const sec = raw ? Number(raw) : 10;
+  if (!Number.isFinite(sec) || sec < 0) return 10_000;
   return Math.round(sec * 1000);
 }
 

@@ -74,10 +74,10 @@ export function SpxCommentaryRail({
   }, [live, desk?.available]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!live || !desk) return;
+    if (!live) return;
     const interval = setInterval(() => pullCommentary(false), 15_000);
     return () => clearInterval(interval);
-  }, [live, desk, pullCommentary]);
+  }, [live, pullCommentary]);
 
   return (
     <aside className="spx-commentary-rail spx-commentary-rail-full spx-commentary-rail-desk">

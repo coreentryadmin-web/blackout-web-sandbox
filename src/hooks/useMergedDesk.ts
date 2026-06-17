@@ -7,15 +7,13 @@ import { mergePulseIntoDesk } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 
 const PULSE_MS = 2_000;
-const FULL_DESK_MS = 8_000;
+const FULL_DESK_MS = 10_000;
 
 const swrLiveOpts = {
-  refreshWhenHidden: true,
+  refreshWhenHidden: false,
   refreshWhenOffline: false,
-  revalidateOnFocus: true,
+  revalidateOnFocus: false,
   revalidateOnReconnect: true,
-  dedupingInterval: 0,
-  compare: () => false as const,
 };
 
 export function useMergedDesk() {
@@ -26,6 +24,7 @@ export function useMergedDesk() {
   } = useSWR("spx-desk-full", fetchSpxDesk, {
     ...swrLiveOpts,
     refreshInterval: FULL_DESK_MS,
+    dedupingInterval: FULL_DESK_MS - 500,
     focusThrottleInterval: FULL_DESK_MS,
   });
 
@@ -35,6 +34,7 @@ export function useMergedDesk() {
   } = useSWR("spx-desk-pulse", fetchSpxDeskPulse, {
     ...swrLiveOpts,
     refreshInterval: PULSE_MS,
+    dedupingInterval: PULSE_MS - 500,
     focusThrottleInterval: PULSE_MS,
   });
 
