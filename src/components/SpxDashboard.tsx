@@ -12,7 +12,7 @@ import {
 } from "@/components/desk/SpxDeskPanels";
 
 export function SpxDashboard() {
-  const { desk, live, refreshing } = useMergedDesk();
+  const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
 
   return (
     <div className="spx-sniper-desk">
@@ -28,7 +28,7 @@ export function SpxDashboard() {
         </aside>
 
         <div className="spx-sniper-chart-col spx-center-stack">
-          <SpxTradeAlerts desk={desk} live={live} refreshing={refreshing} />
+          <SpxTradeAlerts desk={desk} live={live} refreshing={refreshing} sessionActive={sessionActive} />
         </div>
 
         <SpxCommentaryRail desk={desk} live={live} />

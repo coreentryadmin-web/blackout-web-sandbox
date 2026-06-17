@@ -181,6 +181,9 @@ export const fetchSpxDeskPulse = () => marketFetch<import("@/lib/providers/spx-d
 /** UW flow lane — live tape, GEX walls, dark pool (~4s). */
 export const fetchSpxDeskFlow = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskFlow>("/spx/flow");
 
+/** Server play engine — BUY / HOLD / TRIM / SELL with gates + Claude arbiter. */
+export const fetchSpxPlay = () => marketFetch<import("@/lib/spx-play-engine").SpxPlayPayload>("/spx/play");
+
 /** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */
 export async function fetchSpxState(): Promise<SpxState> {
   const [indicesRes, intelRes] = await Promise.allSettled([

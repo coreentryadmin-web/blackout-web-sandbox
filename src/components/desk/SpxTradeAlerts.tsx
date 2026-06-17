@@ -1,213 +1,250 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import { computeSpxTradeSignal, type SpxSignalAction, type SpxTradeSignal } from "@/lib/spx-signals";
+import type { SpxPlayPayload, SpxPlayAction } from "@/lib/spx-play-engine";
+import { useSpxPlay } from "@/hooks/useSpxPlay";
 import { fmtPrice } from "@/lib/api";
 
 type Props = {
   desk?: SpxDeskPayload;
   live?: boolean;
   refreshing?: boolean;
+  sessionActive?: boolean;
 };
 
-type AlertRow = SpxTradeSignal & { id: string };
+type HistoryRow = SpxPlayPayload & { id: string };
 
-function actionClass(action: SpxSignalAction): string {
+function actionClass(action: SpxPlayAction): string {
   switch (action) {
-    case "BUY_CALL":
+    case "BUY":
       return "spx-alert-buy-call";
-    case "BUY_PUT":
+    case "SELL":
       return "spx-alert-buy-put";
     case "HOLD":
+    case "TRIM":
       return "spx-alert-hold";
-    default:
+    case "WATCHING":
       return "spx-alert-wait";
+    default:
+      return "spx-alert-scanning";
   }
 }
 
-function actionLabel(action: SpxSignalAction): string {
+function actionLabel(action: SpxPlayAction, direction: SpxPlayPayload["direction"]): string {
   switch (action) {
-    case "BUY_CALL":
-      return "BUY CALL";
-    case "BUY_PUT":
-      return "BUY PUT";
+    case "BUY":
+      return direction === "short" ? "BUY PUT" : "BUY CALL";
+    case "SELL":
+      return "SELL";
     case "HOLD":
       return "HOLD";
+    case "TRIM":
+      return "TRIM";
+    case "WATCHING":
+      return "WATCH";
     default:
-      return "WAIT";
+      return "SCANNING";
   }
 }
 
-function historyActionClass(action: SpxSignalAction): string {
+function historyClass(action: SpxPlayAction): string {
   switch (action) {
-    case "BUY_CALL":
+    case "BUY":
       return "spx-history-buy-call";
-    case "BUY_PUT":
+    case "SELL":
       return "spx-history-buy-put";
     case "HOLD":
+    case "TRIM":
       return "spx-history-hold";
     default:
       return "spx-history-wait";
   }
 }
 
-function scoreClass(action: SpxSignalAction, score: number): string {
-  if (action === "BUY_CALL") return "text-bull";
-  if (action === "BUY_PUT") return "text-bear";
-  if (action === "HOLD" || action === "WAIT") return "text-orange-400";
-  return score > 0 ? "text-bull" : score < 0 ? "text-bear" : "text-grey-200";
+function scoreClass(action: SpxPlayAction, score: number): string {
+  if (action === "BUY") return score >= 0 ? "text-bull" : "text-bear";
+  if (action === "SELL") return "text-bear";
+  if (action === "HOLD" || action === "TRIM" || action === "WATCHING") return "text-orange-400";
+  return "text-grey-400";
 }
 
-function signalId(s: SpxTradeSignal): string {
-  return `${s.action}|${s.confidence}|${Math.round(s.score)}|${s.headline}`;
+function playId(p: SpxPlayPayload): string {
+  return `${p.action}|${p.direction}|${p.confidence}|${Math.round(p.score)}|${p.headline}`;
 }
 
-export function SpxTradeAlerts({ desk, live, refreshing }: Props) {
-  const signal = useMemo(() => (desk ? computeSpxTradeSignal(desk) : null), [desk]);
-  const [history, setHistory] = useState<AlertRow[]>([]);
+export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }: Props) {
+  const { play, playRefreshing } = useSpxPlay(sessionActive);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
   const lastIdRef = useRef<string>("");
 
   useEffect(() => {
-    if (!signal) return;
-    const id = signalId(signal);
+    if (!play || play.action === "SCANNING") return;
+    const id = playId(play);
     if (id === lastIdRef.current) return;
     lastIdRef.current = id;
-    setHistory((prev) => [{ ...signal, id: `${id}|${Date.now()}` }, ...prev].slice(0, 24));
-  }, [signal]);
+    setHistory((prev) => [{ ...play, id: `${id}|${Date.now()}` }, ...prev].slice(0, 24));
+  }, [play]);
 
-  const updatedAt = signal?.as_of
-    ? new Date(signal.as_of).toLocaleTimeString("en-US", {
+  const show = Boolean(play);
+  const updatedAt = play?.as_of
+    ? new Date(play.as_of).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
         second: "2-digit",
       })
     : "—";
 
+  const panelRefreshing = (refreshing || playRefreshing) && play && play.action !== "SCANNING";
+
   return (
     <section
       className={clsx(
         "spx-trade-alerts-panel",
-        refreshing && signal && "spx-desk-panel-refreshing"
+        panelRefreshing && "spx-desk-panel-refreshing"
       )}
     >
       <header className="spx-trade-alerts-header">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-[0.35em] text-grey-500">
-            0DTE SPX
+            0DTE SPX · Play Engine
           </p>
           <h2 className="font-display text-lg text-white tracking-wide">Trade Alerts</h2>
           <p className="font-mono text-[10px] text-grey-500 mt-0.5">
-            Confluence · GEX + flow + internals {live ? `· ${updatedAt}` : ""}
+            Gates · Claude · one play {live ? `· ${updatedAt}` : ""}
           </p>
         </div>
-        <span
-          className={clsx(
-            "spx-live-pill",
-            live ? "spx-live-pill-on" : "spx-live-pill-off"
-          )}
-        >
+        <span className={clsx("spx-live-pill", live ? "spx-live-pill-on" : "spx-live-pill-off")}>
           {live ? "LIVE" : "OFFLINE"}
         </span>
       </header>
 
-      {!signal ? (
+      {!show || !play ? (
         <p className="font-mono text-[11px] text-grey-500 py-8 text-center">
-          {live
-            ? "Building confluence model…"
-            : desk?.market_label
-              ? `Session closed · ${desk.market_label} · resumes 6:30 AM PT`
-              : "Session closed · resumes 6:30 AM PT"}
+          {live ? "Initializing play engine…" : "Session closed · resumes 6:30 AM PT"}
         </p>
       ) : (
         <>
-          <div className={clsx("spx-trade-alert-hero", actionClass(signal.action))}>
+          <div className={clsx("spx-trade-alert-hero", actionClass(play.action))}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <p className="spx-trade-alert-action">{actionLabel(signal.action)}</p>
-                <p className="spx-trade-alert-headline">{signal.headline}</p>
-                <p className="spx-trade-alert-thesis">{signal.thesis}</p>
+                <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
+                <p className="spx-trade-alert-headline">{play.headline}</p>
+                <p className="spx-trade-alert-thesis">{play.thesis}</p>
+                {play.grade && play.action !== "SCANNING" && (
+                  <p className="font-mono text-[10px] text-grey-400 mt-2 uppercase tracking-widest">
+                    Grade {play.grade}
+                    {play.open_play ? ` · open ${play.open_play.direction}` : ""}
+                  </p>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <p className="font-mono text-[10px] uppercase tracking-widest text-grey-500">Score</p>
-                <p className={clsx("spx-trade-alert-score", scoreClass(signal.action, signal.score))}>
-                  {signal.score > 0 ? "+" : ""}
-                  {signal.score}
+                <p className={clsx("spx-trade-alert-score", scoreClass(play.action, play.score))}>
+                  {play.score > 0 ? "+" : ""}
+                  {play.score}
                 </p>
-                <p className="font-mono text-xs text-grey-400 mt-1">
-                  {signal.confidence}% conf
-                </p>
+                <p className="font-mono text-xs text-grey-400 mt-1">{play.confidence}% conf</p>
               </div>
             </div>
 
-            <div className="spx-trade-alert-levels mt-4 grid grid-cols-3 gap-3">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Entry</p>
-                <p className={clsx("spx-level-value", scoreClass(signal.action, signal.score))}>
-                  {fmtPrice(signal.levels.entry)}
-                </p>
+            {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
+              <div className="spx-trade-alert-levels mt-4 grid grid-cols-3 gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Entry</p>
+                  <p className={clsx("spx-level-value", scoreClass(play.action, play.score))}>
+                    {fmtPrice(play.levels.entry)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Stop</p>
+                  <p className="spx-level-value text-bear tabular-nums">
+                    {play.levels.stop != null ? fmtPrice(play.levels.stop) : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Target</p>
+                  <p className="spx-level-value text-bull tabular-nums">
+                    {play.levels.target != null ? fmtPrice(play.levels.target) : "—"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Stop</p>
-                <p className="spx-level-value text-bear tabular-nums">
-                  {signal.levels.stop != null ? fmtPrice(signal.levels.stop) : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Target</p>
-                <p className="spx-level-value text-bull tabular-nums">
-                  {signal.levels.target != null ? fmtPrice(signal.levels.target) : "—"}
-                </p>
-              </div>
-            </div>
-            <p className="font-mono text-xs text-orange-200/70 mt-3">
-              Invalidation: {signal.levels.invalidation}
-            </p>
+            )}
+
+            {play.levels.invalidation && play.phase === "OPEN" && (
+              <p className="font-mono text-xs text-orange-200/70 mt-3">
+                Invalidation: {play.levels.invalidation}
+              </p>
+            )}
+
+            {play.claude && play.action === "BUY" && (
+              <p className="font-mono text-[10px] text-emerald-300/70 mt-2">
+                Claude {play.claude.source} · {play.claude.verdict}
+              </p>
+            )}
           </div>
 
-          <div className="spx-trade-factors mt-4">
-            <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
-              Confluence factors
-            </p>
-            <ul className="spx-desk-list">
-              {signal.factors.slice(0, 10).map((f) => (
-                <li key={`${f.label}-${f.detail}`} className="spx-desk-list-row">
-                  <span
-                    className={clsx(
-                      "font-mono text-[10px] uppercase w-24 shrink-0 font-bold",
-                      f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-400"
-                    )}
-                  >
-                    {f.label}
-                  </span>
-                  <span className="font-mono text-[11px] text-grey-300 flex-1">{f.detail}</span>
-                  <span
-                    className={clsx(
-                      "font-mono text-[10px] tabular-nums shrink-0",
-                      f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-500"
-                    )}
-                  >
-                    {f.weight > 0 ? "+" : ""}
-                    {f.weight}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {(play.gates.blocks.length > 0 || play.gates.warnings.length > 0) &&
+            (play.action === "SCANNING" || play.action === "WATCHING") && (
+              <div className="mt-3 font-mono text-[10px] text-grey-500 space-y-1">
+                {play.gates.blocks.slice(0, 3).map((b) => (
+                  <p key={b} className="text-rose-300/80">
+                    ⛔ {b}
+                  </p>
+                ))}
+                {play.gates.warnings.slice(0, 2).map((w) => (
+                  <p key={w} className="text-amber-200/70">
+                    ⚠ {w}
+                  </p>
+                ))}
+              </div>
+            )}
+
+          {play.factors.length > 0 && play.action !== "SCANNING" && (
+            <div className="spx-trade-factors mt-4">
+              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
+                Confluence factors
+              </p>
+              <ul className="spx-desk-list">
+                {play.factors.slice(0, 10).map((f) => (
+                  <li key={`${f.label}-${f.detail}`} className="spx-desk-list-row">
+                    <span
+                      className={clsx(
+                        "font-mono text-[10px] uppercase w-24 shrink-0 font-bold",
+                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-400"
+                      )}
+                    >
+                      {f.label}
+                    </span>
+                    <span className="font-mono text-[11px] text-grey-300 flex-1">{f.detail}</span>
+                    <span
+                      className={clsx(
+                        "font-mono text-[10px] tabular-nums shrink-0",
+                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-500"
+                      )}
+                    >
+                      {f.weight > 0 ? "+" : ""}
+                      {f.weight}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
 
       {history.length > 1 && (
         <div className="spx-trade-alert-history mt-4 pt-4 border-t border-white/5">
           <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
-            Alert log
+            Play log
           </p>
           <ul className="spx-desk-list max-h-[200px] overflow-y-auto">
             {history.slice(1, 10).map((row) => (
               <li key={row.id} className="spx-desk-list-row text-xs md:text-sm">
-                <span className={clsx("spx-trade-alert-history-action", historyActionClass(row.action))}>
-                  {actionLabel(row.action)}
+                <span className={clsx("spx-trade-alert-history-action", historyClass(row.action))}>
+                  {actionLabel(row.action, row.direction)}
                 </span>
                 <span className="font-mono text-grey-500 shrink-0">
                   {new Date(row.as_of).toLocaleTimeString("en-US", {
@@ -216,18 +253,7 @@ export function SpxTradeAlerts({ desk, live, refreshing }: Props) {
                     second: "2-digit",
                   })}
                 </span>
-                <span
-                  className={clsx(
-                    "font-mono truncate",
-                    row.action === "BUY_CALL"
-                      ? "text-emerald-300/90"
-                      : row.action === "BUY_PUT"
-                        ? "text-rose-300/90"
-                        : "text-orange-200/85"
-                  )}
-                >
-                  {row.headline}
-                </span>
+                <span className="font-mono text-grey-300 truncate">{row.headline}</span>
               </li>
             ))}
           </ul>

@@ -148,6 +148,28 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_signal_log_created_at
     ON spx_signal_log(created_at DESC);
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS spx_open_play (
+      id BIGSERIAL PRIMARY KEY,
+      session_date DATE NOT NULL,
+      direction TEXT NOT NULL,
+      entry_price NUMERIC NOT NULL,
+      stop NUMERIC,
+      target NUMERIC,
+      grade TEXT NOT NULL,
+      headline TEXT NOT NULL,
+      trim_done BOOLEAN DEFAULT FALSE,
+      mfe_pts NUMERIC DEFAULT 0,
+      mae_pts NUMERIC DEFAULT 0,
+      opened_at TIMESTAMPTZ NOT NULL,
+      closed_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'open'
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_open_play_session_status
+    ON spx_open_play(session_date, status);
+  `);
 }
 
 export async function ensureSchema(): Promise<void> {
@@ -398,4 +420,137 @@ export async function fetchRecentSpxSignalLogs(limit = 50): Promise<
     factors: r.factors,
     created_at: new Date(String(r.created_at)).toISOString(),
   }));
+}
+
+export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
+  id: number;
+  session_date: string;
+  direction: "long" | "short";
+  entry_price: number;
+  stop: number | null;
+  target: number | null;
+  grade: string;
+  headline: string;
+  trim_done: boolean;
+  mfe_pts: number;
+  mae_pts: number;
+  opened_at: string;
+  status: "open" | "closed";
+} | null> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, session_date, direction, entry_price, stop, target, grade, headline,
+           trim_done, mfe_pts, mae_pts, opened_at, status
+    FROM spx_open_play
+    WHERE session_date = $1::date AND status = 'open'
+    ORDER BY opened_at DESC
+    LIMIT 1
+    `,
+    [sessionDate]
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    id: Number(r.id),
+    session_date: String(r.session_date).slice(0, 10),
+    direction: r.direction === "short" ? "short" : "long",
+    entry_price: Number(r.entry_price),
+    stop: r.stop != null ? Number(r.stop) : null,
+    target: r.target != null ? Number(r.target) : null,
+    grade: String(r.grade),
+    headline: String(r.headline),
+    trim_done: Boolean(r.trim_done),
+    mfe_pts: Number(r.mfe_pts ?? 0),
+    mae_pts: Number(r.mae_pts ?? 0),
+    opened_at: new Date(String(r.opened_at)).toISOString(),
+    status: "open",
+  };
+}
+
+export async function insertOpenSpxPlay(row: {
+  session_date: string;
+  direction: string;
+  entry_price: number;
+  stop: number | null;
+  target: number | null;
+  grade: string;
+  headline: string;
+  opened_at: string;
+}): Promise<number> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE session_date = $1::date AND status = 'open'`,
+    [row.session_date]
+  );
+  const res = await (await getPool()).query<{ id: string }>(
+    `
+    INSERT INTO spx_open_play (
+      session_date, direction, entry_price, stop, target, grade, headline, opened_at, status
+    )
+    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,'open')
+    RETURNING id
+    `,
+    [
+      row.session_date,
+      row.direction,
+      row.entry_price,
+      row.stop,
+      row.target,
+      row.grade,
+      row.headline,
+      row.opened_at,
+    ]
+  );
+  return Number(res.rows[0]?.id ?? 0);
+}
+
+export async function updateOpenSpxPlayRow(
+  id: number,
+  patch: {
+    stop?: number | null;
+    target?: number | null;
+    trim_done?: boolean;
+    mfe_pts?: number;
+    mae_pts?: number;
+  }
+): Promise<void> {
+  await ensureSchema();
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  if (patch.stop !== undefined) {
+    sets.push(`stop = $${i++}`);
+    vals.push(patch.stop);
+  }
+  if (patch.target !== undefined) {
+    sets.push(`target = $${i++}`);
+    vals.push(patch.target);
+  }
+  if (patch.trim_done !== undefined) {
+    sets.push(`trim_done = $${i++}`);
+    vals.push(patch.trim_done);
+  }
+  if (patch.mfe_pts !== undefined) {
+    sets.push(`mfe_pts = $${i++}`);
+    vals.push(patch.mfe_pts);
+  }
+  if (patch.mae_pts !== undefined) {
+    sets.push(`mae_pts = $${i++}`);
+    vals.push(patch.mae_pts);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  await (await getPool()).query(
+    `UPDATE spx_open_play SET ${sets.join(", ")} WHERE id = $${i} AND status = 'open'`,
+    vals
+  );
+}
+
+export async function closeOpenSpxPlayRow(id: number): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE id = $1 AND status = 'open'`,
+    [id]
+  );
 }
