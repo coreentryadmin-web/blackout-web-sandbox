@@ -6,8 +6,8 @@ import { fetchSpxDesk, fetchSpxDeskFlow, fetchSpxDeskPulse } from "@/lib/api";
 import { mergeFlowIntoDesk, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 
-const PULSE_MS = 2_000;
-const FLOW_MS = 5_000;
+const PULSE_MS = 1_000;
+const FLOW_MS = 2_000;
 const FULL_DESK_MS = 15_000;
 
 const swrLiveOpts = {
@@ -35,7 +35,7 @@ export function useMergedDesk() {
     {
       ...swrLiveOpts,
       refreshInterval: FLOW_MS,
-      dedupingInterval: FLOW_MS - 500,
+      dedupingInterval: 1_500,
       focusThrottleInterval: FLOW_MS,
     }
   );
@@ -46,7 +46,7 @@ export function useMergedDesk() {
     {
       ...swrLiveOpts,
       refreshInterval: PULSE_MS,
-      dedupingInterval: PULSE_MS - 500,
+      dedupingInterval: 800,
       focusThrottleInterval: PULSE_MS,
     }
   );

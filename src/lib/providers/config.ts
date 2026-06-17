@@ -22,19 +22,27 @@ export function deskCacheTtlMs(): number {
   return Math.round(sec * 1000);
 }
 
-/** Fast Polygon pulse cache (price, session, internals). Default 2s. */
+/** Fast Polygon pulse cache (price, session, internals). Default 1s. */
 export function deskPulseCacheTtlMs(): number {
   const raw = process.env.SPX_PULSE_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 2;
-  if (!Number.isFinite(sec) || sec < 0) return 2_000;
+  const sec = raw ? Number(raw) : 1;
+  if (!Number.isFinite(sec) || sec < 0) return 1_000;
   return Math.round(sec * 1000);
 }
 
-/** UW flow lane cache (tape + GEX strikes). Default 5s. */
+/** Slower pulse structure refresh (EMAs, minute bars, mega-caps). Default 10s. */
+export function deskPulseStructureCacheTtlMs(): number {
+  const raw = process.env.SPX_PULSE_STRUCTURE_SEC?.trim();
+  const sec = raw ? Number(raw) : 10;
+  if (!Number.isFinite(sec) || sec < 0) return 10_000;
+  return Math.round(sec * 1000);
+}
+
+/** UW flow lane cache (tape + GEX strikes). Default 2s. */
 export function deskFlowCacheTtlMs(): number {
   const raw = process.env.SPX_FLOW_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 5;
-  if (!Number.isFinite(sec) || sec < 0) return 5_000;
+  const sec = raw ? Number(raw) : 2;
+  if (!Number.isFinite(sec) || sec < 0) return 2_000;
   return Math.round(sec * 1000);
 }
 

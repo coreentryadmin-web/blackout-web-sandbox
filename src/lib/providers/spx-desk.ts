@@ -1,4 +1,4 @@
-import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured } from "./config";
+import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured, deskPulseStructureCacheTtlMs } from "./config";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { fetchEconomicCalendarToday, type MacroEvent } from "./finnhub";
 import {
@@ -55,6 +55,32 @@ let cachedPriorDay = {
   pdh: null as number | null,
   pdl: null as number | null,
   fetchedAt: 0,
+};
+
+type PulseStructureCache = {
+  fetchedAt: number;
+  lod: number | null;
+  hod: number | null;
+  vwap: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  ema200: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  leader_stocks: Array<{ name: string; ticker: string; change_pct: number }>;
+};
+
+let cachedPulseStructure: PulseStructureCache = {
+  fetchedAt: 0,
+  lod: null,
+  hod: null,
+  vwap: null,
+  ema20: null,
+  ema50: null,
+  ema200: null,
+  sma50: null,
+  sma200: null,
+  leader_stocks: [],
 };
 
 const SPX = "I:SPX";
@@ -642,6 +668,42 @@ async function fetchPriorDayCached(): Promise<{ pdh: number | null; pdl: number 
   return { pdh: prior.pdh, pdl: prior.pdl };
 }
 
+/** EMAs / VWAP / HOD/LOD — refreshed on a slower cadence so 1s pulse stays light. */
+async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStructureCache> {
+  const now = Date.now();
+  const ttl = deskPulseStructureCacheTtlMs();
+  if (cachedPulseStructure.fetchedAt > 0 && now - cachedPulseStructure.fetchedAt < ttl) {
+    return cachedPulseStructure;
+  }
+
+  const [minuteBars, ema20, ema50, ema200, sma50, sma200, vwapInd, leaderStocks] =
+    await Promise.all([
+      fetchIndexMinuteBars(SPX, today, today).catch(() => []),
+      fetchIndexEma(SPX, 20, "minute"),
+      fetchIndexEma(SPX, 50, "minute"),
+      fetchIndexEma(SPX, 200, "day"),
+      fetchIndexSma(SPX, 50, "day"),
+      fetchIndexSma(SPX, 200, "day"),
+      fetchIndexVwap(SPX, "minute"),
+      fetchLeaderStockSnapshots().catch(() => []),
+    ]);
+
+  const session = sessionStatsFromMinuteBars(minuteBars);
+  cachedPulseStructure = {
+    fetchedAt: now,
+    lod: session.lod,
+    hod: session.hod,
+    vwap: session.vwap ?? vwapInd ?? null,
+    ema20,
+    ema50,
+    ema200,
+    sma50,
+    sma200,
+    leader_stocks: leaderStocks ?? [],
+  };
+  return cachedPulseStructure;
+}
+
 function gexSnapshotForPrice(price: number) {
   const levelsForWalls = lastGoodStrikeLevels;
   const flipLevels = levelsForWalls.map((l) => ({ strike: l.strike, net_gex: l.net_gex }));
@@ -657,7 +719,7 @@ function gexSnapshotForPrice(price: number) {
   };
 }
 
-/** Polygon-only fast lane — price, session, internals, mega-caps, GEX wall distances. */
+/** Polygon-only fast lane — 1s price tick + slower structure refresh. */
 export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
   const polledAt = new Date().toISOString();
   const empty: SpxDeskPulse = {
@@ -689,39 +751,22 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
   if (!polygonConfigured()) return empty;
 
   const today = todayEtYmd();
-  const [
-    snaps,
-    minuteBars,
-    prior,
-    ema20,
-    ema50,
-    ema200,
-    sma50,
-    sma200,
-    vwapInd,
-    leaderStocks,
-  ] = await Promise.all([
+  const [snaps, prior, structure] = await Promise.all([
     fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
-    fetchIndexMinuteBars(SPX, today, today).catch(() => []),
     fetchPriorDayCached(),
-    fetchIndexEma(SPX, 20, "minute"),
-    fetchIndexEma(SPX, 50, "minute"),
-    fetchIndexEma(SPX, 200, "day"),
-    fetchIndexSma(SPX, 50, "day"),
-    fetchIndexSma(SPX, 200, "day"),
-    fetchIndexVwap(SPX, "minute"),
-    fetchLeaderStockSnapshots().catch(() => []),
+    refreshPulseStructureIfNeeded(today),
   ]);
 
   const spxSnap = snaps[SPX];
   const vixSnap = snaps[VIX];
   if (!spxSnap?.price) return empty;
 
-  const session = sessionStatsFromMinuteBars(minuteBars);
   const price = spxSnap.price;
-  const vwap = session.vwap ?? vwapInd ?? null;
-  const lod = session.lod ?? price;
-  const hod = session.hod ?? price;
+  const vwap = structure.vwap;
+  const lod = structure.lod ?? price;
+  const hod = structure.hod ?? price;
+  const ema20 = structure.ema20;
+  const ema50 = structure.ema50;
   const vixTerm = computeVixTermStructure(
     vixSnap?.price ?? null,
     snaps[VIX9D]?.price ?? null,
@@ -743,14 +788,14 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
     pdl: prior.pdl,
     ema20,
     ema50,
-    ema200,
-    sma50,
-    sma200,
+    ema200: structure.ema200,
+    sma50: structure.sma50,
+    sma200: structure.sma200,
     tick: snaps[TICK]?.price ?? null,
     trin: snaps[TRIN]?.price ?? null,
     add: snaps[ADD]?.price ?? null,
     regime: String(inferRegime(price, ema20, ema50)),
-    leader_stocks: leaderStocks ?? [],
+    leader_stocks: structure.leader_stocks,
     vix_term: {
       vix9d: vixTerm.vix9d,
       vix3m: vixTerm.vix3m,
