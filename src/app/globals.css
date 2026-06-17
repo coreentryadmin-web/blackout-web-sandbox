@@ -123,6 +123,7 @@ body {
 }
 
 .text-glow-green { text-shadow: 0 0 40px rgba(34,197,94,0.6), 0 0 80px rgba(34,197,94,0.2); }
+.text-glow-red { text-shadow: 0 0 40px rgba(239,68,68,0.55), 0 0 80px rgba(239,68,68,0.2); }
 
 @layer components {
   .page-shell { @apply min-h-screen void-bg text-white; }
@@ -777,32 +778,59 @@ body {
   }
 
   .spx-sniper-command {
-    @apply relative overflow-hidden border border-white/[0.07] bg-[#050505] px-5 py-5 md:px-7 md:py-6;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    @apply relative overflow-hidden border border-bull/35 bg-black/55 backdrop-blur-md px-5 py-5 md:px-7 md:py-6;
+    box-shadow:
+      0 0 60px rgba(34, 197, 94, 0.14),
+      inset 0 0 48px rgba(34, 197, 94, 0.06);
   }
 
   .spx-sniper-command-grid {
-    @apply absolute inset-0 opacity-[0.12] pointer-events-none;
+    @apply absolute inset-0 opacity-[0.22] pointer-events-none;
     background:
-      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
+      linear-gradient(rgba(34, 197, 94, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 197, 94, 0.08) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  .spx-sniper-command-scan {
+    @apply absolute inset-x-0 h-px top-0 z-[1];
+    background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.85), transparent);
+    animation: desk-scan 5s linear infinite;
+  }
+
+  .spx-sniper-command-glow {
+    @apply absolute pointer-events-none rounded-full blur-3xl opacity-40;
+    width: 42%;
+    height: 70%;
+    top: 10%;
+    left: 28%;
+    background: radial-gradient(circle, rgba(34, 197, 94, 0.35) 0%, transparent 70%);
+    animation: spx-command-pulse 4s ease-in-out infinite;
+  }
+
+  @keyframes spx-command-pulse {
+    0%, 100% { opacity: 0.28; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.06); }
   }
 
   .spx-command-live {
-    @apply inline-flex items-center gap-1.5 font-mono text-[9px] tracking-[0.25em] uppercase text-grey-600 px-2.5 py-1 border border-grey-800/80 bg-black/60;
+    @apply inline-flex items-center gap-1.5 font-mono text-[9px] tracking-[0.25em] uppercase text-grey-500 px-2.5 py-1 border border-grey-800/80 bg-black/50;
   }
 
   .spx-command-live-on {
-    @apply text-grey-400 border-grey-700/80;
+    @apply text-bull border-bull/35 bg-bull/5;
   }
 
   .spx-sniper-command .spx-sniper-title {
-    @apply font-anton text-4xl md:text-5xl leading-none tracking-wide uppercase;
+    @apply font-anton text-4xl md:text-6xl leading-none tracking-wide uppercase;
   }
 
   .spx-stat-pill-dark {
-    @apply border bg-[#0a0a0a] px-2.5 py-1.5;
+    @apply border bg-black/45 backdrop-blur-sm px-2.5 py-1.5;
+  }
+
+  .spx-stat-pill-glow {
+    box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.1);
   }
 
   .spx-sniper-header-inner {
@@ -832,7 +860,7 @@ body {
   }
 
   .spx-stat-pill {
-    @apply border border-grey-900/90 bg-[#0a0a0a] px-3 py-2;
+    @apply border border-grey-800/80 bg-black/40 px-3 py-2 backdrop-blur-sm;
   }
 
   .spx-sniper-main {
