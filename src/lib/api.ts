@@ -172,9 +172,13 @@ export async function requestSpxCommentary(
   return data.commentary;
 }
 
-/** Full SPX-Sniper desk — Polygon structure + UW dealer/flow + optional engine overlay */
+/** Full SPX-Sniper desk — Polygon + UW dealer/flow (slower lane, ~8s). */
 export const fetchSpxDesk = () =>
   marketFetch<SpxDeskPayload>(`/spx/desk?poll=${Date.now()}`);
+
+/** Fast Polygon pulse — price, session, internals, mega-caps (~2s). */
+export const fetchSpxDeskPulse = () =>
+  marketFetch<import("@/lib/providers/spx-desk").SpxDeskPulse>(`/spx/pulse?poll=${Date.now()}`);
 
 
 /** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */

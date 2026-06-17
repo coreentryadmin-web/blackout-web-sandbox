@@ -1,7 +1,6 @@
 "use client";
 
-import useSWR from "swr";
-import { fetchSpxDesk } from "@/lib/api";
+import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxChart } from "@/components/desk/SpxChart";
@@ -15,29 +14,11 @@ import {
   SpxUnifiedTape,
 } from "@/components/desk/SpxDeskPanels";
 
-const DESK_REFRESH_MS = 3_000;
-
 export function SpxDashboard() {
-  const { data: desk, isLoading, isValidating } = useSWR(
-    "spx-desk-live",
-    fetchSpxDesk,
-    {
-      refreshInterval: DESK_REFRESH_MS,
-      refreshWhenHidden: true,
-      refreshWhenOffline: false,
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-      dedupingInterval: 0,
-      focusThrottleInterval: DESK_REFRESH_MS,
-      // Always re-render when a poll completes — default deep-compare skips updates.
-      compare: () => false,
-    }
-  );
+  const { desk, live, refreshing } = useMergedDesk();
 
-  const live = Boolean(desk?.available && (desk?.price ?? 0) > 0);
-  const deskRefreshing = isValidating && !isLoading;
-
-  return (    <div className="spx-sniper-desk">
+  return (
+    <div className="spx-sniper-desk">
       <SpxSniperHeader desk={desk} live={live} />
 
       <SpxIntelStrip desk={desk} live={live} />
@@ -45,8 +26,8 @@ export function SpxDashboard() {
       <div className="spx-sniper-triple">
         <aside className="spx-sniper-left-rail spx-left-stack">
           <SpxDarkPoolCard desk={desk} live={live} />
-          <SpxGexLadder desk={desk} live={live} refreshing={deskRefreshing} />
-          <SpxUnifiedTape desk={desk} live={live} refreshing={deskRefreshing} />
+          <SpxGexLadder desk={desk} live={live} refreshing={refreshing} />
+          <SpxUnifiedTape desk={desk} live={live} refreshing={refreshing} />
         </aside>
 
         <div className="spx-sniper-chart-col spx-center-stack">

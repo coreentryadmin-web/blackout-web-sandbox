@@ -52,6 +52,11 @@ let lastGoodStrikeLevels: GexStrikeLevel[] = [];
 let lastGoodGammaFlip: number | null = null;
 let lastGoodGammaRegime = "unknown";
 let lastGoodUnifiedTape: SpxTapeItem[] = [];
+let cachedPriorDay = {
+  pdh: null as number | null,
+  pdl: null as number | null,
+  fetchedAt: 0,
+};
 
 const SPX = "I:SPX";
 const VIX = "I:VIX";
@@ -153,6 +158,37 @@ export type SpxDeskPayload = {
   /** Set on each API response so clients can detect fresh polls. */
   polled_at?: string;
 };
+
+/** Fast-moving Polygon fields — merged over the full desk on the client every ~2s. */
+export type SpxDeskPulse = Pick<
+  SpxDeskPayload,
+  | "available"
+  | "price"
+  | "spx_change_pct"
+  | "vix"
+  | "vix_change_pct"
+  | "above_vwap"
+  | "lod"
+  | "hod"
+  | "vwap"
+  | "pdh"
+  | "pdl"
+  | "ema20"
+  | "ema50"
+  | "ema200"
+  | "sma50"
+  | "sma200"
+  | "tick"
+  | "trin"
+  | "add"
+  | "regime"
+  | "gamma_flip"
+  | "above_gamma_flip"
+  | "gamma_regime"
+  | "gex_walls"
+  | "leader_stocks"
+  | "vix_term"
+> & { polled_at: string };
 
 function level(
   label: string,
@@ -510,5 +546,175 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     iv_term_structure: ivTerm ?? [],
     macro_events: macroEvents ?? [],
     news_headlines: newsHeadlines,
+  };
+}
+
+async function fetchPriorDayCached(): Promise<{ pdh: number | null; pdl: number | null }> {
+  const now = Date.now();
+  if (now - cachedPriorDay.fetchedAt < 60_000 && cachedPriorDay.pdh != null) {
+    return { pdh: cachedPriorDay.pdh, pdl: cachedPriorDay.pdl };
+  }
+  const today = todayEtYmd();
+  const bars = await fetchIndexDailyBars(SPX, priorEtYmd(10), today).catch(() => []);
+  const prior = priorDayFromDailyBars(bars);
+  cachedPriorDay = { pdh: prior.pdh, pdl: prior.pdl, fetchedAt: now };
+  return { pdh: prior.pdh, pdl: prior.pdl };
+}
+
+function gexSnapshotForPrice(price: number) {
+  const levelsForWalls = lastGoodStrikeLevels;
+  const flipLevels = levelsForWalls.map((l) => ({ strike: l.strike, net_gex: l.net_gex }));
+  const gammaFlip = computeGammaFlip(flipLevels, price) ?? lastGoodGammaFlip;
+  const walls = topGexWalls(levelsForWalls, price, 6);
+  const finalWalls = walls.length ? walls : topGexWalls(lastGoodStrikeLevels, price, 6);
+  const gRegime = gammaRegime(price, gammaFlip);
+  return {
+    gamma_flip: gammaFlip,
+    above_gamma_flip: gammaFlip != null ? price > gammaFlip : false,
+    gamma_regime: gRegime !== "unknown" ? gRegime : lastGoodGammaRegime,
+    gex_walls: finalWalls.length ? finalWalls : lastGoodGexWalls,
+  };
+}
+
+/** Polygon-only fast lane — price, session, internals, mega-caps, GEX wall distances. */
+export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
+  const polledAt = new Date().toISOString();
+  const empty: SpxDeskPulse = {
+    available: false,
+    polled_at: polledAt,
+    price: 0,
+    spx_change_pct: 0,
+    vix: null,
+    vix_change_pct: 0,
+    above_vwap: false,
+    lod: null,
+    hod: null,
+    vwap: null,
+    pdh: null,
+    pdl: null,
+    ema20: null,
+    ema50: null,
+    ema200: null,
+    sma50: null,
+    sma200: null,
+    tick: null,
+    trin: null,
+    add: null,
+    regime: "unknown",
+    gamma_flip: null,
+    above_gamma_flip: false,
+    gamma_regime: "unknown",
+    gex_walls: [],
+    leader_stocks: [],
+    vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
+  };
+
+  if (!polygonConfigured()) return empty;
+
+  const today = todayEtYmd();
+  const [
+    snaps,
+    minuteBars,
+    prior,
+    ema20,
+    ema50,
+    ema200,
+    sma50,
+    sma200,
+    vwapInd,
+    leaderStocks,
+  ] = await Promise.all([
+    fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
+    fetchIndexMinuteBars(SPX, today, today).catch(() => []),
+    fetchPriorDayCached(),
+    fetchIndexEma(SPX, 20, "minute"),
+    fetchIndexEma(SPX, 50, "minute"),
+    fetchIndexEma(SPX, 200, "day"),
+    fetchIndexSma(SPX, 50, "day"),
+    fetchIndexSma(SPX, 200, "day"),
+    fetchIndexVwap(SPX, "minute"),
+    fetchLeaderStockSnapshots().catch(() => []),
+  ]);
+
+  const spxSnap = snaps[SPX];
+  const vixSnap = snaps[VIX];
+  if (!spxSnap?.price) return empty;
+
+  const session = sessionStatsFromMinuteBars(minuteBars);
+  const price = spxSnap.price;
+  const vwap = session.vwap ?? vwapInd ?? null;
+  const lod = session.lod ?? price;
+  const hod = session.hod ?? price;
+  const gex = gexSnapshotForPrice(price);
+  const vixTerm = computeVixTermStructure(
+    vixSnap?.price ?? null,
+    snaps[VIX9D]?.price ?? null,
+    snaps[VIX3M]?.price ?? null
+  );
+
+  return {
+    available: true,
+    polled_at: polledAt,
+    price,
+    spx_change_pct: spxSnap.change_pct,
+    vix: vixSnap?.price ?? null,
+    vix_change_pct: vixSnap?.change_pct ?? 0,
+    above_vwap: vwap != null ? price >= vwap : false,
+    lod,
+    hod,
+    vwap,
+    pdh: prior.pdh,
+    pdl: prior.pdl,
+    ema20,
+    ema50,
+    ema200,
+    sma50,
+    sma200,
+    tick: snaps[TICK]?.price ?? null,
+    trin: snaps[TRIN]?.price ?? null,
+    add: snaps[ADD]?.price ?? null,
+    regime: String(inferRegime(price, ema20, ema50)),
+    gamma_flip: gex.gamma_flip,
+    above_gamma_flip: gex.above_gamma_flip,
+    gamma_regime: gex.gamma_regime,
+    gex_walls: gex.gex_walls,
+    leader_stocks: leaderStocks ?? [],
+    vix_term: {
+      vix9d: vixTerm.vix9d,
+      vix3m: vixTerm.vix3m,
+      structure: vixTerm.structure,
+      detail: vixTerm.detail,
+    },
+  };
+}
+
+/** Overlay fast Polygon pulse onto the slower UW desk snapshot. */
+export function mergePulseIntoDesk(
+  base: SpxDeskPayload,
+  pulse: SpxDeskPulse
+): SpxDeskPayload {
+  const price = pulse.price || base.price;
+  return {
+    ...base,
+    ...pulse,
+    as_of: pulse.polled_at,
+    polled_at: pulse.polled_at,
+    source: base.source,
+    levels: buildLevels({
+      price,
+      lod: pulse.lod ?? base.lod,
+      hod: pulse.hod ?? base.hod,
+      vwap: pulse.vwap ?? base.vwap,
+      pdh: pulse.pdh ?? base.pdh,
+      pdl: pulse.pdl ?? base.pdl,
+      ema20: pulse.ema20 ?? base.ema20,
+      ema50: pulse.ema50 ?? base.ema50,
+      ema200: pulse.ema200 ?? base.ema200,
+      sma50: pulse.sma50 ?? base.sma50,
+      sma200: pulse.sma200 ?? base.sma200,
+      gex_king: base.gex_king,
+      max_pain: base.max_pain,
+      gamma_flip: pulse.gamma_flip ?? base.gamma_flip,
+    }),
   };
 }

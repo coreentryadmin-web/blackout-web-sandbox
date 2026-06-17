@@ -14,11 +14,19 @@ export function marketDataConfigured(): boolean {
   return polygonConfigured() || uwConfigured() || finnhubConfigured();
 }
 
-/** SPX desk in-memory cache TTL (ms). Default 4s — keep at or below client poll interval. */
+/** Full SPX desk cache (UW + Polygon). Default 8s — client polls slower than pulse. */
 export function deskCacheTtlMs(): number {
   const raw = process.env.SPX_DESK_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 4;
-  if (!Number.isFinite(sec) || sec < 0) return 4_000;
+  const sec = raw ? Number(raw) : 8;
+  if (!Number.isFinite(sec) || sec < 0) return 8_000;
+  return Math.round(sec * 1000);
+}
+
+/** Fast Polygon pulse cache (price, session, internals). Default 2s. */
+export function deskPulseCacheTtlMs(): number {
+  const raw = process.env.SPX_PULSE_CACHE_SEC?.trim();
+  const sec = raw ? Number(raw) : 2;
+  if (!Number.isFinite(sec) || sec < 0) return 2_000;
   return Math.round(sec * 1000);
 }
 
