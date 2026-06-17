@@ -6,7 +6,6 @@ import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxStructureBlocks } from "@/components/desk/SpxStructureBlocks";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxChart } from "@/components/desk/SpxChart";
-import { BenzingaNewsTicker } from "@/components/desk/BenzingaNewsTicker";
 import {
   SpxDarkPoolCard,
   SpxFlowStrip,
@@ -32,7 +31,6 @@ export function SpxDashboard() {
     <div className="spx-sniper-desk">
       <SpxSniperHeader desk={desk} live={live} />
 
-      <BenzingaNewsTicker />
       <SpxIntelStrip desk={desk} live={live} />
 
       <div className="spx-sniper-triple">
