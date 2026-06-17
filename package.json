@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
-    "lint": "next lint"
+    "lint": "next lint",
+    "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.1.0",
@@ -28,6 +29,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10",
+    "docx": "^9.7.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
