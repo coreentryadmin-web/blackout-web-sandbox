@@ -2,7 +2,11 @@ const INTEL_BASE = "/api/engine";
 const MARKET_BASE = "/api/market";
 
 async function marketFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${MARKET_BASE}${path}`, { cache: "no-store" });
+  const res = await fetch(`${MARKET_BASE}${path}`, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
+  });
   if (!res.ok) throw new Error(`Market ${path} → ${res.status}`);
   return res.json();
 }
@@ -169,7 +173,8 @@ export async function requestSpxCommentary(
 }
 
 /** Full SPX-Sniper desk — Polygon structure + UW dealer/flow + optional engine overlay */
-export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
+export const fetchSpxDesk = () =>
+  marketFetch<SpxDeskPayload>(`/spx/desk?poll=${Date.now()}`);
 
 
 /** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */

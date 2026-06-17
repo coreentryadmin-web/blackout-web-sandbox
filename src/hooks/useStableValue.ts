@@ -1,11 +1,9 @@
 import { useEffect, useRef } from "react";
 
-/** Keep the last non-empty/non-null value across refreshes so UI does not flash away. */
+/** Keep the last non-empty array when a refresh briefly returns empty. */
 export function useStableArray<T>(value: T[]) {
   const ref = useRef<T[]>([]);
-  useEffect(() => {
-    if (value.length > 0) ref.current = value;
-  }, [value]);
+  if (value.length > 0) ref.current = value;
   return value.length > 0 ? value : ref.current;
 }
 

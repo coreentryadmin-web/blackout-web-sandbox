@@ -38,7 +38,7 @@ export function SpxSniperHeader({ desk, live }: Props) {
             <div className="min-w-0">
               <AnimatePresence mode="popLayout">
                 <motion.p
-                  key={desk?.price}
+                  key={`${desk?.price ?? 0}-${desk?.polled_at ?? desk?.as_of ?? ""}`}
                   initial={{ opacity: 0.5, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25 }}
@@ -114,9 +114,14 @@ export function SpxSniperHeader({ desk, live }: Props) {
           </div>
         </div>
 
-        {live && desk?.as_of && (
+        {live && (desk?.polled_at ?? desk?.as_of) && (
           <p className="spx-hero-desk-tick mt-4 font-mono text-[10px] tracking-wider">
-            Desk · {new Date(desk.as_of).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+            Desk ·{" "}
+            {new Date(desk.polled_at ?? desk.as_of).toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
           </p>
         )}
       </div>

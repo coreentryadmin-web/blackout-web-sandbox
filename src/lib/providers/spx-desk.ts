@@ -150,6 +150,8 @@ export type SpxDeskPayload = {
   iv_term_structure: IvTermPoint[];
   macro_events: MacroEvent[];
   news_headlines: DeskNewsHeadline[];
+  /** Set on each API response so clients can detect fresh polls. */
+  polled_at?: string;
 };
 
 function level(

@@ -15,19 +15,29 @@ import {
   SpxUnifiedTape,
 } from "@/components/desk/SpxDeskPanels";
 
-const DESK_REFRESH_MS = 5_000;
+const DESK_REFRESH_MS = 3_000;
 
 export function SpxDashboard() {
-  const { data: desk, isLoading, isValidating } = useSWR("spx-desk", fetchSpxDesk, {
-    refreshInterval: DESK_REFRESH_MS,
-    revalidateOnFocus: true,
-    keepPreviousData: true,
-  });
+  const { data: desk, isLoading, isValidating } = useSWR(
+    "spx-desk-live",
+    fetchSpxDesk,
+    {
+      refreshInterval: DESK_REFRESH_MS,
+      refreshWhenHidden: true,
+      refreshWhenOffline: false,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      dedupingInterval: 0,
+      focusThrottleInterval: DESK_REFRESH_MS,
+      // Always re-render when a poll completes — default deep-compare skips updates.
+      compare: () => false,
+    }
+  );
 
   const live = Boolean(desk?.available && (desk?.price ?? 0) > 0);
   const deskRefreshing = isValidating && !isLoading;
-  return (
-    <div className="spx-sniper-desk">
+
+  return (    <div className="spx-sniper-desk">
       <SpxSniperHeader desk={desk} live={live} />
 
       <SpxIntelStrip desk={desk} live={live} />
