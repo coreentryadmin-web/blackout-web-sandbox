@@ -30,6 +30,14 @@ export function deskPulseCacheTtlMs(): number {
   return Math.round(sec * 1000);
 }
 
+/** UW flow lane cache (tape + GEX strikes). Default 4s. */
+export function deskFlowCacheTtlMs(): number {
+  const raw = process.env.SPX_FLOW_CACHE_SEC?.trim();
+  const sec = raw ? Number(raw) : 4;
+  if (!Number.isFinite(sec) || sec < 0) return 4_000;
+  return Math.round(sec * 1000);
+}
+
 /** Optional merge from engine /spx/state. Off by default — website owns live desk data. */
 export function engineIntelOverlayEnabled(): boolean {
   return process.env.ENGINE_INTEL_OVERLAY?.trim().toLowerCase() === "1";

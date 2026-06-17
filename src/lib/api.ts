@@ -178,6 +178,8 @@ export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
 /** Fast Polygon pulse — price, session, internals, mega-caps (~2s). */
 export const fetchSpxDeskPulse = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskPulse>("/spx/pulse");
 
+/** UW flow lane — live tape, GEX walls, dark pool (~4s). */
+export const fetchSpxDeskFlow = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskFlow>("/spx/flow");
 
 /** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */
 export async function fetchSpxState(): Promise<SpxState> {

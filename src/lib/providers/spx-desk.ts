@@ -1,4 +1,4 @@
-import { polygonConfigured, engineIntelOverlayEnabled } from "./config";
+import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured } from "./config";
 import { fetchEconomicCalendarToday, type MacroEvent } from "./finnhub";
 import {
   analyzeStrikeGexRows,
@@ -182,13 +182,28 @@ export type SpxDeskPulse = Pick<
   | "trin"
   | "add"
   | "regime"
-  | "gamma_flip"
-  | "above_gamma_flip"
-  | "gamma_regime"
-  | "gex_walls"
   | "leader_stocks"
   | "vix_term"
 > & { polled_at: string };
+
+/** UW fast lane — live tape, dark pool, 0DTE GEX walls (refreshed every ~4s). */
+export type SpxDeskFlow = {
+  available: boolean;
+  polled_at: string;
+  price: number;
+  dark_pool: DarkPoolSnapshot | null;
+  spx_flows: SpxFlowBrief[];
+  unified_tape: SpxTapeItem[];
+  gex_walls: GexWall[];
+  gex_net: number | null;
+  gex_king: number | null;
+  gamma_flip: number | null;
+  above_gamma_flip: boolean;
+  gamma_regime: string;
+  flow_0dte_call_premium: number | null;
+  flow_0dte_put_premium: number | null;
+  flow_0dte_net: number | null;
+};
 
 function level(
   label: string,
@@ -601,10 +616,6 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
     trin: null,
     add: null,
     regime: "unknown",
-    gamma_flip: null,
-    above_gamma_flip: false,
-    gamma_regime: "unknown",
-    gex_walls: [],
     leader_stocks: [],
     vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
   };
@@ -645,7 +656,6 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
   const vwap = session.vwap ?? vwapInd ?? null;
   const lod = session.lod ?? price;
   const hod = session.hod ?? price;
-  const gex = gexSnapshotForPrice(price);
   const vixTerm = computeVixTermStructure(
     vixSnap?.price ?? null,
     snaps[VIX9D]?.price ?? null,
@@ -674,10 +684,6 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
     trin: snaps[TRIN]?.price ?? null,
     add: snaps[ADD]?.price ?? null,
     regime: String(inferRegime(price, ema20, ema50)),
-    gamma_flip: gex.gamma_flip,
-    above_gamma_flip: gex.above_gamma_flip,
-    gamma_regime: gex.gamma_regime,
-    gex_walls: gex.gex_walls,
     leader_stocks: leaderStocks ?? [],
     vix_term: {
       vix9d: vixTerm.vix9d,
@@ -685,5 +691,96 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
       structure: vixTerm.structure,
       detail: vixTerm.detail,
     },
+  };
+}
+
+/** UW flow lane — GEX strike ladder, live tape, dark pool (~4s). */
+export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
+  const polledAt = new Date().toISOString();
+  const empty: SpxDeskFlow = {
+    available: false,
+    polled_at: polledAt,
+    price: 0,
+    dark_pool: null,
+    spx_flows: [],
+    unified_tape: [],
+    gex_walls: [],
+    gex_net: null,
+    gex_king: null,
+    gamma_flip: null,
+    above_gamma_flip: false,
+    gamma_regime: "unknown",
+    flow_0dte_call_premium: null,
+    flow_0dte_put_premium: null,
+    flow_0dte_net: null,
+  };
+
+  const [spxSnap, strikeRows, darkPool, spxFlowsRaw, uwGex, uwFlow] = await Promise.all([
+    polygonConfigured()
+      ? fetchIndexSnapshots([SPX]).then((m) => m[SPX])
+      : Promise.resolve(null),
+    uwConfigured() ? fetchUwOdteSpotExposuresByStrike("SPX") : Promise.resolve([]),
+    uwConfigured()
+      ? fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 })
+      : Promise.resolve(null),
+    uwConfigured() ? fetchUwTickerFlowAlerts("SPX", 12) : Promise.resolve([]),
+    uwConfigured() ? fetchUwOdteGex("SPX") : Promise.resolve(null),
+    uwConfigured() ? fetchUwFlow0dte("SPX") : Promise.resolve(null),
+  ]);
+
+  const price = spxSnap?.price ?? 0;
+  if (!price && !strikeRows.length && !spxFlowsRaw.length) return empty;
+
+  const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
+  if (gexAnalysis.ranked_levels.length) {
+    lastGoodStrikeLevels = gexAnalysis.ranked_levels;
+  }
+  const levelsForWalls = gexAnalysis.ranked_levels.length
+    ? gexAnalysis.ranked_levels
+    : lastGoodStrikeLevels;
+  const flipLevels = levelsForWalls.map((l) => ({
+    strike: l.strike,
+    net_gex: l.net_gex,
+  }));
+  const spot = price || spxSnap?.price || 0;
+  const gammaFlip = computeGammaFlip(flipLevels, spot) ?? lastGoodGammaFlip;
+  const walls = topGexWalls(levelsForWalls, spot, 6);
+  const finalWalls = walls.length ? walls : lastGoodGexWalls;
+  if (finalWalls.length) lastGoodGexWalls = finalWalls;
+  if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
+  const gRegime = gammaRegime(spot, gammaFlip);
+  const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
+  if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
+
+  const spxFlows: SpxFlowBrief[] = (spxFlowsRaw ?? []).map((f) => ({
+    ticker: f.ticker,
+    premium: f.premium,
+    option_type: f.option_type,
+    strike: f.strike,
+    expiry: f.expiry,
+    direction: f.direction,
+    alerted_at: f.alerted_at,
+  }));
+
+  const freshTape = buildUnifiedTape(spxFlows, darkPool);
+  if (freshTape.length) lastGoodUnifiedTape = freshTape;
+  const unifiedTape = freshTape.length ? freshTape : lastGoodUnifiedTape;
+
+  return {
+    available: spot > 0,
+    polled_at: polledAt,
+    price: spot,
+    dark_pool: darkPool,
+    spx_flows: spxFlows,
+    unified_tape: unifiedTape,
+    gex_walls: finalWalls,
+    gex_net: uwGex?.net_gex ?? gexAnalysis.net_gex ?? null,
+    gex_king: uwGex?.gex_king ?? gexAnalysis.gex_king_strike ?? null,
+    gamma_flip: gammaFlip,
+    above_gamma_flip: gammaFlip != null ? spot > gammaFlip : false,
+    gamma_regime: gammaRegimeLabel,
+    flow_0dte_call_premium: uwFlow?.call_premium ?? null,
+    flow_0dte_put_premium: uwFlow?.put_premium ?? null,
+    flow_0dte_net: uwFlow?.net ?? null,
   };
 }

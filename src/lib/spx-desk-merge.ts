@@ -2,7 +2,7 @@
  * Client-safe desk merge — do NOT import spx-desk.ts from client components
  * (it pulls Polygon/UW server providers into the browser bundle).
  */
-import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse } from "@/lib/providers/spx-desk";
+import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse, SpxDeskFlow } from "@/lib/providers/spx-desk";
 import { distancePct } from "@/lib/providers/spx-session";
 
 function level(
@@ -50,7 +50,45 @@ function buildLevels(input: {
   return items.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 }
 
-/** Overlay fast Polygon pulse onto the slower UW desk snapshot. */
+/** Overlay UW flow lane — tape, dark pool, GEX walls. */
+export function mergeFlowIntoDesk(base: SpxDeskPayload, flow: SpxDeskFlow): SpxDeskPayload {
+  const price = flow.price || base.price;
+  return {
+    ...base,
+    polled_at: flow.polled_at,
+    dark_pool: flow.dark_pool ?? base.dark_pool,
+    spx_flows: flow.spx_flows.length ? flow.spx_flows : base.spx_flows,
+    unified_tape: flow.unified_tape.length ? flow.unified_tape : base.unified_tape,
+    gex_walls: flow.gex_walls.length ? flow.gex_walls : base.gex_walls,
+    gex_net: flow.gex_net ?? base.gex_net,
+    gex_king: flow.gex_king ?? base.gex_king,
+    gamma_flip: flow.gamma_flip ?? base.gamma_flip,
+    above_gamma_flip: flow.above_gamma_flip,
+    gamma_regime: flow.gamma_regime ?? base.gamma_regime,
+    flow_0dte_call_premium: flow.flow_0dte_call_premium ?? base.flow_0dte_call_premium,
+    flow_0dte_put_premium: flow.flow_0dte_put_premium ?? base.flow_0dte_put_premium,
+    flow_0dte_net: flow.flow_0dte_net ?? base.flow_0dte_net,
+    price,
+    levels: buildLevels({
+      price,
+      lod: base.lod,
+      hod: base.hod,
+      vwap: base.vwap,
+      pdh: base.pdh,
+      pdl: base.pdl,
+      ema20: base.ema20,
+      ema50: base.ema50,
+      ema200: base.ema200,
+      sma50: base.sma50,
+      sma200: base.sma200,
+      gex_king: flow.gex_king ?? base.gex_king,
+      max_pain: base.max_pain,
+      gamma_flip: flow.gamma_flip ?? base.gamma_flip,
+    }),
+  };
+}
+
+/** Overlay fast Polygon pulse — price/session only (does not touch tape or GEX). */
 export function mergePulseIntoDesk(
   base: SpxDeskPayload,
   pulse: SpxDeskPulse
@@ -58,10 +96,29 @@ export function mergePulseIntoDesk(
   const price = pulse.price || base.price;
   return {
     ...base,
-    ...pulse,
+    price,
+    spx_change_pct: pulse.spx_change_pct,
+    vix: pulse.vix,
+    vix_change_pct: pulse.vix_change_pct,
+    above_vwap: pulse.above_vwap,
+    lod: pulse.lod ?? base.lod,
+    hod: pulse.hod ?? base.hod,
+    vwap: pulse.vwap ?? base.vwap,
+    pdh: pulse.pdh ?? base.pdh,
+    pdl: pulse.pdl ?? base.pdl,
+    ema20: pulse.ema20 ?? base.ema20,
+    ema50: pulse.ema50 ?? base.ema50,
+    ema200: pulse.ema200 ?? base.ema200,
+    sma50: pulse.sma50 ?? base.sma50,
+    sma200: pulse.sma200 ?? base.sma200,
+    tick: pulse.tick ?? base.tick,
+    trin: pulse.trin ?? base.trin,
+    add: pulse.add ?? base.add,
+    regime: pulse.regime ?? base.regime,
+    leader_stocks: pulse.leader_stocks.length ? pulse.leader_stocks : base.leader_stocks,
+    vix_term: pulse.vix_term ?? base.vix_term,
     as_of: pulse.polled_at,
     polled_at: pulse.polled_at,
-    source: base.source,
     levels: buildLevels({
       price,
       lod: pulse.lod ?? base.lod,
@@ -76,7 +133,7 @@ export function mergePulseIntoDesk(
       sma200: pulse.sma200 ?? base.sma200,
       gex_king: base.gex_king,
       max_pain: base.max_pain,
-      gamma_flip: pulse.gamma_flip ?? base.gamma_flip,
+      gamma_flip: base.gamma_flip,
     }),
   };
 }
