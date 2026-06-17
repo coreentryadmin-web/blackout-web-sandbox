@@ -31,19 +31,10 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const proxyUrl =
-    process.env.NEXT_PUBLIC_CLERK_PROXY_URL ?? `${SITE.url}/__clerk`;
-  const clerkProxyBase = proxyUrl.replace(/\/$/, "");
-
   return (
     <html lang="en">
       <body className="void-bg antialiased">
-        <ClerkProvider
-          proxyUrl={clerkProxyBase}
-          clerkJSUrl={`${clerkProxyBase}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`}
-        >
-          {children}
-        </ClerkProvider>
+        <ClerkProvider>{children}</ClerkProvider>
       </body>
     </html>
   );

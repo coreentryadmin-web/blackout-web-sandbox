@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isClerkRoute = createRouteMatcher(["/__clerk(.*)"]);
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/flows(.*)",
@@ -10,18 +9,11 @@ const isProtectedRoute = createRouteMatcher([
   "/api/checkout(.*)",
 ]);
 
-const proxyUrl =
-  process.env.NEXT_PUBLIC_CLERK_PROXY_URL ?? "https://blackouttrades.com/__clerk";
-
-export default clerkMiddleware(
-  (auth, req) => {
-    if (isClerkRoute(req)) return;
-    if (isProtectedRoute(req)) {
-      auth().protect();
-    }
-  },
-  { proxyUrl }
-);
+export default clerkMiddleware((auth, req) => {
+  if (isProtectedRoute(req)) {
+    auth().protect();
+  }
+});
 
 export const config = {
   matcher: [
