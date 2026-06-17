@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { deskFlowCacheTtlMs } from "@/lib/providers/config";
 import { buildSpxDeskFlow } from "@/lib/providers/spx-desk";
-import { maybeRunDeskFlowIngest } from "@/lib/providers/flow-ingest";
 import { withServerCache } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    void maybeRunDeskFlowIngest();
     const flow = await withServerCache("spx-desk-flow", deskFlowCacheTtlMs(), buildSpxDeskFlow, {
       staleWhileRevalidate: false,
     });

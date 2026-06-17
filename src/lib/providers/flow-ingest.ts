@@ -73,7 +73,8 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`UW flow fetch failed: ${message}`);
+    console.warn("[flow-ingest] UW fetch skipped:", message);
+    return { ok: false, ingested: 0, polled: 0, skipped: message };
   }
   let ingested = 0;
   let newestCursor = cursor;
@@ -143,11 +144,12 @@ export function ingestLockActive(): boolean {
 
 let lastDeskIngestAt = 0;
 
-/** Throttled ingest while SPX desk is open — feeds SSE tape between UW polls. */
+/** Throttled ingest while SPX desk is open — disabled by default to avoid UW 429s. */
 export async function maybeRunDeskFlowIngest(): Promise<void> {
-  const sec = Number(process.env.SPX_DESK_FLOW_INGEST_SEC ?? 8);
-  const intervalMs = Number.isFinite(sec) && sec > 0 ? sec * 1000 : 8_000;
+  const sec = Number(process.env.SPX_DESK_FLOW_INGEST_SEC ?? 0);
+  if (!Number.isFinite(sec) || sec <= 0) return;
+  const intervalMs = sec * 1000;
   if (Date.now() - lastDeskIngestAt < intervalMs) return;
   lastDeskIngestAt = Date.now();
-  void maybeRunFlowIngest(true);
+  void maybeRunFlowIngest(false);
 }

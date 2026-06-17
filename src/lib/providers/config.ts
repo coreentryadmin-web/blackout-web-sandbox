@@ -30,11 +30,11 @@ export function deskPulseCacheTtlMs(): number {
   return Math.round(sec * 1000);
 }
 
-/** UW flow lane cache (tape + GEX strikes). Default 3s. */
+/** UW flow lane cache (tape + GEX strikes). Default 5s. */
 export function deskFlowCacheTtlMs(): number {
   const raw = process.env.SPX_FLOW_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 3;
-  if (!Number.isFinite(sec) || sec < 0) return 4_000;
+  const sec = raw ? Number(raw) : 5;
+  if (!Number.isFinite(sec) || sec < 0) return 5_000;
   return Math.round(sec * 1000);
 }
 

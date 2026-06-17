@@ -7,7 +7,7 @@ import { mergeFlowIntoDesk, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 
 const PULSE_MS = 2_000;
-const FLOW_MS = 3_000;
+const FLOW_MS = 5_000;
 const FULL_DESK_MS = 15_000;
 
 const swrLiveOpts = {

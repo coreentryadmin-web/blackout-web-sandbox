@@ -37,7 +37,7 @@ import {
   fetchUwNope,
   fetchUwOdteGex,
   fetchUwOdteSpotExposuresByStrike,
-  fetchMarketFlowAlerts,
+  fetchUwTickerFlowAlerts,
   type DarkPoolSnapshot,
   type IvTermPoint,
   type NetPremTick,
@@ -50,6 +50,7 @@ let lastGoodStrikeLevels: GexStrikeLevel[] = [];
 let lastGoodGammaFlip: number | null = null;
 let lastGoodGammaRegime = "unknown";
 let lastGoodUnifiedTape: SpxTapeItem[] = [];
+let lastGoodSpxFlowBriefs: SpxFlowBrief[] = [];
 let cachedPriorDay = {
   pdh: null as number | null,
   pdl: null as number | null,
@@ -306,29 +307,24 @@ function spxTapeMinPremium(): number {
   return Number.isFinite(n) && n > 0 ? n : 50_000;
 }
 
-/** Market-wide UW flow alerts for SPX + SPXW (richer than per-stock snapshot). */
+/** SPX tape — per-ticker UW endpoint (lower rate-limit pressure than market flow-alerts). */
 async function fetchSpxDeskFlowAlerts(limit = 32): Promise<SpxFlowBrief[]> {
-  if (!uwConfigured()) return [];
+  if (!uwConfigured()) return lastGoodSpxFlowBriefs;
 
-  const minPremium = spxTapeMinPremium();
-  const perTicker = Math.min(limit, 40);
-  const [spx, spxw] = await Promise.all([
-    fetchMarketFlowAlerts({ ticker: "SPX", limit: perTicker, min_premium: minPremium }),
-    fetchMarketFlowAlerts({ ticker: "SPXW", limit: perTicker, min_premium: minPremium }),
-  ]);
+  const rows = await fetchUwTickerFlowAlerts("SPX", limit);
+  if (!rows.length) return lastGoodSpxFlowBriefs;
 
-  return [...spx, ...spxw]
-    .sort((a, b) => new Date(b.alerted_at).getTime() - new Date(a.alerted_at).getTime())
-    .slice(0, limit)
-    .map((f) => ({
-      ticker: f.ticker,
-      premium: f.premium,
-      option_type: f.option_type,
-      strike: f.strike,
-      expiry: f.expiry,
-      direction: f.direction,
-      alerted_at: f.alerted_at,
-    }));
+  const mapped = rows.map((f) => ({
+    ticker: f.ticker,
+    premium: f.premium,
+    option_type: f.option_type,
+    strike: f.strike,
+    expiry: f.expiry,
+    direction: f.direction,
+    alerted_at: f.alerted_at,
+  }));
+  lastGoodSpxFlowBriefs = mapped;
+  return mapped;
 }
 
 async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]> {
@@ -460,7 +456,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     uwFlow,
     strikeRows,
     darkPool,
-    spxFlowsRaw,
     leaderStocks,
     macroEvents,
     newsRaw,
@@ -483,7 +478,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchUwFlow0dte("SPX"),
     fetchUwOdteSpotExposuresByStrike("SPX"),
     fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-    fetchSpxDeskFlowAlertsWithDb(32),
     fetchLeaderStockSnapshots().catch(() => []),
     fetchEconomicCalendarToday().catch(() => []),
     fetchBenzingaNews(15).catch(() => []),
@@ -540,13 +534,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     snaps[VIX3M]?.price ?? null
   );
 
-  const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
-
-  const freshTape = buildUnifiedTape(spxFlows, darkPool);
-  if (freshTape.length) {
-    lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
-  }
-  const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
+  const spxFlows: SpxFlowBrief[] = lastGoodSpxFlowBriefs;
+  const unifiedTape = lastGoodUnifiedTape;
 
   const newsHeadlines: DeskNewsHeadline[] = (newsRaw ?? [])
     .map((a) => ({

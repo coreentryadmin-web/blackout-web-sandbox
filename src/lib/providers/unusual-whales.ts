@@ -198,6 +198,31 @@ export async function fetchUwFlow0dte(ticker = "SPX") {
   return { call_premium: calls, put_premium: puts, net: calls - puts };
 }
 
+type MarketFlowRow = { raw: Record<string, unknown>; flow: MarketFlowAlert };
+
+let marketFlowCache: { expiresAt: number; rows: MarketFlowRow[] } | null = null;
+
+function marketFlowCacheMs(): number {
+  const sec = Number(process.env.UW_FLOW_ALERTS_CACHE_SEC ?? 15);
+  return (Number.isFinite(sec) && sec > 0 ? sec : 15) * 1000;
+}
+
+function filterMarketFlowRows(
+  rows: MarketFlowRow[],
+  params?: { limit?: number; ticker?: string; min_premium?: number }
+): MarketFlowRow[] {
+  let out = rows;
+  if (params?.ticker) {
+    const t = params.ticker.toUpperCase();
+    out = out.filter((r) => r.flow.ticker === t);
+  }
+  if (params?.min_premium) {
+    out = out.filter((r) => r.flow.premium >= params.min_premium!);
+  }
+  const limit = Math.min(params?.limit ?? 50, 200);
+  return out.slice(0, limit);
+}
+
 export async function fetchMarketFlowAlerts(params?: {
   limit?: number;
   ticker?: string;
@@ -213,7 +238,15 @@ export async function fetchMarketFlowAlertRows(params?: {
   ticker?: string;
   min_premium?: number;
   newer_than?: string;
-}): Promise<Array<{ raw: Record<string, unknown>; flow: MarketFlowAlert }>> {
+}): Promise<MarketFlowRow[]> {
+  const now = Date.now();
+  const hasFreshCache = marketFlowCache && marketFlowCache.expiresAt > now;
+
+  // Incremental ingest bypasses cache when polling newer_than.
+  if (!params?.newer_than && hasFreshCache) {
+    return filterMarketFlowRows(marketFlowCache!.rows, params);
+  }
+
   const query: Record<string, string | number> = {
     limit: Math.min(params?.limit ?? 50, 200),
   };
@@ -221,8 +254,22 @@ export async function fetchMarketFlowAlertRows(params?: {
   if (params?.min_premium) query.min_premium = params.min_premium;
   if (params?.newer_than) query.newer_than = params.newer_than;
 
-  const data = await uwGet<unknown>("/api/option-trades/flow-alerts", query);
-  return extractRows(data).map((raw) => ({ raw, flow: rowToFlow(raw) }));
+  try {
+    const data = await uwGet<unknown>("/api/option-trades/flow-alerts", query);
+    const rows = extractRows(data).map((raw) => ({ raw, flow: rowToFlow(raw) }));
+    if (!params?.newer_than) {
+      marketFlowCache = { expiresAt: now + marketFlowCacheMs(), rows };
+    }
+    return filterMarketFlowRows(rows, params);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (marketFlowCache) {
+      console.warn("[uw] flow-alerts rate limited — serving cache:", message);
+      return filterMarketFlowRows(marketFlowCache.rows, params);
+    }
+    console.warn("[uw] flow-alerts failed:", message);
+    return [];
+  }
 }
 
 export type DarkPoolPrint = {
