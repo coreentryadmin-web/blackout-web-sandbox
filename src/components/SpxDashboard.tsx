@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetchSpxState, fmtPrice, fmtPct, fmtPremium, pctClass, type SpxState } from "@/lib/api";
 import { clsx } from "clsx";
 import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
+import { DashboardEmbeds } from "@/components/embeds/DashboardEmbeds";
 
 function StatCard({ label, value, sub, bull }: { label: string; value: string; sub?: string; bull?: boolean | null }) {
   return (
@@ -32,14 +33,24 @@ export function SpxDashboard() {
     refreshInterval: 15_000,
   });
 
-  if (isLoading) return <DashboardSkeleton />;
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <DashboardEmbeds />
+        <DashboardSkeleton />
+      </div>
+    );
+  }
   if (error || !data?.available) {
     return (
-      <PlatformEmpty
+      <div className="space-y-6">
+        <DashboardEmbeds />
+        <PlatformEmpty
         variant="dashboard"
         title="ENGINE STANDBY"
         description="SPX intel loads during RTH — 9:30 AM to 4:00 PM ET. GEX, VWAP, flow, and levels populate live when the market opens."
-      />
+        />
+      </div>
     );
   }
 
@@ -50,6 +61,7 @@ export function SpxDashboard() {
 
   return (
     <div className="space-y-6">
+      <DashboardEmbeds />
       {/* Top row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-surface-2">
         <StatCard label="SPX Price" value={fmtPrice(s.price)} bull={s.spx_change_pct >= 0} sub={fmtPct(s.spx_change_pct)} />

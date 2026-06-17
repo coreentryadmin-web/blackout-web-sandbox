@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { fetchFlows, createFlowSocket, fmtPremium, fmtPrice, type FlowAlert } from "@/lib/api";
 import { clsx } from "clsx";
 import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
+import { FlowsEmbeds } from "@/components/embeds/FlowsEmbeds";
 
 const ROUTE_COLORS: Record<string, string> = {
   whale: "text-yellow-500 border-yellow-900/40",
@@ -79,6 +80,7 @@ export function FlowFeed() {
 
   return (
     <div className="space-y-4">
+      <FlowsEmbeds alerts={alerts} />
       {/* Filters */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">

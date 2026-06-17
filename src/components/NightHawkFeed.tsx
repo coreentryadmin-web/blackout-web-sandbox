@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetchNightHawkPlays, fmtPremium, type NightHawkPlay } from "@/lib/api";
 import { clsx } from "clsx";
 import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
+import { NightHawkEmbeds } from "@/components/embeds/NightHawkEmbeds";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.min(100, Math.max(0, score));
@@ -70,8 +71,11 @@ export function NightHawkFeed() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-pulse">
-        {[...Array(4)].map((_, i) => <div key={i} className="bg-surface-1 h-48" />)}
+      <div className="space-y-6">
+        <NightHawkEmbeds />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-pulse">
+          {[...Array(4)].map((_, i) => <div key={i} className="bg-surface-1 h-48" />)}
+        </div>
       </div>
     );
   }
@@ -80,16 +84,20 @@ export function NightHawkFeed() {
 
   if (plays.length === 0) {
     return (
-      <PlatformEmpty
+      <div className="space-y-6">
+        <NightHawkEmbeds />
+        <PlatformEmpty
         variant="nighthawk"
         title="NO ACTIVE PLAYS"
         description="Night Hawk scans every 20 minutes during RTH (9:30 AM – 4:00 PM ET). Swing dossiers drop when setups qualify."
-      />
+        />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <NightHawkEmbeds />
       <p className="text-[10px] tracking-[2px] text-text-muted uppercase">{plays.length} active play{plays.length !== 1 ? "s" : ""}</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {plays.map((p, i) => <PlayCard key={`${p.ticker}-${p.posted_at}-${i}`} play={p} />)}

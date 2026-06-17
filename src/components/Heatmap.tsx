@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetchHeatmap, fmtPct, type HeatmapData } from "@/lib/api";
 import { clsx } from "clsx";
 import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
+import { HeatmapEmbeds } from "@/components/embeds/HeatmapEmbeds";
 
 function heatColor(pct: number): string {
   const abs = Math.min(Math.abs(pct), 5);
@@ -51,9 +52,12 @@ export function Heatmap() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="grid grid-cols-5 gap-px bg-surface-2 h-48" />
-        <div className="h-64 bg-surface-1" />
+      <div className="space-y-6">
+        <HeatmapEmbeds />
+        <div className="space-y-6 animate-pulse">
+          <div className="grid grid-cols-5 gap-px bg-surface-2 h-48" />
+          <div className="h-64 bg-surface-1" />
+        </div>
       </div>
     );
   }
@@ -65,6 +69,7 @@ export function Heatmap() {
 
   return (
     <div className="space-y-8">
+      <HeatmapEmbeds />
       {/* Sector heatmap */}
       <div>
         <p className="text-[10px] tracking-[3px] uppercase text-text-muted mb-4">Sector Performance</p>

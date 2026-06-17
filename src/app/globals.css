@@ -405,4 +405,95 @@ body {
     from { opacity: 0; transform: translateY(16px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  /* ── Live embeds ── */
+  .embed-frame-header {
+    @apply flex items-center justify-between gap-3 px-4 py-2.5 border-b border-grey-800 bg-grey-900/90;
+  }
+
+  .embed-frame-body { @apply relative; }
+
+  .embed-frame-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-bull shrink-0;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+  }
+
+  .embed-frame-corners::before,
+  .embed-frame-corners::after {
+    content: "";
+    @apply absolute w-4 h-4 pointer-events-none z-10;
+  }
+
+  .embed-frame-corners::before {
+    top: 0; left: 0;
+    border-top: 1px solid rgba(34, 197, 94, 0.5);
+    border-left: 1px solid rgba(34, 197, 94, 0.5);
+  }
+
+  .embed-frame-corners::after {
+    bottom: 0; right: 0;
+    border-bottom: 1px solid rgba(34, 197, 94, 0.5);
+    border-right: 1px solid rgba(34, 197, 94, 0.5);
+  }
+
+  .embed-pulse-meter {
+    @apply h-1.5 w-full bg-grey-800 overflow-hidden;
+  }
+
+  .embed-pulse-meter-fill {
+    @apply h-full bg-gradient-to-r from-bear via-bull to-bull transition-all duration-700;
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+  }
+
+  .flow-tape-viewport {
+    @apply overflow-hidden h-12 bg-black/60;
+  }
+
+  .flow-tape-track {
+    @apply flex items-center gap-6 whitespace-nowrap py-3 px-4;
+    animation: flow-tape-scroll 35s linear infinite;
+  }
+
+  .flow-tape-item {
+    @apply inline-flex items-center gap-2 shrink-0 px-3 py-1 border border-purple/30 bg-purple/5;
+  }
+
+  .radar-scope {
+    @apply relative w-56 h-56 md:w-64 md:h-64;
+  }
+
+  .radar-ring {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-bear/25;
+  }
+
+  .radar-sweep {
+    @apply absolute inset-0 origin-center;
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(239, 68, 68, 0.35) 40deg, transparent 80deg);
+  }
+
+  .radar-blip {
+    @apply absolute -translate-x-1/2 -translate-y-1/2;
+    animation: radar-blip 2.4s ease-out forwards;
+  }
+
+  .radar-blip::before {
+    content: "";
+    @apply block w-2 h-2 rounded-full bg-bear;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
+  }
+
+  .radar-blip-label {
+    @apply absolute left-3 top-0 font-mono text-[9px] text-bear uppercase tracking-wider whitespace-nowrap;
+  }
+
+  @keyframes flow-tape-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  @keyframes radar-blip {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    15% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
+  }
 }

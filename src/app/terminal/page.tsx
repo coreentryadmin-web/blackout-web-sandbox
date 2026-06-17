@@ -1,7 +1,7 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
 import { PlatformShell } from "@/components/platform/PlatformShell";
-import { LargoTerminal } from "@/components/LargoTerminal";
+import { LargoWorkspace } from "@/components/embeds/LargoWorkspace";
 import { IMAGES } from "@/lib/images";
 
 export default async function TerminalPage() {
@@ -17,7 +17,7 @@ export default async function TerminalPage() {
         imageSrc={IMAGES.largo}
         imageAlt="BlackOut Largo — AI trading terminal"
       >
-        <LargoTerminal />
+        <LargoWorkspace />
       </PlatformShell>
     </div>
   );
