@@ -5,11 +5,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
+import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 
 const MIN_INTERVAL_MS = 55_000;
 const MATERIAL_PRICE_MOVE = 0.08;
+const COMMENTARY_CACHE_KEY = "spx-commentary-feed";
+const COMMENTARY_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 type FeedEntry = SpxCommentaryResult & { id: string };
+
+function loadCachedEntries(): FeedEntry[] {
+  return readSessionCache<FeedEntry[]>(COMMENTARY_CACHE_KEY, COMMENTARY_CACHE_MAX_AGE_MS) ?? [];
+}
 
 function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | null, lastAt: number): boolean {
   if (Date.now() - lastAt < MIN_INTERVAL_MS) return false;
@@ -33,15 +40,23 @@ export function SpxCommentaryRail({
   desk?: SpxDeskPayload;
   live?: boolean;
 }) {
-  const [entries, setEntries] = useState<FeedEntry[]>([]);
+  const [entries, setEntries] = useState<FeedEntry[]>(loadCachedEntries);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const prevRef = useRef<Partial<SpxDeskPayload> | null>(null);
   const lastFetchRef = useRef(0);
   const inFlightRef = useRef(false);
+  const hydratedRef = useRef(entries.length > 0);
+
+  useEffect(() => {
+    if (entries.length > 0) {
+      writeSessionCache(COMMENTARY_CACHE_KEY, entries);
+    }
+  }, [entries]);
 
   const pullCommentary = useCallback(async (force = false) => {
-    if (!desk?.available || !live || inFlightRef.current) return;
+    if (!desk?.available || inFlightRef.current) return;
+    if (!live && entries.length === 0) return;
 
     const prev = prevRef.current;
     if (!force && !shouldRefresh(desk, prev, lastFetchRef.current)) return;
@@ -56,7 +71,11 @@ export function SpxCommentaryRail({
         ...res,
         id: `${res.as_of}-${Date.now()}`,
       };
-      setEntries((e) => [entry, ...e].slice(0, 24));
+      setEntries((e) => {
+        const next = [entry, ...e].slice(0, 24);
+        hydratedRef.current = true;
+        return next;
+      });
       prevRef.current = { ...desk };
       lastFetchRef.current = Date.now();
     } catch (err) {
@@ -66,18 +85,23 @@ export function SpxCommentaryRail({
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [desk, live]);
+  }, [desk, live, entries.length]);
 
   useEffect(() => {
-    if (!live || !desk?.available) return;
-    pullCommentary(true);
-  }, [live, desk?.available]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
+    if (!desk?.available) return;
+    if (hydratedRef.current && entries.length > 0) {
+      if (live) pullCommentary(false);
+      return;
+    }
     if (!live) return;
+    pullCommentary(true);
+  }, [live, desk?.available, desk?.price]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!desk?.available) return;
     const interval = setInterval(() => pullCommentary(false), 15_000);
     return () => clearInterval(interval);
-  }, [live, pullCommentary]);
+  }, [desk?.available, pullCommentary]);
 
   return (
     <aside className="spx-commentary-rail spx-commentary-rail-full spx-commentary-rail-desk">
@@ -99,7 +123,7 @@ export function SpxCommentaryRail({
       </div>
 
       <div className="spx-commentary-viewport">
-        {!live ? (
+        {!live && entries.length === 0 ? (
           <p className="font-mono text-[10px] text-grey-500 p-4 text-center">
             Commentary loads when SPX desk is live
           </p>
@@ -109,7 +133,7 @@ export function SpxCommentaryRail({
           </p>
         ) : entries.length === 0 ? (
           <p className="font-mono text-[10px] text-grey-500 p-4 text-center animate-pulse">
-            Claude reading the tape…
+            {live ? "Claude reading the tape…" : "Reconnecting desk…"}
           </p>
         ) : (
           <div className="spx-commentary-feed">

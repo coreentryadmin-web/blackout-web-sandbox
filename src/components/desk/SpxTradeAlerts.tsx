@@ -87,7 +87,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     setHistory((prev) => [{ ...play, id: `${id}|${Date.now()}` }, ...prev].slice(0, 24));
   }, [play]);
 
-  const show = Boolean(play);
+  const show = play != null;
   const updatedAt = play?.as_of
     ? new Date(play.as_of).toLocaleTimeString("en-US", {
         hour: "numeric",
@@ -118,9 +118,9 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
         </span>
       </header>
 
-      {!show || !play ? (
+      {!show ? (
         <p className="font-mono text-[11px] text-grey-500 py-8 text-center">
-          {live ? "Initializing play engine…" : "Session closed · resumes 6:30 AM PT"}
+          {live ? "Loading play engine…" : "Session closed · resumes 6:30 AM PT"}
         </p>
       ) : (
         <>
