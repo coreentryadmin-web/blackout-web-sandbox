@@ -88,7 +88,7 @@ export function SpxCommentaryRail({
             Live Desk AI
           </span>
           <span className="font-mono text-[10px] tracking-[0.2em] text-grey-500 mt-0.5 block">
-            Claude · live tape · refreshes on moves
+            Claude · full desk intel · GEX · tape · levels · news
           </span>
         </div>
         {loading && (

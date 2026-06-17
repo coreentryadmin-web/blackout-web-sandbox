@@ -70,6 +70,27 @@ function computeDelta(
     lines.push(`New session LOD: ${fmt(desk.lod)}`);
   }
 
+  const prevTape = prev.unified_tape ?? [];
+  const nextTape = desk.unified_tape ?? [];
+  if (nextTape.length > prevTape.length && nextTape[0]) {
+    const latest = nextTape[0];
+    lines.push(
+      `New tape: ${latest.kind === "flow" ? "flow" : "dark pool"} ${latest.label} · ${fmtPrem(latest.premium)}`
+    );
+  }
+
+  const prevWalls = (prev.gex_walls ?? []).map((w) => w.strike).join(",");
+  const nextWalls = (desk.gex_walls ?? []).map((w) => w.strike).join(",");
+  if (prevWalls && nextWalls && prevWalls !== nextWalls) {
+    lines.push("0DTE GEX wall nodes shifted");
+  }
+
+  const prevNews = new Set((prev.news_headlines ?? []).map((n) => n.title));
+  const freshHeadline = (desk.news_headlines ?? []).find((n) => n.title && !prevNews.has(n.title));
+  if (freshHeadline) {
+    lines.push(`New headline: ${freshHeadline.title.slice(0, 80)}`);
+  }
+
   if (lines.length === 0) {
     lines.push("Tape quiet — levels holding, monitoring for structure breaks.");
   }
@@ -81,13 +102,20 @@ function computeDelta(
 function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
   const netPrem = desk.net_prem_ticks ?? [];
   const lastNetPrem = netPrem.length ? netPrem[netPrem.length - 1]?.net : null;
+  const price = desk.price;
+  const levels = desk.levels ?? [];
+  const supports = levels.filter((l) => l.kind === "support");
+  const resistances = levels.filter((l) => l.kind === "resistance");
+  const gexWalls = desk.gex_walls ?? [];
+  const gexSupport = gexWalls.filter((w) => w.kind === "support");
+  const gexResistance = gexWalls.filter((w) => w.kind === "resistance");
 
   return {
     as_of: desk.as_of,
     source: desk.source,
 
     price_action: {
-      price: desk.price,
+      price,
       change_pct: desk.spx_change_pct,
       above_vwap: desk.above_vwap,
       lod: desk.lod,
@@ -104,6 +132,8 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
       ema200: desk.ema200,
       sma50: desk.sma50,
       sma200: desk.sma200,
+      price_vs_ema20: price != null && desk.ema20 != null ? price - desk.ema20 : null,
+      price_vs_ema50: price != null && desk.ema50 != null ? price - desk.ema50 : null,
     },
 
     internals: {
@@ -127,7 +157,26 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
       gamma_flip: desk.gamma_flip,
       above_gamma_flip: desk.above_gamma_flip,
       gamma_regime: desk.gamma_regime,
-      gex_walls: desk.gex_walls,
+    },
+
+    gex_walls_0dte: {
+      support_nodes: gexSupport.map((w) => ({
+        strike: w.strike,
+        net_gex: w.net_gex,
+        distance_from_price: price != null ? w.strike - price : null,
+      })),
+      resistance_nodes: gexResistance.map((w) => ({
+        strike: w.strike,
+        net_gex: w.net_gex,
+        distance_from_price: price != null ? w.strike - price : null,
+      })),
+      all_walls: gexWalls,
+    },
+
+    support_resistance_levels: {
+      nearest_support: supports.slice(0, 5),
+      nearest_resistance: resistances.slice(0, 5),
+      full_ladder: levels,
     },
 
     flow_0dte: {
@@ -177,13 +226,16 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
       time: f.alerted_at,
     })),
 
-    live_tape: (desk.unified_tape ?? []).map((t) => ({
-      kind: t.kind,
-      time: t.time,
-      label: t.label,
-      premium: t.premium,
-      detail: t.detail,
-    })),
+    live_tape: {
+      description: "Unified flow + dark pool tape (same as Live Tape panel)",
+      items: (desk.unified_tape ?? []).map((t) => ({
+        kind: t.kind,
+        time: t.time,
+        label: t.label,
+        premium: t.premium,
+        detail: t.detail,
+      })),
+    },
 
     oi_changes: desk.oi_changes,
 
@@ -204,8 +256,6 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
       tickers: n.tickers,
       published: n.published,
     })),
-
-    key_levels_ladder: desk.levels,
   };
 }
 
@@ -239,7 +289,24 @@ export async function generateSpxCommentary(
 
   const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a 0DTE SPX index options desk. Write a live desk commentary update for members watching the dashboard.
 
-You receive the FULL desk snapshot below: price structure, dealer/GEX, dark pool prints, SPX option flow, unified tape, 0DTE flow, market tide, NOPE, VIX term, mega-cap stock moves (AAPL/NVDA/MSFT/GOOG/TSLA/META), OI changes, net premium velocity (SPY), macro calendar, and Benzinga headlines. Use ALL relevant sections — synthesize across sources.
+You receive the COMPLETE desk snapshot as JSON — every panel on the dashboard is represented. You MUST synthesize across ALL non-empty sections below. Do not ignore data that is present.
+
+DASHBOARD SECTIONS IN THE JSON (use each when populated):
+1. price_action + moving_averages — SPX vs VWAP, HOD/LOD, PDH/PDL, EMAs/SMAs, regime
+2. support_resistance_levels — full ladder with distance_pct (support/resistance/neutral levels)
+3. dealer_gex + gex_walls_0dte — net GEX, GEX king, max pain, γ flip, gamma regime, AND each 0DTE GEX wall node (support vs resistance strikes + net_gex)
+4. dark_pool — institutional prints, bias, PCR
+5. live_tape — unified flow + dark pool tape (same as Live Tape panel); cite recent large prints
+6. spx_option_flows — raw SPX option sweeps
+7. flow_0dte — intraday 0DTE call/put premium skew
+8. market_tide + nope — broad flow bias and NOPE
+9. volatility — VIX, IV rank, vix_term, iv_term_structure
+10. internals — TICK, TRIN, ADD
+11. net_premium_velocity — SPY net prem tick velocity
+12. oi_changes — strike OI shifts
+13. mega_cap_stocks — AAPL/NVDA/MSFT/GOOG/TSLA/META day %
+14. macro_calendar_today — today's macro events
+15. news_headlines — Benzinga catalysts (reference only if provided)
 
 CURRENT DESK (JSON):
 ${JSON.stringify(ctx)}
@@ -249,10 +316,10 @@ ${delta.map((d) => `- ${d}`).join("\n")}
 
 Respond with ONLY valid JSON (no markdown fences):
 {
-  "headline": "One punchy line — max 12 words",
+  "headline": "One punchy line — max 14 words",
   "bias": "bullish" | "bearish" | "neutral",
-  "body": "4-6 short bullet lines separated by \\n. Cover: price vs VWAP/levels, dealer/GEX/γ flip, dark pool + flow tape, 0DTE bias, VIX/IV context, mega-cap leadership if notable, headline catalyst if any, what changed, next 15-30 min playbook. Mentor voice — direct, no hype, no disclaimers.",
-  "watch": ["level or trigger 1", "level or trigger 2", "level or trigger 3"],
+  "body": "8-12 short bullet lines separated by \\n. REQUIRED coverage when data exists: (a) price vs VWAP + nearest support/resistance from support_resistance_levels, (b) dealer/GEX king/γ flip/gamma_regime, (c) gex_walls_0dte support & resistance nodes with strikes, (d) dark_pool bias + notable prints, (e) live_tape recent flow/DP, (f) 0DTE flow skew, (g) VIX/IV context, (h) mega-cap leadership, (i) OI changes or net prem velocity if notable, (j) headline catalyst from news if any, (k) what changed, (l) next 15-30 min playbook. Mentor voice — direct, no hype, no disclaimers.",
+  "watch": ["specific strike/level 1", "specific strike/level 2", "specific strike/level 3"],
   "changed": ["what shifted 1", "what shifted 2"]
 }
 
@@ -260,10 +327,12 @@ Rules:
 - SPX index prices only for levels. Round to .00.
 - Cite real numbers from the JSON — premiums as ${fmtPrem(1_500_000)} style when large.
 - If a section is null/empty, skip it — do not invent data.
-- Reference news only if provided in news_headlines.
-- Max 150 words in body.`;
+- When gex_walls_0dte or support_resistance_levels exist, you MUST reference specific strikes.
+- When live_tape has items, reference at least one recent tape line.
+- When news_headlines exist, mention the most relevant headline if it affects SPX.
+- Max 280 words in body.`;
 
-  const raw = await anthropicText(prompt, 1000);
+  const raw = await anthropicText(prompt, 1800);
   if (!raw) return null;
 
   const parsed = parseCommentaryJson(raw);
