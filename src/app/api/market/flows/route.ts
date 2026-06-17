@@ -16,7 +16,8 @@ export async function GET(req: NextRequest) {
       const flows = await fetchRecentFlows({ limit, ticker, min_premium });
       return NextResponse.json({ source: "postgres", flows, count: flows.length });
     } catch (error) {
-      console.error("[market/flows] postgres:", error);
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error("[market/flows] postgres:", detail);
     }
   }
 

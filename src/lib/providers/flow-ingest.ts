@@ -64,34 +64,44 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   }
 
   const cursor = await getMeta(CURSOR_KEY);
-  const rows = await fetchMarketFlowAlertRows({
-    limit: 100,
-    min_premium: MIN_PREMIUM,
-    newer_than: cursor ?? undefined,
-  });
+  let rows: Awaited<ReturnType<typeof fetchMarketFlowAlertRows>>;
+  try {
+    rows = await fetchMarketFlowAlertRows({
+      limit: 100,
+      min_premium: MIN_PREMIUM,
+      newer_than: cursor ?? undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`UW flow fetch failed: ${message}`);
+  }
   let ingested = 0;
   let newestCursor = cursor;
 
   for (const { raw, flow } of rows) {
     const id = alertId(raw, flow);
 
-    const inserted = await insertFlowAlert({
-      alert_id: id,
-      ticker: flow.ticker,
-      strike: flow.strike || null,
-      expiry: flow.expiry || null,
-      option_type: flow.option_type,
-      total_premium: flow.premium,
-      score: flow.score,
-      created_at: flow.alerted_at || null,
-      raw_payload: raw,
-    });
+    try {
+      const inserted = await insertFlowAlert({
+        alert_id: id,
+        ticker: flow.ticker,
+        strike: Number.isFinite(flow.strike) ? flow.strike : null,
+        expiry: flow.expiry || null,
+        option_type: flow.option_type,
+        total_premium: flow.premium,
+        score: flow.score,
+        created_at: flow.alerted_at || null,
+        raw_payload: raw,
+      });
 
-    if (inserted) {
-      ingested += 1;
-      const event = toFlowRow(flow);
-      publishFlowEvent(event);
-      void notifyDiscord(event);
+      if (inserted) {
+        ingested += 1;
+        const event = toFlowRow(flow);
+        publishFlowEvent(event);
+        void notifyDiscord(event);
+      }
+    } catch (error) {
+      console.warn("[flow-ingest] skip row:", id, error);
     }
 
     const created = String(raw.created_at ?? raw.start_time ?? flow.alerted_at ?? "");

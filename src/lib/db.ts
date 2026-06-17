@@ -3,16 +3,35 @@ import { Pool, type QueryResultRow } from "pg";
 let pool: Pool | null = null;
 
 export function dbConfigured(): boolean {
-  return Boolean(process.env.DATABASE_URL?.trim());
+  return Boolean(resolveDatabaseUrl());
+}
+
+function resolveDatabaseUrl(): string | undefined {
+  return (
+    process.env.DATABASE_URL?.trim() ||
+    process.env.DATABASE_PUBLIC_URL?.trim() ||
+    undefined
+  );
+}
+
+function poolSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
+  if (process.env.DATABASE_SSL === "0") return false;
+  if (connectionString.includes("localhost") || connectionString.includes("127.0.0.1")) {
+    return false;
+  }
+  return { rejectUnauthorized: false };
 }
 
 export function getPool(): Pool {
-  if (!dbConfigured()) throw new Error("DATABASE_URL not set");
+  const connectionString = resolveDatabaseUrl();
+  if (!connectionString) throw new Error("DATABASE_URL not set");
+
   if (!pool) {
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: 8,
-      ssl: process.env.DATABASE_SSL === "0" ? false : { rejectUnauthorized: false },
+      ssl: poolSsl(connectionString),
+      connectionTimeoutMillis: 15_000,
     });
   }
   return pool;
@@ -20,45 +39,62 @@ export function getPool(): Pool {
 
 let schemaReady: Promise<void> | null = null;
 
+async function runMigrations(): Promise<void> {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS flow_alerts (
+      id BIGSERIAL PRIMARY KEY,
+      alert_id TEXT UNIQUE,
+      ticker TEXT,
+      strike NUMERIC,
+      expiry DATE,
+      option_type TEXT,
+      total_premium NUMERIC,
+      score NUMERIC DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'unusual_whales',
+      created_at TIMESTAMPTZ,
+      inserted_at TIMESTAMPTZ DEFAULT NOW(),
+      raw_payload JSONB
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_flow_alerts_created_at
+    ON flow_alerts(created_at DESC);
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_flow_alerts_ticker
+    ON flow_alerts(ticker);
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS platform_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+}
+
 export async function ensureSchema(): Promise<void> {
   if (!dbConfigured()) return;
-  if (!schemaReady) {
-    schemaReady = (async () => {
-      const p = getPool();
-      await p.query(`
-        CREATE TABLE IF NOT EXISTS flow_alerts (
-          id BIGSERIAL PRIMARY KEY,
-          alert_id TEXT UNIQUE,
-          ticker TEXT,
-          strike NUMERIC,
-          expiry DATE,
-          option_type TEXT,
-          total_premium NUMERIC,
-          score NUMERIC DEFAULT 0,
-          source TEXT NOT NULL DEFAULT 'unusual_whales',
-          created_at TIMESTAMPTZ,
-          inserted_at TIMESTAMPTZ DEFAULT NOW(),
-          raw_payload JSONB
-        );
-      `);
-      await p.query(`
-        CREATE INDEX IF NOT EXISTS idx_flow_alerts_created_at
-        ON flow_alerts(created_at DESC);
-      `);
-      await p.query(`
-        CREATE INDEX IF NOT EXISTS idx_flow_alerts_ticker
-        ON flow_alerts(ticker);
-      `);
-      await p.query(`
-        CREATE TABLE IF NOT EXISTS platform_meta (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `);
-    })();
+  try {
+    if (!schemaReady) schemaReady = runMigrations();
+    await schemaReady;
+  } catch (error) {
+    schemaReady = null;
+    throw error;
   }
-  await schemaReady;
+}
+
+export async function pingDatabase(): Promise<{ ok: boolean; error?: string }> {
+  if (!dbConfigured()) return { ok: false, error: "DATABASE_URL not set" };
+  try {
+    await ensureSchema();
+    await getPool().query("SELECT 1");
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message };
+  }
 }
 
 export async function getMeta(key: string): Promise<string | null> {
@@ -150,6 +186,18 @@ export async function fetchRecentFlows(params: {
   }));
 }
 
+function parseDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+}
+
+function parseTimestamptz(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 export async function insertFlowAlert(row: {
   alert_id: string;
   ticker: string;
@@ -176,11 +224,11 @@ export async function insertFlowAlert(row: {
       row.alert_id,
       row.ticker,
       row.strike,
-      row.expiry,
+      parseDate(row.expiry),
       row.option_type,
       row.total_premium,
-      row.score,
-      row.created_at,
+      Number.isFinite(row.score) ? row.score : 0,
+      parseTimestamptz(row.created_at),
       JSON.stringify(row.raw_payload ?? {}),
     ]
   );
