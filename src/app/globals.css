@@ -1110,121 +1110,319 @@ body {
   }
 
   .spx-trade-alerts-panel {
-    @apply flex flex-col h-full min-h-0 border border-bull/25 bg-black/55 backdrop-blur-md p-4;
+    @apply flex flex-col h-full min-h-0 border border-bull/25 bg-black/55 backdrop-blur-md p-4 md:p-5;
   }
 
   .spx-trade-alerts-header {
-    @apply flex items-start justify-between gap-3 pb-3 mb-3 border-b border-white/5 shrink-0;
+    @apply flex items-start justify-between gap-3 pb-4 mb-4 border-b border-white/10 shrink-0;
+  }
+
+  .spx-trade-alerts-title {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: linear-gradient(
+      90deg,
+      #22d3ee 0%,
+      #a78bfa 28%,
+      #f472b6 55%,
+      #34d399 78%,
+      #22d3ee 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: spx-title-shimmer 5s ease-in-out infinite;
+    filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.35))
+      drop-shadow(0 0 28px rgba(167, 139, 250, 0.2));
+  }
+
+  .spx-trade-alerts-kicker {
+    @apply font-mono uppercase text-grey-400;
+    font-size: clamp(0.65rem, 1.4vw, 0.8rem);
+    letter-spacing: 0.35em;
+  }
+
+  .spx-trade-alerts-sub {
+    @apply font-mono text-grey-400 mt-1;
+    font-size: clamp(0.75rem, 1.6vw, 0.9rem);
+  }
+
+  @keyframes spx-title-shimmer {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes spx-action-glow-scan {
+    0%,
+    100% {
+      color: #22d3ee;
+      text-shadow:
+        0 0 20px rgba(34, 211, 238, 0.9),
+        0 0 45px rgba(34, 211, 238, 0.45),
+        0 0 80px rgba(34, 211, 238, 0.2);
+    }
+    33% {
+      color: #a78bfa;
+      text-shadow:
+        0 0 20px rgba(167, 139, 250, 0.9),
+        0 0 45px rgba(167, 139, 250, 0.45),
+        0 0 80px rgba(167, 139, 250, 0.2);
+    }
+    66% {
+      color: #60a5fa;
+      text-shadow:
+        0 0 20px rgba(96, 165, 250, 0.9),
+        0 0 45px rgba(96, 165, 250, 0.45),
+        0 0 80px rgba(96, 165, 250, 0.2);
+    }
+  }
+
+  @keyframes spx-action-glow-watch {
+    0%,
+    100% {
+      color: #fb923c;
+      text-shadow:
+        0 0 22px rgba(251, 146, 60, 0.85),
+        0 0 50px rgba(251, 146, 60, 0.4);
+    }
+    50% {
+      color: #fbbf24;
+      text-shadow:
+        0 0 22px rgba(251, 191, 36, 0.9),
+        0 0 50px rgba(251, 191, 36, 0.45);
+    }
+  }
+
+  @keyframes spx-action-glow-buy-call {
+    0%,
+    100% {
+      color: #4ade80;
+      text-shadow:
+        0 0 24px rgba(74, 222, 128, 0.9),
+        0 0 55px rgba(74, 222, 128, 0.45);
+    }
+    50% {
+      color: #34d399;
+      text-shadow:
+        0 0 24px rgba(52, 211, 153, 0.95),
+        0 0 60px rgba(52, 211, 153, 0.5);
+    }
+  }
+
+  @keyframes spx-action-glow-buy-put {
+    0%,
+    100% {
+      color: #f87171;
+      text-shadow:
+        0 0 24px rgba(248, 113, 113, 0.9),
+        0 0 55px rgba(248, 113, 113, 0.45);
+    }
+    50% {
+      color: #fb7185;
+      text-shadow:
+        0 0 24px rgba(251, 113, 133, 0.95),
+        0 0 60px rgba(251, 113, 133, 0.5);
+    }
+  }
+
+  @keyframes spx-headline-pulse-scan {
+    0%,
+    100% {
+      color: #e4e4e7;
+      text-shadow: 0 0 12px rgba(228, 228, 231, 0.25);
+    }
+    50% {
+      color: #f4f4f5;
+      text-shadow: 0 0 18px rgba(244, 244, 245, 0.4);
+    }
   }
 
   .spx-trade-alert-hero {
-    @apply rounded-sm border p-4 md:p-5;
+    @apply rounded-sm border p-5 md:p-6;
   }
 
   .spx-alert-buy-call {
-    @apply border-bull/50 bg-bull/[0.07];
-    box-shadow: inset 0 0 48px rgba(34, 197, 94, 0.06);
+    @apply border-bull/60 bg-bull/[0.09];
+    box-shadow:
+      inset 0 0 56px rgba(34, 197, 94, 0.08),
+      0 0 32px rgba(34, 197, 94, 0.12);
   }
 
   .spx-alert-buy-put {
-    @apply border-bear/50 bg-bear/[0.07];
-    box-shadow: inset 0 0 48px rgba(239, 68, 68, 0.06);
+    @apply border-bear/60 bg-bear/[0.09];
+    box-shadow:
+      inset 0 0 56px rgba(239, 68, 68, 0.08),
+      0 0 32px rgba(239, 68, 68, 0.12);
   }
 
   .spx-alert-hold {
-    @apply border-orange-500/45 bg-orange-500/[0.08];
-    box-shadow: inset 0 0 48px rgba(249, 115, 22, 0.07);
+    @apply border-orange-500/55 bg-orange-500/[0.1];
+    box-shadow:
+      inset 0 0 56px rgba(249, 115, 22, 0.1),
+      0 0 28px rgba(249, 115, 22, 0.12);
   }
 
   .spx-alert-wait {
-    @apply border-orange-500/25 bg-orange-500/[0.04];
-    box-shadow: inset 0 0 32px rgba(249, 115, 22, 0.04);
+    @apply border-amber-400/40 bg-amber-500/[0.06];
+    box-shadow:
+      inset 0 0 40px rgba(251, 191, 36, 0.08),
+      0 0 24px rgba(251, 191, 36, 0.1);
   }
 
   .spx-alert-scanning {
-    @apply border-zinc-600/40 bg-zinc-900/30;
-    box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.02);
+    @apply border-cyan-500/25 bg-zinc-950/50;
+    box-shadow:
+      inset 0 0 40px rgba(34, 211, 238, 0.04),
+      0 0 28px rgba(167, 139, 250, 0.08);
   }
 
   .spx-alert-scanning .spx-trade-alert-action {
-    @apply text-zinc-400;
-    text-shadow: none;
-    font-size: clamp(1.75rem, 5vw, 2.75rem);
+    animation: spx-action-glow-scan 4s ease-in-out infinite;
+    font-size: clamp(2.5rem, 9vw, 5rem);
   }
 
   .spx-alert-scanning .spx-trade-alert-headline {
-    @apply text-zinc-300 italic;
+    animation: spx-headline-pulse-scan 3s ease-in-out infinite;
+    @apply italic;
   }
 
   .spx-alert-scanning .spx-trade-alert-thesis {
-    @apply text-zinc-500;
+    @apply text-zinc-400;
+    font-size: clamp(0.95rem, 2.2vw, 1.15rem);
   }
 
   .spx-trade-alert-action {
     @apply font-anton uppercase leading-none tracking-wide;
-    font-size: clamp(2.75rem, 8vw, 4.5rem);
+    font-size: clamp(3rem, 9vw, 5.25rem);
   }
 
   .spx-alert-buy-call .spx-trade-alert-action {
-    @apply text-bull;
-    text-shadow: 0 0 32px rgba(34, 197, 94, 0.55), 0 0 64px rgba(34, 197, 94, 0.2);
+    animation: spx-action-glow-buy-call 2.5s ease-in-out infinite;
   }
 
   .spx-alert-buy-put .spx-trade-alert-action {
-    @apply text-bear;
-    text-shadow: 0 0 32px rgba(239, 68, 68, 0.55), 0 0 64px rgba(239, 68, 68, 0.2);
+    animation: spx-action-glow-buy-put 2.5s ease-in-out infinite;
   }
 
-  .spx-alert-hold .spx-trade-alert-action,
-  .spx-alert-wait .spx-trade-alert-action {
+  .spx-alert-hold .spx-trade-alert-action {
     @apply text-orange-400;
-    text-shadow: 0 0 28px rgba(249, 115, 22, 0.45), 0 0 56px rgba(249, 115, 22, 0.15);
+    text-shadow:
+      0 0 28px rgba(249, 115, 22, 0.55),
+      0 0 56px rgba(249, 115, 22, 0.2);
   }
 
   .spx-alert-wait .spx-trade-alert-action {
-    @apply text-orange-300/80;
+    animation: spx-action-glow-watch 2.8s ease-in-out infinite;
   }
 
   .spx-trade-alert-headline {
-    @apply font-display leading-tight mt-2;
-    font-size: clamp(1.35rem, 3.5vw, 2rem);
-    letter-spacing: 0.04em;
+    @apply font-display leading-tight mt-3 font-semibold;
+    font-size: clamp(1.5rem, 4.2vw, 2.35rem);
+    letter-spacing: 0.03em;
   }
 
   .spx-alert-buy-call .spx-trade-alert-headline {
-    @apply text-emerald-200;
+    @apply text-emerald-100;
+    text-shadow: 0 0 20px rgba(167, 243, 208, 0.35);
   }
 
   .spx-alert-buy-put .spx-trade-alert-headline {
-    @apply text-rose-200;
+    @apply text-rose-100;
+    text-shadow: 0 0 20px rgba(254, 205, 211, 0.35);
   }
 
   .spx-alert-hold .spx-trade-alert-headline,
   .spx-alert-wait .spx-trade-alert-headline {
-    @apply text-orange-200;
+    @apply text-amber-100;
+    text-shadow: 0 0 18px rgba(253, 230, 138, 0.3);
   }
 
   .spx-trade-alert-thesis {
-    @apply font-mono mt-3 leading-relaxed;
-    font-size: clamp(0.8rem, 1.8vw, 0.95rem);
+    @apply font-mono mt-4 leading-relaxed;
+    font-size: clamp(0.95rem, 2.2vw, 1.15rem);
   }
 
   .spx-alert-buy-call .spx-trade-alert-thesis {
-    @apply text-emerald-300/90;
+    @apply text-emerald-200/95;
   }
 
   .spx-alert-buy-put .spx-trade-alert-thesis {
-    @apply text-rose-300/90;
+    @apply text-rose-200/95;
   }
 
   .spx-alert-hold .spx-trade-alert-thesis,
   .spx-alert-wait .spx-trade-alert-thesis {
-    @apply text-orange-200/85;
+    @apply text-amber-100/90;
   }
 
   .spx-trade-alert-score {
     @apply font-anton tabular-nums leading-none;
-    font-size: clamp(2rem, 5vw, 3rem);
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+    text-shadow: 0 0 24px rgba(255, 255, 255, 0.15);
+  }
+
+  .spx-trade-alert-score-label {
+    @apply font-mono uppercase text-grey-400;
+    font-size: clamp(0.7rem, 1.5vw, 0.85rem);
+    letter-spacing: 0.2em;
+  }
+
+  .spx-trade-alert-conf-pct {
+    @apply font-mono text-grey-300 mt-1;
+    font-size: clamp(0.85rem, 1.8vw, 1rem);
+  }
+
+  .spx-trade-confirmations {
+    @apply mt-4 space-y-1.5 rounded-sm border border-white/5 bg-black/30 p-4;
+  }
+
+  .spx-trade-confirmations-title {
+    @apply font-mono uppercase text-grey-300 mb-3 font-semibold;
+    font-size: clamp(0.85rem, 1.8vw, 1rem);
+    letter-spacing: 0.12em;
+  }
+
+  .spx-trade-confirmation-pass {
+    @apply text-emerald-300;
+    font-size: clamp(0.8rem, 1.7vw, 0.95rem);
+    text-shadow: 0 0 10px rgba(110, 231, 183, 0.25);
+  }
+
+  .spx-trade-confirmation-fail {
+    @apply text-rose-300;
+    font-size: clamp(0.8rem, 1.7vw, 0.95rem);
+    text-shadow: 0 0 10px rgba(253, 164, 175, 0.25);
+  }
+
+  .spx-trade-confirmation-meta {
+    @apply font-mono text-grey-400 pt-2;
+    font-size: clamp(0.8rem, 1.7vw, 0.95rem);
+  }
+
+  .spx-trade-block-warn {
+    @apply text-rose-300 font-medium;
+    font-size: clamp(0.85rem, 1.8vw, 1rem);
+    text-shadow: 0 0 12px rgba(251, 113, 133, 0.3);
+  }
+
+  .spx-trade-option-ticket {
+    @apply font-mono mt-2 tabular-nums text-emerald-200 font-semibold;
+    font-size: clamp(1rem, 2.2vw, 1.25rem);
+    text-shadow: 0 0 16px rgba(167, 243, 208, 0.4);
+  }
+
+  .spx-trade-grade-line {
+    @apply font-mono mt-3 uppercase text-grey-300;
+    font-size: clamp(0.75rem, 1.6vw, 0.9rem);
+    letter-spacing: 0.15em;
   }
 
   .spx-trade-alert-levels {
@@ -1233,7 +1431,7 @@ body {
 
   .spx-trade-alert-levels .spx-level-value {
     @apply font-mono font-bold tabular-nums;
-    font-size: clamp(0.95rem, 2.2vw, 1.15rem);
+    font-size: clamp(1.1rem, 2.5vw, 1.35rem);
   }
 
   .spx-trade-alert-history-action {

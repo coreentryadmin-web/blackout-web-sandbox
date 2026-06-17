@@ -107,11 +107,9 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     >
       <header className="spx-trade-alerts-header">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-[0.35em] text-grey-500">
-            0DTE SPX · Play Engine
-          </p>
-          <h2 className="font-display text-lg text-white tracking-wide">Trade Alerts</h2>
-          <p className="font-mono text-[10px] text-grey-500 mt-0.5">
+          <p className="spx-trade-alerts-kicker">0DTE SPX · Play Engine</p>
+          <h2 className="spx-trade-alerts-title font-display">Trade Alerts</h2>
+          <p className="spx-trade-alerts-sub">
             Confluence · MTF · news · flow · S/R {live ? `· ${updatedAt}` : ""}
           </p>
         </div>
@@ -132,7 +130,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
                 <p className="spx-trade-alert-headline">{play.headline}</p>
                 {play.option_ticket && play.action === "BUY" && (
-                  <p className="font-mono text-sm text-emerald-200 mt-1 tabular-nums">
+                  <p className="spx-trade-option-ticket">
                     {play.option_ticket.contract_label} · ${play.option_ticket.premium_range}
                     {play.option_ticket.delta != null
                       ? ` · Δ ${Math.abs(play.option_ticket.delta).toFixed(2)}`
@@ -141,7 +139,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 )}
                 <p className="spx-trade-alert-thesis">{play.thesis}</p>
                 {play.grade && play.action !== "SCANNING" && (
-                  <p className="font-mono text-[10px] text-grey-400 mt-2 uppercase tracking-widest">
+                  <p className="spx-trade-grade-line">
                     Grade {play.grade}
                     {play.open_play ? ` · open ${play.open_play.direction}` : ""}
                     {play.watch?.active ? " · WATCH active" : ""}
@@ -150,31 +148,31 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 )}
               </div>
               <div className="text-right shrink-0">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-grey-500">Score</p>
+                <p className="spx-trade-alert-score-label">Score</p>
                 <p className={clsx("spx-trade-alert-score", scoreClass(play.action, play.score))}>
                   {play.score > 0 ? "+" : ""}
                   {play.score}
                 </p>
-                <p className="font-mono text-xs text-grey-400 mt-1">{play.confidence}% conf</p>
+                <p className="spx-trade-alert-conf-pct">{play.confidence}% conf</p>
               </div>
             </div>
 
             {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
-              <div className="spx-trade-alert-levels mt-4 grid grid-cols-3 gap-3">
+              <div className="spx-trade-alert-levels mt-5 grid grid-cols-3 gap-4">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Entry</p>
+                  <p className="spx-trade-alert-score-label">Entry</p>
                   <p className={clsx("spx-level-value", scoreClass(play.action, play.score))}>
                     {fmtPrice(play.levels.entry)}
                   </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Stop</p>
+                  <p className="spx-trade-alert-score-label">Stop</p>
                   <p className="spx-level-value text-bear tabular-nums">
                     {play.levels.stop != null ? fmtPrice(play.levels.stop) : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-grey-500">Target</p>
+                  <p className="spx-trade-alert-score-label">Target</p>
                   <p className="spx-level-value text-bull tabular-nums">
                     {play.levels.target != null ? fmtPrice(play.levels.target) : "—"}
                   </p>
@@ -197,31 +195,41 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
           {(play.gates.blocks.length > 0 || play.gates.warnings.length > 0 || play.confirmations) &&
             (play.action === "SCANNING" || play.action === "WATCHING") && (
-              <div className="mt-3 font-mono text-[10px] text-grey-500 space-y-1">
+              <div className="spx-trade-confirmations">
                 {play.confirmations && (
-                  <p className="text-grey-400 mb-2">
+                  <p className="spx-trade-confirmations-title">
                     Confirmations {play.confirmations.passed_count}/{play.confirmations.total}
                   </p>
                 )}
                 {play.confirmations?.checks.map((c) => (
-                  <p key={c.label} className={c.passed ? "text-emerald-300/80" : "text-rose-300/70"}>
+                  <p
+                    key={c.label}
+                    className={c.passed ? "spx-trade-confirmation-pass" : "spx-trade-confirmation-fail"}
+                  >
                     {c.passed ? "✓" : "✗"} {c.label}: {c.detail}
                   </p>
                 ))}
                 {play.technicals && (
-                  <p className="text-grey-500 pt-1">
+                  <p className="spx-trade-confirmation-meta">
                     5m {play.technicals.m5_trend} · RSI {play.technicals.m5_rsi?.toFixed(0) ?? "—"} · 3m{" "}
                     {play.technicals.m3_close?.toFixed(2) ?? "—"}
                     {play.technicals.mtf_summary ? ` · ${play.technicals.mtf_summary}` : ""}
                   </p>
                 )}
                 {play.watch?.active && (
-                  <p className="text-orange-300/80 pt-1">
-                    WATCH since {play.watch.since ? new Date(play.watch.since).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "—"} · {play.watch.reason}
+                  <p className="spx-trade-confirmation-meta text-amber-300/90">
+                    WATCH since{" "}
+                    {play.watch.since
+                      ? new Date(play.watch.since).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "—"}{" "}
+                    · {play.watch.reason}
                   </p>
                 )}
                 {play.telemetry?.adaptive_active && (
-                  <p className="font-mono text-[9px] text-grey-600 pt-2">
+                  <p className="spx-trade-confirmation-meta text-violet-300/80">
                     Telemetry: {play.telemetry.summary}
                     {play.telemetry.cold_buy_win_rate != null
                       ? ` · cold ${(play.telemetry.cold_buy_win_rate * 100).toFixed(0)}%`
@@ -232,7 +240,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                   </p>
                 )}
                 {play.gates.blocks.slice(0, 2).map((b) => (
-                  <p key={b} className="text-rose-300/80">
+                  <p key={b} className="spx-trade-block-warn">
                     ⛔ {b}
                   </p>
                 ))}
