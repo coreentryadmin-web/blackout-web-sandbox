@@ -3,7 +3,7 @@ import { Nav } from "@/components/Nav";
 import { NightHawkFeed } from "@/components/NightHawkFeed";
 
 export default async function NightHawkPage() {
-  await requireTier("elite");
+  await requireTier("premium");
 
   return (
     <div className="page-shell">

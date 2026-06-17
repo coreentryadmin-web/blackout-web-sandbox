@@ -1,21 +1,9 @@
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { SyncMembershipButton } from "@/components/SyncMembershipButton";
-import { TIER_LABELS, type Tier } from "@/lib/tiers";
+import { WHOP_CHECKOUT, WHOP_PREMIUM_CHECKOUT_OPTIONS } from "@/lib/whop-checkout";
 
-const CHECKOUT = {
-  pro: process.env.NEXT_PUBLIC_WHOP_CHECKOUT_PRO ?? "",
-  elite: process.env.NEXT_PUBLIC_WHOP_CHECKOUT_ELITE ?? "",
-};
-
-export default function UpgradePage({
-  searchParams,
-}: {
-  searchParams: { plan?: string };
-}) {
-  const required = (searchParams.plan === "elite" ? "elite" : "pro") as Tier;
-  const checkoutUrl = CHECKOUT[required];
-
+export default function UpgradePage() {
   return (
     <div className="page-shell">
       <Nav />
@@ -23,33 +11,44 @@ export default function UpgradePage({
         <p className="font-mono text-[10px] tracking-[0.4em] text-purple-light uppercase mb-3">
           Membership required
         </p>
-        <h1 className="page-title mb-4">Upgrade to {TIER_LABELS[required]}</h1>
+        <h1 className="page-title mb-4">Premium Access</h1>
         <p className="text-grey-400 text-sm leading-relaxed mb-8">
-          This feature is part of the {TIER_LABELS[required]} plan. Pay on Whop using the
-          same email as your BlackOut account, then refresh your access below.
+          Choose monthly, yearly, or lifetime on Whop. Use the same email as your BlackOut
+          account, then refresh your access below.
         </p>
 
-        {checkoutUrl ? (
-          <a
-            href={checkoutUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary inline-block mb-6"
-          >
-            Subscribe on Whop →
-          </a>
-        ) : (
-          <p className="text-bear text-sm mb-6">
-            Whop checkout URL is not configured yet. Contact support.
-          </p>
-        )}
+        <div className="flex flex-col gap-3 mb-8">
+          {WHOP_PREMIUM_CHECKOUT_OPTIONS.length > 0 ? (
+            WHOP_PREMIUM_CHECKOUT_OPTIONS.map((option) => (
+              <a
+                key={option.label}
+                href={option.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary"
+              >
+                {option.label} on Whop →
+              </a>
+            ))
+          ) : WHOP_CHECKOUT.store ? (
+            <a
+              href={WHOP_CHECKOUT.store}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary"
+            >
+              View plans on Whop →
+            </a>
+          ) : (
+            <p className="text-bear text-sm">Whop checkout links are not configured yet.</p>
+          )}
+        </div>
 
         <SyncMembershipButton />
 
         <p className="text-grey-600 text-xs mt-8 font-mono">
-          Already subscribed?{" "}
-          <Link href="/dashboard" className="text-purple-light hover:text-purple">
-            Back to dashboard
+          <Link href="/" className="text-purple-light hover:text-purple">
+            Back to home
           </Link>
         </p>
       </main>

@@ -5,7 +5,7 @@ import { LargoTerminal } from "@/components/LargoTerminal";
 import { IMAGES } from "@/lib/images";
 
 export default async function TerminalPage() {
-  await requireTier("elite");
+  await requireTier("premium");
 
   return (
     <div className="page-shell flex flex-col">

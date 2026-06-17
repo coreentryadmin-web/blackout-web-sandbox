@@ -3,7 +3,7 @@ import { Nav } from "@/components/Nav";
 import { FlowFeed } from "@/components/FlowFeed";
 
 export default async function FlowsPage() {
-  await requireTier("pro");
+  await requireTier("premium");
 
   return (
     <div className="page-shell">

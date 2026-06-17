@@ -18,7 +18,7 @@ export async function requireTier(minTier: Tier) {
   const tier = await getUserTier(userId);
 
   if (!tierAtLeast(tier, minTier)) {
-    redirect(`/upgrade?plan=${minTier}`);
+    redirect("/upgrade");
   }
 
   return { userId, tier };

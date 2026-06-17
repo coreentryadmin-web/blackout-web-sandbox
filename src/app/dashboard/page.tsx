@@ -7,7 +7,7 @@ import { IMAGES } from "@/lib/images";
 export const revalidate = 0;
 
 export default async function DashboardPage() {
-  await requireTier("pro");
+  await requireTier("premium");
 
   return (
     <div className="page-shell">

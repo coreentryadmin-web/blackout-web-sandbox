@@ -3,12 +3,12 @@
 import { motion } from "framer-motion";
 
 const FEATURES = [
-  { num: "01", title: "SPX LIVE", sub: "Dashboard", desc: "GEX, VWAP, regime, dealer positioning, 0DTE alerts.", tier: "Pro", accent: "border-bull text-bull", rotate: "-rotate-1" },
-  { num: "02", title: "FLOW", sub: "Feed", desc: "Whale & dark pool alerts. Filter by premium, DTE, ticker.", tier: "Pro", accent: "border-purple text-purple-light", rotate: "rotate-1" },
-  { num: "03", title: "SECTOR", sub: "Heatmaps", desc: "Live rotation heatmaps. See where institutions move.", tier: "Pro", accent: "border-grey-500 text-grey-300", rotate: "-rotate-2" },
-  { num: "04", title: "AI", sub: "Largo", desc: "Desk-grade answers from flows, news, and technicals.", tier: "Elite", accent: "border-purple text-purple-light", rotate: "rotate-2" },
-  { num: "05", title: "NIGHT", sub: "Hawk", desc: "2–10 DTE swing plays with full dossier intel.", tier: "Elite", accent: "border-bear text-bear", rotate: "-rotate-1" },
-  { num: "06", title: "PRE-MARKET", sub: "Brief", desc: "AI SPX briefings at 6 AM PT. Levels & macro.", tier: "Elite", accent: "border-bull text-bull", rotate: "rotate-1" },
+  { num: "01", title: "SPX LIVE", sub: "Dashboard", desc: "GEX, VWAP, regime, dealer positioning, 0DTE alerts.", tier: "Premium", accent: "border-bull text-bull", rotate: "-rotate-1" },
+  { num: "02", title: "FLOW", sub: "Feed", desc: "Whale & dark pool alerts. Filter by premium, DTE, ticker.", tier: "Premium", accent: "border-purple text-purple-light", rotate: "rotate-1" },
+  { num: "03", title: "SECTOR", sub: "Heatmaps", desc: "Live rotation heatmaps. See where institutions move.", tier: "Premium", accent: "border-grey-500 text-grey-300", rotate: "-rotate-2" },
+  { num: "04", title: "AI", sub: "Largo", desc: "Desk-grade answers from flows, news, and technicals.", tier: "Premium", accent: "border-purple text-purple-light", rotate: "rotate-2" },
+  { num: "05", title: "NIGHT", sub: "Hawk", desc: "2–10 DTE swing plays with full dossier intel.", tier: "Premium", accent: "border-bear text-bear", rotate: "-rotate-1" },
+  { num: "06", title: "PRE-MARKET", sub: "Brief", desc: "AI SPX briefings at 6 AM PT. Levels & macro.", tier: "Premium", accent: "border-bull text-bull", rotate: "rotate-1" },
 ];
 
 export function FeaturesGrid() {
@@ -61,7 +61,7 @@ export function FeaturesGrid() {
                   <span className={f.accent.split(" ")[1]}>{f.sub}</span>
                 </h3>
                 <p className="text-grey-400 text-xs md:text-sm mt-4 leading-relaxed">{f.desc}</p>
-                <span className={f.tier === "Elite" ? "tier-badge-elite mt-5 inline-block" : "tier-badge-pro mt-5 inline-block"}>
+                <span className="tier-badge-pro mt-5 inline-block">
                   {f.tier}
                 </span>
               </div>

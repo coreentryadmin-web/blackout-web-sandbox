@@ -3,7 +3,7 @@ import { Nav } from "@/components/Nav";
 import { Heatmap } from "@/components/Heatmap";
 
 export default async function HeatmapPage() {
-  await requireTier("pro");
+  await requireTier("premium");
 
   return (
     <div className="page-shell">

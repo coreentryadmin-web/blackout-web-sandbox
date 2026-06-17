@@ -2,11 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-
-const WHOP_CHECKOUT = {
-  pro: process.env.NEXT_PUBLIC_WHOP_CHECKOUT_PRO ?? "",
-  elite: process.env.NEXT_PUBLIC_WHOP_CHECKOUT_ELITE ?? "",
-};
+import { WHOP_CHECKOUT, WHOP_PREMIUM_CHECKOUT_OPTIONS } from "@/lib/whop-checkout";
 
 const TIERS = [
   {
@@ -14,93 +10,41 @@ const TIERS = [
     price: "$0",
     period: "forever",
     featured: false,
-    cta: "Get Started",
-    href: "/sign-up",
-    external: false,
     accent: "border-grey-700",
     features: [
-      { text: "Flow Feed (delayed 15m)", active: true },
-      { text: "Basic heatmap", active: true },
-      { text: "SPX Dashboard", active: false },
-      { text: "AI Terminal", active: false },
-      { text: "Night Hawk plays", active: false },
+      { text: "Community landing & updates", active: true },
+      { text: "Create your account", active: true },
+      { text: "Live flow feed", active: false },
+      { text: "SPX dashboard & tools", active: false },
+      { text: "AI terminal & Night Hawk", active: false },
     ],
   },
   {
-    name: "Pro",
-    price: "$97",
-    period: "per month",
+    name: "Premium Access",
+    price: "$79.99",
+    period: "from / month on Whop",
     featured: true,
-    cta: "Join Pro on Whop",
-    href: WHOP_CHECKOUT.pro || "/sign-up",
-    external: Boolean(WHOP_CHECKOUT.pro),
     accent: "border-bull",
     features: [
       { text: "Live Flow Feed", active: true },
-      { text: "Full heatmaps", active: true },
       { text: "SPX Live Dashboard", active: true },
-      { text: "Pre-market briefings", active: true },
-      { text: "AI Terminal", active: false },
-    ],
-  },
-  {
-    name: "Elite",
-    price: "$197",
-    period: "per month",
-    featured: false,
-    cta: "Join Elite on Whop",
-    href: WHOP_CHECKOUT.elite || "/sign-up",
-    external: Boolean(WHOP_CHECKOUT.elite),
-    accent: "border-purple",
-    features: [
-      { text: "Everything in Pro", active: true },
+      { text: "Full heatmaps", active: true },
       { text: "AI Terminal — Largo", active: true },
-      { text: "Night Hawk Scanner", active: true },
-      { text: "Priority Discord access", active: true },
-      { text: "1-on-1 onboarding", active: true },
+      { text: "Night Hawk scanner", active: true },
     ],
   },
 ];
-
-function TierCta({
-  tier,
-}: {
-  tier: (typeof TIERS)[number];
-}) {
-  const className = tier.featured
-    ? "btn-primary w-full text-center !px-0"
-    : "btn-outline w-full text-center";
-
-  if (tier.external) {
-    return (
-      <a
-        href={tier.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-      >
-        {tier.cta}
-      </a>
-    );
-  }
-
-  return (
-    <Link href={tier.href} className={className}>
-      {tier.cta}
-    </Link>
-  );
-}
 
 export function PricingSection() {
   return (
     <section id="pricing" className="relative py-32 px-4 md:px-8 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
         <span className="absolute -right-10 top-20 font-anton text-[20vw] text-white/[0.03] leading-none">
-          PRO
+          VIP
         </span>
       </div>
 
-      <div className="max-w-6xl mx-auto relative z-10">
+      <div className="max-w-5xl mx-auto relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -111,14 +55,15 @@ export function PricingSection() {
             ◆ Pricing
           </p>
           <h2 className="font-syne font-extrabold text-5xl md:text-7xl tracking-tight">
-            CHOOSE YOUR <span className="text-gradient-fire">TIER</span>
+            FREE OR <span className="text-gradient-fire">PREMIUM</span>
           </h2>
           <p className="text-grey-500 text-sm mt-4 max-w-xl font-mono">
-            Sign up first, then pay on Whop with the same email. Access unlocks automatically.
+            Sign up on BlackOut, then choose monthly, yearly, or lifetime on Whop — same
+            email unlocks everything.
           </p>
         </motion.div>
 
-        <div className="flex flex-col md:flex-row items-center md:items-stretch justify-center gap-0 md:-space-x-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
           {TIERS.map((t, i) => (
             <motion.div
               key={t.name}
@@ -126,15 +71,13 @@ export function PricingSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className={`relative flex flex-col w-full md:w-1/3 p-8 md:p-10 bg-black
-                border-2 ${t.accent}
-                ${t.featured ? "md:scale-110 z-20 shadow-glow-bull md:-my-6" : "z-10 opacity-90"}
-                ${i === 0 ? "md:rotate-[-2deg]" : i === 2 ? "md:rotate-[2deg]" : ""}
-                hover:rotate-0 hover:scale-105 transition-all duration-300`}
+              className={`relative flex flex-col p-8 md:p-10 bg-black border-2 ${t.accent}
+                ${t.featured ? "shadow-glow-bull md:scale-[1.02]" : "opacity-95"}
+                hover:scale-[1.02] transition-all duration-300`}
             >
               {t.featured && (
                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-bull text-black font-mono text-[9px] tracking-[0.3em] uppercase px-4 py-1 font-bold">
-                  Most Popular
+                  Full Access
                 </span>
               )}
               <p className="font-mono text-[10px] tracking-[0.4em] text-grey-500 uppercase mb-2">
@@ -154,7 +97,41 @@ export function PricingSection() {
                   </li>
                 ))}
               </ul>
-              <TierCta tier={t} />
+
+              {t.featured ? (
+                <div className="flex flex-col gap-3">
+                  {WHOP_PREMIUM_CHECKOUT_OPTIONS.length > 0 ? (
+                    WHOP_PREMIUM_CHECKOUT_OPTIONS.map((option) => (
+                      <a
+                        key={option.label}
+                        href={option.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary w-full text-center !px-0 text-xs"
+                      >
+                        {option.label}
+                      </a>
+                    ))
+                  ) : WHOP_CHECKOUT.store ? (
+                    <a
+                      href={WHOP_CHECKOUT.store}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary w-full text-center !px-0"
+                    >
+                      Get Premium on Whop →
+                    </a>
+                  ) : (
+                    <Link href="/sign-up" className="btn-primary w-full text-center !px-0">
+                      Sign up first →
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <Link href="/sign-up" className="btn-outline w-full text-center">
+                  Get Started
+                </Link>
+              )}
             </motion.div>
           ))}
         </div>
