@@ -7,11 +7,15 @@ export function dbConfigured(): boolean {
 }
 
 function resolveDatabaseUrl(): string | undefined {
-  return (
-    process.env.DATABASE_URL?.trim() ||
-    process.env.DATABASE_PUBLIC_URL?.trim() ||
-    undefined
-  );
+  const privateUrl = process.env.DATABASE_URL?.trim();
+  const publicUrl = process.env.DATABASE_PUBLIC_URL?.trim();
+
+  // Railway private network is unavailable during `next build` — use public URL briefly.
+  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
+  if (isBuild && publicUrl) return publicUrl;
+
+  // Runtime: private URL (no egress). Never prefer public at runtime.
+  return privateUrl || publicUrl || undefined;
 }
 
 function poolSsl(connectionString: string): false | { rejectUnauthorized: boolean } {

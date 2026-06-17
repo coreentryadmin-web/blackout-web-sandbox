@@ -1,8 +1,8 @@
 [build]
 builder = "nixpacks"
+buildCommand = "DATABASE_URL=$DATABASE_PUBLIC_URL npm run build"
 
-[deploy]
-startCommand = "next start -H 0.0.0.0 -p $PORT"
+[deploy]startCommand = "next start -H 0.0.0.0 -p $PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
