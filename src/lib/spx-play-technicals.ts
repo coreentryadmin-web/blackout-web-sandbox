@@ -1,7 +1,7 @@
 import { polygonConfigured } from "@/lib/providers/config";
 import { fetchIndexEma, fetchIndexMinuteBars } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import { playMtfBufferPts } from "@/lib/spx-play-config";
+import { playMtfBufferPts, playTechnicalsCacheSec } from "@/lib/spx-play-config";
 
 type Bar = { t: number; o: number; h: number; l: number; c: number; v?: number };
 
@@ -121,7 +121,8 @@ export async function buildPlayTechnicals(
   if (!polygonConfigured() || price <= 0) return empty;
 
   const now = Date.now();
-  if (cached && now - cached.at < 60_000 && Math.abs(cached.data.price - price) < 3) {
+  const cacheMs = playTechnicalsCacheSec() * 1000;
+  if (cached && now - cached.at < cacheMs && Math.abs(cached.data.price - price) < 3) {
     return cached.data;
   }
 

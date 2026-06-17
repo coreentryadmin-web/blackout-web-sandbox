@@ -6,6 +6,10 @@ import { clsx } from "clsx";
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
+import {
+  commentaryOfflineTone,
+  pickCommentaryOfflineCopy,
+} from "@/lib/spx-commentary-offline-copy";
 
 const MIN_INTERVAL_MS = 55_000;
 const MATERIAL_PRICE_MOVE = 0.08;
@@ -103,13 +107,21 @@ export function SpxCommentaryRail({
     return () => clearInterval(interval);
   }, [desk?.available, pullCommentary]);
 
+  const offlineCopy = pickCommentaryOfflineCopy(desk);
+  const offlineTone = commentaryOfflineTone(desk);
+
   return (
-    <aside className="spx-commentary-rail spx-commentary-rail-full spx-commentary-rail-desk">
+    <aside
+      className={clsx(
+        "spx-commentary-rail spx-commentary-rail-full spx-commentary-rail-desk",
+        !live && entries.length === 0 && "spx-commentary-rail-standby"
+      )}
+    >
       <div className="spx-commentary-header">
         <span className={clsx("badge-live-dot", live && "animate-pulse")} />
         <div>
           <span className="font-syne text-base tracking-[0.15em] uppercase text-purple-light block font-bold">
-            Live Desk AI
+            {live ? "Live Desk AI" : "Desk AI · Standby"}
           </span>
         </div>
         {loading && (
@@ -121,9 +133,17 @@ export function SpxCommentaryRail({
 
       <div className="spx-commentary-viewport">
         {!live && entries.length === 0 ? (
-          <p className="font-mono text-[10px] text-grey-500 p-4 text-center">
-            Commentary loads when SPX desk is live
-          </p>
+          <div
+            className={clsx(
+              "spx-commentary-offline-hero",
+              `spx-commentary-offline-hero-${offlineTone}`
+            )}
+          >
+            <p className="spx-commentary-offline-kicker">{offlineCopy.kicker}</p>
+            <h2 className="spx-commentary-offline-headline">{offlineCopy.headline}</h2>
+            <p className="spx-commentary-offline-body">{offlineCopy.body}</p>
+            <p className="spx-commentary-offline-tagline">{offlineCopy.tagline}</p>
+          </div>
         ) : error && entries.length === 0 ? (
           <p className="font-mono text-[10px] text-bear/80 p-4 text-center">
             {error.includes("ANTHROPIC") ? "Set ANTHROPIC_API_KEY on Railway" : error}

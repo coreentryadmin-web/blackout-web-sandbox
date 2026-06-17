@@ -63,6 +63,43 @@ let lastGoodUnifiedTape: SpxTapeItem[] = [];
 let lastGoodSpxFlowBriefs: SpxFlowBrief[] = [];
 let lastPulseForSignals: SpxDeskPulse | null = null;
 
+async function syncDeskStickyFromRedis(): Promise<void> {
+  if (!process.env.REDIS_URL?.trim()) return;
+  try {
+    const { sharedCacheGet, DESK_STICKY_KEYS } = await import("@/lib/shared-cache");
+    const [walls, tape, flip, regime, strikes, flows] = await Promise.all([
+      sharedCacheGet<GexWall[]>(DESK_STICKY_KEYS.gexWalls),
+      sharedCacheGet<SpxTapeItem[]>(DESK_STICKY_KEYS.unifiedTape),
+      sharedCacheGet<number | null>(DESK_STICKY_KEYS.gammaFlip),
+      sharedCacheGet<string>(DESK_STICKY_KEYS.gammaRegime),
+      sharedCacheGet<GexStrikeLevel[]>(DESK_STICKY_KEYS.strikeLevels),
+      sharedCacheGet<SpxFlowBrief[]>(DESK_STICKY_KEYS.spxFlowBriefs),
+    ]);
+    if (walls?.length) lastGoodGexWalls = walls;
+    if (tape?.length) lastGoodUnifiedTape = tape;
+    if (flip != null) lastGoodGammaFlip = flip;
+    if (regime) lastGoodGammaRegime = regime;
+    if (strikes?.length) lastGoodStrikeLevels = strikes;
+    if (flows?.length) lastGoodSpxFlowBriefs = flows;
+  } catch {
+    // keep in-process sticky state
+  }
+}
+
+function publishDeskStickyToRedis(): void {
+  if (!process.env.REDIS_URL?.trim()) return;
+  void import("@/lib/shared-cache").then(({ sharedCacheSet, DESK_STICKY_KEYS, DESK_STICKY_TTL_SEC }) =>
+    Promise.all([
+      sharedCacheSet(DESK_STICKY_KEYS.gexWalls, lastGoodGexWalls, DESK_STICKY_TTL_SEC.gex),
+      sharedCacheSet(DESK_STICKY_KEYS.unifiedTape, lastGoodUnifiedTape, DESK_STICKY_TTL_SEC.tape),
+      sharedCacheSet(DESK_STICKY_KEYS.gammaFlip, lastGoodGammaFlip, DESK_STICKY_TTL_SEC.gex),
+      sharedCacheSet(DESK_STICKY_KEYS.gammaRegime, lastGoodGammaRegime, DESK_STICKY_TTL_SEC.gex),
+      sharedCacheSet(DESK_STICKY_KEYS.strikeLevels, lastGoodStrikeLevels, DESK_STICKY_TTL_SEC.gex),
+      sharedCacheSet(DESK_STICKY_KEYS.spxFlowBriefs, lastGoodSpxFlowBriefs, DESK_STICKY_TTL_SEC.tape),
+    ])
+  );
+}
+
 export function getLastPulseForSignals(): SpxDeskPulse | null {
   return lastPulseForSignals;
 }
@@ -930,6 +967,7 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
 
 /** UW flow lane — GEX strike ladder, live tape, dark pool (~4s). */
 export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
+  await syncDeskStickyFromRedis();
   const polledAt = new Date().toISOString();
   const empty: SpxDeskFlow = {
     available: false,
@@ -996,12 +1034,15 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
 
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
+  if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) {
     lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
   }
   const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
+
+  publishDeskStickyToRedis();
 
   return {
     available: spot > 0,

@@ -40,7 +40,7 @@ export function computeAdaptiveGates(stats: PlayOutcomeStats): AdaptivePlayGates
   let global_min_score_boost = 0;
   let promote_min_score_boost = 0;
   let promote_blocked = false;
-  let promote_requires_claude = true;
+  let promote_requires_claude = false;
   let promote_block_reason: string | null = null;
   const notes: string[] = [];
 

@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { polygonConfigured } from "./config";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
@@ -7,7 +8,7 @@ async function polygonGet<T>(path: string, params: Record<string, string> = {}):
   if (!polygonConfigured()) throw new Error("POLYGON_API_KEY not set");
 
   const qs = new URLSearchParams({ ...params, apiKey: KEY });
-  const res = await fetch(`${BASE}${path}?${qs}`, {
+  const res = await trackedFetch("polygon", path, `${BASE}${path}?${qs}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });

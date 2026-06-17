@@ -3,12 +3,14 @@ import type { PlayTechnicals } from "@/lib/spx-play-technicals";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
 import { flowAlignedForDirection } from "@/lib/spx-play-confirmations";
 import { buildLottoOptionTicket } from "@/lib/spx-lotto-options";
+import { computeSpxConfluence } from "@/lib/spx-signals";
 import {
   LOTTO_SIZING_NOTE,
   playLottoConfirmMovePts,
   playLottoExpireEtHour,
   playLottoExpireEtMin,
   playLottoMaxPicksPerDay,
+  playLottoMinScore,
   playLottoTargetPts,
 } from "@/lib/spx-play-config";
 import { evaluateLottoCatalysts } from "@/lib/spx-lotto-catalyst";
@@ -293,6 +295,11 @@ async function tryNewWatch(
 ): Promise<LottoRecord | null> {
   const catalyst = evaluateLottoCatalysts(desk);
   if (!catalyst.qualified || !catalyst.direction) return null;
+
+  const confluence = computeSpxConfluence(desk);
+  const minScore = playLottoMinScore();
+  if (confluence && Math.abs(confluence.score) < minScore) return null;
+
   const price = desk.price > 0 ? desk.price : desk.prior_close ?? desk.pdh ?? 0;
   const ticket = await buildLottoOptionTicket(price, catalyst.direction);
   return buildWatchRecord(desk, catalyst.direction, catalyst, pickCount, isReversal, ticket);

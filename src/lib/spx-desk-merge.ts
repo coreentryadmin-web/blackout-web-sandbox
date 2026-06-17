@@ -188,6 +188,29 @@ export function mergePulseIntoDesk(
   };
 }
 
+/** Merge desk + flow + pulse lanes (shared by server loader and client hooks). */
+export function mergeDeskLayers(
+  desk: SpxDeskPayload,
+  flow: SpxDeskFlow | null | undefined,
+  pulse: SpxDeskPulse | null | undefined
+): SpxDeskPayload {
+  let merged = desk;
+  if (flow?.available) merged = mergeFlowIntoDesk(merged, flow);
+  if (pulse) {
+    if (pulse.available) merged = mergePulseIntoDesk(merged, pulse);
+    else {
+      merged = {
+        ...merged,
+        market_open: pulse.market_open,
+        market_status: pulse.market_status,
+        market_label: pulse.market_label,
+        polled_at: pulse.polled_at,
+      };
+    }
+  }
+  return merged;
+}
+
 const signalDeskStub = (): SpxDeskPayload => ({
   available: false,
   as_of: new Date().toISOString(),

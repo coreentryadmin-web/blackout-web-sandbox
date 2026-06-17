@@ -377,14 +377,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 {confirmationLayer.gates.play_idea && (
                   <p className="spx-trade-idea-line">{confirmationLayer.gates.play_idea}</p>
                 )}
-                {confirmationLayer.gates.warnings.slice(0, 2).map((w) => (
+                {confirmationLayer.gates.warnings.map((w) => (
                   <p key={w} className="spx-trade-confirmation-meta text-amber-300/90">
                     ⚠ {w}
                   </p>
                 ))}
                 {confirmationLayer.gates.blocks
                   .filter((b) => b !== confirmationLayer.gates.play_idea)
-                  .slice(0, 2)
                   .map((b) =>
                     isPlayIdeaLine(b) ? (
                       <p key={b} className="spx-trade-idea-line">

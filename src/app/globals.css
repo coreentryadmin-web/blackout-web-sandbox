@@ -1893,6 +1893,93 @@ body {
     @apply font-mono text-xs text-purple-light/95 leading-relaxed;
   }
 
+  .spx-commentary-rail-standby {
+    box-shadow:
+      inset 0 0 80px rgba(139, 92, 246, 0.08),
+      0 0 40px rgba(88, 28, 135, 0.15);
+  }
+
+  .spx-commentary-offline-hero {
+    @apply relative flex flex-col items-center justify-center text-center min-h-[320px] h-full px-6 py-10 overflow-hidden;
+  }
+
+  .spx-commentary-offline-hero::before {
+    content: "";
+    @apply pointer-events-none absolute inset-0 opacity-80;
+    background: radial-gradient(ellipse 70% 55% at 50% 20%, rgba(139, 92, 246, 0.22), transparent 70%);
+    animation: spx-commentary-offline-glow 5s ease-in-out infinite alternate;
+  }
+
+  @keyframes spx-commentary-offline-glow {
+    from {
+      opacity: 0.45;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0.95;
+      transform: scale(1.06);
+    }
+  }
+
+  .spx-commentary-offline-kicker {
+    @apply relative z-[1] font-syne text-xs md:text-sm font-bold uppercase tracking-[0.35em] mb-4;
+    color: #e9d5ff;
+    text-shadow: 0 0 24px rgba(192, 132, 252, 0.55);
+  }
+
+  .spx-commentary-offline-headline {
+    @apply relative z-[1] font-syne font-black uppercase leading-none mb-5;
+    font-size: clamp(2rem, 5.5vw, 3.25rem);
+    letter-spacing: 0.06em;
+    background: linear-gradient(135deg, #f5f3ff 0%, #c4b5fd 35%, #a78bfa 55%, #f0abfc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 28px rgba(167, 139, 250, 0.45));
+    animation: spx-commentary-offline-shimmer 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes spx-commentary-offline-shimmer {
+    from {
+      filter: drop-shadow(0 0 18px rgba(167, 139, 250, 0.35));
+    }
+    to {
+      filter: drop-shadow(0 0 36px rgba(244, 114, 182, 0.55));
+    }
+  }
+
+  .spx-commentary-offline-body {
+    @apply relative z-[1] max-w-md text-sm md:text-base leading-relaxed text-purple-100/90 mb-4;
+  }
+
+  .spx-commentary-offline-tagline {
+    @apply relative z-[1] font-mono text-[10px] md:text-xs uppercase tracking-[0.22em] text-fuchsia-300/75;
+  }
+
+  .spx-commentary-offline-hero-weekend .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 40%, #f472b6 75%, #c4b5fd 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  .spx-commentary-offline-hero-premarket .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #67e8f9 0%, #22d3ee 40%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  .spx-commentary-offline-hero-extended .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #fda4af 0%, #fb7185 35%, #c084fc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  .spx-commentary-offline-hero-closed .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 40%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
   .spx-left-stack {
     @apply flex flex-col gap-3 min-h-0 overflow-y-auto xl:max-h-[calc(100vh-200px)] xl:overflow-y-auto;
   }
@@ -2174,6 +2261,335 @@ body {
 
   .admin-warn {
     @apply mb-4 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm;
+  }
+
+  /* ── Admin API dashboard ── */
+  .admin-api-dashboard {
+    @apply space-y-6;
+  }
+
+  .admin-api-toolbar {
+    @apply flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-2;
+  }
+
+  .admin-api-toolbar-actions {
+    @apply flex items-center gap-3;
+  }
+
+  .admin-api-live {
+    @apply flex items-center gap-2 text-xs font-mono text-grey-400;
+  }
+
+  .admin-api-live-dot {
+    @apply w-2 h-2 rounded-full bg-bull animate-pulse;
+  }
+
+  .admin-api-stat-grid {
+    @apply lg:grid-cols-4;
+  }
+
+  .admin-api-provider-grid {
+    @apply grid gap-4;
+  }
+
+  .admin-api-card {
+    @apply rounded-xl border border-grey-800 bg-grey-900/50 overflow-hidden transition-colors;
+  }
+
+  .admin-api-card-ok {
+    @apply border-bull/20;
+  }
+
+  .admin-api-card-error {
+    @apply border-bear/30;
+  }
+
+  .admin-api-card-off {
+    @apply border-grey-800 opacity-80;
+  }
+
+  .admin-api-card-idle {
+    @apply border-grey-700;
+  }
+
+  .admin-api-card-open {
+    @apply border-bull/30 bg-grey-900/70;
+  }
+
+  .admin-api-card-head {
+    @apply w-full text-left p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3
+           hover:bg-grey-800/30 transition-colors;
+  }
+
+  .admin-api-card-title-row {
+    @apply flex items-start gap-3;
+  }
+
+  .admin-api-card-title {
+    @apply text-base font-semibold text-white;
+  }
+
+  .admin-api-card-desc {
+    @apply text-xs text-grey-400 mt-0.5 max-w-xl;
+  }
+
+  .admin-api-card-meta {
+    @apply flex flex-wrap items-center gap-3 text-xs font-mono text-grey-500 shrink-0;
+  }
+
+  .admin-api-meta-error {
+    @apply text-bear;
+  }
+
+  .admin-api-chevron {
+    @apply text-grey-500 ml-1;
+  }
+
+  .admin-api-card-body {
+    @apply px-4 pb-4 pt-0 border-t border-grey-800/80 space-y-4;
+  }
+
+  .admin-api-probe-row {
+    @apply flex flex-wrap items-center gap-3 text-xs font-mono text-grey-400 pt-4;
+  }
+
+  .admin-api-probe-label {
+    @apply uppercase tracking-wider text-grey-500;
+  }
+
+  .admin-api-probe-error {
+    @apply text-bear;
+  }
+
+  .admin-api-badge {
+    @apply px-2 py-0.5 rounded text-[10px] uppercase tracking-wider;
+  }
+
+  .admin-api-badge-ok {
+    @apply bg-bull/15 text-bull border border-bull/30;
+  }
+
+  .admin-api-badge-error {
+    @apply bg-bear/15 text-bear border border-bear/30;
+  }
+
+  .admin-api-env {
+    @apply text-xs text-grey-500;
+  }
+
+  .admin-api-env code {
+    @apply mx-1 px-1.5 py-0.5 rounded bg-grey-800 text-grey-300 font-mono text-[10px];
+  }
+
+  .admin-api-docs-link {
+    @apply text-xs text-bull hover:underline;
+  }
+
+  .admin-api-endpoint-table td {
+    @apply align-top;
+  }
+
+  .admin-api-mono {
+    @apply font-mono text-[11px];
+  }
+
+  .admin-api-endpoint {
+    @apply text-grey-200 break-all max-w-xs;
+  }
+
+  .admin-api-used-by {
+    @apply text-[11px] text-grey-500 max-w-[140px];
+  }
+
+  .admin-api-dot {
+    @apply inline-block w-2 h-2 rounded-full shrink-0;
+  }
+
+  .admin-api-dot-ok {
+    @apply bg-bull;
+  }
+
+  .admin-api-dot-error {
+    @apply bg-bear;
+  }
+
+  .admin-api-dot-idle {
+    @apply bg-grey-600;
+  }
+
+  .admin-api-dot-off {
+    @apply bg-grey-700;
+  }
+
+  .admin-api-endpoint-errors {
+    @apply p-3 rounded-lg border border-bear/20 bg-bear/5 text-sm;
+  }
+
+  .admin-api-endpoint-errors ul {
+    @apply mt-2 space-y-1 text-xs text-bear list-disc list-inside;
+  }
+
+  .admin-api-muted {
+    @apply text-sm text-grey-500;
+  }
+
+  .admin-api-footer {
+    @apply text-[11px] font-mono text-grey-600 text-center pt-2;
+  }
+
+  /* ── Admin SPX Sniper dashboard ── */
+  .admin-spx-dashboard {
+    @apply space-y-6;
+  }
+
+  .admin-spx-toolbar {
+    @apply flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4;
+  }
+
+  .admin-spx-toolbar-actions {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .admin-spx-live-btn {
+    @apply border-bull/40 text-bull hover:bg-bull/10;
+  }
+
+  .admin-spx-section-nav {
+    @apply flex flex-wrap gap-2 pb-2 border-b border-grey-800;
+  }
+
+  .admin-spx-section-tab {
+    @apply px-3 py-1.5 rounded-lg text-xs font-mono uppercase tracking-wider text-grey-500
+           hover:text-white hover:bg-grey-800/60 transition-colors;
+  }
+
+  .admin-spx-section-tab-active {
+    @apply text-white bg-bull/15 border border-bull/30;
+  }
+
+  .admin-spx-section {
+    @apply space-y-4;
+  }
+
+  .admin-spx-hero {
+    @apply flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 p-6 rounded-xl
+           border border-bull/25 bg-gradient-to-br from-bull/10 via-grey-900/80 to-grey-900/40;
+  }
+
+  .admin-spx-hero-kicker {
+    @apply font-mono text-[10px] tracking-[0.35em] uppercase text-bull/80 mb-2;
+  }
+
+  .admin-spx-hero-title {
+    @apply font-anton text-2xl md:text-3xl text-white tracking-wide;
+  }
+
+  .admin-spx-hero-sub {
+    @apply text-sm text-grey-300 mt-2 max-w-xl;
+  }
+
+  .admin-spx-hero-stats {
+    @apply flex gap-8;
+  }
+
+  .admin-spx-hero-price {
+    @apply text-3xl font-semibold text-white tabular-nums;
+  }
+
+  .admin-spx-hero-grade {
+    @apply text-2xl font-semibold text-bull tabular-nums;
+  }
+
+  .admin-spx-stat-grid {
+    @apply lg:grid-cols-6;
+  }
+
+  .admin-spx-panel {
+    @apply rounded-xl border border-grey-800 bg-grey-900/40 overflow-hidden;
+  }
+
+  .admin-spx-panel-head {
+    @apply w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-grey-800/30 transition-colors;
+  }
+
+  .admin-spx-panel-title {
+    @apply text-sm font-semibold text-white flex-1;
+  }
+
+  .admin-spx-panel-body {
+    @apply px-4 pb-4 pt-1 border-t border-grey-800/80;
+  }
+
+  .admin-spx-badge {
+    @apply px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider
+           bg-grey-800 text-grey-300 border border-grey-700;
+  }
+
+  .admin-spx-chevron {
+    @apply text-grey-500 text-sm;
+  }
+
+  .admin-spx-kv-grid {
+    @apply grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 text-sm;
+  }
+
+  .admin-spx-kv-row dt {
+    @apply font-mono text-[10px] uppercase tracking-wider text-grey-500;
+  }
+
+  .admin-spx-kv-row dd {
+    @apply text-grey-200 mb-2 break-all;
+  }
+
+  .admin-spx-json {
+    @apply text-[11px] font-mono text-grey-300 bg-grey-900/80 rounded-lg p-3 overflow-x-auto
+           max-h-96 overflow-y-auto border border-grey-800;
+  }
+
+  .admin-spx-filters {
+    @apply flex flex-wrap gap-4 items-end mb-4;
+  }
+
+  .admin-spx-filter {
+    @apply flex flex-col gap-1 text-xs font-mono text-grey-500;
+  }
+
+  .admin-spx-filter-search {
+    @apply flex-1 min-w-[180px];
+  }
+
+  .admin-spx-select,
+  .admin-spx-input {
+    @apply px-3 py-2 rounded-lg border border-grey-700 bg-grey-900 text-sm text-grey-200
+           focus:border-bull/40 focus:outline-none;
+  }
+
+  .admin-spx-meta {
+    @apply text-xs font-mono text-grey-500;
+  }
+
+  .admin-spx-idea {
+    @apply text-sm text-cyan-300/90 mb-2;
+  }
+
+  .admin-spx-list {
+    @apply space-y-1 text-sm list-disc list-inside;
+  }
+
+  .admin-spx-list-error {
+    @apply text-bear;
+  }
+
+  .admin-spx-list-warn {
+    @apply text-amber-300/90;
+  }
+
+  .admin-spx-table-tall {
+    @apply max-h-[32rem];
+  }
+
+  .admin-spx-row-click {
+    @apply cursor-pointer hover:bg-grey-800/40;
   }
 
   /* ── Docs / playbook ── */

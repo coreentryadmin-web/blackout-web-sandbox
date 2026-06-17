@@ -76,6 +76,11 @@ const memoryOutcomes: PlayOutcomeRow[] = [];
 let memoryNextId = 1;
 
 function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven" {
+  if (close.exit_action === "THETA" || close.exit_action === "SESSION") {
+    if (close.pnl_pts <= -1) return "loss";
+    if (close.pnl_pts >= 2) return "win";
+    return "breakeven";
+  }
   if (close.was_loss || close.exit_action === "STOP" || close.exit_action === "THESIS") {
     return "loss";
   }

@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { uwConfigured } from "./config";
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
@@ -10,7 +11,7 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
 
   const url = `${BASE}${path}${qs.size ? `?${qs}` : ""}`;
-  const res = await fetch(url, {
+  const res = await trackedFetch("unusual_whales", path, url, {
     headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" },
     cache: "no-store",
   });

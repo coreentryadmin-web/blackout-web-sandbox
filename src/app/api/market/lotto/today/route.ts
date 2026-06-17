@@ -1,15 +1,11 @@
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { deskCacheTtlMs, deskFlowCacheTtlMs, deskPulseCacheTtlMs } from "@/lib/providers/config";
-import {
-  buildSpxDesk,
-  buildSpxDeskFlow,
-  buildSpxDeskPulse,
-} from "@/lib/providers/spx-desk";
-import { mergeFlowIntoDesk, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
-import { withServerCache } from "@/lib/server-cache";
+import { requireDatabaseInProduction } from "@/lib/db";
+import { fetchLottoPlaysForDate } from "@/lib/db";
+import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
+import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
-import { fetchLottoPlaysForDate } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,34 +13,15 @@ function todayEt(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 }
 
-export async function GET() {
-  try {
-    const [desk, flow, pulse] = await Promise.all([
-      withServerCache("spx-desk", deskCacheTtlMs(), buildSpxDesk, {
-        staleWhileRevalidate: false,
-      }),
-      withServerCache("spx-desk-flow", deskFlowCacheTtlMs(), buildSpxDeskFlow, {
-        staleWhileRevalidate: false,
-      }),
-      withServerCache("spx-desk-pulse", deskPulseCacheTtlMs(), buildSpxDeskPulse, {
-        staleWhileRevalidate: false,
-      }),
-    ]);
+export async function GET(req: NextRequest) {
+  const dbDenied = requireDatabaseInProduction();
+  if (dbDenied) return dbDenied;
 
-    let merged = desk;
-    if (flow?.available) merged = mergeFlowIntoDesk(merged, flow);
-    if (pulse) {
-      if (pulse.available) merged = mergePulseIntoDesk(merged, pulse);
-      else {
-        merged = {
-          ...merged,
-          market_open: pulse.market_open,
-          market_status: pulse.market_status,
-          market_label: pulse.market_label,
-          polled_at: pulse.polled_at,
-        };
-      }
-    }
+  const authResult = await authorizeCronOrTierApi(req, "premium");
+  if (authResult instanceof Response) return authResult;
+
+  try {
+    const { merged } = await loadMergedSpxDesk();
 
     const technicals = await buildPlayTechnicals(merged.price, {
       vwap: merged.vwap,

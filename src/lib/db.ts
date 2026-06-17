@@ -10,6 +10,24 @@ export function dbConfigured(): boolean {
   );
 }
 
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+/** Stateful engines require Postgres in production — no per-instance memory fallbacks. */
+export function requireDatabaseInProduction(): Response | null {
+  if (isProductionRuntime() && !dbConfigured()) {
+    return new Response(
+      JSON.stringify({
+        error: "Database required",
+        detail: "Set DATABASE_URL in production — play/lotto state cannot run in memory.",
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  return null;
+}
+
 export function databaseConnectionMode(): "private" | "public" | "unknown" {
   return activeMode;
 }

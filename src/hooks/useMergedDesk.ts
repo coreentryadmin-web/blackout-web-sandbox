@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import useSWR from "swr";
 import { fetchSpxDesk, fetchSpxDeskFlow, fetchSpxDeskPulse } from "@/lib/api";
-import { mergeFlowIntoDesk, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
+import { mergeDeskLayers, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 
@@ -22,27 +22,6 @@ const swrLiveOpts = {
   keepPreviousData: true,
 };
 
-function mergeDeskLayers(
-  desk: SpxDeskPayload,
-  flow: Awaited<ReturnType<typeof fetchSpxDeskFlow>> | undefined,
-  pulse: Awaited<ReturnType<typeof fetchSpxDeskPulse>> | undefined
-): SpxDeskPayload {
-  let out = desk;
-  if (flow?.available) out = mergeFlowIntoDesk(out, flow);
-  if (pulse) {
-    if (pulse.available) out = mergePulseIntoDesk(out, pulse);
-    else {
-      out = {
-        ...out,
-        market_open: pulse.market_open,
-        market_status: pulse.market_status,
-        market_label: pulse.market_label,
-        polled_at: pulse.polled_at,
-      };
-    }
-  }
-  return out;
-}
 
 function isDeskSessionLive(pulse?: {
   market_open?: boolean;

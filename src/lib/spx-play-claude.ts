@@ -76,7 +76,8 @@ export async function evaluateClaudePlayApproval(
   confluence: SpxConfluence,
   gates: PlayGateResult,
   confirmations: PlayConfirmationResult,
-  technicals: PlayTechnicals
+  technicals: PlayTechnicals,
+  options?: { forceClaude?: boolean }
 ): Promise<ClaudePlayVerdict> {
   if (!gates.passed || !confluence.direction) {
     return mechanicalVerdict(confluence, gates, confirmations);
@@ -86,7 +87,25 @@ export async function evaluateClaudePlayApproval(
   const cached = await readCache(key);
   if (cached) return cached;
 
-  if (!playClaudeGateEnabled() || !anthropicConfigured()) {
+  const forceClaude = options?.forceClaude === true;
+
+  if (!anthropicConfigured()) {
+    if (forceClaude) {
+      return {
+        verdict: "VETO",
+        direction: confluence.direction,
+        headline: "Promote blocked — Claude required",
+        thesis: "Telemetry requires Claude approval for WATCH→ENTRY, but Anthropic is not configured.",
+        approved: false,
+        source: "mechanical",
+      };
+    }
+    const mech = mechanicalVerdict(confluence, gates, confirmations);
+    await writeCache(key, mech);
+    return mech;
+  }
+
+  if (!playClaudeGateEnabled() && !forceClaude) {
     const mech = mechanicalVerdict(confluence, gates, confirmations);
     await writeCache(key, mech);
     return mech;

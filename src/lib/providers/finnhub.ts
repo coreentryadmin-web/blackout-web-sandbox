@@ -1,4 +1,5 @@
 import { finnhubConfigured } from "./config";
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 
 const BASE = "https://finnhub.io/api/v1";
 
@@ -21,10 +22,15 @@ async function finnhubGet<T>(path: string, params: Record<string, string> = {}):
 
   const qs = new URLSearchParams({ ...params, token: key });
   try {
-    const res = await fetch(`${BASE}${path}?${qs}`, {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 3600 },
-    });
+    const res = await trackedFetch(
+      "finnhub",
+      path,
+      `${BASE}${path}?${qs}`,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 3600 },
+      }
+    );
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

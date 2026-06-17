@@ -1,3 +1,5 @@
+import { trackedFetch } from "@/lib/api-tracked-fetch";
+
 const API_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 
@@ -11,7 +13,7 @@ export async function anthropicText(prompt: string, maxTokens = 600): Promise<st
 
   const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
 
-  const res = await fetch(API_URL, {
+  const res = await trackedFetch("anthropic", "/v1/messages", API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

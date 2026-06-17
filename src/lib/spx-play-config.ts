@@ -204,6 +204,10 @@ export function gradeRank(grade: string): number {
   return ranks[grade.toUpperCase()] ?? 0;
 }
 
+export function playWatchEntryMaxPriceDriftPts(): number {
+  return num(process.env.SPX_WATCH_ENTRY_MAX_PRICE_DRIFT_PTS, 10);
+}
+
 export function playOptionChainRequired(): boolean {
   return flag(process.env.SPX_OPTION_CHAIN_REQUIRED, true);
 }

@@ -1,5 +1,6 @@
 import { polygonConfigured } from "./config";
 import { todayEtYmd } from "./spx-session";
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -34,8 +35,14 @@ async function polygonFetchUrl(url: string): Promise<ChainResponse | null> {
   const full = url.startsWith("http")
     ? `${url}${sep}apiKey=${KEY}`
     : `${BASE}${url}${sep}apiKey=${KEY}`;
+  const endpointKey = url.startsWith("http")
+    ? "/v3/snapshot/options/{underlying}"
+    : url.split("?")[0] || "/v3/snapshot/options/{underlying}";
   try {
-    const res = await fetch(full, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const res = await trackedFetch("polygon", endpointKey, full, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     return (await res.json()) as ChainResponse;
   } catch {

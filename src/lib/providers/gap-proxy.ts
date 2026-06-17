@@ -1,4 +1,5 @@
 import { polygonConfigured } from "./config";
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 
 type SpySnapshot = {
   ticker?: string;
@@ -20,10 +21,15 @@ export async function fetchSpyGapPct(): Promise<number | null> {
 
   try {
     const qs = new URLSearchParams({ tickers: "SPY", apiKey: KEY });
-    const res = await fetch(`${BASE}/v2/snapshot/locale/us/markets/stocks/tickers?${qs}`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
+    const res = await trackedFetch(
+      "polygon",
+      "/v2/snapshot/locale/us/markets/stocks/tickers",
+      `${BASE}/v2/snapshot/locale/us/markets/stocks/tickers?${qs}`,
+      {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      }
+    );
     if (!res.ok) return null;
 
     const data = (await res.json()) as { tickers?: SpySnapshot[] };

@@ -35,6 +35,13 @@ export function isLottoWindow(now = new Date()): boolean {
   return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(10, 30);
 }
 
+/** 7:00 AM–4:00 PM ET weekdays — server cron evaluation window for play + lotto. */
+export function isSpxEngineCronWindow(now = new Date()): boolean {
+  if (!isEtWeekday(now)) return false;
+  const etMins = etMinutes(now);
+  return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(16, 0);
+}
+
 /** 7:00–9:30 AM ET weekdays — desk tracks data; lotto playbook only (no BUY). */
 export function isPremarketPlanningWindow(now = new Date()): boolean {
   if (!isEtWeekday(now)) return false;

@@ -1,7 +1,7 @@
 import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
-import { playMtfBufferPts, playWatchExtendAgeMin, playWatchMaxAgeMin } from "@/lib/spx-play-config";
+import { playMtfBufferPts, playWatchEntryMaxPriceDriftPts, playWatchExtendAgeMin, playWatchMaxAgeMin } from "@/lib/spx-play-config";
 import { flowAlignedForDirection } from "@/lib/spx-play-confirmations";
 
 export type WatchRecord = {
@@ -29,7 +29,7 @@ function effectiveWatchMaxAgeMin(desk: SpxDeskPayload, direction: SpxPlayDirecti
   return playWatchMaxAgeMin();
 }
 function watchMaxDriftPts(): number {
-  return Number(process.env.SPX_WATCH_ENTRY_MAX_PRICE_DRIFT_PTS ?? 10);
+  return playWatchEntryMaxPriceDriftPts();
 }
 
 export function watchSetupKey(direction: SpxPlayDirection): string {

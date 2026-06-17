@@ -612,7 +612,16 @@ async function evaluateFlatPlay(
     };
   }
 
-  const claude = await evaluateClaudePlayApproval(desk, confluence, entryGatesRaw, confirmations, technicals);
+  const claude = await evaluateClaudePlayApproval(
+    desk,
+    confluence,
+    entryGatesRaw,
+    confirmations,
+    technicals,
+    {
+      forceClaude: promoteEligible && adaptive.promote_requires_claude,
+    }
+  );
 
   if (!claude.approved || !confluence.direction) {
     return {
