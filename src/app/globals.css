@@ -1110,7 +1110,11 @@ body {
   }
 
   .spx-trade-alerts-panel {
-    @apply flex flex-col h-full min-h-0 border border-bull/25 bg-black/55 backdrop-blur-md p-4 md:p-5;
+    @apply flex flex-col h-full min-h-0 border border-bull/25 backdrop-blur-md p-4 md:p-5;
+  }
+
+  .spx-sniper-panel.spx-trade-alerts-panel {
+    @apply bg-black/20;
   }
 
   .spx-sniper-panel {
@@ -1127,25 +1131,28 @@ body {
 
   .spx-sniper-backdrop-layer {
     @apply absolute inset-0 bg-cover bg-center opacity-0;
-    transform: scale(1.06);
+    transform: scale(1.08);
+    filter: brightness(1.45) contrast(1.2) saturate(1.35);
     transition:
-      opacity 2.2s ease-in-out,
-      transform 12s ease-out;
+      opacity 2.4s ease-in-out,
+      transform 14s ease-out,
+      filter 2.4s ease-in-out;
     will-change: opacity, transform;
   }
 
   .spx-sniper-backdrop-layer.is-active {
-    opacity: 0.42;
-    transform: scale(1);
+    opacity: 0.72;
+    transform: scale(1.02);
+    filter: brightness(1.55) contrast(1.22) saturate(1.4);
   }
 
   .spx-sniper-backdrop-scrim {
     @apply absolute inset-0;
     background: linear-gradient(
       180deg,
-      rgba(0, 0, 0, 0.72) 0%,
-      rgba(0, 0, 0, 0.55) 38%,
-      rgba(0, 0, 0, 0.78) 100%
+      rgba(0, 0, 0, 0.38) 0%,
+      rgba(0, 0, 0, 0.18) 42%,
+      rgba(0, 0, 0, 0.48) 100%
     );
     transition: background 1.2s ease;
   }
@@ -1153,54 +1160,54 @@ body {
   .spx-sniper-tint-scan {
     background: linear-gradient(
       180deg,
-      rgba(8, 12, 24, 0.82) 0%,
-      rgba(20, 10, 40, 0.5) 45%,
-      rgba(0, 0, 0, 0.85) 100%
+      rgba(8, 12, 24, 0.42) 0%,
+      rgba(20, 10, 40, 0.12) 45%,
+      rgba(0, 0, 0, 0.5) 100%
     );
   }
 
   .spx-sniper-tint-watch {
     background: linear-gradient(
       180deg,
-      rgba(30, 15, 0, 0.8) 0%,
-      rgba(120, 60, 0, 0.22) 40%,
-      rgba(0, 0, 0, 0.88) 100%
+      rgba(30, 15, 0, 0.45) 0%,
+      rgba(120, 60, 0, 0.1) 40%,
+      rgba(0, 0, 0, 0.52) 100%
     );
   }
 
   .spx-sniper-tint-buy {
     background: linear-gradient(
       180deg,
-      rgba(0, 20, 10, 0.82) 0%,
-      rgba(0, 120, 60, 0.18) 42%,
-      rgba(0, 0, 0, 0.88) 100%
+      rgba(0, 20, 10, 0.4) 0%,
+      rgba(0, 120, 60, 0.08) 42%,
+      rgba(0, 0, 0, 0.5) 100%
     );
   }
 
   .spx-sniper-tint-sell {
     background: linear-gradient(
       180deg,
-      rgba(24, 0, 8, 0.84) 0%,
-      rgba(140, 0, 30, 0.2) 42%,
-      rgba(0, 0, 0, 0.9) 100%
+      rgba(24, 0, 8, 0.45) 0%,
+      rgba(140, 0, 30, 0.1) 42%,
+      rgba(0, 0, 0, 0.55) 100%
     );
   }
 
   .spx-sniper-tint-hold {
     background: linear-gradient(
       180deg,
-      rgba(20, 12, 0, 0.82) 0%,
-      rgba(180, 90, 0, 0.16) 42%,
-      rgba(0, 0, 0, 0.88) 100%
+      rgba(20, 12, 0, 0.42) 0%,
+      rgba(180, 90, 0, 0.08) 42%,
+      rgba(0, 0, 0, 0.5) 100%
     );
   }
 
   .spx-sniper-panel .spx-trade-alert-hero {
-    @apply bg-black/35 backdrop-blur-sm;
+    @apply bg-black/25 backdrop-blur-[2px];
   }
 
   .spx-sniper-panel .spx-trade-confirmations {
-    @apply bg-black/45 backdrop-blur-sm;
+    @apply bg-black/30 backdrop-blur-[2px];
   }
 
   .spx-trade-alerts-header {

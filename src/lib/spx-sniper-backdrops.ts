@@ -2,9 +2,9 @@ import type { SpxPlayAction } from "@/lib/spx-play-engine";
 
 /** Public paths under /public/spx-sniper — swap or add files anytime. */
 export const SPX_SNIPER_BACKDROPS = [
-  "/spx-sniper/spx-sniper-bg-sunset.webp",
-  "/spx-sniper/spx-sniper-bg-winter.webp",
-  "/spx-sniper/spx-sniper-bg-night.webp",
+  "/spx-sniper/spx-sniper-vivid-sunset.webp",
+  "/spx-sniper/spx-sniper-vivid-combat.webp",
+  "/spx-sniper/spx-sniper-vivid-neon.webp",
 ] as const;
 
 export function sniperBackdropIntervalMs(): number {
