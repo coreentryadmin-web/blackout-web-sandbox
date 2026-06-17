@@ -3,12 +3,16 @@ type CacheEntry<T> = { value: T; expiresAt: number };
 const store = new Map<string, CacheEntry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
-/** In-process TTL cache with in-flight dedup + stale-while-revalidate. */
+type CacheOpts = { staleWhileRevalidate?: boolean };
+
+/** In-process TTL cache with in-flight dedup + optional stale-while-revalidate. */
 export async function withServerCache<T>(
   key: string,
   ttlMs: number,
-  loader: () => Promise<T>
+  loader: () => Promise<T>,
+  opts: CacheOpts = {}
 ): Promise<T> {
+  const swr = opts.staleWhileRevalidate !== false;
   if (ttlMs <= 0) return loader();
 
   const now = Date.now();
@@ -16,6 +20,12 @@ export async function withServerCache<T>(
 
   if (hit && hit.expiresAt > now) {
     return hit.value;
+  }
+
+  // Fast lanes: always await a fresh build once TTL expires (no stale handoff).
+  if (hit && hit.expiresAt <= now && !swr) {
+    if (inflight.has(key)) return inflight.get(key) as Promise<T>;
+    return refreshCache(key, ttlMs, loader);
   }
 
   // Cache expired but we have data — return stale immediately, refresh in background.

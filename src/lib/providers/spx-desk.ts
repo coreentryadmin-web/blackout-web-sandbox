@@ -1,4 +1,5 @@
 import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured } from "./config";
+import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { fetchEconomicCalendarToday, type MacroEvent } from "./finnhub";
 import {
   analyzeStrikeGexRows,
@@ -39,7 +40,7 @@ import {
   fetchUwOdteGex,
   fetchUwOdteSpotExposuresByStrike,
   fetchUwOiChange,
-  fetchUwTickerFlowAlerts,
+  fetchMarketFlowAlerts,
   type DarkPoolSnapshot,
   type IvTermPoint,
   type NetPremTick,
@@ -281,7 +282,98 @@ function buildUnifiedTape(
 
   return items
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 24);
+    .slice(0, 32);
+}
+
+function tapeItemKey(t: SpxTapeItem): string {
+  return `${t.kind}|${t.time}|${t.label}|${t.premium}`;
+}
+
+/** Rolling tape — prepend new prints instead of replacing the whole list each poll. */
+function mergeTapeBuffer(prev: SpxTapeItem[], incoming: SpxTapeItem[], max = 32): SpxTapeItem[] {
+  const seen = new Set<string>();
+  const out: SpxTapeItem[] = [];
+  for (const t of [...incoming, ...prev]) {
+    const key = tapeItemKey(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+    if (out.length >= max) break;
+  }
+  return out.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+}
+
+function spxTapeMinPremium(): number {
+  const raw = process.env.SPX_TAPE_MIN_PREMIUM?.trim();
+  const n = raw ? Number(raw) : 50_000;
+  return Number.isFinite(n) && n > 0 ? n : 50_000;
+}
+
+/** Market-wide UW flow alerts for SPX + SPXW (richer than per-stock snapshot). */
+async function fetchSpxDeskFlowAlerts(limit = 32): Promise<SpxFlowBrief[]> {
+  if (!uwConfigured()) return [];
+
+  const minPremium = spxTapeMinPremium();
+  const perTicker = Math.min(limit, 40);
+  const [spx, spxw] = await Promise.all([
+    fetchMarketFlowAlerts({ ticker: "SPX", limit: perTicker, min_premium: minPremium }),
+    fetchMarketFlowAlerts({ ticker: "SPXW", limit: perTicker, min_premium: minPremium }),
+  ]);
+
+  return [...spx, ...spxw]
+    .sort((a, b) => new Date(b.alerted_at).getTime() - new Date(a.alerted_at).getTime())
+    .slice(0, limit)
+    .map((f) => ({
+      ticker: f.ticker,
+      premium: f.premium,
+      option_type: f.option_type,
+      strike: f.strike,
+      expiry: f.expiry,
+      direction: f.direction,
+      alerted_at: f.alerted_at,
+    }));
+}
+
+async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]> {
+  const fromUw = await fetchSpxDeskFlowAlerts(limit);
+  if (!dbConfigured()) return fromUw;
+
+  try {
+    const fromDb = await fetchRecentFlows({
+      limit,
+      min_premium: spxTapeMinPremium(),
+    });
+    const spxDb = fromDb
+      .filter((f) => {
+        const t = f.ticker.toUpperCase();
+        return t === "SPX" || t === "SPXW";
+      })
+      .map((f) => ({
+        ticker: f.ticker,
+        premium: f.premium,
+        option_type: f.option_type,
+        strike: f.strike,
+        expiry: f.expiry,
+        direction: f.direction,
+        alerted_at: f.alerted_at,
+      }));
+
+    const merged = [...fromUw, ...spxDb].sort(
+      (a, b) => new Date(b.alerted_at).getTime() - new Date(a.alerted_at).getTime()
+    );
+    const seen = new Set<string>();
+    const out: SpxFlowBrief[] = [];
+    for (const f of merged) {
+      const key = `${f.ticker}|${f.alerted_at}|${f.strike}|${f.option_type}|${f.premium}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(f);
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch {
+    return fromUw;
+  }
 }
 
 function emptyPayload(asOf: string): SpxDeskPayload {
@@ -397,7 +489,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchUwFlow0dte("SPX"),
     fetchUwOdteSpotExposuresByStrike("SPX"),
     fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-    fetchUwTickerFlowAlerts("SPX", 12),
+    fetchSpxDeskFlowAlertsWithDb(32),
     fetchUwNetPremTicks("SPY"),
     fetchUwOiChange("SPX"),
     fetchUwIvTermStructure("SPX"),
@@ -457,19 +549,13 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     snaps[VIX3M]?.price ?? null
   );
 
-  const spxFlows: SpxFlowBrief[] = (spxFlowsRaw ?? []).map((f) => ({
-    ticker: f.ticker,
-    premium: f.premium,
-    option_type: f.option_type,
-    strike: f.strike,
-    expiry: f.expiry,
-    direction: f.direction,
-    alerted_at: f.alerted_at,
-  }));
+  const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
-  if (freshTape.length) lastGoodUnifiedTape = freshTape;
-  const unifiedTape = freshTape.length ? freshTape : lastGoodUnifiedTape;
+  if (freshTape.length) {
+    lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
+  }
+  const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
 
   const newsHeadlines: DeskNewsHeadline[] = (newsRaw ?? [])
     .map((a) => ({
@@ -723,7 +809,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     uwConfigured()
       ? fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 })
       : Promise.resolve(null),
-    uwConfigured() ? fetchUwTickerFlowAlerts("SPX", 12) : Promise.resolve([]),
+    uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32) : Promise.resolve([]),
     uwConfigured() ? fetchUwOdteGex("SPX") : Promise.resolve(null),
     uwConfigured() ? fetchUwFlow0dte("SPX") : Promise.resolve(null),
   ]);
@@ -752,19 +838,13 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
 
-  const spxFlows: SpxFlowBrief[] = (spxFlowsRaw ?? []).map((f) => ({
-    ticker: f.ticker,
-    premium: f.premium,
-    option_type: f.option_type,
-    strike: f.strike,
-    expiry: f.expiry,
-    direction: f.direction,
-    alerted_at: f.alerted_at,
-  }));
+  const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
-  if (freshTape.length) lastGoodUnifiedTape = freshTape;
-  const unifiedTape = freshTape.length ? freshTape : lastGoodUnifiedTape;
+  if (freshTape.length) {
+    lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
+  }
+  const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
 
   return {
     available: spot > 0,

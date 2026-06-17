@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import { useLiveSpxTape } from "@/hooks/useLiveSpxTape";
 import { useStableArray, useStableValue } from "@/hooks/useStableValue";
 import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
 
@@ -203,7 +204,7 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
 }
 
 export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
-  const tape = useStableArray(desk?.unified_tape ?? []);
+  const tape = useLiveSpxTape(desk?.unified_tape);
   const hasTape = tape.length > 0;
 
   return (

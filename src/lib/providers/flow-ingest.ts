@@ -140,3 +140,14 @@ export async function maybeRunFlowIngest(force = false): Promise<FlowIngestResul
 export function ingestLockActive(): boolean {
   return ingestInFlight != null && Date.now() - lastIngestAt < INGEST_LOCK_MS;
 }
+
+let lastDeskIngestAt = 0;
+
+/** Throttled ingest while SPX desk is open — feeds SSE tape between UW polls. */
+export async function maybeRunDeskFlowIngest(): Promise<void> {
+  const sec = Number(process.env.SPX_DESK_FLOW_INGEST_SEC ?? 8);
+  const intervalMs = Number.isFinite(sec) && sec > 0 ? sec * 1000 : 8_000;
+  if (Date.now() - lastDeskIngestAt < intervalMs) return;
+  lastDeskIngestAt = Date.now();
+  void maybeRunFlowIngest(true);
+}

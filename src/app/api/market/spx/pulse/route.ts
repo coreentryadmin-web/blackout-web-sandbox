@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const pulse = await withServerCache("spx-desk-pulse", deskPulseCacheTtlMs(), buildSpxDeskPulse);
+    const pulse = await withServerCache("spx-desk-pulse", deskPulseCacheTtlMs(), buildSpxDeskPulse, {
+      staleWhileRevalidate: false,
+    });
     return NextResponse.json(pulse, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

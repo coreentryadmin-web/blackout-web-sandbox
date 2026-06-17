@@ -2,8 +2,53 @@
  * Client-safe desk merge — do NOT import spx-desk.ts from client components
  * (it pulls Polygon/UW server providers into the browser bundle).
  */
-import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse, SpxDeskFlow } from "@/lib/providers/spx-desk";
+import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse, SpxDeskFlow, SpxTapeItem } from "@/lib/providers/spx-desk";
+import type { GexWall } from "@/lib/providers/gamma-desk";
 import { distancePct } from "@/lib/providers/spx-session";
+
+export function recalcGexWallDistances(walls: GexWall[], spot: number): GexWall[] {
+  if (!walls.length || spot <= 0) return walls;
+  return walls.map((w) => ({
+    ...w,
+    distance_pts: Math.round((w.strike - spot) * 100) / 100,
+  }));
+}
+
+export function mergeTapeItems(
+  incoming: SpxTapeItem[],
+  prev: SpxTapeItem[],
+  max = 32
+): SpxTapeItem[] {
+  const seen = new Set<string>();
+  const out: SpxTapeItem[] = [];
+  for (const t of [...incoming, ...prev]) {
+    const key = `${t.kind}|${t.time}|${t.label}|${t.premium}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+    if (out.length >= max) break;
+  }
+  return out.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+}
+
+export function flowAlertToTapeItem(alert: {
+  ticker: string;
+  premium: number;
+  option_type: string;
+  strike: number;
+  direction: string;
+  alerted_at: string;
+}): SpxTapeItem {
+  const isPut = alert.option_type.toUpperCase().startsWith("P");
+  return {
+    kind: "flow",
+    side: isPut ? "put" : "call",
+    time: alert.alerted_at,
+    label: `${isPut ? "PUT" : "CALL"} ${alert.strike}`,
+    premium: alert.premium,
+    detail: `${alert.ticker} · ${alert.direction}`,
+  };
+}
 
 function level(
   label: string,
@@ -53,13 +98,14 @@ function buildLevels(input: {
 /** Overlay UW flow lane — tape, dark pool, GEX walls. */
 export function mergeFlowIntoDesk(base: SpxDeskPayload, flow: SpxDeskFlow): SpxDeskPayload {
   const price = flow.price || base.price;
+  const walls = flow.gex_walls.length ? flow.gex_walls : base.gex_walls;
   return {
     ...base,
     polled_at: flow.polled_at,
     dark_pool: flow.dark_pool ?? base.dark_pool,
     spx_flows: flow.spx_flows.length ? flow.spx_flows : base.spx_flows,
     unified_tape: flow.unified_tape.length ? flow.unified_tape : base.unified_tape,
-    gex_walls: flow.gex_walls.length ? flow.gex_walls : base.gex_walls,
+    gex_walls: recalcGexWallDistances(walls, price),
     gex_net: flow.gex_net ?? base.gex_net,
     gex_king: flow.gex_king ?? base.gex_king,
     gamma_flip: flow.gamma_flip ?? base.gamma_flip,
@@ -119,6 +165,7 @@ export function mergePulseIntoDesk(
     vix_term: pulse.vix_term ?? base.vix_term,
     as_of: pulse.polled_at,
     polled_at: pulse.polled_at,
+    gex_walls: recalcGexWallDistances(base.gex_walls, price),
     levels: buildLevels({
       price,
       lod: pulse.lod ?? base.lod,
