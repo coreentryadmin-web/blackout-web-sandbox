@@ -9,11 +9,17 @@ const isProtectedRoute = createRouteMatcher([
   "/api/checkout(.*)",
 ]);
 
-export default clerkMiddleware((auth, req) => {
-  if (isProtectedRoute(req)) {
-    auth().protect();
-  }
-});
+const proxyUrl =
+  process.env.NEXT_PUBLIC_CLERK_PROXY_URL ?? "https://blackouttrades.com/__clerk";
+
+export default clerkMiddleware(
+  (auth, req) => {
+    if (isProtectedRoute(req)) {
+      auth().protect();
+    }
+  },
+  { proxyUrl }
+);
 
 export const config = {
   matcher: [
