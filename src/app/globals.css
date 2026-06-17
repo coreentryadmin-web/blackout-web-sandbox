@@ -1109,6 +1109,54 @@ body {
     @apply min-h-[640px] xl:min-h-[720px];
   }
 
+  .spx-trade-alerts-panel {
+    @apply flex flex-col h-full min-h-0 border border-bull/25 bg-black/55 backdrop-blur-md p-4;
+  }
+
+  .spx-trade-alerts-header {
+    @apply flex items-start justify-between gap-3 pb-3 mb-3 border-b border-white/5 shrink-0;
+  }
+
+  .spx-trade-alert-hero {
+    @apply rounded-sm border p-4;
+  }
+
+  .spx-alert-buy-call {
+    @apply border-bull/40 bg-bull/5;
+  }
+
+  .spx-alert-buy-put {
+    @apply border-bear/40 bg-bear/5;
+  }
+
+  .spx-alert-hold {
+    @apply border-amber-500/30 bg-amber-500/5;
+  }
+
+  .spx-alert-wait {
+    @apply border-grey-700 bg-white/[0.02];
+  }
+
+  .spx-trade-alert-action {
+    @apply font-mono text-xs uppercase tracking-[0.35em] text-grey-400;
+  }
+
+  .spx-trade-alert-headline {
+    @apply font-display text-xl text-white mt-1;
+  }
+
+  .spx-live-pill {
+    @apply font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded-sm border;
+  }
+
+  .spx-live-pill-on {
+    @apply border-bull/40 text-bull bg-bull/10;
+  }
+
+  .spx-live-pill-off {
+    @apply border-grey-700 text-grey-500;
+  }
+
   .spx-chart-frame {
     @apply h-full min-h-0 flex flex-col border-bull/30 bg-black/45 backdrop-blur-sm;
   }

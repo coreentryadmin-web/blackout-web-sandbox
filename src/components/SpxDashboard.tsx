@@ -3,7 +3,7 @@
 import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
-import { SpxChart } from "@/components/desk/SpxChart";
+import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
 import {
   SpxDarkPoolCard,
   SpxGexLadder,
@@ -28,7 +28,7 @@ export function SpxDashboard() {
         </aside>
 
         <div className="spx-sniper-chart-col spx-center-stack">
-          <SpxChart fill />
+          <SpxTradeAlerts desk={desk} live={live} refreshing={refreshing} />
         </div>
 
         <SpxCommentaryRail desk={desk} live={live} />

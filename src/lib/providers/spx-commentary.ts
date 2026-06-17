@@ -1,5 +1,6 @@
 import { anthropicText } from "./anthropic";
 import type { SpxDeskPayload } from "./spx-desk";
+import { computeSpxTradeSignal } from "@/lib/spx-signals";
 
 export type SpxCommentaryResult = {
   headline: string;
@@ -113,6 +114,8 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
   return {
     as_of: desk.as_of,
     source: desk.source,
+
+    trade_signal: computeSpxTradeSignal(desk),
 
     price_action: {
       price,
@@ -292,6 +295,7 @@ export async function generateSpxCommentary(
 You receive the COMPLETE desk snapshot as JSON — every panel on the dashboard is represented. You MUST synthesize across ALL non-empty sections below. Do not ignore data that is present.
 
 DASHBOARD SECTIONS IN THE JSON (use each when populated):
+0. trade_signal — rule-based 0DTE confluence (BUY_CALL / BUY_PUT / HOLD / WAIT, score, confidence, entry/stop/target). Align commentary with this when present; explain agreement or conflict.
 1. price_action + moving_averages — SPX vs VWAP, HOD/LOD, PDH/PDL, EMAs/SMAs, regime
 2. support_resistance_levels — full ladder with distance_pct (support/resistance/neutral levels)
 3. dealer_gex + gex_walls_0dte — net GEX, GEX king, max pain, γ flip, gamma regime, AND each 0DTE GEX wall node (support vs resistance strikes + net_gex)
