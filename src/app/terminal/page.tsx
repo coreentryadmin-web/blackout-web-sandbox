@@ -1,6 +1,6 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
-import { PageBanner } from "@/components/PageBanner";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 import { LargoTerminal } from "@/components/LargoTerminal";
 import { IMAGES } from "@/lib/images";
 
@@ -8,19 +8,17 @@ export default async function TerminalPage() {
   await requireTier("premium");
 
   return (
-    <div className="page-shell flex flex-col">
+    <div className="page-shell relative overflow-hidden flex flex-col min-h-screen">
       <Nav />
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 flex flex-col">
-        <PageBanner
-          src={IMAGES.largo}
-          alt="BlackOut Largo — AI trading terminal"
-        />
-        <div className="page-header mb-6">
-          <h1 className="page-title">AI TERMINAL</h1>
-          <span className="page-subtitle">Largo — BlackOut Desk</span>
-        </div>
+      <PlatformShell
+        variant="largo"
+        title="AI Terminal"
+        subtitle="Largo — Desk-grade market intelligence"
+        imageSrc={IMAGES.largo}
+        imageAlt="BlackOut Largo — AI trading terminal"
+      >
         <LargoTerminal />
-      </main>
+      </PlatformShell>
     </div>
   );
 }

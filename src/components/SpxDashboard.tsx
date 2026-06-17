@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { fetchSpxState, fmtPrice, fmtPct, fmtPremium, pctClass, type SpxState } from "@/lib/api";
 import { clsx } from "clsx";
+import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
 
 function StatCard({ label, value, sub, bull }: { label: string; value: string; sub?: string; bull?: boolean | null }) {
   return (
@@ -34,9 +35,11 @@ export function SpxDashboard() {
   if (isLoading) return <DashboardSkeleton />;
   if (error || !data?.available) {
     return (
-      <div className="card p-8 text-center text-text-muted text-[13px]">
-        Engine data unavailable — starts during RTH (6:30 AM – 1:00 PM PT)
-      </div>
+      <PlatformEmpty
+        variant="dashboard"
+        title="ENGINE STANDBY"
+        description="SPX intel loads during RTH — 9:30 AM to 4:00 PM ET. GEX, VWAP, flow, and levels populate live when the market opens."
+      />
     );
   }
 

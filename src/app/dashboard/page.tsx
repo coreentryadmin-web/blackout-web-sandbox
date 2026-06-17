@@ -1,6 +1,6 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
-import { PageBanner } from "@/components/PageBanner";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 import { SpxDashboard } from "@/components/SpxDashboard";
 import { IMAGES } from "@/lib/images";
 
@@ -10,22 +10,17 @@ export default async function DashboardPage() {
   await requireTier("premium");
 
   return (
-    <div className="page-shell">
+    <div className="page-shell relative overflow-hidden">
       <Nav />
-      <main className="page-main">
-        <PageBanner
-          src={IMAGES.spxSniper}
-          alt="SPX Sniper Bot — Precision. Patience. Profit."
-        />
-        <div className="page-header">
-          <h1 className="page-title">SPX DASHBOARD</h1>
-          <span className="badge-live">
-            <span className="badge-live-dot" />
-            Live
-          </span>
-        </div>
+      <PlatformShell
+        variant="dashboard"
+        title="SPX Dashboard"
+        subtitle="GEX · VWAP · Regime · Dealer positioning"
+        imageSrc={IMAGES.spxSniper}
+        imageAlt="SPX Sniper Bot — Precision. Patience. Profit."
+      >
         <SpxDashboard />
-      </main>
+      </PlatformShell>
     </div>
   );
 }

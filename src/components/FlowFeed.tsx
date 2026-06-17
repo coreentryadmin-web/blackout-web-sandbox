@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { fetchFlows, createFlowSocket, fmtPremium, fmtPrice, type FlowAlert } from "@/lib/api";
 import { clsx } from "clsx";
+import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
 
 const ROUTE_COLORS: Record<string, string> = {
   whale: "text-yellow-500 border-yellow-900/40",
@@ -106,7 +107,14 @@ export function FlowFeed() {
       </div>
 
       {/* Table */}
-      <div className="card overflow-hidden">
+      {!loading && alerts.length === 0 ? (
+        <PlatformEmpty
+          variant="flows"
+          title="NO WHALES YET"
+          description="Flow alerts stream live during market hours. Lower the premium filter or check back when RTH opens."
+        />
+      ) : (
+      <div className="card overflow-hidden border-purple/20">
         <table className="data-table">
           <thead>
             <tr>
@@ -122,9 +130,7 @@ export function FlowFeed() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="text-center py-12 text-text-muted text-[13px]">Loading flow data…</td></tr>
-            ) : alerts.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-12 text-text-muted text-[13px]">No alerts yet — market may be closed</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-purple-light/80 text-[13px] font-mono">Scanning institutional tape…</td></tr>
             ) : (
               alerts.map((a, i) => {
                 const id = `${a.ticker}-${a.alerted_at}`;
@@ -134,6 +140,7 @@ export function FlowFeed() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

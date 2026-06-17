@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { fetchHeatmap, fmtPct, type HeatmapData } from "@/lib/api";
 import { clsx } from "clsx";
+import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
 
 function heatColor(pct: number): string {
   const abs = Math.min(Math.abs(pct), 5);
@@ -68,9 +69,11 @@ export function Heatmap() {
       <div>
         <p className="text-[10px] tracking-[3px] uppercase text-text-muted mb-4">Sector Performance</p>
         {sectors.length === 0 ? (
-          <div className="card p-8 text-center text-text-muted text-[13px]">
-            Sector data unavailable outside RTH
-          </div>
+          <PlatformEmpty
+            variant="heatmap"
+            title="THERMAL IDLE"
+            description="Sector heatmaps light up during RTH when rotation data is live. Check back when the bell rings."
+          />
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-5 gap-px bg-surface-2">
             {sectors.map((s) => (

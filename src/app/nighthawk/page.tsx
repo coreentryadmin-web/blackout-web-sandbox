@@ -1,20 +1,21 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 import { NightHawkFeed } from "@/components/NightHawkFeed";
 
 export default async function NightHawkPage() {
   await requireTier("premium");
 
   return (
-    <div className="page-shell">
+    <div className="page-shell relative overflow-hidden">
       <Nav />
-      <main className="page-main">
-        <div className="page-header">
-          <h1 className="page-title">NIGHT HAWK</h1>
-          <span className="page-subtitle">2–10 DTE Swing Plays</span>
-        </div>
+      <PlatformShell
+        variant="nighthawk"
+        title="Night Hawk"
+        subtitle="2–10 DTE swing plays · Full dossier intel"
+      >
         <NightHawkFeed />
-      </main>
+      </PlatformShell>
     </div>
   );
 }

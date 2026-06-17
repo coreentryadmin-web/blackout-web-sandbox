@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { fetchNightHawkPlays, fmtPremium, type NightHawkPlay } from "@/lib/api";
 import { clsx } from "clsx";
+import { PlatformEmpty } from "@/components/platform/PlatformEmpty";
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.min(100, Math.max(0, score));
@@ -79,13 +80,11 @@ export function NightHawkFeed() {
 
   if (plays.length === 0) {
     return (
-      <div className="card p-12 text-center space-y-3">
-        <p className="font-display text-3xl tracking-[2px] text-surface-3">NO ACTIVE PLAYS</p>
-        <p className="text-[13px] text-text-muted">
-          Night Hawk scans every 20 minutes during RTH (9:30 AM – 4:00 PM ET).
-          <br />Check back during market hours.
-        </p>
-      </div>
+      <PlatformEmpty
+        variant="nighthawk"
+        title="NO ACTIVE PLAYS"
+        description="Night Hawk scans every 20 minutes during RTH (9:30 AM – 4:00 PM ET). Swing dossiers drop when setups qualify."
+      />
     );
   }
 
