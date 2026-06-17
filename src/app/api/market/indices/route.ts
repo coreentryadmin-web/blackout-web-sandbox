@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { fetchIndexSnapshot } from "@/lib/providers/polygon";
+import { fetchIndexSnapshots } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
+
+const SPX = "I:SPX";
+const VIX = "I:VIX";
 
 export async function GET() {
   if (!polygonConfigured()) {
@@ -8,10 +11,16 @@ export async function GET() {
   }
 
   try {
-    const [spx, vix] = await Promise.all([
-      fetchIndexSnapshot("I:SPX"),
-      fetchIndexSnapshot("I:VIX"),
-    ]);
+    const snaps = await fetchIndexSnapshots([SPX, VIX]);
+    const spx = snaps[SPX];
+    const vix = snaps[VIX];
+
+    if (!spx && !vix) {
+      return NextResponse.json(
+        { error: "No index data returned — check Indices Advanced plan on Massive" },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       source: "polygon",

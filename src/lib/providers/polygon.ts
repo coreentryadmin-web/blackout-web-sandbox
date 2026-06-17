@@ -9,7 +9,7 @@ async function polygonGet<T>(path: string, params: Record<string, string> = {}):
   const qs = new URLSearchParams({ ...params, apiKey: KEY });
   const res = await fetch(`${BASE}${path}?${qs}`, {
     headers: { Accept: "application/json" },
-    next: { revalidate: 15 },
+    cache: "no-store",
   });
 
   if (!res.ok) throw new Error(`Polygon ${path} → ${res.status}`);
@@ -83,24 +83,57 @@ export async function fetchMarketMovers(limit = 20) {
   return combined.sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
 }
 
-type IndexSnapshot = {
+type IndexResult = {
+  ticker?: string;
   value?: number;
-  session?: { change?: number; change_percent?: number };
-  prevDay?: { c?: number };
+  error?: string;
+  message?: string;
+  session?: {
+    change?: number;
+    change_percent?: number;
+    close?: number;
+    previous_close?: number;
+  };
 };
 
-export async function fetchIndexSnapshot(symbol: string) {
-  const sym = symbol.toUpperCase();
-  const data = await polygonGet<{ results?: IndexSnapshot }>(
-    `/v3/snapshot/indices/${sym}`
+export type IndexQuote = {
+  symbol: string;
+  price: number;
+  change_pct: number;
+};
+
+/** Batch index snapshots — Massive uses GET /v3/snapshot/indices?ticker.any_of=I:SPX,I:VIX */
+export async function fetchIndexSnapshots(
+  symbols: string[]
+): Promise<Record<string, IndexQuote | null>> {
+  const normalized = symbols.map((s) => s.toUpperCase());
+  const out: Record<string, IndexQuote | null> = Object.fromEntries(
+    normalized.map((s) => [s, null])
   );
-  const r = data.results;
-  if (!r) return null;
 
-  const price = r.value ?? r.prevDay?.c ?? 0;
-  const changePct = r.session?.change_percent ?? 0;
+  if (!normalized.length) return out;
 
-  return { symbol: sym, price, change_pct: changePct };
+  const data = await polygonGet<{ results?: IndexResult[] }>("/v3/snapshot/indices", {
+    "ticker.any_of": normalized.join(","),
+  });
+
+  for (const row of data.results ?? []) {
+    const ticker = row.ticker?.toUpperCase();
+    if (!ticker || row.error) continue;
+
+    out[ticker] = {
+      symbol: ticker,
+      price: row.value ?? row.session?.close ?? row.session?.previous_close ?? 0,
+      change_pct: Number((row.session?.change_percent ?? 0).toFixed(2)),
+    };
+  }
+
+  return out;
+}
+
+export async function fetchIndexSnapshot(symbol: string): Promise<IndexQuote | null> {
+  const map = await fetchIndexSnapshots([symbol]);
+  return map[symbol.toUpperCase()] ?? null;
 }
 
 export async function fetchBenzingaNews(limit = 12) {
