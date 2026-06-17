@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchMarketMovers, fetchSectorPerformance } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   if (!polygonConfigured()) {
     return NextResponse.json(

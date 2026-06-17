@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchIndexSnapshots } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
 
+export const dynamic = "force-dynamic";
+
 const SPX = "I:SPX";
 const VIX = "I:VIX";
 

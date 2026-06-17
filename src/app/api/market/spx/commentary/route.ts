@@ -4,6 +4,8 @@ import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { generateSpxCommentary } from "@/lib/providers/spx-commentary";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) {

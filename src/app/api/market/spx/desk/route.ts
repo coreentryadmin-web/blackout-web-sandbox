@@ -3,6 +3,8 @@ import { deskCacheTtlMs } from "@/lib/providers/config";
 import { buildSpxDesk } from "@/lib/providers/spx-desk";
 import { withServerCache } from "@/lib/server-cache";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const desk = await withServerCache("spx-desk", deskCacheTtlMs(), buildSpxDesk);

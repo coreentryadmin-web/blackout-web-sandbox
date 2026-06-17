@@ -4,6 +4,8 @@ import { fetchMarketFlowAlerts } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const limit = Number(sp.get("limit") ?? 50);
