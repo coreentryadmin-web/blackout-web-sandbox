@@ -1106,7 +1106,25 @@ body {
   .spx-level-neutral { @apply border-l-2 border-grey-700; }
 
   .spx-sniper-chart-col {
-    @apply min-h-[640px] xl:min-h-[720px];
+    @apply flex flex-col min-h-[640px] xl:min-h-[720px];
+  }
+
+  .spx-center-stack .spx-trade-alerts-panel {
+    @apply flex-1 min-h-0;
+  }
+
+  .spx-sniper-panel-body {
+    @apply flex-1 min-h-0 overflow-y-auto flex flex-col;
+  }
+
+  .spx-lotto-dock {
+    @apply relative z-20 shrink-0 mt-auto pt-3 border-t border-amber-400/25;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(8, 6, 0, 0.92) 38%, rgba(4, 3, 0, 0.98) 100%);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .spx-lotto-dock .spx-lotto-play-block {
+    @apply mt-0 mb-0;
   }
 
   .spx-trade-alerts-panel {
@@ -1521,7 +1539,7 @@ body {
   }
 
   .spx-lotto-play-block {
-    @apply relative mt-4 space-y-2 overflow-hidden rounded-md p-4;
+    @apply relative space-y-2 overflow-hidden rounded-md p-4;
     border: 1px solid rgba(251, 191, 36, 0.38);
     background: linear-gradient(
       145deg,

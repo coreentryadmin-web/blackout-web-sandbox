@@ -233,6 +233,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
         </span>
       </header>
 
+      <div className="spx-sniper-panel-body">
       {!show ? (
         <p className="spx-desk-offline-line font-mono py-8 text-center">
           {live ? "Loading play engine…" : "Session closed · resumes 6:30 AM PT"}
@@ -432,12 +433,6 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
         </>
       )}
 
-      <LottoPlayBlock
-        lotto={lotto}
-        lottoLoading={lottoLoading}
-        lottoRefreshing={lottoRefreshing}
-      />
-
       {history.length > 1 && (
         <div className="spx-trade-alert-history mt-4 pt-4 border-t border-white/5">
           <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
@@ -462,6 +457,15 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           </ul>
         </div>
       )}
+      </div>
+
+      <div className="spx-lotto-dock" aria-label="Lotto engine">
+        <LottoPlayBlock
+          lotto={lotto}
+          lottoLoading={lottoLoading}
+          lottoRefreshing={lottoRefreshing}
+        />
+      </div>
       </div>
     </section>
   );
