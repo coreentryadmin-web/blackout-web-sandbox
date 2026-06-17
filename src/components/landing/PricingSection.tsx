@@ -10,7 +10,7 @@ const TIERS = [
     price: "$0",
     period: "forever",
     featured: false,
-    accent: "border-grey-700",
+    accent: "border-bear/50",
     features: [
       { text: "Community landing & updates", active: true },
       { text: "Create your account", active: true },
@@ -57,7 +57,7 @@ export function PricingSection() {
           <h2 className="font-syne font-extrabold text-5xl md:text-7xl tracking-tight">
             FREE OR <span className="text-gradient-fire">PREMIUM</span>
           </h2>
-          <p className="text-grey-500 text-sm mt-4 max-w-xl font-mono">
+          <p className="text-red-400 text-sm mt-4 max-w-xl font-mono leading-relaxed">
             Sign up on BlackOut, then choose monthly, yearly, or lifetime on Whop — same
             email unlocks everything.
           </p>
@@ -80,20 +80,20 @@ export function PricingSection() {
                   Full Access
                 </span>
               )}
-              <p className="font-mono text-[10px] tracking-[0.4em] text-grey-500 uppercase mb-2">
+              <p className={`font-mono text-[10px] tracking-[0.4em] uppercase mb-2 ${t.featured ? "text-bull" : "text-red-400"}`}>
                 {t.name}
               </p>
               <div className="font-anton text-6xl md:text-7xl text-white leading-none">{t.price}</div>
-              <p className="font-mono text-[10px] text-grey-600 mt-1 mb-8 uppercase tracking-widest">
+              <p className="font-mono text-[10px] text-grey-300 mt-1 mb-8 uppercase tracking-widest">
                 {t.period}
               </p>
               <ul className="flex flex-col gap-3 mb-10 flex-1">
                 {t.features.map((f) => (
                   <li key={f.text} className="flex gap-3 text-xs font-mono">
-                    <span className={f.active ? "text-bull" : "text-grey-700"}>
+                    <span className={f.active ? "text-bull" : "text-bear"}>
                       {f.active ? "▸" : "—"}
                     </span>
-                    <span className={f.active ? "text-grey-300" : "text-grey-700"}>{f.text}</span>
+                    <span className={f.active ? "text-white" : "text-bear/80"}>{f.text}</span>
                   </li>
                 ))}
               </ul>
