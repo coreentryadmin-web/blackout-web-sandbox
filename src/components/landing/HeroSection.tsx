@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { LandingCta } from "@/components/landing/LandingCta";
 import { HeroBanner } from "@/components/HeroBanner";
-import { MarqueeStrip } from "./MarqueeStrip";
+import { HeroToolsRail } from "./HeroToolsRail";
 
 const STATS = [
   { num: "93K+", label: "Flow Alerts", color: "text-bull" },
@@ -73,11 +73,7 @@ export function HeroSection() {
       </div>
 
       <div className="relative z-10 mt-auto">
-        <MarqueeStrip
-          items={["INSTITUTIONAL GRADE", "REAL-TIME FLOW", "AI DESK", "0DTE SNIPER"]}
-          direction="right"
-          variant="dark"
-        />
+        <HeroToolsRail />
 
         <div className="overlap-panel landing-overlap-panel scan-line">
           <motion.div

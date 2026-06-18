@@ -15,7 +15,6 @@ type NavLink = {
 
 const NAV_LINKS: NavLink[] = [
   { href: "/dashboard", label: "SPX Slayer", lines: ["SPX", "Slayer"] },
-  { href: "/docs/spx-sniper", label: "Playbook" },
   { href: "/flows", label: "Flows" },
   { href: "/heatmap", label: "Heatmaps" },
   { href: "/terminal", label: "Largo" },
@@ -68,7 +67,7 @@ export function Nav() {
                 href={href}
                 className={clsx(
                   "nav-link",
-                  isHome && "nav-link-landing",
+                  isHome && "nav-link-landing nav-link-landing-bold",
                   path.startsWith(href) && "nav-link-active",
                   isHome && path.startsWith(href) && "nav-link-active-landing"
                 )}
