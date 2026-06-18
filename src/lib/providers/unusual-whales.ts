@@ -50,9 +50,13 @@ export type MarketFlowAlert = {
   score: number;
   route: string;
   alerted_at: string;
+  /** UW flow-alerts rule — RepeatedHits, RepeatedHitsAscendingFill, etc. */
+  alert_rule: string | null;
+  trade_count: number | null;
+  has_sweep: boolean;
 };
 
-function rowToFlow(row: Record<string, unknown>): MarketFlowAlert {
+export function parseUwFlowAlert(row: Record<string, unknown>): MarketFlowAlert {
   const opt = String(row.type ?? row.option_type ?? "call").toLowerCase();
   const premium = Number(row.total_premium ?? row.premium ?? 0);
   const dte = row.expiry ? Math.ceil((new Date(String(row.expiry)).getTime() - Date.now()) / 86400000) : 99;
@@ -64,6 +68,9 @@ function rowToFlow(row: Record<string, unknown>): MarketFlowAlert {
     alertedAt = new Date(ts > 1e12 ? ts : ts * 1000).toISOString();
   }
 
+  const ruleRaw = String(row.alert_rule ?? row.rule_name ?? "").trim();
+  const tradeRaw = Number(row.trade_count ?? 0);
+
   return {
     ticker: String(row.ticker ?? "").toUpperCase(),
     premium,
@@ -74,8 +81,14 @@ function rowToFlow(row: Record<string, unknown>): MarketFlowAlert {
     score: Number(row.score ?? 0),
     route,
     alerted_at: alertedAt || new Date().toISOString(),
+    alert_rule: ruleRaw || null,
+    trade_count: Number.isFinite(tradeRaw) && tradeRaw > 0 ? tradeRaw : null,
+    has_sweep: Boolean(row.has_sweep),
   };
 }
+
+/** @deprecated use parseUwFlowAlert */
+const rowToFlow = parseUwFlowAlert;
 
 async function uwGetSafe<T>(path: string, params: Record<string, string | number> = {}): Promise<T | null> {
   if (!uwConfigured()) return null;
@@ -676,11 +689,13 @@ export async function fetchUwOptionContracts(
 }
 
 /** Recent ticker flow prints — complements flow-alerts for per-ticker tape. */
-export async function fetchUwFlowRecent(ticker: string, limit = 25) {
+export async function fetchUwFlowRecent(ticker: string, limit = 25): Promise<MarketFlowAlert[]> {
   const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-recent`, {
     limit: Math.min(limit, 100),
   });
-  return extractRows(data).slice(0, limit);
+  return extractRows(data)
+    .map((raw) => parseUwFlowAlert(raw))
+    .slice(0, limit);
 }
 
 /** Interpolated IV + percentile for a ticker. */
@@ -1040,10 +1055,15 @@ export async function fetchUwOptionVolumeOiExpiry(ticker: string, limit = 30) {
   return extractRows(data).slice(0, limit);
 }
 
-export async function fetchUwGlobalFlowAlerts(limit = 30, params?: Record<string, string | number>) {
+export async function fetchUwGlobalFlowAlerts(
+  limit = 30,
+  params?: Record<string, string | number>
+): Promise<MarketFlowAlert[]> {
   const data = await uwGetSafe<unknown>("/api/option-trades/flow-alerts", {
     limit: Math.min(limit, 200),
     ...params,
   });
-  return extractRows(data).slice(0, limit);
+  return extractRows(data)
+    .map((raw) => parseUwFlowAlert(raw))
+    .slice(0, limit);
 }

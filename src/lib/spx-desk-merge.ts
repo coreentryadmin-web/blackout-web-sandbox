@@ -4,6 +4,7 @@
  */
 import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse, SpxDeskFlow, SpxTapeItem } from "@/lib/providers/spx-desk";
 import type { GexWall } from "@/lib/providers/gamma-desk";
+import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { distancePct } from "@/lib/providers/spx-session";
 
 export function recalcGexWallDistances(walls: GexWall[], spot: number): GexWall[] {
@@ -154,12 +155,18 @@ function buildLevels(input: {
 export function mergeFlowIntoDesk(base: SpxDeskPayload, flow: SpxDeskFlow): SpxDeskPayload {
   const price = flow.price || base.price;
   const walls = flow.gex_walls.length ? flow.gex_walls : base.gex_walls;
+  const spx_flows = flow.spx_flows.length ? flow.spx_flows : base.spx_flows;
+  const strike_stacks =
+    flow.strike_stacks?.length
+      ? flow.strike_stacks
+      : computeFlowStrikeStacks(spx_flows);
   return {
     ...base,
     polled_at: flow.polled_at,
     dark_pool: flow.dark_pool ?? base.dark_pool,
-    spx_flows: flow.spx_flows.length ? flow.spx_flows : base.spx_flows,
+    spx_flows,
     unified_tape: flow.unified_tape.length ? flow.unified_tape : base.unified_tape,
+    strike_stacks,
     gex_walls: recalcGexWallDistances(walls, price),
     gex_net: flow.gex_net ?? base.gex_net,
     gex_king: flow.gex_king ?? base.gex_king,
@@ -324,6 +331,7 @@ const signalDeskStub = (): SpxDeskPayload => ({
   dark_pool: null,
   spx_flows: [],
   unified_tape: [],
+  strike_stacks: [],
   net_prem_ticks: [],
   vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
   sector_heat: [],

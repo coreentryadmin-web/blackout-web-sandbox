@@ -7,6 +7,7 @@ import {
   fetchSpxAdminRollups,
 } from "@/lib/db";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
+import { computeFlowStrikeStacks, withStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { isSpxTicker } from "@/lib/spx-desk-live";
 import { evaluateSpxPlay } from "@/lib/spx-play-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
@@ -204,6 +205,7 @@ async function polygonChainBundle(ticker: string, expiry: string) {
 const UW_EXCLUSIVE_NOTE = "UW only — no Polygon equivalent (rate-limited; use sparingly)";
 
 function spxDeskSummary(merged: Awaited<ReturnType<typeof getLargoSpxLiveDesk>>) {
+  const spx_flows = merged.spx_flows;
   return {
     as_of: merged.as_of,
     market_open: merged.market_open,
@@ -233,7 +235,7 @@ function spxDeskSummary(merged: Awaited<ReturnType<typeof getLargoSpxLiveDesk>>)
     regime: merged.regime,
     levels: merged.levels,
     dark_pool: merged.dark_pool,
-    spx_flows: merged.spx_flows,
+    spx_flows,
     unified_tape: merged.unified_tape,
     net_prem_ticks: merged.net_prem_ticks,
     news_headlines: merged.news_headlines,
@@ -243,6 +245,7 @@ function spxDeskSummary(merged: Awaited<ReturnType<typeof getLargoSpxLiveDesk>>)
     oi_changes: merged.oi_changes,
     iv_term_structure: merged.iv_term_structure,
     vix_term: merged.vix_term,
+    strike_stacks: computeFlowStrikeStacks(spx_flows ?? []),
   };
 }
 
@@ -506,45 +509,51 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
         const deskFlows = desk.spx_flows ?? [];
         const deskTape = desk.unified_tape ?? [];
         if (deskFlows.length || deskTape.length || desk.flow_0dte_net != null) {
-          return {
-            ticker: sym,
-            source: "spx_sniper_desk",
-            flow_alerts: deskFlows,
-            unified_tape: deskTape.slice(0, 20),
-            intraday_0dte: {
-              call_premium: desk.flow_0dte_call_premium,
-              put_premium: desk.flow_0dte_put_premium,
-              net: desk.flow_0dte_net,
+          return withStrikeStacks(
+            {
+              ticker: sym,
+              source: "spx_sniper_desk",
+              flow_alerts: deskFlows,
+              unified_tape: deskTape.slice(0, 20),
+              intraday_0dte: {
+                call_premium: desk.flow_0dte_call_premium,
+                put_premium: desk.flow_0dte_put_premium,
+                net: desk.flow_0dte_net,
+              },
+              bias:
+                desk.flow_0dte_net != null
+                  ? desk.flow_0dte_net > 0
+                    ? "bullish"
+                    : desk.flow_0dte_net < 0
+                      ? "bearish"
+                      : "neutral"
+                  : desk.tide_bias,
+              note: "Live SPX Sniper desk tape — same feed as dashboard",
             },
-            bias:
-              desk.flow_0dte_net != null
-                ? desk.flow_0dte_net > 0
-                  ? "bullish"
-                  : desk.flow_0dte_net < 0
-                    ? "bearish"
-                    : "neutral"
-                : desk.tide_bias,
-            note: "Live SPX Sniper desk tape — same feed as dashboard",
-          };
+            [deskFlows]
+          );
         }
       }
       const [alerts, flow0dte, recent] = await Promise.all([
-        fetchUwTickerFlowAlerts(sym, 20),
+        fetchUwTickerFlowAlerts(sym, 40),
         fetchUwFlow0dte(sym),
-        fetchUwFlowRecent(sym, 20),
+        fetchUwFlowRecent(sym, 40),
       ]);
       const callPrem = alerts.filter((a) => a.option_type === "CALL").reduce((s, a) => s + a.premium, 0);
       const putPrem = alerts.filter((a) => a.option_type === "PUT").reduce((s, a) => s + a.premium, 0);
-      return {
-        ticker: sym,
-        source: "unusual_whales",
-        note: UW_EXCLUSIVE_NOTE,
-        flow_alerts: alerts,
-        flow_recent: recent,
-        intraday_0dte: flow0dte,
-        alert_premium: { calls: callPrem, puts: putPrem, net: callPrem - putPrem },
-        bias: callPrem > putPrem ? "bullish" : putPrem > callPrem ? "bearish" : "neutral",
-      };
+      return withStrikeStacks(
+        {
+          ticker: sym,
+          source: "unusual_whales",
+          note: UW_EXCLUSIVE_NOTE,
+          flow_alerts: alerts,
+          flow_recent: recent,
+          intraday_0dte: flow0dte,
+          alert_premium: { calls: callPrem, puts: putPrem, net: callPrem - putPrem },
+          bias: callPrem > putPrem ? "bullish" : putPrem > callPrem ? "bearish" : "neutral",
+        },
+        [alerts, recent]
+      );
     }
     case "get_net_prem_ticks":
       return toolNetPremTicks(ticker);
@@ -1034,7 +1043,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
       if (input.min_premium) params.min_premium = Number(input.min_premium);
       if (input.is_call === true) params.is_call = "true";
       if (input.is_put === true) params.is_put = "true";
-      return { alerts: await fetchUwGlobalFlowAlerts(40, params), source: "unusual_whales", note: UW_EXCLUSIVE_NOTE };
+      const alerts = await fetchUwGlobalFlowAlerts(40, params);
+      return withStrikeStacks(
+        { alerts, source: "unusual_whales", note: UW_EXCLUSIVE_NOTE },
+        [alerts]
+      );
     }
 
     default:

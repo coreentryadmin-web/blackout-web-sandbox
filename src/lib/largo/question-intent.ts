@@ -81,10 +81,15 @@ export function analyzeLargoQuestion(
   const guidance = [
     `User asked: "${question.trim().slice(0, 320)}"`,
     scopeTicker ? `Ticker context: ${scopeTicker}.` : "No ticker pinned — infer from chat if needed.",
-    "A live feed was auto-captured for this turn (flow, news, catalysts, technicals, dark pool, SPX desk). Synthesize it — don't dump it raw.",
-    `Tool hints for drill-down if needed: ${uniqueTools.join(", ")}.`,
-    "End with **Bottom line:** when substantive — your honest take in your voice.",
-  ].join("\n");
+    "Live feed auto-captured this turn. Every figure you cite must be in that feed or a tool call you make now — no guessing, no invented stacks or premiums.",
+    needsFlow
+      ? "Flow question: use strike_stacks from feed/tools if present; if absent, do not describe a stack. Call get_options_flow if tape looks incomplete."
+      : null,
+    `Tool hints if needed: ${uniqueTools.join(", ")}.`,
+    "End with **Bottom line:** when substantive — opinion there; facts above must stay feed-verified.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return {
     needsSpxDesk,

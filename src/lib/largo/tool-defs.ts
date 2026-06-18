@@ -80,7 +80,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_options_volume", "Options volume. Polygon chain aggregate first; UW fallback.", T, ["ticker"]),
 
-  t("get_options_flow", "UW ONLY — live flow alerts, 0DTE premium. No Polygon equivalent.", T, ["ticker"]),
+  t("get_options_flow", "UW ONLY — live flow alerts, 0DTE premium, strike_stacks (Repeated Hits + same-strike accumulation). No Polygon equivalent.", T, ["ticker"]),
 
   t("get_net_prem_ticks", "UW ONLY — tick-level net premium velocity.", T, ["ticker"]),
 
@@ -258,7 +258,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_dividends", "UW ONLY — dividends, splits (no Polygon equivalent).", T, ["ticker"]),
 
-  t("get_global_flow", "UW ONLY — market-wide flow alerts with filters.", {
+  t("get_global_flow", "UW ONLY — market-wide flow alerts with filters; includes strike_stacks.", {
 
     ticker: { type: "string" },
 

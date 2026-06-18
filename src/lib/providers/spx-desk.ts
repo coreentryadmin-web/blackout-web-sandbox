@@ -1,6 +1,10 @@
 import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured, deskPulseStructureCacheTtlMs } from "./config";
 import { fetchPolygonOdteDeskBundle } from "./polygon-options-gex";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
+import {
+  computeFlowStrikeStacks,
+  type FlowStrikeStack,
+} from "@/lib/largo/flow-strike-stacks";
 import { fetchEconomicCalendarToday, type MacroEvent } from "./finnhub";
 import { mergeMacroEventsToday } from "./macro-events";
 import { resolveDeskGap } from "./gap-proxy";
@@ -168,6 +172,9 @@ export type SpxFlowBrief = {
   expiry: string;
   direction: string;
   alerted_at: string;
+  alert_rule: string | null;
+  trade_count: number | null;
+  has_sweep: boolean;
 };
 
 export type SpxTapeItem = {
@@ -232,6 +239,8 @@ export type SpxDeskPayload = {
   dark_pool: DarkPoolSnapshot | null;
   spx_flows: SpxFlowBrief[];
   unified_tape: SpxTapeItem[];
+  /** UW Repeated Hits + same-strike multi-alert stacks on SPX flow. */
+  strike_stacks: FlowStrikeStack[];
   net_prem_ticks: NetPremTick[];
   vix_term: {
     vix9d: number | null;
@@ -303,6 +312,7 @@ export type SpxDeskFlow = {
   flow_0dte_call_premium: number | null;
   flow_0dte_put_premium: number | null;
   flow_0dte_net: number | null;
+  strike_stacks: FlowStrikeStack[];
 };
 
 function level(
@@ -423,6 +433,9 @@ async function fetchSpxDeskFlowAlerts(limit = 32): Promise<SpxFlowBrief[]> {
     expiry: f.expiry,
     direction: f.direction,
     alerted_at: f.alerted_at,
+    alert_rule: f.alert_rule,
+    trade_count: f.trade_count,
+    has_sweep: f.has_sweep,
   }));
   lastGoodSpxFlowBriefs = mapped;
   return mapped;
@@ -450,6 +463,9 @@ async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]>
         expiry: f.expiry,
         direction: f.direction,
         alerted_at: f.alerted_at,
+        alert_rule: null,
+        trade_count: null,
+        has_sweep: false,
       }));
 
     const merged = [...fromUw, ...spxDb].sort(
@@ -518,6 +534,7 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     dark_pool: null,
     spx_flows: [],
     unified_tape: [],
+    strike_stacks: [],
     net_prem_ticks: [],
     vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
     sector_heat: [],
@@ -749,6 +766,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     dark_pool: darkPool,
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
+    strike_stacks: computeFlowStrikeStacks(spxFlows),
     net_prem_ticks: [],
     vix_term: {
       vix9d: vixTerm.vix9d,
@@ -991,6 +1009,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     flow_0dte_call_premium: null,
     flow_0dte_put_premium: null,
     flow_0dte_net: null,
+    strike_stacks: [],
   };
 
   if (!isSpxRthActive() && !isPremarketPlanningWindow()) return empty;
@@ -1050,6 +1069,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
 
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
+  const strike_stacks = computeFlowStrikeStacks(spxFlows);
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) {
@@ -1066,6 +1086,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     dark_pool: darkPool,
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
+    strike_stacks,
     gex_walls: finalWalls,
     gex_net: uwGex?.net_gex ?? polygonGexNet ?? gexAnalysis.net_gex ?? null,
     gex_king: uwGex?.gex_king ?? polygonGexKing ?? gexAnalysis.gex_king_strike ?? null,

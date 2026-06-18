@@ -1,6 +1,10 @@
 import { anthropicText } from "./anthropic";
 import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/lib/spx-signals";
+import {
+  formatFlowStrikeStackLine,
+  flowStackSignature,
+} from "@/lib/largo/flow-strike-stacks";
 
 export type SpxCommentaryResult = {
   headline: string;
@@ -69,6 +73,17 @@ function computeDelta(
   }
   if (prev.lod != null && desk.lod != null && desk.lod < prev.lod - 0.25) {
     lines.push(`New session LOD: ${fmt(desk.lod)}`);
+  }
+
+  const prevStacks = flowStackSignature(prev.strike_stacks);
+  const nextStacks = flowStackSignature(desk.strike_stacks);
+  if (nextStacks && prevStacks !== nextStacks) {
+    const top = desk.strike_stacks?.[0];
+    if (top) {
+      lines.push(`Strike stack shift: ${formatFlowStrikeStackLine(top)}`);
+    } else {
+      lines.push("SPX flow strike stacks updated");
+    }
   }
 
   const prevTape = prev.unified_tape ?? [];
@@ -227,7 +242,29 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
       premium: f.premium,
       direction: f.direction,
       time: f.alerted_at,
+      alert_rule: f.alert_rule,
+      trade_count: f.trade_count,
+      has_sweep: f.has_sweep,
     })),
+
+    strike_stacks: {
+      description:
+        "UW-verified only — do not describe stacks if this array is empty. Use summary and premiums[] verbatim.",
+      stacks: (desk.strike_stacks ?? []).map((s) => ({
+        strike: s.strike,
+        option_type: s.option_type,
+        expiry: s.expiry,
+        alert_count: s.alert_count,
+        total_premium: s.total_premium,
+        premiums: s.premiums,
+        trade_count: s.trade_count,
+        repeated_hits: s.repeated_hits,
+        same_strike_accumulation: s.same_strike_accumulation,
+        alert_rules: s.alert_rules,
+        kind: s.kind,
+        summary: formatFlowStrikeStackLine(s),
+      })),
+    },
 
     live_tape: {
       description: "Unified flow + dark pool tape (same as Live Tape panel)",
@@ -292,48 +329,51 @@ export async function generateSpxCommentary(
 
   const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a 0DTE SPX index options desk. Write a live desk commentary update for members watching the dashboard.
 
-You receive the COMPLETE desk snapshot as JSON — every panel on the dashboard is represented. You MUST synthesize across ALL non-empty sections below. Do not ignore data that is present.
+ACCURACY FIRST: Every number, strike, premium, and stack detail must come from the JSON below or the WHAT CHANGED list. No invented flow, no trader psychology, no hype. If data is missing, say so briefly and skip that topic.
+
+You receive the COMPLETE desk snapshot as JSON. Use each non-empty section. Do not fabricate to fill the template.
 
 DASHBOARD SECTIONS IN THE JSON (use each when populated):
-0. confluence — rule-based 0DTE scoring (direction, grade, score, confidence, factors, entry/stop/target). Align commentary with this when present; explain agreement or conflict.
+0. confluence — rule-based 0DTE scoring. Bias should align with confluence when present; if you disagree, say why using feed facts only.
 1. price_action + moving_averages — SPX vs VWAP, HOD/LOD, PDH/PDL, EMAs/SMAs, regime
-2. support_resistance_levels — full ladder with distance_pct (support/resistance/neutral levels)
-3. dealer_gex + gex_walls_0dte — net GEX, GEX king, max pain, γ flip, gamma regime, AND each 0DTE GEX wall node (support vs resistance strikes + net_gex)
-4. dark_pool — institutional prints, bias, PCR
-5. live_tape — unified flow + dark pool tape (same as Live Tape panel); cite recent large prints
-6. spx_option_flows — raw SPX option sweeps
-7. flow_0dte — intraday 0DTE call/put premium skew
-8. market_tide + nope — broad flow bias and NOPE
-9. volatility — VIX, IV rank, vix_term, iv_term_structure
-10. internals — TICK, TRIN, ADD
-11. net_premium_velocity — SPY net prem tick velocity
-12. oi_changes — strike OI shifts
-13. mega_cap_stocks — AAPL/NVDA/MSFT/GOOG/TSLA/META day %
-14. macro_calendar_today — today's macro events
-15. news_headlines — Benzinga catalysts (reference only if provided)
+2. support_resistance_levels — ladder with distance_pct
+3. dealer_gex + gex_walls_0dte — net GEX, king, max pain, γ flip, gamma regime, wall strikes + net_gex
+4. dark_pool — prints, bias, PCR (cite only listed prints)
+5. live_tape — recent flow/DP lines from tape
+6. strike_stacks — UW-verified only. If strike_stacks.stacks is non-empty: cite top stack using summary + premiums[] — strike, expiry, alert_count, total_premium, kind (RepeatedHits vs same-strike accumulation). If empty, do NOT mention a stack.
+7. spx_option_flows — individual alerts (alert_rule, trade_count when present)
+8. flow_0dte — call/put/net premium skew
+9. market_tide + nope
+10. volatility — VIX, IV rank, term structure
+11. internals — TICK, TRIN, ADD
+12. net_premium_velocity
+13. oi_changes
+14. mega_cap_stocks
+15. macro_calendar_today
+16. news_headlines — cite title only if relevant; do not infer market impact beyond headline
 
 CURRENT DESK (JSON):
 ${JSON.stringify(ctx)}
 
-WHAT CHANGED SINCE LAST UPDATE:
+WHAT CHANGED SINCE LAST UPDATE (use for changed[] and change bullets — do not invent changes):
 ${delta.map((d) => `- ${d}`).join("\n")}
 
 Respond with ONLY valid JSON (no markdown fences):
 {
-  "headline": "One punchy line — max 14 words",
+  "headline": "One factual line — max 14 words, anchored to the dominant desk fact",
   "bias": "bullish" | "bearish" | "neutral",
-  "body": "8-12 short bullet lines separated by \\n. REQUIRED coverage when data exists: (a) price vs VWAP + nearest support/resistance from support_resistance_levels, (b) dealer/GEX king/γ flip/gamma_regime, (c) gex_walls_0dte support & resistance nodes with strikes, (d) dark_pool bias + notable prints, (e) live_tape recent flow/DP, (f) 0DTE flow skew, (g) VIX/IV context, (h) mega-cap leadership, (i) OI changes or net prem velocity if notable, (j) headline catalyst from news if any, (k) what changed, (l) next 15-30 min playbook. Mentor voice — direct, no hype, no disclaimers.",
-  "watch": ["specific strike/level 1", "specific strike/level 2", "specific strike/level 3"],
-  "changed": ["what shifted 1", "what shifted 2"]
+  "body": "8-12 short bullet lines separated by \\n. Facts only from JSON. When data exists cover: (a) price vs VWAP + nearest S/R strikes, (b) GEX king/γ flip/regime + wall strikes, (c) dark pool bias + one print if listed, (d) live_tape line if present, (e) strike_stacks top stack ONLY if stacks non-empty — exact premiums, (f) 0DTE flow skew numbers, (g) VIX/IV, (h) mega-cap if notable, (i) one change from delta, (j) 15-30 min levels to watch. Direct mentor tone — no hype, no disclaimers, no guessing who traded.",
+  "watch": ["specific SPX strike/level from JSON", "second level", "third level"],
+  "changed": ["items from WHAT CHANGED — paraphrase ok, facts must match"]
 }
 
 Rules:
-- SPX index prices only for levels. Round to .00.
-- Cite real numbers from the JSON — premiums as ${fmtPrem(1_500_000)} style when large.
-- If a section is null/empty, skip it — do not invent data.
-- When gex_walls_0dte or support_resistance_levels exist, you MUST reference specific strikes.
-- When live_tape has items, reference at least one recent tape line.
-- When news_headlines exist, mention the most relevant headline if it affects SPX.
+- SPX index prices only. Round to .00.
+- Premiums: ${fmtPrem(1_500_000)} style when large.
+- Null/empty section → skip. Never invent.
+- strike_stacks.stacks empty → no stack language in body.
+- changed[] must reflect WHAT CHANGED; if nothing material, say tape quiet.
+- bias must be defensible from confluence, flow_0dte net, or price vs VWAP — not vibes.
 - Max 280 words in body.`;
 
   const raw = await anthropicText(prompt, 1800);

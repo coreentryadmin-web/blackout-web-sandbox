@@ -1,5 +1,10 @@
 import { runLargoTool } from "@/lib/largo/run-tool";
 import type { LargoQuestionIntent } from "@/lib/largo/question-intent";
+import {
+  computeFlowStrikeStacks,
+  formatFlowStrikeStackLine,
+  type FlowStrikeStack,
+} from "@/lib/largo/flow-strike-stacks";
 
 type FeedKey =
   | "market"
@@ -72,7 +77,25 @@ function flowLine(item: unknown): string {
   const strike = o.strike ?? o.strike_price ?? "";
   const prem = o.premium ?? o.total_premium ?? o.size ?? "";
   const sym = o.ticker ?? o.symbol ?? "";
-  return [sym, side, strike ? `@${strike}` : "", prem ? `$${prem}` : ""].filter(Boolean).join(" ");
+  const exp = o.expiry ? String(o.expiry).slice(0, 10) : "";
+  const rule = o.alert_rule ? String(o.alert_rule) : "";
+  const trades = o.trade_count != null ? `×${o.trade_count}` : "";
+  return [sym, side, strike ? `@${strike}` : "", exp, prem ? `$${prem}` : "", rule || null, trades || null]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function parseStrikeStacks(raw: unknown): FlowStrikeStack[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((s) => s && typeof s === "object") as FlowStrikeStack[];
+}
+
+function appendStrikeStacks(lines: string[], stacks: FlowStrikeStack[]) {
+  if (!stacks.length) return;
+  lines.push("**Strike stacks / Repeated Hits (UW-verified — cite exactly in Flow; do not invent):**");
+  for (const s of stacks.slice(0, 8)) {
+    lines.push(`- ${formatFlowStrikeStackLine(s)}`);
+  }
 }
 
 function poolLine(item: unknown): string {
@@ -87,8 +110,8 @@ function poolLine(item: unknown): string {
 /** Compact, human-readable block for the system prompt — Claude rephrases, never dumps verbatim. */
 export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string {
   const lines: string[] = [
-    "## Live feed (auto-captured from Polygon, Benzinga, Finnhub, UW, SPX desk)",
-    "This is real-time desk data. Synthesize it in your voice — weave flow, news, catalysts, technicals, and levels into your answer. Do not paste this block raw.",
+    "## Live feed (auto-captured — authoritative source for this turn)",
+    "Use ONLY figures from this block or tools you call now. Do not invent stacks, premiums, levels, or trader intent. Strike stacks below are UW-verified.",
     "",
   ];
 
@@ -128,9 +151,16 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
     if (tape.length) {
       lines.push("Tape: " + tape.map(flowLine).filter(Boolean).join(" | "));
     }
-    const spxFlows = asArr(spx.spx_flows).slice(0, 8);
+    const spxFlows = asArr(spx.spx_flows).slice(0, 12);
     if (spxFlows.length) {
       lines.push("SPX flow: " + spxFlows.map(flowLine).filter(Boolean).join(" | "));
+    }
+    const spxStacks = parseStrikeStacks(spx.strike_stacks);
+    if (spxStacks.length) {
+      appendStrikeStacks(lines, spxStacks);
+    } else if (spxFlows.length) {
+      const derived = computeFlowStrikeStacks(spxFlows);
+      appendStrikeStacks(lines, derived);
     }
     const dp = asObj(spx.dark_pool);
     const dpPrints = asArr(dp?.prints ?? dp?.trades ?? dp?.recent).slice(0, 5);
@@ -184,9 +214,22 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
     if (o0) {
       lines.push(`0DTE: calls ${o0.call_premium ?? o0.calls} puts ${o0.put_premium ?? o0.puts} net ${o0.net}`);
     }
-    const alerts = asArr(flow.flow_alerts ?? flow.unified_tape).slice(0, 10);
+    const alerts = asArr(flow.flow_alerts ?? flow.unified_tape).slice(0, 15);
     if (alerts.length) {
-      lines.push(alerts.map(flowLine).filter(Boolean).join(" | "));
+      lines.push("Recent prints: " + alerts.map(flowLine).filter(Boolean).join(" | "));
+    }
+    const ap = asObj(flow.alert_premium);
+    if (ap) {
+      lines.push(
+        `Alert premium: calls ${ap.calls ?? "—"} puts ${ap.puts ?? "—"} net ${ap.net ?? "—"}`
+      );
+    }
+    const stacks = parseStrikeStacks(flow.strike_stacks);
+    if (stacks.length) {
+      appendStrikeStacks(lines, stacks);
+    } else if (alerts.length) {
+      const recent = asArr(flow.flow_recent);
+      appendStrikeStacks(lines, computeFlowStrikeStacks([...alerts, ...recent]));
     }
     lines.push("");
   }

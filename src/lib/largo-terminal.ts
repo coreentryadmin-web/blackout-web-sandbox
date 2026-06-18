@@ -77,7 +77,7 @@ ${intent.guidance}
 
 
 
-Session memory is in Postgres — honor follow-ups. Refresh via tools if you need a deeper drill-down on something specific. Express yourself fully; synthesize the live feed above.`;
+Session memory is in Postgres — honor follow-ups. Re-fetch via tools if you need fresher flow or stacks. Facts from the live feed only; opinion in Bottom line.`;
 
 }
 

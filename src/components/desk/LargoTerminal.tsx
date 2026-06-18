@@ -12,8 +12,8 @@ type Message = { id: string; role: "user" | "assistant"; content: string; tools?
 
 const LARGO_SESSION_KEY = "largo-terminal-session";
 
-const INPUT_PLACEHOLDER = "Jack into the tape";
-const INPUT_PLACEHOLDER_BUSY = "Neural Link Processing…";
+const INPUT_PLACEHOLDER = "jack into the tape ...";
+const INPUT_PLACEHOLDER_BUSY = "neural link processing ...";
 
 const WELCOME: Message = {
   id: "welcome",

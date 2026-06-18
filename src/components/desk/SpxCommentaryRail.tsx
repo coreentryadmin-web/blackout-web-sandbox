@@ -10,6 +10,7 @@ import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
 } from "@/lib/spx-commentary-offline-copy";
+import { flowStackSignature } from "@/lib/largo/flow-strike-stacks";
 
 const MIN_INTERVAL_MS = 55_000;
 const MATERIAL_PRICE_MOVE = 0.08;
@@ -33,6 +34,10 @@ function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | nul
   if (prev.above_vwap !== desk.above_vwap) return true;
   if (prev.tide_bias !== desk.tide_bias) return true;
   if (prev.gex_king !== desk.gex_king) return true;
+
+  const prevStacks = flowStackSignature(prev.strike_stacks);
+  const nextStacks = flowStackSignature(desk.strike_stacks);
+  if (nextStacks && prevStacks !== nextStacks) return true;
 
   return Date.now() - lastAt >= MIN_INTERVAL_MS * 2;
 }
