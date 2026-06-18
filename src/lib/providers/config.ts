@@ -15,12 +15,10 @@ export function finnhubConfigured(): boolean {
   return Boolean(process.env.FINNHUB_API_KEY?.trim());
 }
 
-/** Finnhub economic calendar is premium-only ($50/mo). On in production when key is set unless disabled. */
+/** Finnhub economic calendar is premium-only (~$50/mo). Opt in with FINNHUB_ECONOMIC_CALENDAR=1. */
 export function finnhubEconomicCalendarEnabled(): boolean {
   const raw = process.env.FINNHUB_ECONOMIC_CALENDAR?.trim().toLowerCase();
-  if (raw === "0" || raw === "false") return false;
-  if (raw === "1" || raw === "true") return true;
-  return process.env.NODE_ENV === "production" && finnhubConfigured();
+  return raw === "1" || raw === "true";
 }
 
 export function marketDataConfigured(): boolean {

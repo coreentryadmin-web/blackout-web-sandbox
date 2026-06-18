@@ -183,7 +183,7 @@ export const API_PROVIDER_CATALOG: ApiProviderCatalogEntry[] = [
       {
         endpoint: "/calendar/economic",
         method: "GET",
-        description: "US macro calendar (premium — set FINNHUB_ECONOMIC_CALENDAR=1)",
+        description: "US macro calendar (premium — opt in with FINNHUB_ECONOMIC_CALENDAR=1)",
         used_by: ["macro rail", "play gates"],
       },
       {
