@@ -1,5 +1,5 @@
 import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured, deskPulseStructureCacheTtlMs } from "./config";
-import { fetchPolygonOdteGexRows } from "./polygon-options-gex";
+import { fetchPolygonOdteDeskBundle } from "./polygon-options-gex";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { fetchEconomicCalendarToday, type MacroEvent } from "./finnhub";
 import { mergeMacroEventsToday } from "./macro-events";
@@ -22,6 +22,7 @@ import {
   fetchIndexSma,
   fetchIndexSnapshots,
   fetchMarketStatusNow,
+  fetchVixIvRankPercentile,
 } from "./polygon";
 import { resolveMarketInternals } from "@/lib/market-internals";
 import {
@@ -550,14 +551,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     ema200,
     sma50,
     sma200,
-    uwGex,
-    uwMaxPain,
-    uwTide,
-    uwNope,
-    uwIv,
-    uwFlow,
-    strikeRows,
-    darkPool,
     breadthAll,
     macroEvents,
     newsRaw,
@@ -565,20 +558,12 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   ] = await Promise.all([
     fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
     fetchIndexMinuteBars(SPX, today, today).catch(() => []),
-    fetchIndexDailyBars(SPX, fromWeek, today).catch(() => []),
+    fetchIndexDailyBars(SPX, fromWeek, today),
     fetchIndexEma(SPX, 20, "minute"),
     fetchIndexEma(SPX, 50, "minute"),
     fetchIndexEma(SPX, 200, "day"),
     fetchIndexSma(SPX, 50, "day"),
     fetchIndexSma(SPX, 200, "day"),
-    fetchUwOdteGex("SPX"),
-    fetchUwMaxPain("SPX"),
-    fetchUwMarketTide(),
-    fetchUwNope("SPX"),
-    fetchUwIvRank("SPX"),
-    fetchUwFlow0dte("SPX"),
-    fetchUwOdteSpotExposuresByStrike("SPX"),
-    fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
     fetchBreadthUniverseSnapshots().catch(() => []),
     fetchEconomicCalendarToday().catch(() => []),
     fetchBenzingaNews(15).catch(() => []),
@@ -589,10 +574,35 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const vixSnap = snaps[VIX];
   if (!spxSnap?.price) return empty;
 
+  const price = spxSnap.price;
+
+  const [polygonBundle, polygonIvRank] = await Promise.all([
+    fetchPolygonOdteDeskBundle(price),
+    fetchVixIvRankPercentile(),
+  ]);
+  let strikeRows = polygonBundle.rows;
+  if (!strikeRows.length && uwConfigured()) {
+    strikeRows = await fetchUwOdteSpotExposuresByStrike("SPX");
+  }
+  let maxPain = polygonBundle.maxPain;
+
+  const uwExclusive = uwConfigured()
+    ? await Promise.all([
+        fetchUwMarketTide(),
+        fetchUwNope("SPX"),
+        fetchUwFlow0dte("SPX"),
+        fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
+        strikeRows.length ? Promise.resolve(null) : fetchUwOdteGex("SPX"),
+        maxPain != null ? Promise.resolve(null) : fetchUwMaxPain("SPX"),
+        polygonIvRank != null ? Promise.resolve(null) : fetchUwIvRank("SPX"),
+      ])
+    : [null, null, null, null, null, null, null];
+
+  const [uwTide, uwNope, uwFlow, darkPool, uwGex, uwMaxPain, uwIv] = uwExclusive;
+  if (maxPain == null) maxPain = uwMaxPain ?? null;
+
   const session = sessionStatsFromMinuteBars(minuteBars);
   const prior = priorDayFromDailyBars(dailyBars);
-
-  const price = spxSnap.price;
   const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
   const lod = session.lod ?? (intel?.lod as number | null) ?? spxSnap.price;
   const hod = session.hod ?? (intel?.hod as number | null) ?? spxSnap.price;
@@ -623,7 +633,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gexNet = (intel?.gex_net as number | null) ?? uwGex?.net_gex ?? gexAnalysis.net_gex ?? null;
   const gexKing =
     (intel?.gex_king as number | null) ?? uwGex?.gex_king ?? gexAnalysis.gex_king_strike ?? null;
-  const maxPain = (intel?.max_pain as number | null) ?? uwMaxPain ?? null;
+  maxPain = (intel?.max_pain as number | null) ?? maxPain ?? null;
 
   const regime =
     (intel?.chart_levels as { regime?: string } | undefined)?.regime ??
@@ -693,7 +703,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   return {
     available: true,
     as_of: asOf,
-    source: intel?.available ? "merged" : "polygon+uw",
+    source: intel?.available ? "merged" : uwConfigured() ? "polygon+uw-flow" : "polygon",
     price,
     spx_change_pct: spxSnap.change_pct,
     vix: vixSnap?.price ?? (intel?.vix as number | null) ?? null,
@@ -733,7 +743,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     tide_net: uwTide?.net ?? null,
     nope: (intel?.nope as { nope?: number } | null)?.nope ?? uwNope?.nope ?? null,
     nope_net_delta: uwNope?.net_delta ?? null,
-    uw_iv_rank: (intel?.uw_iv_rank as number | null) ?? uwIv ?? null,
+    uw_iv_rank: (intel?.uw_iv_rank as number | null) ?? polygonIvRank ?? uwIv ?? null,
     regime: String(regime),
     levels,
     dark_pool: darkPool,
@@ -985,7 +995,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
 
   if (!isSpxRthActive() && !isPremarketPlanningWindow()) return empty;
 
-  const [spxSnap, darkPool, spxFlowsRaw, uwGex, uwFlow] = await Promise.all([
+  const [spxSnap, darkPool, spxFlowsRaw, uwFlow] = await Promise.all([
     polygonConfigured()
       ? fetchIndexSnapshots([SPX]).then((m) => m[SPX])
       : Promise.resolve(null),
@@ -993,7 +1003,6 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
       ? fetchUwDarkPool("SPX", { limit: 20, min_premium: 500_000 })
       : Promise.resolve(null),
     uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32) : Promise.resolve([]),
-    uwConfigured() ? fetchUwOdteGex("SPX") : Promise.resolve(null),
     uwConfigured() ? fetchUwFlow0dte("SPX") : Promise.resolve(null),
   ]);
 
@@ -1001,14 +1010,24 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   if (!price && !spxFlowsRaw.length) return empty;
 
   let strikeRows: Record<string, unknown>[] = [];
+  let polygonGexNet: number | null = null;
+  let polygonGexKing: number | null = null;
   if (polygonConfigured() && price > 0) {
-    strikeRows = await fetchPolygonOdteGexRows(price);
+    const bundle = await fetchPolygonOdteDeskBundle(price);
+    strikeRows = bundle.rows;
   }
   if (!strikeRows.length && uwConfigured()) {
     strikeRows = await fetchUwOdteSpotExposuresByStrike("SPX");
   }
 
   const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
+  polygonGexNet = gexAnalysis.net_gex;
+  polygonGexKing = gexAnalysis.gex_king_strike;
+
+  let uwGex = null;
+  if (polygonGexNet == null && uwConfigured()) {
+    uwGex = await fetchUwOdteGex("SPX");
+  }
   if (gexAnalysis.ranked_levels.length) {
     lastGoodStrikeLevels = gexAnalysis.ranked_levels;
   }
@@ -1048,8 +1067,8 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
     gex_walls: finalWalls,
-    gex_net: uwGex?.net_gex ?? gexAnalysis.net_gex ?? null,
-    gex_king: uwGex?.gex_king ?? gexAnalysis.gex_king_strike ?? null,
+    gex_net: uwGex?.net_gex ?? polygonGexNet ?? gexAnalysis.net_gex ?? null,
+    gex_king: uwGex?.gex_king ?? polygonGexKing ?? gexAnalysis.gex_king_strike ?? null,
     gamma_flip: gammaFlip,
     above_gamma_flip: gammaFlip != null ? spot > gammaFlip : false,
     gamma_regime: gammaRegimeLabel,

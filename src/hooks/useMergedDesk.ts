@@ -9,7 +9,7 @@ import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 
 const PULSE_MS = 1_000;
 const FLOW_MS = 2_000;
-const FULL_DESK_MS = 15_000;
+const FULL_DESK_MS = 10_000;
 const DESK_CACHE_KEY = "spx-merged-desk";
 /** Keep cached desk for the trading day across refresh/navigation. */
 const DESK_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;

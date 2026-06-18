@@ -27,14 +27,14 @@ function PulseBar({ label, value, bull }: { label: string; value: string; bull?:
 }
 
 export function LiveMarketPulse({ compact, className }: LiveMarketPulseProps) {
-  const { data } = useSWR<SpxState>("spx-pulse", fetchSpxState, { refreshInterval: 10_000 });
+  const { data } = useSWR<SpxState>("spx-merged-pulse", fetchSpxState, { refreshInterval: 3_000 });
 
   const live = data?.available;
 
   return (
     <EmbedFrame
       title="Market Pulse"
-      subtitle={live ? "BlackOut Engine" : "TradingView Feed"}
+      subtitle={live ? "SPX Sniper Desk" : "Standby"}
       variant="pulse"
       className={className}
       live={live}

@@ -131,3 +131,19 @@ export async function mergeMacroEventsToday(input: {
   const fromNews = macroFromHeadlines(input.headlines);
   return dedupeEvents([...staticHits, ...finnhub, ...fromNews]);
 }
+
+/** Upcoming US macro from curated schedule (no Finnhub premium required). */
+export function fetchUpcomingMacroEvents(daysAhead = 7): MacroEvent[] {
+  const today = todayEtYmd();
+  const endMs = Date.now() + Math.max(1, daysAhead) * 86400000;
+  const end = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(endMs));
+
+  return US_MACRO_SCHEDULE_2026.filter((e) => e.date >= today && e.date <= end).map((e) => ({
+    time: e.date,
+    event: e.event,
+    country: "US",
+    impact: e.impact,
+    actual: null,
+    estimate: null,
+  }));
+}

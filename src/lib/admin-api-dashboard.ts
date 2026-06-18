@@ -16,6 +16,7 @@ import {
   uwConfigured,
   finnhubConfigured,
 } from "@/lib/providers/config";
+import { webSearchConfigured } from "@/lib/providers/web-search";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 
@@ -236,6 +237,8 @@ function isConfigured(id: ApiProviderId): boolean {
       return engineConfigured();
     case "postgres":
       return dbConfigured();
+    case "web_search":
+      return webSearchConfigured();
     default:
       return false;
   }
@@ -254,6 +257,10 @@ const PROBE_FNS: Record<
       : { ok: false, latency_ms: 0, error: "Not configured" },
   blackout_engine: probeEngine,
   postgres: probePostgres,
+  web_search: async () =>
+    webSearchConfigured()
+      ? { ok: true, latency_ms: 0, error: null }
+      : { ok: false, latency_ms: 0, error: "Not configured" },
 };
 
 export async function fetchApiDashboard(options?: {

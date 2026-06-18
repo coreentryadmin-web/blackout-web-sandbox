@@ -1,44 +1,29 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
-import { PlatformShell } from "@/components/platform/PlatformShell";
 import { LargoTerminal } from "@/components/desk/LargoTerminal";
-import { TradingViewWidget } from "@/components/embeds/TradingViewWidget";
 
 export default async function TerminalPage() {
   await requireTier("premium");
 
   return (
-    <div className="page-shell relative overflow-hidden flex flex-col min-h-screen">
+    <div className="largo-page-shell">
       <Nav />
-      <PlatformShell
-        variant="largo"
-        title="AI Terminal"
-        subtitle="Largo — Desk-grade market intelligence"
-        deskMode
-      >
-        <div className="flex flex-col xl:flex-row gap-5 xl:items-stretch">
-          <div className="xl:flex-[7] min-w-0">
-            <LargoTerminal />
+      <main className="largo-page-main">
+        <header className="largo-page-header">
+          <div>
+            <p className="largo-page-kicker">◆ AI DESK — LARGO</p>
+            <h1 className="largo-page-title">Neural Terminal</h1>
+            <p className="largo-page-subtitle">Live market intelligence · continuous session</p>
           </div>
-          <div
-            className="hidden xl:block w-px self-stretch shrink-0"
-            style={{
-              background: "linear-gradient(to bottom, transparent, rgba(191,95,255,0.3), transparent)",
-            }}
-            aria-hidden
-          />
-          <div className="xl:flex-[5] min-w-0 space-y-4">
-            <div className="largo-widget-panel">
-              <div className="largo-widget-label">SPY Context</div>
-              <TradingViewWidget type="advanced-chart" symbol="AMEX:SPY" title="SPY Context" height={360} />
-            </div>
-            <div className="largo-widget-panel">
-              <div className="largo-widget-label">Tape</div>
-              <TradingViewWidget type="ticker-tape" title="Tape" height={48} />
-            </div>
-          </div>
-        </div>
-      </PlatformShell>
+          <span className="badge-ai largo-page-badge">
+            <span className="badge-live-dot" />
+            AI Online
+          </span>
+        </header>
+        <LargoTerminal fullPage />
+      </main>
+      <div className="platform-ambient platform-ambient-largo" aria-hidden />
+      <div className="platform-dot-grid" aria-hidden />
     </div>
   );
 }

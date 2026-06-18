@@ -89,7 +89,7 @@ export const API_PROVIDER_CATALOG: ApiProviderCatalogEntry[] = [
   {
     id: "unusual_whales",
     name: "Unusual Whales",
-    description: "Options flow, GEX, dark pool, market tide, IV term structure.",
+    description: "Options flow, GEX, dark pool, market tide, IV — UW Advanced ($375/mo) live REST + WebSocket.",
     docs_url: "https://api.unusualwhales.com/docs",
     env_keys: ["UW_API_KEY", "UW_API_BASE"],
     endpoints: [

@@ -1,11 +1,17 @@
 const INTEL_BASE = "/api/engine";
 const MARKET_BASE = "/api/market";
 
-async function marketFetch<T>(path: string): Promise<T> {
+async function marketFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${MARKET_BASE}${path}`, {
     cache: "no-store",
     credentials: "same-origin",
-    headers: { Pragma: "no-cache", "Cache-Control": "no-cache" },
+    headers: {
+      Pragma: "no-cache",
+      "Cache-Control": "no-cache",
+      ...(options?.body ? { "Content-Type": "application/json" } : {}),
+      ...options?.headers,
+    },
+    ...options,
   });
   if (!res.ok) throw new Error(`Market ${path} → ${res.status}`);
   return res.json();
@@ -124,6 +130,68 @@ function emptySpxState(): SpxState {
   };
 }
 
+function deskPayloadToSpxState(desk: SpxDeskPayload): SpxState {
+  return {
+    available: desk.available && desk.price > 0,
+    source: desk.source?.includes("engine") ? "blackout_intel" : "merged",
+    as_of: desk.polled_at ?? desk.as_of,
+    price: desk.price,
+    vwap: desk.vwap ?? 0,
+    lod: desk.lod ?? 0,
+    hod: desk.hod ?? 0,
+    vix: desk.vix,
+    vix_change_pct: desk.vix_change_pct,
+    spx_change_pct: desk.spx_change_pct,
+    above_vwap: desk.above_vwap,
+    uw_iv_rank: desk.uw_iv_rank,
+    gex_net: desk.gex_net,
+    gex_king: desk.gex_king,
+    max_pain: desk.max_pain,
+    gamma_flip: desk.gamma_flip,
+    flow_0dte_call_premium: desk.flow_0dte_call_premium,
+    flow_0dte_put_premium: desk.flow_0dte_put_premium,
+    flow_0dte_net: desk.flow_0dte_net,
+    adv: desk.add,
+    dec: null,
+    trin: desk.trin,
+    tick: desk.tick,
+    sector_bias: desk.tide_bias,
+    sector_leaders: (desk.leader_stocks ?? []).map((s) => ({
+      sector: s.name || s.ticker,
+      change_pct: s.change_pct,
+    })),
+    sector_laggards: [],
+    tide_bias: desk.tide_bias,
+    tide_call: desk.tide_call_premium,
+    tide_put: desk.tide_put_premium,
+    nope:
+      desk.nope != null
+        ? {
+            nope: desk.nope,
+            call_delta: 0,
+            put_delta: desk.nope_net_delta ?? 0,
+          }
+        : null,
+    vol_regime: null,
+    chart_levels: {
+      regime: desk.regime,
+      vah: null,
+      val: null,
+      poc: null,
+      fib_382: null,
+      fib_50: null,
+      fib_618: null,
+      ema20: desk.ema20,
+      ema50: desk.ema50,
+      ema200: desk.ema200,
+      onh: desk.hod,
+      onl: desk.lod,
+      pdh: desk.pdh,
+      pdl: desk.pdl,
+    },
+  };
+}
+
 /** Fast Polygon-only quote — polled every 5s on dashboard */
 export async function fetchSpxIndices() {
   return marketFetch<{
@@ -202,49 +270,23 @@ export const fetchSpxLottoToday = () =>
     }>;
   }>("/lotto/today");
 
-/** Website-first: Polygon indices + optional BlackOut intel overlay (GEX, levels, regime). */
+/** Merged SPX Sniper desk — pulse + flow + full desk (single server merge). */
+export async function fetchSpxMerged() {
+  return marketFetch<{
+    merged: SpxDeskPayload;
+    pulse_available: boolean;
+    flow_available: boolean;
+  }>("/spx/merged");
+}
+
+/** Website-first: merged SPX Sniper desk (same live feed as dashboard). */
 export async function fetchSpxState(): Promise<SpxState> {
-  const [indicesRes, intelRes] = await Promise.allSettled([
-    marketFetch<{
-      spx?: { price: number; change_pct: number };
-      vix?: { price: number; change_pct: number };
-      as_of?: string;
-    }>("/indices"),
-    intelFetch<SpxState>("/spx/state"),
-  ]);
-
-  const base = emptySpxState();
-
-  if (indicesRes.status === "fulfilled" && indicesRes.value.spx) {
-    const { spx, vix, as_of } = indicesRes.value;
-    base.available = true;
-    base.source = "polygon";
-    base.as_of = as_of ?? new Date().toISOString();
-    base.price = spx?.price ?? 0;
-    base.spx_change_pct = spx?.change_pct ?? 0;
-    base.vix = vix?.price ?? null;
-    base.vix_change_pct = vix?.change_pct ?? 0;
+  try {
+    const { merged } = await fetchSpxMerged();
+    return deskPayloadToSpxState(merged);
+  } catch {
+    return emptySpxState();
   }
-
-  if (intelRes.status === "fulfilled" && intelRes.value?.available) {
-    return { ...intelRes.value, source: "blackout_intel" };
-  }
-
-  if (intelRes.status === "fulfilled" && indicesRes.status === "fulfilled" && base.available) {
-    const intel = intelRes.value;
-    return {
-      ...base,
-      ...intel,
-      available: true,
-      source: "merged",
-      price: base.price || intel.price,
-      spx_change_pct: base.spx_change_pct || intel.spx_change_pct,
-      vix: base.vix ?? intel.vix,
-      vix_change_pct: base.vix_change_pct || intel.vix_change_pct,
-    };
-  }
-
-  return base;
 }
 
 export interface PlatformHealth {
@@ -346,10 +388,26 @@ export const fetchMarketNews = () =>
 // ── Largo (BlackOut intel only) ───────────────────────────────────────────────
 
 export const queryLargo = (question: string, sessionId: string) =>
-  intelFetch<{ answer: string; session_id: string }>("/largo/query", {
-    method: "POST",
-    body: JSON.stringify({ question, session_id: sessionId }),
-  });
+  marketFetch<{ answer: string; session_id: string; source?: string; tools_used?: string[] }>(
+    "/largo/query",
+    {
+      method: "POST",
+      body: JSON.stringify({ question, session_id: sessionId }),
+    }
+  );
+
+export type LargoChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  tools_used: string[];
+  created_at: string;
+};
+
+export const fetchLargoSession = (sessionId: string) =>
+  marketFetch<{ session_id: string; messages: LargoChatMessage[] }>(
+    `/largo/session?session_id=${encodeURIComponent(sessionId)}`
+  );
 
 // ── Live flow stream (website SSE — no engine WebSocket required) ─────────────
 

@@ -59,7 +59,7 @@ export function playReentryLockSec(): number {
 }
 
 export function playGexStaleMaxSec(): number {
-  return num(process.env.SPX_PLAY_GEX_STALE_MAX_SEC, 120);
+  return num(process.env.SPX_PLAY_GEX_STALE_MAX_SEC, 90);
 }
 
 export function playClaudeGateEnabled(): boolean {
@@ -206,7 +206,7 @@ export function playMinConfirmationsRequired(): number {
 }
 
 export function playTechnicalsCacheSec(): number {
-  return num(process.env.SPX_PLAY_TECHNICALS_CACHE_SEC, 60);
+  return num(process.env.SPX_PLAY_TECHNICALS_CACHE_SEC, 30);
 }
 
 export function gradeRank(grade: string): number {

@@ -12,6 +12,8 @@ type DeskPanelProps = {
   live?: boolean;
   feedStatus?: "live" | "reconnecting";
   glow?: boolean;
+  /** Hide panel header — used for full-page Largo layout */
+  bare?: boolean;
 };
 
 const VARIANTS = {
@@ -30,34 +32,37 @@ export function DeskPanel({
   live,
   feedStatus,
   glow,
+  bare,
 }: DeskPanelProps) {
   return (
     <div className={clsx("desk-panel", VARIANTS[variant], glow && "desk-panel-glow", className)}>
-      <div className="desk-panel-header">
-        <div>
-          <p className="desk-panel-title">{title}</p>
-          {subtitle && <p className="desk-panel-subtitle">{subtitle}</p>}
+      {!bare && (
+        <div className="desk-panel-header">
+          <div>
+            <p className="desk-panel-title">{title}</p>
+            {subtitle && <p className="desk-panel-subtitle">{subtitle}</p>}
+          </div>
+          {feedStatus === "live" && (
+            <span className="badge-live text-[9px]">
+              <span className="badge-live-dot" />
+              LIVE
+            </span>
+          )}
+          {feedStatus === "reconnecting" && (
+            <span className="badge-reconnecting text-[9px]">
+              <span className="badge-offline-dot" />
+              RECONNECTING
+            </span>
+          )}
+          {feedStatus === undefined && live && (
+            <span className="badge-live text-[9px]">
+              <span className="badge-live-dot" />
+              Live
+            </span>
+          )}
         </div>
-        {feedStatus === "live" && (
-          <span className="badge-live text-[9px]">
-            <span className="badge-live-dot" />
-            LIVE
-          </span>
-        )}
-        {feedStatus === "reconnecting" && (
-          <span className="badge-reconnecting text-[9px]">
-            <span className="badge-offline-dot" />
-            RECONNECTING
-          </span>
-        )}
-        {feedStatus === undefined && live && (
-          <span className="badge-live text-[9px]">
-            <span className="badge-live-dot" />
-            Live
-          </span>
-        )}
-      </div>
-      <div className="desk-panel-body">{children}</div>
+      )}
+      <div className={clsx("desk-panel-body", bare && "desk-panel-body-bare")}>{children}</div>
       <div className="desk-panel-scan" aria-hidden />
     </div>
   );

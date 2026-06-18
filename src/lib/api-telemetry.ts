@@ -4,7 +4,8 @@ export type ApiProviderId =
   | "finnhub"
   | "anthropic"
   | "blackout_engine"
-  | "postgres";
+  | "postgres"
+  | "web_search";
 
 export type ApiCallEvent = {
   id: string;
@@ -104,6 +105,7 @@ export function getApiTelemetrySnapshot(sinceMs = 5 * 60_000) {
     anthropic: { calls: 0, errors: 0, endpoints: [] },
     blackout_engine: { calls: 0, errors: 0, endpoints: [] },
     postgres: { calls: 0, errors: 0, endpoints: [] },
+    web_search: { calls: 0, errors: 0, endpoints: [] },
   };
 
   for (const e of recent) {

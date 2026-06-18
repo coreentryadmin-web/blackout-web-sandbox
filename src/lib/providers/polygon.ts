@@ -1,6 +1,6 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { polygonConfigured } from "./config";
-import { sessionStatsFromMinuteBars, todayEtYmd } from "./spx-session";
+import { sessionStatsFromMinuteBars, todayEtYmd, priorEtYmd } from "./spx-session";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -44,9 +44,53 @@ const SECTOR_ETFS = [
 type SnapshotTicker = {
   ticker?: string;
   todaysChangePerc?: number;
-  day?: { c?: number; v?: number };
+  day?: { c?: number; h?: number; l?: number; vw?: number; v?: number };
   prevDay?: { c?: number };
+  lastTrade?: { p?: number };
 };
+
+export type StockQuoteSnapshot = {
+  ticker: string;
+  price: number;
+  prev_close: number;
+  change_pct: number;
+  day_high: number;
+  day_low: number;
+  vwap: number;
+  volume: number;
+};
+
+export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnapshot | null> {
+  const sym = ticker.toUpperCase();
+  const data = await polygonGet<{ ticker?: SnapshotTicker }>(
+    `/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`
+  );
+  const row = data.ticker;
+  if (!row) return null;
+
+  const day = row.day ?? {};
+  const prev = row.prevDay ?? {};
+  const last = row.lastTrade ?? {};
+  const price = Number(last.p ?? day.c ?? 0);
+  const prevClose = Number(prev.c ?? 0);
+  const changePct =
+    row.todaysChangePerc != null
+      ? Number(row.todaysChangePerc.toFixed(2))
+      : prevClose
+        ? Number((((price - prevClose) / prevClose) * 100).toFixed(2))
+        : 0;
+
+  return {
+    ticker: sym,
+    price,
+    prev_close: prevClose,
+    change_pct: changePct,
+    day_high: Number(day.h ?? price),
+    day_low: Number(day.l ?? price),
+    vwap: Number(day.vw ?? price),
+    volume: Number(day.v ?? 0),
+  };
+}
 
 async function fetchStockSnapshotPerformance(
   symbols: Array<{ name: string; ticker: string }>
@@ -162,19 +206,34 @@ export async function fetchIndexSnapshot(symbol: string): Promise<IndexQuote | n
   return map[symbol.toUpperCase()] ?? null;
 }
 
-export async function fetchBenzingaNews(limit = 12) {
+export async function fetchBenzingaNews(
+  limit = 12,
+  opts?: { ticker?: string; channels?: string; since?: string }
+) {
+  const params: Record<string, string> = {
+    limit: String(Math.min(limit, 50)),
+    sort: "published.desc",
+  };
+  if (opts?.ticker) params["tickers.any_of"] = opts.ticker.toUpperCase();
+  if (opts?.channels) params["channels.any_of"] = opts.channels;
+  if (opts?.since) params["published.gte"] = opts.since;
+
   const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
     "/benzinga/v2/news",
-    { limit: String(limit), sort: "published.desc" }
+    params
   );
 
   return (data.results ?? []).map((article) => ({
     id: String(article.id ?? article.benzinga_id ?? ""),
     title: String(article.title ?? ""),
-    teaser: String(article.teaser ?? article.body ?? "").slice(0, 280),
+    teaser: String(article.teaser ?? "").slice(0, 400),
+    body: String(article.body ?? "").slice(0, 2000),
     published: String(article.published ?? article.created_at ?? ""),
     tickers: Array.isArray(article.tickers) ? article.tickers.map(String) : [],
+    channels: Array.isArray(article.channels) ? article.channels.map(String) : [],
+    tags: Array.isArray(article.tags) ? article.tags.map(String) : [],
     url: String(article.url ?? article.benzinga_url ?? ""),
+    author: String(article.author ?? ""),
   }));
 }
 
@@ -202,11 +261,25 @@ export async function fetchIndexMinuteBars(symbol: string, from: string, to: str
   return mapAggBars(data.results);
 }
 
-export async function fetchIndexDailyBars(symbol: string, from: string, to: string) {
+export async function fetchIndexDailyBars(
+  symbol: string,
+  from: string,
+  to: string,
+  limit = "10"
+) {
   const sym = symbol.toUpperCase();
   const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
     `/v2/aggs/ticker/${sym}/range/1/day/${from}/${to}`,
-    { limit: "10", sort: "asc" }
+    { limit, sort: "asc" }
+  );
+  return mapAggBars(data.results);
+}
+
+export async function fetchStockDailyBars(symbol: string, from: string, to: string, limit = "60") {
+  const sym = symbol.toUpperCase();
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    `/v2/aggs/ticker/${sym}/range/1/day/${from}/${to}`,
+    { limit, sort: "asc" }
   );
   return mapAggBars(data.results);
 }
@@ -223,6 +296,72 @@ async function latestIndicator(
     return v != null ? Number(v) : null;
   } catch {
     return null;
+  }
+}
+
+export async function fetchTickerEma(
+  symbol: string,
+  window: number,
+  timespan: "minute" | "hour" | "day" = "day"
+) {
+  const sym = symbol.toUpperCase();
+  return latestIndicator(`/v1/indicators/ema/${sym}`, {
+    window: String(window),
+    timespan,
+    series_type: "close",
+    order: "desc",
+    limit: "1",
+  });
+}
+
+export async function fetchTickerRsi(symbol: string, window = 14, timespan: "day" | "hour" = "day") {
+  const sym = symbol.toUpperCase();
+  return latestIndicator(`/v1/indicators/rsi/${sym}`, {
+    window: String(window),
+    timespan,
+    series_type: "close",
+    order: "desc",
+    limit: "1",
+  });
+}
+
+export async function fetchShortInterest(ticker: string) {
+  const sym = ticker.toUpperCase();
+  try {
+    const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+      "/stocks/v1/short-interest",
+      { ticker: sym, limit: "1", sort: "settlement_date.desc" }
+    );
+    const row = data.results?.[0];
+    if (!row) return null;
+    return {
+      ticker: sym,
+      settlement_date: String(row.settlement_date ?? ""),
+      short_interest: Number(row.short_interest ?? 0),
+      avg_daily_volume: Number(row.avg_daily_volume ?? 0),
+      days_to_cover: Number(row.days_to_cover ?? 0),
+      source: "massive_stocks_v1",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchShortVolume(ticker: string, limit = 5) {
+  const sym = ticker.toUpperCase();
+  try {
+    const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+      "/stocks/v1/short-volume",
+      { ticker: sym, limit: String(limit), sort: "date.desc" }
+    );
+    return (data.results ?? []).map((row) => ({
+      date: String(row.date ?? ""),
+      short_volume: Number(row.short_volume ?? 0),
+      total_volume: Number(row.total_volume ?? 0),
+      short_volume_ratio: Number(row.short_volume_ratio ?? 0),
+    }));
+  } catch {
+    return [];
   }
 }
 
@@ -316,6 +455,41 @@ export function computeVixTermStructure(
     return { vix9d: near, vix3m: far, structure: "backwardation", detail: `Backwardation ${spreadNear.toFixed(2)}` };
   }
   return { vix9d: near, vix3m: far, structure: "flat", detail: `Flat term` };
+}
+
+const VIX = "I:VIX";
+let cachedVixIvRank: { at: number; rank: number | null } | null = null;
+
+/** VIX percentile vs ~1y of daily closes — Polygon Indices Advanced (replaces UW IV rank when available). */
+export async function fetchVixIvRankPercentile(): Promise<number | null> {
+  if (!polygonConfigured()) return null;
+  const now = Date.now();
+  if (cachedVixIvRank && now - cachedVixIvRank.at < 300_000) {
+    return cachedVixIvRank.rank;
+  }
+
+  const today = todayEtYmd();
+  const from = priorEtYmd(400);
+  const [snaps, bars] = await Promise.all([
+    fetchIndexSnapshots([VIX]),
+    fetchIndexDailyBars(VIX, from, today, "300").catch(() => []),
+  ]);
+  const current = snaps[VIX]?.price;
+  if (current == null || current <= 0 || !bars.length) {
+    cachedVixIvRank = { at: now, rank: null };
+    return null;
+  }
+
+  const closes = bars.map((b) => b.c).filter((c) => c > 0);
+  if (closes.length < 20) {
+    cachedVixIvRank = { at: now, rank: null };
+    return null;
+  }
+
+  const below = closes.filter((c) => c <= current).length;
+  const rank = Math.round((below / closes.length) * 100);
+  cachedVixIvRank = { at: now, rank };
+  return rank;
 }
 
 export type PolygonMarketNow = {

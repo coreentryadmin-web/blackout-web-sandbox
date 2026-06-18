@@ -3,6 +3,10 @@ import { uwConfigured } from "./config";
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
 const KEY = process.env.UW_API_KEY ?? "";
+const CLIENT_ID = process.env.UW_CLIENT_API_ID ?? "100001";
+
+/** UW Advanced — live options chain, flow, GEX, lit/dark pool, vol analytics, WebSocket streaming. */
+export const UW_PLAN_TIER = "advanced" as const;
 
 async function uwGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
   if (!uwConfigured()) throw new Error("UW_API_KEY not set");
@@ -12,7 +16,11 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
 
   const url = `${BASE}${path}${qs.size ? `?${qs}` : ""}`;
   const res = await trackedFetch("unusual_whales", path, url, {
-    headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" },
+    headers: {
+      Authorization: `Bearer ${KEY}`,
+      Accept: "application/json",
+      "UW-CLIENT-API-ID": CLIENT_ID,
+    },
     cache: "no-store",
   });
 
@@ -420,16 +428,622 @@ export type IvTermPoint = { expiry: string; iv: number };
 
 /** IV term structure curve */
 export async function fetchUwIvTermStructure(ticker = "SPX"): Promise<IvTermPoint[]> {
-  const data = await uwGetSafe<unknown>(
-    `/api/stock/${ticker.toUpperCase()}/implied-volatility-term-structure`,
-    {}
-  );
-  return extractRows(data)
-    .map((r) => ({
-      expiry: String(r.expiry ?? r.expiration ?? r.date ?? "").slice(0, 10),
-      iv: Number(r.iv ?? r.implied_volatility ?? r.volatility ?? 0),
-    }))
-    .filter((p) => p.expiry && p.iv > 0)
-    .slice(0, 8);
+  const sym = ticker.toUpperCase();
+  for (const path of [
+    `/api/stock/${sym}/volatility/term-structure`,
+    `/api/stock/${sym}/implied-volatility-term-structure`,
+  ]) {
+    const data = await uwGetSafe<unknown>(path, {});
+    const rows = extractRows(data)
+      .map((r) => ({
+        expiry: String(r.expiry ?? r.expiration ?? r.date ?? "").slice(0, 10),
+        iv: Number(r.iv ?? r.implied_volatility ?? r.volatility ?? 0),
+      }))
+      .filter((p) => p.expiry && p.iv > 0)
+      .slice(0, 12);
+    if (rows.length) return rows;
+  }
+  return [];
 }
 
+export async function fetchUwFlowPerStrikeRows(ticker = "SPX", limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-per-strike-intraday`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwOiPerStrike(ticker = "SPX", limit = 40) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/oi-per-strike`, { limit });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwGreeksByStrike(ticker: string, expiry?: string, limit = 30) {
+  const params: Record<string, string | number> = { limit };
+  if (expiry) params.expiry = expiry;
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/greeks`, params);
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwSectorTide(sector = "technology") {
+  const data = await uwGetSafe<Record<string, unknown>>(`/api/market/${sector.toLowerCase()}/sector-tide`, {});
+  if (!data) return null;
+  const block = data.data;
+  const row = Array.isArray(block) ? block[block.length - 1] : block;
+  return row ?? null;
+}
+
+export async function fetchUwInsiderFlow(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/insider-buy-sells`, {});
+}
+
+export async function fetchUwCongressTrades(ticker?: string, limit = 25) {
+  const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
+  if (ticker) params.ticker = ticker.toUpperCase();
+  return uwGetSafe<unknown>("/api/congress/recent-trades", params);
+}
+
+export async function fetchUwShortFloat(ticker: string) {
+  return uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/interest-float/v2`, {});
+}
+
+export async function fetchUwShortScreener(limit = 15) {
+  const data = await uwGetSafe<unknown>("/api/shorts/screener", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwFlowPerExpiry(ticker: string, limit = 12) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-per-expiry`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwStockInfo(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/info`, {});
+}
+
+export async function fetchUwEarnings(ticker: string) {
+  const sym = ticker.toUpperCase();
+  for (const path of [`/api/earnings/${sym}`, `/api/stock/${sym}/earnings`]) {
+    const data = await uwGetSafe<unknown>(path, {});
+    const rows = extractRows(data);
+    if (rows.length) return rows;
+  }
+  return [];
+}
+
+export async function fetchUwScreenerStocks(limit = 15) {
+  const data = await uwGetSafe<unknown>("/api/screener/stocks", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwUnusualTrades(ticker?: string, limit = 20) {
+  const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
+  const data = await uwGetSafe<unknown>("/api/unusual-trades/recent", params);
+  let rows = extractRows(data);
+  if (ticker) {
+    const t = ticker.toUpperCase();
+    rows = rows.filter((r) => String(r.ticker ?? "").toUpperCase() === t);
+  }
+  return rows.slice(0, limit);
+}
+
+export async function fetchUwNewsHeadlines(ticker: string, limit = 12) {
+  const data = await uwGetSafe<unknown>("/api/news/headlines", {
+    ticker: ticker.toUpperCase(),
+    limit: Math.min(limit, 50),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwMarketMovers(limit = 15) {
+  const data = await uwGetSafe<unknown>("/api/market/movers", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwMarketTopNetImpact(limit = 15) {
+  const data = await uwGetSafe<unknown>("/api/market/top-net-impact", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwMarketOiChange(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/market/oi-change", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwAtmChains(ticker: string, expiry?: string, limit = 30) {
+  const params: Record<string, string | number> = { limit };
+  if (expiry) params.expiry = expiry;
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/atm-chains`, params);
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwOiPerExpiry(ticker: string, limit = 12) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/oi-per-expiry`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwOptionsVolume(ticker: string, limit = 20) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/options-volume`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEtfInOutflow(etf: string) {
+  return uwGetSafe<unknown>(`/api/etf/${etf.toUpperCase()}/in-outflow`, {});
+}
+
+export async function fetchUwEtfTide(etf: string) {
+  return uwGetSafe<unknown>(`/api/etf/${etf.toUpperCase()}/tide`, {});
+}
+
+export async function fetchUwLitFlow(ticker: string, limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/lit-flow/ticker", {
+    ticker: ticker.toUpperCase(),
+    limit: Math.min(limit, 50),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwScreenerContracts(limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/screener/contracts", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwSeasonality(ticker: string) {
+  const data = await uwGetSafe<unknown>(`/api/seasonality/${ticker.toUpperCase()}/monthly`, {});
+  return extractRows(data);
+}
+
+export async function fetchUwCongressLateReports(limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/congress/late-reports", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwShortVolume(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/volume-and-ratio`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwFtds(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/ftds`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwVolatilityAnomaly(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/volatility/anomaly`, {});
+}
+
+export async function fetchUwVolatilityCharacter(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/volatility/character`, {});
+}
+
+export async function fetchUwRealizedVol(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/volatility/realized`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwRiskReversalSkew(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>(
+    `/api/stock/${ticker.toUpperCase()}/historical-risk-reversal-skew`,
+    {}
+  );
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwVolAnomalyTop(direction = "long_vol", limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/volatility/anomaly/top", {
+    direction,
+    limit: String(Math.min(limit, 50)),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInsiderTransactions(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>("/api/insider/transactions", {
+    ticker: ticker.toUpperCase(),
+    limit: Math.min(limit, 50),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwFdaCalendar(ticker: string, limit = 10) {
+  const data = await uwGetSafe<unknown>("/api/market/fda-calendar", {
+    ticker: ticker.toUpperCase(),
+    limit: Math.min(limit, 20),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEarningsEstimates(ticker: string) {
+  const data = await uwGetSafe<unknown>(`/api/companies/${ticker.toUpperCase()}/earnings-estimates`, {});
+  return extractRows(data);
+}
+
+export async function fetchUwOptionContractFlow(contractId: string, limit = 20) {
+  const data = await uwGetSafe<unknown>(`/api/option-contract/${contractId.toUpperCase()}/flow`, {
+    limit: Math.min(limit, 50),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+/** Live NBBO options chain — UW Advanced (real-time). Cross-check with Polygon Options Advanced. */
+export async function fetchUwOptionContracts(
+  ticker: string,
+  opts?: { expiry?: string; option_type?: string; limit?: number }
+) {
+  const params: Record<string, string | number> = { limit: Math.min(opts?.limit ?? 250, 500) };
+  if (opts?.expiry) params.expiry = opts.expiry;
+  if (opts?.option_type) params.option_type = opts.option_type;
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/option-contracts`, params);
+  return extractRows(data);
+}
+
+/** Recent ticker flow prints — complements flow-alerts for per-ticker tape. */
+export async function fetchUwFlowRecent(ticker: string, limit = 25) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-recent`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+/** Interpolated IV + percentile for a ticker. */
+export async function fetchUwInterpolatedIv(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/interpolated-iv`, {});
+}
+
+/** Static GEX by strike (vs spot-exposures which is interpolated). */
+export async function fetchUwGreekExposureStrike(ticker: string, limit = 500) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/greek-exposure/strike`, {
+    limit: Math.min(limit, 500),
+  });
+  return extractRows(data);
+}
+
+/** Market-wide dark pool prints. */
+export async function fetchUwDarkPoolRecent(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/darkpool/recent", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+/** Hottest chains / bullish-bearish option screener. */
+export async function fetchUwScreenerOptionContracts(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/screener/option-contracts", { limit: Math.min(limit, 150) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwFinancials(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/financials`, {});
+}
+
+export async function fetchUwIncomeStatements(ticker: string, reportType = "quarterly") {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/income-statements`, {
+    report_type: reportType,
+  });
+  return extractRows(data);
+}
+
+export async function fetchUwBalanceSheets(ticker: string, reportType = "quarterly") {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/balance-sheets`, {
+    report_type: reportType,
+  });
+  return extractRows(data);
+}
+
+export async function fetchUwCashFlows(ticker: string, reportType = "quarterly") {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/cash-flows`, {
+    report_type: reportType,
+  });
+  return extractRows(data);
+}
+
+/** UW technical indicators — RSI, MACD, SMA, etc. */
+export async function fetchUwTechnicalIndicator(
+  ticker: string,
+  fn: string,
+  opts?: { interval?: string; time_period?: number; series_type?: string }
+) {
+  const params: Record<string, string | number> = {};
+  if (opts?.interval) params.interval = opts.interval;
+  if (opts?.time_period) params.time_period = opts.time_period;
+  if (opts?.series_type) params.series_type = opts.series_type;
+  const data = await uwGetSafe<unknown>(
+    `/api/stock/${ticker.toUpperCase()}/technical-indicator/${fn.toLowerCase()}`,
+    params
+  );
+  return extractRows(data);
+}
+
+/** Daily IV rank time series. */
+export async function fetchUwIvRankSeries(ticker: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/iv-rank`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export function formatUwOptionContracts(
+  rows: Record<string, unknown>[],
+  spot: number,
+  optionType?: "call" | "put",
+  limit = 28
+) {
+  const want = optionType?.toLowerCase();
+  return rows
+    .filter((r) => {
+      const type = String(r.type ?? r.option_type ?? r.contract_type ?? "").toLowerCase();
+      if (want && !type.startsWith(want.slice(0, 1))) return false;
+      return Number(r.strike ?? r.strike_price ?? 0) > 0;
+    })
+    .sort(
+      (a, b) =>
+        Math.abs(Number(a.strike ?? a.strike_price ?? 0) - spot) -
+        Math.abs(Number(b.strike ?? b.strike_price ?? 0) - spot)
+    )
+    .slice(0, limit)
+    .map((r) => ({
+      strike: Number(r.strike ?? r.strike_price ?? 0),
+      type: r.type ?? r.option_type ?? r.contract_type,
+      expiry: String(r.expiry ?? r.expiration ?? r.expiration_date ?? "").slice(0, 10),
+      oi: Number(r.open_interest ?? r.oi ?? 0),
+      iv: Number(r.implied_volatility ?? r.iv ?? 0),
+      delta: Number(r.delta ?? 0),
+      gamma: Number(r.gamma ?? 0),
+      bid: Number(r.nbbo_bid ?? r.bid ?? 0),
+      ask: Number(r.nbbo_ask ?? r.ask ?? 0),
+      volume: Number(r.volume ?? 0),
+    }));
+}
+
+export function uwOptionsMeta() {
+  return { data_delay: "real-time", source: "unusual_whales_advanced", plan: UW_PLAN_TIER };
+}
+
+function sym(ticker: string) {
+  return ticker.toUpperCase().replace(/^I:/, "");
+}
+
+export async function fetchUwGexLevels(ticker: string, limit = 500) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/gex-levels`, { limit: Math.min(limit, 500) });
+  return extractRows(data);
+}
+
+export async function fetchUwGreekFlow(ticker: string, expiry?: string, limit = 500) {
+  const s = sym(ticker);
+  const path = expiry
+    ? `/api/stock/${s}/greek-flow/${expiry}`
+    : `/api/stock/${s}/greek-flow`;
+  const data = await uwGetSafe<unknown>(path, { limit: Math.min(limit, 500) });
+  return extractRows(data);
+}
+
+export async function fetchUwSpotExposuresExpiryStrike(
+  ticker: string,
+  expiry: string,
+  limit = 500
+) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/spot-exposures/expiry-strike`, {
+    "expirations[]": expiry,
+    limit: Math.min(limit, 500),
+  });
+  return extractRows(data);
+}
+
+export async function fetchUwSpotExposuresByExpiry(ticker: string, expiry: string, limit = 500) {
+  const data = await uwGetSafe<unknown>(
+    `/api/stock/${sym(ticker)}/spot-exposures/${expiry}/strike`,
+    { limit: Math.min(limit, 500) }
+  );
+  return extractRows(data);
+}
+
+export async function fetchUwGreekExposureExpiry(ticker: string, limit = 500) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/greek-exposure/expiry`, {
+    limit: Math.min(limit, 500),
+  });
+  return extractRows(data);
+}
+
+export async function fetchUwStockState(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/stock-state`, {});
+}
+
+export async function fetchUwFlowPerStrike(ticker: string, limit = 40) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/flow-per-strike`, { limit });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwLitFlowRecent(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/lit-flow/recent", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwMarketTotalOptionsVolume() {
+  return uwGetSafe<unknown>("/api/market/total-options-volume", {});
+}
+
+export async function fetchUwMarketCorrelations(limit = 30) {
+  const data = await uwGetSafe<unknown>("/api/market/correlations", { limit: Math.min(limit, 100) });
+  return extractRows(data);
+}
+
+export async function fetchUwMarketEconomicCalendar(limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/market/economic-calendar", { limit: Math.min(limit, 50) });
+  return extractRows(data);
+}
+
+export async function fetchUwVixTermStructure(limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/volatility/vix-term-structure", { limit: Math.min(limit, 50) });
+  return extractRows(data);
+}
+
+export async function fetchUwVolatilityCharacterTop(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/volatility/character/top", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwVarianceRiskPremium(ticker: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/volatility/variance-risk-premium`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEarningsPremarket(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/earnings/premarket", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEarningsAfterhours(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/earnings/afterhours", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwOptionChains(ticker: string, limit = 500) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/option-chains`, { limit: Math.min(limit, 500) });
+  return extractRows(data);
+}
+
+export async function fetchUwOwnership(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/ownership`, {});
+}
+
+export async function fetchUwOhlc(ticker: string, candleSize = "1d", limit = 60) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/ohlc/${candleSize}`, {
+    limit: Math.min(limit, 500),
+  });
+  return extractRows(data);
+}
+
+export async function fetchUwOptionContractIntraday(contractId: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/option-contract/${contractId.toUpperCase()}/intraday`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwOptionContractVolumeProfile(contractId: string) {
+  return uwGetSafe<unknown>(`/api/option-contract/${contractId.toUpperCase()}/volume-profile`, {});
+}
+
+export async function fetchUwInsiderTicker(ticker: string, limit = 25) {
+  const data = await uwGetSafe<unknown>(`/api/insider/${sym(ticker)}`, { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInsiderSectorFlow(sector: string, limit = 25) {
+  const data = await uwGetSafe<unknown>(`/api/insider/${sector.toLowerCase()}/sector-flow`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwCongressUnusualTrades(ticker?: string, limit = 25) {
+  const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
+  if (ticker) params.ticker = sym(ticker);
+  const data = await uwGetSafe<unknown>("/api/congress/unusual-trades", params);
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwCongressPoliticians(limit = 30) {
+  const data = await uwGetSafe<unknown>("/api/congress/politicians", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEtfHoldings(etf: string, limit = 50) {
+  const data = await uwGetSafe<unknown>(`/api/etfs/${etf.toUpperCase()}/holdings`, { limit: Math.min(limit, 200) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwEtfExposure(etf: string) {
+  return uwGetSafe<unknown>(`/api/etfs/${etf.toUpperCase()}/exposure`, {});
+}
+
+export async function fetchUwEtfInfo(etf: string) {
+  return uwGetSafe<unknown>(`/api/etfs/${etf.toUpperCase()}/info`, {});
+}
+
+export async function fetchUwEtfWeights(etf: string, limit = 50) {
+  const data = await uwGetSafe<unknown>(`/api/etfs/${etf.toUpperCase()}/weights`, { limit: Math.min(limit, 200) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInstitutionActivity(name: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/institution/${encodeURIComponent(name)}/activity`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInstitutionHoldings(name: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/institution/${encodeURIComponent(name)}/holdings`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInstitutionsLatestFilings(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/institutions/latest_filings", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwInstitutionOwnership(ticker: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/institution/${sym(ticker)}/ownership`, { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwNetFlowExpiry(limit = 30) {
+  const data = await uwGetSafe<unknown>("/api/net-flow/expiry", { limit: Math.min(limit, 100) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwCompaniesDividends(ticker: string, limit = 20) {
+  const data = await uwGetSafe<unknown>(`/api/companies/${sym(ticker)}/dividends`, { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwCompaniesSplits(ticker: string, limit = 20) {
+  const data = await uwGetSafe<unknown>(`/api/companies/${sym(ticker)}/splits`, { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwCompaniesProfile(ticker: string) {
+  return uwGetSafe<unknown>(`/api/companies/${sym(ticker)}/profile`, {});
+}
+
+export async function fetchUwSeasonalityMarket() {
+  return uwGetSafe<unknown>("/api/seasonality/market", {});
+}
+
+export async function fetchUwMarketSectorEtfs() {
+  return uwGetSafe<unknown>("/api/market/sector-etfs", {});
+}
+
+export async function fetchUwScreenerAnalysts(limit = 25) {
+  const data = await uwGetSafe<unknown>("/api/screener/analysts", { limit: Math.min(limit, 50) });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwShortsData(ticker: string) {
+  return uwGetSafe<unknown>(`/api/shorts/${sym(ticker)}/data`, {});
+}
+
+export async function fetchUwShortVolumesByExchange(ticker: string, limit = 15) {
+  const data = await uwGetSafe<unknown>(`/api/shorts/${sym(ticker)}/volumes-by-exchange`, {});
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwFundamentalBreakdown(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/fundamental-breakdown`, {});
+}
+
+export async function fetchUwExpiryBreakdown(ticker: string) {
+  return uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/expiry-breakdown`, {});
+}
+
+export async function fetchUwOptionVolumeOiExpiry(ticker: string, limit = 30) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/option/volume-oi-expiry`, {
+    limit: Math.min(limit, 100),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
+export async function fetchUwGlobalFlowAlerts(limit = 30, params?: Record<string, string | number>) {
+  const data = await uwGetSafe<unknown>("/api/option-trades/flow-alerts", {
+    limit: Math.min(limit, 200),
+    ...params,
+  });
+  return extractRows(data).slice(0, limit);
+}

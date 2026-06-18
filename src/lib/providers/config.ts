@@ -35,10 +35,10 @@ export function deskPulseCacheTtlMs(): number {
   return Math.round(sec * 1000);
 }
 
-/** Slower pulse structure refresh (EMAs, minute bars, mega-caps). Default 10s. */
+/** Slower pulse structure refresh (EMAs, minute bars, mega-caps). Default 5s with live Polygon. */
 export function deskPulseStructureCacheTtlMs(): number {
   const raw = process.env.SPX_PULSE_STRUCTURE_SEC?.trim();
-  const sec = raw ? Number(raw) : 10;
+  const sec = raw ? Number(raw) : 5;
   if (!Number.isFinite(sec) || sec < 0) return 10_000;
   return Math.round(sec * 1000);
 }

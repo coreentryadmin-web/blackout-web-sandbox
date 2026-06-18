@@ -272,6 +272,33 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_lotto_plays_session
     ON lotto_plays(session_date, pick_index);
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS largo_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_largo_sessions_user
+    ON largo_sessions(user_id, updated_at DESC);
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS largo_messages (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES largo_sessions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      tools_used JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_largo_messages_session
+    ON largo_messages(session_id, created_at ASC);
+  `);
 }
 
 export async function ensureSchema(): Promise<void> {
@@ -285,6 +312,14 @@ export async function ensureSchema(): Promise<void> {
     poolInit = null;
     throw error;
   }
+}
+
+export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  values?: unknown[]
+) {
+  await ensureSchema();
+  return (await getPool()).query<T>(text, values);
 }
 
 export async function pingDatabase(): Promise<{

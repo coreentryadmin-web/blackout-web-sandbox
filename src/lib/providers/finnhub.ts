@@ -62,3 +62,71 @@ export async function fetchEconomicCalendarToday(): Promise<MacroEvent[]> {
     .filter((e) => e.event)
     .slice(0, 8);
 }
+
+export async function fetchFinnhubCompanyProfile(ticker: string) {
+  return finnhubGet<Record<string, unknown>>("/stock/profile2", {
+    symbol: ticker.toUpperCase(),
+  });
+}
+
+export async function fetchFinnhubRecommendations(ticker: string) {
+  return finnhubGet<Array<Record<string, unknown>>>("/stock/recommendation", {
+    symbol: ticker.toUpperCase(),
+  });
+}
+
+export async function fetchFinnhubEarningsCalendar(ticker: string, daysAhead = 90) {
+  const from = todayUtc();
+  const to = new Date(Date.now() + daysAhead * 86400000).toISOString().slice(0, 10);
+  return finnhubGet<{ earningsCalendar?: Array<Record<string, unknown>> }>("/calendar/earnings", {
+    from,
+    to,
+    symbol: ticker.toUpperCase(),
+  });
+}
+
+export async function fetchFinnhubBasicMetrics(ticker: string) {
+  return finnhubGet<Record<string, unknown>>("/stock/metric", {
+    symbol: ticker.toUpperCase(),
+    metric: "all",
+  });
+}
+
+export async function fetchFinnhubCompanyNews(ticker: string, daysBack = 7) {
+  const to = todayUtc();
+  const from = new Date(Date.now() - daysBack * 86400000).toISOString().slice(0, 10);
+  return finnhubGet<Array<Record<string, unknown>>>("/company-news", {
+    symbol: ticker.toUpperCase(),
+    from,
+    to,
+  });
+}
+
+export async function fetchFinnhubPriceTarget(ticker: string) {
+  return finnhubGet<Record<string, unknown>>("/stock/price-target", {
+    symbol: ticker.toUpperCase(),
+  });
+}
+
+export async function fetchFinnhubInsiderTransactions(ticker: string) {
+  return finnhubGet<Array<Record<string, unknown>>>("/stock/insider-transactions", {
+    symbol: ticker.toUpperCase(),
+  });
+}
+
+export async function fetchFinnhubIpoCalendar(from?: string, to?: string) {
+  const f = from ?? todayUtc();
+  const t = to ?? new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+  return finnhubGet<{ ipoCalendar?: Array<Record<string, unknown>> }>("/calendar/ipo", {
+    from: f,
+    to: t,
+  });
+}
+
+export async function fetchFinnhubEconomicCalendarRange(from: string, to: string) {
+  if (!finnhubEconomicCalendarEnabled()) return null;
+  return finnhubGet<{ economicCalendar?: Array<Record<string, unknown>> }>("/calendar/economic", {
+    from,
+    to,
+  });
+}

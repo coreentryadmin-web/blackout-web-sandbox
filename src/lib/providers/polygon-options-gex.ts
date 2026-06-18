@@ -5,6 +5,13 @@ import { trackedFetch } from "@/lib/api-tracked-fetch";
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
+/** Options Advanced plan: chain snapshots, greeks, and quotes are real-time. */
+export const POLYGON_OPTIONS_DATA_DELAY = "real-time (Massive Options Advanced plan)";
+
+export function polygonOptionsMeta() {
+  return { data_delay: POLYGON_OPTIONS_DATA_DELAY, source: "polygon", plan: "options_advanced" };
+}
+
 type ChainContract = {
   details?: {
     strike_price?: number;
@@ -22,11 +29,49 @@ type ChainResponse = {
   status?: string;
 };
 
-let cachedRows: { at: number; spot: number; rows: Record<string, unknown>[] } | null = null;
+let cachedOdteBundle: {
+  at: number;
+  spot: number;
+  rows: Record<string, unknown>[];
+  maxPain: number | null;
+} | null = null;
 
 function polygonGexCacheMs(): number {
-  const sec = Number(process.env.SPX_POLYGON_GEX_CACHE_SEC ?? 30);
-  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 30_000;
+  const sec = Number(process.env.SPX_POLYGON_GEX_CACHE_SEC ?? 15);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 15_000;
+}
+
+async function loadOdteContracts(spot: number, expiry: string): Promise<ChainContract[]> {
+  const [spx, spxw] = await Promise.all([
+    fetchChainBand("SPX", spot, expiry),
+    fetchChainBand("SPXW", spot, expiry),
+  ]);
+  return [...spx, ...spxw];
+}
+
+/** 0DTE GEX rows + max pain from one Polygon chain snapshot (SPX + SPXW). */
+export async function fetchPolygonOdteDeskBundle(
+  spot: number,
+  expiry = todayEtYmd()
+): Promise<{ rows: Record<string, unknown>[]; maxPain: number | null }> {
+  if (!polygonConfigured() || spot <= 0) return { rows: [], maxPain: null };
+
+  const now = Date.now();
+  if (
+    cachedOdteBundle &&
+    now - cachedOdteBundle.at < polygonGexCacheMs() &&
+    Math.abs(cachedOdteBundle.spot - spot) < Math.max(spot * 0.003, 5)
+  ) {
+    return { rows: cachedOdteBundle.rows, maxPain: cachedOdteBundle.maxPain };
+  }
+
+  const contracts = await loadOdteContracts(spot, expiry);
+  const rows = aggregateGexRows(contracts, spot);
+  const maxPain = computeMaxPainFromChain(contracts);
+  if (rows.length) {
+    cachedOdteBundle = { at: now, spot, rows, maxPain };
+  }
+  return { rows, maxPain };
 }
 
 async function polygonFetchUrl(url: string): Promise<ChainResponse | null> {
@@ -81,6 +126,10 @@ async function fetchChainBand(
   return out;
 }
 
+export function summarizeGexFromChain(contracts: ChainContract[], spot: number) {
+  return aggregateGexRows(contracts, spot);
+}
+
 function aggregateGexRows(contracts: ChainContract[], spot: number): Record<string, unknown>[] {
   const byStrike = new Map<number, { call: number; put: number }>();
 
@@ -110,25 +159,93 @@ export async function fetchPolygonOdteGexRows(
   spot: number,
   expiry = todayEtYmd()
 ): Promise<Record<string, unknown>[]> {
-  if (!polygonConfigured() || spot <= 0) return [];
-
-  const now = Date.now();
-  if (
-    cachedRows &&
-    now - cachedRows.at < polygonGexCacheMs() &&
-    Math.abs(cachedRows.spot - spot) < Math.max(spot * 0.003, 5)
-  ) {
-    return cachedRows.rows;
-  }
-
-  const [spx, spxw] = await Promise.all([
-    fetchChainBand("SPX", spot, expiry),
-    fetchChainBand("SPXW", spot, expiry),
-  ]);
-
-  const rows = aggregateGexRows([...spx, ...spxw], spot);
-  if (rows.length) {
-    cachedRows = { at: now, spot, rows };
-  }
+  const { rows } = await fetchPolygonOdteDeskBundle(spot, expiry);
   return rows;
+}
+
+/** Options chain near the money for Largo terminal tools. */
+export async function fetchPolygonOptionsChain(
+  underlying: string,
+  spot: number,
+  expiry: string
+): Promise<ChainContract[]> {
+  if (!polygonConfigured() || spot <= 0) return [];
+  const root = underlying.toUpperCase();
+  if (root === "SPX") {
+    const [spx, spxw] = await Promise.all([
+      fetchChainBand("SPX", spot, expiry),
+      fetchChainBand("SPXW", spot, expiry),
+    ]);
+    return [...spx, ...spxw];
+  }
+  return fetchChainBand(root, spot, expiry);
+}
+
+export function summarizeOiByStrike(contracts: ChainContract[], limit = 20) {
+  const byStrike = new Map<number, { call_oi: number; put_oi: number }>();
+  for (const c of contracts) {
+    const strike = Number(c.details?.strike_price);
+    const oi = Number(c.open_interest ?? 0);
+    const type = String(c.details?.contract_type ?? "").toLowerCase();
+    if (!Number.isFinite(strike) || strike <= 0 || !oi) continue;
+    const row = byStrike.get(strike) ?? { call_oi: 0, put_oi: 0 };
+    if (type === "call") row.call_oi += oi;
+    else if (type === "put") row.put_oi += oi;
+    byStrike.set(strike, row);
+  }
+  return Array.from(byStrike.entries())
+    .map(([strike, oi]) => ({ strike, ...oi, total_oi: oi.call_oi + oi.put_oi }))
+    .sort((a, b) => b.total_oi - a.total_oi)
+    .slice(0, limit);
+}
+
+export function computeMaxPainFromChain(contracts: ChainContract[]): number | null {
+  const byStrike = summarizeOiByStrike(contracts, 500);
+  if (!byStrike.length) return null;
+  let bestStrike: number | null = null;
+  let bestPain = Infinity;
+  for (const candidate of byStrike) {
+    let pain = 0;
+    for (const row of byStrike) {
+      if (row.strike < candidate.strike) pain += (candidate.strike - row.strike) * row.call_oi;
+      if (row.strike > candidate.strike) pain += (row.strike - candidate.strike) * row.put_oi;
+    }
+    if (pain < bestPain) {
+      bestPain = pain;
+      bestStrike = candidate.strike;
+    }
+  }
+  return bestStrike;
+}
+
+export function formatChainContracts(
+  contracts: ChainContract[],
+  spot: number,
+  optionType?: "call" | "put",
+  limit = 24
+) {
+  const want = optionType?.toLowerCase();
+  return contracts
+    .filter((c) => {
+      const type = String(c.details?.contract_type ?? "").toLowerCase();
+      if (want && type !== want) return false;
+      return Number(c.details?.strike_price) > 0;
+    })
+    .sort(
+      (a, b) =>
+        Math.abs(Number(a.details?.strike_price) - spot) -
+        Math.abs(Number(b.details?.strike_price) - spot)
+    )
+    .slice(0, limit)
+    .map((c) => ({
+      strike: Number(c.details?.strike_price),
+      type: c.details?.contract_type,
+      expiry: c.details?.expiration_date,
+      oi: Number(c.open_interest ?? 0),
+      iv: Number((c as { implied_volatility?: number }).implied_volatility ?? 0),
+      delta: Number((c as { greeks?: { delta?: number } }).greeks?.delta ?? 0),
+      gamma: Number(c.greeks?.gamma ?? 0),
+      bid: Number((c as { last_quote?: { bid?: number } }).last_quote?.bid ?? 0),
+      ask: Number((c as { last_quote?: { ask?: number } }).last_quote?.ask ?? 0),
+    }));
 }
