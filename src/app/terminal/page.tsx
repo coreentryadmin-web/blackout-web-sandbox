@@ -13,7 +13,10 @@ export default async function TerminalPage() {
           <div>
             <p className="largo-page-kicker">◆ AI DESK — LARGO</p>
             <h1 className="largo-page-title">Neural Terminal</h1>
-            <p className="largo-page-subtitle">Live market intelligence · continuous session</p>
+            <p className="largo-page-subtitle">
+              Live market intelligence ·{" "}
+              <span className="largo-page-subtitle-accent">Partner In Crime</span>
+            </p>
           </div>
           <span className="badge-ai largo-page-badge">
             <span className="badge-live-dot" />

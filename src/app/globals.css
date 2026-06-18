@@ -2346,6 +2346,13 @@ body {
     margin-top: 0.35rem;
   }
 
+  .largo-page-subtitle-accent {
+    color: #991b1b;
+    text-transform: none;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+  }
+
   .largo-page-badge {
     flex-shrink: 0;
     margin-bottom: 0.25rem;
