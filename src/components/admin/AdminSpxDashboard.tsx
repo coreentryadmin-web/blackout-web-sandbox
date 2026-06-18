@@ -4,7 +4,27 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { SpxAdminDashboardPayload } from "@/lib/admin-spx-dashboard";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
-import { ActionButton, LivePill, MegaStat } from "@/components/admin/AdminUi";
+import {
+  ActionButton,
+  DataTable,
+  DeckPanel,
+  EmptyDeck,
+  FilterSearch,
+  FilterSelect,
+  GlassPanel,
+  HorzBar,
+  JsonBlock,
+  KvTiles,
+  LivePill,
+  MegaStat,
+  MetricChip,
+  OutcomeBadge,
+  PnlChart,
+  SectionDeck,
+  TabCommandHero,
+  WinRateRing,
+  pct,
+} from "@/components/admin/AdminUi";
 
 type SectionId =
   | "overview"
@@ -16,20 +36,16 @@ type SectionId =
   | "analytics"
   | "config";
 
-const SECTIONS: Array<{ id: SectionId; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "live", label: "Live Engine" },
-  { id: "desk", label: "Desk Intel" },
-  { id: "lotto", label: "Lotto" },
-  { id: "outcomes", label: "Outcomes" },
-  { id: "signals", label: "Signals" },
-  { id: "analytics", label: "Analytics" },
-  { id: "config", label: "Config" },
+const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
+  { id: "overview", label: "Overview", icon: "◎" },
+  { id: "live", label: "Live Engine", icon: "⚡" },
+  { id: "desk", label: "Desk Intel", icon: "◈" },
+  { id: "lotto", label: "Lotto", icon: "◆" },
+  { id: "outcomes", label: "Outcomes", icon: "▣" },
+  { id: "signals", label: "Signals", icon: "◉" },
+  { id: "analytics", label: "Analytics", icon: "◐" },
+  { id: "config", label: "Config", icon: "⚙" },
 ];
-
-function pct(n: number): string {
-  return `${(n * 100).toFixed(0)}%`;
-}
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -42,86 +58,15 @@ function fmtTime(iso: string | null | undefined): string {
   });
 }
 
-function StatCard(props: Parameters<typeof MegaStat>[0]) {
-  return <MegaStat {...props} />;
-}
-
-function CollapsiblePanel({
-  title,
-  defaultOpen = false,
-  children,
-  badge,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  badge?: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="admin-spx-panel">
-      <button type="button" className="admin-spx-panel-head" onClick={() => setOpen((v) => !v)}>
-        <span className="admin-spx-panel-title">{title}</span>
-        {badge && <span className="admin-spx-badge">{badge}</span>}
-        <span className="admin-spx-chevron">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && <div className="admin-spx-panel-body">{children}</div>}
-    </div>
-  );
-}
-
-function KeyValueGrid({ data }: { data: Record<string, unknown> }) {
-  return (
-    <dl className="admin-spx-kv-grid">
-      {Object.entries(data).map(([k, v]) => (
-        <div key={k} className="admin-spx-kv-row">
-          <dt>{k}</dt>
-          <dd>{v == null ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v)}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="admin-spx-json">{JSON.stringify(value, null, 2)}</pre>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-}) {
-  return (
-    <label className="admin-spx-filter">
-      <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="admin-spx-select">
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 function OverviewSection({ data }: { data: SpxAdminDashboardPayload }) {
   const play = data.play;
   const stats = data.analytics.outcome_stats;
   const c = data.confluence;
 
   return (
-    <div className="admin-spx-section">
-      <div className="admin-spx-hero">
+    <SectionDeck accent="bull">
+      <div className="admin-spx-hero admin-spx-hero-v2">
+        <div className="admin-spx-hero-glow" aria-hidden />
         <div>
           <p className="admin-spx-hero-kicker">
             {data.desk.market.label ?? "SPX"} · {data.desk.market.open ? "OPEN" : "CLOSED"}
@@ -130,59 +75,54 @@ function OverviewSection({ data }: { data: SpxAdminDashboardPayload }) {
             {play?.action ?? c?.direction?.toUpperCase() ?? "SCANNING"}
             {play?.direction ? ` · ${play.direction.toUpperCase()}` : ""}
           </h2>
-          <p className="admin-spx-hero-sub">
-            {play?.headline ?? c?.headline ?? "Awaiting live engine tick"}
-          </p>
+          <p className="admin-spx-hero-sub">{play?.headline ?? c?.headline ?? "Awaiting live engine tick"}</p>
         </div>
         <div className="admin-spx-hero-stats">
-          <div>
-            <p className="admin-stat-label">SPX</p>
+          <div className="admin-spx-hero-stat-block">
+            <p className="admin-deck-kicker">SPX</p>
             <p className="admin-spx-hero-price">{data.desk.price_action.price as number}</p>
           </div>
-          <div>
-            <p className="admin-stat-label">Grade</p>
+          <div className="admin-spx-hero-stat-block">
+            <p className="admin-deck-kicker">Grade</p>
             <p className="admin-spx-hero-grade">{play?.grade ?? c?.grade ?? "—"}</p>
           </div>
-          <div>
-            <p className="admin-stat-label">Score</p>
+          <div className="admin-spx-hero-stat-block">
+            <p className="admin-deck-kicker">Score</p>
             <p className="admin-spx-hero-grade">{play?.score ?? c?.score ?? "—"}</p>
           </div>
         </div>
       </div>
 
       <section className="admin-mega-grid admin-spx-stat-grid">
-        <StatCard
+        <MegaStat
           label="Win rate"
           value={pct(stats.overall.win_rate)}
           sub={`${stats.overall.wins}W · ${stats.overall.losses}L`}
           tone="bull"
+          bar={stats.overall.win_rate * 100}
         />
-        <StatCard label="Closed" value={String(stats.total_closed)} sub={`${stats.days_of_data.toFixed(0)}d data`} />
-        <StatCard
+        <MegaStat label="Closed" value={String(stats.total_closed)} sub={`${stats.days_of_data.toFixed(0)}d data`} tone="cyan" />
+        <MegaStat
           label="Avg PnL"
           value={`${data.analytics.avg_pnl_pts >= 0 ? "+" : ""}${data.analytics.avg_pnl_pts.toFixed(1)}`}
           tone={data.analytics.avg_pnl_pts >= 0 ? "bull" : "bear"}
+          trend={data.analytics.avg_pnl_pts >= 0 ? "up" : data.analytics.avg_pnl_pts < 0 ? "down" : "flat"}
         />
-        <StatCard label="Signals today" value={String(data.analytics.signals_today)} />
-        <StatCard label="Flow alerts" value={String(data.analytics.flow_alerts_today)} />
-        <StatCard
-          label="Lotto"
-          value={data.lotto.today?.phase ?? data.lotto.record?.phase ?? "—"}
-          tone="violet"
-        />
+        <MegaStat label="Signals today" value={String(data.analytics.signals_today)} tone="violet" />
+        <MegaStat label="Flow alerts" value={String(data.analytics.flow_alerts_today)} tone="amber" />
+        <MegaStat label="Lotto" value={data.lotto.today?.phase ?? data.lotto.record?.phase ?? "—"} tone="violet" />
       </section>
 
       {data.analytics.insights.length > 0 && (
-        <section className="admin-insights">
-          <h2 className="admin-section-title">Insights</h2>
-          <ul className="admin-insight-list">
+        <GlassPanel title="Desk insights" accent="bull" kicker="Live telemetry">
+          <ul className="admin-insight-list admin-insight-list-pro">
             {data.analytics.insights.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
-        </section>
+        </GlassPanel>
       )}
-    </div>
+    </SectionDeck>
   );
 }
 
@@ -190,16 +130,19 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
   const play = data.play;
   if (!play) {
     return (
-      <p className="admin-api-muted">
-        Live engine not loaded — click <strong>Run live engine</strong> to evaluate play state (mutates session).
-      </p>
+      <EmptyDeck
+        title="Live engine not loaded"
+        hint="Click Run live engine to evaluate play state — this mutates the active session."
+      />
     );
   }
 
+  const gateTone = play.gates.passed ? "bull" : "bear";
+
   return (
-    <div className="admin-spx-section">
-      <CollapsiblePanel title="Play state" defaultOpen badge={`${play.phase} · ${play.action}`}>
-        <KeyValueGrid
+    <SectionDeck>
+      <DeckPanel title="Play state" defaultOpen badge={`${play.phase} · ${play.action}`} accent="cyan">
+        <KvTiles
           data={{
             phase: play.phase,
             action: play.action,
@@ -213,27 +156,27 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
             thesis: play.thesis,
           }}
         />
-      </CollapsiblePanel>
+      </DeckPanel>
 
-      <CollapsiblePanel title="Gates" defaultOpen badge={play.gates.passed ? "PASSED" : "BLOCKED"}>
+      <DeckPanel title="Gates" defaultOpen badge={play.gates.passed ? "PASSED" : "BLOCKED"} accent={gateTone}>
         {play.gates.play_idea && <p className="admin-spx-idea">{play.gates.play_idea}</p>}
-        <p className="admin-section-title mt-2">Blocks ({play.gates.blocks.length})</p>
-        <ul className="admin-spx-list admin-spx-list-error">
+        <p className="admin-deck-subtitle">Blocks ({play.gates.blocks.length})</p>
+        <ul className="admin-tag-list admin-tag-list-bear">
           {play.gates.blocks.map((b) => (
             <li key={b}>{b}</li>
           ))}
         </ul>
-        <p className="admin-section-title mt-3">Warnings ({play.gates.warnings.length})</p>
-        <ul className="admin-spx-list admin-spx-list-warn">
+        <p className="admin-deck-subtitle mt-4">Warnings ({play.gates.warnings.length})</p>
+        <ul className="admin-tag-list admin-tag-list-warn">
           {play.gates.warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
-        <p className="admin-spx-meta">Entry mode: {play.gates.entry_mode}</p>
-      </CollapsiblePanel>
+        <MetricChip label="Entry mode" value={play.gates.entry_mode} tone="cyan" />
+      </DeckPanel>
 
-      <CollapsiblePanel title="Confluence factors" badge={String(play.factors.length)}>
-        <table className="admin-table">
+      <DeckPanel title="Confluence factors" badge={String(play.factors.length)} accent="violet">
+        <DataTable>
           <thead>
             <tr>
               <th>Factor</th>
@@ -244,8 +187,8 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
           <tbody>
             {play.factors.map((f) => (
               <tr key={`${f.label}-${f.detail}`}>
-                <td>{f.label}</td>
-                <td className={f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : ""}>
+                <td className="admin-td-strong">{f.label}</td>
+                <td className={f.weight > 0 ? "admin-td-bull" : f.weight < 0 ? "admin-td-bear" : ""}>
                   {f.weight > 0 ? "+" : ""}
                   {f.weight}
                 </td>
@@ -253,85 +196,79 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
               </tr>
             ))}
           </tbody>
-        </table>
-      </CollapsiblePanel>
+        </DataTable>
+      </DeckPanel>
 
       {play.confirmations && (
-        <CollapsiblePanel
-          title="Confirmations"
-          badge={`${play.confirmations.passed_count}/${play.confirmations.total}`}
-        >
+        <DeckPanel title="Confirmations" badge={`${play.confirmations.passed_count}/${play.confirmations.total}`} accent="bull">
           <JsonBlock value={play.confirmations} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.mtf && (
-        <CollapsiblePanel title="MTF hybrid" badge={play.mtf.ok ? "OK" : "FAIL"}>
+        <DeckPanel title="MTF hybrid" badge={play.mtf.ok ? "OK" : "FAIL"} accent={play.mtf.ok ? "bull" : "bear"}>
           <JsonBlock value={play.mtf} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.technicals && (
-        <CollapsiblePanel title="Technicals">
+        <DeckPanel title="Technicals" accent="cyan">
           <JsonBlock value={play.technicals} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.claude && (
-        <CollapsiblePanel title="Claude verdict" badge={play.claude.verdict}>
+        <DeckPanel title="Claude verdict" badge={play.claude.verdict} accent="violet">
           <JsonBlock value={play.claude} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.open_play && (
-        <CollapsiblePanel title="Open play" defaultOpen badge={play.open_play.direction}>
+        <DeckPanel title="Open play" defaultOpen badge={play.open_play.direction} accent="amber">
           <JsonBlock value={play.open_play} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.watch && (
-        <CollapsiblePanel title="Watch state" badge={play.watch.promote_ready ? "PROMOTE READY" : "WATCH"}>
+        <DeckPanel title="Watch state" badge={play.watch.promote_ready ? "PROMOTE READY" : "WATCH"} accent="amber">
           <JsonBlock value={play.watch} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
       {play.option_ticket && (
-        <CollapsiblePanel title="Option ticket">
+        <DeckPanel title="Option ticket" accent="cyan">
           <JsonBlock value={play.option_ticket} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-
-      <CollapsiblePanel title="Session meta">
+      <DeckPanel title="Session meta" accent="cyan">
         <JsonBlock value={data.state.session_meta} />
-      </CollapsiblePanel>
-
+      </DeckPanel>
       {data.state.watch && (
-        <CollapsiblePanel title="Watch record">
+        <DeckPanel title="Watch record" accent="amber">
           <JsonBlock value={data.state.watch} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-    </div>
+    </SectionDeck>
   );
 }
 
 function DeskSection({ data }: { data: SpxAdminDashboardPayload }) {
   const d = data.desk;
   return (
-    <div className="admin-spx-section">
-      <CollapsiblePanel title="Price action" defaultOpen>
-        <KeyValueGrid data={d.price_action} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Moving averages">
-        <KeyValueGrid data={d.moving_averages} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Internals">
-        <KeyValueGrid data={d.internals} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Volatility">
-        <KeyValueGrid data={d.volatility as Record<string, unknown>} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Dealer GEX" defaultOpen badge={String((d.dealer_gex.walls as unknown[])?.length ?? 0) + " walls"}>
-        <KeyValueGrid
+    <SectionDeck>
+      <DeckPanel title="Price action" defaultOpen accent="cyan">
+        <KvTiles data={d.price_action} />
+      </DeckPanel>
+      <DeckPanel title="Moving averages" accent="violet">
+        <KvTiles data={d.moving_averages} />
+      </DeckPanel>
+      <DeckPanel title="Internals" accent="bull">
+        <KvTiles data={d.internals} />
+      </DeckPanel>
+      <DeckPanel title="Volatility" accent="amber">
+        <KvTiles data={d.volatility as Record<string, unknown>} />
+      </DeckPanel>
+      <DeckPanel
+        title="Dealer GEX"
+        defaultOpen
+        badge={`${(d.dealer_gex.walls as unknown[])?.length ?? 0} walls`}
+        accent="bull"
+      >
+        <KvTiles
           data={{
             gex_net: d.dealer_gex.gex_net,
             gex_king: d.dealer_gex.gex_king,
@@ -340,7 +277,7 @@ function DeskSection({ data }: { data: SpxAdminDashboardPayload }) {
             gamma_regime: d.dealer_gex.gamma_regime,
           }}
         />
-        <table className="admin-table mt-3">
+        <DataTable className="mt-4">
           <thead>
             <tr>
               <th>Strike</th>
@@ -352,20 +289,20 @@ function DeskSection({ data }: { data: SpxAdminDashboardPayload }) {
           <tbody>
             {((d.dealer_gex.walls as Array<Record<string, unknown>>) ?? []).map((w) => (
               <tr key={String(w.strike)}>
-                <td>{String(w.strike)}</td>
+                <td className="admin-td-strong">{String(w.strike)}</td>
                 <td>{String(w.kind)}</td>
-                <td>{String(w.net_gex)}</td>
+                <td className="admin-td-bull">{String(w.net_gex)}</td>
                 <td>{String(w.distance_pts)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Flow & tide">
-        <KeyValueGrid data={d.flow as Record<string, unknown>} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Levels" badge={String(d.levels.length)}>
-        <table className="admin-table">
+        </DataTable>
+      </DeckPanel>
+      <DeckPanel title="Flow & tide" accent="cyan">
+        <KvTiles data={d.flow as Record<string, unknown>} />
+      </DeckPanel>
+      <DeckPanel title="Levels" badge={String(d.levels.length)} accent="violet">
+        <DataTable>
           <thead>
             <tr>
               <th>Label</th>
@@ -377,17 +314,17 @@ function DeskSection({ data }: { data: SpxAdminDashboardPayload }) {
           <tbody>
             {d.levels.map((l) => (
               <tr key={l.label}>
-                <td>{l.label}</td>
+                <td className="admin-td-strong">{l.label}</td>
                 <td>{l.value}</td>
                 <td>{l.kind}</td>
                 <td>{l.distance_pct?.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Unified tape" badge={String(d.tape.length)}>
-        <table className="admin-table">
+        </DataTable>
+      </DeckPanel>
+      <DeckPanel title="Unified tape" badge={String(d.tape.length)} accent="amber">
+        <DataTable tall>
           <thead>
             <tr>
               <th>Time</th>
@@ -400,42 +337,44 @@ function DeskSection({ data }: { data: SpxAdminDashboardPayload }) {
             {d.tape.map((t) => (
               <tr key={`${t.time}-${t.label}`}>
                 <td>{fmtTime(t.time)}</td>
-                <td>{t.side}</td>
+                <td className={t.side === "call" ? "admin-td-bull" : t.side === "put" ? "admin-td-bear" : ""}>
+                  {t.side}
+                </td>
                 <td>{t.label}</td>
-                <td>{t.premium?.toLocaleString()}</td>
+                <td className="admin-td-strong">{t.premium?.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Macro & news">
+        </DataTable>
+      </DeckPanel>
+      <DeckPanel title="Macro & news" accent="violet">
         <JsonBlock value={{ macro: d.macro_events, news: d.news_headlines }} />
-      </CollapsiblePanel>
-      <CollapsiblePanel title="Confluence snapshot">
+      </DeckPanel>
+      <DeckPanel title="Confluence snapshot" accent="bull">
         <JsonBlock value={data.confluence} />
-      </CollapsiblePanel>
-    </div>
+      </DeckPanel>
+    </SectionDeck>
   );
 }
 
 function LottoSection({ data }: { data: SpxAdminDashboardPayload }) {
   const lotto = data.lotto.today;
   return (
-    <div className="admin-spx-section">
+    <SectionDeck>
       {lotto ? (
-        <CollapsiblePanel title="Live lotto" defaultOpen badge={lotto.phase}>
+        <DeckPanel title="Live lotto" defaultOpen badge={lotto.phase} accent="violet">
           <JsonBlock value={lotto} />
-        </CollapsiblePanel>
+        </DeckPanel>
       ) : (
-        <p className="admin-api-muted">Run live engine to load lotto state.</p>
+        <EmptyDeck title="No live lotto state" hint="Run live engine to load lotto evaluation." />
       )}
       {data.lotto.record && (
-        <CollapsiblePanel title="Lotto record (DB/meta)">
+        <DeckPanel title="Lotto record (DB)" accent="cyan">
           <JsonBlock value={data.lotto.record} />
-        </CollapsiblePanel>
+        </DeckPanel>
       )}
-      <CollapsiblePanel title="Today's history" badge={String(data.lotto.history.length)}>
-        <table className="admin-table">
+      <DeckPanel title="Today's history" badge={String(data.lotto.history.length)} accent="violet">
+        <DataTable tall>
           <thead>
             <tr>
               <th>Pick</th>
@@ -452,15 +391,15 @@ function LottoSection({ data }: { data: SpxAdminDashboardPayload }) {
                 <td>{r.pick_index}</td>
                 <td>{r.phase}</td>
                 <td>{r.direction}</td>
-                <td>{r.strike}</td>
-                <td>{r.outcome ?? "—"}</td>
-                <td className="max-w-[200px] truncate">{r.headline ?? "—"}</td>
+                <td className="admin-td-strong">{r.strike}</td>
+                <td>{r.outcome ? <OutcomeBadge outcome={r.outcome} /> : "—"}</td>
+                <td className="admin-td-truncate">{r.headline ?? "—"}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </CollapsiblePanel>
-    </div>
+        </DataTable>
+      </DeckPanel>
+    </SectionDeck>
   );
 }
 
@@ -478,9 +417,9 @@ function OutcomesSection({ rows }: { rows: PlayOutcomeRow[] }) {
     [rows]
   );
 
+  const closed = rows.filter((r) => r.outcome !== "open");
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (r.outcome === "open") return false;
+    return closed.filter((r) => {
       if (grade !== "all" && r.grade !== grade) return false;
       if (path !== "all" && r.entry_path !== path) return false;
       if (outcome !== "all" && r.outcome !== outcome) return false;
@@ -488,11 +427,14 @@ function OutcomesSection({ rows }: { rows: PlayOutcomeRow[] }) {
       if (search && !r.headline.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [rows, grade, path, outcome, exit, search]);
+  }, [closed, grade, path, outcome, exit, search]);
+
+  const wins = filtered.filter((r) => r.outcome === "win").length;
+  const winRate = filtered.length ? wins / filtered.length : 0;
 
   return (
-    <div className="admin-spx-section">
-      <div className="admin-spx-filters">
+    <SectionDeck>
+      <div className="admin-filter-bar">
         <FilterSelect
           label="Grade"
           value={grade}
@@ -526,20 +468,16 @@ function OutcomesSection({ rows }: { rows: PlayOutcomeRow[] }) {
           onChange={setExit}
           options={exits.map((e) => ({ value: e, label: e === "all" ? "All exits" : e }))}
         />
-        <label className="admin-spx-filter admin-spx-filter-search">
-          <span>Search</span>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Headline…"
-            className="admin-spx-input"
-          />
-        </label>
+        <FilterSearch label="Search" value={search} onChange={setSearch} placeholder="Headline…" />
       </div>
-      <p className="admin-spx-meta mb-3">{filtered.length} of {rows.filter((r) => r.outcome !== "open").length} closed plays</p>
-      <div className="admin-scroll-table admin-spx-table-tall">
-        <table className="admin-table">
+
+      <div className="admin-outcomes-summary">
+        <MegaStat label="Filtered plays" value={String(filtered.length)} sub={`of ${closed.length} closed`} tone="cyan" />
+        <MegaStat label="Filter win rate" value={pct(winRate)} sub={`${wins}W in view`} tone="bull" bar={winRate * 100} />
+      </div>
+
+      <GlassPanel title="Closed play ledger" accent="bull" kicker="Click row to expand">
+        <DataTable tall>
           <thead>
             <tr>
               <th />
@@ -562,16 +500,18 @@ function OutcomesSection({ rows }: { rows: PlayOutcomeRow[] }) {
                   <td>{expanded === r.id ? "▾" : "▸"}</td>
                   <td className="whitespace-nowrap">{fmtTime(r.closed_at)}</td>
                   <td>{r.entry_path === "watch_promote" ? "promote" : "cold"}</td>
-                  <td>{r.grade}</td>
+                  <td className="admin-td-strong">{r.grade}</td>
                   <td>{r.direction}</td>
                   <td>{r.exit_action ?? "—"}</td>
-                  <td className={r.outcome === "win" ? "text-bull" : r.outcome === "loss" ? "text-bear" : ""}>
-                    {r.outcome}
+                  <td>
+                    <OutcomeBadge outcome={r.outcome} />
                   </td>
-                  <td>{r.pnl_pts != null ? r.pnl_pts.toFixed(1) : "—"}</td>
+                  <td className={r.pnl_pts != null && r.pnl_pts >= 0 ? "admin-td-bull" : "admin-td-bear"}>
+                    {r.pnl_pts != null ? r.pnl_pts.toFixed(1) : "—"}
+                  </td>
                   <td>{r.mfe_pts.toFixed(1)}</td>
                   <td>{r.mae_pts.toFixed(1)}</td>
-                  <td className="max-w-[180px] truncate">{r.headline}</td>
+                  <td className="admin-td-truncate">{r.headline}</td>
                 </tr>
                 {expanded === r.id && (
                   <tr>
@@ -583,9 +523,9 @@ function OutcomesSection({ rows }: { rows: PlayOutcomeRow[] }) {
               </Fragment>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </DataTable>
+      </GlassPanel>
+    </SectionDeck>
   );
 }
 
@@ -599,8 +539,8 @@ function SignalsSection({ data }: { data: SpxAdminDashboardPayload }) {
   );
 
   return (
-    <div className="admin-spx-section">
-      <div className="admin-spx-filters">
+    <SectionDeck>
+      <div className="admin-filter-bar">
         <FilterSelect
           label="Action"
           value={action}
@@ -608,15 +548,15 @@ function SignalsSection({ data }: { data: SpxAdminDashboardPayload }) {
           options={actions.map((a) => ({ value: a, label: a === "all" ? "All actions" : a }))}
         />
       </div>
-      <div className="admin-mini-grid mb-4">
+
+      <div className="admin-metric-chip-row">
         {data.analytics.signal_actions_30d.map((s) => (
-          <span key={s.action}>
-            {s.action}: {s.count}
-          </span>
+          <MetricChip key={s.action} label={s.action} value={String(s.count)} tone="violet" />
         ))}
       </div>
-      <div className="admin-scroll-table admin-spx-table-tall">
-        <table className="admin-table">
+
+      <GlassPanel title="Signal log" accent="violet" kicker={`${filtered.length} events`}>
+        <DataTable tall>
           <thead>
             <tr>
               <th>Time</th>
@@ -631,87 +571,81 @@ function SignalsSection({ data }: { data: SpxAdminDashboardPayload }) {
             {filtered.map((s) => (
               <tr key={s.id}>
                 <td>{fmtTime(s.created_at)}</td>
-                <td>{s.action}</td>
-                <td>{s.bias ?? "—"}</td>
+                <td className="admin-td-strong">{s.action}</td>
+                <td className={s.bias === "bull" ? "admin-td-bull" : s.bias === "bear" ? "admin-td-bear" : ""}>
+                  {s.bias ?? "—"}
+                </td>
                 <td>{s.score}</td>
                 <td>{s.confidence}</td>
-                <td className="max-w-[280px] truncate">{s.headline}</td>
+                <td className="admin-td-truncate">{s.headline}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </DataTable>
+      </GlassPanel>
+    </SectionDeck>
   );
 }
 
 function AnalyticsSection({ data }: { data: SpxAdminDashboardPayload }) {
   const a = data.analytics;
   const stats = a.outcome_stats;
+
   return (
-    <div className="admin-spx-section">
+    <SectionDeck accent="violet">
       {a.adaptive && (
-        <section className="admin-panel">
-          <h2 className="admin-section-title">Adaptive gates</h2>
-          <p className="text-sm text-grey-300">{a.adaptive.summary}</p>
-          <div className="admin-mini-grid mt-3">
-            <span>Active: {a.adaptive.active ? "yes" : "no"}</span>
-            <span>Global boost: +{a.adaptive.global_min_score_boost}</span>
-            <span>Promote boost: +{a.adaptive.promote_min_score_boost}</span>
-            <span>Promote blocked: {a.adaptive.promote_blocked ? "yes" : "no"}</span>
-            <span>Promote requires Claude: {a.adaptive.promote_requires_claude ? "yes" : "no"}</span>
+        <GlassPanel title="Adaptive gates" accent="violet" kicker="Engine learning layer">
+          <p className="admin-adaptive-summary admin-adaptive-banner">{a.adaptive.summary}</p>
+          <div className="admin-metric-chip-row mt-4">
+            <MetricChip label="Active" value={a.adaptive.active ? "YES" : "NO"} tone={a.adaptive.active ? "bull" : "neutral"} />
+            <MetricChip label="Global boost" value={`+${a.adaptive.global_min_score_boost}`} tone="cyan" />
+            <MetricChip label="Promote boost" value={`+${a.adaptive.promote_min_score_boost}`} tone="violet" />
+            <MetricChip label="Promote blocked" value={a.adaptive.promote_blocked ? "YES" : "NO"} tone={a.adaptive.promote_blocked ? "bear" : "bull"} />
+            <MetricChip label="Claude required" value={a.adaptive.promote_requires_claude ? "YES" : "NO"} tone="amber" />
           </div>
-        </section>
+        </GlassPanel>
       )}
-      <div className="admin-two-col">
-        <section className="admin-panel">
-          <h2 className="admin-section-title">By grade</h2>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Grade</th>
-                <th>n</th>
-                <th>Win%</th>
-                <th>Avg PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {a.grade_breakdown.map((g) => (
-                <tr key={g.grade}>
-                  <td>{g.grade}</td>
-                  <td>{g.count}</td>
-                  <td className={g.win_rate >= 0.5 ? "text-bull" : "text-bear"}>{pct(g.win_rate)}</td>
-                  <td>{g.avg_pnl.toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-        <section className="admin-panel">
-          <h2 className="admin-section-title">Exit reason</h2>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Exit</th>
-                <th>n</th>
-                <th>Avg PnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {a.exit_breakdown.map((e) => (
-                <tr key={e.exit_action}>
-                  <td>{e.exit_action}</td>
-                  <td>{e.count}</td>
-                  <td>{e.avg_pnl.toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+
+      <div className="admin-analytics-rings">
+        <WinRateRing value={stats.cold_buy.win_rate} label="Cold BUY" sub={`${stats.cold_buy.count} plays`} tone="bull" size={100} />
+        <WinRateRing value={stats.watch_promote.win_rate} label="Promote" sub={`${stats.watch_promote.count} plays`} tone="violet" size={100} />
+        <MegaStat label="Open outcomes" value={String(a.open_outcomes)} sub="still tracking" tone="amber" />
       </div>
-      <section className="admin-panel">
-        <h2 className="admin-section-title">Daily rollup (ET)</h2>
-        <table className="admin-table">
+
+      <div className="admin-two-col">
+        <GlassPanel title="By grade" accent="bull">
+          <div className="admin-bar-list">
+            {a.grade_breakdown.map((g) => (
+              <HorzBar
+                key={g.grade}
+                label={g.grade}
+                value={g.win_rate}
+                max={1}
+                tone={g.win_rate >= 0.5 ? "bull" : "bear"}
+                right={`${pct(g.win_rate)} · n=${g.count} · avg ${g.avg_pnl.toFixed(1)}`}
+              />
+            ))}
+          </div>
+        </GlassPanel>
+        <GlassPanel title="Exit reason" accent="bear">
+          <div className="admin-bar-list">
+            {a.exit_breakdown.map((e) => (
+              <HorzBar
+                key={e.exit_action}
+                label={e.exit_action}
+                value={Math.abs(e.avg_pnl)}
+                max={Math.max(1, ...a.exit_breakdown.map((x) => Math.abs(x.avg_pnl)))}
+                tone={e.avg_pnl >= 0 ? "bull" : "bear"}
+                right={`n=${e.count} · avg ${e.avg_pnl.toFixed(1)}`}
+              />
+            ))}
+          </div>
+        </GlassPanel>
+      </div>
+
+      <GlassPanel title="Daily rollup (ET)" accent="cyan" kicker="Session P&L">
+        <PnlChart days={a.daily_rollup} />
+        <DataTable className="mt-6">
           <thead>
             <tr>
               <th>Day</th>
@@ -724,30 +658,31 @@ function AnalyticsSection({ data }: { data: SpxAdminDashboardPayload }) {
           <tbody>
             {a.daily_rollup.map((d) => (
               <tr key={d.day}>
-                <td>{d.day}</td>
+                <td className="admin-td-strong">{d.day}</td>
                 <td>{d.trades}</td>
                 <td>
-                  {d.wins}/{d.losses}
+                  <span className="admin-td-bull">{d.wins}</span>
+                  <span className="text-grey-600"> / </span>
+                  <span className="admin-td-bear">{d.losses}</span>
                 </td>
                 <td>{d.avg_pnl.toFixed(1)}</td>
-                <td className={d.total_pnl >= 0 ? "text-bull" : "text-bear"}>
+                <td className={d.total_pnl >= 0 ? "admin-td-bull admin-td-strong" : "admin-td-bear admin-td-strong"}>
                   {d.total_pnl >= 0 ? "+" : ""}
                   {d.total_pnl.toFixed(1)}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </section>
-      <section className="admin-panel">
-        <h2 className="admin-section-title">Path comparison</h2>
-        <div className="admin-mini-grid">
-          <span>Cold BUY: {pct(stats.cold_buy.win_rate)} ({stats.cold_buy.count}n)</span>
-          <span>Promote: {pct(stats.watch_promote.win_rate)} ({stats.watch_promote.count}n)</span>
-          <span>Open outcomes: {a.open_outcomes}</span>
+        </DataTable>
+      </GlassPanel>
+
+      <GlassPanel title="Path comparison" accent="violet">
+        <div className="admin-path-compare">
+          <HorzBar label="Cold BUY win rate" value={stats.cold_buy.win_rate} max={1} tone="bull" right={pct(stats.cold_buy.win_rate)} />
+          <HorzBar label="Promote win rate" value={stats.watch_promote.win_rate} max={1} tone="violet" right={pct(stats.watch_promote.win_rate)} />
         </div>
-      </section>
-    </div>
+      </GlassPanel>
+    </SectionDeck>
   );
 }
 
@@ -757,8 +692,8 @@ function ConfigSection({ data }: { data: SpxAdminDashboardPayload }) {
   const visible = group === "all" ? groups : groups.filter((g) => g.id === group);
 
   return (
-    <div className="admin-spx-section">
-      <div className="admin-spx-filters">
+    <SectionDeck>
+      <div className="admin-filter-bar">
         <FilterSelect
           label="Group"
           value={group}
@@ -770,8 +705,8 @@ function ConfigSection({ data }: { data: SpxAdminDashboardPayload }) {
         />
       </div>
       {visible.map((g) => (
-        <CollapsiblePanel key={g.id} title={g.label} defaultOpen={group !== "all"} badge={String(g.items.length)}>
-          <table className="admin-table">
+        <DeckPanel key={g.id} title={g.label} defaultOpen={group !== "all"} badge={String(g.items.length)} accent="cyan">
+          <DataTable>
             <thead>
               <tr>
                 <th>Key</th>
@@ -781,15 +716,15 @@ function ConfigSection({ data }: { data: SpxAdminDashboardPayload }) {
             <tbody>
               {g.items.map((item) => (
                 <tr key={item.key}>
-                  <td className="admin-api-mono">{item.key}</td>
+                  <td className="admin-api-mono admin-td-strong">{item.key}</td>
                   <td>{String(item.value)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </CollapsiblePanel>
+          </DataTable>
+        </DeckPanel>
       ))}
-    </div>
+    </SectionDeck>
   );
 }
 
@@ -799,6 +734,24 @@ export function AdminSpxDashboard() {
   const [loading, setLoading] = useState(true);
   const [liveLoading, setLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clock, setClock] = useState("");
+
+  useEffect(() => {
+    const tick = () => {
+      setClock(
+        new Date().toLocaleString("en-US", {
+          timeZone: "America/New_York",
+          weekday: "short",
+          hour: "numeric",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const load = useCallback(async (live = false) => {
     if (live) setLiveLoading(true);
@@ -834,46 +787,112 @@ export function AdminSpxDashboard() {
     }
   }, [section, data, load]);
 
+  const stats = data?.analytics;
+  const wr = stats?.outcome_stats.overall.win_rate ?? 0;
+  const cold = stats?.outcome_stats.cold_buy.win_rate ?? 0;
+  const promote = stats?.outcome_stats.watch_promote.win_rate ?? 0;
+
   return (
-    <div className="admin-spx-dashboard">
-      <header className="admin-spx-toolbar">
-        <div>
-          <h2 className="admin-section-title">SPX Sniper Command</h2>
-          <p className="admin-sub">
-            Live engine · desk intel · outcomes · signals · adaptive telemetry · full config
-          </p>
-        </div>
-        <div className="admin-spx-toolbar-actions">
-          <LivePill label={loading ? "Loading…" : data?.live_engine ? "Live engine on" : "Desk snapshot"} />
-          <ActionButton onClick={() => load(false)} disabled={loading}>
-            Refresh
-          </ActionButton>
-          <ActionButton onClick={() => load(true)} disabled={liveLoading} variant="primary">
-            {liveLoading ? "Running…" : "Run live engine"}
-          </ActionButton>
-        </div>
-      </header>
+    <div className="admin-spx-dashboard admin-deck-root">
+      <TabCommandHero
+        kicker="Blackout · SPX Engine"
+        title="SPX Sniper"
+        titleAccent="Command"
+        subtitle="Live engine · desk intel · outcomes · signals · adaptive telemetry · full config"
+        chips={
+          <>
+            <LivePill label={loading ? "Loading…" : data?.live_engine ? "Live engine on" : "Desk snapshot"} />
+            <span className="admin-hero-chip">ET {clock}</span>
+            {stats && (
+              <>
+                <span className="admin-hero-chip">Signals today {stats.signals_today}</span>
+                <span className="admin-hero-chip">Flow alerts {stats.flow_alerts_today}</span>
+              </>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <ActionButton onClick={() => load(false)} disabled={loading}>
+              Refresh
+            </ActionButton>
+            <ActionButton onClick={() => load(true)} disabled={liveLoading} variant="primary">
+              {liveLoading ? "Running…" : "Run live engine"}
+            </ActionButton>
+          </>
+        }
+        rings={
+          stats ? (
+            <>
+              <WinRateRing
+                value={wr}
+                label="Win rate"
+                sub={`${stats.outcome_stats.overall.wins}W · ${stats.outcome_stats.overall.losses}L`}
+                tone="bull"
+                size={96}
+              />
+              <WinRateRing value={cold} label="Cold BUY" sub={`${stats.outcome_stats.cold_buy.count} trades`} tone="cyan" size={96} />
+              <WinRateRing
+                value={promote}
+                label="Promote"
+                sub={`${stats.outcome_stats.watch_promote.count} trades`}
+                tone="violet"
+                size={96}
+              />
+            </>
+          ) : undefined
+        }
+      />
+
+      {stats && (
+        <section className="admin-mega-grid">
+          <MegaStat
+            label="Closed plays"
+            value={String(stats.outcome_stats.total_closed)}
+            sub={`${stats.outcome_stats.days_of_data.toFixed(0)} days logged`}
+            tone="neutral"
+          />
+          <MegaStat
+            label="Avg PnL"
+            value={`${stats.avg_pnl_pts >= 0 ? "+" : ""}${stats.avg_pnl_pts.toFixed(1)} pts`}
+            sub={`MFE ${stats.avg_mfe_pts.toFixed(1)} · MAE ${stats.avg_mae_pts.toFixed(1)}`}
+            tone={stats.avg_pnl_pts >= 0 ? "bull" : "bear"}
+            trend={stats.avg_pnl_pts >= 0 ? "up" : "down"}
+          />
+          <MegaStat label="Open outcomes" value={String(stats.open_outcomes)} sub="Active in DB" tone="amber" />
+          <MegaStat
+            label="Adaptive gates"
+            value={stats.adaptive?.active ? "LIVE" : "COLLECT"}
+            sub={stats.adaptive?.summary?.slice(0, 48) ?? "Building sample"}
+            tone="violet"
+            bar={
+              stats.adaptive?.active ? 100 : Math.min(100, (stats.outcome_stats.total_closed / 8) * 100)
+            }
+          />
+        </section>
+      )}
 
       {error && <p className="admin-error">{error}</p>}
       {!data?.analytics.db_configured && (
         <p className="admin-warn">DATABASE_URL not set — analytics and state may be empty or in-memory only.</p>
       )}
 
-      <nav className="admin-spx-section-nav">
+      <nav className="admin-deck-nav admin-deck-nav-pro">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
             type="button"
-            className={clsx("admin-spx-section-tab", section === s.id && "admin-spx-section-tab-active")}
+            className={clsx("admin-deck-nav-tab", section === s.id && "admin-deck-nav-tab-active")}
             onClick={() => setSection(s.id)}
           >
-            {s.label}
+            <span className="admin-deck-nav-icon">{s.icon}</span>
+            <span>{s.label}</span>
           </button>
         ))}
       </nav>
 
       {data && (
-        <>
+        <div className="admin-deck-content" key={section}>
           {section === "overview" && <OverviewSection data={data} />}
           {section === "live" && <LiveEngineSection data={data} />}
           {section === "desk" && <DeskSection data={data} />}
@@ -886,7 +905,7 @@ export function AdminSpxDashboard() {
             Updated {fmtTime(data.generated_at)}
             {data.live_engine ? " · live engine evaluated" : " · desk snapshot only"}
           </p>
-        </>
+        </div>
       )}
     </div>
   );

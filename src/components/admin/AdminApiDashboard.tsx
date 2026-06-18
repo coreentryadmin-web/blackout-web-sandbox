@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { clsx } from "clsx";
 import type { ApiDashboardPayload, ProviderDashboardRow } from "@/lib/admin-api-dashboard";
-import { ActionButton, LivePill, MegaStat } from "@/components/admin/AdminUi";
+import { ActionButton, DataTable, HealthMeter, LivePill, MegaStat, TabCommandHero, WinRateRing } from "@/components/admin/AdminUi";
 
 function statusDot(status: string): string {
   switch (status) {
@@ -49,29 +49,43 @@ function ProviderCard({
         ? "admin-api-card-error"
         : "admin-api-card-idle";
 
+  const errorRate =
+    provider.telemetry.calls > 0 ? (provider.telemetry.errors / provider.telemetry.calls) * 100 : 0;
+  const successRate = Math.max(0, 100 - errorRate);
+
   return (
-    <article className={clsx("admin-api-card admin-provider-card", healthClass, expanded && "admin-api-card-open")}>
-      <div className="admin-provider-strip" aria-hidden />
-      <button type="button" className="admin-api-card-head" onClick={onToggle}>
+    <article className={clsx("admin-api-card admin-provider-card admin-deck-panel-wrap", healthClass, expanded && "admin-api-card-open admin-deck-open")}>
+      <div className="admin-provider-strip admin-deck-strip" aria-hidden />
+      <button type="button" className="admin-api-card-head admin-deck-head" onClick={onToggle}>
         <div className="admin-api-card-title-row">
           <span className={clsx("admin-api-dot", statusDot(provider.probe.ok ? "ok" : provider.configured ? "error" : "unconfigured"))} />
           <div>
-            <h3 className="admin-api-card-title">{provider.name}</h3>
+            <h3 className="admin-api-card-title admin-deck-head-title">{provider.name}</h3>
             <p className="admin-api-card-desc">{provider.description}</p>
           </div>
         </div>
         <div className="admin-api-card-meta">
-          <span>{provider.configured ? "Configured" : "Not configured"}</span>
+          <span className="admin-deck-badge">{provider.configured ? "Configured" : "Not configured"}</span>
           <span>{provider.telemetry.calls} calls</span>
           {provider.telemetry.errors > 0 && (
             <span className="admin-api-meta-error">{provider.telemetry.errors} errors</span>
           )}
-          <span className="admin-api-chevron">{expanded ? "▾" : "▸"}</span>
+          <span className="admin-deck-chevron">{expanded ? "▾" : "▸"}</span>
         </div>
       </button>
 
+      {!expanded && provider.configured && provider.telemetry.calls > 0 && (
+        <div className="admin-provider-meter px-5 pb-4 pl-6">
+          <HealthMeter
+            label="Success rate"
+            value={successRate}
+            tone={successRate >= 90 ? "bull" : successRate >= 70 ? "amber" : "bear"}
+          />
+        </div>
+      )}
+
       {expanded && (
-        <div className="admin-api-card-body">
+        <div className="admin-api-card-body admin-deck-body">
           <div className="admin-api-probe-row">
             <span className="admin-api-probe-label">Live probe</span>
             {provider.probe.at ? (
@@ -104,8 +118,8 @@ function ProviderCard({
             </a>
           )}
 
-          <div className="admin-scroll-table">
-            <table className="admin-table admin-api-endpoint-table">
+          <div className="admin-scroll-table admin-table-wrap">
+            <table className="admin-table admin-table-pro admin-api-endpoint-table">
               <thead>
                 <tr>
                   <th>Status</th>
@@ -167,6 +181,24 @@ export function AdminApiDashboard() {
   const [probing, setProbing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [clock, setClock] = useState("");
+
+  useEffect(() => {
+    const tick = () => {
+      setClock(
+        new Date().toLocaleString("en-US", {
+          timeZone: "America/New_York",
+          weekday: "short",
+          hour: "numeric",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const load = useCallback(async (withProbe = false) => {
     if (withProbe) setProbing(true);
@@ -196,23 +228,64 @@ export function AdminApiDashboard() {
   }, [load]);
 
   const summary = data?.summary;
+  const healthRatio =
+    summary && summary.providers_configured > 0
+      ? summary.providers_healthy / summary.providers_configured
+      : 0;
+  const successRatio = summary ? Math.max(0, 1 - summary.error_rate / 100) : 0;
+  const configuredRatio =
+    summary && summary.providers_total > 0 ? summary.providers_configured / summary.providers_total : 0;
 
   return (
-    <div className="admin-api-dashboard">
-      <header className="admin-api-toolbar">
-        <div>
-          <h2 className="admin-section-title">API Command Center</h2>
-          <p className="admin-sub">
-            Real-time outbound API telemetry · live health probes · endpoint error tracking
-          </p>
-        </div>
-        <div className="admin-api-toolbar-actions">
-          <LivePill label={loading && !data ? "Loading…" : probing ? "Probing…" : "Live · 5s"} />
+    <div className="admin-api-dashboard admin-deck-root">
+      <TabCommandHero
+        kicker="Blackout · API Telemetry"
+        title="API"
+        titleAccent="Grid"
+        subtitle="Real-time outbound probes · provider health · endpoint errors · latency tracking"
+        chips={
+          <>
+            <LivePill label={loading && !data ? "Loading…" : probing ? "Probing…" : `Live · 5s · ET ${clock}`} />
+            {summary && (
+              <span className="admin-hero-chip">
+                {summary.providers_healthy}/{summary.providers_configured} healthy
+              </span>
+            )}
+          </>
+        }
+        actions={
           <ActionButton onClick={() => load(true)} disabled={probing} variant="primary">
             {probing ? "Probing…" : "Probe all APIs"}
           </ActionButton>
-        </div>
-      </header>
+        }
+        rings={
+          summary ? (
+            <>
+              <WinRateRing
+                value={healthRatio}
+                label="Healthy"
+                sub={`${summary.providers_healthy}/${summary.providers_configured}`}
+                tone="bull"
+                size={96}
+              />
+              <WinRateRing
+                value={successRatio}
+                label="Success"
+                sub={`${summary.error_rate.toFixed(1)}% err`}
+                tone={summary.error_rate > 10 ? "bear" : "cyan"}
+                size={96}
+              />
+              <WinRateRing
+                value={configuredRatio}
+                label="Configured"
+                sub={`${summary.providers_configured}/${summary.providers_total}`}
+                tone="violet"
+                size={96}
+              />
+            </>
+          ) : undefined
+        }
+      />
 
       {error && <p className="admin-error">{error}</p>}
 
@@ -262,64 +335,60 @@ export function AdminApiDashboard() {
       {data && (data.recent_errors.length > 0 || data.recent_events.length > 0) && (
         <section className="admin-two-col">
           <div className="admin-panel admin-glass admin-glass-bear">
-            <h3 className="admin-section-title admin-section-title-glow">Recent errors</h3>
+            <h3 className="admin-glass-title admin-deck-title">Recent errors</h3>
             {data.recent_errors.length === 0 ? (
               <p className="admin-api-muted">No errors in the current window.</p>
             ) : (
-              <div className="admin-scroll-table">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Provider</th>
-                      <th>Endpoint</th>
-                      <th>Error</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recent_errors.map((e) => (
-                      <tr key={e.id}>
-                        <td>{fmtTime(e.at)}</td>
-                        <td>{e.provider}</td>
-                        <td className="admin-api-mono">{e.endpoint}</td>
-                        <td className="admin-api-meta-error">{e.error ?? `HTTP ${e.status}`}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="admin-panel admin-glass admin-glass-cyan">
-            <h3 className="admin-section-title admin-section-title-glow">Recent calls</h3>
-            <div className="admin-scroll-table">
-              <table className="admin-table">
+              <DataTable>
                 <thead>
                   <tr>
                     <th>Time</th>
                     <th>Provider</th>
                     <th>Endpoint</th>
-                    <th>Status</th>
-                    <th>ms</th>
+                    <th>Error</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recent_events.slice(0, 30).map((e) => (
+                  {data.recent_errors.map((e) => (
                     <tr key={e.id}>
                       <td>{fmtTime(e.at)}</td>
-                      <td>{e.provider}</td>
+                      <td className="admin-td-strong">{e.provider}</td>
                       <td className="admin-api-mono">{e.endpoint}</td>
-                      <td>
-                        <span className={clsx("admin-api-dot", statusDot(e.ok ? "ok" : "error"))} />
-                        {e.status ?? "—"}
-                      </td>
-                      <td>{e.latency_ms}</td>
+                      <td className="admin-api-meta-error">{e.error ?? `HTTP ${e.status}`}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+              </DataTable>
+            )}
+          </div>
+
+          <div className="admin-panel admin-glass admin-glass-cyan">
+            <h3 className="admin-glass-title admin-deck-title">Recent calls</h3>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Provider</th>
+                  <th>Endpoint</th>
+                  <th>Status</th>
+                  <th>ms</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recent_events.slice(0, 30).map((e) => (
+                  <tr key={e.id}>
+                    <td>{fmtTime(e.at)}</td>
+                    <td className="admin-td-strong">{e.provider}</td>
+                    <td className="admin-api-mono">{e.endpoint}</td>
+                    <td>
+                      <span className={clsx("admin-api-dot", statusDot(e.ok ? "ok" : "error"))} />
+                      {e.status ?? "—"}
+                    </td>
+                    <td>{e.latency_ms}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
           </div>
         </section>
       )}
