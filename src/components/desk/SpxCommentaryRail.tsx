@@ -44,7 +44,7 @@ export function SpxCommentaryRail({
   desk?: SpxDeskPayload;
   live?: boolean;
 }) {
-  const [entries, setEntries] = useState<FeedEntry[]>(loadCachedEntries);
+  const [entries, setEntries] = useState<FeedEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const prevRef = useRef<Partial<SpxDeskPayload> | null>(null);
@@ -53,14 +53,13 @@ export function SpxCommentaryRail({
   const hydratedRef = useRef(entries.length > 0);
 
   useEffect(() => {
-    if (entries.length > 0) {
+    if (live && entries.length > 0) {
       writeSessionCache(COMMENTARY_CACHE_KEY, entries);
     }
-  }, [entries]);
+  }, [entries, live]);
 
   const pullCommentary = useCallback(async (force = false) => {
-    if (!desk?.available || inFlightRef.current) return;
-    if (!live && entries.length === 0) return;
+    if (!live || !desk?.available || inFlightRef.current) return;
 
     const prev = prevRef.current;
     if (!force && !shouldRefresh(desk, prev, lastFetchRef.current)) return;
@@ -89,23 +88,33 @@ export function SpxCommentaryRail({
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [desk, live, entries.length]);
+  }, [desk, live]);
 
   useEffect(() => {
-    if (!desk?.available) return;
+    if (!live) return;
+    if (entries.length === 0) {
+      const cached = loadCachedEntries();
+      if (cached.length > 0) {
+        setEntries(cached);
+        hydratedRef.current = true;
+      }
+    }
+  }, [live, entries.length]);
+
+  useEffect(() => {
+    if (!desk?.available || !live) return;
     if (hydratedRef.current && entries.length > 0) {
-      if (live) pullCommentary(false);
+      pullCommentary(false);
       return;
     }
-    if (!live) return;
     pullCommentary(true);
   }, [live, desk?.available, desk?.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!desk?.available) return;
+    if (!desk?.available || !live) return;
     const interval = setInterval(() => pullCommentary(false), 15_000);
     return () => clearInterval(interval);
-  }, [desk?.available, pullCommentary]);
+  }, [desk?.available, live, pullCommentary]);
 
   const offlineCopy = pickCommentaryOfflineCopy(desk);
   const offlineTone = commentaryOfflineTone(desk);
@@ -114,7 +123,7 @@ export function SpxCommentaryRail({
     <aside
       className={clsx(
         "spx-commentary-rail spx-commentary-rail-full spx-commentary-rail-desk",
-        !live && entries.length === 0 && "spx-commentary-rail-standby"
+        !live && "spx-commentary-rail-standby"
       )}
     >
       <div className="spx-commentary-header">
@@ -132,7 +141,7 @@ export function SpxCommentaryRail({
       </div>
 
       <div className="spx-commentary-viewport">
-        {!live && entries.length === 0 ? (
+        {!live ? (
           <div
             className={clsx(
               "spx-commentary-offline-hero",
@@ -150,7 +159,7 @@ export function SpxCommentaryRail({
           </p>
         ) : entries.length === 0 ? (
           <p className="font-mono text-[10px] text-grey-500 p-4 text-center animate-pulse">
-            {live ? "Claude reading the tape…" : "Reconnecting desk…"}
+            Claude reading the tape…
           </p>
         ) : (
           <div className="spx-commentary-feed">
