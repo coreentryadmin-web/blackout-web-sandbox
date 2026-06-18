@@ -34,7 +34,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
     "get_technicals",
 
-    "Full MTF chart analysis from Polygon: daily/hourly/15m EMAs, RSI, MACD, ATR, S/R, VWAP, trend stack.",
+    "Full MTF chart analysis from Polygon: daily/hourly/15m EMAs, RSI, MACD, ATR, S/R, weekly & monthly breakout highs/lows.",
 
     T,
 
@@ -176,7 +176,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   }),
 
-  t("get_spx_structure", "Full live SPX Sniper desk — merged pulse + flow + dealer map (same as dashboard)."),
+  t("get_spx_structure", "Full live SPX Sniper desk — price, GEX, flow tape, dark pool, news headlines, macro, tide (same as dashboard)."),
 
   t("get_spx_play", "SPX play engine state."),
 

@@ -1823,12 +1823,33 @@ body {
     @apply border border-grey-800 bg-black/40 py-2 px-1;
   }
 
+  .largo-msg-bubble {
+    width: 100%;
+    max-width: min(100%, 44rem);
+  }
+
   .desk-largo-user {
-    @apply border-l-2 border-purple/50 pl-4 py-2;
+    @apply py-2;
+    align-self: flex-end;
+    margin-left: auto;
+    max-width: min(88%, 34rem);
+    padding-right: 1rem;
+    padding-left: 0.75rem;
+    border-right: 2px solid rgba(191, 95, 255, 0.5);
+    border-left: none;
+    text-align: right;
   }
 
   .desk-largo-assistant {
-    @apply border-l-2 border-bull/40 pl-4 py-2 bg-bull/[0.03];
+    @apply border-l-2 pl-4 py-2;
+    align-self: flex-start;
+    margin-right: auto;
+    border-left-color: rgba(0, 255, 65, 0.55);
+    background: rgba(0, 255, 65, 0.03);
+  }
+
+  .largo-thinking-wrap {
+    max-width: min(100%, 44rem);
   }
 
   .largo-chat-shell {
@@ -1922,17 +1943,37 @@ body {
   }
 
   .largo-msg-user {
-    background: linear-gradient(90deg, rgba(191, 95, 255, 0.06), transparent);
-    border-radius: 0 4px 4px 0;
+    background: linear-gradient(270deg, rgba(191, 95, 255, 0.1), rgba(191, 95, 255, 0.02) 55%, transparent);
+    border-radius: 4px 0 0 4px;
+    box-shadow: -8px 0 24px rgba(191, 95, 255, 0.06);
+  }
+
+  .largo-msg-user .largo-msg-label {
+    text-align: right;
+    color: rgba(213, 128, 255, 0.9);
   }
 
   .largo-msg-assistant {
-    background: linear-gradient(90deg, rgba(0, 255, 136, 0.04), transparent);
+    background: linear-gradient(90deg, rgba(0, 255, 65, 0.05), transparent);
     border-radius: 0 4px 4px 0;
   }
 
+  .largo-msg-assistant .largo-msg-text {
+    color: #00ff41;
+    font-family: var(--font-jetbrains), monospace;
+    text-shadow:
+      0 0 6px rgba(0, 255, 65, 0.45),
+      0 0 1px rgba(0, 255, 65, 0.8);
+  }
+
   .largo-msg-welcome .largo-msg-label {
-    color: #d580ff;
+    color: #00ff41;
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  }
+
+  .largo-msg-assistant .largo-msg-label {
+    color: rgba(0, 255, 65, 0.85);
+    text-shadow: 0 0 6px rgba(0, 255, 65, 0.35);
   }
 
   .largo-tools-used {
@@ -2193,8 +2234,7 @@ body {
   }
 
   .largo-input-busy {
-    border-color: rgba(191, 95, 255, 0.4) !important;
-    opacity: 0.7;
+    opacity: 0.85;
   }
 
   .largo-input-form {
@@ -2343,6 +2383,16 @@ body {
     padding-right: 0.5rem;
   }
 
+  .largo-messages-fullpage .largo-msg-user {
+    max-width: min(72%, 30rem);
+  }
+
+  @media (min-width: 1024px) {
+    .largo-messages-fullpage .largo-msg-user {
+      max-width: min(58%, 28rem);
+    }
+  }
+
   .largo-input-form-fullpage {
     flex-shrink: 0;
     padding-top: 1rem;
@@ -2367,10 +2417,14 @@ body {
     min-width: 7.5rem;
   }
 
-  /* ── Largo rich message formatting ── */
+  /* ── Largo rich message formatting (Matrix neon) ── */
   .largo-message-body {
-    color: var(--grey-100);
+    color: #00ff41;
+    font-family: var(--font-jetbrains), monospace;
     line-height: 1.65;
+    text-shadow:
+      0 0 6px rgba(0, 255, 65, 0.4),
+      0 0 1px rgba(0, 255, 65, 0.75);
   }
 
   .largo-fmt-para {
@@ -2401,74 +2455,202 @@ body {
     content: "▸";
     position: absolute;
     left: -1rem;
-    color: #bf5fff;
+    color: #00ff41;
     font-size: 0.75em;
+    text-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
   }
 
   .largo-fmt-bold {
     font-weight: 700;
-    color: #fff;
+    color: inherit;
     letter-spacing: 0.01em;
   }
 
   .largo-fmt-italic {
     font-style: italic;
-    color: var(--grey-300);
+    color: inherit;
+    opacity: 0.92;
   }
 
   .largo-fmt-code {
     font-family: var(--font-jetbrains), monospace;
     font-size: 0.88em;
     padding: 0.1em 0.35em;
-    border: 1px solid rgba(191, 95, 255, 0.25);
-    background: rgba(191, 95, 255, 0.08);
-    color: #e9d5ff;
+    border: 1px solid rgba(0, 255, 65, 0.28);
+    background: rgba(0, 255, 65, 0.06);
+    color: inherit;
   }
 
   .largo-fmt-num {
-    font-style: italic;
     font-family: var(--font-jetbrains), monospace;
-    font-weight: 600;
-    color: #67e8f9;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(0, 255, 65, 0.9);
+    color: inherit;
     letter-spacing: 0.02em;
   }
 
-  .largo-fmt-ticker {
-    font-family: var(--font-jetbrains), monospace;
+  .largo-fmt-verdict {
+    margin: 0 0 0.85rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid rgba(0, 255, 65, 0.35);
+    background: rgba(0, 255, 65, 0.06);
     font-weight: 700;
-    font-size: 0.92em;
-    color: #d580ff;
-    letter-spacing: 0.06em;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
   }
 
-  .largo-fmt-key {
-    font-weight: 600;
-    color: #c4b5fd;
-    text-transform: lowercase;
+  .largo-fmt-bottomline {
+    margin: 1rem 0 0.25rem;
+    padding: 0.9rem 1rem 1rem;
+    border: 1px solid rgba(0, 255, 65, 0.42);
+    background: linear-gradient(
+      135deg,
+      rgba(0, 255, 65, 0.1) 0%,
+      rgba(0, 0, 0, 0.45) 55%,
+      rgba(191, 95, 255, 0.06) 100%
+    );
+    box-shadow:
+      inset 0 0 28px rgba(0, 255, 65, 0.06),
+      0 0 22px rgba(0, 255, 65, 0.1);
   }
 
-  .largo-fmt-bull {
-    font-weight: 600;
-    color: #00ff88;
-  }
-
-  .largo-fmt-bear {
-    font-weight: 600;
-    color: #ff4560;
-  }
-
-  .largo-fmt-pct-up {
-    font-style: italic;
+  .largo-fmt-bottomline-title {
+    margin: 0 0 0.55rem;
     font-family: var(--font-jetbrains), monospace;
+    font-size: 0.68rem;
     font-weight: 700;
-    color: #00ff88;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(0, 255, 65, 0.98);
+    text-shadow: 0 0 10px rgba(0, 255, 65, 0.55);
   }
 
-  .largo-fmt-pct-down {
-    font-style: italic;
+  .largo-fmt-bottomline-body {
+    margin: 0 0 0.55rem;
+    line-height: 1.7;
+    font-size: 0.95em;
+    color: rgba(0, 255, 65, 0.96);
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.28);
+  }
+
+  .largo-fmt-bottomline-body:last-child {
+    margin-bottom: 0;
+  }
+
+  .largo-fmt-bottomline-list {
+    margin: 0.35rem 0 0;
+    padding-left: 1.1rem;
+    list-style: none;
+  }
+
+  .largo-fmt-bottomline-list li {
+    position: relative;
+    margin-bottom: 0.35rem;
+    padding-left: 0.35rem;
+    line-height: 1.6;
+  }
+
+  .largo-fmt-bottomline-list li::before {
+    content: "◆";
+    position: absolute;
+    left: -1rem;
+    color: rgba(0, 255, 65, 0.85);
+    font-size: 0.55em;
+    top: 0.35em;
+  }
+
+  .largo-fmt-section {
+    margin: 0.85rem 0 0.35rem;
+  }
+
+  .largo-fmt-section-title {
+    margin: 0 0 0.4rem;
     font-family: var(--font-jetbrains), monospace;
+    font-size: 0.68rem;
     font-weight: 700;
-    color: #ff4560;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(0, 255, 65, 0.92);
+    text-shadow: 0 0 6px rgba(0, 255, 65, 0.35);
+  }
+
+  .largo-level-grid {
+    margin: 0.5rem 0 0.85rem;
+    border: 1px solid rgba(0, 255, 65, 0.22);
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }
+
+  .largo-level-grid-head,
+  .largo-level-grid-row {
+    display: grid;
+    grid-template-columns: minmax(7rem, 1.05fr) minmax(4.5rem, 0.55fr) minmax(0, 1.4fr);
+    gap: 0.65rem 1rem;
+    align-items: start;
+    padding: 0.55rem 0.85rem;
+  }
+
+  .largo-level-grid-head {
+    border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+    background: rgba(0, 255, 65, 0.05);
+  }
+
+  .largo-level-grid-th {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+
+  .largo-level-grid-row {
+    border-bottom: 1px solid rgba(0, 255, 65, 0.08);
+    font-size: 0.88em;
+    line-height: 1.45;
+  }
+
+  .largo-level-grid-row:last-child {
+    border-bottom: none;
+  }
+
+  .largo-level-grid-row:nth-child(even) {
+    background: rgba(0, 255, 65, 0.025);
+  }
+
+  .largo-level-grid-label {
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .largo-level-grid-value {
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: rgba(0, 255, 65, 0.85);
+  }
+
+  .largo-level-grid-note {
+    opacity: 0.88;
+    font-size: 0.94em;
+  }
+
+  @media (max-width: 640px) {
+    .largo-level-grid-head {
+      display: none;
+    }
+
+    .largo-level-grid-row {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .largo-level-grid-value {
+      font-size: 1.05em;
+    }
   }
 
   .largo-spx-live-strip {
@@ -2507,6 +2689,76 @@ body {
 
   .largo-chat-container {
     min-height: 0;
+  }
+
+  .largo-input-wrap {
+    position: relative;
+  }
+
+  .largo-input-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0 1rem;
+    pointer-events: none;
+    font-family: var(--font-jetbrains), monospace;
+    font-size: 0.875rem;
+    letter-spacing: 0.04em;
+    color: rgba(0, 255, 65, 0.72);
+    text-shadow:
+      0 0 8px rgba(0, 255, 65, 0.75),
+      0 0 18px rgba(0, 255, 65, 0.4),
+      0 0 32px rgba(191, 95, 255, 0.22);
+    animation: largo-placeholder-glow 2.8s ease-in-out infinite;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .largo-input-placeholder-prompt {
+    color: rgba(191, 95, 255, 0.95);
+    text-shadow:
+      0 0 10px rgba(191, 95, 255, 0.85),
+      0 0 20px rgba(191, 95, 255, 0.45);
+    animation: largo-placeholder-blink 1.1s step-end infinite;
+    flex-shrink: 0;
+  }
+
+  .largo-input-placeholder-busy {
+    color: rgba(191, 95, 255, 0.8);
+    text-shadow:
+      0 0 10px rgba(191, 95, 255, 0.7),
+      0 0 22px rgba(191, 95, 255, 0.35);
+    animation: largo-placeholder-busy 1.6s ease-in-out infinite;
+  }
+
+  @keyframes largo-placeholder-glow {
+    0%, 100% {
+      color: rgba(0, 255, 65, 0.55);
+      text-shadow:
+        0 0 6px rgba(0, 255, 65, 0.55),
+        0 0 14px rgba(0, 255, 65, 0.28),
+        0 0 24px rgba(191, 95, 255, 0.15);
+    }
+    50% {
+      color: rgba(0, 255, 65, 0.95);
+      text-shadow:
+        0 0 10px rgba(0, 255, 65, 0.95),
+        0 0 22px rgba(0, 255, 65, 0.55),
+        0 0 40px rgba(191, 95, 255, 0.3);
+    }
+  }
+
+  @keyframes largo-placeholder-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+  }
+
+  @keyframes largo-placeholder-busy {
+    0%, 100% { opacity: 0.65; }
+    50% { opacity: 1; }
   }
 
   .largo-input-cursor {
@@ -2562,12 +2814,33 @@ body {
 
   .desk-largo-input {
     @apply flex-1 bg-black border border-grey-700 px-4 py-3 font-mono text-sm text-white
-           placeholder:text-grey-600 focus:outline-none transition-shadow;
+           focus:outline-none transition-all duration-300;
+    caret-color: #00ff41;
+  }
+
+  .desk-largo-input::placeholder {
+    color: transparent;
+  }
+
+  .desk-largo-input.largo-input-idle {
+    border-color: rgba(0, 255, 65, 0.28);
+    background: linear-gradient(90deg, rgba(0, 255, 65, 0.04), rgba(0, 0, 0, 0.95) 35%);
+    box-shadow:
+      inset 0 0 24px rgba(0, 255, 65, 0.04),
+      0 0 18px rgba(0, 255, 65, 0.08);
   }
 
   .desk-largo-input:focus {
-    border-color: rgba(191, 95, 255, 0.5);
-    box-shadow: 0 0 16px rgba(191, 95, 255, 0.2);
+    border-color: rgba(0, 255, 65, 0.55);
+    box-shadow:
+      0 0 20px rgba(0, 255, 65, 0.22),
+      0 0 36px rgba(191, 95, 255, 0.12),
+      inset 0 0 28px rgba(0, 255, 65, 0.06);
+  }
+
+  .largo-input-busy {
+    border-color: rgba(191, 95, 255, 0.45) !important;
+    box-shadow: 0 0 22px rgba(191, 95, 255, 0.18) !important;
   }
 
   .desk-largo-send {

@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import { queryLargo, fetchLargoSession } from "@/lib/api";
 import { DeskPanel } from "./DeskPanel";
-import { SpxLiveStrip } from "./SpxLiveStrip";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; tools?: string[] };
 
 const LARGO_SESSION_KEY = "largo-terminal-session";
+
+const INPUT_PLACEHOLDER = "Jack into the tape — SPX · GEX · flow · any ticker…";
+const INPUT_PLACEHOLDER_BUSY = "Neural link processing…";
 
 const WELCOME: Message = {
   id: "welcome",
@@ -109,18 +111,10 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
         loading && "largo-chat-shell-processing"
       )}
     >
-      <div className="largo-terminal-top">
-        <SpxLiveStrip className="flex-1 min-w-0" />
-        <div className={clsx("largo-link-badge", loading && "largo-link-badge-active")}>
-          <span className="largo-link-badge-dot" />
-          {loading ? "PROCESSING" : "ONLINE"}
-        </div>
-      </div>
-
       <div className="flex-1 flex flex-col min-h-0 largo-chat-container">
         <div
           className={clsx(
-            "flex-1 overflow-y-auto space-y-4 mb-4 pr-2 largo-messages-scroll",
+            "flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2 largo-messages-scroll",
             fullPage ? "largo-messages-fullpage" : "max-h-[420px]"
           )}
         >
@@ -128,10 +122,15 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
             {messages.map((msg) => (
               <motion.div
                 key={msg.id}
-                initial={{ opacity: 0, y: 14, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
+                initial={
+                  msg.role === "user"
+                    ? { opacity: 0, x: 18, scale: 0.98 }
+                    : { opacity: 0, y: 14, scale: 0.98 }
+                }
+                animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 className={clsx(
+                  "largo-msg-bubble",
                   msg.role === "user" ? "desk-largo-user largo-msg-user" : "desk-largo-assistant largo-msg-assistant",
                   msg.id === "welcome" && "largo-msg-welcome"
                 )}
@@ -147,7 +146,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
                 ) : (
                   <p
                     className={clsx(
-                      "text-grey-100 leading-relaxed whitespace-pre-wrap",
+                      "largo-msg-text leading-relaxed whitespace-pre-wrap",
                       fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"
                     )}
                   >
@@ -168,7 +167,11 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
           </AnimatePresence>
 
           <AnimatePresence mode="wait">
-            {loading && <LargoThinkingState key="largo-thinking" />}
+            {loading && (
+              <div className="largo-msg-bubble largo-thinking-wrap">
+                <LargoThinkingState key="largo-thinking" />
+              </div>
+            )}
           </AnimatePresence>
           <div ref={bottomRef} />
         </div>
@@ -177,21 +180,28 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
           onSubmit={submit}
           className={clsx("desk-largo-input-row largo-input-form", fullPage && "largo-input-form-fullpage")}
         >
-          <div className="relative flex-1">
+          <div className="relative flex-1 largo-input-wrap">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={loading ? "Largo is working…" : "Drop your question — SPX, flow, any ticker…"}
+              placeholder={loading ? INPUT_PLACEHOLDER_BUSY : INPUT_PLACEHOLDER}
               className={clsx(
                 "desk-largo-input w-full",
                 loading && "largo-input-busy",
+                !input && !loading && hydrated && "largo-input-idle",
                 fullPage && "largo-input-fullpage"
               )}
               disabled={loading || !hydrated}
             />
             {!input && !loading && hydrated && (
-              <span className="largo-input-cursor" aria-hidden>
-                |
+              <span className="largo-input-placeholder" aria-hidden>
+                <span className="largo-input-placeholder-prompt">▸</span>
+                {INPUT_PLACEHOLDER}
+              </span>
+            )}
+            {loading && (
+              <span className="largo-input-placeholder largo-input-placeholder-busy" aria-hidden>
+                {INPUT_PLACEHOLDER_BUSY}
               </span>
             )}
           </div>

@@ -262,6 +262,11 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
         ? "bearish"
         : "mixed";
 
+  const rangeHigh20 = daily.length ? Math.max(...daily.slice(-20).map((b) => b.h)) : null;
+  const rangeLow20 = daily.length ? Math.min(...daily.slice(-20).map((b) => b.l)) : null;
+  const weekSlice = daily.slice(-5);
+  const monthSlice = daily.slice(-22);
+
   return {
     ticker: polygonSym,
     price,
@@ -279,8 +284,20 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
       hourly: { ...hourlyLv, ema20: ema20h, rsi14: rsi14h },
       m15: { ...minLv, ema20: ema20m, rsi14: rsi14m },
     },
-    range_high_20d: daily.length ? Math.max(...daily.slice(-20).map((b) => b.h)) : null,
-    range_low_20d: daily.length ? Math.min(...daily.slice(-20).map((b) => b.l)) : null,
+    range_high_20d: rangeHigh20,
+    range_low_20d: rangeLow20,
+    weekly: {
+      high: weekSlice.length ? Math.max(...weekSlice.map((b) => b.h)) : null,
+      low: weekSlice.length ? Math.min(...weekSlice.map((b) => b.l)) : null,
+      support: weekSlice.length ? Number(Math.min(...weekSlice.map((b) => b.l)).toFixed(2)) : null,
+      resistance: weekSlice.length ? Number(Math.max(...weekSlice.map((b) => b.h)).toFixed(2)) : null,
+    },
+    monthly: {
+      high: monthSlice.length ? Math.max(...monthSlice.map((b) => b.h)) : null,
+      low: monthSlice.length ? Math.min(...monthSlice.map((b) => b.l)) : null,
+      support: monthSlice.length ? Number(Math.min(...monthSlice.map((b) => b.l)).toFixed(2)) : null,
+      resistance: monthSlice.length ? Number(Math.max(...monthSlice.map((b) => b.h)).toFixed(2)) : null,
+    },
     data_source: "polygon",
   };
 }

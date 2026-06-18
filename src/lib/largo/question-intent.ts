@@ -12,7 +12,8 @@ export type LargoQuestionIntent = {
 
 const TICKER_RE = /\b([A-Z]{1,5})\b/g;
 const KNOWN_TICKERS = new Set([
-  "SPX", "SPY", "QQQ", "IWM", "VIX", "NVDA", "AAPL", "TSLA", "META", "MSFT", "AMZN", "GOOG", "GOOGL",
+  "SPX", "SPY", "QQQ", "IWM", "VIX", "NDX", "ES", "NQ", "NVDA", "AAPL", "TSLA", "META", "MSFT", "AMZN", "GOOG", "GOOGL",
+  "ASTS", "AMD", "COIN", "PLTR", "SOFI", "HOOD", "GME", "AMC",
 ]);
 
 function recentUserText(history: AnthropicMessage[], limit = 6): string {
@@ -33,12 +34,11 @@ function extractTicker(question: string, historyText: string): string | null {
   return null;
 }
 
-/** Decide which live tools to emphasize — never inject full desk JSON into the prompt. */
+/** Light hints for this turn — Largo decides how much to pull and how to express it. */
 export function analyzeLargoQuestion(
   question: string,
   history: AnthropicMessage[]
 ): LargoQuestionIntent {
-  const q = question.toLowerCase();
   const ctx = `${recentUserText(history)} ${question}`.toLowerCase();
 
   const needsSpxDesk =
@@ -46,35 +46,45 @@ export function analyzeLargoQuestion(
       ctx
     );
   const needsPlayState =
-    /\b(buy|sell|hold|trim|play engine|open play|watching|scanning|lotto|signal)\b/.test(ctx);
+    /\b(buy|sell|hold|trim|play|setup|trade|lotto|signal|outlook|analysis)\b/.test(ctx);
   const needsFlow =
-    /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps)\b/.test(ctx);
-  const needsNews = /\b(news|headline|catalyst|earnings|cpi|fomc|macro)\b/.test(ctx);
+    /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/.test(ctx);
+  const needsNews = /\b(news|headline|catalyst|earnings|cpi|fomc|macro|calendar)\b/.test(ctx);
   const needsVol = /\b(iv|vol|vix|skew|rank|realized)\b/.test(ctx);
 
   const tickerHint = extractTicker(question, recentUserText(history));
+  const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);
 
-  const tools: string[] = [];
-  if (needsSpxDesk) tools.push("get_spx_structure");
-  if (needsPlayState) tools.push("get_spx_play", "get_open_plays");
-  if (needsFlow && tickerHint === "SPX") tools.push("get_options_flow");
-  else if (needsFlow) tools.push("get_options_flow", "get_global_flow");
-  if (needsNews) tools.push("get_news");
-  if (needsVol) tools.push("get_volatility_regime");
-  if (tickerHint && tickerHint !== "SPX") tools.push("get_quote");
-  if (!tools.length) tools.push("get_market_context");
+  const toolHints: string[] = ["get_market_context"];
+
+  if (needsSpxDesk || scopeTicker === "SPX") {
+    toolHints.push("get_spx_structure", "get_gex");
+  }
+  if (needsPlayState) {
+    toolHints.push("get_spx_play", "get_open_plays");
+  }
+  if (scopeTicker) {
+    toolHints.push("get_quote", "get_technicals", "get_news", "get_options_flow", "get_dark_pool");
+  }
+  if (needsFlow) {
+    toolHints.push("get_global_flow", "get_flow_per_strike");
+  }
+  if (needsNews) {
+    toolHints.push("get_economic_calendar", "get_web_search");
+  }
+  if (needsVol) {
+    toolHints.push("get_volatility_regime", "get_iv_stats");
+  }
+
+  const uniqueTools = Array.from(new Set(toolHints));
 
   const guidance = [
-    `User asked: "${question.trim().slice(0, 280)}"`,
-    "Respond ONLY to that question — no unsolicited desk recap, no raw JSON dumps, no metric laundry lists.",
-    `Call the minimum tools needed (suggested: ${tools.slice(0, 4).join(", ")}). Use tool output numbers verbatim.`,
-    tickerHint ? `Ticker in scope: ${tickerHint}.` : "Infer ticker from conversation if the user uses 'it' or 'that name'.",
-    needsSpxDesk
-      ? "For SPX: use get_spx_structure for live merged desk — cite only fields relevant to the question."
-      : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `User asked: "${question.trim().slice(0, 320)}"`,
+    scopeTicker ? `Ticker context: ${scopeTicker}.` : "No ticker pinned — infer from chat if needed.",
+    "A live feed was auto-captured for this turn (flow, news, catalysts, technicals, dark pool, SPX desk). Synthesize it — don't dump it raw.",
+    `Tool hints for drill-down if needed: ${uniqueTools.join(", ")}.`,
+    "End with **Bottom line:** when substantive — your honest take in your voice.",
+  ].join("\n");
 
   return {
     needsSpxDesk,
