@@ -12,8 +12,18 @@ export type LargoStoredMessage = {
 const MAX_MESSAGES_LOAD = 28;
 /** Max rows stored per session in Postgres (UI/Claude still use last MAX_MESSAGES_LOAD). */
 const MAX_MESSAGES_STORED = 50;
+const MAX_MEMORY_SESSIONS = 500;
 const DEFAULT_RETENTION_DAYS = 7;
 const memorySessions = new Map<string, AnthropicMessage[]>();
+
+function touchMemorySession(sessionId: string, hist: AnthropicMessage[]): void {
+  memorySessions.delete(sessionId);
+  memorySessions.set(sessionId, hist);
+  while (memorySessions.size > MAX_MEMORY_SESSIONS) {
+    const oldest = memorySessions.keys().next().value;
+    if (oldest) memorySessions.delete(oldest);
+  }
+}
 
 export async function ensureLargoSession(sessionId: string, userId: string): Promise<void> {
   if (!dbConfigured()) return;
@@ -127,7 +137,7 @@ export async function appendLargoMessage(
     const hist = memorySessions.get(sessionId) ?? [];
     hist.push({ role, content: trimmed });
     if (hist.length > MAX_MESSAGES_LOAD) hist.splice(0, hist.length - MAX_MESSAGES_LOAD);
-    memorySessions.set(sessionId, hist);
+    touchMemorySession(sessionId, hist);
     return;
   }
 

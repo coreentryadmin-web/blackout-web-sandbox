@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
-import { queryLargo, fetchLargoSession } from "@/lib/api";
+import { queryLargoStream, fetchLargoSession } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { DeskPanel } from "./DeskPanel";
 import { LargoThinkingState } from "./LargoThinkingState";
@@ -25,6 +25,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const sessionId = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -69,20 +70,29 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     const userId = `u-${++msgId.current}`;
     setMessages((m) => [...m.filter((x) => x.id !== "welcome"), { id: userId, role: "user", content: q }]);
     setLoading(true);
+    setStreaming(false);
+
+    const assistantId = `a-${++msgId.current}`;
+    setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
 
     try {
-      const res = await queryLargo(q, sessionId.current);
+      const res = await queryLargoStream(q, sessionId.current, (token) => {
+        setStreaming(true);
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
+          )
+        );
+      });
       sessionId.current = res.session_id;
       sessionStorage.setItem(LARGO_SESSION_KEY, sessionId.current);
-      setMessages((m) => [
-        ...m,
-        {
-          id: `a-${++msgId.current}`,
-          role: "assistant",
-          content: res.answer,
-          tools: res.tools_used,
-        },
-      ]);
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, content: res.answer, tools: res.tools_used }
+            : msg
+        )
+      );
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
       let content =
@@ -93,6 +103,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
       setMessages((m) => [...m, { id: `e-${++msgId.current}`, role: "assistant", content }]);
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
   }
 
@@ -166,7 +177,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
           </AnimatePresence>
 
           <AnimatePresence mode="wait">
-            {loading && (
+            {loading && !streaming && (
               <div className="largo-msg-bubble largo-thinking-wrap">
                 <LargoThinkingState key="largo-thinking" />
               </div>

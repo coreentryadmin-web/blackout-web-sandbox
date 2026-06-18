@@ -1,4 +1,14 @@
 import type { AnthropicToolDef } from "@/lib/providers/anthropic";
+import {
+  FLOW_TOOLS_RE,
+  FUNDAMENTAL_RE,
+  matchesIntent,
+  NEWS_TOOLS_RE,
+  NIGHTHAWK_RE,
+  SCREENER_RE,
+  SPX_DESK_TOOLS_RE,
+  VOL_TOOLS_RE,
+} from "@/lib/largo/intent-keywords";
 
 
 
@@ -354,25 +364,25 @@ export function getToolsForIntent(question: string): string[] {
   const lower = question.toLowerCase();
   const names = new Set<string>(["get_market_context"]);
 
-  if (/\b(flow|tape|sweep|whale|dark pool|premium|unusual)\b/.test(lower)) {
+  if (matchesIntent(lower, FLOW_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.flow_analysis]) names.add(n);
   }
-  if (/\b(spx|s&p|play|signal|0dte|sniper|gamma|gex|dealer)\b/.test(lower)) {
+  if (matchesIntent(lower, SPX_DESK_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.vol_analysis]) names.add(n);
   }
-  if (/\b(vol|vix|iv|skew|rank)\b/.test(lower)) {
+  if (matchesIntent(lower, VOL_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.vol_analysis, ...TOOL_GROUPS.spx_desk]) names.add(n);
   }
-  if (/\b(earnings|news|catalyst|cpi|fomc|macro|calendar)\b/.test(lower)) {
+  if (matchesIntent(lower, NEWS_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.news_events, ...TOOL_GROUPS.stock_analysis]) names.add(n);
   }
-  if (/\b(nighthawk|night hawk|playbook|hawk)\b/.test(lower)) {
+  if (matchesIntent(lower, NIGHTHAWK_RE)) {
     for (const n of TOOL_GROUPS.platform) names.add(n);
   }
-  if (/\b(screener|squeeze|movers|breadth|sector)\b/.test(lower)) {
+  if (matchesIntent(lower, SCREENER_RE)) {
     for (const n of TOOL_GROUPS.screener) names.add(n);
   }
-  if (/\b(fundamental|financial|insider|congress|analyst)\b/.test(lower)) {
+  if (matchesIntent(lower, FUNDAMENTAL_RE)) {
     for (const n of TOOL_GROUPS.fundamental) names.add(n);
   }
 

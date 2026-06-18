@@ -8,13 +8,12 @@ export async function persistApiTelemetryEvent(event: ApiCallEvent): Promise<voi
     await ensureSchema();
     await dbQuery(
       `INSERT INTO api_telemetry_events (
-        seq_id, event_id, correlation_id, provider, endpoint, method, status, ok,
+        event_id, correlation_id, provider, endpoint, method, status, ok,
         latency_ms, error, severity, rate_limited, sla_breach, attempt, max_attempts,
         retry_status, phase, request_url, request_body, response_snippet, headers_sent, at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
       ON CONFLICT (event_id) DO NOTHING`,
       [
-        event.seq_id,
         event.id,
         event.correlation_id,
         event.provider,

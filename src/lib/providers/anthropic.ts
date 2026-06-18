@@ -1,50 +1,154 @@
-import { trackedFetch } from "@/lib/api-tracked-fetch";
+import Anthropic from "@anthropic-ai/sdk";
+import type {
+  ContentBlock,
+  MessageCreateParamsNonStreaming,
+  MessageCreateParams,
+  MessageParam,
+  OutputConfig,
+  Tool,
+  ToolUseBlock,
+} from "@anthropic-ai/sdk/resources/messages/messages";
+import { recordApiCall } from "@/lib/api-telemetry";
 
-const API_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-opus-4-6";
+const TEMPERATURE = 0.3;
+
+export type AnthropicSystemBlock = {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+};
+
+export type AnthropicSystem = string | AnthropicSystemBlock[];
 
 export function anthropicConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
+function getClient(): Anthropic | null {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!key) return null;
+  return new Anthropic({ apiKey: key, maxRetries: 3 });
+}
+
+function getModel(): string {
+  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+}
+
+async function withTelemetry<T>(
+  endpointKey: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    recordApiCall({
+      provider: "anthropic",
+      endpoint: endpointKey,
+      method: "POST",
+      status: 200,
+      ok: true,
+      latency_ms: Date.now() - start,
+      error: null,
+      correlation_id: `anthropic-${Date.now()}`,
+      attempt: 1,
+      max_attempts: 1,
+      phase: "success",
+      request_url: "https://api.anthropic.com/v1/messages",
+      request_body: null,
+      response_snippet: null,
+      rate_limited: false,
+      headers_sent: [],
+    });
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status =
+      err instanceof Anthropic.APIError ? err.status ?? null : null;
+    recordApiCall({
+      provider: "anthropic",
+      endpoint: endpointKey,
+      method: "POST",
+      status,
+      ok: false,
+      latency_ms: Date.now() - start,
+      error: message.slice(0, 200),
+      correlation_id: `anthropic-${Date.now()}`,
+      attempt: 1,
+      max_attempts: 1,
+      phase: "failure",
+      request_url: "https://api.anthropic.com/v1/messages",
+      request_body: null,
+      response_snippet: null,
+      rate_limited: status === 429,
+      headers_sent: [],
+    });
+    console.error("[anthropic]", status ?? "error", message);
+    throw err;
+  }
+}
+
+
+function extractTextFromBlocks(content: Array<{ type: string; text?: string }>): string {
+  return content
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+}
+
+function extractTextFromLastAssistant(messages: AnthropicMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== "assistant") continue;
+    const content = messages[i].content;
+    if (typeof content === "string") {
+      const trimmed = content.trim();
+      if (trimmed) return trimmed;
+      continue;
+    }
+    if (Array.isArray(content)) {
+      const text = extractTextFromBlocks(
+        content as Array<{ type: string; text?: string }>
+      );
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
 export async function anthropicText(
   prompt: string,
   maxTokens = 600,
-  system?: string
+  system?: AnthropicSystem,
+  options?: {
+    output_config?: OutputConfig;
+    temperature?: number;
+  }
 ): Promise<string | null> {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!key) return null;
+  const client = getClient();
+  if (!client) return null;
 
-  const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
-
-  const body: Record<string, unknown> = {
+  const model = getModel();
+  const body: MessageCreateParamsNonStreaming = {
     model,
     max_tokens: maxTokens,
+    temperature: options?.temperature ?? TEMPERATURE,
     messages: [{ role: "user", content: prompt }],
   };
-  if (system?.trim()) body.system = system.trim();
-
-  const res = await trackedFetch("anthropic", "/v1/messages", API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    console.error("[anthropic]", res.status, await res.text().catch(() => ""));
-    return null;
+  if (system) {
+    body.system = typeof system === "string" ? system.trim() : system;
+  }
+  if (options?.output_config) {
+    body.output_config = options.output_config;
   }
 
-  const data = (await res.json()) as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-  const block = data.content?.find((c) => c.type === "text");
-  return block?.text?.trim() ?? null;
+  try {
+    const data = await withTelemetry("anthropic-text", () => client.messages.create(body));
+    const block = data.content.find((c) => c.type === "text");
+    return block?.type === "text" ? block.text.trim() || null : null;
+  } catch {
+    return null;
+  }
 }
 
 export type AnthropicToolDef = {
@@ -56,67 +160,86 @@ export type AnthropicToolDef = {
 type AnthropicContentBlock = Record<string, unknown>;
 export type AnthropicMessage = { role: string; content: string | AnthropicContentBlock[] };
 
+export type AnthropicToolLoopEvent =
+  | { type: "token"; text: string }
+  | { type: "tool_start"; name: string };
+
 export async function anthropicToolLoop(params: {
-  system: string;
+  system: AnthropicSystem;
   tools: AnthropicToolDef[];
   messages: AnthropicMessage[];
   maxTokens?: number;
   maxRounds?: number;
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
+  onEvent?: (event: AnthropicToolLoopEvent) => void;
 }): Promise<string | null> {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!key) return null;
+  const client = getClient();
+  if (!client) return null;
 
-  const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+  const model = getModel();
   const maxTokens = params.maxTokens ?? 4096;
   const maxRounds = params.maxRounds ?? 12;
-  const messages = [...params.messages];
+  const messages: MessageParam[] = params.messages.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content as MessageParam["content"],
+  }));
+
+  const tools: Tool[] = params.tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.input_schema as Tool["input_schema"],
+  }));
+
+  const systemParam =
+    typeof params.system === "string"
+      ? params.system
+      : params.system;
 
   for (let round = 0; round < maxRounds; round++) {
-    const res = await trackedFetch("anthropic", "/v1/messages", API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system: params.system,
-        tools: params.tools,
-        messages,
-      }),
-      cache: "no-store",
-    });
+    const createParams: MessageCreateParams = {
+      model,
+      max_tokens: maxTokens,
+      temperature: TEMPERATURE,
+      system: systemParam,
+      tools,
+      messages,
+    };
 
-    if (!res.ok) {
-      console.error("[anthropic-tools]", res.status, await res.text().catch(() => ""));
-      return null;
+    let content: ContentBlock[];
+    let stopReason: string | null = null;
+
+    if (params.onEvent) {
+      const stream = client.messages.stream(createParams);
+      stream.on("text", (delta) => {
+        params.onEvent?.({ type: "token", text: delta });
+      });
+      const finalMessage = await withTelemetry("anthropic-tool-loop-stream", () =>
+        stream.finalMessage()
+      );
+      content = finalMessage.content;
+      stopReason = finalMessage.stop_reason;
+    } else {
+      const data = await withTelemetry("anthropic-tool-loop", () =>
+        client.messages.create(createParams)
+      );
+      content = data.content;
+      stopReason = data.stop_reason;
     }
 
-    const data = (await res.json()) as {
-      content?: AnthropicContentBlock[];
-      stop_reason?: string;
-    };
-    const content = data.content ?? [];
-    const toolCalls = content.filter((b) => b.type === "tool_use");
+    const toolCalls = content.filter((b): b is ToolUseBlock => b.type === "tool_use");
 
     if (!toolCalls.length) {
-      const text = content
-        .filter((b) => b.type === "text" && typeof b.text === "string")
-        .map((b) => b.text as string)
-        .join("\n")
-        .trim();
+      const text = extractTextFromBlocks(content as Array<{ type: string; text?: string }>);
       return text || null;
     }
 
-    messages.push({ role: "assistant", content });
+    messages.push({ role: "assistant", content: content as unknown as MessageParam["content"] });
 
     const results = await Promise.all(
       toolCalls.map(async (tc) => {
-        const name = String(tc.name ?? "");
-        const input = (tc.input as Record<string, unknown>) ?? {};
+        const name = tc.name;
+        params.onEvent?.({ type: "tool_start", name });
+        const input = tc.input as Record<string, unknown>;
         try {
           return await params.runTool(name, input);
         } catch (err) {
@@ -128,14 +251,14 @@ export async function anthropicToolLoop(params: {
     messages.push({
       role: "user",
       content: toolCalls.map((tc, i) => ({
-        type: "tool_result",
+        type: "tool_result" as const,
         tool_use_id: tc.id,
         content: JSON.stringify(results[i]),
       })),
     });
 
-    if (data.stop_reason === "end_turn") break;
+    if (stopReason === "end_turn") break;
   }
 
-  return null;
+  return extractTextFromLastAssistant(messages as AnthropicMessage[]);
 }

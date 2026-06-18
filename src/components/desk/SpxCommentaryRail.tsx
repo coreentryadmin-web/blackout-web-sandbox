@@ -12,6 +12,8 @@ import {
 } from "@/lib/spx-commentary-offline-copy";
 import { flowStackSignature } from "@/lib/largo/flow-strike-stacks";
 
+const BASE_POLL_MS = 15_000;
+const QUIET_POLL_MS = 30_000;
 const MIN_INTERVAL_MS = 55_000;
 const MATERIAL_PRICE_MOVE = 0.08;
 const COMMENTARY_CACHE_KEY = "spx-commentary-feed";
@@ -21,6 +23,24 @@ type FeedEntry = SpxCommentaryResult & { id: string };
 
 function loadCachedEntries(): FeedEntry[] {
   return readSessionCache<FeedEntry[]>(COMMENTARY_CACHE_KEY, COMMENTARY_CACHE_MAX_AGE_MS) ?? [];
+}
+
+function isQuietTape(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | null): boolean {
+  if (!prev?.price) return false;
+
+  const priceMove = Math.abs(desk.price - (prev.price ?? 0));
+  if (priceMove >= MATERIAL_PRICE_MOVE) return false;
+
+  if (prev.regime !== desk.regime) return false;
+  if (prev.above_vwap !== desk.above_vwap) return false;
+  if (prev.tide_bias !== desk.tide_bias) return false;
+  if (prev.gex_king !== desk.gex_king) return false;
+
+  const prevStacks = flowStackSignature(prev.strike_stacks);
+  const nextStacks = flowStackSignature(desk.strike_stacks);
+  if (nextStacks && prevStacks !== nextStacks) return false;
+
+  return true;
 }
 
 function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | null, lastAt: number): boolean {
@@ -117,9 +137,24 @@ export function SpxCommentaryRail({
 
   useEffect(() => {
     if (!desk?.available || !live) return;
-    const interval = setInterval(() => pullCommentary(false), 15_000);
-    return () => clearInterval(interval);
-  }, [desk?.available, live, pullCommentary]);
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = () => {
+      const prev = prevRef.current;
+      const quiet = isQuietTape(desk, prev);
+      const interval = quiet ? QUIET_POLL_MS : BASE_POLL_MS;
+      timer = setTimeout(() => {
+        pullCommentary(false);
+        schedule();
+      }, interval);
+    };
+
+    schedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [desk, live, pullCommentary]);
 
   const offlineCopy = pickCommentaryOfflineCopy(desk);
   const offlineTone = commentaryOfflineTone(desk);

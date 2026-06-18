@@ -327,7 +327,7 @@ async function runMigrations(): Promise<void> {
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS api_telemetry_events (
-      seq_id BIGINT PRIMARY KEY,
+      seq_id BIGSERIAL PRIMARY KEY,
       event_id TEXT NOT NULL UNIQUE,
       correlation_id TEXT NOT NULL,
       provider TEXT NOT NULL,
@@ -354,6 +354,24 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_api_telemetry_events_at
     ON api_telemetry_events(at DESC);
+  `);
+  /* Existing deployments used app-assigned seq_id; wire Postgres sequence for multi-instance safety. */
+  await p.query(`
+    CREATE SEQUENCE IF NOT EXISTS api_telemetry_events_seq_id_seq;
+  `);
+  await p.query(`
+    ALTER TABLE api_telemetry_events
+    ALTER COLUMN seq_id SET DEFAULT nextval('api_telemetry_events_seq_id_seq');
+  `);
+  await p.query(`
+    ALTER SEQUENCE api_telemetry_events_seq_id_seq OWNED BY api_telemetry_events.seq_id;
+  `);
+  await p.query(`
+    SELECT setval(
+      'api_telemetry_events_seq_id_seq',
+      GREATEST(1, COALESCE((SELECT MAX(seq_id) FROM api_telemetry_events), 0) + 1),
+      false
+    );
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS admin_audit_log (

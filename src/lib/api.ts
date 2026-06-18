@@ -415,6 +415,77 @@ export const queryLargo = (question: string, sessionId: string) =>
     }
   );
 
+export async function queryLargoStream(
+  question: string,
+  sessionId: string,
+  onToken: (text: string) => void
+): Promise<{ answer: string; session_id: string; source?: string; tools_used?: string[] }> {
+  const res = await fetch(`${MARKET_BASE}/largo/query?stream=1`, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      Pragma: "no-cache",
+      "Cache-Control": "no-cache",
+    },
+    body: JSON.stringify({ question, session_id: sessionId }),
+  });
+
+  if (!res.ok) throw new Error(`Market /largo/query → ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("Market /largo/query stream unavailable");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: { answer: string; session_id: string; source?: string; tools_used?: string[] } | null =
+    null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload) continue;
+
+      const event = JSON.parse(payload) as {
+        type: string;
+        text?: string;
+        message?: string;
+        answer?: string;
+        session_id?: string;
+        source?: string;
+        tools_used?: string[];
+      };
+
+      if (event.type === "token" && event.text) onToken(event.text);
+      if (event.type === "done" && event.answer && event.session_id) {
+        result = {
+          answer: event.answer,
+          session_id: event.session_id,
+          source: event.source,
+          tools_used: event.tools_used,
+        };
+      }
+      if (event.type === "error") {
+        throw new Error(event.message ?? "Largo stream failed");
+      }
+    }
+  }
+
+  if (!result) throw new Error("Largo stream ended without result");
+  return result;
+}
+
 export type LargoChatMessage = {
   id: number;
   role: "user" | "assistant";

@@ -320,12 +320,74 @@ function parseCommentaryJson(raw: string): SpxCommentaryResult | null {
   }
 }
 
+const COMMENTARY_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    bias: { type: "string", enum: ["bullish", "bearish", "neutral"] },
+    body: { type: "string" },
+    watch: { type: "array", items: { type: "string" } },
+    changed: { type: "array", items: { type: "string" } },
+  },
+  required: ["headline", "bias", "body", "watch", "changed"],
+  additionalProperties: false,
+} as const;
+
+function sectionHasData(section: unknown): boolean {
+  if (section == null) return false;
+  if (typeof section !== "object") return false;
+  const obj = section as Record<string, unknown>;
+  return Object.values(obj).some((v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0));
+}
+
+function validateDeskData(ctx: Record<string, unknown>): { ok: true } | { ok: false; reason: string } {
+  const priceAction = ctx.price_action as Record<string, unknown> | undefined;
+  const dealerGex = ctx.dealer_gex as Record<string, unknown> | undefined;
+
+  const hasPrice =
+    priceAction != null &&
+    priceAction.price != null &&
+    Number.isFinite(Number(priceAction.price)) &&
+    Number(priceAction.price) > 0;
+
+  const hasGex =
+    dealerGex != null &&
+    (dealerGex.gex_king != null ||
+      dealerGex.gamma_flip != null ||
+      dealerGex.gex_net != null ||
+      dealerGex.max_pain != null);
+
+  if (!hasPrice) return { ok: false, reason: "missing_price_action" };
+  if (!hasGex) return { ok: false, reason: "missing_dealer_gex" };
+
+  const sections = [
+    "price_action",
+    "dealer_gex",
+    "flow_0dte",
+    "market_tide",
+    "volatility",
+    "support_resistance_levels",
+  ];
+  const populated = sections.filter((key) => sectionHasData(ctx[key])).length;
+  if (populated < 2) {
+    return { ok: false, reason: "insufficient_desk_sections" };
+  }
+
+  return { ok: true };
+}
+
 export async function generateSpxCommentary(
   desk: SpxDeskPayload,
   previous?: Partial<SpxDeskPayload> | null
 ): Promise<SpxCommentaryResult | null> {
   const delta = computeDelta(desk, previous);
   const ctx = deskContext(desk);
+
+  const dataCheck = validateDeskData(ctx);
+  if (dataCheck.ok === false) {
+    console.warn("[spx-commentary] skipping Claude call:", dataCheck.reason);
+    return null;
+  }
 
   const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a 0DTE SPX index options desk. Write a live desk commentary update for members watching the dashboard.
 
@@ -376,7 +438,14 @@ Rules:
 - bias must be defensible from confluence, flow_0dte net, or price vs VWAP — not vibes.
 - Max 280 words in body.`;
 
-  const raw = await anthropicText(prompt, 1800);
+  const raw = await anthropicText(prompt, 1800, undefined, {
+    output_config: {
+      format: {
+        type: "json_schema",
+        schema: COMMENTARY_OUTPUT_SCHEMA,
+      },
+    },
+  });
   if (!raw) return null;
 
   const parsed = parseCommentaryJson(raw);

@@ -1,4 +1,13 @@
 import type { AnthropicMessage } from "@/lib/providers/anthropic";
+import {
+  FLOW_RE,
+  matchesIntent,
+  NEWS_RE,
+  NIGHTHAWK_RE,
+  PLAY_STATE_RE,
+  SPX_DESK_RE,
+  VOL_RE,
+} from "@/lib/largo/intent-keywords";
 
 export type LargoQuestionIntent = {
   needsSpxDesk: boolean;
@@ -11,9 +20,16 @@ export type LargoQuestionIntent = {
 };
 
 const TICKER_RE = /\b([A-Z]{1,5})\b/g;
-const KNOWN_TICKERS = new Set([
-  "SPX", "SPY", "QQQ", "IWM", "VIX", "NDX", "ES", "NQ", "NVDA", "AAPL", "TSLA", "META", "MSFT", "AMZN", "GOOG", "GOOGL",
-  "ASTS", "AMD", "COIN", "PLTR", "SOFI", "HOOD", "GME", "AMC",
+export const KNOWN_TICKERS = new Set([
+  "SPX", "SPY", "QQQ", "IWM", "VIX", "NDX", "ES", "NQ", "DIA", "VOO", "IVV", "RSP",
+  "XLF", "XLE", "XLK", "XLV", "XLI", "XLP", "XLU", "XLY", "XLRE", "XLB", "XLC",
+  "TQQQ", "SQQQ", "GLD", "SLV", "USO", "UNG", "TLT", "HYG", "SMH", "SOXX", "ARKK",
+  "NVDA", "AAPL", "TSLA", "META", "MSFT", "AMZN", "GOOG", "GOOGL", "BRK", "BRKB",
+  "JPM", "V", "MA", "UNH", "JNJ", "PG", "HD", "CVX", "LLY", "AVGO", "COST", "WMT",
+  "CRM", "NFLX", "AMD", "INTC", "ORCL", "ADBE", "BAC", "XOM", "DIS", "PEP", "KO",
+  "ABBV", "MRK", "TMO", "CSCO", "ACN", "MCD", "ABT", "DHR", "TXN", "QCOM", "IBM",
+  "GE", "CAT", "GS", "MS", "BLK", "SCHW", "AXP", "NOW", "UBER", "PYPL", "SQ",
+  "ASTS", "COIN", "PLTR", "SOFI", "HOOD", "GME", "AMC", "MSTR", "SMCI", "ARM",
 ]);
 
 function recentUserText(history: AnthropicMessage[], limit = 6): string {
@@ -41,18 +57,12 @@ export function analyzeLargoQuestion(
 ): LargoQuestionIntent {
   const ctx = `${recentUserText(history)} ${question}`.toLowerCase();
 
-  const needsSpxDesk =
-    /\b(spx|s&p 500|s&p|0dte|sniper|gamma flip|gex|dealer|max pain|vwap|hod|lod|pdh|pdl|internals|tick|trin)\b/.test(
-      ctx
-    );
-  const needsPlayState =
-    /\b(buy|sell|hold|trim|play|setup|trade|lotto|signal|outlook|analysis)\b/.test(ctx);
-  const needsFlow =
-    /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/.test(ctx);
-  const needsNews = /\b(news|headline|catalyst|earnings|cpi|fomc|macro|calendar)\b/.test(ctx);
-  const needsVol = /\b(iv|vol|vix|skew|rank|realized)\b/.test(ctx);
-  const needsNightHawk =
-    /\b(nighthawk|night hawk|playbook|tomorrow|evening plays|hawk plays|top plays)\b/.test(ctx);
+  const needsSpxDesk = matchesIntent(ctx, SPX_DESK_RE);
+  const needsPlayState = matchesIntent(ctx, PLAY_STATE_RE);
+  const needsFlow = matchesIntent(ctx, FLOW_RE);
+  const needsNews = matchesIntent(ctx, NEWS_RE);
+  const needsVol = matchesIntent(ctx, VOL_RE);
+  const needsNightHawk = matchesIntent(ctx, NIGHTHAWK_RE);
 
   const tickerHint = extractTicker(question, recentUserText(history));
   const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);

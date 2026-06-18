@@ -5247,13 +5247,29 @@ body {
     @apply min-h-screen text-white relative overflow-x-hidden;
     background: #050508;
     --admin-nav-offset: 5.75rem;
+    --admin-cyan: #00D4FF;
+    --admin-green: #39FF14;
+    --admin-gold: #FFD700;
+    --admin-orange: #FF8C00;
+    --admin-purple: #BB86FC;
+    --admin-turquoise: #40E0D0;
+    --admin-text: #f0f0f8;
+    --admin-text-muted: #d8d8e8;
+    --admin-text-dim: #b8b8cc;
+    --admin-text-label: #a4a8bc;
+    --admin-success: var(--admin-green);
+    --admin-warning: var(--admin-gold);
+    --admin-error: var(--admin-orange);
+    --admin-info: var(--admin-cyan);
+    --admin-link: var(--admin-turquoise);
+    --admin-accent: var(--admin-purple);
   }
 
   .admin-page-canvas {
     background:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 230, 118, 0.15), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 50%, rgba(191, 95, 255, 0.12), transparent),
-      radial-gradient(ellipse 50% 30% at 0% 80%, rgba(6, 182, 212, 0.1), transparent),
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(57, 255, 20, 0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 50%, rgba(187, 134, 252, 0.1), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 80%, rgba(0, 212, 255, 0.08), transparent),
       #050508;
   }
 
@@ -5290,18 +5306,18 @@ body {
 
   .admin-mesh-orb-a {
     @apply w-[320px] h-[320px] top-0 -left-16;
-    background: radial-gradient(circle, rgba(0, 230, 118, 0.45), transparent 70%);
+    background: radial-gradient(circle, rgba(57, 255, 20, 0.35), transparent 70%);
   }
 
   .admin-mesh-orb-b {
     @apply w-[360px] h-[360px] top-1/3 -right-24;
-    background: radial-gradient(circle, rgba(191, 95, 255, 0.4), transparent 70%);
+    background: radial-gradient(circle, rgba(187, 134, 252, 0.32), transparent 70%);
     animation-delay: -6s;
   }
 
   .admin-mesh-orb-c {
     @apply w-[280px] h-[280px] bottom-0 left-1/3;
-    background: radial-gradient(circle, rgba(6, 182, 212, 0.35), transparent 70%);
+    background: radial-gradient(circle, rgba(64, 224, 208, 0.28), transparent 70%);
     animation-delay: -12s;
   }
 
@@ -5376,11 +5392,12 @@ body {
 
   .admin-title-accent {
     @apply text-transparent bg-clip-text;
-    background-image: linear-gradient(90deg, #00e676, #00d4ff, #d580ff);
+    background-image: linear-gradient(90deg, var(--admin-green), var(--admin-cyan), var(--admin-purple));
   }
 
   .admin-sub-hero {
-    @apply text-xs md:text-sm text-grey-400 max-w-2xl leading-relaxed;
+    @apply text-xs md:text-sm max-w-2xl leading-relaxed;
+    color: var(--admin-text-3);
   }
 
   .admin-hero-chips {
@@ -5389,11 +5406,14 @@ body {
 
   .admin-hero-chip {
     @apply px-2.5 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider
-           border border-white/10 bg-white/5 text-grey-400;
+           border border-white/10 bg-white/5;
+    color: var(--admin-text-label);
   }
 
   .admin-hero-chip-warn {
-    @apply border-amber-500/35 bg-amber-500/10 text-amber-200;
+    border-color: color-mix(in srgb, var(--admin-gold) 40%, transparent);
+    background: color-mix(in srgb, var(--admin-gold) 12%, transparent);
+    color: var(--admin-gold);
   }
 
   .admin-mega-grid {
@@ -8579,6 +8599,116 @@ body {
   }
 
   .admin-spx-term-incident-btn-muted {
-    @apply border-white/20 text-grey-400 hover:bg-white/5;
+    @apply border-white/20 hover:bg-white/5;
+    color: var(--admin-text-label);
+  }
+
+  /* ── Admin approved palette: readability + color lock ── */
+  .admin-page .text-grey-100,
+  .admin-page .text-grey-200 { color: var(--admin-text-2) !important; }
+  .admin-page .text-grey-300 { color: var(--admin-text-3) !important; }
+  .admin-page .text-grey-400,
+  .admin-page .text-grey-500,
+  .admin-page .text-grey-600 { color: var(--admin-text-label) !important; }
+
+  .admin-page .text-bull,
+  .admin-page [class*="text-emerald"],
+  .admin-page [class*="text-green"] { color: var(--admin-green) !important; }
+
+  .admin-page .text-bear,
+  .admin-page [class*="text-red"],
+  .admin-page [class*="text-rose"] { color: var(--admin-orange) !important; }
+
+  .admin-page .text-gold,
+  .admin-page [class*="text-amber"],
+  .admin-page [class*="text-yellow"] { color: var(--admin-gold) !important; }
+
+  .admin-page .text-ember,
+  .admin-page [class*="text-orange"]:not([class*="text-orange-50"]) { color: var(--admin-orange) !important; }
+
+  .admin-page .text-purple,
+  .admin-page [class*="text-violet"],
+  .admin-page [class*="text-fuchsia"],
+  .admin-page [class*="text-indigo"] { color: var(--admin-purple) !important; }
+
+  .admin-page .text-cyan,
+  .admin-page [class*="text-cyan"],
+  .admin-page [class*="text-sky"],
+  .admin-page [class*="text-teal"] { color: var(--admin-cyan) !important; }
+
+  .admin-page [class*="border-emerald"],
+  .admin-page [class*="border-green"] {
+    border-color: color-mix(in srgb, var(--admin-green) 35%, transparent) !important;
+  }
+  .admin-page [class*="border-red"],
+  .admin-page [class*="border-rose"] {
+    border-color: color-mix(in srgb, var(--admin-orange) 35%, transparent) !important;
+  }
+  .admin-page [class*="border-amber"],
+  .admin-page [class*="border-yellow"] {
+    border-color: color-mix(in srgb, var(--admin-gold) 35%, transparent) !important;
+  }
+  .admin-page [class*="border-orange"] {
+    border-color: color-mix(in srgb, var(--admin-orange) 35%, transparent) !important;
+  }
+  .admin-page [class*="border-violet"],
+  .admin-page [class*="border-purple"],
+  .admin-page [class*="border-fuchsia"] {
+    border-color: color-mix(in srgb, var(--admin-purple) 35%, transparent) !important;
+  }
+  .admin-page [class*="border-cyan"],
+  .admin-page [class*="border-sky"],
+  .admin-page [class*="border-teal"] {
+    border-color: color-mix(in srgb, var(--admin-cyan) 35%, transparent) !important;
+  }
+
+  .admin-page [class*="bg-emerald"],
+  .admin-page [class*="bg-green"] {
+    background-color: color-mix(in srgb, var(--admin-green) 14%, transparent) !important;
+  }
+  .admin-page [class*="bg-red"],
+  .admin-page [class*="bg-rose"] {
+    background-color: color-mix(in srgb, var(--admin-orange) 14%, transparent) !important;
+  }
+  .admin-page [class*="bg-amber"],
+  .admin-page [class*="bg-yellow"] {
+    background-color: color-mix(in srgb, var(--admin-gold) 14%, transparent) !important;
+  }
+  .admin-page [class*="bg-orange"] {
+    background-color: color-mix(in srgb, var(--admin-orange) 14%, transparent) !important;
+  }
+  .admin-page [class*="bg-violet"],
+  .admin-page [class*="bg-purple"],
+  .admin-page [class*="bg-fuchsia"] {
+    background-color: color-mix(in srgb, var(--admin-purple) 14%, transparent) !important;
+  }
+  .admin-page [class*="bg-cyan"],
+  .admin-page [class*="bg-sky"],
+  .admin-page [class*="bg-teal"] {
+    background-color: color-mix(in srgb, var(--admin-cyan) 14%, transparent) !important;
+  }
+
+  .admin-page .admin-section-title,
+  .admin-page .admin-glass-title,
+  .admin-page .admin-mega-stat-label,
+  .admin-page .admin-stat-label,
+  .admin-page .admin-table th,
+  .admin-page .admin-tab-blurb,
+  .admin-page .admin-ring-label,
+  .admin-page .admin-ring-sub,
+  .admin-page .admin-mega-stat-sub,
+  .admin-page .admin-stat-sub {
+    color: var(--admin-text-label) !important;
+  }
+
+  .admin-page .admin-table td,
+  .admin-page .admin-insight-list,
+  .admin-page .admin-mini-grid {
+    color: var(--admin-text-3) !important;
+  }
+
+  .admin-page .admin-sub,
+  .admin-page .admin-live-pill {
+    color: var(--admin-text-label) !important;
   }
 }

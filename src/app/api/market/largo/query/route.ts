@@ -1,10 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireTierApi } from "@/lib/market-api-auth";
-import { largoConfigured, runLargoQuery } from "@/lib/largo-terminal";
+import { largoConfigured, runLargoQuery, runLargoQueryStream } from "@/lib/largo-terminal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+function wantsStream(req: NextRequest): boolean {
+  if (req.nextUrl.searchParams.get("stream") === "1") return true;
+  const accept = req.headers.get("accept") ?? "";
+  return accept.includes("text/event-stream");
+}
 
 export async function POST(req: NextRequest) {
   const authResult = await requireTierApi("premium");
@@ -35,12 +41,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "question too long" }, { status: 400 });
   }
 
+  const resolvedSessionId = sessionId || `web-${authResult.userId}-${Date.now()}`;
+
+  if (wantsStream(req)) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (payload: unknown) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        };
+        try {
+          await runLargoQueryStream(question, resolvedSessionId, authResult.userId, send);
+        } catch (error) {
+          console.error("[market/largo/query stream]", error);
+          const message = error instanceof Error ? error.message : "Largo query failed";
+          send({ type: "error", message });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        Connection: "keep-alive",
+        Pragma: "no-cache",
+      },
+    });
+  }
+
   try {
-    const result = await runLargoQuery(
-      question,
-      sessionId || `web-${authResult.userId}-${Date.now()}`,
-      authResult.userId
-    );
+    const result = await runLargoQuery(question, resolvedSessionId, authResult.userId);
     return NextResponse.json(result, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

@@ -13,6 +13,7 @@
     "analyze:api": "node scripts/analyze-api-usage.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@clerk/nextjs": "^5.1.0",
     "@whop/sdk": "^0.0.40",
     "clsx": "^2.1.1",
