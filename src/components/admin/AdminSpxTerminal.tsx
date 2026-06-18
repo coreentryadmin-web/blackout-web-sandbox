@@ -150,6 +150,19 @@ export function AdminSpxTerminal({
   const healthClass =
     terminal.counts.critical > 0 ? "bear" : terminal.counts.warning > 0 ? "amber" : "bull";
 
+  const incidentAction = async (id: string, action: "ack" | "resolve") => {
+    try {
+      const res = await fetch("/api/admin/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+      if (res.ok && onRefresh) onRefresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <section className="admin-spx-terminal">
       <div className="admin-spx-term-chrome">
@@ -204,6 +217,36 @@ export function AdminSpxTerminal({
             <span className="admin-spx-term-stat-value">{filtered.length}</span>
           </div>
         </div>
+
+        {data.open_incidents.length > 0 && (
+          <div className="admin-spx-term-incidents">
+            <p className="admin-spx-term-incidents-title">Open incidents · ack to record MTTA</p>
+            {data.open_incidents.map((inc) => (
+              <div key={inc.id} className={clsx("admin-spx-term-incident", `admin-spx-term-incident-${inc.severity}`)}>
+                <div>
+                  <p className="admin-spx-term-incident-head">{inc.title}</p>
+                  <p className="admin-spx-term-incident-detail">{inc.detail}</p>
+                  <p className="admin-spx-term-incident-meta">
+                    {inc.status.toUpperCase()}
+                    {inc.mtta_ms != null
+                      ? ` · MTTA ${Math.round(inc.mtta_ms / 1000)}s`
+                      : ` · open ${Math.round((Date.now() - new Date(inc.opened_at).getTime()) / 1000)}s`}
+                  </p>
+                </div>
+                <div className="admin-spx-term-incident-actions">
+                  {inc.status === "open" && (
+                    <button type="button" className="admin-spx-term-incident-btn" onClick={() => incidentAction(inc.id, "ack")}>
+                      Ack
+                    </button>
+                  )}
+                  <button type="button" className="admin-spx-term-incident-btn admin-spx-term-incident-btn-muted" onClick={() => incidentAction(inc.id, "resolve")}>
+                    Resolve
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="admin-spx-term-toolbar">
           <div className="admin-spx-term-filters">

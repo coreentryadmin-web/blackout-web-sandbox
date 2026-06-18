@@ -161,6 +161,7 @@ export function TabCommandHero({
   chips,
   rings,
   actions,
+  compact = false,
 }: {
   kicker: string;
   title: string;
@@ -169,9 +170,15 @@ export function TabCommandHero({
   chips?: React.ReactNode;
   rings?: React.ReactNode;
   actions?: React.ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <header className="admin-command-hero admin-command-hero-stacked">
+    <header
+      className={clsx(
+        "admin-command-hero admin-command-hero-stacked",
+        compact && "admin-command-hero-compact"
+      )}
+    >
       <div className="admin-command-hero-left">
         <p className="admin-kicker admin-kicker-glow">{kicker}</p>
         <h1 className="admin-title admin-title-xl">
@@ -541,6 +548,86 @@ export function ClaudeVerdictCard({
       </div>
       <p className="admin-claude-verdict">{verdict}</p>
       {thesis && <p className="admin-claude-thesis">{thesis}</p>}
+    </div>
+  );
+}
+
+export function ConfirmationsCard({
+  passed,
+  passed_count,
+  total,
+  checks,
+}: {
+  passed: boolean;
+  passed_count: number;
+  total: number;
+  checks: Array<{ label: string; passed: boolean; required: boolean; detail: string }>;
+}) {
+  const tone = passed ? "bull" : "bear";
+  return (
+    <div className={clsx("admin-confirm-card", `admin-confirm-card-${tone}`)}>
+      <div className="admin-confirm-card-head">
+        <span className={clsx("admin-claude-badge", `admin-claude-badge-${tone}`)}>
+          {passed_count}/{total} PASS
+        </span>
+        <span className="admin-claude-source">{passed ? "READY" : "BLOCKED"}</span>
+      </div>
+      <ul className="admin-confirm-check-list">
+        {checks.map((c) => (
+          <li key={c.label} className={clsx("admin-confirm-check", c.passed ? "admin-confirm-check-pass" : "admin-confirm-check-fail")}>
+            <span className="admin-confirm-check-mark">{c.passed ? "✓" : "✕"}</span>
+            <div>
+              <p className="admin-confirm-check-label">
+                {c.label}
+                {c.required && <span className="admin-confirm-required">required</span>}
+              </p>
+              <p className="admin-confirm-check-detail">{c.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function MtfHybridCard({
+  ok,
+  summary,
+  failure_reason,
+  t1_trigger,
+  t2_confirm_3m,
+  t3_regime_5m,
+  soft_5m,
+}: {
+  ok: boolean;
+  summary: string;
+  failure_reason: string | null;
+  t1_trigger: boolean;
+  t2_confirm_3m: boolean;
+  t3_regime_5m: boolean;
+  soft_5m: boolean;
+}) {
+  const tone = ok ? "bull" : "bear";
+  const steps = [
+    { label: "1m trigger", pass: t1_trigger },
+    { label: "3m confirm", pass: t2_confirm_3m },
+    { label: "5m regime", pass: t3_regime_5m },
+  ];
+  return (
+    <div className={clsx("admin-mtf-card", `admin-mtf-card-${tone}`)}>
+      <div className="admin-claude-card-head">
+        <span className={clsx("admin-claude-badge", `admin-claude-badge-${tone}`)}>{ok ? "MTF OK" : "MTF FAIL"}</span>
+        {soft_5m && <span className="admin-claude-source">soft 5m</span>}
+      </div>
+      <p className="admin-claude-thesis">{summary}</p>
+      {failure_reason && <p className="admin-mtf-fail">{failure_reason}</p>}
+      <div className="admin-mtf-steps">
+        {steps.map((s) => (
+          <span key={s.label} className={clsx("admin-mtf-step", s.pass ? "admin-mtf-step-pass" : "admin-mtf-step-fail")}>
+            {s.pass ? "✓" : "✕"} {s.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

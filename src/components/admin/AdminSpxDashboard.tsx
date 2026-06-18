@@ -9,6 +9,7 @@ import { AdminSpxTerminal } from "@/components/admin/AdminSpxTerminal";
 import {
   ActionButton,
   ClaudeVerdictCard,
+  ConfirmationsCard,
   ConfirmModal,
   DataTable,
   DeckPanel,
@@ -22,6 +23,7 @@ import {
   LivePill,
   MegaStat,
   MetricChip,
+  MtfHybridCard,
   OutcomeBadge,
   PnlChart,
   SectionDeck,
@@ -42,8 +44,8 @@ type SectionId =
   | "config";
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
-  { id: "overview", label: "Overview", icon: "◎" },
   { id: "terminal", label: "Terminal", icon: "▸" },
+  { id: "overview", label: "Overview", icon: "◎" },
   { id: "live", label: "Live Engine", icon: "⚡" },
   { id: "desk", label: "Desk Intel", icon: "◈" },
   { id: "lotto", label: "Lotto", icon: "◆" },
@@ -52,6 +54,23 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: "analytics", label: "Analytics", icon: "◐" },
   { id: "config", label: "Config", icon: "⚙" },
 ];
+
+function parseSection(value: string | null): SectionId {
+  if (
+    value === "overview" ||
+    value === "terminal" ||
+    value === "live" ||
+    value === "desk" ||
+    value === "lotto" ||
+    value === "outcomes" ||
+    value === "signals" ||
+    value === "analytics" ||
+    value === "config"
+  ) {
+    return value;
+  }
+  return "terminal";
+}
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -207,12 +226,25 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
 
       {play.confirmations && (
         <DeckPanel title="Confirmations" badge={`${play.confirmations.passed_count}/${play.confirmations.total}`} accent="bull">
-          <JsonBlock value={play.confirmations} />
+          <ConfirmationsCard
+            passed={play.confirmations.passed}
+            passed_count={play.confirmations.passed_count}
+            total={play.confirmations.total}
+            checks={play.confirmations.checks}
+          />
         </DeckPanel>
       )}
       {play.mtf && (
         <DeckPanel title="MTF hybrid" badge={play.mtf.ok ? "OK" : "FAIL"} accent={play.mtf.ok ? "bull" : "bear"}>
-          <JsonBlock value={play.mtf} />
+          <MtfHybridCard
+            ok={play.mtf.ok}
+            summary={play.mtf.summary}
+            failure_reason={play.mtf.failure_reason}
+            t1_trigger={play.mtf.t1_trigger}
+            t2_confirm_3m={play.mtf.t2_confirm_3m}
+            t3_regime_5m={play.mtf.t3_regime_5m}
+            soft_5m={play.mtf.soft_5m}
+          />
         </DeckPanel>
       )}
       {play.technicals && (
@@ -742,7 +774,7 @@ function ConfigSection({ data }: { data: SpxAdminDashboardPayload }) {
 export function AdminSpxDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [section, setSection] = useState<SectionId>("overview");
+  const [section, setSection] = useState<SectionId>(() => parseSection(searchParams.get("section")));
   const [data, setData] = useState<SpxAdminDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveLoading, setLiveLoading] = useState(false);
@@ -751,20 +783,7 @@ export function AdminSpxDashboard() {
   const [confirmLive, setConfirmLive] = useState(false);
 
   useEffect(() => {
-    const fromUrl = searchParams.get("section");
-    if (
-      fromUrl === "overview" ||
-      fromUrl === "terminal" ||
-      fromUrl === "live" ||
-      fromUrl === "desk" ||
-      fromUrl === "lotto" ||
-      fromUrl === "outcomes" ||
-      fromUrl === "signals" ||
-      fromUrl === "analytics" ||
-      fromUrl === "config"
-    ) {
-      setSection(fromUrl);
-    }
+    setSection(parseSection(searchParams.get("section")));
   }, [searchParams]);
 
   const goSection = useCallback(
@@ -772,8 +791,10 @@ export function AdminSpxDashboard() {
       setSection(next);
       const params = new URLSearchParams(searchParams.toString());
       params.set("tab", "spx");
-      params.set("section", next);
-      router.replace(`/admin?${params.toString()}`);
+      if (next === "terminal") params.delete("section");
+      else params.set("section", next);
+      const qs = params.toString();
+      router.replace(qs ? `/admin?${qs}` : "/admin", { scroll: false });
     },
     [router, searchParams]
   );
@@ -852,6 +873,7 @@ export function AdminSpxDashboard() {
         loading={liveLoading}
       />
       <TabCommandHero
+        compact={section === "terminal"}
         kicker="Blackout · SPX Engine"
         title="SPX Sniper"
         titleAccent="Command"

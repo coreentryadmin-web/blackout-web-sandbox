@@ -18,7 +18,7 @@ export type {
   ApiEndpointStats,
   ProviderHealthRow,
 } from "@/lib/api-telemetry-types";
-export { classifyEventSeverity, incidentDedupeKey } from "@/lib/api-telemetry-types";
+export { classifyEventSeverity, incidentDedupeKey, isFeedableIncident } from "@/lib/api-telemetry-types";
 
 export type ActiveRetry = {
   correlation_id: string;
@@ -92,6 +92,16 @@ export function getEventsSinceSeq(sinceSeq: number): ApiCallEvent[] {
 
 export function getLatestSeqId(): number {
   return globalSeq;
+}
+
+export function getCallsByProvider1m(): Partial<Record<ApiProviderId, number>> {
+  const cutoff = Date.now() - 60_000;
+  const counts: Partial<Record<ApiProviderId, number>> = {};
+  for (const e of events) {
+    if (new Date(e.at).getTime() < cutoff) continue;
+    counts[e.provider] = (counts[e.provider] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export function recordApiCall(input: {
@@ -214,7 +224,7 @@ export function recordApiCall(input: {
 export function getApiTelemetrySnapshot(sinceMs = 5 * 60_000) {
   const cutoff = Date.now() - sinceMs;
   const recent = events.filter((e) => new Date(e.at).getTime() >= cutoff);
-  const errors = recent.filter((e) => !e.ok).slice(0, 60);
+  const errors = recent.filter((e) => !e.ok || e.sla_breach).slice(0, 60);
 
   const byProvider: Record<
     ApiProviderId,

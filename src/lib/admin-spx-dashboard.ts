@@ -13,6 +13,9 @@ import { computeSpxConfluence } from "@/lib/spx-signals";
 import { fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
 import { buildSpxAdminIssues, type SpxAdminIssuesPayload } from "@/lib/admin-spx-issues";
 import { buildSpxTerminalFeed, type SpxTerminalPayload } from "@/lib/admin-spx-terminal";
+import { syncAdminIncidents, listOpenAdminIncidents, type AdminIncidentRow } from "@/lib/admin-incidents";
+import { getAdminRouteErrors } from "@/lib/admin-route-errors";
+import { recordPlayEngineTick } from "@/lib/play-engine-heartbeat";
 
 export type DeskIntelSection = {
   polled_at: string | null;
@@ -57,6 +60,7 @@ export type SpxAdminDashboardPayload = {
   };
   issues: SpxAdminIssuesPayload;
   terminal: SpxTerminalPayload;
+  open_incidents: AdminIncidentRow[];
   outcomes_all: Awaited<ReturnType<typeof fetchRecentPlayOutcomes>>;
 };
 
@@ -173,6 +177,7 @@ export async function fetchSpxAdminDashboard(options?: {
       evaluateSpxPlay(merged),
       evaluateSpxLotto(merged, technicals),
     ]);
+    recordPlayEngineTick("admin_live");
   }
 
   const issues = await buildSpxAdminIssues({
@@ -181,6 +186,10 @@ export async function fetchSpxAdminDashboard(options?: {
     marketOpen: merged.market_open === true,
   });
 
+  await syncAdminIncidents(issues.issues);
+  const openIncidents = await listOpenAdminIncidents(12);
+  const routeErrors = getAdminRouteErrors();
+
   const terminal = buildSpxTerminalFeed({
     issues,
     desk: merged,
@@ -188,6 +197,8 @@ export async function fetchSpxAdminDashboard(options?: {
     liveEngine,
     signalsToday: analytics.signals_today,
     flowAlertsToday: analytics.flow_alerts_today,
+    routeErrors,
+    openIncidents,
   });
 
   return {
@@ -206,6 +217,7 @@ export async function fetchSpxAdminDashboard(options?: {
     state: { watch, session_meta },
     issues,
     terminal,
+    open_incidents: openIncidents,
     outcomes_all,
   };
 }

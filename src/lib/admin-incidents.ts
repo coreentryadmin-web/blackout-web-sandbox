@@ -1,0 +1,153 @@
+import { dbQuery, dbConfigured } from "@/lib/db";
+import type { SpxAdminIssue } from "@/lib/admin-spx-issues";
+
+export type AdminIncidentStatus = "open" | "acked" | "resolved";
+
+export type AdminIncidentRow = {
+  id: string;
+  fingerprint: string;
+  severity: string;
+  category: string;
+  title: string;
+  detail: string;
+  status: AdminIncidentStatus;
+  opened_at: string;
+  acked_at: string | null;
+  resolved_at: string | null;
+  acked_by: string | null;
+  mtta_ms: number | null;
+};
+
+let schemaReady: Promise<void> | null = null;
+
+async function ensureIncidentSchema(): Promise<void> {
+  if (!dbConfigured()) return;
+  if (!schemaReady) {
+    schemaReady = dbQuery(`
+      CREATE TABLE IF NOT EXISTS admin_incidents (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL UNIQUE,
+        severity TEXT NOT NULL,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        acked_at TIMESTAMPTZ,
+        resolved_at TIMESTAMPTZ,
+        acked_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_incidents_status ON admin_incidents(status);
+      CREATE INDEX IF NOT EXISTS idx_admin_incidents_opened ON admin_incidents(opened_at DESC);
+    `).then(() => undefined);
+  }
+  await schemaReady;
+}
+
+function fingerprintFor(issue: SpxAdminIssue): string {
+  return `${issue.category}:${issue.title}`;
+}
+
+export async function syncAdminIncidents(issues: SpxAdminIssue[]): Promise<void> {
+  if (!dbConfigured()) return;
+  await ensureIncidentSchema();
+
+  const active = issues.filter((i) => i.severity === "critical" || i.severity === "warning");
+  const activeFp = new Set(active.map(fingerprintFor));
+
+  for (const issue of active) {
+    const fp = fingerprintFor(issue);
+    await dbQuery(
+      `INSERT INTO admin_incidents (id, fingerprint, severity, category, title, detail, status, opened_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'open', NOW(), NOW())
+       ON CONFLICT (fingerprint) DO UPDATE SET
+         severity = EXCLUDED.severity,
+         detail = EXCLUDED.detail,
+         updated_at = NOW(),
+         status = CASE WHEN admin_incidents.status = 'resolved' THEN 'open' ELSE admin_incidents.status END,
+         resolved_at = CASE WHEN admin_incidents.status = 'resolved' THEN NULL ELSE admin_incidents.resolved_at END`,
+      [issue.id, fp, issue.severity, issue.category, issue.title, issue.detail]
+    );
+  }
+
+  const openRows = await dbQuery<{ fingerprint: string }>(
+    `SELECT fingerprint FROM admin_incidents WHERE status IN ('open', 'acked')`
+  );
+  for (const row of openRows.rows) {
+    if (!activeFp.has(row.fingerprint)) {
+      await dbQuery(
+        `UPDATE admin_incidents SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
+         WHERE fingerprint = $1 AND status IN ('open', 'acked')`,
+        [row.fingerprint]
+      );
+    }
+  }
+}
+
+export async function listOpenAdminIncidents(limit = 20): Promise<AdminIncidentRow[]> {
+  if (!dbConfigured()) return [];
+  await ensureIncidentSchema();
+  const res = await dbQuery<{
+    id: string;
+    fingerprint: string;
+    severity: string;
+    category: string;
+    title: string;
+    detail: string;
+    status: AdminIncidentStatus;
+    opened_at: Date;
+    acked_at: Date | null;
+    resolved_at: Date | null;
+    acked_by: string | null;
+  }>(
+    `SELECT id, fingerprint, severity, category, title, detail, status, opened_at, acked_at, resolved_at, acked_by
+     FROM admin_incidents
+     WHERE status IN ('open', 'acked')
+     ORDER BY opened_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  const now = Date.now();
+  return res.rows.map((row) => {
+    const openedMs = new Date(row.opened_at).getTime();
+    const ackedMs = row.acked_at ? new Date(row.acked_at).getTime() : null;
+    return {
+      id: row.id,
+      fingerprint: row.fingerprint,
+      severity: row.severity,
+      category: row.category,
+      title: row.title,
+      detail: row.detail,
+      status: row.status,
+      opened_at: row.opened_at.toISOString(),
+      acked_at: row.acked_at?.toISOString() ?? null,
+      resolved_at: row.resolved_at?.toISOString() ?? null,
+      acked_by: row.acked_by,
+      mtta_ms: ackedMs != null ? ackedMs - openedMs : row.status === "open" ? now - openedMs : null,
+    };
+  });
+}
+
+export async function ackAdminIncident(id: string, actorEmail: string | null): Promise<boolean> {
+  if (!dbConfigured()) return false;
+  await ensureIncidentSchema();
+  const res = await dbQuery(
+    `UPDATE admin_incidents SET status = 'acked', acked_at = NOW(), acked_by = $2, updated_at = NOW()
+     WHERE id = $1 AND status = 'open'`,
+    [id, actorEmail]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function resolveAdminIncident(id: string): Promise<boolean> {
+  if (!dbConfigured()) return false;
+  await ensureIncidentSchema();
+  const res = await dbQuery(
+    `UPDATE admin_incidents SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND status IN ('open', 'acked')`,
+    [id]
+  );
+  return (res.rowCount ?? 0) > 0;
+}

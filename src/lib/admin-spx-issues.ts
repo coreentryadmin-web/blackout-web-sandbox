@@ -260,6 +260,32 @@ export async function buildSpxAdminIssues(input: {
   }
 
   const playEngine = health.play_engine;
+  const hb = playEngine.heartbeat;
+  if (marketOpen) {
+    if (!hb.last_tick_at) {
+      push(issues, {
+        severity: "warning",
+        category: "engine",
+        title: "Play engine never ticked this session",
+        detail: "No cron or live-engine evaluation recorded since process start",
+      });
+    } else if (hb.critical_stale) {
+      push(issues, {
+        severity: "critical",
+        category: "engine",
+        title: "Play engine silent",
+        detail: `Last tick ${Math.round((hb.age_ms ?? 0) / 1000)}s ago via ${hb.last_source ?? "unknown"}`,
+      });
+    } else if (hb.stale) {
+      push(issues, {
+        severity: "warning",
+        category: "engine",
+        title: "Play engine tick aging",
+        detail: `Last tick ${Math.round((hb.age_ms ?? 0) / 1000)}s ago · ${hb.tick_count} ticks total`,
+      });
+    }
+  }
+
   if (playEngine.open_play && marketOpen && !play) {
     push(issues, {
       severity: "info",

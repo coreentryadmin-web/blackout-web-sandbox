@@ -14,6 +14,22 @@ type Handler = (data: unknown) => void;
 
 type ChannelState = "idle" | "connecting" | "open" | "auth_failed";
 
+type NodeWebSocketInit = {
+  headers?: Record<string, string>;
+};
+
+function openUwWebSocket(url: string): WebSocket {
+  const init: NodeWebSocketInit = {
+    headers: {
+      Authorization: `Bearer ${UW_API_KEY}`,
+      Accept: "application/json",
+      "UW-CLIENT-API-ID": UW_CLIENT_ID,
+    },
+  };
+  // Node/undici WebSocket accepts headers on upgrade; DOM lib types do not.
+  return new WebSocket(url, init as unknown as string[]);
+}
+
 const UW_WS_BASE = process.env.UW_WS_BASE ?? "wss://api.unusualwhales.com/api/socket";
 const UW_API_KEY = (process.env.UW_API_KEY ?? "").trim();
 const UW_CLIENT_ID = process.env.UW_CLIENT_API_ID ?? "100001";
@@ -143,7 +159,7 @@ class UwSocketManager {
     try {
       this.channelState.set(channel, "connecting");
       this.opened.set(channel, false);
-      const ws = new WebSocket(`${UW_WS_BASE}/${channel}`);
+      const ws = openUwWebSocket(`${UW_WS_BASE}/${channel}`);
       this.sockets.set(channel, ws);
 
       ws.onopen = () => {

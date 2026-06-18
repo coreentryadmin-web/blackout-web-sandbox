@@ -5,10 +5,12 @@ import {
 } from "@/lib/api-provider-catalog";
 import {
   getApiTelemetrySnapshot,
+  getCallsByProvider1m,
   recordApiCall,
   type ApiEndpointStats,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
+import { buildRateQuotaHeadroom, type RateQuotaHeadroom } from "@/lib/api-rate-quotas";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { buildEndpointRegistry, type EndpointRegistryPayload } from "@/lib/admin-endpoint-registry";
 import { pingDatabase, dbConfigured } from "@/lib/db";
@@ -22,6 +24,8 @@ import { webSearchConfigured } from "@/lib/providers/web-search";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
+import { getDatabasePoolStats } from "@/lib/db";
+import { getPlayEngineHealth } from "@/lib/play-engine-health";
 
 export type EndpointDashboardRow = CatalogEndpoint & {
   telemetry: ApiEndpointStats | null;
@@ -63,6 +67,11 @@ export type ApiDashboardPayload = {
   websockets: {
     polygon_indices: ReturnType<typeof getIndexStoreStatus>;
     unusual_whales: ReturnType<typeof getUwSocketHealth>;
+  };
+  ops: {
+    db_pool: Awaited<ReturnType<typeof getDatabasePoolStats>>;
+    play_engine: Awaited<ReturnType<typeof getPlayEngineHealth>>;
+    rate_headroom: RateQuotaHeadroom[];
   };
 };
 
@@ -339,6 +348,9 @@ export async function fetchApiDashboard(options?: {
   const configuredCount = providers.filter((p) => p.configured).length;
   const healthyCount = providers.filter((p) => p.configured && p.probe.ok).length;
 
+  const [dbPool, playEngine] = await Promise.all([getDatabasePoolStats(), getPlayEngineHealth()]);
+  const rateHeadroom = buildRateQuotaHeadroom(getCallsByProvider1m());
+
   return {
     generated_at: new Date().toISOString(),
     summary: {
@@ -360,6 +372,11 @@ export async function fetchApiDashboard(options?: {
     websockets: {
       polygon_indices: getIndexStoreStatus(),
       unusual_whales: getUwSocketHealth(),
+    },
+    ops: {
+      db_pool: dbPool,
+      play_engine: playEngine,
+      rate_headroom: rateHeadroom,
     },
   };
 }

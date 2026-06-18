@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 
 import type { ApiCallEvent } from "@/lib/api-telemetry-types";
-import { incidentDedupeKey } from "@/lib/api-telemetry-types";
+import { incidentDedupeKey, isFeedableIncident } from "@/lib/api-telemetry-types";
 
 
 
@@ -63,6 +63,8 @@ function fmtRel(iso: string): string {
 
 function statusLabel(event: ApiCallEvent): string {
 
+  if (event.sla_breach) return "SLA";
+
   if (event.ok) return "OK";
 
   if (event.rate_limited) return "429";
@@ -75,11 +77,13 @@ function statusLabel(event: ApiCallEvent): string {
 
 
 
-function severityClass(severity: ApiCallEvent["severity"]): string {
+function severityClass(event: ApiCallEvent): string {
 
-  if (severity === "p1") return "admin-cmd-incident-p1";
+  if (event.sla_breach && event.ok) return "admin-cmd-incident-p3 admin-cmd-incident-sla";
 
-  if (severity === "p2") return "admin-cmd-incident-p2";
+  if (event.severity === "p1") return "admin-cmd-incident-p1";
+
+  if (event.severity === "p2") return "admin-cmd-incident-p2";
 
   return "admin-cmd-incident-p3";
 
@@ -248,7 +252,7 @@ export function AdminApiLiveFeed({
 
             if (ev.seq_id > lastSeqRef.current) lastSeqRef.current = ev.seq_id;
 
-            if (!ev.ok && !seen.current.has(ev.id)) {
+            if (isFeedableIncident(ev) && !seen.current.has(ev.id)) {
 
               seen.current.add(ev.id);
 
@@ -312,7 +316,7 @@ export function AdminApiLiveFeed({
 
           <p className="admin-cmd-feed-kicker">Live incidents</p>
 
-          <h3 className="admin-cmd-feed-title">Failed calls</h3>
+          <h3 className="admin-cmd-feed-title">Failures & SLA</h3>
 
         </div>
 
@@ -380,7 +384,7 @@ export function AdminApiLiveFeed({
 
           {groups.length === 0 ? (
 
-            <p className="admin-api-muted admin-cmd-feed-empty">No failures in window — all clear.</p>
+            <p className="admin-api-muted admin-cmd-feed-empty">No incidents in window — all clear.</p>
 
           ) : (
 
@@ -406,7 +410,7 @@ export function AdminApiLiveFeed({
 
                   "admin-cmd-incident",
 
-                  severityClass(group.event.severity),
+                  severityClass(group.event),
 
                   selectedId === group.event.id && "admin-cmd-incident-active"
 

@@ -1,4 +1,5 @@
 import type { SpxAdminIssuesPayload, SpxIssueSeverity } from "@/lib/admin-spx-issues";
+import type { AdminIncidentRow } from "@/lib/admin-incidents";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxPlayPayload } from "@/lib/spx-play-engine";
 
@@ -54,6 +55,8 @@ export function buildSpxTerminalFeed(input: {
   liveEngine: boolean;
   signalsToday?: number;
   flowAlertsToday?: number;
+  routeErrors?: Array<{ route: string; message: string; at: string }>;
+  openIncidents?: AdminIncidentRow[];
 }): SpxTerminalPayload {
   const { desk, play, issues, liveEngine } = input;
   const now = new Date().toISOString();
@@ -138,6 +141,39 @@ export function buildSpxTerminalFeed(input: {
       marker: markerForSeverity(issue.severity),
       headline: issue.title,
       detail: issue.detail,
+    });
+  }
+
+  // ── Open incidents (acked / MTTA) ──
+  for (const inc of input.openIncidents ?? []) {
+    const openMs = Date.now() - new Date(inc.opened_at).getTime();
+    push({
+      id: `incident:${inc.id}`,
+      at: inc.acked_at ?? inc.opened_at,
+      kind: inc.severity === "critical" ? "critical" : "warning",
+      category: `incident:${inc.status}`,
+      headline: inc.title,
+      detail: inc.detail,
+      meta: [
+        inc.status.toUpperCase(),
+        inc.mtta_ms != null ? `MTTA ${Math.round(inc.mtta_ms / 1000)}s` : `open ${Math.round(openMs / 1000)}s`,
+        inc.acked_by ? `by ${inc.acked_by}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    });
+  }
+
+  // ── Route handler failures ──
+  for (const err of input.routeErrors ?? []) {
+    push({
+      id: `route:${err.route}:${err.at}`,
+      at: err.at,
+      kind: "api",
+      category: "route",
+      headline: err.route,
+      detail: err.message,
+      meta: "ROUTE ERR",
     });
   }
 

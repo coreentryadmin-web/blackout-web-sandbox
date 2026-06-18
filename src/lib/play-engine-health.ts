@@ -1,4 +1,5 @@
 import { dbConfigured } from "@/lib/db";
+import { getPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
 import { loadOpenPlay, loadPlaySessionMeta } from "@/lib/spx-play-store";
 import { fetchRecentSpxSignals } from "@/lib/providers/spx-signal-log";
 
@@ -13,6 +14,7 @@ export async function getPlayEngineHealth() {
 
   return {
     db_configured: dbConfigured(),
+    heartbeat: getPlayEngineHeartbeat(),
     open_play: openPlay,
     session_meta: sessionMeta,
     last_signal: lastSignal

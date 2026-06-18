@@ -5,6 +5,7 @@ import { evaluateSpxPlay } from "@/lib/spx-play-engine";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { recordPlayEngineTick } from "@/lib/play-engine-heartbeat";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
       evaluateSpxPlay(merged, technicals),
       evaluateSpxLotto(merged, technicals),
     ]);
+    recordPlayEngineTick("cron");
 
     return NextResponse.json({
       ok: true,

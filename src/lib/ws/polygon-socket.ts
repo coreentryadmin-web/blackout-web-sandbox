@@ -52,7 +52,7 @@ function connectIndices() {
         for (const msg of msgs) {
           const ev = msg.ev as string;
 
-          if (ev === "connected") {
+          if (ev === "connected" || (ev === "status" && msg.status === "connected")) {
             indicesWs?.send(JSON.stringify({ action: "auth", params: POLYGON_API_KEY }));
           } else if (ev === "auth_success" || (ev === "status" && msg.status === "auth_success")) {
             indicesAuthenticated = true;
@@ -63,6 +63,11 @@ function connectIndices() {
                 params: "A.I:SPX,A.I:VIX,A.I:VIX9D,A.I:VIX3M,A.I:TICK,A.I:TRIN,A.I:ADD",
               })
             );
+          } else if (
+            ev === "auth_failed" ||
+            (ev === "status" && (msg.status === "auth_failed" || msg.status === "unauthorized"))
+          ) {
+            console.error("[polygon-socket] indices auth failed — check POLYGON_API_KEY");
           } else if (ev === "A" || ev === "AM") {
             const agg = msg as unknown as PolygonAgg;
             if (indexStore[agg.sym]) {

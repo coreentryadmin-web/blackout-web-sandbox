@@ -45,6 +45,8 @@ const POLYGON_BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com")
 const POLYGON_KEY = (process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_KEY ?? "").trim();
 const UW_KEY = (process.env.UW_API_KEY ?? "").trim();
 const UW_WS_BASE = process.env.UW_WS_BASE ?? "wss://api.unusualwhales.com/api/socket";
+const UW_CLIENT_ID = process.env.UW_CLIENT_API_ID ?? "100001";
+const CRON_SECRET = (process.env.CRON_SECRET ?? "").trim();
 
 const results = [];
 
@@ -67,6 +69,16 @@ async function fetchJson(path, opts = {}) {
   return { res, body, ms };
 }
 
+function routePasses(path, res, body) {
+  if (path.includes("/api/market/spx/commentary")) {
+    return [401, 403, 422, 429, 503].includes(res.status);
+  }
+  if (path.includes("/api/market/spx/play")) {
+    return res.status === 200 || [401, 403, 503].includes(res.status);
+  }
+  return res.status >= 200 && res.status < 500 && body != null;
+}
+
 async function probeRoutes() {
   console.log("\n── SPX API routes ──");
   const routes = [
@@ -83,8 +95,31 @@ async function probeRoutes() {
 
   for (const path of routes) {
     try {
-      const { res, body, ms } = await fetchJson(path);
-      const ok = res.status >= 200 && res.status < 500 && body != null;
+      const init = {};
+      if (path.includes("/api/market/spx/play") && CRON_SECRET) {
+        init.headers = { Authorization: `Bearer ${CRON_SECRET}` };
+      }
+      let res;
+      let body;
+      let ms;
+      if (path.includes("/api/market/spx/commentary")) {
+        const started = Date.now();
+        res = await fetch(`${BASE}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+          body: JSON.stringify({ desk: { price: 6000, available: true } }),
+          cache: "no-store",
+        });
+        ms = Date.now() - started;
+        try {
+          body = await res.json();
+        } catch {
+          body = null;
+        }
+      } else {
+        ({ res, body, ms } = await fetchJson(path, init));
+      }
+      const ok = routePasses(path, res, body);
       let detail = `${res.status} ${ms}ms`;
       if (path.includes("pulse") && body?.spx_price != null) detail += ` · SPX $${body.spx_price}`;
       if (path.includes("desk") && body?.spx_price != null) detail += ` · SPX $${body.spx_price} · flows=${(body.spx_flows ?? []).length}`;
@@ -169,7 +204,13 @@ function probeUwWs(channel, timeoutMs = 8000) {
     }
     const url = `${UW_WS_BASE}/${channel}`;
     let settled = false;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, {
+      headers: {
+        Authorization: `Bearer ${UW_KEY}`,
+        Accept: "application/json",
+        "UW-CLIENT-API-ID": UW_CLIENT_ID,
+      },
+    });
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -182,8 +223,10 @@ function probeUwWs(channel, timeoutMs = 8000) {
       }
     }, timeoutMs);
 
+    let opened = false;
+
     ws.onopen = () => {
-      ws.send(JSON.stringify({ action: "auth", key: UW_KEY }));
+      opened = true;
     };
 
     ws.onmessage = () => {
@@ -191,16 +234,12 @@ function probeUwWs(channel, timeoutMs = 8000) {
         settled = true;
         clearTimeout(timer);
         ws.close();
-        resolve({ ok: true, detail: "connected + auth sent" });
+        resolve({ ok: true, detail: "connected + message" });
       }
     };
 
     ws.onerror = () => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve({ ok: false, detail: "socket error" });
-      }
+      /* onclose carries actionable detail */
     };
 
     ws.onclose = (ev) => {
@@ -208,8 +247,8 @@ function probeUwWs(channel, timeoutMs = 8000) {
         settled = true;
         clearTimeout(timer);
         resolve({
-          ok: ev.code === 1000,
-          detail: `closed code=${ev.code}${ev.reason ? ` ${ev.reason}` : ""}`,
+          ok: opened,
+          detail: opened ? `opened then closed code=${ev.code}` : `closed code=${ev.code}`,
         });
       }
     };
@@ -217,11 +256,10 @@ function probeUwWs(channel, timeoutMs = 8000) {
 }
 
 async function probeUwSockets() {
-  console.log("\n── UW WebSocket auth (key field) ──");
+  console.log("\n── UW WebSocket auth (Bearer handshake) ──");
   for (const ch of ["flow_alerts", "market_tide", "off_lit_trades"]) {
     const r = await probeUwWs(ch);
-    // code 1006 after auth often means bad token field — staying open or clean close is success
-    const ok = r.ok || r.detail.includes("connected");
+    const ok = r.ok || r.detail.includes("connected") || r.detail.includes("message");
     record("ws", `UW ${ch}`, ok, r.detail);
   }
 }
@@ -252,7 +290,7 @@ async function probePolygonWs() {
       try {
         const msgs = JSON.parse(String(ev.data));
         for (const msg of msgs) {
-          if (msg.ev === "connected") {
+          if (msg.ev === "connected" || (msg.ev === "status" && msg.status === "connected")) {
             ws.send(JSON.stringify({ action: "auth", params: POLYGON_KEY }));
           }
           if (msg.ev === "auth_success" || (msg.ev === "status" && msg.status === "auth_success")) {

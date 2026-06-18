@@ -294,6 +294,49 @@ export function AdminApiDashboard() {
                   </div>
                 </div>
               </section>
+              <section className="admin-cmd-ops-grid">
+                <div className="admin-cmd-ws-card">
+                  <p className="admin-ep-name">Postgres pool</p>
+                  <p className="admin-api-muted">
+                    {data.ops.db_pool?.configured
+                      ? `${data.ops.db_pool.total} total · ${data.ops.db_pool.idle} idle · ${data.ops.db_pool.waiting} waiting`
+                      : "Not configured"}
+                  </p>
+                </div>
+                <div className="admin-cmd-ws-card">
+                  <p className="admin-ep-name">Play engine heartbeat</p>
+                  <p className="admin-api-muted">
+                    {data.ops.play_engine.heartbeat.last_tick_at
+                      ? `Last tick ${Math.round((data.ops.play_engine.heartbeat.age_ms ?? 0) / 1000)}s ago · ${data.ops.play_engine.heartbeat.tick_count} ticks`
+                      : "No ticks this session"}
+                  </p>
+                  <p className="admin-api-muted">
+                    source {data.ops.play_engine.heartbeat.last_source ?? "—"}
+                    {data.ops.play_engine.heartbeat.stale ? " · STALE" : ""}
+                  </p>
+                </div>
+              </section>
+              {data.ops.rate_headroom.length > 0 && (
+                <section className="admin-cmd-rate-headroom">
+                  <h3 className="admin-cmd-ws-title">Rate limit headroom (1m)</h3>
+                  <div className="admin-cmd-rate-grid">
+                    {data.ops.rate_headroom.map((row) => (
+                      <div key={row.provider} className={clsx("admin-cmd-rate-card", `admin-cmd-rate-${row.status}`)}>
+                        <div className="admin-cmd-rate-head">
+                          <span className="admin-ep-name">{row.provider}</span>
+                          <span className="admin-api-muted">
+                            {row.used_1m}/{row.limit_1m}
+                          </span>
+                        </div>
+                        <div className="admin-cmd-rate-bar">
+                          <span className="admin-cmd-rate-fill" style={{ width: `${Math.min(100, row.pct)}%` }} />
+                        </div>
+                        <p className="admin-api-muted">{row.headroom} req headroom · {row.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               <section className="admin-cmd-provider-health">
                 {data.providers.map((p) => {
                   const latency = p.endpoints.find((ep) => ep.telemetry?.p95_latency_ms)?.telemetry;

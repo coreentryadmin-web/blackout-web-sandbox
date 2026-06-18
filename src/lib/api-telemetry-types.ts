@@ -75,5 +75,10 @@ export function classifyEventSeverity(input: {
 }
 
 export function incidentDedupeKey(event: ApiCallEvent): string {
-  return `${event.provider}|${event.endpoint}|${event.status ?? "null"}|${event.severity}`;
+  const statusKey = event.sla_breach ? "sla" : String(event.status ?? "null");
+  return `${event.provider}|${event.endpoint}|${statusKey}|${event.severity}`;
+}
+
+export function isFeedableIncident(event: ApiCallEvent): boolean {
+  return !event.ok || event.sla_breach;
 }
