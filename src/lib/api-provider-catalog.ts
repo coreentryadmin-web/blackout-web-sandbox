@@ -67,9 +67,9 @@ export const API_PROVIDER_CATALOG: ApiProviderCatalogEntry[] = [
         used_by: ["desk pulse"],
       },
       {
-        endpoint: "/v1/indicators/vwap/{symbol}",
+        endpoint: "/v2/aggs/ticker/{symbol}/range/1/minute/{from}/{to}",
         method: "GET",
-        description: "VWAP indicator",
+        description: "Session VWAP (computed from RTH minute bars — no Polygon VWAP indicator for indices)",
         used_by: ["desk pulse"],
       },
       {
@@ -178,13 +178,19 @@ export const API_PROVIDER_CATALOG: ApiProviderCatalogEntry[] = [
     name: "Finnhub",
     description: "US economic calendar (macro events).",
     docs_url: "https://finnhub.io/docs/api",
-    env_keys: ["FINNHUB_API_KEY"],
+    env_keys: ["FINNHUB_API_KEY", "FINNHUB_ECONOMIC_CALENDAR"],
     endpoints: [
       {
         endpoint: "/calendar/economic",
         method: "GET",
-        description: "Today's US macro calendar",
+        description: "US macro calendar (premium — set FINNHUB_ECONOMIC_CALENDAR=1)",
         used_by: ["macro rail", "play gates"],
+      },
+      {
+        endpoint: "/quote",
+        method: "GET",
+        description: "Quote probe (free tier health check)",
+        used_by: ["admin probe"],
       },
     ],
   },

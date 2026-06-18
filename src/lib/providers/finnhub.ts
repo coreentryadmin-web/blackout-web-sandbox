@@ -1,4 +1,4 @@
-import { finnhubConfigured } from "./config";
+import { finnhubConfigured, finnhubEconomicCalendarEnabled } from "./config";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 
 const BASE = "https://finnhub.io/api/v1";
@@ -38,8 +38,10 @@ async function finnhubGet<T>(path: string, params: Record<string, string> = {}):
   }
 }
 
-/** Today's US macro events — requires Finnhub Economic Data subscription ($50/mo). Free tier returns null. */
+/** Today's US macro events — requires Finnhub Economic Data subscription ($50/mo). */
 export async function fetchEconomicCalendarToday(): Promise<MacroEvent[]> {
+  if (!finnhubEconomicCalendarEnabled()) return [];
+
   const from = todayUtc();
   const data = await finnhubGet<{ economicCalendar?: Array<Record<string, unknown>> }>(
     "/calendar/economic",

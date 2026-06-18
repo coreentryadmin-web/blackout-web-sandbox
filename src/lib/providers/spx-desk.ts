@@ -21,7 +21,6 @@ import {
   fetchIndexMinuteBars,
   fetchIndexSma,
   fetchIndexSnapshots,
-  fetchIndexVwap,
   fetchMarketStatusNow,
 } from "./polygon";
 import { resolveMarketInternals } from "@/lib/market-internals";
@@ -551,7 +550,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     ema200,
     sma50,
     sma200,
-    vwapInd,
     uwGex,
     uwMaxPain,
     uwTide,
@@ -573,7 +571,6 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchIndexEma(SPX, 200, "day"),
     fetchIndexSma(SPX, 50, "day"),
     fetchIndexSma(SPX, 200, "day"),
-    fetchIndexVwap(SPX, "minute"),
     fetchUwOdteGex("SPX"),
     fetchUwMaxPain("SPX"),
     fetchUwMarketTide(),
@@ -596,7 +593,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const prior = priorDayFromDailyBars(dailyBars);
 
   const price = spxSnap.price;
-  const vwap = session.vwap ?? vwapInd ?? (intel?.vwap as number | null) ?? null;
+  const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
   const lod = session.lod ?? (intel?.lod as number | null) ?? spxSnap.price;
   const hod = session.hod ?? (intel?.hod as number | null) ?? spxSnap.price;
 
@@ -788,7 +785,7 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
     return cachedPulseStructure;
   }
 
-  const [minuteBars, ema20, ema50, ema200, sma50, sma200, vwapInd, breadthAll] =
+  const [minuteBars, ema20, ema50, ema200, sma50, sma200, breadthAll] =
     await Promise.all([
       fetchIndexMinuteBars(SPX, today, today).catch(() => []),
       fetchIndexEma(SPX, 20, "minute"),
@@ -796,7 +793,6 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
       fetchIndexEma(SPX, 200, "day"),
       fetchIndexSma(SPX, 50, "day"),
       fetchIndexSma(SPX, 200, "day"),
-      fetchIndexVwap(SPX, "minute"),
       fetchBreadthUniverseSnapshots().catch(() => []),
     ]);
 
@@ -806,7 +802,7 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
     fetchedAt: now,
     lod: session.lod,
     hod: session.hod,
-    vwap: session.vwap ?? vwapInd ?? null,
+    vwap: session.vwap ?? null,
     ema20,
     ema50,
     ema200,

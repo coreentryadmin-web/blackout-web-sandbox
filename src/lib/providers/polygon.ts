@@ -1,5 +1,6 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { polygonConfigured } from "./config";
+import { sessionStatsFromMinuteBars, todayEtYmd } from "./spx-session";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -255,13 +256,21 @@ export async function fetchIndexSma(
   });
 }
 
+/** Polygon has no `/v1/indicators/vwap` for indices — derive from RTH minute aggregates. */
+export function computeIndexVwapFromBars(
+  bars: Array<{ t?: number; o: number; h: number; l: number; c: number; v?: number }>
+): number | null {
+  return sessionStatsFromMinuteBars(bars).vwap;
+}
+
 export async function fetchIndexVwap(symbol: string, timespan: "minute" | "day" = "minute") {
   const sym = symbol.toUpperCase();
-  return latestIndicator(`/v1/indicators/vwap/${sym}`, {
-    timespan,
-    order: "desc",
-    limit: "1",
-  });
+  const today = todayEtYmd();
+  const bars =
+    timespan === "day"
+      ? await fetchIndexDailyBars(sym, today, today).catch(() => [])
+      : await fetchIndexMinuteBars(sym, today, today).catch(() => []);
+  return computeIndexVwapFromBars(bars);
 }
 
 export type VixTermSnapshot = {

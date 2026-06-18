@@ -163,14 +163,13 @@ async function probeUnusualWhales(): Promise<{ ok: boolean; latency_ms: number; 
 async function probeFinnhub(): Promise<{ ok: boolean; latency_ms: number; error: string | null }> {
   if (!finnhubConfigured()) return { ok: false, latency_ms: 0, error: "Not configured" };
   const key = process.env.FINNHUB_API_KEY?.trim() ?? "";
-  const from = new Date().toISOString().slice(0, 10);
-  const qs = new URLSearchParams({ from, to: from, token: key });
+  const qs = new URLSearchParams({ symbol: "SPY", token: key });
   const start = Date.now();
   try {
     const res = await trackedFetch(
       "finnhub",
-      "/calendar/economic",
-      `https://finnhub.io/api/v1/calendar/economic?${qs}`,
+      "/quote",
+      `https://finnhub.io/api/v1/quote?${qs}`,
       { headers: { Accept: "application/json" }, cache: "no-store" }
     );
     return {

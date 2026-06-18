@@ -10,6 +10,11 @@ export function finnhubConfigured(): boolean {
   return Boolean(process.env.FINNHUB_API_KEY?.trim());
 }
 
+/** Finnhub economic calendar is premium-only ($50/mo). Off by default — static macro schedule is used instead. */
+export function finnhubEconomicCalendarEnabled(): boolean {
+  return process.env.FINNHUB_ECONOMIC_CALENDAR?.trim().toLowerCase() === "1";
+}
+
 export function marketDataConfigured(): boolean {
   return polygonConfigured() || uwConfigured() || finnhubConfigured();
 }
