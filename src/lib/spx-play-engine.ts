@@ -18,6 +18,7 @@ import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/lib
 import {
   gradeRank,
   playFullMinScore,
+  playIdealTargetPts,
   playOptionChainRequired,
   playTrimMfePts,
   playTrimProgressPct,
@@ -804,20 +805,43 @@ export async function evaluateSpxPlay(
 ): Promise<SpxPlayPayload> {
   const premarket = isPremarketPlanningWindow();
   if (!desk.market_open && !premarket) {
+    const closedConfluence = desk.price > 0 ? computeSpxConfluence(desk) : null;
+    const playIdea =
+      closedConfluence != null ? buildPlayIdeaIntel(desk, closedConfluence) : null;
+    const dir = closedConfluence?.direction;
+    const entry = desk.price > 0 ? desk.price : null;
+    const idealTarget =
+      entry != null && dir != null
+        ? dir === "long"
+          ? entry + playIdealTargetPts()
+          : entry - playIdealTargetPts()
+        : null;
+
     return {
       available: false,
       phase: "SCANNING",
       action: "SCANNING",
-      direction: null,
-      grade: "D",
-      score: 0,
-      confidence: 0,
+      direction: dir ?? null,
+      grade: closedConfluence?.grade ?? "D",
+      score: closedConfluence?.score ?? 0,
+      confidence: closedConfluence?.confidence ?? 0,
       headline: "Session closed",
       thesis: `Desk offline · ${desk.market_label ?? "CLOSED"} · resumes 6:30 AM PT`,
       idle_message: null,
-      factors: [],
-      levels: { entry: null, stop: null, target: null, invalidation: "" },
-      gates: { passed: false, blocks: ["Session closed"], warnings: [], entry_mode: "none", play_idea: null },
+      factors: closedConfluence?.factors ?? [],
+      levels: {
+        entry,
+        stop: closedConfluence?.levels.stop ?? null,
+        target: idealTarget,
+        invalidation: closedConfluence?.levels.invalidation ?? "",
+      },
+      gates: {
+        passed: false,
+        blocks: ["Session closed"],
+        warnings: [],
+        entry_mode: "none",
+        play_idea: playIdea,
+      },
       claude: null,
       open_play: null,
       confirmations: null,

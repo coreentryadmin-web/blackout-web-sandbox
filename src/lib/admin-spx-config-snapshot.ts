@@ -76,6 +76,7 @@ export function buildSpxConfigSnapshot(): ConfigSnapshotGroup[] {
       items: [
         { key: "SPX_PLAY_LOTTO_MIN_SCORE", value: playConfig.playLottoMinScore() },
         { key: "SPX_PLAY_LOTTO_TARGET_PTS", value: playConfig.playLottoTargetPts() },
+        { key: "SPX_PLAY_IDEAL_TARGET_PTS", value: playConfig.playIdealTargetPts() },
         { key: "SPX_PLAY_LOTTO_MAX_PICKS", value: playConfig.playLottoMaxPicksPerDay() },
         { key: "SPX_PLAY_LOTTO_FLOW_MIN", value: playConfig.playLottoFlowMinNotional() },
         { key: "SPX_PLAY_LOTTO_GAP_MIN_PCT", value: playConfig.playLottoGapMinPct() },

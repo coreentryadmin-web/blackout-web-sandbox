@@ -74,6 +74,44 @@ function round5(n: number): number {
   return Math.round(n / 5) * 5;
 }
 
+/** Lotto target: minimum ±25 SPX pts, extended to the next structure level when farther. */
+function resolveLottoTargetPts(
+  desk: SpxDeskPayload,
+  direction: SpxPlayDirection,
+  entry: number
+): number {
+  const min = playLottoTargetPts();
+  if (entry <= 0) return min;
+
+  if (direction === "long") {
+    const levels = [
+      ...(desk.gex_walls ?? [])
+        .filter((w) => w.kind === "resistance" && w.strike > entry)
+        .map((w) => w.strike),
+      desk.hod,
+      desk.pdh,
+      desk.max_pain,
+    ].filter((v): v is number => v != null && v > entry);
+    if (levels.length) {
+      return Math.max(min, Math.min(...levels) - entry);
+    }
+    return min;
+  }
+
+  const levels = [
+    ...(desk.gex_walls ?? [])
+      .filter((w) => w.kind === "support" && w.strike < entry)
+      .map((w) => w.strike),
+    desk.lod,
+    desk.pdl,
+    desk.max_pain,
+  ].filter((v): v is number => v != null && v < entry);
+  if (levels.length) {
+    return Math.max(min, entry - Math.max(...levels));
+  }
+  return min;
+}
+
 function isLottoExpired(now = new Date()): boolean {
   return etMinutes(now) >= etClock(playLottoExpireEtHour(), playLottoExpireEtMin());
 }
@@ -164,8 +202,8 @@ function buildWatchRecord(
   const price = desk.price > 0 ? desk.price : desk.prior_close ?? desk.pdh ?? 0;
   if (price <= 0) return null;
 
-  const targetPts = playLottoTargetPts();
   const entryZone = round5(price);
+  const targetPts = resolveLottoTargetPts(desk, direction, entryZone);
   const targetPrice = direction === "long" ? round5(entryZone + targetPts) : round5(entryZone - targetPts);
   const strike = ticket.strike;
   const contractLabel = ticket.contract_label || `${strike}${direction === "long" ? "C" : "P"}`;

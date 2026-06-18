@@ -3,6 +3,7 @@
  */
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { computeWeightedConflicts } from "@/lib/spx-play-conflicts";
+import { playIdealTargetPts } from "@/lib/spx-play-config";
 
 export type SpxSignalAction = "BUY_CALL" | "BUY_PUT" | "HOLD" | "WAIT";
 export type SpxPlayAction = "SCANNING" | "WATCHING" | "BUY" | "HOLD" | "TRIM" | "SELL";
@@ -92,11 +93,11 @@ function buildLevels(
 
   if (action === "BUY_CALL" || (action === "HOLD" && bias === "bullish")) {
     stop = support?.strike ?? desk.lod ?? desk.vwap ?? null;
-    target = resistance?.strike ?? desk.hod ?? desk.max_pain ?? null;
+    target = price + playIdealTargetPts();
     if (stop != null) invalidation = `Below ${stop.toFixed(0)} (GEX support / LOD)`;
   } else if (action === "BUY_PUT" || (action === "HOLD" && bias === "bearish")) {
     stop = resistance?.strike ?? desk.hod ?? desk.vwap ?? null;
-    target = support?.strike ?? desk.lod ?? desk.max_pain ?? null;
+    target = price - playIdealTargetPts();
     if (stop != null) invalidation = `Above ${stop.toFixed(0)} (GEX resistance / HOD)`;
   }
 

@@ -143,6 +143,16 @@ export function playLottoTargetPts(): number {
   return num(process.env.SPX_PLAY_LOTTO_TARGET_PTS, 25);
 }
 
+/** Minimum SPX move for far-OTM lotto — target may extend to the next structure level. */
+export function playLottoMinTargetPts(): number {
+  return playLottoTargetPts();
+}
+
+/** Conviction / ideal play target distance (0DTE scalp). */
+export function playIdealTargetPts(): number {
+  return num(process.env.SPX_PLAY_IDEAL_TARGET_PTS, 10);
+}
+
 export function playLottoMaxPicksPerDay(): number {
   return num(process.env.SPX_PLAY_LOTTO_MAX_PICKS, 2);
 }

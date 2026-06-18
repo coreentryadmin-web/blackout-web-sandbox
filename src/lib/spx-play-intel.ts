@@ -103,11 +103,12 @@ export function buildPlayIdea(desk: SpxDeskPayload, confluence: SpxConfluence): 
   let line: string;
   if (grade >= 4 && confluence.conflicts <= 1) {
     line = `I like ${side} here — ${strike} ${contract} is the play`;
-    if (target != null) line += ` · target ${target.toFixed(0)}`;
+    if (target != null) line += ` · target +${Math.abs(target - desk.price).toFixed(0)} pts (${target.toFixed(0)})`;
     else if (anchor) line += ` · hold ${anchor}`;
   } else if (grade >= 3) {
     line = `I like ${side} here — ${strike} ${contract} could be the play`;
-    if (anchor) line += ` if we hold ${anchor}`;
+    if (target != null) line += ` · ±${Math.abs(target - desk.price).toFixed(0)}pt target`;
+    else if (anchor) line += ` if we hold ${anchor}`;
   } else if (confluence.conflicts >= 3) {
     line = `Tape's mixed, but ${side} lean — ${strike} ${contract} on watch`;
     if (factor) line += ` · ${factor}`;
