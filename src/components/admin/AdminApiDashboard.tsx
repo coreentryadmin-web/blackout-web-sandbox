@@ -20,6 +20,8 @@ import { AdminApiCallTimeline } from "@/components/admin/AdminApiCallTimeline";
 type ViewTab = "overview" | "registry" | "internal";
 type UsageFilter = "all" | "used" | "unused" | "candidates" | "risks";
 type ProbeFilter = "all" | "ok" | "fail" | "blocked" | "unknown";
+type SortField = "runtime" | "probe" | "ms" | "name";
+type SortDir = "asc" | "desc";
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -78,6 +80,8 @@ export function AdminApiDashboard() {
   const [providerFilter, setProviderFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<SortField>("ms");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   useEffect(() => {
     const tick = () => setClock(fmtClock());
@@ -133,7 +137,7 @@ export function AdminApiDashboard() {
   const filteredEndpoints = useMemo(() => {
     if (!registry) return [];
     const q = search.trim().toLowerCase();
-    return registry.endpoints.filter((row) => {
+    const filtered = registry.endpoints.filter((row) => {
       if (providerFilter !== "all" && row.provider !== providerFilter) return false;
       if (usageFilter === "used" && !row.usedInCode) return false;
       if (usageFilter === "unused" && row.usedInCode) return false;
@@ -146,7 +150,25 @@ export function AdminApiDashboard() {
       }
       return true;
     });
-  }, [registry, providerFilter, usageFilter, probeFilter, search]);
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortField === "name") return a.name.localeCompare(b.name) * dir;
+      if (sortField === "probe") return a.probeStatus.localeCompare(b.probeStatus) * dir;
+      if (sortField === "runtime") return a.runtimeStatus.localeCompare(b.runtimeStatus) * dir;
+      const ams = a.probeMs ?? -1;
+      const bms = b.probeMs ?? -1;
+      return (ams - bms) * dir;
+    });
+  }, [registry, providerFilter, usageFilter, probeFilter, search, sortField, sortDir]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortField(field);
+      setSortDir(field === "name" ? "asc" : "desc");
+    }
+  };
 
   const coverageRatio = summary && summary.documented_total > 0 ? summary.used_in_code / summary.documented_total : 0;
   const probePassRatio = summary && summary.documented_total > 0 ? summary.probe_ok / summary.documented_total : 0;
@@ -249,17 +271,47 @@ export function AdminApiDashboard() {
           {viewTab === "overview" && data && (
             <>
               <AdminApiCallTimeline events={data.recent_events} selectedId={selectedEventId} onSelect={setSelectedEventId} />
+              <section className="admin-cmd-ws-status">
+                <h3 className="admin-cmd-ws-title">WebSocket status</h3>
+                <div className="admin-cmd-ws-grid">
+                  <div className="admin-cmd-ws-card">
+                    <p className="admin-ep-name">Polygon indices</p>
+                    <p className="admin-api-muted">
+                      {data.websockets.polygon_indices.authenticated ? "Authenticated" : "Not auth"} ·{" "}
+                      {data.websockets.polygon_indices.wsState}
+                    </p>
+                    <p className="admin-api-muted">
+                      {data.websockets.polygon_indices.symbols.length} symbols tracked
+                    </p>
+                  </div>
+                  <div className="admin-cmd-ws-card">
+                    <p className="admin-ep-name">Unusual Whales</p>
+                    {Object.entries(data.websockets.unusual_whales.channels).map(([ch, row]) => (
+                      <p key={ch} className="admin-api-muted">
+                        {ch}: {row.ws_state} · {row.authenticated ? "auth" : "no auth"}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </section>
               <section className="admin-cmd-provider-health">
-                {data.providers.map((p) => (
+                {data.providers.map((p) => {
+                  const latency = p.endpoints.find((ep) => ep.telemetry?.p95_latency_ms)?.telemetry;
+                  return (
                   <div key={p.id} className="admin-cmd-health-card">
                     <span className={clsx("admin-api-dot", p.probe.ok ? "admin-api-dot-ok" : "admin-api-dot-error")} />
                     <div>
                       <p className="admin-ep-name">{p.name}</p>
-                      <p className="admin-api-muted">{p.telemetry.calls} calls · {p.telemetry.errors} errors</p>
+                      <p className="admin-api-muted">
+                        {p.telemetry.calls} calls · {p.telemetry.errors} errors
+                        {latency?.p95_latency_ms ? ` · p95 ${latency.p95_latency_ms}ms` : ""}
+                        {latency?.p99_latency_ms ? ` · p99 ${latency.p99_latency_ms}ms` : ""}
+                      </p>
                     </div>
                     <span className="admin-cmd-health-status">{p.probe.ok ? "Healthy" : p.probe.error ?? "Down"}</span>
                   </div>
-                ))}
+                  );
+                })}
               </section>
             </>
           )}
@@ -284,7 +336,31 @@ export function AdminApiDashboard() {
                   <table className="admin-table admin-table-pro admin-ep-table">
                     <thead>
                       <tr>
-                        <th>RT</th><th>Usage</th><th>Probe</th><th>Provider</th><th>Section</th><th>Name</th><th>Path</th><th>HTTP</th><th>ms</th>
+                        <th>
+                          <button type="button" className="admin-ep-sort" onClick={() => toggleSort("runtime")}>
+                            RT {sortField === "runtime" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                          </button>
+                        </th>
+                        <th>Usage</th>
+                        <th>
+                          <button type="button" className="admin-ep-sort" onClick={() => toggleSort("probe")}>
+                            Probe {sortField === "probe" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                          </button>
+                        </th>
+                        <th>Provider</th>
+                        <th>Section</th>
+                        <th>
+                          <button type="button" className="admin-ep-sort" onClick={() => toggleSort("name")}>
+                            Name {sortField === "name" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                          </button>
+                        </th>
+                        <th>Path</th>
+                        <th>HTTP</th>
+                        <th>
+                          <button type="button" className="admin-ep-sort" onClick={() => toggleSort("ms")}>
+                            ms {sortField === "ms" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                          </button>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

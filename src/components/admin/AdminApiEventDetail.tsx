@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
-import type { ApiCallEvent } from "@/lib/api-telemetry";
+import type { ApiCallEvent } from "@/lib/api-telemetry-types";
 
 type EventDetail = {
   event: ApiCallEvent;
@@ -12,6 +12,8 @@ type EventDetail = {
     call_count: number;
     error_count: number;
     avg_latency_ms: number;
+    p95_latency_ms?: number;
+    p99_latency_ms?: number;
     last_at: string | null;
   } | null;
   active_retry: {
@@ -97,6 +99,7 @@ export function AdminApiEventDetail({
                       value={detail.event.status != null ? String(detail.event.status) : "—"}
                       tone={detail.event.ok ? "ok" : "error"}
                     />
+                    <DetailCell label="Severity" value={detail.event.severity.toUpperCase()} tone={detail.event.ok ? "ok" : "error"} />
                     <DetailCell label="Latency" value={`${detail.event.latency_ms}ms`} />
                     <DetailCell label="Attempt" value={`${detail.event.attempt} / ${detail.event.max_attempts}`} />
                     <DetailCell label="Retry status" value={detail.event.retry_status} />
@@ -110,6 +113,12 @@ export function AdminApiEventDetail({
                   <code className="admin-cmd-detail-code">{detail.event.endpoint}</code>
                   <h4 className="admin-cmd-detail-heading">Request URL</h4>
                   <code className="admin-cmd-detail-code admin-cmd-detail-code-wrap">{detail.event.request_url}</code>
+                  {detail.event.request_body && (
+                    <>
+                      <h4 className="admin-cmd-detail-heading">Request body / query</h4>
+                      <pre className="admin-cmd-detail-pre">{detail.event.request_body}</pre>
+                    </>
+                  )}
                 </section>
 
                 {detail.event.error && (
@@ -158,6 +167,12 @@ export function AdminApiEventDetail({
                       <DetailCell label="Total calls" value={String(detail.endpoint_stats.call_count)} />
                       <DetailCell label="Errors" value={String(detail.endpoint_stats.error_count)} />
                       <DetailCell label="Avg latency" value={`${detail.endpoint_stats.avg_latency_ms}ms`} />
+                      {detail.endpoint_stats.p95_latency_ms != null && (
+                        <DetailCell label="P95 latency" value={`${detail.endpoint_stats.p95_latency_ms}ms`} />
+                      )}
+                      {detail.endpoint_stats.p99_latency_ms != null && (
+                        <DetailCell label="P99 latency" value={`${detail.endpoint_stats.p99_latency_ms}ms`} />
+                      )}
                     </div>
                   </section>
                 )}

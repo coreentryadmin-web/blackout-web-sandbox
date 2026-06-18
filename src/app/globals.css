@@ -8243,4 +8243,166 @@ body {
   .admin-spx-term-footer {
     @apply relative z-10 flex flex-wrap items-center gap-2 px-6 md:px-8 py-4 border-t border-white/10 text-sm md:text-base font-mono text-grey-500 uppercase tracking-wider;
   }
+
+  /* ── Admin health banner + ops UI ── */
+  .admin-health-banner {
+    @apply sticky z-40 top-0 flex flex-wrap items-center gap-3 px-4 py-3 mb-4 border rounded-xl font-mono uppercase tracking-wider;
+  }
+
+  .admin-health-banner-ok {
+    @apply border-emerald-500/30 bg-emerald-500/10 text-emerald-200;
+  }
+
+  .admin-health-banner-warn {
+    @apply border-amber-500/30 bg-amber-500/10 text-amber-200;
+  }
+
+  .admin-health-banner-critical {
+    @apply border-red-500/35 bg-red-500/10 text-red-200;
+  }
+
+  .admin-health-banner-label {
+    @apply text-xs text-grey-400;
+  }
+
+  .admin-health-banner-value {
+    @apply text-lg font-bold;
+  }
+
+  .admin-health-banner-chip {
+    @apply text-xs px-2 py-1 rounded-full border;
+  }
+
+  .admin-health-banner-chip-critical {
+    @apply border-red-500/35 bg-red-500/15 text-red-100;
+  }
+
+  .admin-health-banner-chip-warn {
+    @apply border-amber-500/35 bg-amber-500/15 text-amber-100;
+  }
+
+  .admin-health-banner-chip-api {
+    @apply border-violet-500/35 bg-violet-500/15 text-violet-100;
+  }
+
+  .admin-cmd-incident-p1 {
+    @apply border-red-500/35 bg-red-950/25;
+  }
+
+  .admin-cmd-incident-p2 {
+    @apply border-amber-500/30 bg-amber-950/20;
+  }
+
+  .admin-cmd-incident-p3 {
+    @apply border-white/10 bg-black/30;
+  }
+
+  .admin-cmd-incident-count {
+    @apply text-xs font-mono px-2 py-0.5 rounded-full border border-white/15 bg-white/5 text-grey-200;
+  }
+
+  .admin-cmd-retry-banner-urgent {
+    @apply border-red-500/40 bg-red-950/35;
+  }
+
+  .admin-cmd-retry-row-urgent {
+    @apply text-red-200;
+  }
+
+  .admin-cmd-timeline-axis {
+    @apply grid gap-1 mt-2;
+    grid-template-columns: repeat(48, minmax(0, 1fr));
+  }
+
+  .admin-cmd-timeline-tick {
+    @apply text-[9px] font-mono text-grey-600 text-center truncate;
+  }
+
+  .admin-cmd-ws-status {
+    @apply rounded-xl border border-white/10 bg-black/30 p-4 mb-4;
+  }
+
+  .admin-cmd-ws-title {
+    @apply text-sm font-semibold text-white mb-3;
+  }
+
+  .admin-cmd-ws-grid {
+    @apply grid gap-3 md:grid-cols-2;
+  }
+
+  .admin-cmd-ws-card {
+    @apply rounded-lg border border-white/10 bg-black/25 p-3;
+  }
+
+  .admin-ep-sort {
+    @apply text-left uppercase tracking-wider text-grey-400 hover:text-white bg-transparent border-0 p-0 cursor-pointer;
+  }
+
+  .admin-stale-banner {
+    @apply border-amber-500/35 bg-amber-500/10 text-amber-100 px-4 py-3 rounded-xl mb-4;
+  }
+
+  .admin-confirm-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4;
+  }
+
+  .admin-confirm-modal {
+    @apply w-full max-w-lg rounded-2xl border border-white/15 bg-black/95 p-6 shadow-2xl;
+  }
+
+  .admin-confirm-kicker {
+    @apply text-xs font-mono uppercase tracking-wider text-cyan/70;
+  }
+
+  .admin-confirm-title {
+    @apply text-xl font-bold text-white mt-2;
+  }
+
+  .admin-confirm-body {
+    @apply text-sm text-grey-300 mt-3 leading-relaxed;
+  }
+
+  .admin-confirm-actions {
+    @apply flex justify-end gap-3 mt-6;
+  }
+
+  .admin-claude-card {
+    @apply rounded-xl border p-4;
+  }
+
+  .admin-claude-card-bull {
+    @apply border-emerald-500/35 bg-emerald-500/10;
+  }
+
+  .admin-claude-card-bear {
+    @apply border-red-500/35 bg-red-500/10;
+  }
+
+  .admin-claude-card-head {
+    @apply flex items-center gap-3 mb-3;
+  }
+
+  .admin-claude-badge {
+    @apply text-sm font-bold px-3 py-1 rounded-full border uppercase tracking-wider;
+  }
+
+  .admin-claude-badge-bull {
+    @apply border-emerald-500/40 text-emerald-200 bg-emerald-500/15;
+  }
+
+  .admin-claude-badge-bear {
+    @apply border-red-500/40 text-red-200 bg-red-500/15;
+  }
+
+  .admin-claude-source {
+    @apply text-xs font-mono uppercase text-grey-500;
+  }
+
+  .admin-claude-verdict {
+    @apply text-lg font-bold text-white;
+  }
+
+  .admin-claude-thesis {
+    @apply text-base text-grey-300 mt-2 leading-relaxed;
+  }
 }

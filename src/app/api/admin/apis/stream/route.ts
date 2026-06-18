@@ -1,12 +1,25 @@
-import { subscribeApiTelemetry, getApiTelemetrySnapshot } from "@/lib/api-telemetry";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getApiTelemetrySnapshot,
+  getEventsSinceSeq,
+  subscribeApiTelemetry,
+} from "@/lib/api-telemetry";
 import { requireAdminApi } from "@/lib/admin-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const denied = await requireAdminApi();
   if (denied) return denied;
+
+  const lastEventId = req.headers.get("last-event-id");
+  const sinceSeqParam = req.nextUrl.searchParams.get("since_seq");
+  const sinceSeq = lastEventId
+    ? Number.parseInt(lastEventId, 10)
+    : sinceSeqParam
+      ? Number.parseInt(sinceSeqParam, 10)
+      : 0;
 
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -14,20 +27,27 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = (payload: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      const send = (payload: unknown, id?: number) => {
+        const idLine = id != null ? `id: ${id}\n` : "";
+        controller.enqueue(encoder.encode(`${idLine}data: ${JSON.stringify(payload)}\n\n`));
       };
 
-      const snap = getApiTelemetrySnapshot(15 * 60_000);
-      send({
-        type: "snapshot",
-        active_retries: snap.active_retries,
-        recent_errors: snap.recent_errors.slice(0, 20),
-        totals: snap.totals,
-      });
+      if (sinceSeq > 0) {
+        for (const event of getEventsSinceSeq(sinceSeq)) {
+          send({ type: "event", event }, event.seq_id);
+        }
+      } else {
+        const snap = getApiTelemetrySnapshot(15 * 60_000);
+        send({
+          type: "snapshot",
+          active_retries: snap.active_retries,
+          recent_errors: snap.recent_errors.slice(0, 20),
+          totals: snap.totals,
+        });
+      }
 
       unsubscribe = subscribeApiTelemetry((event) => {
-        send({ type: "event", event });
+        send({ type: "event", event }, event.seq_id);
       });
 
       heartbeat = setInterval(() => {

@@ -29,3 +29,24 @@ export async function notifyPlayDiscord(input: {
     body: JSON.stringify({ content: lines.join("\n").slice(0, 1900) }),
   }).catch((err) => console.warn("[spx-play-notify] discord webhook:", err));
 }
+
+export async function notifyOpsDiscord(input: {
+  title: string;
+  body: string;
+  severity?: "critical" | "warning" | "info";
+}): Promise<void> {
+  const url =
+    process.env.DISCORD_OPS_WEBHOOK_URL?.trim() ||
+    process.env.DISCORD_PLAY_WEBHOOK_URL?.trim();
+  if (!url) return;
+
+  const emoji =
+    input.severity === "critical" ? "🚨" : input.severity === "warning" ? "⚠️" : "ℹ️";
+  const content = `${emoji} **${input.title}**\n${input.body}`.slice(0, 1900);
+
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  }).catch((err) => console.warn("[spx-play-notify] ops webhook:", err));
+}

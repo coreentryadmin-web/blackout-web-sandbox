@@ -1,4 +1,4 @@
-import type { ApiProviderId } from "@/lib/api-telemetry";
+import type { ApiProviderId } from "@/lib/api-telemetry-types";
 import { getApiTelemetrySnapshot, getProviderHealthSummary } from "@/lib/api-telemetry";
 
 const TELEMETRY_TTL_SEC = 120;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { fetchApiDashboard } from "@/lib/admin-api-dashboard";
+import { recordAdminRouteError } from "@/lib/admin-route-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     const dashboard = await fetchApiDashboard({ probe, windowMs });
     return NextResponse.json(dashboard);
   } catch (error) {
-    console.error("[admin/apis/dashboard]", error);
+    recordAdminRouteError("admin/apis/dashboard", error);
     return NextResponse.json({ error: "Failed to load API dashboard" }, { status: 502 });
   }
 }

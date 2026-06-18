@@ -32,6 +32,25 @@ function headerNames(init?: RequestInit): string[] {
   return Object.keys(h);
 }
 
+function requestBodyHint(url: string, init?: RequestInit): string | null {
+  try {
+    const u = new URL(url);
+    const qs = u.searchParams.toString();
+    let body: string | null = null;
+    if (init?.body) {
+      body =
+        typeof init.body === "string"
+          ? init.body.slice(0, 400)
+          : "[non-string body]";
+    }
+    if (qs && body) return `?${qs} | body: ${body}`;
+    if (qs) return `?${qs}`;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
 async function readSnippet(res: Response): Promise<string | null> {
   try {
     const clone = res.clone();
@@ -59,6 +78,7 @@ export async function trackedFetch(
   const corrId = correlationId ?? `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const safeUrl = sanitizeUrl(url);
   const headersSent = headerNames(fetchInit);
+  const requestBody = requestBodyHint(url, fetchInit);
 
   let lastEvent: ApiCallEvent | null = null;
 
@@ -83,6 +103,7 @@ export async function trackedFetch(
         max_attempts: maxAttempts,
         phase: attempt > 1 ? (res.ok ? "success" : "retry") : res.ok ? "success" : "failure",
         request_url: safeUrl,
+        request_body: requestBody,
         response_snippet: snippet,
         rate_limited: rateLimited,
         headers_sent: headersSent,
@@ -113,6 +134,7 @@ export async function trackedFetch(
         max_attempts: maxAttempts,
         phase: attempt > 1 ? "retry" : "failure",
         request_url: safeUrl,
+        request_body: requestBody,
         response_snippet: null,
         rate_limited: false,
         headers_sent: headersSent,

@@ -1,12 +1,15 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
 import type { SpxAdminDashboardPayload } from "@/lib/admin-spx-dashboard";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
 import { AdminSpxTerminal } from "@/components/admin/AdminSpxTerminal";
 import {
   ActionButton,
+  ClaudeVerdictCard,
+  ConfirmModal,
   DataTable,
   DeckPanel,
   EmptyDeck,
@@ -144,7 +147,7 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
 
   return (
     <SectionDeck>
-      <DeckPanel title="Play state" defaultOpen badge={`${play.phase} · ${play.action}`} accent="cyan">
+      <DeckPanel title="Play state" storageKey="spx-play-state" defaultOpen badge={`${play.phase} · ${play.action}`} accent="cyan">
         <KvTiles
           data={{
             phase: play.phase,
@@ -161,7 +164,7 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
         />
       </DeckPanel>
 
-      <DeckPanel title="Gates" defaultOpen badge={play.gates.passed ? "PASSED" : "BLOCKED"} accent={gateTone}>
+      <DeckPanel title="Gates" storageKey="spx-gates" defaultOpen badge={play.gates.passed ? "PASSED" : "BLOCKED"} accent={gateTone}>
         {play.gates.play_idea && <p className="admin-spx-idea">{play.gates.play_idea}</p>}
         <p className="admin-deck-subtitle">Blocks ({play.gates.blocks.length})</p>
         <ul className="admin-tag-list admin-tag-list-bear">
@@ -218,8 +221,13 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
         </DeckPanel>
       )}
       {play.claude && (
-        <DeckPanel title="Claude verdict" badge={play.claude.verdict} accent="violet">
-          <JsonBlock value={play.claude} />
+        <DeckPanel title="Claude verdict" storageKey="spx-claude" badge={play.claude.verdict} accent="violet">
+          <ClaudeVerdictCard
+            verdict={play.claude.verdict}
+            thesis={play.claude.thesis}
+            source={play.claude.source}
+            approved={play.claude.approved}
+          />
         </DeckPanel>
       )}
       {play.open_play && (
@@ -732,12 +740,43 @@ function ConfigSection({ data }: { data: SpxAdminDashboardPayload }) {
 }
 
 export function AdminSpxDashboard() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [section, setSection] = useState<SectionId>("overview");
   const [data, setData] = useState<SpxAdminDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveLoading, setLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState("");
+  const [confirmLive, setConfirmLive] = useState(false);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("section");
+    if (
+      fromUrl === "overview" ||
+      fromUrl === "terminal" ||
+      fromUrl === "live" ||
+      fromUrl === "desk" ||
+      fromUrl === "lotto" ||
+      fromUrl === "outcomes" ||
+      fromUrl === "signals" ||
+      fromUrl === "analytics" ||
+      fromUrl === "config"
+    ) {
+      setSection(fromUrl);
+    }
+  }, [searchParams]);
+
+  const goSection = useCallback(
+    (next: SectionId) => {
+      setSection(next);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", "spx");
+      params.set("section", next);
+      router.replace(`/admin?${params.toString()}`);
+    },
+    [router, searchParams]
+  );
 
   useEffect(() => {
     const tick = () => {
@@ -795,9 +834,23 @@ export function AdminSpxDashboard() {
   const wr = stats?.outcome_stats.overall.win_rate ?? 0;
   const cold = stats?.outcome_stats.cold_buy.win_rate ?? 0;
   const promote = stats?.outcome_stats.watch_promote.win_rate ?? 0;
+  const staleMs = data ? Date.now() - new Date(data.generated_at).getTime() : 0;
+  const isStale = staleMs > 90_000;
 
   return (
     <div className="admin-spx-dashboard admin-deck-root">
+      <ConfirmModal
+        open={confirmLive}
+        title="Run live SPX engine?"
+        body="This evaluates the play engine against live desk data and may update session state, gates, and open-play logic. Confirm only if you intend to mutate the active session."
+        confirmLabel="Run live engine"
+        onCancel={() => setConfirmLive(false)}
+        onConfirm={() => {
+          setConfirmLive(false);
+          load(true);
+        }}
+        loading={liveLoading}
+      />
       <TabCommandHero
         kicker="Blackout · SPX Engine"
         title="SPX Sniper"
@@ -825,7 +878,7 @@ export function AdminSpxDashboard() {
             <ActionButton onClick={() => load(false)} disabled={loading}>
               Refresh
             </ActionButton>
-            <ActionButton onClick={() => load(true)} disabled={liveLoading} variant="primary">
+            <ActionButton onClick={() => setConfirmLive(true)} disabled={liveLoading} variant="primary">
               {liveLoading ? "Running…" : "Run live engine"}
             </ActionButton>
           </>
@@ -882,6 +935,11 @@ export function AdminSpxDashboard() {
       )}
 
       {error && <p className="admin-error">{error}</p>}
+      {isStale && (
+        <p className="admin-warn admin-stale-banner">
+          Desk data is stale ({Math.round(staleMs / 1000)}s old) — last refresh may have failed silently.
+        </p>
+      )}
       {!data?.analytics.db_configured && (
         <p className="admin-warn">DATABASE_URL not set — analytics and state may be empty or in-memory only.</p>
       )}
@@ -892,7 +950,7 @@ export function AdminSpxDashboard() {
             key={s.id}
             type="button"
             className={clsx("admin-deck-nav-tab", section === s.id && "admin-deck-nav-tab-active")}
-            onClick={() => setSection(s.id)}
+            onClick={() => goSection(s.id)}
           >
             <span className="admin-deck-nav-icon">{s.icon}</span>
             <span>{s.label}</span>
@@ -906,7 +964,7 @@ export function AdminSpxDashboard() {
       </nav>
 
       {data && (
-        <div className="admin-deck-content" key={section}>
+        <div className="admin-deck-content">
           {section === "overview" && <OverviewSection data={data} />}
           {section === "terminal" && (
             <AdminSpxTerminal data={data} loading={loading} onRefresh={() => load(false)} />

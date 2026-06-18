@@ -1,48 +1,24 @@
-export type ApiProviderId =
-  | "polygon"
-  | "unusual_whales"
-  | "finnhub"
-  | "anthropic"
-  | "blackout_engine"
-  | "postgres"
-  | "web_search";
+import type {
+  ApiCallEvent,
+  ApiEndpointStats,
+  ApiCallPhase,
+  ApiProviderId,
+  ApiRetryStatus,
+  ApiIncidentSeverity,
+  ProviderHealthRow,
+} from "@/lib/api-telemetry-types";
+import { classifyEventSeverity } from "@/lib/api-telemetry-types";
 
-export type ApiCallPhase = "attempt" | "retry" | "success" | "failure";
-export type ApiRetryStatus = "none" | "scheduled" | "in_progress" | "exhausted" | "recovered";
-
-export type ApiCallEvent = {
-  id: string;
-  correlation_id: string;
-  provider: ApiProviderId;
-  endpoint: string;
-  method: string;
-  status: number | null;
-  ok: boolean;
-  latency_ms: number;
-  error: string | null;
-  at: string;
-  attempt: number;
-  max_attempts: number;
-  retry_status: ApiRetryStatus;
-  phase: ApiCallPhase;
-  request_url: string;
-  response_snippet: string | null;
-  rate_limited: boolean;
-  headers_sent: string[];
-};
-
-export type ApiEndpointStats = {
-  endpoint: string;
-  method: string;
-  call_count: number;
-  error_count: number;
-  last_status: number | null;
-  last_latency_ms: number | null;
-  last_ok: boolean;
-  last_at: string | null;
-  last_error: string | null;
-  avg_latency_ms: number;
-};
+export type {
+  ApiProviderId,
+  ApiCallPhase,
+  ApiRetryStatus,
+  ApiIncidentSeverity,
+  ApiCallEvent,
+  ApiEndpointStats,
+  ProviderHealthRow,
+} from "@/lib/api-telemetry-types";
+export { classifyEventSeverity, incidentDedupeKey } from "@/lib/api-telemetry-types";
 
 export type ActiveRetry = {
   correlation_id: string;
@@ -69,6 +45,17 @@ function statsKey(provider: ApiProviderId, method: string, endpoint: string): st
 }
 
 let eventSeq = 0;
+let globalSeq = 0;
+
+const SLA_MS = 5000;
+const MAX_SAMPLES = 100;
+
+function percentile(samples: number[], p: number): number {
+  if (!samples.length) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
 
 export function subscribeApiTelemetry(listener: TelemetryListener): () => void {
   listeners.add(listener);
@@ -99,6 +86,14 @@ export function getApiEventsByCorrelation(correlationId: string): ApiCallEvent[]
   return events.filter((e) => e.correlation_id === correlationId).reverse();
 }
 
+export function getEventsSinceSeq(sinceSeq: number): ApiCallEvent[] {
+  return events.filter((e) => e.seq_id > sinceSeq).sort((a, b) => a.seq_id - b.seq_id);
+}
+
+export function getLatestSeqId(): number {
+  return globalSeq;
+}
+
 export function recordApiCall(input: {
   provider: ApiProviderId;
   endpoint: string;
@@ -113,6 +108,7 @@ export function recordApiCall(input: {
   retry_status?: ApiRetryStatus;
   phase?: ApiCallPhase;
   request_url?: string;
+  request_body?: string | null;
   response_snippet?: string | null;
   rate_limited?: boolean;
   headers_sent?: string[];
@@ -121,6 +117,8 @@ export function recordApiCall(input: {
   const attempt = input.attempt ?? 1;
   const max_attempts = input.max_attempts ?? 1;
   const rate_limited = input.rate_limited ?? input.status === 429;
+  const latency_ms = Math.round(input.latency_ms);
+  const sla_breach = input.ok && latency_ms >= SLA_MS;
 
   let retry_status: ApiRetryStatus = input.retry_status ?? "none";
   if (!input.ok && attempt < max_attempts && rate_limited) {
@@ -135,15 +133,18 @@ export function recordApiCall(input: {
     ? "success"
     : (input.phase ?? (attempt > 1 ? "retry" : "failure"));
 
+  const severity = classifyEventSeverity({ ok: input.ok, status: input.status, rate_limited });
+
   const event: ApiCallEvent = {
     id: `${Date.now()}-${++eventSeq}`,
+    seq_id: ++globalSeq,
     correlation_id,
     provider: input.provider,
     endpoint: input.endpoint,
     method: input.method.toUpperCase(),
     status: input.status,
     ok: input.ok,
-    latency_ms: Math.round(input.latency_ms),
+    latency_ms,
     error: input.error ?? null,
     at: new Date().toISOString(),
     attempt,
@@ -151,9 +152,12 @@ export function recordApiCall(input: {
     retry_status,
     phase,
     request_url: input.request_url ?? input.endpoint,
+    request_body: input.request_body ?? null,
     response_snippet: input.response_snippet ?? null,
     rate_limited,
     headers_sent: input.headers_sent ?? [],
+    severity,
+    sla_breach,
   };
 
   if (!input.ok && retry_status === "scheduled") {
@@ -182,6 +186,7 @@ export function recordApiCall(input: {
   const avg_latency_ms = prev
     ? Math.round((prev.avg_latency_ms * (call_count - 1) + event.latency_ms) / call_count)
     : event.latency_ms;
+  const latency_samples = [...(prev?.latency_samples ?? []), event.latency_ms].slice(-MAX_SAMPLES);
 
   endpointStats.set(key, {
     endpoint: event.endpoint,
@@ -194,9 +199,15 @@ export function recordApiCall(input: {
     last_at: event.at,
     last_error: event.ok ? prev?.last_error ?? null : event.error,
     avg_latency_ms,
+    latency_samples,
+    p95_latency_ms: percentile(latency_samples, 95),
+    p99_latency_ms: percentile(latency_samples, 99),
   });
 
   emit(event);
+  void import("@/lib/api-telemetry-persist").then(({ persistApiTelemetryEvent }) =>
+    persistApiTelemetryEvent(event)
+  );
   return event;
 }
 
@@ -270,6 +281,9 @@ export function buildEventDetail(eventId: string) {
 
 function diagnoseEvent(event: ApiCallEvent): string[] {
   const tips: string[] = [];
+  if (event.sla_breach) {
+    tips.push(`Slow success — ${event.latency_ms}ms exceeds ${SLA_MS}ms SLA threshold.`);
+  }
   if (event.rate_limited || event.status === 429) {
     tips.push("Rate limited — reduce poll frequency or enable caching.");
     if (event.attempt < event.max_attempts) {
@@ -289,6 +303,7 @@ function diagnoseEvent(event: ApiCallEvent): string[] {
   }
   if (event.status === 422) {
     tips.push("Validation error — missing or invalid query parameters.");
+    if (event.request_body) tips.push(`Request: ${event.request_body.slice(0, 120)}`);
   }
   if (event.status === null) {
     tips.push("Network failure — DNS, timeout, or connection reset.");
@@ -301,17 +316,6 @@ function diagnoseEvent(event: ApiCallEvent): string[] {
   }
   return tips;
 }
-
-export type ProviderHealthRow = {
-  calls_5m: number;
-  errors_5m: number;
-  rate_limits_5m: number;
-  last_at: string | null;
-  last_status: number | null;
-  last_ok: boolean;
-  last_error: string | null;
-  last_endpoint: string | null;
-};
 
 /** Condensed provider health for /api/market/health and ops dashboards. */
 export function getProviderHealthSummary(sinceMs = 5 * 60_000) {

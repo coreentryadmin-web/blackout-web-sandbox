@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 
 export function pct(n: number): string {
@@ -240,18 +240,38 @@ export function DeckPanel({
   children,
   badge,
   accent = "cyan",
+  storageKey,
 }: {
   title: string;
   defaultOpen?: boolean;
   badge?: string;
   accent?: "bull" | "bear" | "violet" | "cyan" | "amber";
   children: React.ReactNode;
+  storageKey?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined") return;
+    const stored = sessionStorage.getItem(`admin-deck:${storageKey}`);
+    if (stored === "open") setOpen(true);
+    if (stored === "closed") setOpen(false);
+  }, [storageKey]);
+
+  const toggle = () => {
+    setOpen((v) => {
+      const next = !v;
+      if (storageKey && typeof window !== "undefined") {
+        sessionStorage.setItem(`admin-deck:${storageKey}`, next ? "open" : "closed");
+      }
+      return next;
+    });
+  };
+
   return (
     <div className={clsx("admin-deck-panel-wrap", `admin-deck-accent-${accent}`, open && "admin-deck-open")}>
       <div className="admin-deck-strip" aria-hidden />
-      <button type="button" className="admin-deck-head" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="admin-deck-head" onClick={toggle}>
         <span className="admin-deck-head-title">{title}</span>
         {badge && <span className="admin-deck-badge">{badge}</span>}
         <span className="admin-deck-chevron">{open ? "▾" : "▸"}</span>
@@ -455,6 +475,72 @@ export function EmptyDeck({ title, hint }: { title: string; hint?: string }) {
     <div className="admin-empty-deck">
       <p className="admin-empty-deck-title">{title}</p>
       {hint && <p className="admin-empty-deck-hint">{hint}</p>}
+    </div>
+  );
+}
+
+export function ConfirmModal({
+  open,
+  title,
+  body,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="admin-confirm-backdrop" role="presentation" onClick={onCancel}>
+      <div className="admin-confirm-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <p className="admin-confirm-kicker">Confirm action</p>
+        <h3 className="admin-confirm-title">{title}</h3>
+        <p className="admin-confirm-body">{body}</p>
+        <div className="admin-confirm-actions">
+          <ActionButton onClick={onCancel} disabled={loading}>
+            {cancelLabel}
+          </ActionButton>
+          <ActionButton onClick={onConfirm} disabled={loading} variant="primary">
+            {loading ? "Running…" : confirmLabel}
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ClaudeVerdictCard({
+  verdict,
+  thesis,
+  source,
+  approved,
+}: {
+  verdict: string;
+  thesis?: string;
+  source?: string;
+  approved?: boolean;
+}) {
+  const isVeto = verdict === "VETO" || approved === false;
+  const tone = isVeto ? "bear" : "bull";
+  return (
+    <div className={clsx("admin-claude-card", `admin-claude-card-${tone}`)}>
+      <div className="admin-claude-card-head">
+        <span className={clsx("admin-claude-badge", `admin-claude-badge-${tone}`)}>
+          {isVeto ? "VETO" : "APPROVE"}
+        </span>
+        <span className="admin-claude-source">{source ?? "claude"}</span>
+      </div>
+      <p className="admin-claude-verdict">{verdict}</p>
+      {thesis && <p className="admin-claude-thesis">{thesis}</p>}
     </div>
   );
 }

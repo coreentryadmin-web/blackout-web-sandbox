@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin-access";
 import { Nav } from "@/components/Nav";
 import { AdminAnalyticsDashboard } from "@/components/admin/AdminAnalyticsDashboard";
@@ -11,7 +12,9 @@ export default async function AdminPage() {
     <div className="admin-page admin-page-canvas">
       <Nav />
       <main className="admin-page-main">
-        <AdminAnalyticsDashboard />
+        <Suspense fallback={<p className="admin-api-muted p-6">Loading admin…</p>}>
+          <AdminAnalyticsDashboard />
+        </Suspense>
       </main>
     </div>
   );

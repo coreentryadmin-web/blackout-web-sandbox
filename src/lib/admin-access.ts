@@ -46,18 +46,23 @@ export async function getAdminStatus(): Promise<{ admin: boolean; email: string 
 
 /** For API routes — returns 403 response or null if allowed. */
 export async function requireAdminApi(): Promise<Response | null> {
-  const { userId } = await auth();
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (!(await isAdminUser(userId))) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
+  const actor = await getAdminApiActor();
+  if (!actor) {
+    const { userId } = await auth();
+    return new Response(JSON.stringify({ error: userId ? "Forbidden" : "Unauthorized" }), {
+      status: userId ? 403 : 401,
       headers: { "Content-Type": "application/json" },
     });
   }
   return null;
+}
+
+/** Returns admin actor for audit logging, or null if denied. */
+export async function getAdminApiActor(): Promise<{ userId: string; email: string | null } | null> {
+  const { userId } = await auth();
+  if (!userId || !(await isAdminUser(userId))) return null;
+  const user = await (await clerkClient()).users.getUser(userId);
+  const email =
+    user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+  return { userId, email };
 }

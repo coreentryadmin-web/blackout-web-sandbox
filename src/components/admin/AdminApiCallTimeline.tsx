@@ -1,7 +1,16 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { ApiCallEvent } from "@/lib/api-telemetry";
+import type { ApiCallEvent } from "@/lib/api-telemetry-types";
+
+function fmtEtLabel(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 export function AdminApiCallTimeline({
   events,
@@ -12,20 +21,22 @@ export function AdminApiCallTimeline({
   onSelect: (id: string) => void;
   selectedId: string | null;
 }) {
-  const maxLatency = Math.max(100, ...events.map((e) => e.latency_ms));
+  const bars = events.slice(0, 48);
+  const maxLatency = Math.max(100, ...bars.map((e) => e.latency_ms));
+  const labelEvery = Math.max(1, Math.floor(bars.length / 6));
 
   return (
     <section className="admin-cmd-timeline">
       <div className="admin-cmd-timeline-head">
         <h3 className="admin-cmd-timeline-title">Call timeline</h3>
-        <span className="admin-api-muted">{events.length} recent · click bar for details</span>
+        <span className="admin-api-muted">{bars.length} recent · click bar for details</span>
       </div>
       <div className="admin-cmd-timeline-track">
-        {events.slice(0, 48).map((ev, i) => (
+        {bars.map((ev, i) => (
           <motion.button
             key={ev.id}
             type="button"
-            title={`${ev.provider} ${ev.endpoint} · ${ev.latency_ms}ms`}
+            title={`${ev.provider} ${ev.endpoint} · ${ev.latency_ms}ms · ${fmtEtLabel(ev.at)} ET`}
             className={`admin-cmd-timeline-bar ${ev.ok ? "admin-cmd-timeline-bar-ok" : "admin-cmd-timeline-bar-fail"} ${selectedId === ev.id ? "admin-cmd-timeline-bar-active" : ""}`}
             style={{ height: `${Math.max(12, (ev.latency_ms / maxLatency) * 100)}%` }}
             initial={{ scaleY: 0, opacity: 0 }}
@@ -33,6 +44,13 @@ export function AdminApiCallTimeline({
             transition={{ delay: i * 0.015, type: "spring", stiffness: 500, damping: 28 }}
             onClick={() => onSelect(ev.id)}
           />
+        ))}
+      </div>
+      <div className="admin-cmd-timeline-axis">
+        {bars.map((ev, i) => (
+          <span key={`${ev.id}-axis`} className="admin-cmd-timeline-tick">
+            {i % labelEvery === 0 || i === bars.length - 1 ? fmtEtLabel(ev.at) : ""}
+          </span>
         ))}
       </div>
     </section>

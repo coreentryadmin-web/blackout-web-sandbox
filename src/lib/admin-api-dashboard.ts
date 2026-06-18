@@ -9,6 +9,7 @@ import {
   type ApiEndpointStats,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
+import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { buildEndpointRegistry, type EndpointRegistryPayload } from "@/lib/admin-endpoint-registry";
 import { pingDatabase, dbConfigured } from "@/lib/db";
 import { engineConfigured, fetchEngine } from "@/lib/engine";
@@ -19,7 +20,8 @@ import {
 } from "@/lib/providers/config";
 import { webSearchConfigured } from "@/lib/providers/web-search";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
-import { trackedFetch } from "@/lib/api-tracked-fetch";
+import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
+import { getUwSocketHealth } from "@/lib/ws/uw-socket";
 
 export type EndpointDashboardRow = CatalogEndpoint & {
   telemetry: ApiEndpointStats | null;
@@ -58,6 +60,10 @@ export type ApiDashboardPayload = {
   recent_events: ReturnType<typeof getApiTelemetrySnapshot>["recent_events"];
   active_retries: ReturnType<typeof getApiTelemetrySnapshot>["active_retries"];
   registry: EndpointRegistryPayload;
+  websockets: {
+    polygon_indices: ReturnType<typeof getIndexStoreStatus>;
+    unusual_whales: ReturnType<typeof getUwSocketHealth>;
+  };
 };
 
 function normalizeEndpointKey(endpoint: string): string {
@@ -351,5 +357,9 @@ export async function fetchApiDashboard(options?: {
     recent_events: telemetry.recent_events,
     active_retries: telemetry.active_retries,
     registry: buildEndpointRegistry(windowMs),
+    websockets: {
+      polygon_indices: getIndexStoreStatus(),
+      unusual_whales: getUwSocketHealth(),
+    },
   };
 }

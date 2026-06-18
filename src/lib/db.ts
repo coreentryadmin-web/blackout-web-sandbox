@@ -325,6 +325,50 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_nighthawk_editions_published
     ON nighthawk_editions(published_at DESC);
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS api_telemetry_events (
+      seq_id BIGINT PRIMARY KEY,
+      event_id TEXT NOT NULL UNIQUE,
+      correlation_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      method TEXT NOT NULL,
+      status INT,
+      ok BOOLEAN NOT NULL,
+      latency_ms INT NOT NULL,
+      error TEXT,
+      severity TEXT NOT NULL,
+      rate_limited BOOLEAN DEFAULT FALSE,
+      sla_breach BOOLEAN DEFAULT FALSE,
+      attempt INT NOT NULL,
+      max_attempts INT NOT NULL,
+      retry_status TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      request_url TEXT,
+      request_body TEXT,
+      response_snippet TEXT,
+      headers_sent JSONB DEFAULT '[]'::jsonb,
+      at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_api_telemetry_events_at
+    ON api_telemetry_events(at DESC);
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      actor_user_id TEXT,
+      actor_email TEXT,
+      action TEXT NOT NULL,
+      detail JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+    ON admin_audit_log(created_at DESC);
+  `);
 }
 
 export async function ensureSchema(): Promise<void> {

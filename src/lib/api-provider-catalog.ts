@@ -1,4 +1,4 @@
-import type { ApiProviderId } from "@/lib/api-telemetry";
+import type { ApiProviderId } from "@/lib/api-telemetry-types";
 
 export type CatalogEndpoint = {
   endpoint: string;
