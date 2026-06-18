@@ -1,0 +1,2381 @@
+{
+  "generatedAt": "2026-06-18T18:34:13.947Z",
+  "codebaseUsageAt": "2026-06-18T18:34:13.870Z",
+  "polygon": {
+    "documented": 78,
+    "used": 49,
+    "unused": 29,
+    "unusedList": [
+      {
+        "provider": "polygon-stocks",
+        "section": "Tickers",
+        "name": "Ticker Types",
+        "path": "/v3/reference/tickers/types",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Daily Market Summary",
+        "path": "/v2/aggs/grouped/locale/us/market/stocks/{date}",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Trades & Quotes",
+        "name": "Trades",
+        "path": "/v3/trades/{stockTicker}",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Trades & Quotes",
+        "name": "Quotes",
+        "path": "/v3/quotes/{stockTicker}",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Market Operations",
+        "name": "Exchanges",
+        "path": "/v3/reference/exchanges",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Market Operations",
+        "name": "Condition Codes",
+        "path": "/v3/reference/conditions",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "IPOs",
+        "path": "/vX/reference/ipos",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "Splits (Deprecated)",
+        "path": "/v3/reference/splits",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "Splits",
+        "path": "/stocks/v1/splits",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "Dividends (Deprecated)",
+        "path": "/v3/reference/dividends",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "Dividends",
+        "path": "/stocks/v1/dividends",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Corporate Actions",
+        "name": "Ticker Events",
+        "path": "/vX/reference/tickers/{id}/events",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Balance Sheets",
+        "path": "/stocks/financials/v1/balance-sheets",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Cash Flow Statements",
+        "path": "/stocks/financials/v1/cash-flow-statements",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Income Statements",
+        "path": "/stocks/financials/v1/income-statements",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Ratios",
+        "path": "/stocks/financials/v1/ratios",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "EDGAR Index",
+        "path": "/stocks/filings/vX/index",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "10-K Sections",
+        "path": "/stocks/filings/10-K/vX/sections",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "8-K Text",
+        "path": "/stocks/filings/8-K/vX/text",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "13-F Filings",
+        "path": "/stocks/filings/vX/13-F",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "Risk Factors",
+        "path": "/stocks/filings/vX/risk-factors",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "Risk Categories",
+        "path": "/stocks/taxonomies/vX/risk-factors",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "Form 3",
+        "path": "/stocks/filings/vX/form-3",
+        "used": false
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Filings & Disclosures",
+        "name": "Form 4",
+        "path": "/stocks/filings/vX/form-4",
+        "used": false
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Contracts",
+        "name": "Contract Overview",
+        "path": "/v3/reference/options/contracts/{options_ticker}",
+        "used": false
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Trades & Quotes",
+        "name": "Trades",
+        "path": "/v3/trades/{optionsTicker}",
+        "used": false
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Trades & Quotes",
+        "name": "Quotes",
+        "path": "/v3/quotes/{optionsTicker}",
+        "used": false
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Market Operations",
+        "name": "Exchanges",
+        "path": "/v3/reference/exchanges",
+        "used": false
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Market Operations",
+        "name": "Condition Codes",
+        "path": "/v3/reference/conditions",
+        "used": false
+      }
+    ],
+    "usedList": [
+      {
+        "provider": "polygon-stocks",
+        "section": "Tickers",
+        "name": "All Tickers",
+        "path": "/v3/reference/tickers",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Tickers",
+        "name": "Ticker Overview",
+        "path": "/v3/reference/tickers/{ticker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Tickers",
+        "name": "Related Tickers",
+        "path": "/v1/related-companies/{ticker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Custom Bars",
+        "path": "/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Daily Ticker Summary",
+        "path": "/v1/open-close/{stocksTicker}/{date}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Previous Day Bar",
+        "path": "/v2/aggs/ticker/{stocksTicker}/prev",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Snapshots",
+        "name": "Single Ticker Snapshot",
+        "path": "/v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Snapshots",
+        "name": "Full Market Snapshot",
+        "path": "/v2/snapshot/locale/us/markets/stocks/tickers",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Snapshots",
+        "name": "Unified Snapshot",
+        "path": "/v3/snapshot",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Snapshots",
+        "name": "Top Market Movers",
+        "path": "/v2/snapshot/locale/us/markets/stocks/{direction}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Trades & Quotes",
+        "name": "Last Trade",
+        "path": "/v2/last/trade/{stocksTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Trades & Quotes",
+        "name": "Last Quote",
+        "path": "/v2/last/nbbo/{stocksTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Technical Indicators",
+        "name": "SMA",
+        "path": "/v1/indicators/sma/{stockTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Technical Indicators",
+        "name": "EMA",
+        "path": "/v1/indicators/ema/{stockTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Technical Indicators",
+        "name": "MACD",
+        "path": "/v1/indicators/macd/{stockTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Technical Indicators",
+        "name": "RSI",
+        "path": "/v1/indicators/rsi/{stockTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Market Operations",
+        "name": "Market Holidays",
+        "path": "/v1/marketstatus/upcoming",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Market Operations",
+        "name": "Market Status",
+        "path": "/v1/marketstatus/now",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Short Interest",
+        "path": "/stocks/v1/short-interest",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Short Volume",
+        "path": "/stocks/v1/short-volume",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "Fundamentals",
+        "name": "Float",
+        "path": "/stocks/vX/float",
+        "used": true
+      },
+      {
+        "provider": "polygon-stocks",
+        "section": "News",
+        "name": "News",
+        "path": "/v2/reference/news",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Contracts",
+        "name": "All Contracts",
+        "path": "/v3/reference/options/contracts",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Custom Bars",
+        "path": "/v2/aggs/ticker/{optionsTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Daily Ticker Summary",
+        "path": "/v1/open-close/{optionsTicker}/{date}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Previous Day Bar",
+        "path": "/v2/aggs/ticker/{optionsTicker}/prev",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Snapshots",
+        "name": "Option Contract Snapshot",
+        "path": "/v3/snapshot/options/{underlyingAsset}/{optionContract}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Snapshots",
+        "name": "Option Chain Snapshot",
+        "path": "/v3/snapshot/options/{underlyingAsset}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Snapshots",
+        "name": "Unified Snapshot",
+        "path": "/v3/snapshot",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Trades & Quotes",
+        "name": "Last Trade",
+        "path": "/v2/last/trade/{optionsTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Technical Indicators",
+        "name": "SMA",
+        "path": "/v1/indicators/sma/{optionsTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Technical Indicators",
+        "name": "EMA",
+        "path": "/v1/indicators/ema/{optionsTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Technical Indicators",
+        "name": "MACD",
+        "path": "/v1/indicators/macd/{optionsTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Technical Indicators",
+        "name": "RSI",
+        "path": "/v1/indicators/rsi/{optionsTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Market Operations",
+        "name": "Market Holidays",
+        "path": "/v1/marketstatus/upcoming",
+        "used": true
+      },
+      {
+        "provider": "polygon-options",
+        "section": "Market Operations",
+        "name": "Market Status",
+        "path": "/v1/marketstatus/now",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Tickers",
+        "name": "All Tickers",
+        "path": "/v3/reference/tickers",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Tickers",
+        "name": "Ticker Overview",
+        "path": "/v3/reference/tickers/{ticker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Custom Bars",
+        "path": "/v2/aggs/ticker/{indicesTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Previous Day Bar",
+        "path": "/v2/aggs/ticker/{indicesTicker}/prev",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Aggregate Bars (OHLC)",
+        "name": "Daily Ticker Summary",
+        "path": "/v1/open-close/{indicesTicker}/{date}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Snapshots",
+        "name": "Indices Snapshot",
+        "path": "/v3/snapshot/indices",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Snapshots",
+        "name": "Unified Snapshot",
+        "path": "/v3/snapshot",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Technical Indicators",
+        "name": "SMA",
+        "path": "/v1/indicators/sma/{indicesTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Technical Indicators",
+        "name": "EMA",
+        "path": "/v1/indicators/ema/{indicesTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Technical Indicators",
+        "name": "MACD",
+        "path": "/v1/indicators/macd/{indicesTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Technical Indicators",
+        "name": "RSI",
+        "path": "/v1/indicators/rsi/{indicesTicker}",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Market Operations",
+        "name": "Market Holidays",
+        "path": "/v1/marketstatus/upcoming",
+        "used": true
+      },
+      {
+        "provider": "polygon-indices",
+        "section": "Market Operations",
+        "name": "Market Status",
+        "path": "/v1/marketstatus/now",
+        "used": true
+      }
+    ],
+    "codePathsNotInDocs": [
+      "/benzinga/v2/news",
+      "polygon",
+      "POLYGON_API_KEY not set"
+    ]
+  },
+  "unusual_whales": {
+    "documented": 186,
+    "used": 120,
+    "unused": 66,
+    "unusedBySection": {
+      "Websocket": [
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "WebSocket channels",
+          "path": "/api/socket",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Contract screener",
+          "path": "/api/socket/contract_screener",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Custom alerts",
+          "path": "/api/socket/custom_alerts",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Flow alerts",
+          "path": "/api/socket/flow_alerts",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "GEX",
+          "path": "/api/socket/gex",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Ticker Interval flow",
+          "path": "/api/socket/interval_flow",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Lit trades",
+          "path": "/api/socket/lit_trades",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Market tide",
+          "path": "/api/socket/market_tide",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Net flow",
+          "path": "/api/socket/net_flow",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "News",
+          "path": "/api/socket/news",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Off-lit trades",
+          "path": "/api/socket/off_lit_trades",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Option trades",
+          "path": "/api/socket/option_trades",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Price",
+          "path": "/api/socket/price",
+          "used": false
+        },
+        {
+          "section": "Websocket",
+          "sectionId": "websocket",
+          "name": "Trading halts",
+          "path": "/api/socket/trading_halts",
+          "used": false
+        }
+      ],
+      "Predictions": [
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market Insiders",
+          "path": "/api/predictions/insiders",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market Details",
+          "path": "/api/predictions/market/{asset_id}",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market Liquidity",
+          "path": "/api/predictions/market/{asset_id}/liquidity",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market Positions",
+          "path": "/api/predictions/market/{asset_id}/positions",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Search Prediction Market Users",
+          "path": "/api/predictions/search-users",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Smart Money",
+          "path": "/api/predictions/smart-money",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Unusual Prediction Markets",
+          "path": "/api/predictions/unusual",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market User",
+          "path": "/api/predictions/user/{user_id}",
+          "used": false
+        },
+        {
+          "section": "Predictions",
+          "sectionId": "predictions",
+          "name": "Prediction Market Whales",
+          "path": "/api/predictions/whales",
+          "used": false
+        }
+      ],
+      "Private Markets": [
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "List Private Markets Companies",
+          "path": "/api/private-markets/companies",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Company Profile",
+          "path": "/api/private-markets/companies/{npm_ticker}",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Funding Rounds",
+          "path": "/api/private-markets/companies/{npm_ticker}/funding",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Investors for Company",
+          "path": "/api/private-markets/companies/{npm_ticker}/investors",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Management",
+          "path": "/api/private-markets/companies/{npm_ticker}/management",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Pricing History",
+          "path": "/api/private-markets/companies/{npm_ticker}/pricing",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Top Private Markets Investors",
+          "path": "/api/private-markets/investors",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Private Markets Investor Profile",
+          "path": "/api/private-markets/investors/{name}",
+          "used": false
+        },
+        {
+          "section": "Private Markets",
+          "sectionId": "private-markets",
+          "name": "Search Private Markets",
+          "path": "/api/private-markets/search",
+          "used": false
+        }
+      ],
+      "Politician Portfolios": [
+        {
+          "section": "Politician Portfolios",
+          "sectionId": "politician-portfolios",
+          "name": "Annual Disclosures List",
+          "path": "/api/politician-portfolios/disclosures",
+          "used": false
+        },
+        {
+          "section": "Politician Portfolios",
+          "sectionId": "politician-portfolios",
+          "name": "Politician Portfolio Holders by Ticker",
+          "path": "/api/politician-portfolios/holders/{ticker}",
+          "used": false
+        },
+        {
+          "section": "Politician Portfolios",
+          "sectionId": "politician-portfolios",
+          "name": "Politicians List",
+          "path": "/api/politician-portfolios/people",
+          "used": false
+        },
+        {
+          "section": "Politician Portfolios",
+          "sectionId": "politician-portfolios",
+          "name": "Politician Trades",
+          "path": "/api/politician-portfolios/recent_trades",
+          "used": false
+        },
+        {
+          "section": "Politician Portfolios",
+          "sectionId": "politician-portfolios",
+          "name": "Politician Portfolios",
+          "path": "/api/politician-portfolios/{politician_id}",
+          "used": false
+        }
+      ],
+      "Crypto": [
+        {
+          "section": "Crypto",
+          "sectionId": "crypto",
+          "name": "Crypto Whale Transactions",
+          "path": "/api/crypto/whale-transactions",
+          "used": false
+        },
+        {
+          "section": "Crypto",
+          "sectionId": "crypto",
+          "name": "Recent Crypto Whale Trades",
+          "path": "/api/crypto/whales/recent",
+          "used": false
+        },
+        {
+          "section": "Crypto",
+          "sectionId": "crypto",
+          "name": "Crypto OHLC Candles",
+          "path": "/api/crypto/{pair}/ohlc/{candle_size}",
+          "used": false
+        },
+        {
+          "section": "Crypto",
+          "sectionId": "crypto",
+          "name": "Crypto Pair State",
+          "path": "/api/crypto/{pair}/state",
+          "used": false
+        }
+      ],
+      "Intel": [
+        {
+          "section": "Intel",
+          "sectionId": "intel",
+          "name": "Sliding-Window Analytics",
+          "path": "/api/analytics/sliding",
+          "used": false
+        },
+        {
+          "section": "Intel",
+          "sectionId": "intel",
+          "name": "Fixed-Window Analytics",
+          "path": "/api/analytics/window",
+          "used": false
+        },
+        {
+          "section": "Intel",
+          "sectionId": "intel",
+          "name": "IPO Calendar",
+          "path": "/api/calendar/ipo",
+          "used": false
+        },
+        {
+          "section": "Intel",
+          "sectionId": "intel",
+          "name": "Active or Delisted Securities",
+          "path": "/api/companies/listings",
+          "used": false
+        }
+      ],
+      "Option-trade": [
+        {
+          "section": "Option-trade",
+          "sectionId": "option-trade",
+          "name": "Exchange & Trade Code Breakdown",
+          "path": "/api/option-trades/exchange-breakdown/{date}",
+          "used": false
+        },
+        {
+          "section": "Option-trade",
+          "sectionId": "option-trade",
+          "name": "Flow Alert by ID",
+          "path": "/api/option-trades/flow-alerts/{id}",
+          "used": false
+        },
+        {
+          "section": "Option-trade",
+          "sectionId": "option-trade",
+          "name": "Full Tape",
+          "path": "/api/option-trades/full-tape/{date}",
+          "used": false
+        },
+        {
+          "section": "Option-trade",
+          "sectionId": "option-trade",
+          "name": "Optionable Tickers",
+          "path": "/api/option-trades/optionable-tickers",
+          "used": false
+        }
+      ],
+      "Forex": [
+        {
+          "section": "Forex",
+          "sectionId": "forex",
+          "name": "FX Historical Series",
+          "path": "/api/forex/history",
+          "used": false
+        },
+        {
+          "section": "Forex",
+          "sectionId": "forex",
+          "name": "FX Intraday Series",
+          "path": "/api/forex/intraday",
+          "used": false
+        },
+        {
+          "section": "Forex",
+          "sectionId": "forex",
+          "name": "FX Spot Rate",
+          "path": "/api/forex/rate",
+          "used": false
+        }
+      ],
+      "Unusual Trades": [
+        {
+          "section": "Unusual Trades",
+          "sectionId": "unusual-trades",
+          "name": "Unusual Trades by Ticker",
+          "path": "/api/congress/unusual-trades/by-tickers",
+          "used": false
+        },
+        {
+          "section": "Unusual Trades",
+          "sectionId": "unusual-trades",
+          "name": "Unusual Trades Chart Data",
+          "path": "/api/congress/unusual-trades/chart-data",
+          "used": false
+        },
+        {
+          "section": "Unusual Trades",
+          "sectionId": "unusual-trades",
+          "name": "Unusual Trades Aggregate Stats",
+          "path": "/api/congress/unusual-trades/stats",
+          "used": false
+        }
+      ],
+      "Alerts": [
+        {
+          "section": "Alerts",
+          "sectionId": "alerts",
+          "name": "Alerts",
+          "path": "/api/alerts",
+          "used": false
+        },
+        {
+          "section": "Alerts",
+          "sectionId": "alerts",
+          "name": "Alert configurations",
+          "path": "/api/alerts/configuration",
+          "used": false
+        }
+      ],
+      "Digital Currencies": [
+        {
+          "section": "Digital Currencies",
+          "sectionId": "digital-currencies",
+          "name": "Digital Currency Historical Series",
+          "path": "/api/digital-currencies/history",
+          "used": false
+        },
+        {
+          "section": "Digital Currencies",
+          "sectionId": "digital-currencies",
+          "name": "Digital Currency Intraday Series",
+          "path": "/api/digital-currencies/intraday",
+          "used": false
+        }
+      ],
+      "Group Flow": [
+        {
+          "section": "Group Flow",
+          "sectionId": "group-flow",
+          "name": "Greek flow",
+          "path": "/api/group-flow/{flow_group}/greek-flow",
+          "used": false
+        },
+        {
+          "section": "Group Flow",
+          "sectionId": "group-flow",
+          "name": "Greek flow by expiry",
+          "path": "/api/group-flow/{flow_group}/greek-flow/{expiry}",
+          "used": false
+        }
+      ],
+      "Commodities": [
+        {
+          "section": "Commodities",
+          "sectionId": "commodities",
+          "name": "Commodity Series",
+          "path": "/api/commodities/{name}",
+          "used": false
+        }
+      ],
+      "Congress": [
+        {
+          "section": "Congress",
+          "sectionId": "congress",
+          "name": "Recent Reports By Trader",
+          "path": "/api/congress/congress-trader",
+          "used": false
+        }
+      ],
+      "Economy": [
+        {
+          "section": "Economy",
+          "sectionId": "economy",
+          "name": "Economic Indicator",
+          "path": "/api/economy/{indicator}",
+          "used": false
+        }
+      ],
+      "Market": [
+        {
+          "section": "Market",
+          "sectionId": "market",
+          "name": "Total Insider Buy & Sells",
+          "path": "/api/market/insider-buy-sells",
+          "used": false
+        }
+      ],
+      "Stock-directory": [
+        {
+          "section": "Stock-directory",
+          "sectionId": "stock-directory",
+          "name": "Ticker Exchange Mapping",
+          "path": "/api/stock-directory/ticker-exchanges",
+          "used": false
+        }
+      ]
+    },
+    "unusedList": [
+      {
+        "section": "Alerts",
+        "sectionId": "alerts",
+        "name": "Alerts",
+        "path": "/api/alerts",
+        "used": false
+      },
+      {
+        "section": "Alerts",
+        "sectionId": "alerts",
+        "name": "Alert configurations",
+        "path": "/api/alerts/configuration",
+        "used": false
+      },
+      {
+        "section": "Commodities",
+        "sectionId": "commodities",
+        "name": "Commodity Series",
+        "path": "/api/commodities/{name}",
+        "used": false
+      },
+      {
+        "section": "Congress",
+        "sectionId": "congress",
+        "name": "Recent Reports By Trader",
+        "path": "/api/congress/congress-trader",
+        "used": false
+      },
+      {
+        "section": "Crypto",
+        "sectionId": "crypto",
+        "name": "Crypto Whale Transactions",
+        "path": "/api/crypto/whale-transactions",
+        "used": false
+      },
+      {
+        "section": "Crypto",
+        "sectionId": "crypto",
+        "name": "Recent Crypto Whale Trades",
+        "path": "/api/crypto/whales/recent",
+        "used": false
+      },
+      {
+        "section": "Crypto",
+        "sectionId": "crypto",
+        "name": "Crypto OHLC Candles",
+        "path": "/api/crypto/{pair}/ohlc/{candle_size}",
+        "used": false
+      },
+      {
+        "section": "Crypto",
+        "sectionId": "crypto",
+        "name": "Crypto Pair State",
+        "path": "/api/crypto/{pair}/state",
+        "used": false
+      },
+      {
+        "section": "Digital Currencies",
+        "sectionId": "digital-currencies",
+        "name": "Digital Currency Historical Series",
+        "path": "/api/digital-currencies/history",
+        "used": false
+      },
+      {
+        "section": "Digital Currencies",
+        "sectionId": "digital-currencies",
+        "name": "Digital Currency Intraday Series",
+        "path": "/api/digital-currencies/intraday",
+        "used": false
+      },
+      {
+        "section": "Economy",
+        "sectionId": "economy",
+        "name": "Economic Indicator",
+        "path": "/api/economy/{indicator}",
+        "used": false
+      },
+      {
+        "section": "Forex",
+        "sectionId": "forex",
+        "name": "FX Historical Series",
+        "path": "/api/forex/history",
+        "used": false
+      },
+      {
+        "section": "Forex",
+        "sectionId": "forex",
+        "name": "FX Intraday Series",
+        "path": "/api/forex/intraday",
+        "used": false
+      },
+      {
+        "section": "Forex",
+        "sectionId": "forex",
+        "name": "FX Spot Rate",
+        "path": "/api/forex/rate",
+        "used": false
+      },
+      {
+        "section": "Group Flow",
+        "sectionId": "group-flow",
+        "name": "Greek flow",
+        "path": "/api/group-flow/{flow_group}/greek-flow",
+        "used": false
+      },
+      {
+        "section": "Group Flow",
+        "sectionId": "group-flow",
+        "name": "Greek flow by expiry",
+        "path": "/api/group-flow/{flow_group}/greek-flow/{expiry}",
+        "used": false
+      },
+      {
+        "section": "Intel",
+        "sectionId": "intel",
+        "name": "Sliding-Window Analytics",
+        "path": "/api/analytics/sliding",
+        "used": false
+      },
+      {
+        "section": "Intel",
+        "sectionId": "intel",
+        "name": "Fixed-Window Analytics",
+        "path": "/api/analytics/window",
+        "used": false
+      },
+      {
+        "section": "Intel",
+        "sectionId": "intel",
+        "name": "IPO Calendar",
+        "path": "/api/calendar/ipo",
+        "used": false
+      },
+      {
+        "section": "Intel",
+        "sectionId": "intel",
+        "name": "Active or Delisted Securities",
+        "path": "/api/companies/listings",
+        "used": false
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Total Insider Buy & Sells",
+        "path": "/api/market/insider-buy-sells",
+        "used": false
+      },
+      {
+        "section": "Option-trade",
+        "sectionId": "option-trade",
+        "name": "Exchange & Trade Code Breakdown",
+        "path": "/api/option-trades/exchange-breakdown/{date}",
+        "used": false
+      },
+      {
+        "section": "Option-trade",
+        "sectionId": "option-trade",
+        "name": "Flow Alert by ID",
+        "path": "/api/option-trades/flow-alerts/{id}",
+        "used": false
+      },
+      {
+        "section": "Option-trade",
+        "sectionId": "option-trade",
+        "name": "Full Tape",
+        "path": "/api/option-trades/full-tape/{date}",
+        "used": false
+      },
+      {
+        "section": "Option-trade",
+        "sectionId": "option-trade",
+        "name": "Optionable Tickers",
+        "path": "/api/option-trades/optionable-tickers",
+        "used": false
+      },
+      {
+        "section": "Politician Portfolios",
+        "sectionId": "politician-portfolios",
+        "name": "Annual Disclosures List",
+        "path": "/api/politician-portfolios/disclosures",
+        "used": false
+      },
+      {
+        "section": "Politician Portfolios",
+        "sectionId": "politician-portfolios",
+        "name": "Politician Portfolio Holders by Ticker",
+        "path": "/api/politician-portfolios/holders/{ticker}",
+        "used": false
+      },
+      {
+        "section": "Politician Portfolios",
+        "sectionId": "politician-portfolios",
+        "name": "Politicians List",
+        "path": "/api/politician-portfolios/people",
+        "used": false
+      },
+      {
+        "section": "Politician Portfolios",
+        "sectionId": "politician-portfolios",
+        "name": "Politician Trades",
+        "path": "/api/politician-portfolios/recent_trades",
+        "used": false
+      },
+      {
+        "section": "Politician Portfolios",
+        "sectionId": "politician-portfolios",
+        "name": "Politician Portfolios",
+        "path": "/api/politician-portfolios/{politician_id}",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market Insiders",
+        "path": "/api/predictions/insiders",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market Details",
+        "path": "/api/predictions/market/{asset_id}",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market Liquidity",
+        "path": "/api/predictions/market/{asset_id}/liquidity",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market Positions",
+        "path": "/api/predictions/market/{asset_id}/positions",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Search Prediction Market Users",
+        "path": "/api/predictions/search-users",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Smart Money",
+        "path": "/api/predictions/smart-money",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Unusual Prediction Markets",
+        "path": "/api/predictions/unusual",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market User",
+        "path": "/api/predictions/user/{user_id}",
+        "used": false
+      },
+      {
+        "section": "Predictions",
+        "sectionId": "predictions",
+        "name": "Prediction Market Whales",
+        "path": "/api/predictions/whales",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "List Private Markets Companies",
+        "path": "/api/private-markets/companies",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Company Profile",
+        "path": "/api/private-markets/companies/{npm_ticker}",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Funding Rounds",
+        "path": "/api/private-markets/companies/{npm_ticker}/funding",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Investors for Company",
+        "path": "/api/private-markets/companies/{npm_ticker}/investors",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Management",
+        "path": "/api/private-markets/companies/{npm_ticker}/management",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Pricing History",
+        "path": "/api/private-markets/companies/{npm_ticker}/pricing",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Top Private Markets Investors",
+        "path": "/api/private-markets/investors",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Private Markets Investor Profile",
+        "path": "/api/private-markets/investors/{name}",
+        "used": false
+      },
+      {
+        "section": "Private Markets",
+        "sectionId": "private-markets",
+        "name": "Search Private Markets",
+        "path": "/api/private-markets/search",
+        "used": false
+      },
+      {
+        "section": "Stock-directory",
+        "sectionId": "stock-directory",
+        "name": "Ticker Exchange Mapping",
+        "path": "/api/stock-directory/ticker-exchanges",
+        "used": false
+      },
+      {
+        "section": "Unusual Trades",
+        "sectionId": "unusual-trades",
+        "name": "Unusual Trades by Ticker",
+        "path": "/api/congress/unusual-trades/by-tickers",
+        "used": false
+      },
+      {
+        "section": "Unusual Trades",
+        "sectionId": "unusual-trades",
+        "name": "Unusual Trades Chart Data",
+        "path": "/api/congress/unusual-trades/chart-data",
+        "used": false
+      },
+      {
+        "section": "Unusual Trades",
+        "sectionId": "unusual-trades",
+        "name": "Unusual Trades Aggregate Stats",
+        "path": "/api/congress/unusual-trades/stats",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "WebSocket channels",
+        "path": "/api/socket",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Contract screener",
+        "path": "/api/socket/contract_screener",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Custom alerts",
+        "path": "/api/socket/custom_alerts",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Flow alerts",
+        "path": "/api/socket/flow_alerts",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "GEX",
+        "path": "/api/socket/gex",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Ticker Interval flow",
+        "path": "/api/socket/interval_flow",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Lit trades",
+        "path": "/api/socket/lit_trades",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Market tide",
+        "path": "/api/socket/market_tide",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Net flow",
+        "path": "/api/socket/net_flow",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "News",
+        "path": "/api/socket/news",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Off-lit trades",
+        "path": "/api/socket/off_lit_trades",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Option trades",
+        "path": "/api/socket/option_trades",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Price",
+        "path": "/api/socket/price",
+        "used": false
+      },
+      {
+        "section": "Websocket",
+        "sectionId": "websocket",
+        "name": "Trading halts",
+        "path": "/api/socket/trading_halts",
+        "used": false
+      }
+    ],
+    "usedList": [
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "GEX Levels",
+        "path": "/api/stock/{ticker}/gex-levels",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek Exposure",
+        "path": "/api/stock/{ticker}/greek-exposure",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek Exposure By Expiry",
+        "path": "/api/stock/{ticker}/greek-exposure/expiry",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek Exposure By Strike",
+        "path": "/api/stock/{ticker}/greek-exposure/strike",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek Exposure By Strike And Expiry",
+        "path": "/api/stock/{ticker}/greek-exposure/strike-expiry",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek flow",
+        "path": "/api/stock/{ticker}/greek-flow",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Greek flow by expiry",
+        "path": "/api/stock/{ticker}/greek-flow/{expiry}",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Spot GEX exposures per 1min",
+        "path": "/api/stock/{ticker}/spot-exposures",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Spot GEX exposures by strike & expiry",
+        "path": "/api/stock/{ticker}/spot-exposures/expiry-strike",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Spot GEX exposures by strike",
+        "path": "/api/stock/{ticker}/spot-exposures/strike",
+        "used": true
+      },
+      {
+        "section": "GEX / Greeks",
+        "sectionId": "gex-greeks",
+        "name": "Spot GEX exposures by strike & expiry (Deprecated)",
+        "path": "/api/stock/{ticker}/spot-exposures/{expiry}/strike",
+        "used": true
+      },
+      {
+        "section": "Companies",
+        "sectionId": "companies",
+        "name": "Company Dividends",
+        "path": "/api/companies/{ticker}/dividends",
+        "used": true
+      },
+      {
+        "section": "Companies",
+        "sectionId": "companies",
+        "name": "Forward Earnings Estimates",
+        "path": "/api/companies/{ticker}/earnings-estimates",
+        "used": true
+      },
+      {
+        "section": "Companies",
+        "sectionId": "companies",
+        "name": "Company Profile",
+        "path": "/api/companies/{ticker}/profile",
+        "used": true
+      },
+      {
+        "section": "Companies",
+        "sectionId": "companies",
+        "name": "Company Stock Splits",
+        "path": "/api/companies/{ticker}/splits",
+        "used": true
+      },
+      {
+        "section": "Companies",
+        "sectionId": "companies",
+        "name": "Earnings Call Transcript",
+        "path": "/api/companies/{ticker}/transcripts/{quarter}",
+        "used": true
+      },
+      {
+        "section": "Congress",
+        "sectionId": "congress",
+        "name": "Recent Late Reports",
+        "path": "/api/congress/late-reports",
+        "used": true
+      },
+      {
+        "section": "Congress",
+        "sectionId": "congress",
+        "name": "List of Politicians with Trade Data",
+        "path": "/api/congress/politicians",
+        "used": true
+      },
+      {
+        "section": "Congress",
+        "sectionId": "congress",
+        "name": "Recent Congress Trades",
+        "path": "/api/congress/recent-trades",
+        "used": true
+      },
+      {
+        "section": "Darkpool",
+        "sectionId": "darkpool",
+        "name": "Recent Darkpool Trades",
+        "path": "/api/darkpool/recent",
+        "used": true
+      },
+      {
+        "section": "Darkpool",
+        "sectionId": "darkpool",
+        "name": "Ticker Darkpool Trades",
+        "path": "/api/darkpool/{ticker}",
+        "used": true
+      },
+      {
+        "section": "Earnings",
+        "sectionId": "earnings",
+        "name": "Afterhours",
+        "path": "/api/earnings/afterhours",
+        "used": true
+      },
+      {
+        "section": "Earnings",
+        "sectionId": "earnings",
+        "name": "Premarket",
+        "path": "/api/earnings/premarket",
+        "used": true
+      },
+      {
+        "section": "Earnings",
+        "sectionId": "earnings",
+        "name": "Historical Ticker Earnings",
+        "path": "/api/earnings/{ticker}",
+        "used": true
+      },
+      {
+        "section": "Etfs",
+        "sectionId": "etfs",
+        "name": "Exposure",
+        "path": "/api/etfs/{ticker}/exposure",
+        "used": true
+      },
+      {
+        "section": "Etfs",
+        "sectionId": "etfs",
+        "name": "Holdings",
+        "path": "/api/etfs/{ticker}/holdings",
+        "used": true
+      },
+      {
+        "section": "Etfs",
+        "sectionId": "etfs",
+        "name": "Inflow & Outflow",
+        "path": "/api/etfs/{ticker}/in-outflow",
+        "used": true
+      },
+      {
+        "section": "Etfs",
+        "sectionId": "etfs",
+        "name": "Information",
+        "path": "/api/etfs/{ticker}/info",
+        "used": true
+      },
+      {
+        "section": "Etfs",
+        "sectionId": "etfs",
+        "name": "Sector & Country weights",
+        "path": "/api/etfs/{ticker}/weights",
+        "used": true
+      },
+      {
+        "section": "Insiders",
+        "sectionId": "insiders",
+        "name": "Transactions",
+        "path": "/api/insider/transactions",
+        "used": true
+      },
+      {
+        "section": "Insiders",
+        "sectionId": "insiders",
+        "name": "Sector Flow",
+        "path": "/api/insider/{sector}/sector-flow",
+        "used": true
+      },
+      {
+        "section": "Insiders",
+        "sectionId": "insiders",
+        "name": "Insiders",
+        "path": "/api/insider/{ticker}",
+        "used": true
+      },
+      {
+        "section": "Insiders",
+        "sectionId": "insiders",
+        "name": "Ticker Flow",
+        "path": "/api/insider/{ticker}/ticker-flow",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Institutional Activity (Deprecated)",
+        "path": "/api/institution/{name}/activity",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Institutional Activity",
+        "path": "/api/institution/{name}/activity/v2",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Institutional Holdings",
+        "path": "/api/institution/{name}/holdings",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Sector Exposure",
+        "path": "/api/institution/{name}/sectors",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Institutional Ownership",
+        "path": "/api/institution/{ticker}/ownership",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "List of Institutions",
+        "path": "/api/institutions",
+        "used": true
+      },
+      {
+        "section": "Institution",
+        "sectionId": "institution",
+        "name": "Latest Filings",
+        "path": "/api/institutions/latest_filings",
+        "used": true
+      },
+      {
+        "section": "Intel",
+        "sectionId": "intel",
+        "name": "Top Movers",
+        "path": "/api/market/movers",
+        "used": true
+      },
+      {
+        "section": "Lit-flow",
+        "sectionId": "lit-flow",
+        "name": "Recent Lit Flow Trades",
+        "path": "/api/lit-flow/recent",
+        "used": true
+      },
+      {
+        "section": "Lit-flow",
+        "sectionId": "lit-flow",
+        "name": "Ticker Lit Flow Trades",
+        "path": "/api/lit-flow/{ticker}",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Correlations",
+        "path": "/api/market/correlations",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Economic calendar",
+        "path": "/api/market/economic-calendar",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "FDA Calendar",
+        "path": "/api/market/fda-calendar",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Market Tide",
+        "path": "/api/market/market-tide",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "OI Change",
+        "path": "/api/market/oi-change",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Sector Etfs",
+        "path": "/api/market/sector-etfs",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Top Net Impact",
+        "path": "/api/market/top-net-impact",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Total Options Volume",
+        "path": "/api/market/total-options-volume",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Sector Tide",
+        "path": "/api/market/{sector}/sector-tide",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "ETF Tide",
+        "path": "/api/market/{ticker}/etf-tide",
+        "used": true
+      },
+      {
+        "section": "Market",
+        "sectionId": "market",
+        "name": "Net Flow Expiry",
+        "path": "/api/net-flow/expiry",
+        "used": true
+      },
+      {
+        "section": "News",
+        "sectionId": "news",
+        "name": "News Headlines",
+        "path": "/api/news/headlines",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Flow Data",
+        "path": "/api/option-contract/{id}/flow",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Historic Data",
+        "path": "/api/option-contract/{id}/historic",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Intraday Data",
+        "path": "/api/option-contract/{id}/intraday",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Volume Profile",
+        "path": "/api/option-contract/{id}/volume-profile",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Expiry Breakdown",
+        "path": "/api/stock/{ticker}/expiry-breakdown",
+        "used": true
+      },
+      {
+        "section": "Option-contract",
+        "sectionId": "option-contract",
+        "name": "Option contracts",
+        "path": "/api/stock/{ticker}/option-contracts",
+        "used": true
+      },
+      {
+        "section": "Option-trade",
+        "sectionId": "option-trade",
+        "name": "Flow Alerts",
+        "path": "/api/option-trades/flow-alerts",
+        "used": true
+      },
+      {
+        "section": "Screener",
+        "sectionId": "screener",
+        "name": "Analyst Rating",
+        "path": "/api/screener/analysts",
+        "used": true
+      },
+      {
+        "section": "Screener",
+        "sectionId": "screener",
+        "name": "Hottest Chains",
+        "path": "/api/screener/option-contracts",
+        "used": true
+      },
+      {
+        "section": "Screener",
+        "sectionId": "screener",
+        "name": "Stock Screener",
+        "path": "/api/screener/stocks",
+        "used": true
+      },
+      {
+        "section": "Seasonality",
+        "sectionId": "seasonality",
+        "name": "Market Seasonality",
+        "path": "/api/seasonality/market",
+        "used": true
+      },
+      {
+        "section": "Seasonality",
+        "sectionId": "seasonality",
+        "name": "Month Performers",
+        "path": "/api/seasonality/{month}/performers",
+        "used": true
+      },
+      {
+        "section": "Seasonality",
+        "sectionId": "seasonality",
+        "name": "Average return per month",
+        "path": "/api/seasonality/{ticker}/monthly",
+        "used": true
+      },
+      {
+        "section": "Seasonality",
+        "sectionId": "seasonality",
+        "name": "Price change per month per year",
+        "path": "/api/seasonality/{ticker}/year-month",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "Short Screener",
+        "path": "/api/short_screener",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "Short Data",
+        "path": "/api/shorts/{ticker}/data",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "Failures to Deliver",
+        "path": "/api/shorts/{ticker}/ftds",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "V1 Short Interest and Float (Deprecated)",
+        "path": "/api/shorts/{ticker}/interest-float",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "V2 Short Interest and Float",
+        "path": "/api/shorts/{ticker}/interest-float/v2",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "Short Volume and Ratio",
+        "path": "/api/shorts/{ticker}/volume-and-ratio",
+        "used": true
+      },
+      {
+        "section": "Short",
+        "sectionId": "short",
+        "name": "Short Volume By Exchange",
+        "path": "/api/shorts/{ticker}/volumes-by-exchange",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Companies in Sector",
+        "path": "/api/stock/{sector}/tickers",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "ATM Chains",
+        "path": "/api/stock/{ticker}/atm-chains",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Balance Sheets",
+        "path": "/api/stock/{ticker}/balance-sheets",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Cash Flow Statements",
+        "path": "/api/stock/{ticker}/cash-flows",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Earnings History",
+        "path": "/api/stock/{ticker}/earnings",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Full Financials",
+        "path": "/api/stock/{ticker}/financials",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Flow Alerts",
+        "path": "/api/stock/{ticker}/flow-alerts",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Flow per expiry",
+        "path": "/api/stock/{ticker}/flow-per-expiry",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Flow per strike",
+        "path": "/api/stock/{ticker}/flow-per-strike",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Flow per strike intraday",
+        "path": "/api/stock/{ticker}/flow-per-strike-intraday",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Recent flows",
+        "path": "/api/stock/{ticker}/flow-recent",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Fundamental Breakdown",
+        "path": "/api/stock/{ticker}/fundamental-breakdown",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Greeks",
+        "path": "/api/stock/{ticker}/greeks",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Historical Risk Reversal Skew",
+        "path": "/api/stock/{ticker}/historical-risk-reversal-skew",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Income Statements",
+        "path": "/api/stock/{ticker}/income-statements",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Information",
+        "path": "/api/stock/{ticker}/info",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Insider buy & sells",
+        "path": "/api/stock/{ticker}/insider-buy-sells",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Interpolated IV",
+        "path": "/api/stock/{ticker}/interpolated-iv",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "IV Rank",
+        "path": "/api/stock/{ticker}/iv-rank",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Max Pain",
+        "path": "/api/stock/{ticker}/max-pain",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Call/Put Net/Vol Ticks",
+        "path": "/api/stock/{ticker}/net-prem-ticks",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Nope",
+        "path": "/api/stock/{ticker}/nope",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "OHLC",
+        "path": "/api/stock/{ticker}/ohlc/{candle_size}",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "OI Change",
+        "path": "/api/stock/{ticker}/oi-change",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "OI per Expiry",
+        "path": "/api/stock/{ticker}/oi-per-expiry",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "OI per Strike",
+        "path": "/api/stock/{ticker}/oi-per-strike",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Option Chains",
+        "path": "/api/stock/{ticker}/option-chains",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Option Price Levels",
+        "path": "/api/stock/{ticker}/option/stock-price-levels",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Volume & OI per Expiry",
+        "path": "/api/stock/{ticker}/option/volume-oi-expiry",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Options Volume",
+        "path": "/api/stock/{ticker}/options-volume",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Ownership",
+        "path": "/api/stock/{ticker}/ownership",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Stock State",
+        "path": "/api/stock/{ticker}/stock-state",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Off/Lit Price Levels",
+        "path": "/api/stock/{ticker}/stock-volume-price-levels",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Technical Indicator",
+        "path": "/api/stock/{ticker}/technical-indicator/{function}",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Realized Volatility",
+        "path": "/api/stock/{ticker}/volatility/realized",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Volatility Statistics",
+        "path": "/api/stock/{ticker}/volatility/stats",
+        "used": true
+      },
+      {
+        "section": "Stock",
+        "sectionId": "stock",
+        "name": "Implied Volatility Term Structure",
+        "path": "/api/stock/{ticker}/volatility/term-structure",
+        "used": true
+      },
+      {
+        "section": "Unusual Trades",
+        "sectionId": "unusual-trades",
+        "name": "Unusual Congressional Trades",
+        "path": "/api/congress/unusual-trades",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "Volatility Anomaly Score",
+        "path": "/api/stock/{ticker}/volatility/anomaly",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "Volatility Character",
+        "path": "/api/stock/{ticker}/volatility/character",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "Variance Risk Premium",
+        "path": "/api/stock/{ticker}/volatility/variance-risk-premium",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "Top Volatility Anomalies",
+        "path": "/api/volatility/anomaly/top",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "Top Volatility Character",
+        "path": "/api/volatility/character/top",
+        "used": true
+      },
+      {
+        "section": "Volatility",
+        "sectionId": "volatility",
+        "name": "VIX Term Structure",
+        "path": "/api/volatility/vix-term-structure",
+        "used": true
+      }
+    ],
+    "codePathsNotInDocs": [
+      "/api/etf/${etf.toUpperCase()}/in-outflow",
+      "/api/etf/${etf.toUpperCase()}/tide",
+      "/api/screener/contracts",
+      "/api/unusual-trades/recent",
+      "en-CA",
+      "UW_API_KEY not set"
+    ]
+  }
+}

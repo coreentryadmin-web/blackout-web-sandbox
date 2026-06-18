@@ -1,0 +1,4805 @@
+{
+  "summary": {
+    "probedAt": "2026-06-18T18:50:25.270Z",
+    "codebaseUsageGeneratedAt": "2026-06-18T18:39:58.472Z",
+    "documentedTotal": 265,
+    "probedTotal": 265,
+    "uwOnlyRun": true,
+    "polygonDelayMs": 130,
+    "uwDelayMs": 650,
+    "polygon": {
+      "total": 79,
+      "ok": 66,
+      "fail": 13,
+      "rateLimited": 0,
+      "blocked": 0,
+      "usedInCode": 50,
+      "unusedInCode": 29,
+      "unusedAndWorking": 19,
+      "unusedAndBlocked": 0
+    },
+    "unusual_whales": {
+      "total": 186,
+      "ok": 140,
+      "fail": 40,
+      "rateLimited": 0,
+      "blocked": 6,
+      "usedInCode": 120,
+      "unusedInCode": 66,
+      "unusedAndWorking": 35,
+      "unusedAndBlocked": 0
+    }
+  },
+  "results": [
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "All Tickers",
+      "pathTemplate": "/v3/reference/tickers",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/tickers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 110,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "Ticker Overview",
+      "pathTemplate": "/v3/reference/tickers/{ticker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/tickers/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 90,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "Ticker Types",
+      "pathTemplate": "/v3/reference/tickers/types",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/tickers/types",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 102,
+        "note": "25 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "Related Tickers",
+      "pathTemplate": "/v1/related-companies/{ticker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/tickers/NVDA/related",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 75,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Custom Bars",
+      "pathTemplate": "/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/NVDA/range/1/day/2026-06-11/2026-06-18",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 159,
+        "note": "6 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Daily Market Summary",
+      "pathTemplate": "/v2/aggs/grouped/locale/us/market/stocks/{date}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/aggs/grouped/locale/us/market/stocks/2026-06-17",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 431,
+        "note": "12311 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Daily Ticker Summary",
+      "pathTemplate": "/v1/open-close/{stocksTicker}/{date}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/open-close/NVDA/2026-06-17",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 491,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Previous Day Bar",
+      "pathTemplate": "/v2/aggs/ticker/{stocksTicker}/prev",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/NVDA/prev",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 88,
+        "note": "1 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Single Ticker Snapshot",
+      "pathTemplate": "/v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/snapshot/locale/us/markets/stocks/tickers/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Full Market Snapshot",
+      "pathTemplate": "/v2/snapshot/locale/us/markets/stocks/tickers",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/snapshot/locale/us/markets/stocks/tickers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 181,
+        "note": "12801 tickers"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Unified Snapshot",
+      "pathTemplate": "/v3/snapshot",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/snapshot",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 1548,
+        "note": "2 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Top Market Movers",
+      "pathTemplate": "/v2/snapshot/locale/us/markets/stocks/{direction}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/snapshot/locale/us/markets/stocks/gainers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 202,
+        "note": "21 tickers"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Trades",
+      "pathTemplate": "/v3/trades/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/trades/NVDA",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 325,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Last Trade",
+      "pathTemplate": "/v2/last/trade/{stocksTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/last/trade/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 161,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Quotes",
+      "pathTemplate": "/v3/quotes/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/quotes/NVDA",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 107,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Last Quote",
+      "pathTemplate": "/v2/last/nbbo/{stocksTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/last/nbbo/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 102,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "SMA",
+      "pathTemplate": "/v1/indicators/sma/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/indicators/sma/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 202,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "EMA",
+      "pathTemplate": "/v1/indicators/ema/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/indicators/ema/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 189,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "MACD",
+      "pathTemplate": "/v1/indicators/macd/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/indicators/macd/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 167,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "RSI",
+      "pathTemplate": "/v1/indicators/rsi/{stockTicker}",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/indicators/rsi/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 201,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Exchanges",
+      "pathTemplate": "/v3/reference/exchanges",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/exchanges",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "53 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Holidays",
+      "pathTemplate": "/v1/marketstatus/upcoming",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/marketstatus/upcoming",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 74,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Status",
+      "pathTemplate": "/v1/marketstatus/now",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/marketstatus/now",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 123,
+        "note": "market=open"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Condition Codes",
+      "pathTemplate": "/v3/reference/conditions",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/conditions",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 107,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "IPOs",
+      "pathTemplate": "/vX/reference/ipos",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/reference/ipos",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 77,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "Splits (Deprecated)",
+      "pathTemplate": "/v3/reference/splits",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/splits",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 101,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "Splits",
+      "pathTemplate": "/stocks/v1/splits",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/v1/splits",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 104,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "Dividends (Deprecated)",
+      "pathTemplate": "/v3/reference/dividends",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v3/reference/dividends",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 79,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "Dividends",
+      "pathTemplate": "/stocks/v1/dividends",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/v1/dividends",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 111,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Corporate Actions",
+      "sectionId": "corporate-actions",
+      "name": "Ticker Events",
+      "pathTemplate": "/vX/reference/tickers/{id}/events",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v1/reference/tickers/O:NVDA260618C00000500/events",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 83,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Balance Sheets",
+      "pathTemplate": "/stocks/financials/v1/balance-sheets",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/financials/v1/balance-sheets",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 384,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Cash Flow Statements",
+      "pathTemplate": "/stocks/financials/v1/cash-flow-statements",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/financials/v1/cash-flow-statements",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 394,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Income Statements",
+      "pathTemplate": "/stocks/financials/v1/income-statements",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/financials/v1/income-statements",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 124,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Ratios",
+      "pathTemplate": "/stocks/financials/v1/ratios",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/financials/v1/ratios",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 114,
+        "note": "1 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Short Interest",
+      "pathTemplate": "/stocks/v1/short-interest",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/v1/short-interest",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 128,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Short Volume",
+      "pathTemplate": "/stocks/v1/short-volume",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/v1/short-volume",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 179,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Fundamentals",
+      "sectionId": "fundamentals",
+      "name": "Float",
+      "pathTemplate": "/stocks/vX/float",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/v1/float",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 77,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "EDGAR Index",
+      "pathTemplate": "/stocks/filings/vX/index",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/v1/index",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 84,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "10-K Sections",
+      "pathTemplate": "/stocks/filings/10-K/vX/sections",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/10-K/v1/sections",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 74,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "8-K Text",
+      "pathTemplate": "/stocks/filings/8-K/vX/text",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/8-K/v1/text",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 115,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "13-F Filings",
+      "pathTemplate": "/stocks/filings/vX/13-F",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/v1/13-F",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 70,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "Risk Factors",
+      "pathTemplate": "/stocks/filings/vX/risk-factors",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/v1/risk-factors",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 76,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "Risk Categories",
+      "pathTemplate": "/stocks/taxonomies/vX/risk-factors",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/taxonomies/v1/risk-factors",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 79,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "Form 3",
+      "pathTemplate": "/stocks/filings/vX/form-3",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/v1/form-3",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 79,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "Filings & Disclosures",
+      "sectionId": "filings",
+      "name": "Form 4",
+      "pathTemplate": "/stocks/filings/vX/form-4",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/stocks/filings/v1/form-4",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 81,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-stocks",
+      "docSection": "News",
+      "sectionId": "news",
+      "name": "News",
+      "pathTemplate": "/v2/reference/news",
+      "source": "src/lib/polygon-docs-stocks-rest.ts",
+      "resolvedPath": "/v2/reference/news",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 133,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Contracts",
+      "sectionId": "contracts",
+      "name": "All Contracts",
+      "pathTemplate": "/v3/reference/options/contracts",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/reference/options/contracts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 181,
+        "note": "10 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Contracts",
+      "sectionId": "contracts",
+      "name": "Contract Overview",
+      "pathTemplate": "/v3/reference/options/contracts/{options_ticker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/reference/options/contracts/O%3ANVDA260618C00000500",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Custom Bars",
+      "pathTemplate": "/v2/aggs/ticker/{optionsTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/O%3ANVDA260618C00000500/range/1/day/2026-06-11/2026-06-18",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 148,
+        "note": "1 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Daily Ticker Summary",
+      "pathTemplate": "/v1/open-close/{optionsTicker}/{date}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/open-close/O%3ANVDA260618C00000500/2026-06-17",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 404,
+        "ok": false,
+        "blocked": false,
+        "ms": 860,
+        "note": "404 Not Found"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Previous Day Bar",
+      "pathTemplate": "/v2/aggs/ticker/{optionsTicker}/prev",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/O%3ANVDA260618C00000500/prev",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 79,
+        "note": "1 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Option Contract Snapshot",
+      "pathTemplate": "/v3/snapshot/options/{underlyingAsset}/{optionContract}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/snapshot/options/NVDA/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 149,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Option Chain Snapshot",
+      "pathTemplate": "/v3/snapshot/options/{underlyingAsset}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/snapshot/options/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 112,
+        "note": "10 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Unified Snapshot",
+      "pathTemplate": "/v3/snapshot",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/snapshot",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 90,
+        "note": "2 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Trades",
+      "pathTemplate": "/v3/trades/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/trades/O%3ANVDA260618C00000500",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 398,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Last Trade",
+      "pathTemplate": "/v2/last/trade/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v2/last/trade/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 155,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Trades & Quotes",
+      "sectionId": "trades-quotes",
+      "name": "Quotes",
+      "pathTemplate": "/v3/quotes/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/quotes/O%3ANVDA260618C00000500",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 108,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "SMA",
+      "pathTemplate": "/v1/indicators/sma/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/indicators/sma/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 324,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "EMA",
+      "pathTemplate": "/v1/indicators/ema/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/indicators/ema/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 108,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "MACD",
+      "pathTemplate": "/v1/indicators/macd/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/indicators/macd/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 136,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "RSI",
+      "pathTemplate": "/v1/indicators/rsi/{optionsTicker}",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/indicators/rsi/O%3ANVDA260618C00000500",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 107,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Exchanges",
+      "pathTemplate": "/v3/reference/exchanges",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/reference/exchanges",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 89,
+        "note": "53 results"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Holidays",
+      "pathTemplate": "/v1/marketstatus/upcoming",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/marketstatus/upcoming",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 95,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Status",
+      "pathTemplate": "/v1/marketstatus/now",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v1/marketstatus/now",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 90,
+        "note": "market=open"
+      }
+    },
+    {
+      "provider": "polygon-options",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Condition Codes",
+      "pathTemplate": "/v3/reference/conditions",
+      "source": "src/lib/polygon-docs-options-rest.ts",
+      "resolvedPath": "/v3/reference/conditions",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "All Tickers",
+      "pathTemplate": "/v3/reference/tickers",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v3/reference/tickers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 128,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Tickers",
+      "sectionId": "tickers",
+      "name": "Ticker Overview",
+      "pathTemplate": "/v3/reference/tickers/{ticker}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v3/reference/tickers/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 88,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Custom Bars",
+      "pathTemplate": "/v2/aggs/ticker/{indicesTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/I%3ASPX/range/1/day/2026-06-11/2026-06-18",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 91,
+        "note": "6 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Previous Day Bar",
+      "pathTemplate": "/v2/aggs/ticker/{indicesTicker}/prev",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v2/aggs/ticker/I%3ASPX/prev",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 90,
+        "note": "1 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Aggregate Bars (OHLC)",
+      "sectionId": "aggregates",
+      "name": "Daily Ticker Summary",
+      "pathTemplate": "/v1/open-close/{indicesTicker}/{date}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/open-close/I%3ASPX/2026-06-17",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 154,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Indices Snapshot",
+      "pathTemplate": "/v3/snapshot/indices",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v3/snapshot/indices",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 597,
+        "note": "2 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Snapshots",
+      "sectionId": "snapshots",
+      "name": "Unified Snapshot",
+      "pathTemplate": "/v3/snapshot",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v3/snapshot",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 147,
+        "note": "2 results"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "SMA",
+      "pathTemplate": "/v1/indicators/sma/{indicesTicker}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/indicators/sma/I%3ASPX",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 113,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "EMA",
+      "pathTemplate": "/v1/indicators/ema/{indicesTicker}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/indicators/ema/I%3ASPX",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 110,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "MACD",
+      "pathTemplate": "/v1/indicators/macd/{indicesTicker}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/indicators/macd/I%3ASPX",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 160,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Technical Indicators",
+      "sectionId": "indicators",
+      "name": "RSI",
+      "pathTemplate": "/v1/indicators/rsi/{indicesTicker}",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/indicators/rsi/I%3ASPX",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 121,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Holidays",
+      "pathTemplate": "/v1/marketstatus/upcoming",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/marketstatus/upcoming",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 94,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "polygon-indices",
+      "docSection": "Market Operations",
+      "sectionId": "market-ops",
+      "name": "Market Status",
+      "pathTemplate": "/v1/marketstatus/now",
+      "source": "src/lib/polygon-docs-indices-rest.ts",
+      "resolvedPath": "/v1/marketstatus/now",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 77,
+        "note": "market=open"
+      }
+    },
+    {
+      "provider": "polygon-benzinga",
+      "docSection": "Benzinga",
+      "sectionId": "news",
+      "name": "Real-time Benzinga News",
+      "pathTemplate": "/benzinga/v2/news",
+      "source": "src/lib/polygon-docs-benzinga-rest.ts",
+      "resolvedPath": "/benzinga/v2/news",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 120,
+        "note": "5 results"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "GEX Levels",
+      "pathTemplate": "/api/stock/{ticker}/gex-levels",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/gex-levels",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 168,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek Exposure",
+      "pathTemplate": "/api/stock/{ticker}/greek-exposure",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-exposure",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "251 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek Exposure By Expiry",
+      "pathTemplate": "/api/stock/{ticker}/greek-exposure/expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-exposure/expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 73,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek Exposure By Strike",
+      "pathTemplate": "/api/stock/{ticker}/greek-exposure/strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-exposure/strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 93,
+        "note": "284 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek Exposure By Strike And Expiry",
+      "pathTemplate": "/api/stock/{ticker}/greek-exposure/strike-expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-exposure/strike-expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 79,
+        "note": "261 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek flow",
+      "pathTemplate": "/api/stock/{ticker}/greek-flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-flow",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 88,
+        "note": "316 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Greek flow by expiry",
+      "pathTemplate": "/api/stock/{ticker}/greek-flow/{expiry}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greek-flow/2026-06-18",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 95,
+        "note": "316 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Spot GEX exposures per 1min",
+      "pathTemplate": "/api/stock/{ticker}/spot-exposures",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/spot-exposures",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 111,
+        "note": "474 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Spot GEX exposures by strike & expiry",
+      "pathTemplate": "/api/stock/{ticker}/spot-exposures/expiry-strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/spot-exposures/expiry-strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 66,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Spot GEX exposures by strike",
+      "pathTemplate": "/api/stock/{ticker}/spot-exposures/strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/spot-exposures/strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 119,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "GEX / Greeks",
+      "sectionId": "gex-greeks",
+      "name": "Spot GEX exposures by strike & expiry (Deprecated)",
+      "pathTemplate": "/api/stock/{ticker}/spot-exposures/{expiry}/strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/spot-exposures/2026-06-18/strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 105,
+        "note": "261 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Alerts",
+      "sectionId": "alerts",
+      "name": "Alerts",
+      "pathTemplate": "/api/alerts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/alerts",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 78,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Alerts",
+      "sectionId": "alerts",
+      "name": "Alert configurations",
+      "pathTemplate": "/api/alerts/configuration",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/alerts/configuration",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 74,
+        "note": "1 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Commodities",
+      "sectionId": "commodities",
+      "name": "Commodity Series",
+      "pathTemplate": "/api/commodities/{name}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/commodities/BERKSHIRE%2520HATHAWAY%2520INC",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 204,
+        "note": "Unknown commodity. Valid: wti, brent, natural-gas, copper, aluminum, wheat, corn, cotton, sugar, cof"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Companies",
+      "sectionId": "companies",
+      "name": "Company Dividends",
+      "pathTemplate": "/api/companies/{ticker}/dividends",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/NVDA/dividends",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 137,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Companies",
+      "sectionId": "companies",
+      "name": "Forward Earnings Estimates",
+      "pathTemplate": "/api/companies/{ticker}/earnings-estimates",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/NVDA/earnings-estimates",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 135,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Companies",
+      "sectionId": "companies",
+      "name": "Company Profile",
+      "pathTemplate": "/api/companies/{ticker}/profile",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/NVDA/profile",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 131,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Companies",
+      "sectionId": "companies",
+      "name": "Company Stock Splits",
+      "pathTemplate": "/api/companies/{ticker}/splits",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/NVDA/splits",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 144,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Companies",
+      "sectionId": "companies",
+      "name": "Earnings Call Transcript",
+      "pathTemplate": "/api/companies/{ticker}/transcripts/{quarter}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/NVDA/transcripts/2024Q1",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 196,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Congress",
+      "sectionId": "congress",
+      "name": "Recent Reports By Trader",
+      "pathTemplate": "/api/congress/congress-trader",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/congress-trader",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 98,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Congress",
+      "sectionId": "congress",
+      "name": "Recent Late Reports",
+      "pathTemplate": "/api/congress/late-reports",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/late-reports",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 114,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Congress",
+      "sectionId": "congress",
+      "name": "List of Politicians with Trade Data",
+      "pathTemplate": "/api/congress/politicians",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/politicians",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 109,
+        "note": "405 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Congress",
+      "sectionId": "congress",
+      "name": "Recent Congress Trades",
+      "pathTemplate": "/api/congress/recent-trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/recent-trades",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 122,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Crypto",
+      "sectionId": "crypto",
+      "name": "Crypto Whale Transactions",
+      "pathTemplate": "/api/crypto/whale-transactions",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/crypto/whale-transactions",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 78,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Crypto",
+      "sectionId": "crypto",
+      "name": "Recent Crypto Whale Trades",
+      "pathTemplate": "/api/crypto/whales/recent",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/crypto/whales/recent",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Crypto",
+      "sectionId": "crypto",
+      "name": "Crypto OHLC Candles",
+      "pathTemplate": "/api/crypto/{pair}/ohlc/{candle_size}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/crypto/X/ohlc/1d",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 69,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Crypto",
+      "sectionId": "crypto",
+      "name": "Crypto Pair State",
+      "pathTemplate": "/api/crypto/{pair}/state",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/crypto/X/state",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Darkpool",
+      "sectionId": "darkpool",
+      "name": "Recent Darkpool Trades",
+      "pathTemplate": "/api/darkpool/recent",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/darkpool/recent",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 73,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Darkpool",
+      "sectionId": "darkpool",
+      "name": "Ticker Darkpool Trades",
+      "pathTemplate": "/api/darkpool/{ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/darkpool/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 68,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Digital Currencies",
+      "sectionId": "digital-currencies",
+      "name": "Digital Currency Historical Series",
+      "pathTemplate": "/api/digital-currencies/history",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/digital-currencies/history",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 68,
+        "note": "symbol and market are required"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Digital Currencies",
+      "sectionId": "digital-currencies",
+      "name": "Digital Currency Intraday Series",
+      "pathTemplate": "/api/digital-currencies/intraday",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/digital-currencies/intraday",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 61,
+        "note": "symbol and market are required"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Earnings",
+      "sectionId": "earnings",
+      "name": "Afterhours",
+      "pathTemplate": "/api/earnings/afterhours",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/earnings/afterhours",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 87,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Earnings",
+      "sectionId": "earnings",
+      "name": "Premarket",
+      "pathTemplate": "/api/earnings/premarket",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/earnings/premarket",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 69,
+        "note": "2 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Earnings",
+      "sectionId": "earnings",
+      "name": "Historical Ticker Earnings",
+      "pathTemplate": "/api/earnings/{ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/earnings/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 82,
+        "note": "104 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Economy",
+      "sectionId": "economy",
+      "name": "Economic Indicator",
+      "pathTemplate": "/api/economy/{indicator}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/economy/GDP",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 134,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Etfs",
+      "sectionId": "etfs",
+      "name": "Exposure",
+      "pathTemplate": "/api/etfs/{ticker}/exposure",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/etfs/NVDA/exposure",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 100,
+        "note": "100 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Etfs",
+      "sectionId": "etfs",
+      "name": "Holdings",
+      "pathTemplate": "/api/etfs/{ticker}/holdings",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/etfs/NVDA/holdings",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Etfs",
+      "sectionId": "etfs",
+      "name": "Inflow & Outflow",
+      "pathTemplate": "/api/etfs/{ticker}/in-outflow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/etfs/NVDA/in-outflow",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 74,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Etfs",
+      "sectionId": "etfs",
+      "name": "Information",
+      "pathTemplate": "/api/etfs/{ticker}/info",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/etfs/NVDA/info",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Etfs",
+      "sectionId": "etfs",
+      "name": "Sector & Country weights",
+      "pathTemplate": "/api/etfs/{ticker}/weights",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/etfs/NVDA/weights",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 67,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Forex",
+      "sectionId": "forex",
+      "name": "FX Historical Series",
+      "pathTemplate": "/api/forex/history",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/forex/history",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 80,
+        "note": "from and to currency codes are required"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Forex",
+      "sectionId": "forex",
+      "name": "FX Intraday Series",
+      "pathTemplate": "/api/forex/intraday",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/forex/intraday",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 70,
+        "note": "from and to currency codes are required"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Forex",
+      "sectionId": "forex",
+      "name": "FX Spot Rate",
+      "pathTemplate": "/api/forex/rate",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/forex/rate",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 82,
+        "note": "from and to currency codes are required"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Group Flow",
+      "sectionId": "group-flow",
+      "name": "Greek flow",
+      "pathTemplate": "/api/group-flow/{flow_group}/greek-flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/group-flow/mag7/greek-flow",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 89,
+        "note": "317 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Group Flow",
+      "sectionId": "group-flow",
+      "name": "Greek flow by expiry",
+      "pathTemplate": "/api/group-flow/{flow_group}/greek-flow/{expiry}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/group-flow/mag7/greek-flow/2026-06-18",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 273,
+        "note": "317 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Insiders",
+      "sectionId": "insiders",
+      "name": "Transactions",
+      "pathTemplate": "/api/insider/transactions",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/insider/transactions",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Insiders",
+      "sectionId": "insiders",
+      "name": "Sector Flow",
+      "pathTemplate": "/api/insider/{sector}/sector-flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/insider/technology/sector-flow",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 71,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Insiders",
+      "sectionId": "insiders",
+      "name": "Insiders",
+      "pathTemplate": "/api/insider/{ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/insider/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "32 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Insiders",
+      "sectionId": "insiders",
+      "name": "Ticker Flow",
+      "pathTemplate": "/api/insider/{ticker}/ticker-flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/insider/NVDA/ticker-flow",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 68,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Institutional Activity (Deprecated)",
+      "pathTemplate": "/api/institution/{name}/activity",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institution/BERKSHIRE%2520HATHAWAY%2520INC/activity",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 87,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Institutional Activity",
+      "pathTemplate": "/api/institution/{name}/activity/v2",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institution/BERKSHIRE%2520HATHAWAY%2520INC/activity/v2",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 97,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Institutional Holdings",
+      "pathTemplate": "/api/institution/{name}/holdings",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institution/BERKSHIRE%2520HATHAWAY%2520INC/holdings",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 98,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Sector Exposure",
+      "pathTemplate": "/api/institution/{name}/sectors",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institution/BERKSHIRE%2520HATHAWAY%2520INC/sectors",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 86,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Institutional Ownership",
+      "pathTemplate": "/api/institution/{ticker}/ownership",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institution/NVDA/ownership",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 157,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "List of Institutions",
+      "pathTemplate": "/api/institutions",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institutions",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 157,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Institution",
+      "sectionId": "institution",
+      "name": "Latest Filings",
+      "pathTemplate": "/api/institutions/latest_filings",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/institutions/latest_filings",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 122,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Intel",
+      "sectionId": "intel",
+      "name": "Sliding-Window Analytics",
+      "pathTemplate": "/api/analytics/sliding",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/analytics/sliding",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 71,
+        "note": "symbols is required (comma-separated tickers)"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Intel",
+      "sectionId": "intel",
+      "name": "Fixed-Window Analytics",
+      "pathTemplate": "/api/analytics/window",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/analytics/window",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 72,
+        "note": "symbols is required (comma-separated tickers)"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Intel",
+      "sectionId": "intel",
+      "name": "IPO Calendar",
+      "pathTemplate": "/api/calendar/ipo",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/calendar/ipo",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 129,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Intel",
+      "sectionId": "intel",
+      "name": "Active or Delisted Securities",
+      "pathTemplate": "/api/companies/listings",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/companies/listings",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 621,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Intel",
+      "sectionId": "intel",
+      "name": "Top Movers",
+      "pathTemplate": "/api/market/movers",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/movers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 337,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Lit-flow",
+      "sectionId": "lit-flow",
+      "name": "Recent Lit Flow Trades",
+      "pathTemplate": "/api/lit-flow/recent",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/lit-flow/recent",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 77,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Lit-flow",
+      "sectionId": "lit-flow",
+      "name": "Ticker Lit Flow Trades",
+      "pathTemplate": "/api/lit-flow/{ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/lit-flow/NVDA",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 125,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Correlations",
+      "pathTemplate": "/api/market/correlations",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/correlations",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 400,
+        "ok": false,
+        "blocked": false,
+        "ms": 68,
+        "note": "Please provide tickers as a list of strings in the 'tickers' parameter, such as ?tickers=AAPL,SPY,JP"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Economic calendar",
+      "pathTemplate": "/api/market/economic-calendar",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/economic-calendar",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 73,
+        "note": "35 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "FDA Calendar",
+      "pathTemplate": "/api/market/fda-calendar",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/fda-calendar",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 100,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Total Insider Buy & Sells",
+      "pathTemplate": "/api/market/insider-buy-sells",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/insider-buy-sells",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 68,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Market Tide",
+      "pathTemplate": "/api/market/market-tide",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/market-tide",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 92,
+        "note": "64 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "OI Change",
+      "pathTemplate": "/api/market/oi-change",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/oi-change",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 73,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Sector Etfs",
+      "pathTemplate": "/api/market/sector-etfs",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/sector-etfs",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "12 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Top Net Impact",
+      "pathTemplate": "/api/market/top-net-impact",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/top-net-impact",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 128,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Total Options Volume",
+      "pathTemplate": "/api/market/total-options-volume",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/total-options-volume",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 66,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Sector Tide",
+      "pathTemplate": "/api/market/{sector}/sector-tide",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/technology/sector-tide",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "318 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "ETF Tide",
+      "pathTemplate": "/api/market/{ticker}/etf-tide",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/market/NVDA/etf-tide",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "390 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Market",
+      "sectionId": "market",
+      "name": "Net Flow Expiry",
+      "pathTemplate": "/api/net-flow/expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/net-flow/expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 93,
+        "note": "1 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "News",
+      "sectionId": "news",
+      "name": "News Headlines",
+      "pathTemplate": "/api/news/headlines",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/news/headlines",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 79,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Flow Data",
+      "pathTemplate": "/api/option-contract/{id}/flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/flow",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 66,
+        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Historic Data",
+      "pathTemplate": "/api/option-contract/{id}/historic",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/historic",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 66,
+        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Intraday Data",
+      "pathTemplate": "/api/option-contract/{id}/intraday",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/intraday",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 77,
+        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Volume Profile",
+      "pathTemplate": "/api/option-contract/{id}/volume-profile",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/volume-profile",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 94,
+        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Expiry Breakdown",
+      "pathTemplate": "/api/stock/{ticker}/expiry-breakdown",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/expiry-breakdown",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-contract",
+      "sectionId": "option-contract",
+      "name": "Option contracts",
+      "pathTemplate": "/api/stock/{ticker}/option-contracts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/option-contracts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 75,
+        "note": "20 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-trade",
+      "sectionId": "option-trade",
+      "name": "Exchange & Trade Code Breakdown",
+      "pathTemplate": "/api/option-trades/exchange-breakdown/{date}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-trades/exchange-breakdown/2026-06-17",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 558,
+        "note": "146 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-trade",
+      "sectionId": "option-trade",
+      "name": "Flow Alerts",
+      "pathTemplate": "/api/option-trades/flow-alerts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-trades/flow-alerts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 82,
+        "note": "5 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-trade",
+      "sectionId": "option-trade",
+      "name": "Flow Alert by ID",
+      "pathTemplate": "/api/option-trades/flow-alerts/{id}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-trades/flow-alerts/O%3ANVDA260618C00000500",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 400,
+        "ok": false,
+        "blocked": false,
+        "ms": 68,
+        "note": "Invalid UUID format"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-trade",
+      "sectionId": "option-trade",
+      "name": "Full Tape",
+      "pathTemplate": "/api/option-trades/full-tape/{date}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-trades/full-tape/2026-06-17",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 0,
+        "ok": false,
+        "blocked": false,
+        "ms": 34483,
+        "note": "Cannot create a string longer than 0x1fffffe8 characters"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Option-trade",
+      "sectionId": "option-trade",
+      "name": "Optionable Tickers",
+      "pathTemplate": "/api/option-trades/optionable-tickers",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/option-trades/optionable-tickers",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 711,
+        "note": "6295 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Politician Portfolios",
+      "sectionId": "politician-portfolios",
+      "name": "Annual Disclosures List",
+      "pathTemplate": "/api/politician-portfolios/disclosures",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/politician-portfolios/disclosures",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 80,
+        "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Politician Portfolios",
+      "sectionId": "politician-portfolios",
+      "name": "Politician Portfolio Holders by Ticker",
+      "pathTemplate": "/api/politician-portfolios/holders/{ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/politician-portfolios/holders/NVDA",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 77,
+        "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Politician Portfolios",
+      "sectionId": "politician-portfolios",
+      "name": "Politicians List",
+      "pathTemplate": "/api/politician-portfolios/people",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/politician-portfolios/people",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 75,
+        "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Politician Portfolios",
+      "sectionId": "politician-portfolios",
+      "name": "Politician Trades",
+      "pathTemplate": "/api/politician-portfolios/recent_trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/politician-portfolios/recent_trades",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 113,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Politician Portfolios",
+      "sectionId": "politician-portfolios",
+      "name": "Politician Portfolios",
+      "pathTemplate": "/api/politician-portfolios/{politician_id}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/politician-portfolios/1",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 69,
+        "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market Insiders",
+      "pathTemplate": "/api/predictions/insiders",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/insiders",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 223,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market Details",
+      "pathTemplate": "/api/predictions/market/{asset_id}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/market/1",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 105,
+        "note": "Not found"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market Liquidity",
+      "pathTemplate": "/api/predictions/market/{asset_id}/liquidity",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/market/1/liquidity",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 230,
+        "note": "Not found"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market Positions",
+      "pathTemplate": "/api/predictions/market/{asset_id}/positions",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/market/1/positions",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 100,
+        "note": "Not found"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Search Prediction Market Users",
+      "pathTemplate": "/api/predictions/search-users",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/search-users",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 400,
+        "ok": false,
+        "blocked": false,
+        "ms": 74,
+        "note": "Missing required parameter: q"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Smart Money",
+      "pathTemplate": "/api/predictions/smart-money",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/smart-money",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 278,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Unusual Prediction Markets",
+      "pathTemplate": "/api/predictions/unusual",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/unusual",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 151,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market User",
+      "pathTemplate": "/api/predictions/user/{user_id}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/user/1",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 110,
+        "note": "HashDive API error: 400"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Predictions",
+      "sectionId": "predictions",
+      "name": "Prediction Market Whales",
+      "pathTemplate": "/api/predictions/whales",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/predictions/whales",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 474,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "List Private Markets Companies",
+      "pathTemplate": "/api/private-markets/companies",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 66,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Company Profile",
+      "pathTemplate": "/api/private-markets/companies/{npm_ticker}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies/SPACE",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 68,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Funding Rounds",
+      "pathTemplate": "/api/private-markets/companies/{npm_ticker}/funding",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies/SPACE/funding",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 86,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Investors for Company",
+      "pathTemplate": "/api/private-markets/companies/{npm_ticker}/investors",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies/SPACE/investors",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 78,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Management",
+      "pathTemplate": "/api/private-markets/companies/{npm_ticker}/management",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies/SPACE/management",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 77,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Pricing History",
+      "pathTemplate": "/api/private-markets/companies/{npm_ticker}/pricing",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/companies/SPACE/pricing",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 75,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Top Private Markets Investors",
+      "pathTemplate": "/api/private-markets/investors",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/investors",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 131,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Private Markets Investor Profile",
+      "pathTemplate": "/api/private-markets/investors/{name}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/investors/BERKSHIRE%2520HATHAWAY%2520INC",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 75,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Private Markets",
+      "sectionId": "private-markets",
+      "name": "Search Private Markets",
+      "pathTemplate": "/api/private-markets/search",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/private-markets/search",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 69,
+        "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Screener",
+      "sectionId": "screener",
+      "name": "Analyst Rating",
+      "pathTemplate": "/api/screener/analysts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/screener/analysts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Screener",
+      "sectionId": "screener",
+      "name": "Hottest Chains",
+      "pathTemplate": "/api/screener/option-contracts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/screener/option-contracts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Screener",
+      "sectionId": "screener",
+      "name": "Stock Screener",
+      "pathTemplate": "/api/screener/stocks",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/screener/stocks",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 126,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Seasonality",
+      "sectionId": "seasonality",
+      "name": "Market Seasonality",
+      "pathTemplate": "/api/seasonality/market",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/seasonality/market",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 89,
+        "note": "168 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Seasonality",
+      "sectionId": "seasonality",
+      "name": "Month Performers",
+      "pathTemplate": "/api/seasonality/{month}/performers",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/seasonality/1/performers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 111,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Seasonality",
+      "sectionId": "seasonality",
+      "name": "Average return per month",
+      "pathTemplate": "/api/seasonality/{ticker}/monthly",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/seasonality/NVDA/monthly",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 93,
+        "note": "12 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Seasonality",
+      "sectionId": "seasonality",
+      "name": "Price change per month per year",
+      "pathTemplate": "/api/seasonality/{ticker}/year-month",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/seasonality/NVDA/year-month",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 95,
+        "note": "234 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "Short Screener",
+      "pathTemplate": "/api/short_screener",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/short_screener",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "50 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "Short Data",
+      "pathTemplate": "/api/shorts/{ticker}/data",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/data",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 119,
+        "note": "1000 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "Failures to Deliver",
+      "pathTemplate": "/api/shorts/{ticker}/ftds",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/ftds",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 91,
+        "note": "729 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "V1 Short Interest and Float (Deprecated)",
+      "pathTemplate": "/api/shorts/{ticker}/interest-float",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/interest-float",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 66,
+        "note": "17 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "V2 Short Interest and Float",
+      "pathTemplate": "/api/shorts/{ticker}/interest-float/v2",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/interest-float/v2",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 131,
+        "note": "120 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "Short Volume and Ratio",
+      "pathTemplate": "/api/shorts/{ticker}/volume-and-ratio",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/volume-and-ratio",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 92,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Short",
+      "sectionId": "short",
+      "name": "Short Volume By Exchange",
+      "pathTemplate": "/api/shorts/{ticker}/volumes-by-exchange",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/shorts/NVDA/volumes-by-exchange",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 88,
+        "note": "500 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Companies in Sector",
+      "pathTemplate": "/api/stock/{sector}/tickers",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/technology/tickers",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 71,
+        "note": "Invalid path input: technology (technology is not a valid input. Valid inputs are Basic Materials, C"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "ATM Chains",
+      "pathTemplate": "/api/stock/{ticker}/atm-chains",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/atm-chains",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 76,
+        "note": "Invalid query input(s): expirations=[] (List input expirations must be provided and may not be an em"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Balance Sheets",
+      "pathTemplate": "/api/stock/{ticker}/balance-sheets",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/balance-sheets",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 93,
+        "note": "102 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Cash Flow Statements",
+      "pathTemplate": "/api/stock/{ticker}/cash-flows",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/cash-flows",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 90,
+        "note": "102 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Earnings History",
+      "pathTemplate": "/api/stock/{ticker}/earnings",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/earnings",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 78,
+        "note": "138 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Full Financials",
+      "pathTemplate": "/api/stock/{ticker}/financials",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/financials",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 114,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Flow Alerts",
+      "pathTemplate": "/api/stock/{ticker}/flow-alerts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/flow-alerts",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "5 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Flow per expiry",
+      "pathTemplate": "/api/stock/{ticker}/flow-per-expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/flow-per-expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Flow per strike",
+      "pathTemplate": "/api/stock/{ticker}/flow-per-strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/flow-per-strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 87,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Flow per strike intraday",
+      "pathTemplate": "/api/stock/{ticker}/flow-per-strike-intraday",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/flow-per-strike-intraday",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 256,
+        "note": "2057 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Recent flows",
+      "pathTemplate": "/api/stock/{ticker}/flow-recent",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/flow-recent",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 107,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Fundamental Breakdown",
+      "pathTemplate": "/api/stock/{ticker}/fundamental-breakdown",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/fundamental-breakdown",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 99,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Greeks",
+      "pathTemplate": "/api/stock/{ticker}/greeks",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/greeks",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 107,
+        "note": "261 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Historical Risk Reversal Skew",
+      "pathTemplate": "/api/stock/{ticker}/historical-risk-reversal-skew",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/historical-risk-reversal-skew",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 80,
+        "note": "251 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Income Statements",
+      "pathTemplate": "/api/stock/{ticker}/income-statements",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/income-statements",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 85,
+        "note": "102 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Information",
+      "pathTemplate": "/api/stock/{ticker}/info",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/info",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Insider buy & sells",
+      "pathTemplate": "/api/stock/{ticker}/insider-buy-sells",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/insider-buy-sells",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 84,
+        "note": "829 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Interpolated IV",
+      "pathTemplate": "/api/stock/{ticker}/interpolated-iv",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/interpolated-iv",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 84,
+        "note": "9 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "IV Rank",
+      "pathTemplate": "/api/stock/{ticker}/iv-rank",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/iv-rank",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 75,
+        "note": "5 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Max Pain",
+      "pathTemplate": "/api/stock/{ticker}/max-pain",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/max-pain",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 67,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Call/Put Net/Vol Ticks",
+      "pathTemplate": "/api/stock/{ticker}/net-prem-ticks",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/net-prem-ticks",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 89,
+        "note": "320 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Nope",
+      "pathTemplate": "/api/stock/{ticker}/nope",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/nope",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 128,
+        "note": "320 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "OHLC",
+      "pathTemplate": "/api/stock/{ticker}/ohlc/{candle_size}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/ohlc/1d",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 86,
+        "note": "755 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "OI Change",
+      "pathTemplate": "/api/stock/{ticker}/oi-change",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/oi-change",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 67,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "OI per Expiry",
+      "pathTemplate": "/api/stock/{ticker}/oi-per-expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/oi-per-expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 84,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "OI per Strike",
+      "pathTemplate": "/api/stock/{ticker}/oi-per-strike",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/oi-per-strike",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 87,
+        "note": "284 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Option Chains",
+      "pathTemplate": "/api/stock/{ticker}/option-chains",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/option-chains",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 85,
+        "note": "4241 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Option Price Levels",
+      "pathTemplate": "/api/stock/{ticker}/option/stock-price-levels",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/option/stock-price-levels",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 123,
+        "note": "6998 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Volume & OI per Expiry",
+      "pathTemplate": "/api/stock/{ticker}/option/volume-oi-expiry",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/option/volume-oi-expiry",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Options Volume",
+      "pathTemplate": "/api/stock/{ticker}/options-volume",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/options-volume",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 75,
+        "note": "10 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Ownership",
+      "pathTemplate": "/api/stock/{ticker}/ownership",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/ownership",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 71,
+        "note": "Missing access for ownership endpoint. This is an enterprise only endpoint. Contact dev@unusualwhale"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Stock State",
+      "pathTemplate": "/api/stock/{ticker}/stock-state",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/stock-state",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 82,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Off/Lit Price Levels",
+      "pathTemplate": "/api/stock/{ticker}/stock-volume-price-levels",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/stock-volume-price-levels",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 294,
+        "note": "32351 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Technical Indicator",
+      "pathTemplate": "/api/stock/{ticker}/technical-indicator/{function}",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/technical-indicator/sma",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 75,
+        "note": "251 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Realized Volatility",
+      "pathTemplate": "/api/stock/{ticker}/volatility/realized",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/realized",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 79,
+        "note": "251 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Volatility Statistics",
+      "pathTemplate": "/api/stock/{ticker}/volatility/stats",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/stats",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 87,
+        "note": "OK"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock",
+      "sectionId": "stock",
+      "name": "Implied Volatility Term Structure",
+      "pathTemplate": "/api/stock/{ticker}/volatility/term-structure",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/term-structure",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 76,
+        "note": "24 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Stock-directory",
+      "sectionId": "stock-directory",
+      "name": "Ticker Exchange Mapping",
+      "pathTemplate": "/api/stock-directory/ticker-exchanges",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock-directory/ticker-exchanges",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 187,
+        "note": "17910 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Unusual Trades",
+      "sectionId": "unusual-trades",
+      "name": "Unusual Congressional Trades",
+      "pathTemplate": "/api/congress/unusual-trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/unusual-trades",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 64,
+        "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Unusual Trades",
+      "sectionId": "unusual-trades",
+      "name": "Unusual Trades by Ticker",
+      "pathTemplate": "/api/congress/unusual-trades/by-tickers",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/unusual-trades/by-tickers",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 75,
+        "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Unusual Trades",
+      "sectionId": "unusual-trades",
+      "name": "Unusual Trades Chart Data",
+      "pathTemplate": "/api/congress/unusual-trades/chart-data",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/unusual-trades/chart-data",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 66,
+        "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Unusual Trades",
+      "sectionId": "unusual-trades",
+      "name": "Unusual Trades Aggregate Stats",
+      "pathTemplate": "/api/congress/unusual-trades/stats",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/congress/unusual-trades/stats",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 422,
+        "ok": false,
+        "blocked": false,
+        "ms": 65,
+        "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "Volatility Anomaly Score",
+      "pathTemplate": "/api/stock/{ticker}/volatility/anomaly",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/anomaly",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 62,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "Volatility Character",
+      "pathTemplate": "/api/stock/{ticker}/volatility/character",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/character",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 72,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "Variance Risk Premium",
+      "pathTemplate": "/api/stock/{ticker}/volatility/variance-risk-premium",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/stock/NVDA/volatility/variance-risk-premium",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 88,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "Top Volatility Anomalies",
+      "pathTemplate": "/api/volatility/anomaly/top",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/volatility/anomaly/top",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 127,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "Top Volatility Character",
+      "pathTemplate": "/api/volatility/character/top",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/volatility/character/top",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 71,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Volatility",
+      "sectionId": "volatility",
+      "name": "VIX Term Structure",
+      "pathTemplate": "/api/volatility/vix-term-structure",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/volatility/vix-term-structure",
+      "usedInCode": true,
+      "unused": false,
+      "probe": {
+        "status": 403,
+        "ok": false,
+        "blocked": true,
+        "ms": 75,
+        "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "WebSocket channels",
+      "pathTemplate": "/api/socket",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 66,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Contract screener",
+      "pathTemplate": "/api/socket/contract_screener",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/contract_screener",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 74,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Custom alerts",
+      "pathTemplate": "/api/socket/custom_alerts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/custom_alerts",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 80,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Flow alerts",
+      "pathTemplate": "/api/socket/flow_alerts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/flow_alerts",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 82,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "GEX",
+      "pathTemplate": "/api/socket/gex",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/gex",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 75,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Ticker Interval flow",
+      "pathTemplate": "/api/socket/interval_flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/interval_flow",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Lit trades",
+      "pathTemplate": "/api/socket/lit_trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/lit_trades",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 72,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Market tide",
+      "pathTemplate": "/api/socket/market_tide",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/market_tide",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 80,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Net flow",
+      "pathTemplate": "/api/socket/net_flow",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/net_flow",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "News",
+      "pathTemplate": "/api/socket/news",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/news",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 81,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Off-lit trades",
+      "pathTemplate": "/api/socket/off_lit_trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/off_lit_trades",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 70,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Option trades",
+      "pathTemplate": "/api/socket/option_trades",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/option_trades",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 83,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Price",
+      "pathTemplate": "/api/socket/price",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/price",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 69,
+        "note": "0 rows"
+      }
+    },
+    {
+      "provider": "unusual_whales",
+      "docSection": "Websocket",
+      "sectionId": "websocket",
+      "name": "Trading halts",
+      "pathTemplate": "/api/socket/trading_halts",
+      "source": "src/lib/uw-docs-catalog.ts",
+      "resolvedPath": "/api/socket/trading_halts",
+      "usedInCode": false,
+      "unused": true,
+      "probe": {
+        "status": 200,
+        "ok": true,
+        "blocked": false,
+        "ms": 80,
+        "note": "0 rows"
+      }
+    }
+  ]
+}

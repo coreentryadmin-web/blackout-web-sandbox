@@ -10,9 +10,15 @@ type AgentSidebarProps = {
 };
 
 const ACCENT_CLASS = {
-  cyan: "nighthawk-agent-card-cyan",
+  gold: "nighthawk-agent-card-gold",
   bear: "nighthawk-agent-card-bear",
   purple: "nighthawk-agent-card-purple",
+} as const;
+
+const MODE_ICON = {
+  day: "⚡",
+  swing: "◎",
+  leap: "◈",
 } as const;
 
 export function AgentSidebar({ activeMode, onSelect }: AgentSidebarProps) {
@@ -22,7 +28,7 @@ export function AgentSidebar({ activeMode, onSelect }: AgentSidebarProps) {
         <p className="nighthawk-agent-kicker">Hunt modes</p>
         <h2 className="nighthawk-agent-title">Power up an agent</h2>
         <p className="nighthawk-agent-sub">
-          Each mode runs its own ruleset — flow, technicals, and contract logic tuned to the horizon.
+          Flow, technicals, and contract logic tuned to your horizon.
         </p>
       </header>
 
@@ -40,12 +46,13 @@ export function AgentSidebar({ activeMode, onSelect }: AgentSidebarProps) {
           >
             <div className="nighthawk-agent-card-top">
               <span className="nighthawk-agent-card-icon" aria-hidden>
-                {agent.mode === "day" ? "⚡" : agent.mode === "swing" ? "◎" : "◈"}
+                {MODE_ICON[agent.mode]}
               </span>
               <span className="nighthawk-agent-card-power">Power</span>
             </div>
             <p className="nighthawk-agent-card-name">{agent.title}</p>
             <p className="nighthawk-agent-card-tag">{agent.tagline}</p>
+            <p className="nighthawk-agent-card-desc">{agent.description}</p>
           </button>
         ))}
       </div>

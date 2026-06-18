@@ -16,7 +16,9 @@ type FeedKey =
   | "dark_pool"
   | "vol"
   | "play"
-  | "open_plays";
+  | "open_plays"
+  | "nighthawk"
+  | "flow_tape";
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 
@@ -39,8 +41,10 @@ export async function captureLargoLiveFeed(intent: LargoQuestionIntent): Promise
     { key: "technicals", promise: safeTool("get_technicals", { ticker }) },
     { key: "news", promise: safeTool("get_news", { ticker }) },
     { key: "flow", promise: safeTool("get_options_flow", { ticker }) },
+    { key: "flow_tape", promise: safeTool("get_flow_tape", { limit: 40 }) },
     { key: "dark_pool", promise: safeTool("get_dark_pool", { ticker }) },
     { key: "vol", promise: safeTool("get_volatility_regime", { ticker }) },
+    { key: "nighthawk", promise: safeTool("get_nighthawk_edition") },
   ];
 
   if (intent.needsPlayState || intent.needsSpxDesk || ticker === "SPX") {
@@ -291,6 +295,52 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
   if (market?.indices) {
     lines.push("### Market indices");
     lines.push(JSON.stringify(market.indices).slice(0, 400));
+    lines.push("");
+  }
+
+  const hawk = asObj(feed.nighthawk);
+  if (hawk && !hawk.error && hawk.available) {
+    lines.push("### Night Hawk playbook");
+    lines.push(
+      [
+        hawk.edition_for ? `Edition for ${hawk.edition_for}` : null,
+        hawk.recap_headline ? String(hawk.recap_headline) : null,
+        hawk.play_count != null ? `${hawk.play_count} plays` : null,
+        Array.isArray(hawk.plays)
+          ? hawk.plays
+              .slice(0, 5)
+              .map((p) => {
+                const o = asObj(p);
+                if (!o) return "";
+                return `${o.ticker ?? "?"} ${o.direction ?? ""} · ${o.options_play ?? o.thesis ?? ""}`.trim();
+              })
+              .filter(Boolean)
+              .join("; ")
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    );
+    lines.push("");
+  }
+
+  const tape = asObj(feed.flow_tape);
+  if (tape && !tape.error && tape.count) {
+    lines.push("### Flow feed tape (Postgres)");
+    lines.push(`Alerts: ${tape.count} · Total prem $${Number(tape.total_premium ?? 0).toLocaleString()}`);
+    const tops = asArr(tape.top_tickers).slice(0, 6);
+    if (tops.length) {
+      lines.push(
+        tops
+          .map((t) => {
+            const o = asObj(t);
+            if (!o) return "";
+            return `${o.ticker} $${Number(o.premium ?? 0).toLocaleString()} (${o.count} prints)`;
+          })
+          .filter(Boolean)
+          .join(" · ")
+      );
+    }
     lines.push("");
   }
 

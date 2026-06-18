@@ -12,9 +12,27 @@ export type PlaybookPlay = {
   target: string;
   stop: string;
   options_play: string;
+  /** Per-share option entry premium (must be ≤ $20). */
+  entry_premium?: number;
+  /** entry_premium × 100 — cost for one contract. */
+  entry_cost_per_contract?: number;
+  premium_cap_ok?: boolean;
+  risk_note?: string;
   score: number;
   flow_streak_days?: number;
   iv_rank?: number;
+};
+
+export type PlayExplainRequest = {
+  edition_for: string;
+  ticker: string;
+};
+
+export type PlayExplainResponse = {
+  ticker: string;
+  rank: number;
+  explanation: string;
+  cached: boolean;
 };
 
 export type NightHawkEdition = {
@@ -23,6 +41,7 @@ export type NightHawkEdition = {
   published_at: string | null;
   recap_headline: string | null;
   recap_summary: string | null;
+  market_recap?: Record<string, unknown> | null;
   plays: PlaybookPlay[];
 };
 
@@ -50,4 +69,11 @@ export type HuntResponse = {
   scanned_at: string;
   message: string;
   plays: HuntPlay[];
+  /** Live cross-service context available to hunt agents. */
+  platform_context?: {
+    spx_price: number | null;
+    flow_alerts: number;
+    edition_for: string | null;
+    edition_plays: number;
+  };
 };

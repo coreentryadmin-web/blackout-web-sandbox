@@ -1,200 +1,86 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { clsx } from "clsx";
-import type { ApiDashboardPayload, ProviderDashboardRow } from "@/lib/admin-api-dashboard";
-import { ActionButton, DataTable, HealthMeter, LivePill, MegaStat, TabCommandHero, WinRateRing } from "@/components/admin/AdminUi";
+import type { ApiDashboardPayload } from "@/lib/admin-api-dashboard";
+import type { RegistryEndpointRow } from "@/lib/admin-endpoint-registry";
+import {
+  ActionButton,
+  HealthMeter,
+  LivePill,
+  MegaStat,
+  TabCommandHero,
+  WinRateRing,
+} from "@/components/admin/AdminUi";
+import { AdminApiLiveFeed } from "@/components/admin/AdminApiLiveFeed";
+import { AdminApiEventDetail } from "@/components/admin/AdminApiEventDetail";
+import { AdminApiCallTimeline } from "@/components/admin/AdminApiCallTimeline";
 
-function statusDot(status: string): string {
-  switch (status) {
-    case "ok":
-      return "admin-api-dot-ok";
-    case "error":
-      return "admin-api-dot-error";
-    case "unconfigured":
-      return "admin-api-dot-off";
-    default:
-      return "admin-api-dot-idle";
-  }
-}
+type ViewTab = "overview" | "registry" | "internal";
+type UsageFilter = "all" | "used" | "unused" | "candidates" | "risks";
+type ProbeFilter = "all" | "ok" | "fail" | "blocked" | "unknown";
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString(undefined, {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
     hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtClock(): string {
+  return new Date().toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
   });
 }
 
-function fmtLatency(ms: number | null | undefined): string {
-  if (ms == null) return "—";
-  return `${ms}ms`;
+function probeBadge(status: RegistryEndpointRow["probeStatus"]) {
+  const cls = {
+    ok: "admin-ep-badge-ok",
+    fail: "admin-ep-badge-fail",
+    blocked: "admin-ep-badge-blocked",
+    rate_limited: "admin-ep-badge-warn",
+    unknown: "admin-ep-badge-unknown",
+  }[status];
+  const label = { ok: "OK", fail: "Fail", blocked: "Blocked", rate_limited: "429", unknown: "—" }[status];
+  return <span className={clsx("admin-ep-badge", cls)}>{label}</span>;
 }
 
-function ProviderCard({
-  provider,
-  expanded,
-  onToggle,
-}: {
-  provider: ProviderDashboardRow;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const healthClass = !provider.configured
-    ? "admin-api-card-off"
-    : provider.probe.ok
-      ? "admin-api-card-ok"
-      : provider.probe.at
-        ? "admin-api-card-error"
-        : "admin-api-card-idle";
-
-  const errorRate =
-    provider.telemetry.calls > 0 ? (provider.telemetry.errors / provider.telemetry.calls) * 100 : 0;
-  const successRate = Math.max(0, 100 - errorRate);
-
-  return (
-    <article className={clsx("admin-api-card admin-provider-card admin-deck-panel-wrap", healthClass, expanded && "admin-api-card-open admin-deck-open")}>
-      <div className="admin-provider-strip admin-deck-strip" aria-hidden />
-      <button type="button" className="admin-api-card-head admin-deck-head" onClick={onToggle}>
-        <div className="admin-api-card-title-row">
-          <span className={clsx("admin-api-dot", statusDot(provider.probe.ok ? "ok" : provider.configured ? "error" : "unconfigured"))} />
-          <div>
-            <h3 className="admin-api-card-title admin-deck-head-title">{provider.name}</h3>
-            <p className="admin-api-card-desc">{provider.description}</p>
-          </div>
-        </div>
-        <div className="admin-api-card-meta">
-          <span className="admin-deck-badge">{provider.configured ? "Configured" : "Not configured"}</span>
-          <span>{provider.telemetry.calls} calls</span>
-          {provider.telemetry.errors > 0 && (
-            <span className="admin-api-meta-error">{provider.telemetry.errors} errors</span>
-          )}
-          <span className="admin-deck-chevron">{expanded ? "▾" : "▸"}</span>
-        </div>
-      </button>
-
-      {!expanded && provider.configured && provider.telemetry.calls > 0 && (
-        <div className="admin-provider-meter px-5 pb-4 pl-6">
-          <HealthMeter
-            label="Success rate"
-            value={successRate}
-            tone={successRate >= 90 ? "bull" : successRate >= 70 ? "amber" : "bear"}
-          />
-        </div>
-      )}
-
-      {expanded && (
-        <div className="admin-api-card-body admin-deck-body">
-          <div className="admin-api-probe-row">
-            <span className="admin-api-probe-label">Live probe</span>
-            {provider.probe.at ? (
-              <>
-                <span className={clsx("admin-api-badge", provider.probe.ok ? "admin-api-badge-ok" : "admin-api-badge-error")}>
-                  {provider.probe.ok ? "Healthy" : "Failed"}
-                </span>
-                <span>{fmtLatency(provider.probe.latency_ms)}</span>
-                <span>{fmtTime(provider.probe.at)}</span>
-                {provider.probe.error && (
-                  <span className="admin-api-probe-error">{provider.probe.error}</span>
-                )}
-              </>
-            ) : (
-              <span className="admin-api-muted">Run refresh with probe to check live status</span>
-            )}
-          </div>
-
-          {provider.env_keys.length > 0 && (
-            <p className="admin-api-env">
-              Env: {provider.env_keys.map((k) => (
-                <code key={k}>{k}</code>
-              ))}
-            </p>
-          )}
-
-          {provider.docs_url && (
-            <a href={provider.docs_url} target="_blank" rel="noreferrer" className="admin-api-docs-link">
-              API docs ↗
-            </a>
-          )}
-
-          <div className="admin-scroll-table admin-table-wrap">
-            <table className="admin-table admin-table-pro admin-api-endpoint-table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Method</th>
-                  <th>Endpoint</th>
-                  <th>Last</th>
-                  <th>Latency</th>
-                  <th>Errors</th>
-                  <th>Used by</th>
-                </tr>
-              </thead>
-              <tbody>
-                {provider.endpoints.map((ep) => (
-                  <tr key={`${ep.method}-${ep.endpoint}`}>
-                    <td>
-                      <span className={clsx("admin-api-dot", statusDot(ep.status))} title={ep.status} />
-                    </td>
-                    <td className="admin-api-mono">{ep.method}</td>
-                    <td className="admin-api-mono admin-api-endpoint">{ep.endpoint}</td>
-                    <td>{fmtTime(ep.telemetry?.last_at ?? null)}</td>
-                    <td>{fmtLatency(ep.telemetry?.last_latency_ms)}</td>
-                    <td>
-                      {ep.telemetry?.error_count ? (
-                        <span className="admin-api-meta-error">{ep.telemetry.error_count}</span>
-                      ) : (
-                        "0"
-                      )}
-                    </td>
-                    <td className="admin-api-used-by">{ep.used_by.join(", ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {provider.endpoints.some((e) => e.telemetry?.last_error) && (
-            <div className="admin-api-endpoint-errors">
-              <p className="admin-section-title">Endpoint errors</p>
-              <ul>
-                {provider.endpoints
-                  .filter((e) => e.telemetry?.last_error)
-                  .map((e) => (
-                    <li key={`err-${e.endpoint}`}>
-                      <code>{e.endpoint}</code> — {e.telemetry?.last_error}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-    </article>
-  );
+function runtimeDot(status: RegistryEndpointRow["runtimeStatus"]) {
+  const cls = {
+    ok: "admin-api-dot-ok",
+    error: "admin-api-dot-error",
+    idle: "admin-api-dot-idle",
+    unconfigured: "admin-api-dot-off",
+    unknown: "admin-api-dot-idle",
+  }[status];
+  return <span className={clsx("admin-api-dot", cls)} title={status} />;
 }
 
 export function AdminApiDashboard() {
   const [data, setData] = useState<ApiDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [clock, setClock] = useState("");
+  const [viewTab, setViewTab] = useState<ViewTab>("overview");
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
+  const [probeFilter, setProbeFilter] = useState<ProbeFilter>("all");
+  const [providerFilter, setProviderFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    const tick = () => {
-      setClock(
-        new Date().toLocaleString("en-US", {
-          timeZone: "America/New_York",
-          weekday: "short",
-          hour: "numeric",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      );
-    };
+    const tick = () => setClock(fmtClock());
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -202,7 +88,7 @@ export function AdminApiDashboard() {
 
   const load = useCallback(async (withProbe = false) => {
     if (withProbe) setProbing(true);
-    else setLoading(true);
+    else if (!data) setLoading(true);
     setError(null);
     try {
       const qs = withProbe ? "?probe=1" : "";
@@ -215,73 +101,95 @@ export function AdminApiDashboard() {
       setLoading(false);
       setProbing(false);
     }
-  }, []);
+  }, [data]);
+
+  const rescan = useCallback(async () => {
+    setRescanning(true);
+    try {
+      const res = await fetch("/api/admin/apis/rescan", { method: "POST" });
+      if (!res.ok) throw new Error("Rescan failed");
+      await load(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rescan failed");
+    } finally {
+      setRescanning(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     load(true);
-    const telemetryId = setInterval(() => load(false), 5_000);
-    const probeId = setInterval(() => load(true), 60_000);
+    const telemetryId = setInterval(() => load(false), 8_000);
+    const probeId = setInterval(() => load(true), 120_000);
     return () => {
       clearInterval(telemetryId);
       clearInterval(probeId);
     };
   }, [load]);
 
-  const summary = data?.summary;
-  const healthRatio =
-    summary && summary.providers_configured > 0
-      ? summary.providers_healthy / summary.providers_configured
-      : 0;
-  const successRatio = summary ? Math.max(0, 1 - summary.error_rate / 100) : 0;
-  const configuredRatio =
-    summary && summary.providers_total > 0 ? summary.providers_configured / summary.providers_total : 0;
+  const registry = data?.registry;
+  const summary = registry?.summary;
+  const providers = registry?.providers ?? [];
+
+  const filteredEndpoints = useMemo(() => {
+    if (!registry) return [];
+    const q = search.trim().toLowerCase();
+    return registry.endpoints.filter((row) => {
+      if (providerFilter !== "all" && row.provider !== providerFilter) return false;
+      if (usageFilter === "used" && !row.usedInCode) return false;
+      if (usageFilter === "unused" && row.usedInCode) return false;
+      if (usageFilter === "candidates" && !row.integrationCandidate) return false;
+      if (usageFilter === "risks" && !row.productionRisk) return false;
+      if (probeFilter !== "all" && row.probeStatus !== probeFilter) return false;
+      if (q) {
+        const hay = `${row.name} ${row.pathTemplate} ${row.section} ${row.provider} ${row.sourceFiles.join(" ")}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [registry, providerFilter, usageFilter, probeFilter, search]);
+
+  const coverageRatio = summary && summary.documented_total > 0 ? summary.used_in_code / summary.documented_total : 0;
+  const probePassRatio = summary && summary.documented_total > 0 ? summary.probe_ok / summary.documented_total : 0;
+  const runtimeSuccess = data?.summary && data.summary.calls_window > 0 ? 1 - data.summary.error_rate / 100 : 1;
 
   return (
-    <div className="admin-api-dashboard admin-deck-root">
+    <div className="admin-api-dashboard admin-deck-root admin-ep-dashboard admin-cmd-root admin-cmd-vivid">
       <TabCommandHero
-        kicker="Blackout · API Telemetry"
-        title="API"
-        titleAccent="Grid"
-        subtitle="Real-time outbound probes · provider health · endpoint errors · latency tracking"
+        kicker="Blackout · API Command Center"
+        title="One-Stop"
+        titleAccent="API Ops"
+        subtitle="265 endpoints · live incident stream · retry forensics · codebase auto-discovery"
         chips={
           <>
-            <LivePill label={loading && !data ? "Loading…" : probing ? "Probing…" : `Live · 5s · ET ${clock}`} />
+            <LivePill label={loading && !data ? "Booting…" : probing ? "Probing…" : `Live · ET ${clock}`} />
             {summary && (
-              <span className="admin-hero-chip">
-                {summary.providers_healthy}/{summary.providers_configured} healthy
-              </span>
+              <>
+                <span className="admin-hero-chip">{summary.documented_total} documented</span>
+                <span className="admin-hero-chip">{data?.recent_errors.length ?? 0} failures</span>
+                <span className="admin-hero-chip">{(data?.active_retries.length ?? 0) > 0 ? `${data?.active_retries.length} retrying` : "stable"}</span>
+              </>
             )}
           </>
         }
         actions={
-          <ActionButton onClick={() => load(true)} disabled={probing} variant="primary">
-            {probing ? "Probing…" : "Probe all APIs"}
-          </ActionButton>
+          <>
+            <ActionButton onClick={() => load(true)} disabled={probing} variant="primary">
+              {probing ? "Probing…" : "Probe providers"}
+            </ActionButton>
+            <ActionButton onClick={rescan} disabled={rescanning}>
+              {rescanning ? "Scanning…" : "Rescan codebase"}
+            </ActionButton>
+            <Link href="/docs/cursor-api-analysis/live-probe" className="admin-ep-docs-link">
+              Probe report ↗
+            </Link>
+          </>
         }
         rings={
           summary ? (
             <>
-              <WinRateRing
-                value={healthRatio}
-                label="Healthy"
-                sub={`${summary.providers_healthy}/${summary.providers_configured}`}
-                tone="bull"
-                size={96}
-              />
-              <WinRateRing
-                value={successRatio}
-                label="Success"
-                sub={`${summary.error_rate.toFixed(1)}% err`}
-                tone={summary.error_rate > 10 ? "bear" : "cyan"}
-                size={96}
-              />
-              <WinRateRing
-                value={configuredRatio}
-                label="Configured"
-                sub={`${summary.providers_configured}/${summary.providers_total}`}
-                tone="violet"
-                size={96}
-              />
+              <WinRateRing value={coverageRatio} label="Coverage" sub={`${summary.used_in_code}/${summary.documented_total}`} tone="cyan" size={120} />
+              <WinRateRing value={probePassRatio} label="Probe OK" sub={`${summary.probe_ok} live`} tone="bull" size={120} />
+              <WinRateRing value={runtimeSuccess} label="Runtime" sub={`${data?.summary.error_rate.toFixed(1) ?? 0}% err`} tone={data && data.summary.error_rate > 10 ? "bear" : "violet"} size={120} />
             </>
           ) : undefined
         }
@@ -290,113 +198,143 @@ export function AdminApiDashboard() {
       {error && <p className="admin-error">{error}</p>}
 
       {summary && (
-        <section className="admin-mega-grid admin-api-stat-grid">
-          <MegaStat
-            label="Providers healthy"
-            value={`${summary.providers_healthy}/${summary.providers_configured}`}
-            sub="live probe pass"
-            tone="bull"
-            bar={(summary.providers_healthy / Math.max(1, summary.providers_configured)) * 100}
-          />
-          <MegaStat
-            label={`Calls (${summary.window_label})`}
-            value={String(summary.calls_window)}
-            sub="outbound requests"
-            tone="cyan"
-          />
-          <MegaStat
-            label={`Errors (${summary.window_label})`}
-            value={String(summary.errors_window)}
-            sub="failed / non-2xx"
-            tone="bear"
-            trend={summary.errors_window > 0 ? "down" : "flat"}
-          />
-          <MegaStat
-            label="Error rate"
-            value={`${summary.error_rate.toFixed(1)}%`}
-            sub="rolling window"
-            tone={summary.error_rate > 10 ? "bear" : "amber"}
-            bar={summary.error_rate}
-          />
+        <section className="admin-mega-grid admin-api-stat-grid admin-cmd-stats">
+          <MegaStat label="Documented" value={String(summary.documented_total)} sub="polygon + UW" tone="cyan" />
+          <MegaStat label="In code" value={String(summary.used_in_code)} sub="auto-scanned" tone="bull" />
+          <MegaStat label="Unused" value={String(summary.unused_in_code)} sub="gap analysis" tone="amber" />
+          <MegaStat label="Candidates" value={String(summary.integration_candidates)} sub="unused + OK" tone="violet" />
+          <MegaStat label="Risks" value={String(summary.production_risks)} sub="used + blocked" tone="bear" trend={summary.production_risks > 0 ? "down" : "flat"} />
+          <MegaStat label={`Calls (${summary.window_label})`} value={String(summary.runtime_calls_window)} sub="telemetry" tone="neutral" />
         </section>
       )}
 
-      <section className="admin-api-provider-grid">
-        {data?.providers.map((p) => (
-          <ProviderCard
-            key={p.id}
-            provider={p}
-            expanded={expanded === p.id}
-            onToggle={() => setExpanded((cur) => (cur === p.id ? null : p.id))}
-          />
-        ))}
-      </section>
+      <div className="admin-cmd-split">
+        <AdminApiLiveFeed
+          initialErrors={data?.recent_errors ?? []}
+          activeRetries={data?.active_retries ?? []}
+          selectedId={selectedEventId}
+          onSelect={setSelectedEventId}
+        />
 
-      {data && (data.recent_errors.length > 0 || data.recent_events.length > 0) && (
-        <section className="admin-two-col">
-          <div className="admin-panel admin-glass admin-glass-bear">
-            <h3 className="admin-glass-title admin-deck-title">Recent errors</h3>
-            {data.recent_errors.length === 0 ? (
-              <p className="admin-api-muted">No errors in the current window.</p>
-            ) : (
-              <DataTable>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Provider</th>
-                    <th>Endpoint</th>
-                    <th>Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recent_errors.map((e) => (
-                    <tr key={e.id}>
-                      <td>{fmtTime(e.at)}</td>
-                      <td className="admin-td-strong">{e.provider}</td>
-                      <td className="admin-api-mono">{e.endpoint}</td>
-                      <td className="admin-api-meta-error">{e.error ?? `HTTP ${e.status}`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </DataTable>
-            )}
+        <div className="admin-cmd-main">
+          {providers.length > 0 && (
+            <section className="admin-ep-provider-strip admin-cmd-provider-strip">
+              {providers.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={clsx("admin-ep-provider-chip", providerFilter === p.id && "admin-ep-provider-chip-active")}
+                  onClick={() => setProviderFilter((cur) => (cur === p.id ? "all" : p.id))}
+                >
+                  <span className="admin-ep-provider-chip-name">{p.name}</span>
+                  <span className="admin-ep-provider-chip-stats">{p.usedTotal}/{p.documentedTotal} used · {p.probeOk} OK</span>
+                  {p.configured && p.telemetryCalls > 0 && (
+                    <HealthMeter label="" value={Math.max(0, 100 - (p.telemetryErrors / Math.max(1, p.telemetryCalls)) * 100)} tone="bull" />
+                  )}
+                </button>
+              ))}
+            </section>
+          )}
+
+          <div className="admin-ep-toolbar admin-cmd-tabs">
+            <div className="admin-provider-tabs">
+              {(["overview", "registry", "internal"] as const).map((tab) => (
+                <button key={tab} type="button" className={viewTab === tab ? "admin-vivid-tab-active" : "admin-vivid-tab"} onClick={() => setViewTab(tab)}>
+                  {tab === "overview" ? "Overview" : tab === "registry" ? `Registry (${registry?.endpoints.length ?? 0})` : `Internal (${registry?.internalRoutes.length ?? 0})`}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="admin-panel admin-glass admin-glass-cyan">
-            <h3 className="admin-glass-title admin-deck-title">Recent calls</h3>
-            <DataTable>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Provider</th>
-                  <th>Endpoint</th>
-                  <th>Status</th>
-                  <th>ms</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent_events.slice(0, 30).map((e) => (
-                  <tr key={e.id}>
-                    <td>{fmtTime(e.at)}</td>
-                    <td className="admin-td-strong">{e.provider}</td>
-                    <td className="admin-api-mono">{e.endpoint}</td>
-                    <td>
-                      <span className={clsx("admin-api-dot", statusDot(e.ok ? "ok" : "error"))} />
-                      {e.status ?? "—"}
-                    </td>
-                    <td>{e.latency_ms}</td>
-                  </tr>
+          {viewTab === "overview" && data && (
+            <>
+              <AdminApiCallTimeline events={data.recent_events} selectedId={selectedEventId} onSelect={setSelectedEventId} />
+              <section className="admin-cmd-provider-health">
+                {data.providers.map((p) => (
+                  <div key={p.id} className="admin-cmd-health-card">
+                    <span className={clsx("admin-api-dot", p.probe.ok ? "admin-api-dot-ok" : "admin-api-dot-error")} />
+                    <div>
+                      <p className="admin-ep-name">{p.name}</p>
+                      <p className="admin-api-muted">{p.telemetry.calls} calls · {p.telemetry.errors} errors</p>
+                    </div>
+                    <span className="admin-cmd-health-status">{p.probe.ok ? "Healthy" : p.probe.error ?? "Down"}</span>
+                  </div>
                 ))}
-              </tbody>
-            </DataTable>
-          </div>
-        </section>
-      )}
+              </section>
+            </>
+          )}
 
-      {data && (
+          {viewTab === "registry" && (
+            <>
+              <div className="admin-cmd-registry-filters">
+                <input type="search" className="admin-ep-search" placeholder="Search endpoints…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <div className="admin-provider-tabs admin-ep-filter-tabs">
+                  {(["all", "used", "unused", "candidates", "risks"] as const).map((f) => (
+                    <button key={f} type="button" className={usageFilter === f ? "admin-vivid-tab-active" : "admin-vivid-tab"} onClick={() => setUsageFilter(f)}>{f}</button>
+                  ))}
+                </div>
+                <div className="admin-provider-tabs admin-ep-filter-tabs">
+                  {(["all", "ok", "fail", "blocked", "unknown"] as const).map((f) => (
+                    <button key={f} type="button" className={probeFilter === f ? "admin-vivid-tab-active" : "admin-vivid-tab"} onClick={() => setProbeFilter(f)}>{f}</button>
+                  ))}
+                </div>
+              </div>
+              <section className="admin-ep-table-section">
+                <div className="admin-scroll-table admin-table-wrap">
+                  <table className="admin-table admin-table-pro admin-ep-table">
+                    <thead>
+                      <tr>
+                        <th>RT</th><th>Usage</th><th>Probe</th><th>Provider</th><th>Section</th><th>Name</th><th>Path</th><th>HTTP</th><th>ms</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredEndpoints.map((row) => (
+                        <tr key={row.id} className={clsx(row.productionRisk && "admin-ep-row-risk", row.integrationCandidate && "admin-ep-row-candidate")}>
+                          <td>{runtimeDot(row.runtimeStatus)}</td>
+                          <td><span className={row.usedInCode ? "admin-ep-used" : "admin-ep-unused"}>{row.usedInCode ? "used" : "unused"}</span></td>
+                          <td>{probeBadge(row.probeStatus)}</td>
+                          <td className="admin-ep-provider">{row.providerLabel}</td>
+                          <td className="admin-ep-section">{row.section}</td>
+                          <td className="admin-ep-name">{row.name}</td>
+                          <td><code className="admin-api-mono admin-api-endpoint">{row.pathTemplate}</code></td>
+                          <td className="admin-api-mono">{row.probeHttp ?? "—"}</td>
+                          <td className="admin-api-mono">{row.probeMs ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="admin-ep-count">Showing {filteredEndpoints.length} of {registry?.endpoints.length ?? 0}</p>
+              </section>
+            </>
+          )}
+
+          {viewTab === "internal" && registry && (
+            <section className="admin-ep-table-section">
+              <div className="admin-scroll-table admin-table-wrap">
+                <table className="admin-table admin-table-pro admin-ep-table">
+                  <thead><tr><th>Method</th><th>Path</th><th>File</th></tr></thead>
+                  <tbody>
+                    {registry.internalRoutes.map((route) => (
+                      <tr key={`${route.method}-${route.path}`}>
+                        <td><span className="docs-rest-method">{route.method}</span></td>
+                        <td><code className="admin-api-mono">{route.path}</code></td>
+                        <td><code className="admin-file-ref">{route.file.replace(/^src\//, "")}</code></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+
+      <AdminApiEventDetail eventId={selectedEventId} onClose={() => setSelectedEventId(null)} />
+
+      {registry && (
         <p className="admin-api-footer">
-          Last updated {fmtTime(data.generated_at)} · Telemetry window {data.summary.window_label} ·
-          Probes refresh every 60s
+          Scan {fmtTime(registry.codebase_scanned_at)} · Probe {registry.probe_completed_at ? fmtTime(registry.probe_completed_at) : "—"} · SSE incident stream · Click any failure for deep dive
         </p>
       )}
     </div>

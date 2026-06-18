@@ -3,6 +3,7 @@ import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { fetchMarketFlowAlerts } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
+import { marketPlatform } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,19 @@ export async function GET(req: NextRequest) {
   if (dbConfigured()) {
     void maybeRunFlowIngest();
     try {
-      const flows = await fetchRecentFlows({ limit, ticker, min_premium });
-      return NextResponse.json({ source: "postgres", flows, count: flows.length });
+      const [flows, platform] = await Promise.all([
+        fetchRecentFlows({ limit, ticker, min_premium }),
+        Promise.all([
+          marketPlatform.spx.getSpxDeskSummary().catch(() => null),
+          marketPlatform.nighthawk.getLatestNightHawkSummary().catch(() => null),
+        ]).then(([spx, nighthawk]) => ({ spx, nighthawk })),
+      ]);
+      return NextResponse.json({
+        source: "postgres",
+        flows,
+        count: flows.length,
+        platform_refs: platform,
+      });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error("[market/flows] postgres:", detail);

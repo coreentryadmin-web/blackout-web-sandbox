@@ -9,6 +9,7 @@ import {
   type ApiEndpointStats,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
+import { buildEndpointRegistry, type EndpointRegistryPayload } from "@/lib/admin-endpoint-registry";
 import { pingDatabase, dbConfigured } from "@/lib/db";
 import { engineConfigured, fetchEngine } from "@/lib/engine";
 import {
@@ -55,6 +56,8 @@ export type ApiDashboardPayload = {
   providers: ProviderDashboardRow[];
   recent_errors: ReturnType<typeof getApiTelemetrySnapshot>["recent_errors"];
   recent_events: ReturnType<typeof getApiTelemetrySnapshot>["recent_events"];
+  active_retries: ReturnType<typeof getApiTelemetrySnapshot>["active_retries"];
+  registry: EndpointRegistryPayload;
 };
 
 function normalizeEndpointKey(endpoint: string): string {
@@ -346,5 +349,7 @@ export async function fetchApiDashboard(options?: {
     providers,
     recent_errors: telemetry.recent_errors,
     recent_events: telemetry.recent_events,
+    active_retries: telemetry.active_retries,
+    registry: buildEndpointRegistry(windowMs),
   };
 }

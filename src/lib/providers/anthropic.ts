@@ -7,11 +7,22 @@ export function anthropicConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
 
-export async function anthropicText(prompt: string, maxTokens = 600): Promise<string | null> {
+export async function anthropicText(
+  prompt: string,
+  maxTokens = 600,
+  system?: string
+): Promise<string | null> {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
 
   const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    messages: [{ role: "user", content: prompt }],
+  };
+  if (system?.trim()) body.system = system.trim();
 
   const res = await trackedFetch("anthropic", "/v1/messages", API_URL, {
     method: "POST",
@@ -20,11 +31,7 @@ export async function anthropicText(prompt: string, maxTokens = 600): Promise<st
       "x-api-key": key,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    }),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
 

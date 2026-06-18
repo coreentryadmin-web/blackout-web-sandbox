@@ -1,16 +1,8 @@
-import {
-  fetchClosedPlayOutcomes,
-  fetchLottoPlaysForDate,
-  fetchOpenSpxPlay,
-  fetchRecentFlows,
-  fetchRecentSpxSignalLogs,
-  fetchSpxAdminRollups,
-} from "@/lib/db";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
 import { computeFlowStrikeStacks, withStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { isSpxTicker } from "@/lib/spx-desk-live";
-import { evaluateSpxPlay } from "@/lib/spx-play-engine";
-import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
+import { getPlatformSnapshot, marketPlatform } from "@/lib/platform";
+import { summarizeSpxDesk } from "@/lib/platform/spx-service";
 import {
   buildPeerRelativeStrength,
   buildQqqRelativeStrength,
@@ -32,6 +24,7 @@ import { fetchUpcomingMacroEvents } from "@/lib/providers/macro-events";
 import {
   computeMaxPainFromChain,
   fetchPolygonOdteGexRows,
+  fetchPolygonOiByExpiry,
   fetchPolygonOptionsChain,
   formatChainContracts,
   polygonOptionsMeta,
@@ -205,48 +198,7 @@ async function polygonChainBundle(ticker: string, expiry: string) {
 const UW_EXCLUSIVE_NOTE = "UW only — no Polygon equivalent (rate-limited; use sparingly)";
 
 function spxDeskSummary(merged: Awaited<ReturnType<typeof getLargoSpxLiveDesk>>) {
-  const spx_flows = merged.spx_flows;
-  return {
-    as_of: merged.as_of,
-    market_open: merged.market_open,
-    market_label: merged.market_label,
-    price: merged.price,
-    change_pct: merged.spx_change_pct,
-    vix: merged.vix,
-    vwap: merged.vwap,
-    above_vwap: merged.above_vwap,
-    hod: merged.hod,
-    lod: merged.lod,
-    pdh: merged.pdh,
-    pdl: merged.pdl,
-    ema20: merged.ema20,
-    ema50: merged.ema50,
-    gamma_flip: merged.gamma_flip,
-    gex_net: merged.gex_net,
-    gex_king: merged.gex_king,
-    max_pain: merged.max_pain,
-    gamma_regime: merged.gamma_regime,
-    gex_walls: merged.gex_walls,
-    flow_0dte_net: merged.flow_0dte_net,
-    tide_bias: merged.tide_bias,
-    tide_net: merged.tide_net,
-    nope: merged.nope,
-    uw_iv_rank: merged.uw_iv_rank,
-    regime: merged.regime,
-    levels: merged.levels,
-    dark_pool: merged.dark_pool,
-    spx_flows,
-    unified_tape: merged.unified_tape,
-    net_prem_ticks: merged.net_prem_ticks,
-    news_headlines: merged.news_headlines,
-    macro_events: merged.macro_events,
-    sector_heat: merged.sector_heat,
-    leader_stocks: merged.leader_stocks,
-    oi_changes: merged.oi_changes,
-    iv_term_structure: merged.iv_term_structure,
-    vix_term: merged.vix_term,
-    strike_stacks: computeFlowStrikeStacks(spx_flows ?? []),
-  };
+  return summarizeSpxDesk(merged);
 }
 
 async function toolQuote(ticker: string) {
@@ -406,8 +358,24 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
         gex_by_strike: polygonGex.length ? polygonGex : uwGex,
       };
     }
-    case "get_oi_per_expiry":
-      return { ticker: uwTicker(ticker), expiries: await fetchUwOiPerExpiry(uwTicker(ticker)) };
+    case "get_oi_per_expiry": {
+      const sym = uwTicker(ticker);
+      const spot = await resolveSpot(ticker);
+      const polygonExpiries = spot > 0 ? await fetchPolygonOiByExpiry(sym, 12) : [];
+      if (polygonExpiries.length) {
+        return {
+          ticker: sym,
+          source: "polygon",
+          ...polygonOptionsMeta(),
+          expiries: polygonExpiries,
+        };
+      }
+      return {
+        ticker: sym,
+        source: "unusual_whales",
+        expiries: await fetchUwOiPerExpiry(sym),
+      };
+    }
     case "get_max_pain": {
       const sym = uwTicker(ticker);
       const exp = input.expiry ? String(input.expiry) : todayEtYmd();
@@ -594,17 +562,33 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
 
     case "get_iv_stats": {
       const sym = uwTicker(ticker);
-      const [ivRank, oiChange, volChar, ivSeries, interpolated] = await Promise.all([
-        fetchUwIvRank(sym),
-        fetchUwOiChange(sym),
-        fetchUwVolatilityCharacter(sym),
-        fetchUwIvRankSeries(sym),
-        fetchUwInterpolatedIv(sym),
-      ]);
+      const indexProxy = ["SPX", "SPY", "QQQ", "VIX", "IWM"].includes(sym);
+      let ivRank: number | null = null;
+      if (indexProxy) {
+        ivRank = await fetchVixIvRankPercentile();
+      }
+      const uwCalls =
+        ivRank == null
+          ? Promise.all([
+              fetchUwIvRank(sym),
+              fetchUwOiChange(sym),
+              fetchUwVolatilityCharacter(sym),
+              fetchUwIvRankSeries(sym),
+              fetchUwInterpolatedIv(sym),
+            ])
+          : Promise.all([
+              Promise.resolve(null),
+              fetchUwOiChange(sym),
+              fetchUwVolatilityCharacter(sym),
+              Promise.resolve(null),
+              fetchUwInterpolatedIv(sym),
+            ]);
+      const [uwIvRank, oiChange, volChar, ivSeries, interpolated] = await uwCalls;
       return {
         ticker: sym,
-        ...uwOptionsMeta(),
-        iv_rank: ivRank,
+        ...(ivRank != null ? polygonOptionsMeta() : uwOptionsMeta()),
+        source: ivRank != null ? "polygon" : "unusual_whales",
+        iv_rank: ivRank ?? uwIvRank,
         oi_changes: oiChange?.slice(0, 8),
         vol_character: volChar,
         iv_rank_series: ivSeries,
@@ -788,43 +772,54 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     }
 
     case "get_spx_structure": {
-      const merged = await getLargoSpxLiveDesk();
-      return spxDeskSummary(merged);
+      return marketPlatform.spx.getSpxDeskSummary();
     }
     case "get_spx_play": {
-      const merged = await getLargoSpxLiveDesk();
-      const technicals = await buildPlayTechnicals(merged.price, {
-        vwap: merged.vwap,
-        pdh: merged.pdh,
-        pdl: merged.pdl,
-        hod: merged.hod,
-        lod: merged.lod,
-      });
-      return evaluateSpxPlay(merged, technicals);
+      return marketPlatform.spx.getSpxPlayState();
     }
     case "get_open_plays":
-      return { open_play: await fetchOpenSpxPlay(todayEtYmd()) };
+      return marketPlatform.spx.getSpxOpenPlay();
     case "get_trade_history": {
       const days = Number(input.days ?? 30);
-      const cutoff = Date.now() - days * 86400000;
-      let rows = await fetchClosedPlayOutcomes(300);
-      if (input.ticker) {
-        const sym = uwTicker(String(input.ticker));
-        rows = rows.filter((r) => r.headline.toUpperCase().includes(sym));
-      }
-      return rows.filter((r) => new Date(r.closed_at ?? r.opened_at).getTime() >= cutoff).slice(0, 50);
+      return marketPlatform.spx.getSpxTradeHistory({
+        ticker: input.ticker ? String(input.ticker) : undefined,
+        days,
+      });
     }
     case "get_setup_stats":
-      return fetchSpxAdminRollups();
+      return marketPlatform.spx.getSpxSetupStats();
     case "get_postgres_flows":
-      return fetchRecentFlows({
+      return marketPlatform.flows.getFlowTape({
         limit: Number(input.limit ?? 25),
         ticker: input.ticker ? uwTicker(String(input.ticker)) : undefined,
       });
     case "get_signal_log":
-      return fetchRecentSpxSignalLogs(Number(input.limit ?? 20));
+      return marketPlatform.spx.getSpxSignalLog(Number(input.limit ?? 20));
     case "get_lotto_state":
-      return fetchLottoPlaysForDate(todayEtYmd());
+      return marketPlatform.spx.getSpxLottoState();
+
+    case "get_nighthawk_edition": {
+      const date = input.date ? String(input.date) : undefined;
+      const edition = date
+        ? await marketPlatform.nighthawk.getNightHawkEditionForDate(date)
+        : await marketPlatform.nighthawk.getLatestNightHawkEdition();
+      return edition ?? { available: false, plays: [] };
+    }
+
+    case "get_flow_tape":
+      return marketPlatform.flows.getFlowTapeSummary({
+        limit: Number(input.limit ?? 50),
+        ticker: input.ticker ? uwTicker(String(input.ticker)) : undefined,
+      });
+
+    case "get_platform_snapshot":
+      return getPlatformSnapshot({
+        include: Array.isArray(input.include)
+          ? (input.include as Array<"spx" | "flows" | "nighthawk" | "largo">)
+          : undefined,
+        flowLimit: Number(input.flow_limit ?? 50),
+        fullEdition: Boolean(input.full_edition),
+      });
 
     case "get_gex": {
       const sym = uwTicker(ticker);

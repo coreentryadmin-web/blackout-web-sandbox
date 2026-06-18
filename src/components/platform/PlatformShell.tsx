@@ -16,6 +16,8 @@ type PlatformShellProps = {
   deskMode?: boolean;
   /** Transparent content area — no bordered frame (Night Hawk radar canvas). */
   frameless?: boolean;
+  /** Edge-to-edge content (Night Hawk full desk). */
+  fullWidth?: boolean;
   children: ReactNode;
 };
 
@@ -69,7 +71,7 @@ const CONFIG: Record<
     ambient: "platform-ambient-nighthawk",
     frame: "platform-frame-nighthawk",
     label: "◆ NIGHT OPS",
-    titleClass: "platform-title-nighthawk glow-text-cyan",
+    titleClass: "platform-title-nighthawk glow-text-gold",
     heroArt: "platform-hero-nighthawk",
     badgeClass: "badge-ops",
   },
@@ -140,6 +142,7 @@ export function PlatformShell({
   imageAlt,
   deskMode,
   frameless,
+  fullWidth,
   children,
 }: PlatformShellProps) {
   const theme = CONFIG[variant];
@@ -148,8 +151,15 @@ export function PlatformShell({
     <>
       <div className={clsx("platform-ambient", theme.ambient)} aria-hidden />
       <div className="platform-dot-grid" aria-hidden />
-      <main className={clsx("relative z-10 max-w-7xl mx-auto px-4 md:px-6 pb-16", deskMode ? "pt-20" : "pt-24")}>
-        <header className={clsx(deskMode ? "mb-6" : "mb-10")}>
+      <main
+        className={clsx(
+          "relative z-10 pb-4 md:pb-5",
+          fullWidth ? "max-w-none px-2 md:px-3" : "max-w-7xl mx-auto px-4 md:px-6 pb-16",
+          deskMode ? "pt-20" : "pt-24",
+          !fullWidth && "mx-auto"
+        )}
+      >
+        <header className={clsx(fullWidth ? "mb-3 px-1" : deskMode ? "mb-6" : "mb-10")}>
           {!deskMode && (imageSrc && imageAlt ? (
             <HeroImage src={imageSrc} alt={imageAlt} variant={variant} />
           ) : (
@@ -173,7 +183,7 @@ export function PlatformShell({
                 transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                 className={clsx(
                   "font-anton leading-[0.9] tracking-wide uppercase",
-                  deskMode ? "text-4xl md:text-5xl" : "text-5xl md:text-7xl lg:text-8xl",
+                  deskMode ? (fullWidth ? "text-3xl md:text-4xl" : "text-4xl md:text-5xl") : "text-5xl md:text-7xl lg:text-8xl",
                   theme.titleClass
                 )}
               >

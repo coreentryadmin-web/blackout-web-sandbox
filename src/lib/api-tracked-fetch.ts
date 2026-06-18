@@ -1,38 +1,127 @@
-import { recordApiCall, type ApiProviderId } from "@/lib/api-telemetry";
+import {
+  recordApiCall,
+  type ApiCallEvent,
+  type ApiProviderId,
+} from "@/lib/api-telemetry";
+
+export type TrackedFetchOptions = RequestInit & {
+  maxRetries?: number;
+  retryDelayMs?: number;
+  correlationId?: string;
+};
+
+function sanitizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const key of ["apiKey", "token", "apikey"]) {
+      if (u.searchParams.has(key)) u.searchParams.set(key, "[REDACTED]");
+    }
+    return u.toString();
+  } catch {
+    return url
+      .replace(/apiKey=[^&]+/gi, "apiKey=[REDACTED]")
+      .replace(/token=[^&]+/gi, "token=[REDACTED]");
+  }
+}
+
+function headerNames(init?: RequestInit): string[] {
+  if (!init?.headers) return [];
+  const h = init.headers;
+  if (h instanceof Headers) return Array.from(h.keys());
+  if (Array.isArray(h)) return h.map(([k]) => k);
+  return Object.keys(h);
+}
+
+async function readSnippet(res: Response): Promise<string | null> {
+  try {
+    const clone = res.clone();
+    const text = await clone.text();
+    return text.slice(0, 600) || null;
+  } catch {
+    return null;
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export async function trackedFetch(
   provider: ApiProviderId,
   endpointKey: string,
   url: string,
-  init?: RequestInit
+  init?: TrackedFetchOptions
 ): Promise<Response> {
-  const method = (init?.method ?? "GET").toUpperCase();
-  const start = Date.now();
-  try {
-    const res = await fetch(url, init);
-    const latency_ms = Date.now() - start;
-    recordApiCall({
-      provider,
-      endpoint: endpointKey,
-      method,
-      status: res.status,
-      ok: res.ok,
-      latency_ms,
-      error: res.ok ? null : `HTTP ${res.status}`,
-    });
-    return res;
-  } catch (err) {
-    const latency_ms = Date.now() - start;
-    const message = err instanceof Error ? err.message : "Network error";
-    recordApiCall({
-      provider,
-      endpoint: endpointKey,
-      method,
-      status: null,
-      ok: false,
-      latency_ms,
-      error: message,
-    });
-    throw err;
+  const { maxRetries, retryDelayMs, correlationId, ...fetchInit } = init ?? {};
+  const method = (fetchInit.method ?? "GET").toUpperCase();
+  const maxAttempts = Math.max(1, (maxRetries ?? 0) + 1);
+  const delayMs = retryDelayMs ?? 2000;
+  const corrId = correlationId ?? `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const safeUrl = sanitizeUrl(url);
+  const headersSent = headerNames(fetchInit);
+
+  let lastEvent: ApiCallEvent | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const start = Date.now();
+    try {
+      const res = await fetch(url, fetchInit);
+      const latency_ms = Date.now() - start;
+      const snippet = res.ok ? null : await readSnippet(res);
+      const rateLimited = res.status === 429;
+
+      lastEvent = recordApiCall({
+        provider,
+        endpoint: endpointKey,
+        method,
+        status: res.status,
+        ok: res.ok,
+        latency_ms,
+        error: res.ok ? null : snippet?.slice(0, 200) ?? `HTTP ${res.status}`,
+        correlation_id: corrId,
+        attempt,
+        max_attempts: maxAttempts,
+        phase: attempt > 1 ? (res.ok ? "success" : "retry") : res.ok ? "success" : "failure",
+        request_url: safeUrl,
+        response_snippet: snippet,
+        rate_limited: rateLimited,
+        headers_sent: headersSent,
+      });
+
+      if (res.ok || attempt >= maxAttempts) return res;
+
+      if (rateLimited || res.status >= 500) {
+        await sleep(delayMs * attempt);
+        continue;
+      }
+
+      return res;
+    } catch (err) {
+      const latency_ms = Date.now() - start;
+      const message = err instanceof Error ? err.message : "Network error";
+
+      lastEvent = recordApiCall({
+        provider,
+        endpoint: endpointKey,
+        method,
+        status: null,
+        ok: false,
+        latency_ms,
+        error: message,
+        correlation_id: corrId,
+        attempt,
+        max_attempts: maxAttempts,
+        phase: attempt > 1 ? "retry" : "failure",
+        request_url: safeUrl,
+        response_snippet: null,
+        rate_limited: false,
+        headers_sent: headersSent,
+      });
+
+      if (attempt >= maxAttempts) throw err;
+      await sleep(delayMs * attempt);
+    }
   }
+
+  throw new Error(lastEvent?.error ?? "Request failed");
 }

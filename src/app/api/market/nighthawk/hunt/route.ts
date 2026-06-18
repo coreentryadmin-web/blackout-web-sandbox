@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { getAgentConfig } from "@/lib/nighthawk/agent-config";
+import { getPlatformSnapshot } from "@/lib/platform";
 import type { HuntMode, HuntRequest, HuntResponse } from "@/lib/nighthawk/types";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
 
   const config = getAgentConfig(body.mode);
   const filters = body.filters ?? {};
+  const platform = await getPlatformSnapshot({ include: ["spx", "flows", "nighthawk"], flowLimit: 40 });
 
   const response: HuntResponse = {
     status: "queued",
@@ -32,6 +34,12 @@ export async function POST(req: NextRequest) {
     scanned_at: new Date().toISOString(),
     message: `${config.title} agent armed with your filters. Full scan pipeline ships next — dossier + scoring + Claude synthesis.`,
     plays: [],
+    platform_context: {
+      spx_price: platform.spx?.price ?? null,
+      flow_alerts: platform.flows?.count ?? 0,
+      edition_for: platform.nighthawk?.edition_for ?? null,
+      edition_plays: platform.nighthawk?.play_count ?? 0,
+    },
   };
 
   console.info("[nighthawk/hunt]", {

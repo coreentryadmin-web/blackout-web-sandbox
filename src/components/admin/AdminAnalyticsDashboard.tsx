@@ -9,7 +9,7 @@ import { ActionButton, TabCanvas } from "@/components/admin/AdminUi";
 type ToolTab = "spx" | "nighthawk" | "largo" | "apis";
 
 const TABS: Array<{ id: ToolTab; label: string; icon: string; blurb: string }> = [
-  { id: "apis", label: "API Grid", icon: "⬡", blurb: "Providers · latency · errors" },
+  { id: "apis", label: "API Command", icon: "⬡", blurb: "Live ops · incidents · 265 endpoints" },
   { id: "spx", label: "SPX Sniper", icon: "◎", blurb: "Live engine · outcomes · desk" },
   { id: "nighthawk", label: "Night Hawk", icon: "◈", blurb: "Coming soon" },
   { id: "largo", label: "Largo", icon: "◆", blurb: "Coming soon" },
@@ -62,7 +62,7 @@ export function AdminAnalyticsDashboard() {
             <h2 className="admin-deck-heading">Intel engine analytics incoming</h2>
             <p>Win rate, signal quality, and engagement telemetry will land in this slot next.</p>
             <ActionButton variant="primary" onClick={() => setTab("apis")}>
-              Back to API Grid
+              Back to API Command
             </ActionButton>
           </div>
           </TabCanvas>

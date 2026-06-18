@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "next lint",
-    "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs"
+    "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
+    "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
+    "probe:docs:uw": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs --uw-only",
+    "analyze:api": "node scripts/analyze-api-usage.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.1.0",

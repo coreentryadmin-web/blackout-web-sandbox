@@ -1,4 +1,5 @@
 import { polygonConfigured } from "./config";
+import { fetchStockSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 
@@ -248,4 +249,136 @@ export function formatChainContracts(
       bid: Number((c as { last_quote?: { bid?: number } }).last_quote?.bid ?? 0),
       ask: Number((c as { last_quote?: { ask?: number } }).last_quote?.ask ?? 0),
     }));
+}
+
+type RefContract = {
+  expiration_date?: string;
+  contract_type?: string;
+  open_interest?: number;
+};
+
+type RefContractsResponse = {
+  results?: RefContract[];
+  next_url?: string;
+};
+
+const positioningCache = new Map<string, { at: number; bundle: PolygonPositioningBundle }>();
+
+function positioningCacheMs(): number {
+  const sec = Number(process.env.POLYGON_POSITIONING_CACHE_SEC ?? 30);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 30_000;
+}
+
+export type PolygonPositioningBundle = {
+  rows: Record<string, unknown>[];
+  maxPain: number | null;
+  spot: number;
+  source: "polygon";
+  expiry: string;
+};
+
+/** GEX rows + max pain from Polygon options chain — any underlying (SPX uses SPX+SPXW). */
+export async function fetchPolygonPositioningBundle(
+  underlying: string,
+  opts?: { spot?: number; expiry?: string }
+): Promise<PolygonPositioningBundle> {
+  const sym = underlying.toUpperCase();
+  const expiry = opts?.expiry ?? todayEtYmd();
+  const cacheKey = `${sym}:${expiry}`;
+  const now = Date.now();
+  const cached = positioningCache.get(cacheKey);
+  if (cached && now - cached.at < positioningCacheMs()) {
+    return cached.bundle;
+  }
+
+  if (!polygonConfigured()) {
+    return { rows: [], maxPain: null, spot: 0, source: "polygon", expiry };
+  }
+
+  let spot = opts?.spot ?? 0;
+  if (spot <= 0) {
+    const snap = await fetchStockSnapshot(sym).catch(() => null);
+    spot = snap?.price ?? 0;
+  }
+  if (spot <= 0) {
+    return { rows: [], maxPain: null, spot: 0, source: "polygon", expiry };
+  }
+
+  const contracts = await fetchPolygonOptionsChain(sym, spot, expiry);
+  const rows = aggregateGexRows(contracts, spot);
+  const maxPain = computeMaxPainFromChain(contracts);
+  const bundle: PolygonPositioningBundle = { rows, maxPain, spot, source: "polygon", expiry };
+  if (rows.length) positioningCache.set(cacheKey, { at: now, bundle });
+  return bundle;
+}
+
+/** OI aggregated by expiry from Polygon reference contracts (unlimited plan). */
+export async function fetchPolygonOiByExpiry(
+  underlying: string,
+  limit = 12
+): Promise<Array<{ expiry: string; call_oi: number; put_oi: number; total_oi: number }>> {
+  if (!polygonConfigured()) return [];
+  const root = underlying.toUpperCase();
+  const today = todayEtYmd();
+  const params = new URLSearchParams({
+    underlying_ticker: root,
+    expired: "false",
+    limit: "250",
+    sort: "expiration_date",
+    order: "asc",
+    "expiration_date.gte": today,
+    apiKey: KEY,
+  });
+
+  const byExpiry = new Map<string, { call_oi: number; put_oi: number }>();
+  let page: RefContractsResponse | null = await polygonRefFetch(`/v3/reference/options/contracts?${params}`);
+  let guard = 0;
+
+  while (page && guard < 12) {
+    for (const c of page.results ?? []) {
+      const expiry = String(c.expiration_date ?? "").slice(0, 10);
+      if (!expiry) continue;
+      const oi = Number(c.open_interest ?? 0);
+      if (!oi) continue;
+      const type = String(c.contract_type ?? "").toLowerCase();
+      const row = byExpiry.get(expiry) ?? { call_oi: 0, put_oi: 0 };
+      if (type === "call") row.call_oi += oi;
+      else if (type === "put") row.put_oi += oi;
+      byExpiry.set(expiry, row);
+    }
+    if (!page.next_url) break;
+    page = await polygonRefFetch(page.next_url);
+    guard += 1;
+  }
+
+  return Array.from(byExpiry.entries())
+    .map(([expiry, oi]) => ({
+      expiry,
+      call_oi: oi.call_oi,
+      put_oi: oi.put_oi,
+      total_oi: oi.call_oi + oi.put_oi,
+    }))
+    .sort((a, b) => a.expiry.localeCompare(b.expiry))
+    .slice(0, limit);
+}
+
+async function polygonRefFetch(url: string): Promise<RefContractsResponse | null> {
+  if (!polygonConfigured()) return null;
+  const sep = url.includes("?") ? "&" : "?";
+  const full = url.startsWith("http")
+    ? `${url}${sep}apiKey=${KEY}`
+    : `${BASE}${url}${sep}apiKey=${KEY}`;
+  const endpointKey = url.startsWith("http")
+    ? "/v3/reference/options/contracts"
+    : url.split("?")[0] || "/v3/reference/options/contracts";
+  try {
+    const res = await trackedFetch("polygon", endpointKey, full, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as RefContractsResponse;
+  } catch {
+    return null;
+  }
 }

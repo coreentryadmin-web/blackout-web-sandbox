@@ -14,7 +14,7 @@ export type AgentModeConfig = {
   mode: HuntMode;
   title: string;
   tagline: string;
-  accent: "cyan" | "bear" | "purple";
+  accent: "gold" | "bear" | "purple";
   powerLabel: string;
   description: string;
   filters: AgentFilterField[];
@@ -25,7 +25,7 @@ export const AGENT_MODES: AgentModeConfig[] = [
     mode: "day",
     title: "Day Trade",
     tagline: "0–1 DTE · intraday structure",
-    accent: "cyan",
+    accent: "gold",
     powerLabel: "Power Up Day Hawk",
     description:
       "Hunts same-session setups using 0DTE flow, gamma, VWAP structure, and opening-range levels.",

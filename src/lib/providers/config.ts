@@ -2,6 +2,11 @@ export function polygonConfigured(): boolean {
   return Boolean(process.env.POLYGON_API_KEY?.trim());
 }
 
+/** Polygon Advanced (Options/Stocks/Indices/Benzinga) — unlimited; prefer over UW for chains, GEX, indices, news. */
+export function polygonPrimary(): boolean {
+  return polygonConfigured();
+}
+
 export function uwConfigured(): boolean {
   return Boolean(process.env.UW_API_KEY?.trim());
 }

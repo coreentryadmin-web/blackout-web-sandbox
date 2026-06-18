@@ -51,6 +51,8 @@ export function analyzeLargoQuestion(
     /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/.test(ctx);
   const needsNews = /\b(news|headline|catalyst|earnings|cpi|fomc|macro|calendar)\b/.test(ctx);
   const needsVol = /\b(iv|vol|vix|skew|rank|realized)\b/.test(ctx);
+  const needsNightHawk =
+    /\b(nighthawk|night hawk|playbook|tomorrow|evening plays|hawk plays|top plays)\b/.test(ctx);
 
   const tickerHint = extractTicker(question, recentUserText(history));
   const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);
@@ -74,6 +76,12 @@ export function analyzeLargoQuestion(
   }
   if (needsVol) {
     toolHints.push("get_volatility_regime", "get_iv_stats");
+  }
+  if (needsNightHawk) {
+    toolHints.push("get_nighthawk_edition", "get_platform_snapshot");
+  }
+  if (needsFlow) {
+    toolHints.push("get_flow_tape");
   }
 
   const uniqueTools = Array.from(new Set(toolHints));

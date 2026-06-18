@@ -546,6 +546,14 @@ export async function fetchUwNewsHeadlines(ticker: string, limit = 12) {
   return extractRows(data).slice(0, limit);
 }
 
+/** Market-wide headlines — no ticker filter. */
+export async function fetchUwMarketNewsHeadlines(limit = 20) {
+  const data = await uwGetSafe<unknown>("/api/news/headlines", {
+    limit: Math.min(limit, 50),
+  });
+  return extractRows(data).slice(0, limit);
+}
+
 export async function fetchUwMarketMovers(limit = 15) {
   const data = await uwGetSafe<unknown>("/api/market/movers", { limit: Math.min(limit, 50) });
   return extractRows(data).slice(0, limit);

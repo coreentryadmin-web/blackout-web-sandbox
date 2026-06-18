@@ -85,6 +85,15 @@ export async function fetchFinnhubEarningsCalendar(ticker: string, daysAhead = 9
   });
 }
 
+/** All symbols reporting on a given date (omit symbol filter). */
+export async function fetchFinnhubEarningsOnDate(dateYmd: string) {
+  const data = await finnhubGet<{ earningsCalendar?: Array<Record<string, unknown>> }>(
+    "/calendar/earnings",
+    { from: dateYmd, to: dateYmd }
+  );
+  return data?.earningsCalendar ?? [];
+}
+
 export async function fetchFinnhubBasicMetrics(ticker: string) {
   return finnhubGet<Record<string, unknown>>("/stock/metric", {
     symbol: ticker.toUpperCase(),

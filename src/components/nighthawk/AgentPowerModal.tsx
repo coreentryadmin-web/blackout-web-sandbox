@@ -133,7 +133,7 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
           <motion.div
             className={clsx(
               "nighthawk-modal",
-              config.accent === "cyan" && "nighthawk-modal-cyan",
+              config.accent === "gold" && "nighthawk-modal-gold",
               config.accent === "bear" && "nighthawk-modal-bear",
               config.accent === "purple" && "nighthawk-modal-purple"
             )}

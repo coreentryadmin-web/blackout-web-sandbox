@@ -299,6 +299,24 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_largo_messages_session
     ON largo_messages(session_id, created_at ASC);
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS nighthawk_editions (
+      id BIGSERIAL PRIMARY KEY,
+      edition_for DATE NOT NULL UNIQUE,
+      session_date DATE NOT NULL,
+      published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      recap_headline TEXT,
+      recap_summary TEXT,
+      market_recap JSONB NOT NULL DEFAULT '{}'::jsonb,
+      plays JSONB NOT NULL DEFAULT '[]'::jsonb,
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_nighthawk_editions_published
+    ON nighthawk_editions(published_at DESC);
+  `);
 }
 
 export async function ensureSchema(): Promise<void> {
@@ -1157,4 +1175,157 @@ export async function fetchLottoPlaysForDate(sessionDate: string): Promise<
     buy_at: r.buy_at != null ? new Date(String(r.buy_at)).toISOString() : null,
     closed_at: r.closed_at != null ? new Date(String(r.closed_at)).toISOString() : null,
   }));
+}
+
+export type NighthawkEditionRow = {
+  edition_for: string;
+  session_date: string;
+  published_at: string;
+  recap_headline: string | null;
+  recap_summary: string | null;
+  market_recap: Record<string, unknown>;
+  plays: unknown[];
+  meta: Record<string, unknown>;
+};
+
+export async function upsertNighthawkEdition(row: {
+  edition_for: string;
+  session_date: string;
+  recap_headline: string | null;
+  recap_summary: string | null;
+  market_recap: Record<string, unknown>;
+  plays: unknown[];
+  meta?: Record<string, unknown>;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO nighthawk_editions (
+      edition_for, session_date, published_at,
+      recap_headline, recap_summary, market_recap, plays, meta
+    ) VALUES ($1::date, $2::date, NOW(), $3, $4, $5::jsonb, $6::jsonb, $7::jsonb)
+    ON CONFLICT (edition_for) DO UPDATE SET
+      session_date = EXCLUDED.session_date,
+      published_at = NOW(),
+      recap_headline = EXCLUDED.recap_headline,
+      recap_summary = EXCLUDED.recap_summary,
+      market_recap = EXCLUDED.market_recap,
+      plays = EXCLUDED.plays,
+      meta = EXCLUDED.meta
+    `,
+    [
+      row.edition_for,
+      row.session_date,
+      row.recap_headline,
+      row.recap_summary,
+      JSON.stringify(row.market_recap),
+      JSON.stringify(row.plays),
+      JSON.stringify(row.meta ?? {}),
+    ]
+  );
+}
+
+export async function fetchNighthawkEditionByDate(
+  editionFor: string
+): Promise<NighthawkEditionRow | null> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `
+    SELECT edition_for, session_date, published_at,
+           recap_headline, recap_summary, market_recap, plays, meta
+    FROM nighthawk_editions
+    WHERE edition_for = $1::date
+    LIMIT 1
+    `,
+    [editionFor]
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    edition_for: String(r.edition_for).slice(0, 10),
+    session_date: String(r.session_date).slice(0, 10),
+    published_at: new Date(String(r.published_at)).toISOString(),
+    recap_headline: r.recap_headline != null ? String(r.recap_headline) : null,
+    recap_summary: r.recap_summary != null ? String(r.recap_summary) : null,
+    market_recap: (r.market_recap as Record<string, unknown>) ?? {},
+    plays: Array.isArray(r.plays) ? r.plays : [],
+    meta: (r.meta as Record<string, unknown>) ?? {},
+  };
+}
+
+export async function fetchLatestNighthawkEdition(): Promise<NighthawkEditionRow | null> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `
+    SELECT edition_for, session_date, published_at,
+           recap_headline, recap_summary, market_recap, plays, meta
+    FROM nighthawk_editions
+    ORDER BY edition_for DESC
+    LIMIT 1
+    `
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    edition_for: String(r.edition_for).slice(0, 10),
+    session_date: String(r.session_date).slice(0, 10),
+    published_at: new Date(String(r.published_at)).toISOString(),
+    recap_headline: r.recap_headline != null ? String(r.recap_headline) : null,
+    recap_summary: r.recap_summary != null ? String(r.recap_summary) : null,
+    market_recap: (r.market_recap as Record<string, unknown>) ?? {},
+    plays: Array.isArray(r.plays) ? r.plays : [],
+    meta: (r.meta as Record<string, unknown>) ?? {},
+  };
+}
+
+export async function cacheNighthawkPlayExplanation(
+  editionFor: string,
+  ticker: string,
+  explanation: string
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE nighthawk_editions
+    SET meta = jsonb_set(
+      COALESCE(meta, '{}'::jsonb),
+      ARRAY['play_explanations', $2],
+      to_jsonb($3::text),
+      true
+    )
+    WHERE edition_for = $1::date
+    `,
+    [editionFor, ticker.toUpperCase(), explanation]
+  );
+}
+
+export async function fetchTickerFlowDailyNet(
+  ticker: string,
+  lookbackDays = 10
+): Promise<Array<{ day: string; net: number; call: number; put: number }>> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `
+    SELECT
+      (created_at AT TIME ZONE 'America/New_York')::date AS day,
+      COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'c%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS call_prem,
+      COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'p%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS put_prem
+    FROM flow_alerts
+    WHERE ticker = $1
+      AND created_at >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
+    GROUP BY 1
+    ORDER BY day DESC
+    `,
+    [ticker.toUpperCase(), lookbackDays]
+  );
+  return res.rows.map((row) => {
+    const call = Number(row.call_prem ?? 0);
+    const put = Number(row.put_prem ?? 0);
+    return {
+      day: String(row.day).slice(0, 10),
+      call,
+      put,
+      net: call - put,
+    };
+  });
 }

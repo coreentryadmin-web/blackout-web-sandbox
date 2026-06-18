@@ -351,7 +351,7 @@ export interface NightHawkPlay {
   summary: string;
 }
 
-export type { NightHawkEdition, HuntMode, HuntRequest, HuntResponse } from "@/lib/nighthawk/types";
+export type { NightHawkEdition, HuntMode, HuntRequest, HuntResponse, PlayExplainRequest, PlayExplainResponse } from "@/lib/nighthawk/types";
 
 export const fetchNightHawkPlays = () =>
   intelFetch<{ plays: NightHawkPlay[] }>("/nighthawk/plays");
@@ -361,6 +361,14 @@ export const fetchNightHawkEdition = () =>
 
 export const postNightHawkHunt = (body: import("@/lib/nighthawk/types").HuntRequest) =>
   marketFetch<import("@/lib/nighthawk/types").HuntResponse>("/nighthawk/hunt", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const postNightHawkPlayExplain = (
+  body: import("@/lib/nighthawk/types").PlayExplainRequest
+) =>
+  marketFetch<import("@/lib/nighthawk/types").PlayExplainResponse>("/nighthawk/play-explain", {
     method: "POST",
     body: JSON.stringify(body),
   });

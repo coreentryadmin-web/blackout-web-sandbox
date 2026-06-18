@@ -60,7 +60,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   }, ["ticker"]),
 
-  t("get_oi_per_expiry", "OI bucketed by expiry (UW only — no Polygon equivalent).", T, ["ticker"]),
+  t("get_oi_per_expiry", "OI bucketed by expiry. Polygon reference contracts first; UW fallback.", T, ["ticker"]),
 
   t("get_max_pain", "Max pain strike. Polygon chain first; UW fallback.", { ...T, expiry: { type: "string" } }, ["ticker"]),
 
@@ -100,7 +100,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_top_net_impact", "UW ONLY — highest net premium impact tickers."),
 
-  t("get_iv_stats", "IV rank + vol character. UW only (no Polygon IV rank).", T, ["ticker"]),
+  t("get_iv_stats", "IV rank + vol character. Polygon VIX rank for index proxies; UW fallback for single names.", T, ["ticker"]),
 
   t("get_iv_term_structure", "IV term structure. UW only.", T, ["ticker"]),
 
@@ -191,6 +191,25 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
   t("get_signal_log", "SPX signal log from Postgres.", { limit: { type: "integer" } }),
 
   t("get_lotto_state", "Today's lotto state from Postgres."),
+
+  t("get_nighthawk_edition", "Night Hawk evening playbook — top plays, recap, market context. Same data as /nighthawk.", {
+    date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
+  }),
+
+  t("get_flow_tape", "Flow feed tape from Postgres — recent alerts + top tickers by premium.", {
+    ticker: { type: "string" },
+    limit: { type: "integer", default: 50 },
+  }),
+
+  t("get_platform_snapshot", "Cross-service snapshot: SPX desk + flow tape + Night Hawk edition in one call.", {
+    include: {
+      type: "array",
+      items: { type: "string", enum: ["spx", "flows", "nighthawk", "largo"] },
+      description: "Subset of services; default all three.",
+    },
+    flow_limit: { type: "integer", default: 50 },
+    full_edition: { type: "boolean", description: "Include full Night Hawk play objects." },
+  }),
 
   t("get_gex", "GEX/dealer map. Polygon chain GEX first; UW spot exposures fallback.", {
 
