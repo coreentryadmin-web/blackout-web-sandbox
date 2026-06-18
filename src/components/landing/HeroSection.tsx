@@ -9,7 +9,7 @@ import { HeroToolsRail } from "./HeroToolsRail";
 const STATS = [
   { num: "93K+", label: "Flow Alerts", color: "text-bull" },
   { num: "4", label: "AI Systems", color: "text-purple-light" },
-  { num: "0DTE", label: "SPX Precision", color: "text-bear" },
+  { num: "0DTE", label: "SPX Precision", color: "text-cyan" },
   { num: "24/7", label: "Night Hawk", color: "text-grey-200" },
 ];
 
@@ -32,6 +32,7 @@ export function HeroSection() {
   return (
     <section className="landing-section landing-section-hero relative min-h-screen flex flex-col overflow-hidden pt-20">
       <HeroBanner />
+      <div className="hero-noise-overlay" aria-hidden />
 
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
@@ -51,6 +52,7 @@ export function HeroSection() {
             key={s.label}
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
+            whileHover={{ scale: 1.05, rotate: 0 }}
             transition={{ delay: 0.3 + i * 0.15 }}
             className="bg-black/80 border border-bull/40 px-5 py-3 backdrop-blur-md -rotate-2 hover:rotate-0 transition-transform"
           >
@@ -64,6 +66,7 @@ export function HeroSection() {
         <motion.div
           initial={{ opacity: 0, x: -40 }}
           animate={{ opacity: 1, x: 0 }}
+          whileHover={{ scale: 1.05, rotate: 0 }}
           transition={{ delay: 0.5 }}
           className="bg-black/80 border border-purple/40 px-5 py-3 backdrop-blur-md rotate-2"
         >
@@ -107,7 +110,9 @@ export function HeroSection() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-8 justify-center md:justify-start">
-              <LandingCta href="/sign-up">Start Trading →</LandingCta>
+              <LandingCta href="/sign-up" className="btn-cta-primary">
+                Start Trading →
+              </LandingCta>
               <LandingCta href="#features" variant="ghost">
                 See Platform
               </LandingCta>

@@ -78,7 +78,13 @@ export function OverlapShowcase({
         >
           <div className={clsx("showcase-image-glow absolute -inset-8 -z-10 rounded-2xl", glowClass)} aria-hidden />
           <div className={clsx("relative w-full h-full border-2 overflow-hidden shadow-glow-bull", borderColor)}>
-            <FadeInImage src={image} alt={alt} fill sizes="60vw" />
+            <motion.div
+              className="relative w-full h-full"
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <FadeInImage src={image} alt={alt} fill sizes="60vw" />
+            </motion.div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
             <span
               className={clsx(
@@ -97,6 +103,7 @@ export function OverlapShowcase({
           className={clsx(
             "absolute bottom-0 md:bottom-12 w-[92%] md:w-[48%] z-20 bg-black/80 border-2 backdrop-blur-xl p-8 md:p-10",
             borderColor,
+            accent === "green" ? "showcase-panel-green" : "showcase-panel-purple",
             reverse ? "left-0 md:left-8 rotate-1" : "right-0 md:right-8 -rotate-1",
             "hover:rotate-0 transition-transform duration-500"
           )}

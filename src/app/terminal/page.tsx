@@ -16,13 +16,26 @@ export default async function TerminalPage() {
         subtitle="Largo — Desk-grade market intelligence"
         deskMode
       >
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-          <div className="xl:col-span-7">
+        <div className="flex flex-col xl:flex-row gap-5 xl:items-stretch">
+          <div className="xl:flex-[7] min-w-0">
             <LargoTerminal />
           </div>
-          <div className="xl:col-span-5 space-y-4">
-            <TradingViewWidget type="advanced-chart" symbol="AMEX:SPY" title="SPY Context" height={360} />
-            <TradingViewWidget type="ticker-tape" title="Tape" height={48} />
+          <div
+            className="hidden xl:block w-px self-stretch shrink-0"
+            style={{
+              background: "linear-gradient(to bottom, transparent, rgba(191,95,255,0.3), transparent)",
+            }}
+            aria-hidden
+          />
+          <div className="xl:flex-[5] min-w-0 space-y-4">
+            <div className="largo-widget-panel">
+              <div className="largo-widget-label">SPY Context</div>
+              <TradingViewWidget type="advanced-chart" symbol="AMEX:SPY" title="SPY Context" height={360} />
+            </div>
+            <div className="largo-widget-panel">
+              <div className="largo-widget-label">Tape</div>
+              <TradingViewWidget type="ticker-tape" title="Tape" height={48} />
+            </div>
           </div>
         </div>
       </PlatformShell>

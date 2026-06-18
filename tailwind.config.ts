@@ -11,48 +11,55 @@ const config: Config = {
       colors: {
         black: "#000000",
         void: {
-          deep: "#0c0c0f",
-          black: "#000000",
+          DEFAULT: "#040407",
+          deep: "#08080e",
+          surface: "#0f0f1a",
+          card: "#161628",
         },
         grey: {
-          50: "#f5f5f5",
-          100: "#e5e5e5",
-          200: "#a3a3a3",
-          300: "#737373",
-          400: "#525252",
-          500: "#404040",
-          600: "#2a2a2a",
-          700: "#1a1a1a",
-          800: "#111111",
-          900: "#0a0a0a",
+          50: "#f5f5f7",
+          100: "#e0e0e8",
+          200: "#a8a8b8",
+          300: "#707080",
+          400: "#4a4a5a",
+          500: "#32323f",
+          600: "#22222c",
+          700: "#16161e",
+          800: "#0f0f16",
+          900: "#08080e",
         },
         purple: {
-          DEFAULT: "#8b5cf6",
-          light: "#a78bfa",
-          dark: "#6d28d9",
-          glow: "rgba(139, 92, 246, 0.35)",
+          DEFAULT: "#bf5fff",
+          light: "#d580ff",
+          dark: "#9333ea",
+          dim: "#7c3aed",
+          glow: "rgba(191,95,255,0.35)",
         },
-        bull: "#22c55e",
-        bear: "#ef4444",
+        bull: "#00e676",
+        bear: "#ff2d55",
+        cyan: "#00d4ff",
+        gold: "#ffd23f",
+        ember: "#ff6b2b",
         surface: {
-          1: "#0a0a0a",
-          2: "#111111",
-          3: "#1a1a1a",
-          4: "#222222",
+          1: "#08080e",
+          2: "#0f0f1a",
+          3: "#161628",
+          4: "#1e1e32",
         },
         border: {
-          DEFAULT: "#1a1a1a",
-          subtle: "#111111",
-          strong: "#2a2a2a",
+          DEFAULT: "#1e1e2e",
+          subtle: "rgba(255,255,255,0.06)",
+          mid: "rgba(255,255,255,0.12)",
+          strong: "rgba(255,255,255,0.20)",
         },
         text: {
-          primary: "#f0f0f0",
-          secondary: "#888888",
-          muted: "#525252",
-          dim: "#2a2a2a",
+          primary: "#f0f0f8",
+          secondary: "#8888a0",
+          muted: "#4a4a60",
+          dim: "#22222c",
         },
-        warning: "#f59e0b",
-        elite: "#8b5cf6",
+        warning: "#ffd23f",
+        elite: "#bf5fff",
       },
       fontFamily: {
         display: ["var(--font-bebas)", "sans-serif"],
@@ -63,20 +70,37 @@ const config: Config = {
       },
       backgroundImage: {
         "eclipse-glow":
-          "radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.18) 0%, transparent 55%)",
+          "radial-gradient(ellipse at 50% 0%, rgba(0,230,118,0.15) 0%, rgba(191,95,255,0.08) 40%, transparent 65%)",
         "hero-mesh":
-          "radial-gradient(ellipse 60% 50% at 50% -10%, rgba(139,92,246,0.22), transparent 50%), radial-gradient(ellipse 40% 30% at 10% 80%, rgba(34,197,94,0.08), transparent 50%), radial-gradient(ellipse 40% 30% at 90% 70%, rgba(239,68,68,0.08), transparent 50%)",
+          "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(0,230,118,0.14), transparent 55%), radial-gradient(ellipse 40% 30% at 5% 70%, rgba(191,95,255,0.10), transparent 50%), radial-gradient(ellipse 40% 30% at 95% 60%, rgba(255,45,85,0.08), transparent 50%)",
         "card-glow":
-          "radial-gradient(ellipse at 50% -20%, rgba(139,92,246,0.12) 0%, transparent 55%)",
+          "radial-gradient(ellipse at 50% -20%, rgba(0,230,118,0.10) 0%, transparent 60%)",
+        aurora:
+          "linear-gradient(135deg, rgba(191,95,255,0.15), rgba(0,212,255,0.10))",
       },
       boxShadow: {
-        eclipse: "0 0 120px 40px rgba(139,92,246,0.12), 0 0 300px 80px rgba(139,92,246,0.06)",
-        glow: "0 0 24px rgba(139,92,246,0.35)",
-        "glow-purple": "0 0 20px rgba(139,92,246,0.4)",
-        "glow-bull": "0 0 16px rgba(34,197,94,0.35)",
-        "glow-bear": "0 0 16px rgba(239,68,68,0.35)",
-        "glow-green": "0 0 16px rgba(34,197,94,0.3)",
-        "glow-red": "0 0 16px rgba(239,68,68,0.3)",
+        eclipse:
+          "0 0 120px 40px rgba(0,230,118,0.10), 0 0 300px 80px rgba(191,95,255,0.08)",
+        glow:
+          "0 0 8px rgba(0,230,118,0.6), 0 0 30px rgba(0,230,118,0.3), 0 0 80px rgba(0,230,118,0.12)",
+        "glow-bull":
+          "0 0 8px rgba(0,230,118,0.6), 0 0 30px rgba(0,230,118,0.3)",
+        "glow-bear":
+          "0 0 8px rgba(255,45,85,0.6),  0 0 30px rgba(255,45,85,0.3)",
+        "glow-purple":
+          "0 0 8px rgba(191,95,255,0.6), 0 0 30px rgba(191,95,255,0.3)",
+        "glow-cyan":
+          "0 0 8px rgba(0,212,255,0.6),  0 0 30px rgba(0,212,255,0.3)",
+        "glow-gold":
+          "0 0 8px rgba(255,210,63,0.6), 0 0 30px rgba(255,210,63,0.3)",
+        "glow-ember":
+          "0 0 8px rgba(255,107,43,0.6), 0 0 30px rgba(255,107,43,0.3)",
+        "glow-green":
+          "0 0 8px rgba(0,230,118,0.5),  0 0 24px rgba(0,230,118,0.25)",
+        "glow-red":
+          "0 0 8px rgba(255,45,85,0.5),  0 0 24px rgba(255,45,85,0.25)",
+        "card-hover":
+          "0 0 0 1px rgba(0,230,118,0.2), 0 8px 32px rgba(0,0,0,0.6)",
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",

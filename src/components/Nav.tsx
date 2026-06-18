@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
 
@@ -153,11 +153,20 @@ export function Nav() {
             </span>
           </button>
 
-          {featuresOpen && (
-            <div className="nav-features-panel">
-              <NavFeaturesMenu links={featureLinks} path={path} onNavigate={() => setFeaturesOpen(false)} />
-            </div>
-          )}
+          <AnimatePresence>
+            {featuresOpen && (
+              <motion.div
+                className="nav-features-panel"
+                initial={{ opacity: 0, y: -8, scaleY: 0.95 }}
+                animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                exit={{ opacity: 0, y: -8, scaleY: 0.95 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                style={{ transformOrigin: "top" }}
+              >
+                <NavFeaturesMenu links={featureLinks} path={path} onNavigate={() => setFeaturesOpen(false)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </li>
 
         {TOP_LINKS.map(({ hash, label }) => {
@@ -219,36 +228,45 @@ export function Nav() {
         </SignedIn>
       </div>
 
-      {mobileOpen && (
-        <div className="nav-mobile-drawer md:hidden">
-          <p className="nav-mobile-drawer-label">Features</p>
-          <NavFeaturesMenu
-            links={featureLinks}
-            path={path}
-            onNavigate={() => setMobileOpen(false)}
-          />
-          <div className="nav-mobile-drawer-divider" />
-          {TOP_LINKS.map(({ hash, label }) => (
-            <Link
-              key={hash}
-              href={isHome ? `#${hash}` : `/#${hash}`}
-              onClick={() => setMobileOpen(false)}
-              className="nav-mobile-top-link"
-            >
-              {label}
-            </Link>
-          ))}
-          {showAdmin && (
-            <Link
-              href="/admin"
-              onClick={() => setMobileOpen(false)}
-              className="nav-mobile-top-link"
-            >
-              Admin
-            </Link>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            className="nav-mobile-drawer md:hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            style={{ overflow: "hidden" }}
+          >
+            <p className="nav-mobile-drawer-label">Features</p>
+            <NavFeaturesMenu
+              links={featureLinks}
+              path={path}
+              onNavigate={() => setMobileOpen(false)}
+            />
+            <div className="nav-mobile-drawer-divider" />
+            {TOP_LINKS.map(({ hash, label }) => (
+              <Link
+                key={hash}
+                href={isHome ? `#${hash}` : `/#${hash}`}
+                onClick={() => setMobileOpen(false)}
+                className="nav-mobile-top-link"
+              >
+                {label}
+              </Link>
+            ))}
+            {showAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setMobileOpen(false)}
+                className="nav-mobile-top-link"
+              >
+                Admin
+              </Link>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.nav>
   );
 }

@@ -10,6 +10,7 @@ type DeskPanelProps = {
   className?: string;
   children: ReactNode;
   live?: boolean;
+  feedStatus?: "live" | "reconnecting";
   glow?: boolean;
 };
 
@@ -27,6 +28,7 @@ export function DeskPanel({
   className,
   children,
   live,
+  feedStatus,
   glow,
 }: DeskPanelProps) {
   return (
@@ -36,7 +38,19 @@ export function DeskPanel({
           <p className="desk-panel-title">{title}</p>
           {subtitle && <p className="desk-panel-subtitle">{subtitle}</p>}
         </div>
-        {live && (
+        {feedStatus === "live" && (
+          <span className="badge-live text-[9px]">
+            <span className="badge-live-dot" />
+            LIVE
+          </span>
+        )}
+        {feedStatus === "reconnecting" && (
+          <span className="badge-reconnecting text-[9px]">
+            <span className="badge-offline-dot" />
+            RECONNECTING
+          </span>
+        )}
+        {feedStatus === undefined && live && (
           <span className="badge-live text-[9px]">
             <span className="badge-live-dot" />
             Live

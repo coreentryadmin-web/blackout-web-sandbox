@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
 
@@ -47,7 +50,7 @@ const CONFIG: Record<
     ambient: "platform-ambient-heatmap",
     frame: "platform-frame-heatmap",
     label: "◆ SECTOR ROTATION",
-    titleClass: "platform-title-thermal",
+    titleClass: "platform-title-thermal glow-text-amber",
     heroArt: "platform-hero-heatmap",
     badgeClass: "badge-thermal",
   },
@@ -55,7 +58,7 @@ const CONFIG: Record<
     ambient: "platform-ambient-largo",
     frame: "platform-frame-largo",
     label: "◆ AI DESK — LARGO",
-    titleClass: "text-purple-light platform-title-glow-purple",
+    titleClass: "text-purple-light platform-title-glow-purple glow-text-purple",
     heroArt: "platform-hero-largo",
     badgeClass: "badge-ai",
     imagePosition: "object-[center_30%]",
@@ -64,7 +67,7 @@ const CONFIG: Record<
     ambient: "platform-ambient-nighthawk",
     frame: "platform-frame-nighthawk",
     label: "◆ SWING RADAR",
-    titleClass: "platform-title-nighthawk",
+    titleClass: "platform-title-nighthawk glow-text-cyan",
     heroArt: "platform-hero-nighthawk",
     badgeClass: "badge-ops",
   },
@@ -141,6 +144,7 @@ export function PlatformShell({
   return (
     <>
       <div className={clsx("platform-ambient", theme.ambient)} aria-hidden />
+      <div className="platform-dot-grid" aria-hidden />
       <main className={clsx("relative z-10 max-w-7xl mx-auto px-4 md:px-6 pb-16", deskMode ? "pt-20" : "pt-24")}>
         <header className={clsx(deskMode ? "mb-6" : "mb-10")}>
           {!deskMode && (imageSrc && imageAlt ? (
@@ -159,7 +163,11 @@ export function PlatformShell({
               <p className="font-mono text-[10px] tracking-[0.45em] text-grey-300 uppercase mb-2">
                 {theme.label}
               </p>
-              <h1
+              <motion.h1
+                key={variant}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                 className={clsx(
                   "font-anton leading-[0.9] tracking-wide uppercase",
                   deskMode ? "text-4xl md:text-5xl" : "text-5xl md:text-7xl lg:text-8xl",
@@ -167,7 +175,7 @@ export function PlatformShell({
                 )}
               >
                 {title}
-              </h1>
+              </motion.h1>
               {subtitle && (
                 <p className="font-mono text-xs md:text-sm text-grey-200 mt-2 tracking-widest uppercase">
                   {subtitle}

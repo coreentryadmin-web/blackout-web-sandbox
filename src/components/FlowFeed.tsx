@@ -87,7 +87,7 @@ export function FlowFeed() {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-7">
-          <FlowAlertStream flows={alerts} live={live && !loading} />
+          <FlowAlertStream flows={alerts} live={live} loading={loading} />
         </div>
         <div className="xl:col-span-5 space-y-4">
           <FlowVolumeChart alerts={alerts} />

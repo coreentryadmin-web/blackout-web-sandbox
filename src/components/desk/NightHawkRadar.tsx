@@ -5,48 +5,91 @@ import { clsx } from "clsx";
 import type { NightHawkPlay } from "@/lib/api";
 import { DeskPanel } from "./DeskPanel";
 
+const listVariants = {
+  show: { transition: { staggerChildren: 0.08 } },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, x: -24 },
+  show: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+  },
+};
+
+function scorePercent(score: number) {
+  return Math.min(100, Math.max(0, score));
+}
+
 export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?: boolean }) {
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <DeskPanel title="Night Hawk Radar" subtitle="After-hours setups" variant="purple" live={live} glow className="lg:col-span-2">
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <motion.div
+          className="grid md:grid-cols-2 xl:grid-cols-3 gap-3"
+          variants={listVariants}
+          initial="hidden"
+          animate="show"
+        >
           {plays.length === 0 ? (
             <p className="col-span-full text-grey-500 text-sm font-mono py-10 text-center">
               {live ? "Scanning for plays…" : "Engine offline"}
             </p>
           ) : (
-            plays.map((play, i) => (
-              <motion.div
-                key={`${play.ticker}-${play.posted_at}`}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="desk-nighthawk-card"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-anton text-2xl text-white">{play.ticker}</span>
-                  <span
-                    className={clsx(
-                      "desk-nh-direction",
-                      play.direction?.toLowerCase().includes("bull") ? "desk-nh-bull" : "desk-nh-bear"
-                    )}
-                  >
-                    {play.direction}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                  <MiniStat label="Score" value={String(play.score)} />
-                  <MiniStat label="Streak" value={`${play.streak_days}d`} />
-                  <MiniStat label="IV" value={String(play.iv_rank)} />
-                </div>
-                <p className="text-xs text-grey-300 leading-relaxed line-clamp-3">{play.summary}</p>
-                <p className="text-[9px] font-mono text-grey-500 mt-3 uppercase tracking-wider">
-                  {play.dte_range} · {play.entry_premium ? `$${play.entry_premium}` : "—"}
-                </p>
-              </motion.div>
-            ))
+            plays.map((play) => {
+              const isBull = play.direction?.toLowerCase().includes("bull");
+              const pct = scorePercent(play.score);
+
+              return (
+                <motion.div
+                  key={`${play.ticker}-${play.posted_at}`}
+                  variants={cardVariants}
+                  className={clsx(
+                    "desk-nighthawk-card",
+                    isBull ? "desk-nighthawk-bull" : "desk-nighthawk-bear"
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-anton text-2xl text-white">{play.ticker}</span>
+                    <span
+                      className={clsx(
+                        "desk-nh-direction",
+                        isBull ? "desk-nh-bull" : "desk-nh-bear"
+                      )}
+                    >
+                      {play.direction}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                    <MiniStat label="Score" value={String(play.score)} />
+                    <MiniStat label="Streak" value={`${play.streak_days}d`} />
+                    <MiniStat label="IV" value={String(play.iv_rank)} />
+                  </div>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[8px] font-mono uppercase tracking-widest text-grey-500">Conviction</span>
+                      <span className="text-[9px] font-mono text-purple-light">{pct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-grey-900 rounded-full overflow-hidden">
+                      <motion.div
+                        className={clsx("h-full rounded-full", isBull ? "bg-bull" : "bg-bear")}
+                        initial={{ width: "0%" }}
+                        whileInView={{ width: `${pct}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-grey-300 leading-relaxed line-clamp-3">{play.summary}</p>
+                  <p className="text-[9px] font-mono text-grey-500 mt-3 uppercase tracking-wider">
+                    {play.dte_range} · {play.entry_premium ? `$${play.entry_premium}` : "—"}
+                  </p>
+                </motion.div>
+              );
+            })
           )}
-        </div>
+        </motion.div>
       </DeskPanel>
     </div>
   );

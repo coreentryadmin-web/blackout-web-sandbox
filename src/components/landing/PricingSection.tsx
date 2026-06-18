@@ -61,7 +61,20 @@ export function PricingSection() {
         >
           <p className="font-mono text-[10px] tracking-[0.5em] text-purple-light uppercase mb-2">◆ Pricing</p>
           <h2 className="font-syne font-extrabold text-5xl md:text-7xl tracking-tight">
-            FREE OR <span className="text-gradient-fire">PREMIUM</span>
+            FREE OR{" "}
+            <motion.span
+              className="text-gradient-fire inline-block"
+              animate={{
+                textShadow: [
+                  "0 0 20px rgba(255,45,85,0.3)",
+                  "0 0 60px rgba(255,45,85,0.7)",
+                  "0 0 20px rgba(255,45,85,0.3)",
+                ],
+              }}
+              transition={{ duration: 2.5, repeat: Infinity }}
+            >
+              PREMIUM
+            </motion.span>
           </h2>
           <p className="text-red-400 text-sm mt-4 max-w-xl font-mono leading-relaxed">
             Sign up on BlackOut, then choose monthly, yearly, or lifetime on Whop — same email unlocks

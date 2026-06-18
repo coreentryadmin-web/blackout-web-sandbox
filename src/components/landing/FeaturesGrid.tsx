@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
+import type { CSSProperties } from "react";
 
 const FEATURES = [
   {
@@ -32,10 +33,10 @@ const FEATURES = [
     sub: "Heatmaps",
     desc: "Live rotation heatmaps. See where institutions move.",
     tier: "Premium",
-    accent: "border-grey-500 text-grey-300",
+    accent: "border-ember text-ember",
     rotate: "-rotate-2",
-    topAccent: "orange",
-    badgeGlow: "orange",
+    topAccent: "ember",
+    badgeGlow: "ember",
   },
   {
     num: "04",
@@ -54,10 +55,10 @@ const FEATURES = [
     sub: "Hawk",
     desc: "2–10 DTE swing plays with full dossier intel.",
     tier: "Premium",
-    accent: "border-bear text-bear",
+    accent: "border-cyan text-cyan",
     rotate: "-rotate-1",
-    topAccent: "red",
-    badgeGlow: "bear",
+    topAccent: "cyan",
+    badgeGlow: "cyan",
   },
   {
     num: "06",
@@ -68,9 +69,20 @@ const FEATURES = [
     accent: "border-bull text-bull",
     rotate: "rotate-1",
     topAccent: "yellow",
-    badgeGlow: "bull",
+    badgeGlow: "gold",
   },
-];
+] as const;
+
+const ACCENT_COLORS: Record<string, string> = {
+  green: "#00e676",
+  purple: "#bf5fff",
+  orange: "#ff6b2b",
+  ember: "#ff6b2b",
+  blue: "#3b82f6",
+  red: "#ff2d55",
+  cyan: "#00d4ff",
+  yellow: "#ffd23f",
+};
 
 const headingLines = ["EVERYTHING", "YOU NEED"];
 
@@ -129,6 +141,7 @@ export function FeaturesGrid() {
               custom={i}
               initial="hidden"
               whileInView="show"
+              whileHover={{ y: -6 }}
               viewport={{ once: true, margin: "-40px" }}
               variants={cardVariants}
               className={clsx(
@@ -137,8 +150,14 @@ export function FeaturesGrid() {
                 i % 3 === 2 && "md:mt-4"
               )}
             >
-              <div className={clsx("bento-card-wrap", f.rotate, "transition-transform duration-500 group-hover:rotate-0")}>
-                <div className="bento-card-glow" aria-hidden />
+              <div
+                className={clsx("bento-card-wrap", f.rotate, "transition-transform duration-500 group-hover:rotate-0")}
+                style={
+                  {
+                    "--card-accent-color": ACCENT_COLORS[f.topAccent] ?? ACCENT_COLORS.green,
+                  } as CSSProperties
+                }
+              >
                 <div
                   className={clsx(
                     "bento-card-inner",

@@ -8,6 +8,7 @@ export default async function NightHawkPage() {
 
   return (
     <div className="page-shell relative overflow-hidden">
+      <div className="nv-scanlines" aria-hidden />
       <Nav />
       <PlatformShell
         variant="nighthawk"
@@ -17,6 +18,10 @@ export default async function NightHawkPage() {
       >
         <NightHawkFeed />
       </PlatformShell>
+      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 font-mono text-[9px] tracking-[0.3em] uppercase text-cyan bg-black/80 border border-cyan/30 px-3 py-2 backdrop-blur-md">
+        <span className="w-1.5 h-1.5 rounded-full bg-cyan animate-pulse" />
+        Night Ops Active
+      </div>
     </div>
   );
 }
