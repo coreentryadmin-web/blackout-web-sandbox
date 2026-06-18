@@ -1,6 +1,7 @@
 import {
   anthropicConfigured,
   anthropicToolLoop,
+  LARGO_MODEL,
   type AnthropicMessage,
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
@@ -151,6 +152,7 @@ export async function runLargoQuery(
       system,
       tools: filteredTools,
       messages: history,
+      model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 16,
       runTool: async (name, input) => {
@@ -198,6 +200,7 @@ export async function runLargoQueryStream(
       system,
       tools: filteredTools,
       messages: history,
+      model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 16,
       onEvent: (event) => onEvent(event),

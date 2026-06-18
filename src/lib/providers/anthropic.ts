@@ -10,7 +10,9 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import { recordApiCall } from "@/lib/api-telemetry";
 
-const DEFAULT_MODEL = "claude-opus-4-6";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+export const LARGO_MODEL = "claude-sonnet-4-6";
+export const COMMENTARY_MODEL = "claude-haiku-4-5";
 const TEMPERATURE = 0.3;
 
 export type AnthropicSystemBlock = {
@@ -31,8 +33,8 @@ function getClient(): Anthropic | null {
   return new Anthropic({ apiKey: key, maxRetries: 3 });
 }
 
-function getModel(): string {
-  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+function resolveModel(explicit?: string): string {
+  return explicit?.trim() || process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
 }
 
 async function withTelemetry<T>(
@@ -123,12 +125,13 @@ export async function anthropicText(
   options?: {
     output_config?: OutputConfig;
     temperature?: number;
+    model?: string;
   }
 ): Promise<string | null> {
   const client = getClient();
   if (!client) return null;
 
-  const model = getModel();
+  const model = resolveModel(options?.model);
   const body: MessageCreateParamsNonStreaming = {
     model,
     max_tokens: maxTokens,
@@ -168,6 +171,7 @@ export async function anthropicToolLoop(params: {
   system: AnthropicSystem;
   tools: AnthropicToolDef[];
   messages: AnthropicMessage[];
+  model?: string;
   maxTokens?: number;
   maxRounds?: number;
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -176,7 +180,7 @@ export async function anthropicToolLoop(params: {
   const client = getClient();
   if (!client) return null;
 
-  const model = getModel();
+  const model = resolveModel(params.model);
   const maxTokens = params.maxTokens ?? 4096;
   const maxRounds = params.maxRounds ?? 12;
   const messages: MessageParam[] = params.messages.map((m) => ({

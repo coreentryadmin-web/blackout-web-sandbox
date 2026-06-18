@@ -1,4 +1,4 @@
-import { anthropicText } from "./anthropic";
+import { anthropicText, COMMENTARY_MODEL } from "./anthropic";
 import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import {
@@ -439,6 +439,7 @@ Rules:
 - Max 280 words in body.`;
 
   const raw = await anthropicText(prompt, 1800, undefined, {
+    model: COMMENTARY_MODEL,
     output_config: {
       format: {
         type: "json_schema",
