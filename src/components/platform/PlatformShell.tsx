@@ -14,6 +14,8 @@ type PlatformShellProps = {
   imageSrc?: string;
   imageAlt?: string;
   deskMode?: boolean;
+  /** Transparent content area — no bordered frame (Night Hawk radar canvas). */
+  frameless?: boolean;
   children: ReactNode;
 };
 
@@ -66,7 +68,7 @@ const CONFIG: Record<
   nighthawk: {
     ambient: "platform-ambient-nighthawk",
     frame: "platform-frame-nighthawk",
-    label: "◆ SWING RADAR",
+    label: "◆ NIGHT OPS",
     titleClass: "platform-title-nighthawk glow-text-cyan",
     heroArt: "platform-hero-nighthawk",
     badgeClass: "badge-ops",
@@ -137,6 +139,7 @@ export function PlatformShell({
   imageSrc,
   imageAlt,
   deskMode,
+  frameless,
   children,
 }: PlatformShellProps) {
   const theme = CONFIG[variant];
@@ -189,7 +192,13 @@ export function PlatformShell({
           </div>
         </header>
 
-        <div className={clsx("platform-content-frame", theme.frame)}>{children}</div>
+        <div
+          className={clsx(
+            frameless ? "platform-content-bare" : clsx("platform-content-frame", theme.frame)
+          )}
+        >
+          {children}
+        </div>
       </main>
     </>
   );

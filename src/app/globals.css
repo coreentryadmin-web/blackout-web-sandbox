@@ -1429,6 +1429,517 @@ body {
     padding-top: 1.5rem;
   }
 
+  .platform-content-bare {
+    @apply relative min-h-[50vh];
+  }
+
+  /* ── Night Hawk full-screen radar ── */
+  .nighthawk-page-shell {
+    @apply relative;
+  }
+
+  .nighthawk-page-shell .platform-ambient {
+    opacity: 0.35;
+  }
+
+  .nighthawk-page-shell .platform-dot-grid {
+    opacity: 0.15;
+  }
+
+  .nighthawk-radar-backdrop {
+    @apply fixed inset-0 z-0 overflow-hidden pointer-events-none;
+    background: radial-gradient(ellipse 120% 90% at 50% 45%, rgba(8, 4, 12, 0.4), #000 72%);
+  }
+
+  .nighthawk-radar-vignette {
+    @apply absolute inset-0;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 48%, transparent 0%, rgba(0, 0, 0, 0.55) 100%),
+      linear-gradient(180deg, rgba(0, 0, 0, 0.65) 0%, transparent 18%, transparent 78%, rgba(0, 0, 0, 0.75) 100%);
+  }
+
+  .nighthawk-radar-grid {
+    @apply absolute inset-0 opacity-[0.12];
+    background:
+      linear-gradient(rgba(255, 45, 85, 0.35) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 45, 85, 0.35) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, black 20%, transparent 72%);
+  }
+
+  .nighthawk-radar-stage {
+    @apply absolute inset-0 flex items-center justify-center;
+  }
+
+  .nighthawk-radar-scope {
+    @apply relative;
+    width: min(140vmin, 1200px);
+    height: min(140vmin, 1200px);
+  }
+
+  .nighthawk-radar-ring {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full;
+    border: 1px solid rgba(255, 45, 85, 0.22);
+    box-shadow: inset 0 0 24px rgba(255, 45, 85, 0.04);
+  }
+
+  .nighthawk-radar-crosshair-h,
+  .nighthawk-radar-crosshair-v {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2;
+    background: rgba(255, 45, 85, 0.12);
+  }
+
+  .nighthawk-radar-crosshair-h {
+    width: 100%;
+    height: 1px;
+  }
+
+  .nighthawk-radar-crosshair-v {
+    width: 1px;
+    height: 100%;
+  }
+
+  .nighthawk-radar-sweep {
+    @apply absolute inset-0 origin-center rounded-full;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(255, 45, 85, 0.42) 36deg,
+      rgba(255, 45, 85, 0.08) 72deg,
+      transparent 90deg
+    );
+  }
+
+  .nighthawk-radar-core {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full;
+    width: 8px;
+    height: 8px;
+    background: rgba(255, 45, 85, 0.9);
+    box-shadow: 0 0 20px rgba(255, 45, 85, 0.8), 0 0 60px rgba(255, 45, 85, 0.35);
+  }
+
+  .nighthawk-radar-blip {
+    @apply absolute -translate-x-1/2 -translate-y-1/2;
+    animation: radar-blip 2.8s ease-out forwards;
+  }
+
+  .nighthawk-radar-blip::before {
+    content: "";
+    @apply block w-2.5 h-2.5 rounded-full bg-bear;
+    box-shadow: 0 0 14px rgba(255, 45, 85, 0.95), 0 0 28px rgba(255, 45, 85, 0.45);
+  }
+
+  .nighthawk-radar-blip-label {
+    @apply absolute left-3.5 top-0 font-mono text-[10px] md:text-[11px] text-bear uppercase tracking-wider whitespace-nowrap;
+    text-shadow: 0 0 12px rgba(255, 45, 85, 0.8);
+  }
+
+  .nighthawk-content-canvas {
+    @apply relative z-10 min-h-[52vh];
+  }
+
+  .nighthawk-layout {
+    @apply grid gap-4 lg:gap-5;
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 1024px) {
+    .nighthawk-layout {
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+      align-items: start;
+    }
+  }
+
+  /* Playbook board */
+  .nighthawk-playbook {
+    @apply relative;
+  }
+
+  .nighthawk-playbook-header {
+    @apply flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4;
+  }
+
+  .nighthawk-playbook-kicker {
+    @apply font-mono text-[10px] tracking-[0.4em] uppercase text-cyan/80 mb-1;
+  }
+
+  .nighthawk-playbook-title {
+    @apply font-anton text-2xl md:text-3xl uppercase tracking-wide text-white;
+    text-shadow: 0 0 24px rgba(0, 212, 255, 0.25);
+  }
+
+  .nighthawk-playbook-recap {
+    @apply mt-2 font-mono text-[11px] md:text-xs text-grey-300 max-w-2xl leading-relaxed;
+  }
+
+  .nighthawk-playbook-status {
+    @apply shrink-0;
+  }
+
+  .nighthawk-status-pill {
+    @apply inline-flex items-center gap-2 font-mono text-[9px] tracking-[0.25em] uppercase px-3 py-1.5 border;
+  }
+
+  .nighthawk-status-live {
+    @apply border-bull/40 text-bull bg-bull/5;
+  }
+
+  .nighthawk-status-wait {
+    @apply border-bear/35 text-bear/90 bg-bear/5;
+  }
+
+  .nighthawk-status-loading {
+    @apply border-grey-600 text-grey-400 bg-black/40;
+  }
+
+  .nighthawk-status-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-bull;
+    box-shadow: 0 0 8px rgba(0, 230, 118, 0.8);
+  }
+
+  .nighthawk-playbook-rows {
+    @apply flex flex-col gap-2.5 md:gap-3;
+  }
+
+  .nighthawk-play-row {
+    @apply flex gap-0 min-h-[4.5rem] md:min-h-[5.25rem] overflow-hidden;
+    border: 1px solid rgba(255, 45, 85, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(8px);
+    box-shadow: inset 0 0 40px rgba(255, 45, 85, 0.04);
+  }
+
+  .nighthawk-play-row-bull {
+    border-left: 3px solid rgba(0, 230, 118, 0.65);
+  }
+
+  .nighthawk-play-row-bear {
+    border-left: 3px solid rgba(255, 45, 85, 0.65);
+  }
+
+  .nighthawk-play-row-empty {
+    @apply border-grey-800/80;
+    border-left: 3px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .nighthawk-play-rank {
+    @apply flex items-center justify-center shrink-0 font-anton text-2xl md:text-3xl text-bear/70;
+    width: 3rem;
+    background: rgba(255, 45, 85, 0.06);
+    border-right: 1px solid rgba(255, 45, 85, 0.15);
+  }
+
+  .nighthawk-play-row-empty .nighthawk-play-rank {
+    @apply text-grey-600;
+    background: rgba(255, 255, 255, 0.02);
+    border-right-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .nighthawk-play-body {
+    @apply flex-1 min-w-0 px-3 py-2.5 md:px-4 md:py-3 flex flex-col justify-center gap-1.5;
+  }
+
+  .nighthawk-play-body-empty {
+    @apply gap-0.5;
+  }
+
+  .nighthawk-play-empty-title {
+    @apply font-mono text-[10px] tracking-[0.3em] uppercase text-grey-400;
+  }
+
+  .nighthawk-play-empty-copy {
+    @apply font-mono text-[10px] text-grey-500;
+  }
+
+  .nighthawk-play-head {
+    @apply flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1;
+  }
+
+  .nighthawk-play-ticker-wrap {
+    @apply flex items-center gap-2 flex-wrap;
+  }
+
+  .nighthawk-play-ticker {
+    @apply font-anton text-xl md:text-2xl text-white tracking-wide;
+  }
+
+  .nighthawk-play-direction {
+    @apply font-mono text-[9px] tracking-[0.2em] uppercase px-2 py-0.5 border;
+  }
+
+  .nighthawk-play-direction-bull {
+    @apply border-bull/40 text-bull bg-bull/10;
+  }
+
+  .nighthawk-play-direction-bear {
+    @apply border-bear/40 text-bear bg-bear/10;
+  }
+
+  .nighthawk-play-conviction {
+    @apply font-mono text-[9px] tracking-widest text-cyan uppercase;
+  }
+
+  .nighthawk-play-stats {
+    @apply flex items-center gap-3 font-mono text-[9px] text-grey-400 uppercase tracking-wider;
+  }
+
+  .nighthawk-play-thesis {
+    @apply font-mono text-[11px] md:text-xs text-grey-200 line-clamp-2 leading-relaxed;
+  }
+
+  .nighthawk-play-levels {
+    @apply flex flex-wrap gap-x-4 gap-y-1 font-mono text-[9px] md:text-[10px] text-grey-400;
+  }
+
+  .nighthawk-play-levels em {
+    @apply not-italic text-grey-500 uppercase tracking-wider mr-1;
+  }
+
+  .nighthawk-play-contract {
+    @apply text-cyan/80;
+  }
+
+  /* Agent sidebar */
+  .nighthawk-agent-sidebar {
+    @apply lg:sticky lg:top-24;
+  }
+
+  .nighthawk-agent-sidebar-header {
+    @apply mb-3;
+  }
+
+  .nighthawk-agent-kicker {
+    @apply font-mono text-[9px] tracking-[0.4em] uppercase text-bear/80 mb-1;
+  }
+
+  .nighthawk-agent-title {
+    @apply font-anton text-lg uppercase tracking-wide text-white;
+  }
+
+  .nighthawk-agent-sub {
+    @apply mt-1.5 font-mono text-[10px] text-grey-400 leading-relaxed;
+  }
+
+  .nighthawk-agent-list {
+    @apply flex flex-col gap-2;
+  }
+
+  .nighthawk-agent-card {
+    @apply relative text-left w-full px-3 py-3 border transition-all duration-200;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+  }
+
+  .nighthawk-agent-card:hover {
+    transform: translateX(-2px);
+  }
+
+  .nighthawk-agent-card-cyan {
+    @apply border-cyan/30 hover:border-cyan/55 hover:shadow-[0_0_24px_rgba(0,212,255,0.12)];
+  }
+
+  .nighthawk-agent-card-bear {
+    @apply border-bear/30 hover:border-bear/55 hover:shadow-[0_0_24px_rgba(255,45,85,0.12)];
+  }
+
+  .nighthawk-agent-card-purple {
+    @apply border-purple/35 hover:border-purple/55 hover:shadow-[0_0_24px_rgba(191,95,255,0.12)];
+  }
+
+  .nighthawk-agent-card-active {
+    box-shadow: inset 0 0 30px rgba(255, 45, 85, 0.08);
+  }
+
+  .nighthawk-agent-card-top {
+    @apply flex items-center justify-between mb-2;
+  }
+
+  .nighthawk-agent-card-icon {
+    @apply text-base;
+  }
+
+  .nighthawk-agent-card-power {
+    @apply font-mono text-[8px] tracking-[0.35em] uppercase text-grey-400;
+  }
+
+  .nighthawk-agent-card-name {
+    @apply font-anton text-lg uppercase text-white tracking-wide;
+  }
+
+  .nighthawk-agent-card-tag {
+    @apply font-mono text-[9px] text-grey-400 uppercase tracking-wider mt-0.5;
+  }
+
+  /* Agent modal */
+  .nighthawk-modal-overlay {
+    @apply fixed inset-0 z-[100] flex items-center justify-center p-4;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(6px);
+  }
+
+  .nighthawk-modal {
+    @apply w-full max-w-lg max-h-[90vh] overflow-y-auto border bg-black/95;
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.8);
+  }
+
+  .nighthawk-modal-cyan {
+    @apply border-cyan/35;
+    box-shadow: 0 0 60px rgba(0, 212, 255, 0.12);
+  }
+
+  .nighthawk-modal-bear {
+    @apply border-bear/35;
+    box-shadow: 0 0 60px rgba(255, 45, 85, 0.12);
+  }
+
+  .nighthawk-modal-purple {
+    @apply border-purple/35;
+    box-shadow: 0 0 60px rgba(191, 95, 255, 0.12);
+  }
+
+  .nighthawk-modal-header {
+    @apply flex items-start justify-between gap-4 p-5 border-b border-grey-800/80;
+  }
+
+  .nighthawk-modal-kicker {
+    @apply font-mono text-[9px] tracking-[0.35em] uppercase text-grey-400 mb-1;
+  }
+
+  .nighthawk-modal-title {
+    @apply font-anton text-2xl uppercase text-white tracking-wide;
+  }
+
+  .nighthawk-modal-desc {
+    @apply mt-2 font-mono text-[11px] text-grey-400 leading-relaxed;
+  }
+
+  .nighthawk-modal-close {
+    @apply shrink-0 w-8 h-8 flex items-center justify-center font-mono text-grey-400 border border-grey-700 hover:text-white hover:border-grey-500 transition-colors;
+  }
+
+  .nighthawk-modal-body {
+    @apply p-5;
+  }
+
+  .nighthawk-modal-section-label {
+    @apply font-mono text-[9px] tracking-[0.35em] uppercase text-grey-500 mb-3;
+  }
+
+  .nighthawk-filter-grid {
+    @apply flex flex-col gap-3 mb-5;
+  }
+
+  .nighthawk-filter-field,
+  .nighthawk-filter-toggle {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .nighthawk-filter-label {
+    @apply font-mono text-[10px] tracking-[0.2em] uppercase text-grey-300;
+  }
+
+  .nighthawk-filter-input {
+    @apply w-full bg-black/80 border border-grey-700 px-3 py-2 font-mono text-xs text-white;
+    @apply focus:outline-none focus:border-cyan/50;
+  }
+
+  .nighthawk-filter-hint {
+    @apply font-mono text-[9px] text-grey-500 leading-relaxed;
+  }
+
+  .nighthawk-toggle {
+    @apply relative w-11 h-6 rounded-full border border-grey-600 bg-grey-900 transition-colors;
+  }
+
+  .nighthawk-toggle-on {
+    @apply border-cyan/50 bg-cyan/20;
+  }
+
+  .nighthawk-toggle-thumb {
+    @apply absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-grey-400 transition-transform;
+  }
+
+  .nighthawk-toggle-on .nighthawk-toggle-thumb {
+    @apply bg-cyan translate-x-5;
+  }
+
+  .nighthawk-modal-actions {
+    @apply flex items-center justify-end gap-2 pt-2;
+  }
+
+  .nighthawk-btn-ghost {
+    @apply px-4 py-2 font-mono text-[10px] tracking-[0.2em] uppercase text-grey-400 border border-grey-700 hover:text-white hover:border-grey-500 transition-colors;
+  }
+
+  .nighthawk-btn-power {
+    @apply px-4 py-2 font-mono text-[10px] tracking-[0.2em] uppercase text-black bg-cyan border border-cyan hover:bg-cyan/90 transition-colors;
+  }
+
+  .nighthawk-modal-bear .nighthawk-btn-power {
+    @apply bg-bear border-bear text-white hover:bg-bear/90;
+  }
+
+  .nighthawk-modal-purple .nighthawk-btn-power {
+    @apply bg-purple border-purple text-white hover:bg-purple/90;
+  }
+
+  .nighthawk-modal-error {
+    @apply mb-3 font-mono text-xs text-bear;
+  }
+
+  .nighthawk-modal-powering {
+    @apply flex flex-col items-center justify-center text-center py-10 gap-4;
+  }
+
+  .nighthawk-power-ring {
+    @apply w-16 h-16 rounded-full border-2 border-cyan/40;
+    border-top-color: rgba(0, 212, 255, 0.9);
+    animation: nighthawk-spin 0.9s linear infinite;
+  }
+
+  .nighthawk-modal-bear .nighthawk-power-ring {
+    @apply border-bear/40;
+    border-top-color: rgba(255, 45, 85, 0.9);
+  }
+
+  .nighthawk-modal-purple .nighthawk-power-ring {
+    @apply border-purple/40;
+    border-top-color: rgba(191, 95, 255, 0.9);
+  }
+
+  .nighthawk-power-title {
+    @apply font-anton text-xl uppercase text-white tracking-wide;
+  }
+
+  .nighthawk-power-copy {
+    @apply font-mono text-[11px] text-grey-400 max-w-xs;
+  }
+
+  .nighthawk-result-message {
+    @apply font-mono text-xs text-grey-200 leading-relaxed mb-4;
+  }
+
+  .nighthawk-result-empty {
+    @apply font-mono text-[11px] text-grey-500 mb-4;
+  }
+
+  .nighthawk-result-plays {
+    @apply flex flex-col gap-2 mb-4;
+  }
+
+  .nighthawk-result-play {
+    @apply font-mono text-[11px] text-grey-300 border border-grey-800 px-3 py-2;
+  }
+
+  .nighthawk-result-ticker {
+    @apply font-anton text-base text-white mr-2;
+  }
+
+  @keyframes nighthawk-spin {
+    to { transform: rotate(360deg); }
+  }
+
   .platform-frame-dashboard {
     @apply border border-bull/25 bg-black/60 shadow-[inset_0_0_60px_rgba(0,230,118,0.06)];
     border-top-color: rgba(0, 230, 118, 0.25);

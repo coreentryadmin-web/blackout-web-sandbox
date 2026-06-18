@@ -19,7 +19,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/flows", label: "Flow Feed", sub: "Whale · Dark Pool", accent: "purple" },
   { href: "/heatmap", label: "Heatmaps", sub: "Sector Rotation", accent: "orange" },
   { href: "/terminal", label: "Largo AI", sub: "Desk Terminal", accent: "blue" },
-  { href: "/nighthawk", label: "Night Hawk", sub: "2–10 DTE Swings", accent: "red" },
+  { href: "/nighthawk", label: "Night Hawk", sub: "Playbook · Hunt modes", accent: "red" },
 ];
 
 const TOP_LINKS = [

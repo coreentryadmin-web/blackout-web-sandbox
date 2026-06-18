@@ -337,7 +337,7 @@ export async function fetchFlows(params?: {
   );
 }
 
-// ── Night Hawk (BlackOut intel only) ──────────────────────────────────────────
+// ── Night Hawk (website-first) ────────────────────────────────────────────────
 
 export interface NightHawkPlay {
   ticker: string;
@@ -351,8 +351,19 @@ export interface NightHawkPlay {
   summary: string;
 }
 
+export type { NightHawkEdition, HuntMode, HuntRequest, HuntResponse } from "@/lib/nighthawk/types";
+
 export const fetchNightHawkPlays = () =>
   intelFetch<{ plays: NightHawkPlay[] }>("/nighthawk/plays");
+
+export const fetchNightHawkEdition = () =>
+  marketFetch<import("@/lib/nighthawk/types").NightHawkEdition>("/nighthawk/edition");
+
+export const postNightHawkHunt = (body: import("@/lib/nighthawk/types").HuntRequest) =>
+  marketFetch<import("@/lib/nighthawk/types").HuntResponse>("/nighthawk/hunt", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 
