@@ -228,8 +228,8 @@ function DetailCell({
       <span
         className={clsx(
           "admin-cmd-detail-value",
-          tone === "ok" && "text-emerald-400",
-          tone === "error" && "text-red-400"
+          tone === "ok" && "text-[color:var(--admin-green)]",
+          tone === "error" && "text-[color:var(--admin-orange)]"
         )}
       >
         {value}
