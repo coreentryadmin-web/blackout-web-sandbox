@@ -150,8 +150,30 @@ export async function buildSpxAdminIssues(input: {
   if (uwConfigured()) {
     if (!uwWs.configured) {
       push(issues, { severity: "warning", category: "websocket", title: "UW WS disabled", detail: "UW_API_KEY missing" });
+    } else if (uwWs.auth_failed) {
+      const authFailedChannels = Object.entries(uwWs.channels)
+        .filter(([, row]) => row.auth_failed)
+        .map(([ch]) => ch);
+      push(issues, {
+        severity: marketOpen ? "critical" : "warning",
+        category: "websocket",
+        title: "UW WebSocket auth failed",
+        detail:
+          authFailedChannels.length > 0
+            ? `Channels: ${authFailedChannels.join(", ")} — check UW_API_KEY`
+            : "401 on connect — check UW_API_KEY",
+      });
     } else {
       for (const [ch, row] of Object.entries(uwWs.channels)) {
+        if (row.auth_failed) {
+          push(issues, {
+            severity: marketOpen ? "critical" : "warning",
+            category: "websocket",
+            title: `UW ${ch} auth failed`,
+            detail: row.last_close_reason || "401 — check UW_API_KEY",
+          });
+          continue;
+        }
         if (row.ws_state !== "OPEN") {
           push(issues, {
             severity: marketOpen ? "warning" : "info",
@@ -164,7 +186,7 @@ export async function buildSpxAdminIssues(input: {
             severity: "warning",
             category: "websocket",
             title: `UW ${ch} not authenticated`,
-            detail: "Waiting for auth payload",
+            detail: "Connected — waiting for first payload",
           });
         }
         const age = uwWs.last_message_age_ms[ch as keyof typeof uwWs.last_message_age_ms];

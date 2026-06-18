@@ -12,8 +12,12 @@ type UwChannel = "flow_alerts" | "market_tide" | "off_lit_trades";
 
 type Handler = (data: unknown) => void;
 
+type ChannelState = "idle" | "connecting" | "open" | "auth_failed";
+
 const UW_WS_BASE = process.env.UW_WS_BASE ?? "wss://api.unusualwhales.com/api/socket";
-const UW_API_KEY = process.env.UW_API_KEY ?? "";
+const UW_API_KEY = (process.env.UW_API_KEY ?? "").trim();
+const UW_CLIENT_ID = process.env.UW_CLIENT_API_ID ?? "100001";
+const AUTH_FAILED_BACKOFF_MS = 5 * 60_000;
 
 class UwSocketManager {
   private sockets = new Map<UwChannel, WebSocket>();
@@ -21,6 +25,12 @@ class UwSocketManager {
   private reconnectTimers = new Map<UwChannel, ReturnType<typeof setTimeout>>();
   private reconnectDelays = new Map<UwChannel, number>();
   private authenticated = new Map<UwChannel, boolean>();
+  private channelState = new Map<UwChannel, ChannelState>();
+  private authFailedUntil = new Map<UwChannel, number>();
+  private lastCloseReason = new Map<UwChannel, string>();
+
+  private authFailedLogged = new Set<UwChannel>();
+  private opened = new Map<UwChannel, boolean>();
 
   private isAuthError(data: unknown): boolean {
     if (!data || typeof data !== "object") return false;
@@ -31,7 +41,7 @@ class UwSocketManager {
       r.auth === false ||
       err.includes("unauthorized") ||
       err.includes("forbidden") ||
-      err.includes("invalid") && err.includes("key")
+      (err.includes("invalid") && err.includes("key"))
     );
   }
 
@@ -42,14 +52,56 @@ class UwSocketManager {
     return Array.isArray(r.data) || r.ticker != null || r.premium != null;
   }
 
+  private markAuthFailed(channel: UwChannel, reason: string) {
+    this.authenticated.set(channel, false);
+    this.channelState.set(channel, "auth_failed");
+    this.authFailedUntil.set(channel, Date.now() + AUTH_FAILED_BACKOFF_MS);
+    this.lastCloseReason.set(channel, reason);
+    const ws = this.sockets.get(channel);
+    if (ws && ws.readyState <= 1) {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.sockets.delete(channel);
+    if (!this.authFailedLogged.has(channel)) {
+      this.authFailedLogged.add(channel);
+      console.error(`[uw-socket] ${channel} auth failed (${reason}) — check UW_API_KEY`);
+    }
+    this.scheduleAuthRetry(channel);
+  }
+
+  private clearReconnect(channel: UwChannel) {
+    const existing = this.reconnectTimers.get(channel);
+    if (existing) clearTimeout(existing);
+    this.reconnectTimers.delete(channel);
+  }
+
+  private scheduleAuthRetry(channel: UwChannel) {
+    if ((this.handlers.get(channel)?.size ?? 0) === 0) return;
+    this.clearReconnect(channel);
+    const delay = Math.max(0, (this.authFailedUntil.get(channel) ?? 0) - Date.now());
+    const timer = setTimeout(() => {
+      if ((this.handlers.get(channel)?.size ?? 0) === 0) return;
+      this.channelState.set(channel, "idle");
+      this.authFailedLogged.delete(channel);
+      this.connect(channel);
+    }, delay || AUTH_FAILED_BACKOFF_MS);
+    this.reconnectTimers.set(channel, timer);
+  }
+
   private dispatch(channel: UwChannel, data: unknown) {
     if (this.isAuthError(data)) {
-      this.authenticated.set(channel, false);
+      this.markAuthFailed(channel, "auth payload rejected");
       return;
     }
     if (!this.authenticated.get(channel)) {
       if (this.looksLikePayload(data)) {
         this.authenticated.set(channel, true);
+        this.channelState.set(channel, "open");
+        this.lastCloseReason.delete(channel);
       } else {
         return;
       }
@@ -75,19 +127,31 @@ class UwSocketManager {
 
   private connect(channel: UwChannel) {
     if (!UW_API_KEY) {
-      console.warn(`[uw-socket] UW_API_KEY not set — cannot connect ${channel}`);
+      this.markAuthFailed(channel, "UW_API_KEY not set");
       return;
     }
 
+    const authBlockedUntil = this.authFailedUntil.get(channel) ?? 0;
+    if (Date.now() < authBlockedUntil) {
+      this.channelState.set(channel, "auth_failed");
+      this.scheduleAuthRetry(channel);
+      return;
+    }
+
+    this.clearReconnect(channel);
+
     try {
+      this.channelState.set(channel, "connecting");
+      this.opened.set(channel, false);
       const ws = new WebSocket(`${UW_WS_BASE}/${channel}`);
       this.sockets.set(channel, ws);
 
       ws.onopen = () => {
+        this.opened.set(channel, true);
         console.log(`[uw-socket] connected: ${channel}`);
         this.reconnectDelays.set(channel, 1000);
         this.authenticated.set(channel, false);
-        ws.send(JSON.stringify({ action: "auth", key: UW_API_KEY }));
+        this.channelState.set(channel, "open");
       };
 
       ws.onmessage = (event) => {
@@ -99,23 +163,49 @@ class UwSocketManager {
         }
       };
 
-      ws.onerror = (err) => {
-        console.error(`[uw-socket] error on ${channel}:`, err);
+      ws.onerror = () => {
+        /* onclose carries actionable detail; avoid dumping ErrorEvent */
       };
 
       ws.onclose = (event) => {
-        console.warn(`[uw-socket] closed ${channel} (code=${event.code}) — reconnecting...`);
+        const wasOpen = this.opened.get(channel) === true;
+        this.opened.set(channel, false);
+        const reason = event.reason?.trim() || `code=${event.code}`;
+        this.sockets.delete(channel);
+        this.authenticated.set(channel, false);
+
+        const authFailure =
+          !wasOpen ||
+          event.code === 1008 ||
+          event.code === 4401 ||
+          event.code === 4403 ||
+          /401|403|unauthorized|forbidden|authentication/i.test(reason);
+
+        if (authFailure) {
+          this.markAuthFailed(channel, wasOpen ? reason : `401 handshake (${reason})`);
+          return;
+        }
+
+        this.channelState.set(channel, "idle");
+        this.lastCloseReason.set(channel, reason);
+        console.warn(`[uw-socket] ${channel} closed (${reason}) — reconnecting`);
         this.scheduleReconnect(channel);
       };
     } catch (err) {
-      console.error(`[uw-socket] failed to open ${channel}:`, err);
+      const msg = err instanceof Error ? err.message : "open failed";
+      console.warn(`[uw-socket] ${channel} failed to open: ${msg}`);
       this.scheduleReconnect(channel);
     }
   }
 
   private scheduleReconnect(channel: UwChannel) {
-    const existing = this.reconnectTimers.get(channel);
-    if (existing) clearTimeout(existing);
+    if (this.channelState.get(channel) === "auth_failed") return;
+    if ((this.handlers.get(channel)?.size ?? 0) === 0) return;
+
+    const authBlockedUntil = this.authFailedUntil.get(channel) ?? 0;
+    if (Date.now() < authBlockedUntil) return;
+
+    this.clearReconnect(channel);
 
     const delay = Math.min(this.reconnectDelays.get(channel) ?? 1000, 30_000);
     this.reconnectDelays.set(channel, delay * 2);
@@ -141,24 +231,58 @@ class UwSocketManager {
     const states = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     const result: Record<string, string> = {};
     for (const [channel, ws] of Array.from(this.sockets.entries())) {
-      result[channel] = states[ws.readyState] ?? "UNKNOWN";
+      if (this.channelState.get(channel) === "auth_failed") {
+        result[channel] = "AUTH_FAILED";
+      } else {
+        result[channel] = states[ws.readyState] ?? "UNKNOWN";
+      }
     }
     return result;
   }
 
   getChannelHealth(): Record<
     UwChannel,
-    { ws_state: string; authenticated: boolean; handlers: number }
+    {
+      ws_state: string;
+      authenticated: boolean;
+      handlers: number;
+      auth_failed: boolean;
+      auth_retry_at: number | null;
+      last_close_reason: string | null;
+      last_error: string | null;
+    }
   > {
     const states = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     const channels: UwChannel[] = ["flow_alerts", "market_tide", "off_lit_trades"];
-    const out = {} as Record<UwChannel, { ws_state: string; authenticated: boolean; handlers: number }>;
+    const out = {} as Record<
+      UwChannel,
+      {
+        ws_state: string;
+        authenticated: boolean;
+        handlers: number;
+        auth_failed: boolean;
+        auth_retry_at: number | null;
+        last_close_reason: string | null;
+        last_error: string | null;
+      }
+    >;
     for (const channel of channels) {
       const ws = this.sockets.get(channel);
+      const authFailed = this.channelState.get(channel) === "auth_failed";
+      const retryAt = this.authFailedUntil.get(channel) ?? null;
+      const closeReason = this.lastCloseReason.get(channel) ?? null;
       out[channel] = {
-        ws_state: ws ? states[ws.readyState] ?? "UNKNOWN" : "NOT_CREATED",
+        ws_state: authFailed
+          ? "AUTH_FAILED"
+          : ws
+            ? states[ws.readyState] ?? "UNKNOWN"
+            : "NOT_CREATED",
         authenticated: Boolean(this.authenticated.get(channel)),
         handlers: this.handlers.get(channel)?.size ?? 0,
+        auth_failed: authFailed,
+        auth_retry_at: retryAt && retryAt > Date.now() ? retryAt : null,
+        last_close_reason: closeReason,
+        last_error: closeReason,
       };
     }
     return out;
@@ -247,10 +371,16 @@ export function initUwSocket() {
 
 export function getUwSocketHealth() {
   const now = Date.now();
+  const channels = uwSocket.getChannelHealth();
+  const authFailedChannels = (Object.entries(channels) as [UwChannel, (typeof channels)[UwChannel]][])
+    .filter(([, row]) => row.auth_failed)
+    .map(([ch]) => ch);
   return {
     configured: Boolean(UW_API_KEY),
     initialized: uwSocketInitialized,
-    channels: uwSocket.getChannelHealth(),
+    auth_failed: authFailedChannels.length > 0,
+    auth_failed_channels: authFailedChannels,
+    channels,
     last_message_at: {
       flow_alerts: lastFlowMessageAt,
       market_tide: lastTideMessageAt,

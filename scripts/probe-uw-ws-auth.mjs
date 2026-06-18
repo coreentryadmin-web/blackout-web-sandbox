@@ -30,26 +30,29 @@ async function testRest() {
   console.log(`REST market-tide: ${r.status} ${text.slice(0, 120)}`);
 }
 
-function testWs(channel, authPayload) {
+function testWs(channel, opts, label) {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`${BASE}/${channel}`);
+    const ws = new WebSocket(`${BASE}/${channel}`, opts ?? undefined);
     let gotMessage = false;
+    let opened = false;
     const timer = setTimeout(() => {
       ws.close();
-      resolve({ authPayload, detail: gotMessage ? "message received" : "timeout/no message", ok: gotMessage });
+      resolve({ label, detail: gotMessage ? "message received" : opened ? "open/no message" : "timeout/no open", ok: gotMessage || opened });
     }, 6000);
 
-    ws.onopen = () => ws.send(JSON.stringify(authPayload));
+    ws.onopen = () => {
+      opened = true;
+    };
     ws.onmessage = (ev) => {
       gotMessage = true;
       clearTimeout(timer);
       ws.close();
-      resolve({ authPayload, detail: String(ev.data).slice(0, 100), ok: true });
+      resolve({ label, detail: String(ev.data).slice(0, 100), ok: true });
     };
     ws.onclose = (ev) => {
       if (!gotMessage) {
         clearTimeout(timer);
-        resolve({ authPayload, detail: `closed code=${ev.code}`, ok: ev.code === 1000 });
+        resolve({ label, detail: opened ? `opened then closed code=${ev.code}` : `closed code=${ev.code}`, ok: opened });
       }
     };
     ws.onerror = () => {
@@ -64,13 +67,19 @@ async function main() {
     process.exit(1);
   }
   await testRest();
-  for (const payload of [
-    { action: "auth", key: KEY },
-    { action: "auth", token: KEY },
-    { action: "auth", api_key: KEY },
+  const bearerOpts = {
+    headers: {
+      Authorization: `Bearer ${KEY}`,
+      Accept: "application/json",
+      "UW-CLIENT-API-ID": process.env.UW_CLIENT_API_ID ?? "100001",
+    },
+  };
+  for (const [label, opts] of [
+    ["no auth (expect 401)", null],
+    ["Bearer header (UW docs)", bearerOpts],
   ]) {
-    const r = await testWs("flow_alerts", payload);
-    console.log(`WS flow_alerts ${JSON.stringify(payload)} → ${r.ok ? "OK" : "FAIL"}: ${r.detail}`);
+    const r = await testWs("flow_alerts", opts, label);
+    console.log(`WS flow_alerts ${label} → ${r.ok ? "OK" : "FAIL"}: ${r.detail}`);
   }
 }
 
