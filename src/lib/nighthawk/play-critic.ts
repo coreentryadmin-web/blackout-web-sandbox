@@ -1,5 +1,4 @@
 import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
-import { mapClaudePlayToEdition } from "./claude-edition";
 import type { TickerDossier } from "./dossier";
 import { buildMarketRecap, formatTickerDossierText } from "./format";
 import type { MarketWideContext } from "./market-wide";
@@ -42,30 +41,6 @@ function parseCriticJson(raw: string): CriticVerdict[] {
   } catch {
     return [];
   }
-}
-
-function mechanicalReplacement(
-  candidate: ScoredCandidate,
-  dossier: TickerDossier | undefined,
-  rank: number,
-  dossierMap: Record<string, TickerDossier>
-): PlaybookPlay {
-  return mapClaudePlayToEdition(
-    {
-      ticker: candidate.ticker,
-      type: "stock",
-      direction: candidate.direction === "long" ? "LONG" : "SHORT",
-      conviction: candidate.conviction,
-      key_signal: dossier?.tech?.summary ?? "Critic replacement — promoted from ranked pool.",
-      entry_range: "See technical levels",
-      target: dossier?.tech?.resistance_levels?.[0]?.toString() ?? "—",
-      stop: dossier?.tech?.support_levels?.[0]?.toString() ?? "—",
-      options_play: "—",
-      score: candidate.score,
-    },
-    rank,
-    dossierMap
-  );
 }
 
 function scoredForPlay(
@@ -129,13 +104,11 @@ export async function critiquePlays(params: {
   const notes: string[] = [];
   const verdictByRank = new Map(verdicts.map((v) => [Number(v.rank), v]));
   const surviving: PlaybookPlay[] = [];
-  const usedTickers = new Set<string>();
 
   for (const play of plays) {
     const verdict = verdictByRank.get(play.rank);
     if (!verdict) {
       surviving.push(play);
-      usedTickers.add(play.ticker.toUpperCase());
       continue;
     }
 
@@ -153,22 +126,12 @@ export async function critiquePlays(params: {
     } else {
       surviving.push(play);
     }
-    usedTickers.add(play.ticker.toUpperCase());
   }
 
-  const targetCount = plays.length;
-  while (surviving.length < targetCount) {
-    const next = ranked.find((r) => !usedTickers.has(r.ticker.toUpperCase()));
-    if (!next) break;
-    usedTickers.add(next.ticker.toUpperCase());
-    const replacement = mechanicalReplacement(
-      next,
-      dossiers[next.ticker.toUpperCase()],
-      surviving.length + 1,
-      dossiers
+  if (surviving.length < plays.length) {
+    notes.push(
+      `Publishing ${surviving.length} vetted play(s) — ${plays.length - surviving.length} cut (no mechanical backfill; fewer strong plays beats stub contracts).`
     );
-    surviving.push(replacement);
-    notes.push(`Promoted ${next.ticker} as replacement (rank ${surviving.length})`);
   }
 
   const reranked = surviving.map((p, i) => ({ ...p, rank: i + 1 }));

@@ -31,7 +31,7 @@ export const MAX_DOSSIER_STOCKS = 60;
 /** Top dossiers sent to Claude for play synthesis (not the full ranked pool). */
 export const EDITION_SYNTHESIS_POOL = 12;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays). */
-export const EDITION_CHAIN_PREFETCH = 10;
+export const EDITION_CHAIN_PREFETCH = 12;
 export const MIN_STOCK_FLOW_PREMIUM = 100_000;
 export const MIN_HOT_CHAIN_PREMIUM = 500_000;
 /** Market-wide flow tape — higher limit captures late-session event volume. */

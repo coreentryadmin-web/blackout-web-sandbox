@@ -197,7 +197,7 @@ export async function buildEveningEdition(opts?: {
     }
 
     const scoredList = Object.values(dossiers)
-      .filter((d) => d.tech != null && d.scored)
+      .filter((d) => d.scored != null)
       .map((d) => d.scored!);
 
     if (!scoredList.length) {

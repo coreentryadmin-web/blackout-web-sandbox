@@ -121,8 +121,8 @@ export function scoreFlowQuality(
   flows: Record<string, unknown>[],
   flowStreak?: FlowStreak,
   opts?: { streakWeight?: number; riskReversalSkew?: number | null }
-): { score: number; direction: "long" | "short" } {
-  if (!flows.length) return { score: 0, direction: "long" };
+): { score: number; direction: "long" | "short"; directionFlippedBySkew: boolean } {
+  if (!flows.length) return { score: 0, direction: "long", directionFlippedBySkew: false };
 
   let totalPrem = 0;
   let sweepPrem = 0;
@@ -201,6 +201,7 @@ export function scoreFlowQuality(
   score = Math.min(38, score);
   let direction: "long" | "short" =
     callWeightedPrem >= putWeightedPrem ? "long" : "short";
+  let directionFlippedBySkew = false;
 
   const skew = opts?.riskReversalSkew;
   if (skew != null && Number.isFinite(skew) && skew !== 0) {
@@ -208,17 +209,18 @@ export function scoreFlowQuality(
     const weightedTotal = callWeightedPrem + putWeightedPrem;
     const flowMargin = weightedTotal > 0 ? Math.abs(callWeightedPrem - putWeightedPrem) / weightedTotal : 1;
 
-    if (skewDir === direction) {
-      score = Math.min(38, score + 2);
-    } else if (flowMargin < 0.12 && Math.abs(skew) >= 0.3) {
-      direction = skewDir;
-      score = Math.min(38, score + 1);
-    } else if (flowMargin < 0.25 && Math.abs(skew) >= 1) {
-      direction = skewDir;
+    if (skewDir !== direction) {
+      if (flowMargin < 0.12 && Math.abs(skew) >= 0.3) {
+        direction = skewDir;
+        directionFlippedBySkew = true;
+      } else if (flowMargin < 0.25 && Math.abs(skew) >= 1) {
+        direction = skewDir;
+        directionFlippedBySkew = true;
+      }
     }
   }
 
-  return { score, direction };
+  return { score, direction, directionFlippedBySkew };
 }
 
 export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long" | "short"): number {
@@ -416,7 +418,9 @@ export function scoreCandidate(
   const posScore = scoreOptionsPositioning(dossierExtras, flow.direction);
   const newsScore = scoreNewsCatalyst(dossierExtras);
   const smartMoneyScore = scoreSmartMoney(dossierExtras, flow.direction);
-  const skewAdj = scoreSkewConfirmation(dossierExtras.risk_reversal_skew, flow.direction);
+  const skewAdj = flow.directionFlippedBySkew
+    ? 0
+    : scoreSkewConfirmation(dossierExtras.risk_reversal_skew, flow.direction);
   const regimeMultiplier = computeRegimeMultiplier(regime);
   let total = Math.min(
     100,
