@@ -1135,10 +1135,59 @@ export type UwMacroIndicatorSnapshot = {
 };
 
 export const UW_MACRO_INDICATORS = [
-  { id: "GDP", label: "GDP" },
-  { id: "CPI", label: "CPI" },
-  { id: "UNRATE", label: "Unemployment" },
+  { id: "GDP", slug: "gdp", label: "GDP" },
+  { id: "CPI", slug: "cpi", label: "CPI" },
+  { id: "UNRATE", slug: "unemployment", label: "Unemployment" },
 ] as const;
+
+/** UW economy paths use kebab slugs — not FRED tickers (UNRATE) or uppercase (GDP). */
+const UW_ECONOMY_SLUG_ALIASES: Record<string, string> = {
+  GDP: "gdp",
+  CPI: "cpi",
+  UNRATE: "unemployment",
+  UNEMPLOYMENT: "unemployment",
+  INFLATION: "inflation",
+  "FED-FUNDS": "fed-funds",
+  FED_FUNDS: "fed-funds",
+  "TREASURY-YIELD": "treasury-yield",
+  TREASURY_YIELD: "treasury-yield",
+  "GDP-PER-CAPITA": "gdp-per-capita",
+  GDP_PER_CAPITA: "gdp-per-capita",
+  "RETAIL-SALES": "retail-sales",
+  RETAIL_SALES: "retail-sales",
+  DURABLES: "durables",
+  PAYROLLS: "payrolls",
+};
+
+const UW_ECONOMY_VALID_SLUGS = new Set([
+  "gdp",
+  "gdp-per-capita",
+  "treasury-yield",
+  "fed-funds",
+  "cpi",
+  "inflation",
+  "retail-sales",
+  "durables",
+  "unemployment",
+  "payrolls",
+]);
+
+function resolveUwEconomySlug(indicator: string): string {
+  const trimmed = indicator.trim();
+  const upper = trimmed.toUpperCase().replace(/_/g, "-");
+  const fromAlias = UW_ECONOMY_SLUG_ALIASES[upper];
+  if (fromAlias) return fromAlias;
+
+  const lower = trimmed.toLowerCase();
+  if (UW_ECONOMY_VALID_SLUGS.has(lower)) return lower;
+
+  return lower;
+}
+
+function resolveMacroLabel(indicator: string, slug: string): string {
+  const id = indicator.toUpperCase().trim();
+  return UW_MACRO_INDICATORS.find((m) => m.id === id)?.label ?? slug;
+}
 
 function parseEconomyIndicatorRows(
   indicator: string,
@@ -1173,8 +1222,9 @@ function parseEconomyIndicatorRows(
 
 export async function fetchUwEconomyIndicator(indicator: string): Promise<UwMacroIndicatorSnapshot> {
   const id = indicator.toUpperCase().trim();
-  const label = UW_MACRO_INDICATORS.find((m) => m.id === id)?.label ?? id;
-  const data = await uwGetSafe<unknown>(`/api/economy/${id}`, {});
+  const slug = resolveUwEconomySlug(indicator);
+  const label = resolveMacroLabel(indicator, slug);
+  const data = await uwGetSafe<unknown>(`/api/economy/${slug}`, {});
   const rows = extractRows(data) as Record<string, unknown>[];
   return parseEconomyIndicatorRows(id, label, rows);
 }
