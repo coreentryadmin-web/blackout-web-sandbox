@@ -151,13 +151,16 @@ export async function runHuntScan(request: HuntRequest): Promise<HuntBuildResult
       };
     }
 
+    const effectiveMaxDte =
+      mode === "day" && filters.max_dte != null ? filters.max_dte : weights.maxDte;
+
     console.info(`[nighthawk/hunt] phase 4: Claude synthesis (${ranked.length} ranked)`);
     const { plays: playbookPlays } = await generateEditionPlays({
       ctx,
       dossiers: topDossiers,
       ranked,
       huntMode: mode,
-      maxDte: weights.maxDte,
+      maxDte: effectiveMaxDte,
     });
 
     if (!playbookPlays.length) {

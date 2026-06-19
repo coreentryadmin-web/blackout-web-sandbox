@@ -282,8 +282,11 @@ export function parseOptionsContract(optionsPlay: string): ParsedOptionsContract
     const labelMatch = text.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})\b/i);
     if (labelMatch) {
       const year = new Date().getFullYear();
-      const parsed = new Date(`${labelMatch[1]} ${labelMatch[2]}, ${year} 12:00:00`);
+      let parsed = new Date(`${labelMatch[1]} ${labelMatch[2]}, ${year} 12:00:00`);
       if (!Number.isNaN(parsed.getTime())) {
+        if (parsed.getTime() < Date.now() - 5 * 86_400_000) {
+          parsed = new Date(`${labelMatch[1]} ${labelMatch[2]}, ${year + 1} 12:00:00`);
+        }
         expiryYmd = parsed.toISOString().slice(0, 10);
       }
     }
@@ -325,20 +328,40 @@ export async function fetchEditionChainRows(params: {
   stockTickers: string[];
   dossiers: TickerDossier[];
 }): Promise<Record<string, ChainStrikeRow[]>> {
+  const resolved = await fetchEditionChains(params);
+  return Object.fromEntries(Object.entries(resolved).map(([ticker, data]) => [ticker, data.rows]));
+}
+
+export type EditionChainData = { spot: number; rows: ChainStrikeRow[] };
+
+/** Pre-fetch ATM ±5% chains (spot + rows) for ranked stocks — single fetch per ticker. */
+export async function fetchEditionChains(params: {
+  stockTickers: string[];
+  dossiers: TickerDossier[];
+}): Promise<Record<string, EditionChainData>> {
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
   const tickers = Array.from(new Set(params.stockTickers.map((t) => t.toUpperCase())));
 
   const entries = await Promise.all(
     tickers.map(async (ticker) => {
       const resolved = await resolveTickerChainRows(ticker, dossierMap[ticker]);
-      return resolved ? ([ticker, resolved.rows] as const) : null;
+      return resolved ? ([ticker, resolved] as const) : null;
     })
   );
 
-  return Object.fromEntries(entries.filter((e): e is [string, ChainStrikeRow[]] => e != null));
+  return Object.fromEntries(entries.filter((e): e is [string, EditionChainData] => e != null));
 }
 
-/** Pre-fetch ATM ±5% chain tables for ranked stocks. */
+export function formatEditionChainTables(chains: Record<string, EditionChainData>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(chains).map(([ticker, { spot, rows }]) => [
+      ticker,
+      formatChainTableText(ticker, spot, rows),
+    ])
+  );
+}
+
+/** @deprecated Prefer fetchEditionChains + formatEditionChainTables (avoids duplicate fetches). */
 export async function fetchEditionChainTables(params: {
   stockTickers: string[];
   dossiers: TickerDossier[];

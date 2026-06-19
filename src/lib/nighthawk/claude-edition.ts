@@ -2,7 +2,11 @@ import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
 import type { TickerDossier } from "./dossier";
 import { buildClaudePrompt, buildMarketRecap } from "./format";
 import type { MarketWideContext } from "./market-wide";
-import { fetchEditionChainTables, fetchEditionChainRows, validatePlayAgainstChain } from "./option-chain-prompt";
+import {
+  fetchEditionChains,
+  formatEditionChainTables,
+  validatePlayAgainstChain,
+} from "./option-chain-prompt";
 import {
   applyPremiumCapToPlay,
   filterPlaysWithinPremiumCap,
@@ -97,10 +101,9 @@ export async function generateEditionPlays(params: {
   }
 
   const chainTickers = params.ranked.slice(0, EDITION_CHAIN_PREFETCH).map((s) => s.ticker);
-  const [chainTables, chainRows] = await Promise.all([
-    fetchEditionChainTables({ stockTickers: chainTickers, dossiers: params.dossiers }),
-    fetchEditionChainRows({ stockTickers: chainTickers, dossiers: params.dossiers }),
-  ]);
+  const chainData = await fetchEditionChains({ stockTickers: chainTickers, dossiers: params.dossiers });
+  const chainTables = formatEditionChainTables(chainData);
+  const chainRows = Object.fromEntries(Object.entries(chainData).map(([ticker, data]) => [ticker, data.rows]));
 
   const prompt = buildClaudePrompt({
     ctx: params.ctx,

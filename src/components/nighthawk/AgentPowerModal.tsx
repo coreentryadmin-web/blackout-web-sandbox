@@ -209,7 +209,7 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
                   </ul>
                 ) : (
                   <p className="nighthawk-result-empty">
-                    No qualifying plays yet — full hunt engine connects in the next build.
+                    No qualifying plays matched your filters — try relaxing bias, DTE, or SPX alignment.
                   </p>
                 )}
                 <div className="nighthawk-modal-actions">

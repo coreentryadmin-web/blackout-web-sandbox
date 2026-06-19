@@ -61,6 +61,10 @@ export type HuntPlay = {
   target: string;
   stop: string;
   score: number;
+  /** Day Trade Agent lifecycle phase. */
+  phase?: "CANDIDATE" | "WATCH" | "ACTIONABLE" | "EXPIRED";
+  /** Whether play aligns with SPX desk bias when spx_context filter is on. */
+  spx_aligned?: boolean;
 };
 
 export type HuntResponse = {
@@ -75,5 +79,6 @@ export type HuntResponse = {
     flow_alerts: number;
     edition_for: string | null;
     edition_plays: number;
+    spx_bias?: "bull" | "bear" | "neutral" | null;
   };
 };

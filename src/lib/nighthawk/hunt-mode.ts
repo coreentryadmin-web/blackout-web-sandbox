@@ -18,6 +18,10 @@ export type NormalizedHuntFilters = {
   min_streak: number | null;
   max_iv_rank: number | null;
   min_premium: number | null;
+  /** Day mode: user max DTE (0 or 1). */
+  max_dte: number | null;
+  /** Day mode: require SPX desk alignment. */
+  spx_context: boolean;
 };
 
 export function huntModeWeights(mode: HuntMode): HuntModeWeights {
@@ -48,6 +52,15 @@ export function normalizeHuntFilters(
   const minPremium = Number(filters.min_premium);
   const parsedMinPremium = Number.isFinite(minPremium) && minPremium > 0 ? minPremium : null;
 
+  const maxDteRaw = Number(filters.max_dte);
+  const max_dte =
+    mode === "day" && Number.isFinite(maxDteRaw) && maxDteRaw >= 0 && maxDteRaw <= 1
+      ? maxDteRaw
+      : null;
+
+  const spx_context =
+    mode === "day" ? filters.spx_context !== false && String(filters.spx_context) !== "false" : false;
+
   return {
     sector: String(filters.sector ?? "").trim() || null,
     min_score: Number.isFinite(Number(filters.min_score))
@@ -59,6 +72,8 @@ export function normalizeHuntFilters(
     min_streak: Number.isFinite(Number(filters.min_streak)) ? Number(filters.min_streak) : null,
     max_iv_rank: Number.isFinite(Number(filters.max_iv_rank)) ? Number(filters.max_iv_rank) : null,
     min_premium: parsedMinPremium ?? weights.minLiquidity,
+    max_dte,
+    spx_context,
   };
 }
 

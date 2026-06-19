@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
+import { runDayTradeAgent } from "@/lib/nighthawk/agents";
 import { getAgentConfig } from "@/lib/nighthawk/agent-config";
 import { huntPlatformContext, runHuntScan } from "@/lib/nighthawk/hunt-builder";
 import type { HuntMode, HuntRequest, HuntResponse } from "@/lib/nighthawk/types";
@@ -34,33 +35,47 @@ export async function POST(req: NextRequest) {
     userId: authResult.userId,
   });
 
-  const [scan, platform_context] = await Promise.all([
-    runHuntScan(body),
+  const [scanResult, platform_context] = await Promise.all([
+    body.mode === "day"
+      ? runDayTradeAgent({ mode: "day", filters }).then((run) => ({
+          ok: run.ok,
+          plays: run.signals,
+          message: run.message,
+          candidates: run.candidates,
+          error: run.error,
+          duration_ms: run.duration_ms,
+          spx_bias: run.spx_bias,
+        }))
+      : runHuntScan(body).then((scan) => ({ ...scan, spx_bias: null })),
     huntPlatformContext(),
   ]);
 
   const response: HuntResponse = {
-    status: scan.ok ? "complete" : "error",
+    status: scanResult.ok ? "complete" : "error",
     mode: body.mode,
     scanned_at: new Date().toISOString(),
-    message: scan.ok
-      ? scan.message
-      : scan.message || `${config.title} hunt finished without qualifying plays.`,
-    plays: scan.plays,
-    platform_context,
+    message: scanResult.ok
+      ? scanResult.message
+      : scanResult.message || `${config.title} hunt finished without qualifying plays.`,
+    plays: scanResult.plays,
+    platform_context: {
+      ...platform_context,
+      spx_bias: scanResult.spx_bias ?? null,
+    },
   };
 
   console.info("[nighthawk/hunt] done", {
     mode: body.mode,
-    ok: scan.ok,
-    plays: scan.plays.length,
-    candidates: scan.candidates,
-    duration_ms: scan.duration_ms,
+    ok: scanResult.ok,
+    plays: scanResult.plays.length,
+    candidates: scanResult.candidates,
+    duration_ms: scanResult.duration_ms,
+    spx_bias: scanResult.spx_bias,
     userId: authResult.userId,
   });
 
   return NextResponse.json(response, {
-    status: scan.ok ? 200 : 422,
+    status: scanResult.ok ? 200 : 422,
     headers: { "Cache-Control": "no-store" },
   });
 }
