@@ -2,7 +2,7 @@ import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 import { persistAndPublishFlowAlert } from "@/lib/flow-persist";
 import { fetchMarketFlowAlertRows } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
-import { uwSocket } from "@/lib/ws/uw-socket";
+import { uwSocket, isUwChannelFresh } from "@/lib/ws/uw-socket";
 
 const CURSOR_KEY = "uw_flow_cursor";
 const INGEST_LOCK_MS = 5_000;
@@ -23,7 +23,10 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   }
 
   const wsStatus = uwSocket.getStatus();
-  if (wsStatus["flow_alerts"] === "OPEN") {
+  // Skip REST only if the WS is BOTH authenticated AND actually delivering data.
+  // "OPEN" alone means authenticated; a half-open/silent socket would otherwise
+  // stop ingestion entirely. Require a recent message before trusting the WS path.
+  if (wsStatus["flow_alerts"] === "OPEN" && isUwChannelFresh("flow_alerts", 120_000)) {
     // WS path persists via persistAndPublishFlowAlert — skip REST to avoid duplicate UW calls.
     return { ok: true, ingested: 0, polled: 0, skipped: "ws_active" };
   }
@@ -56,7 +59,11 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
       console.error("[flow-ingest] persist row failed:", error);
     }
 
-    const created = String(raw.created_at ?? raw.start_time ?? flow.alerted_at ?? "");
+    // Cursor must stay in UW's native `created_at` format and is echoed back as
+    // `newer_than`. Never mix in `start_time` (epoch) — comparing epoch vs ISO
+    // strings corrupts ordering and can drop or duplicate alerts. Rows without
+    // `created_at` simply don't advance the cursor (still ingested + deduped).
+    const created = String(raw.created_at ?? "");
     if (created && (!newestCursor || created > newestCursor)) {
       newestCursor = created;
     }

@@ -544,6 +544,17 @@ export function initUwSocket() {
   );
 }
 
+/**
+ * True only if the channel has delivered a message within `maxAgeMs`. A channel
+ * can report "OPEN" (authenticated) while silently delivering nothing — callers
+ * that depend on live data (e.g. flow ingest fallback) must check freshness, not
+ * just connection status.
+ */
+export function isUwChannelFresh(channel: UwWsChannel, maxAgeMs = 120_000): boolean {
+  const at = lastMessageAt[channel];
+  return at != null && Date.now() - at <= maxAgeMs;
+}
+
 export function getUwSocketHealth() {
   const now = Date.now();
   const channels = uwSocket.getChannelHealth();
