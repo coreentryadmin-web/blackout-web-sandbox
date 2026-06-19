@@ -1,4 +1,5 @@
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
+import { summarizeGroupGreekFlow } from "@/lib/group-greek-flow-summary";
 import { computeFlowStrikeStacks, withStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { isSpxTicker } from "@/lib/spx-desk-live";
 import { getPlatformSnapshot, marketPlatform } from "@/lib/platform";
@@ -134,6 +135,9 @@ import {
   fetchUwOptionsVolume,
   fetchUwOwnership,
   fetchUwPredictionsConsensus,
+  fetchUwGroupGreekFlow,
+  fetchUwEconomyIndicator,
+  fetchUwMacroIndicators,
   fetchUwRealizedVol,
   fetchUwRiskReversalSkew,
   fetchUwScreenerAnalysts,
@@ -879,6 +883,25 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
       const filterTicker = input.ticker ? String(input.ticker) : undefined;
       const consensus = await fetchUwPredictionsConsensus(limit, filterTicker);
       return { ...consensus, note: UW_EXCLUSIVE_NOTE };
+    }
+    case "get_group_greek_flow": {
+      const group = String(input.group ?? "mag7").toLowerCase();
+      const exp = input.expiry ? String(input.expiry) : undefined;
+      const rows = await fetchUwGroupGreekFlow(group, exp);
+      const summary = summarizeGroupGreekFlow(group, rows as Record<string, unknown>[]);
+      return {
+        group,
+        expiry: exp,
+        source: "unusual_whales",
+        note: UW_EXCLUSIVE_NOTE,
+        greek_flow: rows,
+        summary,
+      };
+    }
+    case "get_macro_indicator": {
+      const indicator = String(input.indicator ?? "CPI").toUpperCase();
+      const single = await fetchUwEconomyIndicator(indicator);
+      return { ...single, note: UW_EXCLUSIVE_NOTE };
     }
     case "get_option_contract": {
       const cid = String(input.contract_id ?? "").toUpperCase();

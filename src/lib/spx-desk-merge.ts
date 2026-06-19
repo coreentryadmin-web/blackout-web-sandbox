@@ -352,6 +352,8 @@ const signalDeskStub = (): SpxDeskPayload => ({
   flow_by_expiry: [],
   net_flow_by_expiry: [],
   market_breadth: null,
+  mag7_greek_flow: null,
+  macro_indicators: [],
 });
 
 /** Minimal merged desk for server-side signal logging (pulse + flow lanes). */

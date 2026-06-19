@@ -43,6 +43,11 @@ export const UW_FETCH_FUNCTION_PATHS: Record<string, string> = {
   fetchUwNetPremTicks: "/api/stock/{ticker}/net-prem-ticks",
   fetchMarketFlowAlerts: "/api/option-trades/flow-alerts",
   fetchMarketFlowAlertRows: "/api/option-trades/flow-alerts",
+  fetchUwGroupGreekFlow: "/api/group-flow/{flow_group}/greek-flow",
+  fetchUwEconomyIndicator: "/api/economy/{indicator}",
+  fetchUwMacroIndicators: "/api/economy/{indicator}",
+  fetchUwGreekFlow: "/api/stock/{ticker}/greek-flow",
+  fetchUwMarketEconomicCalendar: "/api/market/economic-calendar",
 };
 
 /** Symbols monitored for trading-halt play gates. */

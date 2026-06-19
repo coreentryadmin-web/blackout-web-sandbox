@@ -235,6 +235,15 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     limit: { type: "integer", default: 20 },
   }),
 
+  t("get_group_greek_flow", "UW ONLY — basket dealer greek flow (mag7, semis, etc.).", {
+    group: { type: "string", description: "Flow group e.g. mag7, semis", default: "mag7" },
+    expiry: { type: "string", description: "Optional YYYY-MM-DD expiry" },
+  }),
+
+  t("get_macro_indicator", "UW ONLY — macro series (GDP, CPI, unemployment).", {
+    indicator: { type: "string", enum: ["GDP", "CPI", "UNRATE"], default: "CPI" },
+  }),
+
   t("get_option_contract", "UW ONLY — single contract flow/intraday (OCC symbol required).", {
 
     contract_id: { type: "string", description: "OCC symbol e.g. NVDA250117C00124000" },
@@ -311,6 +320,7 @@ export const TOOL_GROUPS = {
     "get_trade_history",
     "get_greek_flow",
     "get_gex",
+    "get_group_greek_flow",
   ],
   flow_analysis: [
     "get_options_flow",
@@ -345,6 +355,7 @@ export const TOOL_GROUPS = {
     "get_web_search",
     "get_earnings",
     "get_economic_calendar",
+    "get_macro_indicator",
     "get_earnings_market",
     "get_fda_calendar",
     "get_ipo_calendar",

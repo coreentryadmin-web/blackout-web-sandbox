@@ -1,8 +1,8 @@
 /** Auto-generated — run: node scripts/probe-docs-endpoints.mjs */
 export const DOCS_PROBE_REPORT = {
   "summary": {
-    "probedAt": "2026-06-18T18:50:25.270Z",
-    "codebaseUsageGeneratedAt": "2026-06-18T18:39:58.472Z",
+    "probedAt": "2026-06-19T00:32:04.773Z",
+    "codebaseUsageGeneratedAt": "2026-06-19T00:28:45.065Z",
     "documentedTotal": 265,
     "probedTotal": 265,
     "uwOnlyRun": true,
@@ -21,14 +21,14 @@ export const DOCS_PROBE_REPORT = {
     },
     "unusual_whales": {
       "total": 186,
-      "ok": 140,
-      "fail": 40,
+      "ok": 135,
+      "fail": 45,
       "rateLimited": 0,
       "blocked": 6,
-      "usedInCode": 120,
-      "unusedInCode": 66,
-      "unusedAndWorking": 35,
-      "unusedAndBlocked": 0
+      "usedInCode": 132,
+      "unusedInCode": 54,
+      "unusedAndWorking": 20,
+      "unusedAndBlocked": 3
     }
   },
   "results": [
@@ -1468,7 +1468,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 168,
+        "ms": 180,
         "note": "OK"
       }
     },
@@ -1486,7 +1486,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 77,
         "note": "251 rows"
       }
     },
@@ -1504,7 +1504,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 73,
+        "ms": 76,
         "note": "24 rows"
       }
     },
@@ -1522,7 +1522,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 93,
+        "ms": 76,
         "note": "284 rows"
       }
     },
@@ -1540,7 +1540,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 79,
+        "ms": 96,
         "note": "261 rows"
       }
     },
@@ -1558,8 +1558,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 88,
-        "note": "316 rows"
+        "ms": 92,
+        "note": "391 rows"
       }
     },
     {
@@ -1576,8 +1576,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 95,
-        "note": "316 rows"
+        "ms": 589,
+        "note": "390 rows"
       }
     },
     {
@@ -1594,8 +1594,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 111,
-        "note": "474 rows"
+        "ms": 103,
+        "note": "541 rows"
       }
     },
     {
@@ -1609,11 +1609,11 @@ export const DOCS_PROBE_REPORT = {
       "usedInCode": true,
       "unused": false,
       "probe": {
-        "status": 200,
-        "ok": true,
+        "status": 503,
+        "ok": false,
         "blocked": false,
-        "ms": 66,
-        "note": "10 rows"
+        "ms": 83,
+        "note": "upstream connect error or disconnect/reset before headers. reset reason: remote "
       }
     },
     {
@@ -1627,11 +1627,11 @@ export const DOCS_PROBE_REPORT = {
       "usedInCode": true,
       "unused": false,
       "probe": {
-        "status": 200,
-        "ok": true,
+        "status": 503,
+        "ok": false,
         "blocked": false,
-        "ms": 119,
-        "note": "10 rows"
+        "ms": 76,
+        "note": "upstream connect error or disconnect/reset before headers. reset reason: remote "
       }
     },
     {
@@ -1645,11 +1645,11 @@ export const DOCS_PROBE_REPORT = {
       "usedInCode": true,
       "unused": false,
       "probe": {
-        "status": 200,
-        "ok": true,
+        "status": 503,
+        "ok": false,
         "blocked": false,
-        "ms": 105,
-        "note": "261 rows"
+        "ms": 62,
+        "note": "upstream connect error or disconnect/reset before headers. reset reason: remote "
       }
     },
     {
@@ -1666,7 +1666,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 78,
+        "ms": 69,
         "note": "0 rows"
       }
     },
@@ -1684,7 +1684,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 74,
+        "ms": 86,
         "note": "1 rows"
       }
     },
@@ -1702,7 +1702,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 204,
+        "ms": 75,
         "note": "Unknown commodity. Valid: wti, brent, natural-gas, copper, aluminum, wheat, corn, cotton, sugar, cof"
       }
     },
@@ -1720,7 +1720,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 137,
+        "ms": 251,
         "note": "OK"
       }
     },
@@ -1738,7 +1738,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 135,
+        "ms": 116,
         "note": "OK"
       }
     },
@@ -1756,7 +1756,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 131,
+        "ms": 125,
         "note": "OK"
       }
     },
@@ -1774,7 +1774,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 144,
+        "ms": 123,
         "note": "OK"
       }
     },
@@ -1792,7 +1792,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 196,
+        "ms": 162,
         "note": "OK"
       }
     },
@@ -1810,7 +1810,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 98,
+        "ms": 88,
         "note": "10 rows"
       }
     },
@@ -1828,7 +1828,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 114,
+        "ms": 98,
         "note": "10 rows"
       }
     },
@@ -1846,7 +1846,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 109,
+        "ms": 120,
         "note": "405 rows"
       }
     },
@@ -1864,7 +1864,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 122,
+        "ms": 121,
         "note": "10 rows"
       }
     },
@@ -1882,7 +1882,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 78,
+        "ms": 75,
         "note": "10 rows"
       }
     },
@@ -1900,7 +1900,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 66,
         "note": "10 rows"
       }
     },
@@ -1918,7 +1918,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 69,
+        "ms": 78,
         "note": "0 rows"
       }
     },
@@ -1936,7 +1936,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 90,
         "note": "OK"
       }
     },
@@ -1954,7 +1954,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 73,
+        "ms": 76,
         "note": "10 rows"
       }
     },
@@ -1972,7 +1972,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 68,
+        "ms": 77,
         "note": "10 rows"
       }
     },
@@ -1990,7 +1990,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 68,
+        "ms": 70,
         "note": "symbol and market are required"
       }
     },
@@ -2008,7 +2008,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 61,
+        "ms": 70,
         "note": "symbol and market are required"
       }
     },
@@ -2026,7 +2026,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 87,
+        "ms": 77,
         "note": "0 rows"
       }
     },
@@ -2044,7 +2044,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 69,
+        "ms": 85,
         "note": "2 rows"
       }
     },
@@ -2062,7 +2062,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 82,
+        "ms": 79,
         "note": "104 rows"
       }
     },
@@ -2074,13 +2074,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/economy/{indicator}",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/economy/GDP",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 134,
+        "ms": 122,
         "note": "OK"
       }
     },
@@ -2098,7 +2098,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 100,
+        "ms": 200,
         "note": "100 rows"
       }
     },
@@ -2116,7 +2116,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 79,
         "note": "0 rows"
       }
     },
@@ -2134,7 +2134,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 74,
+        "ms": 78,
         "note": "0 rows"
       }
     },
@@ -2152,7 +2152,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 71,
         "note": "OK"
       }
     },
@@ -2170,7 +2170,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 67,
+        "ms": 70,
         "note": "OK"
       }
     },
@@ -2188,7 +2188,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 80,
+        "ms": 67,
         "note": "from and to currency codes are required"
       }
     },
@@ -2206,7 +2206,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 70,
+        "ms": 72,
         "note": "from and to currency codes are required"
       }
     },
@@ -2224,7 +2224,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 82,
+        "ms": 63,
         "note": "from and to currency codes are required"
       }
     },
@@ -2236,14 +2236,14 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/group-flow/{flow_group}/greek-flow",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/group-flow/mag7/greek-flow",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 89,
-        "note": "317 rows"
+        "ms": 107,
+        "note": "391 rows"
       }
     },
     {
@@ -2254,14 +2254,14 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/group-flow/{flow_group}/greek-flow/{expiry}",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/group-flow/mag7/greek-flow/2026-06-18",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 273,
-        "note": "317 rows"
+        "ms": 279,
+        "note": "390 rows"
       }
     },
     {
@@ -2278,7 +2278,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 80,
         "note": "10 rows"
       }
     },
@@ -2296,7 +2296,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 71,
+        "ms": 64,
         "note": "0 rows"
       }
     },
@@ -2314,7 +2314,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 73,
         "note": "32 rows"
       }
     },
@@ -2332,7 +2332,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 68,
+        "ms": 73,
         "note": "10 rows"
       }
     },
@@ -2350,7 +2350,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 87,
+        "ms": 75,
         "note": "0 rows"
       }
     },
@@ -2368,7 +2368,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 97,
+        "ms": 89,
         "note": "0 rows"
       }
     },
@@ -2383,11 +2383,11 @@ export const DOCS_PROBE_REPORT = {
       "usedInCode": true,
       "unused": false,
       "probe": {
-        "status": 200,
-        "ok": true,
+        "status": 503,
+        "ok": false,
         "blocked": false,
-        "ms": 98,
-        "note": "0 rows"
+        "ms": 68,
+        "note": "upstream connect error or disconnect/reset before headers. reset reason: remote "
       }
     },
     {
@@ -2401,11 +2401,11 @@ export const DOCS_PROBE_REPORT = {
       "usedInCode": true,
       "unused": false,
       "probe": {
-        "status": 200,
-        "ok": true,
+        "status": 503,
+        "ok": false,
         "blocked": false,
-        "ms": 86,
-        "note": "0 rows"
+        "ms": 76,
+        "note": "upstream connect error or disconnect/reset before headers. reset reason: remote "
       }
     },
     {
@@ -2422,7 +2422,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 157,
+        "ms": 544,
         "note": "10 rows"
       }
     },
@@ -2440,7 +2440,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 157,
+        "ms": 172,
         "note": "10 rows"
       }
     },
@@ -2458,7 +2458,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 122,
+        "ms": 131,
         "note": "10 rows"
       }
     },
@@ -2476,7 +2476,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 71,
+        "ms": 70,
         "note": "symbols is required (comma-separated tickers)"
       }
     },
@@ -2512,7 +2512,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 129,
+        "ms": 162,
         "note": "OK"
       }
     },
@@ -2530,7 +2530,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 621,
+        "ms": 871,
         "note": "OK"
       }
     },
@@ -2548,7 +2548,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 337,
+        "ms": 124,
         "note": "OK"
       }
     },
@@ -2566,7 +2566,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 77,
+        "ms": 84,
         "note": "10 rows"
       }
     },
@@ -2584,7 +2584,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 125,
+        "ms": 74,
         "note": "10 rows"
       }
     },
@@ -2602,7 +2602,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 400,
         "ok": false,
         "blocked": false,
-        "ms": 68,
+        "ms": 73,
         "note": "Please provide tickers as a list of strings in the 'tickers' parameter, such as ?tickers=AAPL,SPY,JP"
       }
     },
@@ -2620,7 +2620,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 73,
+        "ms": 71,
         "note": "35 rows"
       }
     },
@@ -2638,7 +2638,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 100,
+        "ms": 92,
         "note": "10 rows"
       }
     },
@@ -2656,7 +2656,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 68,
+        "ms": 80,
         "note": "10 rows"
       }
     },
@@ -2674,8 +2674,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 92,
-        "note": "64 rows"
+        "ms": 74,
+        "note": "81 rows"
       }
     },
     {
@@ -2692,7 +2692,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 73,
+        "ms": 83,
         "note": "10 rows"
       }
     },
@@ -2710,7 +2710,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 88,
         "note": "12 rows"
       }
     },
@@ -2728,7 +2728,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 128,
+        "ms": 105,
         "note": "10 rows"
       }
     },
@@ -2746,7 +2746,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 66,
+        "ms": 87,
         "note": "10 rows"
       }
     },
@@ -2764,8 +2764,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 83,
-        "note": "318 rows"
+        "ms": 78,
+        "note": "391 rows"
       }
     },
     {
@@ -2782,7 +2782,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 83,
+        "ms": 70,
         "note": "390 rows"
       }
     },
@@ -2800,7 +2800,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 93,
+        "ms": 89,
         "note": "1 rows"
       }
     },
@@ -2829,15 +2829,15 @@ export const DOCS_PROBE_REPORT = {
       "name": "Flow Data",
       "pathTemplate": "/api/option-contract/{id}/flow",
       "source": "src/lib/uw-docs-catalog.ts",
-      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/flow",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260622C00110000/flow",
       "usedInCode": true,
       "unused": false,
       "probe": {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 66,
-        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+        "ms": 71,
+        "note": "Invalid path input: O:NVDA260622C00110000 (Invalid input format. Check the endpoint's documentation "
       }
     },
     {
@@ -2847,15 +2847,15 @@ export const DOCS_PROBE_REPORT = {
       "name": "Historic Data",
       "pathTemplate": "/api/option-contract/{id}/historic",
       "source": "src/lib/uw-docs-catalog.ts",
-      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/historic",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260622C00110000/historic",
       "usedInCode": true,
       "unused": false,
       "probe": {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 66,
-        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+        "ms": 82,
+        "note": "Invalid path input: O:NVDA260622C00110000 (Invalid input format. Check the endpoint's documentation "
       }
     },
     {
@@ -2865,15 +2865,15 @@ export const DOCS_PROBE_REPORT = {
       "name": "Intraday Data",
       "pathTemplate": "/api/option-contract/{id}/intraday",
       "source": "src/lib/uw-docs-catalog.ts",
-      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/intraday",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260622C00110000/intraday",
       "usedInCode": true,
       "unused": false,
       "probe": {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 77,
-        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+        "ms": 66,
+        "note": "Invalid path input: O:NVDA260622C00110000 (Invalid input format. Check the endpoint's documentation "
       }
     },
     {
@@ -2883,15 +2883,15 @@ export const DOCS_PROBE_REPORT = {
       "name": "Volume Profile",
       "pathTemplate": "/api/option-contract/{id}/volume-profile",
       "source": "src/lib/uw-docs-catalog.ts",
-      "resolvedPath": "/api/option-contract/O%3ANVDA260618C00000500/volume-profile",
+      "resolvedPath": "/api/option-contract/O%3ANVDA260622C00110000/volume-profile",
       "usedInCode": true,
       "unused": false,
       "probe": {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 94,
-        "note": "Invalid path input: O:NVDA260618C00000500 (Invalid input format. Check the endpoint's documentation "
+        "ms": 71,
+        "note": "Invalid path input: O:NVDA260622C00110000 (Invalid input format. Check the endpoint's documentation "
       }
     },
     {
@@ -2908,7 +2908,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 79,
         "note": "24 rows"
       }
     },
@@ -2926,7 +2926,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 75,
+        "ms": 79,
         "note": "20 rows"
       }
     },
@@ -2944,7 +2944,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 558,
+        "ms": 509,
         "note": "146 rows"
       }
     },
@@ -2962,7 +2962,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 82,
+        "ms": 81,
         "note": "5 rows"
       }
     },
@@ -2973,14 +2973,14 @@ export const DOCS_PROBE_REPORT = {
       "name": "Flow Alert by ID",
       "pathTemplate": "/api/option-trades/flow-alerts/{id}",
       "source": "src/lib/uw-docs-catalog.ts",
-      "resolvedPath": "/api/option-trades/flow-alerts/O%3ANVDA260618C00000500",
+      "resolvedPath": "/api/option-trades/flow-alerts/O%3ANVDA260622C00110000",
       "usedInCode": false,
       "unused": true,
       "probe": {
         "status": 400,
         "ok": false,
         "blocked": false,
-        "ms": 68,
+        "ms": 78,
         "note": "Invalid UUID format"
       }
     },
@@ -2998,7 +2998,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 0,
         "ok": false,
         "blocked": false,
-        "ms": 34483,
+        "ms": 33702,
         "note": "Cannot create a string longer than 0x1fffffe8 characters"
       }
     },
@@ -3016,7 +3016,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 711,
+        "ms": 673,
         "note": "6295 rows"
       }
     },
@@ -3034,7 +3034,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 80,
+        "ms": 74,
         "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
       }
     },
@@ -3052,7 +3052,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 77,
+        "ms": 70,
         "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
       }
     },
@@ -3070,7 +3070,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 75,
+        "ms": 76,
         "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
       }
     },
@@ -3088,7 +3088,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 113,
+        "ms": 115,
         "note": "10 rows"
       }
     },
@@ -3106,7 +3106,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 69,
+        "ms": 80,
         "note": "Missing access for politician ports. This is an enterprise only endpoint. Contact dev@unusualwhales."
       }
     },
@@ -3118,13 +3118,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/predictions/insiders",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/predictions/insiders",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 223,
+        "ms": 165,
         "note": "OK"
       }
     },
@@ -3142,7 +3142,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 105,
+        "ms": 112,
         "note": "Not found"
       }
     },
@@ -3160,7 +3160,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 230,
+        "ms": 221,
         "note": "Not found"
       }
     },
@@ -3178,7 +3178,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 100,
+        "ms": 108,
         "note": "Not found"
       }
     },
@@ -3196,7 +3196,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 400,
         "ok": false,
         "blocked": false,
-        "ms": 74,
+        "ms": 84,
         "note": "Missing required parameter: q"
       }
     },
@@ -3208,13 +3208,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/predictions/smart-money",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/predictions/smart-money",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 278,
+        "ms": 144,
         "note": "OK"
       }
     },
@@ -3226,13 +3226,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/predictions/unusual",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/predictions/unusual",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 151,
+        "ms": 112,
         "note": "OK"
       }
     },
@@ -3250,7 +3250,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 110,
+        "ms": 119,
         "note": "HashDive API error: 400"
       }
     },
@@ -3262,13 +3262,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/predictions/whales",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/predictions/whales",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 474,
+        "ms": 488,
         "note": "OK"
       }
     },
@@ -3286,7 +3286,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 66,
+        "ms": 75,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3304,7 +3304,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 68,
+        "ms": 83,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3322,7 +3322,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 86,
+        "ms": 83,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3340,7 +3340,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 78,
+        "ms": 79,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3376,7 +3376,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 75,
+        "ms": 79,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3394,7 +3394,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 131,
+        "ms": 76,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3412,7 +3412,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 75,
+        "ms": 71,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3430,7 +3430,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 69,
+        "ms": 75,
         "note": "Missing access for private markets. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -3448,7 +3448,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 91,
         "note": "10 rows"
       }
     },
@@ -3466,7 +3466,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 86,
         "note": "10 rows"
       }
     },
@@ -3484,7 +3484,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 126,
+        "ms": 123,
         "note": "10 rows"
       }
     },
@@ -3502,7 +3502,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 89,
+        "ms": 96,
         "note": "168 rows"
       }
     },
@@ -3520,7 +3520,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 111,
+        "ms": 88,
         "note": "10 rows"
       }
     },
@@ -3538,7 +3538,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 93,
+        "ms": 80,
         "note": "12 rows"
       }
     },
@@ -3556,7 +3556,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 95,
+        "ms": 84,
         "note": "234 rows"
       }
     },
@@ -3574,7 +3574,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 83,
+        "ms": 79,
         "note": "50 rows"
       }
     },
@@ -3592,7 +3592,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 119,
+        "ms": 91,
         "note": "1000 rows"
       }
     },
@@ -3610,7 +3610,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 91,
+        "ms": 153,
         "note": "729 rows"
       }
     },
@@ -3628,7 +3628,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 66,
+        "ms": 70,
         "note": "17 rows"
       }
     },
@@ -3646,7 +3646,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 131,
+        "ms": 81,
         "note": "120 rows"
       }
     },
@@ -3664,7 +3664,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 92,
+        "ms": 84,
         "note": "OK"
       }
     },
@@ -3700,7 +3700,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 71,
+        "ms": 74,
         "note": "Invalid path input: technology (technology is not a valid input. Valid inputs are Basic Materials, C"
       }
     },
@@ -3718,7 +3718,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 76,
+        "ms": 83,
         "note": "Invalid query input(s): expirations=[] (List input expirations must be provided and may not be an em"
       }
     },
@@ -3736,7 +3736,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 93,
+        "ms": 90,
         "note": "102 rows"
       }
     },
@@ -3754,7 +3754,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 90,
+        "ms": 87,
         "note": "102 rows"
       }
     },
@@ -3772,7 +3772,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 78,
+        "ms": 102,
         "note": "138 rows"
       }
     },
@@ -3790,7 +3790,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 114,
+        "ms": 112,
         "note": "OK"
       }
     },
@@ -3808,7 +3808,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 70,
         "note": "5 rows"
       }
     },
@@ -3826,7 +3826,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 85,
         "note": "OK"
       }
     },
@@ -3844,7 +3844,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 87,
+        "ms": 86,
         "note": "OK"
       }
     },
@@ -3862,8 +3862,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 256,
-        "note": "2057 rows"
+        "ms": 429,
+        "note": "2519 rows"
       }
     },
     {
@@ -3880,7 +3880,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 107,
+        "ms": 102,
         "note": "OK"
       }
     },
@@ -3898,7 +3898,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 99,
+        "ms": 95,
         "note": "OK"
       }
     },
@@ -3916,7 +3916,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 107,
+        "ms": 97,
         "note": "261 rows"
       }
     },
@@ -3934,7 +3934,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 80,
+        "ms": 146,
         "note": "251 rows"
       }
     },
@@ -3952,7 +3952,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 85,
+        "ms": 84,
         "note": "102 rows"
       }
     },
@@ -3970,7 +3970,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 83,
         "note": "OK"
       }
     },
@@ -3988,8 +3988,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 84,
-        "note": "829 rows"
+        "ms": 97,
+        "note": "830 rows"
       }
     },
     {
@@ -4006,7 +4006,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 84,
+        "ms": 81,
         "note": "9 rows"
       }
     },
@@ -4024,7 +4024,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 75,
+        "ms": 72,
         "note": "5 rows"
       }
     },
@@ -4042,7 +4042,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 67,
+        "ms": 72,
         "note": "24 rows"
       }
     },
@@ -4060,8 +4060,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 89,
-        "note": "320 rows"
+        "ms": 88,
+        "note": "391 rows"
       }
     },
     {
@@ -4078,8 +4078,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 128,
-        "note": "320 rows"
+        "ms": 112,
+        "note": "390 rows"
       }
     },
     {
@@ -4096,8 +4096,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 86,
-        "note": "755 rows"
+        "ms": 88,
+        "note": "756 rows"
       }
     },
     {
@@ -4114,7 +4114,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 67,
+        "ms": 81,
         "note": "10 rows"
       }
     },
@@ -4132,7 +4132,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 84,
+        "ms": 71,
         "note": "24 rows"
       }
     },
@@ -4150,7 +4150,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 87,
+        "ms": 83,
         "note": "284 rows"
       }
     },
@@ -4168,8 +4168,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 85,
-        "note": "4241 rows"
+        "ms": 99,
+        "note": "4314 rows"
       }
     },
     {
@@ -4186,8 +4186,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 123,
-        "note": "6998 rows"
+        "ms": 117,
+        "note": "7712 rows"
       }
     },
     {
@@ -4204,7 +4204,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 83,
+        "ms": 70,
         "note": "24 rows"
       }
     },
@@ -4222,7 +4222,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 75,
+        "ms": 80,
         "note": "10 rows"
       }
     },
@@ -4240,7 +4240,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 71,
+        "ms": 74,
         "note": "Missing access for ownership endpoint. This is an enterprise only endpoint. Contact dev@unusualwhale"
       }
     },
@@ -4258,7 +4258,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 82,
+        "ms": 77,
         "note": "OK"
       }
     },
@@ -4276,8 +4276,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 294,
-        "note": "32351 rows"
+        "ms": 272,
+        "note": "35543 rows"
       }
     },
     {
@@ -4294,8 +4294,8 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 75,
-        "note": "251 rows"
+        "ms": 114,
+        "note": "250 rows"
       }
     },
     {
@@ -4312,7 +4312,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 79,
+        "ms": 80,
         "note": "251 rows"
       }
     },
@@ -4330,7 +4330,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 87,
+        "ms": 83,
         "note": "OK"
       }
     },
@@ -4348,7 +4348,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 76,
+        "ms": 71,
         "note": "24 rows"
       }
     },
@@ -4366,7 +4366,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 187,
+        "ms": 162,
         "note": "17910 rows"
       }
     },
@@ -4384,7 +4384,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 64,
+        "ms": 75,
         "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -4420,7 +4420,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 66,
+        "ms": 75,
         "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -4438,7 +4438,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 422,
         "ok": false,
         "blocked": false,
-        "ms": 65,
+        "ms": 177,
         "note": "Missing access for unusual trades. This is a premium endpoint. Contact dev@unusualwhales.com"
       }
     },
@@ -4456,7 +4456,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 62,
+        "ms": 69,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4474,7 +4474,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 72,
+        "ms": 82,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4492,7 +4492,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 88,
+        "ms": 155,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4504,13 +4504,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/volatility/anomaly/top",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/volatility/anomaly/top",
-      "usedInCode": true,
-      "unused": false,
+      "usedInCode": false,
+      "unused": true,
       "probe": {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 127,
+        "ms": 66,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4522,13 +4522,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/volatility/character/top",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/volatility/character/top",
-      "usedInCode": true,
-      "unused": false,
+      "usedInCode": false,
+      "unused": true,
       "probe": {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 71,
+        "ms": 76,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4540,13 +4540,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/volatility/vix-term-structure",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/volatility/vix-term-structure",
-      "usedInCode": true,
-      "unused": false,
+      "usedInCode": false,
+      "unused": true,
       "probe": {
         "status": 403,
         "ok": false,
         "blocked": true,
-        "ms": 75,
+        "ms": 83,
         "note": "{\"code\":\"volatility_scope_required\",\"message\":\"This endpoint requires the volati"
       }
     },
@@ -4558,13 +4558,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 66,
+        "ms": 74,
         "note": "0 rows"
       }
     },
@@ -4582,7 +4582,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 74,
+        "ms": 76,
         "note": "0 rows"
       }
     },
@@ -4600,7 +4600,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 80,
+        "ms": 75,
         "note": "0 rows"
       }
     },
@@ -4612,13 +4612,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/flow_alerts",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/flow_alerts",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 82,
+        "ms": 66,
         "note": "0 rows"
       }
     },
@@ -4630,13 +4630,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/gex",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/gex",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 75,
+        "ms": 77,
         "note": "0 rows"
       }
     },
@@ -4648,13 +4648,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/interval_flow",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/interval_flow",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 75,
         "note": "0 rows"
       }
     },
@@ -4672,7 +4672,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 72,
+        "ms": 67,
         "note": "0 rows"
       }
     },
@@ -4684,13 +4684,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/market_tide",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/market_tide",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 80,
+        "ms": 74,
         "note": "0 rows"
       }
     },
@@ -4702,13 +4702,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/net_flow",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/net_flow",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 82,
         "note": "0 rows"
       }
     },
@@ -4726,7 +4726,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 81,
+        "ms": 82,
         "note": "0 rows"
       }
     },
@@ -4738,13 +4738,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/off_lit_trades",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/off_lit_trades",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 70,
+        "ms": 83,
         "note": "0 rows"
       }
     },
@@ -4762,7 +4762,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 83,
+        "ms": 78,
         "note": "0 rows"
       }
     },
@@ -4780,7 +4780,7 @@ export const DOCS_PROBE_REPORT = {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 69,
+        "ms": 71,
         "note": "0 rows"
       }
     },
@@ -4792,13 +4792,13 @@ export const DOCS_PROBE_REPORT = {
       "pathTemplate": "/api/socket/trading_halts",
       "source": "src/lib/uw-docs-catalog.ts",
       "resolvedPath": "/api/socket/trading_halts",
-      "usedInCode": false,
-      "unused": true,
+      "usedInCode": true,
+      "unused": false,
       "probe": {
         "status": 200,
         "ok": true,
         "blocked": false,
-        "ms": 80,
+        "ms": 76,
         "note": "0 rows"
       }
     }

@@ -1121,6 +1121,79 @@ export async function fetchUwGreekFlow(ticker: string, expiry?: string, limit = 
   return extractRows(data);
 }
 
+export type UwMacroIndicatorSnapshot = {
+  indicator: string;
+  label: string;
+  latest_value: number | null;
+  prior_value: number | null;
+  change_pct: number | null;
+  as_of: string | null;
+  rows: Record<string, unknown>[];
+};
+
+export const UW_MACRO_INDICATORS = [
+  { id: "GDP", label: "GDP" },
+  { id: "CPI", label: "CPI" },
+  { id: "UNRATE", label: "Unemployment" },
+] as const;
+
+function parseEconomyIndicatorRows(
+  indicator: string,
+  label: string,
+  rows: Record<string, unknown>[]
+): UwMacroIndicatorSnapshot {
+  const sorted = [...rows].sort((a, b) => {
+    const ta = String(a.date ?? a.as_of ?? a.period ?? "");
+    const tb = String(b.date ?? b.as_of ?? b.period ?? "");
+    return tb.localeCompare(ta);
+  });
+  const latest = sorted[0];
+  const prior = sorted[1];
+  const latestVal = latest ? Number(latest.value ?? latest.actual ?? latest.reading ?? NaN) : NaN;
+  const priorVal = prior ? Number(prior.value ?? prior.actual ?? prior.reading ?? NaN) : NaN;
+  const latest_value = Number.isFinite(latestVal) ? latestVal : null;
+  const prior_value = Number.isFinite(priorVal) ? priorVal : null;
+  const change_pct =
+    latest_value != null && prior_value != null && prior_value !== 0
+      ? Number((((latest_value - prior_value) / Math.abs(prior_value)) * 100).toFixed(2))
+      : null;
+  return {
+    indicator,
+    label,
+    latest_value,
+    prior_value,
+    change_pct,
+    as_of: latest ? String(latest.date ?? latest.as_of ?? latest.period ?? "") || null : null,
+    rows: sorted.slice(0, 12),
+  };
+}
+
+export async function fetchUwEconomyIndicator(indicator: string): Promise<UwMacroIndicatorSnapshot> {
+  const id = indicator.toUpperCase().trim();
+  const label = UW_MACRO_INDICATORS.find((m) => m.id === id)?.label ?? id;
+  const data = await uwGetSafe<unknown>(`/api/economy/${id}`, {});
+  const rows = extractRows(data) as Record<string, unknown>[];
+  return parseEconomyIndicatorRows(id, label, rows);
+}
+
+export async function fetchUwMacroIndicators(
+  indicators: string[] = UW_MACRO_INDICATORS.map((m) => m.id)
+): Promise<UwMacroIndicatorSnapshot[]> {
+  const results = await Promise.all(
+    indicators.map((id) => fetchUwEconomyIndicator(id).catch(() => null))
+  );
+  return results.filter((r): r is UwMacroIndicatorSnapshot => r != null);
+}
+
+export async function fetchUwGroupGreekFlow(group: string, expiry?: string, limit = 500) {
+  const g = group.toLowerCase().trim();
+  const path = expiry
+    ? `/api/group-flow/${g}/greek-flow/${expiry}`
+    : `/api/group-flow/${g}/greek-flow`;
+  const data = await uwGetSafe<unknown>(path, { limit: Math.min(limit, 500) });
+  return extractRows(data);
+}
+
 export async function fetchUwSpotExposuresExpiryStrike(
   ticker: string,
   expiry: string,

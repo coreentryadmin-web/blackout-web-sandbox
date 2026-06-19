@@ -200,6 +200,23 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
         }
       : null,
 
+    mag7_greek_flow: desk.mag7_greek_flow
+      ? {
+          headline: desk.mag7_greek_flow.headline,
+          bias: desk.mag7_greek_flow.bias,
+          net_delta: desk.mag7_greek_flow.net_delta,
+          net_gamma: desk.mag7_greek_flow.net_gamma,
+        }
+      : null,
+
+    macro_indicators: (desk.macro_indicators ?? []).map((m) => ({
+      indicator: m.indicator,
+      label: m.label,
+      latest_value: m.latest_value,
+      change_pct: m.change_pct,
+      as_of: m.as_of,
+    })),
+
     flow_by_expiry: (desk.flow_by_expiry ?? []).slice(0, 8).map((r) => ({
       expiry: String(r.expiry ?? r.expiration ?? "").slice(0, 10),
       call_premium: r.call_premium ?? r.calls,
@@ -447,7 +464,9 @@ DASHBOARD SECTIONS IN THE JSON (use each when populated):
 11. internals — TICK, TRIN, ADD
 11b. market_breadth — A/D ratio, % advancing, % above VWAP, new highs/lows
 11c. greek_exposure_by_expiry — which expiry pins dealer gamma (e.g. 0DTE share)
-11d. flow_by_expiry / net_flow_by_expiry — call/put net per DTE bucket
+11d. mag7_greek_flow — mega-cap dealer gamma overlay for index context
+11e. macro_indicators — GDP/CPI/unemployment trend snapshots
+11f. flow_by_expiry / net_flow_by_expiry — call/put net per DTE bucket
 12. net_premium_velocity
 13. oi_changes
 14. mega_cap_stocks

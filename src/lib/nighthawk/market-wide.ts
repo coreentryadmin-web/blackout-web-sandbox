@@ -5,6 +5,8 @@ import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import {
   fetchMarketFlowAlertRows,
   fetchUwEtfTide,
+  fetchUwGroupGreekFlow,
+  fetchUwMacroIndicators,
   fetchUwMarketNewsHeadlines,
   fetchUwMarketTide,
   fetchUwMarketTopNetImpact,
@@ -13,6 +15,8 @@ import {
   fetchUwTickerFlowAlerts,
   type PredictionConsensusSignal,
 } from "@/lib/providers/unusual-whales";
+import { summarizeGroupGreekFlow, type GroupGreekFlowSummary } from "@/lib/group-greek-flow-summary";
+import type { UwMacroIndicatorSnapshot } from "@/lib/providers/unusual-whales";
 import {
   INDEX_SET,
   INDEX_TICKERS,
@@ -42,6 +46,8 @@ export type MarketWideContext = {
   vix_iv_rank: number | null;
   market_breadth: MarketBreadthMetrics | null;
   predictions_consensus: PredictionConsensusSignal[];
+  mag7_greek_flow: GroupGreekFlowSummary | null;
+  macro_indicators: UwMacroIndicatorSnapshot[];
 };
 
 function flowRowToDict(row: { raw: Record<string, unknown>; flow: { ticker: string; premium: number } }) {
@@ -138,6 +144,8 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     topNetImpact,
     dailyMarket,
     predictionsRaw,
+    mag7Rows,
+    macroIndicators,
   ] = await Promise.all([
     uwConfigured() ? fetchUwMarketTide().catch(() => null) : Promise.resolve(null),
     uwConfigured()
@@ -161,6 +169,8 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     uwConfigured() ? fetchUwMarketTopNetImpact(12).catch(() => []) : Promise.resolve([]),
     fetchDailyMarketSummary(today).catch(() => null),
     uwConfigured() ? fetchUwPredictionsConsensus(15).catch(() => null) : Promise.resolve(null),
+    uwConfigured() ? fetchUwGroupGreekFlow("mag7").catch(() => []) : Promise.resolve([]),
+    uwConfigured() ? fetchUwMacroIndicators().catch(() => []) : Promise.resolve([]),
   ]);
 
   const stockFlows = flowRows
@@ -228,5 +238,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     vix_iv_rank: vixIvRank,
     market_breadth: marketBreadth,
     predictions_consensus: predictionsRaw?.top_signals ?? [],
+    mag7_greek_flow: summarizeGroupGreekFlow("mag7", mag7Rows as Record<string, unknown>[]),
+    macro_indicators: macroIndicators,
   };
 }

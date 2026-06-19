@@ -1,9 +1,9 @@
 /** Shared intent keyword patterns for Largo tool routing and question analysis. */
 
 export const SPX_DESK_RE =
-  /\b(spx|s&p 500|s&p|0dte|sniper|gamma flip|gex|dealer|max pain|vwap|hod|lod|pdh|pdl|internals|tick|trin|greek flow|dealer gamma)\b/;
+  /\b(spx|s&p 500|s&p|0dte|sniper|gamma flip|gex|dealer|max pain|vwap|hod|lod|pdh|pdl|internals|tick|trin|greek flow|dealer gamma|mag7|mag 7|mega.?cap)\b/;
 
-export const SPX_DESK_TOOLS_RE = /\b(spx|s&p|play|signal|0dte|sniper|gamma|gex|dealer|greek flow)\b/;
+export const SPX_DESK_TOOLS_RE = /\b(spx|s&p|play|signal|0dte|sniper|gamma|gex|dealer|greek flow|mag7|mag 7)\b/;
 
 export const FLOW_RE =
   /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/;
@@ -13,9 +13,9 @@ export const FLOW_TOOLS_RE = /\b(flow|tape|sweep|whale|dark pool|premium|unusual
 export const PLAY_STATE_RE =
   /\b(buy|sell|hold|trim|play|setup|trade|lotto|signal|outlook|analysis)\b/;
 
-export const NEWS_RE = /\b(news|headline|catalyst|earnings|cpi|fomc|macro|calendar)\b/;
+export const NEWS_RE = /\b(news|headline|catalyst|earnings|cpi|fomc|macro|calendar|gdp|unemployment|inflation)\b/;
 
-export const NEWS_TOOLS_RE = /\b(earnings|news|catalyst|cpi|fomc|macro|calendar)\b/;
+export const NEWS_TOOLS_RE = /\b(earnings|news|catalyst|cpi|fomc|macro|calendar|gdp|unemployment|inflation)\b/;
 
 export const VOL_RE = /\b(iv|vol|vix|skew|rank|realized)\b/;
 

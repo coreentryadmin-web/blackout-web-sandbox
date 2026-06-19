@@ -21,7 +21,9 @@ type FeedKey =
   | "nighthawk"
   | "flow_tape"
   | "greek_flow"
-  | "breadth";
+  | "breadth"
+  | "group_greek_flow"
+  | "macro_indicators";
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 
@@ -55,7 +57,9 @@ export async function captureLargoLiveFeed(intent: LargoQuestionIntent): Promise
       { key: "play", promise: safeTool("get_spx_play") },
       { key: "open_plays", promise: safeTool("get_open_plays") },
       { key: "greek_flow", promise: safeTool("get_greek_flow", { ticker: "SPX" }) },
-      { key: "breadth", promise: safeTool("get_market_breadth") }
+      { key: "breadth", promise: safeTool("get_market_breadth") },
+      { key: "group_greek_flow", promise: safeTool("get_group_greek_flow", { group: "mag7" }) },
+      { key: "macro_indicators", promise: safeTool("get_macro_indicator", { indicator: "CPI" }) }
     );
   }
 
@@ -220,6 +224,26 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
       );
       lines.push("");
     }
+  }
+
+  const groupGreek = asObj(feed.group_greek_flow);
+  if (groupGreek && !groupGreek.error) {
+    const summary = asObj(groupGreek.summary);
+    if (summary?.headline) {
+      lines.push("### Mag7 dealer greek flow");
+      lines.push(String(summary.headline));
+      lines.push("");
+    }
+  }
+
+  const macro = asObj(feed.macro_indicators);
+  if (macro && !macro.error && macro.latest_value != null) {
+    const changePct = Number(macro.change_pct);
+    const changeSuffix =
+      Number.isFinite(changePct) ? ` (${changePct > 0 ? "+" : ""}${changePct}% vs prior)` : "";
+    lines.push("### Macro indicator");
+    lines.push(`${macro.label ?? macro.indicator}: ${macro.latest_value}${changeSuffix}`);
+    lines.push("");
   }
 
   const tech = asObj(feed.technicals);

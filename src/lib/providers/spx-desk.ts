@@ -34,6 +34,7 @@ import {
 } from "./polygon";
 import { resolveMarketInternals } from "@/lib/market-internals";
 import { summarizeGreekExposureByExpiry, type GreekExposureSummary } from "@/lib/greek-exposure-summary";
+import { summarizeGroupGreekFlow, type GroupGreekFlowSummary } from "@/lib/group-greek-flow-summary";
 import {
   isSpxRthActive,
   marketStatusLabel,
@@ -51,8 +52,10 @@ import {
   fetchUwDarkPool,
   fetchUwFlow0dte,
   fetchUwFlowPerExpiry,
+  fetchUwGroupGreekFlow,
   fetchUwGreekExposureExpiry,
   fetchUwIvRank,
+  fetchUwMacroIndicators,
   fetchUwMarketTide,
   fetchUwMaxPain,
   fetchUwNetFlowExpiry,
@@ -66,6 +69,7 @@ import {
   type IvTermPoint,
   type NetPremTick,
   type OiChangeItem,
+  type UwMacroIndicatorSnapshot,
 } from "./unusual-whales";
 import { fetchEngine } from "@/lib/engine";
 import { indexStore } from "@/lib/ws/polygon-socket";
@@ -437,6 +441,10 @@ export type SpxDeskPayload = {
   net_flow_by_expiry: Record<string, unknown>[];
   /** Full-market breadth from Polygon daily grouped aggs. */
   market_breadth: MarketBreadthMetrics | null;
+  /** Mega-cap dealer greek flow overlay (UW group-flow/mag7). */
+  mag7_greek_flow: GroupGreekFlowSummary | null;
+  /** UW economy indicator snapshots (GDP, CPI, unemployment). */
+  macro_indicators: UwMacroIndicatorSnapshot[];
 };
 
 export type DeskDataQuality = {
@@ -736,6 +744,8 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     flow_by_expiry: [],
     net_flow_by_expiry: [],
     market_breadth: null,
+    mag7_greek_flow: null,
+    macro_indicators: [],
   };
 }
 
@@ -910,18 +920,24 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     breadthAll ?? []
   );
 
-  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, dailyMarket] =
+  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, dailyMarket, mag7Rows, macroIndicators] =
     await Promise.all([
       uwConfigured() ? fetchUwGreekExposureExpiry("SPX").catch(() => []) : Promise.resolve([]),
       uwConfigured() ? fetchUwFlowPerExpiry("SPX", 12).catch(() => []) : Promise.resolve([]),
       uwConfigured() ? fetchUwNetFlowExpiry(20).catch(() => []) : Promise.resolve([]),
       uwConfigured() ? fetchUwNetPremTicks("SPY").catch(() => []) : Promise.resolve([]),
       fetchDailyMarketSummary(today).catch(() => null),
+      uwConfigured() ? fetchUwGroupGreekFlow("mag7").catch(() => []) : Promise.resolve([]),
+      uwConfigured() ? fetchUwMacroIndicators().catch(() => []) : Promise.resolve([]),
     ]);
 
   const greekExposure = summarizeGreekExposureByExpiry(
     greekExpRows as Record<string, unknown>[],
     today
+  );
+  const mag7GreekFlow = summarizeGroupGreekFlow(
+    "mag7",
+    mag7Rows as Record<string, unknown>[]
   );
   const marketBreadth = dailyMarket?.results?.length
     ? computeMarketBreadthFromSummary(dailyMarket.results)
@@ -1013,6 +1029,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     flow_by_expiry: flowByExpiry,
     net_flow_by_expiry: netFlowByExpiry,
     market_breadth: marketBreadth,
+    mag7_greek_flow: mag7GreekFlow,
+    macro_indicators: macroIndicators,
   };
 }
 

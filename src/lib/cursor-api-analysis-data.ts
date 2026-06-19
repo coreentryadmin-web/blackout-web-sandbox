@@ -1,16 +1,16 @@
 /** Auto-generated — run: node scripts/analyze-api-usage.mjs */
 export const CURSOR_API_ANALYSIS = {
-  "generatedAt": "2026-06-18T23:49:55.305Z",
+  "generatedAt": "2026-06-19T00:28:45.065Z",
   "summary": {
     "internalRoutes": 40,
     "polygonEndpoints": 43,
-    "uwEndpoints": 198,
+    "uwEndpoints": 203,
     "finnhubEndpoints": 4,
     "anthropicEndpoints": 1,
     "engineEndpoints": 1,
     "webSearchEndpoints": 3,
     "clientCalls": 27,
-    "largoTools": 76
+    "largoTools": 78
   },
   "internalRoutes": [
     {
@@ -606,6 +606,28 @@ export const CURSOR_API_ANALYSIS = {
         ]
       },
       {
+        "path": "/api/economy/{indicator}",
+        "files": [
+          "src/lib/live-api-integrations.ts"
+        ]
+      },
+      {
+        "path": "/api/economy/{param}",
+        "files": [
+          "src/lib/largo/run-tool.ts",
+          "src/lib/providers/unusual-whales.ts"
+        ]
+      },
+      {
+        "path": "/api/economy/${id}",
+        "files": [
+          "src/lib/largo/run-tool.ts",
+          "src/lib/nighthawk/dossier.ts",
+          "src/lib/nighthawk/market-wide.ts",
+          "src/lib/providers/unusual-whales.ts"
+        ]
+      },
+      {
         "path": "/api/etf/{param}/in-outflow",
         "files": [
           "src/lib/largo/run-tool.ts",
@@ -684,6 +706,12 @@ export const CURSOR_API_ANALYSIS = {
         "path": "/api/etfs/${etf.toUpperCase()}/weights",
         "files": [
           "src/lib/providers/unusual-whales.ts"
+        ]
+      },
+      {
+        "path": "/api/group-flow/{flow_group}/greek-flow",
+        "files": [
+          "src/lib/live-api-integrations.ts"
         ]
       },
       {
@@ -800,6 +828,7 @@ export const CURSOR_API_ANALYSIS = {
       {
         "path": "/api/market/economic-calendar",
         "files": [
+          "src/lib/live-api-integrations.ts",
           "src/lib/providers/unusual-whales.ts"
         ]
       },
@@ -1384,7 +1413,7 @@ export const CURSOR_API_ANALYSIS = {
       {
         "path": "/api/stock/{param}/spot-exposures/expiry-strike",
         "files": [
-          "src/lib/largo/run-tool.ts",
+          "src/lib/nighthawk/market-wide.ts",
           "src/lib/providers/spx-desk.ts",
           "src/lib/providers/unusual-whales.ts"
         ]
@@ -1461,6 +1490,12 @@ export const CURSOR_API_ANALYSIS = {
       },
       {
         "path": "/api/stock/{ticker}/greek-exposure/strike",
+        "files": [
+          "src/lib/live-api-integrations.ts"
+        ]
+      },
+      {
+        "path": "/api/stock/{ticker}/greek-flow",
         "files": [
           "src/lib/live-api-integrations.ts"
         ]
@@ -1589,9 +1624,6 @@ export const CURSOR_API_ANALYSIS = {
       {
         "path": "/api/stock/${sym(ticker)}/spot-exposures/expiry-strike",
         "files": [
-          "src/lib/largo/run-tool.ts",
-          "src/lib/nighthawk/dossier.ts",
-          "src/lib/nighthawk/market-wide.ts",
           "src/lib/providers/unusual-whales.ts"
         ]
       },
@@ -2072,6 +2104,7 @@ export const CURSOR_API_ANALYSIS = {
     "get_global_flow",
     "get_greek_flow",
     "get_greeks",
+    "get_group_greek_flow",
     "get_insider_flow",
     "get_institutional",
     "get_ipo_calendar",
@@ -2079,6 +2112,7 @@ export const CURSOR_API_ANALYSIS = {
     "get_iv_term_structure",
     "get_lit_flow",
     "get_lotto_state",
+    "get_macro_indicator",
     "get_market_breadth",
     "get_market_context",
     "get_market_movers",

@@ -86,7 +86,15 @@ export function buildMarketRecap(ctx: MarketWideContext): {
           .map((s) => s.headline)
           .join("; ")
       : "";
-  const summary = `${tide}. ${spx}.${breadthLine ? ` Breadth: ${breadthLine}.` : ""} Leaders: ${leaders.map((s) => `${s.name} ${s.change_pct >= 0 ? "+" : ""}${s.change_pct.toFixed(2)}%`).join(", ") || "n/a"}.${netImpact ? ` Net impact: ${netImpact}.` : ""}${predictionsLine ? ` Predictions: ${predictionsLine}.` : ""}`;
+  const mag7Line = ctx.mag7_greek_flow?.headline ?? "";
+  const macroLine =
+    ctx.macro_indicators.length > 0
+      ? ctx.macro_indicators
+          .slice(0, 2)
+          .map((m) => `${m.label} ${m.latest_value ?? "—"}`)
+          .join(" · ")
+      : "";
+  const summary = `${tide}. ${spx}.${breadthLine ? ` Breadth: ${breadthLine}.` : ""}${mag7Line ? ` ${mag7Line}.` : ""}${macroLine ? ` Macro: ${macroLine}.` : ""} Leaders: ${leaders.map((s) => `${s.name} ${s.change_pct >= 0 ? "+" : ""}${s.change_pct.toFixed(2)}%`).join(", ") || "n/a"}.${netImpact ? ` Net impact: ${netImpact}.` : ""}${predictionsLine ? ` Predictions: ${predictionsLine}.` : ""}`;
 
   return {
     headline,
