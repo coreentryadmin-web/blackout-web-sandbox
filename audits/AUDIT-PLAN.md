@@ -35,15 +35,24 @@
 
 ## Re-audit checklist (post-fix verification)
 
-> **Re-audited:** 2026-06-19 · **Output:** `audits/REAUDIT-*.md` + `audits/REAUDIT-SUMMARY.md`
+### Round 1 — Phase 2 (2026-06-19)
 
-- [x] **Batch 01 — Payments & Auth** → `audits/REAUDIT-Payments-Auth.md` — 3/3 MED fixed; LOW policy items open
-- [x] **Batch 02 — Market Data Providers** → `audits/REAUDIT-Market-Data-Providers.md` — B2-01 fixed; B2-02/B2-03 open
-- [x] **Batch 03 — API Routes** → `audits/REAUDIT-API-Routes.md` — H1 + M1 + M2 fixed
-- [x] **Batch 04 — Night Hawk** → `audits/REAUDIT-Night-Hawk.md` — M1/M2 + low items open
-- [x] **Batch 05 — Largo AI** → `audits/REAUDIT-Largo-AI.md` — prefetch/tool-loop items open
-- [x] **Batch 06 — SPX Desk + Admin** → `audits/REAUDIT-SPX-Desk-Admin.md` — **all C+H fixed**; M1/M6/M7/M17 + admin ops open
-- [x] **Batch 07 — Frontend + Config** → `audits/REAUDIT-Frontend-Config.md` — F1/F3/F4 fixed; F2/F5 open
+> **Output:** `audits/REAUDIT-*.md` (Phase 2) · superseded by Round 2 below
+
+### Round 2 — Forensic re-audit (2026-06-19, commit `d171c68`)
+
+> **Output:** `audits/REAUDIT-*.md` + `audits/REAUDIT-SUMMARY.md`  
+> **Build:** `npx tsc --noEmit` ✅ · `npm run build` ✅
+
+- [x] **Batch 01 — Payments & Auth** → `audits/REAUDIT-Payments-Auth.md` — 5 FIXED; LOW-1 grace policy OPEN
+- [x] **Batch 02 — Market Data Providers** → `audits/REAUDIT-Market-Data-Providers.md` — 11 FIXED; B2-02 PARTIAL (NH dossier halt fail-open)
+- [x] **Batch 03 — API Routes** → `audits/REAUDIT-API-Routes.md` — 6 FIXED; L2 lazy-ingest OPEN
+- [x] **Batch 04 — Night Hawk** → `audits/REAUDIT-Night-Hawk.md` — NH-M1 PARTIAL; NH-NEW-01 HIGH (premium unit mismatch)
+- [x] **Batch 05 — Largo AI** → `audits/REAUDIT-Largo-AI.md` — B5-01–08 FIXED; Step 3 edge items OPEN
+- [x] **Batch 06 — SPX Desk + Admin** → `audits/REAUDIT-SPX-Desk-Admin.md` — C1/C2 + play H-path FIXED; lotto GET mutator PARTIAL/NEW
+- [x] **Batch 07 — Frontend + Config** → `audits/REAUDIT-Frontend-Config.md` — F1/F3–F6 FIXED; F7 `strict: false` OPEN; F2 deploy gap PARTIAL
+
+**Round 2 aggregate:** 59 FIXED · 15 PARTIAL · 17 OPEN · 5 NEW (see `REAUDIT-SUMMARY.md`)
 
 ## Leftover / unclassified files
 
@@ -512,26 +521,13 @@
 
 ---
 
-## Phase 2 — Re-audit (2026-06-19)
+## Phase 2 — Re-audit Round 1 (2026-06-19)
 
-**Trigger:** Phase 1 fixes complete (~35 files); build passes (`npm run build`).
+**Trigger:** Phase 1 fixes complete (~35 files).
 
-**Method:** Forensic re-read of every original finding ID in `AUDIT-*.md`; file:line verification; hunt for regressions and new bugs.
+**Method:** Forensic re-read of every original finding ID in `AUDIT-*.md`; file:line verification.
 
-### Re-audit outputs
-
-| Batch | Re-audit file | Status |
-|-------|---------------|--------|
-| 01 Payments & Auth | [`REAUDIT-payments-auth.md`](./REAUDIT-payments-auth.md) | ✅ |
-| 02 Market Data Providers | [`REAUDIT-market-data-providers.md`](./REAUDIT-market-data-providers.md) | ✅ |
-| 03 API Routes | [`REAUDIT-api-routes.md`](./REAUDIT-api-routes.md) | ✅ |
-| 04 Night Hawk | [`REAUDIT-night-hawk.md`](./REAUDIT-night-hawk.md) | ✅ |
-| 05 Largo AI | [`REAUDIT-largo-ai.md`](./REAUDIT-largo-ai.md) | ✅ |
-| 06 SPX Desk + Admin | [`REAUDIT-spx-desk-admin.md`](./REAUDIT-spx-desk-admin.md) | ✅ |
-| 07 Frontend + Config | [`REAUDIT-frontend-config.md`](./REAUDIT-frontend-config.md) | ✅ |
-| Summary | [`REAUDIT-SUMMARY.md`](./REAUDIT-SUMMARY.md) | ✅ |
-
-### Re-audit result (aggregate)
+### Round 1 result (superseded)
 
 | Status | Count |
 |--------|------:|
@@ -540,6 +536,27 @@
 | ❌ OPEN | 67 |
 | 🆕 NEW | 2 |
 
-**Key verifications:** C1/C2, B06-H1–H8, H1, H2, NH-M1 (partial), B2-01, B5-01/02, MED-1, API-M1, docs layout — see summary matrix in `REAUDIT-SUMMARY.md`.
+## Phase 3 — Fix pass + Re-audit Round 2 (2026-06-19, commit `d171c68`)
 
-**Phase 3 candidates:** B2-02 (halt gate), F2 (public playbook), B2-03 (desk WS merge), DB constraints (B06-M1/M6/M7), Railway liveness (API-NEW-1).
+**Trigger:** P2/P3 fixes committed (`Fix remaining P2/P3 audit findings (website)`).
+
+**Method:** Full Round 2 forensic re-audit — re-read all batch files, cross-check every original finding ID, edge-case second pass, challenge prior "0 OPEN" claims.
+
+### Re-audit outputs (Round 2)
+
+| Batch | Re-audit file | FIXED | PARTIAL | OPEN | NEW |
+|-------|---------------|------:|--------:|-----:|----:|
+| 01 Payments & Auth | [`REAUDIT-Payments-Auth.md`](./REAUDIT-Payments-Auth.md) | 5 | 0 | 1 | 0 |
+| 02 Market Data | [`REAUDIT-Market-Data-Providers.md`](./REAUDIT-Market-Data-Providers.md) | 11 | 1 | 0 | 1 |
+| 03 API Routes | [`REAUDIT-API-Routes.md`](./REAUDIT-API-Routes.md) | 6 | 0 | 1 | 0 |
+| 04 Night Hawk | [`REAUDIT-Night-Hawk.md`](./REAUDIT-Night-Hawk.md) | 6 | 2 | 1 | 2 |
+| 05 Largo AI | [`REAUDIT-Largo-AI.md`](./REAUDIT-Largo-AI.md) | 9 | 2 | 6 | 1 |
+| 06 SPX Desk + Admin | [`REAUDIT-SPX-Desk-Admin.md`](./REAUDIT-SPX-Desk-Admin.md) | 22 | 9 | 8 | 1 |
+| 07 Frontend + Config | [`REAUDIT-Frontend-Config.md`](./REAUDIT-Frontend-Config.md) | 6 | 1 | 1 | 0 |
+| Summary | [`REAUDIT-SUMMARY.md`](./REAUDIT-SUMMARY.md) | **59** | **15** | **17** | **5** |
+
+**Build:** `npx tsc --noEmit` ✅ · `npm run build` ✅
+
+**Key verifications:** C1/C2 ✅ · play evaluator lock ✅ · M1/M6/M7 DB constraints ✅ · auth hardening ✅ · `/api/health` ✅ · F7 `strict: false` ❌ · NH `max_entry_premium` unit bug 🆕 · lotto GET mutator 🆕
+
+**Phase 4 candidates:** NH-NEW-01 (premium units), R2-NEW-1 (lotto read-only route + lock), NH-NEW-02 (DTE to Claude), F2 (playbook in build), B2-02 residual (NH dossier halt), F7 (`strict: true`).
