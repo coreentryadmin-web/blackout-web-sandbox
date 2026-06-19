@@ -1,9 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { CronHealthPayload, CronJobHealth } from "@/lib/admin-cron-health";
-import { ActionButton, LivePill, MegaStat } from "@/components/admin/AdminUi";
+import {
+  ActionButton,
+  DeckPanel,
+  EmptyDeck,
+  GlassPanel,
+  HealthMeter,
+  HorzBar,
+  LivePill,
+  MetricChip,
+  SectionDeck,
+  TabCommandHero,
+  WinRateRing,
+} from "@/components/admin/AdminUi";
+
+const JOB_ICONS: Record<string, string> = {
+  "flow-ingest": "⬡",
+  "spx-evaluate": "◎",
+  "largo-cleanup": "◆",
+  "nighthawk-outcomes": "◈",
+  "nighthawk-playbook": "⏱",
+};
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -23,41 +43,154 @@ function fmtDuration(ms: number | null): string {
   return `${Math.round(ms / 60_000)}m`;
 }
 
-function statusDot(status: CronJobHealth["status"]) {
-  const cls = {
-    healthy: "admin-cron-dot-ok",
-    warning: "admin-cron-dot-warn",
-    stale: "admin-cron-dot-stale",
-    failed: "admin-cron-dot-fail",
-    unknown: "admin-cron-dot-unknown",
-  }[status];
-  return <span className={clsx("admin-cron-dot", cls)} />;
+function fmtAge(min: number | null): string {
+  if (min == null) return "never";
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  if (min < 24 * 60) return `${Math.round(min / 60)}h ago`;
+  return `${Math.round(min / (24 * 60))}d ago`;
+}
+
+function statusTone(status: CronJobHealth["status"]): "bull" | "bear" | "amber" | "cyan" | "violet" {
+  if (status === "healthy") return "bull";
+  if (status === "failed") return "bear";
+  if (status === "stale") return "amber";
+  if (status === "warning") return "cyan";
+  return "violet";
 }
 
 function statusLabel(status: CronJobHealth["status"]): string {
   return {
-    healthy: "HEALTHY",
-    warning: "WARNING",
+    healthy: "ONLINE",
+    warning: "CAUTION",
     stale: "STALE",
     failed: "FAILED",
-    unknown: "UNKNOWN",
+    unknown: "DARK",
   }[status];
 }
 
 function nhJobMeta(job: CronJobHealth): string | null {
   const nh = job.meta?.nighthawk_job as
-    | {
-        edition_for?: string;
-        status?: string;
-        current_stage?: string;
-        error?: string | null;
-      }
+    | { edition_for?: string; status?: string; current_stage?: string; error?: string | null }
     | undefined;
   if (!nh) return null;
-  if (nh.error) return `Error: ${nh.error}`;
+  if (nh.error) return nh.error;
   if (nh.status && nh.current_stage) return `${nh.status} · ${nh.current_stage}`;
   if (nh.status && nh.edition_for) return `${nh.status} · ${nh.edition_for}`;
   return nh.status ?? null;
+}
+
+function CronJobCard({ job, index }: { job: CronJobHealth; index: number }) {
+  const tone = statusTone(job.status);
+  const total24 = job.runs_24h.ok + job.runs_24h.failed + job.runs_24h.skipped;
+  const okShare = total24 > 0 ? job.runs_24h.ok / total24 : 0;
+  const extra = nhJobMeta(job);
+
+  return (
+    <article
+      className={clsx(
+        "admin-cron-card",
+        `admin-cron-card-${job.status}`,
+        `admin-cron-card-tone-${tone}`
+      )}
+      style={{ animationDelay: `${index * 70}ms` }}
+    >
+      <div className="admin-cron-card-glow" aria-hidden />
+      <div className="admin-cron-card-scan" aria-hidden />
+
+      <header className="admin-cron-card-head">
+        <div className="admin-cron-card-icon">{JOB_ICONS[job.key] ?? "◉"}</div>
+        <div className="admin-cron-card-titles">
+          <h3 className="admin-cron-card-name">{job.name}</h3>
+          <p className="admin-cron-card-path">
+            {job.kind === "http" ? job.path : "Railway worker"}
+          </p>
+        </div>
+        <span className={clsx("admin-cron-card-badge", `admin-cron-card-badge-${tone}`)}>
+          <span className={clsx("admin-cron-card-dot", job.status === "healthy" && "admin-cron-card-dot-pulse")} />
+          {statusLabel(job.status)}
+        </span>
+      </header>
+
+      <p className="admin-cron-card-desc">{job.description}</p>
+
+      <div className="admin-cron-card-meta">
+        <span className="admin-cron-card-pill">{job.schedule_label}</span>
+        <span className="admin-cron-card-pill admin-cron-card-pill-dim">
+          {job.kind === "http" ? "HTTP" : "WORKER"}
+        </span>
+      </div>
+
+      <div className="admin-cron-card-stats">
+        <div className="admin-cron-card-stat">
+          <span className="admin-cron-card-stat-label">Last tick</span>
+          <span className="admin-cron-card-stat-value">{fmtTime(job.last_run_at)}</span>
+          <span className="admin-cron-card-stat-sub">{fmtAge(job.age_min)}</span>
+        </div>
+        <div className="admin-cron-card-stat">
+          <span className="admin-cron-card-stat-label">Duration</span>
+          <span className="admin-cron-card-stat-value">{fmtDuration(job.last_duration_ms)}</span>
+        </div>
+        <div className="admin-cron-card-stat">
+          <span className="admin-cron-card-stat-label">24h</span>
+          <span className="admin-cron-card-stat-value admin-cron-card-stat-mono">
+            <span className="admin-cron-count-ok">{job.runs_24h.ok}</span>
+            <span className="admin-cron-card-stat-sep">/</span>
+            <span className="admin-cron-count-fail">{job.runs_24h.failed}</span>
+            <span className="admin-cron-card-stat-sep">/</span>
+            <span className="admin-cron-count-skip">{job.runs_24h.skipped}</span>
+          </span>
+          <span className="admin-cron-card-stat-sub">ok · fail · skip</span>
+        </div>
+      </div>
+
+      <HorzBar
+        label="24h success mix"
+        value={okShare}
+        max={1}
+        tone={tone === "violet" ? "cyan" : tone}
+        right={total24 > 0 ? `${Math.round(okShare * 100)}%` : "—"}
+      />
+
+      <p className="admin-cron-card-detail">{job.status_label}</p>
+      {extra && <p className="admin-cron-card-detail-sub">{extra}</p>}
+    </article>
+  );
+}
+
+function RecentRunsFeed({ events }: { events: CronHealthPayload["recent_events"] }) {
+  if (!events.length) {
+    return (
+      <EmptyDeck
+        title="No telemetry yet"
+        hint="Runs stream in when HTTP crons hit blackout-web or the Night Hawk worker completes."
+      />
+    );
+  }
+
+  return (
+    <ul className="admin-cron-feed">
+      {events.map((ev, i) => {
+        const tone =
+          ev.status === "ok" ? "bull" : ev.status === "failed" ? "bear" : ev.status === "skipped" ? "amber" : "violet";
+        return (
+          <li
+            key={`${ev.job_key}-${ev.started_at}-${i}`}
+            className={clsx("admin-cron-feed-row", `admin-cron-feed-row-${tone}`)}
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
+            <span className="admin-cron-feed-time">{fmtTime(ev.started_at)}</span>
+            <span className="admin-cron-feed-job">{ev.job_name}</span>
+            <span className={clsx("admin-cron-feed-status", `admin-cron-feed-status-${tone}`)}>
+              {ev.status}
+            </span>
+            <span className="admin-cron-feed-msg">{ev.message ?? "—"}</span>
+            <span className="admin-cron-feed-dur">{fmtDuration(ev.duration_ms)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export function AdminCronDashboard() {
@@ -66,6 +199,7 @@ export function AdminCronDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [ageSec, setAgeSec] = useState(0);
+  const [pulse, setPulse] = useState(false);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -74,6 +208,8 @@ export function AdminCronDashboard() {
       if (!res.ok) throw new Error(res.status === 403 ? "Not authorized" : `HTTP ${res.status}`);
       setData(await res.json());
       setAgeSec(0);
+      setPulse(true);
+      setTimeout(() => setPulse(false), 600);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -93,182 +229,116 @@ export function AdminCronDashboard() {
     };
   }, [load]);
 
-  if (loading && !data) {
-    return <p className="admin-muted">Loading cron health…</p>;
-  }
+  const healthyPct = useMemo(
+    () => (data?.summary.total ? data.summary.healthy / data.summary.total : 0),
+    [data]
+  );
 
-  if (error && !data) {
+  const fleetScore = useMemo(() => {
+    if (!data) return 0;
+    const { healthy, warning, total, failed, stale } = data.summary;
+    if (!total) return 0;
+    return Math.round(((healthy + warning * 0.5) / total) * 100 - failed * 12 - stale * 8);
+  }, [data]);
+
+  if (loading && !data) {
     return (
-      <div className="admin-coming-soon admin-coming-soon-neon">
-        <h2 className="admin-deck-heading">Cron health unavailable</h2>
-        <p>{error}</p>
-        <ActionButton variant="primary" onClick={() => load()}>
-          Retry
-        </ActionButton>
+      <div className="admin-cron-loading">
+        <span className="admin-cron-loading-ring" />
+        <p>Syncing fleet telemetry…</p>
       </div>
     );
   }
 
+  if (error && !data) {
+    return <EmptyDeck title="Cron fleet offline" hint={error} />;
+  }
+
   if (!data) return null;
 
-  const healthyPct = data.summary.total
-    ? data.summary.healthy / data.summary.total
-    : 0;
-
   return (
-    <div className="admin-cron-dashboard">
-      <div className="admin-cron-hero">
-        <div>
-          <p className="admin-kicker">Operations</p>
-          <h2 className="admin-deck-heading">Cron job health</h2>
-          <p className="admin-muted">
-            Refreshed {ageSec}s ago · auto-poll every 10s
-            {data.generated_at ? ` · snapshot ${fmtTime(data.generated_at)} ET` : ""}
-          </p>
-        </div>
-        <div className="admin-cron-hero-chips">
-          <LivePill label={refreshing ? "SYNC" : "LIVE"} active={!refreshing} />
-          <ActionButton variant="default" onClick={() => load(true)}>
-            Refresh now
+    <div className={clsx("admin-cron-dashboard", pulse && "admin-cron-dashboard-pulse")}>
+      <TabCommandHero
+        kicker="Operations · Fleet"
+        title="Cron"
+        titleAccent="pulse"
+        subtitle={`${data.summary.healthy}/${data.summary.total} jobs online · ${data.logged_runs_total} logged runs · refreshed ${ageSec}s ago`}
+        chips={
+          <>
+            <MetricChip label="DB" value={data.db_configured ? "LINKED" : "DOWN"} tone={data.db_configured ? "bull" : "bear"} />
+            <MetricChip label="Secret" value={data.cron_secret_configured ? "ARMED" : "OPEN"} tone={data.cron_secret_configured ? "bull" : "bear"} />
+            <MetricChip label="Logged" value={String(data.logged_runs_total)} tone="cyan" />
+            <LivePill label={refreshing ? "SYNC" : "LIVE"} active={!refreshing} />
+          </>
+        }
+        actions={
+          <ActionButton variant="primary" onClick={() => load(true)} disabled={refreshing}>
+            {refreshing ? "Syncing…" : "Force sync"}
           </ActionButton>
-          <span className="admin-cron-chip">
-            DB {data.db_configured ? "OK" : "MISSING"}
-          </span>
-          <span className="admin-cron-chip">
-            SECRET {data.cron_secret_configured ? "OK" : "MISSING"}
-          </span>
-          <span className="admin-cron-chip">LOGGED {data.logged_runs_total}</span>
-          {!data.cron_secret_configured && (
-            <span className="admin-cron-chip admin-cron-chip-warn">CRON_SECRET not set</span>
-          )}
-          {!data.db_configured && (
-            <span className="admin-cron-chip admin-cron-chip-warn">DATABASE_URL missing</span>
-          )}
-        </div>
-      </div>
+        }
+        rings={
+          <>
+            <WinRateRing
+              value={healthyPct}
+              label="Online"
+              sub={`${data.summary.healthy} jobs`}
+              tone={data.summary.failed > 0 ? "bear" : "bull"}
+              size={118}
+            />
+            <WinRateRing
+              value={Math.min(1, data.logged_runs_total / 50)}
+              label="Telemetry"
+              sub={`${data.logged_runs_total} events`}
+              tone="cyan"
+              size={118}
+            />
+            <WinRateRing
+              value={data.summary.failed > 0 ? Math.min(1, data.summary.failed / data.summary.total) : 0}
+              label="Failed"
+              sub={String(data.summary.failed)}
+              tone="bear"
+              size={118}
+            />
+            <WinRateRing
+              value={data.summary.unknown / Math.max(1, data.summary.total)}
+              label="Dark"
+              sub={`${data.summary.unknown} idle`}
+              tone="violet"
+              size={118}
+            />
+          </>
+        }
+      />
 
       {data.diagnostics_note && (
-        <div className="admin-cron-diagnostics">
-          <p>{data.diagnostics_note}</p>
-        </div>
+        <GlassPanel kicker="Diagnostics" title="Fleet note" accent="amber">
+          <p className="admin-cron-diagnostics-text">{data.diagnostics_note}</p>
+        </GlassPanel>
       )}
 
-      <div className="admin-cron-stats">
-        <MegaStat
-          label="Healthy"
-          value={`${data.summary.healthy}/${data.summary.total}`}
-          sub={`${Math.round(healthyPct * 100)}% passing`}
-          tone={data.summary.failed > 0 ? "bear" : data.summary.stale > 0 ? "amber" : "bull"}
-          bar={healthyPct * 100}
-        />
-        <MegaStat
-          label="Stale"
-          value={String(data.summary.stale)}
-          sub="Past expected interval"
-          tone={data.summary.stale > 0 ? "amber" : "neutral"}
-        />
-        <MegaStat
-          label="Failed"
-          value={String(data.summary.failed)}
-          sub="Last run errored"
-          tone={data.summary.failed > 0 ? "bear" : "neutral"}
-        />
-        <MegaStat
-          label="Unknown"
-          value={String(data.summary.unknown)}
-          sub={data.logged_runs_total === 0 ? "Awaiting first logged run" : "No cron log row yet"}
-          tone={data.summary.unknown > 0 ? "violet" : "neutral"}
-        />
-      </div>
+      <SectionDeck accent="cyan" className="admin-cron-deck">
+        <div className="admin-cron-fleet-bar">
+          <HealthMeter label="Fleet health score" value={Math.max(0, Math.min(100, fleetScore))} tone={fleetScore >= 70 ? "bull" : fleetScore >= 40 ? "amber" : "bear"} />
+          <div className="admin-cron-fleet-breakdown">
+            <HorzBar label="Online" value={data.summary.healthy} max={data.summary.total} tone="bull" right={String(data.summary.healthy)} />
+            <HorzBar label="Caution" value={data.summary.warning} max={data.summary.total} tone="cyan" right={String(data.summary.warning)} />
+            <HorzBar label="Stale" value={data.summary.stale} max={data.summary.total} tone="amber" right={String(data.summary.stale)} />
+            <HorzBar label="Dark" value={data.summary.unknown} max={data.summary.total} tone="violet" right={String(data.summary.unknown)} />
+          </div>
+        </div>
 
-      <div className="admin-cron-table-wrap">
-        <table className="admin-cron-table">
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Job</th>
-              <th>Schedule</th>
-              <th>Last run</th>
-              <th>Duration</th>
-              <th>24h OK / fail / skip</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.jobs.map((job) => (
-              <tr key={job.key} className={clsx("admin-cron-row", `admin-cron-row-${job.status}`)}>
-                <td>
-                  <div className="admin-cron-status-cell">
-                    {statusDot(job.status)}
-                    <span>{statusLabel(job.status)}</span>
-                  </div>
-                </td>
-                <td>
-                  <p className="admin-cron-job-name">{job.name}</p>
-                  <p className="admin-cron-job-meta">
-                    {job.kind === "http" ? job.path : "Railway worker"}
-                    {" · "}
-                    {job.description}
-                  </p>
-                </td>
-                <td>{job.schedule_label}</td>
-                <td>
-                  <span>{fmtTime(job.last_run_at)}</span>
-                  {job.age_min != null && (
-                    <span className="admin-cron-age">{job.age_min}m ago</span>
-                  )}
-                </td>
-                <td>{fmtDuration(job.last_duration_ms)}</td>
-                <td>
-                  <span className="admin-cron-count-ok">{job.runs_24h.ok}</span>
-                  {" / "}
-                  <span className="admin-cron-count-fail">{job.runs_24h.failed}</span>
-                  {" / "}
-                  <span className="admin-cron-count-skip">{job.runs_24h.skipped}</span>
-                </td>
-                <td>
-                  <span className="admin-cron-detail">{job.status_label}</span>
-                  {nhJobMeta(job) && (
-                    <span className="admin-cron-detail-sub">{nhJobMeta(job)}</span>
-                  )}
-                  {job.last_message && job.last_message !== job.status_label && (
-                    <span className="admin-cron-detail-sub">{job.last_message}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="admin-cron-events">
-        <h3 className="admin-cron-events-title">Recent runs</h3>
-        <ul className="admin-cron-event-list">
-          {data.recent_events.map((ev, i) => (
-            <li key={`${ev.job_key}-${ev.started_at}-${i}`} className="admin-cron-event">
-              {statusDot(
-                ev.status === "ok"
-                  ? "healthy"
-                  : ev.status === "failed"
-                    ? "failed"
-                    : ev.status === "skipped"
-                      ? "warning"
-                      : "unknown"
-              )}
-              <span className="admin-cron-event-name">{ev.job_name}</span>
-              <span className="admin-cron-event-time">{fmtTime(ev.started_at)}</span>
-              <span className="admin-cron-event-msg">{ev.message ?? ev.status}</span>
-              <span className="admin-cron-event-dur">{fmtDuration(ev.duration_ms)}</span>
-            </li>
+        <div className="admin-cron-job-grid">
+          {data.jobs.map((job, i) => (
+            <CronJobCard key={job.key} job={job} index={i} />
           ))}
-          {!data.recent_events.length && (
-            <li className="admin-cron-event admin-cron-event-empty">
-              {data.diagnostics_note ??
-                "No cron runs logged yet — they appear when HTTP crons hit blackout-web or the Night Hawk worker finishes."}
-            </li>
-          )}
-        </ul>
-      </div>
+        </div>
+      </SectionDeck>
+
+      <DeckPanel title="Recent runs · live feed" defaultOpen badge={String(data.recent_events.length)} accent="bull" storageKey="cron-feed">
+        <RecentRunsFeed events={data.recent_events} />
+      </DeckPanel>
+
+      {error && <p className="admin-error">{error}</p>}
     </div>
   );
 }

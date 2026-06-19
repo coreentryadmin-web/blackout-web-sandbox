@@ -8904,150 +8904,288 @@ body {
 
   /* ── Cron health dashboard ── */
   .admin-cron-dashboard {
-    @apply flex flex-col gap-6;
+    @apply flex flex-col gap-6 relative;
   }
 
-  .admin-cron-hero {
-    @apply flex flex-wrap items-start justify-between gap-4;
+  .admin-cron-dashboard-pulse .admin-command-hero::before {
+    animation: admin-cron-hero-flash 0.6s ease-out;
   }
 
-  .admin-cron-hero-chips {
-    @apply flex flex-wrap items-center gap-2;
+  @keyframes admin-cron-hero-flash {
+    0% { opacity: 0.85; filter: brightness(1.35); }
+    100% { opacity: 1; filter: brightness(1); }
   }
 
-  .admin-cron-chip {
-    @apply px-2 py-1 text-[10px] font-mono uppercase tracking-wider rounded border;
+  .admin-cron-loading {
+    @apply flex flex-col items-center justify-center gap-4 py-20 text-grey-400 font-mono text-sm;
   }
 
-  .admin-cron-chip-warn {
+  .admin-cron-loading-ring {
+    @apply w-12 h-12 rounded-full border-2 border-cyan/30 border-t-cyan;
+    animation: admin-cron-spin 0.9s linear infinite;
+  }
+
+  @keyframes admin-cron-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .admin-cron-diagnostics-text {
+    @apply text-sm text-grey-200 leading-relaxed m-0;
+  }
+
+  .admin-cron-deck {
+    @apply p-4 md:p-5 rounded-xl;
+  }
+
+  .admin-cron-fleet-bar {
+    @apply grid gap-5 lg:grid-cols-[minmax(220px,280px)_1fr] mb-6;
+  }
+
+  .admin-cron-fleet-breakdown {
+    @apply grid gap-2 sm:grid-cols-2;
+  }
+
+  .admin-cron-job-grid {
+    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .admin-cron-card {
+    @apply relative overflow-hidden rounded-xl border border-grey-800/80 bg-grey-900/50 backdrop-blur-sm p-4;
+    animation: admin-cron-card-in 0.45s ease-out both;
+  }
+
+  @keyframes admin-cron-card-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .admin-cron-card-glow {
+    @apply absolute inset-0 opacity-40 pointer-events-none;
+    background: radial-gradient(ellipse 80% 60% at 100% 0%, rgba(0, 212, 255, 0.12), transparent 55%);
+  }
+
+  .admin-cron-card-scan {
+    @apply absolute inset-x-0 top-0 h-px opacity-60 pointer-events-none;
+    background: linear-gradient(90deg, transparent, rgba(0, 230, 118, 0.5), transparent);
+  }
+
+  .admin-cron-card-healthy {
+    @apply border-bull/25 shadow-glow-green;
+  }
+
+  .admin-cron-card-healthy .admin-cron-card-glow {
+    background: radial-gradient(ellipse 90% 70% at 100% 0%, rgba(0, 230, 118, 0.18), transparent 60%);
+  }
+
+  .admin-cron-card-failed {
+    @apply border-bear/35;
+    box-shadow: 0 0 24px rgba(255, 45, 85, 0.12);
+  }
+
+  .admin-cron-card-stale {
+    @apply border-warning/30;
+  }
+
+  .admin-cron-card-warning {
+    @apply border-cyan/30;
+  }
+
+  .admin-cron-card-unknown {
+    @apply border-grey-700/60 opacity-95;
+  }
+
+  .admin-cron-card:hover {
+    @apply border-grey-600/80 -translate-y-0.5 transition-transform duration-200;
+  }
+
+  .admin-cron-card-head {
+    @apply flex items-start gap-3 mb-3 relative z-[1];
+  }
+
+  .admin-cron-card-icon {
+    @apply w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-grey-700/80 bg-black/30 text-lg;
+    box-shadow: inset 0 0 20px rgba(0, 212, 255, 0.08);
+  }
+
+  .admin-cron-card-titles {
+    @apply flex-1 min-w-0;
+  }
+
+  .admin-cron-card-name {
+    @apply font-syne text-base font-bold text-white tracking-wide m-0;
+  }
+
+  .admin-cron-card-path {
+    @apply font-mono text-[10px] text-grey-400 truncate m-0 mt-0.5;
+  }
+
+  .admin-cron-card-badge {
+    @apply shrink-0 inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[9px] font-mono uppercase tracking-wider;
+  }
+
+  .admin-cron-card-badge-bull {
+    @apply border-bull/40 text-bull bg-bull/10;
+  }
+
+  .admin-cron-card-badge-bear {
+    @apply border-bear/40 text-bear bg-bear/10;
+  }
+
+  .admin-cron-card-badge-amber {
     @apply border-warning/40 text-warning bg-warning/10;
   }
 
-  .admin-cron-diagnostics {
-    @apply rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-grey-200;
+  .admin-cron-card-badge-cyan {
+    @apply border-cyan/40 text-cyan bg-cyan/10;
   }
 
-  .admin-cron-diagnostics p {
-    @apply m-0 leading-relaxed;
+  .admin-cron-card-badge-violet {
+    @apply border-purple/40 text-purple bg-purple/10;
   }
 
-  .admin-cron-stats {
-    @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  .admin-cron-card-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-current;
   }
 
-  .admin-cron-table-wrap {
-    @apply overflow-x-auto rounded-lg border border-grey-900/80;
+  .admin-cron-card-dot-pulse {
+    animation: admin-cron-dot-pulse 2s ease-in-out infinite;
   }
 
-  .admin-cron-table {
-    @apply w-full text-sm;
+  @keyframes admin-cron-dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.5); }
+    50% { opacity: 0.85; transform: scale(1.15); box-shadow: 0 0 8px 2px rgba(0, 230, 118, 0.35); }
   }
 
-  .admin-cron-table th {
-    @apply px-3 py-2 text-left text-[10px] font-mono uppercase tracking-wider text-grey-400 border-b border-grey-900 bg-grey-900/60;
+  .admin-cron-card-desc {
+    @apply text-xs text-grey-400 leading-relaxed mb-3 relative z-[1];
   }
 
-  .admin-cron-table td {
-    @apply px-3 py-3 align-top border-b border-grey-900/60;
+  .admin-cron-card-meta {
+    @apply flex flex-wrap gap-2 mb-3 relative z-[1];
   }
 
-  .admin-cron-row-failed {
-    @apply bg-bear/10;
+  .admin-cron-card-pill {
+    @apply px-2 py-0.5 rounded border border-cyan/25 bg-cyan/5 font-mono text-[9px] uppercase tracking-wider text-cyan/90;
   }
 
-  .admin-cron-row-stale {
-    @apply bg-warning/10;
+  .admin-cron-card-pill-dim {
+    @apply border-grey-700 text-grey-400 bg-grey-800/40;
   }
 
-  .admin-cron-status-cell {
-    @apply flex items-center gap-2 font-mono text-[11px] uppercase;
+  .admin-cron-card-stats {
+    @apply grid grid-cols-3 gap-2 mb-3 relative z-[1];
   }
 
-  .admin-cron-dot {
-    @apply inline-block w-2 h-2 rounded-full shrink-0;
+  .admin-cron-card-stat {
+    @apply rounded-lg border border-grey-800/80 bg-black/25 px-2 py-2;
   }
 
-  .admin-cron-dot-ok {
-    @apply bg-bull shadow-glow-green;
+  .admin-cron-card-stat-label {
+    @apply block text-[8px] font-mono uppercase tracking-wider text-grey-500 mb-1;
   }
 
-  .admin-cron-dot-warn {
-    @apply bg-warning;
+  .admin-cron-card-stat-value {
+    @apply block text-sm font-semibold text-grey-100 tabular-nums;
   }
 
-  .admin-cron-dot-stale {
-    @apply bg-ember;
+  .admin-cron-card-stat-mono {
+    @apply font-mono text-xs;
   }
 
-  .admin-cron-dot-fail {
-    @apply bg-bear shadow-glow-red;
+  .admin-cron-card-stat-sub {
+    @apply block text-[9px] text-grey-500 mt-0.5;
   }
 
-  .admin-cron-dot-unknown {
-    @apply bg-grey-600;
+  .admin-cron-card-stat-sep {
+    @apply text-grey-600 mx-0.5;
   }
 
-  .admin-cron-job-name {
-    @apply font-medium text-grey-100;
+  .admin-cron-card-detail {
+    @apply text-xs text-grey-300 mt-3 mb-0 relative z-[1];
   }
 
-  .admin-cron-job-meta {
-    @apply text-xs text-grey-500 mt-0.5;
-  }
-
-  .admin-cron-age {
-    @apply block text-[11px] text-grey-500 font-mono;
+  .admin-cron-card-detail-sub {
+    @apply text-[11px] text-grey-500 mt-1 mb-0 relative z-[1];
   }
 
   .admin-cron-count-ok {
-    @apply text-bull font-mono;
+    @apply text-bull;
   }
 
   .admin-cron-count-fail {
-    @apply text-bear font-mono;
+    @apply text-bear;
   }
 
   .admin-cron-count-skip {
-    @apply text-warning/90 font-mono;
+    @apply text-warning/90;
   }
 
-  .admin-cron-detail {
-    @apply block text-sm text-grey-300;
+  .admin-cron-feed {
+    @apply space-y-1.5 max-h-80 overflow-y-auto font-mono text-[11px];
   }
 
-  .admin-cron-detail-sub {
-    @apply block text-xs text-grey-500 mt-0.5;
+  .admin-cron-feed-row {
+    @apply grid gap-x-3 gap-y-1 items-center px-3 py-2 rounded-lg border border-grey-800/60 bg-black/20;
+    grid-template-columns: 7.5rem 1fr auto;
+    animation: admin-cron-feed-in 0.35s ease-out both;
   }
 
-  .admin-cron-events-title {
-    @apply text-sm font-mono uppercase tracking-wider text-grey-400 mb-3;
+  @media (min-width: 768px) {
+    .admin-cron-feed-row {
+      grid-template-columns: 7.5rem 10rem 4.5rem 1fr 3.5rem;
+    }
   }
 
-  .admin-cron-event-list {
-    @apply space-y-1 max-h-72 overflow-y-auto rounded-lg border border-grey-900/80 p-2;
+  @keyframes admin-cron-feed-in {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
   }
 
-  .admin-cron-event {
-    @apply flex flex-wrap items-center gap-x-3 gap-y-1 text-xs py-1.5 px-2 rounded hover:bg-grey-900/40;
+  .admin-cron-feed-row-bull {
+    @apply border-bull/20 bg-bull/5;
   }
 
-  .admin-cron-event-empty {
-    @apply text-grey-500 italic;
+  .admin-cron-feed-row-bear {
+    @apply border-bear/25 bg-bear/5;
   }
 
-  .admin-cron-event-name {
-    @apply font-medium text-grey-200 min-w-[8rem];
+  .admin-cron-feed-row-amber {
+    @apply border-warning/20 bg-warning/5;
   }
 
-  .admin-cron-event-time {
-    @apply font-mono text-grey-500 min-w-[7rem];
+  .admin-cron-feed-time {
+    @apply text-grey-500 tabular-nums;
   }
 
-  .admin-cron-event-msg {
-    @apply text-grey-400 flex-1 min-w-[10rem];
+  .admin-cron-feed-job {
+    @apply text-grey-200 font-medium;
   }
 
-  .admin-cron-event-dur {
-    @apply font-mono text-grey-500;
+  .admin-cron-feed-status {
+    @apply uppercase text-[9px] tracking-wider px-1.5 py-0.5 rounded border w-fit;
+  }
+
+  .admin-cron-feed-status-bull {
+    @apply text-bull border-bull/30 bg-bull/10;
+  }
+
+  .admin-cron-feed-status-bear {
+    @apply text-bear border-bear/30 bg-bear/10;
+  }
+
+  .admin-cron-feed-status-amber {
+    @apply text-warning border-warning/30 bg-warning/10;
+  }
+
+  .admin-cron-feed-status-violet {
+    @apply text-purple border-purple/30 bg-purple/10;
+  }
+
+  .admin-cron-feed-msg {
+    @apply text-grey-400 truncate hidden md:block;
+  }
+
+  .admin-cron-feed-dur {
+    @apply text-grey-500 text-right tabular-nums hidden md:block;
   }
 }

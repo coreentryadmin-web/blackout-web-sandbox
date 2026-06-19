@@ -83,7 +83,7 @@ export function AdminAnalyticsDashboard() {
           </TabCanvas>
         )}
         {tab === "crons" && (
-          <TabCanvas theme="neutral">
+          <TabCanvas theme="api">
             <AdminCronDashboard />
           </TabCanvas>
         )}
