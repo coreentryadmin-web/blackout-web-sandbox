@@ -204,7 +204,7 @@ export function scoreFlowQuality(
 
   const skew = opts?.riskReversalSkew;
   if (skew != null && Number.isFinite(skew) && skew !== 0) {
-    const skewDir: "long" | "short" = skew > 0 ? "short" : "long";
+    const skewDir: "long" | "short" = skew > 0 ? "long" : "short";
     const weightedTotal = callWeightedPrem + putWeightedPrem;
     const flowMargin = weightedTotal > 0 ? Math.abs(callWeightedPrem - putWeightedPrem) / weightedTotal : 1;
 
@@ -358,6 +358,16 @@ export function convictionFromScore(score: number): string {
   return "C";
 }
 
+/** Positive RR skew (calls bid over puts) = bullish; negative = bearish. */
+export function scoreSkewConfirmation(
+  skew: number | null | undefined,
+  direction: "long" | "short"
+): number {
+  if (skew == null || !Number.isFinite(skew) || skew === 0) return 0;
+  const skewDir: "long" | "short" = skew > 0 ? "long" : "short";
+  return skewDir === direction ? 3 : -2;
+}
+
 export function scoreCandidate(
   ticker: string,
   flows: Record<string, unknown>[],
@@ -406,10 +416,13 @@ export function scoreCandidate(
   const posScore = scoreOptionsPositioning(dossierExtras, flow.direction);
   const newsScore = scoreNewsCatalyst(dossierExtras);
   const smartMoneyScore = scoreSmartMoney(dossierExtras, flow.direction);
+  const skewAdj = scoreSkewConfirmation(dossierExtras.risk_reversal_skew, flow.direction);
   const regimeMultiplier = computeRegimeMultiplier(regime);
   let total = Math.min(
     100,
-    Math.round((flow.score + techScore + posScore + newsScore + smartMoneyScore) * regimeMultiplier)
+    Math.round(
+      (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj) * regimeMultiplier
+    )
   );
 
   const fundCheck = passesFundamentalSanity(dossierExtras.fundamental_ratios ?? null);

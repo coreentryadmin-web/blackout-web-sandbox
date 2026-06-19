@@ -31,7 +31,7 @@ import { buildTechnicalCard, type TechnicalCard } from "./technicals";
 import type { ScoredCandidate, NightHawkRegimeContext } from "./scorer";
 import { scoreCandidate } from "./scorer";
 import { hasActiveTradingHalt } from "@/lib/ws/uw-socket";
-import { DOSSIER_BATCH_SIZE, DOSSIER_FETCH_TIMEOUT_MS } from "./constants";
+import { DOSSIER_BATCH_SIZE, DOSSIER_FETCH_TIMEOUT_MS, DOSSIER_INTER_BATCH_MS } from "./constants";
 import { dossierFetch } from "./fetch-timeout";
 import { parseLatestRealizedVol, parseLatestRiskReversalSkew } from "./vol-metrics";
 
@@ -346,15 +346,31 @@ export async function fetchTickerDossier(
 export async function fetchAllDossiers(
   tickers: string[],
   batchSize = DOSSIER_BATCH_SIZE,
-  regime?: NightHawkRegimeContext | null
+  regime?: NightHawkRegimeContext | null,
+  onComplete?: (d: TickerDossier) => Promise<void>
 ): Promise<Record<string, TickerDossier>> {
   const out: Record<string, TickerDossier> = {};
   for (let i = 0; i < tickers.length; i += batchSize) {
     const batch = tickers.slice(i, i + batchSize);
-    const results = await Promise.all(batch.map((ticker) => fetchTickerDossier(ticker, regime)));
-    for (const d of results) out[d.ticker] = d;
+    const results = await Promise.all(
+      batch.map(async (ticker) => {
+        try {
+          return await fetchTickerDossier(ticker, regime);
+        } catch (err) {
+          console.error(`[nighthawk/dossier] ${ticker} failed:`, err);
+          return null;
+        }
+      })
+    );
+
+    for (const d of results) {
+      if (!d) continue;
+      out[d.ticker] = d;
+      if (onComplete) await onComplete(d);
+    }
+
     if (i + batchSize < tickers.length) {
-      await new Promise((r) => setTimeout(r, 2500));
+      await new Promise((r) => setTimeout(r, DOSSIER_INTER_BATCH_MS));
     }
   }
   return out;

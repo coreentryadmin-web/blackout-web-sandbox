@@ -20,22 +20,25 @@ export const SECTOR_WATCH = [
   { key: "consumer", label: "Consumer" },
 ] as const;
 
-export const MAX_CANDIDATES = 20;
+export const MAX_CANDIDATES = 60;
 /** Candidate pool: weighted-premium leaders + unusual-flow movers. */
-export const CANDIDATE_PREMIUM_SLOTS = 12;
-export const CANDIDATE_UNUSUAL_SLOTS = 8;
+export const CANDIDATE_PREMIUM_SLOTS = 40;
+export const CANDIDATE_UNUSUAL_SLOTS = 20;
 export const CANDIDATE_UNUSUALNESS_LOOKBACK_DAYS = 30;
 /** Floor for 30d avg premium — avoids divide-by-zero on thin history. */
 export const CANDIDATE_MIN_BASELINE_PREMIUM = 75_000;
-export const MAX_DOSSIER_STOCKS = 8;
+export const MAX_DOSSIER_STOCKS = 60;
+/** Top dossiers sent to Claude for play synthesis (not the full ranked pool). */
+export const EDITION_SYNTHESIS_POOL = 12;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays). */
-export const EDITION_CHAIN_PREFETCH = 7;
+export const EDITION_CHAIN_PREFETCH = 10;
 export const MIN_STOCK_FLOW_PREMIUM = 100_000;
 export const MIN_HOT_CHAIN_PREMIUM = 500_000;
 /** Market-wide flow tape — higher limit captures late-session event volume. */
 export const MARKET_FLOW_ALERT_LIMIT = 450;
 export const DOSSIER_BATCH_SIZE = 3;
 export const DOSSIER_FETCH_TIMEOUT_MS = 8000;
+export const DOSSIER_INTER_BATCH_MS = 500;
 
 /** Max option entry premium per share — 1 standard contract (100 shares) ≤ $2,000. */
 export const MAX_OPTION_PREMIUM_PER_SHARE = 20;

@@ -1,4 +1,5 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
+import { throttleUw } from "@/lib/providers/uw-rate-limiter";
 import { uwConfigured } from "./config";
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
@@ -15,14 +16,16 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
 
   const url = `${BASE}${path}${qs.size ? `?${qs}` : ""}`;
-  const res = await trackedFetch("unusual_whales", path, url, {
-    headers: {
-      Authorization: `Bearer ${KEY}`,
-      Accept: "application/json",
-      "UW-CLIENT-API-ID": CLIENT_ID,
-    },
-    cache: "no-store",
-  });
+  const res = await throttleUw(() =>
+    trackedFetch("unusual_whales", path, url, {
+      headers: {
+        Authorization: `Bearer ${KEY}`,
+        Accept: "application/json",
+        "UW-CLIENT-API-ID": CLIENT_ID,
+      },
+      cache: "no-store",
+    })
+  );
 
   if (!res.ok) throw new Error(`Unusual Whales ${path} → ${res.status}`);
   return res.json() as Promise<T>;

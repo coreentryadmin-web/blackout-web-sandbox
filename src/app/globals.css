@@ -8854,4 +8854,51 @@ body {
   .admin-nh-dot-open {
     background: #94a3b8;
   }
+
+  .admin-nh-window-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .admin-nh-trend-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .admin-nh-trend {
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+  }
+
+  .admin-nh-trend-grid {
+    stroke: rgba(148, 163, 184, 0.12);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+  }
+
+  .admin-nh-trend-line {
+    stroke: #a78bfa;
+    stroke-width: 2;
+  }
+
+  .admin-nh-trend-dot {
+    fill: #c4b5fd;
+    stroke: #7c3aed;
+    stroke-width: 1;
+  }
+
+  .admin-nh-trend-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    color: var(--admin-text-dim);
+  }
+
+  .admin-nh-trend-label {
+    font-variant-numeric: tabular-nums;
+  }
 }

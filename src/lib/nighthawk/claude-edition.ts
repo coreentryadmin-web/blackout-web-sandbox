@@ -13,7 +13,8 @@ import {
   MAX_OPTION_COST_PER_CONTRACT,
   MAX_OPTION_PREMIUM_PER_SHARE,
   PLAYBOOK_PREMIUM_CAP_LINE,
-} from "./constants";import type { ScoredCandidate } from "./scorer";
+} from "./constants";
+import type { ScoredCandidate } from "./scorer";
 import type { PlaybookPlay } from "./types";
 import type { HuntMode } from "./types";
 
@@ -69,7 +70,8 @@ export async function generateEditionPlays(params: {
   ranked: ScoredCandidate[];
   huntMode?: HuntMode;
   maxDte?: number;
-}): Promise<{ plays: PlaybookPlay[]; recap: ReturnType<typeof buildMarketRecap>; raw: string | null }> {  const recap = buildMarketRecap(params.ctx);
+}): Promise<{ plays: PlaybookPlay[]; recap: ReturnType<typeof buildMarketRecap>; raw: string | null }> {
+  const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
 
   if (!anthropicConfigured()) {
@@ -114,7 +116,8 @@ export async function generateEditionPlays(params: {
   const parsed = parsePlaysJson(raw).slice(0, 8);
   const mapped = parsed
     .map((p, i) => mapClaudePlayToEdition(p, i + 1, dossierMap))
-    .filter((p) => p.play_type === "stock");  const { plays, rejected } = filterPlaysWithinPremiumCap(mapped);
+    .filter((p) => p.play_type === "stock");
+  const { plays, rejected } = filterPlaysWithinPremiumCap(mapped);
   const capped = plays.slice(0, 5).map((p, i) => ({ ...p, rank: i + 1 }));
 
   if (rejected.length) {

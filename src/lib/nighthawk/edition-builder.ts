@@ -1,17 +1,28 @@
-import { upsertNighthawkEdition } from "@/lib/db";
+import {
+  upsertNighthawkEdition,
+  dbConfigured,
+  clearNighthawkStaging,
+  fetchNighthawkJob,
+  fetchStagedDossierTickers,
+  fetchStagedDossiers,
+  logNighthawkJob,
+  saveDossierStaging,
+  upsertNighthawkJob,
+} from "@/lib/db";
 import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
 import { polygonConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { syncNighthawkPlayOutcomes } from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
-import { fetchAllDossiers, resetEditionCongressCache } from "./dossier";
+import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
 import { formatTickerDossierText } from "./format";
 import { fetchIndexDossiers } from "./index-dossier";
-import { fetchMarketWideContext } from "./market-wide";
-import { rankCandidates, regimeContextFromMarket } from "./scorer";
-import { DOSSIER_BATCH_SIZE, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
+import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
+import { critiquePlays } from "./play-critic";
+import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
+import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { nextTradingDayEt, todayEt } from "./session";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
 
@@ -22,13 +33,29 @@ export type EditionBuildResult = {
   candidates: number;
   error?: string;
   duration_ms: number;
+  job_status?: string;
+  current_stage?: string | null;
+  resumed?: boolean;
 };
+
+function stagedToDossierMap(
+  staged: Awaited<ReturnType<typeof fetchStagedDossiers>>
+): Record<string, TickerDossier> {
+  const out: Record<string, TickerDossier> = {};
+  for (const row of staged) {
+    const dossier = row.dossier as TickerDossier;
+    if (row.scored) dossier.scored = row.scored as ScoredCandidate;
+    out[row.ticker] = dossier;
+  }
+  return out;
+}
 
 export async function buildEveningEdition(opts?: {
   force?: boolean;
 }): Promise<EditionBuildResult> {
   const started = Date.now();
   const editionFor = nextTradingDayEt(todayEt());
+  const checkpointing = dbConfigured();
 
   if (!uwConfigured() && !polygonConfigured()) {
     return {
@@ -41,66 +68,206 @@ export async function buildEveningEdition(opts?: {
     };
   }
 
-  try {
-    console.info("[nighthawk/edition] phase 1: market-wide context");
-    const ctx = await fetchMarketWideContext();
+  let job = checkpointing ? await fetchNighthawkJob(editionFor) : null;
 
-    console.info("[nighthawk/edition] phase 2: candidate selection");
-    const candidates = await extractCandidateTickers(ctx.stock_flows, ctx.hot_chains, MAX_CANDIDATES);
-    if (!candidates.length) {
+  if (job?.status === "published" && opts?.force) {
+    await clearNighthawkStaging(editionFor);
+    await upsertNighthawkJob(editionFor, {
+      status: "running",
+      current_stage: "stage_context",
+      context_json: null,
+      candidates_json: null,
+      scored_json: null,
+      error: null,
+      published_at: null,
+    });
+    job = await fetchNighthawkJob(editionFor);
+    logNighthawkJob(editionFor, "info", null, "Force rebuild — job reset");
+  } else if (job?.status === "published" && !opts?.force) {
+    return {
+      ok: true,
+      edition_for: editionFor,
+      plays_count: 5,
+      candidates: job.candidates_json?.length ?? 0,
+      duration_ms: Date.now() - started,
+      job_status: job.status,
+      current_stage: job.current_stage,
+      resumed: true,
+    };
+  }
+
+  try {
+    if (checkpointing) {
+      if (!job) {
+        await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_context" });
+        job = await fetchNighthawkJob(editionFor);
+        logNighthawkJob(editionFor, "info", "stage_context", "Job created");
+      } else if (job.status === "failed") {
+        await upsertNighthawkJob(editionFor, { status: "running", error: null, current_stage: job.current_stage ?? "stage_context" });
+        logNighthawkJob(editionFor, "info", job.current_stage, "Resuming failed job");
+      }
+    }
+
+    // STAGE 1 — Market context
+    let ctx = (job?.context_json as MarketWideContext | null) ?? null;
+    if (!ctx) {
+      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_context" });
+      console.info("[nighthawk/edition] stage_context: market-wide context");
+      ctx = await fetchMarketWideContext();
+      if (checkpointing) {
+        await upsertNighthawkJob(editionFor, {
+          context_json: ctx as unknown as Record<string, unknown>,
+          status: "stage_context",
+          current_stage: "stage_candidates",
+        });
+        logNighthawkJob(editionFor, "info", "stage_context", "Market context built");
+      }
+    } else {
+      console.info("[nighthawk/edition] stage_context: loaded from checkpoint");
+    }
+
+    // STAGE 2 — Candidates
+    let candidates = job?.candidates_json ?? null;
+    if (!candidates?.length) {
+      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_candidates" });
+      console.info("[nighthawk/edition] stage_candidates: selection");
+      candidates = await extractCandidateTickers(ctx.stock_flows, ctx.hot_chains, MAX_CANDIDATES);
+      if (!candidates.length) {
+        const err = "No flow candidates found for today's session.";
+        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        return {
+          ok: false,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: 0,
+          error: err,
+          duration_ms: Date.now() - started,
+          job_status: "failed",
+        };
+      }
+      if (checkpointing) {
+        await upsertNighthawkJob(editionFor, {
+          candidates_json: candidates,
+          status: "stage_candidates",
+          current_stage: "stage_dossiers",
+        });
+        logNighthawkJob(editionFor, "info", "stage_candidates", `Selected ${candidates.length} candidates`);
+      }
+    } else {
+      console.info(`[nighthawk/edition] stage_candidates: loaded ${candidates.length} from checkpoint`);
+    }
+
+    // STAGE 3 — Dossiers (resume-aware)
+    resetEditionCongressCache();
+    const regime = regimeContextFromMarket(ctx);
+    const alreadyDone = checkpointing ? await fetchStagedDossierTickers(editionFor) : [];
+    const remaining = candidates.filter((t) => !alreadyDone.includes(t.toUpperCase()));
+
+    let dossiers: Record<string, TickerDossier>;
+
+    if (checkpointing) {
+      if (remaining.length) {
+        await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_dossiers" });
+        console.info(`[nighthawk/edition] stage_dossiers: ${remaining.length} remaining (${alreadyDone.length} staged)`);
+
+        let completed = alreadyDone.length;
+        const total = candidates.length;
+
+        await fetchAllDossiers(remaining, DOSSIER_BATCH_SIZE, regime, async (dossier) => {
+          completed += 1;
+          await saveDossierStaging(
+            editionFor,
+            dossier.ticker,
+            dossier as unknown as Record<string, unknown>,
+            dossier.scored as unknown as Record<string, unknown> | undefined
+          );
+          logNighthawkJob(
+            editionFor,
+            "info",
+            "stage_dossiers",
+            `Dossier ${dossier.ticker} done (${completed}/${total})`
+          );
+        });
+      }
+
+      dossiers = stagedToDossierMap(await fetchStagedDossiers(editionFor));
+    } else {
+      console.info(`[nighthawk/edition] dossiers for ${candidates.length} tickers (no checkpointing)`);
+      dossiers = await fetchAllDossiers(candidates, DOSSIER_BATCH_SIZE, regime);
+    }
+
+    const scoredList = Object.values(dossiers)
+      .filter((d) => d.tech != null && d.scored)
+      .map((d) => d.scored!);
+
+    if (!scoredList.length) {
+      const err = "No scored dossiers available after staging.";
+      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
       return {
         ok: false,
         edition_for: editionFor,
         plays_count: 0,
-        candidates: 0,
-        error: "No flow candidates found for today's session.",
+        candidates: candidates.length,
+        error: err,
         duration_ms: Date.now() - started,
+        job_status: "failed",
       };
     }
 
-    console.info(`[nighthawk/edition] phase 3: dossiers for ${candidates.length} tickers`);
-    resetEditionCongressCache();
-    const regime = regimeContextFromMarket(ctx);
-    const dossiers = await fetchAllDossiers(candidates, DOSSIER_BATCH_SIZE, regime);
-
-    const scoredList = Object.values(dossiers)
-      .filter((d) => d.tech != null)
-      .map((d) => d.scored!)
-      .filter(Boolean);
-
+    // STAGE 4 — Ranking
     const ranked = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
-    const topDossiers = ranked
-      .map((s) => dossiers[s.ticker])
-      .filter(Boolean);
+    if (checkpointing) {
+      await upsertNighthawkJob(editionFor, {
+        scored_json: ranked,
+        status: "stage_scoring",
+        current_stage: "stage_synthesis",
+      });
+      logNighthawkJob(editionFor, "info", "stage_scoring", `Ranked ${ranked.length} tickers for synthesis`);
+    }
 
-    console.info("[nighthawk/edition] phase 3b: index/ETF dossiers");
+    const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
+    const synthesisRanked = ranked.slice(0, EDITION_SYNTHESIS_POOL);
+    const synthesisDossiers = synthesisRanked.map((s) => dossiers[s.ticker]).filter(Boolean);
+
+    // Index context for recap only
+    console.info("[nighthawk/edition] stage_synthesis: index recap + Claude");
     const [indexDossiers, spxDesk, flowTape] = await Promise.all([
       fetchIndexDossiers(ctx),
       marketPlatform.spx.getSpxDeskSummary().catch(() => null),
       marketPlatform.flows.getFlowTapeSummary({ limit: 30 }).catch(() => null),
     ]);
 
-    console.info(`[nighthawk/edition] phase 4: Claude synthesis (${ranked.length} ranked stocks)`);
-    const { plays, recap, raw } = await generateEditionPlays({
+    const { plays: rawPlays, recap, raw } = await generateEditionPlays({
       ctx,
-      dossiers: topDossiers,
-      ranked,
+      dossiers: synthesisDossiers,
+      ranked: synthesisRanked,
     });
 
-    if (!plays.length) {
+    if (!rawPlays.length) {
+      const err = anthropicConfigured()
+        ? "Claude returned no parseable plays."
+        : "Claude not configured and mechanical fallback empty.";
+      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
       return {
         ok: false,
         edition_for: editionFor,
         plays_count: 0,
         candidates: candidates.length,
-        error: anthropicConfigured()
-          ? "Claude returned no parseable plays."
-          : "Claude not configured and mechanical fallback empty.",
+        error: err,
         duration_ms: Date.now() - started,
+        job_status: "failed",
       };
     }
 
-    console.info("[nighthawk/edition] phase 5: persist edition");
+    const { plays: vettedPlays, notes: criticNotes } = await critiquePlays({
+      plays: rawPlays,
+      dossiers,
+      ranked,
+      ctx,
+    });
+
+    // STAGE 6 — Publish
+    console.info("[nighthawk/edition] publish edition");
     await upsertNighthawkEdition({
       edition_for: editionFor,
       session_date: ctx.today,
@@ -122,7 +289,7 @@ export async function buildEveningEdition(opts?: {
         spx_desk: spxDesk,
         flow_tape: flowTape,
       },
-      plays,
+      plays: vettedPlays,
       meta: {
         candidates: candidates.length,
         ranked_tickers: ranked.map((r) => r.ticker),
@@ -130,11 +297,13 @@ export async function buildEveningEdition(opts?: {
         built_at: new Date().toISOString(),
         force: Boolean(opts?.force),
         dossier_context: Object.fromEntries(
-          topDossiers
+          synthesisDossiers
             .filter((d) => d.scored)
             .map((d) => [d.ticker, formatTickerDossierText(d, d.scored!)])
         ),
         play_explanations: {},
+        critic_notes: criticNotes,
+        critic_applied: Boolean(criticNotes.length),
         platform: {
           spx_price: spxDesk?.price ?? null,
           spx_regime: spxDesk?.gamma_regime ?? null,
@@ -143,21 +312,40 @@ export async function buildEveningEdition(opts?: {
       },
     });
 
-    const sectorByTicker = Object.fromEntries(
-      topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null])
-    );
-    await syncNighthawkPlayOutcomes(editionFor, plays, sectorByTicker);
+    const sectorByTicker = Object.fromEntries(topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null]));
+    await syncNighthawkPlayOutcomes(editionFor, vettedPlays, sectorByTicker);
+
+    if (checkpointing) {
+      await upsertNighthawkJob(editionFor, {
+        status: "published",
+        current_stage: "published",
+        published_at: new Date().toISOString(),
+        error: null,
+      });
+      await clearNighthawkStaging(editionFor);
+      logNighthawkJob(editionFor, "info", "published", `Edition published with ${vettedPlays.length} plays`);
+    }
+
+    const finalJob = checkpointing ? await fetchNighthawkJob(editionFor) : null;
 
     return {
       ok: true,
       edition_for: editionFor,
-      plays_count: plays.length,
+      plays_count: vettedPlays.length,
       candidates: candidates.length,
       duration_ms: Date.now() - started,
+      job_status: finalJob?.status ?? "published",
+      current_stage: finalJob?.current_stage ?? "published",
+      resumed: alreadyDone.length > 0,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[nighthawk/edition] build failed:", error);
+    if (checkpointing) {
+      await upsertNighthawkJob(editionFor, { status: "failed", error: message });
+      logNighthawkJob(editionFor, "error", null, message);
+    }
+    const failedJob = checkpointing ? await fetchNighthawkJob(editionFor) : null;
     return {
       ok: false,
       edition_for: editionFor,
@@ -165,6 +353,8 @@ export async function buildEveningEdition(opts?: {
       candidates: 0,
       error: message,
       duration_ms: Date.now() - started,
+      job_status: failedJob?.status ?? "failed",
+      current_stage: failedJob?.current_stage,
     };
   }
 }

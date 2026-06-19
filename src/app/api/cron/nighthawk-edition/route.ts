@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { requireDatabaseInProduction } from "@/lib/db";
+import { requireDatabaseInProduction, fetchNighthawkJob } from "@/lib/db";
 import { buildEveningEdition } from "@/lib/nighthawk/edition-builder";
-import { isWeekdayEt, etNowParts } from "@/lib/nighthawk/session";
+import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -45,21 +45,59 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get("force") === "1";
-  if (!inEditionWindow(force)) {
+  const statusOnly = req.nextUrl.searchParams.get("status") === "1";
+  const editionFor = nextTradingDayEt(todayEt());
+  const job = await fetchNighthawkJob(editionFor);
+
+  if (statusOnly) {
+    return NextResponse.json({
+      ok: true,
+      edition_for: editionFor,
+      job_status: job?.status ?? "none",
+      current_stage: job?.current_stage ?? null,
+      error: job?.error ?? null,
+      staged_candidates: job?.candidates_json?.length ?? 0,
+      note: "Long runs execute via `npm run nighthawk:run` (Railway cron worker). This route nudges/resumes within 300s.",
+    });
+  }
+
+  if (!inEditionWindow(force) && !(job && job.status !== "published")) {
     return NextResponse.json({
       ok: false,
       skipped: true,
-      reason: "Outside edition window — use ?force=1 to override",
+      reason: "Outside edition window — use ?force=1 to nudge/resume",
+      edition_for: editionFor,
+      job_status: job?.status ?? "none",
+      current_stage: job?.current_stage ?? null,
     });
   }
 
   try {
     const result = await buildEveningEdition({ force });
-    const status = result.ok ? 200 : 502;
-    return NextResponse.json(result, { status });
+    const status = result.ok ? 200 : result.job_status === "failed" ? 500 : 202;
+    return NextResponse.json(
+      {
+        ...result,
+        note:
+          result.job_status === "published"
+            ? "Edition complete."
+            : "Checkpointed pipeline — re-hit this endpoint or run nighthawk:run to resume.",
+      },
+      { status }
+    );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/nighthawk-edition]", error);
-    return NextResponse.json({ ok: false, error: "Edition build failed", detail }, { status: 500 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Edition build failed",
+        detail,
+        edition_for: editionFor,
+        job_status: job?.status ?? "unknown",
+        current_stage: job?.current_stage ?? null,
+      },
+      { status: 500 }
+    );
   }
 }

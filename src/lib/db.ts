@@ -359,6 +359,55 @@ async function runMigrations(): Promise<void> {
     ON nighthawk_play_outcomes(edition_for DESC) WHERE outcome <> 'pending';
   `);
   await p.query(`
+    CREATE TABLE IF NOT EXISTS nighthawk_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      edition_for DATE NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      current_stage TEXT,
+      context_json JSONB,
+      candidates_json JSONB,
+      scored_json JSONB,
+      error TEXT,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      published_at TIMESTAMPTZ
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_nighthawk_jobs_status
+    ON nighthawk_jobs(status, updated_at DESC);
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS nighthawk_dossiers_staging (
+      id BIGSERIAL PRIMARY KEY,
+      edition_for DATE NOT NULL,
+      ticker TEXT NOT NULL,
+      dossier_json JSONB NOT NULL,
+      scored_json JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (edition_for, ticker)
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_nighthawk_dossiers_staging_edition
+    ON nighthawk_dossiers_staging(edition_for);
+  `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS nighthawk_job_log (
+      id BIGSERIAL PRIMARY KEY,
+      edition_for DATE NOT NULL,
+      level TEXT NOT NULL,
+      stage TEXT,
+      message TEXT NOT NULL,
+      meta_json JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_nh_job_log_edition
+    ON nighthawk_job_log(edition_for, created_at DESC);
+  `);
+  await p.query(`
     CREATE TABLE IF NOT EXISTS api_telemetry_events (
       seq_id BIGSERIAL PRIMARY KEY,
       event_id TEXT NOT NULL UNIQUE,
@@ -1721,4 +1770,177 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
     rows: resolvedRes.rows.map(mapNighthawkPlayOutcomeRow),
     pending_count: Number(pendingRes.rows[0]?.count ?? 0),
   };
+}
+
+export type NighthawkJobRow = {
+  id: number;
+  edition_for: string;
+  status: string;
+  current_stage: string | null;
+  context_json: Record<string, unknown> | null;
+  candidates_json: string[] | null;
+  scored_json: unknown[] | null;
+  error: string | null;
+  started_at: string;
+  updated_at: string;
+  published_at: string | null;
+};
+
+function mapNighthawkJobRow(r: QueryResultRow): NighthawkJobRow {
+  const candidates = r.candidates_json;
+  return {
+    id: Number(r.id),
+    edition_for: String(r.edition_for).slice(0, 10),
+    status: String(r.status),
+    current_stage: r.current_stage != null ? String(r.current_stage) : null,
+    context_json: (r.context_json as Record<string, unknown>) ?? null,
+    candidates_json: Array.isArray(candidates) ? candidates.map((t) => String(t).toUpperCase()) : null,
+    scored_json: Array.isArray(r.scored_json) ? r.scored_json : null,
+    error: r.error != null ? String(r.error) : null,
+    started_at: new Date(String(r.started_at)).toISOString(),
+    updated_at: new Date(String(r.updated_at)).toISOString(),
+    published_at: r.published_at != null ? new Date(String(r.published_at)).toISOString() : null,
+  };
+}
+
+export async function upsertNighthawkJob(
+  editionFor: string,
+  fields: {
+    status?: string;
+    current_stage?: string | null;
+    context_json?: Record<string, unknown> | null;
+    candidates_json?: string[] | null;
+    scored_json?: unknown[] | null;
+    error?: string | null;
+    published_at?: string | null;
+  }
+): Promise<void> {
+  await ensureSchema();
+  const sets: string[] = ["updated_at = NOW()"];
+  const values: unknown[] = [editionFor];
+  let idx = 2;
+
+  const add = (col: string, val: unknown, json = false) => {
+    sets.push(`${col} = $${idx}${json ? "::jsonb" : ""}`);
+    values.push(val);
+    idx += 1;
+  };
+
+  if (fields.status !== undefined) add("status", fields.status);
+  if (fields.current_stage !== undefined) add("current_stage", fields.current_stage);
+  if (fields.context_json !== undefined) add("context_json", JSON.stringify(fields.context_json ?? null), true);
+  if (fields.candidates_json !== undefined) add("candidates_json", JSON.stringify(fields.candidates_json ?? []), true);
+  if (fields.scored_json !== undefined) add("scored_json", JSON.stringify(fields.scored_json ?? []), true);
+  if (fields.error !== undefined) add("error", fields.error);
+  if (fields.published_at !== undefined) add("published_at", fields.published_at);
+
+  await (await getPool()).query(
+    `
+    INSERT INTO nighthawk_jobs (edition_for, status, current_stage)
+    VALUES ($1::date, 'running', 'stage_context')
+    ON CONFLICT (edition_for) DO UPDATE SET ${sets.join(", ")}
+    `,
+    values
+  );
+}
+
+export async function fetchNighthawkJob(editionFor: string): Promise<NighthawkJobRow | null> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, edition_for, status, current_stage, context_json, candidates_json, scored_json,
+           error, started_at, updated_at, published_at
+    FROM nighthawk_jobs
+    WHERE edition_for = $1::date
+    LIMIT 1
+    `,
+    [editionFor]
+  );
+  const row = res.rows[0];
+  return row ? mapNighthawkJobRow(row) : null;
+}
+
+export async function updateNighthawkJobStage(
+  editionFor: string,
+  stage: string,
+  status: string
+): Promise<void> {
+  await upsertNighthawkJob(editionFor, { current_stage: stage, status });
+}
+
+export async function saveDossierStaging(
+  editionFor: string,
+  ticker: string,
+  dossierJson: Record<string, unknown>,
+  scoredJson?: Record<string, unknown> | null
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO nighthawk_dossiers_staging (edition_for, ticker, dossier_json, scored_json)
+    VALUES ($1::date, $2, $3::jsonb, $4::jsonb)
+    ON CONFLICT (edition_for, ticker) DO UPDATE SET
+      dossier_json = EXCLUDED.dossier_json,
+      scored_json = EXCLUDED.scored_json,
+      created_at = NOW()
+    `,
+    [editionFor, ticker.toUpperCase(), JSON.stringify(dossierJson), JSON.stringify(scoredJson ?? null)]
+  );
+}
+
+export async function fetchStagedDossiers(
+  editionFor: string
+): Promise<Array<{ ticker: string; dossier: Record<string, unknown>; scored: Record<string, unknown> | null }>> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT ticker, dossier_json, scored_json
+    FROM nighthawk_dossiers_staging
+    WHERE edition_for = $1::date
+    ORDER BY ticker ASC
+    `,
+    [editionFor]
+  );
+  return res.rows.map((r) => ({
+    ticker: String(r.ticker).toUpperCase(),
+    dossier: (r.dossier_json as Record<string, unknown>) ?? {},
+    scored: (r.scored_json as Record<string, unknown>) ?? null,
+  }));
+}
+
+export async function fetchStagedDossierTickers(editionFor: string): Promise<string[]> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{ ticker: string }>(
+    `SELECT ticker FROM nighthawk_dossiers_staging WHERE edition_for = $1::date ORDER BY ticker ASC`,
+    [editionFor]
+  );
+  return res.rows.map((r) => String(r.ticker).toUpperCase());
+}
+
+export function logNighthawkJob(
+  editionFor: string,
+  level: "info" | "warn" | "error",
+  stage: string | null,
+  message: string,
+  meta?: Record<string, unknown>
+): void {
+  void (async () => {
+    try {
+      await ensureSchema();
+      await (await getPool()).query(
+        `
+        INSERT INTO nighthawk_job_log (edition_for, level, stage, message, meta_json)
+        VALUES ($1::date, $2, $3, $4, $5::jsonb)
+        `,
+        [editionFor, level, stage, message, JSON.stringify(meta ?? null)]
+      );
+    } catch (err) {
+      console.warn("[nighthawk/job-log] failed:", err);
+    }
+  })();
+}
+
+export async function clearNighthawkStaging(editionFor: string): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(`DELETE FROM nighthawk_dossiers_staging WHERE edition_for = $1::date`, [editionFor]);
 }

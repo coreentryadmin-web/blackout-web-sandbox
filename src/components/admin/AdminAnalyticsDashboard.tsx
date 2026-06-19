@@ -14,7 +14,7 @@ type ToolTab = "spx" | "nighthawk" | "largo" | "apis";
 const TABS: Array<{ id: ToolTab; label: string; icon: string; blurb: string }> = [
   { id: "apis", label: "API Command", icon: "⬡", blurb: "Live ops · incidents · 265 endpoints" },
   { id: "spx", label: "SPX Sniper", icon: "◎", blurb: "Live engine · outcomes · desk" },
-  { id: "nighthawk", label: "Night Hawk", icon: "◈", blurb: "Win rate · conviction · sectors" },
+  { id: "nighthawk", label: "Night Hawk", icon: "◈", blurb: "Win rate · signal quality" },
   { id: "largo", label: "Largo", icon: "◆", blurb: "Coming soon" },
 ];
 

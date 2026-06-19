@@ -10,7 +10,8 @@
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
     "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
     "probe:docs:uw": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs --uw-only",
-    "analyze:api": "node scripts/analyze-api-usage.mjs"
+    "analyze:api": "node scripts/analyze-api-usage.mjs",
+    "nighthawk:run": "npx tsx scripts/nighthawk-worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
@@ -39,6 +40,7 @@
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "tsx": "^4.19.4"
   }
 }
