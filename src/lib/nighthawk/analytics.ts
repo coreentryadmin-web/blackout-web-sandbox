@@ -9,6 +9,7 @@ export type NighthawkMetrics = {
   profitable_rate: number;
   loss_rate: number;
   open_rate: number;
+  ambiguous_rate: number;
   avg_return_pct: number;
   avg_winner_return_pct: number;
   avg_loser_return_pct: number;
@@ -84,6 +85,7 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
     profitable_rate: 0,
     loss_rate: 0,
     open_rate: 0,
+    ambiguous_rate: 0,
     avg_return_pct: 0,
     avg_winner_return_pct: 0,
     avg_loser_return_pct: 0,
@@ -116,6 +118,7 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
   const winners = rows.filter((r) => r.outcome === "target");
   const losers = rows.filter((r) => r.outcome === "stop");
   const opens = rows.filter((r) => r.outcome === "open");
+  const ambiguous = rows.filter((r) => r.outcome === "ambiguous");
 
   const by_conviction = CONVICTION_ORDER.map((conviction) => ({
     conviction,
@@ -162,6 +165,7 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     profitable_rate: profitableRate(rows),
     loss_rate: losers.length / total,
     open_rate: opens.length / total,
+    ambiguous_rate: ambiguous.length / total,
     avg_return_pct: avgReturn(rows),
     avg_winner_return_pct: avgReturn(winners),
     avg_loser_return_pct: avgReturn(losers),

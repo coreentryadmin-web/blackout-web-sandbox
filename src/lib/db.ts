@@ -344,7 +344,7 @@ async function runMigrations(): Promise<void> {
       session_low NUMERIC,
       hit_target BOOLEAN DEFAULT FALSE,
       hit_stop BOOLEAN DEFAULT FALSE,
-      outcome TEXT NOT NULL DEFAULT 'pending' CHECK (outcome IN ('target', 'stop', 'open', 'pending')),
+      outcome TEXT NOT NULL DEFAULT 'pending' CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending')),
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (edition_for, ticker)
@@ -483,6 +483,12 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
     ON admin_audit_log(created_at DESC);
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes DROP CONSTRAINT IF EXISTS nighthawk_play_outcomes_outcome_check;
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD CONSTRAINT nighthawk_play_outcomes_outcome_check CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending'));
   `);
 }
 
@@ -1619,7 +1625,7 @@ export type NighthawkPlayOutcomeRow = {
   session_low: number | null;
   hit_target: boolean;
   hit_stop: boolean;
-  outcome: "target" | "stop" | "open" | "pending";
+  outcome: "target" | "stop" | "open" | "ambiguous" | "pending";
   created_at: string;
 };
 
@@ -1726,7 +1732,7 @@ export async function updateNighthawkPlayOutcome(
     session_low: number;
     hit_target: boolean;
     hit_stop: boolean;
-    outcome: "target" | "stop" | "open" | "pending";
+    outcome: "target" | "stop" | "open" | "ambiguous" | "pending";
   }
 ): Promise<void> {
   await ensureSchema();

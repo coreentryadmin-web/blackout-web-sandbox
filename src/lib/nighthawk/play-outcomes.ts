@@ -79,7 +79,7 @@ export async function syncNighthawkPlayOutcomes(
 export function resolveOutcome(row: NighthawkPlayOutcomeRow): {
   hit_target: boolean;
   hit_stop: boolean;
-  outcome: "target" | "stop" | "open" | "pending";
+  outcome: "target" | "stop" | "open" | "ambiguous" | "pending";
 } {
   const close = row.next_day_close;
   const high = row.session_high;
@@ -110,12 +110,14 @@ export function resolveOutcome(row: NighthawkPlayOutcomeRow): {
     hit_stop = isLong ? low! <= stop : high! >= stop;
   }
 
-  let outcome: "target" | "stop" | "open" | "pending" = "open";
+  let outcome: "target" | "stop" | "open" | "ambiguous" | "pending" = "open";
   if (hit_target && hit_stop) {
     if (open != null && target != null && (isLong ? open >= target : open <= target)) {
       outcome = "target";
     } else if (open != null && stop != null && (isLong ? open <= stop : open >= stop)) {
       outcome = "stop";
+    } else {
+      outcome = "ambiguous";
     }
   } else if (hit_stop) {
     outcome = "stop";
