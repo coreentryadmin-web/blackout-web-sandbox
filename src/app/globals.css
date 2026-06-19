@@ -8920,7 +8920,7 @@ body {
   }
 
   .admin-cron-chip-warn {
-    @apply border-amber-500/40 text-amber-300 bg-amber-500/10;
+    @apply border-warning/40 text-warning bg-warning/10;
   }
 
   .admin-cron-stats {
@@ -8936,7 +8936,7 @@ body {
   }
 
   .admin-cron-table th {
-    @apply px-3 py-2 text-left text-[10px] font-mono uppercase tracking-wider text-grey-400 border-b border-grey-900 bg-grey-950/60;
+    @apply px-3 py-2 text-left text-[10px] font-mono uppercase tracking-wider text-grey-400 border-b border-grey-900 bg-grey-900/60;
   }
 
   .admin-cron-table td {
@@ -8944,11 +8944,11 @@ body {
   }
 
   .admin-cron-row-failed {
-    @apply bg-red-950/20;
+    @apply bg-bear/10;
   }
 
   .admin-cron-row-stale {
-    @apply bg-amber-950/15;
+    @apply bg-warning/10;
   }
 
   .admin-cron-status-cell {
@@ -8960,19 +8960,19 @@ body {
   }
 
   .admin-cron-dot-ok {
-    @apply bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)];
+    @apply bg-bull shadow-glow-green;
   }
 
   .admin-cron-dot-warn {
-    @apply bg-amber-400;
+    @apply bg-warning;
   }
 
   .admin-cron-dot-stale {
-    @apply bg-orange-400;
+    @apply bg-ember;
   }
 
   .admin-cron-dot-fail {
-    @apply bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.5)];
+    @apply bg-bear shadow-glow-red;
   }
 
   .admin-cron-dot-unknown {
@@ -8992,15 +8992,15 @@ body {
   }
 
   .admin-cron-count-ok {
-    @apply text-emerald-400 font-mono;
+    @apply text-bull font-mono;
   }
 
   .admin-cron-count-fail {
-    @apply text-red-400 font-mono;
+    @apply text-bear font-mono;
   }
 
   .admin-cron-count-skip {
-    @apply text-amber-400/90 font-mono;
+    @apply text-warning/90 font-mono;
   }
 
   .admin-cron-detail {
