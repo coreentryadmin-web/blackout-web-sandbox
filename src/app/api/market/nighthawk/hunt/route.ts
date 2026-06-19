@@ -62,6 +62,10 @@ export async function POST(req: NextRequest) {
       ...platform_context,
       spx_bias: scanResult.spx_bias ?? null,
     },
+    scan_meta: {
+      candidates: scanResult.candidates,
+      duration_ms: scanResult.duration_ms,
+    },
   };
 
   console.info("[nighthawk/hunt] done", {

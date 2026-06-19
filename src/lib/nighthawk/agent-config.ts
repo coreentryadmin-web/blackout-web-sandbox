@@ -28,7 +28,7 @@ export const AGENT_MODES: AgentModeConfig[] = [
     accent: "gold",
     powerLabel: "Power Up Day Hawk",
     description:
-      "Hunts same-session setups using 0DTE flow, gamma, VWAP structure, and opening-range levels.",
+      "Full intraday command surface — live flow dossiers, validated 0DTE chains, and SPX desk alignment in one agentic scan.",
     filters: [
       {
         id: "direction",

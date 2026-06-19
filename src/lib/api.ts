@@ -607,24 +607,10 @@ export function createPulseEventSource(
   );
 }
 
-/** @deprecated Use createFlowEventSource — engine WS optional legacy fallback */
-export function createFlowSocket(onMessage: (alert: FlowAlert) => void): WebSocket | null {
-  const engineBase = process.env.NEXT_PUBLIC_ENGINE_WS_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? "";
-  if (!engineBase || typeof window === "undefined") return null;
-
-  const wsBase = engineBase.replace(/^https/, "wss").replace(/^http/, "ws");
-  const key = process.env.NEXT_PUBLIC_ENGINE_WS_KEY ?? "";
-  const ws = new WebSocket(`${wsBase}/ws/flows${key ? `?key=${key}` : ""}`);
-  ws.onmessage = (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      if (data.type !== "heartbeat") onMessage(data as FlowAlert);
-    } catch {
-      /* ignore */
-    }
-  };
-  return ws;
-}
+// Removed deprecated createFlowSocket() — it was never called and was the only
+// client reference to NEXT_PUBLIC_ENGINE_WS_KEY / NEXT_PUBLIC_ENGINE_WS_URL,
+// which inlined a static engine WS key into the browser bundle. The live feed
+// uses createFlowEventSource → /api/market/flows/stream (server-gated SSE).
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 

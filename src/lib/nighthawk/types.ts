@@ -81,4 +81,9 @@ export type HuntResponse = {
     edition_plays: number;
     spx_bias?: "bull" | "bear" | "neutral" | null;
   };
+  /** Hunt pipeline stats for agent workspaces. */
+  scan_meta?: {
+    candidates: number;
+    duration_ms: number;
+  };
 };

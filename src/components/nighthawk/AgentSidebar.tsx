@@ -48,7 +48,9 @@ export function AgentSidebar({ activeMode, onSelect }: AgentSidebarProps) {
               <span className="nighthawk-agent-card-icon" aria-hidden>
                 {MODE_ICON[agent.mode]}
               </span>
-              <span className="nighthawk-agent-card-power">Power</span>
+              <span className="nighthawk-agent-card-power">
+                {agent.mode === "day" ? "Launch" : "Power"}
+              </span>
             </div>
             <p className="nighthawk-agent-card-name">{agent.title}</p>
             <p className="nighthawk-agent-card-tag">{agent.tagline}</p>

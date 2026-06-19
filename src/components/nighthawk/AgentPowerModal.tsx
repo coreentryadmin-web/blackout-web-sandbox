@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { defaultFiltersForMode, getAgentConfig } from "@/lib/nighthawk/agent-config";
-import type { AgentFilterField } from "@/lib/nighthawk/agent-config";
 import { postNightHawkHunt } from "@/lib/api";
 import type { HuntMode, HuntResponse } from "@/lib/nighthawk/types";
+import { AgentFilterFieldControl } from "./AgentFilterFields";
 
 type AgentPowerModalProps = {
   mode: HuntMode | null;
@@ -14,71 +14,6 @@ type AgentPowerModalProps = {
 };
 
 type Step = "filters" | "powering" | "results";
-
-function FilterField({
-  field,
-  value,
-  onChange,
-}: {
-  field: AgentFilterField;
-  value: string | number | boolean;
-  onChange: (value: string | number | boolean) => void;
-}) {
-  if (field.type === "toggle") {
-    const on = Boolean(value);
-    return (
-      <label className="nighthawk-filter-toggle">
-        <span className="nighthawk-filter-label">{field.label}</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          className={clsx("nighthawk-toggle", on && "nighthawk-toggle-on")}
-          onClick={() => onChange(!on)}
-        >
-          <span className="nighthawk-toggle-thumb" />
-        </button>
-        {field.hint && <span className="nighthawk-filter-hint">{field.hint}</span>}
-      </label>
-    );
-  }
-
-  if (field.type === "select") {
-    return (
-      <label className="nighthawk-filter-field">
-        <span className="nighthawk-filter-label">{field.label}</span>
-        <select
-          className="nighthawk-filter-input"
-          value={String(value)}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {field.options?.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        {field.hint && <span className="nighthawk-filter-hint">{field.hint}</span>}
-      </label>
-    );
-  }
-
-  return (
-    <label className="nighthawk-filter-field">
-      <span className="nighthawk-filter-label">{field.label}</span>
-      <input
-        type={field.type === "number" ? "number" : "text"}
-        className="nighthawk-filter-input"
-        placeholder={field.placeholder}
-        value={String(value)}
-        onChange={(e) =>
-          onChange(field.type === "number" ? Number(e.target.value) : e.target.value)
-        }
-      />
-      {field.hint && <span className="nighthawk-filter-hint">{field.hint}</span>}
-    </label>
-  );
-}
 
 export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
   const [step, setStep] = useState<Step>("filters");
@@ -110,7 +45,6 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
     setStep("powering");
     setError(null);
     try {
-      await new Promise((r) => setTimeout(r, 1400));
       const res = await postNightHawkHunt({ mode, filters });
       setResult(res);
       setStep("results");
@@ -164,7 +98,7 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
                 <p className="nighthawk-modal-section-label">Configure filters</p>
                 <div className="nighthawk-filter-grid">
                   {config.filters.map((field) => (
-                    <FilterField
+                    <AgentFilterFieldControl
                       key={field.id}
                       field={field}
                       value={filters[field.id] ?? field.defaultValue}
