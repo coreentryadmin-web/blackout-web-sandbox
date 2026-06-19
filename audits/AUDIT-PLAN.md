@@ -1,82 +1,67 @@
 # Blackout Web — End-to-End Forensic Audit Plan
 
 > **Scope:** 100% of tracked repo files (`git ls-files`). Each file belongs to exactly one batch.
-> **Generated:** 2026-06-19 · **Total files:** 367
+> **Generated:** 2026-06-19 · **Total files:** 376
+> **Repo:** `C:\Users\raidu\blackout-web`
 
-## How to use
+## Workflow
 
-1. Work batches in order (or parallelize independent batches).
-2. Check off each batch when its forensic audit is complete.
-3. Record findings in `audits/batch-XX-findings.md` (create per batch as you go).
-4. Cross-batch dependencies (e.g. API routes calling lib code) — note in findings, audit the implementation in the owning batch.
+1. Audit batches **in order** (highest-stakes first).
+2. Per batch: **Step 2** (full read audit) → write `audits/AUDIT-<slug>.md` → **Step 3** (edge-case second pass, append to same file).
+3. Mark batch checkbox done in this file when Step 2 + Step 3 complete.
+4. After all batches: **Step 4** completeness check → `audits/AUDIT-SUMMARY.md`.
+
+## Cross-batch rules
+
+- **API Routes (03):** audit HTTP contract (auth, params, errors, caching). Business logic lives in the owning lib/UI batch.
+- **db.ts (06):** schema/queries audited in SPX Desk + Admin; consumers in other batches note integration bugs only.
+- **Finnhub:** removed from codebase — no files to audit.
 
 ## Coverage confirmation
 
-- [x] All 367 tracked files assigned
+- [x] All 376 tracked files assigned
 - [x] No duplicate assignments
 - [x] No unclassified leftovers
 
-## Batch checklist
+## Batch checklist (audit order)
 
-- [ ] **Batch 01 — Payments, Auth & Membership** (13 files)
-- [ ] **Batch 02 — Market Data Providers & WebSockets** (31 files)
-- [ ] **Batch 03 — API Routes** (43 files)
-- [ ] **Batch 04 — Night Hawk Engine & UI** (41 files)
-- [ ] **Batch 05 — Largo AI & Terminal** (17 files)
-- [ ] **Batch 06 — SPX Desk, Play Engine & Lotto** (65 files)
-- [ ] **Batch 07 — Admin, Telemetry & Cron Ops** (34 files)
-- [ ] **Batch 08 — Data Layer, Cache & Platform Services** (14 files)
-- [ ] **Batch 09 — Frontend — App Shell, Landing & General Pages** (35 files)
-- [ ] **Batch 10 — Frontend — Embeds & Market Widgets** (8 files)
-- [ ] **Batch 11 — Internal Docs Site** (41 files)
-- [ ] **Batch 12 — Config, Deploy, Scripts & Static Assets** (26 files)
+- [x] **Batch 01 — Payments & Auth** → `audits/AUDIT-Payments-Auth.md` (13 files)
+- [x] **Batch 02 — Market Data Providers** → `audits/AUDIT-Market-Data-Providers.md` (34 files)
+- [x] **Batch 03 — API Routes** → `audits/AUDIT-API-Routes.md` (43 files)
+- [x] **Batch 04 — Night Hawk** → `audits/AUDIT-Night-Hawk.md` (48 files)
+- [x] **Batch 05 — Largo AI** → `audits/AUDIT-Largo-AI.md` (17 files)
+- [x] **Batch 06 — SPX Desk + Admin** → `audits/AUDIT-SPX-Desk-Admin.md` (111 files)
+- [x] **Batch 07 — Frontend + Config/Deploy** → `audits/AUDIT-Frontend-Config.md` (110 files)
 
-## Subsystem map (quick reference)
+## Re-audit checklist (post-fix verification)
 
-| Subsystem | Batch(es) | Notes |
-|-----------|-----------|-------|
-| Payments & Auth | 01 | Clerk + Whop; no Stripe in repo |
-| Market Data Providers | 02 | Polygon, UW, WS; **Finnhub removed** (no files) |
-| API Routes | 03 | All `src/app/api/**`; thin handlers — audit logic in owning lib batch |
-| Night Hawk | 04 | `lib/nighthawk` + UI + worker; API routes in 03 |
-| Largo AI | 05 | `lib/largo`, Anthropic provider, terminal UI |
-| SPX Desk + Play Engine | 06 | Largest batch; admin SPX surfaces in 07 |
-| Admin & Ops | 07 | Dashboards, telemetry, cron registry |
-| Data / Platform | 08 | `db.ts`, Redis, caches, platform services |
-| Frontend (general) | 09, 10 | Pages/shell vs shared embed widgets |
-| Internal docs | 11 | In-app provider/API reference site |
-| Config & deploy | 12 | Railway, Next config, public assets, scripts |
+> **Re-audited:** 2026-06-19 · **Output:** `audits/REAUDIT-*.md` + `audits/REAUDIT-SUMMARY.md`
 
-## Cross-batch audit rules
-
-When a route in **Batch 03** imports from `lib/nighthawk`, `lib/largo`, `lib/spx-*`, etc.:
-- Audit the **HTTP contract** (auth, params, errors, caching) in Batch 03.
-- Audit **business logic** in the owning lib/UI batch.
-
-**Batch 01** middleware may gate routes audited in 03 — verify tier checks in both places.
-
-**Batch 02** provider modules are consumed by 04, 05, 06, 08 — note integration bugs in findings, fix in the implementation batch.
-
-## Audit tooling (not in `git ls-files` yet)
-
-| File | Batch | Purpose |
-|------|-------|---------|
-| `scripts/build-audit-plan.mjs` | 12 | Regenerates this plan from `git ls-files` |
-| `audits/AUDIT-PLAN.md` | — | This checklist (meta) |
-
-Regenerate after file moves: `node scripts/build-audit-plan.mjs`
+- [x] **Batch 01 — Payments & Auth** → `audits/REAUDIT-Payments-Auth.md` — 3/3 MED fixed; LOW policy items open
+- [x] **Batch 02 — Market Data Providers** → `audits/REAUDIT-Market-Data-Providers.md` — B2-01 fixed; B2-02/B2-03 open
+- [x] **Batch 03 — API Routes** → `audits/REAUDIT-API-Routes.md` — H1 + M1 + M2 fixed
+- [x] **Batch 04 — Night Hawk** → `audits/REAUDIT-Night-Hawk.md` — M1/M2 + low items open
+- [x] **Batch 05 — Largo AI** → `audits/REAUDIT-Largo-AI.md` — prefetch/tool-loop items open
+- [x] **Batch 06 — SPX Desk + Admin** → `audits/REAUDIT-SPX-Desk-Admin.md` — **all C+H fixed**; M1/M6/M7/M17 + admin ops open
+- [x] **Batch 07 — Frontend + Config** → `audits/REAUDIT-Frontend-Config.md` — F1/F3/F4 fixed; F2/F5 open
 
 ## Leftover / unclassified files
 
-**None.** All 367 tracked files are assigned to exactly one batch above.
+**None** among tracked files (`git ls-files`).
 
-**Removed from codebase (not applicable):** `src/lib/providers/finnhub.ts` and Finnhub env vars — already deleted; no audit batch needed.
+**Untracked (out of plan scope until added to git):**
+- `complete-repo-bugs/` — scratch audit drafts (8 files); not in `git ls-files`
+
+**Separate repo (not this audit):**
+- Discord/engine service: `C:\Users\raidu\BO-AAI\BlackOut-Uw-Alerts` (`BlackOut-Uw-Alerts` on GitHub)
 
 ---
 
-## Batch 01 — Payments, Auth & Membership
+## Batch 01 — Payments & Auth
 
-**Focus:** Clerk auth, Whop webhooks/checkout, VIP tiers, membership sync, session cache, middleware gating
+**Output file:** `audits/AUDIT-Payments-Auth.md`
+
+**Focus:** Clerk sessions, Whop webhooks/checkout, VIP tiers, membership sync, middleware gating, session cache
 
 **File count:** 13
 
@@ -96,11 +81,13 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/lib/whop.ts`
 - `src/middleware.ts`
 
-## Batch 02 — Market Data Providers & WebSockets
+## Batch 02 — Market Data Providers
 
-**Focus:** Polygon, Unusual Whales, flow ingest, GEX/gamma, SPX provider adapters, WS stores, rate limits, provider probe scripts
+**Output file:** `audits/AUDIT-Market-Data-Providers.md`
 
-**File count:** 31
+**Focus:** Polygon, Unusual Whales, WebSocket stores, flow ingest, GEX/gamma, rate limits, provider probes (Finnhub removed)
+
+**File count:** 34
 
 ### Files
 
@@ -111,6 +98,9 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `scripts/probe-uw-ws-urls.mjs`
 - `src/lib/api-provider-catalog.ts`
 - `src/lib/api-rate-quotas.ts`
+- `src/lib/flow-data-freshness.ts`
+- `src/lib/flow-events.ts`
+- `src/lib/flow-persist.ts`
 - `src/lib/greek-exposure-summary.ts`
 - `src/lib/group-greek-flow-summary.ts`
 - `src/lib/live-api-integrations.ts`
@@ -138,7 +128,9 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 
 ## Batch 03 — API Routes
 
-**Focus:** All HTTP handlers under src/app/api (admin, cron, market, engine, webhooks, membership)
+**Output file:** `audits/AUDIT-API-Routes.md`
+
+**Focus:** All HTTP handlers under src/app/api — admin, cron, market, engine, webhooks, membership
 
 **File count:** 43
 
@@ -188,11 +180,13 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/app/api/membership/sync/route.ts`
 - `src/app/api/webhook/whop/route.ts`
 
-## Batch 04 — Night Hawk Engine & UI
+## Batch 04 — Night Hawk
 
-**Focus:** Edition builder, scoring, outcomes, dossier pipeline, Night Hawk pages/components/embeds, worker script
+**Output file:** `audits/AUDIT-Night-Hawk.md`
 
-**File count:** 41
+**Focus:** Edition builder, scoring, outcomes, agents, dossier pipeline, Night Hawk pages/components/embeds, worker
+
+**File count:** 48
 
 ### Files
 
@@ -202,13 +196,20 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/components/desk/NightHawkRadar.tsx`
 - `src/components/embeds/NightHawkEmbeds.tsx`
 - `src/components/embeds/NightHawkRadar.tsx`
+- `src/components/nighthawk/AgentFilterFields.tsx`
 - `src/components/nighthawk/AgentPowerModal.tsx`
 - `src/components/nighthawk/AgentSidebar.tsx`
+- `src/components/nighthawk/DayTradeAgentWorkspace.tsx`
+- `src/components/nighthawk/DayTradeSignalCard.tsx`
 - `src/components/nighthawk/NightHawkRadarBackdrop.tsx`
 - `src/components/nighthawk/PlayDetailModal.tsx`
 - `src/components/nighthawk/PlaybookBoard.tsx`
 - `src/components/nighthawk/PlaybookPlayRow.tsx`
 - `src/lib/nighthawk/agent-config.ts`
+- `src/lib/nighthawk/agents/day-trade-agent.ts`
+- `src/lib/nighthawk/agents/day-trade-filters.ts`
+- `src/lib/nighthawk/agents/day-trade-types.ts`
+- `src/lib/nighthawk/agents/index.ts`
 - `src/lib/nighthawk/analytics.ts`
 - `src/lib/nighthawk/candidates.ts`
 - `src/lib/nighthawk/claude-edition.ts`
@@ -238,9 +239,11 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/lib/nighthawk/vol-metrics.ts`
 - `src/lib/platform/nighthawk-service.ts`
 
-## Batch 05 — Largo AI & Terminal
+## Batch 05 — Largo AI
 
-**Focus:** Largo store, tool defs, intent routing, terminal UI, desk Largo panels
+**Output file:** `audits/AUDIT-Largo-AI.md`
+
+**Focus:** Largo store, tool defs, intent routing, Anthropic provider, Largo desk/terminal UI
 
 **File count:** 17
 
@@ -264,15 +267,31 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/lib/largo/tool-defs.ts`
 - `src/lib/providers/anthropic.ts`
 
-## Batch 06 — SPX Desk, Play Engine & Lotto
+## Batch 06 — SPX Desk + Admin
 
-**Focus:** SPX play engine, lotto, desk merge/live loaders, signals, commentary, SPX hooks and desk UI
+**Output file:** `audits/AUDIT-SPX-Desk-Admin.md`
 
-**File count:** 65
+**Focus:** SPX play engine, lotto, desk merge/live, signals, SPX hooks/UI, admin dashboards, telemetry, cron ops
+
+**File count:** 111
 
 ### Files
 
+- `scripts/analyze-api-usage.mjs`
+- `scripts/e2e-spx-probe.mjs`
+- `src/app/admin/page.tsx`
 - `src/components/SpxDashboard.tsx`
+- `src/components/admin/AdminAnalyticsDashboard.tsx`
+- `src/components/admin/AdminApiCallTimeline.tsx`
+- `src/components/admin/AdminApiDashboard.tsx`
+- `src/components/admin/AdminApiEventDetail.tsx`
+- `src/components/admin/AdminApiLiveFeed.tsx`
+- `src/components/admin/AdminCronDashboard.tsx`
+- `src/components/admin/AdminHealthBanner.tsx`
+- `src/components/admin/AdminNightHawkDashboard.tsx`
+- `src/components/admin/AdminSpxDashboard.tsx`
+- `src/components/admin/AdminSpxTerminal.tsx`
+- `src/components/admin/AdminUi.tsx`
 - `src/components/desk/BenzingaNewsRail.tsx`
 - `src/components/desk/BenzingaNewsTicker.tsx`
 - `src/components/desk/DeskHeroTicker.tsx`
@@ -298,9 +317,41 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/hooks/useSpxPlay.ts`
 - `src/hooks/useStablePlayConfirmations.ts`
 - `src/hooks/useStableValue.ts`
+- `src/lib/admin-access.ts`
+- `src/lib/admin-api-dashboard.ts`
+- `src/lib/admin-audit.ts`
+- `src/lib/admin-critical-alerts.ts`
+- `src/lib/admin-cron-health.ts`
+- `src/lib/admin-endpoint-registry.ts`
+- `src/lib/admin-health.ts`
+- `src/lib/admin-incidents.ts`
+- `src/lib/admin-route-errors.ts`
+- `src/lib/admin-spx-analytics.ts`
+- `src/lib/admin-spx-config-snapshot.ts`
+- `src/lib/admin-spx-dashboard.ts`
+- `src/lib/admin-spx-issues.ts`
+- `src/lib/admin-spx-terminal.ts`
+- `src/lib/api-telemetry-persist.ts`
+- `src/lib/api-telemetry-redis.ts`
+- `src/lib/api-telemetry-types.ts`
+- `src/lib/api-telemetry.ts`
+- `src/lib/api-tracked-fetch.ts`
+- `src/lib/api.ts`
+- `src/lib/cron-registry.ts`
+- `src/lib/cron-run.ts`
+- `src/lib/db.ts`
 - `src/lib/engine.ts`
+- `src/lib/market-api-auth.ts`
+- `src/lib/market-health.ts`
+- `src/lib/platform/flow-service.ts`
+- `src/lib/platform/index.ts`
+- `src/lib/platform/spx-service.ts`
+- `src/lib/platform/types.ts`
 - `src/lib/play-engine-health.ts`
 - `src/lib/play-engine-heartbeat.ts`
+- `src/lib/redis-pubsub.ts`
+- `src/lib/server-cache.ts`
+- `src/lib/shared-cache.ts`
 - `src/lib/spx-commentary-limits.ts`
 - `src/lib/spx-commentary-offline-copy.ts`
 - `src/lib/spx-desk-live.ts`
@@ -338,145 +389,46 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/lib/spx-signals.ts`
 - `src/lib/spx-sniper-backdrops.ts`
 
-## Batch 07 — Admin, Telemetry & Cron Ops
+## Batch 07 — Frontend + Config/Deploy
 
-**Focus:** Admin access/dashboards, API telemetry, incidents, cron health registry, SPX admin surfaces
+**Output file:** `audits/AUDIT-Frontend-Config.md`
 
-**File count:** 34
+**Focus:** App shell, landing/marketing, general pages, embeds, internal docs site, build/deploy config, public assets
 
-### Files
-
-- `scripts/analyze-api-usage.mjs`
-- `src/app/admin/page.tsx`
-- `src/components/admin/AdminAnalyticsDashboard.tsx`
-- `src/components/admin/AdminApiCallTimeline.tsx`
-- `src/components/admin/AdminApiDashboard.tsx`
-- `src/components/admin/AdminApiEventDetail.tsx`
-- `src/components/admin/AdminApiLiveFeed.tsx`
-- `src/components/admin/AdminCronDashboard.tsx`
-- `src/components/admin/AdminHealthBanner.tsx`
-- `src/components/admin/AdminNightHawkDashboard.tsx`
-- `src/components/admin/AdminSpxDashboard.tsx`
-- `src/components/admin/AdminSpxTerminal.tsx`
-- `src/components/admin/AdminUi.tsx`
-- `src/lib/admin-access.ts`
-- `src/lib/admin-api-dashboard.ts`
-- `src/lib/admin-audit.ts`
-- `src/lib/admin-critical-alerts.ts`
-- `src/lib/admin-cron-health.ts`
-- `src/lib/admin-endpoint-registry.ts`
-- `src/lib/admin-health.ts`
-- `src/lib/admin-incidents.ts`
-- `src/lib/admin-route-errors.ts`
-- `src/lib/admin-spx-analytics.ts`
-- `src/lib/admin-spx-config-snapshot.ts`
-- `src/lib/admin-spx-dashboard.ts`
-- `src/lib/admin-spx-issues.ts`
-- `src/lib/admin-spx-terminal.ts`
-- `src/lib/api-telemetry-persist.ts`
-- `src/lib/api-telemetry-redis.ts`
-- `src/lib/api-telemetry-types.ts`
-- `src/lib/api-telemetry.ts`
-- `src/lib/api-tracked-fetch.ts`
-- `src/lib/cron-registry.ts`
-- `src/lib/cron-run.ts`
-
-## Batch 08 — Data Layer, Cache & Platform Services
-
-**Focus:** PostgreSQL schema/queries, Redis pubsub, shared caches, platform service layer, flow pipeline
-
-**File count:** 14
+**File count:** 110
 
 ### Files
 
-- `src/lib/api.ts`
-- `src/lib/db.ts`
-- `src/lib/flow-data-freshness.ts`
-- `src/lib/flow-events.ts`
-- `src/lib/flow-persist.ts`
-- `src/lib/market-api-auth.ts`
-- `src/lib/market-health.ts`
-- `src/lib/platform/flow-service.ts`
-- `src/lib/platform/index.ts`
-- `src/lib/platform/spx-service.ts`
-- `src/lib/platform/types.ts`
-- `src/lib/redis-pubsub.ts`
-- `src/lib/server-cache.ts`
-- `src/lib/shared-cache.ts`
-
-## Batch 09 — Frontend — App Shell, Landing & General Pages
-
-**Focus:** Root layout, landing/marketing, nav, dashboard/terminal/flows/heatmap pages, platform shell, shared UI chrome
-
-**File count:** 35
-
-### Files
-
-- `src/app/apple-icon.png`
-- `src/app/dashboard/page.tsx`
-- `src/app/flows/page.tsx`
-- `src/app/globals.css`
-- `src/app/heatmap/page.tsx`
-- `src/app/icon.png`
-- `src/app/layout.tsx`
-- `src/app/page.tsx`
-- `src/app/terminal/page.tsx`
-- `src/components/AuthBackground.tsx`
-- `src/components/BrandImage.tsx`
-- `src/components/CustomCursor.tsx`
-- `src/components/FlowFeed.tsx`
-- `src/components/Heatmap.tsx`
-- `src/components/HeroBanner.tsx`
-- `src/components/LandingChrome.tsx`
-- `src/components/Nav.tsx`
-- `src/components/PageBanner.tsx`
-- `src/components/ScrollProgressBar.tsx`
-- `src/components/landing/FadeInImage.tsx`
-- `src/components/landing/FaqSection.tsx`
-- `src/components/landing/FeaturesGrid.tsx`
-- `src/components/landing/FloatingPanel.tsx`
-- `src/components/landing/HeroSection.tsx`
-- `src/components/landing/HeroToolsRail.tsx`
-- `src/components/landing/LandingCta.tsx`
-- `src/components/landing/LandingFooter.tsx`
-- `src/components/landing/MarqueeStrip.tsx`
-- `src/components/landing/OverlapShowcase.tsx`
-- `src/components/landing/PricingSection.tsx`
-- `src/components/platform/PlatformEmpty.tsx`
-- `src/components/platform/PlatformShell.tsx`
-- `src/lib/images.ts`
-- `src/lib/platform-meta-keys.ts`
-- `src/lib/site.ts`
-
-## Batch 10 — Frontend — Embeds & Market Widgets
-
-**Focus:** TradingView embeds, live flow tape, market pulse, flow volume charts (shared embed layer)
-
-**File count:** 8
-
-### Files
-
-- `src/components/embeds/DashboardEmbeds.tsx`
-- `src/components/embeds/EmbedFrame.tsx`
-- `src/components/embeds/FlowVolumeChart.tsx`
-- `src/components/embeds/FlowsEmbeds.tsx`
-- `src/components/embeds/HeatmapEmbeds.tsx`
-- `src/components/embeds/LiveFlowTape.tsx`
-- `src/components/embeds/LiveMarketPulse.tsx`
-- `src/components/embeds/TradingViewWidget.tsx`
-
-## Batch 11 — Internal Docs Site
-
-**Focus:** In-app documentation pages for Polygon, UW, SPX analysis, API probes, provider reference catalogs
-
-**File count:** 41
-
-### Files
-
+- `.gitignore`
+- `CURSOR_IMPL.md`
+- `audits/AUDIT-PLAN.md`
+- `next-env.d.ts`
+- `next.config.mjs`
+- `package-lock.json`
+- `package.json`
+- `postcss.config.mjs`
+- `public/docs/SPX-Sniper-Playbook.docx`
+- `public/icon-192.png`
+- `public/images/.gitkeep`
+- `public/images/blackout-largo.png`
+- `public/images/dashboard-bg.png`
+- `public/images/hero-banner.png`
+- `public/images/og-image.png`
+- `public/images/spx-sniper-bot.png`
+- `public/spx-sniper/spx-sniper-bg-night.webp`
+- `public/spx-sniper/spx-sniper-bg-sunset.webp`
+- `public/spx-sniper/spx-sniper-bg-winter.webp`
+- `public/spx-sniper/spx-sniper-vivid-neon.webp`
+- `railway.toml`
+- `scripts/build-audit-plan.mjs`
+- `scripts/generate-icons.cjs`
 - `scripts/generate-spx-playbook-docx.mjs`
+- `scripts/generate-uw-docs-catalog.mjs`
 - `scripts/probe-docs-endpoints.mjs`
 - `scripts/summarize-docs-usage.mjs`
 - `scripts/uw-docs-index.md`
+- `src/app/apple-icon.png`
+- `src/app/dashboard/page.tsx`
 - `src/app/docs/api-probe/page.tsx`
 - `src/app/docs/claude-api-analysis/page.tsx`
 - `src/app/docs/cursor-api-analysis/layout.tsx`
@@ -497,55 +449,97 @@ Regenerate after file moves: `node scripts/build-audit-plan.mjs`
 - `src/app/docs/unusual-whales/endpoints/page.tsx`
 - `src/app/docs/unusual-whales/layout.tsx`
 - `src/app/docs/unusual-whales/page.tsx`
+- `src/app/flows/page.tsx`
+- `src/app/globals.css`
+- `src/app/heatmap/page.tsx`
+- `src/app/icon.png`
+- `src/app/layout.tsx`
+- `src/app/page.tsx`
+- `src/app/terminal/page.tsx`
+- `src/components/AuthBackground.tsx`
+- `src/components/BrandImage.tsx`
+- `src/components/CustomCursor.tsx`
+- `src/components/FlowFeed.tsx`
+- `src/components/Heatmap.tsx`
+- `src/components/HeroBanner.tsx`
+- `src/components/LandingChrome.tsx`
+- `src/components/Nav.tsx`
+- `src/components/PageBanner.tsx`
+- `src/components/ScrollProgressBar.tsx`
 - `src/components/docs/PolygonDocsNav.tsx`
 - `src/components/docs/PolygonRestEndpointTable.tsx`
 - `src/components/docs/UwDocsNav.tsx`
 - `src/components/docs/UwEndpointTable.tsx`
+- `src/components/embeds/DashboardEmbeds.tsx`
+- `src/components/embeds/EmbedFrame.tsx`
+- `src/components/embeds/FlowVolumeChart.tsx`
+- `src/components/embeds/FlowsEmbeds.tsx`
+- `src/components/embeds/HeatmapEmbeds.tsx`
+- `src/components/embeds/LiveFlowTape.tsx`
+- `src/components/embeds/LiveMarketPulse.tsx`
+- `src/components/embeds/TradingViewWidget.tsx`
+- `src/components/landing/FadeInImage.tsx`
+- `src/components/landing/FaqSection.tsx`
+- `src/components/landing/FeaturesGrid.tsx`
+- `src/components/landing/FloatingPanel.tsx`
+- `src/components/landing/HeroSection.tsx`
+- `src/components/landing/HeroToolsRail.tsx`
+- `src/components/landing/LandingCta.tsx`
+- `src/components/landing/LandingFooter.tsx`
+- `src/components/landing/MarqueeStrip.tsx`
+- `src/components/landing/OverlapShowcase.tsx`
+- `src/components/landing/PricingSection.tsx`
+- `src/components/platform/PlatformEmpty.tsx`
+- `src/components/platform/PlatformShell.tsx`
 - `src/lib/cursor-api-analysis-data.ts`
 - `src/lib/cursor-api-analysis-meta.ts`
 - `src/lib/docs-probe-report.json`
 - `src/lib/docs-probe-report.ts`
 - `src/lib/docs-usage-summary.json`
+- `src/lib/images.ts`
+- `src/lib/platform-meta-keys.ts`
 - `src/lib/polygon-docs-benzinga-rest.ts`
 - `src/lib/polygon-docs-indices-rest.ts`
 - `src/lib/polygon-docs-nav.ts`
 - `src/lib/polygon-docs-options-rest.ts`
 - `src/lib/polygon-docs-rest-types.ts`
 - `src/lib/polygon-docs-stocks-rest.ts`
+- `src/lib/site.ts`
 - `src/lib/uw-docs-catalog.ts`
 - `src/lib/uw-docs-nav.ts`
-
-## Batch 12 — Config, Deploy, Scripts & Static Assets
-
-**Focus:** Build/deploy config, root tooling scripts, public assets, project metadata
-
-**File count:** 26 (25 tracked + 1 audit tooling script)
-
-### Files
-
-- `.gitignore`
-- `CURSOR_IMPL.md`
-- `next-env.d.ts`
-- `next.config.mjs`
-- `package-lock.json`
-- `package.json`
-- `postcss.config.mjs`
-- `public/docs/SPX-Sniper-Playbook.docx`
-- `public/icon-192.png`
-- `public/images/.gitkeep`
-- `public/images/blackout-largo.png`
-- `public/images/dashboard-bg.png`
-- `public/images/hero-banner.png`
-- `public/images/og-image.png`
-- `public/images/spx-sniper-bot.png`
-- `public/spx-sniper/spx-sniper-bg-night.webp`
-- `public/spx-sniper/spx-sniper-bg-sunset.webp`
-- `public/spx-sniper/spx-sniper-bg-winter.webp`
-- `public/spx-sniper/spx-sniper-vivid-neon.webp`
-- `railway.toml`
-- `scripts/e2e-spx-probe.mjs`
-- `scripts/generate-icons.cjs`
-- `scripts/generate-uw-docs-catalog.mjs`
-- `scripts/build-audit-plan.mjs` *(audit plan generator; add to git when committing)*
 - `tailwind.config.ts`
 - `tsconfig.json`
+
+---
+
+## Phase 2 — Re-audit (2026-06-19)
+
+**Trigger:** Phase 1 fixes complete (~35 files); build passes (`npm run build`).
+
+**Method:** Forensic re-read of every original finding ID in `AUDIT-*.md`; file:line verification; hunt for regressions and new bugs.
+
+### Re-audit outputs
+
+| Batch | Re-audit file | Status |
+|-------|---------------|--------|
+| 01 Payments & Auth | [`REAUDIT-payments-auth.md`](./REAUDIT-payments-auth.md) | ✅ |
+| 02 Market Data Providers | [`REAUDIT-market-data-providers.md`](./REAUDIT-market-data-providers.md) | ✅ |
+| 03 API Routes | [`REAUDIT-api-routes.md`](./REAUDIT-api-routes.md) | ✅ |
+| 04 Night Hawk | [`REAUDIT-night-hawk.md`](./REAUDIT-night-hawk.md) | ✅ |
+| 05 Largo AI | [`REAUDIT-largo-ai.md`](./REAUDIT-largo-ai.md) | ✅ |
+| 06 SPX Desk + Admin | [`REAUDIT-spx-desk-admin.md`](./REAUDIT-spx-desk-admin.md) | ✅ |
+| 07 Frontend + Config | [`REAUDIT-frontend-config.md`](./REAUDIT-frontend-config.md) | ✅ |
+| Summary | [`REAUDIT-SUMMARY.md`](./REAUDIT-SUMMARY.md) | ✅ |
+
+### Re-audit result (aggregate)
+
+| Status | Count |
+|--------|------:|
+| ✅ FIXED | 30 |
+| ⚠️ PARTIAL | 4 |
+| ❌ OPEN | 67 |
+| 🆕 NEW | 2 |
+
+**Key verifications:** C1/C2, B06-H1–H8, H1, H2, NH-M1 (partial), B2-01, B5-01/02, MED-1, API-M1, docs layout — see summary matrix in `REAUDIT-SUMMARY.md`.
+
+**Phase 3 candidates:** B2-02 (halt gate), F2 (public playbook), B2-03 (desk WS merge), DB constraints (B06-M1/M6/M7), Railway liveness (API-NEW-1).

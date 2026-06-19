@@ -208,7 +208,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     setHistory((prev) => [{ ...play, id: `${id}|${Date.now()}` }, ...prev].slice(0, 24));
   }, [play]);
 
-  const show = play != null;
+  const show = play != null && live && sessionActive;
 
   const panelRefreshing = (refreshing || playRefreshing) && play && play.action !== "SCANNING";
 
@@ -236,7 +236,9 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
       <div className="spx-sniper-panel-body">
       {!show ? (
         <p className="spx-desk-offline-line font-mono py-8 text-center">
-          {live ? "Loading play engine…" : "Session closed · resumes 6:30 AM PT"}
+          {sessionActive && live
+            ? "Loading play engine…"
+            : "Session closed · resumes 6:30 AM PT"}
         </p>
       ) : (
         <>

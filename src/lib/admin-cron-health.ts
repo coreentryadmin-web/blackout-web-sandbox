@@ -7,7 +7,7 @@ import {
   fetchLatestNighthawkJob,
   type CronJobRunRow,
 } from "@/lib/db";
-import { getPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
+import { loadPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
 import { isWeekdayEt } from "@/lib/nighthawk/session";
 
 export type CronJobHealthStatus = "healthy" | "warning" | "stale" | "failed" | "unknown";
@@ -155,7 +155,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     runs24hByKey.set(r.job_key, list);
   }
 
-  const playHb = getPlayEngineHeartbeat();
+  const playHb = await loadPlayEngineHeartbeat();
   const jobs = CRON_JOBS.map((job) => {
     const health = evaluateJob(job, lastByKey[job.key], runs24hByKey.get(job.key) ?? []);
 

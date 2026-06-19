@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { ApiCallEvent } from "@/lib/api-telemetry-types";
+import { sanitizeTelemetryBody, sanitizeTelemetryUrl } from "@/lib/api-telemetry-sanitize";
 
 type EventDetail = {
   event: ApiCallEvent;
@@ -112,11 +113,15 @@ export function AdminApiEventDetail({
                   <h4 className="admin-cmd-detail-heading">Endpoint</h4>
                   <code className="admin-cmd-detail-code">{detail.event.endpoint}</code>
                   <h4 className="admin-cmd-detail-heading">Request URL</h4>
-                  <code className="admin-cmd-detail-code admin-cmd-detail-code-wrap">{detail.event.request_url}</code>
+                  <code className="admin-cmd-detail-code admin-cmd-detail-code-wrap">
+                    {sanitizeTelemetryUrl(detail.event.request_url) ?? "—"}
+                  </code>
                   {detail.event.request_body && (
                     <>
                       <h4 className="admin-cmd-detail-heading">Request body / query</h4>
-                      <pre className="admin-cmd-detail-pre">{detail.event.request_body}</pre>
+                      <pre className="admin-cmd-detail-pre">
+                        {sanitizeTelemetryBody(detail.event.request_body)}
+                      </pre>
                     </>
                   )}
                 </section>

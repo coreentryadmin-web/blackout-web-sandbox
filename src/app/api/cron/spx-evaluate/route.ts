@@ -1,27 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { evaluateSpxPlay } from "@/lib/spx-play-engine";
+import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
-import { recordPlayEngineTick } from "@/lib/play-engine-heartbeat";
 import { logCronRun } from "@/lib/cron-run";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export const dynamic = "force-dynamic";
-
-function cronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
-  return auth === secret || q === secret;
-}
 
 /** Optional market-hours evaluator — hit from Railway/Vercel cron with CRON_SECRET. */
 export async function GET(req: NextRequest) {
   const started = Date.now();
-  if (!cronAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -49,11 +41,26 @@ export async function GET(req: NextRequest) {
       lod: merged.lod,
     });
 
-    const [play, lotto] = await Promise.all([
-      evaluateSpxPlay(merged, technicals),
-      evaluateSpxLotto(merged, technicals),
-    ]);
-    recordPlayEngineTick("cron");
+    const evalResult = await runSpxEvaluator(merged, technicals, "cron");
+    if (!evalResult.ok) {
+      throw new Error("error" in evalResult ? evalResult.error : "Evaluation failed");
+    }
+
+    if (evalResult.skipped === true) {
+      const payload = {
+        ok: true,
+        skipped: true,
+        reason: evalResult.reason,
+      };
+      await logCronRun("spx-evaluate", started, payload);
+      return NextResponse.json(payload, { status: 409 });
+    }
+
+    const lotto = await evaluateSpxLotto(merged, technicals);
+    if (!isSpxEvaluatorPlayResult(evalResult)) {
+      throw new Error("Evaluator returned no play payload");
+    }
+    const play = evalResult.play;
 
     const payload = {
       ok: true,

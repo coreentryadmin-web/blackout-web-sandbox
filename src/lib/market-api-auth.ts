@@ -6,8 +6,7 @@ export function isCronAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return false;
   const authHeader = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
-  return authHeader === secret || q === secret;
+  return authHeader === secret;
 }
 
 /** API routes — returns 401/403 JSON or null if allowed. */

@@ -3,26 +3,13 @@ import {
   type ApiCallEvent,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
+import { sanitizeTrackedFetchUrl as sanitizeUrl } from "@/lib/api-telemetry-sanitize";
 
 export type TrackedFetchOptions = RequestInit & {
   maxRetries?: number;
   retryDelayMs?: number;
   correlationId?: string;
 };
-
-function sanitizeUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    for (const key of ["apiKey", "token", "apikey"]) {
-      if (u.searchParams.has(key)) u.searchParams.set(key, "[REDACTED]");
-    }
-    return u.toString();
-  } catch {
-    return url
-      .replace(/apiKey=[^&]+/gi, "apiKey=[REDACTED]")
-      .replace(/token=[^&]+/gi, "token=[REDACTED]");
-  }
-}
 
 function headerNames(init?: RequestInit): string[] {
   if (!init?.headers) return [];

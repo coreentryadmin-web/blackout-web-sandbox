@@ -37,6 +37,26 @@ function toHuntPlay(play: PlaybookPlay): HuntPlay {
   };
 }
 
+function flowDteDays(flow: Record<string, unknown>): number | null {
+  const exp = String(flow.expiry ?? flow.expiration ?? "");
+  if (!exp) return null;
+  const expMs = new Date(exp.includes("T") ? exp : `${exp}T16:00:00-04:00`).getTime();
+  if (!Number.isFinite(expMs)) return null;
+  const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const todayMs = new Date(`${todayEt}T12:00:00-04:00`).getTime();
+  return Math.round((expMs - todayMs) / 86_400_000);
+}
+
+function dossierHasCatalyst(dossier: TickerDossier): boolean {
+  return (
+    dossier.news_headlines.length > 0 ||
+    dossier.polygon_sentiment.length > 0 ||
+    dossier.predictions_signal != null ||
+    dossier.congress_unusual.length > 0 ||
+    dossier.insider_buys > 0
+  );
+}
+
 function dossierPassesPrefilters(dossier: TickerDossier, filters: ReturnType<typeof normalizeHuntFilters>): boolean {
   if (filters.sector) {
     const sector = (dossier.sector ?? "").toLowerCase();
@@ -46,6 +66,17 @@ function dossierPassesPrefilters(dossier: TickerDossier, filters: ReturnType<typ
     return false;
   }
   if (filters.max_iv_rank != null && dossier.iv_rank != null && dossier.iv_rank > filters.max_iv_rank) {
+    return false;
+  }
+  if (filters.dte_min != null || filters.dte_max != null) {
+    const dtes = dossier.flows.map(flowDteDays).filter((d): d is number => d != null);
+    if (dtes.length) {
+      const nearest = Math.min(...dtes);
+      if (filters.dte_min != null && nearest < filters.dte_min) return false;
+      if (filters.dte_max != null && nearest > filters.dte_max) return false;
+    }
+  }
+  if (filters.require_catalyst && !dossierHasCatalyst(dossier)) {
     return false;
   }
   return true;
@@ -128,7 +159,9 @@ export async function runHuntScan(request: HuntRequest): Promise<HuntBuildResult
     resetEditionCongressCache();
     const dossiers = await fetchAllDossiers(candidates, DOSSIER_BATCH_SIZE, regime);
 
-    const dossierList = Object.values(dossiers).filter((d) => d.tech != null && dossierPassesPrefilters(d, filters));
+    const dossierList = Object.values(dossiers).filter(
+      (d) => d.scored != null && dossierPassesPrefilters(d, filters)
+    );
 
     for (const dossier of dossierList) {
       rescoreDossier(dossier, regime, weights.streakWeight);

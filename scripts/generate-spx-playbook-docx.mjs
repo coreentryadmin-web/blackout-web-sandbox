@@ -16,7 +16,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
-const outDir = path.join(root, "public", "docs");
+const outDir = path.join(root, "private", "docs");
 const outFile = path.join(outDir, "SPX-Sniper-Playbook.docx");
 
 function h1(text) {

@@ -22,6 +22,7 @@ import {
   fetchBreadthUniverseSnapshots,
   computeMarketBreadthFromSummary,
   fetchDailyMarketSummary,
+  fetchPriorDayCloses,
   type MarketBreadthMetrics,
   fetchIndexDailyBars,
   fetchIndexEma,
@@ -916,7 +917,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     breadthAll ?? []
   );
 
-  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, dailyMarket, mag7Rows, macroIndicators] =
+  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, dailyMarket, mag7Rows, macroIndicators, priorCloses] =
     await Promise.all([
       uwConfigured() ? fetchUwGreekExposureExpiry("SPX").catch(() => []) : Promise.resolve([]),
       uwConfigured() ? fetchUwFlowPerExpiry("SPX", 12).catch(() => []) : Promise.resolve([]),
@@ -925,6 +926,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
       fetchDailyMarketSummary(today).catch(() => null),
       uwConfigured() ? fetchUwGroupGreekFlow("mag7").catch(() => []) : Promise.resolve([]),
       uwConfigured() ? fetchUwMacroIndicators().catch(() => []) : Promise.resolve([]),
+      fetchPriorDayCloses(today).catch(() => ({})),
     ]);
 
   const greekExposure = summarizeGreekExposureByExpiry(
@@ -936,7 +938,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     mag7Rows as Record<string, unknown>[]
   );
   const marketBreadth = dailyMarket?.results?.length
-    ? computeMarketBreadthFromSummary(dailyMarket.results)
+    ? computeMarketBreadthFromSummary(dailyMarket.results, priorCloses)
     : null;
 
   const levels = buildLevels({

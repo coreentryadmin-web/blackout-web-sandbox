@@ -64,6 +64,16 @@ import {
 
 export type { SpxPlayAction, SpxPlayDirection } from "@/lib/spx-signals";
 
+export type EvaluateSpxPlayOptions = { mutate?: boolean };
+
+/** Read-only play snapshot for member routes — no DB/Discord side effects. */
+export async function getSpxPlaySnapshot(
+  desk: SpxDeskPayload,
+  prefetchedTechnicals?: PlayTechnicals | null
+): Promise<SpxPlayPayload> {
+  return evaluateSpxPlay(desk, prefetchedTechnicals, { mutate: false });
+}
+
 export type SpxPlayPayload = {
   available: boolean;
   phase: "SCANNING" | "WATCHING" | "OPEN";
@@ -239,14 +249,17 @@ async function evaluateOpenPlay(
   technicals: PlayTechnicals | null,
   confirmations: PlayConfirmationResult | null,
   mtf: MtfHybrid | null,
-  telemetry: SpxPlayPayload["telemetry"]
+  telemetry: SpxPlayPayload["telemetry"],
+  mutate = true
 ): Promise<SpxPlayPayload> {
   // Open-play path only: force-exit cutoff is independent from flat-path no-entry gates.
   const price = desk.price;
   const dir = row.direction;
   const mfe = Math.max(row.mfe_pts, dir === "long" ? price - row.entry_price : row.entry_price - price);
   const mae = Math.max(row.mae_pts, dir === "long" ? row.entry_price - price : price - row.entry_price);
-  await updateOpenPlay(row.id, { mfe_pts: mfe, mae_pts: mae });
+  if (mutate) {
+    await updateOpenPlay(row.id, { mfe_pts: mfe, mae_pts: mae });
+  }
 
   let action: SpxPlayAction = "HOLD";
   let headline = `${row.grade} ${dir === "long" ? "CALL" : "PUT"} working`;
@@ -304,116 +317,123 @@ async function evaluateOpenPlay(
         : thesisBreak
           ? `Thesis break (${thesisEval.trigger ?? "or"}) — score ${confluence.score} vs ${thesisEval.trigger === "floor" ? "±" : ""}${Math.abs(thesisEval.threshold).toFixed(0)} threshold (entry ${entryScore}).`
           : "Cash session closed — flatten runners.";
-    await closeOpenPlay(row.id, {
-      was_loss: forceExit ? false : stopHit || thesisBreak,
-      direction: dir,
-      close: closeSnapshot(
-        forceExit ? "THETA" : stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS",
-        forceExit ? false : stopHit || thesisBreak,
-        row.trim_done
-      ),
-    });
-    firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
-      maybeLogSpxPlay(
-      { price: desk.price, market_open: desk.market_open },
-      {
+    const thetaLoss = pnlPts(dir, row.entry_price, price) < 0;
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: forceExit ? thetaLoss : stopHit || thesisBreak,
+        direction: dir,
+        close: closeSnapshot(
+          forceExit ? "THETA" : stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS",
+          forceExit ? thetaLoss : stopHit || thesisBreak,
+          row.trim_done
+        ),
+      });
+      firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
+        maybeLogSpxPlay(
+        { price: desk.price, market_open: desk.market_open },
+        {
+          action: "SELL",
+          direction: dir,
+          grade: row.grade,
+          score: confluence.score,
+          confidence: confluence.confidence,
+          headline,
+          thesis,
+          factors: confluence.factors,
+          levels: {
+            entry: row.entry_price,
+            stop: row.stop,
+            target: row.target,
+            invalidation: confluence.levels.invalidation,
+          },
+        }
+      ));
+      void notifyPlayDiscord({
         action: "SELL",
         direction: dir,
-        grade: row.grade,
-        score: confluence.score,
-        confidence: confluence.confidence,
         headline,
         thesis,
-        factors: confluence.factors,
-        levels: {
-          entry: row.entry_price,
-          stop: row.stop,
-          target: row.target,
-          invalidation: confluence.levels.invalidation,
-        },
-      }
-    ));
-    void notifyPlayDiscord({
-      action: "SELL",
-      direction: dir,
-      headline,
-      thesis,
-      price: desk.price,
-      grade: row.grade,
-      score: confluence.score,
-    });
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
   } else if (targetHit) {
     action = "SELL";
     headline = "TARGET — take profit";
     thesis = `Hit target zone ${target?.toFixed(0)} from ${row.entry_price.toFixed(2)}.`;
-    await closeOpenPlay(row.id, {
-      was_loss: false,
-      direction: dir,
-      close: closeSnapshot("TARGET", false, row.trim_done),
-    });
-    firePlayTelemetry("maybeLogSpxPlay:TARGET", () =>
-      maybeLogSpxPlay(
-      { price: desk.price, market_open: desk.market_open },
-      {
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: false,
+        direction: dir,
+        close: closeSnapshot("TARGET", false, row.trim_done),
+      });
+      firePlayTelemetry("maybeLogSpxPlay:TARGET", () =>
+        maybeLogSpxPlay(
+        { price: desk.price, market_open: desk.market_open },
+        {
+          action: "SELL",
+          direction: dir,
+          grade: row.grade,
+          score: confluence.score,
+          confidence: confluence.confidence,
+          headline,
+          thesis,
+          factors: confluence.factors,
+          levels: {
+            entry: row.entry_price,
+            stop: row.stop,
+            target: row.target,
+            invalidation: confluence.levels.invalidation,
+          },
+        }
+      ));
+      void notifyPlayDiscord({
         action: "SELL",
         direction: dir,
-        grade: row.grade,
-        score: confluence.score,
-        confidence: confluence.confidence,
         headline,
         thesis,
-        factors: confluence.factors,
-        levels: {
-          entry: row.entry_price,
-          stop: row.stop,
-          target: row.target,
-          invalidation: confluence.levels.invalidation,
-        },
-      }
-    ));
-    void notifyPlayDiscord({
-      action: "SELL",
-      direction: dir,
-      headline,
-      thesis,
-      price: desk.price,
-      grade: row.grade,
-      score: confluence.score,
-    });
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
   } else if (trimZone) {
     action = "TRIM";
     headline = "TRIM — bank partial, trail runner";
     thesis = `+${mfe.toFixed(1)} pts MFE · ${Math.round(progress * 100)}% to target — trim ~50%, trail runner.`;
-    await updateOpenPlay(row.id, { trim_done: true });
-    firePlayTelemetry("maybeLogSpxPlay:TRIM", () =>
-      maybeLogSpxPlay(
-      { price: desk.price, market_open: desk.market_open },
-      {
+    if (mutate) {
+      await updateOpenPlay(row.id, { trim_done: true });
+      firePlayTelemetry("maybeLogSpxPlay:TRIM", () =>
+        maybeLogSpxPlay(
+        { price: desk.price, market_open: desk.market_open },
+        {
+          action: "TRIM",
+          direction: dir,
+          grade: row.grade,
+          score: confluence.score,
+          confidence: confluence.confidence,
+          headline,
+          thesis,
+          factors: confluence.factors,
+          levels: {
+            entry: row.entry_price,
+            stop: row.stop,
+            target: row.target,
+            invalidation: confluence.levels.invalidation,
+          },
+        }
+      ));
+      void notifyPlayDiscord({
         action: "TRIM",
         direction: dir,
-        grade: row.grade,
-        score: confluence.score,
-        confidence: confluence.confidence,
         headline,
         thesis,
-        factors: confluence.factors,
-        levels: {
-          entry: row.entry_price,
-          stop: row.stop,
-          target: row.target,
-          invalidation: confluence.levels.invalidation,
-        },
-      }
-    ));
-    void notifyPlayDiscord({
-      action: "TRIM",
-      direction: dir,
-      headline,
-      thesis,
-      price: desk.price,
-      grade: row.grade,
-      score: confluence.score,
-    });
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
   }
 
   const optionLabel = row.option_label;
@@ -490,7 +510,8 @@ async function evaluateFlatPlay(
   desk: SpxDeskPayload,
   confluence: SpxConfluence,
   technicals: PlayTechnicals,
-  confirmations: PlayConfirmationResult
+  confirmations: PlayConfirmationResult,
+  mutate = true
 ): Promise<SpxPlayPayload> {
   const session = await loadPlaySessionMeta();
   const adaptive = await loadAdaptivePlayGates();
@@ -516,7 +537,7 @@ async function evaluateFlatPlay(
   const techSum = technicalsSummary(technicals, mtf);
 
   const watchRec = await loadWatchRecord();
-  if (watchRec && direction != null && watchRec.direction !== direction) {
+  if (mutate && watchRec && direction != null && watchRec.direction !== direction) {
     await clearWatchRecord();
   }
   const activeWatch = watchRec && direction != null && watchRec.direction === direction ? watchRec : null;
@@ -531,7 +552,7 @@ async function evaluateFlatPlay(
             mtfHardPass(direction, keyLevel, technicals) ||
             Boolean(mtf?.ok && gradeRank(confluence.grade) >= 2),
           score: abs,
-          fullMinScore: playPromoteMinScore(),
+          fullMinScore: promoteMin,
           desk,
           flowOk,
         })
@@ -570,7 +591,7 @@ async function evaluateFlatPlay(
     abs >= playWatchMinScore() &&
     Boolean(mtf?.ok);
 
-  if ((nearMiss || watchBand) && direction != null && mtf) {
+  if (mutate && (nearMiss || watchBand) && direction != null && mtf) {
     await recordWatch({
       setup_key: watchSetupKey(direction),
       direction,
@@ -721,7 +742,8 @@ async function evaluateFlatPlay(
       technicals,
       confirmations,
       mtf,
-      telemetry
+      telemetry,
+      mutate
     );
   }
 
@@ -735,8 +757,39 @@ async function evaluateFlatPlay(
     ? `${promotePrefix}Buy ${optionTicket.contract_label} @ ${optionTicket.premium_range}`
     : `${promotePrefix}${claude.headline}`;
 
+  if (!mutate) {
+    return {
+      available: true,
+      phase: watchState?.active ? "WATCHING" : "SCANNING",
+      action: watchState?.active ? "WATCHING" : "SCANNING",
+      direction: dir,
+      grade: confluence.grade,
+      score: confluence.score,
+      confidence: confluence.confidence,
+      headline: watchState?.active
+        ? `${confluence.grade} ${dir === "long" ? "bullish" : "bearish"} — on watch`
+        : pickIdleMessage(),
+      thesis: entryGatesView.play_idea ?? claude.thesis,
+      idle_message: null,
+      factors: confluence.factors,
+      levels: confluence.levels,
+      gates: entryGatesView,
+      claude,
+      open_play: null,
+      confirmations,
+      technicals: techSum,
+      mtf,
+      option_ticket: optionTicket,
+      watch: watchState,
+      telemetry,
+      lotto_play: null,
+      session_phase: currentSessionPhase(desk),
+      as_of: confluence.as_of,
+    };
+  }
+
   const openedAt = new Date().toISOString();
-  const opened = await openPlay({
+  const { row: opened, created } = await openPlay({
     session_date: sessionDate,
     direction: dir,
     entry_price: desk.price,
@@ -752,55 +805,75 @@ async function evaluateFlatPlay(
     option_premium: optionTicket.premium_range,
   });
 
-  await recordBuy(dir);
-  if (promoteEligible) await consumeWatchRecord();
+  if (!created) {
+    const existing = await loadOpenPlay();
+    if (existing) {
+      return evaluateOpenPlay(
+        desk,
+        confluence,
+        existing,
+        technicals,
+        confirmations,
+        mtf,
+        telemetry,
+        mutate
+      );
+    }
+  }
 
-  firePlayTelemetry("recordPlayEntry", () =>
-    recordPlayEntry({
-    open_play_id: opened.id,
-    session_date: sessionDate,
-    direction: dir,
-    entry_path: entryPath,
-    grade: confluence.grade,
-    score: confluence.score,
-    confidence: confluence.confidence,
-    entry_price: desk.price,
-    stop: confluence.levels.stop,
-    target: confluence.levels.target,
-    headline: contractHeadline,
-    factors: confluence.factors,
-    confirmations,
-    mtf,
-    claude,
-    option_ticket: optionTicket,
-    opened_at: openedAt,
-  }));
+  if (mutate) {
+    await recordBuy(dir);
+    if (promoteEligible) await consumeWatchRecord();
+  }
 
-  void notifyPlayDiscord({
-    action: "BUY",
-    direction: dir,
-    headline: contractHeadline,
-    thesis: claude.thesis,
-    price: desk.price,
-    grade: confluence.grade,
-    score: confluence.score,
-  });
-
-  firePlayTelemetry("maybeLogSpxPlay:BUY", () =>
-    maybeLogSpxPlay(
-    { price: desk.price, market_open: desk.market_open },
-    {
-      action: "BUY",
+  if (mutate) {
+    firePlayTelemetry("recordPlayEntry", () =>
+      recordPlayEntry({
+      open_play_id: opened.id,
+      session_date: sessionDate,
       direction: dir,
+      entry_path: entryPath,
       grade: confluence.grade,
       score: confluence.score,
       confidence: confluence.confidence,
+      entry_price: desk.price,
+      stop: confluence.levels.stop,
+      target: confluence.levels.target,
       headline: contractHeadline,
-      thesis: `${optionTicket.contract_label} ${optionTicket.premium_range} · ${claude.thesis}`,
       factors: confluence.factors,
-      levels: confluence.levels,
-    }
-  ));
+      confirmations,
+      mtf,
+      claude,
+      option_ticket: optionTicket,
+      opened_at: openedAt,
+    }));
+
+    void notifyPlayDiscord({
+      action: "BUY",
+      direction: dir,
+      headline: contractHeadline,
+      thesis: claude.thesis,
+      price: desk.price,
+      grade: confluence.grade,
+      score: confluence.score,
+    });
+
+    firePlayTelemetry("maybeLogSpxPlay:BUY", () =>
+      maybeLogSpxPlay(
+      { price: desk.price, market_open: desk.market_open },
+      {
+        action: "BUY",
+        direction: dir,
+        grade: confluence.grade,
+        score: confluence.score,
+        confidence: confluence.confidence,
+        headline: contractHeadline,
+        thesis: `${optionTicket.contract_label} ${optionTicket.premium_range} · ${claude.thesis}`,
+        factors: confluence.factors,
+        levels: confluence.levels,
+      }
+    ));
+  }
 
   return {
     available: true,
@@ -850,8 +923,10 @@ async function evaluateFlatPlay(
 
 export async function evaluateSpxPlay(
   desk: SpxDeskPayload,
-  prefetchedTechnicals?: PlayTechnicals | null
+  prefetchedTechnicals?: PlayTechnicals | null,
+  options?: { mutate?: boolean }
 ): Promise<SpxPlayPayload> {
+  const mutate = options?.mutate === true;
   const premarket = isPremarketPlanningWindow();
   if (!desk.market_open && !premarket) {
     const closedConfluence = desk.price > 0 ? computeSpxConfluence(desk) : null;
@@ -934,8 +1009,8 @@ export async function evaluateSpxPlay(
 
   const open = await loadOpenPlay();
   if (open) {
-    return evaluateOpenPlay(desk, confluence, open, technicals, confirmations, mtf, telemetry);
+    return evaluateOpenPlay(desk, confluence, open, technicals, confirmations, mtf, telemetry, mutate);
   }
 
-  return evaluateFlatPlay(desk, confluence, technicals, confirmations);
+  return evaluateFlatPlay(desk, confluence, technicals, confirmations, mutate);
 }

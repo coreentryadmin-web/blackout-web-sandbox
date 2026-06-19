@@ -551,6 +551,21 @@ export async function getDatabasePoolStats(): Promise<{
   }
 }
 
+export async function tryAdvisoryLock(lockKey: string): Promise<boolean> {
+  if (!dbConfigured()) return true;
+  await ensureSchema();
+  const res = await (await getPool()).query<{ ok: boolean }>(
+    `SELECT pg_try_advisory_lock(hashtext($1::text)) AS ok`,
+    [lockKey]
+  );
+  return res.rows[0]?.ok === true;
+}
+
+export async function releaseAdvisoryLock(lockKey: string): Promise<void> {
+  if (!dbConfigured()) return;
+  await (await getPool()).query(`SELECT pg_advisory_unlock(hashtext($1::text))`, [lockKey]);
+}
+
 export async function getMeta(key: string): Promise<string | null> {
   await ensureSchema();
   const res = await (await getPool()).query<{ value: string }>(
@@ -568,6 +583,23 @@ export async function setMeta(key: string, value: string): Promise<void> {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
     [key, value]
   );
+}
+
+/** Advisory lock for SPX evaluator — single-writer across Railway replicas. */
+const SPX_EVAL_LOCK_ID = 872341;
+
+export async function tryAcquireSpxEvaluateLock(): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{ acquired: boolean }>(
+    `SELECT pg_try_advisory_lock($1) AS acquired`,
+    [SPX_EVAL_LOCK_ID]
+  );
+  return res.rows[0]?.acquired === true;
+}
+
+export async function releaseSpxEvaluateLock(): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(`SELECT pg_advisory_unlock($1)`, [SPX_EVAL_LOCK_ID]);
 }
 
 export type FlowRow = {
@@ -843,15 +875,19 @@ export async function insertOpenSpxPlay(row: {
   option_type?: string | null;
   option_label?: string | null;
   option_premium?: string | null;
-}): Promise<number> {
+}): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
-  await (await getPool()).query(
-    `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE session_date = $1::date AND status = 'open'`,
-    [row.session_date]
-  );
+  const pool = await getPool();
+  const client = await pool.connect();
   try {
-    const res = await (await getPool()).query<{ id: string }>(
-      `
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE session_date = $1::date AND status = 'open'`,
+      [row.session_date]
+    );
+    try {
+      const res = await client.query<{ id: string }>(
+        `
     INSERT INTO spx_open_play (
       session_date, direction, entry_price, entry_score, stop, target, grade, headline, opened_at, status,
       option_strike, option_type, option_label, option_premium
@@ -859,30 +895,35 @@ export async function insertOpenSpxPlay(row: {
     VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11,$12,$13)
     RETURNING id
     `,
-      [
-        row.session_date,
-        row.direction,
-        row.entry_price,
-        row.entry_score,
-        row.stop,
-        row.target,
-        row.grade,
-        row.headline,
-        row.opened_at,
-        row.option_strike ?? null,
-        row.option_type ?? null,
-        row.option_label ?? null,
-        row.option_premium ?? null,
-      ]
-    );
-    return Number(res.rows[0]?.id ?? 0);
-  } catch (err) {
-    const code = (err as { code?: string })?.code;
-    if (code === "23505") {
-      const existing = await fetchOpenSpxPlay(row.session_date);
-      if (existing) return existing.id;
+        [
+          row.session_date,
+          row.direction,
+          row.entry_price,
+          row.entry_score,
+          row.stop,
+          row.target,
+          row.grade,
+          row.headline,
+          row.opened_at,
+          row.option_strike ?? null,
+          row.option_type ?? null,
+          row.option_label ?? null,
+          row.option_premium ?? null,
+        ]
+      );
+      await client.query("COMMIT");
+      return { id: Number(res.rows[0]?.id ?? 0), created: true };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      const code = (err as { code?: string })?.code;
+      if (code === "23505") {
+        const existing = await fetchOpenSpxPlay(row.session_date);
+        if (existing) return { id: existing.id, created: false };
+      }
+      throw err;
     }
-    throw err;
+  } finally {
+    client.release();
   }
 }
 

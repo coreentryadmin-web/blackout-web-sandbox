@@ -1,0 +1,60 @@
+import "server-only";
+
+import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { PlayTechnicals } from "@/lib/spx-play-technicals";
+import {
+  releaseSpxEvaluateLock,
+  tryAcquireSpxEvaluateLock,
+  dbConfigured,
+} from "@/lib/db";
+import { evaluateSpxPlay, type SpxPlayPayload } from "@/lib/spx-play-engine";
+import {
+  recordPlayEngineTick,
+  type PlayEngineTickSource,
+} from "@/lib/play-engine-heartbeat";
+
+export type RunSpxEvaluatorResult =
+  | { ok: true; skipped: false; play: SpxPlayPayload }
+  | { ok: true; skipped: true; reason: string; play?: undefined }
+  | { ok: false; skipped?: undefined; error: string };
+
+export function isSpxEvaluatorPlayResult(
+  result: RunSpxEvaluatorResult
+): result is { ok: true; skipped: false; play: SpxPlayPayload } {
+  return result.ok === true && result.skipped === false;
+}
+
+/** Single mutation entry — acquires advisory lock, evaluates, records heartbeat. */
+export async function runSpxEvaluator(
+  desk: SpxDeskPayload,
+  technicals?: PlayTechnicals | null,
+  source: PlayEngineTickSource = "evaluate"
+): Promise<RunSpxEvaluatorResult> {
+  if (dbConfigured()) {
+    const acquired = await tryAcquireSpxEvaluateLock();
+    if (!acquired) {
+      return { ok: true, skipped: true, reason: "Evaluator lock held by another instance" };
+    }
+  }
+
+  try {
+    const play = await evaluateSpxPlay(desk, technicals, { mutate: true });
+    await recordPlayEngineTick(source);
+    return { ok: true, skipped: false, play };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  } finally {
+    if (dbConfigured()) {
+      await releaseSpxEvaluateLock();
+    }
+  }
+}
+
+/** Read-only play snapshot — no DB writes, Discord, or signal side effects. */
+export async function readSpxPlaySnapshot(
+  desk: SpxDeskPayload,
+  technicals?: PlayTechnicals | null
+): Promise<SpxPlayPayload> {
+  return evaluateSpxPlay(desk, technicals, { mutate: false });
+}

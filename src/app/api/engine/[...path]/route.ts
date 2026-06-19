@@ -21,7 +21,7 @@ function normalizeEnginePath(path: string[]): string | null {
 async function proxyGet(req: NextRequest, context: RouteContext) {
   // Gate: signed-in user (any tier) or cron secret. Closes public access —
   // this route forwards server-credentialed requests to the internal engine.
-  const gate = await authorizeCronOrTierApi(req, "free");
+  const gate = await authorizeCronOrTierApi(req, "premium");
   if (gate instanceof Response) return gate;
 
   if (!engineConfigured()) {

@@ -84,12 +84,18 @@ export async function recordWatch(rec: Omit<WatchRecord, "consumed" | "first_at"
 }
 
 export async function consumeWatchRecord(): Promise<void> {
-  if (memoryWatch.record) {
-    memoryWatch.record = { ...memoryWatch.record, consumed: true };
+  if (!dbConfigured()) {
+    const rec = memoryWatch.record;
+    if (rec && !rec.consumed) {
+      memoryWatch.record = { ...rec, consumed: true };
+    }
+    return;
   }
-  if (!dbConfigured()) return;
+
   const rec = await loadWatchRecord();
-  if (rec) await setMeta(WATCH_KEY, JSON.stringify({ ...rec, consumed: true }));
+  if (rec) {
+    await setMeta(WATCH_KEY, JSON.stringify({ ...rec, consumed: true }));
+  }
   memoryWatch.record = null;
 }
 

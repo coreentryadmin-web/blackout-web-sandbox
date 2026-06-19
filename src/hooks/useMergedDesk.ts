@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { fetchSpxDesk, fetchSpxDeskFlow, fetchSpxDeskPulse } from "@/lib/api";
-import { mergeDeskLayers, mergePulseIntoDesk } from "@/lib/spx-desk-merge";
+import { mergeDeskLayers, mergePulseIntoDesk, resetSpxDeskMergeCache } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 import { usePulseStream } from "@/hooks/usePulseStream";
 
 const PULSE_REST_MS = 1_000;
@@ -39,6 +40,7 @@ function isDeskSessionLive(pulse?: {
 }
 
 export function useMergedDesk() {
+  const sessionDateRef = useRef(todayEtYmd());
   const deskStable = useRef<SpxDeskPayload | undefined>(
     readSessionCache<SpxDeskPayload>(DESK_CACHE_KEY, DESK_CACHE_MAX_AGE_MS)
   );
@@ -62,6 +64,14 @@ export function useMergedDesk() {
   );
 
   const { pulse } = usePulseStream(pulseRest, onPulseConnection);
+
+  useEffect(() => {
+    const today = todayEtYmd();
+    if (sessionDateRef.current === today) return;
+    sessionDateRef.current = today;
+    resetSpxDeskMergeCache();
+    deskStable.current = undefined;
+  }, [pulse?.polled_at, pulseRest?.polled_at]);
 
   const sessionActive = isDeskSessionLive(pulse) || isDeskSessionLive(deskStable.current);
 

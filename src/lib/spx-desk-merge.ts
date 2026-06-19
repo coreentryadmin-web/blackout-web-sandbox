@@ -4,8 +4,8 @@
  */
 import type { SpxDeskLevel, SpxDeskPayload, SpxDeskPulse, SpxDeskFlow, SpxTapeItem } from "@/lib/providers/spx-desk";
 import type { GexWall } from "@/lib/providers/gamma-desk";
+import { todayEtYmd, distancePct } from "@/lib/providers/spx-session";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
-import { distancePct } from "@/lib/providers/spx-session";
 
 export function recalcGexWallDistances(walls: GexWall[], spot: number): GexWall[] {
   if (!walls.length || spot <= 0) return walls;
@@ -61,6 +61,8 @@ function level(
 }
 
 /** Sticky session structure — pulse gaps must not drop HOD/PDH/VWAP from the desk. */
+const STRUCTURE_TTL_MS = 30 * 60 * 1000;
+
 const lastGoodStructure: {
   hod: number | null;
   lod: number | null;
@@ -84,6 +86,38 @@ const lastGoodStructure: {
   sma50: null,
   sma200: null,
 };
+
+let lastGoodStructureSessionDate: string | null = null;
+let lastGoodStructureAt = 0;
+
+export function resetSpxDeskMergeCache(): void {
+  (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>).forEach((key) => {
+    lastGoodStructure[key] = null;
+  });
+  lastGoodStructureSessionDate = null;
+  lastGoodStructureAt = 0;
+}
+
+function ensureStructureCacheFresh(): void {
+  const today = todayEtYmd();
+  if (lastGoodStructureSessionDate != null && lastGoodStructureSessionDate !== today) {
+    resetSpxDeskMergeCache();
+    lastGoodStructureSessionDate = today;
+    return;
+  }
+  if (
+    lastGoodStructureAt > 0 &&
+    Date.now() - lastGoodStructureAt > STRUCTURE_TTL_MS
+  ) {
+    (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>).forEach((key) => {
+      lastGoodStructure[key] = null;
+    });
+    lastGoodStructureAt = 0;
+  }
+  if (lastGoodStructureSessionDate == null) {
+    lastGoodStructureSessionDate = today;
+  }
+}
 
 function seedStructureCacheFromBase(base: {
   hod: number | null;
@@ -110,8 +144,13 @@ function stickyStructureLevel(
   pulseVal: number | null | undefined,
   baseVal: number | null | undefined
 ): number | null {
+  ensureStructureCacheFresh();
   const next = pulseVal ?? baseVal ?? lastGoodStructure[key];
-  if (next != null) lastGoodStructure[key] = next;
+  if (next != null) {
+    lastGoodStructure[key] = next;
+    lastGoodStructureAt = Date.now();
+    lastGoodStructureSessionDate = todayEtYmd();
+  }
   return next;
 }
 

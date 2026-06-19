@@ -28,7 +28,7 @@ type Section = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POLYGON / MASSIVE PROBE RESULTS
-// Probed: https://api.massive.com — POLYGON_API_KEY=AUEJ8r_...
+// Probed: https://api.massive.com — POLYGON_API_KEY=<redacted>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const POLYGON_SECTIONS: Section[] = [
@@ -1206,7 +1206,7 @@ export default function ApiProbePage() {
       <section className="docs-section">
         <h2 id="polygon">Polygon / Massive — Probe results (all 200 ✓)</h2>
         <p style={{ fontSize: 13, opacity: 0.7, marginBottom: "1.5rem" }}>
-          Probed with <code>POLYGON_API_KEY=AUEJ8r_...</code> against <code>https://api.massive.com</code>.
+          Probed with <code>POLYGON_API_KEY=&lt;redacted&gt;</code> against <code>https://api.massive.com</code>.
           Every documented endpoint returned HTTP 200. Two initial 404s (Contract Overview, Single Contract Snapshot) were
           due to test data using expired/non-existent contract tickers — re-probed with a real contract returned 200.
         </p>

@@ -2,21 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { largoSessionRetentionDays, purgeStaleLargoSessions } from "@/lib/largo/largo-store";
 import { logCronRun } from "@/lib/cron-run";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export const dynamic = "force-dynamic";
-
-function cronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
-  return auth === secret || q === secret;
-}
 
 /** Weekly cleanup — delete Largo sessions inactive for 7+ days (default). */
 export async function GET(req: NextRequest) {
   const started = Date.now();
-  if (!cronAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

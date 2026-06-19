@@ -1,9 +1,12 @@
 import "server-only";
 import type { ApiCallEvent } from "@/lib/api-telemetry-types";
+import { sanitizeTelemetryBody, sanitizeTelemetryUrl } from "@/lib/api-telemetry-sanitize";
 import { dbConfigured, ensureSchema, dbQuery } from "@/lib/db";
 
 export async function persistApiTelemetryEvent(event: ApiCallEvent): Promise<void> {
   if (!dbConfigured()) return;
+  const safeUrl = sanitizeTelemetryUrl(event.request_url);
+  const safeBody = sanitizeTelemetryBody(event.request_body);
   try {
     await ensureSchema();
     await dbQuery(
@@ -30,8 +33,8 @@ export async function persistApiTelemetryEvent(event: ApiCallEvent): Promise<voi
         event.max_attempts,
         event.retry_status,
         event.phase,
-        event.request_url,
-        event.request_body,
+        safeUrl,
+        safeBody,
         event.response_snippet,
         JSON.stringify(event.headers_sent),
         event.at,

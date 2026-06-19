@@ -91,12 +91,33 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
   }
 }
 
+function maxTimestamp(a: number | null, b: number | null): number | null {
+  if (a == null) return b ?? null;
+  if (b == null) return a;
+  return Math.max(a, b);
+}
+
+function mergeSessionMeta(existing: PlaySessionMeta, incoming: PlaySessionMeta): PlaySessionMeta {
+  return {
+    last_buy_at: maxTimestamp(existing.last_buy_at, incoming.last_buy_at),
+    last_sell_at: maxTimestamp(existing.last_sell_at, incoming.last_sell_at),
+    last_stop_at: maxTimestamp(existing.last_stop_at, incoming.last_stop_at),
+    last_sell_was_loss:
+      incoming.last_sell_at != null && incoming.last_sell_at >= (existing.last_sell_at ?? 0)
+        ? incoming.last_sell_was_loss
+        : existing.last_sell_was_loss,
+    last_direction: incoming.last_direction ?? existing.last_direction,
+  };
+}
+
 export async function savePlaySessionMeta(meta: PlaySessionMeta): Promise<void> {
-  const json = JSON.stringify(meta);
+  const existing = await loadPlaySessionMeta();
+  const merged = mergeSessionMeta(existing, meta);
+  const json = JSON.stringify(merged);
   if (dbConfigured()) {
     await setMetaWithRetry(SESSION_META_KEY, json);
   }
-  Object.assign(MEMORY_SESSION, meta);
+  Object.assign(MEMORY_SESSION, merged);
 }
 
 export async function loadOpenPlay(): Promise<OpenPlayRow | null> {
@@ -109,7 +130,9 @@ export async function loadOpenPlay(): Promise<OpenPlayRow | null> {
   return row;
 }
 
-export async function openPlay(row: Omit<OpenPlayRow, "id" | "status" | "trim_done" | "mfe_pts" | "mae_pts">): Promise<OpenPlayRow> {
+export async function openPlay(
+  row: Omit<OpenPlayRow, "id" | "status" | "trim_done" | "mfe_pts" | "mae_pts">
+): Promise<{ row: OpenPlayRow; created: boolean }> {
   const full: OpenPlayRow = {
     ...row,
     id: nextMemoryPlayId(),
@@ -121,14 +144,14 @@ export async function openPlay(row: Omit<OpenPlayRow, "id" | "status" | "trim_do
 
   if (!dbConfigured()) {
     MEMORY_OPEN.row = full;
-    return full;
+    return { row: full, created: true };
   }
 
   const { insertOpenSpxPlay } = await import("@/lib/db");
-  const id = await insertOpenSpxPlay(full);
+  const { id, created } = await insertOpenSpxPlay(full);
   const persisted = { ...full, id };
   MEMORY_OPEN.row = persisted;
-  return persisted;
+  return { row: persisted, created };
 }
 
 export async function updateOpenPlay(

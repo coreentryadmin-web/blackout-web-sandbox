@@ -4,17 +4,10 @@ import { requireDatabaseInProduction } from "@/lib/db";
 import { resolvePendingNighthawkOutcomes } from "@/lib/nighthawk/play-outcomes";
 import { isWeekdayEt, etNowParts } from "@/lib/nighthawk/session";
 import { logCronRun } from "@/lib/cron-run";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
-
-function cronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
-  return auth === secret || q === secret;
-}
 
 function inOutcomeWindow(force: boolean): boolean {
   if (force) return true;
@@ -30,7 +23,7 @@ function inOutcomeWindow(force: boolean): boolean {
 
 export async function GET(req: NextRequest) {
   const started = Date.now();
-  if (!cronAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

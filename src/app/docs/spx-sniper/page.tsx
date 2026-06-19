@@ -27,8 +27,8 @@ export default async function SpxSniperPlaybookPage() {
               Full system analysis →
             </Link>
             <a
-              href="/docs/SPX-Sniper-Playbook.docx"
-              download
+              href="/api/docs/spx-playbook"
+              download="SPX-Sniper-Playbook.docx"
               className="docs-download-link"
             >
               Download offline Word doc (.docx)

@@ -37,30 +37,58 @@ async function safeTool(name: string, input: Record<string, unknown> = {}): Prom
 
 /** Parallel capture of live API data — fed to Claude before it writes. */
 export async function captureLargoLiveFeed(intent: LargoQuestionIntent): Promise<LargoLiveFeed> {
-  const ticker = intent.tickerHint ?? "SPX";
+  const scopeTicker = intent.tickerHint ?? (intent.needsSpxDesk ? "SPX" : null);
+  const analysisTicker = scopeTicker ?? "SPX";
 
   const jobs: Array<{ key: FeedKey; promise: Promise<unknown> }> = [
     { key: "market", promise: safeTool("get_market_context") },
-    { key: "calendar", promise: safeTool("get_economic_calendar", { days_ahead: 10 }) },
-    { key: "spx_structure", promise: safeTool("get_spx_structure") },
-    { key: "technicals", promise: safeTool("get_technicals", { ticker }) },
-    { key: "news", promise: safeTool("get_news", { ticker }) },
-    { key: "flow", promise: safeTool("get_options_flow", { ticker }) },
-    { key: "flow_tape", promise: safeTool("get_flow_tape", { limit: 40 }) },
-    { key: "dark_pool", promise: safeTool("get_dark_pool", { ticker }) },
-    { key: "vol", promise: safeTool("get_volatility_regime", { ticker }) },
-    { key: "nighthawk", promise: safeTool("get_nighthawk_edition") },
   ];
 
-  if (intent.needsPlayState || intent.needsSpxDesk || ticker === "SPX") {
+  if (intent.needsNews) {
+    jobs.push({ key: "calendar", promise: safeTool("get_economic_calendar", { days_ahead: 10 }) });
+  }
+
+  if (intent.needsSpxDesk || scopeTicker === "SPX") {
+    jobs.push({ key: "spx_structure", promise: safeTool("get_spx_structure") });
+  }
+
+  if (scopeTicker) {
+    jobs.push(
+      { key: "technicals", promise: safeTool("get_technicals", { ticker: analysisTicker }) },
+      { key: "flow", promise: safeTool("get_options_flow", { ticker: analysisTicker }) },
+      { key: "dark_pool", promise: safeTool("get_dark_pool", { ticker: analysisTicker }) },
+      { key: "vol", promise: safeTool("get_volatility_regime", { ticker: analysisTicker }) }
+    );
+  }
+
+  if (intent.needsFlow) {
+    jobs.push(
+      { key: "flow_tape", promise: safeTool("get_flow_tape", { limit: 40 }) },
+      { key: "greek_flow", promise: safeTool("get_greek_flow", { ticker: analysisTicker }) }
+    );
+  }
+
+  if (intent.needsNews && scopeTicker) {
+    jobs.push({ key: "news", promise: safeTool("get_news", { ticker: analysisTicker }) });
+  }
+
+  if (intent.needsPlayState || intent.needsSpxDesk) {
     jobs.push(
       { key: "play", promise: safeTool("get_spx_play") },
-      { key: "open_plays", promise: safeTool("get_open_plays") },
-      { key: "greek_flow", promise: safeTool("get_greek_flow", { ticker: "SPX" }) },
+      { key: "open_plays", promise: safeTool("get_open_plays") }
+    );
+  }
+
+  if (intent.needsSpxDesk) {
+    jobs.push(
       { key: "breadth", promise: safeTool("get_market_breadth") },
       { key: "group_greek_flow", promise: safeTool("get_group_greek_flow", { group: "mag7" }) },
       { key: "macro_indicators", promise: safeTool("get_macro_indicator", { indicator: "CPI" }) }
     );
+  }
+
+  if (intent.needsFlow || intent.needsNews) {
+    jobs.push({ key: "nighthawk", promise: safeTool("get_nighthawk_edition") });
   }
 
   const settled = await Promise.all(jobs.map(async (j) => ({ key: j.key, data: await j.promise })));

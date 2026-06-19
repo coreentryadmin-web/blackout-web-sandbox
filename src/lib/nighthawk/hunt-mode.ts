@@ -20,6 +20,12 @@ export type NormalizedHuntFilters = {
   min_premium: number | null;
   /** Day mode: user max DTE (0 or 1). */
   max_dte: number | null;
+  /** Swing/leap: minimum contract DTE from flow. */
+  dte_min: number | null;
+  /** Swing/leap: maximum contract DTE from flow. */
+  dte_max: number | null;
+  /** Leap mode: require news/macro/catalyst signal on dossier. */
+  require_catalyst: boolean;
   /** Day mode: require SPX desk alignment. */
   spx_context: boolean;
 };
@@ -58,6 +64,30 @@ export function normalizeHuntFilters(
       ? maxDteRaw
       : null;
 
+  const dteMinRaw = Number(filters.dte_min ?? filters.min_dte);
+  const dteMaxRaw = Number(filters.dte_max);
+  const dte_min =
+    (mode === "swing" || mode === "leap") && Number.isFinite(dteMinRaw) && dteMinRaw >= 0
+      ? dteMinRaw
+      : mode === "leap"
+        ? 30
+        : mode === "swing"
+          ? 2
+          : null;
+  const dte_max =
+    (mode === "swing" || mode === "leap") && Number.isFinite(dteMaxRaw) && dteMaxRaw > 0
+      ? dteMaxRaw
+      : mode === "leap"
+        ? weights.maxDte
+        : mode === "swing"
+          ? weights.maxDte
+          : null;
+
+  const require_catalyst =
+    mode === "leap" &&
+    filters.require_catalyst !== false &&
+    String(filters.require_catalyst) !== "false";
+
   const spx_context =
     mode === "day" ? filters.spx_context !== false && String(filters.spx_context) !== "false" : false;
 
@@ -73,6 +103,9 @@ export function normalizeHuntFilters(
     max_iv_rank: Number.isFinite(Number(filters.max_iv_rank)) ? Number(filters.max_iv_rank) : null,
     min_premium: parsedMinPremium ?? weights.minLiquidity,
     max_dte,
+    dte_min,
+    dte_max,
+    require_catalyst,
     spx_context,
   };
 }

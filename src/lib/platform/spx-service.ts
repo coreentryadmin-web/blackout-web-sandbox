@@ -7,7 +7,7 @@ import {
 } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
-import { evaluateSpxPlay } from "@/lib/spx-play-engine";
+import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
@@ -76,7 +76,7 @@ export async function getSpxPlayState() {
     hod: merged.hod,
     lod: merged.lod,
   });
-  return evaluateSpxPlay(merged, technicals);
+  return readSpxPlaySnapshot(merged, technicals);
 }
 
 export async function getSpxOpenPlay() {

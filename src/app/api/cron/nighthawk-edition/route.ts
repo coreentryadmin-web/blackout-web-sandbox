@@ -3,17 +3,10 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, fetchNighthawkJob } from "@/lib/db";
 import { buildEveningEdition } from "@/lib/nighthawk/edition-builder";
 import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-
-function cronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
-  return auth === secret || q === secret;
-}
 
 function editionEnabled(): boolean {
   const flag = process.env.NIGHTHAWK_EDITION_ENABLED?.trim();
@@ -33,7 +26,7 @@ function inEditionWindow(force: boolean): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!cronAuthorized(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

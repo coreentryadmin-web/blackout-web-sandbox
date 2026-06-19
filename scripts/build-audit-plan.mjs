@@ -9,11 +9,13 @@ const files = execSync("git ls-files", { cwd: root, encoding: "utf8" })
   .filter(Boolean)
   .sort();
 
+/** Audit order: highest-stakes first (per forensic audit workflow). */
 const batches = [
   {
     id: "01",
-    name: "Payments, Auth & Membership",
-    desc: "Clerk auth, Whop webhooks/checkout, VIP tiers, membership sync, session cache, middleware gating",
+    slug: "Payments-Auth",
+    name: "Payments & Auth",
+    desc: "Clerk sessions, Whop webhooks/checkout, VIP tiers, membership sync, middleware gating, session cache",
     patterns: [
       "src/middleware.ts",
       "src/lib/auth-access.ts",
@@ -32,8 +34,9 @@ const batches = [
   },
   {
     id: "02",
-    name: "Market Data Providers & WebSockets",
-    desc: "Polygon, Unusual Whales, flow ingest, GEX/gamma, SPX provider adapters, WS stores, rate limits, provider probe scripts",
+    slug: "Market-Data-Providers",
+    name: "Market Data Providers",
+    desc: "Polygon, Unusual Whales, WebSocket stores, flow ingest, GEX/gamma, rate limits, provider probes (Finnhub removed)",
     patterns: [
       "src/lib/providers/config.ts",
       "src/lib/providers/flow-ingest.ts",
@@ -59,6 +62,9 @@ const batches = [
       "src/lib/group-greek-flow-summary.ts",
       "src/lib/market-internals.ts",
       "src/lib/vix-term-utils.ts",
+      "src/lib/flow-data-freshness.ts",
+      "src/lib/flow-events.ts",
+      "src/lib/flow-persist.ts",
       "scripts/probe-polygon.mjs",
       "scripts/probe-polygon-ws.mjs",
       "scripts/probe-uw-multiplex.mjs",
@@ -68,14 +74,16 @@ const batches = [
   },
   {
     id: "03",
+    slug: "API-Routes",
     name: "API Routes",
-    desc: "All HTTP handlers under src/app/api (admin, cron, market, engine, webhooks, membership)",
+    desc: "All HTTP handlers under src/app/api — admin, cron, market, engine, webhooks, membership",
     patterns: ["src/app/api/**"],
   },
   {
     id: "04",
-    name: "Night Hawk Engine & UI",
-    desc: "Edition builder, scoring, outcomes, dossier pipeline, Night Hawk pages/components/embeds, worker script",
+    slug: "Night-Hawk",
+    name: "Night Hawk",
+    desc: "Edition builder, scoring, outcomes, agents, dossier pipeline, Night Hawk pages/components/embeds, worker",
     patterns: [
       "src/lib/nighthawk/**",
       "src/lib/platform/nighthawk-service.ts",
@@ -90,8 +98,9 @@ const batches = [
   },
   {
     id: "05",
-    name: "Largo AI & Terminal",
-    desc: "Largo store, tool defs, intent routing, terminal UI, desk Largo panels",
+    slug: "Largo-AI",
+    name: "Largo AI",
+    desc: "Largo store, tool defs, intent routing, Anthropic provider, Largo desk/terminal UI",
     patterns: [
       "src/lib/providers/anthropic.ts",
       "src/lib/largo/**",
@@ -105,15 +114,37 @@ const batches = [
   },
   {
     id: "06",
-    name: "SPX Desk, Play Engine & Lotto",
-    desc: "SPX play engine, lotto, desk merge/live loaders, signals, commentary, SPX hooks and desk UI",
+    slug: "SPX-Desk-Admin",
+    name: "SPX Desk + Admin",
+    desc: "SPX play engine, lotto, desk merge/live, signals, SPX hooks/UI, admin dashboards, telemetry, cron ops",
     patterns: [
       "src/lib/spx-**",
       "src/lib/play-engine-health.ts",
       "src/lib/play-engine-heartbeat.ts",
       "src/lib/engine.ts",
+      "src/lib/admin-**",
+      "src/lib/api-telemetry.ts",
+      "src/lib/api-telemetry-persist.ts",
+      "src/lib/api-telemetry-redis.ts",
+      "src/lib/api-telemetry-types.ts",
+      "src/lib/api-tracked-fetch.ts",
+      "src/lib/cron-registry.ts",
+      "src/lib/cron-run.ts",
+      "src/lib/db.ts",
+      "src/lib/redis-pubsub.ts",
+      "src/lib/server-cache.ts",
+      "src/lib/shared-cache.ts",
+      "src/lib/market-api-auth.ts",
+      "src/lib/market-health.ts",
+      "src/lib/api.ts",
+      "src/lib/platform/flow-service.ts",
+      "src/lib/platform/index.ts",
+      "src/lib/platform/spx-service.ts",
+      "src/lib/platform/types.ts",
       "src/hooks/**",
       "src/components/SpxDashboard.tsx",
+      "src/components/admin/**",
+      "src/app/admin/page.tsx",
       "src/components/desk/BenzingaNewsRail.tsx",
       "src/components/desk/BenzingaNewsTicker.tsx",
       "src/components/desk/DeskHeroTicker.tsx",
@@ -132,51 +163,15 @@ const batches = [
       "src/components/desk/SpxStructureBlocks.tsx",
       "src/components/desk/SpxTechnicalsPanel.tsx",
       "src/components/desk/SpxTradeAlerts.tsx",
+      "scripts/analyze-api-usage.mjs",
+      "scripts/e2e-spx-probe.mjs",
     ],
   },
   {
     id: "07",
-    name: "Admin, Telemetry & Cron Ops",
-    desc: "Admin access/dashboards, API telemetry, incidents, cron health registry, SPX admin surfaces",
-    patterns: [
-      "src/lib/admin-**",
-      "src/lib/api-telemetry.ts",
-      "src/lib/api-telemetry-persist.ts",
-      "src/lib/api-telemetry-redis.ts",
-      "src/lib/api-telemetry-types.ts",
-      "src/lib/api-tracked-fetch.ts",
-      "src/lib/cron-registry.ts",
-      "src/lib/cron-run.ts",
-      "src/app/admin/page.tsx",
-      "src/components/admin/**",
-      "scripts/analyze-api-usage.mjs",
-    ],
-  },
-  {
-    id: "08",
-    name: "Data Layer, Cache & Platform Services",
-    desc: "PostgreSQL schema/queries, Redis pubsub, shared caches, platform service layer, flow pipeline",
-    patterns: [
-      "src/lib/db.ts",
-      "src/lib/redis-pubsub.ts",
-      "src/lib/server-cache.ts",
-      "src/lib/shared-cache.ts",
-      "src/lib/flow-data-freshness.ts",
-      "src/lib/flow-events.ts",
-      "src/lib/flow-persist.ts",
-      "src/lib/market-api-auth.ts",
-      "src/lib/market-health.ts",
-      "src/lib/api.ts",
-      "src/lib/platform/flow-service.ts",
-      "src/lib/platform/index.ts",
-      "src/lib/platform/spx-service.ts",
-      "src/lib/platform/types.ts",
-    ],
-  },
-  {
-    id: "09",
-    name: "Frontend — App Shell, Landing & General Pages",
-    desc: "Root layout, landing/marketing, nav, dashboard/terminal/flows/heatmap pages, platform shell, shared UI chrome",
+    slug: "Frontend-Config",
+    name: "Frontend + Config/Deploy",
+    desc: "App shell, landing/marketing, general pages, embeds, internal docs site, build/deploy config, public assets",
     patterns: [
       "src/app/layout.tsx",
       "src/app/page.tsx",
@@ -187,6 +182,7 @@ const batches = [
       "src/app/heatmap/page.tsx",
       "src/app/apple-icon.png",
       "src/app/icon.png",
+      "src/app/docs/**",
       "src/components/AuthBackground.tsx",
       "src/components/BrandImage.tsx",
       "src/components/CustomCursor.tsx",
@@ -199,16 +195,7 @@ const batches = [
       "src/components/ScrollProgressBar.tsx",
       "src/components/landing/**",
       "src/components/platform/**",
-      "src/lib/images.ts",
-      "src/lib/site.ts",
-      "src/lib/platform-meta-keys.ts",
-    ],
-  },
-  {
-    id: "10",
-    name: "Frontend — Embeds & Market Widgets",
-    desc: "TradingView embeds, live flow tape, market pulse, flow volume charts (shared embed layer)",
-    patterns: [
+      "src/components/docs/**",
       "src/components/embeds/DashboardEmbeds.tsx",
       "src/components/embeds/EmbedFrame.tsx",
       "src/components/embeds/FlowsEmbeds.tsx",
@@ -217,15 +204,9 @@ const batches = [
       "src/components/embeds/LiveFlowTape.tsx",
       "src/components/embeds/LiveMarketPulse.tsx",
       "src/components/embeds/TradingViewWidget.tsx",
-    ],
-  },
-  {
-    id: "11",
-    name: "Internal Docs Site",
-    desc: "In-app documentation pages for Polygon, UW, SPX analysis, API probes, provider reference catalogs",
-    patterns: [
-      "src/app/docs/**",
-      "src/components/docs/**",
+      "src/lib/images.ts",
+      "src/lib/site.ts",
+      "src/lib/platform-meta-keys.ts",
       "src/lib/polygon-docs-**",
       "src/lib/uw-docs-catalog.ts",
       "src/lib/uw-docs-nav.ts",
@@ -238,13 +219,6 @@ const batches = [
       "scripts/summarize-docs-usage.mjs",
       "scripts/generate-spx-playbook-docx.mjs",
       "scripts/uw-docs-index.md",
-    ],
-  },
-  {
-    id: "12",
-    name: "Config, Deploy, Scripts & Static Assets",
-    desc: "Build/deploy config, root tooling scripts, public assets, project metadata",
-    patterns: [
       ".gitignore",
       "CURSOR_IMPL.md",
       "next.config.mjs",
@@ -257,8 +231,9 @@ const batches = [
       "railway.toml",
       "public/**",
       "scripts/generate-icons.cjs",
-      "scripts/e2e-spx-probe.mjs",
       "scripts/generate-uw-docs-catalog.mjs",
+      "scripts/build-audit-plan.mjs",
+      "audits/AUDIT-PLAN.md",
     ],
   },
 ];
@@ -306,18 +281,26 @@ if (unassigned.length) {
   process.exit(1);
 }
 
+const today = new Date().toISOString().slice(0, 10);
 const lines = [];
 lines.push("# Blackout Web — End-to-End Forensic Audit Plan");
 lines.push("");
 lines.push("> **Scope:** 100% of tracked repo files (`git ls-files`). Each file belongs to exactly one batch.");
-lines.push(`> **Generated:** ${new Date().toISOString().slice(0, 10)} · **Total files:** ${files.length}`);
+lines.push(`> **Generated:** ${today} · **Total files:** ${files.length}`);
+lines.push("> **Repo:** `C:\\Users\\raidu\\blackout-web`");
 lines.push("");
-lines.push("## How to use");
+lines.push("## Workflow");
 lines.push("");
-lines.push("1. Work batches in order (or parallelize independent batches).");
-lines.push("2. Check off each batch when its forensic audit is complete.");
-lines.push("3. Record findings in `audits/batch-XX-findings.md` (create per batch as you go).");
-lines.push("4. Cross-batch dependencies (e.g. API routes calling lib code) — note in findings, audit the implementation in the owning batch.");
+lines.push("1. Audit batches **in order** (highest-stakes first).");
+lines.push("2. Per batch: **Step 2** (full read audit) → write `audits/AUDIT-<slug>.md` → **Step 3** (edge-case second pass, append to same file).");
+lines.push("3. Mark batch checkbox done in this file when Step 2 + Step 3 complete.");
+lines.push("4. After all batches: **Step 4** completeness check → `audits/AUDIT-SUMMARY.md`.");
+lines.push("");
+lines.push("## Cross-batch rules");
+lines.push("");
+lines.push("- **API Routes (03):** audit HTTP contract (auth, params, errors, caching). Business logic lives in the owning lib/UI batch.");
+lines.push("- **db.ts (06):** schema/queries audited in SPX Desk + Admin; consumers in other batches note integration bugs only.");
+lines.push("- **Finnhub:** removed from codebase — no files to audit.");
 lines.push("");
 lines.push("## Coverage confirmation");
 lines.push("");
@@ -325,19 +308,27 @@ lines.push(`- [x] All ${files.length} tracked files assigned`);
 lines.push("- [x] No duplicate assignments");
 lines.push("- [x] No unclassified leftovers");
 lines.push("");
-lines.push("## Batch checklist");
+lines.push("## Batch checklist (audit order)");
 lines.push("");
 
 for (const batch of batches) {
-  lines.push(`- [ ] **Batch ${batch.id} — ${batch.name}** (${batch.files.length} files)`);
+  lines.push(
+    `- [ ] **Batch ${batch.id} — ${batch.name}** → \`audits/AUDIT-${batch.slug}.md\` (${batch.files.length} files)`
+  );
 }
 
+lines.push("");
+lines.push("## Leftover / unclassified files");
+lines.push("");
+lines.push("**None.** All tracked files assigned above.");
 lines.push("");
 lines.push("---");
 lines.push("");
 
 for (const batch of batches) {
   lines.push(`## Batch ${batch.id} — ${batch.name}`);
+  lines.push("");
+  lines.push(`**Output file:** \`audits/AUDIT-${batch.slug}.md\``);
   lines.push("");
   lines.push(`**Focus:** ${batch.desc}`);
   lines.push("");
@@ -356,4 +347,4 @@ const outPath = join(root, "audits", "AUDIT-PLAN.md");
 writeFileSync(outPath, lines.join("\n"), "utf8");
 
 console.log(`Wrote ${outPath}`);
-console.log(`Total: ${files.length}, Assigned: ${assigned.size}, Batches: ${batches.length}`);
+console.log(`Total: ${files.length}, Batches: ${batches.length}`);

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { evaluateSpxPlay } from "@/lib/spx-play-engine";
+import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       hod: merged.hod,
       lod: merged.lod,
     });
-    const play = await evaluateSpxPlay(merged, technicals);
+    const play = await readSpxPlaySnapshot(merged, technicals);
 
     return NextResponse.json(play, {
       headers: {

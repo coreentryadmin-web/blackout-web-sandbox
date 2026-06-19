@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFlowIngest } from "@/lib/providers/flow-ingest";
 import { logCronRun } from "@/lib/cron-run";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export async function GET(req: NextRequest) {
   const started = Date.now();
-  const secret = process.env.CRON_SECRET?.trim();
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const q = req.nextUrl.searchParams.get("secret");
 
-  if (!secret || (auth !== secret && q !== secret)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

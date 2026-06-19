@@ -2,7 +2,8 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { fetchSpxAdminAnalytics, type SpxAdminAnalytics } from "@/lib/admin-spx-analytics";
 import { buildSpxConfigSnapshot } from "@/lib/admin-spx-config-snapshot";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { evaluateSpxPlay, type SpxPlayPayload } from "@/lib/spx-play-engine";
+import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
+import { type SpxPlayPayload } from "@/lib/spx-play-engine";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { loadWatchRecord } from "@/lib/spx-play-watch";
@@ -15,7 +16,6 @@ import { buildSpxAdminIssues, type SpxAdminIssuesPayload } from "@/lib/admin-spx
 import { buildSpxTerminalFeed, type SpxTerminalPayload } from "@/lib/admin-spx-terminal";
 import { syncAdminIncidents, listOpenAdminIncidents, type AdminIncidentRow } from "@/lib/admin-incidents";
 import { getAdminRouteErrors } from "@/lib/admin-route-errors";
-import { recordPlayEngineTick } from "@/lib/play-engine-heartbeat";
 
 export type DeskIntelSection = {
   polled_at: string | null;
@@ -173,11 +173,14 @@ export async function fetchSpxAdminDashboard(options?: {
       hod: merged.hod,
       lod: merged.lod,
     });
-    [play, lottoToday] = await Promise.all([
-      evaluateSpxPlay(merged),
+    const [evalResult, lottoTodayResult] = await Promise.all([
+      runSpxEvaluator(merged, technicals, "admin_live"),
       evaluateSpxLotto(merged, technicals),
     ]);
-    recordPlayEngineTick("admin_live");
+    lottoToday = lottoTodayResult;
+    if (isSpxEvaluatorPlayResult(evalResult)) {
+      play = evalResult.play;
+    }
   }
 
   const issues = await buildSpxAdminIssues({

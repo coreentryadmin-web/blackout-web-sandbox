@@ -838,18 +838,11 @@ export function AdminSpxDashboard() {
   }, [load]);
 
   useEffect(() => {
-    const live = section === "live";
     const terminal = section === "terminal";
-    const ms = live ? 10_000 : terminal ? 5_000 : 30_000;
-    const id = setInterval(() => load(live), ms);
+    const ms = terminal ? 5_000 : 30_000;
+    const id = setInterval(() => load(false), ms);
     return () => clearInterval(id);
   }, [load, section]);
-
-  useEffect(() => {
-    if (section === "live" && data && !data.live_engine) {
-      load(true);
-    }
-  }, [section, data, load]);
 
   const stats = data?.analytics;
   const wr = stats?.outcome_stats.overall.win_rate ?? 0;
