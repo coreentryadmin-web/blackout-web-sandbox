@@ -19,9 +19,9 @@
 
 ## Executive conclusion
 
-Round 2 **challenges the prior Phase 3 claim of 0 OPEN**. P2/P3 fixes successfully closed the **critical SPX play path** (C1/C2, evaluator lock, DB dedup constraints, stale UI, auth hardening, deploy liveness). However, **17 original findings remain OPEN or PARTIAL**, plus **5 NEW bugs** — most notably a **HIGH-severity Swing Hawk `max_entry_premium` unit mismatch** and a **lotto side-effecting GET** without write lock.
+Round 2 **challenges the prior Phase 3 claim of 0 OPEN**. P2/P3 fixes closed the **critical SPX play path** (C1/C2, evaluator lock, DB dedup, stale UI, auth hardening, deploy liveness, halt fail-closed, NH premium/DTE). Residual: **12 PARTIAL**, **17 OPEN** (mostly LOW), **2 NEW** (lotto GET lock, playbook docx).
 
-No CRITICAL findings remain open. **2 HIGH** issues are new or partial regressions.
+No CRITICAL findings remain open. One **HIGH** lotto GET side-effect remains.
 
 ---
 
@@ -68,15 +68,15 @@ No CRITICAL findings remain open. **2 HIGH** issues are new or partial regressio
 
 ## Top 5 remaining issues (priority order)
 
-1. **NH-NEW-01 (HIGH)** — `max_entry_premium` compares UW block premium ($50K+) to per-contract cap ($5–15) in `hunt-builder.ts:88-91`. Default Swing Hawk filters likely return zero candidates.
+1. **R2-NEW-1 / H1 partial (HIGH)** — `GET /api/market/lotto/today` calls `evaluateSpxLotto` without advisory lock.
 
-2. **R2-NEW-1 / H1 partial (HIGH)** — `GET /api/market/lotto/today` calls `evaluateSpxLotto` (`lotto/today/route.ts:34`) without advisory lock. Play engine lock does not cover lotto writes.
+2. **F2 partial (MEDIUM)** — Playbook route reads `private/docs/SPX-Sniper-Playbook.docx`; artifact may be missing from repo.
 
-3. **NH-NEW-02 / NH-M1 partial (MEDIUM)** — User `filters.dte_max` not passed to Claude edition generation; post-Claude DTE enforcement missing for swing/leap.
+3. **B06-H5 / M17 partial (MEDIUM)** — Session meta version merge not atomic; lotto races without lock.
 
-4. **F2 partial (MEDIUM)** — Playbook gated route reads `private/docs/SPX-Sniper-Playbook.docx` but artifact absent from repo/build (`api/docs/spx-playbook/route.ts:7-11`).
+4. **Largo S3-05–S3-08 (LOW)** — Desk reload redundancy, orphan user turns, tool_start UI gaps.
 
-5. **B2-02 partial / B2-NEW-01 (MEDIUM)** — Night Hawk dossier uses fail-open `hasActiveTradingHalt` (`dossier.ts:266`) while SPX play gates fail-closed via `shouldBlockForTradingHalt`.
+5. **F7 (LOW)** — `tsconfig.json` `"strict": false` (intentional incremental path).
 
 ---
 
