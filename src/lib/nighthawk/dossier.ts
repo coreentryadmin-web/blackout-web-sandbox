@@ -24,7 +24,7 @@ import { fetchPositioningSummary, type PositioningSummary } from "./positioning"
 import { buildTechnicalCard, type TechnicalCard } from "./technicals";
 import type { ScoredCandidate, NightHawkRegimeContext } from "./scorer";
 import { scoreCandidate } from "./scorer";
-import { hasActiveTradingHalt } from "@/lib/ws/uw-socket";
+import { shouldBlockForTradingHalt } from "@/lib/ws/uw-socket";
 import { DOSSIER_BATCH_SIZE, DOSSIER_FETCH_TIMEOUT_MS, DOSSIER_INTER_BATCH_MS } from "./constants";
 import { dossierFetch } from "./fetch-timeout";
 import { parseLatestRealizedVol, parseLatestRiskReversalSkew } from "./vol-metrics";
@@ -263,7 +263,7 @@ export async function fetchTickerDossier(
   const ivTerm = ivTermRaw ?? [];
   const realizedVol = parseLatestRealizedVol((realizedVolRaw ?? []) as Record<string, unknown>[]);
   const riskReversalSkew = parseLatestRiskReversalSkew((skewRaw ?? []) as Record<string, unknown>[]);
-  const tradingHalt = hasActiveTradingHalt([sym]);
+  const tradingHalt = shouldBlockForTradingHalt([sym]).block;
 
   const dossier: TickerDossier = {
     ticker: sym,

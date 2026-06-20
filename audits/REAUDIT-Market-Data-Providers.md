@@ -23,7 +23,7 @@
 | **P6** | — | ✅ **FIXED** | `spx-desk.ts:934-946` — `fetchPriorDayCloses` wired into breadth |
 | **P7** | — | ✅ **FIXED** | `polygon.ts:143-146` — `closed_near_high` / `closed_near_low` |
 | **B2-01** | MEDIUM | ✅ **FIXED** | Same prior-close breadth wiring as P6 |
-| **B2-02** | MEDIUM | ⚠️ **PARTIAL** | `spx-play-gates.ts:110-115` fail-closed via `shouldBlockForTradingHalt`; `dossier.ts:266` still uses `hasActiveTradingHalt` (fail-open when channel stale) |
+| **B2-02** | MEDIUM | ✅ **FIXED** | `spx-play-gates.ts:110-115` + `dossier.ts:266` — `shouldBlockForTradingHalt` fail-closed when channel stale |
 | **B2-03** | MEDIUM | ✅ **FIXED** | `spx-desk.ts:758-759,794` — `ensureDataSockets()` + `mergeWsIndexSnapshots` |
 | **S3-01** | LOW | ✅ **FIXED** | `spx-session.ts:83` — RTH `< 16*60` |
 | **S3-02** | LOW | ✅ **FIXED** | `unusual-whales.ts:253,384-393` — 30m max stale |
@@ -33,19 +33,11 @@
 
 ---
 
-## NEW findings
-
-| ID | Severity | Status | Evidence |
-|----|----------|--------|----------|
-| **B2-NEW-01** | MEDIUM | 🆕 **NEW** | `dossier.ts:266` → `scorer.ts:396-411` — Night Hawk halt check fail-open when UW `trading_halts` channel stale (residual B2-02) |
-
----
-
 ## Summary counts
 
 | Status | Count |
 |--------|------:|
-| ✅ FIXED | 11 |
-| ⚠️ PARTIAL | 1 |
+| ✅ FIXED | 12 |
+| ⚠️ PARTIAL | 0 |
 | ❌ OPEN | 0 |
-| 🆕 NEW | 1 |
+| 🆕 NEW | 0 |
