@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireTierApi } from "@/lib/market-api-auth";
-import { largoConfigured, runLargoQuery, runLargoQueryStream } from "@/lib/largo-terminal";
+import { largoConfigured, runLargoQuery, runLargoQueryStream, isSseClientDisconnect, SseClientDisconnected } from "@/lib/largo-terminal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -47,17 +47,47 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (payload: unknown) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        let closed = false;
+        const markClosed = () => {
+          closed = true;
         };
+        req.signal.addEventListener("abort", markClosed, { once: true });
+
+        const send = (payload: unknown): boolean => {
+          if (closed || req.signal.aborted) {
+            closed = true;
+            return false;
+          }
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            return true;
+          } catch (err) {
+            closed = true;
+            if (!isSseClientDisconnect(err)) {
+              console.warn("[market/largo/query stream] enqueue failed:", err);
+            }
+            return false;
+          }
+        };
+
         try {
-          await runLargoQueryStream(question, resolvedSessionId, authResult.userId, send);
+          await runLargoQueryStream(question, resolvedSessionId, authResult.userId, (event) => {
+            if (!send(event)) {
+              closed = true;
+              throw new SseClientDisconnected();
+            }
+          });
         } catch (error) {
+          if (isSseClientDisconnect(error)) return;
           console.error("[market/largo/query stream]", error);
-          const message = error instanceof Error ? error.message : "Largo query failed";
-          send({ type: "error", message });
+          send({ type: "error", message: error instanceof Error ? error.message : "Largo query failed" });
         } finally {
-          controller.close();
+          closed = true;
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
         }
       },
     });

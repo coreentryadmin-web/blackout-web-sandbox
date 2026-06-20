@@ -25,6 +25,7 @@ import { buildTechnicalCard, type TechnicalCard } from "./technicals";
 import type { ScoredCandidate, NightHawkRegimeContext } from "./scorer";
 import { scoreCandidate } from "./scorer";
 import { shouldBlockForTradingHalt } from "@/lib/ws/uw-socket";
+import { runUwSequential } from "@/lib/providers/uw-rate-limiter";
 import { DOSSIER_BATCH_SIZE, DOSSIER_FETCH_TIMEOUT_MS, DOSSIER_INTER_BATCH_MS } from "./constants";
 import { dossierFetch } from "./fetch-timeout";
 import { parseLatestRealizedVol, parseLatestRiskReversalSkew } from "./vol-metrics";
@@ -180,36 +181,21 @@ export async function fetchTickerDossier(
 
   const [
     flowRows,
-    darkPool,
-    oiChange,
     ivRankRaw,
-    ivTermRaw,
-    realizedVolRaw,
-    skewRaw,
-    flowExpiry,
     positioning,
     tech,
     polyNews,
     bzNews,
-    insider,
     profile,
     shortSi,
     flowStreak,
     congress,
-    congressUnusual,
-    institutional,
     predictionsSignal,
     screenerConfirmed,
     fundamentalRatios,
   ] = await Promise.all([
     dossierFetch(() => fetchMarketFlowAlertRows({ ticker: sym, limit: 80, min_premium: 50_000 }), [], t),
-    uw ? dossierFetch(() => fetchUwDarkPool(sym), null, t) : Promise.resolve(null),
-    uw ? dossierFetch(() => fetchUwOiChange(sym), [], t) : Promise.resolve([]),
     dossierFetch(() => resolveIvRank(sym), null, t),
-    uw ? dossierFetch(() => fetchUwIvTermStructure(sym), [], t) : Promise.resolve([]),
-    uw ? dossierFetch(() => fetchUwRealizedVol(sym), [], t) : Promise.resolve([]),
-    uw ? dossierFetch(() => fetchUwRiskReversalSkew(sym), [], t) : Promise.resolve([]),
-    uw ? dossierFetch(() => fetchUwFlowPerExpiry(sym, 12), [], t) : Promise.resolve([]),
     dossierFetch(() => fetchPositioningSummary(sym), {
       net_gex: 0,
       gex_king_strike: null,
@@ -223,7 +209,6 @@ export async function fetchTickerDossier(
     dossierFetch(() => buildTechnicalCard(sym), null, t),
     dossierFetch(() => fetchPolygonNews(sym, 8), [], t),
     dossierFetch(() => fetchBenzingaNews(5, { ticker: sym }), [], t),
-    uw ? dossierFetch(() => fetchUwInsiderTransactions(sym, 20), [], t) : Promise.resolve([]),
     dossierFetch(() => fetchPolygonTickerDetails(sym), null, t),
     dossierFetch(() => fetchShortInterest(sym), null, t),
     dossierFetch(
@@ -232,12 +217,34 @@ export async function fetchTickerDossier(
       t
     ),
     dossierFetch(() => getEditionCongressTrades(sym), [], t),
-    uw ? dossierFetch(() => fetchUwCongressUnusualTrades(sym, 5), [], t) : Promise.resolve([]),
-    uw ? dossierFetch(() => fetchUwInstitutionOwnership(sym, 8), [], t) : Promise.resolve([]),
     dossierFetch(() => getEditionPredictionsSignal(sym), null, t),
     dossierFetch(() => isScreenerConfirmed(sym), false, t),
     dossierFetch(() => fetchPolygonFinancialRatios(sym), null, t),
   ]);
+
+  const [
+    darkPool,
+    oiChange,
+    ivTermRaw,
+    realizedVolRaw,
+    skewRaw,
+    flowExpiry,
+    insider,
+    congressUnusual,
+    institutional,
+  ] = uw
+    ? await runUwSequential([
+        () => dossierFetch(() => fetchUwDarkPool(sym), null, t),
+        () => dossierFetch(() => fetchUwOiChange(sym), [], t),
+        () => dossierFetch(() => fetchUwIvTermStructure(sym), [], t),
+        () => dossierFetch(() => fetchUwRealizedVol(sym), [], t),
+        () => dossierFetch(() => fetchUwRiskReversalSkew(sym), [], t),
+        () => dossierFetch(() => fetchUwFlowPerExpiry(sym, 12), [], t),
+        () => dossierFetch(() => fetchUwInsiderTransactions(sym, 20), [], t),
+        () => dossierFetch(() => fetchUwCongressUnusualTrades(sym, 5), [], t),
+        () => dossierFetch(() => fetchUwInstitutionOwnership(sym, 8), [], t),
+      ])
+    : [null, [], [], [], [], [], [], [], []];
 
   const flows = flowRows.map((r) => r.raw);
   const strikeStacks = computeFlowStrikeStacks(flows, { minAlerts: 2, limit: 8 });

@@ -26,6 +26,20 @@ import { todayEtYmd } from "@/lib/providers/spx-session";
 
 const MAX_HISTORY = 28;
 
+/** Thrown when the SSE client disconnects before the Largo turn finishes. */
+export class SseClientDisconnected extends Error {
+  constructor() {
+    super("SSE client disconnected");
+    this.name = "SseClientDisconnected";
+  }
+}
+
+export function isSseClientDisconnect(err: unknown): boolean {
+  if (err instanceof SseClientDisconnected) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("Controller is already closed") || msg.includes("Invalid state");
+}
+
 export type LargoStreamEvent =
   | AnthropicToolLoopEvent
   | {
@@ -194,6 +208,15 @@ export async function runLargoQueryStream(
   );
 
   try {
+    const emit = (event: LargoStreamEvent) => {
+      try {
+        onEvent(event);
+      } catch (err) {
+        if (isSseClientDisconnect(err)) throw new SseClientDisconnected();
+        throw err;
+      }
+    };
+
     const answer = await anthropicToolLoop({
       system,
       tools: filteredTools,
@@ -201,7 +224,7 @@ export async function runLargoQueryStream(
       model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 16,
-      onEvent: (event) => onEvent(event),
+      onEvent: (event) => emit(event),
       runTool: async (name, input) => {
         toolsUsed.push(name);
         return runLargoTool(name, input);
@@ -214,7 +237,7 @@ export async function runLargoQueryStream(
 
     await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)));
 
-    onEvent({
+    emit({
       type: "done",
       answer: text,
       session_id: sid,
@@ -222,8 +245,13 @@ export async function runLargoQueryStream(
       tools_used: Array.from(new Set(toolsUsed)),
     });
   } catch (error) {
+    if (isSseClientDisconnect(error)) return;
     const message = error instanceof Error ? error.message : "Largo query failed";
-    onEvent({ type: "error", message });
+    try {
+      onEvent({ type: "error", message });
+    } catch (emitErr) {
+      if (!isSseClientDisconnect(emitErr)) throw emitErr;
+    }
   } finally {
     resetLargoSpxDeskCache();
   }

@@ -30,6 +30,7 @@ import {
 import { computeSpxGapContext, type SpxGapContext } from "./spx-gap";
 import { nextTradingDayEt, todayEt } from "./session";
 import { priorEtYmd } from "@/lib/providers/spx-session";
+import { runUwPool, runUwSequential } from "@/lib/providers/uw-rate-limiter";
 
 export type MarketWideContext = {
   today: string;
@@ -132,14 +133,69 @@ async function fetchMarketNewsPreferPolygon(): Promise<Record<string, unknown>[]
 
 async function fetchEarningsOnDate(dateYmd: string): Promise<Record<string, unknown>[]> {
   if (!uwConfigured()) return [];
-  const [pre, aft] = await Promise.all([
-    fetchUwEarningsPremarket(50).catch(() => []),
-    fetchUwEarningsAfterhours(50).catch(() => []),
+  const [pre, aft] = await runUwSequential([
+    () => fetchUwEarningsPremarket(50).catch(() => []),
+    () => fetchUwEarningsAfterhours(50).catch(() => []),
   ]);
   return [...pre, ...aft].filter((row) => {
     const d = String(row.report_date ?? row.date ?? row.earnings_date ?? row.announce_date ?? "").slice(0, 10);
     return d === dateYmd;
   });
+}
+
+async function fetchSectorTidesSequential(): Promise<Array<{ sector: string; tide: Record<string, unknown> | null }>> {
+  if (!uwConfigured()) {
+    return SECTOR_WATCH.map((s) => ({ sector: s.label, tide: null }));
+  }
+  return runUwSequential(
+    SECTOR_WATCH.map((s) => async () => ({
+      sector: s.label,
+      tide: (await fetchUwSectorTide(s.key).catch(() => null)) as Record<string, unknown> | null,
+    }))
+  );
+}
+
+async function fetchEtfTidesSequential(): Promise<Record<string, Record<string, unknown> | null>> {
+  const tickers = ["SPY", "QQQ", "IWM", "XLF", "XLE"] as const;
+  if (!uwConfigured()) {
+    return Object.fromEntries(tickers.map((t) => [t, null]));
+  }
+  const rows = await runUwSequential(
+    tickers.map((t) => () => fetchUwEtfTide(t).catch(() => null))
+  );
+  return {
+    SPY: rows[0] as Record<string, unknown> | null,
+    QQQ: rows[1] as Record<string, unknown> | null,
+    IWM: rows[2] as Record<string, unknown> | null,
+    XLF: rows[3] as Record<string, unknown> | null,
+    XLE: rows[4] as Record<string, unknown> | null,
+  };
+}
+
+async function fetchIndexFlowsPooled(): Promise<Record<string, unknown>> {
+  if (!uwConfigured()) return {};
+  const indexResults = await runUwPool(
+    INDEX_TICKERS.map((t) => async () => {
+      const alerts = await fetchUwTickerFlowAlerts(t, 30).catch(() => []);
+      const callPrem = alerts
+        .filter((a) => a.option_type === "CALL")
+        .reduce((s, a) => s + a.premium, 0);
+      const putPrem = alerts
+        .filter((a) => a.option_type === "PUT")
+        .reduce((s, a) => s + a.premium, 0);
+      return {
+        ticker: t,
+        call_premium: callPrem,
+        put_premium: putPrem,
+        total_premium: callPrem + putPrem,
+        alerts: alerts.length,
+      };
+    }),
+    3
+  );
+  const indexFlows: Record<string, unknown> = {};
+  for (const row of indexResults) indexFlows[row.ticker] = row;
+  return indexFlows;
 }
 
 export async function fetchMarketWideContext(): Promise<MarketWideContext> {
@@ -155,11 +211,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     vixRaw,
     sectorPerf,
     sectorTides,
-    etfSpy,
-    etfQqq,
-    etfIwm,
-    etfXlf,
-    etfXle,
+    etfTides,
     marketNews,
     vixTerm,
     vixIvRank,
@@ -177,17 +229,8 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     polygonConfigured() ? fetchIndex5MinBars("I:SPX", today, today).catch(() => []) : Promise.resolve([]),
     fetchIndexDailyBars("I:VIX", from, today, "30").catch(() => []),
     fetchSectorPerformance().catch(() => []),
-    Promise.all(
-      SECTOR_WATCH.map(async (s) => ({
-        sector: s.label,
-        tide: uwConfigured() ? await fetchUwSectorTide(s.key).catch(() => null) : null,
-      }))
-    ),
-    uwConfigured() ? fetchUwEtfTide("SPY").catch(() => null) : Promise.resolve(null),
-    uwConfigured() ? fetchUwEtfTide("QQQ").catch(() => null) : Promise.resolve(null),
-    uwConfigured() ? fetchUwEtfTide("IWM").catch(() => null) : Promise.resolve(null),
-    uwConfigured() ? fetchUwEtfTide("XLF").catch(() => null) : Promise.resolve(null),
-    uwConfigured() ? fetchUwEtfTide("XLE").catch(() => null) : Promise.resolve(null),
+    fetchSectorTidesSequential(),
+    fetchEtfTidesSequential(),
     fetchMarketNewsPreferPolygon(),
     fetchVixTermPreferPolygon(),
     fetchVixIvRankPercentile().catch(() => null),
@@ -210,28 +253,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     .map(flowRowToDict);
   const hotChains = aggregateHotChains(hotChainRows);
 
-  const indexFlows: Record<string, unknown> = {};
-  if (uwConfigured()) {
-    const indexResults = await Promise.all(
-      INDEX_TICKERS.map(async (t) => {
-        const alerts = await fetchUwTickerFlowAlerts(t, 30).catch(() => []);
-        const callPrem = alerts
-          .filter((a) => a.option_type === "CALL")
-          .reduce((s, a) => s + a.premium, 0);
-        const putPrem = alerts
-          .filter((a) => a.option_type === "PUT")
-          .reduce((s, a) => s + a.premium, 0);
-        return {
-          ticker: t,
-          call_premium: callPrem,
-          put_premium: putPrem,
-          total_premium: callPrem + putPrem,
-          alerts: alerts.length,
-        };
-      })
-    );
-    for (const row of indexResults) indexFlows[row.ticker] = row;
-  }
+  const indexFlows = await fetchIndexFlowsPooled();
 
   const macroEvents = macroEventsOnDate(tomorrow)
     .filter((e) => e.impact === "high")
@@ -267,13 +289,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     macro_events: macroEvents,
     tomorrow_earnings: tomorrowEarnings,
     sector_tides: sectorTides,
-    etf_tides: {
-      SPY: etfSpy as Record<string, unknown> | null,
-      QQQ: etfQqq as Record<string, unknown> | null,
-      IWM: etfIwm as Record<string, unknown> | null,
-      XLF: etfXlf as Record<string, unknown> | null,
-      XLE: etfXle as Record<string, unknown> | null,
-    },
+    etf_tides: etfTides,
     sector_performance: sectorPerf,
     top_net_impact: topNetImpact,
     vix_term: vixTerm,

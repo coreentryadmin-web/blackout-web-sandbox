@@ -71,6 +71,7 @@ import {
   type OiChangeItem,
   type UwMacroIndicatorSnapshot,
 } from "./unusual-whales";
+import { runUwSequential } from "./uw-rate-limiter";
 import { fetchEngine } from "@/lib/engine";
 import { indexStore } from "@/lib/ws/polygon-socket";
 
@@ -813,14 +814,14 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   let maxPain = polygonBundle.maxPain;
 
   const uwExclusive = uwConfigured()
-    ? await Promise.all([
-        resolveMarketTide(),
-        fetchUwNope("SPX"),
-        resolveFlow0dte("SPX"),
-        resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-        strikeRows.length ? Promise.resolve(null) : fetchUwOdteGex("SPX"),
-        maxPain != null ? Promise.resolve(null) : fetchUwMaxPain("SPX"),
-        polygonIvRank != null ? Promise.resolve(null) : fetchUwIvRank("SPX"),
+    ? await runUwSequential([
+        () => resolveMarketTide(),
+        () => fetchUwNope("SPX").catch(() => null),
+        () => resolveFlow0dte("SPX"),
+        () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
+        () => (strikeRows.length ? Promise.resolve(null) : fetchUwOdteGex("SPX").catch(() => null)),
+        () => (maxPain != null ? Promise.resolve(null) : fetchUwMaxPain("SPX").catch(() => null)),
+        () => (polygonIvRank != null ? Promise.resolve(null) : fetchUwIvRank("SPX").catch(() => null)),
       ])
     : [null, null, null, null, null, null, null];
 
@@ -922,17 +923,21 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     breadthAll ?? []
   );
 
-  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, dailyMarket, mag7Rows, macroIndicators, priorCloses] =
-    await Promise.all([
-      uwConfigured() ? fetchUwGreekExposureExpiry("SPX").catch(() => []) : Promise.resolve([]),
-      uwConfigured() ? fetchUwFlowPerExpiry("SPX", 12).catch(() => []) : Promise.resolve([]),
-      uwConfigured() ? fetchUwNetFlowExpiry(20).catch(() => []) : Promise.resolve([]),
-      uwConfigured() ? fetchUwNetPremTicks("SPY").catch(() => []) : Promise.resolve([]),
-      fetchDailyMarketSummary(today).catch(() => null),
-      uwConfigured() ? fetchUwGroupGreekFlow("mag7").catch(() => []) : Promise.resolve([]),
-      uwConfigured() ? fetchUwMacroIndicators().catch(() => []) : Promise.resolve([]),
-      fetchPriorDayCloses(today).catch(() => ({})),
-    ]);
+  const [dailyMarket, priorCloses] = await Promise.all([
+    fetchDailyMarketSummary(today).catch(() => null),
+    fetchPriorDayCloses(today).catch(() => ({})),
+  ]);
+
+  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, mag7Rows, macroIndicators] = uwConfigured()
+    ? await runUwSequential([
+        () => fetchUwGreekExposureExpiry("SPX").catch(() => []),
+        () => fetchUwFlowPerExpiry("SPX", 12).catch(() => []),
+        () => fetchUwNetFlowExpiry(20).catch(() => []),
+        () => fetchUwNetPremTicks("SPY").catch(() => []),
+        () => fetchUwGroupGreekFlow("mag7").catch(() => []),
+        () => fetchUwMacroIndicators().catch(() => []),
+      ])
+    : [[], [], [], [], [], []];
 
   const greekExposure = summarizeGreekExposureByExpiry(
     greekExpRows as Record<string, unknown>[],
@@ -1283,21 +1288,21 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const flowNow = new Date();
   if (!isSpxRthActive(flowNow, flowMarketNow) && !isPremarketPlanningWindow(flowNow)) return empty;
 
-  const [spxSnapRaw, darkPool, spxFlowsRaw, uwFlow, greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks] =
-    await Promise.all([
-    polygonConfigured()
-      ? fetchIndexSnapshots([SPX]).then((m) => mergeWsIndexSnapshots(m)[SPX])
-      : Promise.resolve(null),
-    uwConfigured()
-      ? resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 })
-      : Promise.resolve(null),
-    uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32) : Promise.resolve([]),
-    uwConfigured() ? resolveFlow0dte("SPX") : Promise.resolve(null),
-    uwConfigured() ? fetchUwGreekExposureExpiry("SPX").catch(() => []) : Promise.resolve([]),
-    uwConfigured() ? fetchUwFlowPerExpiry("SPX", 12).catch(() => []) : Promise.resolve([]),
-    uwConfigured() ? fetchUwNetFlowExpiry(20).catch(() => []) : Promise.resolve([]),
-    uwConfigured() ? fetchUwNetPremTicks("SPY").catch(() => []) : Promise.resolve([]),
-  ]);
+  const spxSnapRaw = polygonConfigured()
+    ? await fetchIndexSnapshots([SPX]).then((m) => mergeWsIndexSnapshots(m)[SPX])
+    : null;
+  const spxFlowsRaw = uwConfigured() ? await fetchSpxDeskFlowAlertsWithDb(32) : [];
+
+  const [darkPool, uwFlow, greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks] = uwConfigured()
+    ? await runUwSequential([
+        () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
+        () => resolveFlow0dte("SPX"),
+        () => fetchUwGreekExposureExpiry("SPX").catch(() => []),
+        () => fetchUwFlowPerExpiry("SPX", 12).catch(() => []),
+        () => fetchUwNetFlowExpiry(20).catch(() => []),
+        () => fetchUwNetPremTicks("SPY").catch(() => []),
+      ])
+    : [null, null, [], [], [], []];
 
   const spxSnap = spxSnapRaw;
   const price = spxSnap?.price ?? 0;

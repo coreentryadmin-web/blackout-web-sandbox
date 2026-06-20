@@ -1,5 +1,11 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
-import { throttleUw } from "@/lib/providers/uw-rate-limiter";
+import {
+  buildUwRequestKey,
+  isUwCircuitOpen,
+  noteUw429,
+  runUwSequential,
+  throttleUwCoalesced,
+} from "@/lib/providers/uw-rate-limiter";
 import { uwConfigured } from "./config";
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
@@ -9,14 +15,56 @@ const CLIENT_ID = process.env.UW_CLIENT_API_ID ?? "100001";
 /** UW Advanced — live options chain, flow, GEX, lit/dark pool, vol analytics, WebSocket streaming. */
 export const UW_PLAN_TIER = "advanced" as const;
 
+function uwEnvSec(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+type UwCacheSlot = { data: unknown; fetchedAt: number; ttlMs: number };
+const uwResponseCache = new Map<string, UwCacheSlot>();
+const UW_SLOW_CACHE_MAX_STALE_MS = 60 * 60 * 1000;
+
+function uwCacheTtlMs(path: string): number {
+  if (path.startsWith("/api/economy/")) return uwEnvSec("UW_ECONOMY_CACHE_SEC", 3600) * 1000;
+  if (path === "/api/market/market-tide") return uwEnvSec("UW_MARKET_TIDE_CACHE_SEC", 300) * 1000;
+  if (path === "/api/net-flow/expiry") return uwEnvSec("UW_NET_FLOW_CACHE_SEC", 120) * 1000;
+  if (path.includes("/api/group-flow/")) return uwEnvSec("UW_GROUP_FLOW_CACHE_SEC", 180) * 1000;
+  return 0;
+}
+
+function uwEffectiveTtlMs(baseMs: number): number {
+  if (isUwCircuitOpen()) return Math.max(baseMs, 30 * 60 * 1000);
+  return baseMs;
+}
+
+function readUwCache<T>(key: string, allowStale: boolean): T | undefined {
+  const slot = uwResponseCache.get(key);
+  if (!slot) return undefined;
+  const age = Date.now() - slot.fetchedAt;
+  const ttl = uwEffectiveTtlMs(slot.ttlMs);
+  if (age <= ttl) return slot.data as T;
+  if (allowStale && age <= UW_SLOW_CACHE_MAX_STALE_MS) return slot.data as T;
+  return undefined;
+}
+
+function writeUwCache(key: string, path: string, data: unknown): void {
+  const ttlMs = uwCacheTtlMs(path);
+  if (ttlMs <= 0) return;
+  uwResponseCache.set(key, { data, fetchedAt: Date.now(), ttlMs });
+}
+
 async function uwGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
   if (!uwConfigured()) throw new Error("UW_API_KEY not set");
+  if (isUwCircuitOpen()) throw new Error(`Unusual Whales ${path} → 429 circuit`);
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
 
   const url = `${BASE}${path}${qs.size ? `?${qs}` : ""}`;
-  const res = await throttleUw(() =>
+  const requestKey = buildUwRequestKey(path, params);
+  const res = await throttleUwCoalesced(requestKey, () =>
     trackedFetch("unusual_whales", path, url, {
       headers: {
         Authorization: `Bearer ${KEY}`,
@@ -27,6 +75,10 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
     })
   );
 
+  if (res.status === 429) {
+    noteUw429(path);
+    throw new Error(`Unusual Whales ${path} → 429`);
+  }
   if (!res.ok) throw new Error(`Unusual Whales ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -99,23 +151,43 @@ async function uwGetSafe<T>(
   retries = 2
 ): Promise<T | null> {
   if (!uwConfigured()) return null;
+
+  const cacheKey = buildUwRequestKey(path, params);
+  const cacheable = uwCacheTtlMs(path) > 0;
+  const freshCached = cacheable ? readUwCache<T>(cacheKey, false) : undefined;
+  if (freshCached !== undefined) return freshCached;
+
+  if (isUwCircuitOpen()) {
+    const stale = cacheable ? readUwCache<T>(cacheKey, true) : undefined;
+    if (stale !== undefined) return stale;
+    return null;
+  }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await uwGet<T>(path, params);
+      const data = await uwGet<T>(path, params);
+      if (cacheable) writeUwCache(cacheKey, path, data);
+      return data;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("403")) {
         console.error(`[uw] PLAN_BLOCKED ${path} — endpoint requires higher tier. Returning null.`);
         return null;
       }
-      if (msg.includes("429") && attempt < retries) {
-        const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
-        console.warn(`[uw] RATE_LIMITED ${path} — retry ${attempt + 1} in ${delay.toFixed(0)}ms`);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      if (attempt === retries && msg.includes("429")) {
-        console.warn(`[uw] RATE_LIMITED ${path}`);
+      if (msg.includes("429")) {
+        noteUw429(path);
+        if (attempt < retries) {
+          const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+          if (process.env.UW_DEBUG_RETRIES === "1") {
+            console.debug(`[uw] RATE_LIMITED ${path} — retry ${attempt + 1} in ${delay.toFixed(0)}ms`);
+          }
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        const stale = cacheable ? readUwCache<T>(cacheKey, true) : undefined;
+        if (stale !== undefined) return stale;
+        console.warn(`[uw] RATE_LIMITED ${path} — exhausted retries`);
+        return null;
       }
       return null;
     }
@@ -1292,8 +1364,8 @@ export async function fetchUwEconomyIndicator(indicator: string): Promise<UwMacr
 export async function fetchUwMacroIndicators(
   indicators: string[] = UW_MACRO_INDICATORS.map((m) => m.id)
 ): Promise<UwMacroIndicatorSnapshot[]> {
-  const results = await Promise.all(
-    indicators.map((id) => fetchUwEconomyIndicator(id).catch(() => null))
+  const results = await runUwSequential(
+    indicators.map((id) => () => fetchUwEconomyIndicator(id).catch(() => null))
   );
   return results.filter((r): r is UwMacroIndicatorSnapshot => r != null);
 }

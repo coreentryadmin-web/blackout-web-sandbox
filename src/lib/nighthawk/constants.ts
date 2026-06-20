@@ -36,7 +36,10 @@ export const MIN_STOCK_FLOW_PREMIUM = 100_000;
 export const MIN_HOT_CHAIN_PREMIUM = 500_000;
 /** Market-wide flow tape — higher limit captures late-session event volume. */
 export const MARKET_FLOW_ALERT_LIMIT = 450;
-export const DOSSIER_BATCH_SIZE = 3;
+export const DOSSIER_BATCH_SIZE = Math.max(
+  1,
+  Math.floor(Number(process.env.NH_DOSSIER_BATCH_SIZE ?? 3))
+);
 export const DOSSIER_FETCH_TIMEOUT_MS = 8000;
 export const DOSSIER_INTER_BATCH_MS = 500;
 

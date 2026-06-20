@@ -217,7 +217,11 @@ export async function anthropicToolLoop(params: {
     if (params.onEvent) {
       const stream = client.messages.stream(createParams);
       stream.on("text", (delta) => {
-        params.onEvent?.({ type: "token", text: delta });
+        try {
+          params.onEvent?.({ type: "token", text: delta });
+        } catch {
+          /* SSE client disconnected — stop forwarding tokens */
+        }
       });
       const finalMessage = await withTelemetry("anthropic-tool-loop-stream", () =>
         stream.finalMessage()
@@ -244,7 +248,11 @@ export async function anthropicToolLoop(params: {
     const results = await Promise.all(
       toolCalls.map(async (tc) => {
         const name = tc.name;
-        params.onEvent?.({ type: "tool_start", name });
+        try {
+          params.onEvent?.({ type: "tool_start", name });
+        } catch {
+          /* SSE client disconnected */
+        }
         const input = tc.input as Record<string, unknown>;
         try {
           return await params.runTool(name, input);

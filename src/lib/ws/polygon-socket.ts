@@ -30,10 +30,42 @@ let indicesWs: WebSocket | null = null;
 let indicesReconnectDelay = 1000;
 let indicesAuthenticated = false;
 let polygonSocketInitialized = false;
+let indicesReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let indicesConsecutiveFailures = 0;
+
+function polygonErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  const evt = err as { message?: string; error?: unknown };
+  if (typeof evt?.message === "string") return evt.message;
+  if (evt?.error instanceof Error) return evt.error.message;
+  return String(err);
+}
+
+function scheduleIndicesReconnect(reason: string) {
+  if (indicesReconnectTimer) return;
+  indicesConsecutiveFailures += 1;
+  const base = Math.min(indicesReconnectDelay, 60_000);
+  const jitter = Math.floor(Math.random() * 400);
+  const delay = indicesConsecutiveFailures >= 8 ? 60_000 : base + jitter;
+  console.warn(
+    `[polygon-socket] indices reconnect in ${delay}ms (${reason}, failures=${indicesConsecutiveFailures})`
+  );
+  indicesReconnectTimer = setTimeout(() => {
+    indicesReconnectTimer = null;
+    connectIndices();
+  }, delay);
+  indicesReconnectDelay = Math.min(indicesReconnectDelay * 2, 60_000);
+}
 
 function connectIndices() {
   if (!POLYGON_API_KEY) {
     console.warn("[polygon-socket] POLYGON_API_KEY not set — WebSocket disabled");
+    return;
+  }
+  if (
+    indicesWs &&
+    (indicesWs.readyState === WebSocket.OPEN || indicesWs.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
 
@@ -42,7 +74,6 @@ function connectIndices() {
 
     indicesWs.onopen = () => {
       console.log("[polygon-socket] indices connected");
-      indicesReconnectDelay = 1000;
       indicesAuthenticated = false;
     };
 
@@ -56,6 +87,8 @@ function connectIndices() {
             indicesWs?.send(JSON.stringify({ action: "auth", params: POLYGON_API_KEY }));
           } else if (ev === "auth_success" || (ev === "status" && msg.status === "auth_success")) {
             indicesAuthenticated = true;
+            indicesReconnectDelay = 1000;
+            indicesConsecutiveFailures = 0;
             console.log("[polygon-socket] indices authenticated — subscribing");
             indicesWs?.send(
               JSON.stringify({
@@ -90,21 +123,20 @@ function connectIndices() {
     };
 
     indicesWs.onerror = (err) => {
-      console.error("[polygon-socket] indices error:", err);
+      const msg = polygonErrorMessage(err);
+      // Upstream 502/504 from Massive gateway — transient; reconnect handles it.
+      console.warn(`[polygon-socket] indices error: ${msg}`);
     };
 
     indicesWs.onclose = (event) => {
-      console.warn(
-        `[polygon-socket] indices closed (code=${event.code}) — reconnecting in ${indicesReconnectDelay}ms`
-      );
+      indicesWs = null;
       indicesAuthenticated = false;
-      setTimeout(() => connectIndices(), indicesReconnectDelay);
-      indicesReconnectDelay = Math.min(indicesReconnectDelay * 2, 30_000);
+      scheduleIndicesReconnect(`code=${event.code}`);
     };
   } catch (err) {
-    console.error("[polygon-socket] failed to connect indices:", err);
-    setTimeout(() => connectIndices(), indicesReconnectDelay);
-    indicesReconnectDelay = Math.min(indicesReconnectDelay * 2, 30_000);
+    indicesWs = null;
+    console.error("[polygon-socket] failed to connect indices:", polygonErrorMessage(err));
+    scheduleIndicesReconnect("connect-threw");
   }
 }
 
@@ -119,6 +151,8 @@ export function getIndexStoreStatus() {
   return {
     authenticated: indicesAuthenticated,
     wsState: indicesWs ? ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][indicesWs.readyState] : "NOT_CREATED",
+    consecutiveFailures: indicesConsecutiveFailures,
+    reconnectDelayMs: indicesReconnectDelay,
     symbols: Object.keys(indexStore).map((sym) => ({
       sym,
       price: indexStore[sym].price,
