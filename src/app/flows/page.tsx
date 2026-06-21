@@ -14,6 +14,7 @@ export default async function FlowsPage() {
         title="Flow Feed"
         subtitle="Whale & dark pool alerts · Real-time tape"
         deskMode
+        fullWidth
       >
         <FlowFeed />
       </PlatformShell>
