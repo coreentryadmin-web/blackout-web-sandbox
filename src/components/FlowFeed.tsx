@@ -50,7 +50,7 @@ export function FlowFeed() {
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
     try {
-      const d = await fetchFlows({ limit: 80, min_premium: minPremium, ticker: tickerFilter || undefined });
+      const d = await fetchFlows({ limit: 300, min_premium: minPremium, ticker: tickerFilter || undefined });
       setAlerts(d.flows);
       setLive(true);
     } catch {

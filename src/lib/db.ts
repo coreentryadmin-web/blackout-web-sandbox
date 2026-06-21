@@ -688,7 +688,7 @@ export async function fetchRecentFlows(params: {
     SELECT ticker,
            COALESCE(total_premium, 0) AS premium,
            option_type,
-           expiry,
+           TO_CHAR(expiry, 'YYYY-MM-DD') AS expiry,
            strike,
            CASE WHEN LOWER(option_type) LIKE 'c%' THEN 'bullish' ELSE 'bearish' END AS direction,
            COALESCE(score, 0) AS score,
@@ -697,10 +697,16 @@ export async function fetchRecentFlows(params: {
              WHEN expiry = CURRENT_DATE THEN '0dte'
              ELSE 'stock'
            END AS route,
-           COALESCE(created_at, inserted_at) AS alerted_at
+           COALESCE(created_at, inserted_at) AS alerted_at,
+           (expiry - CURRENT_DATE) AS dte,
+           NULLIF(COALESCE(
+             raw_payload->>'alert_rule',
+             raw_payload->>'rule_name'
+           ), '') AS alert_rule,
+           (raw_payload->>'ask_side_pct')::numeric AS ask_pct
     FROM flow_alerts
     ${where}
-    ORDER BY COALESCE(created_at, inserted_at) DESC NULLS LAST
+    ORDER BY COALESCE(total_premium, 0) DESC NULLS LAST
     LIMIT $${i}
     `,
     values
@@ -710,12 +716,15 @@ export async function fetchRecentFlows(params: {
     ticker: String(row.ticker ?? ""),
     premium: Number(row.premium ?? 0),
     option_type: String(row.option_type ?? "").toUpperCase(),
-    expiry: row.expiry ? String(row.expiry).slice(0, 10) : "",
+    expiry: row.expiry ?? "",
     strike: Number(row.strike ?? 0),
     direction: String(row.direction ?? "bullish"),
     score: Number(row.score ?? 0),
     route: String(row.route ?? "stock"),
     alerted_at: row.alerted_at ? new Date(String(row.alerted_at)).toISOString() : new Date().toISOString(),
+    dte: row.dte != null ? Number(row.dte) : undefined,
+    alert_rule: row.alert_rule ? String(row.alert_rule) : undefined,
+    ask_pct: row.ask_pct != null ? Number(row.ask_pct) : undefined,
   }));
 }
 
