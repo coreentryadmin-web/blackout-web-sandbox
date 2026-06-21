@@ -77,6 +77,25 @@ body {
   animation: glitch-shift 0.35s steps(2) infinite;
 }
 
+/* ── DNA Helix Background ── */
+@keyframes dna-helix-rotate {
+  0%   { transform: perspective(1100px) rotateY(0deg)   scale(1.35); }
+  100% { transform: perspective(1100px) rotateY(360deg) scale(1.35); }
+}
+
+@keyframes dna-helix-breathe {
+  0%, 100% { opacity: 0.07; }
+  50%       { opacity: 0.11; }
+}
+
+@keyframes dna-helix-drift {
+  0%   { transform: perspective(1100px) rotateY(0deg)   scale(1.35) translateY(0px); }
+  25%  { transform: perspective(1100px) rotateY(90deg)  scale(1.40) translateY(-18px); }
+  50%  { transform: perspective(1100px) rotateY(180deg) scale(1.35) translateY(0px); }
+  75%  { transform: perspective(1100px) rotateY(270deg) scale(1.40) translateY(18px); }
+  100% { transform: perspective(1100px) rotateY(360deg) scale(1.35) translateY(0px); }
+}
+
 /* ── Float ── */
 @keyframes float-y {
   0%, 100% { transform: translateY(0); }
