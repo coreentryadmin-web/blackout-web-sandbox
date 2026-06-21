@@ -90,6 +90,9 @@ export function FlowAlertStream({
   replayMode = false,
   splitFlowTickers,
   earningsDays,
+  velocitySpikeTickers,
+  coordinatedTickers,
+  hawkTickers,
 }: {
   flows: FlowAlert[];
   live?: boolean;
@@ -102,6 +105,9 @@ export function FlowAlertStream({
   replayMode?: boolean;
   splitFlowTickers?: Set<string>;
   earningsDays?: Record<string, number>;
+  velocitySpikeTickers?: Set<string>;
+  coordinatedTickers?: Set<string>;
+  hawkTickers?: Set<string>;
 }) {
   const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT); // Bug 8
   const [newCount, setNewCount]       = useState(0);            // Bug 11
@@ -198,11 +204,14 @@ export function FlowAlertStream({
                   const isWhale    = flow.premium >= WHALE_PREMIUM;
                   const dte        = flow.dte ?? calcDte(flow.expiry);
                   const is0dte     = dte === 0;
-                  const isCompound = compoundTickers?.has(flow.ticker) ?? false;
-                  const isDiverge  = (isCall && flow.direction === "bearish") ||
-                                     (!isCall && flow.direction === "bullish");
-                  const hasSplit   = splitFlowTickers?.has(flow.ticker) ?? false;
-                  const earnIn     = earningsDays?.[flow.ticker] ?? null;
+                  const isCompound   = compoundTickers?.has(flow.ticker) ?? false;
+                  const isDiverge    = (isCall && flow.direction === "bearish") ||
+                                       (!isCall && flow.direction === "bullish");
+                  const hasSplit     = splitFlowTickers?.has(flow.ticker) ?? false;
+                  const earnIn       = earningsDays?.[flow.ticker] ?? null;
+                  const hasVelocity  = velocitySpikeTickers?.has(flow.ticker) ?? false;
+                  const hasCoord     = coordinatedTickers?.has(flow.ticker) ?? false;
+                  const isHawk       = hawkTickers?.has(flow.ticker) ?? false;
                   // IV display: if < 3 treat as decimal (0.45 → 45%), else as already pct
                   const ivDisplay  = flow.implied_volatility != null && flow.implied_volatility > 0
                     ? flow.implied_volatility < 3
@@ -257,6 +266,24 @@ export function FlowAlertStream({
                               style={{ color: "#f59e0b", borderColor: "rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", letterSpacing: "0.06em" }}
                             >
                               SPLIT
+                            </span>
+                          )}
+                          {isHawk && (
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-indigo-400 border-indigo-700/40 bg-indigo-950/25"
+                              style={{ letterSpacing: "0.06em" }}>
+                              ◈ HAWK
+                            </span>
+                          )}
+                          {hasVelocity && (
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-orange-400 border-orange-700/40 bg-orange-950/25 animate-pulse"
+                              style={{ letterSpacing: "0.06em" }}>
+                              ◉ VELOCITY
+                            </span>
+                          )}
+                          {hasCoord && (
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-cyan-400 border-cyan-700/40 bg-cyan-950/25"
+                              style={{ letterSpacing: "0.06em" }}>
+                              ⬡ COORD
                             </span>
                           )}
                           {earnIn !== null && earnIn <= 14 && (

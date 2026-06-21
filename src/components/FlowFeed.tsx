@@ -3,8 +3,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
-import { fetchFlows, fetchEarningsCalendar, createFlowEventSource, fmtPremium, type FlowAlert } from "@/lib/api";
+import {
+  fetchFlows, fetchEarningsCalendar, fetchDarkPoolPrints,
+  createFlowEventSource, fmtPremium,
+  type FlowAlert, type DarkPoolRow,
+} from "@/lib/api";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
+import { getSector } from "@/lib/sector-map";
 import { FlowAlertStream } from "@/components/desk/FlowAlertStream";
 import { FlowBrief } from "@/components/desk/FlowBrief";
 import { NetPremiumLeaderboard } from "@/components/desk/NetPremiumLeaderboard";
@@ -13,6 +18,10 @@ import { FlowMomentumChart } from "@/components/desk/FlowMomentumChart";
 import { DarkPoolPanel } from "@/components/desk/DarkPoolPanel";
 import { TickerDrawer } from "@/components/desk/TickerDrawer";
 import { SplitFlowRadar, type SplitFlowEntry } from "@/components/desk/SplitFlowRadar";
+import { VelocityRadar, type VelocityEntry } from "@/components/desk/VelocityRadar";
+import { SectorFlowPanel, type SectorFlowEntry } from "@/components/desk/SectorFlowPanel";
+import { NightHawkFlowPanel, type NightHawkPlayWithFlow } from "@/components/desk/NightHawkFlowPanel";
+import type { NightHawkEdition } from "@/lib/nighthawk/types";
 
 const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 const FLOOR_PREMIUM = 100_000;
@@ -75,6 +84,10 @@ export function FlowFeed() {
 
   // Feature 7: earnings calendar
   const [earningsMap, setEarningsMap] = useState<Record<string, string>>({});
+  // Feature 2: dark pool prints for coordination signal
+  const [darkPoolPrints, setDarkPoolPrints] = useState<DarkPoolRow[]>([]);
+  // Feature 12: Night Hawk edition for flow conviction
+  const [nighthawkEdition, setNighthawkEdition] = useState<NightHawkEdition | null>(null);
 
   const seenRef         = useRef(new Set<string>());
   const replaySourceRef = useRef<FlowAlert[]>([]);
@@ -84,9 +97,28 @@ export function FlowFeed() {
   // Bug 14: keep ref in sync so SSE closure always reads current value
   useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
 
-  // Feature 7: fetch earnings calendar once on mount (cached 12h server-side)
+  // Feature 7: earnings calendar (cached 12h server-side)
   useEffect(() => {
     fetchEarningsCalendar().then(setEarningsMap).catch(() => {});
+  }, []);
+
+  // Feature 2: dark pool prints for coordination detection (refresh every 60s)
+  useEffect(() => {
+    const load = () =>
+      fetchDarkPoolPrints({ min_premium: 500_000 })
+        .then((d) => setDarkPoolPrints(d.prints ?? []))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Feature 12: Night Hawk latest edition
+  useEffect(() => {
+    fetch("/api/market/nighthawk/edition", { credentials: "same-origin", cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: NightHawkEdition | null) => { if (d?.plays) setNighthawkEdition(d); })
+      .catch(() => {});
   }, []);
 
   // Derived counts for filter pills
@@ -150,6 +182,117 @@ export function FlowFeed() {
     }
     return out;
   }, [earningsMap]);
+
+  // Feature 1: velocity spike detection — prints per 15min vs prior 15min window
+  const { velocityEntries, velocitySpikeTickers } = useMemo(() => {
+    const now      = Date.now();
+    const R_MS     = 15 * 60 * 1000; // recent window
+    const P_MS     = 30 * 60 * 1000; // prior window end
+    const byTicker = new Map<string, { recent: number; prior: number; recentPremium: number }>();
+
+    for (const alert of alerts) {
+      const age = now - new Date(alert.alerted_at).getTime();
+      const cur = byTicker.get(alert.ticker) ?? { recent: 0, prior: 0, recentPremium: 0 };
+      if (age <= R_MS) {
+        cur.recent++;
+        cur.recentPremium += alert.premium;
+      } else if (age <= P_MS) {
+        cur.prior++;
+      }
+      byTicker.set(alert.ticker, cur);
+    }
+
+    const spikes: VelocityEntry[] = [];
+    for (const [ticker, { recent, prior, recentPremium }] of Array.from(byTicker)) {
+      const ratio = recent / Math.max(1, prior);
+      if (recent >= 2 && ratio >= 3) {
+        spikes.push({ ticker, recent, prior, ratio, recentPremium });
+      }
+    }
+    spikes.sort((a, b) => b.ratio - a.ratio);
+
+    return {
+      velocityEntries: spikes.slice(0, 8),
+      velocitySpikeTickers: new Set(spikes.map((e) => e.ticker)),
+    };
+  }, [alerts]);
+
+  // Feature 2: coordinated signal — dark pool block + options sweep on same ticker within 5 min
+  const coordinatedTickers = useMemo<Set<string>>(() => {
+    if (!darkPoolPrints.length) return new Set();
+    const WINDOW_MS = 5 * 60 * 1000;
+    const coordinated = new Set<string>();
+
+    for (const alert of alerts) {
+      const alertTime = new Date(alert.alerted_at).getTime();
+      const hasBlock = darkPoolPrints.some(
+        (dp) =>
+          dp.ticker === alert.ticker &&
+          Math.abs(new Date(dp.executed_at).getTime() - alertTime) <= WINDOW_MS
+      );
+      if (hasBlock) coordinated.add(alert.ticker);
+    }
+    return coordinated;
+  }, [alerts, darkPoolPrints]);
+
+  // Feature 11: sector rotation — aggregate flow premium by sector
+  const sectorFlowEntries = useMemo<SectorFlowEntry[]>(() => {
+    const map = new Map<string, { callPremium: number; putPremium: number }>();
+
+    for (const alert of alerts) {
+      const sector = getSector(alert.ticker);
+      const cur = map.get(sector) ?? { callPremium: 0, putPremium: 0 };
+      if (alert.option_type === "CALL") cur.callPremium += alert.premium;
+      else cur.putPremium += alert.premium;
+      map.set(sector, cur);
+    }
+
+    return Array.from(map.entries())
+      .map(([sector, { callPremium, putPremium }]) => {
+        const total   = callPremium + putPremium;
+        const callPct = total > 0 ? Math.round((callPremium / total) * 100) : 50;
+        return { sector, callPremium, putPremium, total, callPct };
+      })
+      .filter((e) => e.total >= 100_000)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  }, [alerts]);
+
+  // Feature 12: Night Hawk plays enriched with flow conviction from the 7d tape
+  const { nighthawkPlaysWithFlow, hawkTickers } = useMemo(() => {
+    if (!nighthawkEdition?.plays?.length) {
+      return { nighthawkPlaysWithFlow: [] as NightHawkPlayWithFlow[], hawkTickers: new Set<string>() };
+    }
+
+    const playsWithFlow: NightHawkPlayWithFlow[] = nighthawkEdition.plays.map((play) => {
+      const tickerAlerts = alerts.filter((a) => a.ticker === play.ticker);
+      const callPremium  = tickerAlerts.filter((a) => a.option_type === "CALL").reduce((s, a) => s + a.premium, 0);
+      const putPremium   = tickerAlerts.filter((a) => a.option_type === "PUT").reduce((s, a) => s + a.premium, 0);
+      const totalPremium = callPremium + putPremium;
+      const topPrint     = tickerAlerts.reduce((m, a) => Math.max(m, a.premium), 0);
+      const printCount   = tickerAlerts.length;
+
+      const isLong = play.direction?.toLowerCase().includes("long") ||
+                     play.direction?.toLowerCase().includes("bull");
+      const flowCallPct    = totalPremium > 0 ? callPremium / totalPremium : 0.5;
+      const flowAgreement  = isLong ? flowCallPct >= 0.55 : flowCallPct <= 0.45;
+
+      const conviction = totalPremium >= 2_000_000 && flowAgreement ? "strong"
+        : totalPremium >= 500_000 ? "moderate"
+        : totalPremium > 0       ? "weak"
+        : "none";
+
+      return {
+        ...play,
+        flowData: { callPremium, putPremium, totalPremium, topPrint, printCount, flowAgreement, conviction },
+      } as NightHawkPlayWithFlow;
+    });
+
+    return {
+      nighthawkPlaysWithFlow: playsWithFlow,
+      hawkTickers: new Set(nighthawkEdition.plays.map((p) => p.ticker)),
+    };
+  }, [nighthawkEdition, alerts]);
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
@@ -437,13 +580,23 @@ export function FlowFeed() {
             replayMode={replayMode}
             splitFlowTickers={splitFlowTickers}
             earningsDays={earningsDays}
+            velocitySpikeTickers={velocitySpikeTickers}
+            coordinatedTickers={coordinatedTickers}
+            hawkTickers={hawkTickers}
           />
         </div>
 
         {/* Right column — 4 cols */}
         <div className="xl:col-span-4 flex flex-col gap-3">
           <NetPremiumLeaderboard alerts={alerts} />
+          <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+          <NightHawkFlowPanel
+            plays={nighthawkPlaysWithFlow}
+            editionFor={nighthawkEdition?.edition_for}
+            onTickerClick={setSelectedTicker}
+          />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
+          <SectorFlowPanel entries={sectorFlowEntries} />
           <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
           <FlowMomentumChart alerts={alerts} />
           <DarkPoolPanel />
