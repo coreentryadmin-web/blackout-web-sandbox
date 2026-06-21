@@ -93,19 +93,19 @@ Flow stats:
 
 // ─── Shared data fetcher (reuses the same serverCache keys as other routes) ───
 async function fetchSharedData(): Promise<{ alerts: FlowAlert[]; darkPrints: NormalizedBlock[] }> {
-  // Fetch flows — uses the same cache key as /api/market/flows for cache sharing
+  // Fetch flows using a brief-owned cache key — avoids colliding with the flows route
+  // which stores a different shape ({ source, flows, count, platform_refs }) under its keys.
   let alerts: FlowAlert[] = [];
   try {
     if (dbConfigured()) {
-      const payload = await serverCache(
-        "flows:pg:168:200000:all",
+      alerts = await serverCache(
+        "flow-brief:flows:pg:168:200000",
         TTL.DARK_POOL,
         () => fetchRecentFlows({ limit: 500, min_premium: 200_000, since_hours: 168 })
-      );
-      alerts = Array.isArray(payload) ? payload : (payload as { flows?: FlowAlert[] })?.flows ?? [];
+      ) as FlowAlert[];
     } else if (uwConfigured()) {
       alerts = await serverCache(
-        "flows:uw:200:all:200000",
+        "flow-brief:flows:uw:200:200000",
         TTL.DARK_POOL,
         () => fetchMarketFlowAlerts({ limit: 200, min_premium: 200_000 })
       ) as FlowAlert[];
@@ -116,16 +116,18 @@ async function fetchSharedData(): Promise<{ alerts: FlowAlert[]; darkPrints: Nor
 
   // Fetch dark pool prints — uses the same cache key as /api/market/dark-pool
   let darkPrints: NormalizedBlock[] = [];
-  try {
-    const rawRows = await serverCache("dark-pool:recent:50", TTL.DARK_POOL, () =>
-      fetchUwDarkPoolRecent(50)
-    );
-    darkPrints = (Array.isArray(rawRows) ? rawRows : [])
-      .map(normalizeDark)
-      .filter((r): r is NormalizedBlock => r !== null)
-      .sort((a, b) => b.premium - a.premium);
-  } catch (err) {
-    console.error("[flow-brief] dark-pool fetch error:", err);
+  if (uwConfigured()) {
+    try {
+      const rawRows = await serverCache("dark-pool:recent:50", TTL.DARK_POOL, () =>
+        fetchUwDarkPoolRecent(50)
+      );
+      darkPrints = (Array.isArray(rawRows) ? rawRows : [])
+        .map(normalizeDark)
+        .filter((r): r is NormalizedBlock => r !== null)
+        .sort((a, b) => b.premium - a.premium);
+    } catch (err) {
+      console.error("[flow-brief] dark-pool fetch error:", err);
+    }
   }
 
   return { alerts, darkPrints };
