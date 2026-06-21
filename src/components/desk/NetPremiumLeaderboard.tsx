@@ -96,7 +96,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     {callBarW > 0 && (
                       <motion.div
                         className="flow-leader-bar-fill"
-                        style={{ background: "linear-gradient(90deg, #a21caf, #e879f9)", width: `${callBarW}%` }}
+                        style={{ background: "linear-gradient(90deg, #059669, #34d399)", width: `${callBarW}%` }}
                         initial={{ width: 0 }}
                         animate={{ width: `${callBarW}%` }}
                         transition={{ duration: 0.6, delay: i * 0.06, ease: [0.34, 1.56, 0.64, 1] }}
