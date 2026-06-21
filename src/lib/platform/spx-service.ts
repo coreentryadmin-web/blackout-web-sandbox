@@ -17,8 +17,8 @@ export function summarizeSpxDesk(merged: SpxDeskPayload): SpxDeskSummary {
   const spx_flows = merged.spx_flows;
   return {
     as_of: merged.as_of,
-    market_open: merged.market_open,
-    market_label: merged.market_label,
+    market_open: merged.market_open ?? false,
+    market_label: merged.market_label ?? "",
     price: merged.price,
     change_pct: merged.spx_change_pct,
     vix: merged.vix,

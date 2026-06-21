@@ -121,7 +121,7 @@ async function fetchMarketNewsPreferPolygon(): Promise<Record<string, unknown>[]
   return poly.map((n) => ({
     title: n.title,
     source: "polygon",
-    published_at: n.published_utc,
+    published_at: n.published,
   }));
 }
 

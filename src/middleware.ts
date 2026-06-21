@@ -42,7 +42,7 @@ export default clerkMiddleware(async (auth, req) => {
       const rawTier = (sessionClaims?.publicMetadata as Record<string, unknown> | undefined)?.tier;
       const tier = parseTier(rawTier);
 
-      if (!tierAtLeast(tier, "pro")) {
+      if (!tierAtLeast(tier, "premium")) {
         const upgradeUrl = new URL("/upgrade", req.url);
         return NextResponse.redirect(upgradeUrl);
       }

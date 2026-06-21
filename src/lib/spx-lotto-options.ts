@@ -72,7 +72,7 @@ async function fetchOdteContracts(spot: number, expiry: string): Promise<ChainCo
 
 function fallbackLottoStrike(spot: number, direction: SpxPlayDirection): number {
   const base = suggestPlayStrike(
-    { price: spot, gex_walls: [] } as import("@/lib/providers/spx-desk").SpxDeskPayload,
+    { price: spot, gex_walls: [] } as unknown as import("@/lib/providers/spx-desk").SpxDeskPayload,
     direction,
     "D"
   );
