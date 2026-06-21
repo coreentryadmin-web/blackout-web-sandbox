@@ -13,6 +13,7 @@ import {
   playGexStaleMaxSec,
   playMinAgreeingFactors,
   playMinGradeRank,
+  playMinRiskReward,
   playOnlyFullEntry,
   playOpeningRangeMinutes,
   playReentryLockSec,
@@ -232,6 +233,32 @@ export function evaluatePlayGates(
     blocks.push(
       `Re-entry lock after loss (${Math.round(playReentryLockSec() / 60)}m same direction — STOP + THESIS)`
     );
+  }
+
+  // Flow staleness: if the UW flow feed has been silent > 5 min, entries are blocked —
+  // the tape signal and 0DTE flow score are based on data that may no longer reflect
+  // current market structure. Warning at 2 min so the trader sees degraded data early.
+  const flowAgeMs = desk.flow_data_age_ms;
+  if (buyIntent && flowAgeMs != null && flowAgeMs > 300_000) {
+    blocks.push(`Flow data stale (${Math.round(flowAgeMs / 60_000)}m) — tape and 0DTE signals unreliable`);
+  } else if (flowAgeMs != null && flowAgeMs > 120_000) {
+    warnings.push(`Flow data ${Math.round(flowAgeMs / 60_000)}m old — tape signal may lag`);
+  }
+
+  // R:R enforcement: target must be at least playMinRiskReward()× the stop distance.
+  // Only enforced when both levels are defined. A null-stop play is separately flagged
+  // via the invalidation text and is the operator's responsibility to size down.
+  if (buyIntent && confluence.levels.stop != null && confluence.levels.target != null) {
+    const entryPrice = desk.price;
+    const stopDist = Math.abs(entryPrice - confluence.levels.stop);
+    const targetDist = Math.abs(confluence.levels.target - entryPrice);
+    const minRR = playMinRiskReward();
+    if (stopDist > 0 && targetDist / stopDist < minRR) {
+      blocks.push(
+        `R:R ${(targetDist / stopDist).toFixed(2)}:1 below minimum ${minRR}:1 ` +
+        `(target ${Math.round(targetDist)} pts / stop ${Math.round(stopDist)} pts)`
+      );
+    }
   }
 
   if (desk.vix != null && desk.vix > 32) {

@@ -3,7 +3,7 @@
  */
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { computeWeightedConflicts } from "@/lib/spx-play-conflicts";
-import { playIdealTargetPts } from "@/lib/spx-play-config";
+import { playDynamicTargetPts } from "@/lib/spx-play-config";
 
 export type SpxSignalAction = "BUY_CALL" | "BUY_PUT" | "HOLD" | "WAIT";
 export type SpxPlayAction = "SCANNING" | "WATCHING" | "BUY" | "HOLD" | "TRIM" | "SELL";
@@ -92,14 +92,16 @@ function buildLevels(
   let stop: number | null = null;
   let target: number | null = null;
   let invalidation = "No clean level — reduce size or wait";
+  // VIX-indexed target: scales with the day's expected range instead of a fixed 10 pts.
+  const targetPts = playDynamicTargetPts(desk.vix);
 
   if (action === "BUY_CALL" || (action === "HOLD" && bias === "bullish")) {
     stop = support?.strike ?? desk.lod ?? desk.vwap ?? null;
-    target = price + playIdealTargetPts();
+    target = price + targetPts;
     if (stop != null) invalidation = `Below ${stop.toFixed(0)} (GEX support / LOD)`;
   } else if (action === "BUY_PUT" || (action === "HOLD" && bias === "bearish")) {
     stop = resistance?.strike ?? desk.hod ?? desk.vwap ?? null;
-    target = price - playIdealTargetPts();
+    target = price - targetPts;
     if (stop != null) invalidation = `Above ${stop.toFixed(0)} (GEX resistance / HOD)`;
   }
 
@@ -375,6 +377,33 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
         label: "Net prem",
         weight: w,
         detail: `SPY net prem ${delta > 0 ? "accelerating" : "decelerating"}`,
+      });
+    }
+  }
+
+  // VIX term structure — backwardation (spot VIX > 3m VIX) signals near-term fear and
+  // typically precedes a volatility spike. Contango (spot < 3m) is the "calm" baseline.
+  // We only score meaningful divergence (>1 pt), not tick-level noise.
+  const vt = desk.vix_term;
+  if (vt?.vix9d != null && vt?.vix3m != null) {
+    const termDiff = vt.vix9d - vt.vix3m;
+    if (termDiff > 1) {
+      // Backwardation: short-dated vol elevated vs deferred — near-term crash risk
+      const w = -8;
+      score += w;
+      factors.push({
+        label: "VIX curve",
+        weight: w,
+        detail: `VIX backwardation: 9d ${vt.vix9d.toFixed(1)} > 3m ${vt.vix3m.toFixed(1)} — elevated near-term fear`,
+      });
+    } else if (termDiff < -1) {
+      // Normal contango: term structure calm, supports short-vol / call-buying
+      const w = 4;
+      score += w;
+      factors.push({
+        label: "VIX curve",
+        weight: w,
+        detail: `VIX contango: 9d ${vt.vix9d.toFixed(1)} < 3m ${vt.vix3m.toFixed(1)} — calm near-term structure`,
       });
     }
   }

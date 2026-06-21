@@ -11,6 +11,33 @@ import {
 } from "@/lib/spx-play-config";
 import { etClock, etMinutes, formatEtTime } from "@/lib/spx-play-session-time";
 
+/**
+ * NYSE/CBOE standard early-close days (market closes at 1:00 PM ET).
+ * Update annually: Black Friday (day after Thanksgiving) and Christmas Eve.
+ * When July 4 falls on a weekday the market is fully closed (not an early close).
+ */
+const EARLY_CLOSE_DATES: Record<string, number> = {
+  // Black Friday
+  "2025-11-28": etClock(13, 0),
+  "2026-11-27": etClock(13, 0),
+  "2027-11-26": etClock(13, 0),
+  // Christmas Eve
+  "2025-12-24": etClock(13, 0),
+  "2026-12-24": etClock(13, 0),
+  "2027-12-24": etClock(13, 0),
+};
+
+function todayEtYmd(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+}
+
+/** Returns the ET-minutes of the early close for today, or null if it's a normal session. */
+function getEarlyCloseMinutes(now: Date): number | null {
+  const envOverride = process.env.SPX_EARLY_CLOSE_ET_MINS;
+  if (envOverride) return Number(envOverride);
+  return EARLY_CLOSE_DATES[todayEtYmd(now)] ?? null;
+}
+
 export const CASH_OPEN_ET_MINS = etClock(9, 30);
 export const PREMARKET_START_ET_MINS = etClock(7, 0);
 
@@ -58,18 +85,41 @@ export function cashOpenLabel(): string {
   return formatEtTime(9, 30);
 }
 
-/** Block new entries (cold BUY + WATCH→ENTRY promote). Default 3:30 PM ET. */
+/** Block new entries (cold BUY + WATCH→ENTRY promote). Default 3:30 PM ET.
+ *  On early-close days, no-entry cutoff moves to 30 min before the early close.
+ */
 export function isPastNoEntryCutoff(now = new Date()): boolean {
-  return etMinutes(now) >= etClock(playNoEntryAfterEtHour(), playNoEntryAfterEtMin());
+  const earlyClose = getEarlyCloseMinutes(now);
+  const cutoffMins = earlyClose != null
+    ? earlyClose - 30
+    : etClock(playNoEntryAfterEtHour(), playNoEntryAfterEtMin());
+  return etMinutes(now) >= cutoffMins;
 }
 
 export function noEntryCutoffLabel(): string {
   return formatEtTime(playNoEntryAfterEtHour(), playNoEntryAfterEtMin());
 }
 
-/** Force-flatten open 0DTE runners. Default 3:50 PM ET. */
+/** Force-flatten open 0DTE runners. Default 3:50 PM ET.
+ *  On early-close days (Black Friday, Christmas Eve) the cutoff is 10 min before
+ *  the early close (e.g. 12:50 PM on a 1:00 PM close day) to avoid holding options
+ *  that are already worthless after market close.
+ */
 export function isPastForceExitCutoff(now = new Date()): boolean {
-  return etMinutes(now) >= etClock(playForceExitEtHour(), playForceExitEtMin());
+  const earlyClose = getEarlyCloseMinutes(now);
+  const cutoffMins = earlyClose != null
+    ? earlyClose - 10  // 10 min before early close
+    : etClock(playForceExitEtHour(), playForceExitEtMin());
+  return etMinutes(now) >= cutoffMins;
+}
+
+/** Returns the force-exit time label for the current session (early-close aware). */
+export function earlyCloseLabel(now = new Date()): string | null {
+  const earlyClose = getEarlyCloseMinutes(now);
+  if (!earlyClose) return null;
+  const hours = Math.floor(earlyClose / 60);
+  const mins = earlyClose % 60;
+  return formatEtTime(hours, mins);
 }
 
 export function forceExitCutoffLabel(): string {

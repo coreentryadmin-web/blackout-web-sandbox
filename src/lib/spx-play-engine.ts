@@ -24,6 +24,7 @@ import { pickIdleMessage, watchMessage } from "@/lib/spx-play-idle";
 import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/lib/spx-play-intel";
 import {
   gradeRank,
+  playDynamicTrailWindowPts,
   playFullMinScore,
   playIdealTargetPts,
   playOptionChainRequired,
@@ -144,6 +145,13 @@ export type SpxPlayPayload = {
   } | null;
   lotto_play: LottoPlayPayload | null;
   session_phase: "premarket" | "cash" | "closed";
+  /**
+   * True only when the system has committed a play to the DB in this evaluation cycle.
+   * False on the read-only (mutate:false) member snapshot path — even when action:"BUY"
+   * is returned, the system has not yet opened the position. Members should wait for a
+   * true signal_committed BUY before acting, not the snapshot signal alone.
+   */
+  signal_committed: boolean;
   as_of: string;
 };
 
@@ -225,6 +233,7 @@ function scanningPayload(
     telemetry: null,
     lotto_play: null,
     session_phase: currentSessionPhase(desk),
+    signal_committed: false,
     as_of: desk.polled_at ?? desk.as_of ?? new Date().toISOString(),
     ...extras,
   };
@@ -300,7 +309,10 @@ async function evaluateOpenPlay(
   // Pairs with the trim mechanism: trim fires at MFE >=12 at 70% progress; trail protects the runner.
   const trailBreakevenMfe = playTrailingStopBreakevenMfePts();
   const trailActiveMfe = playTrailingStopTrailMfePts();
-  const trailWindowPts = playTrailingStopTrailWindowPts();
+  // VIX-indexed trail window: scales with the day's range so normal retracements on
+  // volatile days don't stop out a healthy runner. Falls back to the static config when
+  // the env override is set (SPX_TRAILING_STOP_TRAIL_WINDOW).
+  const trailWindowPts = playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts();
   let trailingStop: number | null = null;
   if (mfe >= trailActiveMfe) {
     // Trail at (peak price - trailWindowPts) to lock in most of the run
@@ -617,6 +629,7 @@ async function evaluateOpenPlay(
     telemetry,
     lotto_play: null,
     session_phase: "cash",
+    signal_committed: true,
     as_of: confluence.as_of,
   };
 }
@@ -920,6 +933,7 @@ async function evaluateFlatPlay(
       telemetry,
       lotto_play: null,
       session_phase: currentSessionPhase(desk),
+      signal_committed: false,
       as_of: confluence.as_of,
     };
   }
@@ -1070,6 +1084,7 @@ async function evaluateFlatPlay(
     telemetry,
     lotto_play: null,
     session_phase: currentSessionPhase(desk),
+    signal_committed: true,
     as_of: confluence.as_of,
   };
 }
@@ -1129,6 +1144,7 @@ export async function evaluateSpxPlay(
       telemetry: null,
       lotto_play: null,
       session_phase: "closed",
+      signal_committed: false,
       as_of: desk.polled_at ?? desk.as_of ?? new Date().toISOString(),
     };
   }

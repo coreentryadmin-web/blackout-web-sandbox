@@ -197,6 +197,43 @@ export function playIdealTargetPts(): number {
   return num(process.env.SPX_PLAY_IDEAL_TARGET_PTS, 10);
 }
 
+/**
+ * VIX-indexed dynamic target in SPX pts.
+ * Low-vol markets (VIX <16) have tighter intraday ranges — 8 pts is realistic.
+ * Normal markets (VIX 16-22) average 25-40 pt days — 12 pts is a good scalp.
+ * High-vol markets (VIX >22) can move 60-100 pts — 18 pts captures a meaningful slice.
+ * An explicit SPX_PLAY_IDEAL_TARGET_PTS env override disables the VIX indexing entirely.
+ */
+export function playDynamicTargetPts(vix?: number | null): number {
+  if (process.env.SPX_PLAY_IDEAL_TARGET_PTS) return num(process.env.SPX_PLAY_IDEAL_TARGET_PTS, 10);
+  if (vix != null && vix > 22) return 18;
+  if (vix != null && vix > 16) return 12;
+  return 8;
+}
+
+/**
+ * VIX-indexed trail window in SPX pts.
+ * A 7-pt trail on a VIX-25 day gets stopped out by normal noise. Scale with vol:
+ * VIX <16 → 6 pts (quiet market), 16-22 → 9 pts (normal chop), >22 → 13 pts (volatile).
+ * An explicit SPX_TRAILING_STOP_TRAIL_WINDOW env override disables VIX indexing.
+ */
+export function playDynamicTrailWindowPts(vix?: number | null): number {
+  if (process.env.SPX_TRAILING_STOP_TRAIL_WINDOW) return num(process.env.SPX_TRAILING_STOP_TRAIL_WINDOW, 7);
+  if (vix != null && vix > 22) return 13;
+  if (vix != null && vix > 16) return 9;
+  return 6;
+}
+
+/**
+ * Minimum acceptable risk:reward ratio before a BUY entry is allowed.
+ * Default 1.5 — target must be at least 1.5× the distance to the stop.
+ * Only enforced when both stop and target are non-null. Null-stop plays are
+ * not blocked here (they have their own invalidation text warning).
+ */
+export function playMinRiskReward(): number {
+  return num(process.env.SPX_PLAY_MIN_RISK_REWARD, 1.5);
+}
+
 export function playLottoMaxPicksPerDay(): number {
   return num(process.env.SPX_PLAY_LOTTO_MAX_PICKS, 2);
 }
@@ -280,8 +317,14 @@ export function playMtfBufferPts(): number {
   return num(process.env.SPX_PLAY_MTF_BUFFER_PTS, 1.0);
 }
 
+/**
+ * Maximum distance in SPX pts at which a level counts as "nearby."
+ * Default 10 pts — at 22 pts (old default) a support 22 pts below price was considered
+ * "at support" while the target was only 8-12 pts away, creating a default -R:R entry.
+ * 10 pts is meaningful proximity for 0DTE scalp trades.
+ */
 export function playStructureProximityPts(): number {
-  return num(process.env.SPX_PLAY_STRUCTURE_PROX_PTS, 22);
+  return num(process.env.SPX_PLAY_STRUCTURE_PROX_PTS, 10);
 }
 
 export function playMinConfirmationsRequired(): number {
