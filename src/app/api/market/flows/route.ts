@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
           marketPlatform.nighthawk.getLatestNightHawkSummary().catch(() => null),
         ]).then(([spx, nighthawk]) => ({ spx, nighthawk })),
       ]);
+      console.log(`[market/flows] postgres ok — ${flows.length} rows (min_premium=${min_premium}, since_hours=${since_hours})`);
       return NextResponse.json({
         source: "postgres",
         flows,
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      console.error("[market/flows] postgres:", detail);
+      console.error("[market/flows] postgres ERROR:", detail);
     }
   }
 
