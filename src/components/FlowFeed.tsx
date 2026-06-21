@@ -146,7 +146,7 @@ export function FlowFeed() {
       if (now - new Date(alert.alerted_at).getTime() > WINDOW_MS) continue;
       const cur = byTicker.get(alert.ticker) ?? { callPrem: 0, putPrem: 0 };
       if (alert.option_type === "CALL") cur.callPrem += alert.premium;
-      else cur.putPrem += alert.premium;
+      else if (alert.option_type === "PUT") cur.putPrem += alert.premium;
       byTicker.set(alert.ticker, cur);
     }
 
@@ -389,8 +389,9 @@ export function FlowFeed() {
     let base = replayMode ? replayAlerts : alerts;
     base = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
     if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
+    if (typeFilter !== "ALL") base = base.filter((a) => a.option_type === typeFilter);
     return [...base].sort((a, b) => b.premium - a.premium);
-  }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium]);
+  }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium, typeFilter]);
 
   return (
     <div className="desk-layout flex flex-col gap-4">
@@ -551,7 +552,7 @@ export function FlowFeed() {
               transition={{ duration: 0.2 }}
               className="font-mono text-[10px] text-zinc-300 hidden sm:block"
             >
-              {loading ? "Scanning…" : `${alerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
+              {loading ? "Scanning…" : `${displayAlerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
             </motion.span>
           </AnimatePresence>
 

@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error("[market/flows] postgres ERROR:", detail);
-      return NextResponse.json({ source: "postgres_error", flows: [], count: 0, error: detail });
+      return NextResponse.json({ source: "postgres_error", flows: [], count: 0, error: detail }, { status: 503 });
     }
   }
 

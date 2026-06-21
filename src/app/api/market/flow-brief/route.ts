@@ -30,7 +30,7 @@ function normalizeDark(raw: unknown): NormalizedBlock | null {
   const premium = Number(r.premium ?? r.notional ?? r.size_premium ?? 0);
   if (!ticker || premium <= 0) return null;
   const sideRaw = String(r.side ?? r.sentiment ?? r.direction ?? "neutral").toLowerCase();
-  const side = sideRaw.includes("buy") ? "BUY" : sideRaw.includes("sell") ? "SELL" : "NEUTRAL";
+  const side = sideRaw.includes("buy") ? "buy" : sideRaw.includes("sell") ? "sell" : "neutral";
   const share_size = r.size != null ? Number(r.size) : undefined;
   return { ticker, premium, side, share_size };
 }
@@ -58,7 +58,7 @@ function buildPrompt(alerts: FlowAlert[], darkPrints: NormalizedBlock[]): string
     .filter((d) => d.premium >= MASSIVE_BLOCK)
     .slice(0, 4)
     .map((d) =>
-      `${d.ticker} ${d.side} $${(d.premium / 1e6).toFixed(1)}M block${d.share_size ? ` (${(d.share_size / 1000).toFixed(0)}K shares)` : ""}`
+      `${d.ticker} ${d.side.toUpperCase()} $${(d.premium / 1e6).toFixed(1)}M block${d.share_size ? ` (${(d.share_size / 1000).toFixed(0)}K shares)` : ""}`
     );
 
   // Top flow alerts for context
