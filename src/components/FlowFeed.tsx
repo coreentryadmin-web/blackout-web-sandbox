@@ -175,10 +175,11 @@ export function FlowFeed() {
             placeholder="TICKER"
             maxLength={6}
             className={clsx(
-              "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border bg-zinc-950 outline-none w-24",
-              "border-[rgba(0,255,102,0.3)] text-[#00e566] placeholder:text-[rgba(0,229,102,0.4)]",
-              "focus:border-[rgba(0,255,102,0.7)] focus:ring-1 focus:ring-[rgba(0,255,102,0.2)] transition-all"
+              "font-mono text-[13px] font-bold px-4 py-2 rounded-lg border bg-zinc-950 outline-none w-32 tracking-widest uppercase",
+              "border-[rgba(0,255,102,0.35)] text-[#00e566] placeholder:text-[rgba(0,229,102,0.35)]",
+              "focus:border-[rgba(0,255,102,0.8)] focus:ring-2 focus:ring-[rgba(0,255,102,0.15)] transition-all"
             )}
+            style={{ textShadow: tickerFilter ? "0 0 10px rgba(0,229,102,0.6)" : "none" }}
           />
           <AnimatePresence>
             {tickerFilter && (
@@ -188,7 +189,7 @@ export function FlowFeed() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 type="button"
                 onClick={() => setTickerFilter("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 font-mono text-xs"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 font-mono text-sm font-bold"
               >
                 ×
               </motion.button>
