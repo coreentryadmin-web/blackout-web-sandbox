@@ -101,8 +101,28 @@ export function StrikeStackDetector({
                     </div>
 
                     <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <p className="font-mono text-[10px] text-zinc-400">
-                        {stack.strike}{isCall ? "C" : "P"} · {fmtExpiry(stack.expiry)}
+                      <p className="font-mono flex items-center gap-1.5">
+                        <span
+                          className="font-bold tabular-nums"
+                          style={{
+                            fontSize: "13px",
+                            color: "#fde047",
+                            textShadow: "0 0 10px rgba(253,224,71,0.6)",
+                          }}
+                        >
+                          {stack.strike}{isCall ? "C" : "P"}
+                        </span>
+                        <span className="text-zinc-600 text-[10px]">·</span>
+                        <span
+                          className="font-semibold"
+                          style={{
+                            fontSize: "12px",
+                            color: isCall ? "#f0abfc" : "#fda4af",
+                            textShadow: isCall ? "0 0 8px rgba(240,171,252,0.5)" : "0 0 8px rgba(253,164,175,0.5)",
+                          }}
+                        >
+                          {fmtExpiry(stack.expiry)}
+                        </span>
                       </p>
                       <p className="font-mono text-[10px] text-zinc-500">
                         {stack.premiums.map(fmtFlowPremShort).join(" + ")}
