@@ -73,21 +73,21 @@ export function StrikeStackDetector({
                       "w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-200",
                       "hover:scale-[1.01] active:scale-[0.99]",
                       isCall
-                        ? "border-emerald-900/50 bg-emerald-950/15 hover:bg-emerald-950/25 hover:border-emerald-800/60"
+                        ? "border-fuchsia-900/50 bg-fuchsia-950/10 hover:bg-fuchsia-950/20 hover:border-fuchsia-800/50"
                         : "border-rose-900/50 bg-rose-950/15 hover:bg-rose-950/25 hover:border-rose-800/60"
                     )}
-                    style={{ boxShadow: `inset 0 0 ${20 * intensity}px ${isCall ? "rgba(16,185,129,0.06)" : "rgba(244,63,94,0.06)"}` }}
+                    style={{ boxShadow: `inset 0 0 ${20 * intensity}px ${isCall ? "rgba(217,70,239,0.07)" : "rgba(244,63,94,0.06)"}` }}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Hit count */}
                         <span className={clsx(
                           "font-mono text-[11px] font-bold tabular-nums w-5 text-center rounded",
-                          isCall ? "text-emerald-300" : "text-rose-300"
+                          isCall ? "text-fuchsia-300" : "text-rose-300"
                         )}>
                           ×{stack.alert_count}
                         </span>
-                        <span className="font-anton text-[14px] text-white leading-none">{stack.ticker}</span>
+                        <span className="font-anton text-[14px] text-yellow-300 leading-none">{stack.ticker}</span>
                         <span className={clsx("flow-badge", isCall ? "flow-badge-call" : "flow-badge-put")}>
                           {stack.option_type}
                         </span>
@@ -95,7 +95,7 @@ export function StrikeStackDetector({
                       </div>
                       <span className={clsx(
                         "font-mono text-[12px] font-bold tabular-nums flex-shrink-0",
-                        isCall ? "text-emerald-400" : "text-rose-400"
+                        isCall ? "text-fuchsia-400" : "text-rose-400"
                       )}>
                         {fmtFlowPremShort(stack.total_premium)}
                       </span>

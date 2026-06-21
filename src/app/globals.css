@@ -9645,14 +9645,14 @@ body {
   }
 
   .flow-card-call {
-    border-color: rgba(16, 185, 129, 0.15);
-    background: rgba(16, 185, 129, 0.04);
+    border-color: rgba(217, 70, 239, 0.18);
+    background: rgba(217, 70, 239, 0.04);
   }
-  .flow-card-call::before { background: linear-gradient(180deg, #10b981, #059669); }
+  .flow-card-call::before { background: linear-gradient(180deg, #e879f9, #a21caf); }
   .flow-card-call:hover {
-    border-color: rgba(16, 185, 129, 0.3);
-    background: rgba(16, 185, 129, 0.08);
-    box-shadow: 0 0 24px rgba(16, 185, 129, 0.08);
+    border-color: rgba(217, 70, 239, 0.35);
+    background: rgba(217, 70, 239, 0.08);
+    box-shadow: 0 0 24px rgba(217, 70, 239, 0.12);
   }
   .flow-card-call:hover::before { width: 4px; }
 
@@ -9722,7 +9722,7 @@ body {
   }
   .flow-seg-btn:hover { color: #f4f4f5; background: #27272a; }
   .flow-seg-btn-active-all   { background: #3f3f46; color: #f4f4f5; border: 1px solid #52525b; }
-  .flow-seg-btn-active-call  { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+  .flow-seg-btn-active-call  { background: rgba(217,70,239,0.18); color: #f0abfc; border: 1px solid rgba(217,70,239,0.5); }
   .flow-seg-btn-active-put   { background: rgba(244,63,94,0.2);  color: #fb7185; border: 1px solid rgba(244,63,94,0.4); }
 
   /* Count pill on segment button */
@@ -9741,7 +9741,7 @@ body {
     margin-left: 4px;
     transition: background 0.15s, color 0.15s;
   }
-  .flow-seg-btn-active-call .flow-count-pill { background: rgba(16,185,129,0.25); color: #34d399; }
+  .flow-seg-btn-active-call .flow-count-pill { background: rgba(217,70,239,0.2);  color: #f0abfc; }
   .flow-seg-btn-active-put  .flow-count-pill { background: rgba(244,63,94,0.25);  color: #fb7185; }
 
   /* Badge variants */
@@ -9758,7 +9758,7 @@ body {
     border: 1px solid;
     line-height: 1;
   }
-  .flow-badge-call    { color: #6ee7b7; border-color: rgba(16,185,129,0.4);  background: rgba(16,185,129,0.1);  }
+  .flow-badge-call    { color: #f0abfc; border-color: rgba(217,70,239,0.5);   background: rgba(217,70,239,0.12); }
   .flow-badge-put     { color: #fda4af; border-color: rgba(244,63,94,0.4);   background: rgba(244,63,94,0.1);   }
   .flow-badge-sweep   { color: #fdba74; border-color: rgba(249,115,22,0.4);  background: rgba(249,115,22,0.1);  }
   .flow-badge-floor   { color: #7dd3fc; border-color: rgba(14,165,233,0.4);  background: rgba(14,165,233,0.1);  }

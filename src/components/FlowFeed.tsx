@@ -13,7 +13,8 @@ import { FlowMomentumChart } from "@/components/desk/FlowMomentumChart";
 import { DarkPoolPanel } from "@/components/desk/DarkPoolPanel";
 import { TickerDrawer } from "@/components/desk/TickerDrawer";
 
-const PREMIUM_PRESETS = [100_000, 200_000, 500_000, 1_000_000] as const;
+const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
+const FLOOR_PREMIUM = 100_000;
 type TypeFilter = "ALL" | "CALL" | "PUT";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
@@ -50,7 +51,7 @@ export function FlowFeed() {
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
     try {
-      const d = await fetchFlows({ limit: 300, min_premium: minPremium, ticker: tickerFilter || undefined });
+      const d = await fetchFlows({ limit: 300, min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
       setAlerts(d.flows);
       setLive(true);
     } catch {
@@ -109,9 +110,10 @@ export function FlowFeed() {
 
   const displayAlerts = useMemo(() => {
     let base = replayMode ? replayAlerts : alerts;
+    base = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
     if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
     return [...base].sort((a, b) => b.premium - a.premium);
-  }, [replayMode, replayAlerts, alerts, tickerFilter]);
+  }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium]);
 
   return (
     <div className="desk-layout flex flex-col gap-4">

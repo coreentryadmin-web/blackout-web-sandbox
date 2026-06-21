@@ -163,7 +163,7 @@ export function FlowAlertStream({
                         )}
 
                         {/* Ticker */}
-                        <span className="font-anton text-[18px] leading-none text-white tracking-wide">
+                        <span className="font-anton text-[18px] leading-none text-yellow-300 tracking-wide">
                           {flow.ticker}
                         </span>
 
@@ -193,7 +193,7 @@ export function FlowAlertStream({
                       <div className="flex items-center gap-3 ml-auto flex-shrink-0">
                         <span className={clsx(
                           "font-mono text-[15px] font-bold tabular-nums tracking-tight",
-                          isCompound ? "text-amber-400" : isCall ? "text-emerald-400" : "text-rose-400"
+                          isCompound ? "text-yellow-300" : isCall ? "text-fuchsia-400" : "text-rose-400"
                         )}>
                           {fmtPremium(flow.premium)}
                         </span>
@@ -206,7 +206,7 @@ export function FlowAlertStream({
                     {/* Row 2: contract details */}
                     <div className="flex items-center justify-between mt-1.5 gap-2">
                       <p className="font-mono text-[11px] text-zinc-400 leading-none flex items-center gap-1 flex-wrap">
-                        <span className="text-zinc-100 font-semibold">${flow.strike}</span>
+                        <span className="text-yellow-300 font-semibold">${flow.strike}</span>
                         <span className="text-zinc-600">·</span>
                         <span>{fmtExpiry(flow.expiry)}</span>
                         {dte !== null && !is0dte && (
@@ -236,7 +236,7 @@ export function FlowAlertStream({
                         )}
                         <span className={clsx(
                           "font-mono text-[9px] font-semibold uppercase tracking-wider",
-                          isCall ? "text-emerald-500" : "text-rose-500"
+                          isCall ? "text-fuchsia-400" : "text-rose-500"
                         )}>
                           {flow.direction}
                         </span>

@@ -66,17 +66,17 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-anton text-[13px] text-white leading-none tracking-wide">{row.ticker}</span>
+                    <span className="font-anton text-[13px] text-yellow-300 leading-none tracking-wide">{row.ticker}</span>
                     <span className={clsx(
                       "font-mono text-[9px] tracking-wider uppercase",
-                      isBull ? "text-emerald-600" : "text-rose-600"
+                      isBull ? "text-fuchsia-400" : "text-rose-500"
                     )}>
                       {isBull ? "↑" : "↓"} {row.callPct}%
                     </span>
                   </div>
                   <span className={clsx(
                     "font-mono text-[11px] font-semibold tabular-nums",
-                    isBull ? "text-emerald-400" : "text-rose-400"
+                    isBull ? "text-fuchsia-400" : "text-rose-400"
                   )}>
                     {isBull ? "+" : ""}{fmtPremium(row.net)}
                   </span>
@@ -88,7 +88,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     {callBarW > 0 && (
                       <motion.div
                         className="flow-leader-bar-fill"
-                        style={{ background: "linear-gradient(90deg, #059669, #10b981)", width: `${callBarW}%` }}
+                        style={{ background: "linear-gradient(90deg, #a21caf, #e879f9)", width: `${callBarW}%` }}
                         initial={{ width: 0 }}
                         animate={{ width: `${callBarW}%` }}
                         transition={{ duration: 0.6, delay: i * 0.06, ease: [0.34, 1.56, 0.64, 1] }}
