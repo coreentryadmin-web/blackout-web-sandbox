@@ -1,4 +1,5 @@
 import { fetchBenzingaNews, fetchPolygonFinancialRatios, fetchShortInterest, fetchVixIvRankPercentile, type PolygonFinancialRatios } from "@/lib/providers/polygon";
+import { fetchPolygonRealizedVol } from "@/lib/providers/polygon-options-gex";
 import { fetchPolygonNews, fetchPolygonTickerDetails } from "@/lib/providers/polygon-largo";
 import { uwConfigured } from "@/lib/providers/config";
 import {
@@ -10,7 +11,6 @@ import {
   fetchUwInstitutionOwnership,
   fetchUwIvRank,
   fetchUwIvTermStructure,
-  fetchUwNewsHeadlines,
   fetchUwOiChange,
   fetchUwPredictionsConsensus,
   fetchUwRealizedVol,
@@ -61,9 +61,29 @@ export type TickerDossier = {
   scored?: ScoredCandidate;
 };
 
-let editionCongressCache: Record<string, unknown>[] | null = null;
-let editionPredictionsCache: Awaited<ReturnType<typeof fetchUwPredictionsConsensus>> | null = null;
-let editionScreenerCache: Record<string, unknown>[] | null = null;
+/**
+ * Per-build cache for edition-wide API calls (congress trades, predictions,
+ * screener). Each concurrent build should construct its own DossierBuildCache
+ * and pass it through so builds cannot cross-contaminate each other's data.
+ *
+ * The module-level `_defaultBuildCache` is kept for backward-compatibility with
+ * callers that invoke `fetchTickerDossier` directly without a build cache; those
+ * callers should migrate to passing an explicit cache or use `fetchAllDossiers`.
+ */
+export type DossierBuildCache = {
+  congress: Record<string, unknown>[] | null;
+  predictions: Awaited<ReturnType<typeof fetchUwPredictionsConsensus>> | null;
+  screener: Record<string, unknown>[] | null;
+};
+
+export function createDossierBuildCache(): DossierBuildCache {
+  return { congress: null, predictions: null, screener: null };
+}
+
+// Module-level default cache — used only by legacy single-build call sites.
+// Concurrent builds must pass an explicit DossierBuildCache to avoid
+// cross-contamination between concurrent edition builds.
+let _defaultBuildCache: DossierBuildCache = createDossierBuildCache();
 
 const RECENT_SIGNAL_DAYS = 30;
 
@@ -105,41 +125,46 @@ function sectorFromPolygonDetails(profile: Record<string, unknown> | null): stri
   return sector != null ? String(sector) : null;
 }
 
+/** Resets the module-level default build cache used by legacy single-build callers. */
 export function resetEditionCongressCache() {
-  editionCongressCache = null;
-  editionPredictionsCache = null;
-  editionScreenerCache = null;
+  _defaultBuildCache = createDossierBuildCache();
 }
 
-async function getEditionCongressTrades(ticker: string): Promise<Record<string, unknown>[]> {
+async function getEditionCongressTrades(
+  ticker: string,
+  cache: DossierBuildCache
+): Promise<Record<string, unknown>[]> {
   if (!uwConfigured()) return [];
-  if (!editionCongressCache) {
+  if (!cache.congress) {
     const { fetchUwCongressTrades } = await import("@/lib/providers/unusual-whales");
-    editionCongressCache = (await fetchUwCongressTrades(undefined).catch(() => [])) as Record<string, unknown>[];
+    cache.congress = (await fetchUwCongressTrades(undefined).catch(() => [])) as Record<string, unknown>[];
   }
   const sym = ticker.toUpperCase();
-  return editionCongressCache
+  return cache.congress
     .filter((t) => String(t.ticker ?? t.symbol ?? "").toUpperCase() === sym)
     .filter((t) => isWithinRecentSignalWindow(t))
     .slice(0, 5);
 }
 
-async function getEditionPredictionsSignal(ticker: string): Promise<PredictionConsensusSignal | null> {
+async function getEditionPredictionsSignal(
+  ticker: string,
+  cache: DossierBuildCache
+): Promise<PredictionConsensusSignal | null> {
   if (!uwConfigured()) return null;
-  if (!editionPredictionsCache) {
-    editionPredictionsCache = await fetchUwPredictionsConsensus(40).catch(() => null);
+  if (!cache.predictions) {
+    cache.predictions = await fetchUwPredictionsConsensus(40).catch(() => null);
   }
   const sym = ticker.toUpperCase();
-  return editionPredictionsCache?.top_signals?.find((s) => s.ticker === sym) ?? null;
+  return cache.predictions?.top_signals?.find((s) => s.ticker === sym) ?? null;
 }
 
-async function isScreenerConfirmed(ticker: string): Promise<boolean> {
+async function isScreenerConfirmed(ticker: string, cache: DossierBuildCache): Promise<boolean> {
   if (!uwConfigured()) return false;
-  if (!editionScreenerCache) {
-    editionScreenerCache = (await fetchUwScreenerStocks(30).catch(() => [])) as Record<string, unknown>[];
+  if (!cache.screener) {
+    cache.screener = (await fetchUwScreenerStocks(30).catch(() => [])) as Record<string, unknown>[];
   }
   const sym = ticker.toUpperCase();
-  return editionScreenerCache.some((r) => String(r.ticker ?? r.symbol ?? "").toUpperCase() === sym);
+  return cache.screener.some((r) => String(r.ticker ?? r.symbol ?? "").toUpperCase() === sym);
 }
 
 const INDEX_IV_PROXY = new Set(["SPX", "SPY", "QQQ", "VIX", "IWM"]);
@@ -156,25 +181,27 @@ async function resolveIvRank(sym: string): Promise<number | null> {
 }
 
 async function resolveTickerNews(
-  sym: string,
+  // sym unused now that UW fallback is removed — kept for signature stability
+  _sym: string,
   polyNews: Awaited<ReturnType<typeof fetchPolygonNews>>,
   bzNews: Awaited<ReturnType<typeof fetchBenzingaNews>>
 ): Promise<string[]> {
-  const headlines = [
+  // Benzinga (paid) + Polygon are sufficient; UW news quota reserved for flow/tide/dark pool.
+  return [
     ...bzNews.map((n) => String(n.title ?? "")),
     ...polyNews.map((n) => String(n.title ?? "")),
   ].filter(Boolean);
-
-  if (headlines.length >= 4 || !uwConfigured()) return headlines;
-
-  const uw = await fetchUwNewsHeadlines(sym, 8).catch(() => []);
-  return [...headlines, ...uw.map((n) => String(n.title ?? n.headline ?? ""))].filter(Boolean);
 }
 
 export async function fetchTickerDossier(
   ticker: string,
-  regime?: NightHawkRegimeContext | null
+  regime?: NightHawkRegimeContext | null,
+  buildCache?: DossierBuildCache
 ): Promise<TickerDossier> {
+  // Fall back to the module-level default cache for legacy callers that do not
+  // supply an explicit build cache. Concurrent edition builds must pass their
+  // own DossierBuildCache (via fetchAllDossiers) to avoid cross-contamination.
+  const cache = buildCache ?? _defaultBuildCache;
   const sym = ticker.toUpperCase();
   const t = DOSSIER_FETCH_TIMEOUT_MS;
   const uw = uwConfigured();
@@ -216,9 +243,9 @@ export async function fetchTickerDossier(
       { streak_days: 0, net_3d: 0, net_5d: 0, direction: "mixed" as const },
       t
     ),
-    dossierFetch(() => getEditionCongressTrades(sym), [], t),
-    dossierFetch(() => getEditionPredictionsSignal(sym), null, t),
-    dossierFetch(() => isScreenerConfirmed(sym), false, t),
+    dossierFetch(() => getEditionCongressTrades(sym, cache), [], t),
+    dossierFetch(() => getEditionPredictionsSignal(sym, cache), null, t),
+    dossierFetch(() => isScreenerConfirmed(sym, cache), false, t),
     dossierFetch(() => fetchPolygonFinancialRatios(sym), null, t),
   ]);
 
@@ -237,7 +264,11 @@ export async function fetchTickerDossier(
         () => dossierFetch(() => fetchUwDarkPool(sym), null, t),
         () => dossierFetch(() => fetchUwOiChange(sym), [], t),
         () => dossierFetch(() => fetchUwIvTermStructure(sym), [], t),
-        () => dossierFetch(() => fetchUwRealizedVol(sym), [], t),
+        () => dossierFetch(async () => {
+          const poly = await fetchPolygonRealizedVol(sym);
+          if (poly && poly.realized_vol_30d > 0) return [poly];
+          return fetchUwRealizedVol(sym);
+        }, [], t),
         () => dossierFetch(() => fetchUwRiskReversalSkew(sym), [], t),
         () => dossierFetch(() => fetchUwFlowPerExpiry(sym, 12), [], t),
         () => dossierFetch(() => fetchUwInsiderTransactions(sym, 20), [], t),
@@ -334,13 +365,18 @@ export async function fetchAllDossiers(
   regime?: NightHawkRegimeContext | null,
   onComplete?: (d: TickerDossier) => Promise<void>
 ): Promise<Record<string, TickerDossier>> {
+  // Create a single build cache scoped to this fetchAllDossiers invocation so
+  // concurrent calls (e.g. two edition builds running simultaneously) each get
+  // their own isolated congress/predictions/screener snapshot and cannot
+  // overwrite each other's module-level state.
+  const buildCache = createDossierBuildCache();
   const out: Record<string, TickerDossier> = {};
   for (let i = 0; i < tickers.length; i += batchSize) {
     const batch = tickers.slice(i, i + batchSize);
     const results = await Promise.all(
       batch.map(async (ticker) => {
         try {
-          return await fetchTickerDossier(ticker, regime);
+          return await fetchTickerDossier(ticker, regime, buildCache);
         } catch (err) {
           console.error(`[nighthawk/dossier] ${ticker} failed:`, err);
           return null;

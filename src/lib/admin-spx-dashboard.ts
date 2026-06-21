@@ -145,8 +145,14 @@ export function buildDeskIntel(desk: SpxDeskPayload): DeskIntelSection {
 
 export async function fetchSpxAdminDashboard(options?: {
   liveEngine?: boolean;
+  /** EDGE-10: when true (default) the engine runs in read-only snapshot mode.
+   *  Pass dryRun:false only after explicit double-confirmation to allow real
+   *  BUY/SELL writes and Discord notifications. */
+  dryRun?: boolean;
 }): Promise<SpxAdminDashboardPayload> {
   const liveEngine = options?.liveEngine ?? false;
+  // dryRun defaults to true — mutations require explicit opt-in.
+  const dryRun = options?.dryRun !== false;
 
   const [{ merged }, analytics, outcomes_all, watch, session_meta, lottoRecord, lottoHistory] =
     await Promise.all([
@@ -173,13 +179,26 @@ export async function fetchSpxAdminDashboard(options?: {
       hod: merged.hod,
       lod: merged.lod,
     });
-    const [evalResult, lottoTodayResult] = await Promise.all([
-      runSpxEvaluator(merged, technicals, "admin_live"),
-      evaluateSpxLotto(merged, technicals),
-    ]);
-    lottoToday = lottoTodayResult;
-    if (isSpxEvaluatorPlayResult(evalResult)) {
-      play = evalResult.play;
+
+    if (dryRun) {
+      // EDGE-10: dry-run path — read-only snapshot, no DB writes, no Discord.
+      const { readSpxPlaySnapshot } = await import("@/lib/spx-evaluator");
+      const [snapshot, lottoTodayResult] = await Promise.all([
+        readSpxPlaySnapshot(merged, technicals),
+        evaluateSpxLotto(merged, technicals),
+      ]);
+      play = snapshot;
+      lottoToday = lottoTodayResult;
+    } else {
+      // Mutate path — only reached after explicit double-confirmation.
+      const [evalResult, lottoTodayResult] = await Promise.all([
+        runSpxEvaluator(merged, technicals, "admin_live"),
+        evaluateSpxLotto(merged, technicals),
+      ]);
+      lottoToday = lottoTodayResult;
+      if (isSpxEvaluatorPlayResult(evalResult)) {
+        play = evalResult.play;
+      }
     }
   }
 

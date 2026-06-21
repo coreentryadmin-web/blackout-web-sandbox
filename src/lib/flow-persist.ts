@@ -79,7 +79,7 @@ export async function persistAndPublishFlowAlert(
 
   publishFlowEvent(event);
   if (flow.premium >= MIN_PREMIUM) markFlowDataFresh();
-  if (inserted) void notifyDiscord(event);
+  void notifyDiscord(event);
 
   return { inserted, published: true };
 }

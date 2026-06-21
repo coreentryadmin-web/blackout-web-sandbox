@@ -13,6 +13,12 @@ export type NighthawkMetrics = {
   avg_return_pct: number;
   avg_winner_return_pct: number;
   avg_loser_return_pct: number;
+  /**
+   * Number of resolved plays excluded from win/loss counts because a stop level
+   * is defined but intraday high/low data was unavailable (OTC/thin names).
+   * Effective sample size for win_rate = total_resolved - stop_data_unavailable_count.
+   */
+  stop_data_unavailable_count: number;
   by_conviction: Array<{ conviction: string; n: number; win_rate: number; avg_return_pct: number }>;
   by_direction: Array<{ direction: "LONG" | "SHORT"; n: number; win_rate: number; avg_return_pct: number }>;
   by_sector: Array<{ sector: string; n: number; win_rate: number; avg_return_pct: number }>;
@@ -104,7 +110,17 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
     by_sector: [],
     by_score_bucket: SCORE_BUCKETS.map((bucket) => ({ bucket, n: 0, win_rate: 0 })),
     by_edition: [],
+    stop_data_unavailable_count: 0,
   };
+}
+
+/**
+ * Returns true for plays where a stop is defined but intraday data is missing.
+ * These plays cannot have stop outcomes reliably determined and must be excluded
+ * from win/loss tallies to avoid silently inflating the win rate.
+ */
+function isStopDataUnavailable(r: NighthawkPlayOutcomeRow): boolean {
+  return r.stop != null && r.session_high == null && r.session_low == null;
 }
 
 export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMetrics> {
@@ -115,23 +131,30 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
   }
 
   const total = rows.length;
-  const winners = rows.filter((r) => r.outcome === "target");
-  const losers = rows.filter((r) => r.outcome === "stop");
-  const opens = rows.filter((r) => r.outcome === "open");
-  const ambiguous = rows.filter((r) => r.outcome === "ambiguous");
+  // Exclude plays where a stop is defined but intraday data is unavailable —
+  // stop outcomes cannot be reliably determined for these rows, so including
+  // them would silently count unevaluable stops as wins/opens and inflate
+  // the reported win rate.
+  const stopDataUnavailable = rows.filter(isStopDataUnavailable);
+  const scoreable = rows.filter((r) => !isStopDataUnavailable(r));
+
+  const winners = scoreable.filter((r) => r.outcome === "target");
+  const losers = scoreable.filter((r) => r.outcome === "stop");
+  const opens = scoreable.filter((r) => r.outcome === "open");
+  const ambiguous = scoreable.filter((r) => r.outcome === "ambiguous");
 
   const by_conviction = CONVICTION_ORDER.map((conviction) => ({
     conviction,
-    ...groupWithReturn(rows.filter((r) => r.conviction.toUpperCase() === conviction)),
+    ...groupWithReturn(scoreable.filter((r) => r.conviction.toUpperCase() === conviction)),
   }));
 
   const by_direction = (["LONG", "SHORT"] as const).map((direction) => ({
     direction,
-    ...groupWithReturn(rows.filter((r) => r.direction === direction)),
+    ...groupWithReturn(scoreable.filter((r) => r.direction === direction)),
   }));
 
   const sectorMap = new Map<string, NighthawkPlayOutcomeRow[]>();
-  for (const row of rows) {
+  for (const row of scoreable) {
     const sector = row.sector?.trim() || "Unknown";
     const bucket = sectorMap.get(sector) ?? [];
     bucket.push(row);
@@ -143,12 +166,12 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     .sort((a, b) => b.win_rate - a.win_rate || b.n - a.n);
 
   const by_score_bucket = SCORE_BUCKETS.map((bucket) => {
-    const group = rows.filter((r) => scoreBucket(r.score) === bucket);
+    const group = scoreable.filter((r) => scoreBucket(r.score) === bucket);
     return { bucket, n: group.length, win_rate: winRate(group) };
   });
 
   const editionMap = new Map<string, NighthawkPlayOutcomeRow[]>();
-  for (const row of rows) {
+  for (const row of scoreable) {
     const bucket = editionMap.get(row.edition_for) ?? [];
     bucket.push(row);
     editionMap.set(row.edition_for, bucket);
@@ -157,16 +180,18 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     .map(([edition_for, group]) => ({ edition_for, ...groupWithReturn(group) }))
     .sort((a, b) => a.edition_for.localeCompare(b.edition_for));
 
+  const scoreableTotal = scoreable.length;
   return {
     window_days: windowDays,
     total_resolved: total,
     pending_count,
-    win_rate: winners.length / total,
-    profitable_rate: profitableRate(rows),
-    loss_rate: losers.length / total,
-    open_rate: opens.length / total,
-    ambiguous_rate: ambiguous.length / total,
-    avg_return_pct: avgReturn(rows),
+    stop_data_unavailable_count: stopDataUnavailable.length,
+    win_rate: scoreableTotal > 0 ? winners.length / scoreableTotal : 0,
+    profitable_rate: profitableRate(scoreable),
+    loss_rate: scoreableTotal > 0 ? losers.length / scoreableTotal : 0,
+    open_rate: scoreableTotal > 0 ? opens.length / scoreableTotal : 0,
+    ambiguous_rate: scoreableTotal > 0 ? ambiguous.length / scoreableTotal : 0,
+    avg_return_pct: avgReturn(scoreable),
     avg_winner_return_pct: avgReturn(winners),
     avg_loser_return_pct: avgReturn(losers),
     by_conviction,

@@ -6,7 +6,9 @@ let publisherReady = false;
 let subscriberReady = false;
 let publisherInit: Promise<RedisClient | null> | null = null;
 let subscriberInit: Promise<RedisClient | null> | null = null;
-let initFailed = false;
+// Track last failure time instead of a permanent flag; retry after RETRY_BACKOFF_MS.
+const RETRY_BACKOFF_MS = 30_000;
+let lastFailedAt = 0;
 
 const channelHandlers = new Map<string, Set<(message: string) => void>>();
 
@@ -16,7 +18,7 @@ function redisUrl(): string | null {
 }
 
 async function connectPublisher(): Promise<RedisClient | null> {
-  if (initFailed) return null;
+  if (lastFailedAt && Date.now() - lastFailedAt < RETRY_BACKOFF_MS) return null;
   if (publisher && publisherReady) return publisher;
   if (publisherInit) return publisherInit;
 
@@ -35,9 +37,11 @@ async function connectPublisher(): Promise<RedisClient | null> {
       await client.connect();
       publisher = client;
       publisherReady = true;
+      lastFailedAt = 0; // clear failure on success
       return client;
     } catch (err) {
-      initFailed = true;
+      lastFailedAt = Date.now();
+      publisherInit = null; // allow retry after backoff
       console.warn("[redis-pubsub] publisher unavailable", err);
       return null;
     }
@@ -47,7 +51,7 @@ async function connectPublisher(): Promise<RedisClient | null> {
 }
 
 async function connectSubscriber(): Promise<RedisClient | null> {
-  if (initFailed) return null;
+  if (lastFailedAt && Date.now() - lastFailedAt < RETRY_BACKOFF_MS) return null;
   if (subscriber && subscriberReady) return subscriber;
   if (subscriberInit) return subscriberInit;
 
@@ -75,9 +79,11 @@ async function connectSubscriber(): Promise<RedisClient | null> {
       });
       subscriber = client;
       subscriberReady = true;
+      lastFailedAt = 0; // clear failure on success
       return client;
     } catch (err) {
-      initFailed = true;
+      lastFailedAt = Date.now();
+      subscriberInit = null; // allow retry after backoff
       console.warn("[redis-pubsub] subscriber unavailable", err);
       return null;
     }

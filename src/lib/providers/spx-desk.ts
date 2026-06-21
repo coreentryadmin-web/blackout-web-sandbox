@@ -61,9 +61,6 @@ import {
   fetchUwNetFlowExpiry,
   fetchUwNetPremTicks,
   fetchUwNope,
-  fetchUwOdteGex,
-  fetchUwOdteSpotExposuresByStrike,
-  fetchUwSpotExposures,
   fetchUwTickerFlowAlerts,
   type DarkPoolSnapshot,
   type IvTermPoint,
@@ -86,10 +83,8 @@ let lastPulseForSignals: SpxDeskPulse | null = null;
 const DARK_POOL_CACHE_MS = 10_000;
 const TIDE_STALE_MS = 10_000;
 const DARK_POOL_WS_STALE_MS = 15_000;
-const GEX_WS_STALE_MS = 15_000;
 const NET_FLOW_WS_STALE_MS = 10_000;
 const INTERVAL_FLOW_WS_STALE_MS = 10_000;
-const SPOT_EXPOSURES_CACHE_MS = 60_000;
 const INDEX_STORE_STALE_MS = 5_000;
 
 let cachedDarkPool: { data: DarkPoolSnapshot | null; fetchedAt: number; key: string } = {
@@ -109,36 +104,6 @@ async function resolveMarketTide(): Promise<Awaited<ReturnType<typeof fetchUwMar
     /* WS optional */
   }
   return fetchUwMarketTide().catch(() => null);
-}
-
-async function resolveGexStrikeRows(ticker = "SPX"): Promise<Record<string, unknown>[]> {
-  try {
-    const { gexStore } = await import("@/lib/ws/uw-socket");
-    if (Date.now() - gexStore.updatedAt < GEX_WS_STALE_MS && gexStore.rows.length) {
-      return gexStore.rows;
-    }
-  } catch {
-    /* WS optional */
-  }
-  if (!uwConfigured()) return [];
-  const now = Date.now();
-  if (cachedSpotExposures.rows.length && now - cachedSpotExposures.fetchedAt < SPOT_EXPOSURES_CACHE_MS) {
-    return cachedSpotExposures.rows;
-  }
-  const rest = await fetchUwSpotExposures(ticker).catch(() => null);
-  const rows = rest ? extractUwSpotExposureRows(rest) : [];
-  if (rows.length) {
-    cachedSpotExposures = { rows, fetchedAt: now };
-  }
-  return rows.length ? rows : cachedSpotExposures.rows;
-}
-
-function extractUwSpotExposureRows(data: unknown): Record<string, unknown>[] {
-  if (!data || typeof data !== "object") return [];
-  const block = (data as Record<string, unknown>).data;
-  if (Array.isArray(block)) return block as Record<string, unknown>[];
-  if (Array.isArray(data)) return data as Record<string, unknown>[];
-  return [];
 }
 
 async function resolveFlow0dte(ticker = "SPX"): Promise<{
@@ -174,11 +139,6 @@ async function resolveFlow0dte(ticker = "SPX"): Promise<{
   }
   return fetchUwFlow0dte(ticker).catch(() => null);
 }
-
-let cachedSpotExposures: { rows: Record<string, unknown>[]; fetchedAt: number } = {
-  rows: [],
-  fetchedAt: 0,
-};
 
 async function resolveDarkPool(
   ticker: string,
@@ -804,28 +764,23 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchPolygonOdteDeskBundle(price),
     fetchVixIvRankPercentile(),
   ]);
+  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
   let strikeRows = polygonBundle.rows;
-  if (!strikeRows.length && uwConfigured()) {
-    strikeRows = await resolveGexStrikeRows("SPX");
-    if (!strikeRows.length) {
-      strikeRows = await fetchUwOdteSpotExposuresByStrike("SPX");
-    }
-  }
   let maxPain = polygonBundle.maxPain;
 
+  // Polygon is the sole GEX source — uwGex slot removed (UW spot-exposures are 503).
   const uwExclusive = uwConfigured()
     ? await runUwSequential([
         () => resolveMarketTide(),
         () => fetchUwNope("SPX").catch(() => null),
         () => resolveFlow0dte("SPX"),
         () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-        () => (strikeRows.length ? Promise.resolve(null) : fetchUwOdteGex("SPX").catch(() => null)),
         () => (maxPain != null ? Promise.resolve(null) : fetchUwMaxPain("SPX").catch(() => null)),
         () => (polygonIvRank != null ? Promise.resolve(null) : fetchUwIvRank("SPX").catch(() => null)),
       ])
-    : [null, null, null, null, null, null, null];
+    : [null, null, null, null, null, null];
 
-  const [uwTide, uwNope, uwFlow, darkPool, uwGex, uwMaxPain, uwIv] = uwExclusive;
+  const [uwTide, uwNope, uwFlow, darkPool, uwMaxPain, uwIv] = uwExclusive;
   if (maxPain == null) maxPain = uwMaxPain ?? null;
 
   const session = sessionStatsFromMinuteBars(minuteBars);
@@ -857,9 +812,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
 
-  const gexNet = (intel?.gex_net as number | null) ?? uwGex?.net_gex ?? gexAnalysis.net_gex ?? null;
+  // Polygon is the sole GEX source — no UW GEX fallback.
+  const gexNet = (intel?.gex_net as number | null) ?? gexAnalysis.net_gex ?? null;
   const gexKing =
-    (intel?.gex_king as number | null) ?? uwGex?.gex_king ?? gexAnalysis.gex_king_strike ?? null;
+    (intel?.gex_king as number | null) ?? gexAnalysis.gex_king_strike ?? null;
   maxPain = (intel?.max_pain as number | null) ?? maxPain ?? null;
 
   const regime =
@@ -1308,28 +1264,17 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const price = spxSnap?.price ?? 0;
   if (!price && !spxFlowsRaw.length) return empty;
 
+  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
   let strikeRows: Record<string, unknown>[] = [];
-  let polygonGexNet: number | null = null;
-  let polygonGexKing: number | null = null;
   if (polygonConfigured() && price > 0) {
     const bundle = await fetchPolygonOdteDeskBundle(price);
     strikeRows = bundle.rows;
   }
-  if (!strikeRows.length && uwConfigured()) {
-    strikeRows = await resolveGexStrikeRows("SPX");
-    if (!strikeRows.length) {
-      strikeRows = await fetchUwOdteSpotExposuresByStrike("SPX");
-    }
-  }
 
   const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
-  polygonGexNet = gexAnalysis.net_gex;
-  polygonGexKing = gexAnalysis.gex_king_strike;
+  const polygonGexNet = gexAnalysis.net_gex;
+  const polygonGexKing = gexAnalysis.gex_king_strike;
 
-  let uwGex = null;
-  if (polygonGexNet == null && uwConfigured()) {
-    uwGex = await fetchUwOdteGex("SPX");
-  }
   if (gexAnalysis.ranked_levels.length) {
     lastGoodStrikeLevels = gexAnalysis.ranked_levels;
   }
@@ -1377,8 +1322,9 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     unified_tape: unifiedTape,
     strike_stacks,
     gex_walls: finalWalls,
-    gex_net: uwGex?.net_gex ?? polygonGexNet ?? gexAnalysis.net_gex ?? null,
-    gex_king: uwGex?.gex_king ?? polygonGexKing ?? gexAnalysis.gex_king_strike ?? null,
+    // Polygon is the sole GEX source — no UW GEX fallback.
+    gex_net: polygonGexNet ?? null,
+    gex_king: polygonGexKing ?? null,
     gamma_flip: gammaFlip,
     above_gamma_flip: gammaFlip != null ? spot > gammaFlip : false,
     gamma_regime: gammaRegimeLabel,

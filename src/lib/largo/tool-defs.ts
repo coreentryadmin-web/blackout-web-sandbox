@@ -141,11 +141,11 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_financials", "UW financial statements.", T, ["ticker"]),
 
-  t("get_earnings", "UW earnings + estimates.", T, ["ticker"]),
+  t("get_earnings", "Benzinga earnings channel + UW earnings/estimates.", T, ["ticker"]),
 
   t("get_earnings_history", "UW earnings history and estimates.", T, ["ticker"]),
 
-  t("get_analyst_ratings", "UW analyst screener.", T, ["ticker"]),
+  t("get_analyst_ratings", "Benzinga analyst-ratings channel primary; UW screener fallback.", T, ["ticker"]),
 
   t("get_news", "Benzinga full-text primary → Polygon sentiment → UW fallback.", {
 
@@ -163,7 +163,10 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_fda_calendar", "UW ONLY — FDA events for biotech/pharma.", T, ["ticker"]),
 
-  t("get_ipo_calendar", "IPO calendar (unavailable — use web search)."),
+  t("get_ipo_calendar", "Polygon vX IPO calendar for upcoming listings; web search fallback if none found.", {
+    from: { type: "string", description: "YYYY-MM-DD start date; defaults to today" },
+    to: { type: "string", description: "YYYY-MM-DD end date; defaults to 30 days out" },
+  }),
 
   t("get_short_interest", "Polygon short interest first; UW fallback.", T, ["ticker"]),
 
@@ -292,7 +295,20 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_vix_term", "VIX term structure — Polygon VIX indices first; UW fallback.", { ticker: { type: "string" } }),
 
-  t("get_dividends", "UW ONLY — dividends, splits (no Polygon equivalent).", T, ["ticker"]),
+  t("get_dividends", "Polygon dividends + splits first; UW fallback.", T, ["ticker"]),
+
+  t("search_ticker", "Full-text ticker/company name search (Polygon). Returns matches with exchange, type, market.", {
+    query: { type: "string", description: "Company name or ticker prefix e.g. 'Apple' or 'NVDA'" },
+    limit: { type: "integer", default: 10 },
+  }, ["query"]),
+
+  t("get_option_price_history", "Historical OHLC bars for a specific option contract (Polygon). Requires OCC symbol.", {
+    contract_id: { type: "string", description: "OCC symbol e.g. AAPL250117C00200000 (O: prefix optional)" },
+    multiplier: { type: "integer", default: 1 },
+    timespan: { type: "string", enum: ["minute", "hour", "day"], default: "day" },
+    from: { type: "string", description: "YYYY-MM-DD start date" },
+    to: { type: "string", description: "YYYY-MM-DD end date" },
+  }, ["contract_id"]),
 
   t("get_global_flow", "UW ONLY — market-wide flow alerts with filters; includes strike_stacks.", {
 

@@ -1,4 +1,4 @@
-const PREFIX = "blackout:";
+﻿const PREFIX = "blackout:";
 
 /** Keys stored without the blackout: prefix — cleared on Clerk sign-out. */
 const EXTRA_SIGN_OUT_KEYS = ["largo-terminal-session", "blackout_desk_v1"] as const;
@@ -62,16 +62,37 @@ export function clearSessionCacheKey(key: string): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SESSION KEY NAMESPACES — keep this list in sync with every key written to
+// sessionStorage so clearAllSessionCache() never misses a namespace.
+//
+//   PREFIX-scoped keys (swept by startsWith(PREFIX)):
+//     "blackout:"               — all writeSessionCache() entries, e.g.
+//                                 "blackout:<key>:<YYYY-MM-DD>"
+//
+//   Bare (non-prefixed) keys cleared explicitly via EXTRA_SIGN_OUT_KEYS:
+//     "largo-terminal-session"  — Largo terminal widget session state
+//     "blackout_desk_v1"        — desk layout / column preferences
+//
+//   If you add a new key namespace that does NOT use the "blackout:" prefix,
+//   add it to EXTRA_SIGN_OUT_KEYS at the top of this file so it is cleared
+//   on sign-out.
+// ---------------------------------------------------------------------------
+
 /** Clear all blackout session keys — call on Clerk sign-out. */
 export function clearAllSessionCache(): void {
   if (typeof window === "undefined") return;
   try {
+    // 1. Sweep all keys that share the "blackout:" prefix.
     const keys: string[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
       const k = sessionStorage.key(i);
       if (k?.startsWith(PREFIX)) keys.push(k);
     }
     for (const k of keys) sessionStorage.removeItem(k);
+
+    // 2. Explicitly remove every bare (non-prefixed) session-scoped key.
+    //    These are enumerated in EXTRA_SIGN_OUT_KEYS to make omissions obvious.
     for (const k of EXTRA_SIGN_OUT_KEYS) sessionStorage.removeItem(k);
   } catch {
     /* ignore */

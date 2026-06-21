@@ -34,6 +34,7 @@ type RedisClient = {
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;
   get(key: string): Promise<string | null>;
+  eval(script: string, numkeys: number, ...args: (string | number)[]): Promise<unknown>;
   disconnect(): void;
 };
 
@@ -78,6 +79,38 @@ function waitMsForToken(): number {
   return Math.max(25, Math.ceil((deficit / MAX_RPS) * 1000));
 }
 
+/**
+ * Lua script for atomic sliding-window rate-limit check-and-increment.
+ *
+ * Keys:  KEYS[1] = currKey, KEYS[2] = prevKey
+ * Args:  ARGV[1] = elapsedFrac (0..1, fraction of current second elapsed)
+ *        ARGV[2] = limit       (GLOBAL_MAX_RPS)
+ *        ARGV[3] = ttl         (seconds to keep the counter key alive)
+ *
+ * Returns 1 if the request is allowed (counter incremented), 0 if denied.
+ *
+ * The script reads prevKey and currKey, computes the weighted sliding-window
+ * estimate, and only increments currKey when the result would be within the
+ * limit.  Because Lua scripts run atomically in Redis, no concurrent caller
+ * can interleave between the read and the write.
+ */
+const RATE_LIMIT_LUA = `
+local curr = tonumber(redis.call('GET', KEYS[1])) or 0
+local prev = tonumber(redis.call('GET', KEYS[2])) or 0
+local elapsed_frac = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local estimated = curr + prev * (1 - elapsed_frac)
+if estimated >= limit then
+  return 0
+end
+local new_count = redis.call('INCR', KEYS[1])
+if new_count == 1 then
+  redis.call('EXPIRE', KEYS[1], ttl)
+end
+return 1
+`;
+
 async function acquireGlobalRedisSlot(): Promise<boolean> {
   const client = await getSharedRedis();
   if (!client) return true;
@@ -89,15 +122,19 @@ async function acquireGlobalRedisSlot(): Promise<boolean> {
   const prevKey = `blackout:uw:rps:${sec - 1}`;
 
   try {
-    const [currRaw, prevRaw] = await Promise.all([client.get(currKey), client.get(prevKey)]);
-    const curr = Number(currRaw ?? 0);
-    const prev = Number(prevRaw ?? 0);
-    const estimated = curr + prev * (1 - elapsedFrac);
-    if (estimated >= GLOBAL_MAX_RPS) return false;
-
-    const count = await client.incr(currKey);
-    if (count === 1) await client.expire(currKey, 3);
-    return true;
+    // Atomically check the sliding-window estimate and increment in one
+    // Redis round-trip.  Replaces the previous GET+INCR two-step that had
+    // a race window where concurrent callers could both pass the gate.
+    const allowed = await client.eval(
+      RATE_LIMIT_LUA,
+      2,           // numkeys
+      currKey,
+      prevKey,
+      elapsedFrac.toFixed(6),
+      GLOBAL_MAX_RPS,
+      3,           // TTL seconds
+    );
+    return allowed === 1;
   } catch {
     return true;
   }

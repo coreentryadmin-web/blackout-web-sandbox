@@ -6,12 +6,9 @@ import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 export const dynamic = "force-dynamic";
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
 
 export async function GET(req: NextRequest) {
   const authResult = await authorizeCronOrTierApi(req, "premium");
@@ -32,7 +29,7 @@ export async function GET(req: NextRequest) {
     });
 
     const lotto = await evaluateSpxLotto(merged, technicals);
-    const history = await fetchLottoPlaysForDate(todayEt());
+    const history = await fetchLottoPlaysForDate(todayEtYmd());
 
     return NextResponse.json(
       {

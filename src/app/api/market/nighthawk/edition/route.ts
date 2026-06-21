@@ -26,9 +26,13 @@ function emptyEdition(editionFor: string): NightHawkEdition {
 async function fetchLegacyPlays(): Promise<NightHawkEdition | null> {
   if (!ENGINE_BASE) return null;
   try {
+    const apiKey = process.env.BLACKOUT_INTEL_API_KEY ?? "";
     const res = await fetch(`${ENGINE_BASE}/api/nighthawk/plays`, {
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
+      },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { plays?: Array<Record<string, unknown>> };

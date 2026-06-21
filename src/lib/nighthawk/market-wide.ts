@@ -9,7 +9,6 @@ import {
   fetchUwEtfTide,
   fetchUwGroupGreekFlow,
   fetchUwMacroIndicators,
-  fetchUwMarketNewsHeadlines,
   fetchUwMarketTide,
   fetchUwMarketTopNetImpact,
   fetchUwPredictionsConsensus,
@@ -117,18 +116,13 @@ async function fetchVixTermPreferPolygon(): Promise<Record<string, unknown>[]> {
 }
 
 async function fetchMarketNewsPreferPolygon(): Promise<Record<string, unknown>[]> {
+  // Benzinga (via Polygon) is paid — no UW fallback needed; UW quota reserved for flow/tide/dark pool.
   const poly = await fetchPolygonMarketNews(16).catch(() => []);
-  const headlines: Record<string, unknown>[] = poly.map((n) => ({
+  return poly.map((n) => ({
     title: n.title,
     source: "polygon",
     published_at: n.published_utc,
   }));
-  if (headlines.length >= 8 || !uwConfigured()) return headlines;
-  const uw = await fetchUwMarketNewsHeadlines(12).catch(() => []);
-  return [
-    ...headlines,
-    ...uw.map((n) => ({ ...n, source: "unusual_whales" })),
-  ];
 }
 
 async function fetchEarningsOnDate(dateYmd: string): Promise<Record<string, unknown>[]> {

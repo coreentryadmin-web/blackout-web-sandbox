@@ -477,21 +477,23 @@ export async function evaluateSpxLotto(
     }
 
     if (openConfirm(rec, desk, technicals)) {
-      const bought: LottoRecord = {
+      const buyAt = new Date().toISOString();
+      // Write directly to HOLD — skip intermediate BUY write to prevent a crash
+      // between the two saves from leaving the lotto permanently stuck in BUY phase.
+      rec = {
         ...rec,
-        phase: "BUY",
+        phase: "HOLD",
         entry_price: desk.price,
-        buy_at: new Date().toISOString(),
-        status_message: lottoBuyStatusMessage(),
+        buy_at: buyAt,
+        peak_pnl_pts: 0,
+        status_message: lottoHoldStatusMessage(),
       };
-      await saveLottoRecord(bought);
-      void logLottoPhase(bought, {
+      await saveLottoRecord(rec);
+      void logLottoPhase(rec, {
         phase: "BUY",
         entry_price: desk.price,
-        buy_at: bought.buy_at,
+        buy_at: buyAt,
       });
-      rec = { ...bought, phase: "HOLD", peak_pnl_pts: 0, status_message: lottoHoldStatusMessage() };
-      await saveLottoRecord(rec);
       void logLottoPhase(rec, { phase: "HOLD", entry_price: desk.price });
       return recordToPayload(rec);
     }

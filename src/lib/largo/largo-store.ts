@@ -1,4 +1,4 @@
-import { dbConfigured, dbQuery, ensureSchema } from "@/lib/db";
+import { dbClient, dbConfigured, dbQuery, ensureSchema } from "@/lib/db";
 import type { AnthropicMessage } from "@/lib/providers/anthropic";
 
 export type LargoStoredMessage = {
@@ -15,6 +15,7 @@ const MAX_MESSAGES_STORED = 50;
 const MAX_MEMORY_SESSIONS = 500;
 const DEFAULT_RETENTION_DAYS = 7;
 const memorySessions = new Map<string, AnthropicMessage[]>();
+const memorySessionOwners = new Map<string, string>();
 
 function touchMemorySession(sessionId: string, hist: AnthropicMessage[]): void {
   memorySessions.delete(sessionId);
@@ -60,6 +61,8 @@ export async function fetchLargoHistory(
   userId: string
 ): Promise<AnthropicMessage[]> {
   if (!dbConfigured()) {
+    const owner = memorySessionOwners.get(sessionId);
+    if (owner !== undefined && owner !== userId) return [];
     return memorySessions.get(sessionId) ?? [];
   }
 
@@ -71,12 +74,12 @@ export async function fetchLargoHistory(
     `SELECT role, content
      FROM largo_messages
      WHERE session_id = $1
-     ORDER BY created_at ASC
+     ORDER BY created_at DESC
      LIMIT $2`,
     [sessionId, MAX_MESSAGES_LOAD]
   );
 
-  return res.rows.map((r) => ({
+  return res.rows.reverse().map((r) => ({
     role: r.role,
     content: r.content,
   }));
@@ -135,6 +138,7 @@ export async function appendLargoMessage(
 
   if (!dbConfigured()) {
     const hist = memorySessions.get(sessionId) ?? [];
+    if (!memorySessionOwners.has(sessionId)) memorySessionOwners.set(sessionId, userId);
     hist.push({ role, content: trimmed });
     if (hist.length > MAX_MESSAGES_LOAD) hist.splice(0, hist.length - MAX_MESSAGES_LOAD);
     touchMemorySession(sessionId, hist);
@@ -143,37 +147,49 @@ export async function appendLargoMessage(
 
   await ensureLargoSession(sessionId, userId);
 
-  await dbQuery(
-    `INSERT INTO largo_messages (session_id, role, content, tools_used)
-     VALUES ($1, $2, $3, $4::jsonb)`,
-    [sessionId, role, trimmed, JSON.stringify(toolsUsed)]
-  );
+  const client = await dbClient();
+  try {
+    await client.query("BEGIN");
 
-  await dbQuery(
-    `DELETE FROM largo_messages
-     WHERE session_id = $1
-       AND id NOT IN (
-         SELECT id FROM largo_messages
-         WHERE session_id = $1
-         ORDER BY created_at DESC
-         LIMIT $2
-       )`,
-    [sessionId, MAX_MESSAGES_STORED]
-  );
-
-  if (role === "user") {
-    await dbQuery(
-      `UPDATE largo_sessions
-       SET updated_at = NOW(),
-           title = COALESCE(title, LEFT($2, 120))
-       WHERE id = $1 AND user_id = $3`,
-      [sessionId, trimmed, userId]
+    await client.query(
+      `INSERT INTO largo_messages (session_id, role, content, tools_used)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [sessionId, role, trimmed, JSON.stringify(toolsUsed)]
     );
-  } else {
-    await dbQuery(`UPDATE largo_sessions SET updated_at = NOW() WHERE id = $1 AND user_id = $2`, [
-      sessionId,
-      userId,
-    ]);
+
+    await client.query(
+      `DELETE FROM largo_messages
+       WHERE session_id = $1
+         AND id NOT IN (
+           SELECT id FROM largo_messages
+           WHERE session_id = $1
+           ORDER BY created_at DESC
+           LIMIT $2
+         )`,
+      [sessionId, MAX_MESSAGES_STORED]
+    );
+
+    if (role === "user") {
+      await client.query(
+        `UPDATE largo_sessions
+         SET updated_at = NOW(),
+             title = COALESCE(title, LEFT($2, 120))
+         WHERE id = $1 AND user_id = $3`,
+        [sessionId, trimmed, userId]
+      );
+    } else {
+      await client.query(
+        `UPDATE largo_sessions SET updated_at = NOW() WHERE id = $1 AND user_id = $2`,
+        [sessionId, userId]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
 }
 

@@ -4,10 +4,9 @@ import {
   gammaRegime,
   topGexWalls,
 } from "@/lib/providers/gamma-desk";
-import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
+import { polygonConfigured } from "@/lib/providers/config";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
-import { fetchUwMaxPain, fetchUwSpotExposuresByStrike } from "@/lib/providers/unusual-whales";
 
 export type PositioningSummary = {
   net_gex: number;
@@ -70,27 +69,15 @@ function buildSummary(
 export async function fetchPositioningSummary(ticker: string): Promise<PositioningSummary> {
   const sym = ticker.toUpperCase();
 
+  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
   if (polygonConfigured()) {
     const bundle = await fetchPolygonPositioningBundle(sym);
     if (bundle.rows.length) {
-      let maxPain = bundle.maxPain;
-      if (maxPain == null && uwConfigured()) {
-        maxPain = await fetchUwMaxPain(sym).catch(() => null);
-      }
-      return buildSummary(bundle.rows, bundle.spot, maxPain, "polygon");
+      return buildSummary(bundle.rows, bundle.spot, bundle.maxPain, "polygon");
     }
   }
 
-  if (!uwConfigured()) {
-    const snapshot = await fetchStockSnapshot(sym).catch(() => null);
-    return buildSummary([], snapshot?.price ?? 0, null, "polygon");
-  }
-
-  const [rows, maxPainStrike, snapshot] = await Promise.all([
-    fetchUwSpotExposuresByStrike(sym, 300).catch(() => []),
-    fetchUwMaxPain(sym).catch(() => null),
-    fetchStockSnapshot(sym).catch(() => null),
-  ]);
-
-  return buildSummary(rows, snapshot?.price ?? 0, maxPainStrike, "unusual_whales");
+  // No Polygon data — return empty summary with current price.
+  const snapshot = await fetchStockSnapshot(sym).catch(() => null);
+  return buildSummary([], snapshot?.price ?? 0, null, "polygon");
 }

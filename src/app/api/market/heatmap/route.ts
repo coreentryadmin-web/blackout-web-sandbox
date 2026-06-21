@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { fetchMarketMovers, fetchSectorPerformance } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
+import { serverCache, TTL } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [sectors, movers] = await Promise.all([fetchSectorPerformance(), fetchMarketMovers(20)]);
+    const [sectors, movers] = await Promise.all([
+      serverCache("heatmap:sectors", TTL.MARKET_SNAPSHOT, () => fetchSectorPerformance()),
+      serverCache("heatmap:movers:20", TTL.MARKET_SNAPSHOT, () => fetchMarketMovers(20)),
+    ]);
     return NextResponse.json({
       source: "polygon",
       sectors,

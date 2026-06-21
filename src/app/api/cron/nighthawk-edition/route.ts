@@ -39,7 +39,9 @@ export async function GET(req: NextRequest) {
 
   const force = req.nextUrl.searchParams.get("force") === "1";
   const statusOnly = req.nextUrl.searchParams.get("status") === "1";
-  const editionFor = nextTradingDayEt(todayEt());
+  // Use ET date explicitly so the edition target doesn't flip at UTC midnight.
+  const todayInEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const editionFor = nextTradingDayEt(todayInEt);
   const job = await fetchNighthawkJob(editionFor);
 
   if (statusOnly) {

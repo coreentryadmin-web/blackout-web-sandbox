@@ -39,6 +39,35 @@ let cachedOdteBundle: {
 
 const POLYGON_ODTE_CACHE_KEY = "polygon:odte_gex_bundle";
 
+/**
+ * Ring buffer of recent SPX spot prices used to detect fast moves.
+ * Each entry is { price, at } where `at` is epoch-ms.
+ */
+const spxPriceHistory: Array<{ price: number; at: number }> = [];
+const SPX_HISTORY_WINDOW_MS = 5 * 60_000; // 5 minutes
+
+/** Record a new SPX spot price observation for volatility detection. */
+export function recordSpxPriceObservation(price: number): void {
+  const now = Date.now();
+  spxPriceHistory.push({ price, at: now });
+  // Purge entries older than the window to keep the buffer small.
+  const cutoff = now - SPX_HISTORY_WINDOW_MS;
+  while (spxPriceHistory.length > 0 && spxPriceHistory[0].at < cutoff) {
+    spxPriceHistory.shift();
+  }
+}
+
+/**
+ * Returns true if SPX has moved more than 0.5% in the last 5 minutes,
+ * indicating a fast-move / volatile market condition.
+ */
+function isSpxFastMove(currentSpot: number): boolean {
+  if (spxPriceHistory.length === 0) return false;
+  const oldest = spxPriceHistory[0].price;
+  if (oldest <= 0) return false;
+  return Math.abs(currentSpot - oldest) / oldest > 0.005;
+}
+
 function polygonGexCacheMs(): number {
   const sec = Number(process.env.SPX_POLYGON_GEX_CACHE_SEC ?? 15);
   return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 15_000;
@@ -55,12 +84,19 @@ async function loadOdteContracts(spot: number, expiry: string): Promise<ChainCon
 /** 0DTE GEX rows + max pain from one Polygon chain snapshot (SPX + SPXW). */
 export async function fetchPolygonOdteDeskBundle(
   spot: number,
-  expiry = todayEtYmd()
+  expiry = todayEtYmd(),
+  { forceRefresh = false }: { forceRefresh?: boolean } = {}
 ): Promise<{ rows: Record<string, unknown>[]; maxPain: number | null }> {
   if (!polygonConfigured() || spot <= 0) return { rows: [], maxPain: null };
 
   const now = Date.now();
+  // During fast moves (SPX >0.5% in the last 5 min) bypass cache entirely so
+  // GEX reflects the new price level. Also bypass when callers set forceRefresh.
+  const fastMove = isSpxFastMove(spot);
+  const skipCache = forceRefresh || fastMove;
+
   if (
+    !skipCache &&
     cachedOdteBundle &&
     now - cachedOdteBundle.at < polygonGexCacheMs() &&
     Math.abs(cachedOdteBundle.spot - spot) < Math.max(spot * 0.003, 5)
@@ -77,6 +113,7 @@ export async function fetchPolygonOdteDeskBundle(
       maxPain: number | null;
     }>(POLYGON_ODTE_CACHE_KEY);
     if (
+      !skipCache &&
       redisHit &&
       now - redisHit.at < polygonGexCacheMs() &&
       Math.abs(redisHit.spot - spot) < Math.max(spot * 0.003, 5)
@@ -184,9 +221,10 @@ function aggregateGexRows(contracts: ChainContract[], spot: number): Record<stri
 /** 0DTE GEX strike rows from Polygon chain snapshot (SPX + SPXW). UW fallback if empty. */
 export async function fetchPolygonOdteGexRows(
   spot: number,
-  expiry = todayEtYmd()
+  expiry = todayEtYmd(),
+  { forceRefresh = false }: { forceRefresh?: boolean } = {}
 ): Promise<Record<string, unknown>[]> {
-  const { rows } = await fetchPolygonOdteDeskBundle(spot, expiry);
+  const { rows } = await fetchPolygonOdteDeskBundle(spot, expiry, { forceRefresh });
   return rows;
 }
 
@@ -406,6 +444,188 @@ export async function fetchPolygonOiByExpiry(
     .sort((a, b) => a.expiry.localeCompare(b.expiry))
     .slice(0, limit);
 }
+
+// ---------------------------------------------------------------------------
+// IV Term Structure
+// ---------------------------------------------------------------------------
+
+export type PolygonIvTermPoint = {
+  expiry: string;
+  avg_iv: number;
+  call_iv: number;
+  put_iv: number;
+  dte: number;
+};
+
+type SnapshotContract = {
+  details?: {
+    expiration_date?: string;
+    contract_type?: string;
+  };
+  implied_volatility?: number;
+};
+
+type SnapshotResponse = {
+  results?: SnapshotContract[];
+  next_url?: string;
+};
+
+const ivTermCache = new Map<string, { at: number; data: PolygonIvTermPoint[] }>();
+const IV_TERM_CACHE_MS = 5 * 60_000; // 5 minutes
+
+/**
+ * Fetch IV term structure for a ticker from Polygon options chain snapshot.
+ * Groups all contracts by expiry date and averages call + put IV per expiry.
+ * Results are sorted ascending by expiry date and cached for 5 minutes.
+ */
+export async function fetchPolygonIvTermStructure(
+  ticker: string
+): Promise<PolygonIvTermPoint[]> {
+  if (!polygonConfigured()) return [];
+  const root = ticker.toUpperCase();
+  const now = Date.now();
+  const cached = ivTermCache.get(root);
+  if (cached && now - cached.at < IV_TERM_CACHE_MS) return cached.data;
+
+  const today = todayEtYmd();
+  const todayMs = new Date(today).getTime();
+
+  const params = new URLSearchParams({
+    limit: "250",
+    apiKey: KEY,
+  });
+
+  const byExpiry = new Map<
+    string,
+    { callIvSum: number; callCount: number; putIvSum: number; putCount: number }
+  >();
+
+  let page: SnapshotResponse | null = await polygonFetchUrl(
+    `/v3/snapshot/options/${root}?${params}`
+  ) as SnapshotResponse | null;
+  let guard = 0;
+
+  while (page && guard < 20) {
+    for (const c of page.results ?? []) {
+      const expiry = String(c.details?.expiration_date ?? "").slice(0, 10);
+      if (!expiry || expiry < today) continue;
+      const iv = Number(c.implied_volatility ?? 0);
+      if (!iv || !Number.isFinite(iv)) continue;
+      const type = String(c.details?.contract_type ?? "").toLowerCase();
+      const row = byExpiry.get(expiry) ?? {
+        callIvSum: 0,
+        callCount: 0,
+        putIvSum: 0,
+        putCount: 0,
+      };
+      if (type === "call") {
+        row.callIvSum += iv;
+        row.callCount += 1;
+      } else if (type === "put") {
+        row.putIvSum += iv;
+        row.putCount += 1;
+      }
+      byExpiry.set(expiry, row);
+    }
+    if (!page.next_url) break;
+    page = await polygonFetchUrl(page.next_url) as SnapshotResponse | null;
+    guard += 1;
+  }
+
+  const data: PolygonIvTermPoint[] = Array.from(byExpiry.entries())
+    .map(([expiry, row]) => {
+      const callIv = row.callCount > 0 ? row.callIvSum / row.callCount : 0;
+      const putIv = row.putCount > 0 ? row.putIvSum / row.putCount : 0;
+      const count = (row.callCount > 0 ? 1 : 0) + (row.putCount > 0 ? 1 : 0);
+      const avg_iv = count > 0 ? (callIv + putIv) / count : 0;
+      const expiryMs = new Date(expiry).getTime();
+      const dte = Math.max(0, Math.round((expiryMs - todayMs) / 86_400_000));
+      return {
+        expiry,
+        avg_iv: Number(avg_iv.toFixed(4)),
+        call_iv: Number(callIv.toFixed(4)),
+        put_iv: Number(putIv.toFixed(4)),
+        dte,
+      };
+    })
+    .filter((p) => p.avg_iv > 0)
+    .sort((a, b) => a.expiry.localeCompare(b.expiry));
+
+  if (data.length) ivTermCache.set(root, { at: now, data });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Realized Volatility
+// ---------------------------------------------------------------------------
+
+export type PolygonRealizedVol = {
+  realized_vol_30d: number;
+  realized_vol_10d: number;
+};
+
+const realizedVolCache = new Map<string, { at: number; data: PolygonRealizedVol }>();
+const REALIZED_VOL_CACHE_MS = 5 * 60_000; // 5 minutes
+
+function annualizedVol(closes: number[], window: number): number {
+  const slice = closes.slice(-window);
+  if (slice.length < 2) return 0;
+  const logReturns: number[] = [];
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i - 1] > 0 && slice[i] > 0) {
+      logReturns.push(Math.log(slice[i] / slice[i - 1]));
+    }
+  }
+  if (logReturns.length < 2) return 0;
+  const mean = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
+  const variance =
+    logReturns.reduce((s, v) => s + (v - mean) ** 2, 0) / (logReturns.length - 1);
+  return Number((Math.sqrt(variance) * Math.sqrt(252)).toFixed(6));
+}
+
+/**
+ * Compute annualized realized volatility for a ticker using Polygon daily bars.
+ * Returns 30-day and 10-day realized vol. Cached for 5 minutes.
+ */
+export async function fetchPolygonRealizedVol(
+  ticker: string,
+  days = 30
+): Promise<PolygonRealizedVol> {
+  if (!polygonConfigured()) return { realized_vol_30d: 0, realized_vol_10d: 0 };
+  const root = ticker.toUpperCase();
+  const now = Date.now();
+  const cached = realizedVolCache.get(root);
+  if (cached && now - cached.at < REALIZED_VOL_CACHE_MS) return cached.data;
+
+  // Import fetchAggBars from polygon-largo to avoid duplicating the bar-fetch logic.
+  const { fetchAggBars } = await import("./polygon-largo");
+  const today = todayEtYmd();
+  // Fetch enough bars: max(days, 30) + buffer for weekends/holidays.
+  const lookback = Math.max(days, 30);
+  const fromDays = Math.ceil(lookback * 1.5) + 10;
+  const fromDate = new Date(Date.now() - fromDays * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+  // For SPX use the Polygon index ticker prefix.
+  const polyTicker = root === "SPX" ? "I:SPX" : root;
+  const bars = await fetchAggBars(polyTicker, 1, "day", fromDate, today, String(lookback + 20)).catch(
+    () => []
+  );
+
+  const closes = bars.map((b) => b.c).filter((c) => c > 0);
+  const data: PolygonRealizedVol = {
+    realized_vol_30d: annualizedVol(closes, 31), // 31 closes = 30 log-returns
+    realized_vol_10d: annualizedVol(closes, 11), // 11 closes = 10 log-returns
+  };
+
+  if (data.realized_vol_30d > 0 || data.realized_vol_10d > 0) {
+    realizedVolCache.set(root, { at: now, data });
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 
 async function polygonRefFetch(url: string): Promise<RefContractsResponse | null> {
   if (!polygonConfigured()) return null;

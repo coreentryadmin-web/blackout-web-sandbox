@@ -79,9 +79,13 @@ async function createPool(): Promise<Pool> {
         );
       }
 
+      // PgBouncer sits in front of Postgres on Railway. It handles real connection pooling.
+      // We keep our own pool small (default 5) — PgBouncer multiplexes these to many clients.
+      // Set PG_POOL_MAX env var to override (e.g. PG_POOL_MAX=5 in Railway service env vars).
       return new Pool({
         connectionString: candidate.url,
-        max: 8,
+        max: parseInt(process.env.PG_POOL_MAX ?? "5", 10),
+        idleTimeoutMillis: 30_000,
         ssl: poolSsl(candidate.url),
         connectionTimeoutMillis: 15_000,
       });
@@ -112,8 +116,14 @@ async function getPool(): Promise<Pool> {
 
 let schemaReady: Promise<void> | null = null;
 
+const MIGRATION_LOCK_ID = 42;
+
 async function runMigrations(): Promise<void> {
   const p = await getPool();
+  // Acquire a session-level advisory lock so concurrent Next.js cold-start instances
+  // wait rather than racing on DDL. pg_advisory_lock blocks until the lock is free.
+  await p.query(`SELECT pg_advisory_lock($1)`, [MIGRATION_LOCK_ID]);
+  try {
   await p.query(`
     CREATE TABLE IF NOT EXISTS flow_alerts (
       id BIGSERIAL PRIMARY KEY,
@@ -498,6 +508,10 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE nighthawk_play_outcomes ADD CONSTRAINT nighthawk_play_outcomes_outcome_check CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending'));
   `);
+  } finally {
+    // Release the advisory lock so other waiting instances can proceed.
+    await p.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]);
+  }
 }
 
 export async function ensureSchema(): Promise<void> {
@@ -519,6 +533,12 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
 ) {
   await ensureSchema();
   return (await getPool()).query<T>(text, values);
+}
+
+/** Acquire a pool client for manual transaction management (caller must release). */
+export async function dbClient() {
+  await ensureSchema();
+  return (await getPool()).connect();
 }
 
 export async function pingDatabase(): Promise<{

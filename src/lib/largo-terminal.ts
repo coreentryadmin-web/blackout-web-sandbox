@@ -137,7 +137,7 @@ async function prepareLargoTurn(
   const liveFeedBlock = formatLargoLiveFeed(liveFeed, intent.tickerHint ?? "SPX");
   const system = buildDynamicSystem(question, history.slice(0, -1), liveFeedBlock);
 
-  resetLargoSpxDeskCache();
+  resetLargoSpxDeskCache(userId);
   const allowedToolNames = new Set(getToolsForIntent(question));
   const filteredTools = LARGO_TOOL_DEFS.filter((t) => allowedToolNames.has(t.name));
 
@@ -166,10 +166,10 @@ export async function runLargoQuery(
       messages: history,
       model: LARGO_MODEL,
       maxTokens: 4096,
-      maxRounds: 16,
+      maxRounds: 12,
       runTool: async (name, input) => {
         toolsUsed.push(name);
-        return runLargoTool(name, input);
+        return runLargoTool(name, input, userId);
       },
     });
 
@@ -186,7 +186,7 @@ export async function runLargoQuery(
       tools_used: Array.from(new Set(toolsUsed)),
     };
   } finally {
-    resetLargoSpxDeskCache();
+    resetLargoSpxDeskCache(userId);
   }
 }
 
@@ -223,11 +223,11 @@ export async function runLargoQueryStream(
       messages: history,
       model: LARGO_MODEL,
       maxTokens: 4096,
-      maxRounds: 16,
+      maxRounds: 12,
       onEvent: (event) => emit(event),
       runTool: async (name, input) => {
         toolsUsed.push(name);
-        return runLargoTool(name, input);
+        return runLargoTool(name, input, userId);
       },
     });
 
@@ -253,6 +253,6 @@ export async function runLargoQueryStream(
       if (!isSseClientDisconnect(emitErr)) throw emitErr;
     }
   } finally {
-    resetLargoSpxDeskCache();
+    resetLargoSpxDeskCache(userId);
   }
 }

@@ -689,6 +689,17 @@ async function evaluateFlatPlay(
     }
   );
 
+  // BUG-04: detect and flag direction mismatches between Claude and confluence.
+  const claudeDirectionMismatch =
+    claude.direction != null &&
+    confluence.direction != null &&
+    claude.direction !== confluence.direction;
+  if (claudeDirectionMismatch) {
+    console.warn(
+      `[spx-play-engine] Direction mismatch: Claude=${claude.direction} vs confluence=${confluence.direction}`
+    );
+  }
+
   if (!claude.approved || !confluence.direction) {
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
@@ -703,7 +714,7 @@ async function evaluateFlatPlay(
       action: "SCANNING",
       headline: claude.headline,
       thesis: claude.thesis,
-      claude,
+      claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
       confirmations,
       technicals: techSum,
       mtf,
@@ -774,7 +785,7 @@ async function evaluateFlatPlay(
       factors: confluence.factors,
       levels: confluence.levels,
       gates: entryGatesView,
-      claude,
+      claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
       open_play: null,
       confirmations,
       technicals: techSum,
@@ -901,7 +912,7 @@ async function evaluateFlatPlay(
       entry_mode: entryGatesRaw.entry_mode,
       play_idea: entryGatesView.play_idea,
     },
-    claude,
+    claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
     open_play: {
       id: opened.id,
       direction: dir,

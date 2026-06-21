@@ -216,7 +216,7 @@ export async function runHuntScan(request: HuntRequest): Promise<HuntBuildResult
 
     const scoredList = dossierList.map((d) => d.scored!).filter(Boolean);
     const filtered = applyHuntScoreFilters(scoredList, filters);
-    const ranked = rankCandidates(filtered, MAX_DOSSIER_STOCKS);
+    const { ranked, exclusionReason } = rankCandidates(filtered, MAX_DOSSIER_STOCKS);
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
 
     if (!ranked.length) {
@@ -224,7 +224,7 @@ export async function runHuntScan(request: HuntRequest): Promise<HuntBuildResult
         ok: false,
         plays: [],
         playbookPlays: [],
-        message: "Candidates scanned but none passed hunt score filters.",
+        message: exclusionReason ?? "Candidates scanned but none passed hunt score filters.",
         candidates: candidates.length,
         error: "no_ranked",
         duration_ms: Date.now() - started,

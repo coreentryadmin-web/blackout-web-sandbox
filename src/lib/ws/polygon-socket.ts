@@ -1,6 +1,7 @@
 /**
  * Polygon/Massive WebSocket client for real-time index aggregates.
  */
+import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 export type PolygonAgg = {
   ev: "A" | "AM";
   sym: string;
@@ -16,15 +17,24 @@ export type PolygonAgg = {
 const POLYGON_WS_INDICES = process.env.POLYGON_WS_INDICES ?? "wss://socket.massive.com/indices";
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_KEY ?? "";
 
-export const indexStore: Record<string, { price: number; change_pct: number; session_open: number; updatedAt: number }> = {
-  "I:SPX": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:VIX": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:VIX9D": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:VIX3M": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:TICK": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:TRIN": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
-  "I:ADD": { price: 0, change_pct: 0, session_open: 0, updatedAt: 0 },
+export const indexStore: Record<string, { price: number; change_pct: number; session_open: number; session_date: string; updatedAt: number }> = {
+  "I:SPX": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:VIX": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:VIX9D": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:VIX3M": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:TICK": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:TRIN": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+  "I:ADD": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
 };
+
+function barDateET(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 let indicesWs: WebSocket | null = null;
 let indicesReconnectDelay = 1000;
@@ -106,14 +116,27 @@ function connectIndices() {
             if (indexStore[agg.sym]) {
               // Keep the first open of the session as the baseline for day change_pct.
               // agg.o is the bar open; on the very first bar it approximates the session open.
-              const prevOpen = indexStore[agg.sym].session_open;
-              const sessionOpen = prevOpen > 0 ? prevOpen : agg.o;
+              // On reconnect, preserve the existing session_open so the anchor is not reset to
+              // the reconnect time. Reset only when a new trading day is detected (ET date change).
+              const todayET = barDateET();
+              const prev = indexStore[agg.sym];
+              const isNewDay = prev.session_date && prev.session_date !== todayET;
+              const sessionOpen = (!isNewDay && prev.session_open > 0) ? prev.session_open : agg.o;
               indexStore[agg.sym] = {
                 price: agg.c,
                 change_pct: sessionOpen > 0 ? ((agg.c - sessionOpen) / sessionOpen) * 100 : 0,
                 session_open: sessionOpen,
+                session_date: todayET,
                 updatedAt: Date.now(),
               };
+              void (async () => {
+                try {
+                  const redis = await getUwCacheRedis();
+                  if (redis) {
+                    await redis.setex("spx:pulse:snapshot", 30, JSON.stringify(indexStore));
+                  }
+                } catch { /* non-fatal — SSE falls back to local indexStore */ }
+              })();
             }
           }
         }
@@ -131,6 +154,7 @@ function connectIndices() {
     indicesWs.onclose = (event) => {
       indicesWs = null;
       indicesAuthenticated = false;
+      console.warn("[polygon-socket] indices disconnected — bar gap will occur until reconnection completes");
       scheduleIndicesReconnect(`code=${event.code}`);
     };
   } catch (err) {

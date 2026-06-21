@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BlackOut — To-Do</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f9f9f8;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.10);
+    --border-hover: rgba(0,0,0,0.20);
+    --text: #1a1a1a;
+    --muted: #666;
+    --hint: #999;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --green-border: #bbf7d0;
+    --red-bg: #fff1f0;
+    --red-text: #b91c1c;
+    --blue-bg: #eff6ff;
+    --blue-text: #1d4ed8;
+    --amber-bg: #fffbeb;
+    --amber-text: #92400e;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413;
+      --surface: #1e1e1c;
+      --border: rgba(255,255,255,0.10);
+      --border-hover: rgba(255,255,255,0.22);
+      --text: #e8e8e6;
+      --muted: #999;
+      --hint: #666;
+      --green: #4ade80;
+      --green-bg: #052e16;
+      --green-border: #166534;
+      --red-bg: #2d0a0a;
+      --red-text: #fca5a5;
+      --blue-bg: #0c1a33;
+      --blue-text: #93c5fd;
+      --amber-bg: #1c1000;
+      --amber-text: #fcd34d;
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2.5rem 1rem 4rem;
+  }
+
+  .container { max-width: 720px; margin: 0 auto; }
+
+  header { margin-bottom: 2rem; }
+  header h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+  header p { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+  .progress-wrap { margin-bottom: 2rem; }
+  .progress-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .progress-meta span { font-size: 13px; color: var(--muted); }
+  .progress-meta strong { font-size: 13px; color: var(--text); }
+  .bar { height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--green); border-radius: 99px; transition: width .3s ease; }
+
+  .section { margin-bottom: 1.75rem; }
+  .section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--hint);
+    margin-bottom: 8px; padding-left: 2px;
+  }
+
+  .task {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 11px 14px;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 5px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color .12s, opacity .15s;
+  }
+  .task:hover { border-color: var(--border-hover); }
+  .task.done { opacity: .45; }
+  .task.done .title { text-decoration: line-through; color: var(--muted); }
+
+  .check {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1.5px solid var(--border-hover);
+    flex-shrink: 0; margin-top: 2px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s, border-color .12s;
+  }
+  .task.done .check {
+    background: var(--green);
+    border-color: var(--green);
+  }
+  .checkmark {
+    display: none;
+    width: 10px; height: 6px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) translate(1px, -1px);
+  }
+  .task.done .checkmark { display: block; }
+
+  .body { flex: 1; min-width: 0; }
+  .title { font-size: 14px; line-height: 1.45; color: var(--text); }
+  .meta { font-size: 12px; color: var(--hint); margin-top: 3px; font-family: "SF Mono", "Fira Code", monospace; }
+
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 99px;
+    margin-left: 7px; vertical-align: middle; letter-spacing: .02em;
+  }
+  .badge-red { background: var(--red-bg); color: var(--red-text); }
+  .badge-blue { background: var(--blue-bg); color: var(--blue-text); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber-text); }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+
+  .reset-btn {
+    display: block; margin: 2rem auto 0;
+    padding: 8px 20px; font-size: 13px;
+    background: none; border: 0.5px solid var(--border);
+    border-radius: var(--radius); color: var(--muted);
+    cursor: pointer; transition: border-color .12s, color .12s;
+  }
+  .reset-btn:hover { border-color: var(--border-hover); color: var(--text); }
+
+  .updated {
+    text-align: center; font-size: 12px; color: var(--hint);
+    margin-top: 1rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>BlackOut — To-Do</h1>
+    <p>Click a task to mark it done. State saves in your browser.</p>
+  </header>
+
+  <div class="progress-wrap">
+    <div class="progress-meta">
+      <span id="prog-label">0 of 23 done</span>
+      <strong id="prog-pct">0%</strong>
+    </div>
+    <div class="bar"><div class="bar-fill" id="bar-fill" style="width:0%"></div></div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <div class="section-title">Railway / infrastructure — do this first</div>
+
+    <div class="task" data-id="t1" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Switch <code>DATABASE_URL</code> in BlackOut-Uw-Alerts to Project 1 Postgres<span class="badge badge-red">do first</span></div>
+        <div class="meta">Railway → BlackOut-Uw-Alerts → Variables → update DATABASE_URL to Project 1 connection string</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t2" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Redeploy BlackOut-Uw-Alerts after env var change</div>
+        <div class="meta">Railway → manual deploy or push a commit to trigger redeploy</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t3" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Delete Project 2 Postgres plugin from Railway</div>
+        <div class="meta">Only after confirming bot connects cleanly to Project 1 DB in logs</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t4" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Redeploy blackout-web to pick up all Polygon feature changes</div>
+        <div class="meta">New: /api/market/ticker-search · Benzinga earnings/ratings · snapshot fix · new Largo tools</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <div class="section-title">Run probes / verify deployments</div>
+
+    <div class="task" data-id="t5" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Run NOI WebSocket probe during market hours<span class="badge badge-amber">time-sensitive</span></div>
+        <div class="meta">python scripts/probe_polygon_ws_noi.py · run at 9:20–9:35 ET open or 3:45–4:05 ET MOC</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t6" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Run Polygon indices probe to verify API base URL fix</div>
+        <div class="meta">python scripts/probe_polygon_indices.py · should return I:SPX + I:VIX snapshots cleanly</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t7" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Test ticker search on deployed site</div>
+        <div class="meta">/api/market/ticker-search?q=AAPL · expect JSON { results: [...] }</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <div class="section-title">Build: ticker search bar UI<span class="badge badge-blue" style="margin-left:8px">~2 hrs</span></div>
+
+    <div class="task" data-id="t8" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Add search input component to site header / nav</div>
+        <div class="meta">Wire to /api/market/ticker-search?q= with 250 ms debounce · min 1 char</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t9" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Render autocomplete dropdown (ticker, name, exchange)</div>
+        <div class="meta">On select → navigate to ticker detail page</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <div class="section-title">Investigate — after probe results</div>
+
+    <div class="task" data-id="t10" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">If NOI probe hits → build <code>polygon_noi_stream.py</code><span class="badge badge-blue">high value</span></div>
+        <div class="meta">Mirror polygon_stream.py · subscribe IMBALANCE.SPY/QQQ · push noi_bias + noi_pct to SPX desk payload</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t11" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">If NOI probe misses → email Massive support about IMBALANCE channel</div>
+        <div class="meta">Ask: does plan include real-time Net Order Imbalance? What is the exact WS channel name?</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t12" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Ask Massive: does plan cover 13-F filings + insider transactions (vX tier)?</div>
+        <div class="meta">High value if available — powers get_institutional and get_insider_flow with Polygon as primary source</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <div class="section-title">SPX desk — after NOI decision</div>
+
+    <div class="task" data-id="t13" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Add options OHLC bar chart to play cards</div>
+        <div class="meta">Backend done (get_option_price_history tool) · needs frontend chart component in SPX play card</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 6 -->
+  <div class="section">
+    <div class="section-title">Deploy code fixes</div>
+
+    <div class="task" data-id="t14" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Deploy updated Python scalper to Railway (BO-AAI service)<span class="badge badge-red">do first</span></div>
+        <div class="meta">All Phase 1-6 audit fixes are in the code; push or manual deploy to trigger redeploy</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t15" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Set SPX_BAR_STALE_MAX_SEC=150 in Railway BO-AAI environment variables</div>
+        <div class="meta">Railway → BlackOut-Uw-Alerts → Variables → add this var (was defaulting to 0 = disabled)</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t16" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Set SPX_CHART_PULSE_AI_TIMEOUT_SEC=25 in Railway BO-AAI environment variables</div>
+        <div class="meta">Prevents pulse mentor from blocking the dashboard loop on slow Claude API</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t17" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Deploy blackout-web with new cache + SSE + Polygon-first changes</div>
+        <div class="meta">New: /api/market/live SSE endpoint · server-cache.ts shared cache · Polygon-first switches</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 7 -->
+  <div class="section">
+    <div class="section-title">Verify after deploy</div>
+
+    <div class="task" data-id="t18" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Test /api/market/live SSE endpoint</div>
+        <div class="meta">curl -N https://your-domain/api/market/live  — should stream SPX bars as text/event-stream during market hours</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t19" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Confirm entry_risk.py hard blocks fire correctly</div>
+        <div class="meta">Check logs: even with SPX_KILL_SWITCHES_ENABLED=false, daily loss cap + earnings blocks should still fire</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t20" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Monitor Railway logs for WS reconnect gap-fill</div>
+        <div class="meta">On any polygon_stream.py reconnect, should log 'gap-fill: loaded N bars for gap window' — confirms the fix is active</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t21" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Confirm trades register lifecycle tracking in all conditions</div>
+        <div class="meta">Look for no 'TradeLifecycleTracker.register() skipped' errors in logs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 8 -->
+  <div class="section">
+    <div class="section-title">Source code recovery (one-time)</div>
+
+    <div class="task" data-id="t22" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Recover weekly_review.py source from .pyc bytecode<span class="badge badge-amber">amber</span></div>
+        <div class="meta">Only .pyc found in audit — run: python -m uncompyle6 weekly_review.cpython-311.pyc > weekly_review.py in the spx_scalper dir</div>
+      </div>
+    </div>
+
+    <div class="task" data-id="t23" onclick="toggle(this)">
+      <div class="check"><div class="checkmark"></div></div>
+      <div class="body">
+        <div class="title">Recover daily_desk_recap.py source from .pyc</div>
+        <div class="meta">Same as above — these files contain the EOD scheduler wiring that links attribution to Discord</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="reset-btn" onclick="resetAll()">Reset all</button>
+  <p class="updated" id="updated-label"></p>
+
+</div>
+
+<script>
+  const STORAGE_KEY = 'blackout-todo-v1';
+
+  function save(state) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+  }
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) { return {}; }
+  }
+
+  function updateProgress() {
+    const all = document.querySelectorAll('.task');
+    const done = document.querySelectorAll('.task.done');
+    const pct = all.length ? Math.round(done.length / all.length * 100) : 0;
+    document.getElementById('bar-fill').style.width = pct + '%';
+    document.getElementById('prog-label').textContent = done.length + ' of ' + all.length + ' done';
+    document.getElementById('prog-pct').textContent = pct + '%';
+  }
+
+  function toggle(el) {
+    el.classList.toggle('done');
+    const state = load();
+    state[el.dataset.id] = el.classList.contains('done');
+    save(state);
+    updateProgress();
+    updateTimestamp();
+  }
+
+  function resetAll() {
+    document.querySelectorAll('.task.done').forEach(t => t.classList.remove('done'));
+    save({});
+    updateProgress();
+    updateTimestamp();
+  }
+
+  function updateTimestamp() {
+    const now = new Date();
+    document.getElementById('updated-label').textContent =
+      'Last updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function init() {
+    const state = load();
+    document.querySelectorAll('.task').forEach(t => {
+      if (state[t.dataset.id]) t.classList.add('done');
+    });
+    updateProgress();
+    if (Object.keys(state).length) updateTimestamp();
+  }
+
+  init();
+</script>
+</body>
+</html>

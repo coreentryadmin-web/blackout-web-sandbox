@@ -171,9 +171,12 @@ function technicalDirection(desk: SpxDeskPayload): {
   }
 
   if (pdc != null) {
+    // EDGE-09: prior-close alone (weight=1) is insufficient signal to commit
+    // to a lotto direction. Return null so the caller can skip lotto rather
+    // than being tipped by a weak fallback on low-catalyst days.
     return {
-      direction: price >= pdc ? "long" : "short",
-      label: `${price >= pdc ? "Above" : "Below"} prior close ${pdc.toFixed(0)}`,
+      direction: null,
+      label: `Prior close ${pdc.toFixed(0)} — insufficient signal (weight=1 only)`,
       weight: 1,
     };
   }

@@ -217,14 +217,14 @@ export async function buildEveningEdition(opts?: {
     }
 
     // STAGE 4 — Ranking
-    const ranked = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
+    const { ranked, exclusionReason: rankExclusionReason } = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
     if (checkpointing) {
       await upsertNighthawkJob(editionFor, {
         scored_json: ranked,
         status: "stage_scoring",
         current_stage: "stage_synthesis",
       });
-      logNighthawkJob(editionFor, "info", "stage_scoring", `Ranked ${ranked.length} tickers for synthesis`);
+      logNighthawkJob(editionFor, "info", "stage_scoring", `Ranked ${ranked.length} tickers for synthesis${rankExclusionReason ? ` — ${rankExclusionReason}` : ""}`);
     }
 
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
@@ -268,17 +268,22 @@ export async function buildEveningEdition(opts?: {
       ctx,
     });
 
-    let finalPlays = vettedPlays;
-    let finalCriticNotes = criticNotes;
+    const finalPlays = vettedPlays;
+    const finalCriticNotes = criticNotes;
     if (!finalPlays.length) {
-      finalPlays = [...rawPlays]
-        .sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0))
-        .slice(0, 2)
-        .map((play, i) => ({ ...play, rank: i + 1 }));
-      finalCriticNotes = [
-        ...finalCriticNotes,
-        "Critic rejected all plays; published top unvetted fallback by score.",
-      ];
+      // Critic rejected every play — do NOT publish unvetted fallback content.
+      // Return an explicit error so the caller can send a "no plays tonight" notice.
+      const err = "Critic rejected all plays — no plays passed quality review.";
+      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+      return {
+        ok: false,
+        edition_for: editionFor,
+        plays_count: 0,
+        candidates: candidates.length,
+        error: err,
+        duration_ms: Date.now() - started,
+        job_status: "failed",
+      };
     }
 
     // STAGE 6 — Publish

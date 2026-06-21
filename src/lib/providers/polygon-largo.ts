@@ -364,3 +364,127 @@ export async function fetchRelatedTickers(ticker: string) {
 export async function fetchStockFloat(ticker: string) {
   return polygonGet<Record<string, unknown>>(`/stocks/v1/float`, { ticker: ticker.toUpperCase() });
 }
+
+// ── Ticker search ─────────────────────────────────────────────────────────────
+
+export type TickerSearchResult = {
+  ticker: string;
+  name: string;
+  market: string;
+  primary_exchange: string;
+  type: string;
+  active: boolean;
+  currency_name: string;
+};
+
+export async function fetchPolygonTickerSearch(query: string, limit = 10): Promise<TickerSearchResult[]> {
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    "/v3/reference/tickers",
+    { search: query, active: "true", limit: String(limit), sort: "ticker", order: "asc" }
+  );
+  return (data?.results ?? []).map((r) => ({
+    ticker: String(r.ticker ?? ""),
+    name: String(r.name ?? ""),
+    market: String(r.market ?? ""),
+    primary_exchange: String(r.primary_exchange ?? ""),
+    type: String(r.type ?? ""),
+    active: r.active !== false,
+    currency_name: String(r.currency_name ?? "usd"),
+  }));
+}
+
+// ── Options OHLC bars ─────────────────────────────────────────────────────────
+
+export async function fetchPolygonOptionBars(
+  optionTicker: string,
+  multiplier: number,
+  timespan: "minute" | "hour" | "day",
+  from: string,
+  to: string,
+  limit = "250"
+): Promise<AggBar[]> {
+  const sym = optionTicker.startsWith("O:") ? optionTicker : `O:${optionTicker}`;
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    `/v2/aggs/ticker/${sym}/range/${multiplier}/${timespan}/${from}/${to}`,
+    { limit, sort: "asc", adjusted: "true" }
+  );
+  return mapBars(data?.results);
+}
+
+// ── Dividends & splits ────────────────────────────────────────────────────────
+
+export type DividendRecord = {
+  ticker: string;
+  ex_dividend_date: string;
+  pay_date: string;
+  record_date: string;
+  frequency: number;
+  cash_amount: number;
+  currency: string;
+};
+
+export async function fetchPolygonDividends(ticker: string): Promise<DividendRecord[]> {
+  const sym = ticker.toUpperCase();
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    "/v3/reference/dividends",
+    { ticker: sym, limit: "8", order: "desc", sort: "ex_dividend_date" }
+  );
+  return (data?.results ?? []).map((r) => ({
+    ticker: String(r.ticker ?? sym),
+    ex_dividend_date: String(r.ex_dividend_date ?? ""),
+    pay_date: String(r.pay_date ?? ""),
+    record_date: String(r.record_date ?? ""),
+    frequency: Number(r.frequency ?? 0),
+    cash_amount: Number(r.cash_amount ?? 0),
+    currency: String(r.currency ?? "USD"),
+  }));
+}
+
+export type SplitRecord = {
+  ticker: string;
+  execution_date: string;
+  split_from: number;
+  split_to: number;
+};
+
+export async function fetchPolygonSplits(ticker: string): Promise<SplitRecord[]> {
+  const sym = ticker.toUpperCase();
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    "/v3/reference/splits",
+    { ticker: sym, limit: "5", order: "desc", sort: "execution_date" }
+  );
+  return (data?.results ?? []).map((r) => ({
+    ticker: String(r.ticker ?? sym),
+    execution_date: String(r.execution_date ?? ""),
+    split_from: Number(r.split_from ?? 1),
+    split_to: Number(r.split_to ?? 1),
+  }));
+}
+
+// ── IPO calendar ──────────────────────────────────────────────────────────────
+
+export type IpoEntry = {
+  ticker: string;
+  name: string;
+  listing_date: string;
+  isin: string;
+  primary_exchange: string;
+  share_price_low: number | null;
+  share_price_high: number | null;
+};
+
+export async function fetchPolygonIpoCalendar(fromDate: string, toDate: string): Promise<IpoEntry[]> {
+  const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+    "/vX/reference/ipos",
+    { "listing_date.gte": fromDate, "listing_date.lte": toDate, order: "asc", limit: "20" }
+  );
+  return (data?.results ?? []).map((r) => ({
+    ticker: String(r.ticker ?? ""),
+    name: String(r.company_name ?? r.name ?? ""),
+    listing_date: String(r.listing_date ?? ""),
+    isin: String(r.isin ?? ""),
+    primary_exchange: String(r.primary_exchange ?? ""),
+    share_price_low: r.share_price_low != null ? Number(r.share_price_low) : null,
+    share_price_high: r.share_price_high != null ? Number(r.share_price_high) : null,
+  }));
+}

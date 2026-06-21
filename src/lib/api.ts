@@ -152,10 +152,10 @@ function deskPayloadToSpxState(desk: SpxDeskPayload): SpxState {
     flow_0dte_put_premium: desk.flow_0dte_put_premium,
     flow_0dte_net: desk.flow_0dte_net,
     adv: desk.add,
-    dec: null,
+    dec: desk.market_breadth?.closed_near_low ?? null,
     trin: desk.trin,
     tick: desk.tick,
-    sector_bias: desk.tide_bias,
+    sector_bias: null,
     sector_leaders: (desk.leader_stocks ?? []).map((s) => ({
       sector: s.name || s.ticker,
       change_pct: s.change_pct,
@@ -318,6 +318,34 @@ export interface FlowAlert {
   score: number;
   route: string;
   alerted_at: string;
+  alert_rule?: string;
+  ask_pct?: number;
+  dte?: number;
+}
+
+export interface DarkPoolRow {
+  ticker: string;
+  premium: number;
+  side: string;
+  executed_at: string;
+  share_size?: number;
+}
+
+export interface DarkPoolTickerPrint {
+  strike: number;
+  premium: number;
+  side: string;
+  executed_at: string;
+}
+
+export interface DarkPoolTickerSnapshot {
+  total_premium: number;
+  call_premium: number;
+  put_premium: number;
+  bias: string;
+  pcr: number | null;
+  detail: string;
+  prints: DarkPoolTickerPrint[];
 }
 
 /** Flow tape — engine Postgres ingest first, UW direct fallback. */
@@ -334,6 +362,25 @@ export async function fetchFlows(params?: {
 
   return marketFetch<{ flows: FlowAlert[]; count: number; source?: string }>(
     `/flows${query ? `?${query}` : ""}`
+  );
+}
+
+/** Dark pool prints — market-wide institutional off-lit trades. */
+export async function fetchDarkPoolPrints(params?: { limit?: number; min_premium?: number }) {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.min_premium) qs.set("min_premium", String(params.min_premium));
+  const query = qs.toString();
+
+  return marketFetch<{ prints: DarkPoolRow[]; count: number }>(
+    `/dark-pool${query ? `?${query}` : ""}`
+  );
+}
+
+/** Per-ticker dark pool snapshot — call/put split, PCR, institutional prints by strike. */
+export async function fetchDarkPoolTicker(symbol: string) {
+  return marketFetch<{ snapshot: DarkPoolTickerSnapshot | null; symbol: string }>(
+    `/dark-pool/ticker?symbol=${encodeURIComponent(symbol)}`
   );
 }
 

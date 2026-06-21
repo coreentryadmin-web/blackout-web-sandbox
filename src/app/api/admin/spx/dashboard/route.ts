@@ -11,9 +11,12 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const live = req.nextUrl.searchParams.get("live") === "1";
+  // EDGE-10: dryRun defaults to true. Only pass dryRun=false when the client
+  // has performed a second explicit confirmation to allow real mutations.
+  const dryRun = req.nextUrl.searchParams.get("dryRun") !== "false";
 
   try {
-    const dashboard = await fetchSpxAdminDashboard({ liveEngine: live });
+    const dashboard = await fetchSpxAdminDashboard({ liveEngine: live, dryRun });
     if (live) {
       const actor = await getAdminApiActor();
       void logAdminAction({
@@ -23,6 +26,7 @@ export async function GET(req: NextRequest) {
         detail: {
           play_action: dashboard.play?.action ?? null,
           direction: dashboard.play?.direction ?? null,
+          dry_run: dryRun,
         },
       });
     }

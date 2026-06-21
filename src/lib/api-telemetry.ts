@@ -40,6 +40,13 @@ const endpointStats = new Map<string, ApiEndpointStats>();
 const activeRetries = new Map<string, ActiveRetry>();
 const listeners = new Set<TelemetryListener>();
 
+/**
+ * ISO timestamp of when this process started. The in-memory ring buffer
+ * only covers events since this moment — data from before the last cold
+ * start is not available unless persisted externally.
+ */
+export const processStartTime = new Date().toISOString();
+
 function statsKey(provider: ApiProviderId, method: string, endpoint: string): string {
   return `${provider}|${method}|${endpoint}`;
 }
@@ -268,6 +275,8 @@ export function getApiTelemetrySnapshot(sinceMs = 5 * 60_000) {
       errors: errors.length,
       window_ms: sinceMs,
     },
+    /** ISO timestamp of process start — ring buffer only covers events since this moment. */
+    buffer_since: processStartTime,
   };
 }
 

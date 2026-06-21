@@ -49,6 +49,24 @@ function getPremiumPlanIds(): string[] {
   );
 }
 
+// Startup guard: warn loudly if all product/plan ID env vars are missing.
+// A missing config causes every membership check to return 'free', silently
+// downgrading all paying users — so this must surface immediately at boot.
+if (
+  !process.env.WHOP_PREMIUM_PRODUCT_IDS?.trim() &&
+  !process.env.WHOP_PRO_PRODUCT_IDS?.trim() &&
+  !process.env.WHOP_ELITE_PRODUCT_IDS?.trim() &&
+  !process.env.WHOP_PREMIUM_PLAN_IDS?.trim() &&
+  !process.env.WHOP_PRO_PLAN_IDS?.trim() &&
+  !process.env.WHOP_ELITE_PLAN_IDS?.trim()
+) {
+  console.error(
+    "[whop] CRITICAL: All WHOP_*_PRODUCT_IDS and WHOP_*_PLAN_IDS env vars are empty/undefined. " +
+    "Every membership check will resolve as 'free', silently downgrading all paying users. " +
+    "Set at least one of WHOP_PREMIUM_PRODUCT_IDS, WHOP_PRO_PRODUCT_IDS, or WHOP_ELITE_PRODUCT_IDS."
+  );
+}
+
 export function resolveTierFromMembership(membership: WhopMembershipLike): Tier | null {
   if (!ACTIVE_STATUSES.has(membership.status)) return null;
 
@@ -57,6 +75,15 @@ export function resolveTierFromMembership(membership: WhopMembershipLike): Tier 
 
   const premiumProducts = getPremiumProductIds();
   const premiumPlans = getPremiumPlanIds();
+
+  // Guard: if both lists are empty, the comparison always fails and every
+  // membership silently resolves to 'free'. Throw instead of lying.
+  if (premiumProducts.length === 0 && premiumPlans.length === 0) {
+    throw new Error(
+      "[whop] Cannot resolve tier: all WHOP_*_PRODUCT_IDS and WHOP_*_PLAN_IDS are empty. " +
+      "Set at least one product/plan ID env var."
+    );
+  }
 
   if (premiumProducts.includes(productId) || premiumPlans.includes(planId)) {
     return "premium";

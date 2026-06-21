@@ -3,7 +3,10 @@ import {
   type ApiCallEvent,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
-import { sanitizeTrackedFetchUrl as sanitizeUrl } from "@/lib/api-telemetry-sanitize";
+import {
+  sanitizeTrackedFetchUrl as sanitizeUrl,
+  sanitizeHeaderNames,
+} from "@/lib/api-telemetry-sanitize";
 
 export type TrackedFetchOptions = RequestInit & {
   maxRetries?: number;
@@ -64,8 +67,12 @@ export async function trackedFetch(
   const delayMs = retryDelayMs ?? 2000;
   const corrId = correlationId ?? `corr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const safeUrl = sanitizeUrl(url);
-  const headersSent = headerNames(fetchInit);
-  const requestBody = requestBodyHint(url, fetchInit);
+  // Strip credential headers (Authorization, X-Blackout-Key, etc.) so they are
+  // never persisted in the telemetry DB or SSE stream.
+  const headersSent = sanitizeHeaderNames(headerNames(fetchInit));
+  // Use the sanitized URL when building the body hint so API keys in the query string
+  // are scrubbed BEFORE the hint is stored in the telemetry ring buffer.
+  const requestBody = requestBodyHint(safeUrl, fetchInit);
 
   let lastEvent: ApiCallEvent | null = null;
 

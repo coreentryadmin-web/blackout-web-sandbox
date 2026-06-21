@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
+import { serverCache, TTL } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const articles = await fetchBenzingaNews(15);
+    const articles = await serverCache("news:benzinga:15", TTL.NEWS, () => fetchBenzingaNews(15));
     return NextResponse.json({ source: "benzinga", articles });
   } catch (error) {
     console.error("[market/news]", error);

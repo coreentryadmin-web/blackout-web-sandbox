@@ -32,14 +32,12 @@ export async function updateClerkMembershipMetadata(
   metadata: MembershipMetadata
 ) {
   const client = await clerkClient();
-  const user = await client.users.getUser(clerkUserId);
-  const existing = (user.publicMetadata ?? {}) as MembershipMetadata;
-
+  // Use updateUserMetadata (not updateUser) so Clerk performs a server-side
+  // deep-merge of publicMetadata rather than a full overwrite. This eliminates
+  // the read-modify-write race where two concurrent calls could each read stale
+  // metadata and overwrite each other's changes.
   await client.users.updateUserMetadata(clerkUserId, {
-    publicMetadata: {
-      ...existing,
-      ...metadata,
-    },
+    publicMetadata: metadata,
   });
 }
 
@@ -94,8 +92,27 @@ export async function syncWhopMembershipForEmail(email: string): Promise<{
     memberships.push(membership);
   }
 
-  const tier = resolveTierFromMemberships(memberships);
-  const activeMembership = memberships[0];
+  // Sort memberships deterministically: prefer ACTIVE/TRIALING status first,
+  // then fall back to most-recently-created so [0] is always the "best" membership.
+  const STATUS_PRIORITY: Record<string, number> = {
+    active: 0,
+    trialing: 1,
+    completed: 2,
+    past_due: 3,
+    canceling: 4,
+  };
+  const sortedMemberships = [...memberships].sort((a, b) => {
+    const aPriority = STATUS_PRIORITY[a.status] ?? 99;
+    const bPriority = STATUS_PRIORITY[b.status] ?? 99;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    // Within the same priority bucket, prefer the most recently created.
+    const aTs = (a as unknown as { created_at?: number }).created_at ?? 0;
+    const bTs = (b as unknown as { created_at?: number }).created_at ?? 0;
+    return bTs - aTs;
+  });
+
+  const tier = resolveTierFromMemberships(sortedMemberships);
+  const activeMembership = sortedMemberships[0];
 
   const clerkUsers = await findClerkUsersByEmail(normalized);
   const updatedUserIds: string[] = [];

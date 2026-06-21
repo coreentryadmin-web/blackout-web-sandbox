@@ -62,14 +62,7 @@ export type StockQuoteSnapshot = {
   volume: number;
 };
 
-export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnapshot | null> {
-  const sym = ticker.toUpperCase();
-  const data = await polygonGet<{ ticker?: SnapshotTicker }>(
-    `/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`
-  );
-  const row = data.ticker;
-  if (!row) return null;
-
+function _rowToSnapshot(sym: string, row: SnapshotTicker): StockQuoteSnapshot {
   const day = row.day ?? {};
   const prev = row.prevDay ?? {};
   const last = row.lastTrade ?? {};
@@ -81,7 +74,6 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnap
       : prevClose
         ? Number((((price - prevClose) / prevClose) * 100).toFixed(2))
         : 0;
-
   return {
     ticker: sym,
     price,
@@ -92,6 +84,37 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnap
     vwap: Number(day.vw ?? price),
     volume: Number(day.v ?? 0),
   };
+}
+
+export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnapshot | null> {
+  const sym = ticker.toUpperCase();
+  const data = await polygonGet<{ ticker?: SnapshotTicker }>(
+    `/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`
+  );
+  const row = data.ticker;
+  return row ? _rowToSnapshot(sym, row) : null;
+}
+
+/** Batch snapshot — one HTTP call for multiple stock/ETF tickers. */
+export async function fetchStockSnapshots(
+  tickers: string[]
+): Promise<Record<string, StockQuoteSnapshot | null>> {
+  const syms = tickers.map((t) => t.toUpperCase());
+  const out: Record<string, StockQuoteSnapshot | null> = Object.fromEntries(
+    syms.map((s) => [s, null])
+  );
+  if (!syms.length) return out;
+
+  const data = await polygonGet<{ tickers?: SnapshotTicker[] }>(
+    "/v2/snapshot/locale/us/markets/stocks/tickers",
+    { tickers: syms.join(",") }
+  );
+  for (const row of data.tickers ?? []) {
+    const sym = row.ticker?.toUpperCase();
+    if (!sym || !out.hasOwnProperty(sym)) continue;
+    out[sym] = _rowToSnapshot(sym, row);
+  }
+  return out;
 }
 
 async function fetchStockSnapshotPerformance(
@@ -352,6 +375,14 @@ export async function fetchBenzingaNews(
     url: String(article.url ?? article.benzinga_url ?? ""),
     author: String(article.author ?? ""),
   }));
+}
+
+export async function fetchBenzingaEarnings(ticker: string, limit = 15) {
+  return fetchBenzingaNews(limit, { ticker, channels: "earnings" });
+}
+
+export async function fetchBenzingaAnalystRatings(ticker: string, limit = 15) {
+  return fetchBenzingaNews(limit, { ticker, channels: "analyst-ratings" });
 }
 
 // ── SPX structure (indices) ───────────────────────────────────────────────────

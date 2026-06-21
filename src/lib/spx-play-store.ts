@@ -74,6 +74,34 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
   if (!dbConfigured()) return { ...MEMORY_SESSION };
   const raw = await getMeta(SESSION_META_KEY);
   if (!raw) {
+    // Recovery: if there's an open play but no session meta at all, a crash
+    // occurred between openPlay() and recordBuy(). Back-fill last_buy_at from
+    // the play's opened_at so buy-cooldown protection is not bypassed, and
+    // persist the corrected meta immediately.
+    const openRow = await loadOpenPlay();
+    if (openRow) {
+      const backilledAt = new Date(openRow.opened_at).getTime();
+      const recovered: PlaySessionMeta = {
+        last_buy_at: backilledAt,
+        last_sell_at: null,
+        last_sell_was_loss: false,
+        last_direction: openRow.direction,
+        last_stop_at: null,
+        version: 1,
+      };
+      Object.assign(MEMORY_SESSION, recovered);
+      console.warn(
+        "[spx-play-store] session meta missing but open play found — back-filling last_buy_at from opened_at and persisting"
+      );
+      // Fire-and-forget persist so the next read doesn't need to recover again.
+      void setMetaWithRetry(SESSION_META_KEY, JSON.stringify(recovered)).catch((err) =>
+        console.error("[spx-play-store] crash-recovery persist failed:", err)
+      );
+      // Strip internal version before returning to callers.
+      const { version: _version, ...memFields } = recovered;
+      void _version;
+      return memFields;
+    }
     return { last_buy_at: null, last_sell_at: null, last_sell_was_loss: false, last_direction: null, last_stop_at: null };
   }
   try {
@@ -86,6 +114,26 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       last_stop_at: p.last_stop_at ?? null,
       version: typeof p.version === "number" ? p.version : 0,
     };
+
+    // Recovery: if meta was persisted but last_buy_at is null while an open
+    // play exists, a crash occurred between openPlay() and recordBuy().
+    // Back-fill last_buy_at from the play's opened_at to restore cooldown
+    // protection for the rest of the session, and persist so this only fires
+    // once per incident.
+    if (meta.last_buy_at == null) {
+      const openRow = await loadOpenPlay();
+      if (openRow) {
+        meta.last_buy_at = new Date(openRow.opened_at).getTime();
+        console.warn(
+          "[spx-play-store] last_buy_at null with open play present — back-filling from opened_at (crash recovery)"
+        );
+        const patched = { ...meta, version: meta.version + 1 };
+        void setMetaWithRetry(SESSION_META_KEY, JSON.stringify(patched)).catch((err) =>
+          console.error("[spx-play-store] crash-recovery patch persist failed:", err)
+        );
+      }
+    }
+
     Object.assign(MEMORY_SESSION, meta);
     return meta;
   } catch {
@@ -113,6 +161,11 @@ function mergeSessionMeta(existing: PlaySessionMeta, incoming: PlaySessionMeta):
 }
 
 export async function savePlaySessionMeta(meta: PlaySessionMeta): Promise<void> {
+  // BUG-07 fix: All attempts use the same merge strategy — read current DB
+  // value, merge only the fields this writer owns, and write back. On the
+  // third (final) attempt we no longer fall through to an unconditional write;
+  // instead we do one last re-read-and-merge so we never overwrite fields that
+  // a concurrent writer updated between our read and our write.
   for (let attempt = 0; attempt < 3; attempt++) {
     const existing = await loadPlaySessionMeta();
     const existingVersion = existing.version ?? 0;
@@ -126,8 +179,25 @@ export async function savePlaySessionMeta(meta: PlaySessionMeta): Promise<void> 
         try {
           const current = JSON.parse(raw) as PlaySessionMeta;
           const currentVersion = current.version ?? 0;
-          if (currentVersion > existingVersion && attempt < 2) {
-            continue;
+          if (currentVersion > existingVersion) {
+            // Another writer has advanced the version since our read.
+            // On attempts 0 and 1 we retry immediately; on attempt 2 we do a
+            // final merge against the freshly-read current value rather than
+            // overwriting it blindly.
+            if (attempt < 2) continue;
+
+            // Attempt 2 — merge our incoming changes onto the latest DB state
+            // so neither writer's updates are lost.
+            const latestMerged = mergeSessionMeta(current, meta);
+            const latestPayload: PlaySessionMeta = {
+              ...latestMerged,
+              version: currentVersion + 1,
+            };
+            await setMetaWithRetry(SESSION_META_KEY, JSON.stringify(latestPayload));
+            const { version: _v2, ...memoryMeta2 } = latestPayload;
+            void _v2;
+            Object.assign(MEMORY_SESSION, memoryMeta2);
+            return;
           }
         } catch {
           /* proceed with write */
@@ -137,6 +207,7 @@ export async function savePlaySessionMeta(meta: PlaySessionMeta): Promise<void> 
     }
 
     const { version: _v, ...memoryMeta } = payload;
+    void _v;
     Object.assign(MEMORY_SESSION, memoryMeta);
     return;
   }
@@ -196,24 +267,61 @@ export async function closeOpenPlay(
     close?: PlayCloseSnapshot;
   }
 ): Promise<void> {
-  if (outcome.close) {
-    const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
-    await recordPlayClose(id, outcome.close);
-  }
-  if (dbConfigured()) {
-    const { closeOpenSpxPlayRow } = await import("@/lib/db");
-    await closeOpenSpxPlayRow(id);
-  }
-  MEMORY_OPEN.row = null;
-  const meta = await loadPlaySessionMeta();
   const exitAction = outcome.close?.exit_action;
-  await savePlaySessionMeta({
+  const meta = await loadPlaySessionMeta();
+  const newMeta: PlaySessionMeta = {
     last_buy_at: meta.last_buy_at,
     last_sell_at: Date.now(),
     last_sell_was_loss: outcome.was_loss,
     last_direction: outcome.direction,
     last_stop_at: exitAction === "STOP" ? Date.now() : meta.last_stop_at,
-  });
+  };
+
+  if (dbConfigured()) {
+    // Wrap all 4 writes (close outcome, close play row, meta save) in a single
+    // DB transaction so a crash cannot leave the play open while meta reflects
+    // it as closed (BUG-05 — post-loss re-entry protection bypass).
+    const { dbClient } = await import("@/lib/db");
+    const client = await dbClient();
+    try {
+      await client.query("BEGIN");
+
+      if (outcome.close) {
+        const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
+        await recordPlayClose(id, outcome.close);
+      }
+
+      const { closeOpenSpxPlayRow } = await import("@/lib/db");
+      await closeOpenSpxPlayRow(id);
+
+      const metaPayload: PlaySessionMeta = {
+        ...newMeta,
+        version: (meta.version ?? 0) + 1,
+      };
+      const { setMeta: setMetaFn } = await import("@/lib/db");
+      await setMetaFn(SESSION_META_KEY, JSON.stringify(metaPayload));
+
+      await client.query("COMMIT");
+
+      MEMORY_OPEN.row = null;
+      const { version: _v, ...memoryMeta } = metaPayload;
+      void _v;
+      Object.assign(MEMORY_SESSION, memoryMeta);
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    // No DB — update in-memory state directly.
+    if (outcome.close) {
+      const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
+      await recordPlayClose(id, outcome.close);
+    }
+    MEMORY_OPEN.row = null;
+    await savePlaySessionMeta(newMeta);
+  }
 }
 
 export async function recordBuy(direction: SpxPlayDirection): Promise<void> {

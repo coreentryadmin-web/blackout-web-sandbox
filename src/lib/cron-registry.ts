@@ -63,6 +63,16 @@ export const CRON_JOBS: CronJobDefinition[] = [
     weekdays_only: true,
     description: "Full dossier pipeline → Claude plays → publish",
   },
+  {
+    key: "uw-cache-refresh",
+    name: "UW Cache Refresh",
+    kind: "http",
+    path: "/api/cron/uw-cache-refresh",
+    schedule_label: "Every 2 min",
+    stale_after_min: 10,
+    market_hours_only: true,
+    description: "Pre-warm Redis cache for UW market-wide + index-ticker signals to stay under 120/min plan cap",
+  },
 ];
 
 export const CRON_JOB_BY_KEY = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j])) as Record<

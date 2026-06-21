@@ -424,8 +424,11 @@ export function scoreCandidate(
   const regimeMultiplier = computeRegimeMultiplier(regime);
   let total = Math.min(
     100,
-    Math.round(
-      (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj) * regimeMultiplier
+    Math.max(
+      0,
+      Math.round(
+        (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj) * regimeMultiplier
+      )
     )
   );
 
@@ -448,12 +451,43 @@ export function scoreCandidate(
   };
 }
 
+export type RankCandidatesResult = {
+  ranked: ScoredCandidate[];
+  /** Non-empty when all candidates were filtered out; explains which fundamental checks blocked them. */
+  exclusionReason?: string;
+};
+
 export function rankCandidates(
   scored: ScoredCandidate[],
   max = 5
-): ScoredCandidate[] {
-  return [...scored]
+): RankCandidatesResult {
+  const passed = [...scored]
     .filter((c) => !c.trading_halt && !c.fundamental_block)
     .sort((a, b) => b.score - a.score)
     .slice(0, max);
+
+  if (passed.length === 0 && scored.length > 0) {
+    const haltedTickers = scored
+      .filter((c) => c.trading_halt)
+      .map((c) => c.ticker);
+    const blockedDetails = scored
+      .filter((c) => c.fundamental_block && !c.trading_halt)
+      .map((c) => `${c.ticker}: ${(c.fundamental_flags ?? []).join(", ") || "fundamental block"}`);
+
+    const parts: string[] = [];
+    if (haltedTickers.length) {
+      parts.push(`trading halt: ${haltedTickers.join(", ")}`);
+    }
+    if (blockedDetails.length) {
+      parts.push(`fundamental block — ${blockedDetails.join(" | ")}`);
+    }
+    const exclusionReason = parts.length
+      ? `All ${scored.length} candidate(s) excluded. Reasons: ${parts.join("; ")}.`
+      : `All ${scored.length} candidate(s) excluded by fundamental or halt filter.`;
+
+    console.warn("[nighthawk/scorer] rankCandidates returning empty.", exclusionReason);
+    return { ranked: [], exclusionReason };
+  }
+
+  return { ranked: passed };
 }

@@ -1,6 +1,15 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 
-const ENGINE_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "";
+// This module must only be imported from server-side code (API routes, Server
+// Components, Server Actions).  It must never be bundled into the client.
+if (typeof window !== "undefined") {
+  throw new Error(
+    "[engine] engine.ts was imported in a browser context. " +
+      "This file is server-only and must not be included in the client bundle."
+  );
+}
+
+const ENGINE_BASE = process.env.API_BASE?.replace(/\/$/, "") ?? "";
 const ENGINE_KEY = process.env.DASHBOARD_API_SECRET ?? "";
 
 export function engineConfigured(): boolean {
@@ -15,15 +24,29 @@ export async function fetchEngine<T>(
     throw new Error("Engine not configured");
   }
 
-  const separator = path.includes("?") ? "&" : "?";
-  const url = `${ENGINE_BASE}${path}${separator}key=${encodeURIComponent(ENGINE_KEY)}`;
+  // Validate path to prevent SSRF via path traversal or protocol injection.
+  const ALLOWED_PREFIXES = ["spx", "nighthawk", "largo", "health"];
+  const pathWithoutLeadingSlash = path.replace(/^\/+/, "");
+  const pathSegment = pathWithoutLeadingSlash.split("?")[0] ?? "";
+  if (
+    pathSegment.includes("..") ||
+    pathSegment.includes("://") ||
+    !ALLOWED_PREFIXES.some((prefix) => pathSegment === prefix || pathSegment.startsWith(`${prefix}/`))
+  ) {
+    throw Object.assign(new Error(`Invalid engine path: ${path}`), { status: 400 });
+  }
 
-  const pathOnly = path.split("?")[0] ?? path;
+  // Do NOT append the secret as a query-string parameter — query strings are
+  // logged by proxies, servers, and telemetry layers.  Send it as a header.
+  const sanitizedPath = `/${pathWithoutLeadingSlash}`;
+  const url = `${ENGINE_BASE}${sanitizedPath}`;
+
+  const pathOnly = sanitizedPath.split("?")[0] ?? sanitizedPath;
   const res = await trackedFetch("blackout_engine", pathOnly, url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-Blackout-Key": ENGINE_KEY,
+      "Authorization": `Bearer ${ENGINE_KEY}`,
       ...options?.headers,
     },
     cache: "no-store",

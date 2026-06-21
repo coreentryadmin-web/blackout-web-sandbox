@@ -20,6 +20,8 @@ export type ClaudePlayVerdict = {
   thesis: string;
   approved: boolean;
   source: "claude" | "mechanical" | "cache";
+  /** BUG-04: true when Claude's direction differs from confluence.direction. */
+  direction_mismatch?: boolean;
 };
 
 const CACHE_KEY = "spx_claude_play_cache";

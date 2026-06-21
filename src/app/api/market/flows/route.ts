@@ -5,6 +5,7 @@ import { fetchMarketFlowAlerts } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
 import { marketPlatform } from "@/lib/platform";
+import { serverCache, TTL } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   if (dbConfigured()) {
     // Lazy side-effect: background ingest keeps Postgres fresh on read (cron also runs ingest).
-    void maybeRunFlowIngest();
+    maybeRunFlowIngest().catch((err) => console.error("[flows] lazy ingest error:", err));
     try {
       const [flows, platform] = await Promise.all([
         fetchRecentFlows({ limit, ticker, min_premium }),
@@ -48,7 +49,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const flows = await fetchMarketFlowAlerts({ limit, ticker, min_premium });
+    const cacheKey = `flows:uw:${limit}:${ticker ?? "all"}:${min_premium ?? 0}`;
+    const flows = await serverCache(cacheKey, TTL.DARK_POOL, () =>
+      fetchMarketFlowAlerts({ limit, ticker, min_premium })
+    );
     return NextResponse.json({ source: "unusual_whales", flows, count: flows.length });
   } catch (error) {
     console.error("[market/flows]", error);

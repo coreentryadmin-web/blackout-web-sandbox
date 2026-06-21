@@ -28,6 +28,9 @@ const NON_TICKER_CAPS = new Set([
   "AH", "PM", "AM", "OK", "USA", "EU", "UK", "NYSE", "SEC", "AI", "ML", "PE", "EPS",
   "ER", "PT", "TP", "SL", "HOD", "LOD", "VWAP", "EMA", "RSI", "MACD", "GEX", "OI",
   "IT", "OR", "ALL", "FOR", "ARE", "BUT", "NOT", "YOU", "CAN", "HOW", "WHY", "WHO",
+  // Common question words that appear in ALL-CAPS input and must not be treated as tickers
+  "WHAT", "DOES", "DOING", "WITH", "THIS", "THAT", "WHEN", "WHERE", "ABOUT", "FROM",
+  "INTO", "JUST", "BEEN", "HAVE", "WILL", "SOME", "THEM", "THAN", "THEN", "ALSO",
 ]);
 export const KNOWN_TICKERS = new Set([
   "SPX", "SPY", "QQQ", "IWM", "VIX", "NDX", "ES", "NQ", "DIA", "VOO", "IVV", "RSP",
@@ -49,7 +52,9 @@ function recentUserText(history: AnthropicMessage[], limit = 6): string {
 }
 
 function extractTicker(question: string, historyText: string): string | null {
-  const qMatch = question.match(/\$?\b([A-Z]{2,5})\b/g) ?? [];
+  // Normalise to uppercase so mixed-case and ALL-CAPS questions are handled identically.
+  const qUpper = question.toUpperCase();
+  const qMatch = qUpper.match(/\$?\b([A-Z]{2,5})\b/g) ?? [];
   for (let i = qMatch.length - 1; i >= 0; i--) {
     const cand = qMatch[i].replace(/^\$/, "");
     if (KNOWN_TICKERS.has(cand) || !NON_TICKER_CAPS.has(cand)) return cand;

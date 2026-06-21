@@ -151,13 +151,19 @@ function OverviewSection({ data }: { data: SpxAdminDashboardPayload }) {
   );
 }
 
-function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
+function LiveEngineSection({
+  data,
+  onRunMutate,
+}: {
+  data: SpxAdminDashboardPayload;
+  onRunMutate?: () => void;
+}) {
   const play = data.play;
   if (!play) {
     return (
       <EmptyDeck
         title="Live engine not loaded"
-        hint="Click Run live engine to evaluate play state — this mutates the active session."
+        hint="Click Run live engine (dry run) above to preview play state safely, or use Run with mutation to write real orders."
       />
     );
   }
@@ -166,6 +172,17 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
 
   return (
     <SectionDeck>
+      {/* EDGE-10: Prominent mutate button with market-hours callout. */}
+      {onRunMutate && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+          <ActionButton onClick={onRunMutate} variant="primary">
+            Run with mutation (real orders)
+          </ActionButton>
+          <span className="admin-warn" style={{ fontSize: "0.8rem" }}>
+            This path writes BUY/SELL to DB and fires Discord. Requires a second confirmation.
+          </span>
+        </div>
+      )}
       <DeckPanel title="Play state" storageKey="spx-play-state" defaultOpen badge={`${play.phase} · ${play.action}`} accent="cyan">
         <KvTiles
           data={{
@@ -253,7 +270,18 @@ function LiveEngineSection({ data }: { data: SpxAdminDashboardPayload }) {
         </DeckPanel>
       )}
       {play.claude && (
-        <DeckPanel title="Claude verdict" storageKey="spx-claude" badge={play.claude.verdict} accent="violet">
+        <DeckPanel
+          title="Claude verdict"
+          storageKey="spx-claude"
+          badge={play.claude.verdict}
+          accent={play.claude.direction_mismatch ? "bear" : "violet"}
+        >
+          {play.claude.direction_mismatch && (
+            <p className="admin-warn admin-stale-banner" style={{ marginBottom: "0.75rem" }}>
+              DIRECTION MISMATCH — Claude returned &ldquo;{play.claude.direction}&rdquo; but
+              confluence is &ldquo;{data.confluence?.direction}&rdquo;. Review before acting.
+            </p>
+          )}
           <ClaudeVerdictCard
             verdict={play.claude.verdict}
             thesis={play.claude.thesis}
@@ -781,6 +809,17 @@ export function AdminSpxDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState("");
   const [confirmLive, setConfirmLive] = useState(false);
+  // EDGE-10: two-step confirmation for real mutations.
+  const [confirmMutate, setConfirmMutate] = useState(false);
+
+  /** Returns true if the current ET clock is within regular market hours (09:30–16:00). */
+  function isMarketHours(): boolean {
+    const now = new Date();
+    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York", hour12: false, hour: "2-digit", minute: "2-digit" });
+    const [hStr, mStr] = etStr.split(":");
+    const totalMin = Number(hStr) * 60 + Number(mStr);
+    return totalMin >= 9 * 60 + 30 && totalMin < 16 * 60;
+  }
 
   useEffect(() => {
     setSection(parseSection(searchParams.get("section")));
@@ -816,12 +855,14 @@ export function AdminSpxDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  const load = useCallback(async (live = false) => {
+  const load = useCallback(async (live = false, dryRun = true) => {
     if (live) setLiveLoading(true);
     else setLoading(true);
     setError(null);
     try {
-      const qs = live ? "?live=1" : "";
+      let qs = live ? "?live=1" : "";
+      // EDGE-10: always pass dryRun flag when running live engine.
+      if (live && !dryRun) qs += "&dryRun=false";
       const res = await fetch(`/api/admin/spx/dashboard${qs}`, { cache: "no-store" });
       if (!res.ok) throw new Error(res.status === 403 ? "Not authorized" : `HTTP ${res.status}`);
       setData(await res.json());
@@ -853,15 +894,29 @@ export function AdminSpxDashboard() {
 
   return (
     <div className="admin-spx-dashboard admin-deck-root">
+      {/* Step 1 — dry-run preview confirmation (EDGE-10) */}
       <ConfirmModal
         open={confirmLive}
-        title="Run live SPX engine?"
-        body="This evaluates the play engine against live desk data and may update session state, gates, and open-play logic. Confirm only if you intend to mutate the active session."
-        confirmLabel="Run live engine"
+        title="Run live SPX engine (dry run)?"
+        body={`This evaluates the play engine against live desk data in read-only mode — no BUY/SELL orders or Discord notifications will fire. To allow real mutations you will be asked to confirm a second time.${isMarketHours() ? "\n\n⚠ MARKET IS CURRENTLY OPEN (09:30–16:00 ET) — mutations below could trigger real orders." : ""}`}
+        confirmLabel="Run dry-run preview"
         onCancel={() => setConfirmLive(false)}
         onConfirm={() => {
           setConfirmLive(false);
-          load(true);
+          load(true, true);
+        }}
+        loading={liveLoading}
+      />
+      {/* Step 2 — actual mutate confirmation, only reached from LiveEngineSection (EDGE-10) */}
+      <ConfirmModal
+        open={confirmMutate}
+        title={isMarketHours() ? "⚠ MARKET OPEN — Allow real engine mutation?" : "Allow real engine mutation?"}
+        body={`${isMarketHours() ? "MARKET IS OPEN (09:30–16:00 ET). " : ""}This will run the engine with mutate:true, which CAN write a real BUY/SELL to the database and fire Discord. Only confirm if you intend to open or modify a live play right now.`}
+        confirmLabel="Yes — mutate live session"
+        onCancel={() => setConfirmMutate(false)}
+        onConfirm={() => {
+          setConfirmMutate(false);
+          load(true, false);
         }}
         loading={liveLoading}
       />
@@ -894,7 +949,7 @@ export function AdminSpxDashboard() {
               Refresh
             </ActionButton>
             <ActionButton onClick={() => setConfirmLive(true)} disabled={liveLoading} variant="primary">
-              {liveLoading ? "Running…" : "Run live engine"}
+              {liveLoading ? "Running…" : "Run live engine (dry run)"}
             </ActionButton>
           </>
         }
@@ -984,7 +1039,7 @@ export function AdminSpxDashboard() {
           {section === "terminal" && (
             <AdminSpxTerminal data={data} loading={loading} onRefresh={() => load(false)} />
           )}
-          {section === "live" && <LiveEngineSection data={data} />}
+          {section === "live" && <LiveEngineSection data={data} onRunMutate={() => setConfirmMutate(true)} />}
           {section === "desk" && <DeskSection data={data} />}
           {section === "lotto" && <LottoSection data={data} />}
           {section === "outcomes" && <OutcomesSection rows={data.outcomes_all} />}

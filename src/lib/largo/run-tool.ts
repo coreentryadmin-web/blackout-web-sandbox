@@ -1,3 +1,4 @@
+import { serverCache, TTL } from "@/lib/server-cache";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
 import { summarizeGroupGreekFlow } from "@/lib/group-greek-flow-summary";
 import { computeFlowStrikeStacks, withStrikeStacks } from "@/lib/largo/flow-strike-stacks";
@@ -13,9 +14,11 @@ import {
 import { fetchUpcomingMacroEvents } from "@/lib/providers/macro-events";
 import {
   computeMaxPainFromChain,
+  fetchPolygonIvTermStructure,
   fetchPolygonOdteGexRows,
   fetchPolygonOiByExpiry,
   fetchPolygonOptionsChain,
+  fetchPolygonRealizedVol,
   formatChainContracts,
   polygonOptionsMeta,
   summarizeGexFromChain,
@@ -32,9 +35,16 @@ import {
   fetchStockLastTrade,
   fetchOpenClose,
   fetchMarketUpcomingStatus,
+  fetchPolygonTickerSearch,
+  fetchPolygonOptionBars,
+  fetchPolygonDividends,
+  fetchPolygonSplits,
+  fetchPolygonIpoCalendar,
 } from "@/lib/providers/polygon-largo";
 import {
   fetchBenzingaNews,
+  fetchBenzingaEarnings,
+  fetchBenzingaAnalystRatings,
   fetchBreadthUniverseSnapshots,
   computeMarketBreadthFromSummary,
   fetchDailyMarketSummary,
@@ -45,6 +55,7 @@ import {
   fetchShortInterest,
   fetchShortVolume,
   fetchStockSnapshot,
+  fetchStockSnapshots,
   fetchVixIvRankPercentile,
   computeVixTermStructure,
 } from "@/lib/providers/polygon";
@@ -110,7 +121,6 @@ import {
   fetchUwMaxPain,
   fetchUwNetFlowExpiry,
   fetchUwNetPremTicks,
-  fetchUwNewsHeadlines,
   fetchUwNope,
   fetchUwOhlc,
   fetchUwOiChange,
@@ -152,6 +162,18 @@ import {
   uwOptionsMeta,
 } from "@/lib/providers/unusual-whales";
 import { fetchWebSearch } from "@/lib/providers/web-search";
+
+/** Validate a raw ticker symbol supplied from a tool call.
+ *  Returns null if valid, or an error object to return immediately if invalid. */
+function validateTicker(raw: string): { error: string } | null {
+  if (raw.length > 10) {
+    return { error: `Invalid ticker "${raw}": exceeds maximum length of 10 characters.` };
+  }
+  if (!/^[A-Za-z0-9.\-]+$/.test(raw)) {
+    return { error: `Invalid ticker "${raw}": only letters, digits, dots, and hyphens are allowed.` };
+  }
+  return null;
+}
 
 function uwTicker(ticker: string): string {
   const t = ticker.toUpperCase();
@@ -266,26 +288,9 @@ async function toolNews(ticker: string, channels: string) {
     return true;
   });
 
-  if (deduped.length < 6 && sym) {
-    const uw = await fetchUwNewsHeadlines(sym, 8);
-    deduped = [
-      ...deduped,
-      ...uw.map((r) => ({
-        title: String(r.headline ?? r.title ?? ""),
-        teaser: String(r.body ?? r.description ?? "").slice(0, 280),
-        published: String(r.created_at ?? r.published ?? ""),
-        tickers: [sym],
-        source: "unusual_whales",
-      })),
-    ].filter((a) => {
-      const key = a.title.slice(0, 60).toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
+  // Benzinga (paid) + Polygon cover news; UW news quota reserved for flow/tide/dark pool.
 
-  return { articles: deduped.slice(0, 12), priority: "benzinga → polygon → uw (fallback)" };
+  return { articles: deduped.slice(0, 12), priority: "benzinga → polygon" };
 }
 
 async function toolEconomicCalendar(daysAhead: number) {
@@ -293,8 +298,14 @@ async function toolEconomicCalendar(daysAhead: number) {
   return { static_schedule: staticEvents };
 }
 
-export async function runLargoTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+export async function runLargoTool(name: string, input: Record<string, unknown>, userId = "default"): Promise<unknown> {
   const ticker = String(input.ticker ?? "SPX");
+
+  // Validate user-supplied ticker before any external API call
+  if (input.ticker != null) {
+    const tickerErr = validateTicker(String(input.ticker));
+    if (tickerErr) return tickerErr;
+  }
 
   switch (name) {
     case "get_quote":
@@ -452,7 +463,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     case "get_options_flow": {
       const sym = uwTicker(ticker);
       if (isSpxTicker(sym)) {
-        const desk = await getLargoSpxLiveDesk();
+        const desk = await getLargoSpxLiveDesk(userId);
         const deskFlows = desk.spx_flows ?? [];
         const deskTape = desk.unified_tape ?? [];
         if (deskFlows.length || deskTape.length || desk.flow_0dte_net != null) {
@@ -507,7 +518,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     case "get_nope": {
       const sym = uwTicker(ticker);
       if (isSpxTicker(sym)) {
-        const desk = await getLargoSpxLiveDesk();
+        const desk = await getLargoSpxLiveDesk(userId);
         if (desk.nope != null) {
           return {
             ticker: sym,
@@ -571,11 +582,17 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
         interpolated_iv: interpolated,
       };
     }
-    case "get_iv_term_structure":
-      return { ticker: uwTicker(ticker), curve: await fetchUwIvTermStructure(uwTicker(ticker)) };
+    case "get_iv_term_structure": {
+      const sym = uwTicker(ticker);
+      const polygonCurve = await fetchPolygonIvTermStructure(sym);
+      if (polygonCurve && polygonCurve.length > 0) {
+        return { ticker: sym, source: "polygon", ...polygonOptionsMeta(), curve: polygonCurve };
+      }
+      return { ticker: sym, source: "unusual_whales", curve: await fetchUwIvTermStructure(sym) };
+    }
     case "get_volatility_regime": {
       const sym = input.ticker ? uwTicker(String(input.ticker)) : "SPX";
-      const desk = isSpxTicker(sym) ? await getLargoSpxLiveDesk() : null;
+      const desk = isSpxTicker(sym) ? await getLargoSpxLiveDesk(userId) : null;
       const indices = await fetchIndexSnapshots(["I:VIX", "I:SPX", "I:VIX3M"]);
       const ivRank = desk?.uw_iv_rank ?? (await fetchVixIvRankPercentile());
       let ivTerm = null as Awaited<ReturnType<typeof fetchUwIvTermStructure>> | null;
@@ -589,8 +606,14 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
         source: desk ? "spx_sniper_desk" : ivRank != null ? "polygon" : "unusual_whales",
       };
     }
-    case "get_realized_vol":
-      return { ticker: uwTicker(ticker), realized: await fetchUwRealizedVol(uwTicker(ticker)) };
+    case "get_realized_vol": {
+      const sym = uwTicker(ticker);
+      const polyVol = await fetchPolygonRealizedVol(sym);
+      if (polyVol && (polyVol.realized_vol_30d > 0 || polyVol.realized_vol_10d > 0)) {
+        return { ticker: sym, source: "polygon", ...polygonOptionsMeta(), realized: polyVol };
+      }
+      return { ticker: sym, source: "unusual_whales", realized: await fetchUwRealizedVol(sym) };
+    }
     case "get_risk_reversal_skew":
       return { ticker: uwTicker(ticker), skew: await fetchUwRiskReversalSkew(uwTicker(ticker)) };
     case "get_vol_anomaly":
@@ -600,18 +623,20 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
       };
 
     case "get_market_context": {
-      const [indices, tide, status, upcoming, desk] = await Promise.all([
-        fetchIndexSnapshots(["I:SPX", "I:VIX", "SPY", "QQQ", "IWM", "SOXX"]),
-        fetchUwMarketTide(),
-        fetchMarketStatusNow(),
-        fetchMarketUpcomingStatus(),
-        getLargoSpxLiveDesk().catch(() => null),
-      ]);
+      // spx desk is per-user-session and must stay outside the shared cache
+      const desk = await getLargoSpxLiveDesk(userId).catch(() => null);
+      const shared = await serverCache("market_context", TTL.MARKET_SNAPSHOT, async () => {
+        const [indices, etfs, tide, status, upcoming] = await Promise.all([
+          fetchIndexSnapshots(["I:SPX", "I:VIX"]),
+          fetchStockSnapshots(["SPY", "QQQ", "IWM", "SOXX"]),
+          fetchUwMarketTide(),
+          fetchMarketStatusNow(),
+          fetchMarketUpcomingStatus(),
+        ]);
+        return { indices: { ...indices, ...etfs }, market_tide: tide, market_status: status, upcoming_sessions: upcoming };
+      });
       return {
-        indices,
-        market_tide: tide,
-        market_status: status,
-        upcoming_sessions: upcoming,
+        ...shared,
         spx_desk: desk ? spxDeskSummary(desk) : null,
       };
     }
@@ -665,8 +690,22 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     }
     case "get_earnings": {
       const sym = uwTicker(ticker);
-      const [uw, estimates] = await Promise.all([fetchUwEarnings(sym), fetchUwEarningsEstimates(sym)]);
-      return { ticker: sym, source: "unusual_whales", unusual_whales: uw, estimates };
+      return serverCache(`earnings:${sym}`, TTL.EARNINGS, async () => {
+        // PRIMARY: Benzinga earnings news via Polygon (unlimited calls, no rate limit).
+        // SUPPLEMENTAL: UW earnings history and estimates (rate-limited; used only when Benzinga lacks data).
+        const benzinga = await fetchBenzingaEarnings(sym, 15);
+        const [uw, estimates] = await Promise.all([
+          fetchUwEarnings(sym),
+          fetchUwEarningsEstimates(sym),
+        ]);
+        return {
+          ticker: sym,
+          source: benzinga.length ? "benzinga" : "unusual_whales",
+          benzinga_news: benzinga,
+          unusual_whales: uw,
+          estimates,
+        };
+      });
     }
     case "get_earnings_history": {
       const sym = uwTicker(ticker);
@@ -675,9 +714,22 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     }
     case "get_analyst_ratings": {
       const sym = uwTicker(ticker);
-      const rows = await fetchUwScreenerAnalysts(50);
-      const forTicker = rows.filter((r) => String(r.ticker ?? r.symbol ?? "").toUpperCase() === sym);
-      return { ticker: sym, source: "unusual_whales", analysts: forTicker, note: forTicker.length ? undefined : "No analyst ratings for ticker" };
+      return serverCache(`analysts:${sym}`, TTL.ANALYST, async () => {
+        // PRIMARY: Benzinga analyst ratings via Polygon (unlimited calls, no rate limit).
+        // FALLBACK: UW screener analysts — only included when Benzinga returns no results for this ticker.
+        const benzinga = await fetchBenzingaAnalystRatings(sym, 20);
+        const forTicker: unknown[] = [];
+        if (!benzinga.length) {
+          const rows = await fetchUwScreenerAnalysts(50);
+          forTicker.push(...rows.filter((r) => String(r.ticker ?? r.symbol ?? "").toUpperCase() === sym));
+        }
+        return {
+          ticker: sym,
+          source: benzinga.length ? "benzinga" : forTicker.length ? "unusual_whales" : "none",
+          benzinga_ratings: benzinga,
+          analysts: forTicker,
+        };
+      });
     }
     case "get_news":
       return toolNews(String(input.ticker ?? ""), String(input.channels ?? ""));
@@ -685,8 +737,23 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
       return { query: String(input.query ?? ""), results: await fetchWebSearch(String(input.query ?? ""), 8) };
     case "get_fda_calendar":
       return fetchUwFdaCalendar(uwTicker(ticker));
-    case "get_ipo_calendar":
-      return { ipos: [], note: "IPO calendar unavailable — use web search for upcoming listings." };
+    case "get_ipo_calendar": {
+      const today = todayEtYmd();
+      const d = new Date(today + "T00:00:00Z");
+      d.setDate(d.getDate() + 30);
+      const toDate = d.toISOString().slice(0, 10);
+      const fromDate = String(input.from ?? today);
+      const toDateFinal = String(input.to ?? toDate);
+      return serverCache(`ipo:${fromDate}:${toDateFinal}`, TTL.IPO_CALENDAR, async () => {
+        const ipos = await fetchPolygonIpoCalendar(fromDate, toDateFinal);
+        return {
+          ipos,
+          source: ipos.length ? "polygon" : "none",
+          range: { from: fromDate, to: toDateFinal },
+          note: ipos.length ? undefined : "No IPO data from Polygon — try get_web_search for upcoming listings.",
+        };
+      });
+    }
 
     case "get_short_interest": {
       const sym = uwTicker(ticker);
@@ -795,7 +862,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());
       if (isSpxTicker(sym) && exp === todayEtYmd()) {
-        const desk = await getLargoSpxLiveDesk();
+        const desk = await getLargoSpxLiveDesk(userId);
         if (desk.gex_walls?.length || desk.gex_net != null) {
           return {
             ticker: sym,
@@ -1017,13 +1084,45 @@ export async function runLargoTool(name: string, input: Record<string, unknown>)
     }
     case "get_dividends": {
       const sym = uwTicker(ticker);
-      const [dividends, splits, profile, float] = await Promise.all([
-        fetchUwCompaniesDividends(sym),
-        fetchUwCompaniesSplits(sym),
-        fetchUwCompaniesProfile(sym),
-        fetchStockFloat(sym),
-      ]);
-      return { ticker: sym, dividends, splits, company_profile: profile, float: float };
+      return serverCache(`dividends:${sym}`, TTL.REFERENCE, async () => {
+        const [polygonDivs, polygonSplits, uwDividends, uwSplits, profile, float] = await Promise.all([
+          fetchPolygonDividends(sym),
+          fetchPolygonSplits(sym),
+          fetchUwCompaniesDividends(sym),
+          fetchUwCompaniesSplits(sym),
+          fetchUwCompaniesProfile(sym),
+          fetchStockFloat(sym),
+        ]);
+        return {
+          ticker: sym,
+          source: polygonDivs.length ? "polygon" : "unusual_whales",
+          dividends: polygonDivs.length ? polygonDivs : uwDividends,
+          splits: polygonSplits.length ? polygonSplits : uwSplits,
+          company_profile: profile,
+          float: float,
+        };
+      });
+    }
+    case "search_ticker": {
+      const q = String(input.query ?? ticker ?? "");
+      if (!q) return { error: "query required" };
+      const limit = Number(input.limit ?? 10);
+      return serverCache(`search:${q.toLowerCase()}:${limit}`, TTL.TICKER_SEARCH, async () => {
+        const results = await fetchPolygonTickerSearch(q, limit);
+        return { query: q, results, source: "polygon" };
+      });
+    }
+    case "get_option_price_history": {
+      const contract = String(input.contract_id ?? "");
+      if (!contract) return { error: "contract_id required (OCC symbol e.g. AAPL250117C00200000)" };
+      const mult = Number(input.multiplier ?? 1);
+      const span = String(input.timespan ?? "day") as "minute" | "hour" | "day";
+      const from = String(input.from ?? priorEtYmd());
+      const to = String(input.to ?? todayEtYmd());
+      return serverCache(`optbars:${contract}:${from}:${to}`, TTL.OPTIONS_CHAIN, async () => {
+        const bars = await fetchPolygonOptionBars(contract, mult, span, from, to);
+        return { contract_id: contract, multiplier: mult, timespan: span, from, to, source: "polygon", bars };
+      });
     }
     case "get_global_flow": {
       const params: Record<string, string | number> = {};

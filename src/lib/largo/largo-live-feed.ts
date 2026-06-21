@@ -375,7 +375,15 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
   const vol = asObj(feed.vol);
   if (vol && !vol.error) {
     lines.push("### Vol regime");
-    lines.push(JSON.stringify(vol).slice(0, 480));
+    // Limit data BEFORE stringifying to avoid mid-value JSON truncation
+    const volSafe: Record<string, unknown> = {
+      ticker: vol.ticker,
+      vix: vol.vix,
+      iv_rank: vol.iv_rank,
+      source: vol.source,
+      vix_term_desk: vol.vix_term_desk,
+    };
+    lines.push(JSON.stringify(volSafe));
     lines.push("");
   }
 

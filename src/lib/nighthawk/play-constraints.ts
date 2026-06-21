@@ -54,7 +54,8 @@ export function parseEntryPremiumPerShare(
 }
 
 export function entryPremiumWithinCap(premiumPerShare: number | null): boolean {
-  if (premiumPerShare == null) return false;
+  // null means the premium is unknown — treat as passing (no cap applies without data).
+  if (premiumPerShare == null) return true;
   return premiumPerShare <= MAX_OPTION_PREMIUM_PER_SHARE;
 }
 
@@ -73,7 +74,8 @@ export function applyPremiumCapToPlay(play: PlaybookPlay, raw: ClaudePlayRaw): P
     entry_premium: premium ?? undefined,
     entry_cost_per_contract:
       premium != null ? Math.round(premium * 100) : undefined,
-    premium_cap_ok: premium != null ? withinCap : false,
+    // When premium is unknown (null), we cannot enforce the cap — treat as passing.
+    premium_cap_ok: withinCap,
     risk_note:
       !withinCap && premium != null
         ? `Premium cap exceeded (>$${MAX_OPTION_PREMIUM_PER_SHARE}/share · >$${MAX_OPTION_COST_PER_CONTRACT.toLocaleString()}/lot). ${play.risk_note ?? ""}`.trim()
@@ -88,9 +90,9 @@ export function filterPlaysWithinPremiumCap(plays: PlaybookPlay[]): {
   const ok: PlaybookPlay[] = [];
   const rejected: PlaybookPlay[] = [];
   for (const p of plays) {
-    const needsPremium =
-      p.play_type === "stock" && p.options_play.trim() !== "—" && p.options_play.trim().length > 2;
-    if (p.premium_cap_ok === false || (needsPremium && p.entry_premium == null)) {
+    // Only reject when the cap is explicitly exceeded (premium known and > cap).
+    // null entry_premium means unknown — pass through rather than silently drop affordable plays.
+    if (p.premium_cap_ok === false) {
       rejected.push(p);
     } else {
       ok.push(p);

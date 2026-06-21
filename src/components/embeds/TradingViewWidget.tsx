@@ -156,7 +156,7 @@ export function TradingViewWidget({
         title={title ?? "TradingView widget"}
         className="w-full border-0"
         style={{ height }}
-        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+        sandbox="allow-scripts allow-popups allow-forms"
         allowTransparency
         loading="lazy"
       />

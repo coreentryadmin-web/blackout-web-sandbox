@@ -9590,4 +9590,222 @@ body {
   .admin-cron-feed-dur {
     @apply text-grey-500 text-right tabular-nums hidden md:block;
   }
+
+  /* ── Flow Feed UI System ─────────────────────────────────────────────────── */
+
+  /* Thin custom scrollbar for flow tape */
+  .flow-scroll { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+  .flow-scroll::-webkit-scrollbar { width: 3px; }
+  .flow-scroll::-webkit-scrollbar-track { background: transparent; }
+  .flow-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 99px; }
+  .flow-scroll::-webkit-scrollbar-thumb:hover { background: #71717a; }
+
+  /* Skeleton shimmer */
+  @keyframes flow-shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  .flow-skeleton {
+    background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+    background-size: 800px 100%;
+    animation: flow-shimmer 1.6s ease-in-out infinite;
+    border-radius: 6px;
+  }
+
+  /* New-alert entrance flash */
+  @keyframes flow-alert-flash {
+    0%   { background-color: rgba(139, 92, 246, 0.18); }
+    100% { background-color: transparent; }
+  }
+
+  /* Compound stacking pulse glow */
+  @keyframes flow-stack-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.0), inset 0 0 0 0 rgba(245, 158, 11, 0.0); }
+    50%       { box-shadow: 0 0 16px 1px rgba(245, 158, 11, 0.18), inset 0 0 20px rgba(245, 158, 11, 0.05); }
+  }
+
+  /* Flow card base */
+  .flow-card {
+    position: relative;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    overflow: hidden;
+    /* Left accent via pseudo-element so it animates separately */
+  }
+  .flow-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: 3px 0 0 3px;
+    transition: opacity 0.2s ease, width 0.2s ease;
+  }
+
+  .flow-card-call {
+    border-color: rgba(16, 185, 129, 0.15);
+    background: rgba(16, 185, 129, 0.04);
+  }
+  .flow-card-call::before { background: linear-gradient(180deg, #10b981, #059669); }
+  .flow-card-call:hover {
+    border-color: rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.08);
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.08);
+  }
+  .flow-card-call:hover::before { width: 4px; }
+
+  .flow-card-put {
+    border-color: rgba(244, 63, 94, 0.15);
+    background: rgba(244, 63, 94, 0.04);
+  }
+  .flow-card-put::before { background: linear-gradient(180deg, #f43f5e, #e11d48); }
+  .flow-card-put:hover {
+    border-color: rgba(244, 63, 94, 0.3);
+    background: rgba(244, 63, 94, 0.08);
+    box-shadow: 0 0 24px rgba(244, 63, 94, 0.08);
+  }
+  .flow-card-put:hover::before { width: 4px; }
+
+  .flow-card-compound {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.06);
+    animation: flow-stack-glow 2.4s ease-in-out infinite;
+  }
+  .flow-card-compound::before { background: linear-gradient(180deg, #f59e0b, #d97706); }
+  .flow-card-compound:hover { background: rgba(245, 158, 11, 0.10); }
+  .flow-card-compound:hover::before { width: 4px; }
+
+  /* Live dot with radiating ring */
+  @keyframes live-ring {
+    0%   { transform: scale(1);   opacity: 0.6; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .flow-live-dot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .flow-live-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: #10b981;
+    animation: live-ring 1.8s ease-out infinite;
+  }
+
+  /* Segmented filter control */
+  .flow-seg-group {
+    display: inline-flex;
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 2px;
+    gap: 1px;
+  }
+  .flow-seg-btn {
+    font-family: monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: #71717a;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
+  }
+  .flow-seg-btn:hover { color: #d4d4d8; }
+  .flow-seg-btn-active-all   { background: #27272a; color: #e4e4e7; }
+  .flow-seg-btn-active-call  { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+  .flow-seg-btn-active-put   { background: rgba(244,63,94,0.15);  color: #fda4af; }
+
+  /* Count pill on segment button */
+  .flow-count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    font-size: 9px;
+    min-width: 16px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 99px;
+    background: #27272a;
+    color: #71717a;
+    margin-left: 4px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .flow-seg-btn-active-call .flow-count-pill { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+  .flow-seg-btn-active-put  .flow-count-pill { background: rgba(244,63,94,0.2);  color: #fda4af; }
+
+  /* Badge variants */
+  .flow-badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: monospace;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid;
+    line-height: 1;
+  }
+  .flow-badge-call    { color: #6ee7b7; border-color: rgba(16,185,129,0.4);  background: rgba(16,185,129,0.1);  }
+  .flow-badge-put     { color: #fda4af; border-color: rgba(244,63,94,0.4);   background: rgba(244,63,94,0.1);   }
+  .flow-badge-sweep   { color: #fdba74; border-color: rgba(249,115,22,0.4);  background: rgba(249,115,22,0.1);  }
+  .flow-badge-floor   { color: #7dd3fc; border-color: rgba(14,165,233,0.4);  background: rgba(14,165,233,0.1);  }
+  .flow-badge-grenade { color: #fca5a5; border-color: rgba(239,68,68,0.4);   background: rgba(239,68,68,0.1);   }
+  .flow-badge-block   { color: #a5b4fc; border-color: rgba(99,102,241,0.4);  background: rgba(99,102,241,0.1);  }
+  .flow-badge-repeat  { color: #fde68a; border-color: rgba(245,158,11,0.4);  background: rgba(245,158,11,0.1);  }
+  .flow-badge-whale   { color: #c4b5fd; border-color: rgba(139,92,246,0.4);  background: rgba(139,92,246,0.1);  }
+  .flow-badge-0dte    { color: #fca5a5; border-color: rgba(239,68,68,0.5);   background: rgba(239,68,68,0.12); }
+  .flow-badge-stack   { color: #fde68a; border-color: rgba(245,158,11,0.5);  background: rgba(245,158,11,0.12); box-shadow: 0 0 6px rgba(245,158,11,0.2); }
+  .flow-badge-diverge { color: #fef08a; border-color: rgba(234,179,8,0.4);   background: rgba(234,179,8,0.08);  }
+
+  /* Right panel (stacked panels) */
+  .flow-panel {
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    background: rgba(9, 9, 11, 0.85);
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+  }
+  .flow-panel-header {
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid #1c1c1e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .flow-panel-title {
+    font-family: monospace;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: #71717a;
+  }
+  .flow-panel-body {
+    padding: 10px 14px 12px;
+  }
+
+  /* Leaderboard bar */
+  .flow-leader-bar-track {
+    height: 3px;
+    background: #27272a;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 3px;
+  }
+  .flow-leader-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
 }

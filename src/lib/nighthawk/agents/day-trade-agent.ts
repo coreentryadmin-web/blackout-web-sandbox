@@ -8,6 +8,32 @@ import {
 } from "./day-trade-filters";
 import type { DayTradeAgentConfig, DayTradeAgentRun, DayTradeSignal } from "./day-trade-types";
 
+/**
+ * Returns true when the US equity market is closed for the day (>= 16:00 ET).
+ * Uses a fixed UTC offset: ET is UTC-4 during EDT (Mar–Nov) and UTC-5 during EST (Nov–Mar).
+ */
+function isMarketClosed(now: Date = new Date()): boolean {
+  // Approximate ET offset: EDT = UTC-4, EST = UTC-5.
+  const month = now.getUTCMonth() + 1; // 1-based
+  const etOffsetHours = month >= 3 && month <= 11 ? -4 : -5;
+  const etHour = now.getUTCHours() + etOffsetHours;
+  const etMinute = now.getUTCMinutes();
+  return etHour > 16 || (etHour === 16 && etMinute >= 0);
+}
+
+/**
+ * Expire any CANDIDATE or WATCH signals when the market is at or past 16:00 ET.
+ * Stale 0DTE signals must not persist as actionable after the close.
+ */
+function expireSignalsAtMarketClose(signals: DayTradeSignal[], now: Date = new Date()): DayTradeSignal[] {
+  if (!isMarketClosed(now)) return signals;
+  return signals.map((s) =>
+    s.phase === "CANDIDATE" || s.phase === "WATCH"
+      ? { ...s, phase: "EXPIRED" as const }
+      : s
+  );
+}
+
 function toDayTradeSignal(play: HuntPlay, spxAligned?: boolean): DayTradeSignal {
   return {
     ...play,
@@ -53,6 +79,11 @@ export async function runDayTradeAgent(config: DayTradeAgentConfig): Promise<Day
 
   const { signals: aligned, bias, dropped } = filterSignalsBySpxAlignment(signals, spx, requireSpx);
   signals = aligned;
+
+  // Expire CANDIDATE/WATCH plays at or after 16:00 ET so stale 0DTE signals
+  // do not show as CANDIDATE after market close.
+  const now = new Date();
+  signals = expireSignalsAtMarketClose(signals, now);
 
   const ok = signals.length > 0;
   let message = scan.message;

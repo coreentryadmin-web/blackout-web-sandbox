@@ -79,11 +79,21 @@ export function Nav() {
       return;
     }
 
+    // Check sessionStorage first — fetch at most once per browser session.
+    const cached = sessionStorage.getItem("__admin_flag");
+    if (cached !== null) {
+      setIsAdmin(cached === "1");
+      return;
+    }
+
     let cancelled = false;
     fetch("/api/admin/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!cancelled) setIsAdmin(Boolean(data?.admin));
+        if (cancelled) return;
+        const isAdminUser = Boolean(data?.admin);
+        setIsAdmin(isAdminUser);
+        sessionStorage.setItem("__admin_flag", isAdminUser ? "1" : "0");
       })
       .catch(() => {
         if (!cancelled) setIsAdmin(false);

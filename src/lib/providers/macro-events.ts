@@ -101,9 +101,27 @@ function todayEtYmd(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
 }
 
+/**
+ * Return the approximate ET release time for a known macro event label.
+ * Times are approximate and should be verified against the Fed's official
+ * schedule (https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm)
+ * and the BLS/BEA release calendars before relying on them for trading.
+ */
+function eventReleaseTime(eventLabel: string): string {
+  const upper = eventLabel.toUpperCase();
+  // FOMC Minutes are released at 14:00 ET (not 08:30).
+  if (upper.includes("FOMC MINUTES")) return "14:00";
+  // FOMC Decision (rate announcement) at 14:00 ET.
+  if (upper.includes("FOMC DECISION")) return "14:00";
+  // FOMC Press Conference follows the decision at ~14:30 ET.
+  if (upper.includes("FOMC PRESS CONFERENCE")) return "14:30";
+  // NFP, CPI, PPI, GDP, Retail Sales, Claims — standard 08:30 ET.
+  return "08:30";
+}
+
 function scheduleRowToEvent(e: { date: string; event: string; impact: "high" | "medium" }): MacroEvent {
   return {
-    time: "08:30",
+    time: eventReleaseTime(e.event),
     event: e.event,
     country: "US",
     impact: e.impact,
@@ -182,11 +200,16 @@ export async function mergeMacroEventsToday(input: {
 /** Upcoming US macro from curated schedule. */
 export function fetchUpcomingMacroEvents(daysAhead = 7): MacroEvent[] {
   const today = todayEtYmd();
-  const endMs = Date.now() + Math.max(1, daysAhead) * 86400000;
-  const end = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(endMs));
+  // Use calendar-day arithmetic in ET to avoid DST errors (a day can be 23 or 25 hours).
+  // Parse today's ET date, advance by daysAhead calendar days, then reformat.
+  const todayParts = today.split("-").map(Number) as [number, number, number];
+  const endDate = new Date(
+    Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2] + Math.max(1, daysAhead))
+  );
+  const end = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(endDate);
 
   return ALL_MACRO_SCHEDULE.filter((e) => e.date >= today && e.date <= end).map((e) => ({
-    time: "08:30",
+    time: eventReleaseTime(e.event),
     event: e.event,
     country: "US",
     impact: e.impact,

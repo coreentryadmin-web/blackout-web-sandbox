@@ -6,7 +6,17 @@ import {
   runUwSequential,
   throttleUwCoalesced,
 } from "@/lib/providers/uw-rate-limiter";
+import {
+  getUwCacheRedis,
+  uwCacheGet,
+  UW_CACHE_TTL,
+  UW_KEYS,
+} from "@/lib/providers/uw-shared-cache";
 import { uwConfigured } from "./config";
+
+// REDIS CACHE ACTIVE: With Redis caching, most responses are served from cache.
+// UW_MAX_RPS can be safely lowered to 1 (60/min) since live UW calls are rare.
+// TODO: Set UW_MAX_RPS=1 in Railway env vars once Redis cache is confirmed working.
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
 const KEY = process.env.UW_API_KEY ?? "";
@@ -266,32 +276,38 @@ export async function fetchUwMaxPain(ticker = "SPX") {
 }
 
 export async function fetchUwMarketTide() {
-  const data = await uwGetSafe<Record<string, unknown>>("/api/market/market-tide", {
-    interval_5m: "false",
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.marketTide(), UW_CACHE_TTL.marketTide, async () => {
+    const data = await uwGetSafe<Record<string, unknown>>("/api/market/market-tide", {
+      interval_5m: "false",
+    });
+    if (!data) return null;
+    const block = data.data;
+    const row = Array.isArray(block) ? block[block.length - 1] : block;
+    if (!row || typeof row !== "object") return null;
+    const r = row as Record<string, unknown>;
+    const call = Number(r.net_call_premium ?? r.call_premium ?? 0);
+    const put = Number(r.net_put_premium ?? r.put_premium ?? 0);
+    const bias = call > put ? "bullish" : put > call ? "bearish" : "neutral";
+    return { call_premium: call, put_premium: put, net: call - put, bias };
   });
-  if (!data) return null;
-  const block = data.data;
-  const row = Array.isArray(block) ? block[block.length - 1] : block;
-  if (!row || typeof row !== "object") return null;
-  const r = row as Record<string, unknown>;
-  const call = Number(r.net_call_premium ?? r.call_premium ?? 0);
-  const put = Number(r.net_put_premium ?? r.put_premium ?? 0);
-  const bias = call > put ? "bullish" : put > call ? "bearish" : "neutral";
-  return { call_premium: call, put_premium: put, net: call - put, bias };
 }
 
 export async function fetchUwNope(ticker = "SPX") {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/nope`, {});
-  if (!data || typeof data !== "object") return null;
-  const obj = data as Record<string, unknown>;
-  const block = obj.data;
-  const row = Array.isArray(block) ? block[block.length - 1] : block;
-  if (!row || typeof row !== "object") return null;
-  const r = row as Record<string, unknown>;
-  return {
-    nope: Number(r.nope ?? 0),
-    net_delta: Number(r.net_delta ?? 0),
-  };
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.nope(ticker), UW_CACHE_TTL.nope, async () => {
+    const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/nope`, {});
+    if (!data || typeof data !== "object") return null;
+    const obj = data as Record<string, unknown>;
+    const block = obj.data;
+    const row = Array.isArray(block) ? block[block.length - 1] : block;
+    if (!row || typeof row !== "object") return null;
+    const r = row as Record<string, unknown>;
+    return {
+      nope: Number(r.nope ?? 0),
+      net_delta: Number(r.net_delta ?? 0),
+    };
+  });
 }
 
 export async function fetchUwIvRank(ticker = "SPX") {
@@ -305,15 +321,18 @@ export async function fetchUwIvRank(ticker = "SPX") {
 }
 
 export async function fetchUwFlow0dte(ticker = "SPX") {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/flow-per-strike-intraday`, {});
-  const rows = extractRows(data);
-  let calls = 0;
-  let puts = 0;
-  for (const row of rows) {
-    calls += Number(row.call_premium ?? 0);
-    puts += Number(row.put_premium ?? 0);
-  }
-  return { call_premium: calls, put_premium: puts, net: calls - puts };
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.flowPerStrike(ticker), UW_CACHE_TTL.flowPerStrike, async () => {
+    const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/flow-per-strike-intraday`, {});
+    const rows = extractRows(data);
+    let calls = 0;
+    let puts = 0;
+    for (const row of rows) {
+      calls += Number(row.call_premium ?? 0);
+      puts += Number(row.put_premium ?? 0);
+    }
+    return { call_premium: calls, put_premium: puts, net: calls - puts };
+  });
 }
 
 type MarketFlowRow = { raw: Record<string, unknown>; flow: MarketFlowAlert };
@@ -500,64 +519,67 @@ export async function fetchUwDarkPool(
   ticker = "SPX",
   opts?: { limit?: number; min_premium?: number }
 ): Promise<DarkPoolSnapshot | null> {
-  const params: Record<string, string | number> = {
-    limit: Math.min(opts?.limit ?? 20, 100),
-  };
-  if (opts?.min_premium) params.min_premium = opts.min_premium;
-
-  const data = await uwGetSafe<unknown>(`/api/darkpool/${ticker.toUpperCase()}`, params);
-  const rows = extractRows(data);
-  if (!rows.length) {
-    return {
-      prints: [],
-      total_premium: 0,
-      call_premium: 0,
-      put_premium: 0,
-      bias: "neutral",
-      pcr: null,
-      detail: "No large dark pool prints today",
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.darkPoolTicker(ticker), UW_CACHE_TTL.darkPoolTicker, async () => {
+    const params: Record<string, string | number> = {
+      limit: Math.min(opts?.limit ?? 20, 100),
     };
-  }
+    if (opts?.min_premium) params.min_premium = opts.min_premium;
 
-  const today = todayIso();
-  const prints: DarkPoolPrint[] = [];
-  let callPrem = 0;
-  let putPrem = 0;
-  let total = 0;
+    const data = await uwGetSafe<unknown>(`/api/darkpool/${ticker.toUpperCase()}`, params);
+    const rows = extractRows(data);
+    if (!rows.length) {
+      return {
+        prints: [],
+        total_premium: 0,
+        call_premium: 0,
+        put_premium: 0,
+        bias: "neutral",
+        pcr: null,
+        detail: "No large dark pool prints today",
+      };
+    }
 
-  for (const row of rows) {
-    const execAt = String(row.executed_at ?? row.date ?? "");
-    if (execAt && !execAt.startsWith(today)) continue;
+    const today = todayIso();
+    const prints: DarkPoolPrint[] = [];
+    let callPrem = 0;
+    let putPrem = 0;
+    let total = 0;
 
-    const premium = Number(row.premium ?? row.size ?? row.notional ?? 0);
-    if (premium <= 0) continue;
+    for (const row of rows) {
+      const execAt = String(row.executed_at ?? row.date ?? "");
+      if (execAt && !execAt.startsWith(today)) continue;
 
-    const strikeRaw = Number(row.strike ?? row.price ?? row.ref_price ?? 0);
-    const strike = Number.isFinite(strikeRaw) ? bucketPrice(strikeRaw) : 0;
-    const side = String(row.side ?? row.direction ?? "unknown").toLowerCase();
-    const optType = String(row.type ?? row.option_type ?? "").toLowerCase();
+      const premium = Number(row.premium ?? row.size ?? row.notional ?? 0);
+      if (premium <= 0) continue;
 
-    prints.push({
-      strike,
-      premium,
-      side,
-      executed_at: execAt.slice(0, 19) || new Date().toISOString(),
-    });
-    total += premium;
-    if (optType.includes("call")) callPrem += premium;
-    else if (optType.includes("put")) putPrem += premium;
-  }
+      const strikeRaw = Number(row.strike ?? row.price ?? row.ref_price ?? 0);
+      const strike = Number.isFinite(strikeRaw) ? bucketPrice(strikeRaw) : 0;
+      const side = String(row.side ?? row.direction ?? "unknown").toLowerCase();
+      const optType = String(row.type ?? row.option_type ?? "").toLowerCase();
 
-  const bias = darkPoolBias(callPrem, putPrem, total);
-  return {
-    prints: prints.slice(0, 20),
-    total_premium: total,
-    call_premium: callPrem,
-    put_premium: putPrem,
-    bias,
-    pcr: callPrem > 0 ? Math.round((putPrem / callPrem) * 100) / 100 : null,
-    detail: prints.length ? `${prints.length} print(s) · $${(total / 1_000_000).toFixed(2)}M` : "No prints today",
-  };
+      prints.push({
+        strike,
+        premium,
+        side,
+        executed_at: execAt.slice(0, 19) || new Date().toISOString(),
+      });
+      total += premium;
+      if (optType.includes("call")) callPrem += premium;
+      else if (optType.includes("put")) putPrem += premium;
+    }
+
+    const bias = darkPoolBias(callPrem, putPrem, total);
+    return {
+      prints: prints.slice(0, 20),
+      total_premium: total,
+      call_premium: callPrem,
+      put_premium: putPrem,
+      bias,
+      pcr: callPrem > 0 ? Math.round((putPrem / callPrem) * 100) / 100 : null,
+      detail: prints.length ? `${prints.length} print(s) · $${(total / 1_000_000).toFixed(2)}M` : "No prints today",
+    };
+  });
 }
 
 /**
@@ -579,9 +601,17 @@ export function normalizeDarkPoolWsPayload(raw: unknown): DarkPoolSnapshot | nul
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
     const execAt = String(r.executed_at ?? r.date ?? r.timestamp ?? "");
-    // Accept both UTC ISO (2025-06-18T...) and date-only strings for today's ET session.
-    const datePrefix = execAt.slice(0, 10);
-    if (execAt && datePrefix !== today) continue;
+    // Convert the trade timestamp to ET before extracting the date, so trades between
+    // 8 PM–midnight ET (UTC next day) are not silently discarded as "wrong date".
+    const execDate = execAt
+      ? new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/New_York",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(execAt))
+      : "";
+    if (execAt && execDate !== today) continue;
     const premium = Number(r.premium ?? r.size ?? r.notional ?? 0);
     if (premium <= 0) continue;
     const strikeRaw = Number(r.strike ?? r.price ?? r.ref_price ?? 0);
@@ -728,15 +758,18 @@ export type NetPremTick = { time: string; net: number };
 
 /** Tick-level net premium velocity */
 export async function fetchUwNetPremTicks(ticker = "SPY"): Promise<NetPremTick[]> {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/net-prem-ticks`, {});
-  const rows = extractRows(data);
-  return rows
-    .map((r) => ({
-      time: String(r.timestamp ?? r.time ?? r.t ?? ""),
-      net: Number(r.net_premium ?? r.net ?? r.value ?? 0),
-    }))
-    .filter((t) => t.time)
-    .slice(-40);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.netPremTicks(ticker), UW_CACHE_TTL.netPremTicks, async () => {
+    const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/net-prem-ticks`, {});
+    const rows = extractRows(data);
+    return rows
+      .map((r) => ({
+        time: String(r.timestamp ?? r.time ?? r.t ?? ""),
+        net: Number(r.net_premium ?? r.net ?? r.value ?? 0),
+      }))
+      .filter((t) => t.time)
+      .slice(-40);
+  });
 }
 
 export type OiChangeItem = {
@@ -799,11 +832,14 @@ export async function fetchUwGreeksByStrike(ticker: string, expiry?: string, lim
 }
 
 export async function fetchUwSectorTide(sector = "technology") {
-  const data = await uwGetSafe<Record<string, unknown>>(`/api/market/${sector.toLowerCase()}/sector-tide`, {});
-  if (!data) return null;
-  const block = data.data;
-  const row = Array.isArray(block) ? block[block.length - 1] : block;
-  return row ?? null;
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.sectorTide(sector), UW_CACHE_TTL.sectorTide, async () => {
+    const data = await uwGetSafe<Record<string, unknown>>(`/api/market/${sector.toLowerCase()}/sector-tide`, {});
+    if (!data) return null;
+    const block = data.data;
+    const row = Array.isArray(block) ? block[block.length - 1] : block;
+    return row ?? null;
+  });
 }
 
 export async function fetchUwInsiderFlow(ticker: string) {
@@ -811,29 +847,41 @@ export async function fetchUwInsiderFlow(ticker: string) {
 }
 
 export async function fetchUwCongressTrades(ticker?: string, limit = 25) {
-  const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
-  if (ticker) params.ticker = ticker.toUpperCase();
-  return uwGetSafe<unknown>("/api/congress/recent-trades", params);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.congress(), UW_CACHE_TTL.congress, async () => {
+    const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
+    if (ticker) params.ticker = ticker.toUpperCase();
+    return uwGetSafe<unknown>("/api/congress/recent-trades", params);
+  });
 }
 
+/** @deprecated Use fetchShortInterest from polygon.ts as primary (Polygon short interest — no rate limit). UW short float is fallback only when Polygon returns null. */
 export async function fetchUwShortFloat(ticker: string) {
   return uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/interest-float/v2`, {});
 }
 
 export async function fetchUwShortScreener(limit = 15) {
-  const data = await uwGetSafe<unknown>("/api/shorts/screener", { limit: Math.min(limit, 50) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.shortScreener(), UW_CACHE_TTL.shortScreener, async () => {
+    const data = await uwGetSafe<unknown>("/api/shorts/screener", { limit: Math.min(limit, 50) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwFlowPerExpiry(ticker: string, limit = 12) {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-per-expiry`, {});
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.flowPerExpiry(ticker), UW_CACHE_TTL.flowPerExpiry, async () => {
+    const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-per-expiry`, {});
+    return extractRows(data).slice(0, limit);
+  });
 }
 
+/** @deprecated Use fetchPolygonTickerDetails from polygon-largo.ts instead (Polygon reference data — no rate limit). */
 export async function fetchUwStockInfo(ticker: string) {
   return uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/info`, {});
 }
 
+/** @deprecated Use fetchBenzingaEarnings from polygon.ts as primary (unlimited, no rate limit). UW earnings is supplemental only. */
 export async function fetchUwEarnings(ticker: string) {
   const sym = ticker.toUpperCase();
   for (const path of [`/api/earnings/${sym}`, `/api/stock/${sym}/earnings`]) {
@@ -845,21 +893,28 @@ export async function fetchUwEarnings(ticker: string) {
 }
 
 export async function fetchUwScreenerStocks(limit = 15) {
-  const data = await uwGetSafe<unknown>("/api/screener/stocks", { limit: Math.min(limit, 50) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.screenerStocks(), UW_CACHE_TTL.screenerStocks, async () => {
+    const data = await uwGetSafe<unknown>("/api/screener/stocks", { limit: Math.min(limit, 50) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwUnusualTrades(ticker?: string, limit = 20) {
-  const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
-  const data = await uwGetSafe<unknown>("/api/unusual-trades/recent", params);
-  let rows = extractRows(data);
-  if (ticker) {
-    const t = ticker.toUpperCase();
-    rows = rows.filter((r) => String(r.ticker ?? "").toUpperCase() === t);
-  }
-  return rows.slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.unusualTrades(), UW_CACHE_TTL.unusualTrades, async () => {
+    const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
+    const data = await uwGetSafe<unknown>("/api/unusual-trades/recent", params);
+    let rows = extractRows(data);
+    if (ticker) {
+      const t = ticker.toUpperCase();
+      rows = rows.filter((r) => String(r.ticker ?? "").toUpperCase() === t);
+    }
+    return rows.slice(0, limit);
+  });
 }
 
+/** @deprecated Use fetchBenzingaNews from polygon.ts as primary (unlimited via Polygon/Massive plan). UW news quota reserved for flow/tide/dark pool. */
 export async function fetchUwNewsHeadlines(ticker: string, limit = 12) {
   const data = await uwGetSafe<unknown>("/api/news/headlines", {
     ticker: ticker.toUpperCase(),
@@ -868,6 +923,7 @@ export async function fetchUwNewsHeadlines(ticker: string, limit = 12) {
   return extractRows(data).slice(0, limit);
 }
 
+/** @deprecated Use fetchBenzingaNews from polygon.ts as primary (no ticker filter variant). UW news quota reserved for flow/tide/dark pool. */
 /** Market-wide headlines — no ticker filter. */
 export async function fetchUwMarketNewsHeadlines(limit = 20) {
   const data = await uwGetSafe<unknown>("/api/news/headlines", {
@@ -876,19 +932,29 @@ export async function fetchUwMarketNewsHeadlines(limit = 20) {
   return extractRows(data).slice(0, limit);
 }
 
+/** @deprecated Use fetchMarketMovers from polygon.ts instead (gainers/losers via Polygon batch snapshot — no rate limit). */
 export async function fetchUwMarketMovers(limit = 15) {
-  const data = await uwGetSafe<unknown>("/api/market/movers", { limit: Math.min(limit, 50) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.marketMovers(), UW_CACHE_TTL.marketMovers, async () => {
+    const data = await uwGetSafe<unknown>("/api/market/movers", { limit: Math.min(limit, 50) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwMarketTopNetImpact(limit = 15) {
-  const data = await uwGetSafe<unknown>("/api/market/top-net-impact", { limit: Math.min(limit, 50) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.topNetImpact(), UW_CACHE_TTL.topNetImpact, async () => {
+    const data = await uwGetSafe<unknown>("/api/market/top-net-impact", { limit: Math.min(limit, 50) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwMarketOiChange(limit = 25) {
-  const data = await uwGetSafe<unknown>("/api/market/oi-change", { limit: Math.min(limit, 100) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.marketOiChange(), UW_CACHE_TTL.marketOiChange, async () => {
+    const data = await uwGetSafe<unknown>("/api/market/oi-change", { limit: Math.min(limit, 100) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwAtmChains(ticker: string, expirationDate?: string, limit = 30) {
@@ -915,25 +981,37 @@ export async function fetchUwEtfInOutflow(etf: string) {
 }
 
 export async function fetchUwEtfTide(etf: string) {
-  return uwGetSafe<unknown>(`/api/etf/${etf.toUpperCase()}/tide`, {});
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.etfTide(etf), UW_CACHE_TTL.etfTide, () =>
+    uwGetSafe<unknown>(`/api/etf/${etf.toUpperCase()}/tide`, {})
+  );
 }
 
 export async function fetchUwLitFlow(ticker: string, limit = 20) {
-  const data = await uwGetSafe<unknown>("/api/lit-flow/ticker", {
-    ticker: ticker.toUpperCase(),
-    limit: Math.min(limit, 50),
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.litFlow(ticker), UW_CACHE_TTL.litFlow, async () => {
+    const data = await uwGetSafe<unknown>("/api/lit-flow/ticker", {
+      ticker: ticker.toUpperCase(),
+      limit: Math.min(limit, 50),
+    });
+    return extractRows(data).slice(0, limit);
   });
-  return extractRows(data).slice(0, limit);
 }
 
 export async function fetchUwScreenerContracts(limit = 20) {
-  const data = await uwGetSafe<unknown>("/api/screener/contracts", { limit: Math.min(limit, 100) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.screenerContracts(), UW_CACHE_TTL.screenerContracts, async () => {
+    const data = await uwGetSafe<unknown>("/api/screener/contracts", { limit: Math.min(limit, 100) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwSeasonality(ticker: string) {
-  const data = await uwGetSafe<unknown>(`/api/seasonality/${ticker.toUpperCase()}/monthly`, {});
-  return extractRows(data);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.seasonality(ticker), UW_CACHE_TTL.seasonality, async () => {
+    const data = await uwGetSafe<unknown>(`/api/seasonality/${ticker.toUpperCase()}/monthly`, {});
+    return extractRows(data);
+  });
 }
 
 export async function fetchUwCongressLateReports(limit = 20) {
@@ -941,14 +1019,18 @@ export async function fetchUwCongressLateReports(limit = 20) {
   return extractRows(data).slice(0, limit);
 }
 
+/** @deprecated Use fetchShortVolume from polygon.ts as primary (Polygon short volume data — no rate limit). UW short volume is fallback only when Polygon returns empty results. */
 export async function fetchUwShortVolume(ticker: string, limit = 15) {
   const data = await uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/volume-and-ratio`, {});
   return extractRows(data).slice(0, limit);
 }
 
 export async function fetchUwFtds(ticker: string, limit = 15) {
-  const data = await uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/ftds`, {});
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.ftds(ticker), UW_CACHE_TTL.ftds, async () => {
+    const data = await uwGetSafe<unknown>(`/api/shorts/${ticker.toUpperCase()}/ftds`, {});
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 export async function fetchUwRealizedVol(ticker: string, limit = 15) {
@@ -973,11 +1055,14 @@ export async function fetchUwInsiderTransactions(ticker: string, limit = 15) {
 }
 
 export async function fetchUwFdaCalendar(ticker: string, limit = 10) {
-  const data = await uwGetSafe<unknown>("/api/market/fda-calendar", {
-    ticker: ticker.toUpperCase(),
-    limit: Math.min(limit, 20),
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.fdaCalendar(), UW_CACHE_TTL.fdaCalendar, async () => {
+    const data = await uwGetSafe<unknown>("/api/market/fda-calendar", {
+      ticker: ticker.toUpperCase(),
+      limit: Math.min(limit, 20),
+    });
+    return extractRows(data).slice(0, limit);
   });
-  return extractRows(data).slice(0, limit);
 }
 
 export async function fetchUwEarningsEstimates(ticker: string) {
@@ -1029,8 +1114,11 @@ export async function fetchUwGreekExposureStrike(ticker: string, limit = 500) {
 
 /** Market-wide dark pool prints. */
 export async function fetchUwDarkPoolRecent(limit = 25) {
-  const data = await uwGetSafe<unknown>("/api/darkpool/recent", { limit: Math.min(limit, 100) });
-  return extractRows(data).slice(0, limit);
+  const redis = await getUwCacheRedis();
+  return uwCacheGet(redis, UW_KEYS.darkPoolRecent(), UW_CACHE_TTL.darkPoolRecent, async () => {
+    const data = await uwGetSafe<unknown>("/api/darkpool/recent", { limit: Math.min(limit, 100) });
+    return extractRows(data).slice(0, limit);
+  });
 }
 
 /** Hottest chains / bullish-bearish option screener. */
@@ -1064,7 +1152,10 @@ export async function fetchUwCashFlows(ticker: string, reportType = "quarterly")
   return extractRows(data);
 }
 
-/** UW technical indicators — RSI, MACD, SMA, etc. */
+/**
+ * @deprecated Use fetchPolygonMtfTechnicals from polygon-largo.ts instead (full MTF stack via Polygon — no rate limit).
+ * UW technical indicators are fallback only when Polygon MTF returns null.
+ */
 export async function fetchUwTechnicalIndicator(
   ticker: string,
   fn: string,
@@ -1461,6 +1552,7 @@ export async function fetchUwOwnership(ticker: string) {
   return uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/ownership`, {});
 }
 
+/** @deprecated Use fetchAggBars from polygon-largo.ts as primary (Polygon OHLCV aggregates — no rate limit). UW OHLC is fallback only when Polygon returns empty results. */
 export async function fetchUwOhlc(ticker: string, candleSize = "1d", limit = 60) {
   const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/ohlc/${candleSize}`, {
     limit: Math.min(limit, 500),
@@ -1550,11 +1642,13 @@ export async function fetchUwNetFlowExpiry(limit = 30) {
   return extractRows(data).slice(0, limit);
 }
 
+/** @deprecated Use fetchPolygonDividends from polygon-largo.ts as primary. UW dividends is fallback only when Polygon returns empty results. */
 export async function fetchUwCompaniesDividends(ticker: string, limit = 20) {
   const data = await uwGetSafe<unknown>(`/api/companies/${sym(ticker)}/dividends`, { limit: Math.min(limit, 50) });
   return extractRows(data).slice(0, limit);
 }
 
+/** @deprecated Use fetchPolygonSplits from polygon-largo.ts as primary. UW splits is fallback only when Polygon returns empty results. */
 export async function fetchUwCompaniesSplits(ticker: string, limit = 20) {
   const data = await uwGetSafe<unknown>(`/api/companies/${sym(ticker)}/splits`, { limit: Math.min(limit, 50) });
   return extractRows(data).slice(0, limit);
@@ -1572,6 +1666,7 @@ export async function fetchUwMarketSectorEtfs() {
   return uwGetSafe<unknown>("/api/market/sector-etfs", {});
 }
 
+/** @deprecated Use fetchBenzingaAnalystRatings from polygon.ts as primary. UW screener/analysts is fallback only when Benzinga returns no results for the ticker. */
 export async function fetchUwScreenerAnalysts(limit = 25) {
   const data = await uwGetSafe<unknown>("/api/screener/analysts", { limit: Math.min(limit, 50) });
   return extractRows(data).slice(0, limit);

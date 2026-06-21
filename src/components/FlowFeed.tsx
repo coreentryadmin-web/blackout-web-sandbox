@@ -1,31 +1,57 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchFlows, createFlowEventSource, fmtPremium, type FlowAlert } from "@/lib/api";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
+import { fetchFlows, createFlowEventSource, fmtPremium, type FlowAlert } from "@/lib/api";
+import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { EngineStatusBar } from "@/components/desk/EngineStatusBar";
 import { FlowAlertStream } from "@/components/desk/FlowAlertStream";
-import { FlowVolumeChart } from "@/components/embeds/FlowVolumeChart";
-import { TradingViewWidget } from "@/components/embeds/TradingViewWidget";
+import { FlowBrief } from "@/components/desk/FlowBrief";
+import { NetPremiumLeaderboard } from "@/components/desk/NetPremiumLeaderboard";
+import { StrikeStackDetector } from "@/components/desk/StrikeStackDetector";
+import { FlowMomentumChart } from "@/components/desk/FlowMomentumChart";
+import { DarkPoolPanel } from "@/components/desk/DarkPoolPanel";
+import { TickerDrawer } from "@/components/desk/TickerDrawer";
 
-const PREMIUM_FILTERS = [100_000, 200_000, 500_000, 1_000_000] as const;
-const FLOW_REST_POLL_MS = 30_000;
+const PREMIUM_PRESETS = [100_000, 200_000, 500_000, 1_000_000] as const;
+type TypeFilter = "ALL" | "CALL" | "PUT";
+const FLOW_POLL_MS   = 30_000;
+const REPLAY_TICK_MS = 450;
 
 export function FlowFeed() {
-  const [alerts, setAlerts] = useState<FlowAlert[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [minPremium, setMinPremium] = useState(200_000);
-  const [tickerFilter, setTickerFilter] = useState("");
-  const [live, setLive] = useState(false);
-  const seenRef = useRef<Set<string>>(new Set());
+  // Data
+  const [alerts, setAlerts]               = useState<FlowAlert[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [live, setLive]                   = useState(false);
+  // Filters
+  const [minPremium, setMinPremium]       = useState(200_000);
+  const [typeFilter, setTypeFilter]       = useState<TypeFilter>("ALL");
+  const [tickerFilter, setTickerFilter]   = useState("");
+  // UI
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [replayMode, setReplayMode]         = useState(false);
+  const [replayAlerts, setReplayAlerts]     = useState<FlowAlert[]>([]);
 
+  const seenRef         = useRef(new Set<string>());
+  const replaySourceRef = useRef<FlowAlert[]>([]);
+  const replayIdxRef    = useRef(0);
+  const replayTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Derived counts for filter pills
+  const callCount = useMemo(() => alerts.filter((a) => a.option_type === "CALL").length, [alerts]);
+  const putCount  = useMemo(() => alerts.filter((a) => a.option_type === "PUT").length, [alerts]);
+
+  // Compound ticker set from strike stacks
+  const compoundTickers = useMemo<Set<string>>(() => {
+    const stacks = computeFlowStrikeStacks(alerts, { minAlerts: 2, limit: 20 });
+    return new Set(stacks.map((s) => s.ticker));
+  }, [alerts]);
+
+  // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
     try {
-      const d = await fetchFlows({
-        limit: 60,
-        min_premium: minPremium,
-        ticker: tickerFilter || undefined,
-      });
+      const d = await fetchFlows({ limit: 80, min_premium: minPremium, ticker: tickerFilter || undefined });
       setAlerts(d.flows);
       setLive(true);
     } catch {
@@ -35,12 +61,13 @@ export function FlowFeed() {
     }
   }, [minPremium, tickerFilter]);
 
-  useEffect(() => {
-    setLoading(true);
-    loadFlows();
-  }, [loadFlows]);
+  useEffect(() => { setLoading(true); loadFlows(); }, [loadFlows]);
 
   useEffect(() => {
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const go   = () => { if (!poll) poll = setInterval(loadFlows, FLOW_POLL_MS); };
+    const stop = () => { if (poll) { clearInterval(poll); poll = null; } };
+
     const conn = createFlowEventSource(
       (alert) => {
         const id = `${alert.ticker}-${alert.alerted_at}`;
@@ -49,56 +76,197 @@ export function FlowFeed() {
         setAlerts((prev) => [alert, ...prev.slice(0, 99)]);
         setLive(true);
       },
-      {
-        onOpen: () => setLive(true),
-        onClose: () => setLive(false),
-      }
+      { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); } }
     );
-
-    if (conn) {
-      return () => conn.close();
-    }
-
-    const interval = setInterval(loadFlows, FLOW_REST_POLL_MS);
-    return () => clearInterval(interval);
+    if (conn) return () => { conn.close(); stop(); };
+    go();
+    return () => stop();
   }, [loadFlows]);
 
+  // ── Replay ────────────────────────────────────────────────────────────────
+  const startReplay = useCallback(() => {
+    if (!alerts.length) return;
+    const sorted = [...alerts].sort((a, b) => new Date(a.alerted_at).getTime() - new Date(b.alerted_at).getTime());
+    replaySourceRef.current = sorted;
+    replayIdxRef.current    = 0;
+    setReplayAlerts([]);
+    setReplayMode(true);
+    replayTimerRef.current = setInterval(() => {
+      const idx = replayIdxRef.current;
+      const src = replaySourceRef.current;
+      if (idx >= src.length) { if (replayTimerRef.current) clearInterval(replayTimerRef.current); return; }
+      setReplayAlerts((prev) => [src[idx], ...prev]);
+      replayIdxRef.current = idx + 1;
+    }, REPLAY_TICK_MS);
+  }, [alerts]);
+
+  const stopReplay = useCallback(() => {
+    if (replayTimerRef.current) { clearInterval(replayTimerRef.current); replayTimerRef.current = null; }
+    setReplayMode(false);
+    setReplayAlerts([]);
+  }, []);
+
+  useEffect(() => () => { if (replayTimerRef.current) clearInterval(replayTimerRef.current); }, []);
+
+  const displayAlerts = replayMode ? replayAlerts : alerts;
+
   return (
-    <div className="desk-layout space-y-5">
+    <div className="desk-layout flex flex-col gap-4">
       <EngineStatusBar />
 
-      <div className="flex flex-wrap items-center gap-3 desk-filter-bar">
-        <span className="font-mono text-[9px] tracking-[0.35em] uppercase text-grey-500">Min premium</span>
-        {PREMIUM_FILTERS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setMinPremium(v)}
-            className={clsx("desk-filter-btn", minPremium === v && "desk-filter-btn-active")}
-          >
-            {v >= 1_000_000 ? `$${v / 1_000_000}M+` : `$${v / 1000}K+`}
-          </button>
-        ))}
-        <input
-          value={tickerFilter}
-          onChange={(e) => setTickerFilter(e.target.value.toUpperCase())}
-          placeholder="Ticker…"
-          className="desk-filter-input"
-        />
-        <span className="ml-auto font-mono text-[10px] text-grey-500">
-          {loading ? "Scanning…" : `${alerts.length} alerts · ${fmtPremium(alerts[0]?.premium ?? 0)} latest`}
-        </span>
+      {/* ── AI Brief ────────────────────────────────────────────────────── */}
+      <FlowBrief alerts={alerts} />
+
+      {/* ── Filter bar ──────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Premium presets */}
+        <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-zinc-700 hidden sm:block">Min</span>
+        <div className="flow-seg-group">
+          {PREMIUM_PRESETS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setMinPremium(v)}
+              className={clsx("flow-seg-btn", minPremium === v && "flow-seg-btn-active-all")}
+            >
+              {v >= 1_000_000 ? `$${v / 1_000_000}M+` : `$${v / 1000}K+`}
+            </button>
+          ))}
+        </div>
+
+        {/* Type filter */}
+        <div className="flow-seg-group">
+          {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={clsx(
+                "flow-seg-btn",
+                typeFilter === t && (
+                  t === "CALL" ? "flow-seg-btn-active-call" :
+                  t === "PUT"  ? "flow-seg-btn-active-put"  :
+                                 "flow-seg-btn-active-all"
+                )
+              )}
+            >
+              {t}
+              {t === "CALL" && (
+                <span className="flow-count-pill">{callCount}</span>
+              )}
+              {t === "PUT" && (
+                <span className="flow-count-pill">{putCount}</span>
+              )}
+              {t === "ALL" && (
+                <span className="flow-count-pill">{alerts.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Ticker input */}
+        <div className="relative">
+          <input
+            value={tickerFilter}
+            onChange={(e) => setTickerFilter(e.target.value.toUpperCase())}
+            placeholder="TICKER"
+            maxLength={6}
+            className={clsx(
+              "font-mono text-[10px] px-3 py-[5px] rounded-lg border bg-zinc-950 outline-none w-24",
+              "border-zinc-800 text-zinc-300 placeholder:text-zinc-700",
+              "focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700/50 transition-all"
+            )}
+          />
+          <AnimatePresence>
+            {tickerFilter && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                type="button"
+                onClick={() => setTickerFilter("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 font-mono text-xs"
+              >
+                ×
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Replay */}
+        <button
+          type="button"
+          onClick={replayMode ? stopReplay : startReplay}
+          disabled={!replayMode && alerts.length === 0}
+          className={clsx(
+            "font-mono text-[10px] px-3 py-[5px] rounded-lg border transition-all",
+            replayMode
+              ? "border-amber-700/60 text-amber-300 bg-amber-950/40 hover:bg-amber-950/60"
+              : "border-zinc-800 text-zinc-600 hover:text-zinc-300 hover:border-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+          )}
+        >
+          {replayMode ? "■ Stop" : "▶ Replay"}
+        </button>
+
+        {/* Right: stats + live indicator */}
+        <div className="ml-auto flex items-center gap-4">
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={`${alerts.length}-${loading}`}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2 }}
+              className="font-mono text-[10px] text-zinc-600 hidden sm:block"
+            >
+              {loading ? "Scanning…" : `${alerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
+            </motion.span>
+          </AnimatePresence>
+
+          {/* Live indicator */}
+          <div className="flex items-center gap-2">
+            <div className="flow-live-dot">
+              <span className={clsx(
+                "w-1.5 h-1.5 rounded-full block relative z-10",
+                live ? "bg-emerald-400" : "bg-zinc-700"
+              )} />
+            </div>
+            <span className={clsx(
+              "font-mono text-[9px] tracking-widest uppercase",
+              live ? "text-emerald-500" : "text-zinc-700"
+            )}>
+              {live ? "Live" : "Offline"}
+            </span>
+          </div>
+        </div>
       </div>
 
+      {/* ── Main grid ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-7">
-          <FlowAlertStream flows={alerts} live={live} loading={loading} />
+        {/* Flow tape — 8 cols */}
+        <div className="xl:col-span-8">
+          <FlowAlertStream
+            flows={displayAlerts}
+            live={live}
+            loading={loading}
+            typeFilter={typeFilter}
+            compoundTickers={compoundTickers}
+            onTickerClick={setSelectedTicker}
+            replayMode={replayMode}
+          />
         </div>
-        <div className="xl:col-span-5 space-y-4">
-          <FlowVolumeChart alerts={alerts} />
-          <TradingViewWidget type="advanced-chart" symbol="NASDAQ:QQQ" title="QQQ Flow Context" height={320} />
+
+        {/* Right column — 4 cols */}
+        <div className="xl:col-span-4 flex flex-col gap-3">
+          <NetPremiumLeaderboard alerts={alerts} />
+          <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+          <FlowMomentumChart alerts={alerts} />
+          <DarkPoolPanel />
         </div>
       </div>
+
+      {/* Ticker drawer */}
+      <TickerDrawer ticker={selectedTicker} onClose={() => setSelectedTicker(null)} />
     </div>
   );
 }

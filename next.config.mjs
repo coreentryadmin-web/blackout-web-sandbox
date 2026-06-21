@@ -1,4 +1,18 @@
 /** @type {import('next').NextConfig} */
+
+// FIX 2: Resolve the specific Railway hostname at config-load time from the
+// RAILWAY_STATIC_URL env var (set automatically by Railway).  Fall back to
+// an explicit RAILWAY_HOSTNAME override for local / staging overrides.
+// Do NOT use the "**.railway.app" wildcard — that accepts every Railway app.
+const railwayHostname = (() => {
+  const raw =
+    process.env.RAILWAY_HOSTNAME ||
+    (process.env.RAILWAY_STATIC_URL
+      ? new URL(process.env.RAILWAY_STATIC_URL).hostname
+      : null);
+  return raw || null;
+})();
+
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -10,23 +24,47 @@ const securityHeaders = [
   },
   {
     key: "Content-Security-Policy",
+    // FIX 1: Removed 'unsafe-eval' and 'unsafe-inline' from script-src.
+    // TradingView widgets are loaded from their CDN domains explicitly.
+    // Clerk auth JS is served from clerk.accounts.dev / clerk.blackouttrades.com
+    // (add your Clerk Frontend API hostname if it differs).
+    // 'unsafe-inline' is kept only in style-src for Tailwind / inline styles.
+    // Added upgrade-insecure-requests.
     value:
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tradingview.com https://*.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src 'self' https://s.tradingview.com https://*.tradingview.com; frame-ancestors 'self'",
+      "default-src 'self'; " +
+      "script-src 'self' https://s.tradingview.com https://*.tradingview.com https://clerk.blackouttrades.com https://*.clerk.accounts.dev; " +
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+      "font-src 'self' https://fonts.gstatic.com data:; " +
+      "img-src 'self' data: blob: https:; " +
+      "connect-src 'self' https: wss:; " +
+      "frame-src 'self' https://s.tradingview.com https://*.tradingview.com; " +
+      "frame-ancestors 'self'; " +
+      "upgrade-insecure-requests",
   },
 ];
 
+const remotePatterns = [
+  { protocol: "https", hostname: "images.unsplash.com" },
+];
+
+// FIX 2: Only add Railway hostname when the env var is present so the wildcard
+// "**.railway.app" is never used.  Set RAILWAY_HOSTNAME or RAILWAY_STATIC_URL
+// in your Railway service variables to enable image proxying from that host.
+if (railwayHostname) {
+  remotePatterns.push({ protocol: "https", hostname: railwayHostname });
+}
+
+import os from "os";
+
 const nextConfig = {
   experimental: {
-    cpus: 1,
+    cpus: Math.max(1, os.cpus().length - 1),
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "images.unsplash.com" },
-      { protocol: "https", hostname: "**.railway.app" },
-    ],
+    remotePatterns,
   },
 };
 

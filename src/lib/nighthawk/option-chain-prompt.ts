@@ -281,10 +281,15 @@ export function parseOptionsContract(optionsPlay: string): ParsedOptionsContract
   if (!expiryYmd) {
     const labelMatch = text.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})\b/i);
     if (labelMatch) {
-      const year = new Date().getFullYear();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const year = today.getFullYear();
       let parsed = new Date(`${labelMatch[1]} ${labelMatch[2]}, ${year} 12:00:00`);
       if (!Number.isNaN(parsed.getTime())) {
-        if (parsed.getTime() < Date.now() - 5 * 86_400_000) {
+        // Roll to next year only when the date is strictly before today (expired).
+        // Do NOT subtract a buffer — that causes January expiries to be rejected
+        // as "past" when running on Dec 27-31 and rolled to the wrong year.
+        if (parsed < today) {
           parsed = new Date(`${labelMatch[1]} ${labelMatch[2]}, ${year + 1} 12:00:00`);
         }
         expiryYmd = parsed.toISOString().slice(0, 10);
@@ -363,20 +368,17 @@ export function formatEditionChainTables(chains: Record<string, EditionChainData
   );
 }
 
-/** @deprecated Prefer fetchEditionChains + formatEditionChainTables (avoids duplicate fetches). */
-export async function fetchEditionChainTables(params: {
+/**
+ * @deprecated Use fetchEditionChains + formatEditionChainTables instead.
+ * Calling this function causes 2× chain fetches and is a bug.
+ * This function now throws at runtime to prevent accidental use.
+ */
+export async function fetchEditionChainTables(_params: {
   stockTickers: string[];
   dossiers: TickerDossier[];
 }): Promise<Record<string, string>> {
-  const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
-  const tickers = Array.from(new Set(params.stockTickers.map((t) => t.toUpperCase())));
-
-  const entries = await Promise.all(
-    tickers.map(async (ticker) => {
-      const text = await fetchTickerChainTable(ticker, dossierMap[ticker]);
-      return text ? ([ticker, text] as const) : null;
-    })
+  throw new Error(
+    "[nighthawk] fetchEditionChainTables is deprecated and must not be called. " +
+      "Use fetchEditionChains() + formatEditionChainTables() to avoid duplicate chain fetches."
   );
-
-  return Object.fromEntries(entries.filter((e): e is [string, string] => e != null));
 }

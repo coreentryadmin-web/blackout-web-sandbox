@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { fetchIndexSnapshots } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
+import { serverCache, TTL } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snaps = await fetchIndexSnapshots([SPX, VIX]);
+    const snaps = await serverCache("indices:spx-vix", TTL.MARKET_SNAPSHOT, () => fetchIndexSnapshots([SPX, VIX]));
     const spx = snaps[SPX];
     const vix = snaps[VIX];
 

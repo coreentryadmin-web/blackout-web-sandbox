@@ -25,6 +25,10 @@ type InstanceTelemetryPayload = {
 
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
+// Singleton Redis client — created once and reused across all flush calls.
+let _redisClient: import("ioredis").default | null = null;
+let _redisClientInit: Promise<import("ioredis").default | null> | null = null;
+
 function instanceId(): string {
   return (
     process.env.RAILWAY_REPLICA_ID?.trim() ||
@@ -38,21 +42,31 @@ function telemetryInstanceKey(id: string): string {
 }
 
 async function redisClient() {
+  if (_redisClient) return _redisClient;
+  if (_redisClientInit) return _redisClientInit;
+
   const url = process.env.REDIS_URL?.trim();
   if (!url) return null;
-  try {
-    const mod = await import("ioredis");
-    const Redis = mod.default;
-    const client = new Redis(url, {
-      maxRetriesPerRequest: 1,
-      lazyConnect: true,
-      connectTimeout: 2_000,
-    });
-    await client.connect();
-    return client;
-  } catch {
-    return null;
-  }
+
+  _redisClientInit = (async () => {
+    try {
+      const mod = await import("ioredis");
+      const Redis = mod.default;
+      const client = new Redis(url, {
+        maxRetriesPerRequest: 1,
+        lazyConnect: true,
+        connectTimeout: 2_000,
+      });
+      await client.connect();
+      _redisClient = client;
+      return client;
+    } catch {
+      _redisClientInit = null; // allow retry on next call
+      return null;
+    }
+  })();
+
+  return _redisClientInit;
 }
 
 function buildInstancePayload(): InstanceTelemetryPayload {
@@ -100,8 +114,6 @@ export async function flushTelemetryToRedis(): Promise<void> {
     await client.expire(`blackout:${INSTANCE_SET_KEY}`, TELEMETRY_TTL_SEC * 2);
   } catch {
     /* ignore */
-  } finally {
-    client.disconnect();
   }
 }
 
@@ -149,7 +161,5 @@ export async function readCrossInstanceTelemetry(): Promise<{
     return { instances_reporting: reporting, rate_limits, providers };
   } catch {
     return null;
-  } finally {
-    client.disconnect();
   }
 }

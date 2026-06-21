@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runFlowIngest } from "@/lib/providers/flow-ingest";
+import { runFlowIngest, ingestInFlight } from "@/lib/providers/flow-ingest";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 
@@ -8,6 +8,11 @@ export async function GET(req: NextRequest) {
 
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (ingestInFlight) {
+    await logCronRun("flow-ingest", started, { ok: true, skipped: true, reason: "ingest_in_flight" });
+    return NextResponse.json({ ok: true, skipped: "ingest_in_flight" });
   }
 
   try {

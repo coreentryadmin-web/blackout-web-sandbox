@@ -9,7 +9,7 @@ const CURSOR_ID_KEY = "uw_flow_cursor_max_id";
 const INGEST_LOCK_MS = 5_000;
 
 let lastIngestAt = 0;
-let ingestInFlight: Promise<FlowIngestResult> | null = null;
+export let ingestInFlight: Promise<FlowIngestResult> | null = null;
 
 export type FlowIngestResult = {
   ok: boolean;
@@ -21,6 +21,14 @@ export type FlowIngestResult = {
 export async function runFlowIngest(): Promise<FlowIngestResult> {
   if (!uwConfigured()) {
     return { ok: false, ingested: 0, polled: 0, skipped: "UW_API_KEY not set" };
+  }
+
+  // When the Python bot is the primary flow poller (FLOW_INGEST_BOT_PRIMARY=1),
+  // skip REST ingestion entirely. The bot writes to the shared Postgres and publishes
+  // to the blackout:flow-events Redis channel — this cron is redundant.
+  // The UW WebSocket path (below) still runs as a hot backup if the bot goes down.
+  if (process.env.FLOW_INGEST_BOT_PRIMARY === "1") {
+    return { ok: true, ingested: 0, polled: 0, skipped: "bot_primary" };
   }
 
   const wsStatus = uwSocket.getStatus();
