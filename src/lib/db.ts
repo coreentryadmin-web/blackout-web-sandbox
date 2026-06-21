@@ -182,6 +182,11 @@ async function runMigrations(): Promise<void> {
     ON spx_signal_log(created_at DESC);
   `);
   await p.query(`
+    DELETE FROM spx_signal_log a
+    USING spx_signal_log b
+    WHERE a.id > b.id AND a.signal_key = b.signal_key;
+  `);
+  await p.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_spx_signal_log_signal_key
     ON spx_signal_log(signal_key);
   `);
