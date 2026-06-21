@@ -8,8 +8,11 @@ import {
   playLottoConfirmMovePts,
   playLottoExpireEtHour,
   playLottoExpireEtMin,
+  playLottoIntradayCutoffEtHour,
+  playLottoIntradayCutoffEtMin,
   playLottoMaxPicksPerDay,
   playLottoMinScore,
+  playLottoStopLossPts,
   playLottoTargetPts,
 } from "@/lib/spx-play-config";
 import { evaluateLottoCatalysts } from "@/lib/spx-lotto-catalyst";
@@ -21,6 +24,7 @@ import {
   type LottoRecord,
 } from "@/lib/spx-lotto-store";
 import { logLottoPhase, logLottoWatch } from "@/lib/spx-lotto-outcomes";
+import { notifyPlayDiscord } from "@/lib/spx-play-notify";
 import {
   isBeforeCashOpen,
   isPremarketPlanningWindow,
@@ -114,6 +118,27 @@ function resolveLottoTargetPts(
 
 function isLottoExpired(now = new Date()): boolean {
   return etMinutes(now) >= etClock(playLottoExpireEtHour(), playLottoExpireEtMin());
+}
+
+/**
+ * Intraday cutoff (default 2:00 PM ET) — after this no new scans or entries.
+ * Distinct from the 10:30 AM opening-range expiry: the opening expiry kills unconfirmed
+ * pre-market WATCHes, while this cutoff governs the wider intraday catalyst window.
+ */
+function isIntradayCutoff(now = new Date()): boolean {
+  return etMinutes(now) >= etClock(playLottoIntradayCutoffEtHour(), playLottoIntradayCutoffEtMin());
+}
+
+/**
+ * True only for WATCH records that were set up pre-market and have now passed 10:30 AM
+ * without confirming entry. Intraday WATCH records (picked_at after 10:30) are exempt
+ * from the opening-range expiry and remain active until the 2:00 PM intraday cutoff.
+ */
+function isOpeningWatchExpired(rec: LottoRecord, now: Date): boolean {
+  if (!isLottoExpired(now)) return false;
+  const expiryMins = etClock(playLottoExpireEtHour(), playLottoExpireEtMin());
+  const pickedMins = rec.picked_at ? etMinutes(new Date(rec.picked_at)) : 0;
+  return pickedMins < expiryMins;
 }
 
 function phaseLabel(phase: LottoPhase, isReversal = false): string {
@@ -213,9 +238,14 @@ function buildWatchRecord(
       : round5(Math.max(desk.pdh ?? entryZone + playLottoConfirmMovePts(), entryZone + playLottoConfirmMovePts()));
 
   const confirmPts = playLottoConfirmMovePts();
+  const isIntraday =
+    !isReversal &&
+    etMinutes(new Date()) >= etClock(playLottoExpireEtHour(), playLottoExpireEtMin());
   const anchorLabel = isReversal
     ? "reversal anchor (SPX at invalidation)"
-    : "9:30 open anchor (first cash print)";
+    : isIntraday
+      ? "intraday anchor (SPX at setup time)"
+      : "9:30 open anchor (first cash print)";
   const entryTrigger =
     direction === "long"
       ? `+${confirmPts}pt from ${anchorLabel}`
@@ -238,8 +268,8 @@ function buildWatchRecord(
     invalidation_level: invalidationLevel,
     invalidation_note:
       direction === "long"
-        ? `Pre-BUY: −${confirmPts}pt from 9:30 open anchor invalidates (no entry)`
-        : `Pre-BUY: +${confirmPts}pt from 9:30 open anchor invalidates (no entry)`,
+        ? `Pre-BUY: −${confirmPts}pt from ${anchorLabel} invalidates (no entry)`
+        : `Pre-BUY: +${confirmPts}pt from ${anchorLabel} invalidates (no entry)`,
     catalyst_summary: catalyst.catalyst_summary,
     catalysts: catalyst.catalysts.map((c) => c.label),
     confidence: catalyst.confidence,
@@ -316,7 +346,11 @@ function openConfirm(
       ? technicals.m5_trend === "up" || technicals.breakout.pdh_break
       : technicals.m5_trend === "down" || technicals.breakout.pdl_break);
 
-  return moveOk && Boolean(candleOk);
+  // Price move is the primary gate. Technical confirmation (5m trend / level break)
+  // improves quality when Polygon candle data is available, but is not a hard gate
+  // when it's down — a confirmed price move IS a real signal regardless of candle state.
+  const techGate = !technicals?.available || Boolean(candleOk);
+  return moveOk && techGate;
 }
 
 function openInvalidate(
@@ -364,7 +398,7 @@ function holdExit(
     return null;
   }
 
-  if (pnl <= -playLottoConfirmMovePts()) return "stop";
+  if (pnl <= -playLottoStopLossPts()) return "stop";
   return null;
 }
 
@@ -381,7 +415,7 @@ async function tryNewWatch(
   if (confluence && Math.abs(confluence.score) < minScore) return null;
 
   const price = desk.price > 0 ? desk.price : desk.prior_close ?? desk.pdh ?? 0;
-  const ticket = await buildLottoOptionTicket(price, catalyst.direction);
+  const ticket = await buildLottoOptionTicket(price, catalyst.direction, desk.vix ?? null);
   return buildWatchRecord(desk, catalyst.direction, catalyst, pickCount, isReversal, ticket);
 }
 
@@ -401,11 +435,18 @@ export async function evaluateSpxLotto(
     return nonePayload("off_hours");
   }
 
-  if (isLottoExpired(now) && beforeCash) {
-    return nonePayload("off_hours");
-  }
-
   let rec = await loadLottoRecord();
+
+  // L-1: Full intraday cutoff at 2:00 PM — no new entries or scans after this point.
+  // HOLD is always exempt: active positions must continue to be evaluated for exit.
+  // Note: the 10:30 AM opening-range expiry is handled separately inside the WATCH block,
+  // where opening WATCHes that never confirmed are downgraded to NONE for intraday scanning.
+  if (isIntradayCutoff(now) && rec?.phase !== "HOLD") {
+    if (rec?.phase === "WATCH" || rec?.phase === "NONE") {
+      await clearLottoRecord();
+    }
+    return nonePayload("expired");
+  }
 
   if (rec && rec.phase === "WATCH" && afterCash && rec.open_anchor_price == null && desk.price > 0) {
     // Open anchor = first valid SPX cash print at or after 9:30 AM ET.
@@ -430,11 +471,23 @@ export async function evaluateSpxLotto(
 
     const exit = holdExit(rec, desk);
     if (exit === "win") {
-      void logLottoPhase(rec, {
-        phase: "SELL",
-        outcome: "win",
-        exit_price: desk.price,
-        closed_at: new Date().toISOString(),
+      // L-2/L-6: await SELL log so outcome is durable before follow-up or state transition.
+      try {
+        await logLottoPhase(rec, {
+          phase: "SELL",
+          outcome: "win",
+          exit_price: desk.price,
+          closed_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("[spx-lotto-engine] logLottoPhase(win) failed:", err);
+      }
+      const pnlPts = rec.entry_price != null ? Math.abs(desk.price - rec.entry_price) : rec.target_pts;
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: rec.direction,
+        headline: `✅ LOTTO WIN: ${rec.contract_label} +${pnlPts.toFixed(0)}pts`,
+        price: desk.price,
       });
 
       const prev = rec.pick_count;
@@ -458,11 +511,23 @@ export async function evaluateSpxLotto(
       return recordToPayload(rec);
     }
     if (exit === "stop") {
-      void logLottoPhase(rec, {
-        phase: "SELL",
-        outcome: "stop",
-        exit_price: desk.price,
-        closed_at: new Date().toISOString(),
+      // L-6: await SELL log so outcome is durable. Still clear state even if logging fails.
+      try {
+        await logLottoPhase(rec, {
+          phase: "SELL",
+          outcome: "stop",
+          exit_price: desk.price,
+          closed_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("[spx-lotto-engine] logLottoPhase(stop) failed:", err);
+      }
+      const lossPts = rec.entry_price != null ? Math.abs(desk.price - rec.entry_price) : playLottoConfirmMovePts();
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: rec.direction,
+        headline: `🔴 LOTTO STOP: ${rec.contract_label} -${lossPts.toFixed(0)}pts`,
+        price: desk.price,
       });
       await clearLottoRecord();
       return nonePayload("stopped");
@@ -471,47 +536,64 @@ export async function evaluateSpxLotto(
   }
 
   if (rec?.phase === "WATCH" && afterCash) {
-    if (isLottoExpired(now)) {
-      await clearLottoRecord();
-      return nonePayload("expired");
-    }
-
-    if (openConfirm(rec, desk, technicals)) {
-      const buyAt = new Date().toISOString();
-      // Write directly to HOLD — skip intermediate BUY write to prevent a crash
-      // between the two saves from leaving the lotto permanently stuck in BUY phase.
-      rec = {
-        ...rec,
-        phase: "HOLD",
-        entry_price: desk.price,
-        buy_at: buyAt,
-        peak_pnl_pts: 0,
-        status_message: lottoHoldStatusMessage(),
-      };
+    if (isOpeningWatchExpired(rec, now)) {
+      // Pre-market WATCH didn't confirm by 10:30 AM — transition to NONE so the
+      // intraday catalyst scan (up to 2 PM) can take over the same pick slot.
+      // Decrement pick_count so the intraday scan treats this as the same pick number
+      // (the opening WATCH never entered, so it doesn't consume a pick).
+      rec = { ...rec, phase: "NONE", pick_count: Math.max(0, rec.pick_count - 1) };
       await saveLottoRecord(rec);
-      void logLottoPhase(rec, {
-        phase: "BUY",
-        entry_price: desk.price,
-        buy_at: buyAt,
-      });
-      void logLottoPhase(rec, { phase: "HOLD", entry_price: desk.price });
+      // Fall through to NONE scan block below.
+    } else {
+      // Still an active WATCH (opening window not yet expired, or intraday WATCH) —
+      // check for entry confirmation or invalidation as normal.
+      if (openConfirm(rec, desk, technicals)) {
+        const buyAt = new Date().toISOString();
+        // Write directly to HOLD — skip intermediate BUY write to prevent a crash
+        // between the two saves from leaving the lotto permanently stuck in BUY phase.
+        rec = {
+          ...rec,
+          phase: "HOLD",
+          entry_price: desk.price,
+          buy_at: buyAt,
+          peak_pnl_pts: 0,
+          status_message: lottoHoldStatusMessage(),
+        };
+        await saveLottoRecord(rec);
+        // Await both log writes sequentially — these populate the outcomes table for
+        // win-rate analytics; fire-and-forget would silently drop records on DB errors.
+        try {
+          await logLottoPhase(rec, { phase: "BUY", entry_price: desk.price, buy_at: buyAt });
+          await logLottoPhase(rec, { phase: "HOLD", entry_price: desk.price });
+        } catch (err) {
+          console.error("[spx-lotto-engine] logLottoPhase(BUY/HOLD) failed:", err);
+        }
+        // N-1: Notify Discord on WATCH→HOLD (open/buy).
+        void notifyPlayDiscord({
+          action: "BUY",
+          direction: rec.direction,
+          headline: `🎰 LOTTO BUY: ${rec.contract_label} @ ~${rec.premium_estimate ?? "—"}`,
+          price: desk.price,
+        });
+        return recordToPayload(rec);
+      }
+
+      if (openInvalidate(rec, desk, technicals)) {
+        const prev = rec.pick_count;
+        await clearLottoRecord();
+        if (prev >= playLottoMaxPicksPerDay()) {
+          return nonePayload("max_picks");
+        }
+        const reversal = await tryNewWatch(desk, prev + 1, true);
+        if (!reversal) return nonePayload("invalidated_no_reversal");
+        await saveLottoRecord(reversal);
+        void logLottoWatch(reversal);
+        return recordToPayload(reversal);
+      }
+
       return recordToPayload(rec);
     }
-
-    if (openInvalidate(rec, desk, technicals)) {
-      const prev = rec.pick_count;
-      await clearLottoRecord();
-      if (prev >= playLottoMaxPicksPerDay()) {
-        return nonePayload("max_picks");
-      }
-      const reversal = await tryNewWatch(desk, prev + 1, true);
-      if (!reversal) return nonePayload("invalidated_no_reversal");
-      await saveLottoRecord(reversal);
-      void logLottoWatch(reversal);
-      return recordToPayload(reversal);
-    }
-
-    return recordToPayload(rec);
+    // Opening WATCH expired → rec is now NONE → fall through to NONE scan below.
   }
 
   if (rec?.phase === "WATCH" && premarket) {
@@ -519,10 +601,9 @@ export async function evaluateSpxLotto(
   }
 
   if (rec?.phase === "NONE" && afterCash && !premarket) {
-    if (isLottoExpired(now)) {
-      await clearLottoRecord();
-      return nonePayload("expired");
-    }
+    // Opening-range expiry (10:30 AM) is handled in the WATCH block above.
+    // The NONE scan uses the wider 2:00 PM intraday cutoff so catalyst plays
+    // can be established throughout the morning/midday session.
     if (rec.pick_count >= playLottoMaxPicksPerDay()) {
       return nonePayload("closed_for_today");
     }
@@ -536,10 +617,14 @@ export async function evaluateSpxLotto(
   }
 
   if (!rec || rec.phase === "INVALID" || rec.phase === "SELL") {
-    if (!premarket) {
-      return nonePayload(rec?.phase === "SELL" ? "closed_for_today" : "no_qualify");
+    // SELL = picks exhausted for today — never re-enter regardless of time window.
+    if (rec?.phase === "SELL") return nonePayload("closed_for_today");
+    // Allow fresh scans during both pre-market AND the intraday window (until 2 PM).
+    const inIntradayWindow = afterCash && !premarket;
+    if (!premarket && !inIntradayWindow) {
+      return nonePayload("no_qualify");
     }
-    const candidate = await tryNewWatch(desk, 1, false);
+    const candidate = await tryNewWatch(desk, rec?.pick_count ?? 1, false);
     if (!candidate) {
       return nonePayload("no_qualify");
     }

@@ -35,11 +35,16 @@ export type PlaySessionMeta = {
   last_sell_was_loss: boolean;
   last_direction: SpxPlayDirection | null;
   last_stop_at: number | null;
+  // C5: date boundary — prevents stale session data from bleeding across calendar days.
+  session_date?: string;
   version?: number;
 };
 
 const SESSION_META_KEY = "spx_play_session_meta";
 const MEMORY_OPEN: { row: OpenPlayRow | null } = { row: null };
+// C2: in-memory race guard — prevents two concurrent evaluators from both
+// calling openPlay() when dbConfigured() is false.
+let memoryOpenInProgress = false;
 const MEMORY_SESSION: PlaySessionMeta = {
   last_buy_at: null,
   last_sell_at: null,
@@ -63,7 +68,8 @@ async function setMetaWithRetry(key: string, value: string, attempts = 3): Promi
     } catch (err) {
       lastErr = err;
       if (i < attempts - 1) {
-        await new Promise((r) => setTimeout(r, 50 * (i + 1)));
+        // LOW: increased from 50ms/100ms to 150ms/400ms for DB load headroom.
+        await new Promise((r) => setTimeout(r, i === 0 ? 150 : 400));
       }
     }
   }
@@ -112,8 +118,20 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       last_sell_was_loss: Boolean(p.last_sell_was_loss),
       last_direction: p.last_direction ?? null,
       last_stop_at: p.last_stop_at ?? null,
+      session_date: p.session_date,
       version: typeof p.version === "number" ? p.version : 0,
     };
+
+    // C5: date boundary check — if the persisted session_date is absent or
+    // does not match today's ET date, the data is stale (e.g. loaded after
+    // overnight restart). Reset the fields that cause re-entry locks to avoid
+    // false positives on the next trading day. Keep last_buy_at so the
+    // existing cooldown-timer logic handles it independently.
+    if (!meta.session_date || meta.session_date !== todayEt()) {
+      meta.last_sell_was_loss = false;
+      meta.last_direction = null;
+      meta.last_stop_at = null;
+    }
 
     // Recovery: if meta was persisted but last_buy_at is null while an open
     // play exists, a crash occurred between openPlay() and recordBuy().
@@ -157,6 +175,8 @@ function mergeSessionMeta(existing: PlaySessionMeta, incoming: PlaySessionMeta):
         ? incoming.last_sell_was_loss
         : existing.last_sell_was_loss,
     last_direction: incoming.last_direction ?? existing.last_direction,
+    // C5: always carry today's date forward so the reader can detect stale data.
+    session_date: todayEt(),
   };
 }
 
@@ -236,8 +256,19 @@ export async function openPlay(
   };
 
   if (!dbConfigured()) {
-    MEMORY_OPEN.row = full;
-    return { row: full, created: true };
+    // C2: guard against double-entry from concurrent evaluators in the
+    // in-memory path. If another call is already mid-open, return the
+    // existing row as if it was already created (not a new open).
+    if (memoryOpenInProgress) {
+      return { row: MEMORY_OPEN.row ?? full, created: false };
+    }
+    memoryOpenInProgress = true;
+    try {
+      MEMORY_OPEN.row = full;
+      return { row: full, created: true };
+    } finally {
+      memoryOpenInProgress = false;
+    }
   }
 
   const { insertOpenSpxPlay } = await import("@/lib/db");
@@ -274,7 +305,15 @@ export async function closeOpenPlay(
     last_sell_at: Date.now(),
     last_sell_was_loss: outcome.was_loss,
     last_direction: outcome.direction,
-    last_stop_at: exitAction === "STOP" ? Date.now() : meta.last_stop_at,
+    // TRAIL exits do NOT trigger the 15-min stop cooldown by design — a trailing stop
+    // on a +8pt or +15pt MFE trade is a protected exit from a winning setup, not the
+    // chop/structure-break scenario the cooldown guards against. Exception: if the trail
+    // somehow fired at a loss (rare slippage), treat it like a hard stop.
+    last_stop_at:
+      exitAction === "STOP" ||
+      (exitAction === "TRAIL" && (outcome.close?.pnl_pts ?? 0) < 0)
+        ? Date.now()
+        : meta.last_stop_at,
   };
 
   if (dbConfigured()) {
@@ -326,6 +365,12 @@ export async function closeOpenPlay(
 
 export async function recordBuy(direction: SpxPlayDirection): Promise<void> {
   const meta = await loadPlaySessionMeta();
+  // C3: idempotency guard — if a buy was already recorded within the last 30s
+  // (e.g. due to a double-entry race from C2), skip to avoid wiping
+  // last_sell_was_loss a second time and firing duplicate side effects.
+  if (meta.last_buy_at != null && Date.now() - meta.last_buy_at < 30_000) {
+    return;
+  }
   await savePlaySessionMeta({
     ...meta,
     last_buy_at: Date.now(),

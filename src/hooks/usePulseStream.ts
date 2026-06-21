@@ -56,25 +56,50 @@ export function usePulseStream(
   baseRef.current = basePulse;
 
   useEffect(() => {
-    const conn = createPulseEventSource(
-      (snap) => {
-        setOverlay((prev) => ({
-          ...prev,
-          ...overlayFromStream(snap, baseRef.current ?? undefined),
-        }));
-      },
-      {
-        onOpen: () => {
-          setSseConnected(true);
-          onConnectionChange?.(true);
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
+    let currentConn: { close: () => void } | null | undefined = null;
+    let unmounted = false;
+
+    const scheduleReconnect = () => {
+      if (unmounted) return;
+      const delay = Math.min(2000 * Math.pow(2, reconnectAttempts), 30_000);
+      reconnectAttempts++;
+      reconnectTimeout = setTimeout(() => {
+        if (!unmounted) connectSSE();
+      }, delay);
+    };
+
+    const connectSSE = () => {
+      currentConn = createPulseEventSource(
+        (snap) => {
+          setOverlay((prev) => ({
+            ...prev,
+            ...overlayFromStream(snap, baseRef.current ?? undefined),
+          }));
         },
-        onClose: () => {
-          setSseConnected(false);
-          onConnectionChange?.(false);
-        },
-      }
-    );
-    return () => conn?.close();
+        {
+          onOpen: () => {
+            reconnectAttempts = 0;
+            setSseConnected(true);
+            onConnectionChange?.(true);
+          },
+          onClose: () => {
+            setSseConnected(false);
+            onConnectionChange?.(false);
+            scheduleReconnect();
+          },
+        }
+      );
+    };
+
+    connectSSE();
+
+    return () => {
+      unmounted = true;
+      if (reconnectTimeout != null) clearTimeout(reconnectTimeout);
+      currentConn?.close();
+    };
   }, [onConnectionChange]);
 
   const pulse = useMemo((): SpxDeskPulse | undefined => {

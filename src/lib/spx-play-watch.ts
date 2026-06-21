@@ -1,6 +1,7 @@
 import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 import { flowAlignedForDirection } from "@/lib/spx-play-confirmations";
 import {
   playMtfBufferPts,
@@ -36,12 +37,13 @@ function effectiveWatchMaxAgeMin(desk: SpxDeskPayload, direction: SpxPlayDirecti
   if (flowOk && tickOk) return playWatchExtendAgeMin();
   return playWatchMaxAgeMin();
 }
-function watchMaxDriftPts(rec: WatchRecord): number {
+// W-1: Accept optional `now` param to use the evaluation instant rather than a new Date() internally.
+function watchMaxDriftPts(rec: WatchRecord, now = new Date()): number {
   const openingRangeEnd = etClock(9, 30) + playOpeningRangeMinutes();
   const watchEtMins = etMinutes(new Date(rec.first_at));
   const watchFormedInOpeningRange =
     watchEtMins >= etClock(9, 30) && watchEtMins < openingRangeEnd;
-  const afterOpeningRange = etMinutes(new Date()) >= openingRangeEnd;
+  const afterOpeningRange = etMinutes(now) >= openingRangeEnd;
 
   if (watchFormedInOpeningRange && afterOpeningRange) {
     return playWatchOpeningRangeDriftPts();
@@ -49,8 +51,9 @@ function watchMaxDriftPts(rec: WatchRecord): number {
   return playWatchEntryMaxPriceDriftPts();
 }
 
+// W-3: Include session date so a stale yesterday WATCH record never matches today's key.
 export function watchSetupKey(direction: SpxPlayDirection): string {
-  return `0dte:${direction}`;
+  return `0dte:${direction}:${todayEtYmd()}`;
 }
 
 export async function loadWatchRecord(): Promise<WatchRecord | null> {
@@ -151,7 +154,7 @@ export async function evaluateWatchPromote(params: {
   }
 
   const drift = Math.abs(params.price - rec.price);
-  const maxDrift = watchMaxDriftPts(rec);
+  const maxDrift = watchMaxDriftPts(rec, new Date());
   if (drift > maxDrift) {
     return { eligible: false, reason: `Price drift ${drift.toFixed(1)} pts (max ${maxDrift})`, record: rec };
   }

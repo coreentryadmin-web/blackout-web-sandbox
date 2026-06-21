@@ -50,10 +50,12 @@ export async function GET(req: NextRequest) {
       const payload = {
         ok: true,
         skipped: true,
-        reason: evalResult.reason,
+        reason: "lock_held",
       };
       await logCronRun("spx-evaluate", started, payload);
-      return NextResponse.json(payload, { status: 409 });
+      // Return 200 (not 409) so cron monitoring systems don't treat a lock-held
+      // skip as a failure. The payload carries skipped:true for observability.
+      return NextResponse.json(payload);
     }
 
     const lotto = await evaluateSpxLotto(merged, technicals);
@@ -74,8 +76,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.error("[cron/spx-evaluate]", error);
+    console.error("[spx-evaluate]", detail);
     await logCronRun("spx-evaluate", started, { ok: false, error: detail });
-    return NextResponse.json({ ok: false, error: "Evaluation failed", detail }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Evaluation failed" }, { status: 500 });
   }
 }

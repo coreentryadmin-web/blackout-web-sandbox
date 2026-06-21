@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
+
+const BODY_PREVIEW_LINES = 7;
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
@@ -12,8 +14,7 @@ import {
 } from "@/lib/spx-commentary-offline-copy";
 import { flowStackSignature } from "@/lib/largo/flow-strike-stacks";
 
-const BASE_POLL_MS = 15_000;
-const QUIET_POLL_MS = 30_000;
+const RETRY_ON_ERROR_MS = 30_000;
 const MIN_INTERVAL_MS = 55_000;
 const MATERIAL_PRICE_MOVE = 0.08;
 const COMMENTARY_CACHE_KEY = "spx-commentary-feed";
@@ -25,23 +26,6 @@ function loadCachedEntries(): FeedEntry[] {
   return readSessionCache<FeedEntry[]>(COMMENTARY_CACHE_KEY, COMMENTARY_CACHE_MAX_AGE_MS) ?? [];
 }
 
-function isQuietTape(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | null): boolean {
-  if (!prev?.price) return false;
-
-  const priceMove = Math.abs(desk.price - (prev.price ?? 0));
-  if (priceMove >= MATERIAL_PRICE_MOVE) return false;
-
-  if (prev.regime !== desk.regime) return false;
-  if (prev.above_vwap !== desk.above_vwap) return false;
-  if (prev.tide_bias !== desk.tide_bias) return false;
-  if (prev.gex_king !== desk.gex_king) return false;
-
-  const prevStacks = flowStackSignature(prev.strike_stacks);
-  const nextStacks = flowStackSignature(desk.strike_stacks);
-  if (nextStacks && prevStacks !== nextStacks) return false;
-
-  return true;
-}
 
 function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | null, lastAt: number): boolean {
   if (Date.now() - lastAt < MIN_INTERVAL_MS) return false;
@@ -62,6 +46,29 @@ function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | nul
   return Date.now() - lastAt >= MIN_INTERVAL_MS * 2;
 }
 
+function CommentaryBody({ body, featured }: { body: string; featured: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = body.split("\n").filter(Boolean);
+  const needsCollapse = featured && lines.length > BODY_PREVIEW_LINES;
+  const visible = needsCollapse && !expanded ? lines.slice(0, BODY_PREVIEW_LINES) : lines;
+
+  return (
+    <div>
+      <div className="spx-commentary-body whitespace-pre-line">
+        {visible.join("\n")}
+      </div>
+      {needsCollapse && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 font-mono text-[10px] text-purple-light/70 hover:text-purple-light transition-colors"
+        >
+          {expanded ? "▲ collapse" : `▼ show full analysis (${lines.length - BODY_PREVIEW_LINES} more)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function SpxCommentaryRail({
   desk,
   live,
@@ -76,12 +83,13 @@ export function SpxCommentaryRail({
   const lastFetchRef = useRef(0);
   const inFlightRef = useRef(false);
   const hydratedRef = useRef(entries.length > 0);
+  const cancelledRef = useRef(false);
+  /** Milliseconds until the server cache expires — set after each successful call. */
+  const nextRefreshMsRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (live && entries.length > 0) {
-      writeSessionCache(COMMENTARY_CACHE_KEY, entries);
-    }
-  }, [entries, live]);
+  // sessionStorage write is intentionally done inside pullCommentary after
+  // new entries are added — see below — instead of watching the full entries
+  // array (which would write up to 50KB on every 15-30s state update).
 
   const pullCommentary = useCallback(async (force = false) => {
     if (!live || !desk?.available || inFlightRef.current) return;
@@ -94,20 +102,25 @@ export function SpxCommentaryRail({
     setError(null);
 
     try {
-      const res = await requestSpxCommentary(desk, prev);
+      const { commentary, next_refresh_ms } = await requestSpxCommentary(desk, prev);
+      nextRefreshMsRef.current = next_refresh_ms ?? null;
       const entry: FeedEntry = {
-        ...res,
-        id: `${res.as_of}-${Date.now()}`,
+        ...commentary,
+        id: `${commentary.as_of}-${Date.now()}`,
       };
+      let nextEntries: FeedEntry[] = [];
       setEntries((e) => {
-        const next = [entry, ...e].slice(0, 24);
+        nextEntries = [entry, ...e].slice(0, 24);
         hydratedRef.current = true;
-        return next;
+        return nextEntries;
       });
+      // Write to sessionStorage only when a new entry arrives, not on every render
+      if (live) writeSessionCache(COMMENTARY_CACHE_KEY, [entry]);
       prevRef.current = { ...desk };
       lastFetchRef.current = Date.now();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Commentary unavailable";
+      nextRefreshMsRef.current = null;
       setError(msg);
     } finally {
       setLoading(false);
@@ -138,23 +151,32 @@ export function SpxCommentaryRail({
   useEffect(() => {
     if (!desk?.available || !live) return;
 
+    cancelledRef.current = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const schedule = () => {
-      const prev = prevRef.current;
-      const quiet = isQuietTape(desk, prev);
-      const interval = quiet ? QUIET_POLL_MS : BASE_POLL_MS;
+      if (cancelledRef.current) return;
+      // Use server-supplied refresh window (+2s buffer, min 5s).
+      // Falls back to 60s if the server didn't supply next_refresh_ms.
+      // On error (nextRefreshMsRef.current is null), retry after 30s.
+      const serverMs = nextRefreshMsRef.current;
+      const delayMs =
+        serverMs !== null
+          ? Math.max(5_000, serverMs + 2_000)
+          : RETRY_ON_ERROR_MS;
+
       timer = setTimeout(() => {
-        pullCommentary(false);
-        schedule();
-      }, interval);
+        if (cancelledRef.current) return;
+        pullCommentary(false).then(() => schedule());
+      }, delayMs);
     };
 
     schedule();
     return () => {
+      cancelledRef.current = true;
       if (timer) clearTimeout(timer);
     };
-  }, [desk, live, pullCommentary]);
+  }, [desk?.available, live, pullCommentary]);
 
   const offlineCopy = pickCommentaryOfflineCopy(desk);
   const offlineTone = commentaryOfflineTone(desk);
@@ -244,7 +266,7 @@ export function SpxCommentaryRail({
                       ))}
                     </ul>
                   )}
-                  <div className="spx-commentary-body whitespace-pre-line">{entry.body}</div>
+                  <CommentaryBody body={entry.body} featured={idx === 0} />
                   {entry.watch.length > 0 && (
                     <div className="mt-3 pt-2 border-t border-grey-800/80">
                       <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-grey-400 mb-1.5">

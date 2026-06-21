@@ -40,13 +40,17 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
     lod = Math.min(lod, b.l);
     hod = Math.max(hod, b.h);
     const typical = (b.h + b.l + b.c) / 3;
+    // ISSUE-16: Polygon index bars often have v=0; fallback to v=1 makes this an
+    // equal-weight typical price average rather than a true volume-weighted mean.
     const v = b.v && b.v > 0 ? b.v : 1;
     pv += typical * v;
     vol += v;
   }
 
   return {
-    lod: Number.isFinite(lod) ? lod : null,
+    // ISSUE-39: lod init is Infinity; if all bars have l=0 (Polygon glitch), lod becomes 0
+    // which is finite, so we add the lod > 0 guard.
+    lod: lod > 0 && Number.isFinite(lod) ? lod : null,
     hod: Number.isFinite(hod) ? hod : null,
     vwap: vol > 0 ? pv / vol : null,
     open: rth[0]?.o ?? null,
@@ -58,12 +62,9 @@ export function priorDayFromDailyBars(bars: AggBar[]): {
   pdl: number | null;
   pdc: number | null;
 } {
-  if (bars.length < 2) {
-    const only = bars[0];
-    return only
-      ? { pdh: only.h, pdl: only.l, pdc: only.c }
-      : { pdh: null, pdl: null, pdc: null };
-  }
+  // ISSUE-34: When fewer than 2 bars are returned, bars[0] is TODAY's bar, not the prior day.
+  // Returning today's bar as PDH/PDL/PDC produces wrong prior-day data — null is safer.
+  if (bars.length < 2) return { pdh: null, pdl: null, pdc: null };
   const prior = bars[bars.length - 2] ?? bars[bars.length - 1];
   return { pdh: prior.h, pdl: prior.l, pdc: prior.c };
 }
@@ -85,7 +86,8 @@ function filterRthBars(bars: AggBar[]): AggBar[] {
 }
 
 export function distancePct(price: number, level: number | null): number | null {
-  if (level == null || price <= 0) return null;
+  // ISSUE-37: level=0 produces -100% distance instead of null; guard against it.
+  if (level == null || level <= 0 || price <= 0) return null;
   return ((level - price) / price) * 100;
 }
 

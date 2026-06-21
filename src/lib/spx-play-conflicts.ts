@@ -1,9 +1,10 @@
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxSignalFactor } from "@/lib/spx-signals";
 
-const BEAR_NEWS =
+/** Canonical news-sentiment patterns — imported by spx-play-confirmations.ts as well. */
+export const BEAR_NEWS =
   /\b(crash|plunge|selloff|sell-off|hawkish|hot cpi|inflation surge|war|recession|downgrade|lawsuit|probe|tariff)\b/i;
-const BULL_NEWS =
+export const BULL_NEWS =
   /\b(rally|surge|soar|dovish|rate cut|beat estimates|record high|stimulus|ceasefire)\b/i;
 
 function newsSentiment(headlines: SpxDeskPayload["news_headlines"]): "bullish" | "bearish" | "neutral" {

@@ -27,28 +27,36 @@ function intervalKey(userId: string): string {
 }
 
 /** Returns a connected ioredis client, or null if REDIS_URL is not set. */
+let _redisClient: import("ioredis").default | null = null;
+let _connectingPromise: Promise<import("ioredis").default | null> | null = null;
+
 async function getRedis(): Promise<import("ioredis").default | null> {
   const url = process.env.REDIS_URL?.trim();
   if (!url) return null;
-  try {
-    const mod = await import("ioredis");
-    const Redis = mod.default;
-    // Re-use a module-level singleton to avoid opening a new connection on
-    // every request.
-    if (!_redisClient) {
-      _redisClient = new Redis(url, {
+  if (_redisClient) return _redisClient;
+  // Return the in-flight promise so concurrent cold-start requests share one
+  // connection attempt instead of each racing to instantiate their own client.
+  if (_connectingPromise) return _connectingPromise;
+  _connectingPromise = (async () => {
+    try {
+      const mod = await import("ioredis");
+      const Redis = mod.default;
+      const client = new Redis(url, {
         maxRetriesPerRequest: 1,
         lazyConnect: true,
         connectTimeout: 2_000,
       });
-      await _redisClient.connect();
+      await client.connect();
+      _redisClient = client;
+      return _redisClient;
+    } catch {
+      return null;
+    } finally {
+      _connectingPromise = null;
     }
-    return _redisClient;
-  } catch {
-    return null;
-  }
+  })();
+  return _connectingPromise;
 }
-let _redisClient: import("ioredis").default | null = null;
 
 async function readBudget(userId: string): Promise<BudgetRow> {
   const today = todayEt();

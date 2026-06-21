@@ -14,13 +14,13 @@ import {
 import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 
 export type ClaudePlayVerdict = {
-  verdict: "APPROVE_BUY" | "HOLD_WATCH" | "VETO";
+  verdict: "APPROVE_BUY" | "VETO";
   direction: "long" | "short" | null;
   headline: string;
   thesis: string;
   approved: boolean;
   source: "claude" | "mechanical" | "cache";
-  /** BUG-04: true when Claude's direction differs from confluence.direction. */
+  /** true when Claude's direction differs from confluence.direction. */
   direction_mismatch?: boolean;
 };
 
@@ -298,7 +298,7 @@ ${JSON.stringify({
 CONFIRMATION CHECKLIST (${confirmations.passed_count}/${confirmations.total}):
 ${JSON.stringify(confirmations.checks)}
 
-Respond ONLY valid JSON:
+Respond ONLY valid JSON (verdict must be exactly "APPROVE_BUY" or "VETO"):
 {
   "verdict": "APPROVE_BUY" | "VETO",
   "direction": "long" | "short" | null,
@@ -323,16 +323,24 @@ Respond ONLY valid JSON:
     return mech;
   }
 
-  await incrementDailyBudget();
-
   try {
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    // Only charge the daily budget after a successful JSON parse — a malformed
+    // response should not consume budget.
+    await incrementDailyBudget();
     const verdict = String(parsed.verdict ?? "VETO") as ClaudePlayVerdict["verdict"];
     const direction =
       parsed.direction === "long" || parsed.direction === "short"
         ? parsed.direction
         : confluence.direction;
+    const confluenceDirection = confluence.direction;
+    const direction_mismatch =
+      parsed.direction != null &&
+      confluenceDirection != null &&
+      parsed.direction !== confluenceDirection
+        ? true
+        : undefined;
     const result: ClaudePlayVerdict = {
       verdict: verdict === "APPROVE_BUY" ? "APPROVE_BUY" : "VETO",
       direction,
@@ -340,6 +348,7 @@ Respond ONLY valid JSON:
       thesis: String(parsed.thesis ?? ""),
       approved: verdict === "APPROVE_BUY",
       source: "claude",
+      ...(direction_mismatch !== undefined && { direction_mismatch }),
     };
     await writeCache(key, result);
     return result;

@@ -3,6 +3,8 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PlayTechnicals } from "@/lib/spx-play-technicals";
 import { evaluateMtfHybrid, keyLevelForDirection } from "@/lib/spx-play-mtf";
 import { playMinConfirmationsRequired, playStructureProximityPts } from "@/lib/spx-play-config";
+// Canonical news-sentiment patterns live in spx-play-conflicts to avoid duplication.
+import { BEAR_NEWS, BULL_NEWS } from "@/lib/spx-play-conflicts";
 
 export type PlayConfirmationCheck = {
   label: string;
@@ -17,9 +19,6 @@ export type PlayConfirmationResult = {
   total: number;
   checks: PlayConfirmationCheck[];
 };
-
-const BEAR_NEWS = /\b(crash|plunge|selloff|sell-off|hawkish|hot cpi|inflation surge|war|recession|downgrade|lawsuit|probe|tariff)\b/i;
-const BULL_NEWS = /\b(rally|surge|soar|dovish|rate cut|beat estimates|record high|stimulus|ceasefire)\b/i;
 
 function newsSentiment(headlines: SpxDeskPayload["news_headlines"]): "bullish" | "bearish" | "neutral" {
   let bull = 0;
@@ -152,13 +151,15 @@ export function evaluatePlayConfirmations(
   const keyLevel = keyLevelForDirection(desk, direction, confluence);
   const hybrid = evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score);
 
-  const m3Ok = hybrid.t2_confirm_3m || (hybrid.ok && hybrid.soft_5m);
+  // m3Ok: hard 3m close confirmation OR soft 3m bypass (uses soft_3m, not soft_5m,
+  // to avoid double-counting a 5m bypass as a 3m pass).
+  const m3Ok = hybrid.t2_confirm_3m || (hybrid.ok && hybrid.soft_3m);
   checks.push({
     label: "3m MTF",
     required: true,
     passed: m3Ok,
     detail: m3Ok
-      ? `3m hold @ ${keyLevel.toFixed(2)} · close ${technicals.m3_close?.toFixed(2) ?? "—"}${hybrid.soft_5m ? " (soft)" : ""}`
+      ? `3m hold @ ${keyLevel.toFixed(2)} · close ${technicals.m3_close?.toFixed(2) ?? "—"}${hybrid.soft_3m ? " (soft)" : ""}`
       : hybrid.failure_reason ?? "3m close has not confirmed direction",
   });
 
@@ -252,9 +253,11 @@ export function evaluatePlayConfirmations(
     detail: tide ? `Tide ${tide}` : "Tide neutral",
   });
 
+  // Symmetric TICK thresholds: ±800 allows normal market breadth noise while
+  // blocking extreme internals that oppose the trade direction.
   const tickOk =
     desk.tick == null ||
-    (direction === "long" ? desk.tick > -100 : desk.tick < 100);
+    (direction === "long" ? desk.tick > -800 : desk.tick < 800);
   checks.push({
     label: "Internals",
     required: false,
@@ -275,12 +278,16 @@ export function evaluatePlayConfirmations(
     detail: newsOk ? `News ${news} · ${topHeadline}` : `News opposes ${direction}: ${topHeadline}`,
   });
 
+  const price = desk.price;
   const gexOk =
     direction === "long"
-      ? (desk.gamma_regime !== "amplification" || desk.above_gamma_flip) &&
-        (desk.gex_walls?.some((w) => w.kind === "support") ?? false)
-      : (desk.gamma_regime !== "amplification" || !desk.above_gamma_flip) &&
-        (desk.gex_walls?.some((w) => w.kind === "resistance") ?? false);
+      ? // Require a support wall within 10 pts below price — a wall at SPX 4000 while
+        // price is at 5600 is irrelevant and should not satisfy the GEX confirmation.
+        (desk.gamma_regime !== "amplification" || desk.above_gamma_flip) &&
+        (desk.gex_walls?.some((w) => w.kind === "support" && w.strike >= price - 10) ?? false)
+      : // For shorts: require a resistance wall at or above current price (within 10 pts).
+        (desk.gamma_regime !== "amplification" || !desk.above_gamma_flip) &&
+        (desk.gex_walls?.some((w) => w.kind === "resistance" && w.strike >= price - 10) ?? false);
   checks.push({
     label: "Dealer GEX",
     required: false,

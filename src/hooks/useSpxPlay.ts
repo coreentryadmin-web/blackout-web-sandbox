@@ -2,7 +2,7 @@
 
 
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import useSWR from "swr";
 
@@ -66,7 +66,14 @@ function mergePlayWithCache(
 
       fresh.direction === cached.direction;
 
-    if (!sameDirection) return fresh;
+    // Never use cached confirmations when direction flipped — stale confirmations
+    // from the opposite direction would mislead the user for one poll cycle.
+    const directionFlipped =
+      fresh.direction != null &&
+      cached.direction != null &&
+      fresh.direction !== cached.direction;
+
+    if (!sameDirection || directionFlipped) return fresh;
 
 
 
@@ -120,11 +127,18 @@ export function useSpxPlay(sessionActive = true) {
 
   const sessionDate = todayEtYmdClient();
 
-
+  // Cached payload stored in state so readSessionCache is only called when
+  // new SWR data arrives (onSuccess), not on every render in a useMemo.
+  const [cachedPayload, setCachedPayload] = useState<SpxPlayPayload | undefined>(
+    () => (sessionActive ? readSessionCache<SpxPlayPayload>(PLAY_CACHE_KEY, PLAY_CACHE_MAX_AGE_MS) ?? undefined : undefined)
+  );
 
   useEffect(() => {
 
-    if (!sessionActive) clearPlayCache();
+    if (!sessionActive) {
+      clearPlayCache();
+      setCachedPayload(undefined);
+    }
 
   }, [sessionActive]);
 
@@ -148,7 +162,7 @@ export function useSpxPlay(sessionActive = true) {
 
       revalidateOnReconnect: true,
 
-      keepPreviousData: false,
+      keepPreviousData: true,
 
       dedupingInterval: 1_500,
 
@@ -163,6 +177,8 @@ export function useSpxPlay(sessionActive = true) {
         if (!sessionActive || !payload || !shouldPersistPlayPayload(payload)) return;
 
         writeSessionCache(PLAY_CACHE_KEY, payload, sessionDate);
+        // Update state cache so useMemo uses fresh data without a hot-path read
+        setCachedPayload(payload);
 
       },
 
@@ -176,11 +192,9 @@ export function useSpxPlay(sessionActive = true) {
 
     if (!sessionActive) return null;
 
-    const stored = readSessionCache<SpxPlayPayload>(PLAY_CACHE_KEY, PLAY_CACHE_MAX_AGE_MS);
+    return mergePlayWithCache(data, cachedPayload);
 
-    return mergePlayWithCache(data, stored ?? undefined);
-
-  }, [data, sessionActive]);
+  }, [data, sessionActive, cachedPayload]);
 
 
 

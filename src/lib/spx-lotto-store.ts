@@ -66,6 +66,13 @@ export async function loadLottoRecord(): Promise<LottoRecord | null> {
 }
 
 export async function saveLottoRecord(rec: LottoRecord): Promise<void> {
+  const today = todayEt();
+  if (rec.session_date !== today) {
+    console.warn(
+      `[spx-lotto-store] saveLottoRecord: stale session_date ${rec.session_date} (today=${today}) — skipping save`
+    );
+    return;
+  }
   memoryLotto.record = rec;
   if (!dbConfigured()) return;
   await setMeta(LOTTO_KEY, JSON.stringify(rec));

@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
   ensureDataSockets();
   const encoder = new TextEncoder();
   let interval: ReturnType<typeof setInterval> | null = null;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -40,19 +41,32 @@ export async function GET(req: NextRequest) {
           });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         } catch {
-          if (interval) clearInterval(interval);
-          interval = null;
-          controller.close();
+          if (interval) { clearInterval(interval); interval = null; }
+          if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+          try { controller.close(); } catch { /* already closed */ }
         }
       };
 
       interval = setInterval(() => { void send(); }, 250);
       void send();
+
+      // Periodic SSE comment heartbeat — keeps the connection alive through
+      // proxies and load balancers that have idle-timeout defaults (Railway,
+      // nginx, etc.). Fires every 15 seconds regardless of data activity.
+      heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        } catch { /* stream already closed */ }
+      }, 15_000);
     },
     cancel() {
       if (interval) {
         clearInterval(interval);
         interval = null;
+      }
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
       }
     },
   });

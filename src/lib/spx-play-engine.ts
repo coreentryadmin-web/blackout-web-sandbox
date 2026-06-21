@@ -31,6 +31,9 @@ import {
   playTrimProgressPct,
   playWatchMinScore,
   playPromoteMinScore,
+  playTrailingStopBreakevenMfePts,
+  playTrailingStopTrailMfePts,
+  playTrailingStopTrailWindowPts,
 } from "@/lib/spx-play-config";
 import { evaluateThesisBreak } from "@/lib/spx-play-thesis";
 import {
@@ -291,6 +294,26 @@ async function evaluateOpenPlay(
 
   const forceExit = isPastForceExitCutoff();
 
+  // Trailing stop — mfe is the rolling peak MFE (Math.max of row.mfe_pts and current move),
+  // so it naturally tracks the best point the trade reached since entry.
+  // Priority: breakeven lock first (at +8 pts), then price-trail (at +15 pts, 7 pts window).
+  // Pairs with the trim mechanism: trim fires at MFE >=12 at 70% progress; trail protects the runner.
+  const trailBreakevenMfe = playTrailingStopBreakevenMfePts();
+  const trailActiveMfe = playTrailingStopTrailMfePts();
+  const trailWindowPts = playTrailingStopTrailWindowPts();
+  let trailingStop: number | null = null;
+  if (mfe >= trailActiveMfe) {
+    // Trail at (peak price - trailWindowPts) to lock in most of the run
+    const peakPrice = dir === "long" ? row.entry_price + mfe : row.entry_price - mfe;
+    trailingStop = dir === "long" ? peakPrice - trailWindowPts : peakPrice + trailWindowPts;
+  } else if (mfe >= trailBreakevenMfe) {
+    // Lock to entry price — worst case is a scratch, not a loss
+    trailingStop = row.entry_price;
+  }
+  const trailingStopHit = !targetHit && trailingStop !== null && (
+    dir === "long" ? price <= trailingStop : price >= trailingStop
+  );
+
   const closeSnapshot = (exitAction: PlayExitAction, wasLoss: boolean, trimDone: boolean) => ({
     exit_price: price,
     exit_action: exitAction,
@@ -301,32 +324,17 @@ async function evaluateOpenPlay(
     pnl_pts: pnlPts(dir, row.entry_price, price),
   });
 
-  if (forceExit || stopHit || thesisBreak || !desk.market_open) {
+  if (forceExit) {
+    // C1 priority 1: force-exit (theta cutoff) — always highest priority.
     action = "SELL";
-    headline = forceExit
-      ? `THETA FLAT — ${forceExitCutoffLabel()} cutoff`
-      : stopHit
-        ? "STOP — structure broken"
-        : !desk.market_open
-          ? "SESSION FLAT — close 0DTE"
-          : "THESIS BREAK — exit";
-    thesis = forceExit
-      ? "0DTE theta window — flatten open runners before illiquid close."
-      : stopHit
-        ? `Price ${price.toFixed(2)} through stop ${stop?.toFixed(0)}. Flatten.`
-        : thesisBreak
-          ? `Thesis break (${thesisEval.trigger ?? "or"}) — score ${confluence.score} vs ${thesisEval.trigger === "floor" ? "±" : ""}${Math.abs(thesisEval.threshold).toFixed(0)} threshold (entry ${entryScore}).`
-          : "Cash session closed — flatten runners.";
+    headline = `THETA FLAT — ${forceExitCutoffLabel()} cutoff`;
+    thesis = "0DTE theta window — flatten open runners before illiquid close.";
     const thetaLoss = pnlPts(dir, row.entry_price, price) < 0;
     if (mutate) {
       await closeOpenPlay(row.id, {
-        was_loss: forceExit ? thetaLoss : stopHit || thesisBreak,
+        was_loss: thetaLoss,
         direction: dir,
-        close: closeSnapshot(
-          forceExit ? "THETA" : stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS",
-          forceExit ? thetaLoss : stopHit || thesisBreak,
-          row.trim_done
-        ),
+        close: closeSnapshot("THETA", thetaLoss, row.trim_done),
       });
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
@@ -359,6 +367,7 @@ async function evaluateOpenPlay(
       });
     }
   } else if (targetHit) {
+    // C1 priority 2: target hit — win, regardless of whether score also dropped.
     action = "SELL";
     headline = "TARGET — take profit";
     thesis = `Hit target zone ${target?.toFixed(0)} from ${row.entry_price.toFixed(2)}.`;
@@ -369,6 +378,107 @@ async function evaluateOpenPlay(
         close: closeSnapshot("TARGET", false, row.trim_done),
       });
       firePlayTelemetry("maybeLogSpxPlay:TARGET", () =>
+        maybeLogSpxPlay(
+        { price: desk.price, market_open: desk.market_open },
+        {
+          action: "SELL",
+          direction: dir,
+          grade: row.grade,
+          score: confluence.score,
+          confidence: confluence.confidence,
+          headline,
+          thesis,
+          factors: confluence.factors,
+          levels: {
+            entry: row.entry_price,
+            stop: row.stop,
+            target: row.target,
+            invalidation: confluence.levels.invalidation,
+          },
+        }
+      ));
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: dir,
+        headline,
+        thesis,
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
+  } else if (trailingStopHit) {
+    // C1 priority 2b: trailing stop hit — protected gain or scratch, NOT a loss.
+    // was_loss = false so the re-entry lock and post-stop cooldown do NOT fire.
+    action = "SELL";
+    const trailPnl = pnlPts(dir, row.entry_price, price);
+    headline = trailPnl >= 0
+      ? `TRAIL STOP — +${trailPnl.toFixed(1)} pts locked`
+      : "TRAIL STOP — scratch exit";
+    thesis = `Trailing stop at ${trailingStop?.toFixed(2)} hit from MFE peak of +${mfe.toFixed(1)} pts.`;
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: false,
+        direction: dir,
+        close: closeSnapshot("TRAIL", false, row.trim_done),
+      });
+      firePlayTelemetry("maybeLogSpxPlay:TRAIL", () =>
+        maybeLogSpxPlay(
+          { price: desk.price, market_open: desk.market_open },
+          {
+            action: "SELL",
+            direction: dir,
+            grade: row.grade,
+            score: confluence.score,
+            confidence: confluence.confidence,
+            headline,
+            thesis,
+            factors: confluence.factors,
+            levels: {
+              entry: row.entry_price,
+              stop: trailingStop,
+              target: row.target,
+              invalidation: confluence.levels.invalidation,
+            },
+          }
+        )
+      );
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: dir,
+        headline,
+        thesis,
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
+  } else if (stopHit || thesisBreak || !desk.market_open) {
+    // C1 priority 3: stop hit, thesis break, or session close — loss.
+    // C4: if market closed AND stopHit simultaneously, record was_loss=true and
+    // set last_stop_at (stop takes semantic priority over session-close).
+    action = "SELL";
+    const sessionCloseWithStop = !desk.market_open && stopHit;
+    headline = stopHit
+      ? "STOP — structure broken"
+      : !desk.market_open
+        ? "SESSION FLAT — close 0DTE"
+        : "THESIS BREAK — exit";
+    thesis = stopHit
+      ? `Price ${price.toFixed(2)} through stop ${stop?.toFixed(0)}. Flatten.`
+      : thesisBreak
+        ? `Thesis break (${thesisEval.trigger ?? "or"}) — score ${confluence.score} vs ${thesisEval.trigger === "floor" ? "±" : ""}${Math.abs(thesisEval.threshold).toFixed(0)} threshold (entry ${entryScore}).`
+        : "Cash session closed — flatten runners.";
+    // C4: was_loss is true if stop hit OR thesis break (even when market also closing).
+    const wasLoss = stopHit || thesisBreak || sessionCloseWithStop;
+    const exitAction = stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS";
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: wasLoss,
+        direction: dir,
+        close: closeSnapshot(exitAction, wasLoss, row.trim_done),
+      });
+      firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
         {

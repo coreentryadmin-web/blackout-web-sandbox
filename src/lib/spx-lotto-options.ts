@@ -2,7 +2,6 @@ import { polygonConfigured } from "@/lib/providers/config";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { playLottoChainMaxSpreadPct, playLottoTargetPts } from "@/lib/spx-play-config";
-import { suggestPlayStrike } from "@/lib/spx-play-intel";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
 import type { OptionTicket } from "@/lib/spx-play-options";
 
@@ -25,8 +24,30 @@ let lottoTicketCache: {
   at: number;
   spot: number;
   dir: SpxPlayDirection;
+  date: string;       // todayEtYmd() — invalidates on session rollover
+  vixBucket: string;  // "lo" | "mid" | "hi" — invalidates when VIX regime changes
   ticket: OptionTicket;
 } | null = null;
+
+/**
+ * VIX-adjusted premium cap. When volatility is elevated, fair-value OTM premiums
+ * are higher: $0.85 is reasonable in a low-VIX environment but would block all
+ * viable contracts when VIX > 20 and options are priced for wider moves.
+ */
+function lottoMaxPremium(vix?: number | null): number {
+  const envOverride = process.env.SPX_LOTTO_MAX_PREMIUM;
+  if (envOverride) return Number(envOverride);
+  if (vix != null && vix > 20) return 2.0;
+  if (vix != null && vix > 16) return 1.5;
+  return 0.85;
+}
+
+function vixBucket(vix?: number | null): string {
+  if (vix == null) return "unknown";
+  if (vix > 20) return "hi";
+  if (vix > 16) return "mid";
+  return "lo";
+}
 
 function round5(n: number): number {
   return Math.round(n / 5) * 5;
@@ -71,21 +92,22 @@ async function fetchOdteContracts(spot: number, expiry: string): Promise<ChainCo
 }
 
 function fallbackLottoStrike(spot: number, direction: SpxPlayDirection): number {
-  const base = suggestPlayStrike(
-    { price: spot, gex_walls: [] } as unknown as import("@/lib/providers/spx-desk").SpxDeskPayload,
-    direction,
-    "D"
-  );
-  return base + (direction === "long" ? 10 : -10);
+  // Use playLottoTargetPts() (~25 pts) OTM, not suggestPlayStrike("D") which returns ATM+5 then +10 = ATM+15,
+  // violating the lotto's own ±25pt OTM criterion.
+  const base = Math.round(spot / 5) * 5;
+  return base + (direction === "long" ? playLottoTargetPts() : -playLottoTargetPts());
 }
 
 /**
  * Far-OTM lotto ticket — wider spread cap than main plays (default 50%).
  * Main play filter (18–20%) rejects typical $0.30–$0.50 OTM quotes.
+ * VIX adjusts the max premium cap so elevated-vol sessions can still find
+ * viable contracts (VIX <16 → $0.85 | VIX 16-20 → $1.50 | VIX >20 → $2.00).
  */
 export async function buildLottoOptionTicket(
   spot: number,
-  direction: SpxPlayDirection
+  direction: SpxPlayDirection,
+  vix?: number | null
 ): Promise<OptionTicket> {
   const option_type = direction === "long" ? "call" : "put";
   const fallbackStrike = fallbackLottoStrike(spot, direction);
@@ -101,7 +123,7 @@ export async function buildLottoOptionTicket(
     spread_pct: null,
     delta: null,
     open_interest: null,
-    premium_range: "~$0.35–$0.65",
+    premium_range: "~$0.50–$1.50",
     blocked: true,
     block_reason: "Chain unavailable — estimated premium only",
   };
@@ -109,8 +131,12 @@ export async function buildLottoOptionTicket(
   if (!polygonConfigured() || spot <= 0) return empty;
 
   const now = Date.now();
+  const today = todayEtYmd();
+  const currentVixBucket = vixBucket(vix);
   if (
     lottoTicketCache &&
+    lottoTicketCache.date === today &&
+    lottoTicketCache.vixBucket === currentVixBucket &&
     now - lottoTicketCache.at < 60_000 &&
     Math.abs(lottoTicketCache.spot - spot) < 8 &&
     lottoTicketCache.dir === direction
@@ -121,7 +147,7 @@ export async function buildLottoOptionTicket(
   const maxSpread = playLottoChainMaxSpreadPct();
   const minOtmPts = playLottoTargetPts();
   const minPremium = Number(process.env.SPX_LOTTO_MIN_PREMIUM ?? 0.2);
-  const maxPremium = Number(process.env.SPX_LOTTO_MAX_PREMIUM ?? 0.85);
+  const maxPremium = lottoMaxPremium(vix);
   const minOi = Number(process.env.SPX_LOTTO_CHAIN_MIN_OI ?? 5);
 
   const contracts = await fetchOdteContracts(spot, todayEtYmd());
@@ -174,7 +200,7 @@ export async function buildLottoOptionTicket(
   const lo = bid ?? (mid != null ? mid * 0.92 : null);
   const hi = ask ?? (mid != null ? mid * 1.08 : null);
   const premium_range =
-    lo != null && hi != null ? `$${lo.toFixed(2)}–$${hi.toFixed(2)}` : "~$0.35–$0.65";
+    lo != null && hi != null ? `$${lo.toFixed(2)}–$${hi.toFixed(2)}` : "~$0.50–$1.50";
 
   const ticket: OptionTicket = {
     underlying: "SPXW",
@@ -193,6 +219,6 @@ export async function buildLottoOptionTicket(
     block_reason: null,
   };
 
-  lottoTicketCache = { at: now, spot, dir: direction, ticket };
+  lottoTicketCache = { at: now, spot, dir: direction, date: today, vixBucket: currentVixBucket, ticket };
   return ticket;
 }

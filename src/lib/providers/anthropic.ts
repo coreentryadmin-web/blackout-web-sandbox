@@ -30,7 +30,7 @@ export function anthropicConfigured(): boolean {
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  return new Anthropic({ apiKey: key, maxRetries: 3 });
+  return new Anthropic({ apiKey: key, maxRetries: 3, timeout: 20_000 });
 }
 
 function resolveModel(explicit?: string): string {

@@ -35,7 +35,17 @@ export function isSpxRthActive(now = new Date(), status?: PolygonMarketNow | nul
 
   if (status) {
     if (status.market === "closed") return false;
-    if (status.market === "open") return true;
+    if (status.market === "open") {
+      // MEDIUM: cross-check PT time + weekday — a stale Polygon response
+      // must not make the engine think the market is open on a weekend or
+      // outside regular trading hours.
+      const mins = pt.hour * 60 + pt.minute;
+      const open = 6 * 60 + 30;
+      const close = 13 * 60;
+      if (pt.day === 0 || pt.day === 6) return false;
+      if (mins < open || mins >= close) return false;
+      return true;
+    }
     if (status.market === "extended-hours") return false;
     if (status.earlyHours) return false;
     if (status.afterHours) return false;

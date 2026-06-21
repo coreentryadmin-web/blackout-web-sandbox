@@ -12,8 +12,14 @@ export type ThesisBreakDetail = {
 /**
  * Thesis break uses OR logic (either condition flattens):
  *
- * LONG:  score <= entry - dropPts  OR  score <= -floor
- * SHORT: score >= entry + dropPts  OR  score >= +floor
+ * LONG:  score <= entry - effectiveDrop  OR  score <= -floor
+ * SHORT: score >= entry + effectiveDrop  OR  score >= +floor
+ *
+ * effectiveDrop = max(dropPts, |entryScore| * 0.25)
+ * This prevents hair-trigger thesis breaks on low-confidence entries (e.g. score -50)
+ * where a flat dropPts=12 would only allow a 12pt reversal before breaking the thesis.
+ * With the 25% floor, a -50 entry requires a 12.5pt reversal minimum (capped by dropPts
+ * if dropPts is already larger than 25% of entryScore).
  */
 export function evaluateThesisBreak(
   direction: SpxPlayDirection,
@@ -23,9 +29,12 @@ export function evaluateThesisBreak(
 ): ThesisBreakDetail {
   const dropPts = opts?.dropPts ?? playThesisBreakDropPts();
   const floor = opts?.floor ?? playThesisBreakScore();
+  // Effective drop: at least 25% of the entry score magnitude so low-confidence
+  // entries aren't killed by a small noise reversal.
+  const effectiveDrop = Math.max(dropPts, Math.abs(entryScore) * 0.25);
 
   if (direction === "long") {
-    const dropThreshold = entryScore - dropPts;
+    const dropThreshold = entryScore - effectiveDrop;
     const floorThreshold = -floor;
     const dropBroken = score <= dropThreshold;
     const floorBroken = score <= floorThreshold;
@@ -35,7 +44,7 @@ export function evaluateThesisBreak(
     return { broken, threshold, trigger };
   }
 
-  const dropThreshold = entryScore + dropPts;
+  const dropThreshold = entryScore + effectiveDrop;
   const floorThreshold = floor;
   const dropBroken = score >= dropThreshold;
   const floorBroken = score >= floorThreshold;

@@ -29,7 +29,12 @@ export function mergeTapeItems(
     out.push(t);
     if (out.length >= max) break;
   }
-  return out.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  // Sort by premium descending (biggest prints float to the top) with time as tiebreaker
+  return out.sort((a, b) => {
+    const premDiff = (b.premium ?? 0) - (a.premium ?? 0);
+    if (premDiff !== 0) return premDiff;
+    return new Date(b.time).getTime() - new Date(a.time).getTime();
+  });
 }
 
 export function flowAlertToTapeItem(alert: {
@@ -61,7 +66,11 @@ function level(
 }
 
 /** Sticky session structure — pulse gaps must not drop HOD/PDH/VWAP from the desk. */
-const STRUCTURE_TTL_MS = 30 * 60 * 1000;
+// ISSUE-22: TTL is session-date-based (not time-based) so the cache persists through
+// the entire trading session and only resets at the session boundary, preventing a
+// 1-2 poll cycle VWAP/EMA gap during active trading.
+const STRUCTURE_REDIS_KEY = "desk:sticky:merge_structure";
+const STRUCTURE_REDIS_TTL_SEC = 2 * 60 * 60; // 2 hours
 
 const lastGoodStructure: {
   hod: number | null;
@@ -98,21 +107,50 @@ export function resetSpxDeskMergeCache(): void {
   lastGoodStructureAt = 0;
 }
 
+/** C7: Load structure from Redis so workers that haven't run a full desk build
+ *  can still serve non-null VWAP/HOD/LOD/EMAs (cross-instance sticky state). */
+async function loadStructureFromRedis(): Promise<void> {
+  if (!process.env.REDIS_URL?.trim()) return;
+  try {
+    const { sharedCacheGet } = await import("@/lib/shared-cache");
+    const saved = await sharedCacheGet<{
+      data: typeof lastGoodStructure;
+      sessionDate: string;
+    }>(STRUCTURE_REDIS_KEY);
+    if (saved && saved.sessionDate === todayEtYmd()) {
+      (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>).forEach((key) => {
+        if (lastGoodStructure[key] == null && saved.data[key] != null) {
+          lastGoodStructure[key] = saved.data[key];
+        }
+      });
+      if (lastGoodStructureAt === 0) lastGoodStructureAt = Date.now();
+      if (lastGoodStructureSessionDate == null) lastGoodStructureSessionDate = saved.sessionDate;
+    }
+  } catch {
+    // keep in-process state on Redis failure
+  }
+}
+
+/** C7: Fire-and-forget — persist local structure to Redis for other workers. */
+function publishStructureToRedis(): void {
+  if (!process.env.REDIS_URL?.trim()) return;
+  void import("@/lib/shared-cache").then(({ sharedCacheSet }) =>
+    sharedCacheSet(
+      STRUCTURE_REDIS_KEY,
+      { data: { ...lastGoodStructure }, sessionDate: todayEtYmd() },
+      STRUCTURE_REDIS_TTL_SEC
+    )
+  );
+}
+
 function ensureStructureCacheFresh(): void {
   const today = todayEtYmd();
+  // ISSUE-22: Reset only on session-date change, not on time-based TTL.
+  // This avoids a 1-2 poll gap in VWAP/EMA signals during active trading.
   if (lastGoodStructureSessionDate != null && lastGoodStructureSessionDate !== today) {
     resetSpxDeskMergeCache();
     lastGoodStructureSessionDate = today;
     return;
-  }
-  if (
-    lastGoodStructureAt > 0 &&
-    Date.now() - lastGoodStructureAt > STRUCTURE_TTL_MS
-  ) {
-    (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>).forEach((key) => {
-      lastGoodStructure[key] = null;
-    });
-    lastGoodStructureAt = 0;
   }
   if (lastGoodStructureSessionDate == null) {
     lastGoodStructureSessionDate = today;
@@ -131,12 +169,24 @@ function seedStructureCacheFromBase(base: {
   sma50: number | null;
   sma200: number | null;
 }): void {
+  // C7: If local structure is entirely null (worker that hasn't run a full desk build),
+  // attempt to load from Redis before seeding from base. Fire-and-forget async load;
+  // subsequent calls will pick up the Redis-populated values.
+  const localIsEmpty = (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>)
+    .every((k) => lastGoodStructure[k] == null);
+  if (localIsEmpty) {
+    void loadStructureFromRedis();
+  }
+
+  let updated = false;
   (Object.keys(lastGoodStructure) as Array<keyof typeof lastGoodStructure>).forEach((key) => {
     const val = base[key];
     if (lastGoodStructure[key] == null && val != null) {
       lastGoodStructure[key] = val;
+      updated = true;
     }
   });
+  if (updated) publishStructureToRedis();
 }
 
 function stickyStructureLevel(
@@ -147,9 +197,13 @@ function stickyStructureLevel(
   ensureStructureCacheFresh();
   const next = pulseVal ?? baseVal ?? lastGoodStructure[key];
   if (next != null) {
+    const changed = lastGoodStructure[key] !== next;
     lastGoodStructure[key] = next;
     lastGoodStructureAt = Date.now();
     lastGoodStructureSessionDate = todayEtYmd();
+    // C7: Persist updated structure to Redis (fire-and-forget) so other workers
+    // can pick up VWAP/HOD/LOD/EMAs without having run a full desk build.
+    if (changed) publishStructureToRedis();
   }
   return next;
 }
@@ -199,6 +253,9 @@ export function mergeFlowIntoDesk(base: SpxDeskPayload, flow: SpxDeskFlow): SpxD
     flow.strike_stacks?.length
       ? flow.strike_stacks
       : computeFlowStrikeStacks(spx_flows);
+  // ISSUE-19: levels here use base.lod/hod/vwap, which may be stale from the full desk
+  // build. This is intentional — mergePulseIntoDesk runs AFTER this and overwrites levels
+  // with the fresh pulse values. Do not change this merge order or levels will regress.
   return {
     ...base,
     polled_at: flow.polled_at,
@@ -287,6 +344,9 @@ export function mergePulseIntoDesk(
     market_label: pulse.market_label ?? base.market_label,
     as_of: pulse.polled_at,
     polled_at: pulse.polled_at,
+    // ISSUE-18+20: Recompute above_gamma_flip with current price so price crossings
+    // of the gamma flip level are reflected after each pulse — base value would be stale.
+    above_gamma_flip: base.gamma_flip != null ? price > base.gamma_flip : base.above_gamma_flip,
     gex_walls: recalcGexWallDistances(base.gex_walls, price),
     levels: buildLevels({
       price,

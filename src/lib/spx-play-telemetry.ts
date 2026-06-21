@@ -7,6 +7,7 @@ import {
   promoteUnderperformScoreBoost,
 } from "@/lib/spx-play-config";
 import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/lib/spx-play-outcomes";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 export type AdaptivePlayGates = {
   active: boolean;
@@ -19,16 +20,18 @@ export type AdaptivePlayGates = {
   summary: string;
 };
 
-let cached: { at: number; gates: AdaptivePlayGates } | null = null;
+// TL-3: Cache key includes session date so the cache auto-invalidates on date change.
+let cached: { key: string; gates: AdaptivePlayGates; at: number } | null = null;
 const CACHE_MS = 5 * 60_000;
 
 export async function loadAdaptivePlayGates(): Promise<AdaptivePlayGates> {
   const now = Date.now();
-  if (cached && now - cached.at < CACHE_MS) return cached.gates;
+  const cacheKey = todayEtYmd();
+  if (cached && cached.key === cacheKey && now - cached.at < CACHE_MS) return cached.gates;
 
   const stats = await fetchPlayOutcomeStats();
   const gates = computeAdaptiveGates(stats);
-  cached = { at: now, gates };
+  cached = { key: cacheKey, at: now, gates };
   return gates;
 }
 
@@ -59,7 +62,10 @@ export function computeAdaptiveGates(stats: PlayOutcomeStats): AdaptivePlayGates
 
     if (promote.count >= minPathTrades && cold.count >= minPathTrades) {
       const gap = cold.win_rate - promote.win_rate;
-      if (gap >= promoteUnderperformGap()) {
+      // TL-1: If promote win_rate has recovered above 30%, reset any penalty.
+      if (promote.win_rate > 0.3) {
+        promote_min_score_boost = 0;
+      } else if (gap >= promoteUnderperformGap()) {
         promote_min_score_boost = promoteUnderperformScoreBoost();
         promote_requires_claude = true;
         notes.push(
@@ -68,10 +74,20 @@ export function computeAdaptiveGates(stats: PlayOutcomeStats): AdaptivePlayGates
       }
       if (gap >= promoteUnderperformGap() * 2 && promote.win_rate < 0.35) {
         promote_blocked = true;
+        // TL-2: When promote is blocked, clear boost to avoid dual confusing signals.
+        promote_min_score_boost = 0;
         promote_block_reason = `WATCH→ENTRY underperforming (${(promote.win_rate * 100).toFixed(0)}% win rate)`;
         notes.push("promote path blocked until stats improve");
       }
-    } else if (promote.count >= Math.max(3, Math.floor(minPathTrades / 2)) && promote.win_rate === 0) {
+    }
+    // TL-1: Only apply early-run penalty after at least minPathTrades samples —
+    // sparse early data is too noisy to warrant a permanent +5 boost.
+    // No penalty for fewer samples; if win_rate > 0.3 at any sample size, no penalty.
+    if (
+      promote.count >= minPathTrades &&
+      promote.win_rate === 0 &&
+      cold.count < minPathTrades
+    ) {
       promote_min_score_boost = Math.max(promote_min_score_boost, 5);
       notes.push("early promote losses — +5 score on promote");
     }

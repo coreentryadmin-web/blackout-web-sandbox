@@ -127,10 +127,7 @@ export function evaluatePlayGates(
   }
 
   if (confluence.weighted_conflicts >= playWeightedConflictBlockMin()) {
-    const idea = buildPlayIdeaIntel(desk, confluence);
-    blocks.push(
-      idea ?? `Tape's mixed — waiting for cleaner ${dir === "long" ? "call" : dir === "short" ? "put" : "0DTE"} alignment`
-    );
+    blocks.push("Tape's mixed — too many conflicting signals for clean entry");
   }
 
   if (gradeRank(confluence.grade) < playMinGradeRank()) {
@@ -149,14 +146,16 @@ export function evaluatePlayGates(
   }
 
   const etMins = etMinutes(new Date());
-  if (etMins < 7 * 60 + 0) {
+  if (buyIntent && etMins < 7 * 60 + 0) {
     blocks.push("Before 7:00 AM ET — opening volatility, no entries");
   }
 
   const openingRangeEnd = etClock(9, 30) + playOpeningRangeMinutes();
   if (buyIntent && etMins < openingRangeEnd) {
-    const endMin = 30 + playOpeningRangeMinutes();
-    blocks.push(`Opening range — no BUY until ${formatEtTime(9, endMin)} (WATCH ok)`);
+    const endMinRaw = 30 + playOpeningRangeMinutes();
+    const endHour = 9 + Math.floor(endMinRaw / 60);
+    const endMinClamped = endMinRaw % 60;
+    blocks.push(`Opening range — no BUY until ${formatEtTime(endHour, endMinClamped)} (WATCH ok)`);
   }
 
   if (abs < playWatchMinScore()) {

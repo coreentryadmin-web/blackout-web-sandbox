@@ -365,7 +365,7 @@ function parseCommentaryJson(raw: string): SpxCommentaryResult | null {
       headline: String(parsed.headline ?? "Desk update"),
       bias: validBias,
       body: String(parsed.body ?? ""),
-      watch: Array.isArray(parsed.watch) ? parsed.watch.map(String).slice(0, 5) : [],
+      watch: Array.isArray(parsed.watch) ? parsed.watch.map(String).slice(0, 6) : [],
       changed: Array.isArray(parsed.changed) ? parsed.changed.map(String).slice(0, 6) : [],
       as_of: new Date().toISOString(),
     };
@@ -443,61 +443,79 @@ export async function generateSpxCommentary(
     return null;
   }
 
-  const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a 0DTE SPX index options desk. Write a live desk commentary update for members watching the dashboard.
+  // Determine session phase from as_of timestamp for time-context in the prompt
+  const asOfMs = desk.as_of ? new Date(desk.as_of).getTime() : Date.now();
+  const etHour = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getHours();
+  const etMin  = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getMinutes();
+  const etMins = etHour * 60 + etMin;
+  const sessionPhase =
+    etMins < 570  ? "pre-market"           // before 9:30
+    : etMins < 600  ? "opening-range"      // 9:30–10:00
+    : etMins < 660  ? "mid-morning"        // 10:00–11:00
+    : etMins < 780  ? "midday-grind"       // 11:00–13:00
+    : etMins < 870  ? "afternoon"          // 13:00–14:30
+    : etMins < 930  ? "power-hour"         // 14:30–15:30
+    :                 "final-30";          // 15:30–16:00
 
-ACCURACY FIRST: Every number, strike, premium, and stack detail must come from the JSON below or the WHAT CHANGED list. No invented flow, no trader psychology, no hype. If data is missing, say so briefly and skip that topic.
+  const prompt = `You are the lead mentor for BlackOut SPX-Sniper — a real-money 0DTE SPX options desk. Write a live desk commentary for members who are actively watching the market right now.
 
-You receive the COMPLETE desk snapshot as JSON. Use each non-empty section. Do not fabricate to fill the template.
+SESSION PHASE: ${sessionPhase} (ET). Tailor your commentary tone and setup logic to this phase:
+- opening-range: volatility is highest, avoid chasing, wait for range break with confirmation
+- mid-morning: best setups — look for VWAP reclaim/reject + GEX wall reaction
+- midday-grind: low vol, theta burns fast, lighter sizing or no trade
+- afternoon/power-hour: directional momentum setups, watch gamma flip for squeeze risk
+- final-30: avoid initiating new 0DTE positions unless already in trade
 
-DASHBOARD SECTIONS IN THE JSON (use each when populated):
-0. confluence — rule-based 0DTE scoring. Bias should align with confluence when present; if you disagree, say why using feed facts only.
-1. price_action + moving_averages — SPX vs VWAP, HOD/LOD, PDH/PDL, EMAs/SMAs, regime
-2. support_resistance_levels — ladder with distance_pct
-3. dealer_gex + gex_walls_0dte — net GEX, king, max pain, γ flip, gamma regime, wall strikes + net_gex
-4. dark_pool — prints, bias, PCR (cite only listed prints)
-5. live_tape — recent flow/DP lines from tape
-6. strike_stacks — UW-verified only. If strike_stacks.stacks is non-empty: cite top stack using summary + premiums[] — strike, expiry, alert_count, total_premium, kind (RepeatedHits vs same-strike accumulation). If empty, do NOT mention a stack.
-7. spx_option_flows — individual alerts (alert_rule, trade_count when present)
-8. flow_0dte — call/put/net premium skew
-9. market_tide + nope
-10. volatility — VIX, IV rank, term structure
-11. internals — TICK, TRIN, ADD
-11b. market_breadth — A/D ratio, % advancing, % above VWAP, new highs/lows
-11c. greek_exposure_by_expiry — which expiry pins dealer gamma (e.g. 0DTE share)
-11d. mag7_greek_flow — mega-cap dealer gamma overlay for index context
-11e. macro_indicators — GDP/CPI/unemployment trend snapshots
-11f. flow_by_expiry / net_flow_by_expiry — call/put net per DTE bucket
-12. net_premium_velocity
-13. oi_changes
-14. mega_cap_stocks
-15. macro_calendar_today
-16. news_headlines — cite title only if relevant; do not infer market impact beyond headline
+ACCURACY FIRST: Every number, strike, premium, and stack detail must come from the JSON below or WHAT CHANGED. No invented data, no psychology, no hype. If a section is missing or null, skip it.
 
-CURRENT DESK (JSON):
+DESK DATA SECTIONS (use each that is populated):
+0. confluence — scoring engine grade (A+/A/B/C/D). If grade A or higher, state the grade and the top contributing factors.
+1. price_action + moving_averages — price vs VWAP, HOD/LOD, PDH/PDL, EMAs, regime
+2. support_resistance_levels — cite the 2 nearest support + 2 nearest resistance with distance
+3. dealer_gex + gex_walls_0dte — net GEX, γ flip, king, max pain, regime, wall strikes with net_gex
+4. dark_pool — bias + PCR. Cite prints only from the listed prints array; do not invent.
+5. live_tape — cite the most recent significant flow line if present
+6. strike_stacks — ONLY describe if stacks array is non-empty. Use summary + total_premium verbatim.
+7. spx_option_flows — individual sweep/block alerts (alert_rule, premium)
+8. flow_0dte — call/put/net premium. Calculate the skew ratio = call/(call+put). State it explicitly.
+9. market_tide + nope — direction + net values
+10. volatility — VIX level, IV rank, term structure (contango vs backwardation)
+11. internals — TICK (above/below 0), TRIN (above/below 1.0), ADD
+12. market_breadth — A/D ratio, % advancing
+13. macro_calendar_today — any events that could spike VIX today
+14. news_headlines — cite title only if directly SPX-relevant; no inferred market impact
+15. mega_cap_stocks — leaders/laggards if notable rotation
+
+CURRENT DESK SNAPSHOT (JSON):
 ${JSON.stringify(ctx)}
 
-WHAT CHANGED SINCE LAST UPDATE (use for changed[] and change bullets — do not invent changes):
+WHAT CHANGED SINCE LAST UPDATE:
 ${delta.map((d) => `- ${d}`).join("\n")}
 
-Respond with ONLY valid JSON (no markdown fences):
+Respond with ONLY valid JSON (no markdown fences, no trailing commas):
 {
-  "headline": "One factual line — max 14 words, anchored to the dominant desk fact",
+  "headline": "One factual line — max 16 words, anchored to the single most important desk fact right now",
   "bias": "bullish" | "bearish" | "neutral",
-  "body": "8-12 short bullet lines separated by \\n. Facts only from JSON. When data exists cover: (a) price vs VWAP + nearest S/R strikes, (b) GEX king/γ flip/regime + wall strikes, (c) dark pool bias + one print if listed, (d) live_tape line if present, (e) strike_stacks top stack ONLY if stacks non-empty — exact premiums, (f) 0DTE flow skew numbers, (g) VIX/IV, (h) mega-cap if notable, (i) one change from delta, (j) 15-30 min levels to watch. Direct mentor tone — no hype, no disclaimers, no guessing who traded.",
-  "watch": ["specific SPX strike/level from JSON", "second level", "third level"],
-  "changed": ["items from WHAT CHANGED — paraphrase ok, facts must match"]
+  "body": "14-18 bullet lines separated by \\n. CRITICAL ORDER — most actionable info FIRST so it is visible above the fold without scrolling:\\n• PRICE: SPX X vs VWAP Y — above/below by Z pts. Regime. HOD/LOD vs PDH/PDL.\\n• LEVELS: nearest 2 supports (X pts below, Y pts below) + 2 resistances (X pts above, Y pts above). Exact strikes.\\n• GEX: γ flip at X — price [above=dealer dampens/below=vol fuel]. King at X, max pain X, net GEX [pos/neg]. Top 0DTE wall: [strike, net_gex].\\n• SETUP: Based on ALL data — 'Direction: [long/short/no trade]. Trigger: [e.g. hold above X + VWAP reclaim]. Strike zone: [ATM/OTM guidance based on IV rank — e.g. IV rank >50 = buy spread not naked]. Stop: [specific level]. Target: [next level]. Edge: [2-3 data points that create the edge].' Grade B → conditional ('If X then...'). Grade C/D or midday-grind → 'No clean setup — watching for [condition].'\\n• FLIP RISK: The one specific level/reading that kills this bias right now — be precise with numbers. No vague statements.\\n• FLOW SKEW: 0DTE call $X vs put $X = XX% call skew. Tide [direction] net $X. NOPE [value] — confirms/diverges?\\n• TAPE/STACKS: Top 3 prints from live_tape (kind, label, premium). If stacks non-empty: strike, type, total_premium, summary verbatim.\\n• DARK POOL: bias + PCR. Up to 2 specific prints from the prints array (strike, premium, side).\\n• VIX/IV: VIX X (chg X%). IV rank X% — [rich→spreads, cheap→naked]. Term: [contango/backwardation] + 0DTE implication.\\n• INTERNALS: TICK X ([buy/sell pressure]), TRIN X ([bullish/bearish breadth]), ADD X. Confirms or diverges from price?\\n• MAs: EMA20 X, EMA50 X, EMA200 X — price X pts [above/below] 20. Are EMAs acting as dynamic support?\\n• BREADTH: A/D ratio X, X% advancing, X% above VWAP. Volume leaders/laggards if notable rotation.\\n• SPX FLOWS: notable sweep/block from spx_option_flows — alert_rule, strike, premium, direction.\\n• MEGA-CAPS: who leads/lags and SPX implication.\\n• MACRO: events today that could spike VIX. Calendar risks.\\n• NEWS: SPX-relevant headline if present.\\nMentor tone. Every number from JSON. No disclaimers. Write as if briefing a trader 30 seconds before the open.",
+  "watch": [
+    "KEY LEVEL: exact strike and why it is the single most important level right now",
+    "SUPPORT: exact strike — what breaks structurally if price loses it",
+    "RESISTANCE: exact strike — what sets up if price clears it",
+    "GAMMA: γ flip or key GEX wall with specific implication for direction",
+    "TRIGGER: specific condition that would make you enter the SETUP above"
+  ],
+  "changed": ["meaningful items from WHAT CHANGED — paraphrase ok, numbers must match data"]
 }
 
-Rules:
-- SPX index prices only. Round to .00.
-- Premiums: ${fmtPrem(1_500_000)} style when large.
-- Null/empty section → skip. Never invent.
-- strike_stacks.stacks empty → no stack language in body.
-- changed[] must reflect WHAT CHANGED; if nothing material, say tape quiet.
-- bias must be defensible from confluence, flow_0dte net, or price vs VWAP — not vibes.
-- Max 280 words in body.`;
+Hard rules:
+- SPX prices round to .00. Premiums use ${fmtPrem(1_500_000)} format.
+- Null/empty section → skip entirely. Never invent numbers.
+- strike_stacks.stacks empty → zero stack language anywhere.
+- bias must be justified by confluence grade, flow_0dte skew, OR price vs VWAP+γflip — not by feel.
+- SETUP bullet: if grade ≥ A → give full specific setup. Grade B → give conditional setup ('If X then...'). Grade C/D → 'No clean setup — monitoring [specific condition].'
+- Write as if you are the most experienced 0DTE trader on the desk giving a live briefing to a junior trader who is about to size in.`;
 
-  const raw = await anthropicText(prompt, 1800, undefined, {
+  const raw = await anthropicText(prompt, 3000, undefined, {
     model: COMMENTARY_MODEL,
     output_config: {
       format: {

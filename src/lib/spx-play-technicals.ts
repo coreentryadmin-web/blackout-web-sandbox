@@ -25,8 +25,10 @@ export type PlayTechnicals = {
     vwap_lost: boolean;
   };
   mtf: {
-    m3_confirms_long: boolean;
-    m3_confirms_short: boolean;
+    /** null when no meaningful key level exists (VWAP, PDH, PDL all null) */
+    m3_confirms_long: boolean | null;
+    /** null when no meaningful key level exists (VWAP, PDH, PDL all null) */
+    m3_confirms_short: boolean | null;
     m5_confirms_long: boolean;
     m5_confirms_short: boolean;
   };
@@ -124,8 +126,8 @@ export async function buildPlayTechnicals(
       vwap_lost: false,
     },
     mtf: {
-      m3_confirms_long: false,
-      m3_confirms_short: false,
+      m3_confirms_long: null,
+      m3_confirms_short: null,
       m5_confirms_long: false,
       m5_confirms_short: false,
     },
@@ -179,9 +181,12 @@ export async function buildPlayTechnicals(
     vwap_lost: vwap != null && m3Close != null && m3Close <= vwap - buf && price <= vwap,
   };
 
-  const level = vwap ?? ctx.pdh ?? ctx.pdl ?? price;
-  const m3Long = m3Close != null && m3Close >= level + buf;
-  const m3Short = m3Close != null && m3Close <= level - buf;
+  // ISSUE-13: When all of VWAP, PDH, PDL are null, level falls back to price itself.
+  // m3Close >= price + 0.25 would then trivially fire. Return null for m3Long/m3Short
+  // when no meaningful key level exists to compare against.
+  const levelResolved = vwap ?? ctx.pdh ?? ctx.pdl ?? null;
+  const m3Long = m3Close != null && levelResolved != null ? m3Close >= levelResolved + buf : null;
+  const m3Short = m3Close != null && levelResolved != null ? m3Close <= levelResolved - buf : null;
   const m5Long = m5Trend === "up";
   const m5Short = m5Trend === "down";
   const m5RsiWarning =

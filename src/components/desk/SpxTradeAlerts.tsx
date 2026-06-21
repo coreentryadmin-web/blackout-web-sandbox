@@ -24,6 +24,45 @@ type Props = {
   sessionActive?: boolean;
 };
 
+function playDeskAlert(type: "buy" | "watch") {
+  try {
+    const AudioCtx = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (type === "buy") {
+      // Two-tone ascending beep for BUY
+      osc.frequency.value = 660;
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+      // Second tone
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.frequency.value = 880;
+      gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc2.start(ctx.currentTime + 0.15);
+      osc2.stop(ctx.currentTime + 0.55);
+    } else {
+      // Single soft tone for WATCH
+      osc.frequency.value = 440;
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    }
+  } catch {
+    // Audio API unavailable (SSR, permissions)
+  }
+}
+
 type HistoryRow = SpxPlayPayload & { id: string };
 
 function actionClass(action: SpxPlayAction): string {
@@ -31,7 +70,7 @@ function actionClass(action: SpxPlayAction): string {
     case "BUY":
       return "spx-alert-buy-call";
     case "SELL":
-      return "spx-alert-buy-put";
+      return "spx-alert-sell";
     case "HOLD":
     case "TRIM":
       return "spx-alert-hold";
@@ -64,7 +103,7 @@ function historyClass(action: SpxPlayAction): string {
     case "BUY":
       return "spx-history-buy-call";
     case "SELL":
-      return "spx-history-buy-put";
+      return "spx-history-sell";
     case "HOLD":
     case "TRIM":
       return "spx-history-hold";
@@ -199,6 +238,20 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
   const confirmationLayer = useStablePlayConfirmations(play);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const lastIdRef = useRef<string>("");
+  const prevActionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const action = play?.action;
+    const prev = prevActionRef.current;
+    prevActionRef.current = action ?? null;
+
+    if (!action || !prev) return; // No alert on first load
+    if (action === "BUY" && prev !== "BUY") {
+      playDeskAlert("buy");
+    } else if (action === "WATCHING" && prev === "SCANNING") {
+      playDeskAlert("watch");
+    }
+  }, [play?.action]);
 
   useEffect(() => {
     if (!play || play.action === "SCANNING") return;
@@ -216,6 +269,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     Boolean(confirmationLayer) &&
     (play?.action === "SCANNING" ||
       play?.action === "WATCHING" ||
+      play?.action === "BUY" ||
       (!play && playRefreshing));
 
   return (

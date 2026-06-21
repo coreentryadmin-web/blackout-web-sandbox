@@ -7,6 +7,9 @@ import { recordAdminRouteError } from "@/lib/admin-route-errors";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  // Retrieve actor once; requireAdminApi also calls getAdminApiActor internally
+  // so we cache the result here to avoid a second round-trip on live requests.
+  const actor = await getAdminApiActor();
   const denied = await requireAdminApi();
   if (denied) return denied;
 
@@ -18,17 +21,20 @@ export async function GET(req: NextRequest) {
   try {
     const dashboard = await fetchSpxAdminDashboard({ liveEngine: live, dryRun });
     if (live) {
-      const actor = await getAdminApiActor();
-      void logAdminAction({
-        actorUserId: actor?.userId,
-        actorEmail: actor?.email,
-        action: "spx_live_engine",
-        detail: {
-          play_action: dashboard.play?.action ?? null,
-          direction: dashboard.play?.direction ?? null,
-          dry_run: dryRun,
-        },
-      });
+      try {
+        await logAdminAction({
+          actorUserId: actor?.userId,
+          actorEmail: actor?.email,
+          action: "spx_live_engine",
+          detail: {
+            play_action: dashboard.play?.action ?? null,
+            direction: dashboard.play?.direction ?? null,
+            dry_run: dryRun,
+          },
+        });
+      } catch (e) {
+        console.error('[admin-spx] audit log failed:', e);
+      }
     }
     return NextResponse.json(dashboard);
   } catch (error) {

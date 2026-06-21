@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
@@ -13,6 +14,18 @@ type Props = {
 
 export function SpxSniperHeader({ desk, live }: Props) {
   const bull = (desk?.spx_change_pct ?? 0) >= 0;
+
+  const polledAtMs = desk?.polled_at
+    ? new Date(desk.polled_at).getTime()
+    : desk?.as_of
+    ? new Date(desk.as_of).getTime()
+    : 0;
+  const [nowMs, setNowMs] = useState(Date.now);
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 10_000); // check every 10s
+    return () => clearInterval(id);
+  }, []);
+  const isStale = live && polledAtMs > 0 && (nowMs - polledAtMs) > 90_000;
 
   return (
     <header className="spx-sniper-command">
@@ -119,13 +132,19 @@ export function SpxSniperHeader({ desk, live }: Props) {
         </div>
 
         {live && (desk?.polled_at ?? desk?.as_of) && (
-          <p className="spx-hero-desk-tick mt-4 font-mono text-[10px] tracking-wider">
-            Desk ·{" "}
-            {new Date(desk.polled_at ?? desk.as_of).toLocaleTimeString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-              second: "2-digit",
-            })}
+          <p className="spx-hero-desk-tick mt-4 font-mono text-[10px] tracking-wider flex items-center gap-2">
+            {isStale ? (
+              <span className="text-amber-400 font-semibold text-xs animate-pulse">⚠ STALE</span>
+            ) : (
+              <span className="text-neutral-400 text-xs">
+                Desk ·{" "}
+                {new Date(desk?.polled_at ?? desk?.as_of ?? "").toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </span>
+            )}
           </p>
         )}
       </div>

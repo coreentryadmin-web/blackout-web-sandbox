@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import { useEffect } from "react";
 import { fetchSpxLottoToday } from "@/lib/api";
 import { isLottoWindow } from "@/lib/spx-play-session-guards";
 
@@ -25,15 +26,41 @@ export function lottoPollIntervalMs(): number {
 /** Lotto track polls independently of main desk session — 7:00–10:30 AM ET only. */
 export function useSpxLotto() {
   const interval = lottoPollIntervalMs();
-  const { data, isValidating, isLoading } = useSWR("spx-lotto-today", fetchSpxLottoToday, {
+  const { data, isValidating, isLoading, mutate } = useSWR("spx-lotto-today", fetchSpxLottoToday, {
     refreshInterval: interval,
     refreshWhenHidden: false,
     refreshWhenOffline: false,
-    revalidateOnFocus: false,
+    // H-2: revalidateOnFocus so a tab focus after 10:30 refreshes the final expired state
+    // rather than showing stale data indefinitely (interval=0 after window closes).
+    revalidateOnFocus: true,
     revalidateOnReconnect: true,
     keepPreviousData: true,
     dedupingInterval: 5_000,
   });
+
+  // H-1: Schedule an immediate mutate() at 9:30 ET cash open so the interval dynamically
+  // switches from 60s (premarket) to 10s (open) without waiting for the next render cycle.
+  useEffect(() => {
+    const now = new Date();
+    const nyParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const h = Number(nyParts.find((p) => p.type === "hour")?.value ?? 0);
+    const m = Number(nyParts.find((p) => p.type === "minute")?.value ?? 0);
+    const s = Number(nyParts.find((p) => p.type === "second")?.value ?? 0);
+    const etSecondsNow = h * 3600 + m * 60 + s;
+    const cashOpenSeconds = 9 * 3600 + 30 * 60;
+    const msUntilOpen = (cashOpenSeconds - etSecondsNow) * 1000;
+    if (msUntilOpen <= 0) return; // already past cash open
+    const timer = setTimeout(() => {
+      void mutate();
+    }, msUntilOpen);
+    return () => clearTimeout(timer);
+  }, [mutate]);
 
   return {
     lotto: data?.lotto ?? null,

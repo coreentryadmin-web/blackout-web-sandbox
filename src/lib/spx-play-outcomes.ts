@@ -28,7 +28,7 @@ export type PlayEntrySnapshot = {
   opened_at: string;
 };
 
-export type PlayExitAction = "STOP" | "TARGET" | "THESIS" | "SESSION" | "THETA" | "UNKNOWN";
+export type PlayExitAction = "STOP" | "TARGET" | "THESIS" | "SESSION" | "THETA" | "TRAIL" | "UNKNOWN";
 
 export type PlayCloseSnapshot = {
   exit_price: number;
@@ -83,6 +83,14 @@ function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven"
   }
   if (close.was_loss || close.exit_action === "STOP" || close.exit_action === "THESIS") {
     return "loss";
+  }
+  // TRAIL = protected exit (breakeven lock or price-trail). A scratch or better is a
+  // managed win — count it toward win rate. Only classify as loss if slippage put us
+  // below entry despite the trail (should not happen in normal flow).
+  if (close.exit_action === "TRAIL") {
+    if (close.pnl_pts >= 0) return "win";
+    if (close.pnl_pts <= -1) return "loss";
+    return "breakeven";
   }
   if (close.exit_action === "TARGET" || close.pnl_pts >= 2) return "win";
   if (close.pnl_pts <= -1) return "loss";

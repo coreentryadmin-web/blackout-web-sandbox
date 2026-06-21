@@ -7,7 +7,8 @@ export function etMinutes(now = new Date()): number {
     minute: "numeric",
     hour12: false,
   }).formatToParts(now);
-  const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  // LOW-26: some Node.js/ICU builds return "24" for midnight with hour12:false.
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
   const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
   return h * 60 + m;
 }

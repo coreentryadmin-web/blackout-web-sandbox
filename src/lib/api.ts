@@ -221,23 +221,29 @@ export type SpxCommentaryResult = {
   as_of: string;
 };
 
+export type SpxCommentaryResponse = {
+  commentary: SpxCommentaryResult;
+  window_slot: number;
+  next_refresh_ms: number;
+};
+
 /** Claude live desk commentary — requires auth */
 export async function requestSpxCommentary(
   desk: SpxDeskPayload,
   previous?: Partial<SpxDeskPayload> | null
-): Promise<SpxCommentaryResult> {
+): Promise<SpxCommentaryResponse> {
+  // previous is no longer sent — server reads last-window state from Redis
   const res = await fetch("/api/market/spx/commentary", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ desk, previous }),
+    body: JSON.stringify({ desk }),
     cache: "no-store",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? `Commentary → ${res.status}`);
   }
-  const data = (await res.json()) as { commentary: SpxCommentaryResult };
-  return data.commentary;
+  return res.json() as Promise<SpxCommentaryResponse>;
 }
 
 /** Full SPX-Sniper desk — Polygon + UW dealer/flow (slower lane, ~10s). */

@@ -530,7 +530,9 @@ function buildUnifiedTape(
       side: isPut ? "put" : "call",
       time: f.alerted_at,
       label: `${isPut ? "PUT" : "CALL"} ${f.strike}`,
-      premium: f.premium,
+      // ISSUE-35: null premium from DB propagates as null typed as number. In
+      // spx-signals.ts tapeSkew, `bull += t.premium` then produces NaN. Guard here.
+      premium: f.premium ?? 0,
       detail: `${f.ticker} · ${f.direction}`,
     });
   }
@@ -598,7 +600,26 @@ async function fetchSpxDeskFlowAlerts(limit = 32): Promise<SpxFlowBrief[]> {
   return mapped;
 }
 
+// ISSUE-27: Both buildSpxDesk and buildSpxDeskFlow call fetchSpxDeskFlowAlertsWithDb(32)
+// independently. Deduplicate with a short-lived in-flight promise (10s window) so
+// concurrent callers share one UW round-trip per interval.
+let _flowAlertsInFlight: Promise<SpxFlowBrief[]> | null = null;
+let _flowAlertsFetchedAt = 0;
+const FLOW_ALERTS_DEDUP_MS = 10_000;
+
 async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]> {
+  const now = Date.now();
+  if (_flowAlertsInFlight && now - _flowAlertsFetchedAt < FLOW_ALERTS_DEDUP_MS) {
+    return _flowAlertsInFlight;
+  }
+  _flowAlertsFetchedAt = now;
+  _flowAlertsInFlight = _fetchSpxDeskFlowAlertsWithDbInner(limit).finally(() => {
+    _flowAlertsInFlight = null;
+  });
+  return _flowAlertsInFlight;
+}
+
+async function _fetchSpxDeskFlowAlertsWithDbInner(limit = 32): Promise<SpxFlowBrief[]> {
   const fromUw = await fetchSpxDeskFlowAlerts(limit);
   if (!dbConfigured()) return fromUw;
 
@@ -786,8 +807,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const session = sessionStatsFromMinuteBars(minuteBars);
   const prior = priorDayFromDailyBars(dailyBars);
   const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
-  const lod = session.lod ?? (intel?.lod as number | null) ?? spxSnap.price;
-  const hod = session.hod ?? (intel?.hod as number | null) ?? spxSnap.price;
+  const lod = session.lod ?? (intel?.lod as number | null) ?? null;
+  const hod = session.hod ?? (intel?.hod as number | null) ?? null;
 
   const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
   if (gexAnalysis.ranked_levels.length) {
@@ -1014,12 +1035,6 @@ async function fetchPriorDayCached(): Promise<{
   return { pdh: prior.pdh, pdl: prior.pdl, pdc: prior.pdc };
 }
 
-/** @deprecated use resolveDeskGap from gap-proxy */
-function gapFromPrice(price: number, pdc: number | null): number | null {
-  if (pdc == null || pdc <= 0 || price <= 0) return null;
-  return ((price - pdc) / pdc) * 100;
-}
-
 /** EMAs / VWAP / HOD/LOD — refreshed on a slower cadence so 1s pulse stays light. */
 async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStructureCache> {
   const now = Date.now();
@@ -1062,13 +1077,16 @@ function gexSnapshotForPrice(price: number) {
   const flipLevels = levelsForWalls.map((l) => ({ strike: l.strike, net_gex: l.net_gex }));
   const gammaFlip = computeGammaFlip(flipLevels, price) ?? lastGoodGammaFlip;
   const walls = topGexWalls(levelsForWalls, price, 6);
-  const finalWalls = walls.length ? walls : topGexWalls(lastGoodStrikeLevels, price, 6);
+  // ISSUE-41: The previous fallback `topGexWalls(lastGoodStrikeLevels, price, 6)` was
+  // identical to the primary call (levelsForWalls IS lastGoodStrikeLevels), so it always
+  // returned the same empty result. Use lastGoodGexWalls as the real cross-call fallback.
+  const finalWalls = walls.length ? walls : lastGoodGexWalls;
   const gRegime = gammaRegime(price, gammaFlip);
   return {
     gamma_flip: gammaFlip,
     above_gamma_flip: gammaFlip != null ? price > gammaFlip : false,
     gamma_regime: gRegime !== "unknown" ? gRegime : lastGoodGammaRegime,
-    gex_walls: finalWalls.length ? finalWalls : lastGoodGexWalls,
+    gex_walls: finalWalls,
   };
 }
 

@@ -35,6 +35,10 @@ export async function notifyOpsDiscord(input: {
   body: string;
   severity?: "critical" | "warning" | "info";
 }): Promise<void> {
+  // N-2: Warn if ops alerts will fall back to the play webhook (could pollute trade channel).
+  if (!process.env.DISCORD_OPS_WEBHOOK_URL) {
+    console.warn("[notify] DISCORD_OPS_WEBHOOK_URL not set — ops alerts will post to play channel");
+  }
   const url =
     process.env.DISCORD_OPS_WEBHOOK_URL?.trim() ||
     process.env.DISCORD_PLAY_WEBHOOK_URL?.trim();

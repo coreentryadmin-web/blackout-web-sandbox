@@ -14,7 +14,9 @@ export async function GET(req: NextRequest) {
     const rows = await fetchRecentSpxSignals(limit);
     return NextResponse.json({ rows });
   } catch (error) {
+    // ISSUE-30: Standardize error shape — clients should check HTTP status, not peek at
+    // a field. Return 502 with a clear error string; no rows array on error.
     console.error("[market/spx/signals]", error);
-    return NextResponse.json({ rows: [], error: "Failed to load signals" }, { status: 502 });
+    return NextResponse.json({ error: "Failed to load signals" }, { status: 502 });
   }
 }

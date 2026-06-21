@@ -147,28 +147,51 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     }
   }
 
+  // ISSUE-01: GEX support AND resistance could both fire when price is between two walls,
+  // adding +18 AND -18 simultaneously. They cancel the score but inflate conflict/agreeing
+  // counts, degrading the grade for rangebound markets.
+  // Fix: make them mutually exclusive — only score the nearer wall.
   const { support, resistance } = buildLevels(desk, price, "neutral", "WAIT");
-  if (support) {
-    const dist = price - support.strike;
-    if (dist >= 0 && dist <= 12) {
+  const supportDist = support ? price - support.strike : Infinity;
+  const resistanceDist = resistance ? resistance.strike - price : Infinity;
+  const supportInRange = support != null && supportDist >= 0 && supportDist <= 12;
+  const resistanceInRange = resistance != null && resistanceDist >= 0 && resistanceDist <= 12;
+  if (supportInRange && resistanceInRange) {
+    // Both walls in range — score only the closer one.
+    if (supportDist <= resistanceDist) {
       const w = 18;
       score += w;
       factors.push({
         label: "GEX support",
         weight: w,
-        detail: `At 0DTE support node ${support.strike.toFixed(0)} (+${dist.toFixed(0)} pts)`,
+        detail: `At 0DTE support node ${support!.strike.toFixed(0)} (+${supportDist.toFixed(0)} pts)`,
       });
-    }
-  }
-  if (resistance) {
-    const dist = resistance.strike - price;
-    if (dist >= 0 && dist <= 12) {
+    } else {
       const w = -18;
       score += w;
       factors.push({
         label: "GEX resistance",
         weight: w,
-        detail: `Into 0DTE resistance ${resistance.strike.toFixed(0)} (−${dist.toFixed(0)} pts)`,
+        detail: `Into 0DTE resistance ${resistance!.strike.toFixed(0)} (−${resistanceDist.toFixed(0)} pts)`,
+      });
+    }
+  } else {
+    if (supportInRange) {
+      const w = 18;
+      score += w;
+      factors.push({
+        label: "GEX support",
+        weight: w,
+        detail: `At 0DTE support node ${support!.strike.toFixed(0)} (+${supportDist.toFixed(0)} pts)`,
+      });
+    }
+    if (resistanceInRange) {
+      const w = -18;
+      score += w;
+      factors.push({
+        label: "GEX resistance",
+        weight: w,
+        detail: `Into 0DTE resistance ${resistance!.strike.toFixed(0)} (−${resistanceDist.toFixed(0)} pts)`,
       });
     }
   }
@@ -231,7 +254,9 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     });
   }
 
-  if (desk.nope != null && Math.abs(desk.nope) > 0.5) {
+  // C8: desk.nope can be NaN from a failed float parse. NaN != null is true so the null
+  // check passes. Add Number.isFinite() to block NaN from the score.
+  if (desk.nope != null && Number.isFinite(desk.nope) && Math.abs(desk.nope) > 0.5) {
     const w = desk.nope > 0 ? 7 : -7;
     score += w;
     factors.push({
@@ -241,7 +266,8 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     });
   }
 
-  if (desk.uw_iv_rank != null) {
+  // C8: Same NaN guard for uw_iv_rank.
+  if (desk.uw_iv_rank != null && Number.isFinite(desk.uw_iv_rank)) {
     if (desk.uw_iv_rank > 70 && score > 0) {
       score -= 4;
       factors.push({
@@ -259,19 +285,21 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     }
   }
 
-  if (desk.tick != null) {
+  // C8: NaN guard for tick.
+  // ISSUE-05: The `if (Math.abs(w) >= 4)` guard was always true (smallest w is ±4).
+  // Removed the dead conditional; just apply the weight directly.
+  if (desk.tick != null && Number.isFinite(desk.tick)) {
     const w = desk.tick > 200 ? 8 : desk.tick < -200 ? -8 : desk.tick > 0 ? 4 : -4;
-    if (Math.abs(w) >= 4) {
-      score += w;
-      factors.push({
-        label: "TICK",
-        weight: w,
-        detail: `NYSE TICK ${desk.tick > 0 ? "+" : ""}${desk.tick.toFixed(0)}`,
-      });
-    }
+    score += w;
+    factors.push({
+      label: "TICK",
+      weight: w,
+      detail: `NYSE TICK ${desk.tick > 0 ? "+" : ""}${desk.tick.toFixed(0)}`,
+    });
   }
 
-  if (desk.trin != null && desk.trin > 0) {
+  // C8: NaN guard for trin.
+  if (desk.trin != null && Number.isFinite(desk.trin) && desk.trin > 0) {
     const w = desk.trin < 0.85 ? 6 : desk.trin > 1.15 ? -6 : 0;
     if (w) {
       score += w;
@@ -283,7 +311,8 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     }
   }
 
-  if (desk.add != null) {
+  // C8: NaN guard for add.
+  if (desk.add != null && Number.isFinite(desk.add)) {
     const w = desk.add > 100 ? 5 : desk.add < -100 ? -5 : 0;
     if (w) {
       score += w;
@@ -332,8 +361,10 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
 
   const netPrem = desk.net_prem_ticks ?? [];
   if (netPrem.length >= 2) {
-    const last = netPrem[netPrem.length - 1]?.net ?? 0;
-    const prev = netPrem[netPrem.length - 2]?.net ?? 0;
+    // ISSUE-36: UW sometimes returns numeric strings for `net`. Use Number() to coerce
+    // so "1234" - "5678" doesn't produce NaN.
+    const last = Number(netPrem[netPrem.length - 1]?.net ?? 0);
+    const prev = Number(netPrem[netPrem.length - 2]?.net ?? 0);
     const delta = last - prev;
     if (Math.abs(delta) > 500_000) {
       const w = delta > 0 ? 6 : -6;

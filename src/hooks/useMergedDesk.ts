@@ -45,6 +45,9 @@ export function useMergedDesk() {
     readSessionCache<SpxDeskPayload>(DESK_CACHE_KEY, DESK_CACHE_MAX_AGE_MS)
   );
   const [pulseSseConnected, setPulseSseConnected] = useState(false);
+  // Initialized becomes true after the first pulse or REST response arrives.
+  // Prevents sessionActive from returning true before any data is loaded.
+  const [initialized, setInitialized] = useState(false);
   const onPulseConnection = useCallback((connected: boolean) => {
     setPulseSseConnected(connected);
   }, []);
@@ -65,6 +68,8 @@ export function useMergedDesk() {
 
   const { pulse } = usePulseStream(pulseRest, onPulseConnection);
 
+  // Midnight rollover: fires when pulse ticks AND every 60s as a safety net
+  // (handles the case where pulse goes offline overnight).
   useEffect(() => {
     const today = todayEtYmd();
     if (sessionDateRef.current === today) return;
@@ -73,7 +78,30 @@ export function useMergedDesk() {
     deskStable.current = undefined;
   }, [pulse?.polled_at, pulseRest?.polled_at]);
 
-  const sessionActive = isDeskSessionLive(pulse) || isDeskSessionLive(deskStable.current);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const today = todayEtYmd();
+      if (sessionDateRef.current !== today) {
+        sessionDateRef.current = today;
+        resetSpxDeskMergeCache();
+        deskStable.current = undefined;
+      }
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Mark initialized after first data arrives so sessionActive is not
+  // prematurely true during off-hours before any response lands.
+  useEffect(() => {
+    if (!initialized && (pulse != null || pulseRest != null)) {
+      setInitialized(true);
+    }
+  }, [initialized, pulse, pulseRest]);
+
+  const sessionActive =
+    initialized
+      ? isDeskSessionLive(pulse) || isDeskSessionLive(deskStable.current)
+      : false;
 
   const {
     data: desk,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { useLiveSpxTape } from "@/hooks/useLiveSpxTape";
@@ -135,8 +136,13 @@ function tapeSideClass(t: { kind: string; side: string }) {
 
 export function SpxGexLadder({ desk, refreshing }: DeskProps) {
   const walls = useStableArray(desk?.gex_walls ?? []);
-  const gammaFlip = useStableValue(desk?.gamma_flip, (v) => v != null);
-  const gammaRegime = useStableValue(desk?.gamma_regime, (v) => Boolean(v && v !== "unknown"));
+  const isValidGammaFlip = useCallback((v: number | null | undefined) => v != null, []);
+  const isValidGammaRegime = useCallback(
+    (v: string | null | undefined) => Boolean(v && v !== "unknown"),
+    []
+  );
+  const gammaFlip = useStableValue(desk?.gamma_flip, isValidGammaFlip);
+  const gammaRegime = useStableValue(desk?.gamma_regime, isValidGammaRegime);
   const spot = desk?.price ?? null;
   const hasWalls = walls.length > 0;
 
@@ -227,13 +233,13 @@ export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
               <li key={`${t.kind}-${t.time}-${t.label}-${i}`} className="spx-desk-list-row">
                 <span
                   className={clsx(
-                    "font-mono text-[9px] uppercase tracking-wider w-12 shrink-0 font-bold",
+                    "font-mono text-[10px] uppercase tracking-wider w-12 shrink-0 font-bold",
                     side.tagClass
                   )}
                 >
                   {side.tag}
                 </span>
-                <span className="font-mono text-[10px] text-grey-500 shrink-0">
+                <span className="font-mono text-[11px] text-grey-500 shrink-0">
                   {t.time
                     ? new Date(t.time).toLocaleTimeString("en-US", {
                         hour: "numeric",
@@ -241,12 +247,12 @@ export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
                       })
                     : "—"}
                 </span>
-                <span className={clsx("font-mono text-xs truncate font-semibold", side.labelClass)}>
+                <span className={clsx("font-mono text-[13px] truncate font-semibold", side.labelClass)}>
                   {t.label}
                 </span>
                 <span
                   className={clsx(
-                    "font-mono text-xs tabular-nums ml-auto shrink-0",
+                    "font-mono text-sm tabular-nums ml-auto shrink-0 font-bold",
                     t.side === "put" ? "text-bear" : t.side === "call" ? "text-bull" : "text-grey-200"
                   )}
                 >

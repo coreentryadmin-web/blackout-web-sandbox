@@ -16,8 +16,10 @@ export async function GET(req: NextRequest) {
     const desk = await withServerCache("spx-desk", deskCacheTtlMs(), buildSpxDesk, {
       staleWhileRevalidate: false,
     });
+    // ISSUE-29: Do NOT overwrite polled_at with the HTTP response time — that hides
+    // how stale the cached data is. Pass desk.polled_at if set, otherwise desk.as_of.
     return NextResponse.json(
-      { ...desk, polled_at: new Date().toISOString() },
+      { ...desk, polled_at: desk.polled_at ?? desk.as_of },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

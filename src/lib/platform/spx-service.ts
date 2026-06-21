@@ -86,6 +86,10 @@ export async function getSpxOpenPlay() {
 export async function getSpxTradeHistory(opts?: { ticker?: string; days?: number }) {
   const days = opts?.days ?? 30;
   const cutoff = Date.now() - days * 86400000;
+  // OPTIMIZATION NEEDED: fetchClosedPlayOutcomes does not yet accept ticker/date
+  // params, so ticker and date filters are applied in-process after fetching 300
+  // rows. Push these filters into the DB query layer (fetchClosedPlayOutcomes)
+  // to avoid over-fetching when ticker or a short date range is requested.
   let rows = await fetchClosedPlayOutcomes(300);
   if (opts?.ticker) {
     const sym = opts.ticker.toUpperCase();
