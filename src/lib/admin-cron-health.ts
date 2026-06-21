@@ -27,6 +27,8 @@ export type CronJobHealth = {
   last_message: string | null;
   age_min: number | null;
   stale_after_min: number;
+  effective_stale_min: number;
+  stale_multiplier: number;
   runs_24h: { ok: number; failed: number; skipped: number };
   meta?: Record<string, unknown>;
 };
@@ -56,14 +58,14 @@ export type CronHealthPayload = {
   }>;
 };
 
-function effectiveStaleMinutes(job: CronJobDefinition): number {
+function effectiveStaleMinutes(job: CronJobDefinition): { effective: number; multiplier: number } {
   if (job.weekdays_only && !isWeekdayEt()) {
-    return job.stale_after_min * 2.5;
+    return { effective: job.stale_after_min * 2.5, multiplier: 2.5 };
   }
   if (job.market_hours_only && !isWeekdayEt()) {
-    return job.stale_after_min * 6;
+    return { effective: job.stale_after_min * 6, multiplier: 6 };
   }
-  return job.stale_after_min;
+  return { effective: job.stale_after_min, multiplier: 1 };
 }
 
 function evaluateJob(
@@ -79,6 +81,7 @@ function evaluateJob(
   }
 
   if (!last) {
+    const { effective: effMin, multiplier: effMult } = effectiveStaleMinutes(job);
     return {
       key: job.key,
       name: job.name,
@@ -94,12 +97,14 @@ function evaluateJob(
       last_message: null,
       age_min: null,
       stale_after_min: job.stale_after_min,
+      effective_stale_min: Math.round(effMin),
+      stale_multiplier: effMult,
       runs_24h: counts,
     };
   }
 
   const ageMin = (Date.now() - new Date(last.started_at).getTime()) / 60_000;
-  const staleThreshold = effectiveStaleMinutes(job);
+  const { effective: staleThreshold, multiplier: staleMultiplier } = effectiveStaleMinutes(job);
 
   let status: CronJobHealthStatus = "healthy";
   let statusLabel = "OK";
@@ -109,7 +114,7 @@ function evaluateJob(
     statusLabel = "Last run failed";
   } else if (ageMin > staleThreshold) {
     status = "stale";
-    statusLabel = `No run in ${Math.round(ageMin)}m (limit ${Math.round(staleThreshold)}m)`;
+    statusLabel = `No run in ${Math.round(ageMin)}m (limit ${Math.round(staleThreshold)}m${staleMultiplier > 1 ? ` · ${staleMultiplier}× weekend` : ""})`;
   } else if (last.status === "skipped") {
     status = "warning";
     statusLabel = "Last run skipped";
@@ -133,6 +138,8 @@ function evaluateJob(
     last_message: last.message,
     age_min: Math.round(ageMin),
     stale_after_min: job.stale_after_min,
+    effective_stale_min: Math.round(staleThreshold),
+    stale_multiplier: staleMultiplier,
     runs_24h: counts,
     meta: last.meta_json ?? undefined,
   };
@@ -161,7 +168,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
 
     if (job.key === "spx-evaluate" && playHb.last_tick_at) {
       const hbAgeMin = playHb.age_ms != null ? Math.round(playHb.age_ms / 60_000) : null;
-      const staleThreshold = effectiveStaleMinutes(job);
+      const { effective: staleThreshold } = effectiveStaleMinutes(job);
       const cronStale = health.age_min != null && health.age_min > staleThreshold;
 
       if (cronStale && hbAgeMin != null) {

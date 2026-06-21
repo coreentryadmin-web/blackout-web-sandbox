@@ -58,8 +58,8 @@ function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edit
   }
 
   const width = 640;
-  const height = 160;
-  const pad = { top: 20, right: 16, bottom: 32, left: 36 };
+  const height = 180;
+  const pad = { top: 20, right: 16, bottom: 36, left: 48 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const points = editions.map((e, i) => ({
@@ -68,38 +68,52 @@ function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edit
     y: pad.top + plotH - e.win_rate * plotH,
   }));
 
-  const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  // Area fill under the line for a richer look
+  const areaPath = `${linePath} L ${points[points.length - 1]?.x ?? 0} ${pad.top + plotH} L ${points[0]?.x ?? 0} ${pad.top + plotH} Z`;
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1] as const;
 
   return (
     <div className="admin-nh-trend-wrap">
       <svg viewBox={`0 0 ${width} ${height}`} className="admin-nh-trend" role="img" aria-label="Target-hit rate by edition">
-        <line
-          x1={pad.left}
-          y1={pad.top + plotH}
-          x2={pad.left + plotW}
-          y2={pad.top + plotH}
-          className="admin-nh-scatter-axis"
-        />
-        <line
-          x1={pad.left}
-          y1={pad.top}
-          x2={pad.left}
-          y2={pad.top + plotH}
-          className="admin-nh-scatter-axis"
-        />
-        {[0.25, 0.5, 0.75, 1].map((tick) => (
-          <line
-            key={tick}
-            x1={pad.left}
-            y1={pad.top + plotH - tick * plotH}
-            x2={pad.left + plotW}
-            y2={pad.top + plotH - tick * plotH}
-            className="admin-nh-trend-grid"
-          />
-        ))}
-        <path d={path} className="admin-nh-trend-line" fill="none" />
+        <defs>
+          <linearGradient id="nh-area-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#34c5a0" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#34c5a0" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines + Y-axis labels */}
+        {yTicks.map((tick) => {
+          const cy = pad.top + plotH - tick * plotH;
+          return (
+            <g key={tick}>
+              <line x1={pad.left} y1={cy} x2={pad.left + plotW} y2={cy} className="admin-nh-trend-grid" />
+              <text x={pad.left - 6} y={cy + 4} className="admin-nh-trend-axis-label" textAnchor="end">
+                {Math.round(tick * 100)}%
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Axes */}
+        <line x1={pad.left} y1={pad.top + plotH} x2={pad.left + plotW} y2={pad.top + plotH} className="admin-nh-scatter-axis" />
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + plotH} className="admin-nh-scatter-axis" />
+
+        {/* 50% benchmark line */}
+        <line x1={pad.left} y1={pad.top + plotH * 0.5} x2={pad.left + plotW} y2={pad.top + plotH * 0.5}
+          stroke="#6366f1" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
+
+        {/* Area fill */}
+        {points.length > 1 && <path d={areaPath} fill="url(#nh-area-grad)" />}
+
+        {/* Trend line */}
+        <path d={linePath} className="admin-nh-trend-line" fill="none" />
+
+        {/* Data points */}
         {points.map((p) => (
-          <circle key={p.edition_for} cx={p.x} cy={p.y} r={4} className="admin-nh-trend-dot">
+          <circle key={p.edition_for} cx={p.x} cy={p.y} r={5} className="admin-nh-trend-dot">
             <title>
               {p.edition_for}: {pct(p.win_rate)} · {p.n} plays · {fmtReturn(p.avg_return_pct)}
             </title>
@@ -197,7 +211,12 @@ export function AdminNightHawkDashboard() {
               size={120}
             />
             <WinRateRing
-              value={Math.max(0, Math.min(1, (data.avg_return_pct + 10) / 20))}
+              value={(() => {
+                // Dynamic ±range so the ring never pins at 0 or 1 for extreme values.
+                // Use whichever is larger: |avg_return_pct| or 5, capped at 20.
+                const range = Math.min(20, Math.max(5, Math.abs(data.avg_return_pct) * 1.5));
+                return Math.max(0, Math.min(1, (data.avg_return_pct + range) / (range * 2)));
+              })()}
               label="Avg return"
               sub={fmtReturn(data.avg_return_pct)}
               tone={data.avg_return_pct >= 0 ? "bull" : "bear"}

@@ -95,9 +95,19 @@ function pushGrouped(prev: FeedGroup[], event: ApiCallEvent): FeedGroup[] {
 
   const key = incidentDedupeKey(event);
 
-  if (prev.length > 0 && prev[0].key === key) {
+  const idx = prev.findIndex((g) => g.key === key);
+
+  if (idx === 0) {
 
     return [{ key, event, count: prev[0].count + 1 }, ...prev.slice(1)];
+
+  }
+
+  if (idx > 0) {
+
+    const merged = { key, event, count: prev[idx].count + 1 };
+
+    return [merged, ...prev.slice(0, idx), ...prev.slice(idx + 1)].slice(0, 40);
 
   }
 

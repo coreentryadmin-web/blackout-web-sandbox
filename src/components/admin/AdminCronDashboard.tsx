@@ -142,6 +142,20 @@ function CronJobCard({ job, index }: { job: CronJobHealth; index: number }) {
           </span>
           <span className="admin-cron-card-stat-sub">ok · fail · skip</span>
         </div>
+        <div className="admin-cron-card-stat">
+          <span className="admin-cron-card-stat-label">Stale limit</span>
+          <span className="admin-cron-card-stat-value">
+            {job.effective_stale_min ?? job.stale_after_min}m
+            {job.stale_multiplier != null && job.stale_multiplier > 1 && (
+              <span className="admin-cron-card-stale-mult" title={`${job.stale_multiplier}× relaxed (off-schedule)`}>
+                ×{job.stale_multiplier}
+              </span>
+            )}
+          </span>
+          <span className="admin-cron-card-stat-sub">
+            {job.stale_multiplier != null && job.stale_multiplier > 1 ? "weekend relax" : "effective now"}
+          </span>
+        </div>
       </div>
 
       <HorzBar
@@ -318,7 +332,13 @@ export function AdminCronDashboard() {
 
       <SectionDeck accent="cyan" className="admin-cron-deck">
         <div className="admin-cron-fleet-bar">
-          <HealthMeter label="Fleet health score" value={Math.max(0, Math.min(100, fleetScore))} tone={fleetScore >= 70 ? "bull" : fleetScore >= 40 ? "amber" : "bear"} />
+          <div title="Score = (healthy + warning×0.5) / total × 100 − failed×12 − stale×8">
+            <HealthMeter
+              label={`Fleet health score · ${Math.max(0, Math.min(100, fleetScore))}/100`}
+              value={Math.max(0, Math.min(100, fleetScore))}
+              tone={fleetScore >= 70 ? "bull" : fleetScore >= 40 ? "amber" : "bear"}
+            />
+          </div>
           <div className="admin-cron-fleet-breakdown">
             <HorzBar label="Online" value={data.summary.healthy} max={data.summary.total} tone="bull" right={String(data.summary.healthy)} />
             <HorzBar label="Caution" value={data.summary.warning} max={data.summary.total} tone="cyan" right={String(data.summary.warning)} />

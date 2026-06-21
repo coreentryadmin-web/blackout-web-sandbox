@@ -265,8 +265,8 @@ function LiveEngineSection({
         </DeckPanel>
       )}
       {play.technicals && (
-        <DeckPanel title="Technicals" accent="cyan">
-          <JsonBlock value={play.technicals} />
+        <DeckPanel title="Technicals" accent="cyan" defaultOpen>
+          <KvTiles data={play.technicals as Record<string, unknown>} />
         </DeckPanel>
       )}
       {play.claude && (
@@ -277,10 +277,20 @@ function LiveEngineSection({
           accent={play.claude.direction_mismatch ? "bear" : "violet"}
         >
           {play.claude.direction_mismatch && (
-            <p className="admin-warn admin-stale-banner" style={{ marginBottom: "0.75rem" }}>
-              DIRECTION MISMATCH — Claude returned &ldquo;{play.claude.direction}&rdquo; but
-              confluence is &ldquo;{data.confluence?.direction}&rdquo;. Review before acting.
-            </p>
+            <div className="admin-warn admin-stale-banner" style={{ marginBottom: "0.75rem" }}>
+              <p style={{ fontWeight: 700, marginBottom: "0.4rem" }}>
+                ⚠ DIRECTION MISMATCH — Claude: &ldquo;{play.claude.direction}&rdquo; · Confluence: &ldquo;{data.confluence?.direction}&rdquo;
+              </p>
+              <p style={{ fontSize: "0.78rem", marginBottom: "0.5rem", opacity: 0.85 }}>
+                Claude and the confluence model disagree. Choose one of the following actions:
+              </p>
+              <ul style={{ fontSize: "0.77rem", paddingLeft: "1.2rem", lineHeight: 1.7, opacity: 0.9 }}>
+                <li><strong>Defer Claude</strong> — trust the quant confluence score; Claude's thesis may lag recent price action.</li>
+                <li><strong>Defer Confluence</strong> — trust Claude's macro/narrative read; useful in news-driven regimes.</li>
+                <li><strong>Abort play</strong> — disagreement at the model layer is a valid gate block; skip this setup entirely.</li>
+                <li><strong>Re-run engine</strong> — if data is stale (&gt;90s), refresh and check whether the mismatch resolves.</li>
+              </ul>
+            </div>
           )}
           <ClaudeVerdictCard
             verdict={play.claude.verdict}
@@ -296,8 +306,17 @@ function LiveEngineSection({
         </DeckPanel>
       )}
       {play.watch && (
-        <DeckPanel title="Watch state" badge={play.watch.promote_ready ? "PROMOTE READY" : "WATCH"} accent="amber">
-          <JsonBlock value={play.watch} />
+        <DeckPanel title="Watch state" badge={play.watch.promote_ready ? "PROMOTE READY" : "WATCHING"} accent={play.watch.promote_ready ? "bull" : "amber"}>
+          {play.watch.promote_ready ? (
+            <p className="admin-spx-idea" style={{ color: "rgb(52,211,153)", marginBottom: "0.5rem" }}>
+              ✓ All promote conditions satisfied — run live engine (dry run) to preview the promoted play.
+            </p>
+          ) : (
+            <p className="admin-spx-idea" style={{ marginBottom: "0.5rem" }}>
+              Watching for promote signal. Conditions not yet met — check confluence score, gate blocks above.
+            </p>
+          )}
+          <KvTiles data={play.watch as unknown as Record<string, unknown>} />
         </DeckPanel>
       )}
       {play.option_ticket && (

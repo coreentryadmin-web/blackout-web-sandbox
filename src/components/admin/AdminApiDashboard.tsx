@@ -275,20 +275,35 @@ export function AdminApiDashboard() {
                 <h3 className="admin-cmd-ws-title">WebSocket status</h3>
                 <div className="admin-cmd-ws-grid">
                   <div className="admin-cmd-ws-card">
-                    <p className="admin-ep-name">Polygon indices</p>
+                    <div className="admin-cmd-ws-card-head">
+                      <span className={clsx("admin-api-dot", data.websockets.polygon_indices.authenticated ? "admin-api-dot-ok" : "admin-api-dot-error")} />
+                      <p className="admin-ep-name">Polygon Indices</p>
+                    </div>
                     <p className="admin-api-muted">
-                      {data.websockets.polygon_indices.authenticated ? "Authenticated" : "Not auth"} ·{" "}
-                      {data.websockets.polygon_indices.wsState}
+                      State: <strong>{data.websockets.polygon_indices.wsState}</strong>
+                    </p>
+                    <p className="admin-api-muted">
+                      Auth: <strong className={data.websockets.polygon_indices.authenticated ? "admin-cmd-ws-ok" : "admin-cmd-ws-err"}>{data.websockets.polygon_indices.authenticated ? "Authenticated" : "Not auth"}</strong>
                     </p>
                     <p className="admin-api-muted">
                       {data.websockets.polygon_indices.symbols.length} symbols tracked
+                      {data.websockets.polygon_indices.symbols.length > 0 && (
+                        <span className="admin-cmd-ws-symbols"> · {data.websockets.polygon_indices.symbols.slice(0, 3).map(s => s.sym).join(", ")}{data.websockets.polygon_indices.symbols.length > 3 ? "…" : ""}</span>
+                      )}
                     </p>
                   </div>
                   <div className="admin-cmd-ws-card">
-                    <p className="admin-ep-name">Unusual Whales</p>
+                    <div className="admin-cmd-ws-card-head">
+                      <span className={clsx("admin-api-dot",
+                        Object.values(data.websockets.unusual_whales.channels).some(c => c.authenticated) ? "admin-api-dot-ok" : "admin-api-dot-error"
+                      )} />
+                      <p className="admin-ep-name">Unusual Whales</p>
+                    </div>
                     {Object.entries(data.websockets.unusual_whales.channels).map(([ch, row]) => (
                       <p key={ch} className="admin-api-muted">
-                        {ch}: {row.ws_state} · {row.authenticated ? "auth" : "no auth"}
+                        <span className={row.authenticated ? "admin-cmd-ws-ok" : "admin-cmd-ws-err"}>●</span>{" "}
+                        {ch}: <strong>{row.ws_state}</strong>
+                        {!row.authenticated && <span className="admin-cmd-ws-err"> · no auth</span>}
                       </p>
                     ))}
                   </div>
@@ -340,18 +355,27 @@ export function AdminApiDashboard() {
               <section className="admin-cmd-provider-health">
                 {data.providers.map((p) => {
                   const latency = p.endpoints.find((ep) => ep.telemetry?.p95_latency_ms)?.telemetry;
+                  const errorRate = p.telemetry.calls > 0 ? ((p.telemetry.errors / p.telemetry.calls) * 100).toFixed(1) : "0.0";
                   return (
-                  <div key={p.id} className="admin-cmd-health-card">
+                  <div key={p.id} className={clsx("admin-cmd-health-card", !p.probe.ok && "admin-cmd-health-card-fail")}>
                     <span className={clsx("admin-api-dot", p.probe.ok ? "admin-api-dot-ok" : "admin-api-dot-error")} />
-                    <div>
+                    <div className="admin-cmd-health-body">
                       <p className="admin-ep-name">{p.name}</p>
                       <p className="admin-api-muted">
-                        {p.telemetry.calls} calls · {p.telemetry.errors} errors
+                        {p.telemetry.calls} calls · {p.telemetry.errors} err · {errorRate}% error rate
                         {latency?.p95_latency_ms ? ` · p95 ${latency.p95_latency_ms}ms` : ""}
                         {latency?.p99_latency_ms ? ` · p99 ${latency.p99_latency_ms}ms` : ""}
                       </p>
+                      {!p.probe.ok && p.probe.error && (
+                        <p className="admin-cmd-health-error">{p.probe.error}</p>
+                      )}
+                      {p.probe.latency_ms != null && (
+                        <p className="admin-api-muted">Probe latency: {p.probe.latency_ms}ms</p>
+                      )}
                     </div>
-                    <span className="admin-cmd-health-status">{p.probe.ok ? "Healthy" : p.probe.error ?? "Down"}</span>
+                    <span className={clsx("admin-cmd-health-status", p.probe.ok ? "admin-cmd-health-ok" : "admin-cmd-health-down")}>
+                      {p.probe.ok ? "Healthy" : "Down"}
+                    </span>
                   </div>
                   );
                 })}
