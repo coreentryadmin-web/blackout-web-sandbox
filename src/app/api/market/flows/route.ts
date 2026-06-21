@@ -38,10 +38,13 @@ export async function GET(req: NextRequest) {
         flows,
         count: flows.length,
         platform_refs: platform,
+        _debug: { db: true, rows: flows.length, min_premium, since_hours },
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error("[market/flows] postgres ERROR:", detail);
+      // Include error in response so client can surface it
+      return NextResponse.json({ source: "postgres_error", flows: [], count: 0, _debug: { db: true, error: detail } });
     }
   }
 
