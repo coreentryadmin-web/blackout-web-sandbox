@@ -14,16 +14,17 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth;
 
   const sp = req.nextUrl.searchParams;
-  const limit = Number(sp.get("limit") ?? 50);
+  const limit = Number(sp.get("limit") ?? 5000);
   const ticker = sp.get("ticker") ?? undefined;
   const min_premium = Number(sp.get("min_premium") ?? 0) || undefined;
+  const since_hours = Number(sp.get("since_hours") ?? 48) || 48;
 
   if (dbConfigured()) {
     // Lazy side-effect: background ingest keeps Postgres fresh on read (cron also runs ingest).
     maybeRunFlowIngest().catch((err) => console.error("[flows] lazy ingest error:", err));
     try {
       const [flows, platform] = await Promise.all([
-        fetchRecentFlows({ limit, ticker, min_premium }),
+        fetchRecentFlows({ limit, ticker, min_premium, since_hours }),
         Promise.all([
           marketPlatform.spx.getSpxDeskSummary().catch(() => null),
           marketPlatform.nighthawk.getLatestNightHawkSummary().catch(() => null),

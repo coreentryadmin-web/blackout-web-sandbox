@@ -51,7 +51,7 @@ export function FlowFeed() {
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
     try {
-      const d = await fetchFlows({ limit: 300, min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
+      const d = await fetchFlows({ min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
       setAlerts(d.flows);
       setLive(true);
     } catch {
@@ -73,7 +73,7 @@ export function FlowFeed() {
         const id = `${alert.ticker}-${alert.alerted_at}`;
         if (seenRef.current.has(id)) return;
         seenRef.current.add(id);
-        setAlerts((prev) => [alert, ...prev.slice(0, 99)]);
+        setAlerts((prev) => [alert, ...prev]);
         setLive(true);
       },
       { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); loadFlows(); } }

@@ -662,14 +662,20 @@ export type FlowRow = {
 };
 
 export async function fetchRecentFlows(params: {
-  limit: number;
+  limit?: number;
   ticker?: string;
   min_premium?: number;
+  since_hours?: number;
 }): Promise<FlowRow[]> {
   await ensureSchema();
   const clauses: string[] = [];
   const values: (string | number)[] = [];
   let i = 1;
+
+  // Default to last 48h — keeps the tape current without pulling months of history
+  const sinceHours = params.since_hours ?? 48;
+  clauses.push(`COALESCE(created_at, inserted_at) >= NOW() - ($${i++} || ' hours')::interval`);
+  values.push(sinceHours);
 
   if (params.ticker) {
     clauses.push(`ticker = $${i++}`);
@@ -680,8 +686,9 @@ export async function fetchRecentFlows(params: {
     values.push(params.min_premium);
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  values.push(params.limit);
+  const where = `WHERE ${clauses.join(" AND ")}`;
+  const limit = params.limit ?? 5000;
+  values.push(limit);
 
   const res = await (await getPool()).query<QueryResultRow>(
     `
