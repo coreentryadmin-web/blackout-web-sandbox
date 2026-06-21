@@ -197,7 +197,7 @@ export function FlowAlertStream({
                         )}>
                           {fmtPremium(flow.premium)}
                         </span>
-                        <span className="font-mono text-[10px] text-zinc-600 w-6 text-right tabular-nums">
+                        <span className="font-mono text-[10px] text-zinc-400 w-6 text-right tabular-nums">
                           {timeAgo(flow.alerted_at)}
                         </span>
                       </div>
@@ -205,20 +205,20 @@ export function FlowAlertStream({
 
                     {/* Row 2: contract details */}
                     <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <p className="font-mono text-[11px] text-zinc-500 leading-none flex items-center gap-1 flex-wrap">
-                        <span className="text-zinc-300 font-medium">${flow.strike}</span>
-                        <span className="text-zinc-700">·</span>
+                      <p className="font-mono text-[11px] text-zinc-400 leading-none flex items-center gap-1 flex-wrap">
+                        <span className="text-zinc-100 font-semibold">${flow.strike}</span>
+                        <span className="text-zinc-600">·</span>
                         <span>{fmtExpiry(flow.expiry)}</span>
                         {dte !== null && !is0dte && (
                           <>
-                            <span className="text-zinc-700">·</span>
+                            <span className="text-zinc-600">·</span>
                             <span>{dte}d</span>
                           </>
                         )}
                         {flow.ask_pct != null && flow.ask_pct > 0 && (
                           <>
-                            <span className="text-zinc-700">·</span>
-                            <span className={flow.ask_pct >= 85 ? "text-amber-500" : "text-zinc-500"}>
+                            <span className="text-zinc-600">·</span>
+                            <span className={flow.ask_pct >= 85 ? "text-amber-400" : "text-zinc-400"}>
                               {Math.round(flow.ask_pct)}% ask
                             </span>
                           </>
@@ -229,14 +229,14 @@ export function FlowAlertStream({
                         {flow.score > 0 && (
                           <span className={clsx(
                             "font-mono text-[10px] font-medium",
-                            flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-600" : "text-zinc-600"
+                            flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-zinc-500"
                           )}>
                             ▲{flow.score.toFixed(1)}
                           </span>
                         )}
                         <span className={clsx(
-                          "font-mono text-[9px] uppercase tracking-wider",
-                          isCall ? "text-emerald-900" : "text-rose-900"
+                          "font-mono text-[9px] font-semibold uppercase tracking-wider",
+                          isCall ? "text-emerald-500" : "text-rose-500"
                         )}>
                           {flow.direction}
                         </span>

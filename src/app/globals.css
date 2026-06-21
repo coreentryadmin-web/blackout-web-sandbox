@@ -2979,11 +2979,11 @@ body {
   }
 
   .desk-panel-title {
-    @apply font-mono text-[10px] tracking-[0.35em] uppercase text-white;
+    @apply font-mono text-[11px] tracking-[0.35em] uppercase text-white font-semibold;
   }
 
   .desk-panel-subtitle {
-    @apply font-mono text-[9px] tracking-widest uppercase text-grey-500 mt-1;
+    @apply font-mono text-[9px] tracking-widest uppercase text-grey-400 mt-1;
   }
 
   .desk-panel-body {
@@ -9701,7 +9701,7 @@ body {
   .flow-seg-group {
     display: inline-flex;
     background: #18181b;
-    border: 1px solid #27272a;
+    border: 1px solid #3f3f46;
     border-radius: 8px;
     padding: 2px;
     gap: 1px;
@@ -9709,20 +9709,21 @@ body {
   .flow-seg-btn {
     font-family: monospace;
     font-size: 10px;
-    letter-spacing: 0.05em;
-    padding: 4px 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 5px 12px;
     border-radius: 6px;
     border: none;
     background: transparent;
-    color: #71717a;
+    color: #b4b4bc;
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
     white-space: nowrap;
   }
-  .flow-seg-btn:hover { color: #d4d4d8; }
-  .flow-seg-btn-active-all   { background: #27272a; color: #e4e4e7; }
-  .flow-seg-btn-active-call  { background: rgba(16,185,129,0.15); color: #6ee7b7; }
-  .flow-seg-btn-active-put   { background: rgba(244,63,94,0.15);  color: #fda4af; }
+  .flow-seg-btn:hover { color: #f4f4f5; background: #27272a; }
+  .flow-seg-btn-active-all   { background: #3f3f46; color: #f4f4f5; border: 1px solid #52525b; }
+  .flow-seg-btn-active-call  { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+  .flow-seg-btn-active-put   { background: rgba(244,63,94,0.2);  color: #fb7185; border: 1px solid rgba(244,63,94,0.4); }
 
   /* Count pill on segment button */
   .flow-count-pill {
@@ -9735,13 +9736,13 @@ body {
     height: 14px;
     padding: 0 4px;
     border-radius: 99px;
-    background: #27272a;
-    color: #71717a;
+    background: #3f3f46;
+    color: #a1a1aa;
     margin-left: 4px;
     transition: background 0.15s, color 0.15s;
   }
-  .flow-seg-btn-active-call .flow-count-pill { background: rgba(16,185,129,0.2); color: #6ee7b7; }
-  .flow-seg-btn-active-put  .flow-count-pill { background: rgba(244,63,94,0.2);  color: #fda4af; }
+  .flow-seg-btn-active-call .flow-count-pill { background: rgba(16,185,129,0.25); color: #34d399; }
+  .flow-seg-btn-active-put  .flow-count-pill { background: rgba(244,63,94,0.25);  color: #fb7185; }
 
   /* Badge variants */
   .flow-badge {
@@ -9786,10 +9787,11 @@ body {
   }
   .flow-panel-title {
     font-family: monospace;
-    font-size: 9px;
-    letter-spacing: 0.3em;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.32em;
     text-transform: uppercase;
-    color: #71717a;
+    color: #c4b5fd;
   }
   .flow-panel-body {
     padding: 10px 14px 12px;

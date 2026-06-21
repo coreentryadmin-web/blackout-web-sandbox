@@ -50,7 +50,7 @@ export function StrikeStackDetector({
               exit={{ opacity: 0 }}
               className="py-4 text-center"
             >
-              <p className="font-mono text-[10px] text-zinc-700">Watching for accumulation…</p>
+              <p className="font-mono text-[10px] text-zinc-500">Watching for accumulation…</p>
             </motion.div>
           ) : (
             <div className="space-y-2">
@@ -102,10 +102,10 @@ export function StrikeStackDetector({
                     </div>
 
                     <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <p className="font-mono text-[10px] text-zinc-600">
+                      <p className="font-mono text-[10px] text-zinc-400">
                         ${stack.strike} · {fmtExpiry(stack.expiry)}
                       </p>
-                      <p className="font-mono text-[10px] text-zinc-700">
+                      <p className="font-mono text-[10px] text-zinc-500">
                         {stack.premiums.map(fmtFlowPremShort).join(" + ")}
                       </p>
                     </div>

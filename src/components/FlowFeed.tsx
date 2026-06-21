@@ -120,7 +120,7 @@ export function FlowFeed() {
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Premium presets */}
-        <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-zinc-700 hidden sm:block">Min</span>
+        <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-zinc-400 font-semibold hidden sm:block">MIN</span>
         <div className="flow-seg-group">
           {PREMIUM_PRESETS.map((v) => (
             <button
@@ -172,9 +172,9 @@ export function FlowFeed() {
             placeholder="TICKER"
             maxLength={6}
             className={clsx(
-              "font-mono text-[10px] px-3 py-[5px] rounded-lg border bg-zinc-950 outline-none w-24",
-              "border-zinc-800 text-zinc-300 placeholder:text-zinc-700",
-              "focus:border-zinc-600 focus:ring-1 focus:ring-zinc-700/50 transition-all"
+              "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border bg-zinc-900 outline-none w-24",
+              "border-zinc-600 text-zinc-200 placeholder:text-zinc-500",
+              "focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30 transition-all"
             )}
           />
           <AnimatePresence>
@@ -199,10 +199,10 @@ export function FlowFeed() {
           onClick={replayMode ? stopReplay : startReplay}
           disabled={!replayMode && alerts.length === 0}
           className={clsx(
-            "font-mono text-[10px] px-3 py-[5px] rounded-lg border transition-all",
+            "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border transition-all",
             replayMode
-              ? "border-amber-700/60 text-amber-300 bg-amber-950/40 hover:bg-amber-950/60"
-              : "border-zinc-800 text-zinc-600 hover:text-zinc-300 hover:border-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              ? "border-amber-600/70 text-amber-300 bg-amber-950/50 hover:bg-amber-950/70"
+              : "border-zinc-600 text-zinc-300 hover:text-white hover:border-zinc-400 disabled:opacity-30 disabled:cursor-not-allowed"
           )}
         >
           {replayMode ? "■ Stop" : "▶ Replay"}
@@ -217,7 +217,7 @@ export function FlowFeed() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.2 }}
-              className="font-mono text-[10px] text-zinc-600 hidden sm:block"
+              className="font-mono text-[10px] text-zinc-300 hidden sm:block"
             >
               {loading ? "Scanning…" : `${alerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
             </motion.span>

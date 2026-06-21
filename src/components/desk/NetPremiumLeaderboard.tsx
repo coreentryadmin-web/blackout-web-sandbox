@@ -37,7 +37,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
       <div className="flow-panel-header">
         <span className="flow-panel-title">Net Premium</span>
         {rows.length > 0 && (
-          <span className="font-mono text-[9px] text-zinc-600">
+          <span className="font-mono text-[9px] text-zinc-400 font-semibold">
             {fmtPremium(rows.reduce((s, r) => s + r.total, 0))} total
           </span>
         )}
