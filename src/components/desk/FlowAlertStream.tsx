@@ -75,6 +75,8 @@ export function FlowAlertStream({
   live,
   loading,
   typeFilter = "ALL",
+  tickerFilter,
+  hasData = false,
   compoundTickers,
   onTickerClick,
   replayMode = false,
@@ -83,6 +85,8 @@ export function FlowAlertStream({
   live?: boolean;
   loading?: boolean;
   typeFilter?: "ALL" | "CALL" | "PUT";
+  tickerFilter?: string;
+  hasData?: boolean;
   compoundTickers?: Set<string>;
   onTickerClick?: (ticker: string) => void;
   replayMode?: boolean;
@@ -113,12 +117,16 @@ export function FlowAlertStream({
             <div className="w-8 h-8 rounded-full border border-zinc-800 flex items-center justify-center">
               <span className="text-zinc-700 text-xs">—</span>
             </div>
-            <p className="font-mono text-[11px] text-zinc-600 text-center">
-              {live
-                ? typeFilter !== "ALL"
-                  ? `No ${typeFilter} alerts matching filters`
-                  : "Watching for flow alerts…"
-                : "Connect UW_API_KEY to see live flow"}
+            <p className="font-mono text-[11px] text-zinc-500 text-center">
+              {tickerFilter
+                ? `No alerts found for ${tickerFilter} — try a different ticker or lower the premium filter`
+                : typeFilter !== "ALL"
+                  ? `No ${typeFilter} alerts above the current premium threshold`
+                  : hasData
+                    ? "Watching for flow alerts…"
+                    : live
+                      ? "Loading flow data…"
+                      : "Reconnecting to flow data…"}
             </p>
           </div>
         ) : (

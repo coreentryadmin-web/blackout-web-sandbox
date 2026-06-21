@@ -76,7 +76,7 @@ export function FlowFeed() {
         setAlerts((prev) => [alert, ...prev.slice(0, 99)]);
         setLive(true);
       },
-      { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); } }
+      { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); loadFlows(); } }
     );
     if (conn) return () => { conn.close(); stop(); };
     go();
@@ -253,6 +253,8 @@ export function FlowFeed() {
             live={live}
             loading={loading}
             typeFilter={typeFilter}
+            tickerFilter={tickerFilter}
+            hasData={alerts.length > 0}
             compoundTickers={compoundTickers}
             onTickerClick={setSelectedTicker}
             replayMode={replayMode}
