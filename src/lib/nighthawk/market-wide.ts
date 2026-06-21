@@ -95,7 +95,7 @@ function mapBars(
 /** VIX term from Polygon index snapshots — UW fallback only if Polygon unavailable. */
 async function fetchVixTermPreferPolygon(): Promise<Record<string, unknown>[]> {
   if (polygonConfigured()) {
-    const snaps = await fetchIndexSnapshots(["I:VIX", "I:VIX9D", "I:VIX3M"]).catch(() => ({}));
+    const snaps = await fetchIndexSnapshots(["I:VIX", "I:VIX9D", "I:VIX3M"]).catch(() => ({} as Awaited<ReturnType<typeof fetchIndexSnapshots>>));
     const spot = snaps["I:VIX"]?.price ?? null;
     const near = snaps["I:VIX9D"]?.price ?? null;
     const far = snaps["I:VIX3M"]?.price ?? null;
