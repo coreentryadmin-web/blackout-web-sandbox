@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import { fetchFlows, createFlowEventSource, fmtPremium, type FlowAlert } from "@/lib/api";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
-import { EngineStatusBar } from "@/components/desk/EngineStatusBar";
 import { FlowAlertStream } from "@/components/desk/FlowAlertStream";
 import { FlowBrief } from "@/components/desk/FlowBrief";
 import { NetPremiumLeaderboard } from "@/components/desk/NetPremiumLeaderboard";
@@ -112,8 +111,6 @@ export function FlowFeed() {
 
   return (
     <div className="desk-layout flex flex-col gap-4">
-      <EngineStatusBar />
-
       {/* ── AI Brief ────────────────────────────────────────────────────── */}
       <FlowBrief alerts={alerts} />
 
