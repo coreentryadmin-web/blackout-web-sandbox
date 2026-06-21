@@ -719,17 +719,17 @@ export async function fetchRecentFlows(params: {
            ), '') AS alert_rule,
            (raw_payload->>'ask_side_pct')::numeric AS ask_pct,
            COALESCE(
-             NULLIF(raw_payload->>'underlying_last', '')::numeric,
-             NULLIF(raw_payload->>'underlying_price', '')::numeric,
-             NULLIF(raw_payload->>'stock_price', '')::numeric
+             CASE WHEN jsonb_typeof(raw_payload->'underlying_last')  = 'number' THEN (raw_payload->>'underlying_last')::numeric  END,
+             CASE WHEN jsonb_typeof(raw_payload->'underlying_price') = 'number' THEN (raw_payload->>'underlying_price')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'stock_price')      = 'number' THEN (raw_payload->>'stock_price')::numeric      END
            ) AS underlying_price,
            COALESCE(
-             NULLIF(raw_payload->>'open_interest', '')::numeric,
-             NULLIF(raw_payload->>'oi', '')::numeric
+             CASE WHEN jsonb_typeof(raw_payload->'open_interest') = 'number' THEN (raw_payload->>'open_interest')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'oi')            = 'number' THEN (raw_payload->>'oi')::numeric            END
            ) AS open_interest,
            COALESCE(
-             NULLIF(raw_payload->>'iv', '')::numeric,
-             NULLIF(raw_payload->>'implied_volatility', '')::numeric
+             CASE WHEN jsonb_typeof(raw_payload->'iv')                 = 'number' THEN (raw_payload->>'iv')::numeric                 END,
+             CASE WHEN jsonb_typeof(raw_payload->'implied_volatility') = 'number' THEN (raw_payload->>'implied_volatility')::numeric END
            ) AS implied_volatility
     FROM flow_alerts
     ${where}
