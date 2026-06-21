@@ -719,18 +719,17 @@ export async function fetchRecentFlows(params: {
            ), '') AS alert_rule,
            (raw_payload->>'ask_side_pct')::numeric AS ask_pct,
            COALESCE(
-             (raw_payload->>'underlying_last')::numeric,
-             (raw_payload->>'underlying_price')::numeric,
-             (raw_payload->>'stock_price')::numeric,
-             (raw_payload->>'underlying')::numeric
+             NULLIF(raw_payload->>'underlying_last', '')::numeric,
+             NULLIF(raw_payload->>'underlying_price', '')::numeric,
+             NULLIF(raw_payload->>'stock_price', '')::numeric
            ) AS underlying_price,
            COALESCE(
-             (raw_payload->>'open_interest')::numeric,
-             (raw_payload->>'oi')::numeric
+             NULLIF(raw_payload->>'open_interest', '')::numeric,
+             NULLIF(raw_payload->>'oi', '')::numeric
            ) AS open_interest,
            COALESCE(
-             (raw_payload->>'iv')::numeric,
-             (raw_payload->>'implied_volatility')::numeric
+             NULLIF(raw_payload->>'iv', '')::numeric,
+             NULLIF(raw_payload->>'implied_volatility', '')::numeric
            ) AS implied_volatility
     FROM flow_alerts
     ${where}
