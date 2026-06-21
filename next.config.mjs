@@ -23,22 +23,8 @@ const securityHeaders = [
   },
   {
     key: "Content-Security-Policy",
-    // FIX 1: Removed 'unsafe-eval' and 'unsafe-inline' from script-src.
-    // TradingView widgets are loaded from their CDN domains explicitly.
-    // Clerk auth JS is served from clerk.accounts.dev / clerk.blackouttrades.com
-    // (add your Clerk Frontend API hostname if it differs).
-    // 'unsafe-inline' is kept only in style-src for Tailwind / inline styles.
-    // Added upgrade-insecure-requests.
     value:
-      "default-src 'self'; " +
-      "script-src 'self' https://s.tradingview.com https://*.tradingview.com https://clerk.blackouttrades.com https://*.clerk.accounts.dev; " +
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-      "font-src 'self' https://fonts.gstatic.com data:; " +
-      "img-src 'self' data: blob: https:; " +
-      "connect-src 'self' https: wss:; " +
-      "frame-src 'self' https://s.tradingview.com https://*.tradingview.com; " +
-      "frame-ancestors 'self'; " +
-      "upgrade-insecure-requests",
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tradingview.com https://*.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src 'self' https://s.tradingview.com https://*.tradingview.com; frame-ancestors 'self'",
   },
 ];
 
