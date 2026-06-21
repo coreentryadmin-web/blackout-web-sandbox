@@ -5,12 +5,11 @@
 // an explicit RAILWAY_HOSTNAME override for local / staging overrides.
 // Do NOT use the "**.railway.app" wildcard — that accepts every Railway app.
 const railwayHostname = (() => {
-  const raw =
-    process.env.RAILWAY_HOSTNAME ||
-    (process.env.RAILWAY_STATIC_URL
-      ? new URL(process.env.RAILWAY_STATIC_URL).hostname
-      : null);
-  return raw || null;
+  if (process.env.RAILWAY_HOSTNAME) return process.env.RAILWAY_HOSTNAME;
+  if (process.env.RAILWAY_STATIC_URL) {
+    try { return new URL(process.env.RAILWAY_STATIC_URL).hostname; } catch { /* malformed URL — ignore */ }
+  }
+  return null;
 })();
 
 const securityHeaders = [
