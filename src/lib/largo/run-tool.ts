@@ -1077,7 +1077,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       const vix9d = indices["I:VIX9D"]?.price;
       const computedTerm =
         vix != null && vix3m != null
-          ? { spot: vix, three_month: vix3m, spread: vix - vix3m, ...computeVixTermStructure(vix, vix9d, vix3m) }
+          ? { spot: vix, three_month: vix3m, spread: vix - vix3m, ...computeVixTermStructure(vix, vix9d ?? null, vix3m) }
           : null;
       return { ticker: sym, source: "polygon", indices, vix_term: computedTerm };
     }
