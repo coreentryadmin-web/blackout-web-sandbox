@@ -38,6 +38,17 @@ export function isUwRepeatedHitsRule(rule: string | null | undefined): boolean {
   return rule.startsWith("RepeatedHits");
 }
 
+// Bug 6: normalize expiry to YYYY-MM-DD regardless of input format so stackKey is consistent
+function normalizeExpiry(raw: string): string {
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const usLong = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usLong) return `${usLong[3]}-${usLong[1].padStart(2, "0")}-${usLong[2].padStart(2, "0")}`;
+  const usShort = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (usShort) return `20${usShort[3]}-${usShort[1].padStart(2, "0")}-${usShort[2].padStart(2, "0")}`;
+  return raw.slice(0, 10);
+}
+
 export function normalizeFlowAlertForStack(item: unknown): FlowAlertForStack | null {
   if (!item || typeof item !== "object") return null;
   const o = item as Record<string, unknown>;
@@ -63,7 +74,7 @@ export function normalizeFlowAlertForStack(item: unknown): FlowAlertForStack | n
     ticker: String(o.ticker ?? o.symbol ?? "").toUpperCase(),
     strike,
     option_type,
-    expiry: String(o.expiry ?? o.expiration ?? "").slice(0, 10),
+    expiry: normalizeExpiry(String(o.expiry ?? o.expiration ?? "")),
     premium,
     alerted_at,
     alert_rule: ruleRaw || null,
@@ -81,9 +92,11 @@ export function computeFlowStrikeStacks(
 ): FlowStrikeStack[] {
   const minAlerts = opts?.minAlerts ?? 2;
   const limit = opts?.limit ?? 10;
+  // Bug 9: cap input to recent 500 alerts — beyond that stacks are stale anyway
+  const input = alerts.length > 500 ? alerts.slice(0, 500) : alerts;
   const groups = new Map<string, FlowAlertForStack[]>();
 
-  for (const raw of alerts) {
+  for (const raw of input) {
     const row = normalizeFlowAlertForStack(raw);
     if (!row) continue;
     const key = stackKey(row);

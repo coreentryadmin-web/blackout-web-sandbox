@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   let alerts: FlowAlert[] = [];
   try {
     const body = await req.json();
-    alerts = Array.isArray(body?.alerts) ? body.alerts : [];
+    alerts = Array.isArray(body?.alerts) ? body.alerts.slice(0, 50) : []; // Bug 17: cap input size
   } catch {
     return NextResponse.json({ brief: null }, { status: 400 });
   }
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ brief: brief?.trim() ?? null });
   } catch (err) {
     console.error("[flow-brief]", err);
-    return NextResponse.json({ brief: null }, { status: 200 });
+    // Bug 7: return 503 so clients can distinguish transient error from "no brief yet"
+    return NextResponse.json({ brief: null, error: "api_error" }, { status: 503 });
   }
 }

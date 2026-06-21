@@ -68,8 +68,7 @@ export function FlowBrief({ alerts }: { alerts: FlowAlert[] }) {
   const refresh = useCallback(async (forAlerts: FlowAlert[]) => {
     if (!isRTH()) {
       setMarketOpen(false);
-      setBrief(null);
-      return;
+      return; // Bug 4: don't clear brief — preserve last known text across the 4 PM boundary
     }
     setMarketOpen(true);
     if (forAlerts.length < MIN_ALERTS) return;

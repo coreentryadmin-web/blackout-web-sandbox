@@ -195,29 +195,33 @@ function TickerTab({ symbol }: { symbol: string }) {
   const histRef = useRef<{ t: number; net: number }[]>([]);
   const [history, setHistory] = useState<{ t: number; net: number }[]>([]);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetchDarkPoolTicker(symbol);
-      const s = res.snapshot;
-      setSnap(s);
-      if (s) {
-        const net = s.call_premium - s.put_premium;
-        histRef.current = [...histRef.current.slice(-(MAX_HISTORY - 1)), { t: Date.now(), net }];
-        setHistory([...histRef.current]);
-      }
-    } catch { /* silently ignore */ }
-    finally { setLoading(false); }
-  }, [symbol]);
-
+  // Bug 5: cancellation flag prevents stale in-flight fetch from updating state after symbol switch
   useEffect(() => {
+    let cancelled = false;
+
+    const doLoad = async () => {
+      try {
+        const res = await fetchDarkPoolTicker(symbol);
+        if (cancelled) return;
+        const s = res.snapshot;
+        setSnap(s);
+        if (s) {
+          const net = s.call_premium - s.put_premium;
+          histRef.current = [...histRef.current.slice(-(MAX_HISTORY - 1)), { t: Date.now(), net }];
+          setHistory([...histRef.current]);
+        }
+      } catch { /* silently ignore */ }
+      finally { if (!cancelled) setLoading(false); }
+    };
+
     setLoading(true);
     setSnap(null);
     histRef.current = [];
     setHistory([]);
-    load();
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
-  }, [symbol, load]);
+    doLoad();
+    const id = setInterval(doLoad, POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [symbol]);
 
   if (loading) {
     return (

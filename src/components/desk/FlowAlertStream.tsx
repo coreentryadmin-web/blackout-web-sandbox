@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
@@ -8,6 +9,7 @@ import { DeskPanel } from "./DeskPanel";
 
 const WHALE_PREMIUM = 1_000_000;
 const STAGGER = 0.04;
+const RENDER_LIMIT = 150; // Bug 8: cap per-render to prevent browser freeze on large datasets
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -18,10 +20,17 @@ function timeAgo(iso: string): string {
   return `${Math.floor(m / 60)}h`;
 }
 
+// Bug 3: use Intl to derive today's ET date — handles DST (EST -05:00 / EDT -04:00) automatically
 function calcDte(expiry: string): number | null {
   if (!expiry) return null;
-  const exp = new Date(expiry + "T16:00:00-05:00");
-  return Math.max(0, Math.floor((exp.getTime() - Date.now()) / 86_400_000));
+  const etStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  const [m, d, y] = etStr.split("/");
+  const todayMs = new Date(`${y}-${m}-${d}T00:00:00`).getTime();
+  const expMs   = new Date(`${expiry}T00:00:00`).getTime();
+  return Math.max(0, Math.floor((expMs - todayMs) / 86_400_000));
 }
 
 function fmtExpiry(expiry: string): string {
@@ -90,11 +99,40 @@ export function FlowAlertStream({
   onTickerClick?: (ticker: string) => void;
   replayMode?: boolean;
 }) {
+  const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT); // Bug 8
+  const [newCount, setNewCount]       = useState(0);            // Bug 11
+  const scrollRef  = useRef<HTMLDivElement>(null);
+  const prevLenRef = useRef(0);
+
   const feedStatus = loading ? undefined : live ? "live" : "reconnecting";
 
   const visible = typeFilter === "ALL"
     ? flows
     : flows.filter((f) => f.option_type?.toUpperCase() === typeFilter);
+
+  // Bug 11: detect new alerts while user is scrolled down and show badge
+  useEffect(() => {
+    const added = visible.length - prevLenRef.current;
+    if (added > 0) {
+      const el = scrollRef.current;
+      if (el && el.scrollTop > 80) {
+        setNewCount((c) => c + added);
+      }
+    } else if (added < 0) {
+      // data was reset (filter/ticker change) — reset state
+      setNewCount(0);
+      setRenderLimit(RENDER_LIMIT);
+    }
+    prevLenRef.current = visible.length;
+  }, [visible.length]);
+
+  const displayed = visible.slice(0, renderLimit); // Bug 8
+  const hasMore   = visible.length > renderLimit;
+
+  const scrollToTop = () => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    setNewCount(0);
+  };
 
   return (
     <DeskPanel
@@ -105,156 +143,174 @@ export function FlowAlertStream({
       glow
       className="h-full"
     >
-      <div
-        className="flow-scroll overflow-y-auto px-1"
-        style={{ maxHeight: "calc(100vh - 210px)" }}
-      >
-        {loading ? (
-          <SkeletonCards />
-        ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-8 h-8 rounded-full border border-zinc-800 flex items-center justify-center">
-              <span className="text-zinc-700 text-xs">—</span>
+      <div className="relative">
+        {/* Bug 11: new alert badge — floats above scroll area when user is scrolled down */}
+        <AnimatePresence>
+          {newCount > 0 && (
+            <motion.button
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              type="button"
+              onClick={scrollToTop}
+              className="absolute top-2 left-1/2 -translate-x-1/2 z-10 font-mono text-[10px] font-bold px-3 py-1 rounded-full border border-violet-600/60 bg-violet-950/90 text-violet-300 backdrop-blur-sm whitespace-nowrap"
+              style={{ boxShadow: "0 0 12px rgba(139,92,246,0.4)" }}
+            >
+              ↑ {newCount} new
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        <div
+          ref={scrollRef}
+          className="flow-scroll overflow-y-auto px-1"
+          style={{ maxHeight: "calc(100vh - 210px)" }}
+          onScroll={() => { if (scrollRef.current && scrollRef.current.scrollTop < 40) setNewCount(0); }}
+        >
+          {loading ? (
+            <SkeletonCards />
+          ) : visible.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-8 h-8 rounded-full border border-zinc-800 flex items-center justify-center">
+                <span className="text-zinc-700 text-xs">—</span>
+              </div>
+              <p className="font-mono text-[11px] text-zinc-500 text-center">
+                {tickerFilter
+                  ? `No alerts found for ${tickerFilter} — try a different ticker or lower the premium filter`
+                  : typeFilter !== "ALL"
+                    ? `No ${typeFilter} alerts above the current premium threshold`
+                    : hasData
+                      ? "Watching for flow alerts…"
+                      : live
+                        ? "Loading flow data…"
+                        : "Reconnecting to flow data…"}
+              </p>
             </div>
-            <p className="font-mono text-[11px] text-zinc-500 text-center">
-              {tickerFilter
-                ? `No alerts found for ${tickerFilter} — try a different ticker or lower the premium filter`
-                : typeFilter !== "ALL"
-                  ? `No ${typeFilter} alerts above the current premium threshold`
-                  : hasData
-                    ? "Watching for flow alerts…"
-                    : live
-                      ? "Loading flow data…"
-                      : "Reconnecting to flow data…"}
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5 py-1">
-            <AnimatePresence initial={false}>
-              {visible.map((flow, i) => {
-                const isCall     = flow.option_type?.toUpperCase() === "CALL";
-                const isWhale    = flow.premium >= WHALE_PREMIUM;
-                const dte        = flow.dte ?? calcDte(flow.expiry);
-                const is0dte     = dte === 0;
-                const isCompound = compoundTickers?.has(flow.ticker) ?? false;
-                const isDiverge  = (isCall && flow.direction === "bearish") ||
-                                   (!isCall && flow.direction === "bullish");
+          ) : (
+            <div className="flex flex-col gap-1.5 py-1">
+              <AnimatePresence initial={false}>
+                {displayed.map((flow, i) => {
+                  const isCall     = flow.option_type?.toUpperCase() === "CALL";
+                  const isWhale    = flow.premium >= WHALE_PREMIUM;
+                  const dte        = flow.dte ?? calcDte(flow.expiry);
+                  const is0dte     = dte === 0;
+                  const isCompound = compoundTickers?.has(flow.ticker) ?? false;
+                  const isDiverge  = (isCall && flow.direction === "bearish") ||
+                                     (!isCall && flow.direction === "bullish");
 
-                const cardCls = clsx(
-                  "flow-card",
-                  isCompound ? "flow-card-compound" : isCall ? "flow-card-call" : "flow-card-put"
-                );
+                  const cardCls = clsx(
+                    "flow-card",
+                    isCompound ? "flow-card-compound" : isCall ? "flow-card-call" : "flow-card-put"
+                  );
 
-                return (
-                  <motion.div
-                    key={`${flow.ticker}-${flow.alerted_at}-${i}`}
-                    layout="position"
-                    initial={{ opacity: 0, x: -12, scale: 0.98 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
-                    transition={{
-                      opacity:   { duration: 0.25, delay: i < 5 ? i * STAGGER : 0 },
-                      x:         { duration: 0.3,  delay: i < 5 ? i * STAGGER : 0, type: "spring", damping: 22, stiffness: 280 },
-                      scale:     { duration: 0.25 },
-                    }}
-                    onClick={() => onTickerClick?.(flow.ticker)}
-                    className={cardCls}
-                    style={i === 0 ? { animation: "flow-alert-flash 2s ease-out forwards" } : undefined}
-                  >
-                    {/* Row 1: ticker + badges + premium */}
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        {/* Compound badge first */}
-                        {isCompound && (
-                          <span className="flow-badge flow-badge-stack">⚡ STACKING</span>
-                        )}
-
-                        {/* Ticker */}
-                        <span className="font-anton text-[18px] leading-none text-yellow-300 tracking-wide">
-                          {flow.ticker}
-                        </span>
-
-                        {/* Call / Put */}
-                        <span className={clsx("flow-badge", isCall ? "flow-badge-call" : "flow-badge-put")}>
-                          {flow.option_type?.toUpperCase()}
-                        </span>
-
-                        {/* Alert rule */}
-                        {flow.alert_rule && (
-                          <span className={ruleBadgeCls(flow.alert_rule)}>
-                            {ruleLabel(flow.alert_rule)}
+                  return (
+                    <motion.div
+                      key={`${flow.ticker}-${flow.alerted_at}-${i}`}
+                      layout="position"
+                      initial={{ opacity: 0, x: -12, scale: 0.98 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
+                      transition={{
+                        opacity:   { duration: 0.25, delay: i < 5 ? i * STAGGER : 0 },
+                        x:         { duration: 0.3,  delay: i < 5 ? i * STAGGER : 0, type: "spring", damping: 22, stiffness: 280 },
+                        scale:     { duration: 0.25 },
+                      }}
+                      onClick={() => onTickerClick?.(flow.ticker)}
+                      className={cardCls}
+                      style={i === 0 ? { animation: "flow-alert-flash 2s ease-out forwards" } : undefined}
+                    >
+                      {/* Row 1: ticker + badges + premium */}
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          {isCompound && (
+                            <span className="flow-badge flow-badge-stack">⚡ STACKING</span>
+                          )}
+                          <span className="font-anton text-[18px] leading-none text-yellow-300 tracking-wide">
+                            {flow.ticker}
                           </span>
-                        )}
-
-                        {/* Whale badge */}
-                        {isWhale && <span className="flow-badge flow-badge-whale">WHALE</span>}
-
-                        {/* 0DTE badge */}
-                        {is0dte && <span className="flow-badge flow-badge-0dte">0DTE</span>}
-
-                        {/* Divergence badge */}
-                        {isDiverge && <span className="flow-badge flow-badge-diverge">DIVERGE</span>}
-                      </div>
-
-                      {/* Premium + time */}
-                      <div className="flex items-center gap-3 ml-auto flex-shrink-0">
-                        <span className={clsx(
-                          "font-mono text-[15px] font-bold tabular-nums tracking-tight",
-                          isCompound ? "text-yellow-300" : isCall ? "text-fuchsia-400" : "text-rose-400"
-                        )}>
-                          {fmtPremium(flow.premium)}
-                        </span>
-                        <span className="font-mono text-[10px] text-zinc-400 w-6 text-right tabular-nums">
-                          {timeAgo(flow.alerted_at)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Row 2: contract details */}
-                    <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <p className="font-mono text-[11px] text-zinc-400 leading-none flex items-center gap-1 flex-wrap">
-                        <span className="text-yellow-300 font-semibold">{flow.strike}{isCall ? "C" : "P"}</span>
-                        <span className="text-zinc-600">·</span>
-                        <span>{fmtExpiry(flow.expiry)}</span>
-                        {dte !== null && !is0dte && (
-                          <>
-                            <span className="text-zinc-600">·</span>
-                            <span>{dte}d</span>
-                          </>
-                        )}
-                        {flow.ask_pct != null && flow.ask_pct > 0 && (
-                          <>
-                            <span className="text-zinc-600">·</span>
-                            <span className={flow.ask_pct >= 85 ? "text-amber-400" : "text-zinc-400"}>
-                              {Math.round(flow.ask_pct)}% ask
+                          <span className={clsx("flow-badge", isCall ? "flow-badge-call" : "flow-badge-put")}>
+                            {flow.option_type?.toUpperCase()}
+                          </span>
+                          {flow.alert_rule && (
+                            <span className={ruleBadgeCls(flow.alert_rule)}>
+                              {ruleLabel(flow.alert_rule)}
                             </span>
-                          </>
-                        )}
-                      </p>
+                          )}
+                          {isWhale && <span className="flow-badge flow-badge-whale">WHALE</span>}
+                          {is0dte && <span className="flow-badge flow-badge-0dte">0DTE</span>}
+                          {isDiverge && <span className="flow-badge flow-badge-diverge">DIVERGE</span>}
+                        </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {flow.score > 0 && (
+                        <div className="flex items-center gap-3 ml-auto flex-shrink-0">
                           <span className={clsx(
-                            "font-mono text-[10px] font-medium",
-                            flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-zinc-500"
+                            "font-mono text-[15px] font-bold tabular-nums tracking-tight",
+                            isCompound ? "text-yellow-300" : isCall ? "text-fuchsia-400" : "text-rose-400"
                           )}>
-                            ▲{flow.score.toFixed(1)}
+                            {fmtPremium(flow.premium)}
                           </span>
-                        )}
-                        <span className={clsx(
-                          "font-mono text-[9px] font-semibold uppercase tracking-wider",
-                          isCall ? "text-fuchsia-400" : "text-rose-500"
-                        )}>
-                          {flow.direction}
-                        </span>
+                          <span className="font-mono text-[10px] text-zinc-400 w-6 text-right tabular-nums">
+                            {timeAgo(flow.alerted_at)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-        )}
+
+                      {/* Row 2: contract details */}
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <p className="font-mono text-[11px] text-zinc-400 leading-none flex items-center gap-1 flex-wrap">
+                          <span className="text-yellow-300 font-semibold">{flow.strike}{isCall ? "C" : "P"}</span>
+                          <span className="text-zinc-600">·</span>
+                          <span>{fmtExpiry(flow.expiry)}</span>
+                          {dte !== null && !is0dte && (
+                            <>
+                              <span className="text-zinc-600">·</span>
+                              <span>{dte}d</span>
+                            </>
+                          )}
+                          {flow.ask_pct != null && flow.ask_pct > 0 && (
+                            <>
+                              <span className="text-zinc-600">·</span>
+                              <span className={flow.ask_pct >= 85 ? "text-amber-400" : "text-zinc-400"}>
+                                {Math.round(flow.ask_pct)}% ask
+                              </span>
+                            </>
+                          )}
+                        </p>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {flow.score > 0 && (
+                            <span className={clsx(
+                              "font-mono text-[10px] font-medium",
+                              flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-zinc-500"
+                            )}>
+                              ▲{flow.score.toFixed(1)}
+                            </span>
+                          )}
+                          <span className={clsx(
+                            "font-mono text-[9px] font-semibold uppercase tracking-wider",
+                            isCall ? "text-fuchsia-400" : "text-rose-500"
+                          )}>
+                            {flow.direction}
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+
+              {/* Bug 8: load-more button instead of rendering all 5000 items */}
+              {hasMore && (
+                <button
+                  type="button"
+                  onClick={() => setRenderLimit((r) => r + RENDER_LIMIT)}
+                  className="w-full font-mono text-[10px] text-zinc-600 hover:text-zinc-400 py-3 border border-zinc-800/50 rounded-lg hover:border-zinc-700 transition-colors mt-1"
+                >
+                  Load {Math.min(RENDER_LIMIT, visible.length - renderLimit)} more · {visible.length - renderLimit} remaining
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </DeskPanel>
   );

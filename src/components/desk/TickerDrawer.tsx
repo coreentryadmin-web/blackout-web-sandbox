@@ -62,7 +62,16 @@ function FlowRow({ f }: { f: FlowAlert }) {
   );
 }
 
-export function TickerDrawer({ ticker, onClose }: { ticker: string | null; onClose: () => void }) {
+// Bug 13: typeFilter syncs TickerDrawer with the tape's active filter
+export function TickerDrawer({
+  ticker,
+  typeFilter,
+  onClose,
+}: {
+  ticker: string | null;
+  typeFilter?: "ALL" | "CALL" | "PUT";
+  onClose: () => void;
+}) {
   const [state, setState] = useState<State>({ flows: [], dp: [], loading: false });
 
   const load = useCallback(async (t: string) => {
@@ -87,8 +96,13 @@ export function TickerDrawer({ ticker, onClose }: { ticker: string | null; onClo
     return () => window.removeEventListener("keydown", fn);
   }, [onClose]);
 
-  const callPrem = state.flows.filter((f) => f.option_type === "CALL").reduce((s, f) => s + f.premium, 0);
-  const putPrem  = state.flows.filter((f) => f.option_type === "PUT").reduce((s, f) => s + f.premium, 0);
+  // Apply same typeFilter as the tape so drawer matches what the user is looking at
+  const displayFlows = typeFilter && typeFilter !== "ALL"
+    ? state.flows.filter((f) => f.option_type === typeFilter)
+    : state.flows;
+
+  const callPrem = displayFlows.filter((f) => f.option_type === "CALL").reduce((s, f) => s + f.premium, 0);
+  const putPrem  = displayFlows.filter((f) => f.option_type === "PUT").reduce((s, f) => s + f.premium, 0);
   const total    = callPrem + putPrem;
   const callPct  = total > 0 ? Math.round((callPrem / total) * 100) : 0;
   const isBull   = callPrem >= putPrem;
@@ -156,7 +170,7 @@ export function TickerDrawer({ ticker, onClose }: { ticker: string | null; onClo
               ) : (
                 <div className="p-5 space-y-5">
                   {/* Premium summary */}
-                  {state.flows.length > 0 && (
+                  {displayFlows.length > 0 && (
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/15 p-3">
                         <p className="font-mono text-[9px] tracking-widest text-emerald-800 uppercase mb-1.5">Call Premium</p>
@@ -194,13 +208,13 @@ export function TickerDrawer({ ticker, onClose }: { ticker: string | null; onClo
                   {/* Flow alerts */}
                   <div>
                     <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 mb-2">
-                      Flow · {state.flows.length} alerts today
+                      Flow · {displayFlows.length} alerts{typeFilter && typeFilter !== "ALL" ? ` · ${typeFilter}` : ""}
                     </p>
-                    {state.flows.length === 0 ? (
-                      <p className="font-mono text-[11px] text-zinc-700 text-center py-6">No flow alerts for {ticker}</p>
+                    {displayFlows.length === 0 ? (
+                      <p className="font-mono text-[11px] text-zinc-700 text-center py-6">No {typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for {ticker}</p>
                     ) : (
                       <div className="space-y-1.5">
-                        {state.flows.map((f, i) => <FlowRow key={`${f.alerted_at}-${i}`} f={f} />)}
+                        {displayFlows.map((f, i) => <FlowRow key={`${f.alerted_at}-${i}`} f={f} />)}
                       </div>
                     )}
                   </div>
