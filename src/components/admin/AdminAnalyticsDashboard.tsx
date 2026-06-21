@@ -7,23 +7,24 @@ import { AdminApiDashboard } from "@/components/admin/AdminApiDashboard";
 import { AdminCronDashboard } from "@/components/admin/AdminCronDashboard";
 import { AdminNightHawkDashboard } from "@/components/admin/AdminNightHawkDashboard";
 import { AdminSpxDashboard } from "@/components/admin/AdminSpxDashboard";
+import { AdminOperationsDashboard } from "@/components/admin/AdminOperationsDashboard";
 import { AdminHealthBanner } from "@/components/admin/AdminHealthBanner";
-import { ActionButton, TabCanvas } from "@/components/admin/AdminUi";
+import { TabCanvas } from "@/components/admin/AdminUi";
 
-type ToolTab = "spx" | "nighthawk" | "largo" | "apis" | "crons";
+type ToolTab = "spx" | "nighthawk" | "ops" | "apis" | "crons";
 
 const TABS: Array<{ id: ToolTab; label: string; icon: string; blurb: string }> = [
-  { id: "apis", label: "API Command", icon: "⬡", blurb: "Live ops · incidents · 265 endpoints" },
-  { id: "crons", label: "Crons", icon: "⏱", blurb: "Job health · schedules · last run" },
-  { id: "spx", label: "SPX Sniper", icon: "◎", blurb: "Live engine · outcomes · desk" },
-  { id: "nighthawk", label: "Night Hawk", icon: "◈", blurb: "Target-hit · signal quality" },
-  { id: "largo", label: "Largo", icon: "◆", blurb: "Coming soon" },
+  { id: "ops",       label: "Operations",  icon: "◉", blurb: "Incidents · audit trail · system vitals" },
+  { id: "apis",      label: "API Command", icon: "⬡", blurb: "Live ops · incidents · 265 endpoints" },
+  { id: "crons",     label: "Crons",       icon: "⏱", blurb: "Job health · schedules · last run" },
+  { id: "spx",       label: "SPX Sniper",  icon: "◎", blurb: "Live engine · outcomes · desk" },
+  { id: "nighthawk", label: "Night Hawk",  icon: "◈", blurb: "Target-hit · signal quality" },
 ];
 
 function parseTab(value: string | null): ToolTab {
-  if (value === "spx" || value === "nighthawk" || value === "largo" || value === "apis" || value === "crons")
+  if (value === "spx" || value === "nighthawk" || value === "ops" || value === "apis" || value === "crons")
     return value;
-  return "apis";
+  return "ops";
 }
 
 export function AdminAnalyticsDashboard() {
@@ -39,9 +40,9 @@ export function AdminAnalyticsDashboard() {
     (next: ToolTab) => {
       setTab(next);
       const params = new URLSearchParams(searchParams.toString());
-      if (next === "apis") params.delete("tab");
+      if (next === "ops") params.delete("tab");
       else params.set("tab", next);
-      if (next !== "spx") params.delete("section");
+      if (next !== "spx" && next !== "ops") params.delete("section");
       const qs = params.toString();
       router.replace(qs ? `/admin?${qs}` : "/admin", { scroll: false });
     },
@@ -77,6 +78,11 @@ export function AdminAnalyticsDashboard() {
       </nav>
 
       <div className="admin-tab-panel" key={tab}>
+        {tab === "ops" && (
+          <TabCanvas theme="neutral">
+            <AdminOperationsDashboard />
+          </TabCanvas>
+        )}
         {tab === "apis" && (
           <TabCanvas theme="api">
             <AdminApiDashboard />
@@ -95,18 +101,6 @@ export function AdminAnalyticsDashboard() {
         {tab === "nighthawk" && (
           <TabCanvas theme="neutral">
             <AdminNightHawkDashboard />
-          </TabCanvas>
-        )}
-        {tab === "largo" && (
-          <TabCanvas theme="neutral">
-            <div className="admin-coming-soon admin-coming-soon-neon">
-              <p className="admin-kicker">Largo</p>
-              <h2 className="admin-deck-heading">Intel engine analytics incoming</h2>
-              <p>Win rate, signal quality, and engagement telemetry will land in this slot next.</p>
-              <ActionButton variant="primary" onClick={() => selectTab("apis")}>
-                Back to API Command
-              </ActionButton>
-            </div>
           </TabCanvas>
         )}
       </div>
