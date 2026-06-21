@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   const min_premium = Number(sp.get("min_premium") ?? 0) || undefined;
   const since_hours = Number(sp.get("since_hours") ?? 48) || 48;
 
+  console.log(`[market/flows] dbConfigured=${dbConfigured()} uwConfigured=${uwConfigured()} min_premium=${min_premium} since_hours=${since_hours}`);
+
   if (dbConfigured()) {
     // Lazy side-effect: background ingest keeps Postgres fresh on read (cron also runs ingest).
     maybeRunFlowIngest().catch((err) => console.error("[flows] lazy ingest error:", err));
