@@ -195,7 +195,12 @@ export function FlowFeed() {
     const byTicker = new Map<string, { recent: number; prior: number; recentPremium: number }>();
 
     for (const alert of alerts) {
-      const age = now - new Date(alert.alerted_at).getTime();
+      // Velocity must use the REAL alert time (event_at), not alerted_at — a
+      // just-ingested stale print has alerted_at≈now and would fake a spike. Prints
+      // with no known event_at (UW gave no timestamp) are skipped, not assumed recent.
+      if (!alert.event_at) continue;
+      const age = now - new Date(alert.event_at).getTime();
+      if (!Number.isFinite(age)) continue;
       const cur = byTicker.get(alert.ticker) ?? { recent: 0, prior: 0, recentPremium: 0 };
       if (age <= R_MS) {
         cur.recent++;

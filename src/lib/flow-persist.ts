@@ -56,7 +56,22 @@ export async function persistAndPublishFlowAlert(
   }
 
   const id = alertId(raw, flow);
+
+  // Store the REAL UW alert time only (created_at / start_time). Do NOT fall back to
+  // flow.alerted_at — parseUwFlowAlert defaults that to NOW for timestampless alerts,
+  // which made stale prints look fresh and produced false Velocity Radar spikes.
+  const realCreatedAt = ((): string | null => {
+    if (raw.created_at) return String(raw.created_at);
+    const st = raw.start_time;
+    if (st != null) {
+      const ts = Number(st);
+      if (Number.isFinite(ts)) return new Date(ts > 1e12 ? ts : ts * 1000).toISOString();
+    }
+    return null;
+  })();
+
   const event = toFlowRow(flow);
+  event.event_at = realCreatedAt;
   let inserted = false;
 
   if (dbConfigured()) {
@@ -69,7 +84,7 @@ export async function persistAndPublishFlowAlert(
         option_type: flow.option_type,
         total_premium: flow.premium,
         score: flow.score,
-        created_at: flow.alerted_at || null,
+        created_at: realCreatedAt,
         raw_payload: raw,
       });
     } catch (error) {

@@ -682,6 +682,8 @@ export type FlowRow = {
   score: number;
   route: string;
   alerted_at: string;
+  /** Real created_at from UW; null when unknown (do NOT fall back to inserted_at). */
+  event_at?: string | null;
   dte?: number;
   alert_rule?: string;
   ask_pct?: number;
@@ -735,6 +737,7 @@ export async function fetchRecentFlows(params: {
              ELSE 'stock'
            END AS route,
            COALESCE(created_at, inserted_at) AS alerted_at,
+           created_at AS event_at,
            (expiry - CURRENT_DATE) AS dte,
            NULLIF(COALESCE(
              raw_payload->>'alert_rule',
@@ -772,6 +775,7 @@ export async function fetchRecentFlows(params: {
     score: Number(row.score ?? 0),
     route: String(row.route ?? "stock"),
     alerted_at: row.alerted_at ? new Date(String(row.alerted_at)).toISOString() : new Date().toISOString(),
+    event_at: row.event_at ? new Date(String(row.event_at)).toISOString() : null,
     dte: row.dte != null ? Number(row.dte) : undefined,
     alert_rule: row.alert_rule ? String(row.alert_rule) : undefined,
     ask_pct: row.ask_pct != null ? Number(row.ask_pct) : undefined,
