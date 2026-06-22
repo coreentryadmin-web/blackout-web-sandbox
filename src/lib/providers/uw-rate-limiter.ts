@@ -55,6 +55,9 @@ async function getSharedRedis(): Promise<RedisClient | null> {
       lazyConnect: true,
       connectTimeout: 2_000,
     });
+    // Without an 'error' listener, ioredis throws on the EventEmitter when the
+    // connection drops post-connect — which crashes the whole process/replica.
+    client.on("error", (err) => console.warn("[uw-rate-limiter] redis error:", err instanceof Error ? err.message : err));
     await client.connect();
     sharedRedis = client as unknown as RedisClient;
     return sharedRedis;

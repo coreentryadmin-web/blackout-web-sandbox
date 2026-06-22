@@ -34,6 +34,9 @@ async function connectPublisher(): Promise<RedisClient | null> {
         lazyConnect: true,
         connectTimeout: 2_000,
       });
+      // Without an 'error' listener, ioredis throws on the EventEmitter when the
+      // connection drops post-connect — which crashes the whole process/replica.
+      client.on("error", (err) => console.warn("[redis-pubsub] redis error:", err instanceof Error ? err.message : err));
       await client.connect();
       publisher = client;
       publisherReady = true;
@@ -67,6 +70,9 @@ async function connectSubscriber(): Promise<RedisClient | null> {
         lazyConnect: true,
         connectTimeout: 2_000,
       });
+      // Without an 'error' listener, ioredis throws on the EventEmitter when the
+      // connection drops post-connect — which crashes the whole process/replica.
+      client.on("error", (err) => console.warn("[redis-pubsub] redis error:", err instanceof Error ? err.message : err));
       await client.connect();
       client.on("message", (channel, message) => {
         channelHandlers.get(channel)?.forEach((handler) => {

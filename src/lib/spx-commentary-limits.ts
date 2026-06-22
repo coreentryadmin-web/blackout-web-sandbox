@@ -46,6 +46,9 @@ async function getRedis(): Promise<import("ioredis").default | null> {
         lazyConnect: true,
         connectTimeout: 2_000,
       });
+      // Without an 'error' listener, ioredis throws on the EventEmitter when the
+      // connection drops post-connect — which crashes the whole process/replica.
+      client.on("error", (err) => console.warn("[spx-commentary-limits] redis error:", err instanceof Error ? err.message : err));
       await client.connect();
       _redisClient = client;
       return _redisClient;

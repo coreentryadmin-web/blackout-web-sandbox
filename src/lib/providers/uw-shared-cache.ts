@@ -58,6 +58,9 @@ async function getUwCacheRedis(): Promise<RedisClient | null> {
         lazyConnect: true,
         connectTimeout: 2_000,
       })
+      // Without an 'error' listener, ioredis throws on the EventEmitter when the
+      // connection drops post-connect — which crashes the whole process/replica.
+      client.on("error", (err) => console.warn("[uw-shared-cache] redis error:", err instanceof Error ? err.message : err))
       await client.connect()
       _redis = client as unknown as RedisClient
       _lastFailedAt = 0

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { spxBroadcaster } from '@/lib/spx-broadcaster'
+import { authorizeMarketDeskApi } from '@/lib/market-api-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -14,6 +15,10 @@ export const runtime = 'nodejs'
  *   es.onmessage = (e) => { const bar = JSON.parse(e.data); ... }
  */
 export async function GET(req: NextRequest) {
+  // Premium SPX/VIX stream — gate per connection (same data as /api/market/indices).
+  const auth = await authorizeMarketDeskApi(req)
+  if (auth instanceof Response) return auth
+
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
