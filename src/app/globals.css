@@ -9171,34 +9171,34 @@ body {
   }
 
   /* ── Admin approved palette: readability + color lock ── */
-  .admin-page .text-white,
-  .admin-page .text-sky-100 { color: var(--admin-text-muted) !important; }
-  .admin-page .text-sky-200 { color: var(--admin-text-dim) !important; }
-  .admin-page .text-sky-300,
-  .admin-page .text-cyan-400,
-  .admin-page .text-cyan-400 { color: var(--admin-text-label) !important; }
+  /* Using [class~=] attribute selectors to avoid Tailwind @apply circular-dep inside @layer */
+  .admin-page [class~="text-white"],
+  .admin-page [class~="text-sky-100"] { color: var(--admin-text-muted) !important; }
+  .admin-page [class~="text-sky-200"] { color: var(--admin-text-dim) !important; }
+  .admin-page [class~="text-sky-300"],
+  .admin-page [class~="text-cyan-400"] { color: var(--admin-text-label) !important; }
 
-  .admin-page .text-bull,
+  .admin-page [class~="text-bull"],
   .admin-page [class*="text-emerald"],
   .admin-page [class*="text-green"] { color: var(--admin-green) !important; }
 
-  .admin-page .text-bear,
+  .admin-page [class~="text-bear"],
   .admin-page [class*="text-red"],
   .admin-page [class*="text-rose"] { color: var(--admin-orange) !important; }
 
-  .admin-page .text-gold,
+  .admin-page [class~="text-gold"],
   .admin-page [class*="text-amber"],
   .admin-page [class*="text-yellow"] { color: var(--admin-gold) !important; }
 
-  .admin-page .text-ember,
+  .admin-page [class~="text-ember"],
   .admin-page [class*="text-orange"]:not([class*="text-orange-50"]) { color: var(--admin-orange) !important; }
 
-  .admin-page .text-purple,
+  .admin-page [class~="text-purple"],
   .admin-page [class*="text-violet"],
   .admin-page [class*="text-fuchsia"],
   .admin-page [class*="text-indigo"] { color: var(--admin-purple) !important; }
 
-  .admin-page .text-cyan,
+  .admin-page [class~="text-cyan"],
   .admin-page [class*="text-cyan"],
   .admin-page [class*="text-sky"],
   .admin-page [class*="text-teal"] { color: var(--admin-cyan) !important; }
