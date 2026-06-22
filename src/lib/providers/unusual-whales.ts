@@ -74,23 +74,28 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
 
   const url = `${BASE}${path}${qs.size ? `?${qs}` : ""}`;
   const requestKey = buildUwRequestKey(path, params);
-  const res = await throttleUwCoalesced(requestKey, () =>
-    trackedFetch("unusual_whales", path, url, {
+
+  // Coalesce on the PARSED JSON, not the Response. A Response body is a one-shot stream,
+  // so handing the same in-flight Response to concurrent callers made the 2nd .json()
+  // throw 'body already read' — silently dropping greek-exposure / net-prem desk data
+  // under load (uwGetSafe swallowed it as null). Parsing inside the coalesced fn lets
+  // every concurrent caller share one already-parsed payload.
+  return throttleUwCoalesced(requestKey, async () => {
+    const res = await trackedFetch("unusual_whales", path, url, {
       headers: {
         Authorization: `Bearer ${KEY}`,
         Accept: "application/json",
         "UW-CLIENT-API-ID": CLIENT_ID,
       },
       cache: "no-store",
-    })
-  );
-
-  if (res.status === 429) {
-    noteUw429(path);
-    throw new Error(`Unusual Whales ${path} → 429`);
-  }
-  if (!res.ok) throw new Error(`Unusual Whales ${path} → ${res.status}`);
-  return res.json() as Promise<T>;
+    });
+    if (res.status === 429) {
+      noteUw429(path);
+      throw new Error(`Unusual Whales ${path} → 429`);
+    }
+    if (!res.ok) throw new Error(`Unusual Whales ${path} → ${res.status}`);
+    return res.json() as Promise<T>;
+  });
 }
 
 function extractRows(payload: unknown): Record<string, unknown>[] {
