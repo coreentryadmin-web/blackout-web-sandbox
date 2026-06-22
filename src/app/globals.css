@@ -23,6 +23,21 @@
 
 html { scroll-behavior: smooth; }
 
+/* a11y: honor reduced-motion (tames the pervasive pulsing/scrolling animation) and give
+   keyboard users a visible focus ring site-wide (WCAG 2.3.3 + 2.4.7). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
 body {
   background: #040407;
   color: #f0f0f8;

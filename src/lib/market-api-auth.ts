@@ -1,12 +1,17 @@
 import type { NextRequest } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { timingSafeEqual } from "crypto";
 import { parseTier, tierAtLeast, type Tier } from "@/lib/tiers";
 
 export function isCronAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return false;
-  const authHeader = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return authHeader === secret;
+  const authHeader = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  // Constant-time compare — this is the single auth gate for all 9 cron writers, so the
+  // `===` early-exit shouldn't leak the secret byte-by-byte via response timing.
+  const a = Buffer.from(authHeader);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function jsonResponse(body: unknown, status: number): Response {

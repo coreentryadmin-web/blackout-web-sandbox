@@ -29,11 +29,13 @@ export function mergeTapeItems(
     out.push(t);
     if (out.length >= max) break;
   }
-  // Sort by premium descending (biggest prints float to the top) with time as tiebreaker
+  // Sort by time descending (newest prints first) with premium as tiebreaker, so the live
+  // tape reflects real tape order instead of a static premium ranking that looks frozen
+  // during fast prints (matches the server-side time-sort in the flows feed).
   return out.sort((a, b) => {
-    const premDiff = (b.premium ?? 0) - (a.premium ?? 0);
-    if (premDiff !== 0) return premDiff;
-    return new Date(b.time).getTime() - new Date(a.time).getTime();
+    const timeDiff = new Date(b.time).getTime() - new Date(a.time).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return (b.premium ?? 0) - (a.premium ?? 0);
   });
 }
 

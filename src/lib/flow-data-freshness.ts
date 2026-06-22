@@ -3,6 +3,9 @@ let lastFlowDataAt: number | null = null;
 /** Mark UW flow data fresh (WS, REST ingest, or desk poll). */
 export function markFlowDataFresh(at = Date.now()): void {
   if (!Number.isFinite(at)) return;
+  // Reject future-dated timestamps (clock skew / bad source data). A future value would
+  // pin freshness ahead of real time and permanently disable the staleness trade gate.
+  if (at > Date.now() + 60_000) return;
   if (lastFlowDataAt == null || at > lastFlowDataAt) {
     lastFlowDataAt = at;
   }
