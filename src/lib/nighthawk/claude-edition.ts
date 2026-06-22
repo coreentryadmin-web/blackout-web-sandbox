@@ -3,6 +3,7 @@ import type { TickerDossier } from "./dossier";
 import { buildClaudePrompt, buildMarketRecap, type EngineState } from "./format";
 import type { MarketWideContext } from "./market-wide";
 import type { SpxDeskSummary, FlowTapeSummary } from "@/lib/platform/types";
+import type { PlayOutcomeStats } from "@/lib/spx-play-outcomes";
 import {
   fetchEditionChains,
   formatEditionChainTables,
@@ -78,6 +79,7 @@ export async function generateEditionPlays(params: {
   engineState?: EngineState | null;
   spxDesk?: SpxDeskSummary | null;
   flowTape?: FlowTapeSummary | null;
+  playOutcomes?: PlayOutcomeStats | null;
 }): Promise<{ plays: PlaybookPlay[]; recap: ReturnType<typeof buildMarketRecap>; raw: string | null }> {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
@@ -120,6 +122,7 @@ export async function generateEditionPlays(params: {
     engineState: params.engineState,
     spxDesk: params.spxDesk ?? null,
     flowTape: params.flowTape ?? null,
+    playOutcomes: params.playOutcomes ?? null,
   });
   const raw = await anthropicText(prompt, 4500, SYSTEM);
   if (!raw) {

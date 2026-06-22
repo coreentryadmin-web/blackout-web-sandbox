@@ -10,6 +10,7 @@ import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxDeskSummary } from "./types";
 
@@ -115,4 +116,8 @@ export async function getSpxSignalLog(limit = 20) {
 
 export async function getSpxLottoState() {
   return fetchLottoPlaysForDate(todayEtYmd());
+}
+
+export async function getSpxPowerHourState() {
+  return loadPowerHourRecord();
 }

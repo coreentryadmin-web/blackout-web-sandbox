@@ -18,6 +18,7 @@ import { syncNighthawkPlayOutcomes } from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
+import { fetchPlayOutcomeStats } from "@/lib/spx-play-outcomes";
 import { formatTickerDossierText } from "./format";
 import { fetchIndexDossiers } from "./index-dossier";
 import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
@@ -233,18 +234,21 @@ export async function buildEveningEdition(opts?: {
 
     // Index context for recap only
     console.info("[nighthawk/edition] stage_synthesis: index recap + Claude");
-    const [indexDossiers, spxDesk, flowTape, spxPlay, spxOpenPlay, spxLotto] = await Promise.all([
+    const [indexDossiers, spxDesk, flowTape, spxPlay, spxOpenPlay, spxLotto, spxPowerHour, playOutcomes] = await Promise.all([
       fetchIndexDossiers(ctx),
       marketPlatform.spx.getSpxDeskSummary().catch(() => null),
       marketPlatform.flows.getFlowTapeSummary({ limit: 30 }).catch(() => null),
       marketPlatform.spx.getSpxPlayState().catch(() => null),
       marketPlatform.spx.getSpxOpenPlay().catch(() => null),
       marketPlatform.spx.getSpxLottoState().catch(() => []),
+      marketPlatform.spx.getSpxPowerHourState().catch(() => null),
+      fetchPlayOutcomeStats().catch(() => null),
     ]);
     const engineState = {
       play: spxPlay,
       openPlay: spxOpenPlay?.open_play ?? null,
       lotto: spxLotto ?? [],
+      powerHour: spxPowerHour ?? null,
     };
 
     const { plays: rawPlays, recap, raw } = await generateEditionPlays({
@@ -254,6 +258,7 @@ export async function buildEveningEdition(opts?: {
       engineState,
       spxDesk,
       flowTape,
+      playOutcomes,
     });
 
     if (!rawPlays.length) {

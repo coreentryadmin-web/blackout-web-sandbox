@@ -11,12 +11,14 @@ import type { MarketWideContext } from "./market-wide";
 import type { ScoredCandidate } from "./scorer";
 import { formatSpxGapContext } from "./spx-gap";
 import type { SpxDeskSummary, FlowTapeSummary } from "@/lib/platform/types";
+import type { PlayOutcomeStats } from "@/lib/spx-play-outcomes";
 import type { marketPlatform } from "@/lib/platform";
 
 export type EngineState = {
   play: Awaited<ReturnType<typeof marketPlatform.spx.getSpxPlayState>> | null;
   openPlay: Awaited<ReturnType<typeof marketPlatform.spx.getSpxOpenPlay>>["open_play"] | null;
   lotto: Awaited<ReturnType<typeof marketPlatform.spx.getSpxLottoState>>;
+  powerHour: Awaited<ReturnType<typeof marketPlatform.spx.getSpxPowerHourState>> | null;
 };
 
 // Cross-tool: the live SPX engine state (play + open play + lotto) so the overnight
@@ -60,7 +62,39 @@ function formatEngineState(engine?: EngineState | null): string {
     parts.push("Lotto: no picks today.");
   }
 
+  const ph = engine.powerHour;
+  if (ph && ph.phase !== "NONE") {
+    const dir = ph.direction ? ph.direction.toUpperCase() : "-";
+    const tgt = ph.target_price != null ? ph.target_price : `${ph.target_pts}pt`;
+    const stp = ph.stop_price != null ? ph.stop_price : `${ph.stop_pts}pt`;
+    parts.push(
+      `Power hour: ${ph.phase} ${dir} · ${ph.contract_label} · anchor ${ph.anchor_price}${ph.entry_price != null ? ` · entry ${ph.entry_price}` : ""} · target ${tgt} · stop ${stp} · conf ${ph.confidence}`
+    );
+  } else {
+    parts.push("Power hour: idle.");
+  }
+
   return parts.join("\n");
+}
+
+function pct(n: number): string {
+  return `${Math.round(n * 100)}%`;
+}
+
+// Cross-tool: the desk's own realized track record (closed SPX play outcomes) so the
+// overnight edition AI is anchored to how the live engines have actually performed.
+function formatTrackRecord(stats?: PlayOutcomeStats | null): string {
+  if (!stats || stats.total_closed === 0) return "";
+  const o = stats.overall;
+  const cb = stats.cold_buy;
+  const wp = stats.watch_promote;
+  const days = Math.round(stats.days_of_data);
+  const split = (label: string, b: typeof cb): string | null =>
+    b.count > 0
+      ? `${label} ${b.wins}-${b.losses} (${pct(b.win_rate)}, +${b.avg_mfe.toFixed(1)}/-${b.avg_mae.toFixed(1)} pts)`
+      : null;
+  const splits = [split("cold-buy", cb), split("watch-promote", wp)].filter(Boolean).join(" · ");
+  return `DESK TRACK RECORD (${stats.total_closed} closed plays / ${days}d): overall ${o.wins}-${o.losses}-${o.breakeven} (${pct(o.win_rate)} win-rate)${splits ? ` · ${splits}` : ""}`;
 }
 
 /** Summarized LIVE SPX desk + HELIX flow tape for the overnight edition prompt.
@@ -403,9 +437,11 @@ export function buildClaudePrompt(params: {
   engineState?: EngineState | null;
   spxDesk?: SpxDeskSummary | null;
   flowTape?: FlowTapeSummary | null;
+  playOutcomes?: PlayOutcomeStats | null;
 }): string {
-  const { ctx, recap, dossiers, ranked, chainTables = {}, huntMode, maxDte, engineState, spxDesk, flowTape } = params;
+  const { ctx, recap, dossiers, ranked, chainTables = {}, huntMode, maxDte, engineState, spxDesk, flowTape, playOutcomes } = params;
   const liveSpxSection = formatLiveSpxSection(spxDesk, flowTape);
+  const trackRecordLine = formatTrackRecord(playOutcomes);
   const dossierMap = Object.fromEntries(dossiers.map((d) => [d.ticker, d]));
 
   const stockBlocks = ranked
@@ -470,7 +506,7 @@ Sector strength: ${recap.sector_strength}
 Sector weakness: ${recap.sector_weakness}
 Catalysts: ${recap.catalysts}
 LIVE ENGINE STATE:
-${formatEngineState(engineState)}
+${formatEngineState(engineState)}${trackRecordLine ? `\n${trackRecordLine}` : ""}
 Hot chains: ${hotChains || "n/a"}
 ${vixContext ? `Vol regime: ${vixContext}` : ""}
 ${liveSpxSection ? `\nLIVE SPX / 0DTE + HELIX TAPE (real-time desk snapshot - anchor index-level bias and confirm/contradict single-name flow):\n${liveSpxSection}\n` : ""}
