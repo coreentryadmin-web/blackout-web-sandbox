@@ -9,26 +9,59 @@ export function isCronAuthorized(req: NextRequest): boolean {
   return authHeader === secret;
 }
 
-/** API routes — returns 401/403 JSON or null if allowed. */
+function jsonResponse(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Short-lived per-user tier cache. Market panels (commentary, desk, flow, play,
+ * lotto) each poll every 10–60s and used to make a fresh clerkClient.users.getUser
+ * call on EVERY request — a storm that hit Clerk's Backend API rate limit, throwing
+ * and surfacing as intermittent 502s, and added latency to every poll. Caching the
+ * resolved tier for 60s collapses that to ~one Clerk call per user per minute.
+ * Per-instance Map is fine: each Railway replica caches independently and the TTL
+ * keeps tier changes (webhook + membership-reconcile cron) visible within a minute.
+ */
+const tierCache = new Map<string, { tier: Tier; at: number }>();
+const TIER_CACHE_TTL_MS = 60_000;
+
+/** API routes — returns 401/403/503 JSON or {userId,tier} if allowed. */
 export async function requireTierApi(
   minTier: Tier
 ): Promise<{ userId: string; tier: Tier } | Response> {
   const { userId } = await auth();
   if (!userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
-  const user = await clerkClient.users.getUser(userId);
-  const tier = parseTier(user.publicMetadata?.tier);
+  let tier: Tier;
+  const cached = tierCache.get(userId);
+  if (cached && Date.now() - cached.at < TIER_CACHE_TTL_MS) {
+    tier = cached.tier;
+  } else {
+    try {
+      const user = await clerkClient.users.getUser(userId);
+      tier = parseTier(user.publicMetadata?.tier);
+      tierCache.set(userId, { tier, at: Date.now() });
+    } catch (err) {
+      // Transient Clerk API failure (rate limit / network). Fall back to the last
+      // known tier so a paying user isn't kicked out, else return a RETRYABLE 503
+      // (not a hard 401/500) so the client backs off and retries instead of showing
+      // a misleading "Unauthorized".
+      if (cached) {
+        tier = cached.tier;
+      } else {
+        console.warn("[requireTierApi] Clerk getUser failed, no cached tier:", err);
+        return jsonResponse({ error: "Auth check temporarily unavailable" }, 503);
+      }
+    }
+  }
 
   if (!tierAtLeast(tier, minTier)) {
-    return new Response(JSON.stringify({ error: "Forbidden — upgrade required" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Forbidden — upgrade required" }, 403);
   }
 
   return { userId, tier };
