@@ -21,7 +21,7 @@ import {
   buildSeasonality,
   largoSymbol,
 } from "@/lib/largo/technicals";
-import { fetchUpcomingMacroEvents } from "@/lib/providers/macro-events";
+import { fetchUpcomingMacroEventsLive } from "@/lib/providers/macro-events";
 import {
   computeMaxPainFromChain,
   fetchPolygonIvTermStructure,
@@ -304,7 +304,7 @@ async function toolNews(ticker: string, channels: string) {
 }
 
 async function toolEconomicCalendar(daysAhead: number) {
-  const staticEvents = fetchUpcomingMacroEvents(daysAhead);
+  const staticEvents = await fetchUpcomingMacroEventsLive(daysAhead);
   return { static_schedule: staticEvents };
 }
 

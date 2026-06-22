@@ -41,6 +41,7 @@ function uwCacheTtlMs(path: string): number {
   if (path === "/api/market/market-tide") return uwEnvSec("UW_MARKET_TIDE_CACHE_SEC", 300) * 1000;
   if (path === "/api/net-flow/expiry") return uwEnvSec("UW_NET_FLOW_CACHE_SEC", 120) * 1000;
   if (path.includes("/api/group-flow/")) return uwEnvSec("UW_GROUP_FLOW_CACHE_SEC", 180) * 1000;
+  if (path === "/api/market/economic-calendar") return uwEnvSec("UW_MACRO_CALENDAR_CACHE_SEC", 3600) * 1000;
   return 0;
 }
 

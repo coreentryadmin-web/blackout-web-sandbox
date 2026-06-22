@@ -1,6 +1,6 @@
 import { fetchSectorPerformance, fetchIndexDailyBars, fetchIndex5MinBars, fetchIndexSnapshots, fetchVixIvRankPercentile, computeVixTermStructure, fetchDailyMarketSummary, fetchPriorDayCloses, computeMarketBreadthFromSummary, type MarketBreadthMetrics } from "@/lib/providers/polygon";
 import { fetchPolygonMarketNews } from "@/lib/providers/polygon-largo";
-import { macroEventsOnDate } from "@/lib/providers/macro-events";
+import { macroEventsOnDateLive } from "@/lib/providers/macro-events";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import {
   fetchMarketFlowAlertRows,
@@ -249,7 +249,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
 
   const indexFlows = await fetchIndexFlowsPooled();
 
-  const macroEvents = macroEventsOnDate(tomorrow)
+  const macroEvents = (await macroEventsOnDateLive(tomorrow))
     .filter((e) => e.impact === "high")
     .map((e) => ({ ...e }) as Record<string, unknown>);
 
