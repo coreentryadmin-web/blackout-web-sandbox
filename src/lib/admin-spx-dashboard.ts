@@ -188,12 +188,17 @@ export async function fetchSpxAdminDashboard(options?: {
     });
 
     if (dryRun) {
-      // EDGE-10: dry-run path — read-only snapshot, no DB writes, no Discord.
+      // EDGE-10: dry-run path — read-only snapshot, no DB writes, no Discord. Lotto +
+      // power-hour now use their read-only projections too; previously they called the
+      // MUTATING evaluate*, silently advancing state and firing live subscriber Discord
+      // alerts from the default admin dashboard view (audit P1).
       const { readSpxPlaySnapshot } = await import("@/lib/spx-evaluator");
+      const { readSpxLottoSnapshot } = await import("@/lib/spx-lotto-engine");
+      const { readSpxPowerHourSnapshot } = await import("@/lib/spx-power-hour-engine");
       const [snapshot, lottoTodayResult, powerHourResult] = await Promise.all([
         readSpxPlaySnapshot(merged, technicals),
-        evaluateSpxLotto(merged, technicals),
-        evaluateSpxPowerHour(merged, technicals),
+        readSpxLottoSnapshot(),
+        readSpxPowerHourSnapshot(merged),
       ]);
       play = snapshot;
       lottoToday = lottoTodayResult;

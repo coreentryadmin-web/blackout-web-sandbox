@@ -537,3 +537,33 @@ export async function evaluateSpxPowerHour(
 
   return recordToPayload(watch, price);
 }
+
+/**
+ * Read-only power-hour projection — NO saves, clears, scans, or Discord. Mirrors
+ * evaluateSpxPowerHour's RENDER branches only; advancing state (entry/exit/force-exit)
+ * is the spx-evaluate cron's job (single writer). Read paths (admin dry-run, cron
+ * skip-branch) call this so they can't mutate state or fire subscriber alerts (audit P1).
+ */
+export async function readSpxPowerHourSnapshot(desk: SpxDeskPayload): Promise<PowerHourPlayPayload> {
+  const now = new Date();
+  const price = desk.price;
+  if (!price || price <= 0) return nonePayload("off_hours");
+
+  const rec = await loadPowerHourRecord();
+  if (rec?.phase === "SELL") return nonePayload("closed_for_today");
+
+  if (!isPowerHourWindow(now)) {
+    // Past-window open HOLD: render it truthfully — the cron force-exits at the cutoff.
+    if (isPastPowerHourWindow(now) && rec?.phase === "HOLD") return recordToPayload(rec, price);
+    return nonePayload("off_hours");
+  }
+
+  if (rec?.phase === "HOLD") return recordToPayload(rec, price);
+  if (rec?.phase === "WATCH") {
+    if (isWatchExpired(now)) return nonePayload("expired");
+    return recordToPayload(rec, price);
+  }
+  // No record / NONE — read-only can't scan for a new setup; show no_setup (or expired).
+  if (isWatchExpired(now)) return nonePayload("expired");
+  return nonePayload("no_setup");
+}
