@@ -5445,8 +5445,38 @@ body {
   }
 
   .spx-commentary-body {
-    @apply text-sm text-white leading-relaxed;
+    @apply text-sm leading-relaxed space-y-1.5;
+    color: #eaff3a;
+    text-shadow:
+      0 0 6px rgba(234, 255, 58, 0.28),
+      0 0 1px rgba(234, 255, 58, 0.55);
     font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  .spx-ai-line {
+    @apply leading-relaxed;
+  }
+
+  /* Section label chip (LEVELS, SETUP, NEXT 3M, FLIPS IT, …) — dim neon-yellow */
+  .spx-ai-label {
+    @apply font-mono text-[10px] uppercase tracking-wider mr-1.5;
+    color: rgba(234, 255, 58, 0.62);
+    text-shadow: none;
+  }
+
+  /* {{...}} emphasis: numbers + verbatim news render crisp WHITE over the yellow read */
+  .spx-ai-white {
+    color: #ffffff;
+    font-weight: 600;
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.25);
+  }
+
+  /* READ headline — brighter neon-yellow; numbers inside still go white via .spx-ai-white */
+  .spx-ai-headline {
+    color: #eaff3a;
+    text-shadow:
+      0 0 8px rgba(234, 255, 58, 0.40),
+      0 0 2px rgba(234, 255, 58, 0.70);
   }
 
   .spx-commentary-watch {

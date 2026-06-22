@@ -79,11 +79,10 @@ function polygonGexCacheMs(): number {
 }
 
 async function loadOdteContracts(spot: number, expiry: string): Promise<ChainContract[]> {
-  const [spx, spxw] = await Promise.all([
-    fetchChainBand("SPX", spot, expiry),
-    fetchChainBand("SPXW", spot, expiry),
-  ]);
-  return [...spx, ...spxw];
+  // SPX index options (both the SPX monthly and SPXW weekly roots) are listed under
+  // the index underlying I:SPX on Polygon/Massive. A bare "SPX"/"SPXW" underlying
+  // returns HTTP 200 with ZERO results — which is why GEX walls were always empty.
+  return fetchChainBand("I:SPX", spot, expiry);
 }
 
 /** 0DTE GEX rows + max pain from one Polygon chain snapshot (SPX + SPXW). */
@@ -132,7 +131,7 @@ export async function fetchPolygonOdteDeskBundle(
 
   const contracts = await loadOdteContracts(spot, expiry);
   if (!contracts.length) {
-    console.warn(`[polygon-gex] 0 SPX/SPXW contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
+    console.warn(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
   }
   const rows = aggregateGexRows(contracts, spot);
   const maxPain = computeMaxPainFromChain(contracts);
@@ -251,11 +250,8 @@ export async function fetchPolygonOptionsChain(
   if (!polygonConfigured() || spot <= 0) return [];
   const root = underlying.toUpperCase();
   if (root === "SPX") {
-    const [spx, spxw] = await Promise.all([
-      fetchChainBand("SPX", spot, expiry, 0.015),
-      fetchChainBand("SPXW", spot, expiry, 0.015),
-    ]);
-    return [...spx, ...spxw];
+    // SPX + SPXW options both live under the I:SPX index underlying on Polygon/Massive.
+    return fetchChainBand("I:SPX", spot, expiry, 0.015);
   }
   return fetchChainBand(root, spot, expiry, 0.015);
 }
@@ -270,11 +266,8 @@ export async function fetchPolygonAtmOptionsChain(
   if (!polygonConfigured() || spot <= 0) return [];
   const root = underlying.toUpperCase();
   if (root === "SPX") {
-    const [spx, spxw] = await Promise.all([
-      fetchChainBand("SPX", spot, expiry, bandPct),
-      fetchChainBand("SPXW", spot, expiry, bandPct),
-    ]);
-    return [...spx, ...spxw];
+    // SPX + SPXW options both live under the I:SPX index underlying on Polygon/Massive.
+    return fetchChainBand("I:SPX", spot, expiry, bandPct);
   }
   return fetchChainBand(root, spot, expiry, bandPct);
 }

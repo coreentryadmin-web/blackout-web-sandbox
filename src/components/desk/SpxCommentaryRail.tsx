@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 
@@ -46,6 +46,43 @@ function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | nul
   return Date.now() - lastAt >= MIN_INTERVAL_MS * 2;
 }
 
+/** Render {{...}} white-emphasis markup: numbers + verbatim news render WHITE, the rest
+ *  stays neon-yellow (the .spx-commentary-body color). The model wraps every number and
+ *  every literal headline in {{ }} so the renderer never has to guess. */
+function renderEmphasis(text: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  const re = /\{\{([^}]*)\}\}/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      <span key={k++} className="spx-ai-white">
+        {m[1]}
+      </span>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+/** One commentary line: peel a leading UPPERCASE label (followed by 2+ spaces) into a
+ *  styled chip, then render the remainder with white-emphasis markup. */
+function CommentaryLine({ line }: { line: string }) {
+  const m = line.match(/^([A-ZΔ0-9][A-ZΔ0-9 +/&-]{0,13}?) {2,}(.+)$/);
+  if (m) {
+    return (
+      <div className="spx-ai-line">
+        <span className="spx-ai-label">{m[1]}</span>
+        <span>{renderEmphasis(m[2])}</span>
+      </div>
+    );
+  }
+  return <div className="spx-ai-line">{renderEmphasis(line)}</div>;
+}
+
 function CommentaryBody({ body, featured }: { body: string; featured: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const lines = body.split("\n").filter(Boolean);
@@ -54,8 +91,10 @@ function CommentaryBody({ body, featured }: { body: string; featured: boolean })
 
   return (
     <div>
-      <div className="spx-commentary-body whitespace-pre-line">
-        {visible.join("\n")}
+      <div className="spx-commentary-body">
+        {visible.map((line, i) => (
+          <CommentaryLine key={i} line={line} />
+        ))}
       </div>
       {needsCollapse && (
         <button
@@ -253,11 +292,11 @@ export function SpxCommentaryRail({
                   </div>
                   <h3
                     className={clsx(
-                      "font-syne font-bold text-white leading-snug mb-2",
+                      "font-syne font-bold spx-ai-headline leading-snug mb-2",
                       idx === 0 ? "text-lg md:text-xl" : "text-sm"
                     )}
                   >
-                    {entry.headline}
+                    {renderEmphasis(entry.headline)}
                   </h3>
                   {entry.changed.length > 0 && (
                     <ul className="spx-commentary-changed mb-2">
