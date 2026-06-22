@@ -6,6 +6,11 @@ import { trackedFetch } from "@/lib/api-tracked-fetch";
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
+/** Hostname only (never the apiKey query string) for safe diagnostic logging. */
+function hostOf(url: string): string {
+  try { return new URL(url).host; } catch { return "?"; }
+}
+
 /** Options Advanced plan: chain snapshots, greeks, and quotes are real-time. */
 export const POLYGON_OPTIONS_DATA_DELAY = "real-time (Massive Options Advanced plan)";
 
@@ -126,6 +131,9 @@ export async function fetchPolygonOdteDeskBundle(
   }
 
   const contracts = await loadOdteContracts(spot, expiry);
+  if (!contracts.length) {
+    console.warn(`[polygon-gex] 0 SPX/SPXW contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
+  }
   const rows = aggregateGexRows(contracts, spot);
   const maxPain = computeMaxPainFromChain(contracts);
   if (rows.length) {
@@ -151,9 +159,15 @@ async function polygonFetchUrl(url: string): Promise<ChainResponse | null> {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Surface silent provider failures (invalid/non-Massive key, plan without
+      // options-chain access, bad symbol). Host + status only — never the apiKey.
+      console.warn(`[polygon-gex] chain fetch ${res.status} ${res.statusText || ""} from ${hostOf(full)} ${endpointKey}`.trim());
+      return null;
+    }
     return (await res.json()) as ChainResponse;
-  } catch {
+  } catch (err) {
+    console.warn(`[polygon-gex] chain fetch threw from ${hostOf(full)} ${endpointKey}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
