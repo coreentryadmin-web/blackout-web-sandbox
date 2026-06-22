@@ -9,10 +9,10 @@ import { sharedCacheGet } from "@/lib/shared-cache";
 
 export const dynamic = "force-dynamic";
 
-// All users see the same SPX market data — one Claude call per 3-minute window
+// All users see the same SPX market data — one Claude call per 5-minute window
 // serves every connected session. First request in the window triggers the call;
 // all others get the cached result instantly with zero additional cost.
-const COMMENTARY_TTL_MS = 3 * 60 * 1000;
+const COMMENTARY_TTL_MS = 5 * 60 * 1000;
 
 type CommentaryCache = {
   commentary: SpxCommentaryResult;

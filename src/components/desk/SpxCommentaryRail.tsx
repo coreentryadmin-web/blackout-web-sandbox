@@ -293,6 +293,9 @@ export function SpxCommentaryRail({
                   <h3
                     className={clsx(
                       "font-syne font-bold spx-ai-headline leading-snug mb-2",
+                      entry.bias === "bullish" && "spx-ai-headline-bull",
+                      entry.bias === "bearish" && "spx-ai-headline-bear",
+                      entry.bias === "neutral" && "spx-ai-headline-neutral",
                       idx === 0 ? "text-lg md:text-xl" : "text-sm"
                     )}
                   >

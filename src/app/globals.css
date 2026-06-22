@@ -5468,9 +5468,25 @@ body {
     font-weight: 700;
   }
 
-  /* READ headline — amber, no glow; key values inside pop via weight (.spx-ai-key) */
+  /* READ headline — bias-aware color so direction reads at a glance; key values inside
+     inherit the color and pop via weight (.spx-ai-key). Amber base is a fallback only. */
   .spx-ai-headline {
     color: #ffc24d;
+  }
+
+  .spx-ai-headline-bull {
+    color: #4ade80;
+    text-shadow: 0 0 9px rgba(74, 222, 128, 0.40), 0 0 2px rgba(74, 222, 128, 0.70);
+  }
+
+  .spx-ai-headline-bear {
+    color: #ff4d6d;
+    text-shadow: 0 0 9px rgba(255, 77, 109, 0.40), 0 0 2px rgba(255, 77, 109, 0.70);
+  }
+
+  .spx-ai-headline-neutral {
+    color: #38bdf8;
+    text-shadow: 0 0 9px rgba(56, 189, 248, 0.40), 0 0 2px rgba(56, 189, 248, 0.70);
   }
 
   .spx-commentary-watch {
