@@ -188,7 +188,10 @@ function intelGates(
   const play_idea = gates.play_idea ?? buildPlayIdeaIntel(desk, confluence);
   return {
     passed: gates.passed,
-    blocks: humanizeGateBlocks(gates.blocks, desk, confluence),
+    // Dedupe exact duplicates so the payload (and every consumer — desk panel,
+    // Largo get_spx_play) never carries repeated gate lines. Display-only: the
+    // pass/fail decision is computed from the raw blocks in evaluatePlayGates.
+    blocks: Array.from(new Set(humanizeGateBlocks(gates.blocks, desk, confluence))),
     warnings: gates.warnings,
     entry_mode: gates.entry_mode,
     play_idea,

@@ -438,9 +438,35 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     ⚠ {w}
                   </p>
                 ))}
-                {confirmationLayer.gates.blocks
-                  .filter((b) => b !== confirmationLayer.gates.play_idea)
-                  .map((b) =>
+                {(() => {
+                  // De-dup gate blocks for display so the panel never repeats lines:
+                  //  - drop the play_idea (already rendered above),
+                  //  - drop blocks that merely restate a confirmation check (those are
+                  //    already in the ✓/✗ list, e.g. "3m MTF: ...", "5m trend: ..."),
+                  //  - collapse the humanized play-idea variants ("...waiting for grade
+                  //    confirmation", different strikes) into nothing when the lean is
+                  //    already shown via play_idea,
+                  //  - and remove exact duplicates.
+                  const checkStrings = new Set(
+                    confirmationLayer.confirmations.checks.map((c) => `${c.label}: ${c.detail}`)
+                  );
+                  const ideaShown = Boolean(confirmationLayer.gates.play_idea);
+                  const seen = new Set<string>();
+                  const ideaBases = new Set<string>();
+                  const visible = confirmationLayer.gates.blocks.filter((b) => {
+                    if (!b || b === confirmationLayer.gates.play_idea) return false;
+                    if (checkStrings.has(b)) return false;
+                    if (seen.has(b)) return false;
+                    seen.add(b);
+                    if (isPlayIdeaLine(b)) {
+                      if (ideaShown) return false;
+                      const base = b.split(" · ")[0];
+                      if (ideaBases.has(base)) return false;
+                      ideaBases.add(base);
+                    }
+                    return true;
+                  });
+                  return visible.map((b) =>
                     isPlayIdeaLine(b) ? (
                       <p key={b} className="spx-trade-idea-line">
                         {b}
@@ -450,7 +476,8 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                         ⛔ {b}
                       </p>
                     )
-                  )}
+                  );
+                })()}
               </div>
             )}
 
