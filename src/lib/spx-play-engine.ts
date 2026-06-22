@@ -1106,6 +1106,13 @@ export async function evaluateSpxPlay(
   const mutate = options?.mutate === true;
   const premarket = isPremarketPlanningWindow();
   if (!desk.market_open && !premarket) {
+    // Safety net: if a 0DTE play is still open after the cash close (e.g. a missed 15:50
+    // force-exit tick), fall through to the normal evaluation so evaluateOpenPlay's
+    // SESSION-close branch (!market_open → exit_action 'SESSION') force-settles it. Needs
+    // a real price to settle at; with none, render SCANNING and let a later in-window tick
+    // settle. No open play → plain closed-session SCANNING as before.
+    const openAfterClose = desk.price > 0 ? await loadOpenPlay() : null;
+    if (!openAfterClose) {
     const closedConfluence = desk.price > 0 ? computeSpxConfluence(desk) : null;
     const playIdea =
       closedConfluence != null ? buildPlayIdeaIntel(desk, closedConfluence) : null;
@@ -1157,6 +1164,7 @@ export async function evaluateSpxPlay(
       signal_committed: false,
       as_of: desk.polled_at ?? desk.as_of ?? new Date().toISOString(),
     };
+    }
   }
 
   const technicals =
