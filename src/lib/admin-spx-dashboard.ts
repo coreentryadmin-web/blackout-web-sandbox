@@ -6,6 +6,7 @@ import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
 import { type SpxPlayPayload } from "@/lib/spx-play-engine";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
 import { evaluateSpxPowerHour } from "@/lib/spx-power-hour-engine";
+import { runLottoPowerHourLocked } from "@/lib/spx-lotto-powerhour-runner";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { loadWatchRecord } from "@/lib/spx-play-watch";
 import { loadPlaySessionMeta } from "@/lib/spx-play-store";
@@ -204,14 +205,15 @@ export async function fetchSpxAdminDashboard(options?: {
       lottoToday = lottoTodayResult;
       powerHourToday = powerHourResult;
     } else {
-      // Mutate path — only reached after explicit double-confirmation.
-      const [evalResult, lottoTodayResult, powerHourResult] = await Promise.all([
+      // Mutate path — only reached after explicit double-confirmation. Lotto/power-hour
+      // go through the shared advisory lock so a concurrent cron tick can't double-mutate
+      // the shared records or double-fire Discord (the loser renders read-only).
+      const [evalResult, lottoPowerHour] = await Promise.all([
         runSpxEvaluator(merged, technicals, "admin_live"),
-        evaluateSpxLotto(merged, technicals),
-        evaluateSpxPowerHour(merged, technicals),
+        runLottoPowerHourLocked(merged, technicals),
       ]);
-      lottoToday = lottoTodayResult;
-      powerHourToday = powerHourResult;
+      lottoToday = lottoPowerHour.lotto;
+      powerHourToday = lottoPowerHour.powerHour;
       if (isSpxEvaluatorPlayResult(evalResult)) {
         play = evalResult.play;
       }

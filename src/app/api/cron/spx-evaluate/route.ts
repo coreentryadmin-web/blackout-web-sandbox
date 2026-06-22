@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
-import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
-import { evaluateSpxPowerHour } from "@/lib/spx-power-hour-engine";
+import { runLottoPowerHourLocked } from "@/lib/spx-lotto-powerhour-runner";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
@@ -63,10 +62,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(payload);
     }
 
-    const [lotto, powerHour] = await Promise.all([
-      evaluateSpxLotto(merged, technicals),
-      evaluateSpxPowerHour(merged, technicals),
-    ]);
+    // Lotto + power-hour run under a single non-blocking advisory lock so a concurrent
+    // admin live-mutate run can't race the shared records or double-fire Discord.
+    const { lotto, powerHour } = await runLottoPowerHourLocked(merged, technicals);
     if (!isSpxEvaluatorPlayResult(evalResult)) {
       throw new Error("Evaluator returned no play payload");
     }
