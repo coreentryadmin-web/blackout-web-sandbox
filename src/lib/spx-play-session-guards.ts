@@ -62,11 +62,16 @@ export function isLottoWindow(now = new Date()): boolean {
   return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(10, 30);
 }
 
-/** 7:00 AM–4:00 PM ET weekdays — server cron evaluation window for play + lotto. */
+/** 7:00 AM–4:15 PM ET weekdays — server cron evaluation window for play + lotto.
+ *  End extends 15 min past the 4:00 PM cash close so post-close ticks can reach the
+ *  SESSION-close branch (market_open=false) and force-flatten/settle any still-open
+ *  0DTE play. New entries are already blocked by isPastNoEntryCutoff (3:30 PM), so the
+ *  extra window only closes positions, never opens them. Paired with the spx-evaluate
+ *  cron schedule (every 5 min, 11-21 UTC) which covers the close in both EST and EDT. */
 export function isSpxEngineCronWindow(now = new Date()): boolean {
   if (!isEtWeekday(now)) return false;
   const etMins = etMinutes(now);
-  return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(16, 0);
+  return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(16, 15);
 }
 
 /** 7:00–9:30 AM ET weekdays — desk tracks data; lotto playbook only (no BUY). */

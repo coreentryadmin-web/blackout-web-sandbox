@@ -73,6 +73,33 @@ export const CRON_JOBS: CronJobDefinition[] = [
     market_hours_only: true,
     description: "Pre-warm Redis cache for UW market-wide + index-ticker signals to stay under 120/min plan cap",
   },
+  {
+    key: "db-cleanup",
+    name: "DB Cleanup",
+    kind: "http",
+    path: "/api/cron/db-cleanup",
+    schedule_label: "Nightly ~3 AM ET",
+    stale_after_min: 36 * 60,
+    description: "Prune high-volume Postgres tables (telemetry, flow, signal log, cron runs)",
+  },
+  {
+    key: "membership-reconcile",
+    name: "Membership Reconcile",
+    kind: "http",
+    path: "/api/cron/membership-reconcile",
+    schedule_label: "Every 6h",
+    stale_after_min: 13 * 60,
+    description: "Resync Whop membership → Clerk tier; self-heals dropped webhooks (lockouts + revenue leaks)",
+  },
+  {
+    key: "cron-staleness-watchdog",
+    name: "Cron Watchdog",
+    kind: "http",
+    path: "/api/cron/cron-staleness-watchdog",
+    schedule_label: "Every 20 min",
+    stale_after_min: 60,
+    description: "Alerts Discord when any cron goes stale/failed (catches silent never-fired crons)",
+  },
 ];
 
 export const CRON_JOB_BY_KEY = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j])) as Record<

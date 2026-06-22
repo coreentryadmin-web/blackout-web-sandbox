@@ -1,0 +1,12 @@
+# Railway config for the Cron-Staleness-Watchdog service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.cron-staleness-watchdog.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/cron-staleness-watchdog"
+cronSchedule = "*/20 * * * *"
+restartPolicyType = "never"
+numReplicas = 1

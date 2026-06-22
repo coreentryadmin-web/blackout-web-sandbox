@@ -6,7 +6,11 @@ builder = "nixpacks"
 buildCommand = "echo 'cron trigger service: no app build needed'"
 
 [deploy]
+# 11-21 UTC covers the 7:00 AM ET open through the post-4:00 PM ET close in BOTH
+# EST (UTC-5) and EDT (UTC-4) so the THETA force-exit (3:50 PM ET) and SESSION
+# close always get a tick. The route self-skips outside isSpxEngineCronWindow,
+# so the extra ticks are cheap no-ops.
 startCommand = "node scripts/hit-cron.mjs /api/cron/spx-evaluate"
-cronSchedule = "*/5 11-19 * * 1-5"
+cronSchedule = "*/5 11-21 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1
