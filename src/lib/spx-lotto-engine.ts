@@ -636,6 +636,32 @@ export async function evaluateSpxLotto(
   return rec ? recordToPayload(rec) : nonePayload("no_qualify");
 }
 
+/**
+ * Read-only lotto projection — NO saves, clears, lotto_plays writes, or Discord.
+ * Mirrors evaluateSpxLotto's RENDER classification only; advancing state is the cron's
+ * job (spx-evaluate is the single writer). Public/admin read paths call this so a user
+ * poll can never mutate shared state or fire duplicate subscriber alerts (audit P1).
+ */
+export async function readSpxLottoSnapshot(): Promise<LottoPlayPayload> {
+  const now = new Date();
+  const premarket = isPremarketPlanningWindow(now);
+  const beforeCash = isBeforeCashOpen(now);
+  if (!premarket && beforeCash) return nonePayload("off_hours");
+
+  const rec = await loadLottoRecord();
+  if (!rec) return nonePayload("no_qualify");
+  if (isIntradayCutoff(now) && rec.phase !== "HOLD") return nonePayload("expired");
+  if (rec.phase === "WATCH" && !beforeCash && isOpeningWatchExpired(rec, now)) {
+    return nonePayload("expired");
+  }
+  if (rec.phase === "SELL") return nonePayload("closed_for_today");
+  // NONE/INVALID render as the friendly "no setup" copy (the engine never renders a
+  // NONE record through recordToPayload — it falls through to a scan/nonePayload).
+  if (rec.phase === "INVALID" || rec.phase === "NONE") return nonePayload("no_qualify");
+  // HOLD, active WATCH, or premarket WATCH → render the stored record verbatim.
+  return recordToPayload(rec);
+}
+
 /** @deprecated Lotto is independent — no-op for main BUY path. */
 export async function consumeLottoOnBuy(_direction: SpxPlayDirection): Promise<void> {
   return;

@@ -4,8 +4,7 @@ import { requireDatabaseInProduction } from "@/lib/db";
 import { fetchLottoPlaysForDate } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
-import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
+import { readSpxLottoSnapshot } from "@/lib/spx-lotto-engine";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 
 export const dynamic = "force-dynamic";
@@ -20,15 +19,10 @@ export async function GET(req: NextRequest) {
   try {
     const { merged } = await loadMergedSpxDesk();
 
-    const technicals = await buildPlayTechnicals(merged.price, {
-      vwap: merged.vwap,
-      pdh: merged.pdh,
-      pdl: merged.pdl,
-      hod: merged.hod,
-      lod: merged.lod,
-    });
-
-    const lotto = await evaluateSpxLotto(merged, technicals);
+    // Read-only: render the cron-maintained lotto record. The mutating evaluateSpxLotto
+    // runs only in the spx-evaluate cron (single writer) — a user poll must never advance
+    // lotto state or fire Discord (audit P1: per-request mutation + duplicate alerts).
+    const lotto = await readSpxLottoSnapshot();
     const history = await fetchLottoPlaysForDate(todayEtYmd());
 
     return NextResponse.json(
