@@ -44,10 +44,6 @@ import os from "os";
 const nextConfig = {
   experimental: {
     cpus: Math.max(1, os.cpus().length - 1),
-    // Enables src/instrumentation.ts register() (stable in Next 15; needs this
-    // flag on 14.x). Used to boot the UW/Polygon WebSockets at server start so
-    // live flow persists continuously instead of only when a route lazily inits them.
-    instrumentationHook: true,
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
