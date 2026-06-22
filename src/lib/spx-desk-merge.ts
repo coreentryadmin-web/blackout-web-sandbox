@@ -112,7 +112,7 @@ export function resetSpxDeskMergeCache(): void {
 async function loadStructureFromRedis(): Promise<void> {
   if (!process.env.REDIS_URL?.trim()) return;
   try {
-    const { sharedCacheGet } = await import(/* webpackIgnore: true */ "@/lib/shared-cache");
+    const { sharedCacheGet } = await import("./shared-cache");
     const saved = await sharedCacheGet<{
       data: typeof lastGoodStructure;
       sessionDate: string;
@@ -134,13 +134,17 @@ async function loadStructureFromRedis(): Promise<void> {
 /** C7: Fire-and-forget — persist local structure to Redis for other workers. */
 function publishStructureToRedis(): void {
   if (!process.env.REDIS_URL?.trim()) return;
-  void import(/* webpackIgnore: true */ "@/lib/shared-cache").then(({ sharedCacheSet }) =>
-    sharedCacheSet(
-      STRUCTURE_REDIS_KEY,
-      { data: { ...lastGoodStructure }, sessionDate: todayEtYmd() },
-      STRUCTURE_REDIS_TTL_SEC
+  void import("./shared-cache")
+    .then(({ sharedCacheSet }) =>
+      sharedCacheSet(
+        STRUCTURE_REDIS_KEY,
+        { data: { ...lastGoodStructure }, sessionDate: todayEtYmd() },
+        STRUCTURE_REDIS_TTL_SEC
+      )
     )
-  );
+    .catch(() => {
+      /* best-effort cross-instance sticky state — never throw into the hot path */
+    });
 }
 
 function ensureStructureCacheFresh(): void {

@@ -51,6 +51,32 @@ const nextConfig = {
   images: {
     remotePatterns,
   },
+  // spx-desk-merge.ts is isomorphic (used by client hooks) and lazily pulls
+  // shared-cache -> ioredis for cross-instance Redis sticky state. ioredis is only
+  // ever exercised on the server (guarded by process.env.REDIS_URL), but webpack
+  // still bundles it into the client graph. Stub its Node built-ins on the client
+  // so the build doesn't fail on "Can't resolve 'stream'/'crypto'/'dns'/'net'/'tls'".
+  // (This replaced a `webpackIgnore: true` hack that left an unresolvable
+  //  import("@/lib/shared-cache") in the server runtime -> ERR_MODULE_NOT_FOUND.)
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // ioredis is server-only (pulled lazily by shared-cache for cross-instance
+      // Redis sticky state, guarded by process.env.REDIS_URL). It must never enter
+      // the client bundle — it imports Node built-ins (stream/crypto/dns/net/tls and
+      // node:diagnostics_channel). Alias it to false on the client so webpack drops
+      // the whole subtree; it is never executed in the browser (REDIS_URL is unset).
+      config.resolve.alias = { ...config.resolve.alias, ioredis: false };
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        stream: false,
+        crypto: false,
+        dns: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
