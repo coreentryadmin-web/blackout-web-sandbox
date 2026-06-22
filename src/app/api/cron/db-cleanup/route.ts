@@ -51,7 +51,8 @@ async function runCleanup(): Promise<Record<string, number>> {
     adminAuditLog,
   ] = await Promise.all([
     // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
-    deleteOlderThan("api_telemetry_events", "created_at", 7),
+    // NOTE: this table's timestamp column is "at", not "created_at"
+    deleteOlderThan("api_telemetry_events", "at", 7),
 
     // flow_alerts: keep 60 days
     // Hard floor is 30d (Night Hawk avg-premium scorer uses 30-day rolling window).
