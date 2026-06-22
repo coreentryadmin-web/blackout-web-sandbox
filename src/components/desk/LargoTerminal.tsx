@@ -99,7 +99,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
         "Link interrupted — couldn't pull live data. Hit me again with your question.";
       if (raw.includes("401")) content = "Sign in with Premium to access Largo neural link.";
       else if (raw.includes("403")) content = "Largo requires a Premium subscription.";
-      else if (raw.includes("503")) content = "Largo offline — ANTHROPIC_API_KEY not set on server.";
+      else if (raw.includes("503")) content = "Largo intelligence offline — the desk will reconnect shortly.";
       setMessages((m) =>
         m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))
       );

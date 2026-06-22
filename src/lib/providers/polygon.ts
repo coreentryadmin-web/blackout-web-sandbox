@@ -7,14 +7,36 @@ import { sessionStatsFromMinuteBars, todayEtYmd, priorEtYmd } from "./spx-sessio
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
+let _poly429Count = 0;
+let _polyCircuitOpenUntil = 0;
+const POLY_429_THRESHOLD = 5;
+const POLY_CIRCUIT_PAUSE_MS = 60_000;
+
 async function polygonGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
   if (!polygonConfigured()) throw new Error("POLYGON_API_KEY not set");
+
+  if (Date.now() < _polyCircuitOpenUntil) {
+    const waitSec = Math.ceil((_polyCircuitOpenUntil - Date.now()) / 1000);
+    throw new Error(`[polygon] Circuit open — rate limited, pausing ${waitSec}s`);
+  }
 
   const qs = new URLSearchParams({ ...params, apiKey: KEY });
   const res = await trackedFetch("polygon", path, `${BASE}${path}?${qs}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
+
+  if (res.status === 429) {
+    _poly429Count++;
+    if (_poly429Count >= POLY_429_THRESHOLD) {
+      _polyCircuitOpenUntil = Date.now() + POLY_CIRCUIT_PAUSE_MS;
+      _poly429Count = 0;
+      console.warn(`[polygon] Circuit opened after ${POLY_429_THRESHOLD} consecutive 429s — pausing 60s`);
+    }
+    throw new Error(`Polygon ${path} → 429 (rate limited)`);
+  }
+
+  if (res.ok) _poly429Count = 0;
 
   if (!res.ok) throw new Error(`Polygon ${path} → ${res.status}`);
   return res.json() as Promise<T>;
@@ -67,6 +89,9 @@ function _rowToSnapshot(sym: string, row: SnapshotTicker): StockQuoteSnapshot {
   const prev = row.prevDay ?? {};
   const last = row.lastTrade ?? {};
   const price = Number(last.p ?? day.c ?? 0);
+  if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
+    throw new Error(`[polygon] Invalid price for ${sym}: ${price}`);
+  }
   const prevClose = Number(prev.c ?? 0);
   const changePct =
     row.todaysChangePerc != null
@@ -92,7 +117,13 @@ export async function fetchStockSnapshot(ticker: string): Promise<StockQuoteSnap
     `/v2/snapshot/locale/us/markets/stocks/tickers/${sym}`
   );
   const row = data.ticker;
-  return row ? _rowToSnapshot(sym, row) : null;
+  if (!row) return null;
+  try {
+    return _rowToSnapshot(sym, row);
+  } catch (err) {
+    console.warn(`[polygon] snapshot validation failed for ${sym}:`, err);
+    return null;
+  }
 }
 
 /** Batch snapshot — one HTTP call for multiple stock/ETF tickers. */
@@ -112,7 +143,11 @@ export async function fetchStockSnapshots(
   for (const row of data.tickers ?? []) {
     const sym = row.ticker?.toUpperCase();
     if (!sym || !out.hasOwnProperty(sym)) continue;
-    out[sym] = _rowToSnapshot(sym, row);
+    try {
+      out[sym] = _rowToSnapshot(sym, row);
+    } catch {
+      // Leave out[sym] as null — bad price data for this ticker
+    }
   }
   return out;
 }

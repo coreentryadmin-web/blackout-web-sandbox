@@ -105,8 +105,8 @@ export function HeroSection() {
             </h1>
 
             <p className="text-sky-200 text-sm md:text-base leading-relaxed max-w-xl mx-auto md:mx-0 font-light">
-              Real-time options flow, AI market intelligence, live SPX analysis, and the Night Hawk swing
-              scanner — built for traders who don&apos;t guess.
+              Institutional-grade flow intelligence, a live 0DTE war room, and an AI desk that reads the
+              tape while you sleep — built for traders who don&apos;t guess.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 mt-8 justify-center md:justify-start">
@@ -121,7 +121,7 @@ export function HeroSection() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12 lg:hidden">
             {STATS.map((s) => (
-              <div key={s.label} className="border border-grey-800 p-3 text-center bg-black/50">
+              <div key={s.label} className="border border-sky-900/40 p-3 text-center bg-black/50">
                 <p className={`font-display text-2xl ${s.color}`}>{s.num}</p>
                 <p className="font-mono text-[8px] tracking-widest text-cyan-400 uppercase">{s.label}</p>
               </div>

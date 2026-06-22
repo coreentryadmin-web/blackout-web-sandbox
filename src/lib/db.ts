@@ -124,8 +124,11 @@ const MIGRATION_LOCK_ID = 42;
 async function runMigrations(): Promise<void> {
   const p = await getPool();
   // Acquire a session-level advisory lock so concurrent Next.js cold-start instances
-  // wait rather than racing on DDL. pg_advisory_lock blocks until the lock is free.
+  // wait rather than racing on DDL. Statement timeout prevents infinite hang if a
+  // crashed instance holds the lock and the Postgres session wasn't cleaned up yet.
+  await p.query(`SET statement_timeout = '30000'`);
   await p.query(`SELECT pg_advisory_lock($1)`, [MIGRATION_LOCK_ID]);
+  await p.query(`RESET statement_timeout`);
   try {
   await p.query(`
     CREATE TABLE IF NOT EXISTS flow_alerts (
@@ -530,6 +533,19 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE nighthawk_play_outcomes ADD CONSTRAINT nighthawk_play_outcomes_outcome_check CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending'));
   `);
+  await p.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_spx_play_outcomes_open_play'
+      ) THEN
+        ALTER TABLE spx_play_outcomes
+          ADD CONSTRAINT fk_spx_play_outcomes_open_play
+          FOREIGN KEY (open_play_id) REFERENCES spx_open_play(id) ON DELETE CASCADE;
+      END IF;
+    END $$;
+  `);
   } finally {
     // Release the advisory lock so other waiting instances can proceed.
     await p.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]);
@@ -627,6 +643,10 @@ export async function getMeta(key: string): Promise<string | null> {
 
 export async function setMeta(key: string, value: string): Promise<void> {
   await ensureSchema();
+  if (value === "") {
+    await (await getPool()).query("DELETE FROM platform_meta WHERE key = $1", [key]);
+    return;
+  }
   await (await getPool()).query(
     `INSERT INTO platform_meta (key, value, updated_at)
      VALUES ($1, $2, NOW())
@@ -1320,11 +1340,11 @@ export async function fetchSpxAdminRollups(): Promise<{
   );
 
   const signalsTodayRes = await pool.query<{ count: string }>(
-    `SELECT COUNT(*)::int AS count FROM spx_signal_log WHERE created_at::date = CURRENT_DATE`
+    `SELECT COUNT(*)::int AS count FROM spx_signal_log WHERE (created_at AT TIME ZONE 'America/New_York')::date = (NOW() AT TIME ZONE 'America/New_York')::date`
   );
 
   const flowTodayRes = await pool.query<{ count: string }>(
-    `SELECT COUNT(*)::int AS count FROM flow_alerts WHERE inserted_at::date = CURRENT_DATE`
+    `SELECT COUNT(*)::int AS count FROM flow_alerts WHERE (inserted_at AT TIME ZONE 'America/New_York')::date = (NOW() AT TIME ZONE 'America/New_York')::date`
   );
 
   const openRes = await pool.query<{ count: string }>(
@@ -1859,7 +1879,7 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
            hit_target, hit_stop, outcome, created_at
     FROM nighthawk_play_outcomes
     WHERE outcome = 'pending'
-      AND edition_for >= (CURRENT_DATE - ($1::int || ' days')::interval)
+      AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
     ORDER BY edition_for ASC, ticker ASC
     `,
     [lookbackDays]

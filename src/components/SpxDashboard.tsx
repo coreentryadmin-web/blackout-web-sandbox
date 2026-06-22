@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
@@ -32,7 +33,20 @@ class SpxPanelErrorBoundary extends React.Component<
 }
 
 export function SpxDashboard() {
+  const { isLoaded, user } = useUser();
+  const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
   const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
+
+  if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
+        <p className="text-2xl font-display text-white">Premium Required</p>
+        <p className="text-sky-300 font-mono text-sm">
+          Your session no longer has premium access. Please upgrade or re-authenticate.
+        </p>
+      </div>
+    );
+  }
 
   if (deskLoading && !desk) {
     return (

@@ -1,4 +1,5 @@
 import { recordCronJobRun } from "@/lib/db";
+import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 
 export type CronRunPayload = {
   ok?: boolean;
@@ -29,5 +30,13 @@ export async function logCronRun(
     });
   } catch (err) {
     console.warn(`[cron-run/${jobKey}] log failed:`, err);
+  }
+
+  if (status === "failed") {
+    void notifyOpsDiscord({
+      title: `Cron failure: ${jobKey}`,
+      body: `\`${message}\`\nDuration: ${Date.now() - startedMs}ms`,
+      severity: "critical",
+    }).catch(() => undefined);
   }
 }

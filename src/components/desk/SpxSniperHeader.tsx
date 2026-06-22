@@ -20,9 +20,10 @@ export function SpxSniperHeader({ desk, live }: Props) {
     : desk?.as_of
     ? new Date(desk.as_of).getTime()
     : 0;
-  const [nowMs, setNowMs] = useState(Date.now);
+  const [nowMs, setNowMs] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 10_000); // check every 10s
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 10_000);
     return () => clearInterval(id);
   }, []);
   const isStale = live && polledAtMs > 0 && (nowMs - polledAtMs) > 90_000;
@@ -162,7 +163,7 @@ const PILL_BORDER: Record<string, string> = {
   magenta: "border-fuchsia-500/40",
   cyan: "border-cyan-500/40",
   gold: "border-amber-500/40",
-  neutral: "border-grey-700",
+  neutral: "border-sky-900/50",
 };
 
 const VALUE_TONE: Record<string, string> = {

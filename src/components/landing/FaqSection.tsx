@@ -5,23 +5,23 @@ import { motion } from "framer-motion";
 const FAQS = [
   {
     q: "What is BlackOut Trading?",
-    a: "A real-time options intelligence platform — live flow, SPX 0DTE desk tools, AI terminal, heatmaps, and the Night Hawk swing scanner.",
+    a: "An institutional-grade trading intelligence platform — live flow alerts, a 0DTE SPX war room, AI desk analysis, live sector heatmaps, and Night Hawk swing scanner. Everything in one place, nothing held back.",
   },
   {
     q: "How do I get Premium access?",
-    a: "Create your free BlackOut account first, then choose monthly, yearly, or lifetime on Whop using the same email to unlock everything.",
+    a: "Create your free BlackOut account, then choose monthly, yearly, or lifetime access using the same email. One click unlocks the full platform.",
   },
   {
     q: "What's included in Premium?",
-    a: "Live HELIX, SPX Live Dashboard, full heatmaps, Largo AI terminal, and Night Hawk scanner — all in one membership.",
+    a: "HELIX live flow feed, SPX Sniper dashboard, full sector heatmaps, Largo AI desk terminal, and Night Hawk swing scanner — the entire arsenal, one membership.",
   },
   {
     q: "Do I need a broker connection?",
-    a: "No. BlackOut is an intelligence and alert platform. You trade on your own broker — we surface the data and setups.",
+    a: "No. BlackOut is a pure intelligence and signal platform. You execute on your own broker — we surface the data, structure, and setups before price moves.",
   },
   {
     q: "Is this financial advice?",
-    a: "No. BlackOut provides market data and tools for educational purposes. All trading decisions are yours.",
+    a: "No. BlackOut delivers market data and pattern recognition tools for educational purposes. Every trade is your decision — we just make sure you're never trading blind.",
   },
 ];
 
