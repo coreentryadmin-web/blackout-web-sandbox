@@ -328,18 +328,18 @@ export async function closeOpenPlay(
 
       if (outcome.close) {
         const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
-        await recordPlayClose(id, outcome.close);
+        await recordPlayClose(id, outcome.close, client);
       }
 
       const { closeOpenSpxPlayRow } = await import("@/lib/db");
-      await closeOpenSpxPlayRow(id);
+      await closeOpenSpxPlayRow(id, client);
 
       const metaPayload: PlaySessionMeta = {
         ...newMeta,
         version: (meta.version ?? 0) + 1,
       };
       const { setMeta: setMetaFn } = await import("@/lib/db");
-      await setMetaFn(SESSION_META_KEY, JSON.stringify(metaPayload));
+      await setMetaFn(SESSION_META_KEY, JSON.stringify(metaPayload), client);
 
       await client.query("COMMIT");
 

@@ -153,7 +153,8 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
 
 export async function recordPlayClose(
   openPlayId: number,
-  close: PlayCloseSnapshot
+  close: PlayCloseSnapshot,
+  db?: import("@/lib/db").Db
 ): Promise<void> {
   const outcome = classifyOutcome(close);
 
@@ -182,7 +183,7 @@ export async function recordPlayClose(
     pnl_pts: close.pnl_pts,
     outcome,
     closed_at: new Date().toISOString(),
-  });
+  }, db);
 }
 
 export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {

@@ -1,8 +1,11 @@
-import { Pool, type QueryResultRow } from "pg";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
 let poolInit: Promise<Pool> | null = null;
 let activeMode: "private" | "public" | "unknown" = "unknown";
+
+/** A pg executor — the pool or a checked-out client (lets callers thread a real txn). */
+export type Db = Pool | PoolClient;
 
 export function dbConfigured(): boolean {
   return Boolean(
@@ -123,13 +126,16 @@ const MIGRATION_LOCK_ID = 42;
 
 async function runMigrations(): Promise<void> {
   const p = await getPool();
-  // Acquire a session-level advisory lock so concurrent Next.js cold-start instances
-  // wait rather than racing on DDL. Statement timeout prevents infinite hang if a
-  // crashed instance holds the lock and the Postgres session wasn't cleaned up yet.
-  await p.query(`SET statement_timeout = '30000'`);
-  await p.query(`SELECT pg_advisory_lock($1)`, [MIGRATION_LOCK_ID]);
-  await p.query(`RESET statement_timeout`);
+  // Hold the migration advisory lock on ONE dedicated connection for the whole run.
+  // Session-level locks acquired via pool.query() land on a random pooled connection
+  // and unlock on another — leaking the lock and failing to serialize concurrent
+  // cold-start instances. A dedicated client keeps acquire + hold + release on one session.
+  const lockClient = await p.connect();
   try {
+    // Statement timeout bounds the lock wait if a crashed instance still holds it.
+    await lockClient.query(`SET statement_timeout = '30000'`);
+    await lockClient.query(`SELECT pg_advisory_lock($1)`, [MIGRATION_LOCK_ID]);
+    await lockClient.query(`RESET statement_timeout`);
   await p.query(`
     CREATE TABLE IF NOT EXISTS flow_alerts (
       id BIGSERIAL PRIMARY KEY,
@@ -547,8 +553,9 @@ async function runMigrations(): Promise<void> {
     END $$;
   `);
   } finally {
-    // Release the advisory lock so other waiting instances can proceed.
-    await p.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]);
+    // Release the advisory lock + return the dedicated connection to the pool.
+    try { await lockClient.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]); } catch { /* ignore */ }
+    lockClient.release();
   }
 }
 
@@ -617,19 +624,53 @@ export async function getDatabasePoolStats(): Promise<{
   }
 }
 
+// Session-level advisory locks MUST be acquired and released on the SAME connection,
+// and that connection must stay checked out for the lock's whole lifetime. pool.query()
+// grabs a random pooled connection per call, so lock-on-A / unlock-on-B leaks the lock
+// forever and gives no real mutual exclusion. We hold a dedicated client per held key.
+const heldLockClients = new Map<string, PoolClient>();
+
+async function acquireHeldLock(mapKey: string, lockSql: string, arg: string | number): Promise<boolean> {
+  if (heldLockClients.has(mapKey)) return false; // already held by this process
+  const client = await (await getPool()).connect();
+  try {
+    const res = await client.query<{ ok: boolean }>(lockSql, [arg]);
+    if (res.rows[0]?.ok === true) {
+      heldLockClients.set(mapKey, client);
+      return true;
+    }
+    client.release();
+    return false;
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+}
+
+async function releaseHeldLock(mapKey: string, unlockSql: string, arg: string | number): Promise<void> {
+  const client = heldLockClients.get(mapKey);
+  if (!client) return;
+  heldLockClients.delete(mapKey);
+  try {
+    await client.query(unlockSql, [arg]);
+  } finally {
+    client.release();
+  }
+}
+
 export async function tryAdvisoryLock(lockKey: string): Promise<boolean> {
   if (!dbConfigured()) return true;
   await ensureSchema();
-  const res = await (await getPool()).query<{ ok: boolean }>(
+  return acquireHeldLock(
+    `gen:${lockKey}`,
     `SELECT pg_try_advisory_lock(hashtext($1::text)) AS ok`,
-    [lockKey]
+    lockKey
   );
-  return res.rows[0]?.ok === true;
 }
 
 export async function releaseAdvisoryLock(lockKey: string): Promise<void> {
   if (!dbConfigured()) return;
-  await (await getPool()).query(`SELECT pg_advisory_unlock(hashtext($1::text))`, [lockKey]);
+  await releaseHeldLock(`gen:${lockKey}`, `SELECT pg_advisory_unlock(hashtext($1::text))`, lockKey);
 }
 
 export async function getMeta(key: string): Promise<string | null> {
@@ -641,13 +682,14 @@ export async function getMeta(key: string): Promise<string | null> {
   return res.rows[0]?.value ?? null;
 }
 
-export async function setMeta(key: string, value: string): Promise<void> {
+export async function setMeta(key: string, value: string, db?: Db): Promise<void> {
   await ensureSchema();
+  const q = db ?? (await getPool());
   if (value === "") {
-    await (await getPool()).query("DELETE FROM platform_meta WHERE key = $1", [key]);
+    await q.query("DELETE FROM platform_meta WHERE key = $1", [key]);
     return;
   }
-  await (await getPool()).query(
+  await q.query(
     `INSERT INTO platform_meta (key, value, updated_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
@@ -660,16 +702,12 @@ const SPX_EVAL_LOCK_ID = 872341;
 
 export async function tryAcquireSpxEvaluateLock(): Promise<boolean> {
   await ensureSchema();
-  const res = await (await getPool()).query<{ acquired: boolean }>(
-    `SELECT pg_try_advisory_lock($1) AS acquired`,
-    [SPX_EVAL_LOCK_ID]
-  );
-  return res.rows[0]?.acquired === true;
+  return acquireHeldLock("spx-eval", `SELECT pg_try_advisory_lock($1) AS ok`, SPX_EVAL_LOCK_ID);
 }
 
 export async function releaseSpxEvaluateLock(): Promise<void> {
   await ensureSchema();
-  await (await getPool()).query(`SELECT pg_advisory_unlock($1)`, [SPX_EVAL_LOCK_ID]);
+  await releaseHeldLock("spx-eval", `SELECT pg_advisory_unlock($1)`, SPX_EVAL_LOCK_ID);
 }
 
 export type FlowRow = {
@@ -1094,9 +1132,9 @@ export async function updateOpenSpxPlayRow(
   );
 }
 
-export async function closeOpenSpxPlayRow(id: number): Promise<void> {
+export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<void> {
   await ensureSchema();
-  await (await getPool()).query(
+  await (db ?? await getPool()).query(
     `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE id = $1 AND status = 'open'`,
     [id]
   );
@@ -1194,10 +1232,11 @@ export async function closePlayOutcomeRow(
     pnl_pts: number;
     outcome: string;
     closed_at: string;
-  }
+  },
+  db?: Db
 ): Promise<void> {
   await ensureSchema();
-  await (await getPool()).query(
+  await (db ?? await getPool()).query(
     `
     UPDATE spx_play_outcomes
     SET exit_price = $2,
