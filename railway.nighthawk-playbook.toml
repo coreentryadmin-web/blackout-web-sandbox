@@ -1,0 +1,16 @@
+# Railway config for the NightHawk-Playbook worker (the nightly edition builder).
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.nighthawk-playbook.toml"
+#
+# This is a WORKER, not an HTTP trigger: it runs the real edition pipeline in-process,
+# so it needs the full app build + node_modules (DB, Redis, Anthropic, UW). It does NOT
+# need CRON_SECRET (it doesn't go through the HTTP auth gate). It DOES need the same app
+# env as blackout-web (DATABASE_URL, REDIS_URL, ANTHROPIC_API_KEY, UW_API_KEY, etc.).
+[build]
+builder = "nixpacks"
+buildCommand = "DATABASE_URL=$DATABASE_PUBLIC_URL npm run build"
+
+[deploy]
+startCommand = "npx tsx scripts/nighthawk-worker.ts"
+cronSchedule = "30 21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

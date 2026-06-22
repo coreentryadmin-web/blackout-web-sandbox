@@ -1,0 +1,12 @@
+# Railway config for the Flow-Ingest-Cron service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.flow-ingest.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/flow-ingest"
+cronSchedule = "*/2 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1
