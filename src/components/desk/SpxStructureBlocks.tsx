@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -166,7 +166,7 @@ function StructureCard({
           </p>
           <p
             className={clsx(
-              "uppercase text-grey-500",
+              "uppercase text-cyan-400",
               large ? "font-mono text-[10px] tracking-[0.25em] mt-0.5" : "font-mono text-[7px] tracking-widest"
             )}
           >
@@ -184,7 +184,7 @@ const TONE_CLASS: Record<string, string> = {
   bear: "text-bear text-glow-red",
   support: "text-emerald-400",
   resistance: "text-rose-400",
-  neutral: "text-grey-300",
+  neutral: "text-sky-200",
   orange: "text-orange-400",
   purple: "text-purple-400",
   blue: "text-sky-400",

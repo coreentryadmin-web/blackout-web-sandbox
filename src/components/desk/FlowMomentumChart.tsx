@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, ReferenceLine } from "recharts";
@@ -17,7 +17,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: { valu
       <p className={clsx("font-mono text-[10px] font-semibold", net >= 0 ? "text-emerald-400" : "text-rose-400")}>
         {net >= 0 ? "+" : ""}{fmtPremium(net)}
       </p>
-      <p className="font-mono text-[9px] text-zinc-600">net flow</p>
+      <p className="font-mono text-[9px] text-cyan-400">net flow</p>
     </div>
   );
 }
@@ -92,7 +92,7 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
             </ResponsiveContainer>
           </div>
         )}
-        <p className="font-mono text-[9px] text-zinc-700 text-center mt-1">call − put premium · {points.length} samples</p>
+        <p className="font-mono text-[9px] text-cyan-500 text-center mt-1">call − put premium · {points.length} samples</p>
       </div>
     </div>
   );

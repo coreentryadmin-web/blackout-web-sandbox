@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -136,7 +136,7 @@ export function SpxSniperHeader({ desk, live }: Props) {
             {isStale ? (
               <span className="text-amber-400 font-semibold text-xs animate-pulse">⚠ STALE</span>
             ) : (
-              <span className="text-neutral-400 text-xs">
+              <span className="text-sky-300 text-xs">
                 Desk ·{" "}
                 {new Date(desk?.polled_at ?? desk?.as_of ?? "").toLocaleTimeString("en-US", {
                   hour: "numeric",
@@ -175,7 +175,7 @@ const VALUE_TONE: Record<string, string> = {
   magenta: "text-fuchsia-300",
   cyan: "text-cyan-300",
   gold: "text-amber-200",
-  neutral: "text-zinc-100",
+  neutral: "text-white",
 };
 
 const BLOCK_BORDER: Record<string, string> = {
@@ -188,7 +188,7 @@ const MARKET_PILL: Record<MarketStatusLabel, string> = {
   "RTH OPEN": "border-emerald-500/50 bg-emerald-500/10 text-emerald-300",
   "PRE-MARKET": "border-amber-500/50 bg-amber-500/10 text-amber-200",
   EXTENDED: "border-orange-500/50 bg-orange-500/10 text-orange-200",
-  CLOSED: "border-zinc-600/50 bg-zinc-800/40 text-zinc-400",
+  CLOSED: "border-zinc-600/50 bg-zinc-800/40 text-sky-300",
 };
 
 function MarketStatusPill({ label, live }: { label?: string; live?: boolean }) {

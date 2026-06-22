@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
@@ -40,13 +40,13 @@ export function EmbedFrame({
       <div className="embed-frame-header">
         <div className="flex items-center gap-2 min-w-0">
           <span className="embed-frame-dot" />
-          <p className="font-mono text-[10px] tracking-[0.35em] uppercase text-grey-200 truncate">
+          <p className="font-mono text-[10px] tracking-[0.35em] uppercase text-sky-100 truncate">
             {title}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {subtitle && (
-            <span className="font-mono text-[9px] text-grey-400 uppercase tracking-widest hidden sm:inline">
+            <span className="font-mono text-[9px] text-sky-300 uppercase tracking-widest hidden sm:inline">
               {subtitle}
             </span>
           )}

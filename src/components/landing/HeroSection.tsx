@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -10,7 +10,7 @@ const STATS = [
   { num: "93K+", label: "Flow Alerts", color: "text-bull" },
   { num: "4", label: "AI Systems", color: "text-purple-light" },
   { num: "0DTE", label: "SPX Precision", color: "text-cyan" },
-  { num: "24/7", label: "Night Hawk", color: "text-grey-200" },
+  { num: "24/7", label: "Night Hawk", color: "text-sky-100" },
 ];
 
 const headlineWords = [
@@ -57,7 +57,7 @@ export function HeroSection() {
             className="bg-black/80 border border-bull/40 px-5 py-3 backdrop-blur-md -rotate-2 hover:rotate-0 transition-transform"
           >
             <p className={`font-display text-3xl ${s.color}`}>{s.num}</p>
-            <p className="font-mono text-[9px] tracking-[0.2em] text-grey-400 uppercase">{s.label}</p>
+            <p className="font-mono text-[9px] tracking-[0.2em] text-sky-300 uppercase">{s.label}</p>
           </motion.div>
         ))}
       </div>
@@ -71,7 +71,7 @@ export function HeroSection() {
           className="bg-black/80 border border-purple/40 px-5 py-3 backdrop-blur-md rotate-2"
         >
           <p className="font-display text-3xl text-purple-light">24/7</p>
-          <p className="font-mono text-[9px] tracking-[0.2em] text-grey-400 uppercase">Night Hawk</p>
+          <p className="font-mono text-[9px] tracking-[0.2em] text-sky-300 uppercase">Night Hawk</p>
         </motion.div>
       </div>
 
@@ -104,7 +104,7 @@ export function HeroSection() {
               ))}
             </h1>
 
-            <p className="text-grey-300 text-sm md:text-base leading-relaxed max-w-xl mx-auto md:mx-0 font-light">
+            <p className="text-sky-200 text-sm md:text-base leading-relaxed max-w-xl mx-auto md:mx-0 font-light">
               Real-time options flow, AI market intelligence, live SPX analysis, and the Night Hawk swing
               scanner — built for traders who don&apos;t guess.
             </p>
@@ -123,7 +123,7 @@ export function HeroSection() {
             {STATS.map((s) => (
               <div key={s.label} className="border border-grey-800 p-3 text-center bg-black/50">
                 <p className={`font-display text-2xl ${s.color}`}>{s.num}</p>
-                <p className="font-mono text-[8px] tracking-widest text-grey-500 uppercase">{s.label}</p>
+                <p className="font-mono text-[8px] tracking-widest text-cyan-400 uppercase">{s.label}</p>
               </div>
             ))}
           </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import useSWR from "swr";
 import { fetchPlatformHealth } from "@/lib/api";
@@ -21,10 +21,10 @@ export function EngineStatusBar() {
             marketOn ? "engine-status-online" : "engine-status-offline"
           )}
         />
-        <span className="font-mono text-[10px] tracking-[0.35em] uppercase text-grey-200">
+        <span className="font-mono text-[10px] tracking-[0.35em] uppercase text-sky-100">
           BlackOut Data Desk
         </span>
-        <span className="font-mono text-[10px] text-grey-500 hidden sm:inline">
+        <span className="font-mono text-[10px] text-cyan-400 hidden sm:inline">
           {marketOn
             ? `${polygon ? "Polygon" : ""}${polygon && uw ? " · " : ""}${uw ? "UW" : ""} live`
             : "Add API keys on Railway (server-side)"}
@@ -35,7 +35,7 @@ export function EngineStatusBar() {
           </span>
         )}
       </div>
-      <div className="flex items-center gap-4 font-mono text-[9px] tracking-widest uppercase text-grey-500">
+      <div className="flex items-center gap-4 font-mono text-[9px] tracking-widest uppercase text-cyan-400">
         <span className={marketOn ? "text-bull/80" : ""}>Market APIs</span>
         <span className={intelOn ? "text-purple-light/80" : ""}>BlackOut Engine</span>
       </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { clsx } from "clsx";
 import { useSpxDayPerformance } from "@/hooks/useSpxDayPerformance";
@@ -37,7 +37,7 @@ export function SpxDayPerformancePanel() {
         <span className="badge-live-dot animate-pulse" />
         <div>
           <p className="font-syne text-xs tracking-[0.12em] uppercase font-bold">Today</p>
-          <p className="font-mono text-[9px] tracking-[0.2em] uppercase text-grey-500 mt-0.5">
+          <p className="font-mono text-[9px] tracking-[0.2em] uppercase text-cyan-400 mt-0.5">
             {today} · P&amp;L
           </p>
         </div>
@@ -56,30 +56,30 @@ export function SpxDayPerformancePanel() {
 
       <div className="spx-desk-panel-body">
         {noPlays ? (
-          <p className="font-mono text-[11px] text-grey-500 py-2">No completed plays today</p>
+          <p className="font-mono text-[11px] text-cyan-400 py-2">No completed plays today</p>
         ) : (
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
             <div>
-              <div className="font-mono text-[9px] uppercase tracking-wider text-grey-500 mb-0.5">
+              <div className="font-mono text-[9px] uppercase tracking-wider text-cyan-400 mb-0.5">
                 Plays
               </div>
               <div className="font-syne font-bold text-white">
                 {stats!.wins}W / {stats!.losses}L
                 {stats!.breakeven > 0 && (
-                  <span className="text-grey-500 font-normal"> / {stats!.breakeven}BE</span>
+                  <span className="text-cyan-400 font-normal"> / {stats!.breakeven}BE</span>
                 )}
               </div>
             </div>
 
             <div>
-              <div className="font-mono text-[9px] uppercase tracking-wider text-grey-500 mb-0.5">
+              <div className="font-mono text-[9px] uppercase tracking-wider text-cyan-400 mb-0.5">
                 Win Rate
               </div>
               <div
                 className={clsx(
                   "font-syne font-bold tabular-nums",
                   stats!.win_rate == null
-                    ? "text-grey-500"
+                    ? "text-cyan-400"
                     : stats!.win_rate >= 0.5
                     ? "num-bull"
                     : "num-bear"
@@ -90,7 +90,7 @@ export function SpxDayPerformancePanel() {
             </div>
 
             <div>
-              <div className="font-mono text-[9px] uppercase tracking-wider text-grey-500 mb-0.5">
+              <div className="font-mono text-[9px] uppercase tracking-wider text-cyan-400 mb-0.5">
                 Avg Win
               </div>
               <div className="font-syne font-bold num-bull tabular-nums">
@@ -99,7 +99,7 @@ export function SpxDayPerformancePanel() {
             </div>
 
             <div>
-              <div className="font-mono text-[9px] uppercase tracking-wider text-grey-500 mb-0.5">
+              <div className="font-mono text-[9px] uppercase tracking-wider text-cyan-400 mb-0.5">
                 Avg Loss
               </div>
               <div className="font-syne font-bold num-bear tabular-nums">

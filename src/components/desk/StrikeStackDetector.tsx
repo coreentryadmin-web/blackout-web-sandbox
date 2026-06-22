@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -49,7 +49,7 @@ export function StrikeStackDetector({
               exit={{ opacity: 0 }}
               className="py-4 text-center"
             >
-              <p className="font-mono text-[10px] text-zinc-500">Watching for accumulation…</p>
+              <p className="font-mono text-[10px] text-cyan-400">Watching for accumulation…</p>
             </motion.div>
           ) : (
             <div className="space-y-2">
@@ -112,7 +112,7 @@ export function StrikeStackDetector({
                         >
                           {stack.strike}{isCall ? "C" : "P"}
                         </span>
-                        <span className="text-zinc-600 text-[10px]">·</span>
+                        <span className="text-cyan-400 text-[10px]">·</span>
                         <span
                           className="font-semibold"
                           style={{
@@ -124,7 +124,7 @@ export function StrikeStackDetector({
                           {fmtExpiry(stack.expiry)}
                         </span>
                       </p>
-                      <p className="font-mono text-[10px] text-zinc-500">
+                      <p className="font-mono text-[10px] text-cyan-400">
                         {stack.premiums.map(fmtFlowPremShort).join(" + ")}
                       </p>
                     </div>

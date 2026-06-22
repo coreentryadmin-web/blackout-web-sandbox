@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -464,7 +464,7 @@ export function FlowFeed() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 type="button"
                 onClick={() => setTickerFilter("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 font-mono text-sm font-bold"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
               >
                 ×
               </motion.button>
@@ -505,7 +505,7 @@ export function FlowFeed() {
                     "font-mono text-[9px] px-1.5 py-[3px] rounded transition-colors whitespace-nowrap",
                     replaySpeed === s
                       ? "bg-amber-800/60 text-amber-200 border border-amber-700/60"
-                      : "text-zinc-600 hover:text-zinc-400 bg-zinc-900 border border-zinc-800"
+                      : "text-cyan-400 hover:text-sky-300 bg-zinc-900 border border-zinc-800"
                   )}
                 >
                   {s}×
@@ -524,7 +524,7 @@ export function FlowFeed() {
             "font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border transition-all",
             audioEnabled
               ? "border-violet-600/60 text-violet-300 bg-violet-950/40"
-              : "border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700"
+              : "border-zinc-800 text-cyan-400 hover:text-sky-300 hover:border-zinc-700"
           )}
         >
           {audioEnabled ? "AUDIO ON" : "AUDIO"}
@@ -535,7 +535,7 @@ export function FlowFeed() {
           type="button"
           onClick={() => exportCSV(displayAlerts)}
           disabled={displayAlerts.length === 0}
-          className="font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          className="font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border border-zinc-800 text-cyan-400 hover:text-sky-300 hover:border-zinc-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           title="Export current tape to CSV"
         >
           CSV
@@ -550,7 +550,7 @@ export function FlowFeed() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.2 }}
-              className="font-mono text-[10px] text-zinc-300 hidden sm:block"
+              className="font-mono text-[10px] text-sky-200 hidden sm:block"
             >
               {loading ? "Scanning…" : `${displayAlerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
             </motion.span>
@@ -566,7 +566,7 @@ export function FlowFeed() {
             </div>
             <span className={clsx(
               "font-mono text-[9px] tracking-widest uppercase",
-              live ? "text-emerald-500" : "text-zinc-700"
+              live ? "text-emerald-500" : "text-cyan-500"
             )}>
               {live ? "Live" : "Offline"}
             </span>

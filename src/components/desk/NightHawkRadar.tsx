@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -33,7 +33,7 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
           animate="show"
         >
           {plays.length === 0 ? (
-            <p className="col-span-full text-grey-500 text-sm font-mono py-10 text-center">
+            <p className="col-span-full text-cyan-400 text-sm font-mono py-10 text-center">
               {live ? "Scanning for plays…" : "Engine offline"}
             </p>
           ) : (
@@ -68,7 +68,7 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
                   </div>
                   <div className="mb-3">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[8px] font-mono uppercase tracking-widest text-grey-500">Conviction</span>
+                      <span className="text-[8px] font-mono uppercase tracking-widest text-cyan-400">Conviction</span>
                       <span className="text-[9px] font-mono text-purple-light">{pct}%</span>
                     </div>
                     <div className="h-1.5 bg-grey-900 rounded-full overflow-hidden">
@@ -81,8 +81,8 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
                       />
                     </div>
                   </div>
-                  <p className="text-xs text-grey-300 leading-relaxed line-clamp-3">{play.summary}</p>
-                  <p className="text-[9px] font-mono text-grey-500 mt-3 uppercase tracking-wider">
+                  <p className="text-xs text-sky-200 leading-relaxed line-clamp-3">{play.summary}</p>
+                  <p className="text-[9px] font-mono text-cyan-400 mt-3 uppercase tracking-wider">
                     {play.dte_range} · {play.entry_premium ? `$${play.entry_premium}` : "—"}
                   </p>
                 </motion.div>
@@ -98,7 +98,7 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="desk-mini-stat">
-      <p className="text-[8px] uppercase tracking-widest text-grey-500">{label}</p>
+      <p className="text-[8px] uppercase tracking-widest text-cyan-400">{label}</p>
       <p className="font-mono text-sm font-bold text-purple-light">{value}</p>
     </div>
   );

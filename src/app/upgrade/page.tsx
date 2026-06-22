@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { SyncMembershipButton } from "@/components/SyncMembershipButton";
 import { WHOP_CHECKOUT, WHOP_PREMIUM_CHECKOUT_OPTIONS } from "@/lib/whop-checkout";
@@ -12,7 +12,7 @@ export default function UpgradePage() {
           Membership required
         </p>
         <h1 className="page-title mb-4">Premium Access</h1>
-        <p className="text-grey-400 text-sm leading-relaxed mb-8">
+        <p className="text-sky-300 text-sm leading-relaxed mb-8">
           Choose monthly, yearly, or lifetime on Whop. Use the same email as your BlackOut
           account, then refresh your access below.
         </p>
@@ -46,7 +46,7 @@ export default function UpgradePage() {
 
         <SyncMembershipButton />
 
-        <p className="text-grey-600 text-xs mt-8 font-mono">
+        <p className="text-cyan-400 text-xs mt-8 font-mono">
           <Link href="/" className="text-purple-light hover:text-purple">
             Back to home
           </Link>

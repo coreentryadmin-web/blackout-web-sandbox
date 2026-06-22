@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -182,9 +182,9 @@ export function FlowAlertStream({
           ) : visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <div className="w-8 h-8 rounded-full border border-zinc-800 flex items-center justify-center">
-                <span className="text-zinc-700 text-xs">—</span>
+                <span className="text-cyan-500 text-xs">—</span>
               </div>
-              <p className="font-mono text-[11px] text-zinc-500 text-center">
+              <p className="font-mono text-[11px] text-cyan-400 text-center">
                 {tickerFilter
                   ? `No alerts found for ${tickerFilter} — try a different ticker or lower the premium filter`
                   : typeFilter !== "ALL"
@@ -313,7 +313,7 @@ export function FlowAlertStream({
                           >
                             {fmtPremium(flow.premium)}
                           </span>
-                          <span className="font-mono text-[10px] text-zinc-400 w-6 text-right tabular-nums">
+                          <span className="font-mono text-[10px] text-sky-300 w-6 text-right tabular-nums">
                             {timeAgo(flow.alerted_at)}
                           </span>
                         </div>
@@ -321,20 +321,20 @@ export function FlowAlertStream({
 
                       {/* Row 2: contract details */}
                       <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <p className="font-mono text-[11px] text-zinc-400 leading-none flex items-center gap-1 flex-wrap">
+                        <p className="font-mono text-[11px] text-sky-300 leading-none flex items-center gap-1 flex-wrap">
                           <span className="text-yellow-300 font-semibold">{flow.strike}{isCall ? "C" : "P"}</span>
-                          <span className="text-zinc-600">·</span>
+                          <span className="text-cyan-400">·</span>
                           <span>{fmtExpiry(flow.expiry)}</span>
                           {dte !== null && !is0dte && (
                             <>
-                              <span className="text-zinc-600">·</span>
+                              <span className="text-cyan-400">·</span>
                               <span>{dte}d</span>
                             </>
                           )}
                           {flow.ask_pct != null && flow.ask_pct > 0 && (
                             <>
-                              <span className="text-zinc-600">·</span>
-                              <span className={flow.ask_pct >= 85 ? "text-amber-400" : "text-zinc-400"}>
+                              <span className="text-cyan-400">·</span>
+                              <span className={flow.ask_pct >= 85 ? "text-amber-400" : "text-sky-300"}>
                                 {Math.round(flow.ask_pct)}% ask
                               </span>
                             </>
@@ -345,7 +345,7 @@ export function FlowAlertStream({
                           {flow.score > 0 && (
                             <span className={clsx(
                               "font-mono text-[10px] font-medium",
-                              flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-zinc-500"
+                              flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-cyan-400"
                             )}>
                               ▲{flow.score.toFixed(1)}
                             </span>
@@ -386,14 +386,14 @@ export function FlowAlertStream({
                             </span>
                           )}
                           {flow.open_interest != null && flow.open_interest > 0 && (
-                            <span className="font-mono text-[9px] text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800/50">
+                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-zinc-800/50">
                               OI {flow.open_interest >= 1000
                                 ? `${(flow.open_interest / 1000).toFixed(1)}K`
                                 : flow.open_interest.toFixed(0)}
                             </span>
                           )}
                           {ivDisplay && (
-                            <span className="font-mono text-[9px] text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800/50">
+                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-zinc-800/50">
                               IV {ivDisplay}
                             </span>
                           )}
@@ -409,7 +409,7 @@ export function FlowAlertStream({
                 <button
                   type="button"
                   onClick={() => setRenderLimit((r) => r + RENDER_LIMIT)}
-                  className="w-full font-mono text-[10px] text-zinc-600 hover:text-zinc-400 py-3 border border-zinc-800/50 rounded-lg hover:border-zinc-700 transition-colors mt-1"
+                  className="w-full font-mono text-[10px] text-cyan-400 hover:text-sky-300 py-3 border border-zinc-800/50 rounded-lg hover:border-zinc-700 transition-colors mt-1"
                 >
                   Load {Math.min(RENDER_LIMIT, visible.length - renderLimit)} more · {visible.length - renderLimit} remaining
                 </button>

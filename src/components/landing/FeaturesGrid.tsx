@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -176,7 +176,7 @@ export function FeaturesGrid() {
                     <br />
                     <span className={f.accent.split(" ")[1]}>{f.sub}</span>
                   </h3>
-                  <p className="text-grey-400 text-xs md:text-sm mt-4 leading-relaxed">{f.desc}</p>
+                  <p className="text-sky-300 text-xs md:text-sm mt-4 leading-relaxed">{f.desc}</p>
                   <span className={clsx("tier-badge-pro mt-5 inline-block", `tier-badge-glow-${f.badgeGlow}`)}>
                     {f.tier}
                   </span>

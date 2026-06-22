@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -28,10 +28,10 @@ export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean
             <span className={clsx("font-mono text-xl font-bold tabular-nums", bull ? "num-bull" : "num-bear")}>
               {live ? fmtPct(data?.spx_change_pct ?? null) : "—"}
             </span>
-            <span className="font-mono text-sm text-grey-300">
+            <span className="font-mono text-sm text-sky-200">
               VIX {live && data?.vix != null ? fmtPrice(data.vix, 2) : "—"}
             </span>
-            <span className="font-mono text-sm text-grey-400">
+            <span className="font-mono text-sm text-sky-300">
               VWAP {live ? fmtPrice(data?.vwap ?? null) : "—"}
               {live && data?.above_vwap != null && (
                 <span className={data.above_vwap ? " text-bull ml-1" : " text-bear ml-1"}>
@@ -60,7 +60,7 @@ export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean
 function TickerChip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="desk-ticker-chip">
-      <p className="text-[9px] tracking-widest uppercase text-grey-500 mb-1">{label}</p>
+      <p className="text-[9px] tracking-widest uppercase text-cyan-400 mb-1">{label}</p>
       <p className={clsx("font-mono text-sm font-semibold capitalize truncate", accent ? "text-bull" : "text-white")}>
         {value}
       </p>

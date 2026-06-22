@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
@@ -22,8 +22,8 @@ export type NightHawkPlayWithFlow = PlaybookPlay & {
 const CONVICTION_STYLE: Record<FlowConviction, { label: string; cls: string }> = {
   strong:   { label: "STRONG",   cls: "text-emerald-400 border-emerald-700/50 bg-emerald-950/30" },
   moderate: { label: "MODERATE", cls: "text-amber-400   border-amber-700/50   bg-amber-950/25" },
-  weak:     { label: "WEAK",     cls: "text-zinc-400    border-zinc-700/50     bg-zinc-900/40" },
-  none:     { label: "NO DATA",  cls: "text-zinc-600    border-zinc-800/50     bg-zinc-950/40" },
+  weak:     { label: "WEAK",     cls: "text-sky-300    border-zinc-700/50     bg-zinc-900/40" },
+  none:     { label: "NO DATA",  cls: "text-cyan-400    border-zinc-800/50     bg-zinc-950/40" },
 };
 
 export function NightHawkFlowPanel({
@@ -122,7 +122,7 @@ export function NightHawkFlowPanel({
                         style={{ background: "linear-gradient(90deg, #9f1239, #f43f5e)", width: `${100 - callPct}%` }} />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-[11px] text-zinc-400">
+                      <span className="font-mono text-[11px] text-sky-300">
                         {flowData.printCount} prints · top {fmtPremium(flowData.topPrint)}
                       </span>
                       <div className="flex items-center gap-2">
@@ -162,7 +162,7 @@ export function NightHawkFlowPanel({
                     )}
                   </>
                 ) : (
-                  <p className="font-mono text-[11px] text-zinc-600 mt-1">
+                  <p className="font-mono text-[11px] text-cyan-400 mt-1">
                     No flow prints found in 7d window
                   </p>
                 )}
@@ -171,7 +171,7 @@ export function NightHawkFlowPanel({
           })}
         </AnimatePresence>
 
-        <p className="font-mono text-[8px] text-zinc-800 text-center pt-1">
+        <p className="font-mono text-[8px] text-sky-500 text-center pt-1">
           Flow conviction from 7d tape · strong = $2M+ aligned
         </p>
       </div>

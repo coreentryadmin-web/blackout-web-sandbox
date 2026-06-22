@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import useSWR from "swr";
 import { fetchMarketNews, type NewsArticle } from "@/lib/api";
@@ -26,7 +26,7 @@ function NewsItem({ article }: { article: NewsArticle }) {
           {tickers.join(" · ")}
         </span>
       )}
-      <span className="text-grey-200 truncate">{article.title}</span>
+      <span className="text-sky-100 truncate">{article.title}</span>
     </>
   );
 
@@ -61,7 +61,7 @@ export function BenzingaNewsTicker() {
           <span className="badge-live-dot" />
           Benzinga
         </div>
-        <p className="font-mono text-[10px] text-grey-500 px-4 py-3 animate-pulse">
+        <p className="font-mono text-[10px] text-cyan-400 px-4 py-3 animate-pulse">
           Loading headlines…
         </p>
       </div>
@@ -75,7 +75,7 @@ export function BenzingaNewsTicker() {
           <span className="badge-live-dot opacity-40" />
           Benzinga
         </div>
-        <p className="font-mono text-[10px] text-grey-500 px-4 py-3">
+        <p className="font-mono text-[10px] text-cyan-400 px-4 py-3">
           News standby — set POLYGON_API_KEY on Railway
         </p>
       </div>

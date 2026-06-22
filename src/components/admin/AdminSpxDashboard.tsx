@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -752,7 +752,7 @@ function AnalyticsSection({ data }: { data: SpxAdminDashboardPayload }) {
                 <td>{d.trades}</td>
                 <td>
                   <span className="admin-td-bull">{d.wins}</span>
-                  <span className="text-grey-600"> / </span>
+                  <span className="text-cyan-400"> / </span>
                   <span className="admin-td-bear">{d.losses}</span>
                 </td>
                 <td>{d.avg_pnl.toFixed(1)}</td>

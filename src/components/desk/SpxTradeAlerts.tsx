@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
@@ -116,7 +116,7 @@ function scoreClass(action: SpxPlayAction, score: number): string {
   if (action === "BUY") return score >= 0 ? "text-bull" : "text-bear";
   if (action === "SELL") return "text-bear";
   if (action === "HOLD" || action === "TRIM" || action === "WATCHING") return "text-orange-400";
-  return "text-grey-400";
+  return "text-sky-300";
 }
 
 function isPlayIdeaLine(line: string): boolean {
@@ -384,7 +384,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                   Confirmations {confirmationLayer.confirmations.passed_count}/
                   {confirmationLayer.confirmations.total}
                   {playRefreshing && (
-                    <span className="ml-2 text-grey-500 font-normal normal-case tracking-normal">
+                    <span className="ml-2 text-cyan-400 font-normal normal-case tracking-normal">
                       · updating
                     </span>
                   )}
@@ -456,7 +456,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
           {play.factors.length > 0 && play.action !== "SCANNING" && (
             <div className="spx-trade-factors mt-4">
-              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
+              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-400 mb-2">
                 Confluence factors
               </p>
               <ul className="spx-desk-list">
@@ -465,16 +465,16 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     <span
                       className={clsx(
                         "font-mono text-[10px] uppercase w-24 shrink-0 font-bold",
-                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-400"
+                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-sky-300"
                       )}
                     >
                       {f.label}
                     </span>
-                    <span className="font-mono text-[11px] text-grey-300 flex-1">{f.detail}</span>
+                    <span className="font-mono text-[11px] text-sky-200 flex-1">{f.detail}</span>
                     <span
                       className={clsx(
                         "font-mono text-[10px] tabular-nums shrink-0",
-                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-grey-500"
+                        f.weight > 0 ? "text-bull" : f.weight < 0 ? "text-bear" : "text-cyan-400"
                       )}
                     >
                       {f.weight > 0 ? "+" : ""}
@@ -490,7 +490,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
       {history.length > 1 && (
         <div className="spx-trade-alert-history mt-4 pt-4 border-t border-white/5">
-          <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-grey-500 mb-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-400 mb-2">
             Play log
           </p>
           <ul className="spx-desk-list max-h-[200px] overflow-y-auto">
@@ -499,14 +499,14 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 <span className={clsx("spx-trade-alert-history-action", historyClass(row.action))}>
                   {actionLabel(row.action, row.direction)}
                 </span>
-                <span className="font-mono text-grey-500 shrink-0">
+                <span className="font-mono text-cyan-400 shrink-0">
                   {new Date(row.as_of).toLocaleTimeString("en-US", {
                     hour: "numeric",
                     minute: "2-digit",
                     second: "2-digit",
                   })}
                 </span>
-                <span className="font-mono text-grey-300 truncate">{row.headline}</span>
+                <span className="font-mono text-sky-200 truncate">{row.headline}</span>
               </li>
             ))}
           </ul>

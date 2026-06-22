@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { clsx } from "clsx";
@@ -57,7 +57,7 @@ export function LiveFlowTape({ alerts, className }: LiveFlowTapeProps) {
                   {scanning ? "SCANNING" : fmtPremium(alert.premium)}
                 </span>
                 {!scanning && (
-                  <span className="font-mono text-[9px] text-grey-500 uppercase">{alert.route}</span>
+                  <span className="font-mono text-[9px] text-cyan-400 uppercase">{alert.route}</span>
                 )}
               </div>
             );

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,12 +39,12 @@ function FlowRow({ f }: { f: FlowAlert }) {
             {f.option_type}
           </span>
           <span className="font-mono text-[11px] text-yellow-300 font-medium">{f.strike}{isCall ? "C" : "P"}</span>
-          <span className="font-mono text-[10px] text-zinc-400">{fmtExpiry(f.expiry)}</span>
+          <span className="font-mono text-[10px] text-sky-300">{fmtExpiry(f.expiry)}</span>
           {f.route === "0dte"  && <span className="flow-badge flow-badge-0dte">0DTE</span>}
           {isWhale             && <span className="flow-badge flow-badge-whale">WHALE</span>}
           {f.alert_rule        && <span className="flow-badge flow-badge-sweep">{f.alert_rule.toUpperCase().slice(0,6)}</span>}
         </div>
-        <p className="font-mono text-[9px] text-zinc-700 mt-1">{timeAgo(f.alerted_at)}</p>
+        <p className="font-mono text-[9px] text-cyan-500 mt-1">{timeAgo(f.alerted_at)}</p>
       </div>
 
       {/* Right: premium + score */}
@@ -53,7 +53,7 @@ function FlowRow({ f }: { f: FlowAlert }) {
           {fmtPremium(f.premium)}
         </p>
         {f.score > 0 && (
-          <p className={clsx("font-mono text-[9px]", f.score >= 7 ? "text-violet-500" : "text-zinc-700")}>
+          <p className={clsx("font-mono text-[9px]", f.score >= 7 ? "text-violet-500" : "text-cyan-500")}>
             ▲{f.score.toFixed(1)}
           </p>
         )}
@@ -151,7 +151,7 @@ export function TickerDrawer({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-800 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-900 transition-all font-mono text-lg"
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-800 text-cyan-400 hover:text-sky-100 hover:border-zinc-600 hover:bg-zinc-900 transition-all font-mono text-lg"
               >
                 ×
               </button>
@@ -207,11 +207,11 @@ export function TickerDrawer({
 
                   {/* Flow alerts */}
                   <div>
-                    <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 mb-2">
+                    <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-cyan-500 mb-2">
                       Flow · {displayFlows.length} alerts{typeFilter && typeFilter !== "ALL" ? ` · ${typeFilter}` : ""}
                     </p>
                     {displayFlows.length === 0 ? (
-                      <p className="font-mono text-[11px] text-zinc-700 text-center py-6">No {typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for {ticker}</p>
+                      <p className="font-mono text-[11px] text-cyan-500 text-center py-6">No {typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for {ticker}</p>
                     ) : (
                       <div className="space-y-1.5">
                         {displayFlows.map((f, i) => <FlowRow key={`${f.alerted_at}-${i}`} f={f} />)}
@@ -222,7 +222,7 @@ export function TickerDrawer({
                   {/* Dark pool */}
                   {state.dp.length > 0 && (
                     <div>
-                      <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 mb-2">
+                      <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-cyan-500 mb-2">
                         Dark Pool · {state.dp.length} prints
                       </p>
                       <div className="space-y-1.5">
@@ -239,15 +239,15 @@ export function TickerDrawer({
                             <div className="flex items-center gap-2">
                               <span className={clsx(
                                 "font-mono text-[10px] font-bold",
-                                p.side === "buy" ? "text-emerald-400" : p.side === "sell" ? "text-rose-400" : "text-zinc-500"
+                                p.side === "buy" ? "text-emerald-400" : p.side === "sell" ? "text-rose-400" : "text-cyan-400"
                               )}>
                                 {p.side === "buy" ? "↑ BUY" : p.side === "sell" ? "↓ SELL" : "— DARK"}
                               </span>
-                              <span className="font-mono text-[9px] text-zinc-700">{timeAgo(p.executed_at)}</span>
+                              <span className="font-mono text-[9px] text-cyan-500">{timeAgo(p.executed_at)}</span>
                             </div>
                             <span className={clsx(
                               "font-mono text-[13px] font-bold tabular-nums",
-                              p.side === "buy" ? "text-emerald-400" : p.side === "sell" ? "text-rose-400" : "text-zinc-300"
+                              p.side === "buy" ? "text-emerald-400" : p.side === "sell" ? "text-rose-400" : "text-sky-200"
                             )}>
                               {fmtPremium(p.premium)}
                             </span>

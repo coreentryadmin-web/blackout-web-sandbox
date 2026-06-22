@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -196,7 +196,7 @@ export function SpxCommentaryRail({
           </span>
         </div>
         {loading && (
-          <span className="ml-auto font-mono text-[8px] text-grey-500 animate-pulse">
+          <span className="ml-auto font-mono text-[8px] text-cyan-400 animate-pulse">
             Thinking…
           </span>
         )}
@@ -220,7 +220,7 @@ export function SpxCommentaryRail({
             {error.includes("ANTHROPIC") ? "Set ANTHROPIC_API_KEY on Railway" : error}
           </p>
         ) : entries.length === 0 ? (
-          <p className="font-mono text-[10px] text-grey-500 p-4 text-center animate-pulse">
+          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center animate-pulse">
             Claude reading the tape…
           </p>
         ) : (
@@ -244,7 +244,7 @@ export function SpxCommentaryRail({
                     >
                       {entry.bias}
                     </span>
-                    <time className="font-mono text-[8px] text-grey-500 shrink-0">
+                    <time className="font-mono text-[8px] text-cyan-400 shrink-0">
                       {new Date(entry.as_of).toLocaleTimeString("en-US", {
                         hour: "numeric",
                         minute: "2-digit",
@@ -269,7 +269,7 @@ export function SpxCommentaryRail({
                   <CommentaryBody body={entry.body} featured={idx === 0} />
                   {entry.watch.length > 0 && (
                     <div className="mt-3 pt-2 border-t border-grey-800/80">
-                      <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-grey-400 mb-1.5">
+                      <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-1.5">
                         Watch
                       </p>
                       <ul className="spx-commentary-watch">

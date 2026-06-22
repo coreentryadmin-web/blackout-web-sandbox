@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import useSWR from "swr";
 import { fetchMarketNews, type NewsArticle } from "@/lib/api";
@@ -24,14 +24,14 @@ function NewsCard({ article }: { article: NewsArticle }) {
     <article className="news-rail-card">
       <div className="flex items-center justify-between gap-2 mb-2">
         {time && <span className="font-mono text-[10px] text-bull">{time}</span>}
-        <span className="font-mono text-[8px] tracking-widest uppercase text-grey-500">Benzinga</span>
+        <span className="font-mono text-[8px] tracking-widest uppercase text-cyan-400">Benzinga</span>
       </div>
       {tickers.length > 0 && (
         <p className="font-mono text-[10px] text-purple-light mb-2 truncate">
           {tickers.join(" · ")}
         </p>
       )}
-      <p className="text-sm text-grey-100 leading-snug line-clamp-4">{article.title}</p>
+      <p className="text-sm text-white leading-snug line-clamp-4">{article.title}</p>
     </article>
   );
 
@@ -67,7 +67,7 @@ export function BenzingaNewsRail() {
 
       <div className="news-rail-viewport">
         {!live ? (
-          <p className="font-mono text-[10px] text-grey-500 p-4 text-center">
+          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center">
             {data ? "News standby" : "Loading headlines…"}
           </p>
         ) : (

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtPremium } from "@/lib/api";
@@ -99,7 +99,7 @@ export function VelocityRadar({
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[11px] text-zinc-400">
+                  <span className="font-mono text-[11px] text-sky-300">
                     {e.recent} prints last 15m · {e.prior} prior
                   </span>
                   <span
@@ -118,7 +118,7 @@ export function VelocityRadar({
           })}
         </AnimatePresence>
 
-        <p className="font-mono text-[8px] text-zinc-800 text-center pt-1">
+        <p className="font-mono text-[8px] text-sky-500 text-center pt-1">
           ≥3× acceleration vs prior 15 min window · min 2 prints
         </p>
       </div>

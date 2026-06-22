@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback } from "react";
 import { clsx } from "clsx";
@@ -29,7 +29,7 @@ function Panel({
         <div>
           <p className="font-syne text-xs tracking-[0.12em] uppercase font-bold">{title}</p>
           {subtitle && (
-            <p className="font-mono text-[9px] tracking-[0.2em] uppercase text-grey-500 mt-0.5">
+            <p className="font-mono text-[9px] tracking-[0.2em] uppercase text-cyan-400 mt-0.5">
               {subtitle}
             </p>
           )}
@@ -65,7 +65,7 @@ export function SpxIntelStrip({ desk, live }: DeskProps) {
             <span
               className={clsx(
                 "font-mono text-sm tabular-nums font-semibold",
-                !hasData && "text-grey-500",
+                !hasData && "text-cyan-400",
                 hasData && (up ? "num-bull" : "num-bear")
               )}
             >
@@ -85,7 +85,7 @@ export function SpxDarkPoolCard({ desk, live }: DeskProps) {
   return (
     <Panel title="Dark Pool" subtitle="SPX · institutional prints" accent="spx-panel-amber">
       {!live || !prints.length ? (
-        <p className="font-mono text-[11px] text-grey-500 py-2">{dp?.detail ?? "No prints"}</p>
+        <p className="font-mono text-[11px] text-cyan-400 py-2">{dp?.detail ?? "No prints"}</p>
       ) : (
         <>
           <div className="flex items-center justify-between gap-2 mb-2">
@@ -99,7 +99,7 @@ export function SpxDarkPoolCard({ desk, live }: DeskProps) {
             >
               {dp?.bias}
             </span>
-            <span className="font-mono text-xs text-grey-400 tabular-nums">
+            <span className="font-mono text-xs text-sky-300 tabular-nums">
               {fmtPremium(dp?.total_premium ?? 0)}
               {dp?.pcr != null ? ` · PCR ${dp.pcr}` : ""}
             </span>
@@ -107,7 +107,7 @@ export function SpxDarkPoolCard({ desk, live }: DeskProps) {
           <ul className="spx-desk-list">
             {prints.slice(0, 6).map((p, i) => (
               <li key={`${p.executed_at}-${i}`} className="spx-desk-list-row">
-                <span className="text-grey-500 font-mono text-[10px]">
+                <span className="text-cyan-400 font-mono text-[10px]">
                   {new Date(p.executed_at).toLocaleTimeString("en-US", {
                     hour: "numeric",
                     minute: "2-digit",
@@ -129,7 +129,7 @@ export function SpxDarkPoolCard({ desk, live }: DeskProps) {
 }
 
 function tapeSideClass(t: { kind: string; side: string }) {
-  if (t.kind === "darkpool") return { tag: "DP", tagClass: "text-amber-300", labelClass: "text-zinc-200" };
+  if (t.kind === "darkpool") return { tag: "DP", tagClass: "text-amber-300", labelClass: "text-sky-100" };
   if (t.side === "put") return { tag: "PUT", tagClass: "text-bear", labelClass: "text-bear" };
   return { tag: "CALL", tagClass: "text-bull", labelClass: "text-bull" };
 }
@@ -154,7 +154,7 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
       className={clsx(refreshing && hasWalls && "spx-desk-panel-refreshing")}
     >
       {!hasWalls ? (
-        <p className="font-mono text-[11px] text-grey-500 py-2 spx-gex-ladder-empty">
+        <p className="font-mono text-[11px] text-cyan-400 py-2 spx-gex-ladder-empty">
           Loading gamma ladder…
         </p>
       ) : (
@@ -171,7 +171,7 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
                   w.kind === "support" ? "border-l-emerald-500/50" : "border-l-rose-500/50"
                 )}
               >
-                <span className="font-mono text-[10px] uppercase text-grey-500 w-16">{w.kind}</span>
+                <span className="font-mono text-[10px] uppercase text-cyan-400 w-16">{w.kind}</span>
                 <span className="font-mono text-sm text-white tabular-nums">{fmtPrice(w.strike)}</span>
                 {dist != null && (
                   <span
@@ -198,7 +198,7 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
         </ul>
       )}
       {gammaFlip != null && (
-        <p className="font-mono text-[10px] text-grey-400 mt-2 pt-2 border-t border-white/5">
+        <p className="font-mono text-[10px] text-sky-300 mt-2 pt-2 border-t border-white/5">
           γ flip {fmtPrice(gammaFlip)}
           {gammaRegime && gammaRegime !== "unknown"
             ? ` · ${String(gammaRegime).replace("_", " ")}`
@@ -224,7 +224,7 @@ export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
       )}
     >
       {!hasTape ? (
-        <p className="font-mono text-[11px] text-grey-500 py-2 spx-tape-empty">Tape quiet…</p>
+        <p className="font-mono text-[11px] text-cyan-400 py-2 spx-tape-empty">Tape quiet…</p>
       ) : (
         <ul className="spx-desk-list spx-tape-list">
           {tape.map((t, i) => {
@@ -239,7 +239,7 @@ export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
                 >
                   {side.tag}
                 </span>
-                <span className="font-mono text-[11px] text-grey-500 shrink-0">
+                <span className="font-mono text-[11px] text-cyan-400 shrink-0">
                   {t.time
                     ? new Date(t.time).toLocaleTimeString("en-US", {
                         hour: "numeric",
@@ -253,7 +253,7 @@ export function SpxUnifiedTape({ desk, refreshing }: DeskProps) {
                 <span
                   className={clsx(
                     "font-mono text-sm tabular-nums ml-auto shrink-0 font-bold",
-                    t.side === "put" ? "text-bear" : t.side === "call" ? "text-bull" : "text-grey-200"
+                    t.side === "put" ? "text-bear" : t.side === "call" ? "text-bull" : "text-sky-100"
                   )}
                 >
                   {fmtPremium(t.premium)}

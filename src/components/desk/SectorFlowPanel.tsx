@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtPremium } from "@/lib/api";
@@ -61,7 +61,7 @@ export function SectorFlowPanel({
                 className="space-y-1"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[12px] font-semibold text-zinc-200 w-28 truncate">
+                  <span className="font-mono text-[12px] font-semibold text-sky-100 w-28 truncate">
                     {e.sector}
                   </span>
                   <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export function SectorFlowPanel({
           })}
         </AnimatePresence>
 
-        <p className="font-mono text-[8px] text-zinc-800 text-center pt-1">
+        <p className="font-mono text-[8px] text-sky-500 text-center pt-1">
           Premium weighted · bar = relative size vs top sector
         </p>
       </div>

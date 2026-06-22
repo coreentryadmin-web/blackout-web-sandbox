@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { DeskPanel } from "./DeskPanel";
 import type { SpxState } from "@/lib/api";
@@ -14,7 +14,7 @@ export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean
     <DeskPanel title="Dealer Positioning" subtitle="GEX · Max pain · Gamma flip" variant="green" live={live}>
       <div className="space-y-5">
         <div>
-          <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-grey-400 mb-2">
+          <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-sky-300 mb-2">
             <span>Net GEX</span>
             <span className={gexBull ? "text-bull" : "text-bear"}>
               {live ? fmtPremium(data?.gex_net ?? null) : "—"}
@@ -80,7 +80,7 @@ export function BreadthPanel({ data, live }: { data?: SpxState; live?: boolean }
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="desk-metric">
-      <p className="text-[9px] tracking-widest uppercase text-grey-500 mb-1">{label}</p>
+      <p className="text-[9px] tracking-widest uppercase text-cyan-400 mb-1">{label}</p>
       <p className={clsx("font-mono text-sm font-semibold capitalize", accent ? "text-bull" : "text-white")}>
         {value}
       </p>

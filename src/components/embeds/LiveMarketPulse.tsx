@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import useSWR from "swr";
 import { fetchSpxState, fmtPct, fmtPrice, type SpxState } from "@/lib/api";
@@ -13,7 +13,7 @@ type LiveMarketPulseProps = {
 function PulseBar({ label, value, bull }: { label: string; value: string; bull?: boolean | null }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2 border-b border-grey-800 last:border-0">
-      <span className="font-mono text-[10px] tracking-widest uppercase text-grey-400">{label}</span>
+      <span className="font-mono text-[10px] tracking-widest uppercase text-sky-300">{label}</span>
       <span
         className={clsx(
           "font-mono text-sm font-semibold tabular-nums",
@@ -56,7 +56,7 @@ export function LiveMarketPulse({ compact, className }: LiveMarketPulseProps) {
             >
               {live ? fmtPct(data.spx_change_pct) : "—"}
             </p>
-            <p className="font-mono text-[10px] text-grey-400 mt-1">
+            <p className="font-mono text-[10px] text-sky-300 mt-1">
               VIX {live && data.vix != null ? fmtPrice(data.vix, 2) : "—"}
             </p>
           </div>

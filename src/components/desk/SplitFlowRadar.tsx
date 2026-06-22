@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
@@ -88,7 +88,7 @@ export function SplitFlowRadar({
                         ? "text-emerald-400 border-emerald-800/50 bg-emerald-950/40"
                         : isBear
                           ? "text-rose-400 border-rose-800/50 bg-rose-950/40"
-                          : "text-zinc-400 border-zinc-700 bg-zinc-900"
+                          : "text-sky-300 border-zinc-700 bg-zinc-900"
                     )}
                   >
                     {isBull ? "▲ CALL BIAS" : isBear ? "▼ PUT BIAS" : "⇋ NEUTRAL"}
@@ -134,7 +134,7 @@ export function SplitFlowRadar({
                       ▼ {fmtPremium(e.putPremium)} · {100 - e.callPct}%
                     </span>
                   </div>
-                  <span className="font-mono text-[9px] text-zinc-600 tabular-nums">
+                  <span className="font-mono text-[9px] text-cyan-400 tabular-nums">
                     {fmtPremium(e.total)}
                   </span>
                 </div>
@@ -144,7 +144,7 @@ export function SplitFlowRadar({
         </AnimatePresence>
 
         {/* Legend */}
-        <p className="font-mono text-[8px] text-zinc-800 text-center pt-1">
+        <p className="font-mono text-[8px] text-sky-500 text-center pt-1">
           Both call &amp; put ≥ $500K within 30 min window
         </p>
       </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -123,7 +123,7 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
       </span>
 
       {/* Date or timeago */}
-      <span className="font-mono text-[10px] text-zinc-500 flex-shrink-0 text-right"
+      <span className="font-mono text-[10px] text-cyan-400 flex-shrink-0 text-right"
         style={{ minWidth: showDate ? "72px" : "20px" }}>
         {showDate ? fmtDate(p.executed_at) : timeAgo(p.executed_at)}
       </span>
@@ -219,7 +219,7 @@ export function DarkPoolPanel() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 type="button"
                 onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 font-mono text-sm font-bold"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
               >
                 ×
               </motion.button>
@@ -247,7 +247,7 @@ export function DarkPoolPanel() {
                       {activeTicker}
                     </span>
                     {visible.length > 0 && (
-                      <span className="font-mono text-[11px] text-zinc-500">
+                      <span className="font-mono text-[11px] text-cyan-400">
                         {visible.length} block{visible.length !== 1 ? "s" : ""}
                       </span>
                     )}
@@ -329,13 +329,13 @@ export function DarkPoolPanel() {
                 </div>
               ) : visible.length === 0 ? (
                 <div className="py-8 text-center">
-                  <p className="font-mono text-[12px] text-zinc-500">
+                  <p className="font-mono text-[12px] text-cyan-400">
                     {activeTicker
                       ? `No block trades found for ${activeTicker} in current tape`
                       : "No prints available"}
                   </p>
                   {activeTicker && (
-                    <p className="font-mono text-[10px] text-zinc-700 mt-1">
+                    <p className="font-mono text-[10px] text-cyan-500 mt-1">
                       Try a high-volume ticker like NVDA, TSLA, SPY
                     </p>
                   )}

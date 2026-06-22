@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { clsx } from "clsx";
 import { FadeInImage } from "@/components/landing/FadeInImage";
@@ -117,7 +117,7 @@ export function OverlapShowcase({
           ) : (
             <p className={clsx("font-syne text-xs tracking-[0.3em] uppercase mb-5", labelColor)}>{tagline}</p>
           )}
-          <p className="text-grey-400 text-sm leading-relaxed mb-8">{description}</p>
+          <p className="text-sky-300 text-sm leading-relaxed mb-8">{description}</p>
           <LandingCta href={href} className="text-sm !px-8 !py-3">
             {cta} →
           </LandingCta>

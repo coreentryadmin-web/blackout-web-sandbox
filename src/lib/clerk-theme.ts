@@ -1,4 +1,4 @@
-import type { Appearance } from "@clerk/types";
+﻿import type { Appearance } from "@clerk/types";
 
 export const clerkAppearance: Appearance = {
   variables: {
@@ -23,6 +23,6 @@ export const clerkAppearance: Appearance = {
     socialButtonsBlockButton:
       "border border-grey-700 bg-grey-800 hover:bg-grey-700 rounded-none transition-colors",
     dividerLine: "bg-grey-700",
-    dividerText: "text-grey-400 uppercase text-[10px] tracking-widest",
+    dividerText: "text-sky-300 uppercase text-[10px] tracking-widest",
   },
 };

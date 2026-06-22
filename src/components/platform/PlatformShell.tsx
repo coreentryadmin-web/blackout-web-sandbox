@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import { motion } from "framer-motion";
@@ -173,7 +173,7 @@ export function PlatformShell({
             )}
           >
             <div>
-              <p className="font-mono text-[10px] tracking-[0.45em] text-grey-300 uppercase mb-2">
+              <p className="font-mono text-[10px] tracking-[0.45em] text-sky-200 uppercase mb-2">
                 {theme.label}
               </p>
               <motion.h1
@@ -190,7 +190,7 @@ export function PlatformShell({
                 {title}
               </motion.h1>
               {subtitle && (
-                <p className="font-mono text-xs md:text-sm text-grey-200 mt-2 tracking-widest uppercase">
+                <p className="font-mono text-xs md:text-sm text-sky-100 mt-2 tracking-widest uppercase">
                   {subtitle}
                 </p>
               )}

@@ -1,4 +1,4 @@
-import { clsx } from "clsx";
+﻿import { clsx } from "clsx";
 import type { PlatformVariant } from "./PlatformShell";
 
 type PlatformEmptyProps = {
@@ -14,7 +14,7 @@ export function PlatformEmpty({ variant, title, description }: PlatformEmptyProp
       <p className="font-anton text-4xl md:text-5xl tracking-wide text-white/90 mb-4 relative z-10">
         {title}
       </p>
-      <p className="font-mono text-sm text-grey-200 max-w-md mx-auto leading-relaxed relative z-10">
+      <p className="font-mono text-sm text-sky-100 max-w-md mx-auto leading-relaxed relative z-10">
         {description}
       </p>
     </div>

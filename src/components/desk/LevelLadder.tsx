@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { DeskPanel } from "./DeskPanel";
 import type { SpxState } from "@/lib/api";
@@ -41,7 +41,7 @@ export function LevelLadder({ data, live }: { data?: SpxState; live?: boolean })
                 isNear && "desk-level-near"
               )}
             >
-              <span className="text-[10px] font-mono uppercase tracking-wider text-grey-400 w-20 shrink-0">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-sky-300 w-20 shrink-0">
                 {level.label}
               </span>
               <span className="font-mono text-sm text-white tabular-nums flex-1">

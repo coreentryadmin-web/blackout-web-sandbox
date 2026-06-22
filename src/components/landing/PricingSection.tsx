@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -118,7 +118,7 @@ export function PricingSection() {
                   {t.name}
                 </p>
                 <div className="font-anton text-6xl md:text-7xl text-white leading-none">{t.price}</div>
-                <p className="font-mono text-[10px] text-grey-300 mt-1 mb-8 uppercase tracking-widest">
+                <p className="font-mono text-[10px] text-sky-200 mt-1 mb-8 uppercase tracking-widest">
                   {t.period}
                 </p>
                 <ul className="flex flex-col gap-3 mb-10 flex-1">
