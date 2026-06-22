@@ -523,6 +523,11 @@ Hard rules:
         schema: COMMENTARY_OUTPUT_SCHEMA,
       },
     },
+    // 3000 structured tokens brushes past the client's 20s default → "Request timed
+    // out" → Live Desk AI stuck. Give it 45s and a single retry (3-min cached, so the
+    // extra latency is invisible to users — it just needs to complete once).
+    timeoutMs: 45_000,
+    maxRetries: 1,
   });
   if (!raw) return null;
 

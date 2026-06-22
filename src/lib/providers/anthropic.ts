@@ -130,6 +130,12 @@ export async function anthropicText(
     output_config?: OutputConfig;
     temperature?: number;
     model?: string;
+    /** Per-request timeout override (ms). The client default is 20s, too tight for
+     *  large generations (e.g. the 3000-token desk commentary). */
+    timeoutMs?: number;
+    /** Per-request retry override. Client default is 3; lower it for big calls so a
+     *  slow generation doesn't retry 3× and stack to ~60s before failing. */
+    maxRetries?: number;
   }
 ): Promise<string | null> {
   const client = getClient();
@@ -149,8 +155,12 @@ export async function anthropicText(
     body.output_config = options.output_config;
   }
 
+  const reqOpts: { timeout?: number; maxRetries?: number } = {};
+  if (options?.timeoutMs != null) reqOpts.timeout = options.timeoutMs;
+  if (options?.maxRetries != null) reqOpts.maxRetries = options.maxRetries;
+
   try {
-    const data = await withTelemetry("anthropic-text", () => client.messages.create(body));
+    const data = await withTelemetry("anthropic-text", () => client.messages.create(body, reqOpts));
     const block = data.content.find((c) => c.type === "text");
     return block?.type === "text" ? block.text.trim() || null : null;
   } catch {
