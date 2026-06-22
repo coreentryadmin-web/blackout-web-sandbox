@@ -129,11 +129,15 @@ async function prepareLargoTurn(
   history.push({ role: "user", content: question });
   trimHistory(history);
 
-  await appendLargoMessage(sid, userId, "user", question);
+  // The user turn is persisted AFTER the assistant turn completes (see
+  // runLargoQuery / runLargoQueryStream). Persisting it here — before a 12-round
+  // tool loop that can abort or error — left an orphaned trailing user message,
+  // so the next turn pushed a second user message, broke Anthropic role
+  // alternation, and 400'd until the orphan aged out (LARGO-3).
 
   const toolsUsed: string[] = ["live_feed_capture"];
   const intent = analyzeLargoQuestion(question, history.slice(0, -1));
-  const liveFeed = await captureLargoLiveFeed(intent);
+  const liveFeed = await captureLargoLiveFeed(intent, userId);
   const liveFeedBlock = formatLargoLiveFeed(liveFeed, intent.tickerHint ?? "SPX");
   const system = buildDynamicSystem(question, history.slice(0, -1), liveFeedBlock);
 
@@ -177,6 +181,9 @@ export async function runLargoQuery(
       answer?.trim() ||
       "I couldn't pull enough live data to answer that — try naming a ticker or asking about SPX structure.";
 
+    // Persist the completed turn now that the model produced an answer: user
+    // first, then assistant, so role alternation is always intact (LARGO-3).
+    await appendLargoMessage(sid, userId, "user", question);
     await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)));
 
     return {
@@ -235,6 +242,9 @@ export async function runLargoQueryStream(
       answer?.trim() ||
       "I couldn't pull enough live data to answer that — try naming a ticker or asking about SPX structure.";
 
+    // Persist the completed turn now that the model produced an answer: user
+    // first, then assistant, so role alternation is always intact (LARGO-3).
+    await appendLargoMessage(sid, userId, "user", question);
     await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)));
 
     emit({

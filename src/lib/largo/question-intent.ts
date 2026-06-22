@@ -20,18 +20,6 @@ export type LargoQuestionIntent = {
 };
 
 const TICKER_RE = /\b([A-Z]{1,5})\b/g;
-/** Common all-caps acronyms users type that are NOT tickers — avoids the fallback
- *  pinning "FED"/"CPI"/"WHAT" as a ticker on non-ticker questions. */
-const NON_TICKER_CAPS = new Set([
-  "THE", "AND", "FED", "CPI", "PPI", "GDP", "FOMC", "ATH", "ATL", "IV", "OTM", "ITM",
-  "DTE", "ETF", "USD", "EUR", "CEO", "CFO", "IPO", "WSB", "YOLO", "FOMO", "EOD", "RTH",
-  "AH", "PM", "AM", "OK", "USA", "EU", "UK", "NYSE", "SEC", "AI", "ML", "PE", "EPS",
-  "ER", "PT", "TP", "SL", "HOD", "LOD", "VWAP", "EMA", "RSI", "MACD", "GEX", "OI",
-  "IT", "OR", "ALL", "FOR", "ARE", "BUT", "NOT", "YOU", "CAN", "HOW", "WHY", "WHO",
-  // Common question words that appear in ALL-CAPS input and must not be treated as tickers
-  "WHAT", "DOES", "DOING", "WITH", "THIS", "THAT", "WHEN", "WHERE", "ABOUT", "FROM",
-  "INTO", "JUST", "BEEN", "HAVE", "WILL", "SOME", "THEM", "THAN", "THEN", "ALSO",
-]);
 export const KNOWN_TICKERS = new Set([
   "SPX", "SPY", "QQQ", "IWM", "VIX", "NDX", "ES", "NQ", "DIA", "VOO", "IVV", "RSP",
   "XLF", "XLE", "XLK", "XLV", "XLI", "XLP", "XLU", "XLY", "XLRE", "XLB", "XLC",
@@ -56,8 +44,12 @@ function extractTicker(question: string, historyText: string): string | null {
   const qUpper = question.toUpperCase();
   const qMatch = qUpper.match(/\$?\b([A-Z]{2,5})\b/g) ?? [];
   for (let i = qMatch.length - 1; i >= 0; i--) {
+    const hadDollar = qMatch[i].startsWith("$");
     const cand = qMatch[i].replace(/^\$/, "");
-    if (KNOWN_TICKERS.has(cand) || !NON_TICKER_CAPS.has(cand)) return cand;
+    // Only accept a known ticker or an explicit $-prefixed symbol. The old
+    // "any caps token not on the blocklist" branch mis-pinned words like
+    // CALLS / HOLD / SETUP / BULL as tickers (LARGO-9).
+    if (KNOWN_TICKERS.has(cand) || hadDollar) return cand;
   }
   const combined = `${historyText} ${question}`;
   const matches = combined.toUpperCase().match(TICKER_RE) ?? [];

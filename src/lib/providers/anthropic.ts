@@ -14,6 +14,10 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 export const LARGO_MODEL = "claude-sonnet-4-6";
 export const COMMENTARY_MODEL = "claude-haiku-4-5";
 const TEMPERATURE = 0.3;
+/** Per-tool_result size cap. Heavy tools (GEX bundles, full flow payloads) are
+ *  re-sent every loop round; without a cap they overflow the context window and
+ *  Anthropic 400s with prompt-too-long (LARGO-5). */
+const MAX_TOOL_RESULT_CHARS = 16_000;
 
 export type AnthropicSystemBlock = {
   type: "text";
@@ -212,7 +216,6 @@ export async function anthropicToolLoop(params: {
     };
 
     let content: ContentBlock[];
-    let stopReason: string | null = null;
 
     if (params.onEvent) {
       const stream = client.messages.stream(createParams);
@@ -227,13 +230,11 @@ export async function anthropicToolLoop(params: {
         stream.finalMessage()
       );
       content = finalMessage.content;
-      stopReason = finalMessage.stop_reason;
     } else {
       const data = await withTelemetry("anthropic-tool-loop", () =>
         client.messages.create(createParams)
       );
       content = data.content;
-      stopReason = data.stop_reason;
     }
 
     const toolCalls = content.filter((b): b is ToolUseBlock => b.type === "tool_use");
@@ -264,14 +265,22 @@ export async function anthropicToolLoop(params: {
 
     messages.push({
       role: "user",
-      content: toolCalls.map((tc, i) => ({
-        type: "tool_result" as const,
-        tool_use_id: tc.id,
-        content: JSON.stringify(results[i]),
-      })),
+      content: toolCalls.map((tc, i) => {
+        const raw = JSON.stringify(results[i]) ?? "null";
+        const capped =
+          raw.length > MAX_TOOL_RESULT_CHARS
+            ? raw.slice(0, MAX_TOOL_RESULT_CHARS) + "…[truncated]"
+            : raw;
+        return {
+          type: "tool_result" as const,
+          tool_use_id: tc.id,
+          content: capped,
+        };
+      }),
     });
-
-    if (stopReason === "end_turn") break;
+    // No end_turn break here: a response carrying tool_use blocks always has
+    // stop_reason "tool_use", so the loop exits via the no-tool-calls return
+    // above or maxRounds — the old end_turn check was dead code (LARGO-4).
   }
 
   const final = await withTelemetry("anthropic-tool-loop-final", () =>

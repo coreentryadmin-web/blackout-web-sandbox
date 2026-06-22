@@ -27,68 +27,79 @@ type FeedKey =
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 
-async function safeTool(name: string, input: Record<string, unknown> = {}): Promise<unknown> {
+async function safeTool(
+  name: string,
+  input: Record<string, unknown> = {},
+  userId?: string
+): Promise<unknown> {
   try {
-    return await runLargoTool(name, input);
+    return await runLargoTool(name, input, userId);
   } catch (err) {
     return { error: err instanceof Error ? err.message : "tool_failed" };
   }
 }
 
 /** Parallel capture of live API data — fed to Claude before it writes. */
-export async function captureLargoLiveFeed(intent: LargoQuestionIntent): Promise<LargoLiveFeed> {
+export async function captureLargoLiveFeed(
+  intent: LargoQuestionIntent,
+  userId?: string
+): Promise<LargoLiveFeed> {
+  // Thread userId so SPX desk tools key the per-user desk cache correctly —
+  // without it the live feed shared one default cache bucket across users (LARGO-1).
+  const tool = (name: string, input: Record<string, unknown> = {}) => safeTool(name, input, userId);
+
   const scopeTicker = intent.tickerHint ?? (intent.needsSpxDesk ? "SPX" : null);
   const analysisTicker = scopeTicker ?? "SPX";
 
   const jobs: Array<{ key: FeedKey; promise: Promise<unknown> }> = [
-    { key: "market", promise: safeTool("get_market_context") },
+    { key: "market", promise: tool("get_market_context") },
   ];
 
   if (intent.needsNews) {
-    jobs.push({ key: "calendar", promise: safeTool("get_economic_calendar", { days_ahead: 10 }) });
+    jobs.push({ key: "calendar", promise: tool("get_economic_calendar", { days_ahead: 10 }) });
   }
 
   if (intent.needsSpxDesk || scopeTicker === "SPX") {
-    jobs.push({ key: "spx_structure", promise: safeTool("get_spx_structure") });
+    jobs.push({ key: "spx_structure", promise: tool("get_spx_structure") });
   }
 
   if (scopeTicker) {
     jobs.push(
-      { key: "technicals", promise: safeTool("get_technicals", { ticker: analysisTicker }) },
-      { key: "flow", promise: safeTool("get_options_flow", { ticker: analysisTicker }) },
-      { key: "dark_pool", promise: safeTool("get_dark_pool", { ticker: analysisTicker }) },
-      { key: "vol", promise: safeTool("get_volatility_regime", { ticker: analysisTicker }) }
+      { key: "technicals", promise: tool("get_technicals", { ticker: analysisTicker }) },
+      { key: "flow", promise: tool("get_options_flow", { ticker: analysisTicker }) },
+      { key: "dark_pool", promise: tool("get_dark_pool", { ticker: analysisTicker }) },
+      { key: "vol", promise: tool("get_volatility_regime", { ticker: analysisTicker }) }
     );
   }
 
   if (intent.needsFlow) {
     jobs.push(
-      { key: "flow_tape", promise: safeTool("get_flow_tape", { limit: 40 }) },
-      { key: "greek_flow", promise: safeTool("get_greek_flow", { ticker: analysisTicker }) }
+      { key: "flow_tape", promise: tool("get_flow_tape", { limit: 40 }) },
+      { key: "greek_flow", promise: tool("get_greek_flow", { ticker: analysisTicker }) }
     );
   }
 
   if (intent.needsNews && scopeTicker) {
-    jobs.push({ key: "news", promise: safeTool("get_news", { ticker: analysisTicker }) });
+    jobs.push({ key: "news", promise: tool("get_news", { ticker: analysisTicker }) });
   }
 
   if (intent.needsPlayState || intent.needsSpxDesk) {
     jobs.push(
-      { key: "play", promise: safeTool("get_spx_play") },
-      { key: "open_plays", promise: safeTool("get_open_plays") }
+      { key: "play", promise: tool("get_spx_play") },
+      { key: "open_plays", promise: tool("get_open_plays") }
     );
   }
 
   if (intent.needsSpxDesk) {
     jobs.push(
-      { key: "breadth", promise: safeTool("get_market_breadth") },
-      { key: "group_greek_flow", promise: safeTool("get_group_greek_flow", { group: "mag7" }) },
-      { key: "macro_indicators", promise: safeTool("get_macro_indicator", { indicator: "CPI" }) }
+      { key: "breadth", promise: tool("get_market_breadth") },
+      { key: "group_greek_flow", promise: tool("get_group_greek_flow", { group: "mag7" }) },
+      { key: "macro_indicators", promise: tool("get_macro_indicator", { indicator: "CPI" }) }
     );
   }
 
   if (intent.needsFlow || intent.needsNews) {
-    jobs.push({ key: "nighthawk", promise: safeTool("get_nighthawk_edition") });
+    jobs.push({ key: "nighthawk", promise: tool("get_nighthawk_edition") });
   }
 
   const settled = await Promise.all(jobs.map(async (j) => ({ key: j.key, data: await j.promise })));
@@ -105,10 +116,21 @@ function asArr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
+/** Neutralize untrusted external text (news titles/teasers, headlines) before it
+ *  enters the system prompt — strips line breaks, code fences and angle brackets so
+ *  a crafted headline can't pose as instructions inside the trusted block (LARGO-6). */
+function sanitizeFeedText(s: unknown): string {
+  return String(s ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[`<>]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function headline(item: unknown): string {
   const o = asObj(item);
-  if (!o) return String(item ?? "");
-  return String(o.title ?? o.headline ?? o.name ?? "").slice(0, 140);
+  if (!o) return sanitizeFeedText(item);
+  return sanitizeFeedText(o.title ?? o.headline ?? o.name ?? "").slice(0, 140);
 }
 
 function flowLine(item: unknown): string {
@@ -352,7 +374,7 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
       for (const a of articles) {
         const o = asObj(a);
         if (!o) continue;
-        lines.push(`- ${headline(o)}${o.teaser ? ` — ${String(o.teaser).slice(0, 120)}` : ""}`);
+        lines.push(`- ${headline(o)}${o.teaser ? ` — ${sanitizeFeedText(o.teaser).slice(0, 120)}` : ""}`);
       }
       lines.push("");
     }
@@ -407,7 +429,7 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
     lines.push(
       [
         hawk.edition_for ? `Edition for ${hawk.edition_for}` : null,
-        hawk.recap_headline ? String(hawk.recap_headline) : null,
+        hawk.recap_headline ? sanitizeFeedText(hawk.recap_headline) : null,
         hawk.play_count != null ? `${hawk.play_count} plays` : null,
         Array.isArray(hawk.plays)
           ? hawk.plays

@@ -74,11 +74,13 @@ export async function fetchLargoHistory(
     `SELECT role, content
      FROM largo_messages
      WHERE session_id = $1
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT $2`,
     [sessionId, MAX_MESSAGES_LOAD]
   );
 
+  // id tiebreaker keeps same-millisecond user/assistant rows in insert order
+  // after reverse() — without it ties replayed out of order (LARGO-2).
   return res.rows.reverse().map((r) => ({
     role: r.role,
     content: r.content,
@@ -90,6 +92,10 @@ export async function fetchLargoMessagesPublic(
   userId: string
 ): Promise<LargoStoredMessage[]> {
   if (!dbConfigured()) {
+    // Owner check parity with fetchLargoHistory — without it, a premium user
+    // could read another user's in-memory conversation in no-DB mode (LARGO-10).
+    const owner = memorySessionOwners.get(sessionId);
+    if (owner !== undefined && owner !== userId) return [];
     const rows = memorySessions.get(sessionId) ?? [];
     return rows.map((m, i) => ({
       id: i + 1,
@@ -112,7 +118,7 @@ export async function fetchLargoMessagesPublic(
     `SELECT id, role, content, tools_used, created_at
      FROM largo_messages
      WHERE session_id = $1
-     ORDER BY created_at ASC
+     ORDER BY created_at ASC, id ASC
      LIMIT $2`,
     [sessionId, MAX_MESSAGES_LOAD]
   );
@@ -163,7 +169,7 @@ export async function appendLargoMessage(
          AND id NOT IN (
            SELECT id FROM largo_messages
            WHERE session_id = $1
-           ORDER BY created_at DESC
+           ORDER BY created_at DESC, id DESC
            LIMIT $2
          )`,
       [sessionId, MAX_MESSAGES_STORED]

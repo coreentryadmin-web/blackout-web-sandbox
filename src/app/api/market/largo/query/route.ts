@@ -14,21 +14,27 @@ type GateRedis = {
   decr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;
   set(key: string, value: string | number): Promise<"OK">;
+  eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
 } | null;
 
 const MAX_LARGO_CONCURRENT = 2;
 const LARGO_TTL_S = 180; // 3 min — auto-expire stuck counters
 
+// Atomic acquire: INCR + EXPIRE in one round-trip so a crash between the two can
+// never leave a counter with no TTL (which would lock the user out until their
+// next request re-applied expire) — LARGO-7. Returns the post-incr count.
+const ACQUIRE_LUA =
+  "local c = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return c";
+
 async function acquireLargoSlot(userId: string): Promise<{ acquired: boolean; redis: GateRedis }> {
   // getUwCacheRedis returns a minimal RedisClient type; cast to GateRedis so we
-  // can call incr/decr/expire which ioredis supports at runtime.
+  // can call incr/decr/expire/eval which ioredis supports at runtime.
   const redis = (await getUwCacheRedis()) as GateRedis;
   if (!redis) return { acquired: true, redis: null }; // fail-open: no Redis → no gate
 
   const key = `largo:active:${userId}`;
   try {
-    const count = await redis.incr(key);
-    await redis.expire(key, LARGO_TTL_S);
+    const count = Number(await redis.eval(ACQUIRE_LUA, 1, key, LARGO_TTL_S));
     if (count > MAX_LARGO_CONCURRENT) {
       await redis.decr(key);
       return { acquired: false, redis };

@@ -10,6 +10,7 @@ import {
   SPX_DESK_TOOLS_RE,
   VOL_TOOLS_RE,
 } from "@/lib/largo/intent-keywords";
+import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 
 
 
@@ -322,6 +323,24 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   }),
 
+  // --- Cross-tool objects the platform already computes (Largo audit wiring) ---
+  t("get_spx_confluence", "SPX confluence engine — the scored desk thesis: action (BUY_CALL/BUY_PUT/HOLD/WAIT), bias, score (-100..100), grade A+..D, agreeing vs conflicting factors with weights, entry/stop/target/invalidation. Explains WHY the desk leans a direction. Pure compute on the live desk."),
+
+  t("get_positioning", "Dealer positioning for ANY ticker — net GEX, gex king strike, gamma flip, gamma regime, net vex (vanna), max pain, negative-gamma flag, wall summary.", T, ["ticker"]),
+
+  t("get_nighthawk_outcomes", "Night Hawk track record — realized win/loss vs target/stop over a window, plus still-pending plays. Use to cite credibility (e.g. hit-rate over 30d).", {
+    window_days: { type: "integer", default: 30 },
+  }),
+
+  t("get_nighthawk_dossier", "Night Hawk per-ticker research dossier behind a pick (the full scored research). Omit ticker to list dossier tickers for the edition.", {
+    date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest." },
+    ticker: { type: "string", description: "Ticker to fetch the full dossier for." },
+  }),
+
+  t("get_lotto_live", "Current live SPX lotto play (read-only record): phase, direction, strike, entry/target/invalidation, catalysts, confidence."),
+
+  t("get_power_hour", "Current Power Hour (2:45–3:15 PM ET) play (read-only record): phase, direction, strike, levels, status."),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -337,6 +356,10 @@ export const TOOL_GROUPS = {
     "get_greek_flow",
     "get_gex",
     "get_group_greek_flow",
+    // cross-tool desk objects newly surfaced to Largo
+    "get_spx_confluence",
+    "get_lotto_live",
+    "get_power_hour",
   ],
   flow_analysis: [
     "get_options_flow",
@@ -349,6 +372,11 @@ export const TOOL_GROUPS = {
     "get_postgres_flows",
     "get_lit_flow",
     "get_unusual_trades",
+    // previously orphaned (in no group → uncallable) — LARGO-9
+    "get_market_oi_change",
+    "get_etf_flow",
+    "get_market_stats",
+    "get_option_contract",
   ],
   stock_analysis: [
     "get_quote",
@@ -364,8 +392,28 @@ export const TOOL_GROUPS = {
     "get_peer_rs",
     "get_short_interest",
     "get_nbbo",
+    "get_positioning",
+    // previously orphaned — LARGO-9
+    "get_seasonality",
+    "get_qqq_relative_strength",
+    "get_oi_per_expiry",
+    "get_short_data",
+    "get_stock_state",
+    "get_uw_bars",
+    "get_uw_technicals",
+    "search_ticker",
+    "get_option_price_history",
   ],
-  vol_analysis: ["get_iv_stats", "get_iv_term_structure", "get_volatility_regime", "get_vix_term", "get_market_context"],
+  vol_analysis: [
+    "get_iv_stats",
+    "get_iv_term_structure",
+    "get_volatility_regime",
+    "get_vix_term",
+    "get_market_context",
+    // previously orphaned — LARGO-9
+    "get_realized_vol",
+    "get_risk_reversal_skew",
+  ],
   news_events: [
     "get_news",
     "get_web_search",
@@ -387,9 +435,25 @@ export const TOOL_GROUPS = {
     "get_company_profile",
     "get_earnings_history",
     "get_dividends",
+    // previously orphaned — LARGO-9
+    "get_ownership",
   ],
-  platform: ["get_platform_snapshot", "get_nighthawk_edition"],
-  screener: ["get_screener", "get_market_movers", "get_market_breadth", "get_sector_flow", "get_top_net_impact"],
+  platform: [
+    "get_platform_snapshot",
+    "get_nighthawk_edition",
+    // cross-tool Night Hawk objects newly surfaced to Largo
+    "get_nighthawk_outcomes",
+    "get_nighthawk_dossier",
+  ],
+  screener: [
+    "get_screener",
+    "get_market_movers",
+    "get_market_breadth",
+    "get_sector_flow",
+    "get_top_net_impact",
+    // previously orphaned — LARGO-9
+    "get_etf_detail",
+  ],
 } as const;
 
 const CORE_TOOLS = [
@@ -398,6 +462,14 @@ const CORE_TOOLS = [
   ...TOOL_GROUPS.stock_analysis,
   ...TOOL_GROUPS.vol_analysis,
 ];
+
+/** A known ticker or an explicit $SYMBOL means the user is asking about an
+ *  instrument — always give Largo the stock + vol analysis tools so chain/greeks/
+ *  technicals are never dropped by a single mismatched intent (LARGO-9). */
+function mentionsTicker(question: string): boolean {
+  const caps = question.toUpperCase().match(/\$?\b[A-Z]{2,5}\b/g) ?? [];
+  return caps.some((c) => c.startsWith("$") || KNOWN_TICKERS.has(c.replace(/^\$/, "")));
+}
 
 export function getToolsForIntent(question: string): string[] {
   const lower = question.toLowerCase();
@@ -426,6 +498,10 @@ export function getToolsForIntent(question: string): string[] {
   }
   if (matchesIntent(lower, PREDICTIONS_RE)) {
     for (const n of [...TOOL_GROUPS.fundamental, "get_predictions_consensus"]) names.add(n);
+  }
+
+  if (mentionsTicker(question)) {
+    for (const n of [...TOOL_GROUPS.stock_analysis, ...TOOL_GROUPS.vol_analysis]) names.add(n);
   }
 
   if (names.size <= 2) {

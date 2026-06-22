@@ -1,5 +1,15 @@
 import { serverCache, TTL } from "@/lib/server-cache";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
+import { computeSpxConfluence } from "@/lib/spx-signals";
+import { loadLottoRecord } from "@/lib/spx-lotto-store";
+import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
+import { fetchPositioningSummary } from "@/lib/nighthawk/positioning";
+import {
+  fetchNighthawkOutcomeAnalytics,
+  fetchPendingNighthawkOutcomes,
+  fetchStagedDossiers,
+  fetchStagedDossierTickers,
+} from "@/lib/db";
 import { summarizeGroupGreekFlow } from "@/lib/group-greek-flow-summary";
 import { computeFlowStrikeStacks, withStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { isSpxTicker } from "@/lib/spx-desk-live";
@@ -470,6 +480,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
             {
               ticker: sym,
               source: "spx_sniper_desk",
+              as_of: desk.as_of,
               flow_alerts: deskFlows,
               unified_tape: deskTape.slice(0, 20),
               intraday_0dte: {
@@ -522,6 +533,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
           return {
             ticker: sym,
             source: "spx_sniper_desk",
+            as_of: desk.as_of,
             nope: desk.nope,
             net_delta: desk.nope_net_delta,
           };
@@ -867,6 +879,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
             ticker: sym,
             expiry: exp,
             source: "spx_sniper_desk",
+            as_of: desk.as_of,
             gex_net: desk.gex_net,
             gex_king: desk.gex_king,
             gamma_flip: desk.gamma_flip,
@@ -1134,6 +1147,52 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
         { alerts, source: "unusual_whales", note: UW_EXCLUSIVE_NOTE },
         [alerts]
       );
+    }
+
+    case "get_spx_confluence": {
+      // Pure compute on the already-cached per-user desk — no extra API calls.
+      const desk = await getLargoSpxLiveDesk(userId);
+      const confluence = computeSpxConfluence(desk);
+      return (
+        confluence ?? { error: "No confluence available — SPX desk not live yet." }
+      );
+    }
+    case "get_positioning": {
+      const sym = uwTicker(ticker);
+      return { ticker: sym, ...(await fetchPositioningSummary(sym)) };
+    }
+    case "get_nighthawk_outcomes": {
+      const windowDays = Number(input.window_days ?? 30);
+      const [analytics, pending] = await Promise.all([
+        fetchNighthawkOutcomeAnalytics(windowDays),
+        fetchPendingNighthawkOutcomes(7),
+      ]);
+      return { window_days: windowDays, analytics, pending };
+    }
+    case "get_nighthawk_dossier": {
+      let editionFor = input.date ? String(input.date) : null;
+      if (!editionFor) {
+        const latest = await marketPlatform.nighthawk.getLatestNightHawkEdition();
+        editionFor = (latest as { edition_for?: string } | null)?.edition_for ?? todayEtYmd();
+      }
+      const tickerFilter = input.ticker ? uwTicker(String(input.ticker)) : null;
+      if (tickerFilter) {
+        const all = await fetchStagedDossiers(editionFor);
+        const one = all.find((d) => d.ticker === tickerFilter);
+        return { edition_for: editionFor, ticker: tickerFilter, dossier: one ?? null };
+      }
+      const tickers = await fetchStagedDossierTickers(editionFor);
+      return { edition_for: editionFor, tickers, note: "Pass a ticker to get its full dossier." };
+    }
+    case "get_lotto_live": {
+      // Read-only current record — does NOT re-run the (mutating) lotto evaluator.
+      const rec = await loadLottoRecord();
+      return rec ?? { available: false, note: "No live lotto record for today yet." };
+    }
+    case "get_power_hour": {
+      // Read-only current record — does NOT re-run the (mutating) power-hour evaluator.
+      const rec = await loadPowerHourRecord();
+      return rec ?? { available: false, note: "No power-hour record for today yet." };
     }
 
     default:

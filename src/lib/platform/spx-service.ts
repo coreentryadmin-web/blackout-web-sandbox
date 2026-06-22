@@ -54,6 +54,10 @@ export function summarizeSpxDesk(merged: SpxDeskPayload): SpxDeskSummary {
     oi_changes: merged.oi_changes,
     iv_term_structure: merged.iv_term_structure,
     vix_term: merged.vix_term,
+    greek_exposure: merged.greek_exposure,
+    market_breadth: merged.market_breadth,
+    mag7_greek_flow: merged.mag7_greek_flow,
+    macro_indicators: merged.macro_indicators,
     strike_stacks: computeFlowStrikeStacks(spx_flows ?? []),
   };
 }

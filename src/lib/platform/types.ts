@@ -45,6 +45,13 @@ export type SpxDeskSummary = {
   oi_changes: unknown;
   iv_term_structure: unknown;
   vix_term: unknown;
+  // High-value desk fields that the summary used to drop — now surfaced to every
+  // SPX tool (get_spx_structure / get_market_context / get_platform_snapshot) at
+  // zero extra API cost (Largo audit cross-tool fix).
+  greek_exposure: unknown;
+  market_breadth: unknown;
+  mag7_greek_flow: unknown;
+  macro_indicators: unknown;
   strike_stacks: FlowStrikeStack[];
 };
 
