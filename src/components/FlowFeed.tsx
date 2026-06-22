@@ -390,8 +390,30 @@ export function FlowFeed() {
     base = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
     if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
     if (typeFilter !== "ALL") base = base.filter((a) => a.option_type === typeFilter);
-    return [...base].sort((a, b) => b.premium - a.premium);
+    // Real-time tape → newest first. (Largest-by-premium ranking belongs in the
+    // NET PREMIUM / STRIKE STACKS panels; sorting the TAPE by premium pinned old
+    // whale prints to row 0 so a "REAL-TIME TAPE" looked frozen — HELIX flow audit.)
+    return [...base].sort(
+      (a, b) => new Date(b.alerted_at).getTime() - new Date(a.alerted_at).getTime()
+    );
   }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium, typeFilter]);
+
+  // Tape freshness — newest print age drives an honest LIVE/STALE badge.
+  // Connection success alone is NOT data freshness: a stale tape over a weekend
+  // or a dead ingest must read STALE, not green LIVE.
+  const newestAt = displayAlerts[0]?.alerted_at
+    ? new Date(displayAlerts[0].alerted_at).getTime()
+    : 0;
+  const dataAgeMs = newestAt ? Date.now() - newestAt : null;
+  const dataStale = dataAgeMs != null && dataAgeMs > 5 * 60_000;
+  const newestAgeLabel =
+    dataAgeMs == null
+      ? "—"
+      : dataAgeMs < 60_000
+        ? `${Math.round(dataAgeMs / 1000)}s ago`
+        : dataAgeMs < 3_600_000
+          ? `${Math.round(dataAgeMs / 60_000)}m ago`
+          : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
   return (
     <div className="desk-layout flex flex-col gap-4">
@@ -552,23 +574,25 @@ export function FlowFeed() {
               transition={{ duration: 0.2 }}
               className="font-mono text-[10px] text-sky-200 hidden sm:block"
             >
-              {loading ? "Scanning…" : `${displayAlerts.length} alerts · ${fmtPremium(displayAlerts[0]?.premium ?? 0)} latest`}
+              {loading ? "Scanning…" : `${displayAlerts.length} alerts · newest ${newestAgeLabel}`}
             </motion.span>
           </AnimatePresence>
 
-          {/* Live indicator */}
+          {/* Live indicator — green only when connected AND data is fresh; amber
+              "Stale" when the newest print is >5 min old so a frozen tape can't
+              masquerade as live. */}
           <div className="flex items-center gap-2">
             <div className="flow-live-dot">
               <span className={clsx(
                 "w-1.5 h-1.5 rounded-full block relative z-10",
-                live ? "bg-emerald-400" : "bg-zinc-700"
+                !live ? "bg-zinc-700" : dataStale ? "bg-amber-400" : "bg-emerald-400"
               )} />
             </div>
             <span className={clsx(
               "font-mono text-[9px] tracking-widest uppercase",
-              live ? "text-emerald-500" : "text-cyan-500"
+              !live ? "text-cyan-500" : dataStale ? "text-amber-400" : "text-emerald-500"
             )}>
-              {live ? "Live" : "Offline"}
+              {!live ? "Offline" : dataStale ? `Stale ${newestAgeLabel}` : "Live"}
             </span>
           </div>
         </div>

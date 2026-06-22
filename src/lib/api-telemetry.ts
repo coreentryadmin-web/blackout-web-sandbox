@@ -222,9 +222,15 @@ export function recordApiCall(input: {
   });
 
   emit(event);
-  void import("@/lib/api-telemetry-persist").then(({ persistApiTelemetryEvent }) =>
-    persistApiTelemetryEvent(event)
-  );
+  // Relative (not "@/lib") + .catch: this fires on every recorded API call. The
+  // "@/" alias does not resolve in a dynamic import inside the production server
+  // chunk, so it threw ERR_MODULE_NOT_FOUND on every call — and being uncaught,
+  // each one became an unhandled rejection that spammed the logs.
+  void import("./api-telemetry-persist")
+    .then(({ persistApiTelemetryEvent }) => persistApiTelemetryEvent(event))
+    .catch(() => {
+      /* telemetry persistence is best-effort — never throw into the hot path */
+    });
   return event;
 }
 
