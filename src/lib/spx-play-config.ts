@@ -416,3 +416,57 @@ export function promoteUnderperformGap(): number {
 export function promoteUnderperformScoreBoost(): number {
   return num(process.env.SPX_PROMOTE_SCORE_BOOST, 5);
 }
+
+// ---------------------------------------------------------------------------
+// Power Hour Lotto — 2:45–3:15 PM ET near-money momentum plays
+// ---------------------------------------------------------------------------
+
+/** ET hour when the power hour window opens. Default 14 (2:00 PM). */
+export function playPowerHourStartEtHour(): number {
+  return num(process.env.SPX_POWER_HOUR_START_ET_HOUR, 14);
+}
+export function playPowerHourStartEtMin(): number {
+  return num(process.env.SPX_POWER_HOUR_START_ET_MIN, 45);
+}
+/** ET hour when the power hour window closes (force-exit). Default 15 (3:00 PM). */
+export function playPowerHourEndEtHour(): number {
+  return num(process.env.SPX_POWER_HOUR_END_ET_HOUR, 15);
+}
+export function playPowerHourEndEtMin(): number {
+  return num(process.env.SPX_POWER_HOUR_END_ET_MIN, 15);
+}
+/**
+ * Target in SPX pts for power hour plays. Default 13 pts.
+ * Near-money 0DTE options (8 pts OTM) have high gamma — 13 pts is realistic
+ * on a directional power-hour push with 30–45 min left until close.
+ */
+export function playPowerHourTargetPts(): number {
+  return num(process.env.SPX_POWER_HOUR_TARGET_PTS, 13);
+}
+/** Hard stop in SPX pts. Default 4 pts — tight because theta burns fast. */
+export function playPowerHourStopLossPts(): number {
+  return num(process.env.SPX_POWER_HOUR_STOP_LOSS_PTS, 4);
+}
+/** Minimum SPX move from anchor to confirm WATCH → HOLD. Default 3 pts. */
+export function playPowerHourConfirmMovePts(): number {
+  return num(process.env.SPX_POWER_HOUR_CONFIRM_MOVE_PTS, 3);
+}
+/** Maximum option premium for power hour plays. Default $0.50. */
+export function playPowerHourMaxPremium(): number {
+  return num(process.env.SPX_POWER_HOUR_MAX_PREMIUM, 0.5);
+}
+/** OTM offset in SPX pts for strike selection. Default 8 pts. */
+export function playPowerHourStrikeOffsetPts(): number {
+  return num(process.env.SPX_POWER_HOUR_STRIKE_OFFSET_PTS, 8);
+}
+/** Minimum abs confluence score to trigger a power hour WATCH. Default 45. */
+export function playPowerHourMinScore(): number {
+  return num(process.env.SPX_POWER_HOUR_MIN_SCORE, 45);
+}
+/** Unconfirmed WATCHes expire this many minutes before the window closes. Default 5. */
+export function playPowerHourWatchExpiryMarginMin(): number {
+  return num(process.env.SPX_POWER_HOUR_WATCH_EXPIRY_MARGIN_MIN, 5);
+}
+
+export const POWER_HOUR_SIZING_NOTE =
+  "Power hour sizing: 25–50% of standard size. Fast theta — confirm quickly, cut losses immediately.";

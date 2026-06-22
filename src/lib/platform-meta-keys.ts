@@ -10,6 +10,8 @@
 export const PLATFORM_META_KEYS = {
   /** Live lotto state machine — full LottoRecord JSON, one row per trading day */
   lottoTodayState: "spx_lotto_record",
+  /** Power hour lotto — separate 2:45-3:15 PM ET lane, near-money strikes */
+  powerHourState: "spx_power_hour_record",
   /** WATCH→ENTRY promote scratch record */
   watchRecord: "spx_watch_record",
   /** Session buy/sell cooldown + last direction */

@@ -3,6 +3,7 @@ import { requireDatabaseInProduction } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
+import { evaluateSpxPowerHour } from "@/lib/spx-power-hour-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
@@ -62,7 +63,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(payload);
     }
 
-    const lotto = await evaluateSpxLotto(merged, technicals);
+    const [lotto, powerHour] = await Promise.all([
+      evaluateSpxLotto(merged, technicals),
+      evaluateSpxPowerHour(merged, technicals),
+    ]);
     if (!isSpxEvaluatorPlayResult(evalResult)) {
       throw new Error("Evaluator returned no play payload");
     }
@@ -75,6 +79,7 @@ export async function GET(req: NextRequest) {
       play_action: play.action,
       play_phase: play.phase,
       lotto_phase: lotto.phase,
+      power_hour_phase: powerHour.phase,
     };
     await logCronRun("spx-evaluate", started, payload);
     return NextResponse.json(payload);

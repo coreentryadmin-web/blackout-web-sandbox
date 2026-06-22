@@ -50,7 +50,7 @@ function etWeekday(now: Date): number {
   return map[wd] ?? 0;
 }
 
-function isEtWeekday(now: Date): boolean {
+export function isEtWeekday(now: Date): boolean {
   const d = etWeekday(now);
   return d >= 1 && d <= 5;
 }

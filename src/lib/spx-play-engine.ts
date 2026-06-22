@@ -16,6 +16,7 @@ import {
 import { evaluatePlayGates, GATE_BLOCK, type PlayGateResult } from "@/lib/spx-play-gates";
 import { forceExitCutoffLabel, isPastForceExitCutoff, isBeforeCashOpen, isPremarketPlanningWindow } from "@/lib/spx-play-session-guards";
 import type { LottoPlayPayload } from "@/lib/spx-play-lotto";
+import type { PowerHourPlayPayload } from "@/lib/spx-power-hour-engine";
 import { evaluatePlayConfirmations, flowAlignedForDirection } from "@/lib/spx-play-confirmations";
 import { buildPlayTechnicals, type PlayTechnicals } from "@/lib/spx-play-technicals";
 import type { PlayConfirmationResult } from "@/lib/spx-play-confirmations";
@@ -144,6 +145,7 @@ export type SpxPlayPayload = {
     total_closed: number;
   } | null;
   lotto_play: LottoPlayPayload | null;
+  power_play: PowerHourPlayPayload | null;
   session_phase: "premarket" | "cash" | "closed";
   /**
    * True only when the system has committed a play to the DB in this evaluation cycle.
@@ -232,6 +234,7 @@ function scanningPayload(
     watch: null,
     telemetry: null,
     lotto_play: null,
+    power_play: null,
     session_phase: currentSessionPhase(desk),
     signal_committed: false,
     as_of: desk.polled_at ?? desk.as_of ?? new Date().toISOString(),
@@ -628,6 +631,7 @@ async function evaluateOpenPlay(
     watch: null,
     telemetry,
     lotto_play: null,
+    power_play: null,
     session_phase: "cash",
     signal_committed: true,
     as_of: confluence.as_of,
@@ -932,6 +936,7 @@ async function evaluateFlatPlay(
       watch: watchState,
       telemetry,
       lotto_play: null,
+      power_play: null,
       session_phase: currentSessionPhase(desk),
       signal_committed: false,
       as_of: confluence.as_of,
@@ -1083,6 +1088,7 @@ async function evaluateFlatPlay(
     watch: { active: false, promote_ready: false, reason: "Entered", since: null },
     telemetry,
     lotto_play: null,
+    power_play: null,
     session_phase: currentSessionPhase(desk),
     signal_committed: true,
     as_of: confluence.as_of,
@@ -1143,6 +1149,7 @@ export async function evaluateSpxPlay(
       watch: null,
       telemetry: null,
       lotto_play: null,
+      power_play: null,
       session_phase: "closed",
       signal_committed: false,
       as_of: desk.polled_at ?? desk.as_of ?? new Date().toISOString(),

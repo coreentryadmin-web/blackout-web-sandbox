@@ -5,10 +5,12 @@ import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
 import { type SpxPlayPayload } from "@/lib/spx-play-engine";
 import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
+import { evaluateSpxPowerHour } from "@/lib/spx-power-hour-engine";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
 import { loadWatchRecord } from "@/lib/spx-play-watch";
 import { loadPlaySessionMeta } from "@/lib/spx-play-store";
 import { loadLottoRecord } from "@/lib/spx-lotto-store";
+import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import { fetchLottoPlaysForDate } from "@/lib/db";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import { fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
@@ -53,6 +55,10 @@ export type SpxAdminDashboardPayload = {
     today: Awaited<ReturnType<typeof evaluateSpxLotto>> | null;
     record: Awaited<ReturnType<typeof loadLottoRecord>>;
     history: Awaited<ReturnType<typeof fetchLottoPlaysForDate>>;
+  };
+  power_hour: {
+    today: Awaited<ReturnType<typeof evaluateSpxPowerHour>> | null;
+    record: Awaited<ReturnType<typeof loadPowerHourRecord>>;
   };
   state: {
     watch: Awaited<ReturnType<typeof loadWatchRecord>>;
@@ -170,6 +176,7 @@ export async function fetchSpxAdminDashboard(options?: {
 
   let play: SpxPlayPayload | null = null;
   let lottoToday: Awaited<ReturnType<typeof evaluateSpxLotto>> | null = null;
+  let powerHourToday: Awaited<ReturnType<typeof evaluateSpxPowerHour>> | null = null;
 
   if (liveEngine) {
     const technicals = await buildPlayTechnicals(merged.price, {
@@ -183,19 +190,23 @@ export async function fetchSpxAdminDashboard(options?: {
     if (dryRun) {
       // EDGE-10: dry-run path — read-only snapshot, no DB writes, no Discord.
       const { readSpxPlaySnapshot } = await import("@/lib/spx-evaluator");
-      const [snapshot, lottoTodayResult] = await Promise.all([
+      const [snapshot, lottoTodayResult, powerHourResult] = await Promise.all([
         readSpxPlaySnapshot(merged, technicals),
         evaluateSpxLotto(merged, technicals),
+        evaluateSpxPowerHour(merged, technicals),
       ]);
       play = snapshot;
       lottoToday = lottoTodayResult;
+      powerHourToday = powerHourResult;
     } else {
       // Mutate path — only reached after explicit double-confirmation.
-      const [evalResult, lottoTodayResult] = await Promise.all([
+      const [evalResult, lottoTodayResult, powerHourResult] = await Promise.all([
         runSpxEvaluator(merged, technicals, "admin_live"),
         evaluateSpxLotto(merged, technicals),
+        evaluateSpxPowerHour(merged, technicals),
       ]);
       lottoToday = lottoTodayResult;
+      powerHourToday = powerHourResult;
       if (isSpxEvaluatorPlayResult(evalResult)) {
         play = evalResult.play;
       }
@@ -235,6 +246,10 @@ export async function fetchSpxAdminDashboard(options?: {
       today: lottoToday,
       record: lottoRecord,
       history: lottoHistory,
+    },
+    power_hour: {
+      today: powerHourToday,
+      record: await loadPowerHourRecord(),
     },
     state: { watch, session_meta },
     issues,
