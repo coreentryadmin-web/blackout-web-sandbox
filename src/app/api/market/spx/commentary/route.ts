@@ -56,7 +56,12 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await serverCache<CommentaryCache | null>(cacheKey, COMMENTARY_TTL_MS, async () => {
-      const commentary = await generateSpxCommentary(desk, prevDesk);
+      // Cross-tool: give the desk AI the platform's OWN live open play so its read can't
+      // contradict the engine (e.g. say LONG while an open SHORT is held). Fetched only on
+      // a cache miss (once per window); read-only, falls back to null on any error.
+      const { loadOpenPlay } = await import("@/lib/spx-play-store");
+      const livePlay = await loadOpenPlay().catch(() => null);
+      const commentary = await generateSpxCommentary(desk, prevDesk, livePlay);
       if (!commentary) return null;
       return { commentary, desk };
     });

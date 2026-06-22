@@ -432,10 +432,26 @@ function validateDeskData(ctx: Record<string, unknown>): { ok: true } | { ok: fa
 
 export async function generateSpxCommentary(
   desk: SpxDeskPayload,
-  previous?: Partial<SpxDeskPayload> | null
+  previous?: Partial<SpxDeskPayload> | null,
+  livePlay?: import("@/lib/spx-play-store").OpenPlayRow | null
 ): Promise<SpxCommentaryResult | null> {
   const delta = computeDelta(desk, previous);
   const ctx = deskContext(desk);
+
+  // Cross-tool: surface the platform's OWN live open SPX play so the AI aligns its read
+  // with it (or flags the conflict) instead of contradicting the engine's own position.
+  if (livePlay && livePlay.status === "open") {
+    (ctx as Record<string, unknown>).live_spx_play = {
+      direction: livePlay.direction,
+      entry: livePlay.entry_price,
+      stop: livePlay.stop,
+      target: livePlay.target,
+      grade: livePlay.grade,
+      mfe_pts: livePlay.mfe_pts,
+      trim_done: livePlay.trim_done,
+      opened_at: livePlay.opened_at,
+    };
+  }
 
   const dataCheck = validateDeskData(ctx);
   if (dataCheck.ok === false) {
@@ -498,6 +514,7 @@ Hard rules:
 - Null/empty section -> skip. strike_stacks empty -> no stack language.
 - watch and changed MUST be empty arrays — everything lives in headline + body.
 - Every number + every verbatim headline wrapped in {{...}}; teaching words/labels stay outside. No prose paragraphs, one line per label.
+- live_spx_play (if present) is the desk's OWN open position — your READ + SETUP MUST ALIGN with its direction, or explicitly flag the conflict (e.g. "engine still long X — countertrend"). NEVER tell the trader the opposite side of an open desk play without calling out that it contradicts the live engine.
 - ALWAYS show WHY, LEVELS, SETUP, RISK, NEXT 5M, FLIPS IT. Δ/FLOW/NEWS only when they carry signal. Still ~a 20-second read.`;
 
   const raw = await anthropicText(prompt, 1550, undefined, {
