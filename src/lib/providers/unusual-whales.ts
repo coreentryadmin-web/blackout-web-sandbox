@@ -294,6 +294,59 @@ export async function fetchUwOdteSpotExposuresByStrike(ticker = "SPX", limit = 5
   return extractRows(data);
 }
 
+/** Normalize any UW per-strike GEX row to the {strike, call_gamma_oi, put_gamma_oi}
+ *  shape analyzeStrikeGexRows expects, tolerating UW's varied field names across the
+ *  spot-exposures and greek-exposure endpoints. */
+function normalizeUwStrikeGexRow(r: Record<string, unknown>): Record<string, unknown> | null {
+  const strike = Number(r.strike ?? r.strike_price);
+  if (!Number.isFinite(strike) || strike <= 0) return null;
+  let callG = Number(r.call_gamma_oi ?? r.call_gex ?? r.call_gamma ?? NaN);
+  let putG = Number(r.put_gamma_oi ?? r.put_gex ?? r.put_gamma ?? NaN);
+  if (!Number.isFinite(callG) && !Number.isFinite(putG)) {
+    // Some greek-exposure rows give a single net gamma rather than a call/put split.
+    const net = Number(r.gamma_oi ?? r.net_gamma_oi ?? r.gex ?? r.net_gex ?? NaN);
+    if (!Number.isFinite(net)) return null;
+    callG = net; // put the whole net on one side so (call+put) === net downstream
+    putG = 0;
+  } else {
+    callG = Number.isFinite(callG) ? callG : 0;
+    putG = Number.isFinite(putG) ? putG : 0;
+  }
+  return { strike, call_gamma_oi: callG, put_gamma_oi: putG };
+}
+
+/**
+ * UW fallback for the GEX strike ladder when the Polygon/Massive chain is empty.
+ * Tries the 0DTE-correct spot-exposures feed first, then greek-exposure/strike
+ * (cumulative — available on plans where /greek-exposure works, which this one is).
+ * Returns normalized rows + which source produced them. Logs each attempt so the live
+ * source (and any 503/empty) is visible without exposing the UW key.
+ */
+export async function fetchUwOdteGexLadder(
+  ticker = "SPX"
+): Promise<{ rows: Record<string, unknown>[]; source: string }> {
+  const attempts: Array<[string, () => Promise<Record<string, unknown>[]>]> = [
+    ["spot-exposures/expiry-strike (0DTE)", () => fetchUwOdteSpotExposuresByStrike(ticker)],
+    ["greek-exposure/strike (cumulative)", () => fetchUwGreekExposureStrike(ticker)],
+  ];
+  for (const [name, fn] of attempts) {
+    try {
+      const raw = await fn();
+      const rows = raw
+        .map((r) => normalizeUwStrikeGexRow(r))
+        .filter((r): r is Record<string, unknown> => r !== null);
+      if (rows.length) {
+        console.warn(`[uw-gex-fallback] ${ticker} ladder from ${name}: ${rows.length} strikes`);
+        return { rows, source: name };
+      }
+      console.warn(`[uw-gex-fallback] ${ticker} ${name} returned 0 usable strikes`);
+    } catch (err) {
+      console.warn(`[uw-gex-fallback] ${ticker} ${name} threw: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { rows: [], source: "none" };
+}
+
 export async function fetchUwMaxPain(ticker = "SPX") {
   const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/max-pain`, {});
   const rows = extractRows(data);

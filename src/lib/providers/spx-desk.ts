@@ -61,6 +61,7 @@ import {
   fetchUwNetFlowExpiry,
   fetchUwNetPremTicks,
   fetchUwNope,
+  fetchUwOdteGexLadder,
   fetchUwTickerFlowAlerts,
   type DarkPoolSnapshot,
   type IvTermPoint,
@@ -785,9 +786,14 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchPolygonOdteDeskBundle(price),
     fetchVixIvRankPercentile(),
   ]);
-  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
+  // Polygon/Massive is the primary GEX source; when the chain comes back empty (e.g. a
+  // Massive key/plan issue), fall back to UW's GEX strike ladder so walls don't go blank.
   let strikeRows = polygonBundle.rows;
   let maxPain = polygonBundle.maxPain;
+  if (!strikeRows.length && uwConfigured()) {
+    const uwLadder = await fetchUwOdteGexLadder("SPX").catch(() => ({ rows: [], source: "none" }));
+    if (uwLadder.rows.length) strikeRows = uwLadder.rows;
+  }
 
   // Polygon is the sole GEX source — uwGex slot removed (UW spot-exposures are 503).
   const uwExclusive = uwConfigured()
@@ -1282,11 +1288,15 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const price = spxSnap?.price ?? 0;
   if (!price && !spxFlowsRaw.length) return empty;
 
-  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
+  // Polygon/Massive is the primary GEX source; fall back to UW's GEX ladder when empty.
   let strikeRows: Record<string, unknown>[] = [];
   if (polygonConfigured() && price > 0) {
     const bundle = await fetchPolygonOdteDeskBundle(price);
     strikeRows = bundle.rows;
+  }
+  if (!strikeRows.length && uwConfigured() && price > 0) {
+    const uwLadder = await fetchUwOdteGexLadder("SPX").catch(() => ({ rows: [], source: "none" }));
+    if (uwLadder.rows.length) strikeRows = uwLadder.rows;
   }
 
   const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
