@@ -26,11 +26,11 @@ export function Heatmap() {
           description="Sector rotation goes live during RTH, the moment the feed prints. Standby until the bell."
         />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-          <div className="xl:col-span-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-8 xl:col-span-8">
             <SectorThermal data={data} live={live} />
           </div>
-          <div className="xl:col-span-4 space-y-4">
+          <div className="lg:col-span-4 xl:col-span-4 space-y-4">
             <MoversTape data={data} live={live} />
             <TradingViewWidget type="market-overview" title="Indices" height={280} />
           </div>

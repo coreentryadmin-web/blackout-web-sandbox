@@ -654,9 +654,9 @@ export function FlowFeed() {
       </div>
 
       {/* ── Main grid ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Flow tape — 8 cols */}
-        <div className="xl:col-span-8">
+        <div className="lg:col-span-8 xl:col-span-8">
           <FlowAlertStream
             flows={displayAlerts}
             live={live}
@@ -678,7 +678,7 @@ export function FlowFeed() {
         </div>
 
         {/* Right column — 4 cols */}
-        <div className="xl:col-span-4 flex flex-col gap-3">
+        <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-3">
           <NetPremiumLeaderboard alerts={alerts} />
           <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
           <NightHawkFlowPanel

@@ -1,21 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 
 const SCAN_TICKERS = ["NVDA", "TSLA", "SPY", "QQQ", "AAPL", "AMD", "META", "MSFT", "AMZN", "GOOGL", "IWM", "SMCI"];
 
 type Blip = { id: number; x: number; y: number; ticker: string };
 
 export function NightHawkRadarBackdrop() {
-  const [angle, setAngle] = useState(0);
+  const reduced = useReducedMotion();
   const [blips, setBlips] = useState<Blip[]>([]);
 
   useEffect(() => {
-    const spin = window.setInterval(() => setAngle((a) => (a + 2.5) % 360), 50);
-    return () => window.clearInterval(spin);
-  }, []);
-
-  useEffect(() => {
+    if (reduced) return;
     const ping = window.setInterval(() => {
       const id = Date.now();
       const ticker = SCAN_TICKERS[Math.floor(Math.random() * SCAN_TICKERS.length)]!;
@@ -33,7 +30,7 @@ export function NightHawkRadarBackdrop() {
       }, 2800);
     }, 1600);
     return () => window.clearInterval(ping);
-  }, []);
+  }, [reduced]);
 
   return (
     <div className="nighthawk-radar-backdrop" aria-hidden>
@@ -53,10 +50,7 @@ export function NightHawkRadarBackdrop() {
           <div className="nighthawk-radar-crosshair-h" />
           <div className="nighthawk-radar-crosshair-v" />
 
-          <div
-            className="nighthawk-radar-sweep"
-            style={{ transform: `rotate(${angle}deg)` }}
-          />
+          <div className="nighthawk-radar-sweep" />
 
           {blips.map((blip) => (
             <div

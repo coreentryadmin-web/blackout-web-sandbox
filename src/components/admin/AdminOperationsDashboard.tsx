@@ -1,9 +1,12 @@
-﻿"use client";
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import {
+  ActionButton,
+  EmptyDeck,
+  FilterSearch,
   GlassPanel,
   LivePill,
   MegaStat,
@@ -44,21 +47,21 @@ function fmtAction(action: string): string {
   return action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// ─── Action icon + color map ──────────────────────────────────────────────────
+// ─── Action icon + color map (brand tones only) ────────────────────────────────
 const ACTION_META: Record<string, { icon: string; color: string }> = {
-  api_probe_providers: { icon: "⬡", color: "text-cyan-400"   },
-  api_event_view:      { icon: "◉", color: "text-blue-400"   },
-  api_rescan:          { icon: "↺", color: "text-sky-400"    },
-  spx_live_engine:     { icon: "◎", color: "text-orange-400" },
-  incident_ack:        { icon: "✓", color: "text-amber-400"  },
-  incident_resolve:    { icon: "◆", color: "text-emerald-400"},
+  api_probe_providers: { icon: "⬡", color: "text-cyan"   },
+  api_event_view:      { icon: "◉", color: "text-sky-300" },
+  api_rescan:          { icon: "↺", color: "text-sky-300" },
+  spx_live_engine:     { icon: "◎", color: "text-gold"   },
+  incident_ack:        { icon: "✓", color: "text-gold"   },
+  incident_resolve:    { icon: "◆", color: "text-bull"   },
 };
 
 function actionMeta(action: string) {
   for (const [key, val] of Object.entries(ACTION_META)) {
     if (action.startsWith(key)) return val;
   }
-  return { icon: "·", color: "text-cyan-400" };
+  return { icon: "·", color: "text-cyan" };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -68,10 +71,8 @@ function SeverityPip({ severity }: { severity: string }) {
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 font-mono text-[10px] font-black px-2 py-0.5 rounded-full border tracking-widest select-none",
-        isCrit
-          ? "text-red-400 border-red-500/50 bg-red-950/40"
-          : "text-amber-400 border-amber-500/50 bg-amber-950/40"
+        "admin-outcome-badge font-black tracking-widest select-none",
+        isCrit ? "admin-outcome-badge-bear" : "admin-outcome-badge-amber"
       )}
     >
       {isCrit ? "● CRITICAL" : "◆ WARNING"}
@@ -83,10 +84,8 @@ function StatusBadge({ status }: { status: AdminIncidentRow["status"] }) {
   return (
     <span
       className={clsx(
-        "font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border tracking-widest",
-        status === "open"
-          ? "text-red-400 border-red-700/40 bg-red-950/20"
-          : "text-blue-400 border-blue-700/40 bg-blue-950/20"
+        "admin-outcome-badge text-[10px] font-bold tracking-widest",
+        status === "open" ? "admin-outcome-badge-bear" : "admin-outcome-badge-neutral"
       )}
     >
       {status.toUpperCase()}
@@ -128,8 +127,8 @@ function IncidentRow({
       className={clsx(
         "rounded-xl border px-4 py-3 transition-colors duration-200",
         isCrit
-          ? "border-red-700/35 bg-gradient-to-r from-red-950/20 to-zinc-950/30 hover:border-red-600/50"
-          : "border-amber-700/30 bg-gradient-to-r from-amber-950/15 to-zinc-950/30 hover:border-amber-600/40"
+          ? "border-bear/35 bg-gradient-to-r from-bear/10 to-black/40 hover:border-bear/50"
+          : "border-gold/30 bg-gradient-to-r from-gold/10 to-black/40 hover:border-gold/45"
       )}
     >
       {/* Top row */}
@@ -145,48 +144,42 @@ function IncidentRow({
         {/* Action buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {incident.status === "open" && (
-            <button
-              type="button"
-              onClick={() => act("ack")}
-              disabled={loading !== null}
-              className="font-mono text-[10px] font-bold px-3 py-1 rounded-lg border border-amber-600/40 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40 hover:border-amber-500/60 transition-all disabled:opacity-40"
-            >
+            <ActionButton onClick={() => act("ack")} disabled={loading !== null}>
               {loading === "ack" ? "…" : "Acknowledge"}
-            </button>
+            </ActionButton>
           )}
           {(incident.status === "open" || incident.status === "acked") && (
-            <button
-              type="button"
+            <ActionButton
               onClick={() => act("resolve")}
               disabled={loading !== null}
-              className="font-mono text-[10px] font-bold px-3 py-1 rounded-lg border border-emerald-600/40 bg-emerald-950/20 text-emerald-400 hover:bg-emerald-950/40 hover:border-emerald-500/60 transition-all disabled:opacity-40"
+              variant="primary"
             >
               {loading === "resolve" ? "…" : "Resolve"}
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
 
       {/* Detail */}
       {incident.detail && (
-        <p className="font-mono text-[10px] text-cyan-400 mt-1 ml-0.5 line-clamp-2">
+        <p className="font-mono text-[10px] text-sky-300 mt-1 ml-0.5 line-clamp-2">
           {incident.detail}
         </p>
       )}
 
       {/* Footer metadata */}
       <div className="flex items-center gap-4 mt-2 flex-wrap">
-        <span className="font-mono text-[9px] text-cyan-400 uppercase tracking-widest">{incident.category}</span>
-        <span className="font-mono text-[9px] text-cyan-400">
+        <span className="font-mono text-[9px] text-cyan uppercase tracking-widest">{incident.category}</span>
+        <span className="font-mono text-[9px] text-cyan">
           opened {timeAgo(incident.opened_at)}
         </span>
         {incident.status === "acked" && incident.acked_by && (
-          <span className="font-mono text-[9px] text-blue-500/70">
+          <span className="font-mono text-[9px] text-sky-300/70">
             acked by {incident.acked_by} · {timeAgo(incident.acked_at)}
           </span>
         )}
         {incident.mtta_ms != null && (
-          <span className="font-mono text-[9px] text-cyan-400">
+          <span className="font-mono text-[9px] text-cyan">
             MTTA {fmtDuration(incident.mtta_ms)}
           </span>
         )}
@@ -206,7 +199,7 @@ function AuditEntry({ entry }: { entry: AuditLogEntry }) {
       layout
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800/30 transition-colors cursor-default group"
+      className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-default group"
     >
       {/* Icon */}
       <span className={clsx("font-mono text-[13px] flex-shrink-0 mt-0.5", meta.color)}>
@@ -219,18 +212,18 @@ function AuditEntry({ entry }: { entry: AuditLogEntry }) {
           <span className={clsx("font-mono text-[11px] font-bold", meta.color)}>
             {fmtAction(entry.action)}
           </span>
-          <span className="font-mono text-[9px] text-cyan-400 flex-shrink-0">
+          <span className="font-mono text-[9px] text-cyan flex-shrink-0">
             {timeAgo(entry.created_at)}
           </span>
         </div>
         {entry.actor_email && (
-          <span className="font-mono text-[10px] text-cyan-400">{entry.actor_email}</span>
+          <span className="font-mono text-[10px] text-cyan">{entry.actor_email}</span>
         )}
         {hasDetail && (
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="font-mono text-[9px] text-cyan-500 hover:text-sky-300 mt-0.5 transition-colors"
+            className="font-mono text-[9px] text-cyan hover:text-sky-300 mt-0.5 transition-colors"
           >
             {expanded ? "▲ hide" : "▼ detail"}
           </button>
@@ -241,7 +234,7 @@ function AuditEntry({ entry }: { entry: AuditLogEntry }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="font-mono text-[9px] text-cyan-400 bg-zinc-900/60 rounded p-2 mt-1 overflow-x-auto"
+              className="font-mono text-[9px] text-sky-300 bg-black/60 border border-white/10 rounded p-2 mt-1 overflow-x-auto"
             >
               {JSON.stringify(entry.detail, null, 2)}
             </motion.pre>
@@ -265,10 +258,10 @@ function VitalRow({
   sub?: string;
 }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-zinc-800/40 last:border-0">
+    <div className="flex items-center justify-between py-2 border-b border-white/10 last:border-0">
       <div>
         <p className="font-mono text-[11px] text-sky-200 font-semibold">{label}</p>
-        {sub && <p className="font-mono text-[9px] text-cyan-400">{sub}</p>}
+        {sub && <p className="font-mono text-[9px] text-cyan">{sub}</p>}
       </div>
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11px] font-bold text-sky-200">{value}</span>
@@ -276,10 +269,10 @@ function VitalRow({
           className={clsx(
             "w-2 h-2 rounded-full flex-shrink-0",
             ok === true
-              ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]"
+              ? "bg-bull shadow-[0_0_6px_rgba(0,230,118,0.7)]"
               : ok === false
-                ? "bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.7)] animate-pulse"
-                : "bg-zinc-600"
+                ? "bg-bear shadow-[0_0_6px_rgba(255,45,85,0.7)] animate-pulse"
+                : "bg-white/20"
           )}
         />
       </div>
@@ -412,10 +405,10 @@ export function AdminOperationsDashboard() {
       </div>
 
       {/* ── Main grid: incidents (left) + vitals (right) ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
 
         {/* ── Active Incidents ── */}
-        <div className="xl:col-span-2">
+        <div className="md:col-span-2 lg:col-span-2 xl:col-span-2">
           <GlassPanel
             title="Active Incidents"
             accent="bear"
@@ -429,12 +422,12 @@ export function AdminOperationsDashboard() {
                   ))}
                 </div>
               ) : incidents.error ? (
-                <p className="font-mono text-[11px] text-red-400 py-4 text-center">{incidents.error}</p>
+                <p className="font-mono text-[11px] text-bear py-4 text-center">{incidents.error}</p>
               ) : incidents.incidents.length === 0 ? (
                 <div className="py-10 text-center">
-                  <p className="font-mono text-[24px] mb-2">✓</p>
-                  <p className="font-mono text-[12px] font-bold text-emerald-400">All Clear</p>
-                  <p className="font-mono text-[10px] text-cyan-400 mt-1">No active incidents</p>
+                  <p className="font-mono text-[24px] mb-2 text-bull">✓</p>
+                  <p className="font-mono text-[12px] font-bold text-bull">All Clear</p>
+                  <p className="font-mono text-[10px] text-cyan mt-1">No active incidents</p>
                 </div>
               ) : (
                 <AnimatePresence initial={false}>
@@ -450,7 +443,7 @@ export function AdminOperationsDashboard() {
                 <button
                   type="button"
                   onClick={loadIncidents}
-                  className="font-mono text-[9px] text-cyan-400 hover:text-sky-200 transition-colors"
+                  className="font-mono text-[9px] text-cyan hover:text-sky-200 transition-colors"
                 >
                   ↺ refresh
                 </button>
@@ -507,13 +500,13 @@ export function AdminOperationsDashboard() {
 
                 {/* Recent route errors */}
                 {(h?.route_errors?.length ?? 0) > 0 && (
-                  <div className="mt-3 space-y-1 border-t border-zinc-800/40 pt-3">
-                    <p className="font-mono text-[9px] text-cyan-400 uppercase tracking-widest mb-2">Recent Route Errors</p>
+                  <div className="mt-3 space-y-1 border-t border-white/10 pt-3">
+                    <p className="font-mono text-[9px] text-cyan uppercase tracking-widest mb-2">Recent Route Errors</p>
                     {h!.route_errors.slice(0, 4).map((e: { route?: string; message?: string; at?: string }, i: number) => (
-                      <div key={i} className="font-mono text-[9px] rounded px-2 py-1 bg-red-950/20 border border-red-900/30">
-                        <p className="text-red-400 font-bold">{e.route ?? "unknown"}</p>
-                        <p className="text-cyan-400 truncate">{e.message ?? "Error"}</p>
-                        <p className="text-cyan-500">{timeAgo(e.at ?? "")}</p>
+                      <div key={i} className="font-mono text-[9px] rounded px-2 py-1 bg-bear/10 border border-bear/30">
+                        <p className="text-bear font-bold">{e.route ?? "unknown"}</p>
+                        <p className="text-cyan truncate">{e.message ?? "Error"}</p>
+                        <p className="text-sky-300/70">{timeAgo(e.at ?? "")}</p>
                       </div>
                     ))}
                   </div>
@@ -527,29 +520,29 @@ export function AdminOperationsDashboard() {
       {/* ── Audit Trail ── */}
       <GlassPanel title="Audit Trail" accent="violet" kicker={`${audit.total} total actions logged`}>
         {/* Filters */}
-        <div className="flex items-center gap-3 mt-2 mb-3">
-          <input
+        <div className="flex items-end gap-3 mt-2 mb-3 flex-wrap">
+          <FilterSearch
+            label="Action"
             value={auditAction}
-            onChange={(e) => setAuditAction(e.target.value)}
+            onChange={setAuditAction}
             placeholder="filter by action…"
-            className="font-mono text-[10px] bg-zinc-900 border border-zinc-700/50 rounded px-2 py-1 text-sky-200 placeholder-zinc-700 outline-none focus:border-violet-500/60 transition-colors w-40"
           />
-          <input
+          <FilterSearch
+            label="Actor"
             value={auditActor}
-            onChange={(e) => setAuditActor(e.target.value)}
+            onChange={setAuditActor}
             placeholder="filter by actor email…"
-            className="font-mono text-[10px] bg-zinc-900 border border-zinc-700/50 rounded px-2 py-1 text-sky-200 placeholder-zinc-700 outline-none focus:border-violet-500/60 transition-colors w-44"
           />
           {(auditAction || auditActor) && (
             <button
               type="button"
               onClick={() => { setAuditAction(""); setAuditActor(""); }}
-              className="font-mono text-[9px] text-cyan-400 hover:text-sky-200 transition-colors"
+              className="font-mono text-[9px] text-cyan hover:text-sky-200 transition-colors pb-2"
             >
               × clear
             </button>
           )}
-          <span className="ml-auto font-mono text-[9px] text-cyan-500">
+          <span className="ml-auto font-mono text-[9px] text-cyan pb-2">
             last updated {timeAgo(audit.lastAt)}
           </span>
         </div>
@@ -559,18 +552,14 @@ export function AdminOperationsDashboard() {
             {[1, 2, 3, 4, 5].map((n) => <div key={n} className="admin-skeleton h-8 rounded" />)}
           </div>
         ) : audit.error ? (
-          <p className="font-mono text-[11px] text-red-400 py-4 text-center">{audit.error}</p>
+          <p className="font-mono text-[11px] text-bear py-4 text-center">{audit.error}</p>
         ) : audit.entries.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="font-mono text-[11px] text-cyan-400">No audit entries found</p>
-            {!audit.entries.length && !audit.loading && (
-              <p className="font-mono text-[9px] text-cyan-500 mt-1">
-                Actions are logged as admins use the dashboard
-              </p>
-            )}
-          </div>
+          <EmptyDeck
+            title="No audit entries found"
+            hint="Actions are logged as admins use the dashboard"
+          />
         ) : (
-          <div className="divide-y divide-zinc-800/30">
+          <div className="divide-y divide-white/10">
             <AnimatePresence initial={false}>
               {audit.entries.map((entry) => (
                 <AuditEntry key={entry.id} entry={entry} />

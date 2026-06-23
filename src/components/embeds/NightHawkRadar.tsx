@@ -2,20 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
+import { useReducedMotion } from "framer-motion";
 import { EmbedFrame } from "./EmbedFrame";
 
 const SCAN_TICKERS = ["NVDA", "TSLA", "SPY", "QQQ", "AAPL", "AMD", "META", "MSFT"];
 
 export function NightHawkRadar() {
-  const [angle, setAngle] = useState(0);
+  const reduced = useReducedMotion();
   const [blips, setBlips] = useState<Array<{ id: number; x: number; y: number; ticker: string }>>([]);
 
   useEffect(() => {
-    const spin = window.setInterval(() => setAngle((a) => (a + 3) % 360), 50);
-    return () => window.clearInterval(spin);
-  }, []);
-
-  useEffect(() => {
+    if (reduced) return;
     const ping = window.setInterval(() => {
       const id = Date.now();
       const ticker = SCAN_TICKERS[Math.floor(Math.random() * SCAN_TICKERS.length)];
@@ -33,7 +30,7 @@ export function NightHawkRadar() {
       }, 2400);
     }, 1800);
     return () => window.clearInterval(ping);
-  }, []);
+  }, [reduced]);
 
   return (
     <EmbedFrame title="Night Hawk Radar" subtitle="2–10 DTE scan · illustrative" variant="radar">
@@ -47,10 +44,7 @@ export function NightHawkRadar() {
                 style={{ width: `${scale * 100}%`, height: `${scale * 100}%` }}
               />
             ))}
-            <div
-              className="radar-sweep"
-              style={{ transform: `rotate(${angle}deg)` }}
-            />
+            <div className="radar-sweep" />
             {blips.map((blip) => (
               <div
                 key={blip.id}

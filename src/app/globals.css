@@ -2152,6 +2152,7 @@ body {
       rgba(255, 45, 85, 0.08) 72deg,
       transparent 90deg
     );
+    animation: radar-sweep-spin 7.2s linear infinite;
   }
 
   .nighthawk-radar-core {
@@ -3518,6 +3519,7 @@ body {
   .radar-sweep {
     @apply absolute inset-0 origin-center;
     background: conic-gradient(from 0deg, transparent 0deg, rgba(255, 45, 85, 0.35) 40deg, transparent 80deg);
+    animation: radar-sweep-spin 6s linear infinite;
   }
 
   .radar-blip {
@@ -3544,6 +3546,11 @@ body {
     0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
     15% { opacity: 1; }
     100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
+  }
+
+  @keyframes radar-sweep-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   /* ── Trading desk UI ── */
@@ -5113,21 +5120,22 @@ body {
 
   .spx-sniper-triple {
     @apply grid grid-cols-1 gap-3 items-stretch w-full max-w-none;
+    @apply lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.6fr)];
     @apply xl:grid-cols-[minmax(240px,14vw)_minmax(0,1fr)_minmax(400px,27vw)];
     @apply 2xl:grid-cols-[minmax(260px,13vw)_minmax(0,1fr)_minmax(440px,28vw)];
     min-height: calc(100vh - 240px);
   }
 
   .spx-sniper-left-rail {
-    @apply flex flex-col min-h-0 h-full order-2 xl:order-1 xl:pr-0;
+    @apply flex flex-col min-h-0 h-full order-2 lg:order-1 xl:order-1 xl:pr-0;
   }
 
   .spx-sniper-triple .spx-sniper-chart-col {
-    @apply order-1 xl:order-2 flex flex-col min-h-[520px] xl:min-h-0 xl:h-full min-w-0;
+    @apply order-1 lg:order-2 xl:order-2 flex flex-col min-h-[520px] xl:min-h-0 xl:h-full min-w-0;
   }
 
   .spx-sniper-triple .spx-commentary-rail-desk {
-    @apply order-3 xl:order-3 xl:pl-0;
+    @apply order-3 lg:order-3 lg:col-span-2 xl:order-3 xl:col-span-1 xl:pl-0;
   }
 
   .spx-sniper-right-rail {
