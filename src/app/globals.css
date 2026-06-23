@@ -428,6 +428,46 @@ body {
   .pricing-anim { animation: none !important; }
 }
 
+/* ── FAQ "Briefing Board" — no-scroll bento (desktop) ── */
+.faq-tile {
+  border-radius: 1rem;
+  border: 1px solid rgba(125, 211, 252, 0.10);
+  background: rgba(8, 9, 14, 0.66);
+  backdrop-filter: blur(12px);
+  padding: 0.95rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+}
+.faq-board { display: grid; grid-template-columns: 1fr; gap: 0.7rem; }
+@media (min-width: 1024px) {
+  .faq-tile { min-height: 0; overflow: hidden; }
+  .faq-board {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.45fr);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand brand search reader"
+      "platform arsenal signals reader"
+      "platform arsenal member reader"
+      "platform arsenal start reader"
+      "support support support reader";
+  }
+  .fa-brand { grid-area: brand; }
+  .fa-search { grid-area: search; }
+  .fa-platform { grid-area: platform; }
+  .fa-arsenal { grid-area: arsenal; }
+  .fa-signals { grid-area: signals; }
+  .fa-member { grid-area: member; }
+  .fa-start { grid-area: start; }
+  .fa-support { grid-area: support; }
+  .fa-reader { grid-area: reader; }
+  .fa-results { grid-column: 1 / 4; grid-row: 2 / 5; overflow-y: auto; }
+}
+/* thin emerald scrollbar for the single scroll owner (reader body / results) */
+.faq-scroll { scrollbar-width: thin; scrollbar-color: #00e676 transparent; }
+.faq-scroll::-webkit-scrollbar { width: 6px; }
+.faq-scroll::-webkit-scrollbar-track { background: transparent; }
+.faq-scroll::-webkit-scrollbar-thumb { background: rgba(0, 230, 118, 0.45); border-radius: 999px; }
+
 .showcase-glow-purple {
   background: radial-gradient(circle, rgba(191, 95, 255, 0.22), rgba(191, 95, 255, 0.12) 45%, transparent 72%);
   animation: glow-pulse-purple 4s ease-in-out infinite 1s;

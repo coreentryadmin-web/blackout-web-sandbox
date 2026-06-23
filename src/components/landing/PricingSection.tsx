@@ -301,14 +301,19 @@ export function PricingSection() {
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="mt-10 text-center font-mono text-[11px] tracking-[0.04em] text-white/45"
+          className="mt-10 text-center text-sm md:text-[15px] leading-relaxed font-medium text-white/85"
+          style={{ textShadow: "0 2px 14px rgba(0,0,0,0.7)" }}
         >
           Sign up on BlackOut, then unlock on Whop with the same email — instant access, nothing held
-          back. Stop trading blind.
+          back.{" "}
+          <span className="text-bull font-bold">Stop trading blind.</span>
         </motion.p>
-        <p className="mt-3 text-center font-mono text-[11px] tracking-[0.04em] text-white/45">
+        <p
+          className="mt-3 text-center text-[13px] md:text-sm font-medium text-white/75"
+          style={{ textShadow: "0 2px 14px rgba(0,0,0,0.7)" }}
+        >
           Billing or invoice questions?{" "}
-          <a href="mailto:billing@blackouttrades.com" className="text-bull hover:underline">
+          <a href="mailto:billing@blackouttrades.com" className="text-bull font-bold hover:underline">
             billing@blackouttrades.com
           </a>
         </p>

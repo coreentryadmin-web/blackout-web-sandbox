@@ -1,481 +1,445 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
 
 const SUPPORT_EMAIL = "support@blackouttrades.com";
 
-type FaqCategory = "Platform" | "The Arsenal" | "Signals & Data" | "Membership" | "Getting Started";
+type CatKey = "platform" | "arsenal" | "signals" | "member" | "start";
 
-type Faq = { cat: FaqCategory; q: string; a: string };
+type Faq = { id: string; catKey: CatKey; cat: string; q: string; a: string };
 
-const CATEGORY_ORDER: FaqCategory[] = [
-  "Platform",
-  "The Arsenal",
-  "Signals & Data",
-  "Membership",
-  "Getting Started",
+const CATEGORIES: { key: CatKey; label: string; n: string }[] = [
+  { key: "platform", label: "Platform", n: "01" },
+  { key: "arsenal", label: "The Arsenal", n: "02" },
+  { key: "signals", label: "Signals & Data", n: "03" },
+  { key: "member", label: "Membership", n: "04" },
+  { key: "start", label: "Getting Started", n: "05" },
 ];
 
-const FAQS: Faq[] = [
-  // ── Platform ──────────────────────────────────────────────────────────────
-  {
-    cat: "Platform",
-    q: "What exactly is BlackOut?",
-    a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It fuses live options flow, an SPX 0DTE command desk, dealer gamma positioning, dark-pool activity, an AI desk analyst (Largo), and an evening swing/leap scanner (Night Hawk) into one screen — compressing what a hedge-fund desk sees into a single decision surface. It is not a Discord, not a signal-seller. It's a decision terminal.",
-  },
-  {
-    cat: "Platform",
-    q: "Who is BlackOut built for?",
-    a: "Active options, SPX and 0DTE traders — anyone who wants institutional data and structure instead of guessing. Serious beginners are covered by the in-app Learn layer; full-time traders get a command center dense enough to run their whole session from.",
-  },
-  {
-    cat: "Platform",
-    q: "Where does your data come from?",
-    a: "Real-time institutional feeds: Polygon / Massive for price, options chains and gamma, and Unusual Whales for options flow, dark-pool prints and dealer positioning — streamed over live WebSockets. The same caliber of data professional desks pay for, unified and interpreted for you.",
-  },
-  {
-    cat: "Platform",
-    q: "Do I need to connect a broker?",
-    a: "No. BlackOut is a pure intelligence and signal platform — you execute on your own broker. We surface the data, structure, and setups before price moves; you pull the trigger wherever you trade.",
-  },
-  {
-    cat: "Platform",
-    q: "Is any of this financial advice?",
-    a: "No. BlackOut provides market data, analytics, and pattern-recognition tools for educational and informational purposes only. Nothing here is a recommendation to buy or sell — every trade is your own decision. We just make sure you're never trading blind.",
-  },
-  {
-    cat: "Platform",
-    q: "Can I use BlackOut on my phone?",
-    a: "Yes. BlackOut installs as an app on your phone (PWA) — an alert-first, glanceable command center built for the way 0DTE traders actually live during market hours.",
-  },
+const RAW: Record<CatKey, { q: string; a: string }[]> = {
+  platform: [
+    {
+      q: "What exactly is BlackOut?",
+      a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It fuses live options flow, an SPX 0DTE command desk, dealer gamma positioning, dark-pool activity, an AI desk analyst (Largo), and an evening swing/leap scanner (Night Hawk) into one screen — compressing what a hedge-fund desk sees into a single decision surface. It is not a Discord, not a signal-seller. It's a decision terminal.",
+    },
+    {
+      q: "Who is BlackOut built for?",
+      a: "Active options, SPX and 0DTE traders — anyone who wants institutional data and structure instead of guessing. Serious beginners are covered by the in-app Learn layer; full-time traders get a command center dense enough to run their whole session from.",
+    },
+    {
+      q: "Where does your data come from?",
+      a: "From the same caliber of market data that professional trading desks pay a premium for — institutional-grade options and equity feeds, streamed live in real time. We aggregate dealer positioning, options flow, dark-pool prints, and full market internals into one clean signal layer, so you're reading the tape with the same depth the pros do — without stitching together a dozen terminals yourself. No watered-down retail snapshots. No 15-minute delays. Just the real flow, the moment it happens.",
+    },
+    {
+      q: "Do I need to connect a broker?",
+      a: "No. BlackOut is a pure intelligence and signal platform — you execute on your own broker. We surface the data, structure, and setups before price moves; you pull the trigger wherever you trade.",
+    },
+    {
+      q: "Is any of this financial advice?",
+      a: "No. BlackOut provides market data, analytics, and pattern-recognition tools for educational and informational purposes only. Nothing here is a recommendation to buy or sell — every trade is your own decision. We just make sure you're never trading blind.",
+    },
+    {
+      q: "Can I use BlackOut on my phone?",
+      a: "Yes. BlackOut installs as an app on your phone — an alert-first, glanceable command center built for the way 0DTE traders actually live during market hours.",
+    },
+  ],
+  arsenal: [
+    {
+      q: "What is the SPX Sniper desk?",
+      a: "The 0DTE command center. Live SPX with VWAP, gamma exposure and market internals, plus a graded PLAY CARD: a letter grade (A–F), a numeric score and a confidence read, an 11-point confirmation checklist (MTF, trend, structure, VWAP, flow, dark pool, tide, internals, catalyst, dealer GEX, vol regime), a suggested strike with entry / target / stop — and, critically, the invalidation: the one thing that kills the trade. It answers “what's the setup, and what's the risk” in a single glance.",
+    },
+    {
+      q: "What is Largo, the AI desk analyst?",
+      a: "Largo is your AI analyst with full access to every tool's live data — flow, gamma, dark pool, the desk, news. Ask it anything in plain English: “what's the SPX setup right now,” “is this flow real or noise,” “where are dealers trapped.” It answers grounded in the live tape and shows its work, rather than guessing like a generic chatbot.",
+    },
+    {
+      q: "What is the HELIX options-flow feed?",
+      a: "Real-time options flow that surfaces institutional footprints instead of a firehose: repeated-hits strike stacks (same-strike accumulation), sweeps versus blocks, call/put pressure, premium and fill counts. You see where size is actually positioning — and our engine merges the live feed with the full session's flow so big prints aren't missed.",
+    },
+    {
+      q: "What is GEX / dealer positioning?",
+      a: "Dealer gamma exposure, made actionable. The support and resistance gamma walls, the gamma flip level, and the regime read — positive gamma (dips get bought, range-bound) versus negative gamma (volatility expands). In short: what market makers are forced to do, and where liquidity is likely to pull price.",
+    },
+    {
+      q: "What does the dark-pool view show?",
+      a: "Off-exchange institutional prints and levels, anchored to price — where big money is quietly accumulating or distributing away from the lit tape. It makes the invisible part of the market visible.",
+    },
+    {
+      q: "What is Night Hawk?",
+      a: "Your AI-generated evening playbook. After the close, Night Hawk builds ranked swing and leap setups with a per-ticker dossier behind each one — so instead of starting tomorrow from a blank chart, you walk in with a plan.",
+    },
+    {
+      q: "Is there a market overview / heatmap?",
+      a: "Yes. A market-intelligence layer gives you the regime at a glance: sector heatmaps, leaders and laggards, internals (TICK / TRIN / ADD), market tide, and the macro catalysts on the calendar — so you know the environment before you take a single trade.",
+    },
+  ],
+  signals: [
+    {
+      q: "How do alerts work?",
+      a: "BlackOut surfaces live, in-app alerts the moment flow and desk state change — a setup moving to WATCH, a play promoting to ENTRY, unusual flow stacking into a level. The signal reaches you in real time, so you act on structure forming, not after it's gone.",
+    },
+    {
+      q: "Is the data really real-time?",
+      a: "Yes — everything streams live, tick by tick. Quotes, options flow, dealer gamma, dark-pool activity, and your alerts all update the instant the market moves, not on a delay. When a sweep hits the tape or positioning shifts, you see it in real time, the same way an institutional desk would. The platform is built around a live data spine, so the screen in front of you is always the market as it is right now — never a stale snapshot.",
+    },
+    {
+      q: "Do you track your performance?",
+      a: "Yes — transparently. BlackOut keeps a verified, append-only track record of closed setups (win rate, best- and worst-case excursion), not a cherry-picked highlight reel. You can judge the engine on its actual results, by grade.",
+    },
+  ],
+  member: [
+    {
+      q: "How do I get access?",
+      a: "Create your free BlackOut account, then choose monthly, yearly, or lifetime access using the same email. One click unlocks the full platform — no separate logins, no friction.",
+    },
+    {
+      q: "What's included in Premium?",
+      a: "The entire arsenal, one membership: the SPX Sniper desk, the HELIX live flow feed, Largo AI, GEX / dealer positioning, dark-pool activity, Night Hawk, the market heatmap, and the verified track record. Nothing is held back behind a higher tier.",
+    },
+    {
+      q: "Can I cancel anytime?",
+      a: "Yes. Billing is handled securely through Whop, and you can manage or cancel your membership anytime from your account. Questions about a charge, an invoice, or your plan? Email billing@blackouttrades.com and we'll sort it out personally.",
+    },
+  ],
+  start: [
+    {
+      q: "How do I get started in 5 minutes?",
+      a: "Create your account, unlock Premium, and open the SPX Sniper desk — the live read is there immediately. Ask Largo your first question (“what's the SPX setup right now?”), and if you're newer to options, start with the in-app Learn layer. You'll be reading the tape like a desk by the end of your first session.",
+    },
+    {
+      q: "How do I reach the team?",
+      a: `Email us anytime at ${SUPPORT_EMAIL} — real humans, fast replies. Whether it's billing, access, a feature request, or a question about a setup, we've got you.`,
+    },
+  ],
+};
 
-  // ── The Arsenal ───────────────────────────────────────────────────────────
-  {
-    cat: "The Arsenal",
-    q: "What is the SPX Sniper desk?",
-    a: "The 0DTE command center. Live SPX with VWAP, gamma exposure and market internals, plus a graded PLAY CARD: a letter grade (A–F), a numeric score and a confidence read, an 11-point confirmation checklist (MTF, trend, structure, VWAP, flow, dark pool, tide, internals, catalyst, dealer GEX, vol regime), a suggested strike with entry / target / stop — and, critically, the invalidation: the one thing that kills the trade. It answers “what's the setup, and what's the risk” in a single glance.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "What is Largo, the AI desk analyst?",
-    a: "Largo is your AI analyst with full access to every tool's live data — flow, gamma, dark pool, the desk, news. Ask it anything in plain English: “what's the SPX setup right now,” “is this flow real or noise,” “where are dealers trapped.” It answers grounded in the live tape and shows its work, rather than guessing like a generic chatbot.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "What is the HELIX options-flow feed?",
-    a: "Real-time options flow that surfaces institutional footprints instead of a firehose: repeated-hits strike stacks (same-strike accumulation), sweeps versus blocks, call/put pressure, premium and fill counts. You see where size is actually positioning — and our engine merges the live feed with the full session's flow so big prints aren't missed.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "What is GEX / dealer positioning?",
-    a: "Dealer gamma exposure, made actionable. The support and resistance gamma walls, the gamma flip level, and the regime read — positive gamma (dips get bought, range-bound) versus negative gamma (volatility expands). In short: what market makers are forced to do, and where liquidity is likely to pull price.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "What does the dark-pool view show?",
-    a: "Off-exchange institutional prints and levels, anchored to price — where big money is quietly accumulating or distributing away from the lit tape. It makes the invisible part of the market visible.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "What is Night Hawk?",
-    a: "Your AI-generated evening playbook. After the close, Night Hawk builds ranked swing and leap setups with a per-ticker dossier behind each one — so instead of starting tomorrow from a blank chart, you walk in with a plan.",
-  },
-  {
-    cat: "The Arsenal",
-    q: "Is there a market overview / heatmap?",
-    a: "Yes. A market-intelligence layer gives you the regime at a glance: sector heatmaps, leaders and laggards, internals (TICK / TRIN / ADD), market tide, and the macro catalysts on the calendar — so you know the environment before you take a single trade.",
-  },
-
-  // ── Signals & Data ────────────────────────────────────────────────────────
-  {
-    cat: "Signals & Data",
-    q: "How do alerts work?",
-    a: "BlackOut surfaces live, in-app alerts the moment flow and desk state change — a setup moving to WATCH, a play promoting to ENTRY, unusual flow stacking into a level. The signal reaches you in real time, so you act on structure forming, not after it's gone.",
-  },
-  {
-    cat: "Signals & Data",
-    q: "Is the data really real-time?",
-    a: "For members, yes — the desk, flow, gamma and dark-pool surfaces stream over live WebSocket feeds, not minute-delayed snapshots. Public and marketing previews may be shown on a delay; the live platform is built around immediacy.",
-  },
-  {
-    cat: "Signals & Data",
-    q: "Do you track your performance?",
-    a: "Yes — transparently. BlackOut keeps a verified, append-only track record of closed setups (win rate, best- and worst-case excursion), not a cherry-picked highlight reel. You can judge the engine on its actual results, by grade.",
-  },
-
-  // ── Membership ────────────────────────────────────────────────────────────
-  {
-    cat: "Membership",
-    q: "How do I get access?",
-    a: "Create your free BlackOut account, then choose monthly, yearly, or lifetime access using the same email. One click unlocks the full platform — no separate logins, no friction.",
-  },
-  {
-    cat: "Membership",
-    q: "What's included in Premium?",
-    a: "The entire arsenal, one membership: the SPX Sniper desk, the HELIX live flow feed, Largo AI, GEX / dealer positioning, dark-pool activity, Night Hawk, the market heatmap, and the verified track record. Nothing is held back behind a higher tier.",
-  },
-  {
-    cat: "Membership",
-    q: "Can I cancel anytime?",
-    a: "Yes. Billing is handled securely through Whop, and you can manage or cancel your membership anytime from your account. Questions about a charge, an invoice, or your plan? Email billing@blackouttrades.com and we'll sort it out personally.",
-  },
-
-  // ── Getting Started ───────────────────────────────────────────────────────
-  {
-    cat: "Getting Started",
-    q: "How do I get started in 5 minutes?",
-    a: "Create your account, unlock Premium, and open the SPX Sniper desk — the live read is there immediately. Ask Largo your first question (“what's the SPX setup right now?”), and if you're newer to options, start with the in-app Learn layer. You'll be reading the tape like a desk by the end of your first session.",
-  },
-  {
-    cat: "Getting Started",
-    q: "How do I reach the team?",
-    a: `Email us anytime at ${SUPPORT_EMAIL} — real humans, fast replies. Whether it's billing, access, a feature request, or a question about a setup, we've got you.`,
-  },
-];
+const FAQS: Faq[] = CATEGORIES.flatMap((c) =>
+  RAW[c.key].map((it, i) => ({
+    id: `${c.key}-${i + 1}`,
+    catKey: c.key,
+    cat: c.label,
+    q: it.q,
+    a: it.a,
+  }))
+);
 
 export function FaqSection() {
+  const [activeId, setActiveId] = useState<string>(FAQS[0].id);
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<string | null>(FAQS[0].q);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const q = query.trim().toLowerCase();
-  const matches = useMemo(() => {
-    if (!q) return null;
-    return FAQS.filter((f) => f.q.toLowerCase().includes(q) || f.a.toLowerCase().includes(q));
-  }, [q]);
+  const results = useMemo(
+    () => (q ? FAQS.filter((f) => (f.q + " " + f.a).toLowerCase().includes(q)) : null),
+    [q]
+  );
 
-  // global index for the mono number badges (stable across grouping)
-  const indexOf = (qq: string) => FAQS.findIndex((f) => f.q === qq);
+  const active = FAQS.find((f) => f.id === activeId) ?? FAQS[0];
+  const flatIndex = FAQS.findIndex((f) => f.id === active.id);
+
+  const open = useCallback((id: string) => {
+    setActiveId(id);
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${id}`);
+      requestAnimationFrame(() => headingRef.current?.focus());
+    }
+  }, []);
+
+  // deep-link: honor #<id> on mount
+  useEffect(() => {
+    const h = window.location.hash.slice(1);
+    if (h && FAQS.some((f) => f.id === h)) setActiveId(h);
+  }, []);
+
+  // keyboard: "/" focus search · Esc clear · ←/→ walk answers (when not typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const inInput = document.activeElement === searchRef.current;
+      if (e.key === "/" && !inInput) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape" && query) {
+        setQuery("");
+        searchRef.current?.blur();
+      } else if (!inInput && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        const idx = FAQS.findIndex((f) => f.id === activeId);
+        const next = e.key === "ArrowLeft" ? Math.max(0, idx - 1) : Math.min(FAQS.length - 1, idx + 1);
+        if (next !== idx) open(FAQS[next].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [query, activeId, open]);
 
   return (
-    <section
-      id="faq"
-      className="landing-section landing-section-cut relative py-24 md:py-32 px-4 md:px-8 overflow-hidden"
-    >
-      {/* ───────────── layered professional backdrop ───────────── */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        {/* base wash — lifts the void off pure black with a faint blue-green tint + vignette */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(125% 90% at 50% -10%, rgba(8,20,17,0.85), transparent 55%), radial-gradient(100% 80% at 50% 115%, rgba(6,10,20,0.9), transparent 60%)",
-          }}
-        />
-        {/* aurora orbs — slow drift, three hues for depth (reduced-motion auto-respected) */}
-        <motion.div
-          className="absolute rounded-full"
-          style={{ top: "-16%", right: "-8%", height: 640, width: 640, filter: "blur(150px)", background: "radial-gradient(closest-side, #00e676, transparent)", opacity: 0.15 }}
-          animate={{ x: [0, 34, -12, 0], y: [0, 22, -14, 0] }}
-          transition={{ duration: 34, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute rounded-full"
-          style={{ bottom: "-20%", left: "-10%", height: 560, width: 560, filter: "blur(150px)", background: "radial-gradient(closest-side, #22d3ee, transparent)", opacity: 0.1 }}
-          animate={{ x: [0, -26, 16, 0], y: [0, -18, 12, 0] }}
-          transition={{ duration: 42, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute rounded-full"
-          style={{ bottom: "-26%", left: "42%", height: 520, width: 520, filter: "blur(160px)", background: "radial-gradient(closest-side, #7c5cff, transparent)", opacity: 0.08 }}
-          animate={{ x: [0, 18, -20, 0], y: [0, -10, 8, 0] }}
-          transition={{ duration: 50, repeat: Infinity, ease: "easeInOut" }}
-        />
-        {/* institutional grid, masked to the center */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(0,230,118,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(0,230,118,0.6) 1px, transparent 1px)",
-            backgroundSize: "64px 64px",
-            maskImage: "radial-gradient(ellipse 75% 65% at 50% 38%, #000 30%, transparent 78%)",
-            WebkitMaskImage: "radial-gradient(ellipse 75% 65% at 50% 38%, #000 30%, transparent 78%)",
-          }}
-        />
-        {/* on-brand market-chart silhouette along the bottom */}
-        <svg
-          className="absolute bottom-0 left-0 w-full h-[42%]"
-          viewBox="0 0 1440 240"
-          preserveAspectRatio="none"
-          fill="none"
-        >
-          <defs>
-            <linearGradient id="faqArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#00e676" stopOpacity="0.10" />
-              <stop offset="100%" stopColor="#00e676" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M0,205 L90,195 L180,200 L270,175 L360,188 L450,160 L540,178 L630,150 L720,168 L810,140 L900,162 L990,135 L1080,156 L1170,128 L1260,150 L1350,122 L1440,145"
-            stroke="#1d9e75"
-            strokeOpacity="0.16"
-            strokeWidth="1.5"
-          />
-          <path
-            d="M0,180 L80,160 L160,172 L240,128 L320,150 L400,104 L480,126 L560,88 L640,110 L720,70 L800,98 L880,58 L960,84 L1040,46 L1120,72 L1200,36 L1280,60 L1360,28 L1440,50 L1440,240 L0,240 Z"
-            fill="url(#faqArea)"
-          />
-          <path
-            d="M0,180 L80,160 L160,172 L240,128 L320,150 L400,104 L480,126 L560,88 L640,110 L720,70 L800,98 L880,58 L960,84 L1040,46 L1120,72 L1200,36 L1280,60 L1360,28 L1440,50"
-            stroke="#00e676"
-            strokeOpacity="0.28"
-            strokeWidth="1.75"
-          />
-        </svg>
-        {/* fine film grain — removes banding + adds premium matte texture */}
-        <div
-          className="absolute inset-0 opacity-[0.05]"
-          style={{
-            mixBlendMode: "soft-light",
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-          }}
-        />
-        {/* crisp top hairline */}
-        <div
-          className="absolute top-0 left-0 right-0 h-px"
-          style={{ background: "linear-gradient(90deg, transparent, rgba(0,230,118,0.4), transparent)" }}
-        />
-      </div>
+    <section id="faq" className="relative lg:h-[100svh] lg:overflow-hidden">
+      <LandingBackdrop />
 
-      <div className="max-w-6xl mx-auto relative z-10 grid lg:grid-cols-[0.82fr_1.18fr] gap-10 lg:gap-16 items-start">
-        {/* ───────────────── LEFT: brand intro + support (sticky) ───────────────── */}
-        <motion.aside
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="lg:sticky lg:top-28"
-        >
-          <p className="font-mono text-[10px] tracking-[0.5em] text-bull uppercase mb-4 flex items-center gap-2">
-            <span className="inline-block h-[6px] w-[6px] rounded-full bg-bull" style={{ boxShadow: "0 0 10px #00e676" }} />
-            The Briefing
-          </p>
-          <h2 className="font-anton text-5xl md:text-[4.25rem] leading-[0.92] tracking-tight text-white">
-            EVERYTHING,
-            <br />
-            <span
-              style={{
-                background: "linear-gradient(90deg, #00e676, #34d399 60%, #7dd3fc)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
-            >
-              EXPLAINED.
-            </span>
-          </h2>
-          <p className="mt-6 text-[15px] leading-relaxed text-white/65 max-w-sm">
-            Every tool, every signal, every answer — what BlackOut is, how the arsenal works, and how
-            to get the institutional edge running for you in minutes.
-          </p>
-
-          {/* support card */}
-          <div
-            className="mt-8 rounded-2xl border p-6 relative overflow-hidden"
-            style={{
-              borderColor: "rgba(0,230,118,0.22)",
-              background: "linear-gradient(180deg, rgba(0,230,118,0.07), rgba(8,8,14,0.6))",
-              backdropFilter: "blur(14px)",
-            }}
-          >
-            <p className="font-mono text-[10px] tracking-[0.35em] text-bull uppercase mb-2">
-              Still stuck?
-            </p>
-            <p className="text-white font-semibold text-[15px] leading-snug">
-              Talk to a human on the desk.
-            </p>
-            <p className="mt-1.5 text-[13px] text-white/55 leading-relaxed">
-              Real people, fast replies — billing, access, or a read on a setup.
-            </p>
-            <a
-              href={`mailto:${SUPPORT_EMAIL}`}
-              className="mt-4 inline-flex items-center gap-2.5 rounded-xl px-5 py-3 font-semibold text-[14px] tracking-[0.01em] transition-transform duration-200 hover:scale-[1.02]"
-              style={{
-                background: "linear-gradient(180deg, #00e676, #0f9d58)",
-                color: "#021c14",
-                boxShadow: "0 0 34px -10px rgba(0,230,118,0.6)",
-              }}
-            >
-              <span className="font-mono text-[15px]" aria-hidden>
-                &#9993;
-              </span>
-              {SUPPORT_EMAIL}
-            </a>
+      <div className="faq-board relative z-10 mx-auto w-full max-w-[1440px] px-4 lg:px-8 py-14 lg:py-6 lg:h-full">
+        {/* ── BRAND ── */}
+        <div className="faq-tile fa-brand justify-center">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="font-mono text-[10px] tracking-[0.3em] text-cyan-400 uppercase flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-bull animate-pulse motion-reduce:animate-none"
+                  style={{ boxShadow: "0 0 10px #00e676" }}
+                />
+                The Briefing
+              </p>
+              <h2 className="font-anton text-2xl md:text-[2rem] leading-none mt-1.5 text-white">
+                EVERYTHING,{" "}
+                <span
+                  style={{
+                    background: "linear-gradient(90deg, #00e676, #34d399 55%, #7dd3fc)",
+                    WebkitBackgroundClip: "text",
+                    backgroundClip: "text",
+                    color: "transparent",
+                  }}
+                >
+                  EXPLAINED.
+                </span>
+              </h2>
+            </div>
+            <div className="text-left sm:text-right">
+              <p className="font-mono text-[10px] tracking-[0.2em] text-sky-300">
+                21 ANSWERS · 5 DESKS · ONE WINDOW
+              </p>
+              <p className="font-mono text-[10px] mt-1.5 flex items-center gap-3 sm:justify-end text-white/85">
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-bull" /> Data live, real time
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-sky-300" /> 5 desks online
+                </span>
+              </p>
+            </div>
           </div>
-        </motion.aside>
+        </div>
 
-        {/* ───────────────── RIGHT: search + grouped accordion ───────────────── */}
-        <div>
-          {/* search */}
-          <div className="relative mb-7">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-bull/70 font-mono text-sm" aria-hidden>
+        {/* ── SEARCH ── */}
+        <div className="faq-tile fa-search justify-center">
+          <label htmlFor="faq-search" className="sr-only">
+            Search answers
+          </label>
+          <div className="relative">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-bull/70 font-mono text-sm"
+            >
               &#9906;
             </span>
             <input
+              id="faq-search"
+              ref={searchRef}
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search — flow, Largo, gamma, billing…"
-              aria-label="Search frequently asked questions"
-              className="w-full rounded-xl bg-[rgba(8,8,14,0.7)] border border-[rgba(0,230,118,0.16)] py-3.5 pl-11 pr-4 text-sm text-white placeholder:text-white/35 outline-none transition-colors focus:border-bull/60"
-              style={{ backdropFilter: "blur(10px)" }}
+              className="w-full rounded-xl bg-[rgba(8,8,14,0.7)] border border-[rgba(0,230,118,0.16)] py-2.5 pl-10 pr-24 text-sm text-white placeholder:text-sky-300/45 outline-none transition-colors focus:border-bull/60"
             />
+            <span
+              aria-live="polite"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums text-cyan-400"
+            >
+              {results ? `${results.length} match${results.length === 1 ? "" : "es"}` : ""}
+            </span>
           </div>
-
-          {matches ? (
-            <div className="flex flex-col gap-3">
-              <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-white/40 mb-1">
-                {matches.length} result{matches.length === 1 ? "" : "s"}
-              </p>
-              <AnimatePresence initial={false} mode="popLayout">
-                {matches.map((item) => (
-                  <FaqItem
-                    key={item.q}
-                    item={item}
-                    index={indexOf(item.q)}
-                    isOpen={open === item.q}
-                    onToggle={() => setOpen(open === item.q ? null : item.q)}
-                  />
-                ))}
-              </AnimatePresence>
-              {matches.length === 0 && (
-                <div className="rounded-xl border border-[rgba(0,230,118,0.14)] bg-[rgba(8,8,14,0.7)] px-5 py-8 text-center">
-                  <p className="text-sm text-white/65 m-0">
-                    No matches for &ldquo;{query}&rdquo;. Try another term — or email us directly.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-9">
-              {CATEGORY_ORDER.map((cat, ci) => {
-                const items = FAQS.filter((f) => f.cat === cat);
-                return (
-                  <div key={cat}>
-                    <div className="flex items-center gap-3 mb-3.5">
-                      <span className="font-mono text-[11px] text-bull/70 tabular-nums">
-                        {String(ci + 1).padStart(2, "0")}
-                      </span>
-                      <span className="font-mono text-[11px] tracking-[0.28em] uppercase text-white/55">
-                        {cat}
-                      </span>
-                      <span className="flex-1 h-px" style={{ background: "linear-gradient(90deg, rgba(0,230,118,0.25), transparent)" }} />
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      {items.map((item) => (
-                        <FaqItem
-                          key={item.q}
-                          item={item}
-                          index={indexOf(item.q)}
-                          isOpen={open === item.q}
-                          onToggle={() => setOpen(open === item.q ? null : item.q)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
+
+        {/* ── CATEGORY TILES (or search results) ── */}
+        {!results ? (
+          CATEGORIES.map((c) => {
+            const items = FAQS.filter((f) => f.catKey === c.key);
+            return (
+              <div key={c.key} className={`faq-tile fa-${c.key}`} role="group" aria-label={c.label}>
+                <p className="font-mono text-[10px] tracking-[0.2em] uppercase flex items-center gap-2 mb-2 shrink-0">
+                  <span className="text-bull/70 tabular-nums">{c.n}</span>
+                  <span className="text-sky-300">{c.label}</span>
+                  <span className="ml-auto text-cyan-400 tabular-nums">{items.length}</span>
+                </p>
+                <ul className="flex flex-col gap-0.5 min-h-0">
+                  {items.map((f) => {
+                    const on = active.id === f.id;
+                    return (
+                      <li key={f.id}>
+                        <button
+                          onClick={() => open(f.id)}
+                          aria-pressed={on}
+                          aria-controls="faq-reader"
+                          className="group/q w-full flex items-center gap-2 text-left rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
+                          style={{
+                            borderLeft: `2px solid ${on ? "#00e676" : "transparent"}`,
+                            background: on ? "rgba(0,230,118,0.08)" : "transparent",
+                          }}
+                        >
+                          <span
+                            className="truncate text-[13px] transition-colors"
+                            style={{ color: on ? "#fff" : "rgba(255,255,255,0.82)" }}
+                          >
+                            {f.q}
+                          </span>
+                          <span
+                            aria-hidden
+                            className="ml-auto shrink-0 text-bull/60 transition-transform group-hover/q:translate-x-0.5"
+                          >
+                            &rsaquo;
+                          </span>
+                        </button>
+                        {/* mobile inline answer (desktop uses the reader rail) */}
+                        {on && (
+                          <div className="lg:hidden px-2 pb-2.5 pt-1">
+                            <p className="text-[13px] leading-relaxed text-white/80 m-0">{f.a}</p>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })
+        ) : (
+          <div className="faq-tile fa-results faq-scroll" role="region" aria-label="Search results">
+            <p className="font-mono text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-2 shrink-0">
+              {results.length} result{results.length === 1 ? "" : "s"}
+            </p>
+            {results.length === 0 ? (
+              <p className="text-sm text-white/80 m-0">
+                No matches for &ldquo;{query}&rdquo; —{" "}
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-bull hover:underline">
+                  email the desk
+                </a>
+                .
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {results.map((f) => (
+                  <li key={f.id}>
+                    <button
+                      onClick={() => {
+                        open(f.id);
+                        setQuery("");
+                      }}
+                      className="w-full text-left rounded-md px-3 py-2 transition-colors hover:bg-white/[0.05]"
+                    >
+                      <span className="block font-mono text-[10px] tracking-[0.15em] text-sky-300 uppercase">
+                        {f.cat}
+                      </span>
+                      <span className="block text-[14px] text-white">{f.q}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* ── SUPPORT ── */}
+        <div className="faq-tile fa-support">
+          <div className="flex items-center justify-between gap-4 flex-wrap h-full">
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="text-bull text-lg">
+                &#9993;
+              </span>
+              <div>
+                <p className="text-white font-semibold text-[14px] leading-tight m-0">
+                  Still stuck? Talk to a human on the desk.
+                </p>
+                <p className="font-mono text-[10px] text-sky-300 mt-1 hidden xl:block">
+                  &uarr;&darr; navigate · Enter open · &larr;&rarr; prev/next · / search · Esc clear
+                </p>
+              </div>
+            </div>
+            <a
+              href={`mailto:${SUPPORT_EMAIL}`}
+              className="rounded-xl px-5 py-2.5 font-semibold text-[13px] tracking-[0.01em] transition-transform hover:scale-[1.02]"
+              style={{
+                background: "linear-gradient(180deg, #00e676, #0f9d58)",
+                color: "#021c14",
+                boxShadow: "0 0 30px -10px rgba(0,230,118,0.6)",
+              }}
+            >
+              {SUPPORT_EMAIL}
+            </a>
+          </div>
+        </div>
+
+        {/* ── READER (desktop persistent rail — the single scroll owner) ── */}
+        <section
+          id="faq-reader"
+          role="region"
+          aria-live="polite"
+          aria-label="Answer"
+          className="faq-tile fa-reader hidden lg:flex"
+          style={{
+            border: "1px solid rgba(0,230,118,0.4)",
+            background: "linear-gradient(180deg, rgba(0,230,118,0.06), rgba(8,9,14,0.85))",
+            boxShadow: "0 18px 60px -28px rgba(0,230,118,0.5)",
+          }}
+        >
+          <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-cyan-400 shrink-0">
+            {active.cat} / {String(flatIndex + 1).padStart(2, "0")}
+          </p>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={active.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+              className="flex flex-col min-h-0 flex-1 mt-2"
+            >
+              <h3
+                ref={headingRef}
+                tabIndex={-1}
+                className="font-anton text-xl md:text-2xl leading-tight text-white outline-none shrink-0"
+              >
+                {active.q}
+              </h3>
+              <div
+                className="mt-2.5 mb-3 h-px shrink-0"
+                style={{ background: "linear-gradient(90deg, rgba(0,230,118,0.3), transparent 70%)" }}
+              />
+              <div
+                ref={bodyRef}
+                tabIndex={0}
+                className="faq-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 text-[14px] leading-[1.72] text-white/85"
+              >
+                {active.a}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+          <div
+            className="mt-3 pt-3 flex items-center justify-between font-mono text-[11px] text-sky-300 shrink-0"
+            style={{ borderTop: "1px solid rgba(125,211,252,0.1)" }}
+          >
+            <button
+              onClick={() => open(FAQS[Math.max(0, flatIndex - 1)].id)}
+              disabled={flatIndex === 0}
+              className="disabled:opacity-30 hover:text-bull transition-colors"
+            >
+              &lsaquo; Prev
+            </button>
+            <span className="tabular-nums text-white/70">
+              {String(flatIndex + 1).padStart(2, "0")} / {FAQS.length}
+            </span>
+            <button
+              onClick={() => open(FAQS[Math.min(FAQS.length - 1, flatIndex + 1)].id)}
+              disabled={flatIndex === FAQS.length - 1}
+              className="disabled:opacity-30 hover:text-bull transition-colors"
+            >
+              Next &rsaquo;
+            </button>
+          </div>
+        </section>
       </div>
     </section>
-  );
-}
-
-function FaqItem({
-  item,
-  index,
-  isOpen,
-  onToggle,
-}: {
-  item: Faq;
-  index: number;
-  isOpen: boolean;
-  onToggle: () => void;
-}) {
-  const answerId = `faq-a-${index}`;
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className="group relative rounded-xl overflow-hidden"
-      style={{
-        background: isOpen ? "rgba(12,16,22,0.92)" : "rgba(8,9,14,0.66)",
-        border: `1px solid ${isOpen ? "rgba(0,230,118,0.42)" : "rgba(125,211,252,0.08)"}`,
-        backdropFilter: "blur(12px)",
-        boxShadow: isOpen ? "0 18px 50px -22px rgba(0,230,118,0.5)" : "none",
-        transition: "background .25s ease, border-color .25s ease, box-shadow .25s ease",
-      }}
-    >
-      {/* left accent rail */}
-      <span
-        aria-hidden
-        className="absolute left-0 top-0 bottom-0 w-[2px] transition-all duration-300"
-        style={{
-          background: isOpen ? "#00e676" : "rgba(0,230,118,0.25)",
-          boxShadow: isOpen ? "0 0 16px #00e676" : "none",
-        }}
-      />
-      <button
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        aria-controls={answerId}
-        className="w-full flex items-center gap-4 pl-5 pr-5 py-[18px] text-left"
-      >
-        <span
-          className="font-mono text-[11px] tabular-nums shrink-0 w-6 transition-colors"
-          style={{ color: isOpen ? "#00e676" : "rgba(125,211,252,0.5)" }}
-        >
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <span
-          className="flex-1 text-[15px] md:text-[15.5px] font-semibold tracking-[0.005em] transition-colors"
-          style={{ color: isOpen ? "#fff" : "rgba(255,255,255,0.9)" }}
-        >
-          {item.q}
-        </span>
-        <span
-          className="relative shrink-0 h-6 w-6 grid place-items-center rounded-md transition-all duration-300"
-          style={{
-            border: `1px solid ${isOpen ? "rgba(0,230,118,0.5)" : "rgba(255,255,255,0.12)"}`,
-            background: isOpen ? "rgba(0,230,118,0.12)" : "transparent",
-          }}
-          aria-hidden
-        >
-          <span
-            className="font-mono text-[15px] leading-none text-bull transition-transform duration-300"
-            style={{ transform: isOpen ? "rotate(45deg)" : "rotate(0deg)" }}
-          >
-            +
-          </span>
-        </span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            id={answerId}
-            key="content"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-            style={{ overflow: "hidden" }}
-          >
-            <div className="pl-[3.4rem] pr-6 pb-5 -mt-1">
-              <div
-                className="mb-3 h-px w-full"
-                style={{ background: "linear-gradient(90deg, rgba(0,230,118,0.22), transparent 70%)" }}
-              />
-              <p className="text-[14px] leading-[1.72] text-white/75 m-0">{item.a}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
   );
 }
