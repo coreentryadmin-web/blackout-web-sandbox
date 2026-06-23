@@ -1,4 +1,4 @@
-import { dbConfigured, getMeta, setMeta } from "@/lib/db";
+import { dbConfigured, getMeta, setMeta, tryAdvisoryLock, releaseAdvisoryLock } from "@/lib/db";
 import { persistAndPublishFlowAlert } from "@/lib/flow-persist";
 import { fetchMarketFlowAlertRows } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
@@ -7,6 +7,7 @@ import { uwSocket, isUwChannelFresh } from "@/lib/ws/uw-socket";
 const CURSOR_KEY = "uw_flow_cursor";
 const CURSOR_ID_KEY = "uw_flow_cursor_max_id";
 const INGEST_LOCK_MS = 5_000;
+const FLOW_INGEST_LOCK = "flow-ingest";
 
 let lastIngestAt = 0;
 export let ingestInFlight: Promise<FlowIngestResult> | null = null;
@@ -44,57 +45,79 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
     return { ok: false, ingested: 0, polled: 0, skipped: "DATABASE_URL not set" };
   }
 
-  const cursor = await getMeta(CURSOR_KEY);
-  const cursorMaxId = Number((await getMeta(CURSOR_ID_KEY)) ?? 0);
-  let rows: Awaited<ReturnType<typeof fetchMarketFlowAlertRows>>;
+  // Cross-replica guard: only ONE Railway replica runs the actual UW fetch/persist at a
+  // time. pg_try_advisory_lock is non-blocking (try-only) so contending replicas can never
+  // deadlock — the loser returns immediately. NOTE: the cron route calls runFlowIngest()
+  // DIRECTLY (bypassing the in-process ingestInFlight coalescer), so this lock is the gate
+  // for cross-process AND route-vs-coalescer same-process overlap. With DATABASE_URL unset
+  // tryAdvisoryLock returns true and releaseAdvisoryLock is a no-op, so single-replica/dev
+  // is unchanged. (alert_id UNIQUE already prevents duplicate rows; this just saves UW calls.)
+  const acquired = await tryAdvisoryLock(FLOW_INGEST_LOCK);
+  if (!acquired) {
+    return { ok: true, ingested: 0, polled: 0, skipped: "locked" };
+  }
+
   try {
-    rows = await fetchMarketFlowAlertRows({
-      limit: 100,
-      min_premium: Number(process.env.UW_FLOW_MIN_PREMIUM ?? 200_000),
-      newer_than: cursor ?? undefined,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("[flow-ingest] UW fetch skipped:", message);
-    return { ok: false, ingested: 0, polled: 0, skipped: message };
-  }
-  let ingested = 0;
-  let newestCursor = cursor;
-  let newestMaxId = cursorMaxId;
-
-  for (const { raw, flow } of rows) {
-    const rowId = Number(raw.id ?? raw.alert_id ?? 0);
-    const created = String(raw.created_at ?? "");
-    if (!created && rowId > 0 && rowId <= cursorMaxId) {
-      continue;
-    }
-
+    const cursor = await getMeta(CURSOR_KEY);
+    const cursorMaxId = Number((await getMeta(CURSOR_ID_KEY)) ?? 0);
+    let rows: Awaited<ReturnType<typeof fetchMarketFlowAlertRows>>;
     try {
-      const { inserted } = await persistAndPublishFlowAlert(raw, flow);
-      if (inserted) ingested += 1;
+      rows = await fetchMarketFlowAlertRows({
+        limit: 100,
+        min_premium: Number(process.env.UW_FLOW_MIN_PREMIUM ?? 200_000),
+        newer_than: cursor ?? undefined,
+      });
     } catch (error) {
-      console.error("[flow-ingest] persist row failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[flow-ingest] UW fetch skipped:", message);
+      return { ok: false, ingested: 0, polled: 0, skipped: message };
+    }
+    let ingested = 0;
+    let newestCursor = cursor;
+    let newestMaxId = cursorMaxId;
+
+    for (const { raw, flow } of rows) {
+      const rowId = Number(raw.id ?? raw.alert_id ?? 0);
+      const created = String(raw.created_at ?? "");
+      if (!created && rowId > 0 && rowId <= cursorMaxId) {
+        continue;
+      }
+
+      try {
+        const { inserted } = await persistAndPublishFlowAlert(raw, flow);
+        if (inserted) ingested += 1;
+      } catch (error) {
+        console.error("[flow-ingest] persist row failed:", error);
+      }
+
+      // Cursor must stay in UW's native `created_at` format and is echoed back as
+      // `newer_than`. Never mix in `start_time` (epoch) — comparing epoch vs ISO
+      // strings corrupts ordering and can drop or duplicate alerts. Rows without
+      // `created_at` advance a numeric id cursor instead (still ingested + deduped).
+      if (created && (!newestCursor || created > newestCursor)) {
+        newestCursor = created;
+      } else if (!created && rowId > newestMaxId) {
+        newestMaxId = rowId;
+      }
     }
 
-    // Cursor must stay in UW's native `created_at` format and is echoed back as
-    // `newer_than`. Never mix in `start_time` (epoch) — comparing epoch vs ISO
-    // strings corrupts ordering and can drop or duplicate alerts. Rows without
-    // `created_at` advance a numeric id cursor instead (still ingested + deduped).
-    if (created && (!newestCursor || created > newestCursor)) {
-      newestCursor = created;
-    } else if (!created && rowId > newestMaxId) {
-      newestMaxId = rowId;
+    if (newestCursor && newestCursor !== cursor) {
+      await setMeta(CURSOR_KEY, newestCursor);
+    }
+    if (newestMaxId > cursorMaxId) {
+      await setMeta(CURSOR_ID_KEY, String(newestMaxId));
+    }
+
+    return { ok: true, ingested, polled: rows.length };
+  } finally {
+    // Release inside its own try/catch so a release failure can never mask the real
+    // return value / error from the body above. Lock is session-scoped on a held client.
+    try {
+      await releaseAdvisoryLock(FLOW_INGEST_LOCK);
+    } catch (releaseErr) {
+      console.warn("[flow-ingest] advisory lock release failed:", releaseErr);
     }
   }
-
-  if (newestCursor && newestCursor !== cursor) {
-    await setMeta(CURSOR_KEY, newestCursor);
-  }
-  if (newestMaxId > cursorMaxId) {
-    await setMeta(CURSOR_ID_KEY, String(newestMaxId));
-  }
-
-  return { ok: true, ingested, polled: rows.length };
 }
 
 export async function maybeRunFlowIngest(force = false): Promise<FlowIngestResult | null> {

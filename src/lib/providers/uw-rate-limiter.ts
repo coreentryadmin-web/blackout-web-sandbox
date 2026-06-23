@@ -28,6 +28,59 @@ let recent429Timestamps: number[] = [];
 let rateLimitSummaryCount = 0;
 let rateLimitSummaryWindowStart = Date.now();
 
+/** Pub/sub channel a replica uses to broadcast its breaker trip to peers. */
+const BREAKER_CHANNEL = "blackout:uw:breaker";
+/**
+ * Largest future a peer's breaker trip may push our pause to. A poisoned/buggy peer
+ * publishing openUntil = year 3000 must NOT wedge this replica open forever, so we
+ * clamp to a few normal pause windows ahead of local now.
+ */
+const BREAKER_MAX_FUTURE_MS = CIRCUIT_PAUSE_MS * 3;
+let breakerSubscribed = false;
+
+/**
+ * Pure merge: given the current breaker deadline, a peer-published openUntil, the
+ * current clock, and the max future window, return the new deadline. Idempotent
+ * (Math.max) so a replica receiving its own trip is harmless — no INSTANCE_ID needed.
+ * Clamps any peer value beyond now+maxFutureMs (poison guard) and ignores non-finite
+ * / past values (returns current unchanged).
+ */
+export function mergeBreakerOpenUntil(
+  current: number,
+  peerOpenUntil: number,
+  now: number,
+  maxFutureMs: number = BREAKER_MAX_FUTURE_MS
+): number {
+  if (!Number.isFinite(peerOpenUntil) || peerOpenUntil <= now) return current;
+  const clamped = Math.min(peerOpenUntil, now + maxFutureMs);
+  return Math.max(current, clamped);
+}
+
+/**
+ * Lazy, once-per-process passive subscriber: a peer's trip extends our pause.
+ * redis-pubsub is DYNAMICALLY imported (no static @/ dep — keeps this module + its unit
+ * tests alias-free, mirrors getSharedRedis) and no-ops with no Redis (local-only breaker).
+ */
+function ensureBreakerSubscription(): void {
+  if (breakerSubscribed) return;
+  breakerSubscribed = true; // set before await: prevents duplicate subscribe races
+  void import("@/lib/redis-pubsub")
+    .then(({ redisSubscribe }) =>
+      redisSubscribe(BREAKER_CHANNEL, (msg) => {
+        try {
+          const parsed = JSON.parse(msg) as { openUntil?: unknown };
+          const peer = typeof parsed.openUntil === "number" ? parsed.openUntil : NaN;
+          circuitOpenUntil = mergeBreakerOpenUntil(circuitOpenUntil, peer, Date.now());
+        } catch {
+          /* ignore malformed peer message */
+        }
+      })
+    )
+    .catch(() => {
+      breakerSubscribed = false; // allow a later retry if the import/subscribe failed
+    });
+}
+
 const coalescedInflight = new Map<string, Promise<unknown>>();
 
 type RedisClient = {
@@ -180,6 +233,7 @@ async function acquireLocalSlot(): Promise<void> {
 }
 
 async function acquireSlot(): Promise<void> {
+  ensureBreakerSubscription();
   await waitForCircuit();
   if (process.env.REDIS_URL?.trim()) {
     for (;;) {
@@ -229,6 +283,12 @@ export function noteUw429(_path?: string): void {
 
   if (recent429Timestamps.length >= CIRCUIT_429_THRESHOLD && now >= circuitOpenUntil) {
     circuitOpenUntil = now + CIRCUIT_PAUSE_MS;
+    // Broadcast ONLY on the rare trip (never per call). Fire-and-forget via a lazy
+    // dynamic import; peers Math.max-merge it to extend their own pause. No-ops with no
+    // Redis (local-only breaker exactly as today).
+    void import("@/lib/redis-pubsub")
+      .then(({ redisPublish }) => redisPublish(BREAKER_CHANNEL, JSON.stringify({ openUntil: circuitOpenUntil })))
+      .catch(() => {});
     console.warn(
       `[uw] circuit breaker open ${Math.round(CIRCUIT_PAUSE_MS / 1000)}s (${recent429Timestamps.length} 429s in 60s)`
     );
@@ -242,6 +302,7 @@ export function resetUwCircuitForTest(): void {
   circuitOpenUntil = 0;
   recent429Timestamps = [];
   rateLimitSummaryCount = 0;
+  breakerSubscribed = false;
 }
 
 /** Pace a single UW HTTP call through local + optional Redis-global buckets. */
