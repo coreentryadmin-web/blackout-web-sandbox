@@ -3,8 +3,21 @@
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import type { CSSProperties } from "react";
+import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
 
-const FEATURES = [
+const FEATURES: {
+  num: string;
+  title: string;
+  sub: string;
+  desc: string;
+  tier: string;
+  accent: string;
+  rotate: string;
+  topAccent: string;
+  badgeGlow: string;
+  /** Per-product sigil; null for cards with no single product (e.g. Pre-Market Brief). */
+  mark: MarkProduct | null;
+}[] = [
   {
     num: "01",
     title: "SPX LIVE",
@@ -15,6 +28,7 @@ const FEATURES = [
     rotate: "-rotate-1",
     topAccent: "green",
     badgeGlow: "bull",
+    mark: "spx",
   },
   {
     num: "02",
@@ -26,6 +40,7 @@ const FEATURES = [
     rotate: "rotate-1",
     topAccent: "purple",
     badgeGlow: "purple",
+    mark: "helix",
   },
   {
     num: "03",
@@ -37,6 +52,7 @@ const FEATURES = [
     rotate: "-rotate-2",
     topAccent: "ember",
     badgeGlow: "ember",
+    mark: "heatmap",
   },
   {
     num: "04",
@@ -48,6 +64,7 @@ const FEATURES = [
     rotate: "rotate-2",
     topAccent: "blue",
     badgeGlow: "purple",
+    mark: "largo",
   },
   {
     num: "05",
@@ -59,6 +76,7 @@ const FEATURES = [
     rotate: "-rotate-1",
     topAccent: "cyan",
     badgeGlow: "cyan",
+    mark: "nighthawk",
   },
   {
     num: "06",
@@ -70,8 +88,9 @@ const FEATURES = [
     rotate: "rotate-1",
     topAccent: "yellow",
     badgeGlow: "gold",
+    mark: null,
   },
-] as const;
+];
 
 const ACCENT_COLORS: Record<string, string> = {
   green: "#00e676",
@@ -168,6 +187,11 @@ export function FeaturesGrid() {
                   <span className="bento-card-watermark" aria-hidden>
                     {f.num}
                   </span>
+                  {f.mark && (
+                    <span className="mb-3 block" aria-hidden>
+                      <ProductMark product={f.mark} size={42} />
+                    </span>
+                  )}
                   <span className={clsx("font-mono text-sm font-bold opacity-40", f.accent.split(" ")[1])}>
                     {f.num}
                   </span>

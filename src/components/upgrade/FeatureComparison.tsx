@@ -1,4 +1,14 @@
 import { FEATURE_MATRIX } from "@/lib/upsell-features";
+import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
+
+// Product rows get a small static sigil prefix; everything else stays unmarked.
+const LABEL_TO_MARK: Record<string, MarkProduct> = {
+  "Live HELIX flow feed": "helix",
+  "SPX live dashboard": "spx",
+  "Largo AI terminal": "largo",
+  "Night Hawk scanner": "nighthawk",
+  "Full heatmaps": "heatmap",
+};
 
 // Presentational only. Server component (no hooks). Free-vs-Premium matrix on the
 // emerald brand — no grey, no purple (bull / bear / white / sky tokens only).
@@ -25,7 +35,12 @@ export function FeatureComparison() {
             }
           >
             <div className="min-w-0">
-              <p className="text-sm font-semibold leading-tight text-white">{row.label}</p>
+              <p className="flex items-center gap-2 text-sm font-semibold leading-tight text-white">
+                {LABEL_TO_MARK[row.label] && (
+                  <ProductMark product={LABEL_TO_MARK[row.label]} size={22} animated={false} className="shrink-0" />
+                )}
+                {row.label}
+              </p>
               <p className="mt-0.5 text-xs leading-snug text-sky-300">{row.detail}</p>
             </div>
             <span className="w-16 text-center text-base" aria-label={row.free ? "Included" : "Not included"}>

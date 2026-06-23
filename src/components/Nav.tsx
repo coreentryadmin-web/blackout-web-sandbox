@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
 import { OnboardingTrigger } from "@/components/OnboardingTrigger";
+import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
@@ -43,7 +44,9 @@ function FeatureCards({ path, onNavigate }: { path: string; onNavigate?: () => v
           onClick={onNavigate}
           className={clsx("nav-card", `nav-accent-${it.accent}`, path.startsWith(it.href) && "nav-card-active")}
         >
-          <span className="nav-card-chip" aria-hidden />
+          <span className="nav-card-chip" aria-hidden>
+            <ProductMark product={NAV_TO_MARK[it.accent]} size={30} />
+          </span>
           <span className="nav-card-label font-syne">{it.label}</span>
           <span className="nav-card-sub font-mono">{it.sub}</span>
           <span className="nav-card-open font-mono" aria-hidden>

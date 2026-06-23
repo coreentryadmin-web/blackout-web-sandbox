@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { LandingChrome } from "@/components/LandingChrome";
+import { SharedSigilDefs } from "@/components/marks/SharedSigilDefs";
 import { SessionCacheGuard } from "@/components/SessionCacheGuard";
 import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { MotionProvider } from "@/components/MotionProvider";
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="void-bg antialiased">
+        <SharedSigilDefs />
         <ClerkProvider>
           <MotionProvider>
             <SessionCacheGuard />

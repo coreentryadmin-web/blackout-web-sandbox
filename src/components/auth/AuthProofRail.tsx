@@ -1,4 +1,14 @@
 import { FEATURE_MATRIX } from "@/lib/upsell-features";
+import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
+
+// Map the ledger rows to their product sigil. Rows without a single product keep the ✓.
+const LABEL_TO_MARK: Record<string, MarkProduct> = {
+  "Live HELIX flow feed": "helix",
+  "SPX live dashboard": "spx",
+  "Largo AI terminal": "largo",
+  "Night Hawk scanner": "nighthawk",
+  "Full heatmaps": "heatmap",
+};
 
 /**
  * Proof rail for the auth / upgrade screens.
@@ -23,17 +33,24 @@ export function AuthProofRail({ variant }: { variant: "auth" | "upgrade" }) {
     if (variant === "upgrade") return null;
     return (
       <ul className="flex flex-col gap-3">
-        {FEATURE_MATRIX.slice(0, 4).map((f) => (
+        {FEATURE_MATRIX.slice(0, 4).map((f) => {
+          const mark = LABEL_TO_MARK[f.label];
+          return (
           <li key={f.label} className="flex items-start gap-3">
-            <span className="mt-0.5 text-bull" aria-hidden>
-              ✓
-            </span>
+            {mark ? (
+              <ProductMark product={mark} size={26} className="mt-0.5 shrink-0" />
+            ) : (
+              <span className="mt-0.5 text-bull" aria-hidden>
+                ✓
+              </span>
+            )}
             <span>
               <span className="block font-syne text-sm font-semibold text-white">{f.label}</span>
               <span className="block text-xs text-sky-300">{f.detail}</span>
             </span>
           </li>
-        ))}
+          );
+        })}
       </ul>
     );
   }

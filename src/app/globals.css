@@ -10548,3 +10548,140 @@ html.nav-locked body { overflow: hidden; }
   .footer-wm { animation: none; }
   .footer-sheen-bar { animation: none; opacity: 0; }
 }
+
+/* === BLACKOUT SIGIL SYSTEM === */
+/* --- shared tokens (define once) --- */
+:root{
+  --bo-pulse:6s;
+  --ease-draw:cubic-bezier(.22,1,.36,1);
+  --ease-breath:cubic-bezier(.4,0,.6,1);
+  --ease-sweep:cubic-bezier(.65,0,.35,1);
+  --ease-snap:cubic-bezier(.34,1.56,.64,1);
+}
+.bo-sigil{display:block}
+.bo-sigil [class*="bo-glowgrp"],.bo-sigil .bo-scan,.bo-sigil .bo-flow,
+.bo-sigil .bo-wave-path,.bo-sigil .nh-sweep{will-change:transform,opacity}
+
+/* --- shared keyframes --- */
+@keyframes boBreath{0%,100%{opacity:.55;transform:scale(.92)}50%{opacity:1;transform:scale(1.06)}}
+@keyframes boShimmer{0%,100%{opacity:.4}50%{opacity:.75}}
+@keyframes boRingExpand{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes boPop{0%{transform:scale(0)}100%{transform:scale(1)}}
+@keyframes boSpinCW{to{transform:rotate(360deg)}}
+@keyframes boSpinCCW{to{transform:rotate(-360deg)}}
+
+/* ============ SPX ============ */
+.bo-spx .bo-ring{transform-origin:32px 32px;transition:transform .32s ease-out}
+.bo-spx .bo-node,.bo-spx .bo-node-core,.bo-spx .bo-node-halo{transform-box:fill-box;transform-origin:center}
+.bo-spx .bo-curve{stroke-dasharray:62}
+@keyframes boSweep{0%{transform:translateX(-34px);opacity:0}6%{opacity:1}20%{transform:translateX(34px);opacity:1}26%{opacity:0}100%{transform:translateX(34px);opacity:0}}
+@keyframes boDrawCurve{from{stroke-dashoffset:62}to{stroke-dashoffset:0}}
+.bo-spx .bo-node-core{animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-spx .bo-node-halo{animation:boBreath 1.5s var(--ease-breath) infinite .18s}
+.bo-spx .bo-glowgrp{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-spx .bo-scan{animation:boSweep var(--bo-pulse) var(--ease-sweep) infinite}
+.bo-spx.is-live .bo-ring{animation:boRingExpand .5s var(--ease-draw) both}
+.bo-spx.is-live .bo-r2{animation-delay:.08s}
+.bo-spx.is-live .bo-r3{animation-delay:.16s}
+.bo-spx.is-live .bo-curve{animation:boDrawCurve .9s var(--ease-draw) .3s both}
+.bo-spx.is-live .bo-node{animation:boPop .4s var(--ease-snap) 1s both}
+.bo-spx:hover .bo-node-core,.bo-spx:hover .bo-node-halo{animation-duration:.9s}
+.bo-spx:hover .bo-scan{animation-duration:3.6s}
+.bo-spx:hover .bo-glowgrp{animation-duration:1.8s}
+.bo-spx:hover .bo-ring{transform:scale(.95);transition:transform .22s ease-out}
+
+/* ============ HELIX ============ */
+.bo-helix .bo-ring{transform-origin:32px 32px;animation:boSpinCW 6s linear infinite}
+.bo-helix .bo-strandA,.bo-helix .bo-strandB{stroke-dasharray:120;stroke-dashoffset:0}
+@keyframes boHelixDrift{0%{transform:translateY(-16px);opacity:0}12%{opacity:1}88%{opacity:1}100%{transform:translateY(16px);opacity:0}}
+@keyframes boDraw120{from{stroke-dashoffset:120}to{stroke-dashoffset:0}}
+.bo-helix .bo-flow{animation:boHelixDrift 8s linear infinite}
+.bo-helix .bo-flow-put{animation-delay:-4s}
+.bo-helix .bo-focal{transform-box:fill-box;transform-origin:center;animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-helix .bo-glow-fill{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-helix.is-live .bo-strandA{stroke-dashoffset:120;animation:boDraw120 .9s var(--ease-draw) .15s forwards}
+.bo-helix.is-live .bo-strandB{stroke-dashoffset:120;animation:boDraw120 .9s var(--ease-draw) .28s forwards}
+.bo-helix.is-live .bo-focal{animation:boPop .5s var(--ease-snap) 1s both,boBreath 1.5s var(--ease-breath) 1.5s infinite}
+.bo-helix:hover .bo-flow{animation-duration:4.8s}
+.bo-helix:hover .bo-glow-fill{animation-duration:1.8s}
+.bo-helix:hover .bo-ring{transform:scale(.95);transition:transform .22s var(--ease-snap)}
+
+/* ============ HEATMAP ============ */
+@keyframes boHeat{0%,100%{opacity:.30}18%{opacity:1}38%{opacity:.55}}
+@keyframes boPing{0%{transform:scale(.7);opacity:.6}70%,100%{transform:scale(1.5);opacity:0}}
+.bo-heatmap .bo-ring{transform-origin:32px 32px;transition:transform .32s ease-out}
+.bo-heatmap .bo-cells .c{animation:boHeat 3s var(--ease-breath) infinite}
+.bo-heatmap .bo-cells .d1{animation-delay:-.6s}
+.bo-heatmap .bo-cells .d2{animation-delay:-1.2s}
+.bo-heatmap .bo-cells .d3{animation-delay:-1.8s}
+.bo-heatmap .bo-cells .d4{animation-delay:-2.4s}
+.bo-heatmap .bo-node{transform-box:fill-box;transform-origin:center;animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-heatmap .bo-ping{transform-box:fill-box;transform-origin:center;animation:boPing 3s var(--ease-breath) infinite}
+.bo-heatmap .bo-focal{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-heatmap.is-live .bo-ring{animation:boRingExpand .7s var(--ease-draw) .25s both}
+.bo-heatmap.is-live .bo-cells .c{animation:boPop .4s var(--ease-snap) both,boHeat 3s var(--ease-breath) 1.2s infinite}
+.bo-heatmap:hover .bo-cells .c{animation-duration:1.8s}
+.bo-heatmap:hover .bo-focal{animation-duration:1.8s}
+.bo-heatmap:hover .bo-ring{transform:scale(.95);transition:transform .22s var(--ease-snap)}
+
+/* ============ LARGO ============ */
+.bo-largo .bo-ring{transform-box:fill-box;transform-origin:center}
+.bo-largo .bo-ring-outer{animation:boSpinCW 24s linear infinite}
+.bo-largo .bo-ring-inner{animation:boSpinCCW 12s linear infinite}
+.bo-largo .bo-ring-mid{animation:boShimmer 3s var(--ease-breath) infinite}
+@keyframes boWaveTravel{from{transform:translateX(0)}to{transform:translateX(-13.2px)}}
+.bo-largo .bo-wave-path{stroke-dasharray:120;stroke-dashoffset:0;animation:boWaveTravel 8s linear infinite}
+.bo-largo .bo-core-node{transform-box:fill-box;transform-origin:center;animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-largo .bo-core-bloom{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-largo .bo-tick{transform-box:fill-box;transform-origin:center;animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-largo .bo-tick-e{animation-delay:.18s}
+.bo-largo.is-live .bo-ring{animation:boRingExpand .5s var(--ease-draw) .6s both}
+.bo-largo.is-live .bo-ring-inner{animation-delay:.68s}
+.bo-largo.is-live .bo-wave-path{stroke-dashoffset:120;animation:boDraw120 .9s var(--ease-draw) .15s forwards,boWaveTravel 8s linear 1.05s infinite}
+.bo-largo.is-live .bo-core-node{animation:boPop .4s var(--ease-snap) 1s both,boBreath 1.5s var(--ease-breath) 1.4s infinite}
+.bo-largo:hover .bo-ring-outer{animation-duration:14.4s}
+.bo-largo:hover .bo-ring-inner{animation-duration:7.2s}
+.bo-largo:hover .bo-core-node{animation-duration:.9s}
+.bo-largo:hover .bo-core-bloom{animation-duration:1.8s}
+.bo-largo:hover .bo-rings{transform:scale(.95);transform-origin:32px 32px;transition:transform .22s ease-out}
+
+/* ============ NIGHT HAWK ============ */
+.bo-nighthawk .nh-sweep{transform-origin:32px 32px;animation:boSpinCW var(--bo-pulse) linear infinite}
+.bo-nighthawk .nh-ring{transform-box:view-box;transform-origin:32px 32px}
+@keyframes nhBlip{0%{opacity:0;transform:scale(.6)}8%{opacity:1;transform:scale(1.1)}40%{opacity:1;transform:scale(1)}85%{opacity:.15;transform:scale(.85)}100%{opacity:0;transform:scale(.6)}}
+.bo-nighthawk .nh-blip{transform-box:fill-box;transform-origin:center;animation:nhBlip var(--bo-pulse) var(--ease-breath) infinite}
+.bo-nighthawk .nh-blip-2{animation-delay:2s}
+.bo-nighthawk .nh-focal{animation:nhBlip var(--bo-pulse) var(--ease-breath) infinite;animation-delay:4s;transform-box:fill-box;transform-origin:center}
+.bo-nighthawk .nh-bloom{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-nighthawk.is-live .nh-ring{animation:boRingExpand .5s var(--ease-draw) both}
+.bo-nighthawk.is-live .nh-ring-mid{animation-delay:.08s}
+.bo-nighthawk.is-live .nh-ring-outer{animation-delay:.16s}
+.bo-nighthawk:hover .nh-sweep{animation-duration:3.6s}
+.bo-nighthawk:hover .nh-bloom{animation-duration:1.8s}
+.bo-nighthawk:hover .nh-ring{transform:scale(.96);transition:transform .22s ease-out}
+
+/* hero glow upgrade */
+.bo-sigil.bo-hero [filter]{filter:url(#bo-glow-lg)}
+
+/* ============ STATIC / REDUCED-MOTION (single collapse) ============ */
+@media (prefers-reduced-motion:reduce){ .bo-sigil :where(*){animation:none!important;transition:none!important} }
+.bo-static :where(*){animation:none!important;transition:none!important}
+
+/* resting frame values — applied for BOTH reduced-motion and .bo-static */
+@media (prefers-reduced-motion:reduce){
+  .bo-spx .bo-ring,.bo-largo .bo-ring,.bo-nighthawk .nh-ring,.bo-heatmap .bo-ring{transform:scale(1);opacity:1}
+  .bo-spx .bo-curve,.bo-helix .bo-strandA,.bo-helix .bo-strandB,.bo-largo .bo-wave-path{stroke-dashoffset:0}
+  .bo-spx .bo-node,.bo-spx .bo-node-core,.bo-spx .bo-node-halo,
+  .bo-helix .bo-focal,.bo-largo .bo-core-node,.bo-largo .bo-tick,
+  .bo-heatmap .bo-node,.bo-nighthawk .nh-blip,.bo-nighthawk .nh-focal{transform:scale(1);opacity:1}
+  .bo-glowgrp,.bo-glow-fill,.bo-core-bloom,.nh-bloom,.bo-heatmap .bo-focal{opacity:.6}
+  .bo-spx .bo-scan{opacity:.35;transform:translateX(0)}
+  .bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-nighthawk .nh-wedge-fill{opacity:.35}
+  .bo-heatmap .c.d1,.bo-heatmap .c.d2{opacity:.9} .bo-heatmap .c.d3{opacity:.6}
+}
+/* duplicate the resting block scoped to .bo-static so animated={false} matches the poster frame */
+.bo-static.bo-spx .bo-curve,.bo-static.bo-helix .bo-strandA,.bo-static.bo-helix .bo-strandB,.bo-static.bo-largo .bo-wave-path{stroke-dashoffset:0}
+.bo-static .bo-glowgrp,.bo-static .bo-glow-fill,.bo-static .bo-core-bloom,.bo-static .nh-bloom{opacity:.6}
+.bo-static.bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-static.bo-nighthawk .nh-wedge-fill{opacity:.35}
+.bo-static.bo-spx .bo-scan{opacity:.35}
+.bo-static.bo-heatmap .c.d1,.bo-static.bo-heatmap .c.d2{opacity:.9} .bo-static.bo-heatmap .c.d3{opacity:.6}
