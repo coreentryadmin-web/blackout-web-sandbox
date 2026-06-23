@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LandingCta } from "@/components/landing/LandingCta";
-import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
+import { PricingBackdrop } from "@/components/landing/PricingBackdrop";
 import { WHOP_CHECKOUT } from "@/lib/whop-checkout";
 
 type Term = "monthly" | "yearly" | "lifetime";
@@ -76,7 +76,7 @@ export function PricingSection() {
       id="pricing"
       className="landing-section landing-section-cut relative py-28 md:py-32 px-4 md:px-8 overflow-hidden"
     >
-      <LandingBackdrop />
+      <PricingBackdrop />
 
       <div className="max-w-5xl mx-auto relative z-10">
         {/* header */}

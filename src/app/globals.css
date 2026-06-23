@@ -415,6 +415,19 @@ body {
   50% { opacity: 0.65; transform: scale(1.06); }
 }
 
+/* ── Pricing cinematic backdrop animations ── */
+@keyframes pricing-grid-scroll { from { background-position: 0 0; } to { background-position: 0 56px; } }
+@keyframes pricing-vortex-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pricing-ember-float {
+  0% { transform: translateY(10px); opacity: 0; }
+  14% { opacity: 0.7; }
+  86% { opacity: 0.7; }
+  100% { transform: translateY(-240px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pricing-anim { animation: none !important; }
+}
+
 .showcase-glow-purple {
   background: radial-gradient(circle, rgba(191, 95, 255, 0.22), rgba(191, 95, 255, 0.12) 45%, transparent 72%);
   animation: glow-pulse-purple 4s ease-in-out infinite 1s;
