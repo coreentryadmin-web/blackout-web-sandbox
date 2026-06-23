@@ -15,23 +15,26 @@ const riseItem = {
 };
 
 /**
- * Cinematic split-screen shell wrapping the Clerk widget. Left = animated brand pitch;
- * right = the themed form in a pool of light. Stacks to a single column on mobile (the
- * pitch pane is dropped, a compact brand header replaces it). All motion is gated by the
- * root MotionConfig reducedMotion="user". The shell never double-wraps the Clerk card —
- * the card IS the glass surface (see clerkAppearance).
+ * Cinematic split-screen shell wrapping the Clerk widget. A single animated backdrop
+ * spans the WHOLE screen (behind both panes) so the form side is never dead black —
+ * there is continuous motion on every viewport. Left = brand pitch; right = the themed
+ * form floating in a darkened pool of light over the live backdrop. Below lg the pitch
+ * pane drops and a compact brand header takes its place. All motion is gated by the root
+ * MotionConfig reducedMotion="user".
  */
 export function AuthShell({ mode, children }: { mode: "signin" | "signup"; children: React.ReactNode }) {
   return (
     <main className="relative grid min-h-[100dvh] overflow-hidden bg-[#040407] lg:grid-cols-[1.05fr_0.95fr]">
+      {/* full-bleed animated backdrop (behind both panes) */}
+      <PricingBackdrop />
+
       {/* ── LEFT — the pitch ── */}
       <motion.section
         variants={paneStagger}
         initial="hidden"
         animate="show"
-        className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16"
+        className="relative z-10 hidden flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16"
       >
-        <PricingBackdrop />
         <div aria-hidden className="auth-seam absolute right-0 top-0 bottom-0 w-px" />
 
         <motion.div variants={riseItem} className="relative z-10">
@@ -83,12 +86,16 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-        className="relative flex items-center justify-center p-6 sm:p-10"
+        className="relative z-10 flex items-center justify-center p-6 sm:p-10"
       >
+        {/* legibility scrim — darkens behind the form, edges keep the backdrop motion */}
         <div
           aria-hidden
           className="absolute inset-0"
-          style={{ background: "radial-gradient(120% 80% at 50% -10%, rgba(0,230,118,0.06), transparent 60%), #050608" }}
+          style={{
+            background:
+              "radial-gradient(ellipse 100% 90% at 50% 50%, rgba(4,4,7,0.86), rgba(4,4,7,0.5) 70%, transparent), linear-gradient(to right, rgba(4,4,7,0.6), transparent)",
+          }}
         />
         <div className="relative z-10 mx-auto w-full max-w-[420px]">
           {/* mobile brand header (the pitch pane is hidden below lg) */}

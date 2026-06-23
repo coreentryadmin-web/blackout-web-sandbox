@@ -417,6 +417,7 @@ body {
 
 /* ── Pricing cinematic backdrop animations ── */
 @keyframes pricing-grid-scroll { from { background-position: 0 0; } to { background-position: 0 56px; } }
+@keyframes pricing-beam { 0% { transform: translateY(-30%); } 100% { transform: translateY(960%); } }
 @keyframes pricing-vortex-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes pricing-ember-float {
   0% { transform: translateY(10px); opacity: 0; }

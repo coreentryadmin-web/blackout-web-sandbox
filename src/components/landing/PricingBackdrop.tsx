@@ -132,6 +132,16 @@ export function PricingBackdrop() {
         style={{ background: "radial-gradient(58% 48% at 50% 52%, rgba(5,6,8,0.6), transparent 72%)" }}
       />
 
+      {/* sweeping scan beam — continuous terminal motion */}
+      <div
+        className="pricing-anim absolute left-0 right-0 h-28"
+        style={{
+          top: 0,
+          background: "linear-gradient(to bottom, transparent, rgba(0,230,118,0.07), transparent)",
+          animation: "pricing-beam 7s linear infinite",
+        }}
+      />
+
       {/* film grain */}
       <div className="absolute inset-0 opacity-[0.05]" style={{ mixBlendMode: "soft-light", backgroundImage: NOISE }} />
 
