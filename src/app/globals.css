@@ -116,6 +116,13 @@ body {
   }
 }
 
+/* UI primitive: Skeleton shimmer sweep (src/components/ui/Skeleton.tsx).
+   Reduced-motion is handled at the element level (motion-reduce:before:hidden)
+   and globally by the prefers-reduced-motion block above. */
+@keyframes ui-skeleton {
+  100% { transform: translateX(100%); }
+}
+
 /* ── Marquee ── */
 @keyframes marquee-left {
   from { transform: translateX(0); }
