@@ -1,7 +1,11 @@
 ﻿import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { SyncMembershipButton } from "@/components/SyncMembershipButton";
-import { WHOP_CHECKOUT, WHOP_PREMIUM_CHECKOUT_OPTIONS } from "@/lib/whop-checkout";
+import {
+  WHOP_CHECKOUT,
+  WHOP_PREMIUM_CHECKOUT_OPTIONS,
+  WHOP_CHECKOUT_UNAVAILABLE_MESSAGE,
+} from "@/lib/whop-checkout";
 
 export default function UpgradePage() {
   return (
@@ -40,7 +44,7 @@ export default function UpgradePage() {
               View plans on Whop →
             </a>
           ) : (
-            <p className="text-bear text-sm">Whop checkout links are not configured yet.</p>
+            <p className="text-bear text-sm">{WHOP_CHECKOUT_UNAVAILABLE_MESSAGE}</p>
           )}
         </div>
 

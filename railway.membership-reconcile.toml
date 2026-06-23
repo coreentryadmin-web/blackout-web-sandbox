@@ -7,6 +7,6 @@ buildCommand = "echo 'cron trigger service: no app build needed'"
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/membership-reconcile"
-cronSchedule = "0 */6 * * *"
+cronSchedule = "0 * * * *"
 restartPolicyType = "never"
 numReplicas = 1

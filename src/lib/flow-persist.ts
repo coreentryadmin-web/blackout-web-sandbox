@@ -5,7 +5,7 @@ import type { MarketFlowAlert } from "@/lib/providers/unusual-whales";
 import { shouldFanOut } from "@/lib/flow-fanout";
 import { flowFallbackAlertId } from "@/lib/flow-alert-id";
 
-const MIN_PREMIUM = Number(process.env.UW_FLOW_MIN_PREMIUM ?? 200_000);
+export const MIN_PREMIUM = Number(process.env.UW_FLOW_MIN_PREMIUM ?? 200_000);
 
 function toFlowRow(alert: MarketFlowAlert): FlowRow {
   return {
@@ -21,7 +21,7 @@ function toFlowRow(alert: MarketFlowAlert): FlowRow {
   };
 }
 
-function alertId(row: Record<string, unknown>, flow: MarketFlowAlert): string {
+export function alertId(row: Record<string, unknown>, flow: MarketFlowAlert): string {
   const id = row.id ?? row.alert_id;
   if (id != null) return `uw:${id}`;
   return flowFallbackAlertId(flow);

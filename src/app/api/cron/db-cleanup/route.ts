@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbQuery, requireDatabaseInProduction } from "@/lib/db";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { isAllowedCleanupTarget } from "@/lib/db-cleanup-targets";
+import { isAllowedCleanupTarget, cleanupRetentionDays } from "@/lib/db-cleanup-targets";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,18 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Fixed, code-literal status guards (NOT user input) so we never prune unresolved/open
+// rows on outcome tables. Each value is a hardcoded SQL fragment.
+const STATUS_GUARDS: Readonly<Record<string, string>> = {
+  spx_play_outcomes: "outcome <> 'open'",
+  nighthawk_play_outcomes: "outcome NOT IN ('pending', 'open')",
+};
+
+// Cap rows deleted per statement so cleanup never takes a long lock on a high-volume
+// table. Each batch is its own short-lived statement/lock; the loop yields between batches.
+const CLEANUP_BATCH_SIZE = 5000;
+const CLEANUP_MAX_BATCHES = 10_000;
+
 async function deleteOlderThan(table: string, column: string, days: number): Promise<number> {
   // Identifiers cannot be parameterized — validate against the allow-list and reject unknowns.
   if (!isAllowedCleanupTarget(table, column)) {
@@ -42,15 +54,36 @@ async function deleteOlderThan(table: string, column: string, days: number): Pro
   if (!Number.isInteger(days) || days < 0) {
     throw new Error(`Invalid retention window (days must be a non-negative integer): ${days}`);
   }
-  // Window parameterized — mirrors fetchRecentFlows' ($i || ' hours')::interval pattern in db.ts.
-  const res = await dbQuery<{ count: string }>(
-    `DELETE FROM ${table} WHERE ${column} < NOW() - ($1::int || ' days')::interval RETURNING 1`,
-    [days]
-  );
-  return res.rowCount ?? 0;
+  // Append a fixed status guard for outcome tables so open/pending rows are never pruned.
+  const guard = STATUS_GUARDS[table] ? ` AND ${STATUS_GUARDS[table]}` : "";
+  // Batched delete by ctid; window parameterized; rowCount on a plain DELETE is the affected count.
+  let total = 0;
+  for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
+    const res = await dbQuery(
+      `DELETE FROM ${table}
+         WHERE ctid IN (
+           SELECT ctid FROM ${table}
+           WHERE ${column} < NOW() - ($1::int || ' days')::interval${guard}
+           LIMIT $2
+         )`,
+      [days, CLEANUP_BATCH_SIZE]
+    );
+    const deleted = res.rowCount ?? 0;
+    total += deleted;
+    if (deleted < CLEANUP_BATCH_SIZE) break;
+  }
+  return total;
 }
 
 async function runCleanup(): Promise<Record<string, number>> {
+  // Generous, env-configurable retention for high-write outcome tables. Default 365d keeps a
+  // full year of resolved history for admin rollups / Largo analytics; hard floor is 90d.
+  const spxOutcomeDays = cleanupRetentionDays(process.env.SPX_OUTCOMES_RETENTION_DAYS, 365);
+  const nighthawkOutcomeDays = cleanupRetentionDays(
+    process.env.NIGHTHAWK_OUTCOMES_RETENTION_DAYS,
+    365,
+  );
+
   const [
     apiTelemetry,
     flowAlerts,
@@ -59,6 +92,8 @@ async function runCleanup(): Promise<Record<string, number>> {
     nighthawkDossiersStaging,
     nighthawkJobLog,
     adminAuditLog,
+    spxPlayOutcomes,
+    nighthawkPlayOutcomes,
   ] = await Promise.all([
     // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
     // NOTE: this table's timestamp column is "at", not "created_at"
@@ -83,6 +118,14 @@ async function runCleanup(): Promise<Record<string, number>> {
 
     // admin_audit_log: compliance — keep 90 days
     deleteOlderThan("admin_audit_log", "created_at", 90),
+
+    // spx_play_outcomes: high-write trade-outcome ledger. Prune CLOSED rows only
+    // (open rows have closed_at IS NULL + 'outcome <> open' guard). Default 365d, >=90d floor.
+    deleteOlderThan("spx_play_outcomes", "closed_at", spxOutcomeDays),
+
+    // nighthawk_play_outcomes: high-write outcome ledger. Prune RESOLVED rows only
+    // (pending/open excluded by status guard). Default 365d, >=90d floor.
+    deleteOlderThan("nighthawk_play_outcomes", "created_at", nighthawkOutcomeDays),
   ]);
 
   return {
@@ -93,5 +136,7 @@ async function runCleanup(): Promise<Record<string, number>> {
     nighthawk_dossiers_staging: nighthawkDossiersStaging,
     nighthawk_job_log: nighthawkJobLog,
     admin_audit_log: adminAuditLog,
+    spx_play_outcomes: spxPlayOutcomes,
+    nighthawk_play_outcomes: nighthawkPlayOutcomes,
   };
 }

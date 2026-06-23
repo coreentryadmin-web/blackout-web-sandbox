@@ -430,15 +430,76 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
   const play = asObj(feed.play);
   if (play && !play.error) {
     lines.push("### SPX play engine");
-    lines.push(JSON.stringify(play).slice(0, 600));
+    // Whitelist the key facts BEFORE stringifying so the model never sees a
+    // mid-structure-truncated JSON blob (prior code sliced raw JSON at 600 chars).
+    const levels = asObj(play.levels);
+    const gates = asObj(play.gates);
+    const open = asObj(play.open_play);
+    const playSafe: Record<string, unknown> = {
+      available: play.available,
+      phase: play.phase,
+      action: play.action,
+      direction: play.direction,
+      grade: play.grade,
+      score: play.score,
+      confidence: play.confidence,
+      headline: typeof play.headline === "string" ? sanitizeFeedText(play.headline) : play.headline,
+      thesis: typeof play.thesis === "string" ? sanitizeFeedText(play.thesis) : play.thesis,
+    };
+    if (levels) {
+      playSafe.levels = {
+        entry: levels.entry,
+        stop: levels.stop,
+        target: levels.target,
+        invalidation: levels.invalidation,
+      };
+    }
+    if (gates) {
+      playSafe.gates = {
+        passed: gates.passed,
+        blocks: asArr(gates.blocks).slice(0, 6),
+        warnings: asArr(gates.warnings).slice(0, 6),
+        entry_mode: gates.entry_mode,
+        play_idea: gates.play_idea,
+      };
+    }
+    if (open) {
+      playSafe.open_play = {
+        id: open.id,
+        direction: open.direction,
+        entry_price: open.entry_price,
+        stop: open.stop,
+        target: open.target,
+        grade: open.grade,
+        opened_at: open.opened_at,
+        mfe_pts: open.mfe_pts,
+        trim_done: open.trim_done,
+        option_label: open.option_label,
+      };
+    }
+    lines.push(JSON.stringify(playSafe));
     lines.push("");
   }
 
   const market = asObj(feed.market);
-  if (market?.indices) {
-    lines.push("### Market indices");
-    lines.push(JSON.stringify(market.indices).slice(0, 400));
-    lines.push("");
+  const indices = asObj(market?.indices);
+  if (indices) {
+    // Project each snapshot into a compact line instead of slicing the raw
+    // index map mid-JSON (the map holds many symbols and slice(0,400) cut it off).
+    const indexLines = Object.entries(indices)
+      .map(([sym, raw]) => {
+        const q = asObj(raw);
+        if (!q || q.price == null) return "";
+        const chg = q.change_pct != null ? ` (${q.change_pct}%)` : "";
+        return `${sym} ${q.price}${chg}`;
+      })
+      .filter(Boolean)
+      .slice(0, 16);
+    if (indexLines.length) {
+      lines.push("### Market indices");
+      lines.push(indexLines.join(" | "));
+      lines.push("");
+    }
   }
 
   const hawk = asObj(feed.nighthawk);

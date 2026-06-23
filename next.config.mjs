@@ -41,9 +41,15 @@ if (railwayHostname) {
 
 import os from "os";
 
+// P3: os.cpus() can return an empty array (and is unreliable in constrained
+// containers / cgroup-limited environments), so reading .length directly is
+// fragile. Guard with optional chaining + a sane fallback of 1 core before the
+// Math.max(1, ...-1) clamp so we never produce NaN or a value < 1.
+const cpuCount = os.cpus()?.length || 1;
+
 const nextConfig = {
   experimental: {
-    cpus: Math.max(1, os.cpus().length - 1),
+    cpus: Math.max(1, cpuCount - 1),
     // P1 (audit: "No external error tracking"): enable the instrumentation hook so
     // src/instrumentation.ts register() runs at server startup. Required on Next
     // 14.2.x (became stable/default in Next 15); accepted by 14.2.35.

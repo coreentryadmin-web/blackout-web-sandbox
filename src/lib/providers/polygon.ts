@@ -1,4 +1,5 @@
 import { trackedFetch } from "@/lib/api-tracked-fetch";
+import { mergePolyBreakerOpenUntil } from "./polygon-breaker-merge";
 import { computeVixTermStructure, type VixTermSnapshot } from "@/lib/vix-term-utils";
 export { computeVixTermStructure, type VixTermSnapshot } from "@/lib/vix-term-utils";
 import { polygonConfigured } from "./config";
@@ -12,8 +13,51 @@ let _polyCircuitOpenUntil = 0;
 const POLY_429_THRESHOLD = 5;
 const POLY_CIRCUIT_PAUSE_MS = 60_000;
 
+// ── Cluster-aware breaker (mirrors the UW breaker, commit fddc215) ───────────────────────
+// Only the OPEN-UNTIL deadline is shared; the consecutive-429 counter stays local,
+// exactly like UW (recent429Timestamps stays per-process, only circuitOpenUntil is
+// broadcast). The hot polygonGet path NEVER touches Redis — the gate is a SYNC read
+// of _polyCircuitOpenUntil; a peer trip only arrives passively via the subscriber.
+/** Pub/sub channel a replica uses to broadcast its Polygon breaker trip to peers. */
+const POLY_BREAKER_CHANNEL = "blackout:polygon:breaker";
+/** Poison guard: clamp any peer-published openUntil to a few normal pause windows ahead. */
+const POLY_BREAKER_MAX_FUTURE_MS = POLY_CIRCUIT_PAUSE_MS * 3;
+let _polyBreakerSubscribed = false;
+
+/**
+ * Lazy, once-per-process passive subscriber: a peer's trip extends our pause.
+ * redis-pubsub is DYNAMICALLY imported (no static @/ on the hot path; mirrors UW) and
+ * no-ops with no Redis (local-only breaker, exactly as before).
+ */
+function ensurePolyBreakerSubscription(): void {
+  if (_polyBreakerSubscribed) return;
+  _polyBreakerSubscribed = true; // set before await: prevents duplicate subscribe races
+  void import("@/lib/redis-pubsub")
+    .then(({ redisSubscribe }) =>
+      redisSubscribe(POLY_BREAKER_CHANNEL, (msg) => {
+        try {
+          const parsed = JSON.parse(msg) as { openUntil?: unknown };
+          const peer = typeof parsed.openUntil === "number" ? parsed.openUntil : NaN;
+          _polyCircuitOpenUntil = mergePolyBreakerOpenUntil(
+            _polyCircuitOpenUntil,
+            peer,
+            Date.now(),
+            POLY_BREAKER_MAX_FUTURE_MS
+          );
+        } catch {
+          /* ignore malformed peer message */
+        }
+      })
+    )
+    .catch(() => {
+      _polyBreakerSubscribed = false; // allow a later retry if import/subscribe failed
+    });
+}
+
 async function polygonGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
   if (!polygonConfigured()) throw new Error("POLYGON_API_KEY not set");
+
+  ensurePolyBreakerSubscription();
 
   if (Date.now() < _polyCircuitOpenUntil) {
     const waitSec = Math.ceil((_polyCircuitOpenUntil - Date.now()) / 1000);
@@ -31,6 +75,14 @@ async function polygonGet<T>(path: string, params: Record<string, string> = {}):
     if (_poly429Count >= POLY_429_THRESHOLD) {
       _polyCircuitOpenUntil = Date.now() + POLY_CIRCUIT_PAUSE_MS;
       _poly429Count = 0;
+      // Broadcast ONLY on the rare trip (never per call). Fire-and-forget via a lazy
+      // dynamic import; peers Math.max-merge it to extend their own pause. No-ops with
+      // no Redis (local-only breaker exactly as today).
+      void import("@/lib/redis-pubsub")
+        .then(({ redisPublish }) =>
+          redisPublish(POLY_BREAKER_CHANNEL, JSON.stringify({ openUntil: _polyCircuitOpenUntil }))
+        )
+        .catch(() => {});
       console.warn(`[polygon] Circuit opened after ${POLY_429_THRESHOLD} consecutive 429s — pausing 60s`);
     }
     throw new Error(`Polygon ${path} → 429 (rate limited)`);
@@ -655,7 +707,7 @@ export async function fetchIndexRsi(
   window = 14,
   timespan: "minute" | "hour" | "day" = "minute"
 ): Promise<number | null> {
-  const sym = symbol.startsWith("I:") ? encodeURIComponent(symbol) : encodeURIComponent(`I:${symbol}`);
+  const sym = symbol.toUpperCase();
   const data = await polygonGet<{ results?: { values?: Array<{ value?: number }> } }>(
     `/v1/indicators/rsi/${sym}`,
     { window: String(window), timespan, series_type: "close", limit: "1" }

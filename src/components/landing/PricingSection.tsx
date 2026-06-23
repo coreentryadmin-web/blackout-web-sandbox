@@ -80,7 +80,7 @@ export function PricingSection() {
               PREMIUM
             </motion.span>
           </h2>
-          <p className="text-red-400 text-sm mt-4 max-w-xl font-mono leading-relaxed">
+          <p className="text-sky-300 text-sm mt-4 max-w-xl font-mono leading-relaxed">
             Sign up on BlackOut, then choose monthly, yearly, or lifetime on Whop — same email unlocks
             everything.
           </p>

@@ -42,6 +42,11 @@ function trackSpend(model: string, usage: AnthropicUsage | null | undefined): vo
   }
 }
 
+/** Client-level retry budget passed to the Anthropic SDK. The SDK retries
+ *  internally, so a single client.messages.create() call may make up to
+ *  DEFAULT_MAX_RETRIES + 1 HTTP attempts. Telemetry max_attempts is derived
+ *  from this so the dashboard reflects the real retry budget (P3 fix). */
+const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 export const LARGO_MODEL = "claude-sonnet-4-6";
 export const COMMENTARY_MODEL = "claude-haiku-4-5";
@@ -66,7 +71,7 @@ export function anthropicConfigured(): boolean {
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  return new Anthropic({ apiKey: key, maxRetries: 3, timeout: 20_000 });
+  return new Anthropic({ apiKey: key, maxRetries: DEFAULT_MAX_RETRIES, timeout: 20_000 });
 }
 
 function resolveModel(explicit?: string): string {
@@ -75,8 +80,14 @@ function resolveModel(explicit?: string): string {
 
 async function withTelemetry<T>(
   endpointKey: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  // Configured SDK retry budget for this call; max_attempts = maxRetries + 1.
+  // The SDK retries internally within fn(), so we observe only the final
+  // outcome and cannot know which attempt succeeded — attempt stays 1, but
+  // max_attempts now reflects the real budget instead of a hardcoded 1.
+  maxRetries: number = DEFAULT_MAX_RETRIES
 ): Promise<T> {
+  const maxAttempts = maxRetries + 1;
   const start = Date.now();
   try {
     const result = await fn();
@@ -90,7 +101,7 @@ async function withTelemetry<T>(
       error: null,
       correlation_id: `anthropic-${Date.now()}`,
       attempt: 1,
-      max_attempts: 1,
+      max_attempts: maxAttempts,
       phase: "success",
       request_url: "https://api.anthropic.com/v1/messages",
       request_body: null,
@@ -112,8 +123,8 @@ async function withTelemetry<T>(
       latency_ms: Date.now() - start,
       error: message.slice(0, 200),
       correlation_id: `anthropic-${Date.now()}`,
-      attempt: 1,
-      max_attempts: 1,
+      attempt: maxAttempts,
+      max_attempts: maxAttempts,
       phase: "failure",
       request_url: "https://api.anthropic.com/v1/messages",
       request_body: null,
@@ -192,7 +203,11 @@ export async function anthropicText(
   if (options?.maxRetries != null) reqOpts.maxRetries = options.maxRetries;
 
   try {
-    const data = await withTelemetry("anthropic-text", () => client.messages.create(body, reqOpts));
+    const data = await withTelemetry(
+      "anthropic-text",
+      () => client.messages.create(body, reqOpts),
+      options?.maxRetries ?? DEFAULT_MAX_RETRIES
+    );
     trackSpend(model, data.usage);
     const block = data.content.find((c) => c.type === "text");
     return block?.type === "text" ? block.text.trim() || null : null;
@@ -269,14 +284,18 @@ export async function anthropicToolLoop(params: {
           /* SSE client disconnected — stop forwarding tokens */
         }
       });
-      const finalMessage = await withTelemetry("anthropic-tool-loop-stream", () =>
-        stream.finalMessage()
+      const finalMessage = await withTelemetry(
+        "anthropic-tool-loop-stream",
+        () => stream.finalMessage(),
+        DEFAULT_MAX_RETRIES
       );
       trackSpend(model, finalMessage.usage);
       content = finalMessage.content;
     } else {
-      const data = await withTelemetry("anthropic-tool-loop", () =>
-        client.messages.create(createParams)
+      const data = await withTelemetry(
+        "anthropic-tool-loop",
+        () => client.messages.create(createParams),
+        DEFAULT_MAX_RETRIES
       );
       trackSpend(model, data.usage);
       content = data.content;
@@ -328,15 +347,30 @@ export async function anthropicToolLoop(params: {
     // above or maxRounds — the old end_turn check was dead code (LARGO-4).
   }
 
-  const final = await withTelemetry("anthropic-tool-loop-final", () =>
-    client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      temperature: loopTemperature,
-      system: systemParam,
-      messages,
-    })
-  );
-  trackSpend(model, final.usage);
-  return extractTextFromBlocks(final.content as Array<{ type: string; text?: string }>) || null;
+  // maxRounds exhausted: one non-streaming synthesis pass to coerce a final answer.
+  // Guard it — if this call throws (timeout/429/network), do NOT crash the loop and
+  // its callers. Fall back to the last assistant text already accumulated in `messages`
+  // (often a usable partial answer), else null. (Streaming of this final pass is out of scope.)
+  try {
+    const final = await withTelemetry(
+      "anthropic-tool-loop-final",
+      () =>
+        client.messages.create({
+          model,
+          max_tokens: maxTokens,
+          temperature: loopTemperature,
+          system: systemParam,
+          messages,
+        }),
+      DEFAULT_MAX_RETRIES
+    );
+    trackSpend(model, final.usage);
+    return extractTextFromBlocks(final.content as Array<{ type: string; text?: string }>) || null;
+  } catch (err) {
+    console.error(
+      "[anthropic] tool-loop final synthesis failed",
+      err instanceof Error ? err.message : String(err)
+    );
+    return extractTextFromLastAssistant(messages as unknown as AnthropicMessage[]) ?? null;
+  }
 }

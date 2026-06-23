@@ -1,3 +1,5 @@
+import { postDiscordWebhook } from "@/lib/discord-post";
+
 export type PlayDiscordAction = "BUY" | "SELL" | "TRIM";
 
 export async function notifyPlayDiscord(input: {
@@ -23,11 +25,7 @@ export async function notifyPlayDiscord(input: {
   if (input.thesis) lines.push(input.thesis.slice(0, 500));
   lines.push("[Blackout Desk](https://blackouttrades.com/dashboard)");
 
-  await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: lines.join("\n").slice(0, 1900) }),
-  }).catch((err) => console.warn("[spx-play-notify] discord webhook:", err));
+  await postDiscordWebhook(url, { content: lines.join("\n").slice(0, 1900) }, "spx-play");
 }
 
 export async function notifyOpsDiscord(input: {
@@ -48,9 +46,5 @@ export async function notifyOpsDiscord(input: {
     input.severity === "critical" ? "🚨" : input.severity === "warning" ? "⚠️" : "ℹ️";
   const content = `${emoji} **${input.title}**\n${input.body}`.slice(0, 1900);
 
-  await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-  }).catch((err) => console.warn("[spx-play-notify] ops webhook:", err));
+  await postDiscordWebhook(url, { content }, "ops");
 }

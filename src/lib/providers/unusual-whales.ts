@@ -33,6 +33,18 @@ function uwEnvSec(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+// Two-layer caching is INTENTIONAL — do not 'dedupe' this away.
+//  * In-memory uwResponseCache (this file, L1): per-process, the ONLY cache for the
+//    paths in uwCacheTtlMs that callers hit via raw uwGetSafe (economy, net-flow/expiry,
+//    group-flow, economic-calendar). It also provides Redis-DOWN fresh-serve + the
+//    circuit-open stale-serve fallback (up to UW_SLOW_CACHE_MAX_STALE_MS).
+//  * Redis uwCacheGet (uw-shared-cache.ts, L2): cross-process/shared cache, used only by
+//    the high-level fetchers (e.g. fetchUwMarketTide).
+// /api/market/market-tide is the single path that passes through BOTH (Redis L2 in
+// fetchUwMarketTide, then in-memory L1 inside uwGetSafe). That overlap is kept on purpose:
+// removing market-tide from uwCacheTtlMs would drop its in-process hit + circuit-open
+// stale fallback whenever Redis is unavailable, lowering the covered-path hit-rate and
+// changing the resilience of an SPX-desk signal. So the L1 entry stays.
 type UwCacheSlot = { data: unknown; fetchedAt: number; ttlMs: number };
 const uwResponseCache = new Map<string, UwCacheSlot>();
 const UW_SLOW_CACHE_MAX_STALE_MS = 60 * 60 * 1000;

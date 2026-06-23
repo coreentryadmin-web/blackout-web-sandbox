@@ -130,6 +130,8 @@ export function recordApiCall(input: {
   response_snippet?: string | null;
   rate_limited?: boolean;
   headers_sent?: string[];
+  /** Mark non-network events (e.g. admin route catch-blocks) so they are kept out of latency aggregation. */
+  synthetic?: boolean;
 }): ApiCallEvent {
   const correlation_id = input.correlation_id ?? `${Date.now()}-${++eventSeq}`;
   const attempt = input.attempt ?? 1;
@@ -176,6 +178,7 @@ export function recordApiCall(input: {
     headers_sent: input.headers_sent ?? [],
     severity,
     sla_breach,
+    synthetic: input.synthetic ?? false,
   };
 
   if (!input.ok && retry_status === "scheduled") {
@@ -201,10 +204,17 @@ export function recordApiCall(input: {
   const prev = endpointStats.get(key);
   const call_count = (prev?.call_count ?? 0) + 1;
   const error_count = (prev?.error_count ?? 0) + (event.ok ? 0 : 1);
-  const avg_latency_ms = prev
-    ? Math.round((prev.avg_latency_ms * (call_count - 1) + event.latency_ms) / call_count)
-    : event.latency_ms;
-  const latency_samples = [...(prev?.latency_samples ?? []), event.latency_ms].slice(-MAX_SAMPLES);
+  // Synthetic events (e.g. admin route catch-blocks) have a fabricated
+  // latency_ms of 0 and must not skew the latency distribution. Carry forward
+  // the prior latency aggregates while still counting the call/error.
+  const avg_latency_ms = event.synthetic
+    ? prev?.avg_latency_ms ?? 0
+    : prev
+      ? Math.round((prev.avg_latency_ms * (call_count - 1) + event.latency_ms) / call_count)
+      : event.latency_ms;
+  const latency_samples = event.synthetic
+    ? prev?.latency_samples ?? []
+    : [...(prev?.latency_samples ?? []), event.latency_ms].slice(-MAX_SAMPLES);
 
   endpointStats.set(key, {
     endpoint: event.endpoint,
@@ -212,7 +222,7 @@ export function recordApiCall(input: {
     call_count,
     error_count,
     last_status: event.status,
-    last_latency_ms: event.latency_ms,
+    last_latency_ms: event.synthetic ? prev?.last_latency_ms ?? null : event.latency_ms,
     last_ok: event.ok,
     last_at: event.at,
     last_error: event.ok ? prev?.last_error ?? null : event.error,

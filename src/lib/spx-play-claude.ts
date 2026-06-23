@@ -4,6 +4,7 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PlayGateResult } from "@/lib/spx-play-gates";
 import type { PlayConfirmationResult } from "@/lib/spx-play-confirmations";
 import type { PlayTechnicals } from "@/lib/spx-play-technicals";
+import { todayEt } from "@/lib/et-date";
 import {
   gradeRank,
   playClaudeCachePriceStepPts,
@@ -30,10 +31,6 @@ const memoryCache = new Map<string, { at: number; verdict: ClaudePlayVerdict }>(
 
 type ClaudeDailyBudget = { date: string; calls: number };
 let memoryBudget: ClaudeDailyBudget | null = null;
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
 
 function cacheKey(desk: SpxDeskPayload, c: SpxConfluence): string {
   const step = Math.max(0.5, playClaudeCachePriceStepPts());

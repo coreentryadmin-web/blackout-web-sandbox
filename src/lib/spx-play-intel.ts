@@ -3,6 +3,7 @@ import type { SpxConfluence } from "@/lib/spx-signals";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
 import { gradeRank } from "@/lib/spx-play-config";
 import { keyLevelForDirection } from "@/lib/spx-play-mtf";
+import { round5 } from "@/lib/round5";
 
 export type PlayIdea = {
   direction: SpxPlayDirection;
@@ -10,10 +11,6 @@ export type PlayIdea = {
   strike: number;
   line: string;
 };
-
-function round5(n: number): number {
-  return Math.round(n / 5) * 5;
-}
 
 function resolveLeanDirection(
   desk: SpxDeskPayload,

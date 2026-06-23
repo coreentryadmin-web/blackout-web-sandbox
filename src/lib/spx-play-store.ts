@@ -7,6 +7,7 @@ import {
 import { nextMemoryPlayId } from "@/lib/spx-play-memory-id";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
 import type { PlayCloseSnapshot } from "@/lib/spx-play-outcomes";
+import { todayEt } from "@/lib/et-date";
 
 export type OpenPlayRow = {
   id: number;
@@ -52,12 +53,6 @@ const MEMORY_SESSION: PlaySessionMeta = {
   last_direction: null,
   last_stop_at: null,
 };
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-  }).format(new Date());
-}
 
 async function setMetaWithRetry(key: string, value: string, attempts = 3): Promise<void> {
   let lastErr: unknown;

@@ -3,6 +3,7 @@ import type { SpxPlayPayload } from "@/lib/spx-play-engine";
 import { buildMarketHealthSnapshot } from "@/lib/market-health";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { isProductionRuntime, dbConfigured } from "@/lib/db";
+import { freshestFeedAgeMs, classifyFeedStaleness } from "@/lib/ws/feed-staleness";
 
 export type SpxIssueSeverity = "critical" | "warning" | "info";
 
@@ -141,6 +142,34 @@ export async function buildSpxAdminIssues(input: {
           category: "websocket",
           title: `${sym.sym} stale or zero`,
           detail: `price=${sym.price} age=${Math.round(sym.ageMs / 1000)}s`,
+        });
+      }
+    }
+    // Per-feed staleness: alert when the indices socket stops delivering bars
+    // even though the last price was non-zero (the symbol loop above only
+    // catches price<=0). Freshest age across symbols is the liveness signal.
+    if (marketOpen) {
+      const polygonFreshestAgeMs = freshestFeedAgeMs(
+        polygonWs.symbols.map((s) => s.ageMs)
+      );
+      const polygonState = classifyFeedStaleness(
+        polygonFreshestAgeMs,
+        30_000,
+        120_000
+      );
+      if (polygonState === "critical") {
+        push(issues, {
+          severity: "critical",
+          category: "websocket",
+          title: "Polygon indices feed stale",
+          detail: `No index bar for ${Math.round((polygonFreshestAgeMs ?? 0) / 1000)}s`,
+        });
+      } else if (polygonState === "stale") {
+        push(issues, {
+          severity: "warning",
+          category: "websocket",
+          title: "Polygon indices feed aging",
+          detail: `No index bar for ${Math.round((polygonFreshestAgeMs ?? 0) / 1000)}s`,
         });
       }
     }

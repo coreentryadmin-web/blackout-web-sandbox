@@ -4,6 +4,8 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PlayTechnicals } from "@/lib/spx-play-technicals";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
 import { buildLottoOptionTicket } from "@/lib/spx-lotto-options";
+import { todayEt } from "@/lib/et-date";
+import { round5 } from "@/lib/round5";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import {
   LOTTO_SIZING_NOTE,
@@ -71,14 +73,6 @@ export type LottoPlayPayload = {
   spread_pct: number | null;
   open_anchor_price: number | null;
 };
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
-
-function round5(n: number): number {
-  return Math.round(n / 5) * 5;
-}
 
 /** Lotto target: minimum ±25 SPX pts, extended to the next structure level when farther. */
 function resolveLottoTargetPts(

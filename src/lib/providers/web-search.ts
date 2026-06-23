@@ -33,7 +33,10 @@ export async function fetchWebSearch(query: string, limit = 6): Promise<WebSearc
       }),
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[web-search] tavily ${res.status} ${res.statusText || ""}`.trim());
+      return [];
+    }
     const data = (await res.json()) as {
       results?: Array<{ title?: string; url?: string; content?: string }>;
     };
@@ -55,7 +58,10 @@ export async function fetchWebSearch(query: string, limit = 6): Promise<WebSearc
       body: JSON.stringify({ q, num: Math.min(limit, 10) }),
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[web-search] serper ${res.status} ${res.statusText || ""}`.trim());
+      return [];
+    }
     const data = (await res.json()) as {
       organic?: Array<{ title?: string; link?: string; snippet?: string }>;
     };
@@ -78,7 +84,10 @@ export async function fetchWebSearch(query: string, limit = 6): Promise<WebSearc
         cache: "no-store",
       }
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[web-search] brave ${res.status} ${res.statusText || ""}`.trim());
+      return [];
+    }
     const data = (await res.json()) as {
       web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
     };

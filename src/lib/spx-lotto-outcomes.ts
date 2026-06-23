@@ -3,7 +3,10 @@ import type { LottoRecord } from "@/lib/spx-lotto-store";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 
 const memoryIds = new Map<string, number>();
-let rehydrated = false;
+// Tracks the ET session-date for which memoryIds was last rehydrated from the DB.
+// Scoping the guard per-date (instead of a process-global boolean) lets a new
+// session re-rehydrate after a date roll, while staying idempotent within a session.
+let rehydratedForDate: string | null = null;
 
 function rowKey(rec: LottoRecord): string {
   return `${rec.session_date}:${rec.pick_count}`;
@@ -24,7 +27,7 @@ async function rehydrateMemoryIds(): Promise<void> {
       memoryIds.set(key, row.id);
     }
   }
-  rehydrated = true;
+  rehydratedForDate = today;
 }
 
 export async function logLottoWatch(rec: LottoRecord): Promise<void> {
@@ -70,7 +73,9 @@ export async function logLottoPhase(
   const key = rowKey(rec);
   let id = memoryIds.get(key);
   // Rehydrate from DB if memoryIds is empty (e.g. server restarted mid-session).
-  if (id == null && !rehydrated) {
+  // Guard is scoped to the current ET session-date so a new session re-rehydrates
+  // after a date roll, while repeated calls within the same date stay idempotent.
+  if (id == null && rehydratedForDate !== todayEtYmd()) {
     await rehydrateMemoryIds();
     id = memoryIds.get(key);
   }

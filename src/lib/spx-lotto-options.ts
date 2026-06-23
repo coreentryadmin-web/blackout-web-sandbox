@@ -49,10 +49,6 @@ function vixBucket(vix?: number | null): string {
   return "lo";
 }
 
-function round5(n: number): number {
-  return Math.round(n / 5) * 5;
-}
-
 async function fetchChainUrl(url: string): Promise<{ results?: ChainContract[]; next_url?: string } | null> {
   if (!polygonConfigured()) return null;
   const sep = url.includes("?") ? "&" : "?";
@@ -123,7 +119,7 @@ export async function buildLottoOptionTicket(
     spread_pct: null,
     delta: null,
     open_interest: null,
-    premium_range: "~$0.50–$1.50",
+    premium_range: "—",
     blocked: true,
     block_reason: "Chain unavailable — estimated premium only",
   };
@@ -200,7 +196,7 @@ export async function buildLottoOptionTicket(
   const lo = bid ?? (mid != null ? mid * 0.92 : null);
   const hi = ask ?? (mid != null ? mid * 1.08 : null);
   const premium_range =
-    lo != null && hi != null ? `$${lo.toFixed(2)}–$${hi.toFixed(2)}` : "~$0.50–$1.50";
+    lo != null && hi != null ? `$${lo.toFixed(2)}–$${hi.toFixed(2)}` : "—";
 
   const ticket: OptionTicket = {
     underlying: "SPXW",

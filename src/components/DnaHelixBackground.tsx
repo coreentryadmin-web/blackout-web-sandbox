@@ -1,5 +1,7 @@
 "use client";
 
+import { useReducedMotion } from "framer-motion";
+
 // ─── Geometry (module-level, computed once) ───────────────────────────────────
 const VW     = 280;
 const VH     = 1100;
@@ -67,7 +69,7 @@ const C_PART1 = "#ff80ff";  // particle on strand 1
 const C_PART2 = "#80ffff";  // particle on strand 2
 
 // ─── Single helix SVG ─────────────────────────────────────────────────────────
-function HelixSvg({ uid, intense = false }: { uid: string; intense?: boolean }) {
+function HelixSvg({ uid, intense = false, reduce = false }: { uid: string; intense?: boolean; reduce?: boolean }) {
   const F  = `f-${uid}`;
   const RG = `rg-${uid}`;
   const M1 = `m1-${uid}`;
@@ -84,18 +86,18 @@ function HelixSvg({ uid, intense = false }: { uid: string; intense?: boolean }) 
       style={{ overflow: "visible" }}
     >
       <defs>
-        {/* ── 3-layer bloom filter ── */}
+        {/* ── 2-layer bloom filter (wide halo + mid glow, then crisp source on top).
+             Dropped the redundant stdDeviation=1 pass: SourceGraphic is already
+             merged on top, so the 1px blur was near-invisible but cost a full
+             filter pass per column + per particle group. */}
         <filter id={F} x="-130%" y="-10%" width="360%" height="120%">
           {/* Wide atmospheric halo */}
           <feGaussianBlur in="SourceGraphic" stdDeviation={intense ? "14" : "11"} result="wideBlur"/>
           {/* Mid glow */}
           <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="midBlur"/>
-          {/* Tight crisp edge */}
-          <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="crispBlur"/>
           <feMerge>
             <feMergeNode in="wideBlur"/>
             <feMergeNode in="midBlur"/>
-            <feMergeNode in="crispBlur"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>
@@ -113,7 +115,7 @@ function HelixSvg({ uid, intense = false }: { uid: string; intense?: boolean }) 
         <path id={M2} d={S2} fill="none" stroke="none"/>
       </defs>
 
-      <g filter={`url(#${F})`}>
+      <g filter={reduce ? undefined : `url(#${F})`}>
         {/* Strand 1 — electric violet */}
         <path d={S1} fill="none" stroke={C_S1} strokeWidth={sw} strokeLinecap="round"/>
 
@@ -152,7 +154,7 @@ function HelixSvg({ uid, intense = false }: { uid: string; intense?: boolean }) 
       </g>
 
       {/* ── Traveling particles — strand 1 ── */}
-      {DOTS_S1.map((p, j) => (
+      {!reduce && DOTS_S1.map((p, j) => (
         <g key={`p1${j}`} filter={`url(#${F})`}>
           <circle r="5.5" fill={C_PART1} fillOpacity="1">
             <animateMotion dur={p.dur} begin={p.begin} repeatCount="indefinite" rotate="none">
@@ -168,7 +170,7 @@ function HelixSvg({ uid, intense = false }: { uid: string; intense?: boolean }) 
       ))}
 
       {/* ── Traveling particles — strand 2 ── */}
-      {DOTS_S2.map((p, j) => (
+      {!reduce && DOTS_S2.map((p, j) => (
         <g key={`p2${j}`} filter={`url(#${F})`}>
           <circle r="5.5" fill={C_PART2} fillOpacity="1">
             <animateMotion dur={p.dur} begin={p.begin} repeatCount="indefinite" rotate="none">
@@ -201,6 +203,7 @@ const COLS = [
 
 // ─── Root export ─────────────────────────────────────────────────────────────
 export function DnaHelixBackground() {
+  const reduce = useReducedMotion() ?? false;
   return (
     <div
       className="fixed inset-0 pointer-events-none select-none overflow-hidden"
@@ -233,7 +236,7 @@ export function DnaHelixBackground() {
             willChange:     "transform",
           }}
         >
-          <HelixSvg uid={`h${i}`} intense={col.intense} />
+          <HelixSvg uid={`h${i}`} intense={col.intense} reduce={reduce} />
         </div>
       ))}
 

@@ -19,7 +19,7 @@ import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
 import { fetchPlayOutcomeStats } from "@/lib/spx-play-outcomes";
-import { formatTickerDossierText } from "./format";
+import { buildMarketRecap, formatTickerDossierText } from "./format";
 import { fetchIndexDossiers } from "./index-dossier";
 import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
 import { critiquePlays } from "./play-critic";
@@ -80,6 +80,7 @@ export async function buildEveningEdition(opts?: {
       context_json: null,
       candidates_json: null,
       scored_json: null,
+      synthesis_json: null,
       error: null,
       published_at: null,
     });
@@ -217,15 +218,26 @@ export async function buildEveningEdition(opts?: {
       };
     }
 
-    // STAGE 4 — Ranking
-    const { ranked, exclusionReason: rankExclusionReason } = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
-    if (checkpointing) {
-      await upsertNighthawkJob(editionFor, {
-        scored_json: ranked,
-        status: "stage_scoring",
-        current_stage: "stage_synthesis",
-      });
-      logNighthawkJob(editionFor, "info", "stage_scoring", `Ranked ${ranked.length} tickers for synthesis${rankExclusionReason ? ` — ${rankExclusionReason}` : ""}`);
+    // STAGE 4 — Ranking (resume-aware: reuse checkpointed scored_json)
+    const checkpointedRanked =
+      checkpointing && Array.isArray(job?.scored_json) && job.scored_json.length
+        ? (job.scored_json as ScoredCandidate[])
+        : null;
+    let ranked: ScoredCandidate[];
+    if (checkpointedRanked) {
+      ranked = checkpointedRanked;
+      console.info(`[nighthawk/edition] stage_scoring: loaded ${ranked.length} ranked from checkpoint`);
+    } else {
+      const { ranked: freshRanked, exclusionReason: rankExclusionReason } = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
+      ranked = freshRanked;
+      if (checkpointing) {
+        await upsertNighthawkJob(editionFor, {
+          scored_json: ranked,
+          status: "stage_scoring",
+          current_stage: "stage_synthesis",
+        });
+        logNighthawkJob(editionFor, "info", "stage_scoring", `Ranked ${ranked.length} tickers for synthesis${rankExclusionReason ? ` — ${rankExclusionReason}` : ""}`);
+      }
     }
 
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
@@ -251,55 +263,87 @@ export async function buildEveningEdition(opts?: {
       powerHour: spxPowerHour ?? null,
     };
 
-    const { plays: rawPlays, recap, raw } = await generateEditionPlays({
-      ctx,
-      dossiers: synthesisDossiers,
-      ranked: synthesisRanked,
-      engineState,
-      spxDesk,
-      flowTape,
-      playOutcomes,
-    });
+    // recap is deterministic from ctx — safe to rebuild on resume.
+    const recap = buildMarketRecap(ctx);
 
-    if (!rawPlays.length) {
-      const err = anthropicConfigured()
-        ? "Claude returned no parseable plays."
-        : "Claude not configured and mechanical fallback empty.";
-      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
-      return {
-        ok: false,
-        edition_for: editionFor,
-        plays_count: 0,
-        candidates: candidates.length,
-        error: err,
-        duration_ms: Date.now() - started,
-        job_status: "failed",
-      };
-    }
+    // STAGE 5 — Synthesis + critic (resume-aware: reuse checkpointed Claude output)
+    type SynthesisCheckpoint = { plays: PlaybookPlay[]; critic_notes: string[]; claude: boolean };
+    const checkpointedSynthesis =
+      checkpointing && job?.synthesis_json
+        ? (job.synthesis_json as unknown as SynthesisCheckpoint)
+        : null;
 
-    const { plays: vettedPlays, notes: criticNotes } = await critiquePlays({
-      plays: rawPlays,
-      dossiers,
-      ranked,
-      ctx,
-    });
+    let finalPlays: PlaybookPlay[];
+    let finalCriticNotes: string[];
+    let raw: string | null;
 
-    const finalPlays = vettedPlays;
-    const finalCriticNotes = criticNotes;
-    if (!finalPlays.length) {
-      // Critic rejected every play — do NOT publish unvetted fallback content.
-      // Return an explicit error so the caller can send a "no plays tonight" notice.
-      const err = "Critic rejected all plays — no plays passed quality review.";
-      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
-      return {
-        ok: false,
-        edition_for: editionFor,
-        plays_count: 0,
-        candidates: candidates.length,
-        error: err,
-        duration_ms: Date.now() - started,
-        job_status: "failed",
-      };
+    if (checkpointedSynthesis && Array.isArray(checkpointedSynthesis.plays) && checkpointedSynthesis.plays.length) {
+      finalPlays = checkpointedSynthesis.plays;
+      finalCriticNotes = Array.isArray(checkpointedSynthesis.critic_notes) ? checkpointedSynthesis.critic_notes : [];
+      raw = checkpointedSynthesis.claude ? "checkpointed" : null;
+      console.info(`[nighthawk/edition] stage_synthesis: loaded ${finalPlays.length} vetted plays from checkpoint`);
+    } else {
+      const { plays: rawPlays, raw: synthRaw } = await generateEditionPlays({
+        ctx,
+        dossiers: synthesisDossiers,
+        ranked: synthesisRanked,
+        engineState,
+        spxDesk,
+        flowTape,
+        playOutcomes,
+      });
+      raw = synthRaw;
+
+      if (!rawPlays.length) {
+        const err = anthropicConfigured()
+          ? "Claude returned no parseable plays."
+          : "Claude not configured and mechanical fallback empty.";
+        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        return {
+          ok: false,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: candidates.length,
+          error: err,
+          duration_ms: Date.now() - started,
+          job_status: "failed",
+        };
+      }
+
+      const { plays: vettedPlays, notes: criticNotes } = await critiquePlays({
+        plays: rawPlays,
+        dossiers,
+        ranked,
+        ctx,
+      });
+
+      finalPlays = vettedPlays;
+      finalCriticNotes = criticNotes;
+      if (!finalPlays.length) {
+        // Critic rejected every play — do NOT publish unvetted fallback content.
+        // Return an explicit error so the caller can send a "no plays tonight" notice.
+        const err = "Critic rejected all plays — no plays passed quality review.";
+        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        return {
+          ok: false,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: candidates.length,
+          error: err,
+          duration_ms: Date.now() - started,
+          job_status: "failed",
+        };
+      }
+
+      // Checkpoint the vetted Claude output so a resume skips synthesis + critic.
+      if (checkpointing) {
+        await upsertNighthawkJob(editionFor, {
+          synthesis_json: { plays: finalPlays, critic_notes: finalCriticNotes, claude: Boolean(raw) } as unknown as Record<string, unknown>,
+          status: "stage_synthesis",
+          current_stage: "stage_publish",
+        });
+        logNighthawkJob(editionFor, "info", "stage_synthesis", `Synthesis + critic done — ${finalPlays.length} vetted plays`);
+      }
     }
 
     // STAGE 6 — Publish

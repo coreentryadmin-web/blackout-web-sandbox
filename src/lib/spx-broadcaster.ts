@@ -22,7 +22,7 @@ export interface SpxBar {
 class SpxBroadcaster {
   private subscribers = new Set<Subscriber>()
   private ws: any = null
-  private reconnectTimer: any = null
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private authenticated = false
   private reconnectAttempts = 0
   private readonly MAX_RECONNECT_ATTEMPTS = 10
@@ -53,16 +53,27 @@ class SpxBroadcaster {
     }
   }
 
+  private clearReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+  }
+
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
       console.error('[SpxBroadcaster] Max reconnect attempts reached')
       this.reconnecting = false
       return
     }
+    // Cancel any pending reconnect so overlapping 'close' events cannot stack
+    // multiple concurrent connect() attempts (single-timer pattern, see uw-socket.ts).
+    this.clearReconnect()
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000)
     const jitter = Math.random() * 1000
     this.reconnectAttempts++
-    setTimeout(() => this.connect(), delay + jitter)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect()
+    }, delay + jitter)
   }
 
   private setupHandlers() {

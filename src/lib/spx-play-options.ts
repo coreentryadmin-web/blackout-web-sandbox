@@ -3,6 +3,7 @@ import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { gradeRank } from "@/lib/spx-play-config";
 import { effectiveChainMaxSpreadPct } from "@/lib/spx-play-chain";
+import { round5 } from "@/lib/round5";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -82,10 +83,6 @@ function deltaBand(grade: string): { min: number; max: number; target: number } 
   if (gradeRank(grade) >= 4) return { min: 0.45, max: 0.55, target: 0.5 };
   if (gradeRank(grade) >= 3) return { min: 0.35, max: 0.45, target: 0.4 };
   return { min: 0.25, max: 0.35, target: 0.3 };
-}
-
-function round5(n: number): number {
-  return Math.round(n / 5) * 5;
 }
 
 function fallbackStrike(spot: number, type: "call" | "put", steps: number): number {

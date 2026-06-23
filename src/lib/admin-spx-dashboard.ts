@@ -13,6 +13,7 @@ import { loadPlaySessionMeta } from "@/lib/spx-play-store";
 import { loadLottoRecord } from "@/lib/spx-lotto-store";
 import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import { fetchLottoPlaysForDate } from "@/lib/db";
+import { todayEt } from "@/lib/et-date";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import { fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
 import { buildSpxAdminIssues, type SpxAdminIssuesPayload } from "@/lib/admin-spx-issues";
@@ -70,10 +71,6 @@ export type SpxAdminDashboardPayload = {
   open_incidents: AdminIncidentRow[];
   outcomes_all: Awaited<ReturnType<typeof fetchRecentPlayOutcomes>>;
 };
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
 
 export function buildDeskIntel(desk: SpxDeskPayload): DeskIntelSection {
   return {

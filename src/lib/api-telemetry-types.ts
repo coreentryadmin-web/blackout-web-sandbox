@@ -33,6 +33,13 @@ export type ApiCallEvent = {
   headers_sent: string[];
   severity: ApiIncidentSeverity;
   sla_breach: boolean;
+  /**
+   * True for events that are not real outbound API calls (e.g. an admin GET
+   * route catch-block recording a 500). These carry no meaningful latency, so
+   * they are excluded from provider latency aggregation (avg/p95/p99) while
+   * still surfacing in counts and the incident/error feeds.
+   */
+  synthetic?: boolean;
 };
 
 export type ApiEndpointStats = {

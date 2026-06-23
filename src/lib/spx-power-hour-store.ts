@@ -1,6 +1,7 @@
 import { PLATFORM_META_KEYS } from "@/lib/platform-meta-keys";
 import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
+import { todayEt } from "@/lib/et-date";
 
 export type PowerHourPhase = "NONE" | "WATCH" | "HOLD" | "SELL";
 
@@ -28,10 +29,6 @@ export type PowerHourRecord = {
 
 const KEY = PLATFORM_META_KEYS.powerHourState;
 const mem: { record: PowerHourRecord | null } = { record: null };
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
 
 export async function loadPowerHourRecord(): Promise<PowerHourRecord | null> {
   if (mem.record) {

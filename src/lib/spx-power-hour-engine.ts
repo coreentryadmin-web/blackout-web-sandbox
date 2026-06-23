@@ -23,10 +23,12 @@ import "server-only";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PlayTechnicals } from "@/lib/spx-play-technicals";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
+import { todayEt } from "@/lib/et-date";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import { polygonConfigured } from "@/lib/providers/config";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { round5 } from "@/lib/round5";
 import { notifyPlayDiscord } from "@/lib/spx-play-notify";
 import { isEtWeekday } from "@/lib/spx-play-session-guards";
 import { etClock, etMinutes } from "@/lib/spx-play-session-time";
@@ -115,20 +117,8 @@ function isWatchExpired(now = new Date()): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Session date
-// ---------------------------------------------------------------------------
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
-
-// ---------------------------------------------------------------------------
 // Option chain builder — near-money strikes
 // ---------------------------------------------------------------------------
-
-function round5(n: number): number {
-  return Math.round(n / 5) * 5;
-}
 
 type RawContract = {
   details?: { strike_price?: number; contract_type?: string; ticker?: string };

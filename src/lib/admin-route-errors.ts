@@ -19,6 +19,7 @@ export function recordAdminRouteError(route: string, error: unknown): void {
     latency_ms: 0,
     error: message,
     phase: "failure",
+    synthetic: true,
   });
 }
 export function getAdminRouteErrors(): typeof errors {

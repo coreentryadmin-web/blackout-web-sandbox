@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { initFlowEventBridge, subscribeFlowEvents } from "@/lib/flow-events";
+import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,6 +41,18 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const send = (payload: unknown) => {
         if (closed) return;
+        // Backpressure: a slow client lets the controller's internal queue grow
+        // (desiredSize goes increasingly negative). Drop the lagging client rather
+        // than buffer unbounded. Healthy clients keep desiredSize >= 0, so this never trips for them.
+        if (sseBackpressureExceeded(controller.desiredSize)) {
+          try {
+            controller.close();
+          } catch {
+            // already closed/errored
+          }
+          cleanup();
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
         } catch {

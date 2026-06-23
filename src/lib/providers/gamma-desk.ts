@@ -63,42 +63,62 @@ export function computeGammaFlip(
   let prevCum = 0;
   let bestFlip: number | null = null;
   let bestDist = Infinity;
+  // P3 fix: a flip requires the cumulative GEX to actually CHANGE SIGN, not merely
+  // touch zero. The old prevCum===0 / newCum===0 branches fired on any zero touch,
+  // so a "tangent" profile (e.g. cum +10 -> 0 -> +10) registered a flip that could be
+  // arbitrarily far from spot and win on distance. We defer a zero-touch and only
+  // confirm it when the next non-zero cumulative has the OPPOSITE sign (a true
+  // crossing), or when it is the terminal touch away from a non-zero side.
+  let lastNonZeroSign = 0;
+  let pendingZeroStrike: number | null = null;
+  let pendingSignBefore = 0;
+
+  const considerFlip = (flip: number, exact: boolean) => {
+    const dist = Math.abs(spot - flip);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestFlip = exact ? flip : Math.round(flip * 100) / 100;
+    }
+  };
 
   for (const lv of sorted) {
     const strike = lv.strike;
     const net = lv.net_gex;
     const newCum = cum + net;
+    const newSign = newCum > 0 ? 1 : newCum < 0 ? -1 : 0;
 
-    if (prevStrike != null) {
-      if (prevCum === 0) {
-        const flip = prevStrike;
-        const dist = Math.abs(spot - flip);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestFlip = flip;
+    // Genuine sign change between two non-zero cumulatives -> interpolate (unchanged).
+    if (prevStrike != null && prevCum !== 0 && newCum !== 0 && prevCum * newCum < 0) {
+      const denom = Math.abs(prevCum) + Math.abs(newCum);
+      const frac = denom > 0 ? Math.abs(prevCum) / denom : 0.5;
+      considerFlip(prevStrike + frac * (strike - prevStrike), false);
+    }
+
+    if (newSign !== 0) {
+      if (pendingZeroStrike != null) {
+        // Confirm the deferred zero touch only if it was a real crossing: the sign
+        // before the zero differs from the sign after (or the cumulative began at 0).
+        if (pendingSignBefore === 0 || pendingSignBefore !== newSign) {
+          considerFlip(pendingZeroStrike, true);
         }
-      } else if (newCum === 0) {
-        const flip = strike;
-        const dist = Math.abs(spot - flip);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestFlip = flip;
-        }
-      } else if (prevCum * newCum < 0) {
-        const denom = Math.abs(prevCum) + Math.abs(newCum);
-        const frac = denom > 0 ? Math.abs(prevCum) / denom : 0.5;
-        const flip = prevStrike + frac * (strike - prevStrike);
-        const dist = Math.abs(spot - flip);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestFlip = Math.round(flip * 100) / 100;
-        }
+        pendingZeroStrike = null;
       }
+      lastNonZeroSign = newSign;
+    } else if (prevStrike != null && pendingZeroStrike == null) {
+      // Cumulative hit exactly zero -> defer until the next non-zero sign resolves it.
+      pendingZeroStrike = strike;
+      pendingSignBefore = lastNonZeroSign;
     }
 
     cum = newCum;
     prevStrike = strike;
     prevCum = newCum;
+  }
+
+  // Terminal zero touch: reaching zero from a non-zero side at the end of the chain
+  // is the boundary of the gamma profile, so it is the flip (e.g. cum +10 -> 0).
+  if (pendingZeroStrike != null && pendingSignBefore !== 0) {
+    considerFlip(pendingZeroStrike, true);
   }
 
   return bestFlip;

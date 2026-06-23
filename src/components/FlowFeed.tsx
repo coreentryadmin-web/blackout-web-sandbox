@@ -125,9 +125,18 @@ export function FlowFeed() {
       .catch((e) => console.warn("[FlowFeed] nighthawk edition fetch:", e));
   }, []);
 
-  // Derived counts for filter pills
-  const callCount = useMemo(() => alerts.filter((a) => a.option_type === "CALL").length, [alerts]);
-  const putCount  = useMemo(() => alerts.filter((a) => a.option_type === "PUT").length, [alerts]);
+  // Derived counts for filter pills — single pass over alerts instead of two
+  // full filter() scans, and one memo recompute per SSE message instead of two.
+  // (Both still depend on `alerts`; a new alert legitimately changes the counts,
+  // so they must recompute — but we do it once, in O(n), not twice.)
+  const { callCount, putCount } = useMemo(() => {
+    let call = 0, put = 0;
+    for (const a of alerts) {
+      if (a.option_type === "CALL") call++;
+      else if (a.option_type === "PUT") put++;
+    }
+    return { callCount: call, putCount: put };
+  }, [alerts]);
 
   // Bug 9: limit input to recent 500 alerts for strike-stack computation performance
   const compoundTickers = useMemo<Set<string>>(() => {

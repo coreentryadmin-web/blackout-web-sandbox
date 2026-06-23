@@ -2,7 +2,8 @@
  * Singleton UW WebSocket manager — multiplex socket per official UW examples.
  * @see https://github.com/unusual-whales/api-examples
  */
-import { persistAndPublishFlowAlert } from "@/lib/flow-persist";
+import { persistAndPublishFlowAlert, alertId as computeFlowAlertId, MIN_PREMIUM as FLOW_MIN_PREMIUM } from "@/lib/flow-persist";
+import { makeFlowDedup } from "@/lib/flow-dedup";
 import {
   UW_WS_CHANNELS,
   type UwWsChannel,
@@ -509,6 +510,7 @@ export function getActiveTradingHalts(symbols: readonly string[] = PLAY_HALT_WAT
   return Array.from(tradingHaltsStore.halts.values()).filter((h) => watch.has(h.symbol) && h.active);
 }
 
+const flowAlertDedup = makeFlowDedup();
 let uwSocketInitialized = false;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const lastMessageAt: Partial<Record<UwWsChannel, number>> = {};
@@ -534,10 +536,21 @@ export function initUwSocket() {
     try {
       const block = Array.isArray(payload) ? payload : [payload];
       lastMessageAt.flow_alerts = Date.now();
+      const now = Date.now();
       for (const raw of block) {
         if (!raw || typeof raw !== "object") continue;
-        const flow = parseUwFlowAlert(raw as Record<string, unknown>);
-        void persistAndPublishFlowAlert(raw as Record<string, unknown>, flow);
+        const rec = raw as Record<string, unknown>;
+        const flow = parseUwFlowAlert(rec);
+        // Premium pre-filter BEFORE persist: identical threshold/comparison to
+        // persistAndPublishFlowAlert (flow.premium < MIN_PREMIUM => dropped there too),
+        // so this only skips work persist would also reject. A NaN premium yields
+        // false here (same as persist) and falls through to persist, the authority.
+        if (flow.premium < FLOW_MIN_PREMIUM) continue;
+        // Cheap in-process dedup keyed on the EXACT id used for DB ON-CONFLICT.
+        // A hit here would be an ON-CONFLICT duplicate persist already suppresses,
+        // so skipping it cannot drop a genuinely-distinct alert.
+        if (flowAlertDedup.seen(computeFlowAlertId(rec, flow), now)) continue;
+        void persistAndPublishFlowAlert(rec, flow);
       }
     } catch {
       /* ignore */

@@ -423,6 +423,9 @@ async function runMigrations(): Promise<void> {
     );
   `);
   await p.query(`
+    ALTER TABLE nighthawk_jobs ADD COLUMN IF NOT EXISTS synthesis_json JSONB;
+  `);
+  await p.query(`
     CREATE INDEX IF NOT EXISTS idx_nighthawk_jobs_status
     ON nighthawk_jobs(status, updated_at DESC);
   `);
@@ -2008,6 +2011,7 @@ export type NighthawkJobRow = {
   context_json: Record<string, unknown> | null;
   candidates_json: string[] | null;
   scored_json: unknown[] | null;
+  synthesis_json: Record<string, unknown> | null;
   error: string | null;
   started_at: string;
   updated_at: string;
@@ -2024,6 +2028,7 @@ function mapNighthawkJobRow(r: QueryResultRow): NighthawkJobRow {
     context_json: (r.context_json as Record<string, unknown>) ?? null,
     candidates_json: Array.isArray(candidates) ? candidates.map((t) => String(t).toUpperCase()) : null,
     scored_json: Array.isArray(r.scored_json) ? r.scored_json : null,
+    synthesis_json: (r.synthesis_json as Record<string, unknown>) ?? null,
     error: r.error != null ? String(r.error) : null,
     started_at: new Date(String(r.started_at)).toISOString(),
     updated_at: new Date(String(r.updated_at)).toISOString(),
@@ -2039,6 +2044,7 @@ export async function upsertNighthawkJob(
     context_json?: Record<string, unknown> | null;
     candidates_json?: string[] | null;
     scored_json?: unknown[] | null;
+    synthesis_json?: Record<string, unknown> | null;
     error?: string | null;
     published_at?: string | null;
   }
@@ -2059,6 +2065,7 @@ export async function upsertNighthawkJob(
   if (fields.context_json !== undefined) add("context_json", JSON.stringify(fields.context_json ?? null), true);
   if (fields.candidates_json !== undefined) add("candidates_json", JSON.stringify(fields.candidates_json ?? []), true);
   if (fields.scored_json !== undefined) add("scored_json", JSON.stringify(fields.scored_json ?? []), true);
+  if (fields.synthesis_json !== undefined) add("synthesis_json", JSON.stringify(fields.synthesis_json ?? null), true);
   if (fields.error !== undefined) add("error", fields.error);
   if (fields.published_at !== undefined) add("published_at", fields.published_at);
 
@@ -2077,7 +2084,7 @@ export async function fetchNighthawkJob(editionFor: string): Promise<NighthawkJo
   const res = await (await getPool()).query(
     `
     SELECT id, edition_for, status, current_stage, context_json, candidates_json, scored_json,
-           error, started_at, updated_at, published_at
+           synthesis_json, error, started_at, updated_at, published_at
     FROM nighthawk_jobs
     WHERE edition_for = $1::date
     LIMIT 1
@@ -2178,7 +2185,7 @@ export async function fetchLatestNighthawkJob(): Promise<NighthawkJobRow | null>
   const res = await (await getPool()).query(
     `
     SELECT id, edition_for, status, current_stage, context_json, candidates_json, scored_json,
-           error, started_at, updated_at, published_at
+           synthesis_json, error, started_at, updated_at, published_at
     FROM nighthawk_jobs
     ORDER BY updated_at DESC
     LIMIT 1

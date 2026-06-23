@@ -1,6 +1,7 @@
 import { PLATFORM_META_KEYS } from "@/lib/platform-meta-keys";
 import { dbConfigured, getMeta, setMeta } from "@/lib/db";
 import type { SpxPlayDirection } from "@/lib/spx-signals";
+import { todayEt } from "@/lib/et-date";
 
 export type LottoPhase = "SCAN" | "WATCH" | "BUY" | "HOLD" | "SELL" | "INVALID" | "NONE";
 
@@ -36,10 +37,6 @@ export type LottoRecord = {
 
 const LOTTO_KEY = PLATFORM_META_KEYS.lottoTodayState;
 const memoryLotto: { record: LottoRecord | null } = { record: null };
-
-function todayEt(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-}
 
 export async function loadLottoRecord(): Promise<LottoRecord | null> {
   const today = todayEt();

@@ -5,6 +5,7 @@ import {
   subscribeApiTelemetry,
 } from "@/lib/api-telemetry";
 import { requireAdminApi } from "@/lib/admin-access";
+import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,6 +40,17 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const send = (payload: unknown, id?: number) => {
         if (closed) return;
+        // Backpressure: drop a slow client whose un-drained queue has grown past the
+        // threshold instead of buffering unbounded. Healthy clients keep desiredSize >= 0.
+        if (sseBackpressureExceeded(controller.desiredSize)) {
+          try {
+            controller.close();
+          } catch {
+            // already closed/errored
+          }
+          cleanup();
+          return;
+        }
         const idLine = id != null ? `id: ${id}\n` : "";
         try {
           controller.enqueue(encoder.encode(`${idLine}data: ${JSON.stringify(payload)}\n\n`));
