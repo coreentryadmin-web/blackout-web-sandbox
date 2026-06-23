@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { motion } from "framer-motion";
+import { usePulse } from "@/lib/usePulse";
 import { clsx } from "clsx";
 import { LandingCta } from "@/components/landing/LandingCta";
 import { WHOP_CHECKOUT, WHOP_PREMIUM_CHECKOUT_OPTIONS } from "@/lib/whop-checkout";
@@ -46,6 +47,16 @@ const cardVariants = {
 };
 
 export function PricingSection() {
+  const pulse = usePulse(
+    {
+      textShadow: [
+        "0 0 20px rgba(255,45,85,0.3)",
+        "0 0 60px rgba(255,45,85,0.7)",
+        "0 0 20px rgba(255,45,85,0.3)",
+      ],
+    },
+    { duration: 2.5, repeat: Infinity }
+  );
   return (
     <section id="pricing" className="landing-section landing-section-cut relative py-32 px-4 md:px-8 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
@@ -64,14 +75,7 @@ export function PricingSection() {
             FREE OR{" "}
             <motion.span
               className="text-gradient-fire inline-block"
-              animate={{
-                textShadow: [
-                  "0 0 20px rgba(255,45,85,0.3)",
-                  "0 0 60px rgba(255,45,85,0.7)",
-                  "0 0 20px rgba(255,45,85,0.3)",
-                ],
-              }}
-              transition={{ duration: 2.5, repeat: Infinity }}
+              {...pulse}
             >
               PREMIUM
             </motion.span>

@@ -44,6 +44,10 @@ import os from "os";
 const nextConfig = {
   experimental: {
     cpus: Math.max(1, os.cpus().length - 1),
+    // P1 (audit: "No external error tracking"): enable the instrumentation hook so
+    // src/instrumentation.ts register() runs at server startup. Required on Next
+    // 14.2.x (became stable/default in Next 15); accepted by 14.2.35.
+    instrumentationHook: true,
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

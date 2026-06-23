@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePulse } from "@/lib/usePulse";
 import { AreaChart, Area, ResponsiveContainer, ReferenceLine } from "recharts";
 import { clsx } from "clsx";
 import {
@@ -179,14 +180,16 @@ export function DarkPoolPanel() {
   // Ticker summary stats
   const tickerTotal = visible.reduce((s, p) => s + p.premium, 0);
 
+  // Hoisted (no early return in this component, but kept top-level for Rules of Hooks).
+  const pulse = usePulse({ opacity: [1, 0.3, 1] }, { repeat: Infinity, duration: 2.5, ease: "easeInOut" });
+
   return (
     <div className="flow-panel">
       {/* ── Header ── */}
       <div className="flow-panel-header flex-wrap gap-y-2">
         <div className="flex items-center gap-2 flex-shrink-0">
           <motion.span
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+            {...pulse}
             className="text-[11px]"
             style={{ color: "#a78bfa", textShadow: "0 0 8px rgba(167,139,250,0.6)" }}
           >

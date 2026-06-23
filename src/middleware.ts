@@ -17,26 +17,37 @@ export default clerkMiddleware((auth, req) => {
 });
 
 // ---------------------------------------------------------------------------
-// SECURITY MODEL — DENY-LIST (protected by default)
+// SECURITY MODEL — READ THIS BEFORE ADDING ANY API ROUTE
 // ---------------------------------------------------------------------------
-// The matcher below runs clerkMiddleware on ALL page and API routes, then
-// the middleware function itself applies the allow/block logic:
+// The matcher below makes clerkMiddleware RUN on (almost) all page + API routes,
+// but the middleware callback above only ENFORCES auth on the page routes listed
+// in `isProtectedRoute`, via auth().protect(). That is the ENTIRE runtime
+// behavior — there is no deny-list and no "protected by default".
 //
-//   INTENTIONALLY PUBLIC routes (no auth required):
-//     • /api/health          — liveness probe (see isPublicRoute above)
-//     • /_next/*             — Next.js internals (excluded by matcher regex)
-//     • /static assets       — .js, .css, images, fonts, etc. (excluded by regex)
-//     • WebSocket upgrades   — excluded via the `missing` header filter
+//   PROTECTED by this middleware (Clerk redirect/401):
+//     • only the page routes in `isProtectedRoute` above
+//       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /admin, /docs)
 //
-//   Everything else (including ALL /api/* routes not listed above) goes
-//   through clerkMiddleware and is PROTECTED by default.
+//   NOT protected by this middleware (callback is a no-op for them):
+//     • EVERY /api/* and /trpc/* route — they pass through unguarded here
+//     • all other pages (landing, sign-in, etc.)
+//     • static assets + /_next/* — excluded by the matcher regex below
+//     • WebSocket upgrades — excluded via the `missing` upgrade-header filter
 //
-//   To make a new route public you MUST add it to `isPublicRoute` above.
-//   To make a new route premium-gated you MUST add it to both
-//   `isProtectedRoute` AND `isPremiumRoute` above.
+// ==> Adding a route to `isProtectedRoute` does nothing for API routes
+//     (protect() is for page navigations). Every /api route MUST authorize
+//     ITSELF inside its handler. Do not assume the middleware guards it.
 //
-//   Never rely on a route being "not listed" as a security boundary — the
-//   matcher catches all routes, so omission means protected, not public.
+//   Self-guard helpers (call one at the top of each API handler):
+//     • requireTierApi(minTier) ........ src/lib/market-api-auth.ts
+//     • isCronAuthorized(req) ........... src/lib/market-api-auth.ts
+//     • authorizeCronOrTierApi(req,…) ... src/lib/market-api-auth.ts
+//     • authorizeMarketDeskApi(req) ..... src/lib/market-api-auth.ts
+//     • requireAdminApi() ............... src/lib/admin-access.ts
+//
+//   A genuinely public API route is one that intentionally calls none of the
+//   above. Make that choice explicitly per handler; "not listed here" is NOT a
+//   security boundary for API routes.
 // ---------------------------------------------------------------------------
 export const config = {
   matcher: [

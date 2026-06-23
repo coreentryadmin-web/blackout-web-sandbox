@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { usePulse } from "@/lib/usePulse";
 import { fmtPremium } from "@/lib/api";
 
 export type VelocityEntry = {
@@ -18,6 +19,8 @@ export function VelocityRadar({
   entries: VelocityEntry[];
   onTickerClick?: (ticker: string) => void;
 }) {
+  // Hoisted above the early return (Rules of Hooks). Static for reduced-motion users.
+  const pulse = usePulse({ opacity: [1, 0.2, 1] }, { repeat: Infinity, duration: 1.4, ease: "easeInOut" });
   if (entries.length === 0) return null;
 
   const maxRatio = Math.max(...entries.map((e) => e.ratio), 1);
@@ -27,8 +30,7 @@ export function VelocityRadar({
       <div className="flow-panel-header">
         <div className="flex items-center gap-2">
           <motion.span
-            animate={{ opacity: [1, 0.2, 1] }}
-            transition={{ repeat: Infinity, duration: 1.4, ease: "easeInOut" }}
+            {...pulse}
             className="font-mono text-[10px] text-orange-400"
           >
             ◉

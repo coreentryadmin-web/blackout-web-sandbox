@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { usePulse } from "@/lib/usePulse";
 import { clsx } from "clsx";
 import { fmtPremium } from "@/lib/api";
 import type { PlaybookPlay } from "@/lib/nighthawk/types";
@@ -35,6 +36,8 @@ export function NightHawkFlowPanel({
   editionFor?: string | null;
   onTickerClick?: (ticker: string) => void;
 }) {
+  // Hoisted above the early return (Rules of Hooks). Static for reduced-motion users.
+  const pulse = usePulse({ opacity: [1, 0.4, 1] }, { repeat: Infinity, duration: 3, ease: "easeInOut" });
   if (plays.length === 0) return null;
 
   return (
@@ -42,8 +45,7 @@ export function NightHawkFlowPanel({
       <div className="flow-panel-header">
         <div className="flex items-center gap-2">
           <motion.span
-            animate={{ opacity: [1, 0.4, 1] }}
-            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            {...pulse}
             className="font-mono text-[10px] text-indigo-400"
           >
             ◈
