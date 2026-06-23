@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
 
@@ -127,16 +127,8 @@ const FAQS: Faq[] = CATEGORIES.flatMap((c) =>
 
 export function FaqSection() {
   const [activeId, setActiveId] = useState<string>(FAQS[0].id);
-  const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-
-  const q = query.trim().toLowerCase();
-  const results = useMemo(
-    () => (q ? FAQS.filter((f) => (f.q + " " + f.a).toLowerCase().includes(q)) : null),
-    [q]
-  );
 
   const active = FAQS.find((f) => f.id === activeId) ?? FAQS[0];
   const flatIndex = FAQS.findIndex((f) => f.id === active.id);
@@ -156,25 +148,17 @@ export function FaqSection() {
     if (h && FAQS.some((f) => f.id === h)) setActiveId(h);
   }, []);
 
-  // keyboard: "/" focus search · Esc clear · ←/→ walk answers (when not typing)
+  // keyboard: ←/→ walk through answers
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const inInput = document.activeElement === searchRef.current;
-      if (e.key === "/" && !inInput) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      } else if (e.key === "Escape" && query) {
-        setQuery("");
-        searchRef.current?.blur();
-      } else if (!inInput && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-        const idx = FAQS.findIndex((f) => f.id === activeId);
-        const next = e.key === "ArrowLeft" ? Math.max(0, idx - 1) : Math.min(FAQS.length - 1, idx + 1);
-        if (next !== idx) open(FAQS[next].id);
-      }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const idx = FAQS.findIndex((f) => f.id === activeId);
+      const next = e.key === "ArrowLeft" ? Math.max(0, idx - 1) : Math.min(FAQS.length - 1, idx + 1);
+      if (next !== idx) open(FAQS[next].id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [query, activeId, open]);
+  }, [activeId, open]);
 
   return (
     <section id="faq" className="relative lg:h-[100svh] lg:overflow-hidden">
@@ -207,55 +191,15 @@ export function FaqSection() {
                 </span>
               </h2>
             </div>
-            <div className="text-left sm:text-right">
-              <p className="font-mono text-[10px] tracking-[0.2em] text-sky-300">
-                21 ANSWERS · 5 DESKS · ONE WINDOW
-              </p>
-              <p className="font-mono text-[10px] mt-1.5 flex items-center gap-3 sm:justify-end text-white/85">
-                <span className="flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-bull" /> Data live, real time
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-sky-300" /> 5 desks online
-                </span>
-              </p>
-            </div>
+            <p className="hidden md:block max-w-md text-left sm:text-right text-[14px] leading-relaxed text-white/70">
+              Every tool, every signal, every answer — what BlackOut is and how the arsenal
+              works, in one screen.
+            </p>
           </div>
         </div>
 
-        {/* ── SEARCH ── */}
-        <div className="faq-tile fa-search justify-center">
-          <label htmlFor="faq-search" className="sr-only">
-            Search answers
-          </label>
-          <div className="relative">
-            <span
-              aria-hidden
-              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-bull/70 font-mono text-sm"
-            >
-              &#9906;
-            </span>
-            <input
-              id="faq-search"
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search — flow, Largo, gamma, billing…"
-              className="w-full rounded-xl bg-[rgba(8,8,14,0.7)] border border-[rgba(0,230,118,0.16)] py-3 pl-10 pr-24 text-[15px] text-white placeholder:text-sky-300/45 outline-none transition-colors focus:border-bull/60"
-            />
-            <span
-              aria-live="polite"
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums text-cyan-400"
-            >
-              {results ? `${results.length} match${results.length === 1 ? "" : "es"}` : ""}
-            </span>
-          </div>
-        </div>
-
-        {/* ── CATEGORY TILES (or search results) ── */}
-        {!results ? (
-          CATEGORIES.map((c) => {
+        {/* ── CATEGORY TILES ── */}
+        {CATEGORIES.map((c) => {
             const items = FAQS.filter((f) => f.catKey === c.key);
             return (
               <div key={c.key} className={`faq-tile fa-${c.key}`} role="group" aria-label={c.label}>
@@ -311,42 +255,7 @@ export function FaqSection() {
                 </ul>
               </div>
             );
-          })
-        ) : (
-          <div className="faq-tile fa-results faq-scroll" role="region" aria-label="Search results">
-            <p className="font-mono text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-2 shrink-0">
-              {results.length} result{results.length === 1 ? "" : "s"}
-            </p>
-            {results.length === 0 ? (
-              <p className="text-sm text-white/80 m-0">
-                No matches for &ldquo;{query}&rdquo; —{" "}
-                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-bull hover:underline">
-                  email the desk
-                </a>
-                .
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {results.map((f) => (
-                  <li key={f.id}>
-                    <button
-                      onClick={() => {
-                        open(f.id);
-                        setQuery("");
-                      }}
-                      className="w-full text-left rounded-md px-3 py-2 transition-colors hover:bg-white/[0.05]"
-                    >
-                      <span className="block font-mono text-[10px] tracking-[0.15em] text-sky-300 uppercase">
-                        {f.cat}
-                      </span>
-                      <span className="block text-[14px] text-white">{f.q}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+          })}
 
         {/* ── SUPPORT ── */}
         <div className="faq-tile fa-support">
@@ -358,9 +267,6 @@ export function FaqSection() {
               <div>
                 <p className="text-white font-semibold text-[15px] leading-tight m-0">
                   Still stuck? Talk to a human on the desk.
-                </p>
-                <p className="font-mono text-[10px] text-sky-300 mt-1 hidden xl:block">
-                  &uarr;&darr; navigate · Enter open · &larr;&rarr; prev/next · / search · Esc clear
                 </p>
               </div>
             </div>

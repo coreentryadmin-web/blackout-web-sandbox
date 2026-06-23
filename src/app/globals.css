@@ -445,7 +445,7 @@ body {
     grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(0, 3.3fr);
     grid-template-rows: auto minmax(0, 1.3fr) minmax(0, 0.7fr) auto;
     grid-template-areas:
-      "brand brand brand search search search reader"
+      "brand brand brand brand brand brand reader"
       "platform platform arsenal arsenal signals signals reader"
       "member member member start start start reader"
       "support support support support support support reader";
