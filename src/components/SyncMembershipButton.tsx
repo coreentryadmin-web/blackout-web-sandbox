@@ -35,15 +35,14 @@ export function SyncMembershipButton() {
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <button
-        type="button"
-        onClick={handleSync}
-        disabled={loading}
-        className="btn-outline disabled:opacity-50"
-      >
+      <button type="button" onClick={handleSync} disabled={loading} className="btn-outline-bull">
         {loading ? "Syncing..." : "I paid — refresh my access"}
       </button>
-      {message && <p className="font-mono text-xs text-bull text-center">{message}</p>}
+      {message && (
+        <p role="status" aria-live="polite" className="font-mono text-xs text-bull text-center">
+          {message.startsWith("Access updated") ? `✓ ${message}` : message}
+        </p>
+      )}
     </div>
   );
 }
