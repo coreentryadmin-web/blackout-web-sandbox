@@ -10,12 +10,12 @@ type CatKey = "platform" | "arsenal" | "signals" | "member" | "start";
 
 type Faq = { id: string; catKey: CatKey; cat: string; q: string; a: string };
 
-const CATEGORIES: { key: CatKey; label: string; n: string }[] = [
-  { key: "platform", label: "Platform", n: "01" },
-  { key: "arsenal", label: "The Arsenal", n: "02" },
-  { key: "signals", label: "Signals & Data", n: "03" },
-  { key: "member", label: "Membership", n: "04" },
-  { key: "start", label: "Getting Started", n: "05" },
+const CATEGORIES: { key: CatKey; label: string; n: string; blurb: string; wide?: boolean }[] = [
+  { key: "platform", label: "Platform", n: "01", blurb: "What BlackOut is, and how it runs." },
+  { key: "arsenal", label: "The Arsenal", n: "02", blurb: "Every weapon on the desk, explained." },
+  { key: "signals", label: "Signals & Data", n: "03", blurb: "Alerts, latency, and the receipts." },
+  { key: "member", label: "Membership", n: "04", blurb: "Access, pricing, and cancellation.", wide: true },
+  { key: "start", label: "Getting Started", n: "05", blurb: "From zero to reading the tape.", wide: true },
 ];
 
 const RAW: Record<CatKey, { q: string; a: string }[]> = {
@@ -180,7 +180,7 @@ export function FaqSection() {
     <section id="faq" className="relative lg:h-[100svh] lg:overflow-hidden">
       <LandingBackdrop />
 
-      <div className="faq-board relative z-10 mx-auto w-full max-w-[1440px] px-4 lg:px-8 py-14 lg:py-6 lg:h-full">
+      <div className="faq-board relative z-10 mx-auto w-full max-w-[2100px] px-4 lg:px-10 py-14 lg:py-6 lg:h-full">
         {/* ── BRAND ── */}
         <div className="faq-tile fa-brand justify-center">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -193,7 +193,7 @@ export function FaqSection() {
                 />
                 The Briefing
               </p>
-              <h2 className="font-anton text-2xl md:text-[2rem] leading-none mt-1.5 text-white">
+              <h2 className="font-anton text-3xl md:text-[2.7rem] leading-none mt-1.5 text-white">
                 EVERYTHING,{" "}
                 <span
                   style={{
@@ -242,7 +242,7 @@ export function FaqSection() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search — flow, Largo, gamma, billing…"
-              className="w-full rounded-xl bg-[rgba(8,8,14,0.7)] border border-[rgba(0,230,118,0.16)] py-2.5 pl-10 pr-24 text-sm text-white placeholder:text-sky-300/45 outline-none transition-colors focus:border-bull/60"
+              className="w-full rounded-xl bg-[rgba(8,8,14,0.7)] border border-[rgba(0,230,118,0.16)] py-3 pl-10 pr-24 text-[15px] text-white placeholder:text-sky-300/45 outline-none transition-colors focus:border-bull/60"
             />
             <span
               aria-live="polite"
@@ -259,12 +259,19 @@ export function FaqSection() {
             const items = FAQS.filter((f) => f.catKey === c.key);
             return (
               <div key={c.key} className={`faq-tile fa-${c.key}`} role="group" aria-label={c.label}>
-                <p className="font-mono text-[10px] tracking-[0.2em] uppercase flex items-center gap-2 mb-2 shrink-0">
+                <p className="font-mono text-[11px] tracking-[0.22em] uppercase flex items-center gap-2 shrink-0">
                   <span className="text-bull/70 tabular-nums">{c.n}</span>
                   <span className="text-sky-300">{c.label}</span>
                   <span className="ml-auto text-cyan-400 tabular-nums">{items.length}</span>
                 </p>
-                <ul className="flex flex-col gap-0.5 min-h-0">
+                <p className="text-[12.5px] text-sky-300/70 mt-1.5 mb-3 shrink-0">{c.blurb}</p>
+                <ul
+                  className={
+                    c.wide
+                      ? "flex flex-col gap-1 min-h-0 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-1"
+                      : "flex flex-col gap-1 min-h-0"
+                  }
+                >
                   {items.map((f) => {
                     const on = active.id === f.id;
                     return (
@@ -273,15 +280,15 @@ export function FaqSection() {
                           onClick={() => open(f.id)}
                           aria-pressed={on}
                           aria-controls="faq-reader"
-                          className="group/q w-full flex items-center gap-2 text-left rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
+                          className="group/q w-full flex items-center gap-2 text-left rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.05]"
                           style={{
                             borderLeft: `2px solid ${on ? "#00e676" : "transparent"}`,
                             background: on ? "rgba(0,230,118,0.08)" : "transparent",
                           }}
                         >
                           <span
-                            className="truncate text-[13px] transition-colors"
-                            style={{ color: on ? "#fff" : "rgba(255,255,255,0.82)" }}
+                            className="truncate text-[14.5px] font-medium transition-colors"
+                            style={{ color: on ? "#fff" : "rgba(255,255,255,0.85)" }}
                           >
                             {f.q}
                           </span>
@@ -294,8 +301,8 @@ export function FaqSection() {
                         </button>
                         {/* mobile inline answer (desktop uses the reader rail) */}
                         {on && (
-                          <div className="lg:hidden px-2 pb-2.5 pt-1">
-                            <p className="text-[13px] leading-relaxed text-white/80 m-0">{f.a}</p>
+                          <div className="lg:hidden px-3 pb-3 pt-1">
+                            <p className="text-[14px] leading-relaxed text-white/80 m-0">{f.a}</p>
                           </div>
                         )}
                       </li>
@@ -349,7 +356,7 @@ export function FaqSection() {
                 &#9993;
               </span>
               <div>
-                <p className="text-white font-semibold text-[14px] leading-tight m-0">
+                <p className="text-white font-semibold text-[15px] leading-tight m-0">
                   Still stuck? Talk to a human on the desk.
                 </p>
                 <p className="font-mono text-[10px] text-sky-300 mt-1 hidden xl:block">
@@ -359,7 +366,7 @@ export function FaqSection() {
             </div>
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
-              className="rounded-xl px-5 py-2.5 font-semibold text-[13px] tracking-[0.01em] transition-transform hover:scale-[1.02]"
+              className="rounded-xl px-6 py-3 font-semibold text-[14px] tracking-[0.01em] transition-transform hover:scale-[1.02]"
               style={{
                 background: "linear-gradient(180deg, #00e676, #0f9d58)",
                 color: "#021c14",
@@ -384,7 +391,7 @@ export function FaqSection() {
             boxShadow: "0 18px 60px -28px rgba(0,230,118,0.5)",
           }}
         >
-          <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-cyan-400 shrink-0">
+          <p className="font-mono text-[11px] tracking-[0.25em] uppercase text-cyan-400 shrink-0">
             {active.cat} / {String(flatIndex + 1).padStart(2, "0")}
           </p>
           <AnimatePresence mode="wait">
@@ -399,7 +406,7 @@ export function FaqSection() {
               <h3
                 ref={headingRef}
                 tabIndex={-1}
-                className="font-anton text-xl md:text-2xl leading-tight text-white outline-none shrink-0"
+                className="font-anton text-2xl md:text-[2.1rem] leading-tight text-white outline-none shrink-0"
               >
                 {active.q}
               </h3>
@@ -410,7 +417,7 @@ export function FaqSection() {
               <div
                 ref={bodyRef}
                 tabIndex={0}
-                className="faq-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 text-[14px] leading-[1.72] text-white/85"
+                className="faq-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 text-[15px] md:text-base leading-[1.8] text-white/90"
               >
                 {active.a}
               </div>

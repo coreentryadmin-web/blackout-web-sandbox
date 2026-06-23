@@ -442,14 +442,13 @@ body {
 @media (min-width: 1024px) {
   .faq-tile { min-height: 0; overflow: hidden; }
   .faq-board {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.45fr);
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(0, 3.3fr);
+    grid-template-rows: auto minmax(0, 1.3fr) minmax(0, 0.7fr) auto;
     grid-template-areas:
-      "brand brand search reader"
-      "platform arsenal signals reader"
-      "platform arsenal member reader"
-      "platform arsenal start reader"
-      "support support support reader";
+      "brand brand brand search search search reader"
+      "platform platform arsenal arsenal signals signals reader"
+      "member member member start start start reader"
+      "support support support support support support reader";
   }
   .fa-brand { grid-area: brand; }
   .fa-search { grid-area: search; }
@@ -460,7 +459,7 @@ body {
   .fa-start { grid-area: start; }
   .fa-support { grid-area: support; }
   .fa-reader { grid-area: reader; }
-  .fa-results { grid-column: 1 / 4; grid-row: 2 / 5; overflow-y: auto; }
+  .fa-results { grid-column: 1 / 7; grid-row: 2 / 4; overflow-y: auto; }
 }
 /* thin emerald scrollbar for the single scroll owner (reader body / results) */
 .faq-scroll { scrollbar-width: thin; scrollbar-color: #00e676 transparent; }
