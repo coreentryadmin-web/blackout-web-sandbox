@@ -306,6 +306,12 @@ export function PricingSection() {
           Sign up on BlackOut, then unlock on Whop with the same email — instant access, nothing held
           back. Stop trading blind.
         </motion.p>
+        <p className="mt-3 text-center font-mono text-[11px] tracking-[0.04em] text-white/45">
+          Billing or invoice questions?{" "}
+          <a href="mailto:billing@blackouttrades.com" className="text-bull hover:underline">
+            billing@blackouttrades.com
+          </a>
+        </p>
       </div>
     </section>
   );

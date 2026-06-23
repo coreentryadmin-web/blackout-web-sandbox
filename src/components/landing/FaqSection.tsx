@@ -118,7 +118,7 @@ const FAQS: Faq[] = [
   {
     cat: "Membership",
     q: "Can I cancel anytime?",
-    a: "Yes. Billing is handled securely through Whop, and you can manage or cancel your membership anytime from your account. Questions about a charge or your plan? Email us and we'll sort it out personally.",
+    a: "Yes. Billing is handled securely through Whop, and you can manage or cancel your membership anytime from your account. Questions about a charge, an invoice, or your plan? Email billing@blackouttrades.com and we'll sort it out personally.",
   },
 
   // ── Getting Started ───────────────────────────────────────────────────────
