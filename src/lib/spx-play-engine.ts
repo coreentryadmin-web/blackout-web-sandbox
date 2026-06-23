@@ -30,6 +30,7 @@ import {
   playIdealTargetPts,
   playOptionChainRequired,
   playTrimMfePts,
+  playGexStaleMaxSec,
   playTrimProgressPct,
   playWatchMinScore,
   playPromoteMinScore,
@@ -38,6 +39,7 @@ import {
   playTrailingStopTrailWindowPts,
 } from "@/lib/spx-play-config";
 import { evaluateThesisBreak } from "@/lib/spx-play-thesis";
+import { deskAgeSec, isDeskStale } from "@/lib/spx-desk-stale";
 import {
   closeOpenPlay,
   loadOpenPlay,
@@ -273,9 +275,15 @@ async function evaluateOpenPlay(
   // Open-play path only: force-exit cutoff is independent from flat-path no-entry gates.
   const price = desk.price;
   const dir = row.direction;
+  // Staleness guard (mirrors the flat-entry guard in spx-play-gates.ts): if the desk
+  // snapshot is older than the configured GEX-stale window, desk.price is untrustworthy.
+  // We must NOT fire price-driven exits (stop/target/trail/trim) off a stale quote, and
+  // we must not record MFE/MAE excursion peaks from a stale price. Time-based exits
+  // (theta force-exit, session close) are independent of price and stay live below.
+  const deskStale = isDeskStale(deskAgeSec(desk.polled_at, desk.as_of), playGexStaleMaxSec());
   const mfe = Math.max(row.mfe_pts, dir === "long" ? price - row.entry_price : row.entry_price - price);
   const mae = Math.max(row.mae_pts, dir === "long" ? row.entry_price - price : price - row.entry_price);
-  if (mutate) {
+  if (mutate && !deskStale) {
     await updateOpenPlay(row.id, { mfe_pts: mfe, mae_pts: mae });
   }
 
@@ -286,8 +294,11 @@ async function evaluateOpenPlay(
   const stop = row.stop;
   const target = row.target;
 
-  const stopHit = stop != null && (dir === "long" ? price <= stop : price >= stop);
-  const targetHit = target != null && (dir === "long" ? price >= target : price <= target);
+  // When the desk is stale, neutralize all price-driven exit triggers (stop/target/trail/
+  // trim) so management HOLDs instead of acting on an untrustworthy quote. Time/session
+  // based exits (force-exit theta cutoff, session close) are evaluated independently below.
+  const stopHit = !deskStale && stop != null && (dir === "long" ? price <= stop : price >= stop);
+  const targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
 
   const entryScore = row.entry_score ?? confluence.score;
   const thesisEval = evaluateThesisBreak(dir, confluence.score, entryScore);
@@ -302,6 +313,7 @@ async function evaluateOpenPlay(
         : (row.entry_price - price) / totalRun
       : 0;
   const trimZone =
+    !deskStale &&
     !row.trim_done &&
     mfe >= playTrimMfePts() &&
     target != null &&
@@ -328,7 +340,7 @@ async function evaluateOpenPlay(
     // Lock to entry price — worst case is a scratch, not a loss
     trailingStop = row.entry_price;
   }
-  const trailingStopHit = !targetHit && trailingStop !== null && (
+  const trailingStopHit = !deskStale && !targetHit && trailingStop !== null && (
     dir === "long" ? price <= trailingStop : price >= trailingStop
   );
 
@@ -782,7 +794,12 @@ async function evaluateFlatPlay(
           !b.includes(GATE_BLOCK.BUY_COOLDOWN) &&
           !b.includes(GATE_BLOCK.QUALITY_COOLDOWN) &&
           !b.includes(GATE_BLOCK.GRADE_BELOW_MIN) &&
-          !b.includes(GATE_BLOCK.REENTRY_LOCK)
+          // Post-loss same-direction re-entry lock must survive WATCH->ENTRY promotion.
+          // Only strip REENTRY_LOCK when the prior exit was NOT a loss (in which case
+          // the gate never emits it anyway, so this is a no-op outside the loss case).
+          (session.last_sell_was_loss
+            ? true
+            : !b.includes(GATE_BLOCK.REENTRY_LOCK))
       ),
       warnings: [
         ...gates.warnings,

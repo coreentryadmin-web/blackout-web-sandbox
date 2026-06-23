@@ -15,9 +15,9 @@ import {
 } from "@/lib/providers/uw-shared-cache";
 import { uwConfigured } from "./config";
 
-// REDIS CACHE ACTIVE: With Redis caching, most responses are served from cache.
-// UW_MAX_RPS can be safely lowered to 1 (60/min) since live UW calls are rare.
-// TODO: Set UW_MAX_RPS=1 in Railway env vars once Redis cache is confirmed working.
+// REDIS CACHE ACTIVE: with Redis caching most responses are served from cache, so
+// live UW calls are rare. Pacing is owned by uw-rate-limiter.ts (UW_MAX_RPS default 2);
+// override via the UW_MAX_RPS env var if a tighter/looser ceiling is ever needed.
 
 const BASE = (process.env.UW_API_BASE ?? "https://api.unusualwhales.com").replace(/\/$/, "");
 const KEY = process.env.UW_API_KEY ?? "";
@@ -348,6 +348,10 @@ function normalizeUwStrikeGexRow(r: Record<string, unknown>): Record<string, unk
  * UW fallback for the GEX strike ladder when the Polygon/Massive chain is empty.
  * Tries the 0DTE-correct spot-exposures feed first, then greek-exposure/strike
  * (cumulative — available on plans where /greek-exposure works, which this one is).
+ * NOTE: UW spot-exposures endpoints have been observed returning 503 in production
+ * (see nighthawk/positioning.ts, spx-desk.ts) — Polygon is the primary GEX source and
+ * this whole path is a last-resort fallback. The attempt is kept (cheap, self-logging)
+ * so it auto-recovers if UW restores the feed.
  * Returns normalized rows + which source produced them. Logs each attempt so the live
  * source (and any 503/empty) is visible without exposing the UW key.
  */
@@ -556,7 +560,26 @@ export async function fetchMarketFlowAlertRows(params?: {
       };
       if (olderThan) query.older_than = olderThan;
 
-      const batch = await fetchMarketFlowAlertPage(query);
+      let batch: MarketFlowRow[];
+      try {
+        batch = await fetchMarketFlowAlertPage(query);
+      } catch (pageErr) {
+        // fetchMarketFlowAlertPage uses raw uwGet (no internal retry/stale fallback), so a
+        // 429/5xx on page 2+ used to throw out of the loop and DISCARD pages already merged,
+        // serving only the (older) marketFlowCache. Instead: keep the pages we have.
+        //  - first page failed (nothing merged yet) → rethrow so the outer catch runs the
+        //    existing stale-cache / breaker-accounting path UNCHANGED.
+        //  - already have pages → note the 429 here (the outer catch won't run; preserve the
+        //    once-per-failed-attempt breaker count) and break to return the partial merge.
+        if (merged.length === 0) throw pageErr;
+        const pmsg = pageErr instanceof Error ? pageErr.message : String(pageErr);
+        if (pmsg.includes("429")) noteUw429("market/flow-alerts");
+        console.warn(
+          `[uw] flow-alerts page ${page} failed after ${merged.length} rows — serving partial:`,
+          pmsg
+        );
+        break;
+      }
       if (!batch.length) break;
 
       for (const row of batch) {

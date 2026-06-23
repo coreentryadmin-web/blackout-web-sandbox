@@ -4,6 +4,9 @@ import { requireDatabaseInProduction, fetchNighthawkJob } from "@/lib/db";
 import { buildEveningEdition } from "@/lib/nighthawk/edition-builder";
 import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 import { isCronAuthorized } from "@/lib/market-api-auth";
+import { logCronRun } from "@/lib/cron-run";
+
+const CRON_KEY = "nighthawk-playbook";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -26,6 +29,7 @@ function inEditionWindow(force: boolean): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  const started = Date.now();
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -34,7 +38,9 @@ export async function GET(req: NextRequest) {
   if (dbDenied) return dbDenied;
 
   if (!editionEnabled()) {
-    return NextResponse.json({ ok: false, skipped: true, reason: "NIGHTHAWK_EDITION_ENABLED=0" });
+    const payload = { ok: false, skipped: true, reason: "NIGHTHAWK_EDITION_ENABLED=0" };
+    await logCronRun(CRON_KEY, started, payload);
+    return NextResponse.json(payload);
   }
 
   const force = req.nextUrl.searchParams.get("force") === "1";
@@ -57,19 +63,38 @@ export async function GET(req: NextRequest) {
   }
 
   if (!inEditionWindow(force) && !(job && job.status !== "published")) {
-    return NextResponse.json({
+    const payload = {
       ok: false,
       skipped: true,
       reason: "Outside edition window — use ?force=1 to nudge/resume",
       edition_for: editionFor,
       job_status: job?.status ?? "none",
       current_stage: job?.current_stage ?? null,
-    });
+    };
+    await logCronRun(CRON_KEY, started, payload);
+    return NextResponse.json(payload);
   }
 
   try {
     const result = await buildEveningEdition({ force });
     const status = result.ok ? 200 : result.job_status === "failed" ? 500 : 202;
+    // Map run health precisely (verifier note): ok:true -> ok; explicit 'failed' -> failed;
+    // ok:false with a non-failed job_status is a healthy mid-pipeline checkpoint (202) -> skipped,
+    // NOT a failure (avoids false Discord alerts). undefined job_status with ok:false
+    // (e.g. no API keys) keeps ok:false -> failed.
+    const inProgress = !result.ok && result.job_status != null && result.job_status !== "failed";
+    await logCronRun(CRON_KEY, started, {
+      ok: result.ok,
+      skipped: inProgress ? true : undefined,
+      reason: inProgress ? `checkpoint:${result.current_stage ?? result.job_status}` : undefined,
+      error: result.error,
+      edition_for: result.edition_for,
+      job_status: result.job_status ?? null,
+      current_stage: result.current_stage ?? null,
+      plays_count: result.plays_count,
+      candidates: result.candidates,
+      resumed: result.resumed,
+    });
     return NextResponse.json(
       {
         ...result,
@@ -83,6 +108,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/nighthawk-edition]", error);
+    await logCronRun(CRON_KEY, started, { ok: false, error: detail });
     return NextResponse.json(
       {
         ok: false,

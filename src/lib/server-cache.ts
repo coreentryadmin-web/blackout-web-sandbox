@@ -22,6 +22,43 @@ const MAX_STALE_AGE_MS = 10 * 60 * 1000; // 10 minutes
 const store = new Map<string, CacheEntry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
+/**
+ * Hard cap on distinct in-memory cache entries. User-controlled keys (e.g.
+ * ticker-search `search:${q}:${limit}`) could otherwise grow the Map without
+ * bound — a memory-DoS. JS Map preserves insertion order, so the oldest key is
+ * always store.keys().next().value, giving us cheap insertion-order eviction.
+ */
+const MAX_ENTRIES = 5_000;
+
+/**
+ * Insert/refresh a store entry while keeping the Map bounded. Opportunistically
+ * sweeps expired keys first (so a flood of short-TTL keys self-cleans), then
+ * evicts oldest entries until under MAX_ENTRIES. Centralizing every store.set
+ * here is what makes the bound actually hold.
+ */
+function setStoreEntry(key: string, entry: CacheEntry<unknown>): void {
+  // Re-inserting an existing key must move it to the most-recently-used position,
+  // otherwise a hot key could be evicted as "oldest" while cold keys survive.
+  store.delete(key);
+
+  // Sweep expired entries only when we're at/over the cap, to keep the common
+  // (uncrowded) path O(1) instead of scanning the whole Map on every write.
+  if (store.size >= MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [k, v] of Array.from(store)) {
+      if (v.expiresAt <= now) store.delete(k);
+    }
+    // If sweeping wasn't enough (all live), evict oldest by insertion order.
+    while (store.size >= MAX_ENTRIES) {
+      const oldest = store.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      store.delete(oldest);
+    }
+  }
+
+  store.set(key, entry);
+}
+
 type CacheOpts = {
   staleWhileRevalidate?: boolean;
   /** If true, callers can detect upstream degradation via isDegraded(). */
@@ -80,7 +117,7 @@ export async function withServerCache<T>(
       // Use the remaining TTL from Redis, not the full configured TTL, so the
       // in-memory entry expires in sync with the Redis key.
       const remainingMs = redisHit.remainingTtlSec * 1000;
-      store.set(key, { value: redisHit.value, expiresAt: now + remainingMs, refreshedAt: now });
+      setStoreEntry(key, { value: redisHit.value, expiresAt: now + remainingMs, refreshedAt: now });
       return redisHit.value;
     }
   }
@@ -149,7 +186,7 @@ async function refreshCache<T>(
   const promise = loader()
     .then((value) => {
       const refreshedAt = Date.now();
-      store.set(key, { value, expiresAt: refreshedAt + ttlMs, refreshedAt });
+      setStoreEntry(key, { value, expiresAt: refreshedAt + ttlMs, refreshedAt });
       void writeRedisCache(key, value, ttlMs);
       // FIX 5b: Successful refresh — reset failure tracking for this key.
       failureCount.delete(key);

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Whop from "@whop/sdk";
 import { syncWhopMembershipForEmail } from "@/lib/membership";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { recordApiCall } from "@/lib/api-telemetry";
+
+// Telemetry endpoint label for the API ops dashboard. Recorded under the
+// `blackout_engine` provider (same convention as recordAdminRouteError) so the
+// Whop webhook stops being a blind spot in /admin api health.
+const WHOP_WEBHOOK_ENDPOINT = "webhook/whop";
 
 function getWhopWebhookClient() {
   return new Whop({
@@ -21,6 +27,7 @@ if (!process.env.WHOP_WEBHOOK_SECRET?.trim()) {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   if (!process.env.WHOP_WEBHOOK_SECRET?.trim()) {
     // Return 200 so Whop does not retry-loop or blacklist this endpoint.
     // The startup warning above already alerts the operator.
@@ -36,6 +43,18 @@ export async function POST(req: NextRequest) {
       body: "Incoming Whop webhooks are being acknowledged (HTTP 200) but NOT verified or processed. Membership changes are being silently lost. Set WHOP_WEBHOOK_SECRET to restore processing.",
       severity: "critical",
     }).catch(() => undefined);
+    // Telemetry only (the critical Discord alert above is intentionally NOT duplicated).
+    // Record as a failure even though we return HTTP 200: the delivery is dropped/lost.
+    recordApiCall({
+      provider: "blackout_engine",
+      endpoint: WHOP_WEBHOOK_ENDPOINT,
+      method: "POST",
+      status: 200,
+      ok: false,
+      latency_ms: Date.now() - startedAt,
+      error: "webhook_secret_not_configured",
+      phase: "failure",
+    });
     return NextResponse.json({ ok: true, warning: "webhook_secret_not_configured" }, { status: 200 });
   }
 
@@ -55,6 +74,16 @@ export async function POST(req: NextRequest) {
   try {
     event = whop.webhooks.unwrap(body, { headers });
   } catch {
+    recordApiCall({
+      provider: "blackout_engine",
+      endpoint: WHOP_WEBHOOK_ENDPOINT,
+      method: "POST",
+      status: 400,
+      ok: false,
+      latency_ms: Date.now() - startedAt,
+      error: "invalid_webhook_signature",
+      phase: "failure",
+    });
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
   }
 
@@ -94,6 +123,16 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     console.error("[whop webhook]", event.type, error);
+    recordApiCall({
+      provider: "blackout_engine",
+      endpoint: WHOP_WEBHOOK_ENDPOINT,
+      method: "POST",
+      status: 500,
+      ok: false,
+      latency_ms: Date.now() - startedAt,
+      error: `handler_failed: ${event.type}: ${error instanceof Error ? error.message : String(error)}`,
+      phase: "failure",
+    });
     // Surface billing-state handler failures in ops. Fire-and-forget (void + .catch,
     // matching the alerts above) so it never blocks/throws on the response path;
     // notifyOpsDiscord self-guards on a missing webhook URL.
@@ -109,5 +148,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });
   }
 
+  recordApiCall({
+    provider: "blackout_engine",
+    endpoint: WHOP_WEBHOOK_ENDPOINT,
+    method: "POST",
+    status: 200,
+    ok: true,
+    latency_ms: Date.now() - startedAt,
+  });
   return NextResponse.json({ ok: true });
 }

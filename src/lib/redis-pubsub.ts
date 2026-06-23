@@ -127,7 +127,22 @@ export async function redisSubscribe(
   }
 
   return () => {
-    channelHandlers.get(channel)?.delete(handler);
+    const handlers = channelHandlers.get(channel);
+    if (!handlers) return;
+    handlers.delete(handler);
+    // Only tear down the Redis subscription when the LAST local handler for this
+    // channel is gone — otherwise we'd stop delivering messages to siblings.
+    if (handlers.size === 0) {
+      channelHandlers.delete(channel);
+      // Best-effort UNSUBSCRIBE: use the existing connected client only (do not
+      // spin up a connection just to unsubscribe). Fire-and-forget; never throw
+      // from the cleanup callback.
+      if (subscriber && subscriberReady) {
+        void subscriber.unsubscribe(channel).catch(() => {
+          /* local-only / connection gone */
+        });
+      }
+    }
   };
 }
 

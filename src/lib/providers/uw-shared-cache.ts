@@ -37,6 +37,13 @@ export const UW_CACHE_TTL = {
 
 const CACHE_PREFIX = 'uw_cache:'
 
+// In-process in-flight dedup: collapses concurrent cold-miss fetches for the
+// same key into a single fetcher() call (prevents a cold-start UW stampede that
+// would blow the 120/min plan cap). Mirrors withServerCache's inflight Map in
+// src/lib/server-cache.ts. Keyed by the logical cache key (not the Redis key) so
+// it works identically whether or not Redis is configured.
+const _inflight = new Map<string, Promise<unknown>>()
+
 let _redis: RedisClient | null | undefined
 let _redisInit: Promise<RedisClient | null> | null = null
 const RETRY_BACKOFF_MS = 30_000
@@ -89,15 +96,26 @@ export async function uwCacheGet<T>(
     } catch { /* Redis miss — fall through to fetcher */ }
   }
 
-  const result = await fetcher()
+  // Cold miss: dedup concurrent fetches for the same key. The first caller
+  // creates the in-flight promise (which also performs the cache write);
+  // concurrent callers await the same promise instead of stampeding upstream.
+  const existing = _inflight.get(key) as Promise<T> | undefined
+  if (existing) return existing
 
-  if (redis && result != null) {
-    try {
-      await redis.setex(CACHE_PREFIX + key, ttlSeconds, JSON.stringify(result))
-    } catch { /* Cache write failure is non-fatal */ }
-  }
+  const pending = (async (): Promise<T> => {
+    const result = await fetcher()
+    if (redis && result != null) {
+      try {
+        await redis.setex(CACHE_PREFIX + key, ttlSeconds, JSON.stringify(result))
+      } catch { /* Cache write failure is non-fatal */ }
+    }
+    return result
+  })().finally(() => {
+    _inflight.delete(key)
+  })
 
-  return result
+  _inflight.set(key, pending)
+  return pending
 }
 
 // Force-refresh a cache key (used by the cron refresher)

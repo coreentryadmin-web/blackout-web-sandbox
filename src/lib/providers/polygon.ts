@@ -366,9 +366,18 @@ export async function fetchIndexSnapshots(
     const ticker = row.ticker?.toUpperCase();
     if (!ticker || row.error) continue;
 
+    const price = Number(
+      row.value ?? row.session?.close ?? row.session?.previous_close ?? 0
+    );
+    if (!Number.isFinite(price) || price <= 0) {
+      // No usable value/session price — leave out[ticker] as null,
+      // matching the stock snapshot contract (never emit price 0).
+      continue;
+    }
+
     out[ticker] = {
       symbol: ticker,
-      price: row.value ?? row.session?.close ?? row.session?.previous_close ?? 0,
+      price,
       change_pct: Number((row.session?.change_percent ?? 0).toFixed(2)),
     };
   }

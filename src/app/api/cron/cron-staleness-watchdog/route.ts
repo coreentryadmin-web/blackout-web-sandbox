@@ -54,6 +54,6 @@ export async function GET(req: NextRequest) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/cron-staleness-watchdog]", error);
     await logCronRun("cron-staleness-watchdog", started, { ok: false, error: detail });
-    return NextResponse.json({ ok: false, error: detail }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Watchdog failed" }, { status: 500 });
   }
 }

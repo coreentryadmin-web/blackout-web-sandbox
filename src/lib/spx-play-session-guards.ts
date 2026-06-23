@@ -31,10 +31,17 @@ function todayEtYmd(now: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
 }
 
-/** Returns the ET-minutes of the early close for today, or null if it's a normal session. */
-function getEarlyCloseMinutes(now: Date): number | null {
+/** Returns the ET-minutes of the early close for today, or null if it's a normal session.
+ *  An SPX_EARLY_CLOSE_ET_MINS env override is honored only when it parses to a finite
+ *  number; a typo / non-numeric value falls through to the calendar table instead of
+ *  silently returning NaN (which would disable the no-entry / force-exit guards). */
+export function getEarlyCloseMinutes(now: Date): number | null {
   const envOverride = process.env.SPX_EARLY_CLOSE_ET_MINS;
-  if (envOverride) return Number(envOverride);
+  if (envOverride) {
+    const n = Number(envOverride);
+    if (Number.isFinite(n)) return n;
+    // Invalid override (typo) — ignore and fall through to the calendar.
+  }
   return EARLY_CLOSE_DATES[todayEtYmd(now)] ?? null;
 }
 

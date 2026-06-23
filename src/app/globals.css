@@ -3319,7 +3319,7 @@ body {
     font-size: 9px;
     letter-spacing: 0.35em;
     text-transform: uppercase;
-    color: var(--grey-500);
+    color: #a8a8b8; /* readable floor — no-grey rule: was var(--grey-500) #32323f */
     margin-bottom: 0.35rem;
   }
 
@@ -3547,7 +3547,7 @@ body {
     font-family: var(--font-jetbrains), monospace;
     font-size: 7px;
     letter-spacing: 0.15em;
-    color: var(--grey-600);
+    color: #a8a8b8; /* readable floor — no-grey rule: was var(--grey-600) #22222c (idle/pending state) */
     transition: color 0.25s, text-shadow 0.25s;
   }
 
@@ -3702,7 +3702,7 @@ body {
     font-size: 10px;
     letter-spacing: 0.45em;
     text-transform: uppercase;
-    color: var(--grey-300);
+    color: #7dd3fc; /* sky-300 — no-grey rule: was var(--grey-300) #707080, unreadable on #040407 */
     margin-bottom: 0.35rem;
   }
 
@@ -3721,7 +3721,7 @@ body {
     font-size: 11px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--grey-400);
+    color: #a8a8b8; /* readable floor — no-grey rule: was var(--grey-400) #4a4a5a, near-invisible */
     margin-top: 0.35rem;
   }
 
@@ -4093,7 +4093,7 @@ body {
   }
 
   .largo-spx-live-meta {
-    color: var(--grey-400);
+    color: #a8a8b8; /* readable floor — no-grey rule: was var(--grey-400) */
   }
 
   .largo-chat-container {

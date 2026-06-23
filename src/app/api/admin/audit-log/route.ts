@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/admin-access";
+import { resolveAdminApi } from "@/lib/admin-access";
 import { dbConfigured, dbQuery, ensureSchema } from "@/lib/db";
+import { logAdminAction } from "@/lib/admin-audit";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +23,18 @@ export type AuditLogPayload = {
 };
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const denied = await requireAdminApi();
+  // Single resolve: one getUser for both the gate and the read-audit actor.
+  const { actor, denied } = await resolveAdminApi();
   if (denied) return denied as NextResponse;
+
+  // Audit admin READ access to this sensitive dashboard (fire-and-forget;
+  // logAdminAction swallows its own errors and never affects the response).
+  void logAdminAction({
+    actorUserId: actor?.userId,
+    actorEmail: actor?.email,
+    action: "admin_view",
+    detail: { path: "admin/audit-log" },
+  });
 
   try {
     if (!dbConfigured()) {

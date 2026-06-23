@@ -10,8 +10,11 @@ export async function GET(req: NextRequest) {
   if (gate instanceof Response) return gate;
 
   const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
-  if (!q || q.length < 1) {
-    return NextResponse.json({ error: "q param required" }, { status: 400 });
+  // Bound the key space: a tight allow-list + length cap stops an authed user from
+  // minting unbounded distinct cache keys (memory pressure) or passing junk to the
+  // paid upstream. Tickers/company-name fragments only ever need these chars.
+  if (!q || q.length > 32 || !/^[A-Za-z0-9.\-& ]+$/.test(q)) {
+    return NextResponse.json({ error: "invalid q param" }, { status: 400 });
   }
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") ?? 10), 20);
   const results = await serverCache(

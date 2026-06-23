@@ -12,6 +12,13 @@ export const dynamic = "force-dynamic";
 // All users see the same SPX market data — one Claude call per 5-minute window
 // serves every connected session. First request in the window triggers the call;
 // all others get the cached result instantly with zero additional cost.
+//
+// serverCache(cacheKey, COMMENTARY_TTL_MS) is the SOLE throttle/spend control for
+// commentary: because the cache key is shared across all sessions and keyed by the
+// 5-minute window slot, at most one Anthropic call happens per window platform-wide
+// regardless of how many users/requests arrive. (A separate per-user interval/daily-cap
+// module, src/lib/spx-commentary-limits.ts, was never wired in and has been removed —
+// the shared-window cache already bounds spend more tightly than a per-user cap would.)
 const COMMENTARY_TTL_MS = 5 * 60 * 1000;
 
 type CommentaryCache = {

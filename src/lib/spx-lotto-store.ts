@@ -43,19 +43,38 @@ function todayEt(): string {
 
 export async function loadLottoRecord(): Promise<LottoRecord | null> {
   const today = todayEt();
-  if (memoryLotto.record?.session_date === today) return memoryLotto.record;
+  // Drop yesterday's cached record outright.
   if (memoryLotto.record && memoryLotto.record.session_date !== today) {
     memoryLotto.record = null;
   }
 
-  if (!dbConfigured()) return memoryLotto.record;
+  // DB is the source of truth. When DB is unconfigured, the in-memory copy is
+  // all we have, so serve the same-day cache.
+  if (!dbConfigured()) {
+    return memoryLotto.record?.session_date === today ? memoryLotto.record : null;
+  }
 
-  const raw = await getMeta(LOTTO_KEY);
-  if (!raw) return null;
+  // Same-day cache hit: still re-read the (cheap) DB meta key so a write from
+  // another instance/manual update can never be masked by this process's cache.
+  // If the re-read fails, fall back to the cached copy rather than going dark.
+  let raw: string | null;
+  try {
+    raw = await getMeta(LOTTO_KEY);
+  } catch (err) {
+    console.error("[spx-lotto-store] loadLottoRecord: getMeta failed, serving cache:", err);
+    return memoryLotto.record?.session_date === today ? memoryLotto.record : null;
+  }
+
+  if (!raw) {
+    // DB row gone (cleared/settled by the writer) — drop a stale same-day cache too.
+    if (memoryLotto.record?.session_date === today) memoryLotto.record = null;
+    return null;
+  }
   try {
     const rec = JSON.parse(raw) as LottoRecord;
     if (rec.session_date !== today) {
       await setMeta(LOTTO_KEY, "");
+      memoryLotto.record = null;
       return null;
     }
     memoryLotto.record = rec;

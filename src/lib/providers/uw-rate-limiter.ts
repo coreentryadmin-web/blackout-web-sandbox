@@ -7,7 +7,8 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Per-process pacing (worker should set lower than web if no Redis). */
+/** Per-process pacing; default 2 rps. Override via UW_MAX_RPS (e.g. lower on the worker
+ *  than on web when no Redis-global ceiling is in play). */
 const MAX_RPS = envNumber("UW_MAX_RPS", 2);
 /** Cluster-wide ceiling when REDIS_URL is set — shared by worker + web app. */
 const GLOBAL_MAX_RPS = envNumber("UW_GLOBAL_MAX_RPS", 2);

@@ -6,6 +6,7 @@ import {
   formatFlowStrikeStackLine,
   type FlowStrikeStack,
 } from "@/lib/largo/flow-strike-stacks";
+import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 
 type FeedKey =
   | "market"
@@ -114,17 +115,6 @@ function asObj(v: unknown): Record<string, unknown> | null {
 
 function asArr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
-}
-
-/** Neutralize untrusted external text (news titles/teasers, headlines) before it
- *  enters the system prompt — strips line breaks, code fences and angle brackets so
- *  a crafted headline can't pose as instructions inside the trusted block (LARGO-6). */
-function sanitizeFeedText(s: unknown): string {
-  return String(s ?? "")
-    .replace(/[\r\n]+/g, " ")
-    .replace(/[`<>]/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
 }
 
 function headline(item: unknown): string {

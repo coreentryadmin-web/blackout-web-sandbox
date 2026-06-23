@@ -155,8 +155,21 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
 
     Object.assign(MEMORY_SESSION, meta);
     return meta;
-  } catch {
-    return { last_buy_at: null, last_sell_at: null, last_sell_was_loss: false, last_direction: null, last_stop_at: null };
+  } catch (err) {
+    // P1: do not swallow a transient DB/parse failure into a clean default —
+    // that would wipe cooldown / re-entry lock state mid-session. Prefer the
+    // in-memory last-known-good value (refreshed on every successful load via
+    // Object.assign(MEMORY_SESSION, meta) above). Apply the SAME C5 date guard
+    // as the success path so a stale prior-day post-loss lock can never be
+    // resurrected on error. Happy path is unchanged.
+    console.error("[spx-play-store] loadPlaySessionMeta failed — returning last-known in-memory meta:", err);
+    const m = { ...MEMORY_SESSION };
+    if (!m.session_date || m.session_date !== todayEt()) {
+      m.last_sell_was_loss = false;
+      m.last_direction = null;
+      m.last_stop_at = null;
+    }
+    return m;
   }
 }
 
@@ -315,6 +328,12 @@ export async function closeOpenPlay(
       (exitAction === "TRAIL" && (outcome.close?.pnl_pts ?? 0) < 0)
         ? Date.now()
         : meta.last_stop_at,
+    // C5: stamp today's ET date so the same-day re-entry lock (post-loss /
+    // post-stop / direction) survives subsequent reads. Without this the
+    // read-side date-boundary check (loadPlaySessionMeta) sees session_date
+    // undefined and immediately resets last_sell_was_loss/last_direction/
+    // last_stop_at, bypassing the lock until the ET date rolls.
+    session_date: todayEt(),
   };
 
   if (dbConfigured()) {

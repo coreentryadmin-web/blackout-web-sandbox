@@ -25,6 +25,13 @@ type InstanceTelemetryPayload = {
 
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
+// Back-off state: when redisClient() keeps returning null (no REDIS_URL or Redis
+// persistently down) we skip the expensive buildInstancePayload() work for an
+// increasing number of ticks instead of churning every FLUSH_MS.
+let consecutiveMisses = 0;
+let ticksToSkip = 0;
+const MAX_BACKOFF_TICKS = 30; // ~5 min at FLUSH_MS=10s
+
 // Singleton Redis client — created once and reused across all flush calls.
 let _redisClient: import("ioredis").default | null = null;
 let _redisClientInit: Promise<import("ioredis").default | null> | null = null;
@@ -100,12 +107,39 @@ export function scheduleTelemetryRedisFlush(): void {
   flushTimer = setInterval(() => {
     void flushTelemetryToRedis();
   }, FLUSH_MS);
+  // Allow the process to exit even if this interval is still pending (e.g. tests,
+  // graceful shutdown) without requiring an explicit clear.
+  flushTimer.unref?.();
   void flushTelemetryToRedis();
 }
 
+/** Stops the periodic telemetry flush and resets back-off state. Safe to call when not scheduled. */
+export function clearTelemetryRedisFlush(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+  consecutiveMisses = 0;
+  ticksToSkip = 0;
+}
+
 export async function flushTelemetryToRedis(): Promise<void> {
+  // Back-off: while Redis has been persistently unavailable, skip whole ticks so
+  // we neither rebuild the payload nor re-attempt a connect every FLUSH_MS.
+  if (ticksToSkip > 0) {
+    ticksToSkip -= 1;
+    return;
+  }
+
   const client = await redisClient();
-  if (!client) return;
+  if (!client) {
+    consecutiveMisses += 1;
+    // Exponential-ish back-off, capped: skip 1,2,4,... up to MAX_BACKOFF_TICKS.
+    ticksToSkip = Math.min(2 ** Math.min(consecutiveMisses - 1, 5), MAX_BACKOFF_TICKS);
+    return;
+  }
+  consecutiveMisses = 0;
+  ticksToSkip = 0;
 
   const id = instanceId();
   const payload = buildInstancePayload();

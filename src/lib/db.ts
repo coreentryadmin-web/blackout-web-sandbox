@@ -1718,12 +1718,12 @@ export async function fetchTickerFlowDailyNet(
   const res = await (await getPool()).query<QueryResultRow>(
     `
     SELECT
-      (created_at AT TIME ZONE 'America/New_York')::date AS day,
+      (COALESCE(created_at, inserted_at) AT TIME ZONE 'America/New_York')::date AS day,
       COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'c%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS call_prem,
       COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'p%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS put_prem
     FROM flow_alerts
     WHERE ticker = $1
-      AND created_at >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
+      AND COALESCE(created_at, inserted_at) >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
     GROUP BY 1
     ORDER BY day DESC
     `,
@@ -1755,12 +1755,12 @@ export async function fetchTickersAvgDailyPremium(
            COALESCE(AVG(daily_prem), 0) AS avg_premium
     FROM (
       SELECT ticker,
-             (created_at AT TIME ZONE 'America/New_York')::date AS day,
+             (COALESCE(created_at, inserted_at) AT TIME ZONE 'America/New_York')::date AS day,
              SUM(COALESCE(total_premium, 0)) AS daily_prem
       FROM flow_alerts
       WHERE ticker = ANY($1::text[])
-        AND created_at >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
-        AND (created_at AT TIME ZONE 'America/New_York')::date < (NOW() AT TIME ZONE 'America/New_York')::date
+        AND COALESCE(created_at, inserted_at) >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
+        AND (COALESCE(created_at, inserted_at) AT TIME ZONE 'America/New_York')::date < (NOW() AT TIME ZONE 'America/New_York')::date
       GROUP BY ticker, day
     ) daily
     GROUP BY ticker
@@ -1786,12 +1786,12 @@ export async function fetchTickersFlowDailyNets(
     `
     SELECT
       ticker,
-      (created_at AT TIME ZONE 'America/New_York')::date AS day,
+      (COALESCE(created_at, inserted_at) AT TIME ZONE 'America/New_York')::date AS day,
       COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'c%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS call_prem,
       COALESCE(SUM(CASE WHEN LOWER(option_type) LIKE 'p%' THEN COALESCE(total_premium, 0) ELSE 0 END), 0) AS put_prem
     FROM flow_alerts
     WHERE ticker = ANY($1::text[])
-      AND created_at >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
+      AND COALESCE(created_at, inserted_at) >= (NOW() AT TIME ZONE 'America/New_York')::date - ($2::int || ' days')::interval
     GROUP BY ticker, day
     ORDER BY ticker ASC, day DESC
     `,

@@ -24,13 +24,31 @@ export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let unsubscribe: (() => void) | undefined;
+  let closed = false;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
+  };
 
   const stream = new ReadableStream({
     start(controller) {
       const send = (payload: unknown, id?: number) => {
+        if (closed) return;
         const idLine = id != null ? `id: ${id}\n` : "";
-        controller.enqueue(encoder.encode(`${idLine}data: ${JSON.stringify(payload)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`${idLine}data: ${JSON.stringify(payload)}\n\n`));
+        } catch {
+          // Client disconnected; enqueue after close throws. Tear down resources.
+          cleanup();
+        }
       };
+
+      req.signal.addEventListener("abort", cleanup);
 
       if (sinceSeq > 0) {
         for (const event of getEventsSinceSeq(sinceSeq)) {
@@ -59,8 +77,7 @@ export async function GET(req: NextRequest) {
       }, 8000);
     },
     cancel() {
-      if (heartbeat) clearInterval(heartbeat);
-      unsubscribe?.();
+      cleanup();
     },
   });
 

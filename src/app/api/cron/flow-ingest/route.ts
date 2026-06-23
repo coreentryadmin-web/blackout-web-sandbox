@@ -29,6 +29,6 @@ export async function GET(req: NextRequest) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/flow-ingest]", error);
     await logCronRun("flow-ingest", started, { ok: false, error: detail });
-    return NextResponse.json({ ok: false, error: "Ingest failed", detail }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Ingest failed" }, { status: 500 });
   }
 }

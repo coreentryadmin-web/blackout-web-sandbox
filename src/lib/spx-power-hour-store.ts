@@ -49,8 +49,13 @@ export async function loadPowerHourRecord(): Promise<PowerHourRecord | null> {
     if (parsed.session_date !== todayEt()) return null;
     mem.record = parsed;
     return parsed;
-  } catch {
-    return null;
+  } catch (err) {
+    // P1: prefer the in-memory last-known record over a clean null on a parse
+    // failure so power-hour phase/lock state is not silently lost mid-session.
+    // The date guard above (lines 38-41) nulls mem.record when it is from a
+    // prior session, so this only returns today's last-good value.
+    console.error("[spx-power-hour-store] loadPowerHourRecord failed — returning last-known in-memory record:", err);
+    return mem.record;
   }
 }
 

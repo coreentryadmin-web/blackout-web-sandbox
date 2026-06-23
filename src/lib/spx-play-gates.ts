@@ -23,6 +23,7 @@ import {
 } from "@/lib/spx-play-config";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/lib/spx-play-session-time";
+import { parseMacroEventTime, macroBlockWindow } from "@/lib/spx-macro-window";
 
 export type PlayGateResult = {
   passed: boolean;
@@ -44,17 +45,6 @@ export const GATE_BLOCK = {
   REENTRY_LOCK: "Re-entry lock",
 } as const;
 
-function parseMacroEventMinutes(timeRaw: string, todayYmd: string): number | null {
-  const time = timeRaw.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(time)) {
-    if (time !== todayYmd) return null;
-    return 8 * 60 + 30;
-  }
-  const match = time.match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
 function macroHardBlock(desk: SpxDeskPayload): string | null {
   const events = desk.macro_events ?? [];
   const todayYmd = todayEtYmd();
@@ -72,22 +62,27 @@ function macroHardBlock(desk: SpxDeskPayload): string | null {
       title.includes("GDP");
     if (!isMacro) continue;
 
-    const eventMins = parseMacroEventMinutes(String(ev.time ?? ""), todayYmd);
-    if (eventMins == null) continue;
+    const evTime = parseMacroEventTime(String(ev.time ?? ""), todayYmd);
+    if (evTime == null) continue;
 
     const isAfternoonFed =
       title.includes("FOMC") || title.includes("FED") || title.includes("RATE DECISION");
 
     if (isAfternoonFed) {
-      const fedMins = eventMins >= 12 * 60 ? eventMins : 14 * 60;
+      // Preserve prior behavior: a precise afternoon time uses itself; anything else
+      // (including a date-only/imprecise anchor) defaults to the 14:00 ET decision window.
+      const fedMins = evTime.precise && evTime.minutes >= 12 * 60 ? evTime.minutes : 14 * 60;
       if (mins >= fedMins - 15 && mins <= fedMins + 15) {
         return `Macro hard block: ${title.slice(0, 40)} (Fed window)`;
       }
       continue;
     }
 
-    if (mins >= eventMins - 5 && mins <= eventMins + 60) {
-      const label = String(ev.time ?? "08:30").slice(0, 5);
+    // Precise releases get the tight [t-5, t+60] block; date-only/imprecise releases
+    // widen to the full morning so a later-than-8:30 print is never left unguarded.
+    const win = macroBlockWindow(evTime);
+    if (mins >= win.start && mins <= win.end) {
+      const label = evTime.precise ? String(ev.time ?? "08:30").slice(0, 5) : "AM";
       return `Macro hard block: ${title.slice(0, 40)} (${label} ET window)`;
     }
   }

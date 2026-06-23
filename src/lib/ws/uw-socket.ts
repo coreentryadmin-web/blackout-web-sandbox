@@ -8,6 +8,8 @@ import {
   type UwWsChannel,
   PLAY_HALT_WATCH_SYMBOLS,
 } from "@/lib/live-api-integrations";
+import { UW_SOCKET_STALL_MS, freshestMessageAt as freshestFromMap } from "./uw-socket-stall";
+import { isUwErrorFrame } from "@/lib/ws/uw-frame";
 import {
   normalizeDarkPoolWsPayload,
   normalizeGexWsPayload,
@@ -18,10 +20,14 @@ import {
   type DarkPoolSnapshot,
   type TradingHaltEvent,
 } from "@/lib/providers/unusual-whales";
+import {
+  type StoredTradingHalt,
+  pruneExpiredHalts,
+} from "./trading-halts-expiry";
 
 type Handler = (data: unknown) => void;
 
-type ChannelState = "idle" | "connecting" | "open" | "auth_failed";
+type ChannelState = "idle" | "connecting" | "open" | "degraded" | "auth_failed";
 
 const ALL_CHANNELS: UwWsChannel[] = [...UW_WS_CHANNELS];
 
@@ -149,10 +155,24 @@ class UwSocketManager {
         this.authenticated.set(channel, true);
         this.channelState.set(channel, "open");
         this.lastCloseReason = null;
-        return;
+      } else {
+        // A status frame that is not an ok-ack (e.g. status:error) is a
+        // server-side problem, not proof of a healthy authenticated channel.
+        // Do NOT flip authenticated and do NOT forward to data handlers.
+        this.channelState.set(channel, "degraded");
       }
+      return;
     }
 
+    // An error frame (e.g. ["gex", { error: "..." }]) must never be treated as
+    // an authenticated data row. Mark the channel degraded and drop it — auth
+    // failures are detected separately from the top-level error frame path.
+    if (isUwErrorFrame(payload)) {
+      this.channelState.set(channel, "degraded");
+      return;
+    }
+
+    // Only a genuine data row proves the channel is open + authenticated.
     this.authenticated.set(channel, true);
     this.channelState.set(channel, "open");
     this.lastCloseReason = null;
@@ -304,6 +324,32 @@ class UwSocketManager {
     }
   }
 
+  /** True only while the multiplex socket reports OPEN (readyState 1). */
+  isOpen(): boolean {
+    return this.ws?.readyState === 1;
+  }
+
+  /**
+   * Half-open watchdog: when the socket is OPEN but has stopped delivering
+   * (no message on any channel-with-handlers within the stall window despite
+   * prior delivery), tear it down and reconnect. A socket that has never
+   * delivered yet (freshest == null) is left alone so a freshly opened socket
+   * is not churned before first data arrives.
+   */
+  reconnectIfStalled(freshestMessageAt: number | null, stallMs: number, now = Date.now()): boolean {
+    if (!this.isOpen()) return false;
+    if (this.channelsWithHandlers().length === 0) return false;
+    if (freshestMessageAt == null) return false;
+    if (now - freshestMessageAt <= stallMs) return false;
+    console.warn(
+      `[uw-socket] stall watchdog — OPEN but no data for ${Math.round((now - freshestMessageAt) / 1000)}s, reconnecting`
+    );
+    this.reconnectDelay = 1000;
+    this.teardownSocket();
+    this.scheduleReconnect();
+    return true;
+  }
+
   getStatus(): Record<string, string> {
     const result: Record<string, string> = {};
     for (const channel of ALL_CHANNELS) {
@@ -404,11 +450,20 @@ export const intervalFlowStore: {
 } = { rows: [], updatedAt: 0 };
 
 export const tradingHaltsStore: {
-  halts: Map<string, TradingHaltEvent>;
+  halts: Map<string, StoredTradingHalt>;
   updatedAt: number;
 } = { halts: new Map(), updatedAt: 0 };
 
 const TRADING_HALT_CHANNEL_MAX_AGE_MS = 120_000;
+
+/**
+ * Max age for a stored active halt before it is treated as resolved. A halt is
+ * normally cleared by a resume event (active:false), but that event can be
+ * dropped or missed across a reconnect — without an expiry the symbol would
+ * stay "halted" (and block entries) forever. UW halts on watched symbols are
+ * minutes-scale; 30m is a safe ceiling well past any real intraday halt.
+ */
+const TRADING_HALT_MAX_AGE_MS = 30 * 60_000;
 
 /** True when the UW trading_halts channel has not delivered data recently. */
 export function isTradingHaltChannelStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AGE_MS): boolean {
@@ -418,6 +473,7 @@ export function isTradingHaltChannelStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AG
 
 /** Check if any watched symbol has an active trading halt. */
 export function hasActiveTradingHalt(symbols: readonly string[] = PLAY_HALT_WATCH_SYMBOLS): boolean {
+  pruneExpiredHalts(tradingHaltsStore.halts, Date.now(), TRADING_HALT_MAX_AGE_MS);
   const watch = new Set(symbols.map((s) => s.toUpperCase()));
   for (const sym of Array.from(tradingHaltsStore.halts.keys())) {
     const halt = tradingHaltsStore.halts.get(sym);
@@ -448,6 +504,7 @@ export function shouldBlockForTradingHalt(
 
 /** List active halts for watched symbols. */
 export function getActiveTradingHalts(symbols: readonly string[] = PLAY_HALT_WATCH_SYMBOLS): TradingHaltEvent[] {
+  pruneExpiredHalts(tradingHaltsStore.halts, Date.now(), TRADING_HALT_MAX_AGE_MS);
   const watch = new Set(symbols.map((s) => s.toUpperCase()));
   return Array.from(tradingHaltsStore.halts.values()).filter((h) => watch.has(h.symbol) && h.active);
 }
@@ -455,6 +512,15 @@ export function getActiveTradingHalts(symbols: readonly string[] = PLAY_HALT_WAT
 let uwSocketInitialized = false;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const lastMessageAt: Partial<Record<UwWsChannel, number>> = {};
+
+/**
+ * Freshest delivery across all subscribed channels. initUwSocket subscribes
+ * every UW_WS_CHANNELS entry unconditionally, so ALL_CHANNELS == the
+ * channels-with-handlers and is the correct active set here.
+ */
+function freshestUwMessageAt(): number | null {
+  return freshestFromMap(lastMessageAt, ALL_CHANNELS);
+}
 
 export function initUwSocket() {
   if (uwSocketInitialized) return;
@@ -552,19 +618,23 @@ export function initUwSocket() {
     }
     const events = normalizeTradingHaltsWsPayload(payload);
     if (!events.length) return;
-    lastMessageAt.trading_halts = Date.now();
+    const now = Date.now();
+    lastMessageAt.trading_halts = now;
     for (const ev of events) {
       if (ev.active) {
-        tradingHaltsStore.halts.set(ev.symbol, ev);
+        tradingHaltsStore.halts.set(ev.symbol, { ...ev, receivedAt: now });
       } else {
         tradingHaltsStore.halts.delete(ev.symbol);
       }
     }
-    tradingHaltsStore.updatedAt = Date.now();
+    tradingHaltsStore.updatedAt = now;
   });
 
   if (!heartbeatTimer) {
-    heartbeatTimer = setInterval(() => uwSocket.heartbeat(), 30_000);
+    heartbeatTimer = setInterval(() => {
+      uwSocket.heartbeat();
+      uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS);
+    }, 30_000);
   }
 
   console.log(

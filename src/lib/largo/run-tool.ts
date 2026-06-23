@@ -1,4 +1,5 @@
 import { serverCache, TTL } from "@/lib/server-cache";
+import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
 import { computeSpxConfluence } from "@/lib/spx-signals";
 import { loadLottoRecord } from "@/lib/spx-lotto-store";
@@ -255,16 +256,16 @@ async function toolNews(ticker: string, channels: string) {
     sentiment?: Array<{ ticker: string; sentiment: string; reasoning: string }>;
   }> = [
     ...benzinga.map((a) => ({
-      title: a.title,
-      teaser: a.teaser || a.body.slice(0, 280),
+      title: sanitizeFeedText(a.title),
+      teaser: sanitizeFeedText(a.teaser || a.body.slice(0, 280)),
       published: a.published,
       tickers: a.tickers,
       channels: a.channels,
       source: "benzinga",
     })),
     ...(polygonNews ?? []).map((a) => ({
-      title: a.title,
-      teaser: a.description,
+      title: sanitizeFeedText(a.title),
+      teaser: sanitizeFeedText(a.description),
       published: a.published,
       tickers: a.tickers,
       sentiment: a.insights,
@@ -744,8 +745,17 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     }
     case "get_news":
       return toolNews(String(input.ticker ?? ""), String(input.channels ?? ""));
-    case "get_web_search":
-      return { query: String(input.query ?? ""), results: await fetchWebSearch(String(input.query ?? ""), 8) };
+    case "get_web_search": {
+      const webResults = await fetchWebSearch(String(input.query ?? ""), 8);
+      return {
+        query: String(input.query ?? ""),
+        results: webResults.map((r) => ({
+          title: sanitizeFeedText(r.title),
+          url: r.url,
+          snippet: sanitizeFeedText(r.snippet),
+        })),
+      };
+    }
     case "get_fda_calendar":
       return fetchUwFdaCalendar(uwTicker(ticker));
     case "get_ipo_calendar": {
