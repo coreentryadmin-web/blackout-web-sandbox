@@ -35,10 +35,14 @@ const config: Config = {
           dim: "#7c3aed",
           glow: "rgba(191,95,255,0.35)",
         },
+        // Canonical semantic tokens.
         bull: "#00e676",
         bear: "#ff2d55",
+        // Non-grey neutral for secondary copy (authors must NOT reach for zinc/neutral).
+        // Matches the existing secondary-text value on the marketing/auth surface.
+        mute: "#9fb4d4",
         cyan: {
-          DEFAULT: "#00d4ff",
+          DEFAULT: "#22d3ee",
           50: "#ecfeff",
           100: "#cffafe",
           200: "#a5f3fc",

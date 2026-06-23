@@ -1,22 +1,21 @@
-﻿@import url('https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap');
-
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --font-bebas: 'Bebas Neue';
-  --font-anton: 'Anton', sans-serif;
-  --font-syne: 'Syne', sans-serif;
-  --font-inter: 'Inter';
-  --font-jetbrains: 'JetBrains Mono';
+  /* Fonts are provided by next/font (see layout.tsx) as
+     --font-anton / --font-syne / --font-jetbrains / --font-inter / --font-bebas. */
   --color-green: #00e676;
   --color-red: #ff2d55;
   --color-purple: #bf5fff;
-  --color-cyan: #00d4ff;
+  --color-cyan: #22d3ee;
   --color-gold: #ffd23f;
   --color-ember: #ff6b2b;
   --color-void: #040407;
+  /* Signature brand gradient (emerald → mint → sky) used across the marketing surface. */
+  --grad-brand: linear-gradient(90deg, #00e676, #34d399 55%, #7dd3fc);
+  /* Layout tokens */
+  --nav-offset: 60px; /* scrolled nav height */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,6 +63,58 @@ body {
 .font-anton { font-family: var(--font-anton), sans-serif; }
 .font-syne { font-family: var(--font-syne), sans-serif; }
 .font-mono { font-family: var(--font-jetbrains), monospace; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   DESIGN SYSTEM — foundational tokens & type scale (opt-in; additive).
+   These are the canonical classes for later component adoption; existing
+   components are NOT refactored onto them yet.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Signature brand gradient as text fill. */
+.text-grad-brand {
+  background-image: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@layer components {
+  /* ── Type scale ──────────────────────────────────────────────────────── */
+  .t-display {
+    font-family: var(--font-anton), sans-serif;
+    font-size: clamp(2.5rem, 5vw, 5rem);
+    line-height: 0.9;
+  }
+  .t-h1 {
+    font-family: var(--font-anton), sans-serif;
+    @apply text-5xl md:text-6xl leading-[0.92];
+  }
+  .t-h2 {
+    font-family: var(--font-anton), sans-serif;
+    @apply text-4xl md:text-5xl leading-[0.95];
+  }
+  .t-label {
+    font-family: var(--font-syne), sans-serif;
+    @apply font-extrabold tracking-[0.12em];
+  }
+  .t-kicker {
+    font-family: var(--font-jetbrains), monospace;
+    font-size: 10px; /* hard floor — never smaller */
+    @apply uppercase tracking-[0.35em] text-bull;
+  }
+  .t-body {
+    font-family: var(--font-inter), system-ui, sans-serif;
+  }
+  .t-num {
+    font-family: var(--font-jetbrains), monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  .content-rail {
+    @apply mx-auto w-full max-w-7xl px-6;
+  }
+}
 
 /* ── Marquee ── */
 @keyframes marquee-left {

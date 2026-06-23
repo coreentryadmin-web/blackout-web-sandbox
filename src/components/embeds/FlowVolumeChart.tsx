@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { fmtPremium, type FlowAlert } from "@/lib/api";
+import { rechartsTheme } from "@/lib/chart-theme";
 import { EmbedFrame } from "./EmbedFrame";
 
 type FlowVolumeChartProps = {
@@ -46,7 +47,7 @@ export function FlowVolumeChart({ alerts }: FlowVolumeChartProps) {
                 type="category"
                 dataKey="ticker"
                 width={48}
-                tick={{ fill: "#a3a3a3", fontSize: 11, fontFamily: "monospace" }}
+                tick={rechartsTheme.axisTick}
                 axisLine={false}
                 tickLine={false}
               />

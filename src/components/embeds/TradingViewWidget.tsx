@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { clsx } from "clsx";
+import { tradingViewTheme } from "@/lib/chart-theme";
 import { EmbedFrame } from "./EmbedFrame";
 
 export type TradingViewWidgetType =
@@ -119,15 +120,7 @@ function buildWidgetSrc(type: TradingViewWidgetType, symbol?: string): string {
       isTransparent: true,
       showSymbolLogo: true,
       showFloatingTooltip: true,
-      plotLineColorGrowing: "rgba(34, 197, 94, 1)",
-      plotLineColorFalling: "rgba(239, 68, 68, 1)",
-      gridLineColor: "rgba(42, 42, 42, 0.5)",
-      scaleFontColor: "rgba(134, 134, 134, 1)",
-      belowLineFillColorGrowing: "rgba(34, 197, 94, 0.12)",
-      belowLineFillColorFalling: "rgba(239, 68, 68, 0.12)",
-      belowLineFillColorGrowingBottom: "rgba(34, 197, 94, 0)",
-      belowLineFillColorFallingBottom: "rgba(239, 68, 68, 0)",
-      symbolActiveColor: "rgba(34, 197, 94, 0.12)",
+      ...tradingViewTheme,
       tabs: [
         { title: "Indices", symbols: [{ s: "CBOE:SPX" }, { s: "AMEX:SPY" }, { s: "NASDAQ:QQQ" }, { s: "CBOE:VIX" }] },
         { title: "Mag 7", symbols: [{ s: "NASDAQ:NVDA" }, { s: "NASDAQ:AAPL" }, { s: "NASDAQ:MSFT" }, { s: "NASDAQ:GOOGL" }] },

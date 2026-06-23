@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Anton, Syne, JetBrains_Mono, Inter, Bebas_Neue } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { LandingChrome } from "@/components/LandingChrome";
 import { SharedSigilDefs } from "@/components/marks/SharedSigilDefs";
@@ -9,6 +10,41 @@ import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
 import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
+
+// Self-hosted via next/font (no render-blocking @import, no FOUT/CLS). Variable
+// names MUST match tailwind.config fontFamily tokens (--font-anton/-syne/
+// -jetbrains/-inter/-bebas) so the font-anton/font-syne/font-mono/font-display
+// utilities keep resolving.
+const anton = Anton({
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-anton",
+});
+const syne = Syne({
+  weight: ["600", "700", "800"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-syne",
+});
+const jetbrainsMono = JetBrains_Mono({
+  weight: ["400", "500"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-jetbrains",
+});
+const inter = Inter({
+  weight: ["300", "400", "500", "600", "700"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+const bebas = Bebas_Neue({
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-bebas",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -52,7 +88,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${anton.variable} ${syne.variable} ${jetbrainsMono.variable} ${inter.variable} ${bebas.variable}`}
+    >
       <body className="void-bg antialiased">
         <a
           href="#main"
