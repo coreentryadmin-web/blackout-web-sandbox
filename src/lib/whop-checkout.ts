@@ -34,8 +34,11 @@ export const WHOP_CHECKOUT = {
 export const WHOP_CHECKOUT_UNAVAILABLE_MESSAGE =
   "Upgrade options temporarily unavailable — please contact support.";
 
+// Displayed prices. NOTE: these are UI labels only — the amount actually charged is
+// configured on the Whop product behind each checkout URL. Keep these in sync with the
+// Whop product prices so customers never see one price and get charged another.
 export const WHOP_PREMIUM_CHECKOUT_OPTIONS = [
-  { label: "Monthly — $79.99", href: WHOP_CHECKOUT.monthly },
-  { label: "Yearly — $699", href: WHOP_CHECKOUT.yearly },
-  { label: "Lifetime — $1,500", href: WHOP_CHECKOUT.lifetime },
+  { label: "Monthly — $111", href: WHOP_CHECKOUT.monthly },
+  { label: "Yearly — $1,111", href: WHOP_CHECKOUT.yearly },
+  { label: "Lifetime — $2,222", href: WHOP_CHECKOUT.lifetime },
 ].filter((option) => option.href);

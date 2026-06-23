@@ -94,21 +94,21 @@ export type PlanValueProp = {
  * (see src/lib/whop-checkout.ts). If a label has no entry here the card still
  * renders with just its label/href — framing is purely additive and optional.
  *
- * Numbers below are presentation copy derived from the existing list prices
- * ($79.99/mo, $699/yr, $1,500 lifetime). If you change Whop prices, update the
+ * Numbers below are presentation copy derived from the list prices
+ * ($111/mo, $1,111/yr, $2,222 lifetime). If you change Whop prices, update the
  * labels in whop-checkout.ts AND these strings together.
  */
 export const PLAN_VALUE_PROPS: Record<string, PlanValueProp> = {
-  "Monthly — $79.99": {
+  "Monthly — $111": {
     subline: "Billed monthly. Cancel anytime.",
   },
-  "Yearly — $699": {
+  "Yearly — $1,111": {
     badge: "Best value",
-    subline: "$58/mo, billed yearly",
-    savings: "Save $260 vs monthly",
+    subline: "≈ $93/mo, billed yearly",
+    savings: "Save $221 vs monthly",
     featured: true,
   },
-  "Lifetime — $1,500": {
+  "Lifetime — $2,222": {
     subline: "One payment. Yours forever.",
     savings: "Pays for itself in ~2 years",
   },
