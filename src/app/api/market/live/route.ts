@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { spxBroadcaster } from '@/lib/spx-broadcaster'
 import { authorizeMarketDeskApi } from '@/lib/market-api-auth'
+import { sseBackpressureExceeded } from '@/lib/sse-backpressure'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -51,6 +52,13 @@ export async function GET(req: NextRequest) {
 
       unsub = spxBroadcaster.subscribe((bar) => {
         if (closed) return
+        // Backpressure: drop a slow client instead of buffering its controller queue unbounded
+        // (mirrors flows/stream). Healthy clients keep desiredSize >= 0 so this never trips.
+        if (sseBackpressureExceeded(controller.desiredSize)) {
+          cleanup()
+          try { controller.close() } catch { /* already closed */ }
+          return
+        }
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(bar)}\n\n`))
         } catch {

@@ -3,6 +3,7 @@ import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { indexStore } from "@/lib/ws/polygon-socket";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
+import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,6 +105,14 @@ export async function GET(req: NextRequest) {
       // no per-connection Redis GET. The per-connection timer only does an in-memory enqueue.
       const send = () => {
         if (closed) return;
+        // Backpressure: a slow client lets the controller's internal queue grow (desiredSize goes
+        // increasingly negative). Drop the lagging client rather than buffer unbounded — healthy
+        // clients keep desiredSize >= 0 so this never trips for them (mirrors flows/stream).
+        if (sseBackpressureExceeded(controller.desiredSize)) {
+          cleanup();
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
         try {
           const snapshot = latestSnapshot;
           const data = JSON.stringify({
