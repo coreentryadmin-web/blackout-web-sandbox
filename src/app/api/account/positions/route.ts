@@ -11,6 +11,8 @@ import { requireDatabaseInProduction, listUserPositions, createUserPosition } fr
 import { enrichPosition, valuationFromContract, type ContractValuation, type LiveMark } from "@/lib/nights-watch/valuation";
 import { getNwChain, matchContract, nwChainKey, type NwChain } from "@/lib/nights-watch/chain-cache";
 import { buildOcc, getLiveOptionMark } from "@/lib/ws/options-socket";
+import { buildPositionContextMap } from "@/lib/nights-watch/position-context";
+import { computeVerdict } from "@/lib/nights-watch/verdict";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +61,12 @@ export async function GET(req: Request) {
       })
     );
 
+    // Cross-tool context resolved ONCE per request, keyed by underlying. For SPX
+    // this is a single shared, cached desk read (O(distinct underlyings) — never a
+    // per-position or per-user upstream call). Non-SPX underlyings get empty
+    // context in v1, so the verdict engine only uses on-position data for them.
+    const contextMap = await buildPositionContextMap(positions.map((p) => p.ticker));
+
     const enriched = positions.map((p) => {
       const chain = chains.get(nwChainKey(p.ticker, p.expiry)) ?? null;
       let valuation: ContractValuation | null = null;
@@ -68,7 +76,11 @@ export async function GET(req: Request) {
           valuation = valuationFromContract(contract, chain.spot, liveMarks.get(p.id) ?? null);
         }
       }
-      return enrichPosition(p, valuation);
+      const enrichedPosition = enrichPosition(p, valuation);
+      const ctx = contextMap.get(p.ticker.trim().toUpperCase());
+      // Deterministic, pure, free verdict — every action traces to named signals.
+      const verdict = computeVerdict(enrichedPosition, ctx);
+      return { ...enrichedPosition, verdict };
     });
     return NextResponse.json({ positions: enriched });
   } catch (error) {
