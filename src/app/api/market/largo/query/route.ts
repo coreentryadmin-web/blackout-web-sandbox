@@ -6,6 +6,14 @@ import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { largoBudgetKey, secondsUntilEtMidnight, largoDailyQueryBudget, isOverLargoBudget } from "@/lib/largo-budget";
 import { aiSpendKey, aiSpendKillSwitchUsd, isOverAiSpendCeiling } from "@/lib/ai-spend-ledger";
 import { LocalConcurrencyBackstop, largoLocalMaxConcurrent } from "@/lib/largo-local-gate";
+import {
+  LARGO_INFLIGHT_KEY,
+  LARGO_INFLIGHT_ACQUIRE_LUA,
+  largoGlobalMaxConcurrent,
+  largoInflightTtlMs,
+  inflightStaleCutoff,
+} from "@/lib/largo-global-gate";
+import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Largo concurrency gate — max 2 simultaneous queries per user, Redis-backed.
@@ -19,6 +27,7 @@ type GateRedis = {
   get(key: string): Promise<string | null>;
   set(key: string, value: string | number): Promise<"OK">;
   eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
+  zrem(key: string, ...members: string[]): Promise<number>;
 } | null;
 
 const MAX_LARGO_CONCURRENT = 2;
@@ -76,6 +85,52 @@ async function releaseLargoSlot(userId: string, redis: GateRedis, localSlot: boo
     if (val < 0) await redis.set(key, 0); // clamp to 0 if it goes negative
   } catch {
     /* non-fatal — TTL will clean up the key within LARGO_TTL_S seconds */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-replica GLOBAL concurrency ceiling (audit §3.7) — caps total simultaneous Largo queries
+// across ALL users + replicas, on top of the per-user gate. Acquired AFTER the per-user gate so only
+// queries that already passed per-user consume global capacity. Leak-safe ZSET (a crashed replica's
+// reservation self-heals on the next acquire, see largo-global-gate.ts). FAILS OPEN on Redis loss —
+// the per-process local backstop already bounds that path, so this ceiling only binds when Redis is
+// healthy. Reuses the per-user gate's Redis handle: if that was null (fail-open), this is a no-op
+// too, keeping both gates consistent on an outage.
+// ---------------------------------------------------------------------------
+
+type GlobalSlot = { acquired: boolean; reqId: string | null; redis: GateRedis };
+
+async function acquireLargoGlobalSlot(redis: GateRedis): Promise<GlobalSlot> {
+  if (!redis) return { acquired: true, reqId: null, redis }; // fail-open: no Redis → no global gate
+  const reqId = randomUUID();
+  const now = Date.now();
+  const ttlMs = largoInflightTtlMs();
+  try {
+    const ok = Number(
+      await redis.eval(
+        LARGO_INFLIGHT_ACQUIRE_LUA,
+        1,
+        LARGO_INFLIGHT_KEY,
+        inflightStaleCutoff(now, ttlMs),
+        largoGlobalMaxConcurrent(),
+        now,
+        reqId,
+        ttlMs
+      )
+    );
+    if (ok === 1) return { acquired: true, reqId, redis };
+    return { acquired: false, reqId: null, redis }; // at the org-wide cap
+  } catch {
+    return { acquired: true, reqId: null, redis }; // Redis error → fail-open (backstop bounds blast radius)
+  }
+}
+
+async function releaseLargoGlobalSlot(slot: GlobalSlot): Promise<void> {
+  if (!slot.redis || !slot.reqId) return; // nothing reserved (fail-open path)
+  try {
+    await slot.redis.zrem(LARGO_INFLIGHT_KEY, slot.reqId);
+  } catch {
+    /* non-fatal — a stranded reservation is pruned by the staleCutoff on the next acquire within TTL */
   }
 }
 
@@ -196,10 +251,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Daily budget gate — reject (and RELEASE the concurrency slot we just took) if the
-  // user has already consumed their per-day query allowance. Fail-open inside. One check
-  // before BOTH the stream and non-stream branches.
+  // Org-wide concurrency ceiling — reject (releasing the per-user slot we just took) if the WHOLE
+  // cluster is at capacity, so a premium surge can't fan out unbounded Claude tool-loops across
+  // replicas. Acquired after the per-user gate; reuses its Redis handle so both fail open together.
+  const globalSlot = await acquireLargoGlobalSlot(slot.redis);
+  if (!globalSlot.acquired) {
+    await releaseLargoSlot(userId, slot.redis, slot.localSlot);
+    return NextResponse.json(
+      { error: "Largo is at peak capacity right now. Please retry in a few seconds." },
+      { status: 503 }
+    );
+  }
+
+  // Daily budget gate — reject (and RELEASE both slots we just took) if the user has already
+  // consumed their per-day query allowance. Fail-open inside. One check before BOTH branches.
   if (await isLargoBudgetExceeded(userId, slot.redis)) {
+    await releaseLargoGlobalSlot(globalSlot);
     await releaseLargoSlot(userId, slot.redis, slot.localSlot);
     return NextResponse.json(
       { error: `Daily Largo query limit reached (${largoDailyQueryBudget()}/day). Try again after midnight ET.` },
@@ -252,7 +319,8 @@ export async function POST(req: NextRequest) {
           // query already incurred token cost, and this finally also runs on the
           // isSseClientDisconnect early return (a mid-stream hangup still ran the loop).
           await recordLargoBudgetUsage(userId, slot.redis);
-          // Release the concurrency slot before closing the stream controller.
+          // Release both concurrency slots (global then per-user) before closing the controller.
+          await releaseLargoGlobalSlot(globalSlot);
           await releaseLargoSlot(userId, slot.redis, slot.localSlot);
           try {
             controller.close();
@@ -286,10 +354,11 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Largo query failed";
     return NextResponse.json({ error: message }, { status: 502 });
   } finally {
-    // Record one consumed query against the daily budget (best-effort, fail-open), then
-    // release the concurrency slot whether the non-streaming query succeeded or failed.
-    // Billing on success and failure alike is the conservative cost-control choice.
+    // Record one consumed query against the daily budget (best-effort, fail-open), then release
+    // both concurrency slots (global then per-user) whether the non-streaming query succeeded or
+    // failed. Billing on success and failure alike is the conservative cost-control choice.
     await recordLargoBudgetUsage(userId, slot.redis);
+    await releaseLargoGlobalSlot(globalSlot);
     await releaseLargoSlot(userId, slot.redis, slot.localSlot);
   }
 }
