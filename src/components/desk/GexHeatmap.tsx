@@ -310,7 +310,11 @@ function ExposureProfile({
     <div role="img" aria-label={profileLabel} className="space-y-px">
       {rows.map((r, i) => {
         const mag = peak > 0 ? Math.min(1, Math.abs(r.value) / peak) : 0;
-        const widthPct = (mag * 50).toFixed(2);
+        // Fill the FULL available track on each side: each half is 50% of the bar
+        // track, so a peak bar (mag→1) reaches the edge. A gentle gamma curve lets
+        // mid-magnitude bars fill more of their side (so the profile doesn't read
+        // as half-empty on wide monitors); a small floor keeps tiny bars visible.
+        const widthPct = (r.value !== 0 ? Math.max(3, Math.pow(mag, 0.82) * 50) : 0).toFixed(2);
         const positive = r.value > 0;
         const barColor = positive ? c.posHex : c.negHex;
         const wall = r.isPosWall || r.isNegWall;
@@ -368,7 +372,7 @@ function ExposureProfile({
               </span>
 
               {/* bipolar bar track with a center axis */}
-              <span className="relative h-4 flex-1">
+              <span className="relative h-5 flex-1">
                 {/* dark-pool level line — subtle horizontal rule across the band */}
                 {dpLevel != null && (
                   <span
@@ -387,7 +391,7 @@ function ExposureProfile({
                 />
                 <span
                   aria-hidden
-                  className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px] motion-safe:transition-all motion-safe:duration-300"
+                  className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[3px] motion-safe:transition-all motion-safe:duration-300"
                   style={{
                     width: `${widthPct}%`,
                     left: positive ? "50%" : undefined,
@@ -404,7 +408,7 @@ function ExposureProfile({
                 {/* flow marker — thin secondary bar from center, sized by net premium */}
                 {flow != null && flowMag > 0 && (
                   <span
-                    className="absolute top-1/2 z-10 h-[3px] -translate-y-1/2 rounded-full motion-safe:transition-all motion-safe:duration-300"
+                    className="absolute top-1/2 z-10 h-1 -translate-y-1/2 rounded-full motion-safe:transition-all motion-safe:duration-300"
                     style={{
                       width: `${(flowMag * 46).toFixed(2)}%`,
                       left: flowBull ? "50%" : undefined,
@@ -605,7 +609,8 @@ function ShiftView({
       <div role="img" aria-label="Intraday Δ dealer-gamma by strike — built right (green), melted left (red)" className="space-y-px">
         {rows.map((r) => {
           const mag = peak > 0 ? Math.min(1, Math.abs(r.delta) / peak) : 0;
-          const widthPct = (mag * 50).toFixed(2);
+          // Match the profile: fill the full per-side track with a gentle gamma curve.
+          const widthPct = (r.delta !== 0 ? Math.max(3, Math.pow(mag, 0.82) * 50) : 0).toFixed(2);
           const built = r.delta > 0;
           const barHex = built ? SHIFT_BUILD_HEX : SHIFT_MELT_HEX;
           const title = `${fmtStrike(r.strike)} · ${built ? "built" : "melted"} ${fmtMoney(r.delta)}`;
@@ -630,7 +635,7 @@ function ShiftView({
                 </span>
               </span>
 
-              <span className="relative h-4 flex-1">
+              <span className="relative h-5 flex-1">
                 <span
                   aria-hidden
                   className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/15"
@@ -638,7 +643,7 @@ function ShiftView({
                 {r.delta !== 0 && (
                   <span
                     aria-hidden
-                    className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px] motion-safe:transition-all motion-safe:duration-300"
+                    className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[3px] motion-safe:transition-all motion-safe:duration-300"
                     style={{
                       width: `${widthPct}%`,
                       left: built ? "50%" : undefined,
@@ -684,13 +689,23 @@ function TickerSwitcher({
   onPick: (t: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Debounced ticker search.
+  // Debounce the query feeding the SWR key (~250ms) so typing "GOOGL" mints ONE
+  // fetch instead of five. The input stays fully responsive (`query`); only the
+  // network key (`debouncedQuery`) trails behind.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  // Debounced ticker search — also requires length >= 2 to fire (single-char
+  // queries are too broad to be useful and would fan out one fetch per keystroke).
   const { data: searchData } = useSWR<{ results?: TickerSearchResult[] }>(
-    query.trim().length >= 1
-      ? `/api/market/ticker-search?q=${encodeURIComponent(query.trim())}&limit=8`
+    debouncedQuery.length >= 2
+      ? `/api/market/ticker-search?q=${encodeURIComponent(debouncedQuery)}&limit=8`
       : null,
     (url: string) => fetch(url, { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : { results: [] })),
     { revalidateOnFocus: false, dedupingInterval: 30_000 }
@@ -712,6 +727,7 @@ function TickerSwitcher({
     if (!sym) return;
     onPick(sym);
     setQuery("");
+    setDebouncedQuery("");
     setOpen(false);
   }
 
@@ -840,7 +856,7 @@ function LargoRead({ ticker }: { ticker: string }) {
             Desk read
           </span>
           {open && asof && (
-            <span className="font-mono text-[10px] tabular-nums text-sky-300/50">
+            <span className="font-mono text-[10px] tabular-nums text-sky-300/75">
               as of {asof} ET
             </span>
           )}
@@ -888,7 +904,7 @@ function LargoRead({ ticker }: { ticker: string }) {
             </p>
           )}
 
-          <p className="mt-2 text-[10px] leading-snug text-sky-300/50">
+          <p className="mt-2 text-[10px] leading-snug text-sky-300/75">
             Largo reads dealer positioning from the data above. Market-structure analysis,
             not financial advice.
           </p>
@@ -923,19 +939,23 @@ function RegimeTile({
   sublabel,
   tone,
   active = true,
+  className,
 }: {
   label: string;
   value: string;
   sublabel: string;
   tone: TileTone;
   active?: boolean;
+  /** Grid-placement utilities applied to the tile root (e.g. col-span overrides). */
+  className?: string;
 }) {
   const t = TILE_TONE[tone];
   return (
     <div
       className={clsx(
         "relative flex flex-col justify-between overflow-hidden rounded-xl border bg-[rgba(8,9,14,0.55)] px-4 py-3 backdrop-blur",
-        active ? t.border : "border-white/10"
+        active ? t.border : "border-white/10",
+        className
       )}
       style={
         active
@@ -951,7 +971,7 @@ function RegimeTile({
           style={{ background: `linear-gradient(90deg, transparent, ${t.glow}, transparent)` }}
         />
       )}
-      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
         {label}
       </span>
       <span
@@ -1004,10 +1024,10 @@ function KeyLevels({
   return (
     <div className="rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
       <div className="mb-2.5 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
           Key levels
         </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/50">
+        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/75">
           price
         </span>
       </div>
@@ -1039,7 +1059,7 @@ function KeyLevels({
 
       {dp.length > 0 && (
         <div className="mt-3 border-t border-white/[0.06] pt-2.5">
-          <span className="mb-1.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/55">
+          <span className="mb-1.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/75">
             Dark-pool levels
           </span>
           <ul className="space-y-1">
@@ -1095,7 +1115,7 @@ function FlowSummary({ flowByStrike }: { flowByStrike: Record<string, FlowByStri
     <div className="rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
       <div className="mb-2.5 flex items-center justify-between">
         <span className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
             Flow today
           </span>
           <Badge tone="bull" size="sm">
@@ -1156,16 +1176,33 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // spam force-recomputes / blow the shared chain budget. Ref so it never re-renders.
   const lastForceAtRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Fallback timer that guarantees forceNonce returns to 0 even if SWR resolves the
+  // forced revalidation instantly (cache/dedupe/batch) and the settle effect is missed.
+  const forceResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const matrixKey =
     forceNonce > 0
       ? `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}&force=1&n=${forceNonce}`
       : `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`;
 
-  const { data, isLoading, isValidating, error } = useSWR<GexHeatmapResponse>(
+  // When the force key resolves (success OR error), clear the nonce so the next
+  // refresh reads cache again — force must NEVER become the steady state (Rank 19).
+  // These callbacks fire EXACTLY when the forced request settles (never prematurely,
+  // always eventually), so they're the primary, race-free reset path. The armed
+  // fallback timeout in the fast-move effect is the backstop for any missed callback.
+  const clearForceNonce = () => {
+    setForceNonce((n) => (n > 0 ? 0 : n));
+  };
+  const { data, isLoading, error } = useSWR<GexHeatmapResponse>(
     matrixKey,
     fetchGexHeatmap,
-    { refreshInterval: 20_000, revalidateOnFocus: false, keepPreviousData: true }
+    {
+      refreshInterval: 20_000,
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+      onSuccess: clearForceNonce,
+      onError: clearForceNonce,
+    }
   );
 
   // Live spot tape — a SEPARATE, fast (~1.5s) SWR just for the header price. Index
@@ -1177,7 +1214,26 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     { refreshInterval: 1_500, revalidateOnFocus: false, keepPreviousData: true }
   );
 
-  const live = !error && Boolean(data?.available);
+  // ── Stale cross-ticker gate (Rank 10) ───────────────────────────────────────
+  // Both SWRs use keepPreviousData, so on a ticker switch the PREVIOUS ticker's
+  // payload renders under the NEW title for ~one round-trip. `stale` is true while
+  // the in-hand matrix belongs to a different underlying than the selected ticker;
+  // we show the skeleton in that window and gate the fast-move effect on it so the
+  // new quote isn't compared against the old ticker's spot (a spurious divergence).
+  const stale =
+    data != null && (data.underlying ?? "").toUpperCase() !== ticker.toUpperCase();
+  // Header tape is guarded the same way: only trust the quote when it's for the
+  // selected ticker (it also uses keepPreviousData across switches).
+  const quoteMatches =
+    quote != null && (quote.ticker ?? "").toUpperCase() === ticker.toUpperCase();
+
+  // Matrix content presence — drives the "Live" vs "Quote only" badge (Rank 14).
+  const hasStrikes = (data?.strikes?.length ?? 0) > 0;
+  // Green "Live" only when a fresh, current-ticker chain actually has strikes.
+  const live = !error && Boolean(data?.available) && hasStrikes && !stale;
+  // A spot resolved but the chain is empty (e.g. emptyHeatmap sets available:true
+  // with a spot and no strikes) → a quieter "Quote only" state, not a pulsing Live.
+  const quoteOnly = !error && Boolean(data?.available) && !hasStrikes && !stale;
   const fetchFailed = Boolean(error) && !isLoading;
 
   const spot = data?.spot ?? 0;
@@ -1189,6 +1245,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // is purely an ADDITIONAL trigger. Compares quote.price vs data.spot per the spec.
   const quotePrice = quote?.price ?? 0;
   useEffect(() => {
+    // Guard: only compare when BOTH feeds are for the currently-selected ticker.
+    // On a ticker switch keepPreviousData leaves the old matrix/quote in hand for a
+    // round-trip; comparing the new quote vs the old spot would manufacture a huge
+    // false divergence and spuriously fire force=1. (Rank 10)
+    if (stale || !quoteMatches) return;
     if (!(spot > 0) || !(quotePrice > 0)) return;
     const divergence = Math.abs(quotePrice - spot) / spot;
     if (divergence <= 0.005) return;
@@ -1200,25 +1261,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     setFastFlash(true);
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setFastFlash(false), 2_000);
-  }, [quotePrice, spot]);
-
-  // Once a forced refetch has resolved, drop back to the non-force key so the steady-state
-  // 20s refreshInterval reads cache again — force must NEVER become the steady state. With
-  // keepPreviousData, isValidating goes true while the forced (force=1) request is in
-  // flight, then false once it lands; that falling edge is our cue to clear the nonce.
-  const forceWasValidatingRef = useRef(false);
-  useEffect(() => {
-    if (forceNonce === 0) {
-      forceWasValidatingRef.current = false;
-      return;
-    }
-    if (isValidating) {
-      forceWasValidatingRef.current = true; // forced request is in flight
-    } else if (forceWasValidatingRef.current) {
-      forceWasValidatingRef.current = false;
-      setForceNonce(0); // forced refetch resolved → return to the cache-read key
-    }
-  }, [forceNonce, isValidating]);
+    // Arm a fallback that ZEROES the nonce a few seconds out, no matter what SWR
+    // does — guarantees force can never become steady state even if the SWR
+    // onSuccess/onError reset is somehow missed. The forced request still fires
+    // first (4s ≫ a round-trip), so the bypass is never short-circuited. (Rank 19)
+    if (forceResetTimerRef.current) clearTimeout(forceResetTimerRef.current);
+    forceResetTimerRef.current = setTimeout(() => setForceNonce(0), 4_000);
+  }, [quotePrice, spot, stale, quoteMatches]);
 
   // Reset throttle + force state when the ticker changes so a switch starts clean.
   useEffect(() => {
@@ -1227,10 +1276,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     setFastFlash(false);
   }, [ticker]);
 
-  // Clear any pending flash timer on unmount.
+  // Clear any pending timers on unmount.
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      if (forceResetTimerRef.current) clearTimeout(forceResetTimerRef.current);
     };
   }, []);
   const expiries = useMemo(() => data?.expiries ?? [], [data?.expiries]);
@@ -1360,7 +1410,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       title={
         <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span>
-            {data?.underlying ?? ticker} {isGex ? "GEX" : "VEX"} Positioning
+            {/* While stale (old ticker's payload still in hand), show the SELECTED
+                ticker so the title never reads the previous underlying. (Rank 10) */}
+            {stale ? ticker : data?.underlying ?? ticker} {isGex ? "GEX" : "VEX"} Positioning
           </span>
         </span>
       }
@@ -1377,10 +1429,15 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               <span aria-hidden>⚡</span> fast-move refresh
             </span>
           )}
+          {/* Live (green pulse) only when a fresh, current-ticker chain has strikes.
+              A spot-only snapshot (chain empty) shows a quieter "Quote only" pill
+              instead of a pulsing green Live over a "NO OPTIONS CHAIN" body. (Rank 14) */}
           {live ? (
             <Badge tone="bull" dot>
               Live
             </Badge>
+          ) : quoteOnly ? (
+            <Badge tone="sky">Quote only</Badge>
           ) : (
             <Badge tone="neutral">Offline</Badge>
           )}
@@ -1391,9 +1448,21 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
         <TickerSwitcher ticker={ticker} onPick={setTicker} />
 
-        {/* Live spot tape — centered/inline; ● pulse + price + change% */}
-        {live && headerSpot > 0 && (
-          <div className="flex items-center gap-2.5 font-mono">
+        {/* Live spot tape — centered/inline; ● pulse + price + change%.
+            Wrapped in an aria-live polite region so screen readers announce
+            price/change updates, with a visually-hidden label for context.
+            Shows whenever a current-ticker spot resolved (live OR quote-only). */}
+        {(live || quoteOnly) && headerSpot > 0 && (
+          <div
+            className="flex items-center gap-2.5 font-mono"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="sr-only">
+              Live price for {data?.underlying ?? ticker}: {fmtSpot(headerSpot)},{" "}
+              {headerChangeBull ? "up" : "down"} {fmtPct(headerChangePct)}
+            </span>
             <span
               aria-hidden
               title={
@@ -1410,13 +1479,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   : "bg-sky-300/60"
               )}
             />
-            <span className="text-[10px] uppercase tracking-[0.2em] text-sky-300/60">
+            <span aria-hidden className="text-[10px] uppercase tracking-[0.2em] text-sky-300/75">
               {data?.underlying ?? ticker}
             </span>
-            <span className="text-lg font-bold leading-none tabular-nums text-white">
+            <span aria-hidden className="text-lg font-bold leading-none tabular-nums text-white">
               {fmtSpot(headerSpot)}
             </span>
             <span
+              aria-hidden
               className={clsx(
                 "rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums",
                 headerChangeBull ? "bg-bull/12 text-bull" : "bg-bear/12 text-bear"
@@ -1427,35 +1497,37 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           </div>
         )}
 
-        <div
-          role="tablist"
-          aria-label="Exposure lens"
-          className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.5)] p-1"
-        >
-          {(["gex", "vex"] as Lens[]).map((l) => {
-            const active = l === lens;
-            return (
-              <button
-                key={l}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setLens(l)}
-                className={clsx(
-                  "rounded-md px-3.5 py-1 font-mono text-[11px] font-bold uppercase tracking-wider outline-none transition-colors",
-                  "focus-visible:ring-2 focus-visible:ring-sky-400",
-                  active
-                    ? l === "gex"
-                      ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
-                      : "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
-                    : "text-sky-300/70 hover:text-white"
-                )}
-              >
-                {l}
-              </button>
-            );
-          })}
-        </div>
+        {/* Lens switcher — on the shared Tabs primitive (controlled by `lens`) for
+            consistent ARIA wiring + keyboard nav (Arrow/Home/End, roving tabindex).
+            `unstyled` keeps the per-lens bull/sky color identity. */}
+        <Tabs value={lens} onValueChange={(v) => setLens(v as Lens)}>
+          <TabList
+            aria-label="Exposure lens"
+            className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.5)] p-1"
+          >
+            {(["gex", "vex"] as Lens[]).map((l) => {
+              const active = l === lens;
+              return (
+                <Tab
+                  key={l}
+                  value={l}
+                  unstyled
+                  className={clsx(
+                    "rounded-md px-3.5 py-1 font-mono text-[11px] font-bold uppercase tracking-wider outline-none transition-colors",
+                    "focus-visible:ring-2 focus-visible:ring-sky-400",
+                    active
+                      ? l === "gex"
+                        ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
+                        : "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
+                      : "text-sky-300/70 hover:text-white"
+                  )}
+                >
+                  {l}
+                </Tab>
+              );
+            })}
+          </TabList>
+        </Tabs>
       </div>
 
       {fetchFailed && (
@@ -1471,7 +1543,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         </div>
       )}
 
-      {isLoading && !data ? (
+      {/* Skeleton on first load AND while stale — during a ticker switch the previous
+          ticker's payload is still in hand (keepPreviousData); showing the skeleton
+          stops the old matrix rendering under the new title. (Rank 10) */}
+      {(isLoading && !data) || stale ? (
         <div className="space-y-5" aria-hidden>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -1544,9 +1619,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               />
               <RegimeTile
                 label="Net GEX"
-                value={fmtMoney(total)}
+                value={fmtMoneySigned(total)}
                 sublabel="$-gamma total"
                 tone={total >= 0 ? "bull" : "bear"}
+                className="col-span-2 lg:col-span-1"
               />
             </div>
           ) : (
@@ -1581,9 +1657,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               />
               <RegimeTile
                 label="Net VEX"
-                value={fmtMoney(total)}
+                value={fmtMoneySigned(total)}
                 sublabel="$-vanna total"
                 tone={total >= 0 ? "sky" : "bear"}
+                className="col-span-2 lg:col-span-1"
               />
             </div>
           )}
@@ -1604,9 +1681,12 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">{regimeRead}</p>
           </div>
 
-          {/* ── Main area — two columns at lg+ (stack below) ──────────────── */}
-          <div className="mt-5 grid gap-5 lg:grid-cols-[1.62fr_1fr]">
-            {/* LEFT (~62%): the profile hero with Profile | Shift | Matrix toggle */}
+          {/* ── Main area — single column < lg, 2-col at lg, widened profile
+              track at xl+ so the full-bleed width reads intentional on wide
+              monitors (the bipolar profile gets more track; the rail fans its
+              cards into 2 internal columns below). ──────────────── */}
+          <div className="mt-5 grid gap-5 lg:grid-cols-[1.62fr_1fr] xl:grid-cols-[1.85fr_1fr]">
+            {/* LEFT (~62–65%): the profile hero with Profile | Shift | Matrix toggle */}
             <div className="min-w-0">
           {/* ── Profile | Shift | Matrix toggle ───────────────────────────
               Keyed on lens so switching GEX↔VEX resets to Profile — the Shift
@@ -1673,7 +1753,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   darkPoolLevels={darkPoolLevels}
                   showDarkPool={showDarkPool && hasDarkPoolOverlay}
                 />
-                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
+                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
                   {isGex
                     ? "Net dealer $-gamma per strike · green long / violet short · total "
                     : "Net dealer $-vanna per strike · sky positive / violet negative · total "}
@@ -1689,7 +1769,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   {shift && shift.available ? (
                     <>
                       <ShiftView shift={shift} strikes={strikes} spotStrike={spotStrike} />
-                      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
+                      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
                         Δ net dealer $-gamma vs earlier snapshot · green built / red melted ·
                         flip drift up = dealers longer
                       </p>
@@ -1734,12 +1814,17 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   )}
                 </div>
 
-                <div
-                  className="overflow-x-auto"
-                  role="region"
-                  aria-label={`${data?.underlying ?? ticker} dealer ${isGex ? "gamma" : "vanna"} exposure matrix, strikes by expiration`}
-                >
-                  <table className="w-full border-separate border-spacing-0 font-mono text-[11px]">
+                {/* Horizontal-scroll container with a subtle right-edge fade so on
+                    phones the mono values scroll instead of colliding. The table gets
+                    a min-width so columns keep their breathing room below the fold. */}
+                <div className="relative">
+                  <div
+                    className="overflow-x-auto"
+                    role="region"
+                    tabIndex={0}
+                    aria-label={`${data?.underlying ?? ticker} dealer ${isGex ? "gamma" : "vanna"} exposure matrix, strikes by expiration`}
+                  >
+                    <table className="w-full min-w-[34rem] border-separate border-spacing-0 font-mono text-[11px]">
                     <thead>
                       <tr>
                         <th className="sticky left-0 z-10 bg-[rgba(8,9,14,0.92)] px-2 py-2 text-left text-[10px] uppercase tracking-widest text-cyan-400 backdrop-blur">
@@ -1801,9 +1886,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                       : "text-sky-300/30"
                                   )}
                                   style={has ? cellStyle(v, peak, lens) : undefined}
-                                  title={has ? `${strike} · ${fmtExpiry(e)} · ${fmtMoney(v)}` : undefined}
+                                  title={has ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}` : undefined}
                                 >
-                                  {has ? fmtMoney(v) : "·"}
+                                  {has ? fmtMoneySigned(v) : "·"}
                                 </td>
                               );
                             })}
@@ -1814,16 +1899,22 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                               )}
                               style={rowTotal ? cellStyle(rowTotal, totalPeak, lens) : undefined}
                             >
-                              {rowTotal ? fmtMoney(rowTotal) : "·"}
+                              {rowTotal ? fmtMoneySigned(rowTotal) : "·"}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+                  </div>
+                  {/* right-edge scroll fade — hints there's more matrix to the right */}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#040407] to-transparent"
+                  />
                 </div>
 
-                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
+                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
                   {isGex
                     ? "Net dealer $-gamma per strike × expiry · green long / violet short · total "
                     : "Net dealer $-vanna per strike × expiry · sky positive / violet negative · total "}
@@ -1836,10 +1927,15 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           </Tabs>
             </div>
 
-            {/* RIGHT (~38%): Largo desk read · key levels · flow summary */}
-            <aside className="min-w-0 space-y-4">
+            {/* RIGHT (~35–38%): Largo desk read · key levels · flow summary.
+                At xl the rail fans KeyLevels + FlowSummary into 2 internal
+                columns (Largo spans both) so the rail fills its width with
+                substantial content instead of a thin stack. */}
+            <aside className="min-w-0 grid content-start gap-4 xl:grid-cols-2">
               {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
-              <LargoRead key={ticker} ticker={ticker} />
+              <div className="xl:col-span-2">
+                <LargoRead key={ticker} ticker={ticker} />
+              </div>
 
               <KeyLevels
                 levels={
@@ -1867,7 +1963,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           </div>
 
           {/* ── Methodology disclosure — honest about the dealer-sign assumption ── */}
-          <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/55">
+          <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/75">
             <span aria-hidden className="mr-1 text-sky-300/70">ⓘ</span>
             Net dealer gamma uses the standard convention (dealers long calls / short
             puts); vanna is computed closed-form from implied volatility. Levels are model
