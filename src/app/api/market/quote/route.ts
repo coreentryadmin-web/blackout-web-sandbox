@@ -134,6 +134,12 @@ export async function GET(req: NextRequest) {
   ensureDataSockets();
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
+  // §3.4: validate BEFORE any paid upstream call / cache key / telemetry key. An arbitrary-length
+  // or arbitrary-charset ticker would waste a paid Massive snapshot and inflate telemetry/cache
+  // cardinality. Same allowlist as ticker-search; 400 so bad input is loud, not silently absorbed.
+  if (!/^[A-Z0-9.\-]{1,8}$/.test(ticker)) {
+    return NextResponse.json({ error: "Invalid ticker" }, { status: 400 });
+  }
   const { optionsRoot } = resolveOptionsRoot(ticker);
   const isIndex = isIndexRoot(optionsRoot);
 

@@ -17,7 +17,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(sp.get("limit") ?? 500), 1000); // cap at 1000 to keep payload lean
   const ticker = sp.get("ticker") ?? undefined;
   const min_premium = Number(sp.get("min_premium") ?? 0) || undefined;
-  const since_hours = Number(sp.get("since_hours") ?? 168) || 168; // 7-day window while ingest gap persists
+  // §3.5: clamp 1h–720h (30-day ceiling) so a caller can't pass since_hours=10000000 and scan the
+  // entire flow_alerts table (+ mint a distinct cache key per value). limit is already capped at 1000.
+  const since_hours = Math.min(Math.max(Number(sp.get("since_hours") ?? 168) || 168, 1), 720);
 
   if (dbConfigured()) {
     maybeRunFlowIngest().catch((err) => console.error("[flows] lazy ingest error:", err));
