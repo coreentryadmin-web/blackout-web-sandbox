@@ -278,6 +278,22 @@ export function FlowAlertStream({
                         scale:     { duration: 0.25 },
                       }}
                       onClick={() => onTickerClick?.(flow.ticker)}
+                      // I-04 a11y: the tape card is the flagship drill-down; make it keyboard- +
+                      // screen-reader-reachable (Enter/Space activate the same open), mirroring
+                      // NightsWatchPanel's PositionCard. Interactive role only when it's clickable.
+                      onKeyDown={
+                        onTickerClick
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onTickerClick(flow.ticker);
+                              }
+                            }
+                          : undefined
+                      }
+                      role={onTickerClick ? "button" : undefined}
+                      tabIndex={onTickerClick ? 0 : undefined}
+                      aria-label={onTickerClick ? `Open ${flow.ticker} flow detail` : undefined}
                       className={cardCls}
                       style={i === 0 ? { animation: "flow-alert-flash 2s ease-out forwards" } : undefined}
                     >
