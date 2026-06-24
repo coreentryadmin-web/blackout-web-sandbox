@@ -19,6 +19,27 @@ import { parseTier, type Tier } from "@/lib/tiers";
 const tierCache = new Map<string, { tier: Tier; at: number }>();
 const TIER_CACHE_TTL_MS = 60_000;
 
+// Bound the per-replica Map (audit §3.3): it's keyed by userId with a 60s TTL but entries were never
+// deleted — only overwritten on refresh — so over months of signups (incl. churned/trial userIds) it
+// grew unbounded. Same insertion-order LRU + sweep-on-cap pattern as server-cache.ts:setStoreEntry.
+const MAX_TIER_CACHE = 5_000;
+
+function setTierCache(userId: string, tier: Tier): void {
+  tierCache.delete(userId); // re-insert → most-recently-used position
+  if (tierCache.size >= MAX_TIER_CACHE) {
+    const now = Date.now();
+    for (const [k, v] of Array.from(tierCache)) {
+      if (now - v.at >= TIER_CACHE_TTL_MS) tierCache.delete(k); // reclaim expired before evicting live keys
+    }
+    while (tierCache.size >= MAX_TIER_CACHE) {
+      const oldest = tierCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      tierCache.delete(oldest);
+    }
+  }
+  tierCache.set(userId, { tier, at: Date.now() });
+}
+
 /** Thrown when Clerk is unreachable AND we have no last-known tier to fall back on. */
 export class TierUnavailableError extends Error {
   constructor(message = "Tier check temporarily unavailable") {
@@ -45,7 +66,7 @@ export async function resolveUserTier(userId: string): Promise<Tier> {
   try {
     const user = await (await clerkClient()).users.getUser(userId);
     const tier = parseTier(user.publicMetadata?.tier);
-    tierCache.set(userId, { tier, at: Date.now() });
+    setTierCache(userId, tier);
     return tier;
   } catch (err) {
     if (cached) {

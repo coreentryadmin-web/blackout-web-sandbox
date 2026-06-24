@@ -2,6 +2,28 @@ type MemoryEntry = { value: string; expiresAt: number };
 
 const memory = new Map<string, MemoryEntry>();
 
+// The in-memory map is the Redis-FALLBACK copy, written on EVERY sharedCacheSet (even when Redis is
+// up). Previously it was never swept (audit §3.3) — quote:/nw:optmark:/server: keys accumulated for
+// the whole process lifetime. Bound it with the same insertion-order LRU + sweep-on-cap pattern as
+// server-cache.ts:setStoreEntry.
+const MAX_MEMORY_ENTRIES = 5_000;
+
+function setMemoryEntry(key: string, entry: MemoryEntry): void {
+  memory.delete(key); // re-insert → most-recently-used position, so hot keys aren't evicted as "oldest"
+  if (memory.size >= MAX_MEMORY_ENTRIES) {
+    const now = Date.now();
+    for (const [k, v] of Array.from(memory)) {
+      if (v.expiresAt <= now) memory.delete(k); // reclaim expired before evicting live keys
+    }
+    while (memory.size >= MAX_MEMORY_ENTRIES) {
+      const oldest = memory.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      memory.delete(oldest);
+    }
+  }
+  memory.set(key, entry);
+}
+
 type RedisClient = {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, mode: string, ttlSec: number): Promise<unknown>;
@@ -94,7 +116,7 @@ export async function sharedCacheGetWithTtl<T>(
 
 export async function sharedCacheSet(key: string, value: unknown, ttlSec: number): Promise<void> {
   const payload = JSON.stringify(value);
-  memory.set(key, { value: payload, expiresAt: Date.now() + ttlSec * 1000 });
+  setMemoryEntry(key, { value: payload, expiresAt: Date.now() + ttlSec * 1000 });
 
   const redis = await getRedis();
   if (!redis) return;
