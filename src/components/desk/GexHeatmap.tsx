@@ -111,6 +111,31 @@ type GexHeatmapResponse = {
 type TickerSearchResult = { ticker: string; name: string; type?: string };
 
 /**
+ * Live spot tape from /api/market/quote — polled fast (~1.5s) so the header price
+ * updates live while the gamma matrix stays on its own 20s cache. Browser-safe shape
+ * (no server import): index spot is true WS (`source:'ws'`), stocks/ETFs are
+ * ~1.5s shared-cached REST (`source:'rest'`). `available:false` until the first read.
+ */
+type QuoteResponse = {
+  available: boolean;
+  ticker?: string;
+  price?: number;
+  change_pct?: number;
+  source?: "ws" | "rest";
+  asof?: string;
+};
+
+async function fetchQuote(url: string): Promise<QuoteResponse> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+  });
+  if (!res.ok) throw new Error(`quote → ${res.status}`);
+  return res.json();
+}
+
+/**
  * Largo desk-read narrative from /api/market/gex-heatmap/explain. The route is a
  * cache-reader (one Claude call per ticker per ~3 min) and never fabricates: when AI
  * is unconfigured or the read fails it returns { available:false, reason }.
@@ -431,7 +456,10 @@ function ExposureProfile({
         <span className="text-purple-light">
           ◀ {lens === "gex" ? "short γ" : "neg vanna"} (−)
         </span>
-        <span className="text-sky-300">
+        <span
+          className="text-sky-300"
+          title={spot > 0 ? "Profile reflects the 20s gamma snapshot; the header price updates live." : undefined}
+        >
           {spot > 0 ? `spot ${fmtStrike(spot)}` : lens === "gex" ? "net dealer gamma" : "net dealer vanna"}
         </span>
         <span className={lens === "gex" ? "text-bull" : "text-sky-300"}>
@@ -873,6 +901,15 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     { refreshInterval: 20_000, revalidateOnFocus: false, keepPreviousData: true }
   );
 
+  // Live spot tape — a SEPARATE, fast (~1.5s) SWR just for the header price. Index
+  // spot is true real-time WS; stocks/ETFs are ~1.5s shared-cached REST. The gamma
+  // matrix keeps its own 20s cache above; only the header tape goes live.
+  const { data: quote } = useSWR<QuoteResponse>(
+    `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,
+    fetchQuote,
+    { refreshInterval: 1_500, revalidateOnFocus: false, keepPreviousData: true }
+  );
+
   const live = !error && Boolean(data?.available);
   const fetchFailed = Boolean(error) && !isLoading;
 
@@ -982,6 +1019,21 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const isGex = lens === "gex";
   const posColorClass = isGex ? "text-bull" : "text-sky-300";
 
+  // ── Live header tape ─────────────────────────────────────────────────────────
+  // Use the fast quote feed for the HEADER price/change; fall back to the matrix
+  // snapshot (`data.spot` / `data.change_pct`) until the quote is available. The
+  // gamma profile + matrix spot marker stay on the MATRIX `spot` (the gamma was
+  // computed at that 20s snapshot) — only this header line goes live.
+  const quoteLive = quote?.available && (quote.price ?? 0) > 0;
+  const headerSpot = quoteLive ? (quote!.price as number) : spot;
+  const headerChangePct = quoteLive ? (quote!.change_pct ?? 0) : changePct;
+  const headerChangeBull = headerChangePct >= 0;
+  // Bull pulse when the price is genuinely live: WS index, or a fresh REST quote.
+  const quoteFresh =
+    quoteLive &&
+    (quote!.source === "ws" ||
+      (quote!.asof != null && Date.now() - new Date(quote!.asof).getTime() < 6_000));
+
   return (
     <Panel
       accent={isGex ? "bull" : "sky"}
@@ -991,13 +1043,31 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           <span>
             {data?.underlying ?? ticker} {isGex ? "GEX" : "VEX"} Positioning
           </span>
-          {live && spot > 0 && (
+          {live && headerSpot > 0 && (
             <>
-              <span className="font-mono text-sm font-semibold text-white">
-                {spot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-white">
+                {/* live ● pulse — bull when the quote is genuinely fresh (WS index or
+                    a just-fetched REST quote); reduced-motion users get a static dot. */}
+                <span
+                  aria-hidden
+                  title={
+                    quoteFresh
+                      ? quote?.source === "ws"
+                        ? "Live spot — real-time"
+                        : "Live spot — ~1.5s"
+                      : "Spot — 20s snapshot"
+                  }
+                  className={clsx(
+                    "inline-block h-1.5 w-1.5 rounded-full",
+                    quoteFresh
+                      ? "bg-bull shadow-[0_0_6px_#00e676] motion-safe:animate-pulse"
+                      : "bg-sky-300/60"
+                  )}
+                />
+                {headerSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className={clsx("font-mono text-xs font-bold", changeBull ? "text-bull" : "text-bear")}>
-                {fmtPct(changePct)}
+              <span className={clsx("font-mono text-xs font-bold", headerChangeBull ? "text-bull" : "text-bear")}>
+                {fmtPct(headerChangePct)}
               </span>
             </>
           )}
