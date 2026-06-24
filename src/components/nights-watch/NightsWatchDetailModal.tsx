@@ -92,10 +92,13 @@ function shortDate(raw: string | null | undefined): string {
   if (!raw) return EM_DASH;
   const t = Date.parse(raw.length <= 10 ? `${raw}T00:00:00Z` : raw);
   if (!Number.isFinite(t)) return raw;
+  // Render in UTC: expiry is a plain calendar date parsed as UTC midnight above, so a
+  // negative-offset local TZ (e.g. ET) must NOT shift it back a day ("2026-07-17" → "Jul 16").
   return new Date(t).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 
