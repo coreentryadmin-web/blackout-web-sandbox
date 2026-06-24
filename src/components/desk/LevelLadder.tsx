@@ -1,11 +1,22 @@
 ﻿"use client";
 
-import { DeskPanel } from "./DeskPanel";
+import { Panel, Badge } from "@/components/ui";
 import type { SpxState } from "@/lib/api";
 import { fmtPrice } from "@/lib/api";
 import { clsx } from "clsx";
 
 type Level = { label: string; value: number | null; kind?: "support" | "resistance" | "neutral" };
+
+/** Live / offline status pill — mirrors the legacy DeskPanel `live` indicator. */
+function FeedBadge({ live }: { live?: boolean }) {
+  return live ? (
+    <Badge tone="bull" dot>
+      Live
+    </Badge>
+  ) : (
+    <Badge tone="neutral">Offline</Badge>
+  );
+}
 
 export function LevelLadder({ data, live }: { data?: SpxState; live?: boolean }) {
   const c = data?.chart_levels;
@@ -25,7 +36,12 @@ export function LevelLadder({ data, live }: { data?: SpxState; live?: boolean })
   const sorted = [...levels].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
   return (
-    <DeskPanel title="Level Ladder" subtitle="Key strikes & structure" variant="green" live={live}>
+    <Panel
+      accent="bull"
+      kicker="Key strikes & structure"
+      title="Level Ladder"
+      actions={<FeedBadge live={live} />}
+    >
       <div
         className="space-y-1 max-h-[320px] overflow-y-auto pr-1"
         role="status"
@@ -62,6 +78,6 @@ export function LevelLadder({ data, live }: { data?: SpxState; live?: boolean })
           );
         })}
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }

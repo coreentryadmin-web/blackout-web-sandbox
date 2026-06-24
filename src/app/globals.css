@@ -6337,10 +6337,6 @@ body {
   .spx-panel-violet { @apply border-purple/35; }
   .spx-panel-rose { @apply border-rose-500/30; }
 
-  .spx-desk-panel-header {
-    @apply flex items-center gap-2 px-3 py-2.5 border-b border-white/5 bg-white/[0.02];
-  }
-
   .spx-desk-panel-body {
     @apply px-3 py-2.5;
   }
@@ -10353,18 +10349,6 @@ body {
   .flow-scroll::-webkit-scrollbar-track { background: transparent; }
   .flow-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 99px; }
   .flow-scroll::-webkit-scrollbar-thumb:hover { background: rgba(125, 211, 252, 0.45); }
-
-  /* Skeleton shimmer */
-  @keyframes flow-shimmer {
-    0%   { background-position: -400px 0; }
-    100% { background-position: 400px 0; }
-  }
-  .flow-skeleton {
-    background: linear-gradient(90deg, #0b0e16 25%, #161628 50%, #0b0e16 75%);
-    background-size: 800px 100%;
-    animation: flow-shimmer 1.6s ease-in-out infinite;
-    border-radius: 6px;
-  }
 
   /* AI brief scan line animation */
   @keyframes brief-scan {

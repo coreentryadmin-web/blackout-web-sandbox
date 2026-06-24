@@ -1,9 +1,20 @@
 ﻿"use client";
 
-import { DeskPanel } from "./DeskPanel";
+import { Panel, Badge } from "@/components/ui";
 import type { SpxState } from "@/lib/api";
 import { fmtPremium, fmtPrice } from "@/lib/api";
 import { clsx } from "clsx";
+
+/** Live / offline status pill — mirrors the legacy DeskPanel `live` indicator. */
+function FeedBadge({ live }: { live?: boolean }) {
+  return live ? (
+    <Badge tone="bull" dot>
+      Live
+    </Badge>
+  ) : (
+    <Badge tone="neutral">Offline</Badge>
+  );
+}
 
 export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean }) {
   const gex = data?.gex_net ?? 0;
@@ -11,7 +22,12 @@ export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean
   const pct = live && data?.gex_net != null ? Math.min(100, Math.abs(gex) / 5e9 * 100) : 12;
 
   return (
-    <DeskPanel title="Dealer Positioning" subtitle="GEX · Max pain · Gamma flip" variant="green" live={live}>
+    <Panel
+      accent="bull"
+      kicker="GEX · Max pain · Gamma flip"
+      title="Dealer Positioning"
+      actions={<FeedBadge live={live} />}
+    >
       <div className="space-y-5" role="status" aria-live="polite" aria-label="Dealer positioning levels">
 
         <div>
@@ -35,7 +51,7 @@ export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean
           <Metric label="Tide" value={live ? (data?.tide_bias ?? "—") : "—"} accent />
         </div>
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }
 
@@ -46,7 +62,12 @@ export function Flow0dtePanel({ data, live }: { data?: SpxState; live?: boolean 
   const callPct = (calls / total) * 100;
 
   return (
-    <DeskPanel title="0DTE Flow" subtitle="Calls vs puts" variant="purple" live={live}>
+    <Panel
+      accent="accent"
+      kicker="Calls vs puts"
+      title="0DTE Flow"
+      actions={<FeedBadge live={live} />}
+    >
       <div className="space-y-4">
         <div className="desk-flow-split">
           <div className="desk-flow-calls" style={{ width: `${callPct}%` }} />
@@ -61,20 +82,25 @@ export function Flow0dtePanel({ data, live }: { data?: SpxState; live?: boolean 
           </span>
         </div>
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }
 
 export function BreadthPanel({ data, live }: { data?: SpxState; live?: boolean }) {
   return (
-    <DeskPanel title="Market Breadth" subtitle="Internals" variant="neutral" live={live}>
+    <Panel
+      accent="sky"
+      kicker="Internals"
+      title="Market Breadth"
+      actions={<FeedBadge live={live} />}
+    >
       <div className="grid grid-cols-2 gap-4">
         <Metric label="A/D" value={live ? `${data?.adv ?? "—"}/${data?.dec ?? "—"}` : "—"} />
         <Metric label="TRIN" value={live && data?.trin != null ? data.trin.toFixed(2) : "—"} />
         <Metric label="TICK" value={live && data?.tick != null ? (data.tick >= 0 ? `+${data.tick}` : String(data.tick)) : "—"} />
         <Metric label="Sectors" value={live ? (data?.sector_bias ?? "—") : "—"} accent />
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }
 

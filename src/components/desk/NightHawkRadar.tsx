@@ -3,7 +3,18 @@
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import type { NightHawkPlay } from "@/lib/api";
-import { DeskPanel } from "./DeskPanel";
+import { Panel, Badge } from "@/components/ui";
+
+/** Live / offline status pill — mirrors the legacy DeskPanel `live` indicator. */
+function FeedBadge({ live }: { live?: boolean }) {
+  return live ? (
+    <Badge tone="bull" dot>
+      Live
+    </Badge>
+  ) : (
+    <Badge tone="neutral">Offline</Badge>
+  );
+}
 
 const listVariants = {
   show: { transition: { staggerChildren: 0.08 } },
@@ -25,7 +36,14 @@ function scorePercent(score: number) {
 export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?: boolean }) {
   return (
     <div className="grid lg:grid-cols-2 gap-4">
-      <DeskPanel title="Night Hawk Radar" subtitle="After-hours setups" variant="purple" live={live} glow className="lg:col-span-2">
+      <Panel
+        accent="accent"
+        kicker="After-hours setups"
+        title="Night Hawk Radar"
+        actions={<FeedBadge live={live} />}
+        // Preserve the legacy DeskPanel `glow` (cyan box-shadow) + 2-col span.
+        className="lg:col-span-2 shadow-[0_0_30px_rgba(34,211,238,0.15),inset_0_0_40px_rgba(34,211,238,0.06)]"
+      >
         <motion.div
           className="grid md:grid-cols-2 xl:grid-cols-3 gap-3"
           variants={listVariants}
@@ -93,7 +111,7 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
             })
           )}
         </motion.div>
-      </DeskPanel>
+      </Panel>
     </div>
   );
 }
