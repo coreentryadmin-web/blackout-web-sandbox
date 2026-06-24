@@ -3,30 +3,17 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { fetchNightHawkEdition } from "@/lib/api";
-import type { HuntMode, PlaybookPlay } from "@/lib/nighthawk/types";
-import { AgentPowerModal } from "@/components/nighthawk/AgentPowerModal";
-import { AgentSidebar } from "@/components/nighthawk/AgentSidebar";
-import { DayTradeAgentWorkspace } from "@/components/nighthawk/DayTradeAgentWorkspace";
+import type { PlaybookPlay } from "@/lib/nighthawk/types";
+import { NightsWatchPanel } from "@/components/nights-watch/NightsWatchPanel";
 import { PlayDetailModal } from "@/components/nighthawk/PlayDetailModal";
 import { PlaybookBoard } from "@/components/nighthawk/PlaybookBoard";
 
 export function NightHawkFeed() {
-  const [agentMode, setAgentMode] = useState<HuntMode | null>(null);
-  const [dayWorkspaceOpen, setDayWorkspaceOpen] = useState(false);
   const [selectedPlay, setSelectedPlay] = useState<PlaybookPlay | null>(null);
 
   const { data: edition, isLoading } = useSWR("nighthawk-edition", fetchNightHawkEdition, {
     refreshInterval: 120_000,
   });
-
-  function handleAgentSelect(mode: HuntMode) {
-    if (mode === "day") {
-      setDayWorkspaceOpen(true);
-      setAgentMode(null);
-      return;
-    }
-    setAgentMode(mode);
-  }
 
   return (
     <div className="nighthawk-content-canvas">
@@ -36,11 +23,12 @@ export function NightHawkFeed() {
           loading={isLoading}
           onPlaySelect={setSelectedPlay}
         />
-        <AgentSidebar activeMode={dayWorkspaceOpen ? "day" : agentMode} onSelect={handleAgentSelect} />
+        {/* Phase 4: the right column is now the Night's Watch positions manager.
+            The AgentSidebar ("Arm an Agent" / Hunt Modes) component file is kept
+            in place but no longer rendered here. */}
+        <NightsWatchPanel />
       </div>
 
-      <DayTradeAgentWorkspace open={dayWorkspaceOpen} onClose={() => setDayWorkspaceOpen(false)} />
-      <AgentPowerModal mode={agentMode} onClose={() => setAgentMode(null)} />
       <PlayDetailModal
         play={selectedPlay}
         editionFor={edition?.edition_for ?? null}
