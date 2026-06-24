@@ -170,6 +170,10 @@ export function AdminNightHawkDashboard() {
     setRunMsg("Running the edition pipeline… Claude builds can take a few minutes — re-run to resume.");
     try {
       const res = await fetch("/api/admin/nighthawk/run", { method: "POST" });
+      if (res.status === 401 || res.status === 403) {
+        setRunMsg("✗ Admin session expired — refresh the page (Ctrl+Shift+R) and sign in again, then click Run now.");
+        return;
+      }
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         job_status?: string;
@@ -181,8 +185,8 @@ export function AdminNightHawkDashboard() {
       };
       if (json.job_status === "published") {
         setRunMsg(`✓ Published ${json.edition_for ?? ""} — ${json.plays_count ?? 0} plays.`);
-      } else if (json.ok === false && (json.error || json.detail)) {
-        setRunMsg(`✗ ${json.error ?? "Failed"}${json.detail ? ` — ${json.detail}` : ""}`);
+      } else if (!res.ok || json.ok === false) {
+        setRunMsg(`✗ ${json.error ?? json.detail ?? `HTTP ${res.status}`}${json.error && json.detail ? ` — ${json.detail}` : ""}`);
       } else {
         setRunMsg(`… ${json.current_stage ?? json.job_status ?? "in progress"} — click Run again to resume.`);
       }
