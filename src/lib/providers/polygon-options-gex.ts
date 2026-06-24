@@ -201,11 +201,85 @@ export type GexHeatmap = {
   strike_totals: Record<string, number>;
   /** Linear-interpolated zero-gamma flip strike, or null when undetermined. */
   zero_gamma_flip: number | null;
+  /** Strike with the LARGEST POSITIVE net dealer gamma (dealer long-gamma → resistance/pin), or null. */
+  call_wall: number | null;
+  /** Strike with the LARGEST NEGATIVE net dealer gamma (support), or null. */
+  put_wall: number | null;
+  /** Max-pain strike (option-holder value minimizer), or null when not feasible. */
+  max_pain: number | null;
+  /** Regime read derived from spot vs the gamma flip. */
+  regime: GexRegime;
   /** Total net dealer dollar-gamma across the whole matrix. */
   total_gex: number;
   source: "polygon";
   data_delay: string;
 };
+
+export type GexRegime = {
+  /** The gamma flip the posture is measured against (mirrors zero_gamma_flip), or null. */
+  flip: number | null;
+  /** 'long' when spot is at/above the flip, 'short' when below, null when undetermined. */
+  posture: "long" | "short" | null;
+  /** Computed one-liner describing the regime — neutral string when data is missing. */
+  read: string;
+};
+
+/**
+ * Derive the dealer-gamma regime levels (call wall, put wall, posture, read) from the
+ * already-computed per-strike NET gamma totals + spot + flip. Never fabricates: when a
+ * level can't be determined it is null and the `read` falls back to a neutral string.
+ */
+function computeGexRegime(
+  strikeTotals: Record<string, number>,
+  spot: number,
+  flip: number | null,
+  maxPain: number | null
+): { callWall: number | null; putWall: number | null; regime: GexRegime } {
+  let callWall: number | null = null;
+  let putWall: number | null = null;
+  let maxPos = 0;
+  let maxNeg = 0;
+  for (const [s, g] of Object.entries(strikeTotals)) {
+    const strike = Number(s);
+    if (!Number.isFinite(strike) || !Number.isFinite(g)) continue;
+    // Largest POSITIVE net gamma → call wall (resistance/pin).
+    if (g > maxPos) {
+      maxPos = g;
+      callWall = strike;
+    }
+    // Largest NEGATIVE net gamma → put wall (support).
+    if (g < maxNeg) {
+      maxNeg = g;
+      putWall = strike;
+    }
+  }
+
+  const posture: "long" | "short" | null =
+    flip != null && spot > 0 ? (spot >= flip ? "long" : "short") : null;
+
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+
+  let read: string;
+  if (posture == null || flip == null || !(spot > 0)) {
+    read = "Gamma flip undetermined — regime read unavailable until the chain prints a clean dealer-gamma profile.";
+  } else if (posture === "long") {
+    const resistance = callWall != null ? ` Resistance ${fmt(callWall)}` : "";
+    const support = putWall != null ? `${resistance ? "," : ""} support ${fmt(putWall)}` : "";
+    const tail = resistance || support ? `.${resistance}${support}.` : ".";
+    read = `Spot ${fmt(spot)} is above the gamma flip (${fmt(flip)}) → long gamma: range-bound, fade extremes${tail}`;
+  } else {
+    const resistance = callWall != null ? ` Resistance ${fmt(callWall)}` : "";
+    const support = putWall != null ? `${resistance ? "," : ""} support ${fmt(putWall)}` : "";
+    const tail = resistance || support ? `.${resistance}${support}.` : ".";
+    read = `Spot ${fmt(spot)} is below the gamma flip (${fmt(flip)}) → short gamma: momentum / vol expansion, moves accelerate${tail}`;
+  }
+
+  // Note: maxPain is surfaced as its own field; intentionally not folded into `read`.
+  void maxPain;
+
+  return { callWall, putWall, regime: { flip, posture, read } };
+}
 
 const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
 /** In-memory mirror of the Redis matrix so co-located requests skip Redis too. */
@@ -395,6 +469,18 @@ export async function fetchGexHeatmap(
   const finalStrikes = strikes.filter((s) => cells[String(s)] != null);
   const zeroGammaFlip = computeZeroGammaFlip(strikeTotals);
 
+  // Max pain from the same banded chain (option-holder value minimizer). Reuses
+  // computeMaxPainFromChain; null when not feasible — never fabricated.
+  const maxPain = computeMaxPainFromChain(contracts);
+
+  // Regime levels: call wall (largest +gamma), put wall (largest −gamma), posture + read.
+  const { callWall, putWall, regime } = computeGexRegime(
+    strikeTotals,
+    spot,
+    zeroGammaFlip,
+    maxPain
+  );
+
   const heatmap: GexHeatmap = {
     underlying: root,
     spot,
@@ -405,6 +491,10 @@ export async function fetchGexHeatmap(
     cells,
     strike_totals: strikeTotals,
     zero_gamma_flip: zeroGammaFlip,
+    call_wall: callWall,
+    put_wall: putWall,
+    max_pain: maxPain,
+    regime,
     total_gex: prunedTotal || totalGex,
     source: "polygon",
     data_delay: POLYGON_OPTIONS_DATA_DELAY,
