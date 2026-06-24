@@ -35,13 +35,19 @@ export async function notifyPlayDiscord(input: {
   void notifyPlayPersonal(content);
 }
 
+// One-time guard so the "ops webhook not set" fallback warning logs once per process, not on
+// every alert.
+let opsFallbackWarned = false;
+
 export async function notifyOpsDiscord(input: {
   title: string;
   body: string;
   severity?: "critical" | "warning" | "info";
 }): Promise<void> {
-  // N-2: Warn if ops alerts will fall back to the play webhook (could pollute trade channel).
-  if (!process.env.DISCORD_OPS_WEBHOOK_URL) {
+  // N-2: Warn ONCE per process if ops alerts will fall back to the play webhook (could pollute
+  // the trade channel). Logging this on every alert just spams stderr every ~20 min.
+  if (!process.env.DISCORD_OPS_WEBHOOK_URL && !opsFallbackWarned) {
+    opsFallbackWarned = true;
     console.warn("[notify] DISCORD_OPS_WEBHOOK_URL not set — ops alerts will post to play channel");
   }
   const url =

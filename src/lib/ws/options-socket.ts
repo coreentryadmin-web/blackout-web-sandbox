@@ -358,6 +358,12 @@ class OptionsShard {
       return;
     }
 
+    // Any inbound frame (connected / auth / status / subscribe-ack / heartbeat / quote) proves
+    // the socket is ALIVE — track liveness HERE, not only on a priced quote. Otherwise a single
+    // quiet contract with no NBBO update for >stallMs reads as a "stall" and triggers a needless
+    // reconnect (which then collides with the still-closing old socket → 1006 backoff storm).
+    this.lastMessageAt = Date.now();
+
     for (const msg of msgs) {
       const ev = String(msg.ev ?? "");
       const status = msg.status as string | undefined;
@@ -403,7 +409,7 @@ class OptionsShard {
     if (mark == null && bid == null && ask == null && last == null) return;
 
     const now = Date.now();
-    this.lastMessageAt = now;
+    // (liveness is tracked in handleMessage on ANY frame; here we only need `now` for the ts)
     const entry: OptionMark = { bid, ask, mark, last, ts: now };
     optionMarks.set(occ, entry);
     void writeMarkThrough(occ, entry);
@@ -420,7 +426,9 @@ class OptionsShard {
         (now - this.lastMessageAt) / 1000
       )}s, reconnecting`
     );
-    this.reconnectDelay = 1000;
+    // 3s (not 1s) so Massive releases the old (closing) connection before we reopen — a too-fast
+    // reopen collides with the lingering socket and the server drops the new one with 1006.
+    this.reconnectDelay = 3000;
     try {
       this.ws.close();
     } catch {
@@ -615,9 +623,13 @@ const RECONCILE_INTERVAL_MS = Math.max(
   5_000,
   Number(process.env.OPTIONS_WS_RECONCILE_MS ?? 30_000) || 30_000
 );
+// 5 min default. With any-frame liveness (handleMessage), a real half-open stall is rare, and a
+// single quiet contract can legitimately go minutes without an NBBO update — so a tight 90s
+// threshold produced spurious reconnect storms. A genuinely dead-but-OPEN socket is still caught
+// within 5 min, and the live-mark gap meanwhile falls back to the REST snapshot. Tunable via env.
 const WATCHDOG_STALL_MS = Math.max(
   10_000,
-  Number(process.env.OPTIONS_WS_STALL_MS ?? 90_000) || 90_000
+  Number(process.env.OPTIONS_WS_STALL_MS ?? 300_000) || 300_000
 );
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
