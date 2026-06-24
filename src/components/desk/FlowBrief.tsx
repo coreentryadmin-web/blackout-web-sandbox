@@ -97,20 +97,20 @@ export function FlowBrief() {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="relative overflow-hidden rounded-lg"
         style={showAfterHours ? {
-          background: "linear-gradient(135deg, rgba(59,7,100,0.25) 0%, rgba(10,10,25,0.95) 50%, rgba(7,42,100,0.2) 100%)",
-          border: "1px solid rgba(139,92,246,0.35)",
-          boxShadow: "0 0 25px rgba(139,92,246,0.12), 0 0 50px rgba(59,130,246,0.06)",
+          background: "linear-gradient(135deg, rgba(191,95,255,0.18) 0%, rgba(8,9,14,0.95) 50%, rgba(7,42,100,0.2) 100%)",
+          border: "1px solid rgba(191,95,255,0.35)",
+          boxShadow: "0 0 25px rgba(191,95,255,0.12), 0 0 50px rgba(56,189,248,0.06)",
         } : {
-          background: "linear-gradient(135deg, rgba(217,70,239,0.12) 0%, rgba(0,0,0,0.7) 40%, rgba(0,255,102,0.08) 100%)",
+          background: "linear-gradient(135deg, rgba(191,95,255,0.14) 0%, rgba(8,9,14,0.7) 40%, rgba(0,230,118,0.08) 100%)",
           border: "1px solid",
-          borderImage: "linear-gradient(90deg, rgba(217,70,239,0.6), rgba(0,255,102,0.5)) 1",
-          boxShadow: "0 0 30px rgba(217,70,239,0.15), 0 0 60px rgba(0,255,102,0.05)",
+          borderImage: "linear-gradient(90deg, rgba(191,95,255,0.6), rgba(0,230,118,0.5)) 1",
+          boxShadow: "0 0 30px rgba(191,95,255,0.15), 0 0 60px rgba(0,230,118,0.05)",
         }}
       >
         {/* Top gradient line — only during RTH */}
         {!showAfterHours && (
           <div className="absolute inset-x-0 top-0 h-[2px]" style={{
-            background: "linear-gradient(90deg, transparent, #e879f9, #00ff66, transparent)",
+            background: "linear-gradient(90deg, transparent, #bf5fff, #00e676, transparent)",
             animation: "brief-scan 3s ease-in-out infinite",
           }} />
         )}
@@ -121,20 +121,20 @@ export function FlowBrief() {
             {showAfterHours ? (
               <>
                 <div className="relative">
-                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#818cf8", boxShadow: "0 0 8px #818cf8" }} />
-                  <span className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ background: "#818cf8" }} />
+                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#bf5fff", boxShadow: "0 0 8px #bf5fff" }} />
+                  <span className="absolute inset-0 rounded-full animate-ping opacity-30 motion-reduce:animate-none" style={{ background: "#bf5fff" }} />
                 </div>
-                <span className="font-mono text-[9px] tracking-[0.35em] uppercase font-bold" style={{ color: "#a78bfa", textShadow: "0 0 10px rgba(167,139,250,0.8)" }}>
+                <span className="font-mono text-[9px] tracking-[0.35em] uppercase font-bold" style={{ color: "#d580ff", textShadow: "0 0 10px rgba(191,95,255,0.8)" }}>
                   AFTER-HOURS
                 </span>
               </>
             ) : (
               <>
                 <div className="relative">
-                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#e879f9", boxShadow: "0 0 8px #e879f9" }} />
-                  <span className="absolute inset-0 rounded-full animate-ping opacity-50" style={{ background: "#e879f9" }} />
+                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#bf5fff", boxShadow: "0 0 8px #bf5fff" }} />
+                  <span className="absolute inset-0 rounded-full animate-ping opacity-50 motion-reduce:animate-none" style={{ background: "#bf5fff" }} />
                 </div>
-                <span className="font-mono text-[9px] tracking-[0.35em] uppercase font-bold" style={{ color: "#e879f9", textShadow: "0 0 8px rgba(232,121,249,0.7)" }}>
+                <span className="font-mono text-[9px] tracking-[0.35em] uppercase font-bold" style={{ color: "#d580ff", textShadow: "0 0 8px rgba(191,95,255,0.7)" }}>
                   AI BRIEF
                 </span>
                 <span className="font-mono text-[8px] tracking-[0.2em] uppercase" style={{ color: "#00e676", textShadow: "0 0 6px rgba(0,230,118,0.6)" }}>
@@ -160,10 +160,10 @@ export function FlowBrief() {
                 transition={{ duration: 0.4 }}
                 className="flex-1 font-mono leading-relaxed font-medium"
                 style={showAfterHours ? {
-                  color: "#c4b5fd",
+                  color: "#d580ff",
                   fontSize: "11px",
                   fontStyle: "italic",
-                  textShadow: "0 0 12px rgba(167,139,250,0.4)",
+                  textShadow: "0 0 12px rgba(191,95,255,0.4)",
                 } : {
                   color: "#f0f0f0",
                   fontSize: "12px",
@@ -185,7 +185,7 @@ export function FlowBrief() {
         {/* Bottom line — only during RTH */}
         {!showAfterHours && (
           <div className="absolute inset-x-0 bottom-0 h-px" style={{
-            background: "linear-gradient(90deg, transparent, rgba(0,255,102,0.3), rgba(217,70,239,0.3), transparent)",
+            background: "linear-gradient(90deg, transparent, rgba(0,230,118,0.3), rgba(191,95,255,0.3), transparent)",
           }} />
         )}
       </motion.div>

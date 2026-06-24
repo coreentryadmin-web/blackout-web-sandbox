@@ -1,6 +1,7 @@
 import { requireTier } from "@/lib/auth-access";
 import { Nav } from "@/components/Nav";
-import { PlatformShell } from "@/components/platform/PlatformShell";
+import { PageShell, PageHeader, Badge } from "@/components/ui";
+import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/components/FlowFeed";
 import { DnaHelixBackgroundLazy as DnaHelixBackground } from "@/components/DnaHelixBackgroundLazy";
 
@@ -8,23 +9,30 @@ export default async function FlowsPage() {
   await requireTier("premium");
 
   return (
-    <div className="page-shell relative overflow-hidden">
-      {/* Animated DNA helix wallpaper — fixed behind all content */}
+    <>
+      {/* Animated DNA helix wallpaper — fixed behind all content (HELIX canvas) */}
       <DnaHelixBackground />
 
-      {/* All content sits above the background */}
-      <div className="relative" style={{ zIndex: 1 }}>
-        <Nav />
-        <PlatformShell
-          variant="flows"
-          title="HELIX"
-          subtitle="Whale & dark pool alerts · Real-time tape"
-          deskMode
-          fullWidth
-        >
+      <Nav />
+      {/* DnaHelix paints the canvas, so suppress PageShell's own ambient backdrop. */}
+      <PageShell backdrop={false} fullBleed>
+        <div className="content-rail">
+          <PageHeader
+            kicker="◆ INSTITUTIONAL FLOW"
+            title="HELIX"
+            subtitle="Whale & dark pool alerts · Real-time tape"
+            badge={<ProductMark product="helix" size={44} />}
+            actions={
+              <Badge tone="neutral" dot>
+                Live
+              </Badge>
+            }
+          />
+        </div>
+        <div className="mt-6 max-w-none px-2 md:px-3">
           <FlowFeed />
-        </PlatformShell>
-      </div>
-    </div>
+        </div>
+      </PageShell>
+    </>
   );
 }

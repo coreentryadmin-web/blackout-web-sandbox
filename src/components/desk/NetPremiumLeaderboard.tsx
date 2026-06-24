@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
+import { Panel } from "@/components/ui";
 
 type Row = { ticker: string; calls: number; puts: number; net: number; total: number; callPct: number };
 
@@ -33,16 +34,18 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
   const maxTotal = rows[0]?.total ?? 1;
 
   return (
-    <div className="flow-panel">
-      <div className="flow-panel-header">
-        <span className="flow-panel-title">Net Premium</span>
-        {rows.length > 0 && (
+    <Panel
+      accent="bull"
+      title="Net Premium"
+      bodyClassName="!px-4 !py-3.5"
+      actions={
+        rows.length > 0 ? (
           <span className="font-mono text-[9px] text-sky-300 font-semibold">
             {fmtPremium(rows.reduce((s, r) => s + r.total, 0))} total
           </span>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       <div className="flow-panel-body space-y-3">
         {rows.length === 0 ? (
           <div className="space-y-2 py-1">
@@ -69,11 +72,11 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     <span className="font-anton text-[13px] text-gold leading-none tracking-wide">{row.ticker}</span>
                     <span className={clsx(
                       "font-mono text-[10px] font-bold tracking-wider",
-                      isBull ? "text-emerald-400" : "text-red-500"
+                      isBull ? "text-bull" : "text-bear"
                     )}
                     style={isBull
-                      ? { textShadow: "0 0 8px rgba(52,211,153,0.7)" }
-                      : { textShadow: "0 0 8px rgba(239,68,68,0.7)" }
+                      ? { textShadow: "0 0 8px rgba(0,230,118,0.7)" }
+                      : { textShadow: "0 0 8px rgba(255,45,85,0.7)" }
                     }>
                       {isBull ? "▲" : "▼"} {row.callPct}%
                     </span>
@@ -82,8 +85,8 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     className="font-mono font-bold tabular-nums"
                     style={{
                       fontSize: "13px",
-                      color: isBull ? "#34d399" : "#ef4444",
-                      textShadow: isBull ? "0 0 10px rgba(52,211,153,0.6)" : "0 0 10px rgba(239,68,68,0.6)",
+                      color: isBull ? "#00e676" : "#ff2d55",
+                      textShadow: isBull ? "0 0 10px rgba(0,230,118,0.6)" : "0 0 10px rgba(255,45,85,0.6)",
                     }}
                   >
                     {isBull ? "+" : ""}{fmtPremium(row.net)}
@@ -96,7 +99,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     {callBarW > 0 && (
                       <motion.div
                         className="flow-leader-bar-fill"
-                        style={{ background: "linear-gradient(90deg, #059669, #34d399)", width: `${callBarW}%` }}
+                        style={{ background: "linear-gradient(90deg, #0f9d58, #00e676)", width: `${callBarW}%` }}
                         initial={{ width: 0 }}
                         animate={{ width: `${callBarW}%` }}
                         transition={{ duration: 0.6, delay: i * 0.06, ease: [0.34, 1.56, 0.64, 1] }}
@@ -105,7 +108,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     {putBarW > 0 && (
                       <motion.div
                         className="flow-leader-bar-fill"
-                        style={{ background: "linear-gradient(90deg, #e11d48, #f43f5e)", width: `${putBarW}%` }}
+                        style={{ background: "linear-gradient(90deg, #b3203f, #ff2d55)", width: `${putBarW}%` }}
                         initial={{ width: 0 }}
                         animate={{ width: `${putBarW}%` }}
                         transition={{ duration: 0.6, delay: i * 0.06 + 0.05, ease: [0.34, 1.56, 0.64, 1] }}
@@ -118,6 +121,6 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
           })
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

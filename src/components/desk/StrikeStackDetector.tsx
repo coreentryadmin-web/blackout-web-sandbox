@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { computeFlowStrikeStacks, fmtFlowPremShort } from "@/lib/largo/flow-strike-stacks";
+import { Panel, Badge } from "@/components/ui";
 
 function fmtExpiry(expiry: string): string {
   if (!expiry) return "";
@@ -31,14 +32,16 @@ export function StrikeStackDetector({
   );
 
   return (
-    <div className="flow-panel">
-      <div className="flow-panel-header">
-        <span className="flow-panel-title">Strike Stacks</span>
-        {stacks.length > 0 && (
-          <span className="font-mono text-[9px] text-gold">{stacks.length} active</span>
-        )}
-      </div>
-
+    <Panel
+      accent="sky"
+      title="Strike Stacks"
+      bodyClassName="!px-4 !py-3.5"
+      actions={
+        stacks.length > 0 ? (
+          <Badge tone="neutral" size="sm">{stacks.length} active</Badge>
+        ) : undefined
+      }
+    >
       <div className="flow-panel-body">
         <AnimatePresence mode="popLayout">
           {stacks.length === 0 ? (
@@ -70,19 +73,19 @@ export function StrikeStackDetector({
                     onClick={() => onSelectTicker?.(stack.ticker)}
                     className={clsx(
                       "w-full text-left rounded-lg border px-3 py-2.5 transition-all duration-200",
-                      "hover:scale-[1.01] active:scale-[0.99]",
+                      "hover:scale-[1.01] active:scale-[0.99] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
                       isCall
-                        ? "border-fuchsia-900/50 bg-fuchsia-950/10 hover:bg-fuchsia-950/20 hover:border-fuchsia-800/50"
-                        : "border-rose-900/50 bg-rose-950/15 hover:bg-rose-950/25 hover:border-rose-800/60"
+                        ? "border-bull/40 bg-bull/[0.08] hover:bg-bull/[0.14] hover:border-bull/60"
+                        : "border-bear/40 bg-bear/[0.08] hover:bg-bear/[0.14] hover:border-bear/60"
                     )}
-                    style={{ boxShadow: `inset 0 0 ${20 * intensity}px ${isCall ? "rgba(217,70,239,0.07)" : "rgba(244,63,94,0.06)"}` }}
+                    style={{ boxShadow: `inset 0 0 ${20 * intensity}px ${isCall ? "rgba(0,230,118,0.07)" : "rgba(255,45,85,0.06)"}` }}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Hit count */}
                         <span className={clsx(
                           "font-mono text-[11px] font-bold tabular-nums w-5 text-center rounded",
-                          isCall ? "text-fuchsia-300" : "text-rose-300"
+                          isCall ? "text-bull" : "text-bear"
                         )}>
                           ×{stack.alert_count}
                         </span>
@@ -94,7 +97,7 @@ export function StrikeStackDetector({
                       </div>
                       <span className={clsx(
                         "font-mono text-[12px] font-bold tabular-nums flex-shrink-0",
-                        isCall ? "text-fuchsia-400" : "text-rose-400"
+                        isCall ? "text-bull" : "text-bear"
                       )}>
                         {fmtFlowPremShort(stack.total_premium)}
                       </span>
@@ -117,8 +120,8 @@ export function StrikeStackDetector({
                           className="font-semibold"
                           style={{
                             fontSize: "12px",
-                            color: isCall ? "#f0abfc" : "#fda4af",
-                            textShadow: isCall ? "0 0 8px rgba(240,171,252,0.5)" : "0 0 8px rgba(253,164,175,0.5)",
+                            color: isCall ? "#6ee7b7" : "#fda4af",
+                            textShadow: isCall ? "0 0 8px rgba(110,231,183,0.5)" : "0 0 8px rgba(253,164,175,0.5)",
                           }}
                         >
                           {fmtExpiry(stack.expiry)}
@@ -135,6 +138,6 @@ export function StrikeStackDetector({
           )}
         </AnimatePresence>
       </div>
-    </div>
+    </Panel>
   );
 }

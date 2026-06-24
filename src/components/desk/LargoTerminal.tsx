@@ -8,6 +8,7 @@ import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { DeskPanel } from "./DeskPanel";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
+import { Button } from "@/components/ui";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; tools?: string[] };
 
@@ -113,12 +114,14 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     <DeskPanel
       title="Largo Terminal"
       subtitle="Your AI desk officer · grounded in live data"
-      variant="purple"
-      glow
+      variant="neutral"
       bare={fullPage}
       feedStatus={loading ? undefined : hydrated ? "live" : undefined}
       className={clsx(
-        "flex flex-col largo-chat-shell",
+        // Largo accent = cyan (#22d3ee). Override DeskPanel's grey `neutral`
+        // border + drop the hardcoded-purple `glow`/`purple` variants in favour
+        // of a brand-correct cyan border + glow.
+        "flex flex-col largo-chat-shell !border-cyan-400/30 shadow-[0_0_30px_rgba(34,211,238,0.15),inset_0_0_40px_rgba(34,211,238,0.06)]",
         fullPage ? "largo-terminal-fullpage" : "min-h-[560px]",
         loading && "largo-chat-shell-processing"
       )}
@@ -190,7 +193,11 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
 
         <form
           onSubmit={submit}
-          className={clsx("desk-largo-input-row largo-input-form", fullPage && "largo-input-form-fullpage")}
+          className={clsx(
+            // `desk-largo-input-row` border-top is grey in globals.css → cyan brand override.
+            "desk-largo-input-row largo-input-form !border-cyan-400/15",
+            fullPage && "largo-input-form-fullpage"
+          )}
         >
           <div className="relative flex-1 largo-input-wrap">
             <input
@@ -199,7 +206,8 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
               placeholder={loading ? INPUT_PLACEHOLDER_BUSY : INPUT_PLACEHOLDER}
               aria-label="Ask Largo"
               className={clsx(
-                "desk-largo-input w-full",
+                // `desk-largo-input` base border is grey in globals.css → cyan brand override.
+                "desk-largo-input w-full !border-cyan-400/25",
                 loading && "largo-input-busy",
                 !input && !loading && hydrated && "largo-input-idle",
                 fullPage && "largo-input-fullpage"
@@ -217,10 +225,23 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
               </span>
             )}
           </div>
-          <button
+          {/*
+            Send action → <Button>. We drop the off-brand `.desk-largo-send`
+            (bg-purple / purple hover glow lives in globals.css, out of scope) and
+            give the Button explicit Largo-cyan brand utilities instead. All
+            handlers + the loading/idle label content are preserved verbatim.
+          */}
+          <Button
             type="submit"
+            variant="ghost"
+            size="md"
             disabled={loading || !hydrated || !input.trim()}
-            className={clsx("desk-largo-send", loading && "desk-largo-send-busy")}
+            className={clsx(
+              "rounded-none font-syne text-xs uppercase tracking-[0.2em]",
+              "!bg-cyan-400/12 !border-cyan-400/40 !text-cyan-300",
+              "hover:!bg-cyan-400/20 hover:!border-cyan-400/60",
+              "shadow-[0_0_20px_-6px_rgba(34,211,238,0.5)]"
+            )}
           >
             {loading ? (
               <span className="largo-send-pulse">
@@ -230,7 +251,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
             ) : (
               "DEPLOY"
             )}
-          </button>
+          </Button>
         </form>
       </div>
     </DeskPanel>

@@ -5,6 +5,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, ReferenceLine } from "re
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
+import { Panel } from "@/components/ui";
 
 type Point = { t: number; net: number };
 const MAX_POINTS = 50;
@@ -13,8 +14,8 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: { valu
   if (!active || !payload?.length) return null;
   const net = payload[0]?.value ?? 0;
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-md px-2.5 py-1.5 shadow-xl">
-      <p className={clsx("font-mono text-[10px] font-semibold", net >= 0 ? "text-emerald-400" : "text-rose-400")}>
+    <div className="bg-[rgba(8,9,14,0.92)] border border-white/10 rounded-md px-2.5 py-1.5 shadow-xl backdrop-blur">
+      <p className={clsx("font-mono text-[10px] font-semibold", net >= 0 ? "text-bull" : "text-bear")}>
         {net >= 0 ? "+" : ""}{fmtPremium(net)}
       </p>
       <p className="font-mono text-[9px] text-cyan-400">net flow</p>
@@ -42,27 +43,29 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
   const prevNet   = points[points.length - 2]?.net ?? 0;
   const delta     = latestNet - prevNet;
   const isBull    = latestNet >= 0;
-  const color     = isBull ? "#00e676" : "#f43f5e";
+  const color     = isBull ? "#00e676" : "#ff2d55";
 
   return (
-    <div className="flow-panel">
-      <div className="flow-panel-header">
-        <span className="flow-panel-title">Flow Momentum</span>
-        {points.length >= 2 && (
+    <Panel
+      accent="sky"
+      title="Flow Momentum"
+      bodyClassName="!px-2 !py-2"
+      actions={
+        points.length >= 2 ? (
           <div className="flex items-center gap-1.5">
-            <span className={clsx("font-mono text-[10px] font-semibold tabular-nums", isBull ? "text-emerald-400" : "text-rose-400")}>
+            <span className={clsx("font-mono text-[10px] font-semibold tabular-nums", isBull ? "text-bull" : "text-bear")}>
               {isBull ? "+" : ""}{fmtPremium(latestNet)}
             </span>
             {delta !== 0 && (
-              <span className={clsx("font-mono text-[9px]", delta > 0 ? "text-bull" : "text-rose-600")}>
+              <span className={clsx("font-mono text-[9px]", delta > 0 ? "text-bull" : "text-bear")}>
                 {delta > 0 ? "▲" : "▼"}
               </span>
             )}
           </div>
-        )}
-      </div>
-
-      <div className="px-1 pt-2 pb-1">
+        ) : undefined
+      }
+    >
+      <div className="px-1 pt-1 pb-1">
         {points.length < 2 ? (
           <div className="h-[72px] flex items-center justify-center">
             <div className="flow-skeleton h-full w-full rounded-md" style={{ height: 72 }} />
@@ -77,8 +80,8 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
                     <stop offset="100%" stopColor={color} stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
-                <ReferenceLine y={0} stroke="#3f3f46" strokeWidth={1} strokeDasharray="3 3" />
-                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#3f3f46", strokeWidth: 1 }} />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeWidth={1} strokeDasharray="3 3" />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }} />
                 <Area
                   type="monotone"
                   dataKey="net"
@@ -94,6 +97,6 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
         )}
         <p className="font-mono text-[9px] text-cyan-500 text-center mt-1">call − put premium · {points.length} samples</p>
       </div>
-    </div>
+    </Panel>
   );
 }

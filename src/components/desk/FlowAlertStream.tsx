@@ -63,7 +63,7 @@ function SkeletonCards() {
   return (
     <div className="flex flex-col gap-2 px-1">
       {[80, 65, 90, 55, 75].map((w, i) => (
-        <div key={i} className="rounded-lg border border-zinc-800/50 px-4 py-3 space-y-2">
+        <div key={i} className="rounded-lg border border-white/10 px-4 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flow-skeleton h-[18px] rounded" style={{ width: `${w * 0.6}px` }} />
@@ -167,8 +167,8 @@ export function FlowAlertStream({
               exit={{ opacity: 0, y: -6 }}
               type="button"
               onClick={scrollToTop}
-              className="absolute top-2 left-1/2 -translate-x-1/2 z-10 font-mono text-[10px] font-bold px-3 py-1 rounded-full border border-violet-600/60 bg-violet-950/90 text-violet-300 backdrop-blur-sm whitespace-nowrap"
-              style={{ boxShadow: "0 0 12px rgba(139,92,246,0.4)" }}
+              className="absolute top-2 left-1/2 -translate-x-1/2 z-10 font-mono text-[10px] font-bold px-3 py-1 rounded-full border border-purple/60 bg-[rgba(8,9,14,0.9)] text-purple-light backdrop-blur-sm whitespace-nowrap"
+              style={{ boxShadow: "0 0 12px rgba(191,95,255,0.4)" }}
             >
               ↑ {newCount} new
             </motion.button>
@@ -185,7 +185,7 @@ export function FlowAlertStream({
             <SkeletonCards />
           ) : visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-8 h-8 rounded-full border border-zinc-800 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full border border-white/15 flex items-center justify-center">
                 <span className="text-cyan-500 text-xs">—</span>
               </div>
               <p className="font-mono text-[11px] text-cyan-400 text-center">
@@ -288,13 +288,13 @@ export function FlowAlertStream({
                             </span>
                           )}
                           {isHawk && (
-                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-indigo-400 border-indigo-700/40 bg-indigo-950/25"
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-sky-300 border-sky-400/40 bg-sky-400/10"
                               style={{ letterSpacing: "0.06em" }}>
                               ◈ HAWK
                             </span>
                           )}
                           {hasVelocity && (
-                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-orange-400 border-orange-700/40 bg-orange-950/25 animate-pulse"
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border text-ember border-ember/40 bg-ember/10 animate-pulse motion-reduce:animate-none"
                               style={{ letterSpacing: "0.06em" }}>
                               ◉ VELOCITY
                             </span>
@@ -308,9 +308,9 @@ export function FlowAlertStream({
                           {earnIn !== null && earnIn <= 14 && (
                             <span className={clsx(
                               "font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border",
-                              earnIn === 0 ? "text-red-400 border-red-700/60 bg-red-950/30 animate-pulse" :
-                              earnIn <= 2  ? "text-red-400 border-red-700/50 bg-red-950/20" :
-                              earnIn <= 5  ? "text-orange-400 border-orange-700/50 bg-orange-950/20" :
+                              earnIn === 0 ? "text-bear border-bear/60 bg-bear/15 animate-pulse motion-reduce:animate-none" :
+                              earnIn <= 2  ? "text-bear border-bear/50 bg-bear/10" :
+                              earnIn <= 5  ? "text-ember border-ember/50 bg-ember/10" :
                                              "text-gold border-gold/40 bg-gold/10"
                             )}>
                               ⚡{earnIn === 0 ? "EARN TODAY" : `EARN ${earnIn}D`}
@@ -364,7 +364,7 @@ export function FlowAlertStream({
                           {flow.score > 0 && (
                             <span className={clsx(
                               "font-mono text-[10px] font-medium",
-                              flow.score >= 8 ? "text-violet-400" : flow.score >= 6 ? "text-violet-500" : "text-cyan-400"
+                              flow.score >= 8 ? "text-purple-light" : flow.score >= 6 ? "text-purple" : "text-cyan-400"
                             )}>
                               ▲{flow.score.toFixed(1)}
                             </span>
@@ -392,12 +392,12 @@ export function FlowAlertStream({
                             <span className={clsx(
                               "font-mono text-[9px] px-1.5 py-0.5 rounded border",
                               flow.otm_pct < 0
-                                ? "text-fuchsia-400 border-fuchsia-900/40 bg-fuchsia-950/15"
+                                ? "text-purple-light border-purple/40 bg-purple/10"
                                 : flow.otm_pct <= 2
-                                  ? "text-rose-400 border-rose-900/40 bg-rose-950/15"
+                                  ? "text-bear border-bear/40 bg-bear/10"
                                   : flow.otm_pct <= 8
                                     ? "text-gold border-gold/40 bg-gold/10"
-                                    : "text-emerald-400 border-emerald-900/40 bg-emerald-950/15"
+                                    : "text-bull border-bull/40 bg-bull/10"
                             )}>
                               {flow.otm_pct < 0
                                 ? `${Math.abs(flow.otm_pct).toFixed(1)}% ITM`
@@ -405,14 +405,14 @@ export function FlowAlertStream({
                             </span>
                           )}
                           {flow.open_interest != null && flow.open_interest > 0 && (
-                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-zinc-800/50">
+                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-white/10">
                               OI {flow.open_interest >= 1000
                                 ? `${(flow.open_interest / 1000).toFixed(1)}K`
                                 : flow.open_interest.toFixed(0)}
                             </span>
                           )}
                           {ivDisplay && (
-                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-zinc-800/50">
+                            <span className="font-mono text-[9px] text-cyan-400 px-1.5 py-0.5 rounded border border-white/10">
                               IV {ivDisplay}
                             </span>
                           )}
@@ -428,7 +428,7 @@ export function FlowAlertStream({
                 <button
                   type="button"
                   onClick={() => setRenderLimit((r) => r + RENDER_LIMIT)}
-                  className="w-full font-mono text-[10px] text-cyan-400 hover:text-sky-300 py-3 border border-zinc-800/50 rounded-lg hover:border-zinc-700 transition-colors mt-1"
+                  className="w-full font-mono text-[10px] text-cyan-400 hover:text-sky-300 py-3 border border-white/10 rounded-lg hover:border-white/20 transition-colors mt-1"
                 >
                   Load {Math.min(RENDER_LIMIT, visible.length - renderLimit)} more · {visible.length - renderLimit} remaining
                 </button>

@@ -510,7 +510,7 @@ export function FlowFeed() {
             aria-label="Search ticker"
             maxLength={6}
             className={clsx(
-              "font-mono text-[13px] font-bold px-4 py-2 rounded-lg border bg-zinc-950 outline-none w-32 tracking-widest uppercase",
+              "font-mono text-[13px] font-bold px-4 py-2 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none w-32 tracking-widest uppercase",
               "border-[rgba(0,230,118,0.35)] text-[#00e676] placeholder:text-[rgba(0,230,118,0.35)]",
               "focus:border-[rgba(0,230,118,0.8)] focus:ring-2 focus:ring-[rgba(0,230,118,0.15)] transition-all"
             )}
@@ -566,7 +566,7 @@ export function FlowFeed() {
                     "font-mono text-[9px] px-1.5 py-[3px] rounded transition-colors whitespace-nowrap",
                     replaySpeed === s
                       ? "bg-gold/20 text-gold border border-gold/60"
-                      : "text-cyan-400 hover:text-sky-300 bg-zinc-900 border border-zinc-800"
+                      : "text-cyan-400 hover:text-sky-300 bg-white/[0.04] border border-white/10"
                   )}
                 >
                   {s}×
@@ -584,8 +584,8 @@ export function FlowFeed() {
           className={clsx(
             "font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border transition-all",
             audioEnabled
-              ? "border-violet-600/60 text-violet-300 bg-violet-950/40"
-              : "border-zinc-800 text-cyan-400 hover:text-sky-300 hover:border-zinc-700"
+              ? "border-purple/60 text-purple-light bg-purple/15"
+              : "border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20"
           )}
         >
           {audioEnabled ? "AUDIO ON" : "AUDIO"}
@@ -612,7 +612,7 @@ export function FlowFeed() {
           type="button"
           onClick={() => exportCSV(displayAlerts)}
           disabled={displayAlerts.length === 0}
-          className="font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border border-zinc-800 text-cyan-400 hover:text-sky-300 hover:border-zinc-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          className="font-mono text-[9px] font-semibold px-2 py-[5px] rounded-lg border border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           title="Export current tape to CSV"
         >
           CSV
@@ -640,7 +640,7 @@ export function FlowFeed() {
             <div className="flow-live-dot">
               <span className={clsx(
                 "w-1.5 h-1.5 rounded-full block relative z-10",
-                !live ? "bg-zinc-700" : dataStale ? "bg-gold" : "bg-bull"
+                !live ? "bg-sky-300/40" : dataStale ? "bg-gold" : "bg-bull"
               )} />
             </div>
             <span className={clsx(

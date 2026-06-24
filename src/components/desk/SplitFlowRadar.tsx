@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePulse } from "@/lib/usePulse";
 import { clsx } from "clsx";
 import { fmtPremium } from "@/lib/api";
+import { Panel } from "@/components/ui";
 
 export type SplitFlowEntry = {
   ticker: string;
@@ -26,23 +27,23 @@ export function SplitFlowRadar({
   if (entries.length === 0) return null;
 
   return (
-    <div className="flow-panel">
-      {/* Header */}
-      <div className="flow-panel-header">
-        <div className="flex items-center gap-2">
-          <motion.span
-            {...pulse}
-            className="font-mono text-[10px] text-gold"
-          >
-            ◈
-          </motion.span>
-          <span className="flow-panel-title">Split Flow Radar</span>
+    <Panel
+      accent="sky"
+      bodyClassName="!px-4 !py-3.5"
+      header={
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-4 md:px-6">
+          <div className="flex items-center gap-2">
+            <motion.span {...pulse} className="font-mono text-[10px] text-gold">
+              ◈
+            </motion.span>
+            <h3 className="t-label text-[15px] uppercase leading-tight text-white">Split Flow Radar</h3>
+          </div>
+          <span className="font-mono text-[9px] text-gold/60 tabular-nums">
+            {entries.length} ticker{entries.length !== 1 ? "s" : ""} · 30min
+          </span>
         </div>
-        <span className="font-mono text-[9px] text-gold/60 tabular-nums">
-          {entries.length} ticker{entries.length !== 1 ? "s" : ""} · 30min
-        </span>
-      </div>
-
+      }
+    >
       {/* Body */}
       <div className="flow-panel-body space-y-2">
         <AnimatePresence initial={false}>
@@ -61,7 +62,7 @@ export function SplitFlowRadar({
                 className={clsx(
                   "rounded-xl border px-3 py-2.5 transition-colors",
                   onTickerClick && "cursor-pointer hover:border-gold/50",
-                  "border-gold/25 bg-gradient-to-br from-gold/10 to-zinc-950/40"
+                  "border-gold/25 bg-gradient-to-br from-gold/10 to-[rgba(8,9,14,0.4)]"
                 )}
                 style={{ boxShadow: "inset 0 0 20px rgba(255,210,63,0.04)" }}
               >
@@ -87,10 +88,10 @@ export function SplitFlowRadar({
                     className={clsx(
                       "font-mono text-[9px] font-bold px-2 py-0.5 rounded-full border",
                       isBull
-                        ? "text-emerald-400 border-emerald-800/50 bg-emerald-950/40"
+                        ? "text-bull border-bull/40 bg-bull/12"
                         : isBear
-                          ? "text-rose-400 border-rose-800/50 bg-rose-950/40"
-                          : "text-sky-300 border-zinc-700 bg-zinc-900"
+                          ? "text-bear border-bear/40 bg-bear/12"
+                          : "text-sky-300 border-sky-300/20 bg-sky-300/[0.06]"
                     )}
                   >
                     {isBull ? "▲ CALL BIAS" : isBear ? "▼ PUT BIAS" : "⇋ NEUTRAL"}
@@ -98,7 +99,7 @@ export function SplitFlowRadar({
                 </div>
 
                 {/* Row 2: call/put bar */}
-                <div className="relative h-2 rounded-full overflow-hidden bg-zinc-900 flex mb-2">
+                <div className="relative h-2 rounded-full overflow-hidden bg-white/[0.06] flex mb-2">
                   <motion.div
                     className="h-full rounded-l-full"
                     style={{
@@ -112,7 +113,7 @@ export function SplitFlowRadar({
                   <motion.div
                     className="h-full rounded-r-full flex-1"
                     style={{
-                      background: "linear-gradient(90deg, #9f1239, #f43f5e)",
+                      background: "linear-gradient(90deg, #b3203f, #ff2d55)",
                       width: `${100 - e.callPct}%`,
                     }}
                     initial={{ width: 0 }}
@@ -121,7 +122,7 @@ export function SplitFlowRadar({
                   />
                   {/* Center marker */}
                   <div
-                    className="absolute top-0 bottom-0 w-px bg-zinc-600/60"
+                    className="absolute top-0 bottom-0 w-px bg-white/25"
                     style={{ left: "50%" }}
                   />
                 </div>
@@ -132,7 +133,7 @@ export function SplitFlowRadar({
                     <span className="font-mono text-[9px] text-bull">
                       ▲ {fmtPremium(e.callPremium)} · {e.callPct}%
                     </span>
-                    <span className="font-mono text-[9px] text-rose-500">
+                    <span className="font-mono text-[9px] text-bear">
                       ▼ {fmtPremium(e.putPremium)} · {100 - e.callPct}%
                     </span>
                   </div>
@@ -150,6 +151,6 @@ export function SplitFlowRadar({
           Both call &amp; put ≥ $500K within 30 min window
         </p>
       </div>
-    </div>
+    </Panel>
   );
 }

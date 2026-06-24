@@ -18,6 +18,7 @@ import {
   fetchDarkPoolPrints,
   type DarkPoolRow,
 } from "@/lib/api";
+import { Panel } from "@/components/ui";
 
 const POLL_MS     = 30_000;
 const MAX_HISTORY = 20;
@@ -58,8 +59,8 @@ function biasFromSide(prints: DarkPoolRow[]) {
   const total = buy + sell;
   if (total <= 0) return { label: "MIXED",   color: "#7dd3fc", glow: "rgba(125,211,252,0.3)" };
   const r = buy / total;
-  if (r >= 0.65) return { label: "BULLISH",  color: "#34d399", glow: "rgba(52,211,153,0.35)" };
-  if (r <= 0.35) return { label: "BEARISH",  color: "#fb7185", glow: "rgba(251,113,133,0.35)" };
+  if (r >= 0.65) return { label: "BULLISH",  color: "#00e676", glow: "rgba(0,230,118,0.35)" };
+  if (r <= 0.35) return { label: "BEARISH",  color: "#ff2d55", glow: "rgba(255,45,85,0.35)" };
   return         { label: "MIXED",   color: "#7dd3fc", glow: "rgba(125,211,252,0.3)" };
 }
 
@@ -76,13 +77,13 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
       transition={{ duration: 0.18 }}
       className={clsx(
         "flex items-center gap-2 rounded-lg px-3 py-2.5 border transition-colors cursor-default",
-        isBuy  ? "border-emerald-600/40 bg-emerald-950/25 hover:bg-emerald-950/40 hover:border-emerald-500/60" :
-        isSell ? "border-rose-600/40    bg-rose-950/25    hover:bg-rose-950/40    hover:border-rose-500/60" :
-                 "border-zinc-700/30    bg-zinc-900/20    hover:bg-zinc-900/40"
+        isBuy  ? "border-bull/40 bg-bull/[0.08] hover:bg-bull/[0.14] hover:border-bull/60" :
+        isSell ? "border-bear/40 bg-bear/[0.08] hover:bg-bear/[0.14] hover:border-bear/60" :
+                 "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
       )}
       style={{
-        boxShadow: isBuy  ? "inset 0 0 12px rgba(52,211,153,0.05)"
-                  : isSell ? "inset 0 0 12px rgba(251,113,133,0.05)"
+        boxShadow: isBuy  ? "inset 0 0 12px rgba(0,230,118,0.05)"
+                  : isSell ? "inset 0 0 12px rgba(255,45,85,0.05)"
                   : "none",
       }}
     >
@@ -90,9 +91,9 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
       <span
         className="font-mono text-[14px] font-black w-4 flex-shrink-0"
         style={{
-          color: isBuy ? "#34d399" : isSell ? "#fb7185" : "#7dd3fc",
-          textShadow: isBuy  ? "0 0 6px rgba(52,211,153,0.7)"
-                    : isSell ? "0 0 6px rgba(251,113,133,0.7)"
+          color: isBuy ? "#00e676" : isSell ? "#ff2d55" : "#7dd3fc",
+          textShadow: isBuy  ? "0 0 6px rgba(0,230,118,0.7)"
+                    : isSell ? "0 0 6px rgba(255,45,85,0.7)"
                     : "none",
         }}
       >
@@ -122,9 +123,9 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
         className="font-mono font-bold tabular-nums ml-auto flex-shrink-0"
         style={{
           fontSize: "15px",
-          color: isBuy ? "#34d399" : isSell ? "#fb7185" : "#f4f6fb",
-          textShadow: isBuy  ? "0 0 10px rgba(52,211,153,0.55)"
-                    : isSell ? "0 0 10px rgba(251,113,133,0.55)"
+          color: isBuy ? "#00e676" : isSell ? "#ff2d55" : "#f4f6fb",
+          textShadow: isBuy  ? "0 0 10px rgba(0,230,118,0.55)"
+                    : isSell ? "0 0 10px rgba(255,45,85,0.55)"
                     : "none",
         }}
       >
@@ -183,7 +184,7 @@ export function DarkPoolPanel() {
   const bias       = biasFromSide(visible);
   const latestNet  = history[history.length - 1]?.net ?? 0;
   const isBull     = latestNet >= 0;
-  const sparkColor = isBull ? "#34d399" : "#fb7185";
+  const sparkColor = isBull ? "#00e676" : "#ff2d55";
 
   // Ticker summary stats
   const tickerTotal = visible.reduce((s, p) => s + p.premium, 0);
@@ -192,54 +193,57 @@ export function DarkPoolPanel() {
   const pulse = usePulse({ opacity: [1, 0.3, 1] }, { repeat: Infinity, duration: 2.5, ease: "easeInOut" });
 
   return (
-    <div className="flow-panel">
-      {/* ── Header ── */}
-      <div className="flow-panel-header flex-wrap gap-y-2">
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <motion.span
-            {...pulse}
-            className="text-[11px]"
-            style={{ color: "#a78bfa", textShadow: "0 0 8px rgba(167,139,250,0.6)" }}
-          >
-            ⬡
-          </motion.span>
-          <span className="flow-panel-title">Dark Pool</span>
-        </div>
+    <Panel
+      accent="sky"
+      bodyClassName="!px-4 !py-3.5"
+      header={
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/10 px-5 py-4 md:px-6">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <motion.span
+              {...pulse}
+              className="text-[11px]"
+              style={{ color: "#bf5fff", textShadow: "0 0 8px rgba(191,95,255,0.6)" }}
+            >
+              ⬡
+            </motion.span>
+            <h3 className="t-label text-[15px] uppercase leading-tight text-white">Dark Pool</h3>
+          </div>
 
-        {/* Ticker search */}
-        <div className="relative ml-auto">
-          <input
-            value={search}
-            onChange={(e) =>
-              setSearch(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
-            }
-            placeholder="NVDA, TSLA…"
-            maxLength={6}
-            className="font-mono text-[11px] font-bold uppercase px-3 py-1 rounded-lg border bg-zinc-950 outline-none w-28 tracking-widest transition-all"
-            style={{
-              borderColor: search ? "rgba(167,139,250,0.65)" : "rgba(167,139,250,0.22)",
-              color:       search ? "#c4b5fd" : "#7dd3fc",
-              boxShadow:   search ? "0 0 0 2px rgba(167,139,250,0.12)" : "none",
-            }}
-          />
-          <AnimatePresence>
-            {search && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Close"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
-              >
-                ×
-              </motion.button>
-            )}
-          </AnimatePresence>
+          {/* Ticker search */}
+          <div className="relative ml-auto">
+            <input
+              value={search}
+              onChange={(e) =>
+                setSearch(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
+              }
+              placeholder="NVDA, TSLA…"
+              maxLength={6}
+              className="font-mono text-[11px] font-bold uppercase px-3 py-1 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none w-28 tracking-widest transition-all"
+              style={{
+                borderColor: search ? "rgba(191,95,255,0.65)" : "rgba(191,95,255,0.22)",
+                color:       search ? "#d580ff" : "#7dd3fc",
+                boxShadow:   search ? "0 0 0 2px rgba(191,95,255,0.12)" : "none",
+              }}
+            />
+            <AnimatePresence>
+              {search && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Close"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
+                >
+                  ×
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-      </div>
-
+      }
+    >
       {/* ── Body ── */}
       <div className="flow-panel-body">
         <AnimatePresence mode="wait">
@@ -252,10 +256,10 @@ export function DarkPoolPanel() {
           >
             {/* ── Ticker header (when filtering) ── */}
             {activeTicker && (
-              <div className="mb-3 rounded-xl border border-violet-700/30 bg-violet-950/15 px-3 py-2.5">
+              <div className="mb-3 rounded-xl border border-purple/30 bg-purple/[0.08] px-3 py-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="font-anton text-[18px] text-violet-200 leading-none">
+                    <span className="font-anton text-[18px] text-purple-light leading-none">
                       {activeTicker}
                     </span>
                     {visible.length > 0 && (
@@ -270,8 +274,8 @@ export function DarkPoolPanel() {
                         className="font-mono font-bold tabular-nums"
                         style={{
                           fontSize: "15px",
-                          color: "#c4b5fd",
-                          textShadow: "0 0 10px rgba(196,181,253,0.5)",
+                          color: "#d580ff",
+                          textShadow: "0 0 10px rgba(191,95,255,0.5)",
                         }}
                       >
                         {fmtPremium(tickerTotal)}
@@ -357,6 +361,6 @@ export function DarkPoolPanel() {
           </motion.div>
         </AnimatePresence>
       </div>
-    </div>
+    </Panel>
   );
 }

@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtPremium } from "@/lib/api";
 import { SECTOR_ORDER } from "@/lib/sector-map";
+import { Panel } from "@/components/ui";
 
 export type SectorFlowEntry = {
   sector: string;
@@ -32,19 +33,13 @@ export function SectorFlowPanel({
   const maxTotal = sorted[0]?.total ?? 1;
 
   return (
-    <div className="flow-panel">
-      <div className="flow-panel-header">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-sky-400">▦</span>
-          <span className="flow-panel-title">Sector Flow</span>
-        </div>
-        <span className="font-mono text-[10px] text-sky-600/60 tabular-nums">
-          7d rotation
-        </span>
-      </div>
-
-      <div className="flow-panel-body space-y-1.5">
-        <AnimatePresence initial={false}>
+    <Panel
+      accent="accent"
+      kicker="▦ 7d rotation"
+      title="Sector Flow"
+      bodyClassName="space-y-1.5"
+    >
+      <AnimatePresence initial={false}>
           {sorted.map((e, i) => {
             const isBull = e.callPct >= 55;
             const isBear = e.callPct <= 45;
@@ -67,7 +62,7 @@ export function SectorFlowPanel({
                   <div className="flex items-center gap-2">
                     <span
                       className="font-mono text-[12px] font-bold tabular-nums"
-                      style={{ color: isBull ? "#34d399" : isBear ? "#fb7185" : "#7dd3fc" }}
+                      style={{ color: isBull ? "#00e676" : isBear ? "#ff2d55" : "#7dd3fc" }}
                     >
                       {e.callPct}% C
                     </span>
@@ -75,11 +70,11 @@ export function SectorFlowPanel({
                       className="font-mono font-bold tabular-nums"
                       style={{
                         fontSize: "13px",
-                        color: isBull ? "#34d399" : isBear ? "#fb7185" : "#f4f6fb",
+                        color: isBull ? "#00e676" : isBear ? "#ff2d55" : "#ffffff",
                         textShadow: isBull
-                          ? "0 0 8px rgba(52,211,153,0.5)"
+                          ? "0 0 8px rgba(0,230,118,0.5)"
                           : isBear
-                            ? "0 0 8px rgba(251,113,133,0.5)"
+                            ? "0 0 8px rgba(255,45,85,0.5)"
                             : "none",
                       }}
                     >
@@ -89,14 +84,14 @@ export function SectorFlowPanel({
                 </div>
 
                 {/* Call / put bar */}
-                <div className="relative h-2 rounded-full overflow-hidden bg-zinc-900">
+                <div className="relative h-2 rounded-full overflow-hidden bg-white/[0.06]">
                   <motion.div
                     className="absolute inset-y-0 left-0 rounded-full"
                     style={{
                       background: isBull
-                        ? "linear-gradient(90deg, #0f9d58, #00e676)"
+                        ? "linear-gradient(90deg, #00b35a, #00e676)"
                         : isBear
-                          ? "linear-gradient(90deg, #9f1239, #f43f5e)"
+                          ? "linear-gradient(90deg, #b3203c, #ff2d55)"
                           : "linear-gradient(90deg, #0c4a6e, #7dd3fc)",
                       width: `${widthPct}%`,
                     }}
@@ -108,12 +103,11 @@ export function SectorFlowPanel({
               </motion.div>
             );
           })}
-        </AnimatePresence>
+      </AnimatePresence>
 
-        <p className="font-mono text-[8px] text-sky-500 text-center pt-1">
-          Premium weighted · bar = relative size vs top sector
-        </p>
-      </div>
-    </div>
+      <p className="font-mono text-[8px] text-sky-300/70 text-center pt-1">
+        Premium weighted · bar = relative size vs top sector
+      </p>
+    </Panel>
   );
 }
