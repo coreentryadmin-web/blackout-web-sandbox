@@ -6,7 +6,6 @@ import { clsx } from "clsx";
 import {
   Panel,
   Badge,
-  Stat,
   EmptyState,
   Skeleton,
   Tabs,
@@ -158,7 +157,7 @@ async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
   return res.json();
 }
 
-/** Compact signed dollar value: $22.1K / -$45.2M. */
+/** Compact signed dollar value: $22.1K / -$45.2M / $1.2B. */
 function fmtMoney(n: number): string {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
@@ -169,9 +168,20 @@ function fmtMoney(n: number): string {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
+/** Always-signed compact dollar value: +$22.1K / -$45.2M. Used where sign is meaning. */
+function fmtMoneySigned(n: number): string {
+  if (n === 0) return "·";
+  return n > 0 ? `+${fmtMoney(n)}` : fmtMoney(n);
+}
+
 function fmtPct(n: number): string {
   const sign = n >= 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
+}
+
+/** Spot/price with fixed 2-dp precision and thousands grouping, e.g. "5,925.42". */
+function fmtSpot(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Compact strike label, e.g. "740" or "5,925". */
@@ -419,11 +429,11 @@ function ExposureProfile({
               {/* signed value + wall tag (right gutter) */}
               <span
                 className={clsx(
-                  "w-20 shrink-0 text-right font-mono text-[10px] tabular-nums",
+                  "w-24 shrink-0 text-right font-mono text-[11px] font-semibold tabular-nums",
                   positive ? (lens === "gex" ? "text-bull" : "text-sky-300") : "text-purple-light"
                 )}
               >
-                {fmtMoney(r.value)}
+                {fmtMoneySigned(r.value)}
               </span>
               <span className="w-10 shrink-0 text-left">
                 {r.isPosWall && (
@@ -642,10 +652,10 @@ function ShiftView({
               </span>
 
               <span
-                className="w-20 shrink-0 text-right font-mono text-[10px] tabular-nums"
+                className="w-24 shrink-0 text-right font-mono text-[11px] font-semibold tabular-nums"
                 style={{ color: r.delta === 0 ? undefined : barHex }}
               >
-                {r.delta !== 0 ? `${built ? "+" : ""}${fmtMoney(r.delta)}` : "·"}
+                {r.delta !== 0 ? fmtMoneySigned(r.delta) : "·"}
               </span>
             </div>
           );
@@ -820,7 +830,7 @@ function LargoRead({ ticker }: { ticker: string }) {
   const failed = Boolean(error) && !isLoading;
 
   return (
-    <div className="mt-3 rounded-xl border border-sky-400/25 bg-[rgba(8,12,20,0.55)] px-4 py-3">
+    <div className="rounded-xl border border-sky-400/25 bg-[rgba(8,12,20,0.55)] px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <span className="flex items-center gap-2">
           <Badge tone="sky" dot>
@@ -884,6 +894,247 @@ function LargoRead({ ticker }: { ticker: string }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Regime tile — a polished, full-width stat card with accent border + glow by
+// meaning (walls gold, flip cyan, net bull/bear, max-pain sky). Big tabular value.
+// ---------------------------------------------------------------------------
+
+type TileTone = "flip" | "wall" | "support" | "sky" | "bull" | "bear";
+
+const TILE_TONE: Record<
+  TileTone,
+  { value: string; border: string; glow: string; rgb: string }
+> = {
+  flip: { value: "text-cyan-300", border: "border-cyan-400/30", glow: "#22d3ee", rgb: "34,211,238" },
+  wall: { value: "text-gold", border: "border-gold/35", glow: "#ffd23f", rgb: "255,210,63" },
+  support: { value: "text-bear", border: "border-bear/30", glow: "#ff2d55", rgb: "255,45,85" },
+  sky: { value: "text-sky-300", border: "border-sky-400/30", glow: "#7dd3fc", rgb: "125,211,252" },
+  bull: { value: "text-bull", border: "border-bull/30", glow: "#00e676", rgb: "0,230,118" },
+  bear: { value: "text-bear", border: "border-bear/30", glow: "#ff2d55", rgb: "255,45,85" },
+};
+
+function RegimeTile({
+  label,
+  value,
+  sublabel,
+  tone,
+  active = true,
+}: {
+  label: string;
+  value: string;
+  sublabel: string;
+  tone: TileTone;
+  active?: boolean;
+}) {
+  const t = TILE_TONE[tone];
+  return (
+    <div
+      className={clsx(
+        "relative flex flex-col justify-between overflow-hidden rounded-xl border bg-[rgba(8,9,14,0.55)] px-4 py-3 backdrop-blur",
+        active ? t.border : "border-white/10"
+      )}
+      style={
+        active
+          ? { boxShadow: `inset 0 0 24px rgba(${t.rgb},0.05), 0 0 0 1px rgba(${t.rgb},0.04)` }
+          : undefined
+      }
+    >
+      {/* accent hairline strip */}
+      {active && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, ${t.glow}, transparent)` }}
+        />
+      )}
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+        {label}
+      </span>
+      <span
+        className={clsx(
+          "mt-1.5 font-anton text-3xl leading-none tabular-nums",
+          active ? t.value : "text-white/40"
+        )}
+      >
+        {value}
+      </span>
+      <span className="mt-1.5 text-[11px] leading-snug text-sky-300/70">{sublabel}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Key levels — a compact, right-aligned list of the structural price lines
+// (spot, flip, walls, max pain) + dark-pool levels. Always-useful rail content.
+// ---------------------------------------------------------------------------
+
+type KeyLevel = {
+  label: string;
+  value: number | null;
+  tone: "cyan" | "gold" | "bull" | "bear" | "sky" | "violet";
+  note?: string;
+};
+
+const LEVEL_HEX: Record<KeyLevel["tone"], string> = {
+  cyan: "#22d3ee",
+  gold: "#ffd23f",
+  bull: "#00e676",
+  bear: "#ff2d55",
+  sky: "#7dd3fc",
+  violet: "#bf5fff",
+};
+
+function KeyLevels({
+  levels,
+  darkPoolLevels,
+}: {
+  levels: KeyLevel[];
+  darkPoolLevels: DarkPoolLevel[] | null;
+}) {
+  const shown = levels.filter((l) => l.value != null);
+  const dp = (darkPoolLevels ?? [])
+    .slice()
+    .sort((a, b) => b.notional - a.notional)
+    .slice(0, 4);
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+          Key levels
+        </span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/50">
+          price
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {shown.map((l) => (
+          <li
+            key={l.label}
+            className="flex items-center justify-between gap-3 border-b border-white/[0.04] py-1 last:border-0"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: LEVEL_HEX[l.tone], boxShadow: `0 0 6px ${LEVEL_HEX[l.tone]}` }}
+              />
+              <span className="truncate font-mono text-[11px] uppercase tracking-wide text-sky-300">
+                {l.label}
+              </span>
+            </span>
+            <span
+              className="shrink-0 font-mono text-[12px] font-bold tabular-nums"
+              style={{ color: LEVEL_HEX[l.tone] }}
+            >
+              {l.value != null ? fmtStrike(l.value) : "—"}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {dp.length > 0 && (
+        <div className="mt-3 border-t border-white/[0.06] pt-2.5">
+          <span className="mb-1.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/55">
+            Dark-pool levels
+          </span>
+          <ul className="space-y-1">
+            {dp.map((d, i) => (
+              <li key={`${d.price}-${i}`} className="flex items-center justify-between gap-3 py-0.5">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    aria-hidden
+                    className="h-px w-3 shrink-0"
+                    style={{ backgroundColor: DARK_POOL_HEX, boxShadow: `0 0 6px ${DARK_POOL_HEX}` }}
+                  />
+                  <span className="font-mono text-[11px] tabular-nums text-white">
+                    {fmtStrike(d.price)}
+                  </span>
+                </span>
+                <span className="font-mono text-[11px] tabular-nums text-sky-300/80">
+                  {fmtMoney(d.notional)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Flow summary — net premium tilt for the ticker today (bull calls / bear puts),
+// derived from the per-strike HELIX overlay. Compact rail card.
+// ---------------------------------------------------------------------------
+
+function FlowSummary({ flowByStrike }: { flowByStrike: Record<string, FlowByStrike> | null }) {
+  const totals = useMemo(() => {
+    let call = 0;
+    let put = 0;
+    if (flowByStrike) {
+      for (const f of Object.values(flowByStrike)) {
+        call += f.call_prem;
+        put += f.put_prem;
+      }
+    }
+    return { call, put, net: call - put };
+  }, [flowByStrike]);
+
+  if (!flowByStrike || Object.keys(flowByStrike).length === 0) return null;
+
+  const bullish = totals.net >= 0;
+  const gross = Math.abs(totals.call) + Math.abs(totals.put);
+  const callPct = gross > 0 ? (Math.abs(totals.call) / gross) * 100 : 50;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+            Flow today
+          </span>
+          <Badge tone="bull" size="sm">
+            HELIX
+          </Badge>
+        </span>
+        <span
+          className={clsx("font-mono text-[12px] font-bold tabular-nums", bullish ? "text-bull" : "text-bear")}
+        >
+          {fmtMoneySigned(totals.net)}
+        </span>
+      </div>
+
+      {/* call vs put premium split bar */}
+      <div className="mb-2 flex h-2 overflow-hidden rounded-full bg-[rgba(8,9,14,0.8)]">
+        <span
+          className="h-full"
+          style={{ width: `${callPct.toFixed(1)}%`, backgroundColor: "#00e676", boxShadow: "0 0 8px #00e67688" }}
+        />
+        <span
+          className="h-full flex-1"
+          style={{ backgroundColor: "#ff2d55", boxShadow: "0 0 8px #ff2d5588" }}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col">
+          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-bull/80">Calls</span>
+          <span className="font-mono text-[13px] font-bold tabular-nums text-bull">
+            {fmtMoney(totals.call)}
+          </span>
+        </div>
+        <div className="flex flex-col text-right">
+          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-bear/80">Puts</span>
+          <span className="font-mono text-[13px] font-bold tabular-nums text-bear">
+            {fmtMoney(totals.put)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1111,34 +1362,6 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           <span>
             {data?.underlying ?? ticker} {isGex ? "GEX" : "VEX"} Positioning
           </span>
-          {live && headerSpot > 0 && (
-            <>
-              <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-white">
-                {/* live ● pulse — bull when the quote is genuinely fresh (WS index or
-                    a just-fetched REST quote); reduced-motion users get a static dot. */}
-                <span
-                  aria-hidden
-                  title={
-                    quoteFresh
-                      ? quote?.source === "ws"
-                        ? "Live spot — real-time"
-                        : "Live spot — ~1.5s"
-                      : "Spot — 20s snapshot"
-                  }
-                  className={clsx(
-                    "inline-block h-1.5 w-1.5 rounded-full",
-                    quoteFresh
-                      ? "bg-bull shadow-[0_0_6px_#00e676] motion-safe:animate-pulse"
-                      : "bg-sky-300/60"
-                  )}
-                />
-                {headerSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={clsx("font-mono text-xs font-bold", headerChangeBull ? "text-bull" : "text-bear")}>
-                {fmtPct(headerChangePct)}
-              </span>
-            </>
-          )}
         </span>
       }
       actions={
@@ -1164,13 +1387,50 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         </span>
       }
     >
-      {/* ── Controls: ticker switcher + GEX|VEX lens toggle ─────────────── */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      {/* ── Control bar (full width, one tight row): tickers · live tape · lens ── */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
         <TickerSwitcher ticker={ticker} onPick={setTicker} />
+
+        {/* Live spot tape — centered/inline; ● pulse + price + change% */}
+        {live && headerSpot > 0 && (
+          <div className="flex items-center gap-2.5 font-mono">
+            <span
+              aria-hidden
+              title={
+                quoteFresh
+                  ? quote?.source === "ws"
+                    ? "Live spot — real-time"
+                    : "Live spot — ~1.5s"
+                  : "Spot — 20s snapshot"
+              }
+              className={clsx(
+                "inline-block h-2 w-2 rounded-full",
+                quoteFresh
+                  ? "bg-bull shadow-[0_0_8px_#00e676] motion-safe:animate-pulse"
+                  : "bg-sky-300/60"
+              )}
+            />
+            <span className="text-[10px] uppercase tracking-[0.2em] text-sky-300/60">
+              {data?.underlying ?? ticker}
+            </span>
+            <span className="text-lg font-bold leading-none tabular-nums text-white">
+              {fmtSpot(headerSpot)}
+            </span>
+            <span
+              className={clsx(
+                "rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums",
+                headerChangeBull ? "bg-bull/12 text-bull" : "bg-bear/12 text-bear"
+              )}
+            >
+              {fmtPct(headerChangePct)}
+            </span>
+          </div>
+        )}
+
         <div
           role="tablist"
           aria-label="Exposure lens"
-          className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.4)] p-1"
+          className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.5)] p-1"
         >
           {(["gex", "vex"] as Lens[]).map((l) => {
             const active = l === lens;
@@ -1182,7 +1442,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 aria-selected={active}
                 onClick={() => setLens(l)}
                 className={clsx(
-                  "rounded-md px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider outline-none transition-colors",
+                  "rounded-md px-3.5 py-1 font-mono text-[11px] font-bold uppercase tracking-wider outline-none transition-colors",
                   "focus-visible:ring-2 focus-visible:ring-sky-400",
                   active
                     ? l === "gex"
@@ -1212,16 +1472,26 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       )}
 
       {isLoading && !data ? (
-        <div className="space-y-4" aria-hidden>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} height={80} rounded="xl" />
+        <div className="space-y-5" aria-hidden>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} height={92} rounded="xl" />
             ))}
           </div>
-          <Skeleton height={20} rounded="lg" />
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} height={22} rounded="md" />
-          ))}
+          <Skeleton height={44} rounded="lg" />
+          <div className="grid gap-4 lg:grid-cols-[1.62fr_1fr]">
+            <div className="space-y-2">
+              <Skeleton height={28} rounded="lg" />
+              {Array.from({ length: 12 }).map((_, i) => (
+                <Skeleton key={i} height={22} rounded="md" />
+              ))}
+            </div>
+            <div className="space-y-3">
+              <Skeleton height={120} rounded="xl" />
+              <Skeleton height={160} rounded="xl" />
+              <Skeleton height={120} rounded="xl" />
+            </div>
+          </div>
         </div>
       ) : empty ? (
         <EmptyState
@@ -1241,72 +1511,84 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         />
       ) : (
         <>
-          {/* ── Regime header ──────────────────────────────────────────── */}
+          {/* ── Regime tiles (full-width row) — evenly spread polished stat cards ── */}
           {isGex ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <RegimeTile
                 label="Gamma Flip"
                 value={flip != null ? fmtStrike(flip) : "—"}
-                tone={flip != null ? "accent" : "neutral"}
                 sublabel="Posture pivot"
-                compact
+                tone="flip"
+                active={flip != null}
               />
-              <Stat
+              <RegimeTile
                 label="Call Wall"
                 value={posWall != null ? fmtStrike(posWall) : "—"}
-                tone="bull"
                 sublabel="Resistance / pin"
-                compact
+                tone="wall"
+                active={posWall != null}
               />
-              <Stat
+              <RegimeTile
                 label="Put Wall"
                 value={negWall != null ? fmtStrike(negWall) : "—"}
-                tone="bear"
                 sublabel="Support"
-                compact
+                tone="support"
+                active={negWall != null}
               />
-              <Stat
+              <RegimeTile
                 label="Max Pain"
                 value={maxPain != null ? fmtStrike(maxPain) : "—"}
-                tone="sky"
                 sublabel="OI value floor"
-                compact
+                tone="sky"
+                active={maxPain != null}
+              />
+              <RegimeTile
+                label="Net GEX"
+                value={fmtMoney(total)}
+                sublabel="$-gamma total"
+                tone={total >= 0 ? "bull" : "bear"}
               />
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <RegimeTile
                 label="Vanna Flip"
                 value={flip != null ? fmtStrike(flip) : "—"}
-                tone={flip != null ? "accent" : "neutral"}
                 sublabel="Sign pivot"
-                compact
+                tone="flip"
+                active={flip != null}
               />
-              <Stat
+              <RegimeTile
                 label="+Vanna Wall"
                 value={posWall != null ? fmtStrike(posWall) : "—"}
-                tone="sky"
                 sublabel="Adds to moves"
-                compact
+                tone="sky"
+                active={posWall != null}
               />
-              <Stat
+              <RegimeTile
                 label="−Vanna Wall"
                 value={negWall != null ? fmtStrike(negWall) : "—"}
-                tone="accent"
                 sublabel="Fades moves"
-                compact
+                tone="wall"
+                active={negWall != null}
               />
-              <Stat
-                label="Net Vanna"
+              <RegimeTile
+                label="Max Pain"
+                value={maxPain != null ? fmtStrike(maxPain) : "—"}
+                sublabel="OI value floor"
+                tone="sky"
+                active={maxPain != null}
+              />
+              <RegimeTile
+                label="Net VEX"
                 value={fmtMoney(total)}
-                tone={total >= 0 ? "sky" : "accent"}
                 sublabel="$-vanna total"
-                compact
+                tone={total >= 0 ? "sky" : "bear"}
               />
             </div>
           )}
 
-          {/* regime one-liner + posture badge */}
+          {/* regime read strip — clean full-width band below the tiles */}
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
             {isGex
               ? gexPosture != null && (
@@ -1322,15 +1604,16 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">{regimeRead}</p>
           </div>
 
-          {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
-          <LargoRead key={ticker} ticker={ticker} />
-
+          {/* ── Main area — two columns at lg+ (stack below) ──────────────── */}
+          <div className="mt-5 grid gap-5 lg:grid-cols-[1.62fr_1fr]">
+            {/* LEFT (~62%): the profile hero with Profile | Shift | Matrix toggle */}
+            <div className="min-w-0">
           {/* ── Profile | Shift | Matrix toggle ───────────────────────────
               Keyed on lens so switching GEX↔VEX resets to Profile — the Shift
               tab is GEX-only (VEX migration is future work), so it can't be
               left selected when the lens flips to VEX. */}
           <Tabs key={lens} defaultValue="profile">
-            <TabList aria-label={`${isGex ? "GEX" : "VEX"} view`} className="mt-4 w-fit">
+            <TabList aria-label={`${isGex ? "GEX" : "VEX"} view`} className="w-fit">
               <Tab value="profile">{isGex ? "Gamma Profile" : "Vanna Profile"}</Tab>
               {isGex && <Tab value="shift">Shift</Tab>}
               <Tab value="matrix">Matrix</Tab>
@@ -1551,9 +1834,40 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               </TabPanel>
             </TabPanels>
           </Tabs>
+            </div>
+
+            {/* RIGHT (~38%): Largo desk read · key levels · flow summary */}
+            <aside className="min-w-0 space-y-4">
+              {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
+              <LargoRead key={ticker} ticker={ticker} />
+
+              <KeyLevels
+                levels={
+                  isGex
+                    ? [
+                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan" },
+                        { label: "Gamma flip", value: flip, tone: "gold" },
+                        { label: "Call wall", value: posWall, tone: "bull" },
+                        { label: "Put wall", value: negWall, tone: "bear" },
+                        { label: "Max pain", value: maxPain, tone: "sky" },
+                      ]
+                    : [
+                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan" },
+                        { label: "Vanna flip", value: flip, tone: "gold" },
+                        { label: "+Vanna wall", value: posWall, tone: "sky" },
+                        { label: "−Vanna wall", value: negWall, tone: "violet" },
+                        { label: "Max pain", value: maxPain, tone: "sky" },
+                      ]
+                }
+                darkPoolLevels={darkPoolLevels}
+              />
+
+              <FlowSummary flowByStrike={flowByStrike} />
+            </aside>
+          </div>
 
           {/* ── Methodology disclosure — honest about the dealer-sign assumption ── */}
-          <p className="mt-4 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/55">
+          <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/55">
             <span aria-hidden className="mr-1 text-sky-300/70">ⓘ</span>
             Net dealer gamma uses the standard convention (dealers long calls / short
             puts); vanna is computed closed-form from implied volatility. Levels are model

@@ -8,20 +8,22 @@ export default async function HeatmapPage() {
 
   return (
     <>
-      <PageShell>
-        <PageHeader
-          kicker="◆ DEALER POSITIONING"
-          title="HEATMAPS"
-          subtitle="Dealer gamma & vanna exposure · GEX walls, flip & flow"
-          badge={<ProductMark product="heatmap" size={44} />}
-          actions={
-            <Badge tone="accent" dot>
-              GEX · VEX
-            </Badge>
-          }
-        />
-        <div className="mt-6">
-          <Heatmap />
+      <PageShell fullBleed>
+        <div className="px-4 md:px-6">
+          <PageHeader
+            kicker="◆ DEALER POSITIONING"
+            title="HEATMAPS"
+            subtitle="Dealer gamma & vanna exposure · GEX walls, flip & flow"
+            badge={<ProductMark product="heatmap" size={44} />}
+            actions={
+              <Badge tone="accent" dot>
+                GEX · VEX
+              </Badge>
+            }
+          />
+          <div className="mt-6">
+            <Heatmap />
+          </div>
         </div>
       </PageShell>
     </>
