@@ -186,43 +186,113 @@ export async function fetchPolygonOdteDeskBundle(
 // GEX Heatmap — dealer gamma matrix (strike rows × expiry columns)
 // ---------------------------------------------------------------------------
 
+/**
+ * GEX metric block — net dealer dollar-GAMMA matrix + gamma-specific levels.
+ * Lives under `heatmap.gex`. Strike/expiry axes + spot are SHARED at the top level.
+ */
+export type GexMetricBlock = {
+  /** Net dealer dollar-gamma per (strike, expiry). Sparse — absent = no data. */
+  cells: Record<string, Record<string, number>>;
+  /** Net dealer dollar-gamma summed across all expiries, per strike. */
+  strike_totals: Record<string, number>;
+  /** Strike with the LARGEST POSITIVE net dealer gamma (dealer long-gamma → resistance/pin), or null. */
+  call_wall: number | null;
+  /** Strike with the LARGEST NEGATIVE net dealer gamma (support), or null. */
+  put_wall: number | null;
+  /** Total net dealer dollar-gamma across the whole matrix. */
+  total: number;
+  /** Linear-interpolated zero-gamma flip strike, or null when undetermined. */
+  flip: number | null;
+  /** Regime read derived from spot vs the gamma flip. */
+  regime: GexRegime;
+};
+
+/**
+ * VEX metric block — net dealer dollar-VANNA matrix + vanna-specific levels.
+ * Lives under `heatmap.vex`. Vanna is the sensitivity of delta to IV (∂Δ/∂σ);
+ * dealer dollar-vanna says how dealer hedging flows respond as IV shifts.
+ */
+export type VexMetricBlock = {
+  /** Net dealer dollar-vanna per (strike, expiry). Sparse — absent = no data. */
+  cells: Record<string, Record<string, number>>;
+  /** Net dealer dollar-vanna summed across all expiries, per strike. */
+  strike_totals: Record<string, number>;
+  /** Strike with the LARGEST POSITIVE net dealer vanna, or null. */
+  pos_wall: number | null;
+  /** Strike with the LARGEST NEGATIVE net dealer vanna, or null. */
+  neg_wall: number | null;
+  /** Total net dealer dollar-vanna across the whole matrix. */
+  total: number;
+  /** Zero-vanna flip strike (cumulative vanna sign change), or null. */
+  flip: number | null;
+  /** Regime read derived from the net vanna sign. */
+  regime: VexRegime;
+};
+
 export type GexHeatmap = {
   underlying: string;
   spot: number;
   change_pct: number;
   asof: string;
-  /** Ascending, ~8 nearest expirations present in the band. */
+  /** Ascending, ~8 nearest expirations present in the band (SHARED by both metrics). */
   expiries: string[];
-  /** Descending, strike-banded around spot. */
+  /** Descending, strike-banded around spot (SHARED by both metrics). */
   strikes: number[];
-  /** Net dealer dollar-gamma per (strike, expiry). Sparse — absent = no data. */
-  cells: Record<string, Record<string, number>>;
-  /** Net dealer dollar-gamma summed across all expiries, per strike. */
-  strike_totals: Record<string, number>;
-  /** Linear-interpolated zero-gamma flip strike, or null when undetermined. */
-  zero_gamma_flip: number | null;
-  /** Strike with the LARGEST POSITIVE net dealer gamma (dealer long-gamma → resistance/pin), or null. */
-  call_wall: number | null;
-  /** Strike with the LARGEST NEGATIVE net dealer gamma (support), or null. */
-  put_wall: number | null;
-  /** Max-pain strike (option-holder value minimizer), or null when not feasible. */
+  /** Max-pain strike (option-holder value minimizer), or null — GEX-only, shared at top. */
   max_pain: number | null;
-  /** Regime read derived from spot vs the gamma flip. */
-  regime: GexRegime;
-  /** Total net dealer dollar-gamma across the whole matrix. */
-  total_gex: number;
+  /** Net dealer dollar-GAMMA block. */
+  gex: GexMetricBlock;
+  /** Net dealer dollar-VANNA block. */
+  vex: VexMetricBlock;
   source: "polygon";
   data_delay: string;
 };
 
 export type GexRegime = {
-  /** The gamma flip the posture is measured against (mirrors zero_gamma_flip), or null. */
+  /** The gamma flip the posture is measured against (mirrors gex.flip), or null. */
   flip: number | null;
   /** 'long' when spot is at/above the flip, 'short' when below, null when undetermined. */
   posture: "long" | "short" | null;
   /** Computed one-liner describing the regime — neutral string when data is missing. */
   read: string;
 };
+
+export type VexRegime = {
+  /** Net dealer dollar-vanna sign: 'positive' | 'negative' | null when undetermined. */
+  posture: "positive" | "negative" | null;
+  /** Computed one-liner describing the vanna regime — neutral string when data is missing. */
+  read: string;
+};
+
+// ── Standard-normal pdf (for closed-form vanna) ────────────────────────────────
+const INV_SQRT_2PI = 0.3989422804014327; // 1 / sqrt(2π)
+/** Standard normal probability density function. */
+function normPdf(x: number): number {
+  return INV_SQRT_2PI * Math.exp(-0.5 * x * x);
+}
+
+/** Year fraction (ACT/365) from today (ET) to an expiry YYYY-MM-DD. <=0 → not tradeable. */
+function yearsToExpiry(expiry: string, todayYmd: string): number {
+  const expMs = new Date(`${expiry}T16:00:00-04:00`).getTime(); // ~US market close ET
+  const nowMs = new Date(`${todayYmd}T00:00:00-04:00`).getTime();
+  if (!Number.isFinite(expMs) || !Number.isFinite(nowMs)) return 0;
+  return (expMs - nowMs) / (365 * 86_400_000);
+}
+
+/**
+ * Closed-form Black-Scholes VANNA per share: ∂²V/∂S∂σ = −φ(d1)·d2/σ.
+ * Returns 0 (skip) when inputs are non-finite, T<=0, or σ<=0 — never fabricated.
+ * Sign is the SAME for calls and puts (vanna is type-independent); the call/put
+ * dealer-sign convention is applied by the caller, mirroring gamma.
+ */
+function vannaPerShare(spot: number, strike: number, t: number, sigma: number): number {
+  if (!(spot > 0) || !(strike > 0) || !(t > 0) || !(sigma > 0)) return 0;
+  const sqrtT = Math.sqrt(t);
+  const d1 = (Math.log(spot / strike) + 0.5 * sigma * sigma * t) / (sigma * sqrtT);
+  const d2 = d1 - sigma * sqrtT;
+  const v = (-normPdf(d1) * d2) / sigma;
+  return Number.isFinite(v) ? v : 0;
+}
 
 /**
  * Derive the dealer-gamma regime levels (call wall, put wall, posture, read) from the
@@ -279,6 +349,69 @@ function computeGexRegime(
   void maxPain;
 
   return { callWall, putWall, regime: { flip, posture, read } };
+}
+
+/**
+ * Derive the dealer-vanna regime (positive/negative walls, posture, read) from the
+ * per-strike NET vanna totals + the matrix total. Never fabricates: missing levels are
+ * null and the read falls back to a neutral string.
+ *
+ * Sign read: net dealer vanna POSITIVE → as IV rises dealers must buy into the move
+ * (hedging adds to / reinforces the move); NEGATIVE → dealers fade the move as IV rises.
+ * Vanna matters most into OPEX and around vol spikes.
+ */
+function computeVexRegime(
+  strikeTotals: Record<string, number>,
+  total: number
+): { posWall: number | null; negWall: number | null; regime: VexRegime } {
+  let posWall: number | null = null;
+  let negWall: number | null = null;
+  let maxPos = 0;
+  let maxNeg = 0;
+  for (const [s, v] of Object.entries(strikeTotals)) {
+    const strike = Number(s);
+    if (!Number.isFinite(strike) || !Number.isFinite(v)) continue;
+    if (v > maxPos) {
+      maxPos = v;
+      posWall = strike;
+    }
+    if (v < maxNeg) {
+      maxNeg = v;
+      negWall = strike;
+    }
+  }
+
+  const posture: "positive" | "negative" | null =
+    Number.isFinite(total) && total !== 0 ? (total > 0 ? "positive" : "negative") : null;
+
+  let read: string;
+  if (posture == null) {
+    read = "Net vanna ~flat — dealer hedging is broadly insensitive to IV shifts here; little vol-driven flow to expect.";
+  } else if (posture === "positive") {
+    read = "Net vanna positive — dealer hedging ADDS to moves as IV rises (and fades them as IV falls); matters into OPEX / vol spikes.";
+  } else {
+    read = "Net vanna negative — dealers FADE moves as IV rises (cushioning) and lean into them as IV falls; watch into OPEX / vol spikes.";
+  }
+
+  return { posWall, negWall, regime: { posture, read } };
+}
+
+/**
+ * Resolve a user-supplied ticker to its Polygon/Massive options-chain & quote root.
+ * Index tickers live under an `I:` index underlying; equities/ETFs are used directly.
+ * Input is uppercased/normalized. Unknown symbols pass through untouched (best-effort).
+ */
+const INDEX_ROOTS: Record<string, string> = {
+  SPX: "I:SPX",
+  NDX: "I:NDX",
+  RUT: "I:RUT",
+  VIX: "I:VIX",
+};
+
+export function resolveOptionsRoot(ticker: string): { root: string; optionsRoot: string } {
+  const root = String(ticker ?? "").trim().toUpperCase();
+  const optionsRoot = INDEX_ROOTS[root] ?? root;
+  return { root, optionsRoot };
 }
 
 const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
@@ -375,7 +508,10 @@ export async function fetchGexHeatmap(
   { forceRefresh = false }: { forceRefresh?: boolean } = {}
 ): Promise<GexHeatmap | null> {
   if (!polygonConfigured()) return null;
-  const root = underlying.toUpperCase();
+  // Multi-ticker: index tickers → I:* index roots; equities/ETFs used directly.
+  const { root, optionsRoot } = resolveOptionsRoot(underlying);
+  if (!root) return null;
+  // ONE cache key per ticker → GEX + VEX share a single cached chain fetch.
   const cacheKey = `${GEX_HEATMAP_CACHE_PREFIX}:${root}`;
   const now = Date.now();
   const ttlMs = gexHeatmapCacheMs();
@@ -395,90 +531,138 @@ export async function fetchGexHeatmap(
     }
   }
 
-  // Resolve spot + day change%. SPX index options are listed under I:SPX, but the
-  // quote comes from the index snapshot; for equity/ETF roots use the stock snapshot.
-  const quoteSym = root === "SPX" ? "I:SPX" : root;
-  const snap = await fetchStockSnapshot(quoteSym).catch(() => null);
+  // Resolve spot + day change% from the same root (index quote for I:* roots).
+  const snap = await fetchStockSnapshot(optionsRoot).catch(() => null);
   const spot = snap?.price ?? 0;
-  if (!(spot > 0)) return null;
+  // Graceful empty: no spot (thin / unknown name) → valid empty payload, NOT a throw.
+  if (!(spot > 0)) return emptyHeatmap(root);
   const changePct = snap?.change_pct ?? 0;
 
-  const optionsRoot = root === "SPX" ? "I:SPX" : root;
+  // Band sizing stays RELATIVE (% of spot) so it works for $5 and $900 names.
   const contracts = await fetchHeatmapBand(optionsRoot, spot, 0.04);
   if (!contracts.length) {
     console.warn(
-      `[gex-heatmap] 0 contracts for ${optionsRoot} @ ${spot} via ${hostOf(BASE)} — heatmap will be empty. Verify POLYGON_API_KEY has options-chain access.`
+      `[gex-heatmap] 0 contracts for ${optionsRoot} @ ${spot} via ${hostOf(BASE)} — heatmap empty (no/thin options chain).`
     );
-    return null;
+    // Graceful empty (with spot so the header still renders the quote).
+    return emptyHeatmap(root, { spot, changePct, now, cacheKey, ttlMs });
   }
 
   const today = todayEtYmd();
-  // Net dealer gamma per (strike, expiry). Sign convention mirrors aggregateGexRows.
-  const cellMap = new Map<number, Map<string, number>>();
-  const strikeTotalMap = new Map<number, number>();
+  // Net dealer GAMMA + VANNA per (strike, expiry) in ONE chain pass. Both use the SAME
+  // call(+)/put(−) dealer-sign convention as aggregateGexRows.
+  const gammaCellMap = new Map<number, Map<string, number>>();
+  const vannaCellMap = new Map<number, Map<string, number>>();
   const expirySet = new Set<string>();
-  let totalGex = 0;
+  let totalGamma = 0;
+  let totalVanna = 0;
 
   for (const c of contracts) {
     const strike = Number(c.details?.strike_price);
     const expiry = String(c.details?.expiration_date ?? "").slice(0, 10);
     const gamma = Number(c.greeks?.gamma ?? 0);
     const oi = Number(c.open_interest ?? 0);
+    const iv = Number(c.implied_volatility ?? 0);
     const type = String(c.details?.contract_type ?? "").toLowerCase();
     if (!Number.isFinite(strike) || strike <= 0 || !expiry || expiry < today) continue;
-    if (!oi || !gamma) continue; // missing data → skip, never fabricate
+    if (!oi) continue; // no open interest → skip, never fabricate
+    const sign = type === "call" ? 1 : type === "put" ? -1 : 0;
+    if (sign === 0) continue;
 
-    const dollarGamma = gamma * oi * 100 * spot;
-    const signed = type === "call" ? dollarGamma : type === "put" ? -dollarGamma : 0;
-    if (signed === 0) continue;
+    // ── GEX: gamma × oi × 100 × spot, call +/put − ──────────────────────────
+    if (gamma) {
+      const signedGamma = sign * gamma * oi * 100 * spot;
+      if (signedGamma !== 0) {
+        expirySet.add(expiry);
+        const byExpiry = gammaCellMap.get(strike) ?? new Map<string, number>();
+        byExpiry.set(expiry, (byExpiry.get(expiry) ?? 0) + signedGamma);
+        gammaCellMap.set(strike, byExpiry);
+        totalGamma += signedGamma;
+      }
+    }
 
-    expirySet.add(expiry);
-    const byExpiry = cellMap.get(strike) ?? new Map<string, number>();
-    byExpiry.set(expiry, (byExpiry.get(expiry) ?? 0) + signed);
-    cellMap.set(strike, byExpiry);
-    strikeTotalMap.set(strike, (strikeTotalMap.get(strike) ?? 0) + signed);
-    totalGex += signed;
+    // ── VEX: closed-form vanna × oi × 100 × spot, call +/put − ───────────────
+    // Skip contracts with missing IV, T<=0, or σ<=0 (vannaPerShare returns 0 → skipped).
+    const t = yearsToExpiry(expiry, today);
+    const vps = vannaPerShare(spot, strike, t, iv);
+    if (vps !== 0) {
+      const signedVanna = sign * vps * oi * 100 * spot;
+      if (signedVanna !== 0 && Number.isFinite(signedVanna)) {
+        expirySet.add(expiry);
+        const byExpiry = vannaCellMap.get(strike) ?? new Map<string, number>();
+        byExpiry.set(expiry, (byExpiry.get(expiry) ?? 0) + signedVanna);
+        vannaCellMap.set(strike, byExpiry);
+        totalVanna += signedVanna;
+      }
+    }
   }
 
-  if (expirySet.size === 0) return null;
+  if (expirySet.size === 0) {
+    return emptyHeatmap(root, { spot, changePct, now, cacheKey, ttlMs });
+  }
 
-  // Keep the nearest ~8 expiries (ascending).
+  // Keep the nearest ~8 expiries (ascending) — SHARED axis for both metrics.
   const expiries = Array.from(expirySet).sort().slice(0, 8);
   const expirySetKeep = new Set(expiries);
-  // Strikes descending (heatmap rows render high→low like a ladder).
-  const strikes = Array.from(cellMap.keys()).sort((a, b) => b - a);
+  // SHARED strike axis = union of strikes touched by EITHER metric, descending.
+  const allStrikes = new Set<number>([
+    ...Array.from(gammaCellMap.keys()),
+    ...Array.from(vannaCellMap.keys()),
+  ]);
+  const strikes = Array.from(allStrikes).sort((a, b) => b - a);
 
-  const cells: Record<string, Record<string, number>> = {};
-  const strikeTotals: Record<string, number> = {};
-  let prunedTotal = 0;
-  for (const strike of strikes) {
-    const byExpiry = cellMap.get(strike)!;
-    const row: Record<string, number> = {};
-    let strikeSum = 0;
-    for (const [expiry, val] of Array.from(byExpiry.entries())) {
-      if (!expirySetKeep.has(expiry)) continue; // drop the >8th expiry's cells
-      row[expiry] = val;
-      strikeSum += val;
+  // Prune a per-metric cell map to the kept expiries → cells + strike_totals + total.
+  function buildMetric(cellMap: Map<number, Map<string, number>>): {
+    cells: Record<string, Record<string, number>>;
+    strikeTotals: Record<string, number>;
+    total: number;
+  } {
+    const cells: Record<string, Record<string, number>> = {};
+    const strikeTotals: Record<string, number> = {};
+    let total = 0;
+    for (const strike of strikes) {
+      const byExpiry = cellMap.get(strike);
+      if (!byExpiry) continue;
+      const row: Record<string, number> = {};
+      let strikeSum = 0;
+      for (const [expiry, val] of Array.from(byExpiry.entries())) {
+        if (!expirySetKeep.has(expiry)) continue;
+        row[expiry] = val;
+        strikeSum += val;
+      }
+      if (Object.keys(row).length === 0) continue;
+      cells[String(strike)] = row;
+      strikeTotals[String(strike)] = strikeSum;
+      total += strikeSum;
     }
-    if (Object.keys(row).length === 0) continue;
-    cells[String(strike)] = row;
-    strikeTotals[String(strike)] = strikeSum;
-    prunedTotal += strikeSum;
+    return { cells, strikeTotals, total };
   }
 
-  const finalStrikes = strikes.filter((s) => cells[String(s)] != null);
-  const zeroGammaFlip = computeZeroGammaFlip(strikeTotals);
+  const gexBuilt = buildMetric(gammaCellMap);
+  const vexBuilt = buildMetric(vannaCellMap);
 
-  // Max pain from the same banded chain (option-holder value minimizer). Reuses
-  // computeMaxPainFromChain; null when not feasible — never fabricated.
+  // Final shared strike axis = strikes present in EITHER metric's pruned cells.
+  const finalStrikes = strikes.filter(
+    (s) => gexBuilt.cells[String(s)] != null || vexBuilt.cells[String(s)] != null
+  );
+
+  // Max pain (GEX-only, shared at top) from the same banded chain.
   const maxPain = computeMaxPainFromChain(contracts);
 
-  // Regime levels: call wall (largest +gamma), put wall (largest −gamma), posture + read.
-  const { callWall, putWall, regime } = computeGexRegime(
-    strikeTotals,
+  // GEX levels + regime.
+  const gexFlip = computeZeroGammaFlip(gexBuilt.strikeTotals);
+  const { callWall, putWall, regime: gexRegime } = computeGexRegime(
+    gexBuilt.strikeTotals,
     spot,
-    zeroGammaFlip,
+    gexFlip,
     maxPain
+  );
+
+  // VEX levels + regime (zero-vanna flip reuses the generic cumulative-cross helper).
+  const vexFlip = computeZeroGammaFlip(vexBuilt.strikeTotals);
+  const { posWall, negWall, regime: vexRegime } = computeVexRegime(
+    vexBuilt.strikeTotals,
+    vexBuilt.total || totalVanna
   );
 
   const heatmap: GexHeatmap = {
@@ -488,14 +672,25 @@ export async function fetchGexHeatmap(
     asof: new Date().toISOString(),
     expiries,
     strikes: finalStrikes,
-    cells,
-    strike_totals: strikeTotals,
-    zero_gamma_flip: zeroGammaFlip,
-    call_wall: callWall,
-    put_wall: putWall,
     max_pain: maxPain,
-    regime,
-    total_gex: prunedTotal || totalGex,
+    gex: {
+      cells: gexBuilt.cells,
+      strike_totals: gexBuilt.strikeTotals,
+      call_wall: callWall,
+      put_wall: putWall,
+      total: gexBuilt.total || totalGamma,
+      flip: gexFlip,
+      regime: gexRegime,
+    },
+    vex: {
+      cells: vexBuilt.cells,
+      strike_totals: vexBuilt.strikeTotals,
+      pos_wall: posWall,
+      neg_wall: negWall,
+      total: vexBuilt.total || totalVanna,
+      flip: vexFlip,
+      regime: vexRegime,
+    },
     source: "polygon",
     data_delay: POLYGON_OPTIONS_DATA_DELAY,
   };
@@ -507,6 +702,62 @@ export async function fetchGexHeatmap(
     sharedCacheSet(cacheKey, entry, Math.ceil(ttlMs / 1000))
   );
 
+  return heatmap;
+}
+
+/**
+ * A valid, empty GEX/VEX heatmap payload — used for thin/unknown tickers so the route
+ * returns 200 with empty cells instead of throwing. Never fabricates any value.
+ * When spot/cache context is supplied the empty result is cached too (so we don't
+ * re-hit a thin chain every request inside the TTL window).
+ */
+function emptyHeatmap(
+  underlying: string,
+  ctx?: { spot?: number; changePct?: number; now?: number; cacheKey?: string; ttlMs?: number }
+): GexHeatmap {
+  const heatmap: GexHeatmap = {
+    underlying,
+    spot: ctx?.spot ?? 0,
+    change_pct: ctx?.changePct ?? 0,
+    asof: new Date().toISOString(),
+    expiries: [],
+    strikes: [],
+    max_pain: null,
+    gex: {
+      cells: {},
+      strike_totals: {},
+      call_wall: null,
+      put_wall: null,
+      total: 0,
+      flip: null,
+      regime: {
+        flip: null,
+        posture: null,
+        read: "No options-chain data for this ticker — dealer gamma profile unavailable.",
+      },
+    },
+    vex: {
+      cells: {},
+      strike_totals: {},
+      pos_wall: null,
+      neg_wall: null,
+      total: 0,
+      flip: null,
+      regime: {
+        posture: null,
+        read: "No options-chain data for this ticker — dealer vanna profile unavailable.",
+      },
+    },
+    source: "polygon",
+    data_delay: POLYGON_OPTIONS_DATA_DELAY,
+  };
+  if (ctx?.cacheKey && ctx.now != null && ctx.ttlMs != null) {
+    const entry = { at: ctx.now, data: heatmap };
+    cachedHeatmaps.set(ctx.cacheKey, entry);
+    void import("../shared-cache").then(({ sharedCacheSet }) =>
+      sharedCacheSet(ctx.cacheKey!, entry, Math.ceil(ctx.ttlMs! / 1000))
+    );
+  }
   return heatmap;
 }
 

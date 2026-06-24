@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import {
@@ -16,14 +16,42 @@ import {
   TabPanel,
 } from "@/components/ui";
 
-/** Regime read derived server-side from spot vs the gamma flip. */
+/** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
   flip: number | null;
   posture: "long" | "short" | null;
   read: string;
 };
 
-/** Net dealer dollar-gamma matrix + regime levels from /api/market/gex-heatmap. */
+/** VEX regime read derived server-side from the net dealer vanna sign. */
+type VexRegime = {
+  posture: "positive" | "negative" | null;
+  read: string;
+};
+
+/** Net dealer dollar-gamma block. */
+type GexBlock = {
+  cells: Record<string, Record<string, number>>;
+  strike_totals: Record<string, number>;
+  call_wall: number | null;
+  put_wall: number | null;
+  total: number;
+  flip: number | null;
+  regime: GexRegime;
+};
+
+/** Net dealer dollar-vanna block. */
+type VexBlock = {
+  cells: Record<string, Record<string, number>>;
+  strike_totals: Record<string, number>;
+  pos_wall: number | null;
+  neg_wall: number | null;
+  total: number;
+  flip: number | null;
+  regime: VexRegime;
+};
+
+/** Restructured payload from /api/market/gex-heatmap: shared axes + gex/vex blocks. */
 type GexHeatmapResponse = {
   available: boolean;
   underlying?: string;
@@ -32,16 +60,13 @@ type GexHeatmapResponse = {
   asof?: string;
   expiries?: string[];
   strikes?: number[];
-  cells?: Record<string, Record<string, number>>;
-  strike_totals?: Record<string, number>;
-  zero_gamma_flip?: number | null;
-  call_wall?: number | null;
-  put_wall?: number | null;
   max_pain?: number | null;
-  regime?: GexRegime;
-  total_gex?: number;
+  gex?: GexBlock;
+  vex?: VexBlock;
   error?: string;
 };
+
+type TickerSearchResult = { ticker: string; name: string; type?: string };
 
 async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
   const res = await fetch(url, {
@@ -53,8 +78,8 @@ async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
   return res.json();
 }
 
-/** Compact signed dollar-gamma: $22.1K / -$45.2M. */
-function fmtGamma(n: number): string {
+/** Compact signed dollar value: $22.1K / -$45.2M. */
+function fmtMoney(n: number): string {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
@@ -82,50 +107,66 @@ function fmtExpiry(ymd: string): string {
   return `${months[m - 1]} ${d}`;
 }
 
+type Lens = "gex" | "vex";
+
 /**
- * Cell background: green (positive dealer gamma) ↔ violet/purple (negative), opacity
- * scaled by magnitude relative to the matrix peak. Brand tokens only (bull / purple),
- * never grey. Returns an inline style so the alpha can vary continuously.
+ * Per-lens color identity (brand tokens only, never grey):
+ *  - GEX: positive = bull green #00e676, negative = violet #bf5fff (matches the v1 scale)
+ *  - VEX: positive = sky #7dd3fc,        negative = violet #bf5fff
  */
-function cellStyle(value: number, peak: number): React.CSSProperties {
+const LENS_COLORS: Record<Lens, { posRgb: string; negRgb: string; posHex: string; negHex: string }> = {
+  gex: { posRgb: "0,230,118", negRgb: "191,95,255", posHex: "#00e676", negHex: "#bf5fff" },
+  vex: { posRgb: "125,211,252", negRgb: "191,95,255", posHex: "#7dd3fc", negHex: "#bf5fff" },
+};
+
+/**
+ * Matrix cell background: positive ↔ negative per lens, opacity scaled by magnitude
+ * relative to the matrix peak. Returns inline style so the alpha varies continuously.
+ */
+function cellStyle(value: number, peak: number, lens: Lens): React.CSSProperties {
   if (!value || peak <= 0) return {};
   const mag = Math.min(1, Math.abs(value) / peak);
-  // Ease so small values still read; floor at 0.08 alpha, ceil ~0.6.
   const alpha = 0.08 + Math.pow(mag, 0.7) * 0.52;
-  // bull #00e676 / purple #bf5fff
-  const rgb = value > 0 ? "0,230,118" : "191,95,255";
+  const c = LENS_COLORS[lens];
+  const rgb = value > 0 ? c.posRgb : c.negRgb;
   return {
     backgroundColor: `rgba(${rgb},${alpha.toFixed(3)})`,
     boxShadow: mag > 0.6 ? `inset 0 0 14px rgba(${rgb},0.25)` : undefined,
   };
 }
 
+const PRESET_TICKERS = [
+  "SPY", "SPX", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "AMD", "META", "AMZN", "GOOGL",
+];
+
 // ---------------------------------------------------------------------------
-// Gamma profile (the hero) — vertical strike ladder of net gamma bars
+// Exposure profile (the hero) — vertical strike ladder of net exposure bars
 // ---------------------------------------------------------------------------
 
 type ProfileRow = {
   strike: number;
-  gamma: number;
+  value: number;
   isSpot: boolean;
   isFlip: boolean;
-  isCallWall: boolean;
-  isPutWall: boolean;
+  isPosWall: boolean;
+  isNegWall: boolean;
 };
 
-function GammaProfile({
+function ExposureProfile({
   rows,
   peak,
   spot,
   flip,
+  lens,
 }: {
   rows: ProfileRow[];
   peak: number;
   spot: number;
   flip: number | null;
+  lens: Lens;
 }) {
-  // Index of the divider: drawn ABOVE the first row (strikes desc) whose strike < flip,
-  // i.e. between the two strikes the cumulative gamma crosses zero.
+  const c = LENS_COLORS[lens];
+  // Index of the divider: drawn ABOVE the first row (strikes desc) whose strike < flip.
   const flipBoundary = useMemo(() => {
     if (flip == null) return -1;
     for (let i = 0; i < rows.length; i++) {
@@ -134,26 +175,28 @@ function GammaProfile({
     return -1;
   }, [rows, flip]);
 
+  const flipLabel = lens === "gex" ? "γ flip" : "vanna flip";
+  const profileLabel =
+    lens === "gex"
+      ? "Net dealer gamma profile by strike — positive bars right of center, negative left"
+      : "Net dealer vanna profile by strike — positive bars right of center, negative left";
+
   return (
-    <div
-      role="img"
-      aria-label="Net dealer gamma profile by strike — positive bars (green) right of center, negative (violet) left"
-      className="space-y-px"
-    >
+    <div role="img" aria-label={profileLabel} className="space-y-px">
       {rows.map((r, i) => {
-        const mag = peak > 0 ? Math.min(1, Math.abs(r.gamma) / peak) : 0;
-        const widthPct = (mag * 50).toFixed(2); // each side spans up to 50% of the row
-        const positive = r.gamma > 0;
-        const barColor = positive ? "#00e676" : "#bf5fff";
-        const wall = r.isCallWall || r.isPutWall;
+        const mag = peak > 0 ? Math.min(1, Math.abs(r.value) / peak) : 0;
+        const widthPct = (mag * 50).toFixed(2);
+        const positive = r.value > 0;
+        const barColor = positive ? c.posHex : c.negHex;
+        const wall = r.isPosWall || r.isNegWall;
         return (
           <div key={r.strike}>
-            {/* gamma-flip divider between the bracketing strikes */}
+            {/* flip divider between the bracketing strikes */}
             {flip != null && i === flipBoundary && (
               <div className="flex items-center gap-2 py-1" aria-hidden>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
                 <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gold">
-                  γ flip {fmtStrike(flip)}
+                  {flipLabel} {fmtStrike(flip)}
                 </span>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
               </div>
@@ -164,7 +207,7 @@ function GammaProfile({
                 "group relative flex items-center gap-2 rounded-sm py-0.5 pr-1",
                 r.isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.06]"
               )}
-              title={`${fmtStrike(r.strike)} · ${fmtGamma(r.gamma)}`}
+              title={`${fmtStrike(r.strike)} · ${fmtMoney(r.value)}`}
             >
               {/* strike label (left gutter) */}
               <span
@@ -185,15 +228,13 @@ function GammaProfile({
 
               {/* bipolar bar track with a center axis */}
               <span className="relative h-4 flex-1">
-                {/* center axis */}
                 <span
                   aria-hidden
                   className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/15"
                 />
-                {/* the bar — negative grows left, positive grows right */}
                 <span
                   aria-hidden
-                  className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px]"
+                  className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px] motion-safe:transition-all motion-safe:duration-300"
                   style={{
                     width: `${widthPct}%`,
                     left: positive ? "50%" : undefined,
@@ -213,20 +254,20 @@ function GammaProfile({
               <span
                 className={clsx(
                   "w-20 shrink-0 text-right font-mono text-[10px] tabular-nums",
-                  positive ? "text-bull" : "text-purple-light"
+                  positive ? (lens === "gex" ? "text-bull" : "text-sky-300") : "text-purple-light"
                 )}
               >
-                {fmtGamma(r.gamma)}
+                {fmtMoney(r.value)}
               </span>
               <span className="w-10 shrink-0 text-left">
-                {r.isCallWall && (
+                {r.isPosWall && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
-                    call
+                    {lens === "gex" ? "call" : "+vex"}
                   </span>
                 )}
-                {r.isPutWall && (
+                {r.isNegWall && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
-                    put
+                    {lens === "gex" ? "put" : "−vex"}
                   </span>
                 )}
               </span>
@@ -237,39 +278,176 @@ function GammaProfile({
 
       {/* axis legend */}
       <div className="mt-3 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/70">
-        <span className="text-purple-light">◀ short γ (−)</span>
-        <span className="text-sky-300">
-          {spot > 0 ? `spot ${fmtStrike(spot)}` : "net dealer gamma"}
+        <span className="text-purple-light">
+          ◀ {lens === "gex" ? "short γ" : "neg vanna"} (−)
         </span>
-        <span className="text-bull">long γ (+) ▶</span>
+        <span className="text-sky-300">
+          {spot > 0 ? `spot ${fmtStrike(spot)}` : lens === "gex" ? "net dealer gamma" : "net dealer vanna"}
+        </span>
+        <span className={lens === "gex" ? "text-bull" : "text-sky-300"}>
+          {lens === "gex" ? "long γ" : "pos vanna"} (+) ▶
+        </span>
       </div>
     </div>
   );
 }
 
-export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
+// ---------------------------------------------------------------------------
+// Ticker switcher — preset chips + search input wired to /api/market/ticker-search
+// ---------------------------------------------------------------------------
+
+function TickerSwitcher({
+  ticker,
+  onPick,
+}: {
+  ticker: string;
+  onPick: (t: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced ticker search.
+  const { data: searchData } = useSWR<{ results?: TickerSearchResult[] }>(
+    query.trim().length >= 1
+      ? `/api/market/ticker-search?q=${encodeURIComponent(query.trim())}&limit=8`
+      : null,
+    (url: string) => fetch(url, { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : { results: [] })),
+    { revalidateOnFocus: false, dedupingInterval: 30_000 }
+  );
+  const results = searchData?.results ?? [];
+
+  // Close the dropdown on outside click.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  function pick(t: string) {
+    const sym = t.trim().toUpperCase();
+    if (!sym) return;
+    onPick(sym);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {PRESET_TICKERS.map((t) => {
+        const active = t === ticker;
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => onPick(t)}
+            aria-pressed={active}
+            className={clsx(
+              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold tracking-wide outline-none transition-colors",
+              "focus-visible:ring-2 focus-visible:ring-sky-400",
+              active
+                ? "bg-cyan-400/15 text-white outline outline-1 outline-cyan-400/60"
+                : "text-sky-300 hover:bg-white/[0.06] hover:text-white"
+            )}
+          >
+            {t}
+          </button>
+        );
+      })}
+
+      {/* search any ticker */}
+      <div ref={boxRef} className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              if (results[0]) pick(results[0].ticker);
+              else if (query.trim()) pick(query);
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          placeholder="Search…"
+          aria-label="Search any ticker"
+          spellCheck={false}
+          className={clsx(
+            "w-28 rounded-md border border-white/12 bg-[rgba(8,9,14,0.6)] px-2 py-1 font-mono text-[11px] text-white",
+            "placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
+          )}
+        />
+        {open && results.length > 0 && (
+          <ul
+            role="listbox"
+            className="absolute right-0 z-30 mt-1 max-h-60 w-60 overflow-y-auto rounded-lg border border-white/12 bg-[rgba(8,9,14,0.97)] p-1 shadow-xl backdrop-blur"
+          >
+            {results.map((r) => (
+              <li key={r.ticker}>
+                <button
+                  type="button"
+                  onClick={() => pick(r.ticker)}
+                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-cyan-400/10 focus-visible:bg-cyan-400/10"
+                >
+                  <span className="font-mono text-[12px] font-semibold text-white">{r.ticker}</span>
+                  <span className="truncate text-[10px] text-sky-300/70">{r.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
+  const [ticker, setTicker] = useState(initialTicker.toUpperCase());
+  const [lens, setLens] = useState<Lens>("gex");
+
   const { data, isLoading, error } = useSWR<GexHeatmapResponse>(
     `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`,
     fetchGexHeatmap,
-    { refreshInterval: 45_000, revalidateOnFocus: false }
+    { refreshInterval: 45_000, revalidateOnFocus: false, keepPreviousData: true }
   );
 
   const live = !error && Boolean(data?.available);
   const fetchFailed = Boolean(error) && !isLoading;
-  const empty = !isLoading && data != null && !data.available;
 
   const spot = data?.spot ?? 0;
   const expiries = useMemo(() => data?.expiries ?? [], [data?.expiries]);
   const strikes = useMemo(() => data?.strikes ?? [], [data?.strikes]);
-  const cells = data?.cells ?? {};
-  const strikeTotals = useMemo(() => data?.strike_totals ?? {}, [data?.strike_totals]);
-  const flip = data?.zero_gamma_flip ?? null;
-  const callWall = data?.call_wall ?? null;
-  const putWall = data?.put_wall ?? null;
   const maxPain = data?.max_pain ?? null;
-  const regime = data?.regime ?? null;
 
-  // Peak magnitude across all cells drives the matrix color scale.
+  // Active metric block (client-side switch — no refetch, both are in the payload).
+  const block = lens === "gex" ? data?.gex : data?.vex;
+  const cells = useMemo(() => block?.cells ?? {}, [block?.cells]);
+  const strikeTotals = useMemo(() => block?.strike_totals ?? {}, [block?.strike_totals]);
+  const flip = block?.flip ?? null;
+  const total = block?.total ?? 0;
+
+  // Per-lens walls + regime read.
+  const posWall = lens === "gex" ? (data?.gex?.call_wall ?? null) : (data?.vex?.pos_wall ?? null);
+  const negWall = lens === "gex" ? (data?.gex?.put_wall ?? null) : (data?.vex?.neg_wall ?? null);
+  const gexPosture = data?.gex?.regime.posture ?? null;
+  const vexPosture = data?.vex?.regime.posture ?? null;
+  const regimeRead =
+    lens === "gex"
+      ? data?.gex?.regime.read ?? "Regime read unavailable."
+      : data?.vex?.regime.read ?? "Regime read unavailable.";
+
+  // The active block is empty when it has no strike totals (e.g. VEX skipped all IVs).
+  const blockEmpty = Object.keys(strikeTotals).length === 0;
+  const empty = !isLoading && data != null && (!data.available || strikes.length === 0);
+
+  // Peak magnitude across the active block's cells drives the matrix color scale.
   const peak = useMemo(() => {
     let p = 0;
     for (const row of Object.values(cells)) {
@@ -298,7 +476,7 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
     );
   }, [strikes, spot]);
 
-  // The strike row nearest the zero-gamma flip — gets the flip marker (matrix view).
+  // The strike row nearest the active flip — gets the flip marker (matrix view).
   const flipStrike = useMemo(() => {
     if (flip == null || strikes.length === 0) return null;
     return strikes.reduce((best, s) =>
@@ -306,29 +484,32 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
     );
   }, [strikes, flip]);
 
-  // Profile rows: strikes desc, each carrying its net gamma + role flags.
+  // Profile rows: strikes desc, each carrying its net value + role flags.
   const profileRows = useMemo<ProfileRow[]>(() => {
     return strikes.map((strike) => ({
       strike,
-      gamma: strikeTotals[String(strike)] ?? 0,
+      value: strikeTotals[String(strike)] ?? 0,
       isSpot: strike === spotStrike,
       isFlip: strike === flipStrike,
-      isCallWall: callWall != null && strike === callWall,
-      isPutWall: putWall != null && strike === putWall,
+      isPosWall: posWall != null && strike === posWall,
+      isNegWall: negWall != null && strike === negWall,
     }));
-  }, [strikes, strikeTotals, spotStrike, flipStrike, callWall, putWall]);
+  }, [strikes, strikeTotals, spotStrike, flipStrike, posWall, negWall]);
 
   const changePct = data?.change_pct ?? 0;
   const changeBull = changePct >= 0;
-  const postureBull = regime?.posture === "long";
+  const isGex = lens === "gex";
+  const posColorClass = isGex ? "text-bull" : "text-sky-300";
 
   return (
     <Panel
-      accent="bull"
-      kicker="Dealer gamma exposure · Polygon options"
+      accent={isGex ? "bull" : "sky"}
+      kicker={isGex ? "Dealer gamma exposure · Polygon options" : "Dealer vanna exposure · Polygon options"}
       title={
         <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span>{data?.underlying ?? ticker} GEX Positioning</span>
+          <span>
+            {data?.underlying ?? ticker} {isGex ? "GEX" : "VEX"} Positioning
+          </span>
           {live && spot > 0 && (
             <>
               <span className="font-mono text-sm font-semibold text-white">
@@ -351,6 +532,40 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
         )
       }
     >
+      {/* ── Controls: ticker switcher + GEX|VEX lens toggle ─────────────── */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <TickerSwitcher ticker={ticker} onPick={setTicker} />
+        <div
+          role="tablist"
+          aria-label="Exposure lens"
+          className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.4)] p-1"
+        >
+          {(["gex", "vex"] as Lens[]).map((l) => {
+            const active = l === lens;
+            return (
+              <button
+                key={l}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setLens(l)}
+                className={clsx(
+                  "rounded-md px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider outline-none transition-colors",
+                  "focus-visible:ring-2 focus-visible:ring-sky-400",
+                  active
+                    ? l === "gex"
+                      ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
+                      : "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
+                    : "text-sky-300/70 hover:text-white"
+                )}
+              >
+                {l}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {fetchFailed && (
         <div
           role="alert"
@@ -359,7 +574,7 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
         >
           <span className="text-bear text-sm leading-none">⚠</span>
           <span className="font-mono text-[12px] font-bold text-bear tracking-wide">
-            GEX feed unavailable — retrying
+            {isGex ? "GEX" : "VEX"} feed unavailable — retrying
           </span>
         </div>
       )}
@@ -376,78 +591,128 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
             <Skeleton key={i} height={22} rounded="md" />
           ))}
         </div>
-      ) : empty || strikes.length === 0 ? (
+      ) : empty ? (
         <EmptyState
           icon="◆"
-          title="GAMMA PROFILE IDLE"
-          description="The dealer gamma profile prints from the live options chain during RTH. Standby until the bell."
+          title="NO OPTIONS CHAIN"
+          description={`No options chain for ${data?.underlying ?? ticker}. Pick a more liquid name or wait for the chain to print.`}
+        />
+      ) : blockEmpty ? (
+        <EmptyState
+          icon="◆"
+          title={isGex ? "GAMMA PROFILE IDLE" : "VANNA PROFILE IDLE"}
+          description={
+            isGex
+              ? "The dealer gamma profile prints from the live options chain during RTH. Standby until the bell."
+              : "Vanna needs implied vol + time-to-expiry on the chain. No qualifying contracts right now — try GEX or another ticker."
+          }
         />
       ) : (
         <>
           {/* ── Regime header ──────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat
-              label="Gamma Flip"
-              value={flip != null ? fmtStrike(flip) : "—"}
-              tone={flip != null ? "accent" : "neutral"}
-              sublabel="Posture pivot"
-              compact
-            />
-            <Stat
-              label="Call Wall"
-              value={callWall != null ? fmtStrike(callWall) : "—"}
-              tone="bull"
-              sublabel="Resistance / pin"
-              compact
-            />
-            <Stat
-              label="Put Wall"
-              value={putWall != null ? fmtStrike(putWall) : "—"}
-              tone="bear"
-              sublabel="Support"
-              compact
-            />
-            <Stat
-              label="Max Pain"
-              value={maxPain != null ? fmtStrike(maxPain) : "—"}
-              tone="sky"
-              sublabel="OI value floor"
-              compact
-            />
-          </div>
+          {isGex ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat
+                label="Gamma Flip"
+                value={flip != null ? fmtStrike(flip) : "—"}
+                tone={flip != null ? "accent" : "neutral"}
+                sublabel="Posture pivot"
+                compact
+              />
+              <Stat
+                label="Call Wall"
+                value={posWall != null ? fmtStrike(posWall) : "—"}
+                tone="bull"
+                sublabel="Resistance / pin"
+                compact
+              />
+              <Stat
+                label="Put Wall"
+                value={negWall != null ? fmtStrike(negWall) : "—"}
+                tone="bear"
+                sublabel="Support"
+                compact
+              />
+              <Stat
+                label="Max Pain"
+                value={maxPain != null ? fmtStrike(maxPain) : "—"}
+                tone="sky"
+                sublabel="OI value floor"
+                compact
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat
+                label="Vanna Flip"
+                value={flip != null ? fmtStrike(flip) : "—"}
+                tone={flip != null ? "accent" : "neutral"}
+                sublabel="Sign pivot"
+                compact
+              />
+              <Stat
+                label="+Vanna Wall"
+                value={posWall != null ? fmtStrike(posWall) : "—"}
+                tone="sky"
+                sublabel="Adds to moves"
+                compact
+              />
+              <Stat
+                label="−Vanna Wall"
+                value={negWall != null ? fmtStrike(negWall) : "—"}
+                tone="accent"
+                sublabel="Fades moves"
+                compact
+              />
+              <Stat
+                label="Net Vanna"
+                value={fmtMoney(total)}
+                tone={total >= 0 ? "sky" : "accent"}
+                sublabel="$-vanna total"
+                compact
+              />
+            </div>
+          )}
 
           {/* regime one-liner + posture badge */}
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
-            {regime?.posture != null && (
-              <Badge tone={postureBull ? "bull" : "bear"} dot>
-                {postureBull ? "Long Gamma" : "Short Gamma"}
-              </Badge>
-            )}
-            <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">
-              {regime?.read ?? "Regime read unavailable."}
-            </p>
+            {isGex
+              ? gexPosture != null && (
+                  <Badge tone={gexPosture === "long" ? "bull" : "bear"} dot>
+                    {gexPosture === "long" ? "Long Gamma" : "Short Gamma"}
+                  </Badge>
+                )
+              : vexPosture != null && (
+                  <Badge tone={vexPosture === "positive" ? "sky" : "accent"} dot>
+                    {vexPosture === "positive" ? "Vanna Positive" : "Vanna Negative"}
+                  </Badge>
+                )}
+            <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">{regimeRead}</p>
           </div>
 
           {/* ── Profile | Matrix toggle ───────────────────────────────── */}
           <Tabs defaultValue="profile">
-            <TabList aria-label="GEX view" className="mt-4 w-fit">
-              <Tab value="profile">Profile</Tab>
+            <TabList aria-label={`${isGex ? "GEX" : "VEX"} view`} className="mt-4 w-fit">
+              <Tab value="profile">{isGex ? "Gamma Profile" : "Vanna Profile"}</Tab>
               <Tab value="matrix">Matrix</Tab>
             </TabList>
 
             <TabPanels>
-              {/* Hero: gamma profile ladder */}
+              {/* Hero: exposure profile ladder */}
               <TabPanel value="profile">
-                <GammaProfile
+                <ExposureProfile
                   rows={profileRows}
                   peak={totalPeak}
                   spot={spot}
                   flip={flip}
+                  lens={lens}
                 />
                 <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
-                  Net dealer $-gamma per strike · green long / violet short · total{" "}
-                  <span className={clsx((data?.total_gex ?? 0) >= 0 ? "text-bull" : "text-purple-light")}>
-                    {fmtGamma(data?.total_gex ?? 0)}
+                  {isGex
+                    ? "Net dealer $-gamma per strike · green long / violet short · total "
+                    : "Net dealer $-vanna per strike · sky positive / violet negative · total "}
+                  <span className={clsx(total >= 0 ? posColorClass : "text-purple-light")}>
+                    {fmtMoney(total)}
                   </span>
                 </p>
               </TabPanel>
@@ -456,12 +721,18 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
               <TabPanel value="matrix">
                 <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
                   <span className="flex items-center gap-1.5 text-sky-300">
-                    <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: "rgba(0,230,118,0.5)" }} />
-                    Long gamma (+)
+                    <span
+                      className="inline-block h-3 w-3 rounded-sm"
+                      style={{ backgroundColor: `rgba(${LENS_COLORS[lens].posRgb},0.5)` }}
+                    />
+                    {isGex ? "Long gamma (+)" : "Pos vanna (+)"}
                   </span>
                   <span className="flex items-center gap-1.5 text-sky-300">
-                    <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: "rgba(191,95,255,0.5)" }} />
-                    Short gamma (−)
+                    <span
+                      className="inline-block h-3 w-3 rounded-sm"
+                      style={{ backgroundColor: `rgba(${LENS_COLORS[lens].negRgb},0.5)` }}
+                    />
+                    {isGex ? "Short gamma (−)" : "Neg vanna (−)"}
                   </span>
                   {flip != null && (
                     <span className="flex items-center gap-1.5 text-gold">
@@ -479,7 +750,7 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
                 <div
                   className="overflow-x-auto"
                   role="region"
-                  aria-label={`${data?.underlying ?? ticker} dealer gamma exposure matrix, strikes by expiration`}
+                  aria-label={`${data?.underlying ?? ticker} dealer ${isGex ? "gamma" : "vanna"} exposure matrix, strikes by expiration`}
                 >
                   <table className="w-full border-separate border-spacing-0 font-mono text-[11px]">
                     <thead>
@@ -505,13 +776,11 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
                         const row = cells[String(strike)] ?? {};
                         const isSpot = strike === spotStrike;
                         const isFlip = strike === flipStrike;
-                        const total = strikeTotals[String(strike)] ?? 0;
+                        const rowTotal = strikeTotals[String(strike)] ?? 0;
                         return (
                           <tr
                             key={strike}
-                            className={clsx(
-                              isSpot && "outline outline-1 outline-cyan-400/70",
-                            )}
+                            className={clsx(isSpot && "outline outline-1 outline-cyan-400/70")}
                           >
                             <th
                               scope="row"
@@ -538,23 +807,27 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
                                   key={e}
                                   className={clsx(
                                     "whitespace-nowrap px-2 py-1.5 text-center tabular-nums",
-                                    has ? (v > 0 ? "text-bull" : "text-purple-light") : "text-sky-300/30"
+                                    has
+                                      ? v > 0
+                                        ? posColorClass
+                                        : "text-purple-light"
+                                      : "text-sky-300/30"
                                   )}
-                                  style={has ? cellStyle(v, peak) : undefined}
-                                  title={has ? `${strike} · ${fmtExpiry(e)} · ${fmtGamma(v)}` : undefined}
+                                  style={has ? cellStyle(v, peak, lens) : undefined}
+                                  title={has ? `${strike} · ${fmtExpiry(e)} · ${fmtMoney(v)}` : undefined}
                                 >
-                                  {has ? fmtGamma(v) : "·"}
+                                  {has ? fmtMoney(v) : "·"}
                                 </td>
                               );
                             })}
                             <td
                               className={clsx(
                                 "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
-                                total > 0 ? "text-bull" : total < 0 ? "text-purple-light" : "text-sky-300/40"
+                                rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-purple-light" : "text-sky-300/40"
                               )}
-                              style={total ? cellStyle(total, totalPeak) : undefined}
+                              style={rowTotal ? cellStyle(rowTotal, totalPeak, lens) : undefined}
                             >
-                              {total ? fmtGamma(total) : "·"}
+                              {rowTotal ? fmtMoney(rowTotal) : "·"}
                             </td>
                           </tr>
                         );
@@ -564,9 +837,11 @@ export function GexHeatmap({ ticker = "SPY" }: { ticker?: string }) {
                 </div>
 
                 <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
-                  Net dealer $-gamma per strike × expiry · green long / violet short · total{" "}
-                  <span className={clsx((data?.total_gex ?? 0) >= 0 ? "text-bull" : "text-purple-light")}>
-                    {fmtGamma(data?.total_gex ?? 0)}
+                  {isGex
+                    ? "Net dealer $-gamma per strike × expiry · green long / violet short · total "
+                    : "Net dealer $-vanna per strike × expiry · sky positive / violet negative · total "}
+                  <span className={clsx(total >= 0 ? posColorClass : "text-purple-light")}>
+                    {fmtMoney(total)}
                   </span>
                 </p>
               </TabPanel>
