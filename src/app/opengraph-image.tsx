@@ -19,7 +19,35 @@ const INSTRUMENTS = [
   { name: "NIGHT HAWK", accent: "#ff2d55" },
 ];
 
-export default function OgImage() {
+// Best-effort load of the Anton display face for the wordmark, server-side (nodejs
+// runtime). Fetching css2 with NO modern User-Agent makes Google return a .ttf src,
+// which Satori can parse (woff2 it cannot). Timeout-guarded; on ANY failure — or if
+// no .ttf URL is found — we return null and the poster falls back to bold sans-serif.
+// The route therefore never throws on a font issue. (Local Windows @vercel/og has a
+// bundled-font quirk that prevents dev render-verify; prod is Linux and unaffected.)
+async function loadAnton(): Promise<ArrayBuffer | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const css = await fetch("https://fonts.googleapis.com/css2?family=Anton", {
+      signal: controller.signal,
+    }).then((r) => (r.ok ? r.text() : ""));
+    const url = css.match(/src:\s*url\((https:[^)]+\.ttf)\)/)?.[1];
+    if (!url) return null;
+    return await fetch(url, { signal: controller.signal }).then((r) =>
+      r.ok ? r.arrayBuffer() : null,
+    );
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export default async function OgImage() {
+  const anton = await loadAnton();
+  const displayFamily = anton ? "Anton, sans-serif" : "sans-serif";
+
   return new ImageResponse(
     (
       <div
@@ -49,7 +77,7 @@ export default function OgImage() {
         {/* LEFT — wordmark lockup */}
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", paddingLeft: 84, width: 720 }}>
           <div style={{ display: "flex", fontSize: 22, letterSpacing: 8, color: "#00e676", textTransform: "uppercase" }}>{KICK}</div>
-          <div style={{ display: "flex", fontSize: 150, fontWeight: 800, color: "#ffffff", lineHeight: 0.9, marginTop: 6 }}>BLACKOUT</div>
+          <div style={{ display: "flex", fontSize: 158, fontWeight: 800, color: "#ffffff", lineHeight: 0.9, marginTop: 6, fontFamily: displayFamily, letterSpacing: anton ? 4 : 0 }}>BLACKOUT</div>
           <div style={{ display: "flex", fontSize: 36, color: "#7dd3fc", marginTop: 14 }}>The command surface for the floor.</div>
           <div style={{ display: "flex", marginTop: 24, width: 240, height: 3, background: "linear-gradient(90deg, transparent, #00e676, #7dd3fc, transparent)" }} />
         </div>
@@ -84,6 +112,11 @@ export default function OgImage() {
         </div>
       </div>
     ),
-    { ...size }
+    {
+      ...size,
+      fonts: anton
+        ? [{ name: "Anton", data: anton, style: "normal" as const, weight: 400 as const }]
+        : [],
+    }
   );
 }

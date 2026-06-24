@@ -55,6 +55,10 @@ const nextConfig = {
     // 14.2.x (became stable/default in Next 15); accepted by 14.2.35.
     instrumentationHook: true,
   },
+  // Lint is enforced in CI via `npm run lint` (jsx-a11y) and `npm run lint:brand`
+  // (no-grey brand guard), NOT during the production build — so a lint finding never
+  // blocks a deploy. Build correctness is covered by tsc + next build itself.
+  eslint: { ignoreDuringBuilds: true },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
