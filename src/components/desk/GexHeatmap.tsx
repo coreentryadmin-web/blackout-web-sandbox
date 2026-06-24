@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import {
@@ -208,6 +208,185 @@ const LENS_COLORS: Record<Lens, { posRgb: string; negRgb: string; posHex: string
   gex: { posRgb: "0,230,118", negRgb: "191,95,255", posHex: "#00e676", negHex: "#bf5fff" },
   vex: { posRgb: "125,211,252", negRgb: "191,95,255", posHex: "#7dd3fc", negHex: "#bf5fff" },
 };
+
+// ---------------------------------------------------------------------------
+// Client-side per-expiry re-aggregation + wall/flip recompute (Rank 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-sum a lens's `cells[strike][expiry]` over a chosen set of expiries entirely
+ * client-side, producing filtered per-strike totals keyed by strike string. When
+ * `selected` is null we fall back to the server `strike_totals` so "All" exactly
+ * reproduces today's behavior (no re-sum drift); when a subset is chosen we sum the
+ * matching expiry columns. Zero refetch — both `cells` and `strike_totals` ship in
+ * the same payload.
+ */
+function filterStrikeTotals(
+  cells: Record<string, Record<string, number>>,
+  strikeTotals: Record<string, number>,
+  selected: string[] | null
+): Record<string, number> {
+  if (selected == null) return strikeTotals;
+  const out: Record<string, number> = {};
+  for (const [strike, byExpiry] of Object.entries(cells)) {
+    let sum = 0;
+    for (const exp of selected) {
+      const v = byExpiry[exp];
+      if (typeof v === "number") sum += v;
+    }
+    if (sum !== 0) out[strike] = sum;
+  }
+  return out;
+}
+
+/**
+ * Recompute walls + flip from FILTERED per-strike totals so the levels track the
+ * selected expiry scope. Mirrors the server's primary method (we don't have its fn):
+ *  - call/pos wall = strike of the max positive total
+ *  - put/neg wall  = strike of the min (most negative) total
+ *  - flip = the per-strike sign crossing (negative→positive as strike ascends) nearest
+ *    spot, linearly interpolated between the bracketing strikes. Falls back to the
+ *    strike of smallest |total| if no clean crossing exists.
+ * Returns nulls when there's nothing to compute (so callers can defer to server levels).
+ */
+function recomputeLevels(
+  totals: Record<string, number>,
+  spot: number
+): { posWall: number | null; negWall: number | null; flip: number | null } {
+  const entries = Object.entries(totals)
+    .map(([s, v]) => ({ strike: Number(s), value: v }))
+    .filter((e) => Number.isFinite(e.strike))
+    .sort((a, b) => a.strike - b.strike);
+  if (entries.length === 0) return { posWall: null, negWall: null, flip: null };
+
+  let posWall: number | null = null;
+  let negWall: number | null = null;
+  let posMax = -Infinity;
+  let negMin = Infinity;
+  for (const e of entries) {
+    if (e.value > posMax) {
+      posMax = e.value;
+      posWall = e.strike;
+    }
+    if (e.value < negMin) {
+      negMin = e.value;
+      negWall = e.strike;
+    }
+  }
+  if (posMax <= 0) posWall = null;
+  if (negMin >= 0) negWall = null;
+
+  // Flip: ascending sign crossing nearest spot, linearly interpolated. Among all
+  // negative→positive (or positive→negative) crossings, pick the one whose interpolated
+  // strike is closest to spot — that's the regime pivot a desk reads off the profile.
+  let flip: number | null = null;
+  let bestDist = Infinity;
+  for (let i = 1; i < entries.length; i++) {
+    const a = entries[i - 1];
+    const b = entries[i];
+    if (a.value === 0 || b.value === 0) continue;
+    if ((a.value < 0 && b.value > 0) || (a.value > 0 && b.value < 0)) {
+      const t = Math.abs(a.value) / (Math.abs(a.value) + Math.abs(b.value));
+      const cross = a.strike + t * (b.strike - a.strike);
+      const dist = spot > 0 ? Math.abs(cross - spot) : 0;
+      if (dist < bestDist) {
+        bestDist = dist;
+        flip = Math.round(cross);
+      }
+    }
+  }
+  // Fallback: no clean crossing — the strike of smallest |total| is the nearest pivot.
+  if (flip == null) {
+    let best = Infinity;
+    for (const e of entries) {
+      const a = Math.abs(e.value);
+      if (a < best) {
+        best = a;
+        flip = e.strike;
+      }
+    }
+  }
+  return { posWall, negWall, flip };
+}
+
+// ---------------------------------------------------------------------------
+// Accessible info affordance (Rank 8) — a focusable "ⓘ" trigger that reveals a
+// short plain-language explainer. No UI Tooltip/Popover primitive exists, so this
+// is a self-contained accessible implementation: the trigger is a real <button>,
+// labeled, with aria-describedby pointing at the bubble; hover OR focus opens it,
+// blur/mouseleave AND Escape close it. Brand colors only, reduced-motion safe.
+// ---------------------------------------------------------------------------
+
+function InfoTip({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={`${label} — what this means`}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+        className={clsx(
+          "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[8px] font-bold leading-none outline-none transition-colors",
+          "border-sky-400/40 text-sky-300 hover:border-sky-400/80 hover:text-white",
+          "focus-visible:ring-2 focus-visible:ring-sky-400"
+        )}
+      >
+        <span aria-hidden>i</span>
+      </button>
+      {open && (
+        <span
+          id={id}
+          role="tooltip"
+          className={clsx(
+            "absolute left-1/2 top-full z-40 mt-1.5 w-56 -translate-x-1/2 rounded-lg border border-sky-400/30 px-3 py-2",
+            "bg-[rgba(6,9,16,0.97)] text-[11px] leading-snug text-sky-100 shadow-xl backdrop-blur",
+            "motion-safe:transition-opacity"
+          )}
+        >
+          <span className="mb-0.5 block font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/80">
+            {label}
+          </span>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Plain-language per-metric explainers — the SpotGamma "legibility" layer (Rank 8). */
+const METRIC_HELP = {
+  gammaFlip:
+    "The pivot strike where net dealer gamma flips sign. Above it dealers are long gamma (they dampen moves → range-bound); below it they're short gamma (they amplify moves → vol expansion).",
+  callWall:
+    "The strike with the most positive dealer gamma — an upside magnet that often acts as resistance / a pin as spot approaches.",
+  putWall:
+    "The strike with the most negative dealer gamma — typically downside support where dealer hedging slows declines.",
+  maxPain:
+    "The strike where the most option open interest expires worthless — an OI-gravity level price tends to drift toward into expiration.",
+  netGex:
+    "Total net dealer dollar-gamma. Positive = net long gamma (dealers fade moves, suppressing vol); negative = net short gamma (dealers chase moves, feeding vol).",
+  vannaFlip:
+    "The strike where net dealer vanna flips sign — the pivot for how dealer hedging reacts to changes in implied volatility.",
+  posVannaWall: "The strike with the most positive dealer vanna — where vol-driven hedging adds to directional moves.",
+  negVannaWall: "The strike with the most negative dealer vanna — where vol-driven hedging fades directional moves.",
+  netVex: "Total net dealer dollar-vanna — the aggregate sensitivity of dealer hedging to shifts in implied volatility.",
+  spot: "The current underlying price — where the tape sits relative to the structural levels below.",
+} as const;
 
 /**
  * Matrix cell background: positive ↔ negative per lens, opacity scaled by magnitude
@@ -504,6 +683,207 @@ function ExposureProfile({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cumulative exposure curve (Rank 12) — the canonical pro visual: the running
+// sum of per-strike net exposure across strikes ascending, drawn as an area/line.
+// The zero-crossing is the gamma (or vanna) flip; below it = short-gamma (bear),
+// above it = long-gamma (bull). Spot is marked. Respects the rank-5 expiry filter
+// (it's fed the FILTERED rows). Hand-rolled inline SVG to match the bar aesthetic
+// and stay fully client-side / SSR-safe — no recharts ResponsiveContainer sizing.
+// ---------------------------------------------------------------------------
+
+function CumulativeCurve({
+  rows,
+  spot,
+  flip,
+  lens,
+}: {
+  /** Profile rows (strikes DESCENDING, as the profile renders). */
+  rows: ProfileRow[];
+  spot: number;
+  flip: number | null;
+  lens: Lens;
+}) {
+  const c = LENS_COLORS[lens];
+  // Re-order ascending for the cumulative running sum, then build the curve points.
+  const curve = useMemo(() => {
+    const asc = rows.map((r) => ({ strike: r.strike, value: r.value })).sort((a, b) => a.strike - b.strike);
+    let run = 0;
+    const pts = asc.map((p) => {
+      run += p.value;
+      return { strike: p.strike, cum: run };
+    });
+    return pts;
+  }, [rows]);
+
+  const W = 560;
+  const H = 200;
+  const padL = 8;
+  const padR = 8;
+  const padT = 10;
+  const padB = 18;
+
+  const geom = useMemo(() => {
+    if (curve.length < 2) return null;
+    const strikeMin = curve[0].strike;
+    const strikeMax = curve[curve.length - 1].strike;
+    const span = strikeMax - strikeMin || 1;
+    let cumMax = 0;
+    for (const p of curve) {
+      const a = Math.abs(p.cum);
+      if (a > cumMax) cumMax = a;
+    }
+    if (cumMax <= 0) cumMax = 1;
+
+    const x = (strike: number) => padL + ((strike - strikeMin) / span) * (W - padL - padR);
+    // y: +cum at top, −cum at bottom, zero line through the vertical middle.
+    const zeroY = padT + (H - padT - padB) / 2;
+    const y = (cum: number) => zeroY - (cum / cumMax) * ((H - padT - padB) / 2);
+
+    const pathPts = curve.map((p) => `${x(p.strike).toFixed(1)},${y(p.cum).toFixed(1)}`);
+    const linePath = `M${pathPts.join("L")}`;
+    // Area down to the zero line — split bull (cum≥0) vs bear (cum<0) by clipping.
+    const areaPath = `${linePath}L${x(strikeMax).toFixed(1)},${zeroY.toFixed(1)}L${x(strikeMin).toFixed(1)},${zeroY.toFixed(1)}Z`;
+
+    // Zero-crossing of the CUMULATIVE curve = the flip. Interpolate the nearest crossing.
+    let crossStrike: number | null = null;
+    for (let i = 1; i < curve.length; i++) {
+      const a = curve[i - 1];
+      const b = curve[i];
+      if ((a.cum < 0 && b.cum >= 0) || (a.cum > 0 && b.cum <= 0)) {
+        const t = Math.abs(a.cum) / (Math.abs(a.cum) + Math.abs(b.cum) || 1);
+        crossStrike = a.strike + t * (b.strike - a.strike);
+        break;
+      }
+    }
+    const flipX = flip != null && flip >= strikeMin && flip <= strikeMax ? x(flip) : crossStrike != null ? x(crossStrike) : null;
+    const spotX = spot > 0 && spot >= strikeMin && spot <= strikeMax ? x(spot) : null;
+
+    return { x, y, zeroY, linePath, areaPath, flipX, spotX, strikeMin, strikeMax, cumMax };
+  }, [curve, flip, spot]);
+
+  if (!geom) {
+    return (
+      <p className="py-6 text-center font-mono text-[11px] uppercase tracking-widest text-sky-300/60">
+        Not enough strikes to plot the cumulative curve.
+      </p>
+    );
+  }
+
+  const label =
+    lens === "gex"
+      ? "Cumulative net dealer gamma across strikes — zero-crossing is the gamma flip; short-gamma below, long-gamma above"
+      : "Cumulative net dealer vanna across strikes — zero-crossing is the vanna flip; negative below, positive above";
+  const gradId = `cum-grad-${lens}`;
+  const clipBullId = `cum-clip-bull-${lens}`;
+  const clipBearId = `cum-clip-bear-${lens}`;
+
+  return (
+    <div className="space-y-2">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label={label}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          {/* Clip the area into the long-gamma (above zero) and short-gamma (below) halves. */}
+          <clipPath id={clipBullId}>
+            <rect x="0" y={padT} width={W} height={geom.zeroY - padT} />
+          </clipPath>
+          <clipPath id={clipBearId}>
+            <rect x="0" y={geom.zeroY} width={W} height={H - padB - geom.zeroY} />
+          </clipPath>
+        </defs>
+
+        {/* zero line (the flip axis) */}
+        <line
+          x1={padL}
+          y1={geom.zeroY}
+          x2={W - padR}
+          y2={geom.zeroY}
+          stroke="rgba(255,255,255,0.18)"
+          strokeWidth={1}
+        />
+
+        {/* long-gamma fill (above zero) — bull/sky identity */}
+        <path d={geom.areaPath} fill={c.posHex} fillOpacity={0.16} clipPath={`url(#${clipBullId})`} />
+        {/* short-gamma fill (below zero) — violet/bear identity */}
+        <path d={geom.areaPath} fill={c.negHex} fillOpacity={0.16} clipPath={`url(#${clipBearId})`} />
+
+        {/* the cumulative line itself */}
+        <path
+          d={geom.linePath}
+          fill="none"
+          stroke="#ffd23f"
+          strokeWidth={1.6}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          style={{ filter: "drop-shadow(0 0 3px rgba(255,210,63,0.5))" }}
+        />
+
+        {/* flip marker — vertical gold line at the zero-crossing */}
+        {geom.flipX != null && (
+          <line
+            x1={geom.flipX}
+            y1={padT}
+            x2={geom.flipX}
+            y2={H - padB}
+            stroke="#ffd23f"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            opacity={0.8}
+          />
+        )}
+
+        {/* spot marker — vertical cyan line */}
+        {geom.spotX != null && (
+          <line
+            x1={geom.spotX}
+            y1={padT}
+            x2={geom.spotX}
+            y2={H - padB}
+            stroke="#22d3ee"
+            strokeWidth={1}
+            opacity={0.85}
+          />
+        )}
+      </svg>
+
+      {/* x-axis strike endpoints + legend */}
+      <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">
+        <span className="tabular-nums">{fmtStrike(geom.strikeMin)}</span>
+        <span className="flex items-center gap-3">
+          {geom.flipX != null && (
+            <span className="flex items-center gap-1 text-gold">
+              <span aria-hidden className="inline-block h-2.5 w-px" style={{ backgroundColor: "#ffd23f" }} />
+              {lens === "gex" ? "γ flip" : "vanna flip"}
+            </span>
+          )}
+          {geom.spotX != null && (
+            <span className="flex items-center gap-1 text-cyan-400">
+              <span aria-hidden className="inline-block h-2.5 w-px" style={{ backgroundColor: "#22d3ee" }} />
+              spot
+            </span>
+          )}
+        </span>
+        <span className="tabular-nums">{fmtStrike(geom.strikeMax)}</span>
+      </div>
+
+      {/* identity legend — short vs long gamma halves */}
+      <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/70">
+        <span style={{ color: c.negHex }}>
+          {lens === "gex" ? "short γ" : "neg vanna"} (below flip)
+        </span>
+        <span style={{ color: c.posHex }}>
+          {lens === "gex" ? "long γ" : "pos vanna"} (above flip)
+        </span>
+      </div>
     </div>
   );
 }
@@ -940,6 +1320,7 @@ function RegimeTile({
   tone,
   active = true,
   className,
+  help,
 }: {
   label: string;
   value: string;
@@ -948,6 +1329,8 @@ function RegimeTile({
   active?: boolean;
   /** Grid-placement utilities applied to the tile root (e.g. col-span overrides). */
   className?: string;
+  /** Plain-language explainer surfaced via an accessible info affordance (Rank 8). */
+  help?: string;
 }) {
   const t = TILE_TONE[tone];
   return (
@@ -971,8 +1354,9 @@ function RegimeTile({
           style={{ background: `linear-gradient(90deg, transparent, ${t.glow}, transparent)` }}
         />
       )}
-      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
+      <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
         {label}
+        {help && <InfoTip label={label} text={help} />}
       </span>
       <span
         className={clsx(
@@ -997,6 +1381,8 @@ type KeyLevel = {
   value: number | null;
   tone: "cyan" | "gold" | "bull" | "bear" | "sky" | "violet";
   note?: string;
+  /** Plain-language explainer surfaced via an accessible info affordance (Rank 8). */
+  help?: string;
 };
 
 const LEVEL_HEX: Record<KeyLevel["tone"], string> = {
@@ -1046,6 +1432,7 @@ function KeyLevels({
               <span className="truncate font-mono text-[11px] uppercase tracking-wide text-sky-300">
                 {l.label}
               </span>
+              {l.help && <InfoTip label={l.label} text={l.help} />}
             </span>
             <span
               className="shrink-0 font-mono text-[12px] font-bold tabular-nums"
@@ -1159,12 +1546,77 @@ function FlowSummary({ flowByStrike }: { flowByStrike: Record<string, FlowByStri
   );
 }
 
+// ---------------------------------------------------------------------------
+// Expiry scope chips (Rank 5) — All · 0DTE · one per expiry. Drives the profile
+// AND the cumulative curve client-side (re-sum over the chosen expiries). Shared
+// between both panels so the scope is consistent and obvious.
+// ---------------------------------------------------------------------------
+
+function ExpiryScopeBar({
+  expiries,
+  zeroDteExpiry,
+  scope,
+  onScope,
+}: {
+  expiries: string[];
+  zeroDteExpiry: string | null;
+  scope: string;
+  onScope: (s: string) => void;
+}) {
+  if (expiries.length === 0) return null;
+  // 0DTE is redundant when there's a single expiry (it IS the only one) — hide it then.
+  const showZeroDte = zeroDteExpiry != null && expiries.length > 1;
+
+  const chip = (value: string, label: string, title: string) => {
+    const active = scope === value;
+    return (
+      <button
+        key={value}
+        type="button"
+        onClick={() => onScope(value)}
+        aria-pressed={active}
+        title={title}
+        className={clsx(
+          "rounded-md px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
+          "focus-visible:ring-2 focus-visible:ring-sky-400",
+          active
+            ? "bg-cyan-400/15 text-white outline outline-1 outline-cyan-400/60"
+            : "text-sky-300/70 hover:bg-white/[0.06] hover:text-white"
+        )}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      <span className="mr-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
+        Expiry
+      </span>
+      {chip("all", "All", "All expiries — the full-stack positioning")}
+      {showZeroDte &&
+        chip(
+          "0dte",
+          "0DTE",
+          `Nearest expiry${zeroDteExpiry ? ` (${fmtExpiry(zeroDteExpiry)})` : ""} — today's positioning`
+        )}
+      {expiries.map((e) => chip(e, fmtExpiry(e), `${fmtExpiry(e)} positioning only`))}
+    </div>
+  );
+}
+
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
   // Cross-tool overlay toggles (default on; auto-hidden when the overlay is null).
   const [showFlow, setShowFlow] = useState(true);
   const [showDarkPool, setShowDarkPool] = useState(true);
+  // Expiry scope for the profile + curve (Rank 5). "all" = today's behavior (server
+  // strike_totals); "0dte" = the nearest/earliest expiry; otherwise a specific expiry
+  // string. The subset re-sums cells[strike] over the chosen expiry/expiries entirely
+  // client-side (no refetch) and re-derives walls/flip from those filtered totals.
+  const [expiryScope, setExpiryScope] = useState<string>("all");
 
   // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
   // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
@@ -1270,10 +1722,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   }, [quotePrice, spot, stale, quoteMatches]);
 
   // Reset throttle + force state when the ticker changes so a switch starts clean.
+  // Also reset the expiry scope back to "All" — the expiry axis differs per chain, so a
+  // per-expiry chip from the previous ticker would be stale against the new one (Rank 5).
   useEffect(() => {
     lastForceAtRef.current = 0;
     setForceNonce(0);
     setFastFlash(false);
+    setExpiryScope("all");
   }, [ticker]);
 
   // Clear any pending timers on unmount.
@@ -1329,6 +1784,40 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       ? data?.gex?.regime.read ?? "Regime read unavailable."
       : data?.vex?.regime.read ?? "Regime read unavailable.";
 
+  // ── Per-expiry / 0DTE scope (Rank 5) ─────────────────────────────────────────
+  // "0dte" resolves to today's date if it's on the axis, else the earliest expiry.
+  const zeroDteExpiry = useMemo<string | null>(() => {
+    if (expiries.length === 0) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    return expiries.includes(today) ? today : expiries[0];
+  }, [expiries]);
+
+  // The expiries the profile + curve sum over. null ⇒ "All" (use server totals).
+  const selectedExpiries = useMemo<string[] | null>(() => {
+    if (expiryScope === "all") return null;
+    if (expiryScope === "0dte") return zeroDteExpiry ? [zeroDteExpiry] : null;
+    return [expiryScope];
+  }, [expiryScope, zeroDteExpiry]);
+
+  // Filtered per-strike totals (re-summed from cells when a subset is active; the server
+  // strike_totals verbatim for "All" so it exactly matches today's behavior). These drive
+  // the profile bars AND the cumulative curve. Zero refetch — both are in the payload.
+  const filteredTotals = useMemo(
+    () => filterStrikeTotals(cells, strikeTotals, selectedExpiries),
+    [cells, strikeTotals, selectedExpiries]
+  );
+
+  // Walls + flip recomputed from the FILTERED totals so the profile levels track the
+  // selected scope. For "All" we keep the server-computed levels (authoritative); for a
+  // subset we mirror the server's primary method client-side.
+  const filteredLevels = useMemo(() => {
+    if (selectedExpiries == null) return { posWall, negWall, flip };
+    return recomputeLevels(filteredTotals, spot);
+  }, [selectedExpiries, filteredTotals, spot, posWall, negWall, flip]);
+  const profilePosWall = filteredLevels.posWall;
+  const profileNegWall = filteredLevels.negWall;
+  const profileFlip = filteredLevels.flip;
+
   // The active block is empty when it has no strike totals (e.g. VEX skipped all IVs).
   const blockEmpty = Object.keys(strikeTotals).length === 0;
   const empty = !isLoading && data != null && (!data.available || strikes.length === 0);
@@ -1354,6 +1843,32 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     return p;
   }, [strikeTotals]);
 
+  // Peak of the FILTERED totals — scales the profile bars under the active expiry scope
+  // so a 0DTE-only view doesn't render as a few faint bars against the all-expiry peak.
+  const filteredPeak = useMemo(() => {
+    let p = 0;
+    for (const v of Object.values(filteredTotals)) {
+      const a = Math.abs(v);
+      if (a > p) p = a;
+    }
+    return p;
+  }, [filteredTotals]);
+
+  // Net total under the active scope — the filtered sum drives the profile/curve footer.
+  const filteredTotal = useMemo(() => {
+    if (selectedExpiries == null) return total;
+    let s = 0;
+    for (const v of Object.values(filteredTotals)) s += v;
+    return s;
+  }, [selectedExpiries, filteredTotals, total]);
+
+  // Human label for the active scope, used in the profile/curve footers.
+  const scopeLabel = useMemo(() => {
+    if (expiryScope === "all") return "all-expiry";
+    if (expiryScope === "0dte") return zeroDteExpiry ? `${fmtExpiry(zeroDteExpiry)} (0DTE)` : "0DTE";
+    return fmtExpiry(expiryScope);
+  }, [expiryScope, zeroDteExpiry]);
+
   // The strike row nearest spot — highlighted as the "spot" band.
   const spotStrike = useMemo(() => {
     if (!(spot > 0) || strikes.length === 0) return null;
@@ -1370,18 +1885,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     );
   }, [strikes, flip]);
 
-  // Profile rows: strikes desc, each carrying its net value + role flags + flow overlay.
+  // Profile rows: strikes desc, each carrying its FILTERED net value + role flags + flow
+  // overlay. Values + wall flags follow the rank-5 expiry scope so the profile and the
+  // cumulative curve (which is fed these same rows) track the selected expiry/expiries.
   const profileRows = useMemo<ProfileRow[]>(() => {
     return strikes.map((strike) => ({
       strike,
-      value: strikeTotals[String(strike)] ?? 0,
+      value: filteredTotals[String(strike)] ?? 0,
       isSpot: strike === spotStrike,
-      isFlip: strike === flipStrike,
-      isPosWall: posWall != null && strike === posWall,
-      isNegWall: negWall != null && strike === negWall,
+      isFlip: profileFlip != null && strike === profileFlip,
+      isPosWall: profilePosWall != null && strike === profilePosWall,
+      isNegWall: profileNegWall != null && strike === profileNegWall,
       flow: flowByStrike?.[String(strike)] ?? null,
     }));
-  }, [strikes, strikeTotals, spotStrike, flipStrike, posWall, negWall, flowByStrike]);
+  }, [strikes, filteredTotals, spotStrike, profileFlip, profilePosWall, profileNegWall, flowByStrike]);
 
   const changePct = data?.change_pct ?? 0;
   const changeBull = changePct >= 0;
@@ -1595,6 +2112,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Posture pivot"
                 tone="flip"
                 active={flip != null}
+                help={METRIC_HELP.gammaFlip}
               />
               <RegimeTile
                 label="Call Wall"
@@ -1602,6 +2120,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Resistance / pin"
                 tone="wall"
                 active={posWall != null}
+                help={METRIC_HELP.callWall}
               />
               <RegimeTile
                 label="Put Wall"
@@ -1609,6 +2128,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Support"
                 tone="support"
                 active={negWall != null}
+                help={METRIC_HELP.putWall}
               />
               <RegimeTile
                 label="Max Pain"
@@ -1616,6 +2136,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="OI value floor"
                 tone="sky"
                 active={maxPain != null}
+                help={METRIC_HELP.maxPain}
               />
               <RegimeTile
                 label="Net GEX"
@@ -1623,6 +2144,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="$-gamma total"
                 tone={total >= 0 ? "bull" : "bear"}
                 className="col-span-2 lg:col-span-1"
+                help={METRIC_HELP.netGex}
               />
             </div>
           ) : (
@@ -1633,6 +2155,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Sign pivot"
                 tone="flip"
                 active={flip != null}
+                help={METRIC_HELP.vannaFlip}
               />
               <RegimeTile
                 label="+Vanna Wall"
@@ -1640,6 +2163,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Adds to moves"
                 tone="sky"
                 active={posWall != null}
+                help={METRIC_HELP.posVannaWall}
               />
               <RegimeTile
                 label="−Vanna Wall"
@@ -1647,6 +2171,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="Fades moves"
                 tone="wall"
                 active={negWall != null}
+                help={METRIC_HELP.negVannaWall}
               />
               <RegimeTile
                 label="Max Pain"
@@ -1654,6 +2179,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="OI value floor"
                 tone="sky"
                 active={maxPain != null}
+                help={METRIC_HELP.maxPain}
               />
               <RegimeTile
                 label="Net VEX"
@@ -1661,6 +2187,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 sublabel="$-vanna total"
                 tone={total >= 0 ? "sky" : "bear"}
                 className="col-span-2 lg:col-span-1"
+                help={METRIC_HELP.netVex}
               />
             </div>
           )}
@@ -1681,6 +2208,42 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">{regimeRead}</p>
           </div>
 
+          {/* ── "How to read dealer positioning" — collapsible explainer (Rank 8).
+              Native <details>/<summary> disclosure: keyboard-operable, no JS state,
+              brand colors only. Closed by default so it never crowds the desk. */}
+          <details className="group mt-3 rounded-xl border border-sky-400/20 bg-[rgba(8,12,20,0.45)] px-4 py-2.5">
+            <summary
+              className={clsx(
+                "flex cursor-pointer list-none items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300 outline-none",
+                "focus-visible:ring-2 focus-visible:ring-sky-400 [&::-webkit-details-marker]:hidden"
+              )}
+            >
+              <span aria-hidden className="text-[11px] transition-transform group-open:rotate-90">▸</span>
+              How to read dealer positioning
+            </summary>
+            <div className="mt-3 space-y-2 text-[12px] leading-relaxed text-sky-100">
+              <p>
+                <span className="font-semibold text-purple-light">Short gamma</span> (spot below the{" "}
+                <span className="font-semibold text-gold">flip</span>): dealers hedge WITH the move, so
+                they amplify it — expect vol expansion and trend. <span className="font-semibold text-bull">Long gamma</span>{" "}
+                (spot above the flip): dealers hedge AGAINST the move, dampening it — expect range-bound,
+                mean-reverting tape. The flip is the regime pivot.
+              </p>
+              <p>
+                The <span className="font-semibold text-gold">call wall</span> (most positive gamma) acts as an
+                upside magnet / resistance and a likely pin; the{" "}
+                <span className="font-semibold text-bear">put wall</span> (most negative gamma) acts as downside
+                support. <span className="font-semibold text-sky-300">Max pain</span> is the OI-gravity strike price
+                tends to drift toward into expiration.
+              </p>
+              <p className="text-sky-300/80">
+                Toggle the expiry chips to compare 0DTE positioning (which behaves very differently) against the
+                full options stack — the walls and flip recompute for the scope you pick. Market-structure
+                analysis, not financial advice.
+              </p>
+            </div>
+          </details>
+
           {/* ── Main area — single column < lg, 2-col at lg, widened profile
               track at xl+ so the full-bleed width reads intentional on wide
               monitors (the bipolar profile gets more track; the rail fans its
@@ -1695,6 +2258,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           <Tabs key={lens} defaultValue="profile">
             <TabList aria-label={`${isGex ? "GEX" : "VEX"} view`} className="w-fit">
               <Tab value="profile">{isGex ? "Gamma Profile" : "Vanna Profile"}</Tab>
+              <Tab value="curve">Curve</Tab>
               {isGex && <Tab value="shift">Shift</Tab>}
               <Tab value="matrix">Matrix</Tab>
             </TabList>
@@ -1702,6 +2266,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <TabPanels>
               {/* Hero: exposure profile ladder */}
               <TabPanel value="profile">
+                {/* Expiry scope — All · 0DTE · per-expiry (Rank 5). Re-sums the profile
+                    + curve client-side over the chosen expiry/expiries. */}
+                <ExpiryScopeBar
+                  expiries={expiries}
+                  zeroDteExpiry={zeroDteExpiry}
+                  scope={expiryScope}
+                  onScope={setExpiryScope}
+                />
                 {/* Cross-tool overlay toggles — only shown when an overlay has data */}
                 {(hasFlowOverlay || hasDarkPoolOverlay) && (
                   <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1744,9 +2316,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 )}
                 <ExposureProfile
                   rows={profileRows}
-                  peak={totalPeak}
+                  peak={filteredPeak}
                   spot={spot}
-                  flip={flip}
+                  flip={profileFlip}
                   lens={lens}
                   showFlow={showFlow && hasFlowOverlay}
                   flowPeak={flowPeak}
@@ -1755,10 +2327,32 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 />
                 <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
                   {isGex
-                    ? "Net dealer $-gamma per strike · green long / violet short · total "
-                    : "Net dealer $-vanna per strike · sky positive / violet negative · total "}
-                  <span className={clsx(total >= 0 ? posColorClass : "text-purple-light")}>
-                    {fmtMoney(total)}
+                    ? "Net dealer $-gamma per strike · green long / violet short · "
+                    : "Net dealer $-vanna per strike · sky positive / violet negative · "}
+                  {scopeLabel} total{" "}
+                  <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-purple-light")}>
+                    {fmtMoney(filteredTotal)}
+                  </span>
+                </p>
+              </TabPanel>
+
+              {/* Cumulative exposure curve (Rank 12) — running sum of the FILTERED
+                  per-strike totals; zero-crossing = flip, short-γ below / long-γ above. */}
+              <TabPanel value="curve">
+                <ExpiryScopeBar
+                  expiries={expiries}
+                  zeroDteExpiry={zeroDteExpiry}
+                  scope={expiryScope}
+                  onScope={setExpiryScope}
+                />
+                <CumulativeCurve rows={profileRows} spot={spot} flip={profileFlip} lens={lens} />
+                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
+                  {isGex
+                    ? "Cumulative net dealer $-gamma across strikes · zero-crossing = γ flip · "
+                    : "Cumulative net dealer $-vanna across strikes · zero-crossing = vanna flip · "}
+                  {scopeLabel} total{" "}
+                  <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-purple-light")}>
+                    {fmtMoney(filteredTotal)}
                   </span>
                 </p>
               </TabPanel>
@@ -1941,18 +2535,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 levels={
                   isGex
                     ? [
-                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan" },
-                        { label: "Gamma flip", value: flip, tone: "gold" },
-                        { label: "Call wall", value: posWall, tone: "bull" },
-                        { label: "Put wall", value: negWall, tone: "bear" },
-                        { label: "Max pain", value: maxPain, tone: "sky" },
+                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan", help: METRIC_HELP.spot },
+                        { label: "Gamma flip", value: flip, tone: "gold", help: METRIC_HELP.gammaFlip },
+                        { label: "Call wall", value: posWall, tone: "bull", help: METRIC_HELP.callWall },
+                        { label: "Put wall", value: negWall, tone: "bear", help: METRIC_HELP.putWall },
+                        { label: "Max pain", value: maxPain, tone: "sky", help: METRIC_HELP.maxPain },
                       ]
                     : [
-                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan" },
-                        { label: "Vanna flip", value: flip, tone: "gold" },
-                        { label: "+Vanna wall", value: posWall, tone: "sky" },
-                        { label: "−Vanna wall", value: negWall, tone: "violet" },
-                        { label: "Max pain", value: maxPain, tone: "sky" },
+                        { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan", help: METRIC_HELP.spot },
+                        { label: "Vanna flip", value: flip, tone: "gold", help: METRIC_HELP.vannaFlip },
+                        { label: "+Vanna wall", value: posWall, tone: "sky", help: METRIC_HELP.posVannaWall },
+                        { label: "−Vanna wall", value: negWall, tone: "violet", help: METRIC_HELP.negVannaWall },
+                        { label: "Max pain", value: maxPain, tone: "sky", help: METRIC_HELP.maxPain },
                       ]
                 }
                 darkPoolLevels={darkPoolLevels}
