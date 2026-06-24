@@ -1,7 +1,10 @@
-// Pure moving-average math (no imports) so it is unit-testable and reusable. Used to derive
-// INDEX moving averages from aggregate bars, because Polygon's /v1/indicators/{ema,sma} endpoints
-// do NOT support index tickers (e.g. I:SPX) and return "Request failed" — while index aggregate
-// bars work fine (same reason index VWAP is derived from bars).
+// Pure moving-average math (no imports) so it is unit-testable and reusable. Used as the FALLBACK
+// for index moving averages. Massive's documented indices indicator endpoints
+// (/v1/indicators/{sma,ema}/{I:TICKER}, "Included in all Indices plans") DO support index tickers
+// and are PRIMARY in polygon.ts; this computes the MA from aggregate bars only when the endpoint
+// momentarily returns null (a transient Massive blip). NOTE: an earlier version of this comment
+// wrongly claimed indices were unsupported — that was the RT-5 misread (inferred from a code
+// comment instead of the docs); corrected after verifying the official Massive docs.
 
 /** Simple moving average of the last `window` closes. Null when there aren't enough bars. */
 export function smaFromCloses(closes: number[], window: number): number | null {
