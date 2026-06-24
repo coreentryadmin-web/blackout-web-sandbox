@@ -3,6 +3,7 @@ import { computeVixTermStructure, type VixTermSnapshot } from "@/lib/vix-term-ut
 export { computeVixTermStructure, type VixTermSnapshot } from "@/lib/vix-term-utils";
 import { polygonConfigured } from "./config";
 import { sessionStatsFromMinuteBars, todayEtYmd, priorEtYmd } from "./spx-session";
+import { smaFromCloses, emaFromCloses } from "./ma-math";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -593,34 +594,50 @@ export async function fetchShortVolume(ticker: string, limit = 5) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Index moving averages — derived from AGGREGATE BARS, not Polygon's
+// /v1/indicators/{ema,sma} endpoints. Those endpoints DO NOT support index tickers
+// (I:SPX) and fail ("Request failed" in the SLA monitor) — the same reason index VWAP
+// is computed from bars (computeIndexVwapFromBars). Index aggregate bars work, so we
+// fetch enough closes and compute the MA locally (SMA exact; EMA SMA-seeded + iterated).
+// ---------------------------------------------------------------------------
+
+/** Oldest→newest index closes over enough bars to compute a `window`-period MA. */
+async function indexClosesAsc(
+  sym: string,
+  window: number,
+  timespan: "minute" | "hour" | "day"
+): Promise<number[]> {
+  const to = todayEtYmd();
+  // Daily: ~2.2× the window in calendar days (covers weekends/holidays) + buffer so the
+  // EMA seed converges. Intraday: a few sessions of minute bars (plenty for window ≤ ~60).
+  const from = timespan === "day" ? priorEtYmd(Math.ceil(window * 2.2) + 15) : priorEtYmd(6);
+  const bars =
+    timespan === "day"
+      ? await fetchIndexDailyBars(sym, from, to).catch(() => [])
+      : await fetchIndexMinuteBars(sym, from, to).catch(() => []);
+  return bars
+    .filter((b) => Number.isFinite(b.c))
+    .sort((a, b) => (a.t ?? 0) - (b.t ?? 0))
+    .map((b) => b.c);
+}
+
 export async function fetchIndexEma(
   symbol: string,
   window: number,
   timespan: "minute" | "hour" | "day" = "minute"
-) {
-  const sym = symbol.toUpperCase();
-  return latestIndicator(`/v1/indicators/ema/${sym}`, {
-    window: String(window),
-    timespan,
-    series_type: "close",
-    order: "desc",
-    limit: "1",
-  });
+): Promise<number | null> {
+  const closes = await indexClosesAsc(symbol.toUpperCase(), window, timespan);
+  return emaFromCloses(closes, window);
 }
 
 export async function fetchIndexSma(
   symbol: string,
   window: number,
   timespan: "minute" | "hour" | "day" = "day"
-) {
-  const sym = symbol.toUpperCase();
-  return latestIndicator(`/v1/indicators/sma/${sym}`, {
-    window: String(window),
-    timespan,
-    series_type: "close",
-    order: "desc",
-    limit: "1",
-  });
+): Promise<number | null> {
+  const closes = await indexClosesAsc(symbol.toUpperCase(), window, timespan);
+  return smaFromCloses(closes, window);
 }
 
 /** Polygon has no `/v1/indicators/vwap` for indices — derive from RTH minute aggregates. */
