@@ -2,6 +2,7 @@
  * Polygon/Massive WebSocket client for real-time index aggregates.
  */
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
+import { etMinutes, etClock } from "@/lib/spx-play-session-time";
 export type PolygonAgg = {
   ev: "A" | "AM";
   sym: string;
@@ -69,6 +70,59 @@ function scheduleIndicesReconnect(reason: string) {
   indicesReconnectDelay = Math.min(indicesReconnectDelay * 2, 60_000);
 }
 
+// ── Half-open stall watchdog (audit 03-BACKEND §3.2) ────────────────────────────────────────
+// A WebSocket can sit in readyState OPEN while the upstream silently stops delivering aggregates
+// (TCP half-open, idle proxy, Massive gateway hiccup). With only an onclose reconnect, indexStore
+// then freezes at its last value and serves stale SPX/VIX prices to every desk surface (incl. the
+// pulse SSE) until the socket actually closes — which may never happen. Parity with uw-socket /
+// options-socket's reconnectIfStalled.
+const INDICES_STALL_MS = 90_000;
+let lastIndicesMessageAt = 0;
+let indicesWatchdog: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * RTH gate (DST-aware via etMinutes), weekdays only. The index feed is naturally SILENT off-hours
+ * (no aggregates when the market is closed), so we only treat silence as a stall during regular
+ * hours — reconnecting on off-hours quiet would just churn the socket all night (the same
+ * false-positive class as the UW-halts feed). Holidays are not modeled; a reconnect on a holiday
+ * is rare and harmless.
+ */
+function inIndicesMarketHours(now = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const mins = etMinutes(now);
+  return mins >= etClock(9, 30) && mins <= etClock(16, 0);
+}
+
+function startIndicesWatchdog() {
+  if (indicesWatchdog) return;
+  indicesWatchdog = setInterval(() => {
+    if (indicesShuttingDown) return;
+    if (!inIndicesMarketHours()) return; // off-hours silence is expected, not a stall
+    if (
+      indicesWs?.readyState === WebSocket.OPEN &&
+      lastIndicesMessageAt > 0 &&
+      Date.now() - lastIndicesMessageAt > INDICES_STALL_MS
+    ) {
+      console.warn(
+        `[polygon-socket] indices feed STALLED — no frame in ${Math.round(
+          (Date.now() - lastIndicesMessageAt) / 1000
+        )}s, forcing reconnect`
+      );
+      lastIndicesMessageAt = 0; // avoid re-firing before the reconnect lands
+      try {
+        indicesWs.close(); // onclose → scheduleIndicesReconnect handles the actual reconnect
+      } catch {
+        /* ignore — onclose will still fire */
+      }
+    }
+  }, 30_000);
+  (indicesWatchdog as unknown as { unref?: () => void }).unref?.();
+}
+
 function connectIndices() {
   if (indicesShuttingDown) return; // shutting down — do not open a new socket
   if (!POLYGON_API_KEY) {
@@ -91,6 +145,7 @@ function connectIndices() {
     };
 
     indicesWs.onmessage = (event) => {
+      lastIndicesMessageAt = Date.now(); // liveness for the stall watchdog — ANY frame counts
       try {
         const msgs = JSON.parse(String(event.data)) as Array<Record<string, unknown>>;
         for (const msg of msgs) {
@@ -198,6 +253,7 @@ export function initPolygonSocket() {
   if (polygonSocketInitialized) return;
   polygonSocketInitialized = true;
   connectIndices();
+  startIndicesWatchdog();
   console.log("[polygon-socket] initialized");
 }
 
@@ -213,6 +269,10 @@ export function shutdownPolygonSocket(): void {
   if (indicesReconnectTimer) {
     clearTimeout(indicesReconnectTimer);
     indicesReconnectTimer = null;
+  }
+  if (indicesWatchdog) {
+    clearInterval(indicesWatchdog);
+    indicesWatchdog = null;
   }
   const ws = indicesWs;
   indicesWs = null;
