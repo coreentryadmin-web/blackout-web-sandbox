@@ -334,7 +334,16 @@ export async function polygonTrackedFetch(
 
   await acquirePolygonSlot();
   try {
-    const res = await trackedFetch("polygon", endpointKey, url, init);
+    // RT-2 resilience: retry TRANSIENT failures (connect errors like UND_ERR_CONNECT_TIMEOUT /
+    // EHOSTUNREACH, plus 5xx and 429) once with a short backoff, so a momentary api.massive.com
+    // blip no longer hard-fails the desk / SPX-play (was a 502). trackedFetch does NOT retry 4xx
+    // (404/403) and success is unaffected — only an already-failing call pays the extra attempt.
+    // All Massive REST is GET (idempotent), so the retry is safe. Caller-overridable.
+    const res = await trackedFetch("polygon", endpointKey, url, {
+      maxRetries: 1,
+      retryDelayMs: 350,
+      ...(init ?? {}),
+    });
     if (res.status === 429) {
       notePolygon429(endpointKey);
     } else {
