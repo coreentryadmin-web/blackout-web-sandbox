@@ -51,6 +51,18 @@ type VexBlock = {
   regime: VexRegime;
 };
 
+/**
+ * Cross-tool overlays from the route (browser-safe shapes — NO server import).
+ * Flow-per-strike is keyed by strike string; dark-pool levels are price lines.
+ * Either may be null when its upstream feed is unavailable.
+ */
+type FlowByStrike = { call_prem: number; put_prem: number; net_prem: number };
+type DarkPoolLevel = { price: number; notional: number };
+type Overlays = {
+  flow_by_strike: Record<string, FlowByStrike> | null;
+  dark_pool_levels: DarkPoolLevel[] | null;
+};
+
 /** Restructured payload from /api/market/gex-heatmap: shared axes + gex/vex blocks. */
 type GexHeatmapResponse = {
   available: boolean;
@@ -63,6 +75,7 @@ type GexHeatmapResponse = {
   max_pain?: number | null;
   gex?: GexBlock;
   vex?: VexBlock;
+  overlays?: Overlays;
   error?: string;
 };
 
@@ -150,7 +163,13 @@ type ProfileRow = {
   isFlip: boolean;
   isPosWall: boolean;
   isNegWall: boolean;
+  /** HELIX net premium flow hitting this strike today, or null when no overlay data. */
+  flow: FlowByStrike | null;
 };
+
+/** Dark-pool overlay colors (sky / violet) — brand tokens, never grey. */
+const DARK_POOL_HEX = "#7dd3fc";
+const DARK_POOL_ALT_HEX = "#bf5fff";
 
 function ExposureProfile({
   rows,
@@ -158,12 +177,20 @@ function ExposureProfile({
   spot,
   flip,
   lens,
+  showFlow,
+  flowPeak,
+  darkPoolLevels,
+  showDarkPool,
 }: {
   rows: ProfileRow[];
   peak: number;
   spot: number;
   flip: number | null;
   lens: Lens;
+  showFlow: boolean;
+  flowPeak: number;
+  darkPoolLevels: DarkPoolLevel[] | null;
+  showDarkPool: boolean;
 }) {
   const c = LENS_COLORS[lens];
   // Index of the divider: drawn ABOVE the first row (strikes desc) whose strike < flip.
@@ -174,6 +201,27 @@ function ExposureProfile({
     }
     return -1;
   }, [rows, flip]);
+
+  // Resolve each dark-pool price level to the nearest profile-row index so the line is
+  // drawn across that strike band. Only levels inside the rendered strike range appear.
+  const darkPoolByRow = useMemo(() => {
+    const map = new Map<number, DarkPoolLevel>();
+    if (!showDarkPool || !darkPoolLevels?.length || rows.length === 0) return map;
+    for (const level of darkPoolLevels) {
+      let bestIdx = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < rows.length; i++) {
+        const d = Math.abs(rows[i].strike - level.price);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      // Skip levels far outside the band (> half the strike step from any row).
+      if (bestIdx >= 0 && !map.has(bestIdx)) map.set(bestIdx, level);
+    }
+    return map;
+  }, [darkPoolLevels, rows, showDarkPool]);
 
   const flipLabel = lens === "gex" ? "γ flip" : "vanna flip";
   const profileLabel =
@@ -189,6 +237,22 @@ function ExposureProfile({
         const positive = r.value > 0;
         const barColor = positive ? c.posHex : c.negHex;
         const wall = r.isPosWall || r.isNegWall;
+
+        // ── Flow overlay: net premium hitting this strike, colored bull/bear. ──
+        const flow = showFlow ? r.flow : null;
+        const netFlow = flow?.net_prem ?? 0;
+        const flowMag = flow && flowPeak > 0 ? Math.min(1, Math.abs(netFlow) / flowPeak) : 0;
+        const flowBull = netFlow >= 0;
+        const flowHex = flowBull ? "#00e676" : "#ff2d55";
+        const flowTitle =
+          flow != null
+            ? `Flow @ ${fmtStrike(r.strike)} · ${flowBull ? "bullish" : "bearish"} net ${fmtMoney(netFlow)} (calls ${fmtMoney(flow.call_prem)} / puts ${fmtMoney(flow.put_prem)})`
+            : undefined;
+
+        // ── Dark-pool overlay: a level line drawn across this row's band. ──
+        const dpLevel = darkPoolByRow.get(i) ?? null;
+        const dpHex = dpLevel && i % 2 === 0 ? DARK_POOL_HEX : DARK_POOL_ALT_HEX;
+
         return (
           <div key={r.strike}>
             {/* flip divider between the bracketing strikes */}
@@ -228,6 +292,18 @@ function ExposureProfile({
 
               {/* bipolar bar track with a center axis */}
               <span className="relative h-4 flex-1">
+                {/* dark-pool level line — subtle horizontal rule across the band */}
+                {dpLevel != null && (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2"
+                    style={{
+                      backgroundColor: dpHex,
+                      opacity: 0.5,
+                      boxShadow: `0 0 6px ${dpHex}99`,
+                    }}
+                  />
+                )}
                 <span
                   aria-hidden
                   className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/15"
@@ -248,6 +324,29 @@ function ExposureProfile({
                     opacity: 0.35 + mag * 0.6,
                   }}
                 />
+                {/* flow marker — thin secondary bar from center, sized by net premium */}
+                {flow != null && flowMag > 0 && (
+                  <span
+                    className="absolute top-1/2 z-10 h-[3px] -translate-y-1/2 rounded-full motion-safe:transition-all motion-safe:duration-300"
+                    style={{
+                      width: `${(flowMag * 46).toFixed(2)}%`,
+                      left: flowBull ? "50%" : undefined,
+                      right: flowBull ? undefined : "50%",
+                      backgroundColor: flowHex,
+                      boxShadow: `0 0 7px ${flowHex}`,
+                      opacity: 0.55 + flowMag * 0.45,
+                    }}
+                    title={flowTitle}
+                  />
+                )}
+                {/* flow dot anchored at the band center so even tiny flow is visible */}
+                {flow != null && (netFlow !== 0 || flow.call_prem > 0 || flow.put_prem > 0) && (
+                  <span
+                    className="absolute top-1/2 left-1/2 z-10 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                    style={{ backgroundColor: flowHex, boxShadow: `0 0 6px ${flowHex}` }}
+                    title={flowTitle}
+                  />
+                )}
               </span>
 
               {/* signed value + wall tag (right gutter) */}
@@ -270,6 +369,15 @@ function ExposureProfile({
                     {lens === "gex" ? "put" : "−vex"}
                   </span>
                 )}
+                {flow != null && netFlow !== 0 && !r.isPosWall && !r.isNegWall && (
+                  <span
+                    className="font-mono text-[8px] uppercase tracking-wider"
+                    style={{ color: flowHex }}
+                    title={flowTitle}
+                  >
+                    {fmtMoney(netFlow)}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -288,6 +396,30 @@ function ExposureProfile({
           {lens === "gex" ? "long γ" : "pos vanna"} (+) ▶
         </span>
       </div>
+
+      {/* overlay legend — only the active overlays appear */}
+      {((showFlow && flowPeak > 0) || (showDarkPool && darkPoolByRow.size > 0)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">
+          {showFlow && flowPeak > 0 && (
+            <>
+              <span className="flex items-center gap-1.5" style={{ color: "#00e676" }}>
+                <span aria-hidden className="inline-block h-1 w-3 rounded-full" style={{ backgroundColor: "#00e676" }} />
+                bullish flow
+              </span>
+              <span className="flex items-center gap-1.5" style={{ color: "#ff2d55" }}>
+                <span aria-hidden className="inline-block h-1 w-3 rounded-full" style={{ backgroundColor: "#ff2d55" }} />
+                bearish flow
+              </span>
+            </>
+          )}
+          {showDarkPool && darkPoolByRow.size > 0 && (
+            <span className="flex items-center gap-1.5" style={{ color: DARK_POOL_HEX }}>
+              <span aria-hidden className="inline-block h-px w-3" style={{ backgroundColor: DARK_POOL_HEX, boxShadow: `0 0 6px ${DARK_POOL_HEX}` }} />
+              dark-pool level
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -411,6 +543,9 @@ function TickerSwitcher({
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
+  // Cross-tool overlay toggles (default on; auto-hidden when the overlay is null).
+  const [showFlow, setShowFlow] = useState(true);
+  const [showDarkPool, setShowDarkPool] = useState(true);
 
   const { data, isLoading, error } = useSWR<GexHeatmapResponse>(
     `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`,
@@ -425,6 +560,28 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const expiries = useMemo(() => data?.expiries ?? [], [data?.expiries]);
   const strikes = useMemo(() => data?.strikes ?? [], [data?.strikes]);
   const maxPain = data?.max_pain ?? null;
+
+  // ── Cross-tool overlays (server-enriched, may be null per-feed) ──────────────
+  const flowByStrike = useMemo(
+    () => data?.overlays?.flow_by_strike ?? null,
+    [data?.overlays?.flow_by_strike]
+  );
+  const darkPoolLevels = useMemo(
+    () => data?.overlays?.dark_pool_levels ?? null,
+    [data?.overlays?.dark_pool_levels]
+  );
+  const hasFlowOverlay = flowByStrike != null && Object.keys(flowByStrike).length > 0;
+  const hasDarkPoolOverlay = darkPoolLevels != null && darkPoolLevels.length > 0;
+  // Peak |net premium| across mapped strikes — drives the flow-marker width scale.
+  const flowPeak = useMemo(() => {
+    if (!flowByStrike) return 0;
+    let p = 0;
+    for (const f of Object.values(flowByStrike)) {
+      const a = Math.abs(f.net_prem);
+      if (a > p) p = a;
+    }
+    return p;
+  }, [flowByStrike]);
 
   // Active metric block (client-side switch — no refetch, both are in the payload).
   const block = lens === "gex" ? data?.gex : data?.vex;
@@ -484,7 +641,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     );
   }, [strikes, flip]);
 
-  // Profile rows: strikes desc, each carrying its net value + role flags.
+  // Profile rows: strikes desc, each carrying its net value + role flags + flow overlay.
   const profileRows = useMemo<ProfileRow[]>(() => {
     return strikes.map((strike) => ({
       strike,
@@ -493,8 +650,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       isFlip: strike === flipStrike,
       isPosWall: posWall != null && strike === posWall,
       isNegWall: negWall != null && strike === negWall,
+      flow: flowByStrike?.[String(strike)] ?? null,
     }));
-  }, [strikes, strikeTotals, spotStrike, flipStrike, posWall, negWall]);
+  }, [strikes, strikeTotals, spotStrike, flipStrike, posWall, negWall, flowByStrike]);
 
   const changePct = data?.change_pct ?? 0;
   const changeBull = changePct >= 0;
@@ -700,12 +858,56 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <TabPanels>
               {/* Hero: exposure profile ladder */}
               <TabPanel value="profile">
+                {/* Cross-tool overlay toggles — only shown when an overlay has data */}
+                {(hasFlowOverlay || hasDarkPoolOverlay) && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
+                      Overlays
+                    </span>
+                    {hasFlowOverlay && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFlow((v) => !v)}
+                        aria-pressed={showFlow}
+                        className={clsx(
+                          "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-sky-400",
+                          showFlow
+                            ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
+                            : "text-sky-300/70 hover:text-white"
+                        )}
+                      >
+                        HELIX Flow
+                      </button>
+                    )}
+                    {hasDarkPoolOverlay && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDarkPool((v) => !v)}
+                        aria-pressed={showDarkPool}
+                        className={clsx(
+                          "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-sky-400",
+                          showDarkPool
+                            ? "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
+                            : "text-sky-300/70 hover:text-white"
+                        )}
+                      >
+                        Dark Pool
+                      </button>
+                    )}
+                  </div>
+                )}
                 <ExposureProfile
                   rows={profileRows}
                   peak={totalPeak}
                   spot={spot}
                   flip={flip}
                   lens={lens}
+                  showFlow={showFlow && hasFlowOverlay}
+                  flowPeak={flowPeak}
+                  darkPoolLevels={darkPoolLevels}
+                  showDarkPool={showDarkPool && hasDarkPoolOverlay}
                 />
                 <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/60">
                   {isGex

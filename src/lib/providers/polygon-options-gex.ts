@@ -229,6 +229,39 @@ export type VexMetricBlock = {
   regime: VexRegime;
 };
 
+/**
+ * Cross-tool overlays layered onto the gamma profile by the gex-heatmap ROUTE
+ * (not by the cached matrix compute). Each overlay is independently best-effort
+ * and read from its OWN shared cache upstream — null means "unavailable", never
+ * fabricated. The cached GEX/VEX matrix is unaffected by overlay availability.
+ */
+export type GexFlowByStrike = {
+  /** HELIX intraday call premium hitting this strike today (USD). */
+  call_prem: number;
+  /** HELIX intraday put premium hitting this strike today (USD). */
+  put_prem: number;
+  /** Net premium (call − put): positive = bullish flow, negative = bearish. */
+  net_prem: number;
+};
+
+export type GexDarkPoolLevel = {
+  /** Dark-pool print price level (rounded), drawn as a horizontal line on the profile. */
+  price: number;
+  /** Notional / size of the print(s) at this level (USD), drives the label + emphasis. */
+  notional: number;
+};
+
+export type GexHeatmapOverlays = {
+  /**
+   * HELIX flow-per-strike keyed by strike string — ONLY strikes that exist on the
+   * heatmap's shared `strikes` axis are present. Null when the flow feed is empty
+   * or unavailable for this ticker.
+   */
+  flow_by_strike: Record<string, GexFlowByStrike> | null;
+  /** Top dark-pool price levels (largest prints), descending by notional. Null when unavailable. */
+  dark_pool_levels: GexDarkPoolLevel[] | null;
+};
+
 export type GexHeatmap = {
   underlying: string;
   spot: number;

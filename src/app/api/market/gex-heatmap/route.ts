@@ -1,9 +1,153 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
+import type {
+  GexFlowByStrike,
+  GexDarkPoolLevel,
+  GexHeatmapOverlays,
+} from "@/lib/providers/polygon-options-gex";
+import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
+import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Overlay cache. CRITICAL: fetchUwDarkPool is internally cached, but fetchUwFlowPerStrikeRows
+ * is only request-COALESCED (concurrent calls collapse) — NOT cached, so staggered polls
+ * would each hit UW. With UW capped at 2 RPS CLUSTER-WIDE (shared by every tool), an uncached
+ * flow overlay at 500 users would starve the desk/Largo/Night Hawk. So we cache the whole
+ * overlay payload per ticker (in-memory + Redis, ~30s) → the heatmap stays a true cache-reader,
+ * one upstream flow fetch per ticker per TTL regardless of user count.
+ */
+const OVERLAY_TTL_MS = 30_000;
+const overlayMem = new Map<string, { at: number; overlays: GexHeatmapOverlays }>();
+
+/**
+ * HELIX flow-per-strike overlay — net call/put premium hitting each gamma strike today.
+ *
+ * Reads the SHARED, server-side flow-per-strike accessor (request-coalesced upstream, so
+ * 500 concurrent users collapse to one /api/stock/{ticker}/flow-per-strike-intraday call)
+ * and projects it ONTO the heatmap's own strike axis — only strikes present on the matrix
+ * are kept. Best-effort: any failure / empty feed → null (never fabricated, never throws).
+ */
+async function buildFlowByStrike(
+  ticker: string,
+  strikes: number[]
+): Promise<Record<string, GexFlowByStrike> | null> {
+  if (!strikes.length) return null;
+  try {
+    const rows = await fetchUwFlowPerStrikeRows(ticker, 250);
+    if (!rows.length) return null;
+
+    // Index the heatmap strikes for O(1) membership + nearest-int matching.
+    const strikeSet = new Set(strikes.map((s) => String(s)));
+    const byStrike: Record<string, GexFlowByStrike> = {};
+    for (const row of rows) {
+      const strikeRaw = Number(row.strike ?? row.strike_price);
+      if (!Number.isFinite(strikeRaw) || strikeRaw <= 0) continue;
+      // UW strikes can carry decimals; the heatmap axis is the canonical key. Match the
+      // exact string first, then the integer form (e.g. "740.0" → "740").
+      const key = strikeSet.has(String(strikeRaw))
+        ? String(strikeRaw)
+        : strikeSet.has(String(Math.round(strikeRaw)))
+          ? String(Math.round(strikeRaw))
+          : null;
+      if (!key) continue;
+
+      const callPrem = Number(row.call_premium ?? 0);
+      const putPrem = Number(row.put_premium ?? 0);
+      if (!Number.isFinite(callPrem) || !Number.isFinite(putPrem)) continue;
+      if (callPrem === 0 && putPrem === 0) continue;
+
+      // Multiple raw rows can map to one heatmap strike (decimal collapse) — accumulate.
+      const prev = byStrike[key] ?? { call_prem: 0, put_prem: 0, net_prem: 0 };
+      const call_prem = prev.call_prem + callPrem;
+      const put_prem = prev.put_prem + putPrem;
+      byStrike[key] = { call_prem, put_prem, net_prem: call_prem - put_prem };
+    }
+    return Object.keys(byStrike).length ? byStrike : null;
+  } catch (err) {
+    console.warn(
+      `[market/gex-heatmap] flow-per-strike overlay skipped for ${ticker}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
+/**
+ * Dark-pool overlay — top notable price levels from the SHARED, internally-cached
+ * dark-pool accessor (fetchUwDarkPool uses uwCacheGet → Redis/L1, 2-min TTL). Returns
+ * the largest prints by premium as price levels. Best-effort: failure / empty → null.
+ */
+async function buildDarkPoolLevels(ticker: string): Promise<GexDarkPoolLevel[] | null> {
+  try {
+    const snapshot = await fetchUwDarkPool(ticker, { limit: 50 });
+    if (!snapshot || !snapshot.prints.length) return null;
+
+    // Collapse prints to price levels (UW prints carry a bucketed `strike` = price level),
+    // summing notional per level, then keep the top few by notional.
+    const byLevel = new Map<number, number>();
+    for (const print of snapshot.prints) {
+      const price = Number(print.strike);
+      const notional = Number(print.premium);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      if (!Number.isFinite(notional) || notional <= 0) continue;
+      byLevel.set(price, (byLevel.get(price) ?? 0) + notional);
+    }
+    if (!byLevel.size) return null;
+
+    const levels: GexDarkPoolLevel[] = Array.from(byLevel.entries())
+      .map(([price, notional]) => ({ price, notional }))
+      .sort((a, b) => b.notional - a.notional)
+      .slice(0, 5);
+    return levels.length ? levels : null;
+  } catch (err) {
+    console.warn(
+      `[market/gex-heatmap] dark-pool overlay skipped for ${ticker}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
+/**
+ * Cached overlay enrichment — one upstream fetch per ticker per TTL, shared across all users.
+ * In-memory first, then Redis (cross-replica), else compute + write both. Best-effort: a
+ * Redis miss/error just recomputes; the builders themselves never throw.
+ */
+async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatmapOverlays> {
+  const now = Date.now();
+  const mem = overlayMem.get(ticker);
+  if (mem && now - mem.at < OVERLAY_TTL_MS) return mem.overlays;
+
+  try {
+    const hit = await sharedCacheGet<{ at: number; overlays: GexHeatmapOverlays }>(
+      `gex-overlay:${ticker}`
+    );
+    if (hit && now - hit.at < OVERLAY_TTL_MS) {
+      overlayMem.set(ticker, hit);
+      return hit.overlays;
+    }
+  } catch {
+    /* redis optional */
+  }
+
+  const [flow_by_strike, dark_pool_levels] = await Promise.all([
+    buildFlowByStrike(ticker, strikes),
+    buildDarkPoolLevels(ticker),
+  ]);
+  const overlays: GexHeatmapOverlays = { flow_by_strike, dark_pool_levels };
+  const entry = { at: now, overlays };
+  // Bound the in-memory map so an unusual spread of tickers can't grow it unbounded.
+  if (overlayMem.size > 200) overlayMem.clear();
+  overlayMem.set(ticker, entry);
+  void sharedCacheSet(`gex-overlay:${ticker}`, entry, Math.ceil(OVERLAY_TTL_MS / 1000)).catch(
+    () => {}
+  );
+  return overlays;
+}
 
 /**
  * GET /api/market/gex-heatmap?ticker=SPY
@@ -31,8 +175,12 @@ export async function GET(req: NextRequest) {
         }
       );
     }
+    // Cross-tool overlays (HELIX flow-per-strike + dark-pool), cached per ticker (~30s) so the
+    // route never pressures UW's 2-RPS cluster-wide budget regardless of user count.
+    const overlays = await getOverlays(ticker, heatmap.strikes);
+
     return NextResponse.json(
-      { available: true, ...heatmap },
+      { available: true, ...heatmap, overlays },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
