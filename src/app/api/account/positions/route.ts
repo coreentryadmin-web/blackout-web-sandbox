@@ -128,14 +128,12 @@ export async function POST(req: Request) {
       entry_date: entryDate,
       notes,
     });
-    // Echo back with a live valuation so the client can render immediately.
-    const valuation = await valueContract({
-      ticker: position.ticker,
-      optionType: position.option_type,
-      strike: position.strike,
-      expiry: position.expiry,
-    }).catch(() => null);
-    return NextResponse.json({ position: enrichPosition(position, valuation) }, { status: 201 });
+    // Cheap write: persist + return immediately as 'pending' (no inline upstream call).
+    // Live valuation lands on the next GET poll, served from the shared chain cache.
+    return NextResponse.json(
+      { position: enrichPosition(position, null, new Date(), true) },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("[account/positions POST]", error);
     return NextResponse.json({ error: "Failed to create position" }, { status: 502 });

@@ -14,7 +14,7 @@ import {
   deleteUserPosition,
   type UserPositionPatch,
 } from "@/lib/db";
-import { valueContract, enrichPosition } from "@/lib/nights-watch/valuation";
+import { enrichPosition } from "@/lib/nights-watch/valuation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,17 +119,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const updated = await updateUserPosition(userId, id, patch);
     if (!updated) return NextResponse.json({ error: "Position not found" }, { status: 404 });
 
-    // Re-value open positions so the client gets fresh derived fields.
-    const valuation =
-      updated.status === "open"
-        ? await valueContract({
-            ticker: updated.ticker,
-            optionType: updated.option_type,
-            strike: updated.strike,
-            expiry: updated.expiry,
-          }).catch(() => null)
-        : null;
-    return NextResponse.json({ position: enrichPosition(updated, valuation) });
+    // Cheap write: persist + return immediately. Open positions report 'pending';
+    // the next GET poll fills live valuation from the shared chain cache.
+    return NextResponse.json({
+      position: enrichPosition(updated, null, new Date(), updated.status === "open"),
+    });
   } catch (error) {
     console.error("[account/positions/[id] PATCH]", error);
     return NextResponse.json({ error: "Failed to update position" }, { status: 502 });
