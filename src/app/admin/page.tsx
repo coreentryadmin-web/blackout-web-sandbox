@@ -13,7 +13,7 @@ export default async function AdminPage() {
   return (
     <div className="admin-page admin-page-canvas">
       <Nav />
-      <main className="admin-page-main">
+      <main id="main" className="admin-page-main">
         <PageHeader
           className="mb-6"
           kicker="◆ OPERATIONS"

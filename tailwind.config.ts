@@ -78,7 +78,7 @@ const config: Config = {
         elite: "#bf5fff",
       },
       fontFamily: {
-        display: ["var(--font-bebas)", "sans-serif"],
+        display: ["var(--font-anton)", "sans-serif"],
         anton: ["var(--font-anton)", "sans-serif"],
         syne: ["var(--font-syne)", "sans-serif"],
         mono: ["var(--font-jetbrains)", "monospace"],

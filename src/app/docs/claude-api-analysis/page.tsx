@@ -318,10 +318,10 @@ const INTERNAL_ROUTES: ApiEndpoint[] = [
 // ─── Render helpers ──────────────────────────────────────────────────────────
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: "#22c55e",
+  GET: "#00e676",
   POST: "#3b82f6",
   WS: "#a855f7",
-  SSE: "#f59e0b",
+  SSE: "#ffd23f",
 };
 
 function MethodBadge({ method }: { method: string }) {
@@ -354,7 +354,7 @@ function LiveDot() {
         width: 7,
         height: 7,
         borderRadius: "50%",
-        background: "#22c55e",
+        background: "#00e676",
         marginLeft: 5,
         verticalAlign: "middle",
       }}
@@ -448,7 +448,7 @@ export default function ClaudeApiAnalysisPage() {
         <p className="docs-lead">
           Every external and internal API endpoint used across the entire BlackOut codebase —{" "}
           <strong>{totalCount} external endpoints</strong> across 4 providers, audited file-by-file.{" "}
-          <span style={{ color: "#22c55e" }}>●</span> Live = polled in the real-time play engine.
+          <span style={{ color: "#00e676" }}>●</span> Live = polled in the real-time play engine.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
           <Link href="/docs/polygon" className="docs-back-link">Polygon / Massive docs →</Link>
@@ -517,7 +517,7 @@ export default function ClaudeApiAnalysisPage() {
           <span><MethodBadge method="POST" /> REST write / AI generate</span>
           <span><MethodBadge method="WS" /> WebSocket stream</span>
           <span><MethodBadge method="SSE" /> Server-Sent Events</span>
-          <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#22c55e", verticalAlign: "middle" }} /> Polled live in play engine</span>
+          <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#00e676", verticalAlign: "middle" }} /> Polled live in play engine</span>
         </div>
       </section>
 

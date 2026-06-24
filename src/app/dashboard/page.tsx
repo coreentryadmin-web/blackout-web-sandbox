@@ -26,7 +26,7 @@ export default async function DashboardPage() {
       </div>
       <div className="spx-sniper-overlay" aria-hidden />
       <Nav />
-      <main className="relative z-10 w-full max-w-none px-2 sm:px-3 lg:px-4 xl:px-5 pt-20 pb-8">
+      <main id="main" className="relative z-10 w-full max-w-none px-2 sm:px-3 lg:px-4 xl:px-5 pt-20 pb-8">
         <SpxDashboard />
       </main>
     </div>

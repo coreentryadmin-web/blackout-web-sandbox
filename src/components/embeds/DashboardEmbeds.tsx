@@ -8,7 +8,7 @@ export function DashboardEmbeds() {
   return (
     <div className="space-y-5 mb-8">
       <TradingViewWidget type="ticker-tape" title="Market Tape" height={52} />
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2">
           <TradingViewWidget
             type="advanced-chart"
@@ -24,7 +24,7 @@ export function DashboardEmbeds() {
         title="Index & Mag 7 Recon"
         height={340}
       />
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5">
         <DashboardTrackRecordEmbed className="xl:col-span-1" />
       </div>
     </div>

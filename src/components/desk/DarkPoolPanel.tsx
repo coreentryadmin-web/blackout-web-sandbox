@@ -146,6 +146,7 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
 export function DarkPoolPanel() {
   const [allPrints, setAllPrints]   = useState<DarkPoolRow[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [errored, setErrored]       = useState(false);
   const [history, setHistory]       = useState<{ t: number; net: number }[]>([]);
   const [search, setSearch]         = useState("");
   const [activeTicker, setActiveTicker] = useState("");
@@ -156,10 +157,11 @@ export function DarkPoolPanel() {
       const res  = await fetchDarkPoolPrints({ limit: 200 });
       const rows = res.prints ?? [];
       setAllPrints(rows);
+      setErrored(false);
       const buy  = rows.filter((p) => p.side === "buy").reduce((s, p) => s + p.premium, 0);
       const sell = rows.filter((p) => p.side === "sell").reduce((s, p) => s + p.premium, 0);
       setHistory((prev) => [...prev.slice(-(MAX_HISTORY - 1)), { t: Date.now(), net: buy - sell }]);
-    } catch (e) { console.warn("[DarkPoolPanel] fetch error:", e); }
+    } catch (e) { console.warn("[DarkPoolPanel] fetch error:", e); setErrored(true); }
     finally   { setLoading(false); }
   }, []);
 
@@ -217,6 +219,7 @@ export function DarkPoolPanel() {
                 setSearch(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
               }
               placeholder="NVDA, TSLA…"
+              aria-label="Filter dark pool blocks by ticker"
               maxLength={6}
               className="font-mono text-[11px] font-bold uppercase px-3 py-1 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none w-28 tracking-widest transition-all"
               style={{
@@ -330,6 +333,15 @@ export function DarkPoolPanel() {
               {loading ? (
                 <div className="space-y-1.5">
                   {[1, 2, 3, 4].map((n) => <div key={n} className="flow-skeleton h-11 rounded-md" />)}
+                </div>
+              ) : errored && allPrints.length === 0 ? (
+                <div className="py-8 text-center" role="alert">
+                  <p className="font-mono text-[12px] font-bold text-bear">
+                    Feed unavailable
+                  </p>
+                  <p className="font-mono text-[10px] text-bear/70 mt-1">
+                    Couldn&apos;t reach the dark pool tape — retrying shortly
+                  </p>
                 </div>
               ) : visible.length === 0 ? (
                 <div className="py-8 text-center">

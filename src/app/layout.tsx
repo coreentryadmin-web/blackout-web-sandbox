@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Syne, JetBrains_Mono, Inter, Bebas_Neue } from "next/font/google";
+import { Anton, Syne, JetBrains_Mono, Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { LandingChrome } from "@/components/LandingChrome";
 import { SharedSigilDefs } from "@/components/marks/SharedSigilDefs";
@@ -13,7 +13,7 @@ import "./globals.css";
 
 // Self-hosted via next/font (no render-blocking @import, no FOUT/CLS). Variable
 // names MUST match tailwind.config fontFamily tokens (--font-anton/-syne/
-// -jetbrains/-inter/-bebas) so the font-anton/font-syne/font-mono/font-display
+// -jetbrains/-inter) so the font-anton/font-syne/font-mono/font-display
 // utilities keep resolving.
 const anton = Anton({
   weight: "400",
@@ -39,13 +39,6 @@ const inter = Inter({
   display: "swap",
   variable: "--font-inter",
 });
-const bebas = Bebas_Neue({
-  weight: "400",
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-bebas",
-});
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
   title: `${SITE.name} — ${SITE.tagline}`,
@@ -90,7 +83,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${anton.variable} ${syne.variable} ${jetbrainsMono.variable} ${inter.variable} ${bebas.variable}`}
+      className={`${anton.variable} ${syne.variable} ${jetbrainsMono.variable} ${inter.variable}`}
     >
       <body className="void-bg antialiased">
         <a

@@ -171,7 +171,7 @@ export function AdminSpxTerminal({
 
         <header className="admin-spx-term-header">
           <div>
-            <p className="admin-spx-term-kicker">Blackout · SPX Sniper</p>
+            <p className="admin-spx-term-kicker">Blackout · SPX Slayer</p>
             <h2 className="admin-spx-term-title">Terminal</h2>
             <p className="admin-spx-term-sub">
               Live system feed · errors · failures · engine pulses · API telemetry

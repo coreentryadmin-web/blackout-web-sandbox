@@ -954,14 +954,14 @@ const uwUnused = allUwRows.filter((r) => !r.blackout).length;
 
 function StatusBadge({ status }: { status: Status }) {
   const color =
-    status === 200 ? "#22c55e" :
+    status === 200 ? "#00e676" :
     status === 101 ? "#6366f1" :
-    status === 302 ? "#f59e0b" :
-    status === 400 ? "#f59e0b" :
+    status === 302 ? "#ffd23f" :
+    status === 400 ? "#ffd23f" :
     status === 403 ? "#ef4444" :
     status === 404 ? "#ef4444" :
     status === 422 ? "#f97316" :
-    status === 429 ? "#f59e0b" :
+    status === 429 ? "#ffd23f" :
     "#0369a1";
   return (
     <span style={{ display: "inline-block", padding: "1px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: color, color: "#fff", minWidth: 36, textAlign: "center" }}>
@@ -972,8 +972,8 @@ function StatusBadge({ status }: { status: Status }) {
 
 function UsageBadge({ usage }: { usage: UsageStatus }) {
   const cfg: Record<UsageStatus, { bg: string; label: string }> = {
-    used: { bg: "#22c55e", label: "USED" },
-    partial: { bg: "#f59e0b", label: "PARTIAL" },
+    used: { bg: "#00e676", label: "USED" },
+    partial: { bg: "#ffd23f", label: "PARTIAL" },
     unused: { bg: "#0369a1", label: "UNUSED" },
   };
   const c = cfg[usage];
@@ -986,7 +986,7 @@ function UsageBadge({ usage }: { usage: UsageStatus }) {
 
 function UwBadge({ blackout }: { blackout: boolean }) {
   return (
-    <span style={{ display: "inline-block", padding: "1px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: blackout ? "#22c55e" : "#0369a1", color: "#fff" }}>
+    <span style={{ display: "inline-block", padding: "1px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: blackout ? "#00e676" : "#0369a1", color: "#fff" }}>
       {blackout ? "USED" : "UNUSED"}
     </span>
   );
@@ -1012,8 +1012,8 @@ function PolygonSectionTable({ section }: { section: Section }) {
               <td><UsageBadge usage={row.usage} /></td>
               <td><code style={{ fontSize: 11 }}>{row.path}</code></td>
               <td style={{ fontSize: 12 }}>
-                {row.usedIn && <span style={{ color: "#22c55e" }}>{row.usedIn}</span>}
-                {row.opportunity && <span style={{ color: "#f59e0b" }}>{row.opportunity}</span>}
+                {row.usedIn && <span style={{ color: "#00e676" }}>{row.usedIn}</span>}
+                {row.opportunity && <span style={{ color: "#ffd23f" }}>{row.opportunity}</span>}
                 {row.note && !row.opportunity && !row.usedIn && <span style={{ opacity: 0.65 }}>{row.note}</span>}
                 {row.note && row.usedIn && <span style={{ opacity: 0.65 }}> · {row.note}</span>}
               </td>
@@ -1045,8 +1045,8 @@ function UwSectionTable({ section }: { section: UwSection }) {
               <td><UwBadge blackout={row.blackout} /></td>
               <td><code style={{ fontSize: 11 }}>{row.path}</code></td>
               <td style={{ fontSize: 12 }}>
-                {row.usedIn && <span style={{ color: "#22c55e" }}>{row.usedIn}</span>}
-                {row.opportunity && <span style={{ color: "#f59e0b" }}>{row.opportunity}</span>}
+                {row.usedIn && <span style={{ color: "#00e676" }}>{row.usedIn}</span>}
+                {row.opportunity && <span style={{ color: "#ffd23f" }}>{row.opportunity}</span>}
                 {row.note && !row.opportunity && !row.usedIn && <span style={{ opacity: 0.65 }}>{row.note}</span>}
                 {row.note && (row.usedIn || row.opportunity) && <span style={{ opacity: 0.65 }}> · {row.note}</span>}
               </td>
@@ -1091,18 +1091,18 @@ export default function ApiProbePage() {
             <tr>
               <td><strong>Polygon / Massive</strong></td>
               <td>{polyTotal}</td>
-              <td style={{ color: "#22c55e" }}><strong>{polyUsed}</strong></td>
-              <td style={{ color: "#f59e0b" }}>{polyPartial}</td>
+              <td style={{ color: "#00e676" }}><strong>{polyUsed}</strong></td>
+              <td style={{ color: "#ffd23f" }}>{polyPartial}</td>
               <td style={{ color: "#9fb4d4" }}>{polyUnused}</td>
-              <td><span style={{ color: "#22c55e" }}>All 200 ✓</span></td>
+              <td><span style={{ color: "#00e676" }}>All 200 ✓</span></td>
             </tr>
             <tr>
               <td><strong>Unusual Whales</strong></td>
               <td>{uwTotal}</td>
-              <td style={{ color: "#22c55e" }}><strong>{uwUsed}</strong></td>
+              <td style={{ color: "#00e676" }}><strong>{uwUsed}</strong></td>
               <td>—</td>
               <td style={{ color: "#9fb4d4" }}>{uwUnused}</td>
-              <td><span style={{ color: "#22c55e" }}>Live probed ✓ · 6× 403 (plan gap)</span></td>
+              <td><span style={{ color: "#00e676" }}>Live probed ✓ · 6× 403 (plan gap)</span></td>
             </tr>
           </tbody>
         </table>
@@ -1116,7 +1116,7 @@ export default function ApiProbePage() {
           <span><UsageBadge usage="used" /> Actively called in codebase</span>
           <span><UsageBadge usage="partial" /> Called in Largo but not SPX engine</span>
           <span><UsageBadge usage="unused" /> Available, not wired up</span>
-          <span style={{ color: "#f59e0b" }}>🟡 Unused with high-value opportunity noted</span>
+          <span style={{ color: "#ffd23f" }}>🟡 Unused with high-value opportunity noted</span>
         </div>
       </section>
 

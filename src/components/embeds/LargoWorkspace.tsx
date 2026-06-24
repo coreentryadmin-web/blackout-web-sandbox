@@ -8,7 +8,7 @@ export function LargoWorkspace() {
   return (
     <div className="space-y-5">
       <TradingViewWidget type="ticker-tape" title="Desk Tape" height={52} />
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
         <div className="xl:col-span-2 min-h-[600px] flex flex-col">
           <LargoTerminal />
         </div>

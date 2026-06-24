@@ -12,10 +12,10 @@ export default async function SpxSniperPlaybookPage() {
       <Nav />
       <main className="docs-page-main">
         <header className="docs-header">
-          <p className="docs-kicker">Blackout · SPX Sniper</p>
+          <p className="docs-kicker">Blackout · SPX Slayer</p>
           <h1 className="docs-title">Play Engine Playbook</h1>
           <p className="docs-lead">
-            Full reference for the SPX Sniper desk: the main 0DTE play state machine, the parallel pre-market
+            Full reference for the SPX Slayer desk: the main 0DTE play state machine, the parallel pre-market
             lotto engine, entry gates, exit cooldowns, confirmations, session cutoffs, and how the panel interprets
             every action.
           </p>
@@ -39,7 +39,7 @@ export default async function SpxSniperPlaybookPage() {
         <section className="docs-section">
           <h2>Architecture — two parallel tracks</h2>
           <p>
-            SPX Sniper runs <strong>two independent state machines</strong>. They share the same desk data feed
+            SPX Slayer runs <strong>two independent state machines</strong>. They share the same desk data feed
             (Polygon + Unusual Whales + Finnhub) but never share play slots or bias each other.
           </p>
           <table className="docs-table">

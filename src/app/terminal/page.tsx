@@ -16,7 +16,7 @@ export default async function TerminalPage() {
   return (
     <div className="largo-page-shell">
       <Nav />
-      <main className="largo-page-main">
+      <main id="main" className="largo-page-main">
         <PageHeader
           className="largo-page-header"
           kicker="AI DESK ANALYST"

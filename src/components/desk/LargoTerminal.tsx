@@ -128,6 +128,9 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     >
       <div className="flex-1 flex flex-col min-h-0 largo-chat-container">
         <div
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
           className={clsx(
             "flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2 largo-messages-scroll",
             fullPage ? "largo-messages-fullpage" : "max-h-[420px]"

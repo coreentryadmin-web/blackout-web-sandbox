@@ -17,7 +17,7 @@ export default function UpgradePage() {
     <div className="relative min-h-screen overflow-hidden bg-[#040407]">
       <Nav />
       <PricingBackdrop />
-      <main className="relative z-10 mx-auto max-w-5xl px-6 pt-28 pb-24 text-center">
+      <main id="main" className="relative z-10 mx-auto max-w-5xl px-6 pt-28 pb-24 text-center">
         <p className="mb-4 flex items-center justify-center gap-2 font-mono text-[10px] tracking-[0.45em] uppercase text-bull">
           <span className="badge-live-dot" aria-hidden /> Clearance required
         </p>

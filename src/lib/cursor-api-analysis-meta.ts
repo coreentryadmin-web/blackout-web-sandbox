@@ -25,7 +25,7 @@ export const INTERNAL_ROUTE_DESCRIPTIONS: Record<string, string> = {
   "/api/market/nighthawk/play-explain": "Claude briefing for a playbook play",
   "/api/market/platform/snapshot": "Cross-service snapshot (SPX, flows, Night Hawk)",
   "/api/market/spx/commentary": "Claude desk commentary (auth required)",
-  "/api/market/spx/desk": "Full SPX Sniper desk (Polygon + UW)",
+  "/api/market/spx/desk": "Full SPX Slayer desk (Polygon + UW)",
   "/api/market/spx/flow": "Flow lane — GEX, tape, dark pool, NOPE",
   "/api/market/spx/merged": "Merged pulse + flow + desk",
   "/api/market/spx/outcomes": "Play outcome stats + adaptive gates",

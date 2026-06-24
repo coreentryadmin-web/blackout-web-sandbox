@@ -32,6 +32,7 @@ export const PageShell = forwardRef<HTMLDivElement, PageShellProps>(function Pag
   return (
     <div
       ref={ref}
+      id="main"
       className={clsx("relative min-h-[100svh] bg-void", className)}
       style={{ paddingTop: "var(--nav-offset)" }}
       {...rest}

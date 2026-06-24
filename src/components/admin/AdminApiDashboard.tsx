@@ -410,7 +410,7 @@ export function AdminApiDashboard() {
           {viewTab === "registry" && (
             <>
               <div className="admin-cmd-registry-filters">
-                <input type="search" className="admin-ep-search" placeholder="Search endpoints…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input type="search" className="admin-ep-search" placeholder="Search endpoints…" aria-label="Search endpoints" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <div className="admin-provider-tabs admin-ep-filter-tabs">
                   {(["all", "used", "unused", "candidates", "risks"] as const).map((f) => (
                     <button key={f} type="button" className={usageFilter === f ? "admin-vivid-tab-active" : "admin-vivid-tab"} onClick={() => setUsageFilter(f)}>{f}</button>

@@ -90,6 +90,7 @@ export function JournalEditor({ openPlayId, userId, initial }: Props) {
         className="admin-filter-input admin-journal-note"
         value={note}
         placeholder="Why did this play work / fail? Lesson for next time…"
+        aria-label="Why did this play work / fail? Lesson for next time"
         rows={3}
         onChange={(e) => {
           setNote(e.target.value);
@@ -102,6 +103,7 @@ export function JournalEditor({ openPlayId, userId, initial }: Props) {
         className="admin-filter-input admin-journal-tags"
         value={tags}
         placeholder="tags (comma separated): chased, good-entry…"
+        aria-label="tags (comma separated): chased, good-entry"
         onChange={(e) => {
           setTags(e.target.value);
           dirty.current = true;
