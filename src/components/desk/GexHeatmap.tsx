@@ -165,9 +165,36 @@ type GexHeatmapResponse = {
    * cold history (<2 snapshots), empty array when nothing crossed. Never fabricated client-side.
    */
   events?: GexEvent[];
+  /**
+   * Day-over-day EOD HISTORY context (GEX-anchored — flip/walls/net-GEX are gamma concepts).
+   * Present only when ≥1 prior trading-day snapshot exists; absent on cold history (the norm
+   * until the EOD cron has run a few sessions). Browser-safe shape — NO engine runtime import.
+   * Each delta is null when its prior value is missing, so a partial prior never fabricates a
+   * change. Deltas: levels in points (current − prior trading day), net_gex in dollars.
+   */
+  history_context?: {
+    prior_close: {
+      date: string;
+      flip: number | null;
+      call_wall: number | null;
+      put_wall: number | null;
+      net_gex: number | null;
+      max_pain: number | null;
+    } | null;
+    flip_delta_pts: number | null;
+    call_wall_delta_pts: number | null;
+    put_wall_delta_pts: number | null;
+    net_gex_delta: number | null;
+    recent_flip_range: { min: number; max: number } | null;
+    recent_spot_range: { min: number; max: number } | null;
+    sessions: number;
+  };
   overlays?: Overlays;
   error?: string;
 };
+
+/** A non-null history_context narrowed for convenience in the GEX-lens render paths. */
+type HistoryContext = NonNullable<GexHeatmapResponse["history_context"]>;
 
 type TickerSearchResult = { ticker: string; name: string; type?: string };
 
@@ -234,6 +261,20 @@ function fmtMoney(n: number): string {
 function fmtMoneySigned(n: number): string {
   if (n === 0) return "·";
   return n > 0 ? `+${fmtMoney(n)}` : fmtMoney(n);
+}
+
+/**
+ * Signed point delta for level moves vs prior close, e.g. "+5.0" / "-12.5" / "held".
+ * An exact zero (no change) reads "held" so the chip carries a plain-language meaning.
+ * Fractional points round to 1dp; whole points print clean (no trailing ".0" noise on big
+ * index strikes is acceptable — we keep 1dp for consistency with the spec's "+5.0").
+ */
+function fmtPtsDelta(n: number): string {
+  if (n === 0) return "held";
+  const sign = n > 0 ? "+" : "";
+  // Whole numbers print without a decimal; fractional keep 1dp.
+  const body = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return `${sign}${body}`;
 }
 
 function fmtPct(n: number): string {
@@ -1422,6 +1463,20 @@ const TILE_TONE: Record<
   bear: { value: "text-bear", border: "border-bear/30", glow: "#ff2d55", rgb: "255,45,85" },
 };
 
+/**
+ * Optional "vs prior close" delta chip on a RegimeTile. `text` is the already-formatted
+ * change (e.g. "+5.0", "held", "+$1.2M"); `tone` colors it bull/bear/neutral. "held"
+ * (no change) reads neutral sky. Rendered as a tiny one-line sub-note below the sublabel —
+ * never fabricated (callers pass `delta` only when a real prior value exists).
+ */
+type TileDelta = { text: string; tone: "bull" | "bear" | "neutral"; note?: string };
+
+const TILE_DELTA_HEX: Record<TileDelta["tone"], string> = {
+  bull: "#00e676",
+  bear: "#ff2d55",
+  neutral: "#7dd3fc",
+};
+
 function RegimeTile({
   label,
   value,
@@ -1430,6 +1485,7 @@ function RegimeTile({
   active = true,
   className,
   help,
+  delta,
 }: {
   label: string;
   value: string;
@@ -1440,6 +1496,11 @@ function RegimeTile({
   className?: string;
   /** Plain-language explainer surfaced via an accessible info affordance (Rank 8). */
   help?: string;
+  /**
+   * Optional day-over-day change vs prior close (GEX HISTORY context). When present a tiny
+   * delta chip + label renders below the sublabel. Absent → the tile is exactly as today.
+   */
+  delta?: TileDelta | null;
 }) {
   const t = TILE_TONE[tone];
   return (
@@ -1476,6 +1537,26 @@ function RegimeTile({
         {value}
       </span>
       <span className="mt-1.5 text-[11px] leading-snug text-sky-300/70">{sublabel}</span>
+      {/* day-over-day "vs prior close" delta chip — only when HISTORY context shipped a
+          real prior value for this tile (never fabricated). "held" reads neutral sky. */}
+      {delta && (
+        <span className="mt-1.5 flex items-center gap-1.5">
+          <span
+            className="inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums"
+            style={{
+              color: TILE_DELTA_HEX[delta.tone],
+              backgroundColor: `${TILE_DELTA_HEX[delta.tone]}1f`,
+            }}
+          >
+            {delta.text}
+          </span>
+          {delta.note && (
+            <span className="truncate font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/55">
+              {delta.note}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -1829,6 +1910,153 @@ function AlertsStrip({ events }: { events: GexEvent[] }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Recent-range strip — a compact horizontal track showing where the LIVE spot
+// sits within the last-N-session spot range (and, optionally, where the current
+// flip sits within the recent flip range). Pure HISTORY context: rendered only
+// when the server ships `recent_spot_range` over ≥1 prior session. Brand colors,
+// reduced-motion safe, tabular-nums. Renders nothing when the range is absent or
+// degenerate (min == max) — never fabricated.
+// ---------------------------------------------------------------------------
+
+/** One range track: a value's position within [min, max], with labeled ends + a marker. */
+function RangeTrack({
+  label,
+  min,
+  max,
+  value,
+  markerHex,
+  valueLabel,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  /** Brand hex for the marker dot + its glow (cyan for spot, gold for flip). */
+  markerHex: string;
+  /** Pre-formatted current value shown above the marker (e.g. fmtSpot / fmtStrike). */
+  valueLabel: string;
+}) {
+  // Clamp the marker into [0,100] — a live spot can briefly poke just outside the
+  // recent EOD range; we pin it to the rail end rather than overflow the track.
+  const span = max - min;
+  const pctRaw = span > 0 ? ((value - min) / span) * 100 : 50;
+  const pct = Math.max(0, Math.min(100, pctRaw));
+  const outside = pctRaw < 0 || pctRaw > 100;
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/70">
+        {label}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tabular-nums text-sky-300/70">
+        {fmtStrike(min)}
+      </span>
+      <span className="relative h-1.5 flex-1 rounded-full bg-white/10">
+        {/* the filled rail up to the marker, tinted by the marker identity */}
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 rounded-full motion-safe:transition-all motion-safe:duration-300"
+          style={{
+            width: `${pct.toFixed(1)}%`,
+            backgroundColor: `${markerHex}55`,
+          }}
+        />
+        {/* marker dot at the current value */}
+        <span
+          aria-hidden
+          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:transition-all motion-safe:duration-300"
+          style={{
+            left: `${pct.toFixed(1)}%`,
+            backgroundColor: markerHex,
+            boxShadow: `0 0 8px ${markerHex}`,
+            outline: outside ? `1px solid ${markerHex}` : undefined,
+          }}
+        />
+        {/* the current value label floating above the marker */}
+        <span
+          className="absolute -top-4 -translate-x-1/2 font-mono text-[10px] font-bold tabular-nums"
+          style={{ left: `${pct.toFixed(1)}%`, color: markerHex }}
+        >
+          {valueLabel}
+        </span>
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tabular-nums text-sky-300/70">
+        {fmtStrike(max)}
+      </span>
+    </div>
+  );
+}
+
+function RecentRangeStrip({
+  history,
+  spot,
+  flip,
+  showFlipTrack,
+}: {
+  history: HistoryContext;
+  /** Live spot (header/matrix spot) to locate within the recent spot range. */
+  spot: number;
+  /** Current gamma flip to locate within the recent flip range (GEX-only, optional). */
+  flip: number | null;
+  /**
+   * Whether to render the flip track. The flip is a GAMMA concept, so callers pass false
+   * under VEX/DEX/CHARM (the spot track is lens-agnostic and still shows). When false the
+   * strip degrades to the spot track alone — never a stale gamma flip under a vanna header.
+   */
+  showFlipTrack: boolean;
+}) {
+  const spotRange = history.recent_spot_range;
+  const flipRange = history.recent_flip_range;
+
+  // Show the spot track only when we have a real, non-degenerate range AND a live spot.
+  const showSpot = spotRange != null && spotRange.max > spotRange.min && spot > 0;
+  // Flip track is additive — only under the GEX lens, and only when a recent flip range +
+  // a current flip both exist (never a fabricated or cross-lens-stale gamma flip).
+  const showFlip =
+    showFlipTrack && flipRange != null && flipRange.max > flipRange.min && flip != null;
+
+  if (!showSpot && !showFlip) return null;
+
+  const sessions = history.sessions;
+  const sessionLabel = `${sessions}-session range`;
+
+  return (
+    <div className="mt-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
+          Recent range
+        </span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/75">
+          {sessionLabel}
+        </span>
+      </div>
+      <div className="space-y-4 pt-2">
+        {showSpot && spotRange && (
+          <RangeTrack
+            label={`Spot in ${sessions}s`}
+            min={spotRange.min}
+            max={spotRange.max}
+            value={spot}
+            markerHex="#22d3ee"
+            valueLabel={fmtSpot(spot)}
+          />
+        )}
+        {showFlip && flipRange && flip != null && (
+          <RangeTrack
+            label={`Flip in ${sessions}s`}
+            min={flipRange.min}
+            max={flipRange.max}
+            value={flip}
+            markerHex="#ffd23f"
+            valueLabel={fmtStrike(flip)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
@@ -1991,6 +2219,15 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // extra fetch. Only trust the CURRENT ticker's events (keepPreviousData can leave a prior
   // ticker's list in hand across a switch). Empty/absent → strip renders nothing.
   const events = useMemo<GexEvent[]>(() => (stale ? [] : data?.events ?? []), [stale, data?.events]);
+
+  // Day-over-day EOD HISTORY context — GEX-anchored (flip/walls/net-GEX). Present only once
+  // ≥1 prior trading-day snapshot exists (absent on cold history, the norm until the EOD cron
+  // has run a few sessions). Guarded against the stale-ticker window like events. When null,
+  // every history affordance below renders nothing — the UI is exactly as today.
+  const historyContext = useMemo<HistoryContext | null>(
+    () => (stale ? null : data?.history_context ?? null),
+    [stale, data?.history_context]
+  );
 
   // Guard: if the active lens's block vanishes (ticker switch to an older cache, or DEX/CHARM
   // simply absent), fall back to GEX so we never sit on a lens with no data. GEX/VEX always
@@ -2190,6 +2427,34 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     quoteLive &&
     (quote!.source === "ws" ||
       (quote!.asof != null && Date.now() - new Date(quote!.asof).getTime() < 6_000));
+
+  // ── GEX "vs prior close" tile deltas (HISTORY context) ───────────────────────
+  // Built ONLY under the GEX lens (flip/walls/net-GEX are gamma concepts — we never
+  // surface stale gamma deltas under a vanna/charm header). Each chip is present only
+  // when its prior value + delta both exist (never fabricated). A level rising reads
+  // bull, falling reads bear, unchanged reads neutral "held"; net-GEX uses its dollar
+  // sign. The shared note carries the prior-close date so the comparison is legible.
+  const gexTileDeltas = useMemo(() => {
+    if (lens !== "gex" || historyContext == null) return null;
+    const h = historyContext;
+    const priorDate = h.prior_close?.date ?? null;
+    const note = priorDate ? `vs ${priorDate}` : "vs prior close";
+    // Level delta → bull when higher, bear when lower, neutral when held.
+    const levelDelta = (d: number | null): TileDelta | null =>
+      d == null
+        ? null
+        : { text: fmtPtsDelta(d), tone: d > 0 ? "bull" : d < 0 ? "bear" : "neutral", note };
+    const netDelta = (d: number | null): TileDelta | null =>
+      d == null
+        ? null
+        : { text: d === 0 ? "held" : fmtMoneySigned(d), tone: d > 0 ? "bull" : d < 0 ? "bear" : "neutral", note };
+    return {
+      flip: levelDelta(h.flip_delta_pts),
+      callWall: levelDelta(h.call_wall_delta_pts),
+      putWall: levelDelta(h.put_wall_delta_pts),
+      netGex: netDelta(h.net_gex_delta),
+    };
+  }, [lens, historyContext]);
 
   return (
     <Panel
@@ -2403,6 +2668,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 tone="flip"
                 active={flip != null}
                 help={METRIC_HELP.gammaFlip}
+                delta={gexTileDeltas?.flip ?? null}
               />
               <RegimeTile
                 label="Call Wall"
@@ -2411,6 +2677,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 tone="wall"
                 active={posWall != null}
                 help={METRIC_HELP.callWall}
+                delta={gexTileDeltas?.callWall ?? null}
               />
               <RegimeTile
                 label="Put Wall"
@@ -2419,6 +2686,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 tone="support"
                 active={negWall != null}
                 help={METRIC_HELP.putWall}
+                delta={gexTileDeltas?.putWall ?? null}
               />
               <RegimeTile
                 label="Max Pain"
@@ -2435,6 +2703,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 tone={total >= 0 ? "bull" : "bear"}
                 className="col-span-2 lg:col-span-1"
                 help={METRIC_HELP.netGex}
+                delta={gexTileDeltas?.netGex ?? null}
               />
             </div>
           ) : lens === "vex" ? (
@@ -2563,6 +2832,19 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             )}
             <p className="min-w-0 flex-1 text-[13px] leading-snug text-sky-100">{regimeRead}</p>
           </div>
+
+          {/* ── Recent-range strip (HISTORY context) — where the live spot sits within the
+              last-N-session range (+ the flip within its range under GEX). Renders nothing
+              when EOD history is cold (the norm until the cron runs a few sessions). The
+              spot track is lens-agnostic; the flip track shows under GEX only. ── */}
+          {historyContext != null && (
+            <RecentRangeStrip
+              history={historyContext}
+              spot={headerSpot > 0 ? headerSpot : spot}
+              flip={flip}
+              showFlipTrack={lens === "gex"}
+            />
+          )}
 
           {/* ── "How to read dealer positioning" — collapsible explainer (Rank 8).
               Native <details>/<summary> disclosure: keyboard-operable, no JS state,
