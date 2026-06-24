@@ -8,6 +8,7 @@ import type {
 } from "@/lib/providers/polygon-options-gex";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -170,6 +171,10 @@ async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatma
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("heatmap");
+  if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
   // Fast-move escape hatch: `?force=1` bypasses the shared matrix cache and recomputes

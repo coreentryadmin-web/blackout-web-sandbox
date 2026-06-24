@@ -6,6 +6,7 @@ import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { largoBudgetKey, secondsUntilEtMidnight, largoDailyQueryBudget, isOverLargoBudget } from "@/lib/largo-budget";
 import { aiSpendKey, aiSpendKillSwitchUsd, isOverAiSpendCeiling } from "@/lib/ai-spend-ledger";
 import { LocalConcurrencyBackstop, largoLocalMaxConcurrent } from "@/lib/largo-local-gate";
+import { requireToolApi } from "@/lib/tool-access-server";
 import {
   LARGO_INFLIGHT_KEY,
   LARGO_INFLIGHT_ACQUIRE_LUA,
@@ -204,6 +205,10 @@ function wantsStream(req: NextRequest): boolean {
 export async function POST(req: NextRequest) {
   const authResult = await requireTierApi("premium");
   if (authResult instanceof Response) return authResult;
+
+  // Launch gate — Largo is locked to non-admins until it ships (every call spends Anthropic tokens).
+  const locked = await requireToolApi("largo");
+  if (locked) return locked;
 
   if (!largoConfigured()) {
     return NextResponse.json(

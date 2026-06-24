@@ -13,6 +13,7 @@ import {
   HUNT_ACQUIRE_LUA,
   shouldRejectHunt,
 } from "@/lib/nighthawk/hunt-concurrency";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 // ---------------------------------------------------------------------------
 // Per-user hunt concurrency gate — Redis-backed, mirrors market/largo/query's
@@ -66,6 +67,10 @@ const VALID_MODES: HuntMode[] = ["day", "swing", "leap"];
 export async function POST(req: NextRequest) {
   const authResult = await authorizeCronOrTierApi(req, "premium");
   if (authResult instanceof Response) return authResult;
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   let body: HuntRequest;
   try {

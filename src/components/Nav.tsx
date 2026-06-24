@@ -8,6 +8,7 @@ import { UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
 import { OnboardingTrigger } from "@/components/OnboardingTrigger";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
+import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red";
@@ -34,35 +35,52 @@ const CLERK_APPEARANCE = {
   },
 } as const;
 
-function FeatureCards({ path, onNavigate }: { path: string; onNavigate?: () => void }) {
+function FeatureCards({
+  path,
+  lockedTools = [],
+  onNavigate,
+}: {
+  path: string;
+  lockedTools?: ToolKey[];
+  onNavigate?: () => void;
+}) {
   return (
     <>
-      {FEATURE_LINKS.map((it) => (
-        <Link
-          key={it.href}
-          role="menuitem"
-          href={it.href}
-          // Protected route: don't prefetch (the RSC prefetch runs auth().protect() and at the
-          // ~60s token boundary gets 307'd to /sign-in, surfacing as a bounce on the next click).
-          prefetch={false}
-          onClick={onNavigate}
-          className={clsx("nav-card", `nav-accent-${it.accent}`, path.startsWith(it.href) && "nav-card-active")}
-        >
-          <span className="nav-card-chip" aria-hidden>
-            <ProductMark product={NAV_TO_MARK[it.accent]} size={46} />
-          </span>
-          <span className="nav-card-label font-syne">{it.label}</span>
-          <span className="nav-card-sub font-mono">{it.sub}</span>
-          <span className="nav-card-open font-mono" aria-hidden>
-            Open →
-          </span>
-        </Link>
-      ))}
+      {FEATURE_LINKS.map((it) => {
+        const key = toolKeyForHref(it.href);
+        const locked = key != null && lockedTools.includes(key);
+        return (
+          <Link
+            key={it.href}
+            role="menuitem"
+            href={it.href}
+            // Protected route: don't prefetch (the RSC prefetch runs auth().protect() and at the
+            // ~60s token boundary gets 307'd to /sign-in, surfacing as a bounce on the next click).
+            prefetch={false}
+            onClick={onNavigate}
+            className={clsx(
+              "nav-card",
+              `nav-accent-${it.accent}`,
+              path.startsWith(it.href) && "nav-card-active",
+              locked && "nav-card-locked"
+            )}
+          >
+            <span className="nav-card-chip" aria-hidden>
+              <ProductMark product={NAV_TO_MARK[it.accent]} size={46} />
+            </span>
+            <span className="nav-card-label font-syne">{it.label}</span>
+            <span className="nav-card-sub font-mono">{it.sub}</span>
+            <span className="nav-card-open font-mono" aria-hidden>
+              {locked ? "🔒 Launching Soon" : "Open →"}
+            </span>
+          </Link>
+        );
+      })}
     </>
   );
 }
 
-export function Nav() {
+export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const path = usePathname();
   const isHome = path === "/";
   const { isSignedIn, isLoaded } = useAuth();
@@ -249,7 +267,7 @@ export function Nav() {
                     </Link>
                   </div>
                   <div className="nav-mega-grid">
-                    <FeatureCards path={path} onNavigate={() => setFeaturesOpen(false)} />
+                    <FeatureCards path={path} lockedTools={lockedTools} onNavigate={() => setFeaturesOpen(false)} />
                   </div>
                   <div className="nav-mega-foot font-mono">Tab to explore · Esc to close</div>
                 </motion.div>

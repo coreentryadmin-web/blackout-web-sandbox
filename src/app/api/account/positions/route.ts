@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, createUserPosition } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
 import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,10 @@ function isValidYmd(v: unknown): v is string {
 export async function GET(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const url = new URL(req.url);
   const statusParam = url.searchParams.get("status");
@@ -45,6 +50,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const dbGuard = requireDatabaseInProduction();
   if (dbGuard) return dbGuard;

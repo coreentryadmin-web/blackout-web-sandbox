@@ -4,6 +4,7 @@ import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthaw
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
 import { nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
+import { requireToolApi } from "@/lib/tool-access-server";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +72,10 @@ async function fetchLegacyPlays(): Promise<NightHawkEdition | null> {
 export async function GET(req: NextRequest) {
   const authResult = await authorizeCronOrTierApi(req, "premium");
   if (authResult instanceof Response) return authResult;
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const dbDenied = requireDatabaseInProduction();
   if (dbDenied) return dbDenied;

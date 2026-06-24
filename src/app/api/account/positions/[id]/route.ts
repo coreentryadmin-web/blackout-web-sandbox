@@ -15,6 +15,7 @@ import {
   type UserPositionPatch,
 } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,10 @@ function isValidYmd(v: unknown): v is string {
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const dbGuard = requireDatabaseInProduction();
   if (dbGuard) return dbGuard;
@@ -133,6 +138,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const dbGuard = requireDatabaseInProduction();
   if (dbGuard) return dbGuard;

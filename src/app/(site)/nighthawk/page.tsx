@@ -1,4 +1,6 @@
 import { requireTier } from "@/lib/auth-access";
+import { canAccessTool } from "@/lib/tool-access-server";
+import { ComingSoon } from "@/components/ComingSoon";
 
 import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
@@ -10,6 +12,7 @@ import { NightHawkBackdrop } from "@/components/nighthawk/NightHawkBackdrop";
 
 export default async function NightHawkPage() {
   await requireTier("premium");
+  if (!(await canAccessTool("nighthawk"))) return <ComingSoon toolKey="nighthawk" />;
 
   return (
     <>

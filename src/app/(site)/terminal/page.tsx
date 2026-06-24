@@ -1,10 +1,13 @@
 import { requireTier } from "@/lib/auth-access";
+import { canAccessTool } from "@/lib/tool-access-server";
+import { ComingSoon } from "@/components/ComingSoon";
 import { LargoTerminal } from "@/components/desk/LargoTerminal";
 import { PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 
 export default async function TerminalPage() {
   await requireTier("premium");
+  if (!(await canAccessTool("largo"))) return <ComingSoon toolKey="largo" />;
 
   // NOTE: /terminal is a full-viewport chat layout (height:100dvh, internal
   // scroll). We deliberately keep the `largo-page-shell`/`largo-page-main` flex

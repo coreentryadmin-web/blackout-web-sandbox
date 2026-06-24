@@ -1,10 +1,13 @@
 import { requireTier } from "@/lib/auth-access";
+import { canAccessTool } from "@/lib/tool-access-server";
+import { ComingSoon } from "@/components/ComingSoon";
 import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { Heatmap } from "@/components/Heatmap";
 
 export default async function HeatmapPage() {
   await requireTier("premium");
+  if (!(await canAccessTool("heatmap"))) return <ComingSoon toolKey="heatmap" />;
 
   return (
     <>

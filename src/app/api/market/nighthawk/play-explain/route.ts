@@ -12,6 +12,7 @@ import {
   resolveDossierContext,
 } from "@/lib/nighthawk/play-explainer";
 import type { PlaybookPlay, PlayExplainRequest, PlayExplainResponse } from "@/lib/nighthawk/types";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,6 +21,10 @@ export async function POST(req: NextRequest) {
   try {
     const authResult = await authorizeCronOrTierApi(req, "premium");
     if (authResult instanceof Response) return authResult;
+
+    // Launch gate — locked to non-admins until this tool ships.
+    const locked = await requireToolApi("nighthawk");
+    if (locked) return locked;
 
     const dbDenied = requireDatabaseInProduction();
     if (dbDenied) return dbDenied;

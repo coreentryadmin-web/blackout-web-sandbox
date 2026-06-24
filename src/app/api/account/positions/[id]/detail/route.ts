@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { buildPositionDetail } from "@/lib/nights-watch/position-detail";
 import { buildPositionNarrative } from "@/lib/nights-watch/position-narrative";
+import { requireToolApi } from "@/lib/tool-access-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,10 @@ export const dynamic = "force-dynamic";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Launch gate — locked to non-admins until this tool ships.
+  const locked = await requireToolApi("nighthawk");
+  if (locked) return locked;
 
   const dbGuard = requireDatabaseInProduction();
   if (dbGuard) return dbGuard;
