@@ -40,12 +40,18 @@ export const VERDICT_THRESHOLDS = {
   EXPIRY_DTE: 1,
   /** |delta| below this = effectively OTM / low-conviction directional value. */
   LOW_ABS_DELTA: 0.2,
-  /** pnl_pct at/below this = deep loss, thesis likely broken. */
-  DEEP_LOSS_PCT: -60,
-  /** pnl_pct at/above this = lock partial / take some risk off. */
+  /** pnl_pct at/below this = deep loss, thesis likely broken. Side-aware: a long can only
+   *  lose ~100% of premium, but a short's loss is unbounded and its pnl_pct base is the
+   *  premium RECEIVED — so the "broken" line sits much deeper for a short. */
+  DEEP_LOSS_PCT_LONG: -60,
+  DEEP_LOSS_PCT_SHORT: -150,
+  /** pnl_pct at/above this = lock partial / take some risk off (the 50%-of-max rule works
+   *  for both a long and a premium-selling short). */
   GAIN_LOCK_PCT: 50,
-  /** pnl_pct at/above this = strong winner, trim conviction rises. */
-  GAIN_STRONG_PCT: 100,
+  /** pnl_pct at/above this = strong winner, trim conviction rises. A short's profit is
+   *  capped at +100% (mark→0), so its "strong" line sits just below that. */
+  GAIN_STRONG_PCT_LONG: 100,
+  GAIN_STRONG_PCT_SHORT: 85,
   /** DTE at/below this counts as "low DTE" for the decay-pressure rule. */
   LOW_DTE: 3,
   /** theta/day as a fraction of current mark above this = accelerating decay. */
@@ -56,6 +62,9 @@ export const VERDICT_THRESHOLDS = {
   HEALTHY_ABS_DELTA: 0.35,
   /** Underlying within this many points of a GEX wall = "approaching" it. */
   WALL_APPROACH_PTS: 10,
+  /** Underlying must be PAST a wall by at least this many points to count as a decisive
+   *  break (not merely sitting a tick on the wrong side) — prevents a hair-trigger SELL. */
+  WALL_BREAK_PTS: 15,
 } as const;
 
 type SignalHit = { id: string; reason: string };
@@ -156,13 +165,17 @@ function pushedThroughWallAgainst(
   // A wall acts as a floor (support) for bullish exposure / ceiling for bearish.
   // If price has dropped below what should be the nearest SUPPORT (bullish) or
   // risen above the nearest RESISTANCE (bearish), the protective wall has broken.
+  // Require a DECISIVE penetration (WALL_BREAK_PTS past the wall), not merely sitting a tick
+  // on the wrong side: with only one support / one resistance wall and no crossing history,
+  // a zero-margin test is a hair-trigger that mislabels benign noise near a wall as a break.
+  const margin = VERDICT_THRESHOLDS.WALL_BREAK_PTS;
   if (wantsUp) {
     const supports = ctx.gexWalls.filter((w) => w.kind === "support");
-    const brokenBelow = supports.find((w) => spot < w.strike); // support now above spot
+    const brokenBelow = supports.find((w) => spot < w.strike - margin); // decisively below support
     if (brokenBelow) return { wallStrike: brokenBelow.strike };
   } else {
     const resistances = ctx.gexWalls.filter((w) => w.kind === "resistance");
-    const brokenAbove = resistances.find((w) => spot > w.strike); // resistance now below spot
+    const brokenAbove = resistances.find((w) => spot > w.strike + margin); // decisively above resistance
     if (brokenAbove) return { wallStrike: brokenAbove.strike };
   }
   return null;
@@ -198,29 +211,53 @@ export function computeVerdict(
   const dte = position.dte;
   const pnl = position.pnl_pct;
   const T = VERDICT_THRESHOLDS;
+  // The SAME market move means OPPOSITE things to a long vs a short holder, so every signal
+  // below is side-aware. A long fears expiry-worthless + theta decay; a short WANTS them
+  // (it's collecting premium) and instead fears assignment (the option going ITM).
+  const isShort = position.side === "short";
 
   const sellSignals: SignalHit[] = [];
   const trimSignals: SignalHit[] = [];
   const holdSignals: SignalHit[] = [];
 
-  // -------------------- SELL-leaning --------------------
-
-  // Expiry-worthless risk: at/near expiry AND OTM (or very low delta).
+  // -------------------- Expiry zone (side-aware) --------------------
   if (dte <= T.EXPIRY_DTE) {
     const otm = isOtm(position, underlyingPrice);
     const lowDelta = absDelta != null && absDelta < T.LOW_ABS_DELTA;
-    if (otm === true || lowDelta) {
-      sellSignals.push({
-        id: "expiry_worthless_risk",
-        reason: `Expiry-worthless risk: ${dte}DTE and ${
-          otm === true ? "out-of-the-money" : `low |delta| ${absDelta?.toFixed(2)}`
-        }.`,
-      });
+    if (!isShort) {
+      // LONG: OTM / low-delta into expiry → likely expires worthless → cut it.
+      if (otm === true || lowDelta) {
+        sellSignals.push({
+          id: "expiry_worthless_risk",
+          reason: `Expiry-worthless risk: ${dte}DTE and ${
+            otm === true ? "out-of-the-money" : `low |delta| ${absDelta?.toFixed(2)}`
+          }.`,
+        });
+      }
+    } else {
+      // SHORT: OTM into expiry is the GOAL (decays to max profit — let it expire). ITM into
+      // expiry is the danger (assignment / realizing the loss leg) → close to manage it.
+      if (otm === false) {
+        sellSignals.push({
+          id: "expiry_assignment_risk",
+          reason: `Assignment risk: short is in-the-money at ${dte}DTE — close to avoid assignment / cap the loss.`,
+        });
+      } else if (otm === true || lowDelta) {
+        holdSignals.push({
+          id: "expiry_capture",
+          reason: `Short is ${
+            otm === true ? "out-of-the-money" : `low |delta| ${absDelta?.toFixed(2)}`
+          } at ${dte}DTE — decaying toward max profit; let it expire.`,
+        });
+      }
     }
   }
 
-  // Deep loss — thesis likely broken.
-  if (pnl != null && pnl <= T.DEEP_LOSS_PCT) {
+  // -------------------- SELL-leaning --------------------
+
+  // Deep loss — thesis likely broken. Side-aware floor (a short's loss scale is far deeper).
+  const deepLossPct = isShort ? T.DEEP_LOSS_PCT_SHORT : T.DEEP_LOSS_PCT_LONG;
+  if (pnl != null && pnl <= deepLossPct) {
     sellSignals.push({
       id: "deep_loss",
       reason: `Deep loss (${pnl.toFixed(0)}%) — thesis likely broken.`,
@@ -239,16 +276,18 @@ export function computeVerdict(
 
   // -------------------- TRIM-leaning --------------------
 
-  // Lock partial on a strong gain.
+  // Lock partial on a strong gain. Side-aware "strong" line (a short's profit caps at +100%).
   if (pnl != null && pnl >= T.GAIN_LOCK_PCT) {
-    const strong = pnl >= T.GAIN_STRONG_PCT;
+    const gainStrongPct = isShort ? T.GAIN_STRONG_PCT_SHORT : T.GAIN_STRONG_PCT_LONG;
+    const strong = pnl >= gainStrongPct;
     trimSignals.push({
       id: strong ? "gain_lock_strong" : "gain_lock",
       reason: `Up ${pnl.toFixed(0)}% — lock partial profit${strong ? " (strong winner)" : ""}.`,
     });
   }
 
-  // Accelerating theta decay: large theta/day relative to mark, with low DTE.
+  // Theta pressure near expiry. For a LONG, fast decay erodes value → trim. For a SHORT, that
+  // same decay is INCOME working in your favor → it supports holding, not trimming.
   if (
     v.theta != null &&
     Number.isFinite(v.theta) &&
@@ -257,10 +296,17 @@ export function computeVerdict(
   ) {
     const burn = Math.abs(v.theta) / v.mark;
     if (burn >= T.THETA_BURN_FRACTION) {
-      trimSignals.push({
-        id: "theta_decay",
-        reason: `Accelerating decay: theta is ${(burn * 100).toFixed(0)}% of mark/day at ${dte}DTE.`,
-      });
+      if (isShort) {
+        holdSignals.push({
+          id: "theta_tailwind",
+          reason: `Theta tailwind: decay is ${(burn * 100).toFixed(0)}% of mark/day at ${dte}DTE — working for this short.`,
+        });
+      } else {
+        trimSignals.push({
+          id: "theta_decay",
+          reason: `Accelerating decay: theta is ${(burn * 100).toFixed(0)}% of mark/day at ${dte}DTE.`,
+        });
+      }
     }
   }
 
@@ -276,12 +322,22 @@ export function computeVerdict(
 
   // -------------------- HOLD-leaning --------------------
 
-  // Healthy directional exposure.
-  if (absDelta != null && absDelta >= T.HEALTHY_ABS_DELTA) {
-    holdSignals.push({
-      id: "healthy_delta",
-      reason: `Healthy directional exposure (|delta| ${absDelta.toFixed(2)}).`,
-    });
+  // Directional exposure reads OPPOSITELY by side. For a LONG, high |delta| = healthy
+  // conviction (the thesis is working) → hold. For a SHORT, high |delta| means the option
+  // has moved ITM (assignment risk), while LOW |delta| (comfortably OTM) is the safe,
+  // decaying state a premium-seller wants → hold.
+  if (absDelta != null) {
+    if (!isShort && absDelta >= T.HEALTHY_ABS_DELTA) {
+      holdSignals.push({
+        id: "healthy_delta",
+        reason: `Healthy directional exposure (|delta| ${absDelta.toFixed(2)}).`,
+      });
+    } else if (isShort && absDelta < T.LOW_ABS_DELTA && dte > T.EXPIRY_DTE) {
+      holdSignals.push({
+        id: "low_assignment_risk",
+        reason: `Low assignment risk (|delta| ${absDelta.toFixed(2)}) — short is comfortably out-of-the-money.`,
+      });
+    }
   }
 
   // Comfortable time left.

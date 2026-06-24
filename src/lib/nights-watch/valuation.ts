@@ -166,7 +166,10 @@ export function enrichPosition(
   let distance_to_strike_pct: number | null = null;
 
   if (valuation) {
-    current_value = Number((valuation.mark * multiplier).toFixed(2));
+    // Side-aware so the accounting identity holds: for a LONG this is the asset value of
+    // the contracts (positive); for a SHORT it's the cost-to-close LIABILITY (negative).
+    // Without sideSign a short shows a positive "value" for what is actually money owed.
+    current_value = Number((valuation.mark * multiplier * sideSign).toFixed(2));
     unrealized_pnl = Number(
       ((valuation.mark - position.entry_premium) * multiplier * sideSign).toFixed(2)
     );
