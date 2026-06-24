@@ -5,7 +5,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, ReferenceLine } from "re
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
-import { Panel } from "@/components/ui";
+import { Panel, Skeleton } from "@/components/ui";
 
 type Point = { t: number; net: number };
 const MAX_POINTS = 50;
@@ -68,7 +68,7 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
       <div className="px-1 pt-1 pb-1">
         {points.length < 2 ? (
           <div className="h-[72px] flex items-center justify-center">
-            <div className="flow-skeleton h-full w-full rounded-md" style={{ height: 72 }} />
+            <Skeleton width="100%" height={72} rounded="md" />
           </div>
         ) : (
           <div className="h-[72px]">

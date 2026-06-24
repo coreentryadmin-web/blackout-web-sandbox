@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
+import { useFocusTrap } from "@/components/ui";
 import type { ApiCallEvent } from "@/lib/api-telemetry-types";
 import { sanitizeTelemetryBody, sanitizeTelemetrySnippet, sanitizeTelemetryUrl } from "@/lib/api-telemetry-sanitize";
 
@@ -44,6 +45,16 @@ export function AdminApiEventDetail({
 }) {
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
+
+  // Trap focus within the forensics drawer; Esc closes it and focus returns to
+  // the row/opener that launched it. The drawer doesn't own the viewport, so no
+  // body scroll-lock is introduced.
+  useFocusTrap(drawerRef, {
+    active: eventId != null,
+    onEscape: onClose,
+    lockScroll: false,
+  });
 
   useEffect(() => {
     if (!eventId) {
@@ -71,7 +82,12 @@ export function AdminApiEventDetail({
             aria-label="Close detail panel"
           />
           <motion.aside
-            className="admin-cmd-drawer admin-cmd-vivid"
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="API call forensics"
+            tabIndex={-1}
+            className="admin-cmd-drawer admin-cmd-vivid outline-none"
             initial={{ x: "100%", opacity: 0.6 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: "100%", opacity: 0 }}

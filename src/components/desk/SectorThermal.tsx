@@ -28,7 +28,12 @@ export function SectorThermal({ data, live }: { data?: HeatmapData; live?: boole
       actions={<FeedBadge live={live} />}
       className="col-span-full"
     >
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+      <div
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2"
+        role="status"
+        aria-live="polite"
+        aria-label="Sector rotation heatmap"
+      >
         {sectors.length === 0 ? (
           <p className="col-span-full text-cyan-400 text-sm font-mono py-6 text-center">
             {live ? "Acquiring sector rotation…" : "Feed offline — sectors go live at the bell"}
@@ -46,7 +51,12 @@ export function MoversTape({ data, live }: { data?: HeatmapData; live?: boolean 
 
   return (
     <Panel accent="sky" kicker="Polygon stocks" title="Top Movers" actions={<FeedBadge live={live} />}>
-      <div className="space-y-1 max-h-[400px] overflow-y-auto">
+      <div
+        className="space-y-1 max-h-[400px] overflow-y-auto"
+        role="log"
+        aria-live="polite"
+        aria-label="Top movers tape"
+      >
         {movers.length === 0 ? (
           <p className="text-cyan-400 text-sm font-mono py-6 text-center">No movers on the board yet</p>
         ) : (

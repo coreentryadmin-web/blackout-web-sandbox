@@ -31,6 +31,9 @@ export function NightHawkRadar({ plays, live }: { plays: NightHawkPlay[]; live?:
           variants={listVariants}
           initial="hidden"
           animate="show"
+          role="log"
+          aria-live="polite"
+          aria-label="Night Hawk after-hours setups"
         >
           {plays.length === 0 ? (
             <p className="col-span-full text-cyan-400 text-sm font-mono py-10 text-center">

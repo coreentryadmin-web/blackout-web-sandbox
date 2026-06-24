@@ -45,7 +45,12 @@ export function SplitFlowRadar({
       }
     >
       {/* Body */}
-      <div className="flow-panel-body space-y-2">
+      <div
+        className="flow-panel-body space-y-2"
+        role="log"
+        aria-live="polite"
+        aria-label="Split flow radar"
+      >
         <AnimatePresence initial={false}>
           {entries.map((e, i) => {
             const isBull = e.direction === "bullish";

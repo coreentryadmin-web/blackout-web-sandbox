@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button, EmptyState } from "@/components/ui";
+import { Button, EmptyState, useFocusTrap } from "@/components/ui";
 import { defaultFiltersForMode, getAgentConfig } from "@/lib/nighthawk/agent-config";
 import { postNightHawkHunt } from "@/lib/api";
 import type { HuntPlay, HuntResponse } from "@/lib/nighthawk/types";
@@ -64,6 +64,7 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
   const [result, setResult] = useState<HuntResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
   const reset = useCallback(() => {
     setStep("configure");
@@ -79,14 +80,14 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
     reset();
   }, [open, reset]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && step !== "arming") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, step]);
+  // Focus trap + Esc + return-focus for the full-screen takeover. Esc is a
+  // no-op while arming (matches the prior step-conditional handler). The
+  // workspace owns the whole viewport, so no body scroll-lock is introduced.
+  useFocusTrap(workspaceRef, {
+    active: open,
+    onEscape: step !== "arming" ? onClose : undefined,
+    lockScroll: false,
+  });
 
   useEffect(() => {
     if (step !== "arming") return;
@@ -131,7 +132,9 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
     <AnimatePresence>
       {open && (
         <motion.div
-          className="dayhawk-workspace"
+          ref={workspaceRef}
+          className="dayhawk-workspace outline-none"
+          tabIndex={-1}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

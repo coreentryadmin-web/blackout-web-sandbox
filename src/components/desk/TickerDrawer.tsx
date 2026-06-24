@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
-import { Drawer } from "@/components/ui";
+import { Drawer, Skeleton, EmptyState } from "@/components/ui";
 import { fetchFlows, fetchDarkPoolPrints, fmtPremium, type FlowAlert, type DarkPoolRow } from "@/lib/api";
 
 function timeAgo(iso: string): string {
@@ -146,10 +146,10 @@ export function TickerDrawer({
         {state.loading ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="flow-skeleton h-16 rounded-lg" />
-              <div className="flow-skeleton h-16 rounded-lg" />
+              <Skeleton height={64} rounded="lg" />
+              <Skeleton height={64} rounded="lg" />
             </div>
-            {[1, 2, 3, 4].map((n) => <div key={n} className="flow-skeleton h-14 rounded-lg" />)}
+            {[1, 2, 3, 4].map((n) => <Skeleton key={n} height={56} rounded="lg" />)}
           </div>
         ) : (
           <div className="space-y-5">
@@ -195,7 +195,12 @@ export function TickerDrawer({
                       Flow · {displayFlows.length} alerts{typeFilter && typeFilter !== "ALL" ? ` · ${typeFilter}` : ""}
                     </p>
                     {displayFlows.length === 0 ? (
-                      <p className="font-mono text-[11px] text-cyan-500 text-center py-6">No {typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for {ticker}</p>
+                      <EmptyState
+                        className="!py-6"
+                        icon="◆"
+                        title="No flow alerts"
+                        description={`No ${typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for ${ticker} on the current tape`}
+                      />
                     ) : (
                       <div className="space-y-1.5">
                         {displayFlows.map((f, i) => <FlowRow key={`${f.alerted_at}-${i}`} f={f} />)}

@@ -12,7 +12,8 @@ export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean
 
   return (
     <DeskPanel title="Dealer Positioning" subtitle="GEX · Max pain · Gamma flip" variant="green" live={live}>
-      <div className="space-y-5">
+      <div className="space-y-5" role="status" aria-live="polite" aria-label="Dealer positioning levels">
+
         <div>
           <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-sky-300 mb-2">
             <span>Net GEX</span>

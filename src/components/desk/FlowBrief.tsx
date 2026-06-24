@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Skeleton } from "@/components/ui";
 
 // One shared brief per 15-min window — generated server-side for all users
 const REFRESH_MS = 15 * 60 * 1000;
@@ -148,8 +149,8 @@ export function FlowBrief() {
           <AnimatePresence mode="wait">
             {loading && !brief ? (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 space-y-1.5 py-0.5">
-                <div className="flow-skeleton h-[11px] rounded w-full" />
-                <div className="flow-skeleton h-[11px] rounded w-3/4" />
+                <Skeleton width="100%" height={11} rounded="sm" />
+                <Skeleton width="75%" height={11} rounded="sm" />
               </motion.div>
             ) : (
               <motion.p

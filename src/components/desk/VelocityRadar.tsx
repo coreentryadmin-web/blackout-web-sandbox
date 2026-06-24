@@ -42,7 +42,12 @@ export function VelocityRadar({
         </span>
       </div>
 
-      <div className="flow-panel-body space-y-2">
+      <div
+        className="flow-panel-body space-y-2"
+        role="log"
+        aria-live="polite"
+        aria-label="Velocity spike radar"
+      >
         <AnimatePresence initial={false}>
           {entries.map((e, i) => {
             const barPct = Math.min(100, (e.ratio / maxRatio) * 100);

@@ -18,7 +18,7 @@ import {
   fetchDarkPoolPrints,
   type DarkPoolRow,
 } from "@/lib/api";
-import { Panel } from "@/components/ui";
+import { Panel, Skeleton, EmptyState } from "@/components/ui";
 
 const POLL_MS     = 30_000;
 const MAX_HISTORY = 20;
@@ -329,33 +329,36 @@ export function DarkPoolPanel() {
             )}
 
             {/* ── Prints list ── */}
-            <div className="flow-scroll overflow-y-auto" style={{ maxHeight: 300 }}>
+            <div
+              className="flow-scroll overflow-y-auto"
+              style={{ maxHeight: 300 }}
+              role="log"
+              aria-live="polite"
+              aria-label="Dark pool block prints"
+            >
               {loading ? (
                 <div className="space-y-1.5">
-                  {[1, 2, 3, 4].map((n) => <div key={n} className="flow-skeleton h-11 rounded-md" />)}
+                  {[1, 2, 3, 4].map((n) => <Skeleton key={n} height={44} rounded="md" />)}
                 </div>
               ) : errored && allPrints.length === 0 ? (
-                <div className="py-8 text-center" role="alert">
-                  <p className="font-mono text-[12px] font-bold text-bear">
-                    Feed unavailable
-                  </p>
-                  <p className="font-mono text-[10px] text-bear/70 mt-1">
-                    Couldn&apos;t reach the dark pool tape — retrying shortly
-                  </p>
-                </div>
+                <EmptyState
+                  className="!border-bear/30 !py-8"
+                  icon={<span className="text-bear">⚠</span>}
+                  title={<span className="text-bear">Feed unavailable</span>}
+                  description="Couldn't reach the dark pool tape — retrying shortly"
+                  role="alert"
+                />
               ) : visible.length === 0 ? (
-                <div className="py-8 text-center">
-                  <p className="font-mono text-[12px] text-cyan-400">
-                    {activeTicker
-                      ? `No blocks for ${activeTicker} on the current tape`
-                      : "No blocks on the tape yet"}
-                  </p>
-                  {activeTicker && (
-                    <p className="font-mono text-[10px] text-cyan-500 mt-1">
-                      Try a high-volume ticker like NVDA, TSLA, SPY
-                    </p>
-                  )}
-                </div>
+                <EmptyState
+                  className="!py-8"
+                  icon="⬡"
+                  title={activeTicker ? `No blocks for ${activeTicker}` : "No blocks yet"}
+                  description={
+                    activeTicker
+                      ? "Nothing on the current tape — try a high-volume ticker like NVDA, TSLA, SPY"
+                      : "No blocks on the tape yet"
+                  }
+                />
               ) : (
                 <AnimatePresence initial={false}>
                   <div className="space-y-1">

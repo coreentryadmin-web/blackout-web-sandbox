@@ -14,10 +14,26 @@ export function Heatmap() {
 
   const live = !error && Boolean(data);
   const empty = !isLoading && (data?.sectors?.length ?? 0) === 0 && (data?.movers?.length ?? 0) === 0;
+  // Distinguish a fetch FAILURE from a genuinely-idle (connected but empty) feed.
+  // Any cached `data` SWR still holds stays rendered below — we never blank it on error.
+  const fetchFailed = Boolean(error) && !isLoading;
 
   return (
     <div className="desk-layout space-y-5">
       <EngineStatusBar />
+
+      {fetchFailed && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-xl border border-bear/40 bg-bear/[0.08] px-4 py-3"
+          style={{ boxShadow: "inset 0 0 16px rgba(255,45,85,0.06)" }}
+        >
+          <span className="text-bear text-sm leading-none">⚠</span>
+          <span className="font-mono text-[12px] font-bold text-bear tracking-wide">
+            Feed unavailable — retrying
+          </span>
+        </div>
+      )}
 
       {empty ? (
         <EmptyState

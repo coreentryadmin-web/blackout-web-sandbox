@@ -8,6 +8,7 @@ import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
 import { OnboardingTrigger } from "@/components/OnboardingTrigger";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
+import { useFocusTrap } from "@/components/ui";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
@@ -73,6 +74,7 @@ export function Nav() {
   const featuresRef = useRef<HTMLLIElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const scrolledRef = useRef(false);
 
   const showAdmin = isLoaded && isSignedIn && isAdmin;
@@ -151,27 +153,33 @@ export function Nav() {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
 
-  // Esc closes the open surface and returns focus
+  // Esc closes the Features mega-menu and returns focus to its trigger.
+  // (The mobile drawer's Esc + return-focus is handled by useFocusTrap below.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (featuresOpen) {
         setFeaturesOpen(false);
         triggerRef.current?.focus();
-      } else if (mobileOpen) {
-        setMobileOpen(false);
-        hamburgerRef.current?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [featuresOpen, mobileOpen]);
+  }, [featuresOpen]);
 
   // lock body scroll while the mobile drawer is open
   useEffect(() => {
     document.documentElement.classList.toggle("nav-locked", mobileOpen);
     return () => document.documentElement.classList.remove("nav-locked");
   }, [mobileOpen]);
+
+  // Trap Tab within the mobile drawer; Esc closes it and focus returns to the
+  // hamburger trigger. Scroll-lock stays with the nav-locked class above.
+  useFocusTrap(sheetRef, {
+    active: mobileOpen,
+    onEscape: () => setMobileOpen(false),
+    lockScroll: false,
+  });
 
   return (
     <motion.header
@@ -311,11 +319,13 @@ export function Nav() {
               exit={{ opacity: 0 }}
             />
             <motion.div
+              ref={sheetRef}
               id="nav-drawer"
               role="dialog"
               aria-modal="true"
               aria-label="Menu"
-              className="nav-sheet lg:hidden"
+              tabIndex={-1}
+              className="nav-sheet lg:hidden outline-none"
               initial={reduced ? { opacity: 0 } : { x: "100%" }}
               animate={reduced ? { opacity: 1 } : { x: 0 }}
               exit={reduced ? { opacity: 0 } : { x: "100%" }}

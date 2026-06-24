@@ -50,6 +50,9 @@ export type { KickerProps } from "./Kicker";
 export { Modal, Drawer } from "./Modal";
 export type { ModalProps, ModalSide, ModalSize, DrawerProps } from "./Modal";
 
+export { useFocusTrap } from "./useFocusTrap";
+export type { UseFocusTrapOptions } from "./useFocusTrap";
+
 export { Tabs, TabList, Tab, TabPanels, TabPanel } from "./Tabs";
 export type {
   TabsProps,

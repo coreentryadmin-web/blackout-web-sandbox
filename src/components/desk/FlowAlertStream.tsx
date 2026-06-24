@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
 import { DeskPanel } from "./DeskPanel";
+import { Skeleton, EmptyState } from "@/components/ui";
 
 const WHALE_PREMIUM = 1_000_000;
 const STAGGER = 0.04;
@@ -66,12 +67,12 @@ function SkeletonCards() {
         <div key={i} className="rounded-lg border border-white/10 px-4 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="flow-skeleton h-[18px] rounded" style={{ width: `${w * 0.6}px` }} />
-              <div className="flow-skeleton h-[14px] w-10 rounded" />
+              <Skeleton width={w * 0.6} height={18} rounded="sm" />
+              <Skeleton width={40} height={14} rounded="sm" />
             </div>
-            <div className="flow-skeleton h-[16px] w-16 rounded" />
+            <Skeleton width={64} height={16} rounded="sm" />
           </div>
-          <div className="flow-skeleton h-[11px] rounded" style={{ width: `${w}%` }} />
+          <Skeleton width={`${w}%`} height={11} rounded="sm" />
         </div>
       ))}
     </div>
@@ -143,6 +144,12 @@ export function FlowAlertStream({
   const displayed = visible.slice(0, renderLimit); // Bug 8
   const hasMore   = visible.length > renderLimit;
 
+  // Distinct error/offline state: the fetch dropped (not live) and we're no
+  // longer loading. Shown as a bear-accent banner so a feed FAILURE reads
+  // differently from a genuinely-empty (but connected) tape. Any stale data
+  // already loaded stays rendered below — we never blank good data on error.
+  const feedDown = !loading && !replayMode && !live;
+
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     setNewCount(0);
@@ -158,6 +165,26 @@ export function FlowAlertStream({
       className="h-full"
     >
       <div className="relative">
+        {/* Distinct fetch-failure banner — bear accent, role=alert. Sits above the
+            tape so it surfaces even while stale prints stay rendered below. */}
+        <AnimatePresence>
+          {feedDown && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              role="alert"
+              className="mx-1 mb-2 flex items-center gap-2 rounded-lg border border-bear/40 bg-bear/[0.08] px-3 py-2"
+              style={{ boxShadow: "inset 0 0 14px rgba(255,45,85,0.06)" }}
+            >
+              <span className="text-bear text-[12px] leading-none">⚠</span>
+              <span className="font-mono text-[11px] font-bold text-bear tracking-wide">
+                Feed unavailable — retrying
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Bug 11: new alert badge — floats above scroll area when user is scrolled down */}
         <AnimatePresence>
           {newCount > 0 && (
@@ -180,26 +207,35 @@ export function FlowAlertStream({
           className="flow-scroll overflow-y-auto px-1"
           style={{ maxHeight: "calc(100vh - 210px)" }}
           onScroll={() => { if (scrollRef.current && scrollRef.current.scrollTop < 40) setNewCount(0); }}
+          role="log"
+          aria-live="polite"
+          aria-label="Live options flow tape"
         >
           {loading ? (
             <SkeletonCards />
           ) : visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-8 h-8 rounded-full border border-white/15 flex items-center justify-center">
-                <span className="text-cyan-500 text-xs">—</span>
-              </div>
-              <p className="font-mono text-[11px] text-cyan-400 text-center">
-                {tickerFilter
-                  ? `No prints for ${tickerFilter} on the current tape — widen the ticker or lower the premium floor`
+            <EmptyState
+              className="!border-transparent !bg-transparent !py-16"
+              icon="◆"
+              title={
+                tickerFilter
+                  ? `No prints for ${tickerFilter}`
                   : typeFilter !== "ALL"
-                    ? `No ${typeFilter} prints above the premium floor`
+                    ? `No ${typeFilter} prints`
+                    : "Watching the tape"
+              }
+              description={
+                tickerFilter
+                  ? "Widen the ticker or lower the premium floor"
+                  : typeFilter !== "ALL"
+                    ? "Nothing above the premium floor — lower it to see more"
                     : hasData
                       ? "Tape live — watching for the next print…"
                       : live
                         ? "Acquiring the tape…"
-                        : "Reconnecting to the tape…"}
-              </p>
-            </div>
+                        : "Reconnecting to the tape…"
+              }
+            />
           ) : (
             <div className="flex flex-col gap-1.5 py-1">
               <AnimatePresence initial={false}>

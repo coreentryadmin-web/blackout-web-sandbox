@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
-import { Panel } from "@/components/ui";
+import { Panel, Skeleton } from "@/components/ui";
 
 type Row = { ticker: string; calls: number; puts: number; net: number; total: number; callPct: number };
 
@@ -50,7 +50,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
         {rows.length === 0 ? (
           <div className="space-y-2 py-1">
             {[1, 2, 3].map((n) => (
-              <div key={n} className="flow-skeleton h-8 rounded-md" />
+              <Skeleton key={n} height={32} rounded="md" />
             ))}
           </div>
         ) : (

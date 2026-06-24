@@ -3431,16 +3431,6 @@ body {
   .badge-ops { @apply inline-flex items-center gap-1.5 text-[10px] tracking-[2px] text-bear uppercase font-mono; }
   .badge-ops .badge-live-dot { @apply bg-bear; box-shadow: 0 0 10px rgba(255,45,85,0.8); }
 
-  .platform-empty {
-    @apply relative overflow-hidden border p-10 md:p-14 text-center;
-  }
-
-  .platform-empty-dashboard { @apply border-bull/30 bg-[#08080e]/80; }
-  .platform-empty-flows { @apply border-purple/30 bg-[#08080e]/80; }
-  .platform-empty-heatmap { @apply border-bear/25 bg-[#08080e]/80; }
-  .platform-empty-largo { @apply border-purple/30 bg-[#08080e]/80; }
-  .platform-empty-nighthawk { @apply border-bear/35 bg-[#08080e]/80; }
-
   @keyframes platform-stream {
     from { transform: translateX(-20px); }
     to { transform: translateX(20px); }

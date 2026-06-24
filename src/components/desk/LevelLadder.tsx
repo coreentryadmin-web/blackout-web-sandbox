@@ -26,7 +26,12 @@ export function LevelLadder({ data, live }: { data?: SpxState; live?: boolean })
 
   return (
     <DeskPanel title="Level Ladder" subtitle="Key strikes & structure" variant="green" live={live}>
-      <div className="space-y-1 max-h-[320px] overflow-y-auto pr-1">
+      <div
+        className="space-y-1 max-h-[320px] overflow-y-auto pr-1"
+        role="status"
+        aria-live="polite"
+        aria-label="Key price levels"
+      >
         {sorted.map((level) => {
           const dist = live && level.value != null && price ? ((level.value - price) / price) * 100 : null;
           const isNear = dist != null && Math.abs(dist) < 0.15;

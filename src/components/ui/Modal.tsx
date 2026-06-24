@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef } from "react";
+import { useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type ModalSide = "center" | "right" | "left";
 export type ModalSize = "sm" | "md" | "lg";
@@ -25,10 +26,6 @@ export type ModalProps = {
   className?: string;
   children?: React.ReactNode;
 };
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), ' +
-  'select:not([disabled]), details, [tabindex]:not([tabindex="-1"])';
 
 const SIZE: Record<ModalSize, string> = {
   sm: "max-w-sm",
@@ -65,83 +62,13 @@ export function Modal({
   children,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
   const labelId = useId();
   const isDrawer = side !== "center";
 
-  const getFocusable = useCallback((): HTMLElement[] => {
-    const root = panelRef.current;
-    if (!root) return [];
-    return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement
-    );
-  }, []);
-
-  // Record the opener + move focus into the panel when it opens.
-  useEffect(() => {
-    if (!open) return;
-    openerRef.current = (document.activeElement as HTMLElement) ?? null;
-
-    // Defer to let the panel mount/animate in before focusing.
-    const raf = requestAnimationFrame(() => {
-      const focusable = getFocusable();
-      (focusable[0] ?? panelRef.current)?.focus();
-    });
-
-    return () => {
-      cancelAnimationFrame(raf);
-      // Return focus to the opener on close/unmount.
-      openerRef.current?.focus?.();
-    };
-  }, [open, getFocusable]);
-
-  // Body scroll-lock while open.
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
-
-  // Esc-to-close + Tab focus trap.
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && closeOnEsc) {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab") return;
-
-      const focusable = getFocusable();
-      if (focusable.length === 0) {
-        // Nothing focusable inside — keep focus on the panel.
-        e.preventDefault();
-        panelRef.current?.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const activeEl = document.activeElement as HTMLElement | null;
-
-      if (e.shiftKey) {
-        if (activeEl === first || !panelRef.current?.contains(activeEl)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (activeEl === last || !panelRef.current?.contains(activeEl)) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [open, closeOnEsc, onClose, getFocusable]);
+  // Focus trap, scroll-lock, Esc, and return-focus — shared with the other
+  // hand-rolled dialogs. When closeOnEsc is false we pass no onEscape so Esc is
+  // ignored entirely (matching the original inline behaviour).
+  useFocusTrap(panelRef, { active: open, onEscape: closeOnEsc ? onClose : undefined });
 
   // Portal target — guard for SSR.
   if (typeof document === "undefined") return null;
