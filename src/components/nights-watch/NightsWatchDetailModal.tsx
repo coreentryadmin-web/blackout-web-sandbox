@@ -390,6 +390,21 @@ function WhatToDo({
 }
 
 // ---------------------------------------------------------------------------
+// Desk narrative — grounded Claude synthesis (rendered ONLY when available;
+// absent → the deterministic WhatToDo above is the fallback).
+// ---------------------------------------------------------------------------
+function DeskNarrative({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-gold/25 bg-gradient-to-br from-gold/[0.06] to-bull/[0.04] p-3.5">
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gold/80">
+        ◆ Desk read · Claude, grounded in verified signals
+      </p>
+      <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-sky-100/90">{text}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Positioning / GEX
 // ---------------------------------------------------------------------------
 function PositioningView({ data }: { data: PositioningSection }) {
@@ -929,6 +944,9 @@ export function NightsWatchDetailModal({
 
           {/* 2) WHAT TO DO — centerpiece */}
           <WhatToDo whatToDo={ready.whatToDo} verdict={ready.position.verdict} />
+
+          {/* 2b) Grounded Claude desk narrative — only when available (else WhatToDo stands alone) */}
+          {ready.narrative ? <DeskNarrative text={ready.narrative} /> : null}
 
           {/* 3) Positioning / GEX */}
           {ready.sections.positioning ? (
