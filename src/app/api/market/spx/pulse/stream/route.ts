@@ -7,12 +7,68 @@ import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Cap concurrent SSE connections per instance. Each connection holds one 250ms
-// timer that issues a Redis GET, so an unbounded fan-out hammers Redis and the
-// container fd limit. 500 per instance is safe; scale horizontally for more.
-// Override via SSE_MAX_STREAMS env var. Mirrors flows/stream/route.ts.
+// ---------------------------------------------------------------------------
+// FAN-OUT (audit Risk #5 fix). The pulse snapshot is IDENTICAL for every viewer,
+// so ONE shared module-level poller refreshes it per tick and every SSE connection
+// reads that shared copy — instead of each connection issuing its OWN Redis GET
+// every 250ms. The old design was O(connections): ~2,000 GETs/sec at the 500 cap,
+// on the same Redis the rate-limiters need, for data already in process memory.
+// Redis load is now O(1) regardless of how many viewers are connected.
+// ---------------------------------------------------------------------------
+type PulseSnapshot = Record<string, unknown>;
+let latestSnapshot: PulseSnapshot = indexStore;
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+function localFreshAt(): number | null {
+  const spx = indexStore["I:SPX"] as { updatedAt?: number } | undefined;
+  return spx && typeof spx.updatedAt === "number" && spx.updatedAt > 0 ? spx.updatedAt : null;
+}
+
+async function refreshSnapshot(): Promise<void> {
+  try {
+    // Prefer THIS replica's local in-memory indexStore — it's the freshest source
+    // (updated tick-by-tick by the indices WS, incl. the V channel). Fall back to the
+    // cross-replica Redis snapshot only when local hasn't been populated recently (e.g.
+    // a replica whose indices socket isn't connected yet).
+    const fresh = localFreshAt();
+    if (fresh != null && Date.now() - fresh < 10_000) {
+      latestSnapshot = indexStore;
+      return;
+    }
+    const redis = await getUwCacheRedis();
+    if (redis) {
+      const raw = await redis.get("spx:pulse:snapshot");
+      if (raw) {
+        latestSnapshot = JSON.parse(raw) as PulseSnapshot;
+        return;
+      }
+    }
+    latestSnapshot = indexStore; // last resort — stale-but-present beats nothing
+  } catch {
+    /* keep the previous snapshot on a transient error */
+  }
+}
+
+function startRefresher(): void {
+  if (refreshTimer) return;
+  void refreshSnapshot();
+  refreshTimer = setInterval(() => { void refreshSnapshot(); }, 250);
+  // Don't keep the process alive solely for this timer.
+  (refreshTimer as unknown as { unref?: () => void }).unref?.();
+}
+
+function stopRefresherIfIdle(): void {
+  if (activeStreams <= 0 && refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+// Per-instance connection cap. With the fan-out above, Redis load no longer scales
+// with connection count, so this now only guards container fd/memory — raised from
+// 500 to 2000. Override via SSE_MAX_STREAMS.
 let activeStreams = 0;
-const MAX_STREAMS = Number(process.env.SSE_MAX_STREAMS ?? 500);
+const MAX_STREAMS = Number(process.env.SSE_MAX_STREAMS ?? 2000);
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
@@ -26,34 +82,30 @@ export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
   let interval: ReturnType<typeof setInterval> | null = null;
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  // Idempotent teardown: prevents enqueue-after-close, clears both timers, and
-  // decrements the connection count exactly once. Mirrors admin/apis/stream.
+  // Idempotent teardown: prevents enqueue-after-close, clears both timers, decrements
+  // the connection count exactly once, and stops the shared refresher when idle.
   let closed = false;
   let counted = false;
 
   const cleanup = () => {
     if (closed) return;
     closed = true;
-    if (counted) activeStreams = Math.max(0, activeStreams - 1);
+    if (counted) {
+      activeStreams = Math.max(0, activeStreams - 1);
+      stopRefresherIfIdle();
+    }
     if (interval) { clearInterval(interval); interval = null; }
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
   };
 
   const stream = new ReadableStream({
     start(controller) {
-      const send = async () => {
+      // Reads the SHARED snapshot (refreshed once per tick by the module-level poller) —
+      // no per-connection Redis GET. The per-connection timer only does an in-memory enqueue.
+      const send = () => {
         if (closed) return;
         try {
-          let snapshot = indexStore; // default: in-memory
-          try {
-            const redis = await getUwCacheRedis();
-            if (redis) {
-              const raw = await redis.get("spx:pulse:snapshot");
-              if (raw) snapshot = JSON.parse(raw);
-            }
-          } catch { /* use in-memory fallback */ }
-
-          if (closed) return;
+          const snapshot = latestSnapshot;
           const data = JSON.stringify({
             spx: snapshot["I:SPX"],
             vix: snapshot["I:VIX"],
@@ -73,21 +125,21 @@ export async function GET(req: NextRequest) {
 
       activeStreams++;
       counted = true;
+      startRefresher();
       req.signal.addEventListener("abort", cleanup);
 
-      interval = setInterval(() => { void send(); }, 250);
-      void send();
+      interval = setInterval(send, 250);
+      send();
 
-      // Periodic SSE comment heartbeat — keeps the connection alive through
-      // proxies and load balancers that have idle-timeout defaults (Railway,
-      // nginx, etc.). Fires every 15 seconds regardless of data activity.
+      // Periodic SSE comment heartbeat — keeps the connection alive through proxies and
+      // load balancers with idle-timeout defaults (Railway, nginx, etc.). Every 15s.
       heartbeatInterval = setInterval(() => {
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {
-          // pulse-heartbeat-swallow fix: a failed heartbeat enqueue means the
-          // client is gone — tear down instead of silently leaking the timers.
+          // A failed heartbeat enqueue means the client is gone — tear down instead of
+          // silently leaking the timers.
           cleanup();
         }
       }, 15_000);
