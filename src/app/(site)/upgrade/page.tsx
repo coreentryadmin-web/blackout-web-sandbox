@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Nav } from "@/components/Nav";
 import { PricingBackdrop } from "@/components/landing/PricingBackdrop";
 import { SyncMembershipButton } from "@/components/SyncMembershipButton";
 import { PlanLadder } from "@/components/upgrade/PlanLadder";
@@ -15,7 +14,6 @@ export const metadata: Metadata = {
 export default function UpgradePage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#040407]">
-      <Nav />
       <PricingBackdrop />
       <main id="main" className="relative z-10 mx-auto max-w-5xl px-6 pt-28 pb-24 text-center">
         <p className="mb-4 flex items-center justify-center gap-2 font-mono text-[10px] tracking-[0.45em] uppercase text-bull">

@@ -1,5 +1,4 @@
 import { requireTier } from "@/lib/auth-access";
-import { Nav } from "@/components/Nav";
 import { LargoTerminal } from "@/components/desk/LargoTerminal";
 import { PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
@@ -15,7 +14,6 @@ export default async function TerminalPage() {
   // primitives below.
   return (
     <div className="largo-page-shell">
-      <Nav />
       <main id="main" className="largo-page-main">
         <PageHeader
           className="largo-page-header"

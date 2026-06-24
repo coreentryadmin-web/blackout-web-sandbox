@@ -1,5 +1,4 @@
 import { requireTier } from "@/lib/auth-access";
-import { Nav } from "@/components/Nav";
 import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { Heatmap } from "@/components/Heatmap";
@@ -9,7 +8,6 @@ export default async function HeatmapPage() {
 
   return (
     <>
-      <Nav />
       <PageShell>
         <PageHeader
           kicker="◆ SECTOR ROTATION"

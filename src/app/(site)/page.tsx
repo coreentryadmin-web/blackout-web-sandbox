@@ -1,4 +1,3 @@
-import { Nav } from "@/components/Nav";
 import { CustomCursor } from "@/components/CustomCursor";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { MarqueeBlock } from "@/components/landing/MarqueeStrip";
@@ -12,7 +11,6 @@ export default function LandingPage() {
   return (
     <div className="landing-page min-h-screen void-bg text-white overflow-x-hidden">
       <CustomCursor />
-      <Nav />
       <main id="main">
         <HeroSection />
         <MarqueeBlock />

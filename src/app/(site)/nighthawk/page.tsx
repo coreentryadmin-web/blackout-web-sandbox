@@ -1,7 +1,5 @@
 import { requireTier } from "@/lib/auth-access";
 
-import { Nav } from "@/components/Nav";
-
 import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 
@@ -18,8 +16,6 @@ export default async function NightHawkPage() {
       <NightHawkRadarBackdrop />
 
       <div className="nv-scanlines" aria-hidden />
-
-      <Nav />
 
       {/* Radar paints the canvas, so suppress PageShell's own ambient backdrop and
           run full-bleed; the inner column re-creates the full-height desk flex

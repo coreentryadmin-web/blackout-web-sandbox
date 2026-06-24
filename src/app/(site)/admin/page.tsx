@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin-access";
-import { Nav } from "@/components/Nav";
 import { PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { AdminAnalyticsDashboard } from "@/components/admin/AdminAnalyticsDashboard";
@@ -12,7 +11,6 @@ export default async function AdminPage() {
 
   return (
     <div className="admin-page admin-page-canvas">
-      <Nav />
       <main id="main" className="admin-page-main">
         <PageHeader
           className="mb-6"

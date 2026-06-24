@@ -1,5 +1,4 @@
 import { requireTier } from "@/lib/auth-access";
-import { Nav } from "@/components/Nav";
 import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/components/FlowFeed";
@@ -13,7 +12,6 @@ export default async function FlowsPage() {
       {/* Animated DNA helix wallpaper — fixed behind all content (HELIX canvas) */}
       <DnaHelixBackground />
 
-      <Nav />
       {/* DnaHelix paints the canvas, so suppress PageShell's own ambient backdrop. */}
       <PageShell backdrop={false} fullBleed>
         <div className="content-rail">
