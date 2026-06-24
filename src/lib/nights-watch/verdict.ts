@@ -10,8 +10,12 @@
 //     human `reasons[]` line per signal. No black box — the UI can show WHY.
 //
 // HONESTY RULE: a signal is fired ONLY when the data it needs is actually present.
-// If valuation isn't live, the verdict is "watch" (we can't judge). If there's no
-// desk context, the GEX/wall signals are simply never evaluated — never faked.
+// If valuation isn't live, the verdict is "watch" (we can't judge). If there are no
+// REAL GEX walls on the context (source:"none", or empty walls), the GEX/wall signals
+// are simply never evaluated — never faked. Walls can come from EITHER the SPX desk
+// ("spx-desk") OR a per-ticker GEX heatmap ("gex-heatmap"); the wall signals read off
+// the shared `gexWalls` field, so they generalize to any underlying with a real
+// dealer-gamma profile without ever fabricating one.
 
 import type { EnrichedPosition } from "@/lib/nights-watch/valuation";
 import type { PositionContext } from "@/lib/nights-watch/position-context";
@@ -70,6 +74,24 @@ function isOtm(position: EnrichedPosition, underlyingPrice: number | null): bool
 }
 
 /**
+ * Does this context carry REAL GEX walls we can reason about? True for any source
+ * that supplied actual walls + a live spot — today the SPX desk ("spx-desk", richer:
+ * regime/levels/max-pain) AND per-ticker GEX heatmaps ("gex-heatmap", call/put wall).
+ * Reads walls off the SHARED `gexWalls` field rather than hard-gating on one source,
+ * so the wall signals generalize to every underlying that has a real dealer-gamma
+ * profile. Never fabricates: source:"none" (or empty walls / no spot) → false → the
+ * wall signals are simply never evaluated (Greeks-only verdict, exactly as before).
+ */
+function hasWalls(ctx: PositionContext): boolean {
+  return (
+    ctx.source !== "none" &&
+    ctx.gexWalls.length > 0 &&
+    ctx.underlyingPrice != null &&
+    ctx.underlyingPrice > 0
+  );
+}
+
+/**
  * Nearest GEX wall the underlying is moving toward, and whether crossing it would
  * be AGAINST the position. Returns null when there's no desk context / no walls.
  *
@@ -82,7 +104,7 @@ function nearestWallSignal(
   position: EnrichedPosition,
   ctx: PositionContext | undefined
 ): { approaching: boolean; through: boolean; wallStrike: number } | null {
-  if (!ctx || ctx.source !== "spx-desk") return null;
+  if (!ctx || !hasWalls(ctx)) return null;
   const spot = ctx.underlyingPrice;
   if (spot == null || !(spot > 0) || ctx.gexWalls.length === 0) return null;
 
@@ -123,7 +145,7 @@ function pushedThroughWallAgainst(
   position: EnrichedPosition,
   ctx: PositionContext | undefined
 ): { wallStrike: number } | null {
-  if (!ctx || ctx.source !== "spx-desk") return null;
+  if (!ctx || !hasWalls(ctx)) return null;
   const spot = ctx.underlyingPrice;
   if (spot == null || !(spot > 0) || ctx.gexWalls.length === 0) return null;
 
@@ -205,7 +227,8 @@ export function computeVerdict(
     });
   }
 
-  // Underlying pushed THROUGH a GEX wall against the position (SPX only).
+  // Underlying pushed THROUGH a GEX wall against the position (any underlying with
+  // real walls: SPX desk or per-ticker GEX heatmap).
   const broken = pushedThroughWallAgainst(position, ctx);
   if (broken) {
     sellSignals.push({
@@ -241,7 +264,8 @@ export function computeVerdict(
     }
   }
 
-  // Price approaching a GEX wall / key level into the position (SPX only).
+  // Price approaching a GEX wall / key level into the position (any underlying with
+  // real walls: SPX desk or per-ticker GEX heatmap).
   const wall = nearestWallSignal(position, ctx);
   if (wall?.approaching) {
     trimSignals.push({
