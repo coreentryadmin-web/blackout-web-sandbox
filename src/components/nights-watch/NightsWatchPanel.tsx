@@ -24,7 +24,32 @@ import type { Verdict, VerdictAction } from "@/lib/nights-watch/verdict";
 // The shape the GET route returns per position: the enriched row + a verdict.
 type ApiPosition = EnrichedPosition & { verdict: Verdict };
 
-const POLL_MS = 30_000;
+// Adaptive poll cadence: fast during the RTH session (live WS marks move), relaxed off-hours.
+// The GET is a pure cache-reader (cached chain spot + WS marks + pure verdict, no per-user
+// upstream), so 5s polling is safe even at 500–1000 users — actual Polygon stays <0.2 rps
+// cluster-wide. Never drop below 5s (app/DB concurrency, not a provider limit, is the floor).
+const POLL_FAST_MS = 5_000;
+const POLL_SLOW_MS = 30_000;
+
+function isEtMarketHours(now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wd = get("weekday");
+  if (wd === "Sat" || wd === "Sun") return false;
+  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  return mins >= 9 * 60 + 30 && mins <= 16 * 60; // 9:30–16:00 ET
+}
+
+/** Re-evaluated each poll cycle so the cadence flips automatically at the open/close boundary. */
+function getPollMs(now = new Date()): number {
+  return isEtMarketHours(now) ? POLL_FAST_MS : POLL_SLOW_MS;
+}
 
 // ---------------------------------------------------------------------------
 // Verdict chip — colored by action (the brand's signal language):
@@ -658,14 +683,20 @@ export function NightsWatchPanel() {
     }
   }, []);
 
-  // Initial load + 30s poll + refetch on window focus.
+  // Initial load + adaptive poll (self-adjusting timeout re-reads getPollMs() each cycle, so the
+  // cadence flips at the market open/close boundary) + refetch on window focus.
   useEffect(() => {
     void load();
-    const interval = setInterval(() => void load(), POLL_MS);
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      void load();
+      timer = setTimeout(tick, getPollMs());
+    };
+    timer = setTimeout(tick, getPollMs());
     return () => {
-      clearInterval(interval);
+      clearTimeout(timer);
       window.removeEventListener("focus", onFocus);
     };
   }, [load]);
