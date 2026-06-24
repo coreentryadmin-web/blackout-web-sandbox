@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin-access";
 import { Nav } from "@/components/Nav";
+import { PageHeader } from "@/components/ui";
+import { ProductMark } from "@/components/marks/ProductMark";
 import { AdminAnalyticsDashboard } from "@/components/admin/AdminAnalyticsDashboard";
 
 export const revalidate = 0;
@@ -12,6 +14,13 @@ export default async function AdminPage() {
     <div className="admin-page admin-page-canvas">
       <Nav />
       <main className="admin-page-main">
+        <PageHeader
+          className="mb-6"
+          kicker="◆ OPERATIONS"
+          title="ADMIN"
+          subtitle="Live engine, incidents, API command & desk telemetry — the BlackOut control room."
+          badge={<ProductMark product="spx" size={44} />}
+        />
         <Suspense fallback={<p className="admin-api-muted p-6">Loading admin…</p>}>
           <AdminAnalyticsDashboard />
         </Suspense>

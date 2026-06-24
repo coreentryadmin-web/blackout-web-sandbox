@@ -310,7 +310,7 @@ function LiveEngineSection({
       {play.watch && (
         <DeckPanel title="Watch state" badge={play.watch.promote_ready ? "PROMOTE READY" : "WATCHING"} accent={play.watch.promote_ready ? "bull" : "amber"}>
           {play.watch.promote_ready ? (
-            <p className="admin-spx-idea" style={{ color: "rgb(52,211,153)", marginBottom: "0.5rem" }}>
+            <p className="admin-spx-idea" style={{ color: "#00e676", marginBottom: "0.5rem" }}>
               ✓ All promote conditions satisfied — run live engine (dry run) to preview the promoted play.
             </p>
           ) : (

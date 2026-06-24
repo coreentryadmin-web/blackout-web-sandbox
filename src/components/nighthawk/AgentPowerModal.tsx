@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
-import { Modal } from "@/components/ui";
+import { Button, Modal } from "@/components/ui";
 import { defaultFiltersForMode, getAgentConfig } from "@/lib/nighthawk/agent-config";
 import { postNightHawkHunt } from "@/lib/api";
 import type { HuntMode, HuntResponse } from "@/lib/nighthawk/types";
@@ -84,9 +84,9 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
               </div>
               {error && <p className="nighthawk-modal-error">{error}</p>}
               <div className="nighthawk-modal-actions">
-                <button type="button" className="nighthawk-btn-ghost" onClick={onClose}>
+                <Button variant="ghost" size="sm" onClick={onClose}>
                   Stand down
-                </button>
+                </Button>
                 <button type="button" className="nighthawk-btn-power" onClick={handlePowerUp}>
                   {config.powerLabel}
                 </button>
@@ -123,13 +123,9 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
                 </p>
               )}
               <div className="nighthawk-modal-actions">
-                <button
-                  type="button"
-                  className="nighthawk-btn-ghost"
-                  onClick={() => setStep("filters")}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setStep("filters")}>
                   Adjust filters
-                </button>
+                </Button>
                 <button type="button" className="nighthawk-btn-power" onClick={onClose}>
                   Dismiss
                 </button>

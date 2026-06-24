@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
+import { Button, EmptyState } from "@/components/ui";
 import { defaultFiltersForMode, getAgentConfig } from "@/lib/nighthawk/agent-config";
 import { postNightHawkHunt } from "@/lib/api";
 import type { HuntPlay, HuntResponse } from "@/lib/nighthawk/types";
@@ -152,16 +153,16 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
             </div>
             <div className="dayhawk-workspace-header-actions">
               {step === "live" && (
-                <button
-                  type="button"
-                  className="nighthawk-btn-ghost"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setStep("configure");
                     setResult(null);
                   }}
                 >
                   Re-arm
-                </button>
+                </Button>
               )}
               <button
                 type="button"
@@ -191,12 +192,16 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
                 </div>
                 {error && <p className="nighthawk-modal-error">{error}</p>}
                 <div className="dayhawk-config-actions">
-                  <button type="button" className="nighthawk-btn-ghost" onClick={onClose}>
+                  <Button variant="ghost" size="sm" onClick={onClose}>
                     Cancel
-                  </button>
-                  <button type="button" className="dayhawk-btn-arm" onClick={handlePowerUp}>
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handlePowerUp}
+                    className="border-gold/50 bg-gradient-to-b from-gold to-[#e0b417] text-black shadow-[0_0_30px_-10px_rgba(255,210,63,0.7)] hover:shadow-[0_0_40px_-8px_rgba(255,210,63,0.85)]"
+                  >
                     {config.powerLabel}
-                  </button>
+                  </Button>
                 </div>
               </section>
 
@@ -304,17 +309,20 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
                   </aside>
                 </div>
               ) : (
-                <div className="dayhawk-live-empty">
-                  <p>No qualifying signals surfaced this scan.</p>
-                  <p>Relax SPX alignment, widen DTE, or lower the flow premium floor.</p>
-                  <button
-                    type="button"
-                    className="dayhawk-btn-arm"
-                    onClick={() => setStep("configure")}
-                  >
-                    Adjust parameters
-                  </button>
-                </div>
+                <EmptyState
+                  className="dayhawk-live-empty !border-bear/25 !bg-transparent"
+                  title="No qualifying signals"
+                  description="Nothing surfaced this scan. Relax SPX alignment, widen DTE, or lower the flow premium floor."
+                  action={
+                    <Button
+                      size="sm"
+                      onClick={() => setStep("configure")}
+                      className="border-gold/50 bg-gradient-to-b from-gold to-[#e0b417] text-black shadow-[0_0_30px_-10px_rgba(255,210,63,0.7)] hover:shadow-[0_0_40px_-8px_rgba(255,210,63,0.85)]"
+                    >
+                      Adjust parameters
+                    </Button>
+                  }
+                />
               )}
             </div>
           )}

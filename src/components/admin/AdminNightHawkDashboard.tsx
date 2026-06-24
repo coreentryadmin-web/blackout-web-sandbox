@@ -46,10 +46,13 @@ function fmtPublishedAt(iso: string | null): string {
 }
 
 function winRateStyle(rate: number): CSSProperties {
+  // Value-driven heat ramp interpolating between brand bear (#ff2d55) at the
+  // low end and brand bull (#00e676) at the high end.
   const clamped = Math.max(0, Math.min(1, rate));
-  const red = Math.round(239 * (1 - clamped) + 34 * clamped);
-  const green = Math.round(68 * (1 - clamped) + 197 * clamped);
-  return { color: `rgb(${red}, ${green}, 80)` };
+  const red = Math.round(255 * (1 - clamped) + 0 * clamped);
+  const green = Math.round(45 * (1 - clamped) + 230 * clamped);
+  const blue = Math.round(85 * (1 - clamped) + 118 * clamped);
+  return { color: `rgb(${red}, ${green}, ${blue})` };
 }
 
 function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edition"] }) {
@@ -79,8 +82,8 @@ function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edit
       <svg viewBox={`0 0 ${width} ${height}`} className="admin-nh-trend" role="img" aria-label="Target-hit rate by edition">
         <defs>
           <linearGradient id="nh-area-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#34c5a0" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#34c5a0" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#00e676" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#00e676" stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
@@ -103,7 +106,7 @@ function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edit
 
         {/* 50% benchmark line */}
         <line x1={pad.left} y1={pad.top + plotH * 0.5} x2={pad.left + plotW} y2={pad.top + plotH * 0.5}
-          stroke="#6366f1" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
+          stroke="#7dd3fc" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
 
         {/* Area fill */}
         {points.length > 1 && <path d={areaPath} fill="url(#nh-area-grad)" />}

@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui";
 import { PlaybookPlayRow } from "./PlaybookPlayRow";
 import type { NightHawkEdition, PlaybookPlay } from "@/lib/nighthawk/types";
 
@@ -52,14 +53,13 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
             </div>
           )}
           {loading ? (
-            <span className="nighthawk-status-pill nighthawk-status-loading">Syncing…</span>
+            <Badge tone="sky">Syncing…</Badge>
           ) : edition?.available ? (
-            <span className="nighthawk-status-pill nighthawk-status-live">
-              <span className="nighthawk-status-dot" />
+            <Badge tone="bull" dot>
               Edition live
-            </span>
+            </Badge>
           ) : (
-            <span className="nighthawk-status-pill nighthawk-status-wait">Awaiting close</span>
+            <Badge tone="bear">Awaiting close</Badge>
           )}
         </div>
       </header>
