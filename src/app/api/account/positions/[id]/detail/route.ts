@@ -17,14 +17,14 @@ import { buildPositionNarrative } from "@/lib/nights-watch/position-narrative";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const dbGuard = requireDatabaseInProduction();
   if (dbGuard) return dbGuard;
 
-  const id = Number(params.id);
+  const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }

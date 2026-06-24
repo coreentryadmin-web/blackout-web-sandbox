@@ -8,14 +8,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { actor, denied } = await resolveAdminApi();
   if (denied) return denied;
 
-  let detail = buildEventDetail(params.id);
+  const { id } = await params;
+  let detail = buildEventDetail(id);
   if (!detail) {
-    const persisted = await fetchPersistedApiEvent(params.id);
+    const persisted = await fetchPersistedApiEvent(id);
     if (persisted) {
       detail = {
         event: persisted,
@@ -36,7 +37,7 @@ export async function GET(
     actorUserId: actor?.userId,
     actorEmail: actor?.email,
     action: "api_event_view",
-    detail: { event_id: params.id, provider: detail.event.provider },
+    detail: { event_id: id, provider: detail.event.provider },
   });
 
   return NextResponse.json(detail);

@@ -17,7 +17,7 @@ export const PERSONAL_WEBHOOK_META_KEY = "personal_discord_webhook";
 
 /** Read a user's stored personal webhook URL from Clerk privateMetadata (or null). */
 export async function getPersonalWebhook(userId: string): Promise<string | null> {
-  const user = await clerkClient.users.getUser(userId);
+  const user = await (await clerkClient()).users.getUser(userId);
   const raw = (user.privateMetadata as { [k: string]: unknown } | undefined)?.[
     PERSONAL_WEBHOOK_META_KEY
   ];
@@ -35,7 +35,7 @@ export async function setPersonalWebhook(
   url: string | null
 ): Promise<{ cleared: boolean; host: string | null }> {
   if (url === null) {
-    await clerkClient.users.updateUserMetadata(userId, {
+    await (await clerkClient()).users.updateUserMetadata(userId, {
       privateMetadata: { [PERSONAL_WEBHOOK_META_KEY]: null },
     });
     return { cleared: true, host: null };
@@ -44,7 +44,7 @@ export async function setPersonalWebhook(
   if (!isValidDiscordWebhook(trimmed)) {
     throw new Error("INVALID_WEBHOOK");
   }
-  await clerkClient.users.updateUserMetadata(userId, {
+  await (await clerkClient()).users.updateUserMetadata(userId, {
     privateMetadata: { [PERSONAL_WEBHOOK_META_KEY]: trimmed },
   });
   return { cleared: false, host: redactWebhook(trimmed) };
