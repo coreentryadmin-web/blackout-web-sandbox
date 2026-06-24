@@ -36,7 +36,7 @@ export function NightHawkBackdrop() {
           priority
           sizes="100vw"
           className="object-cover"
-          style={{ objectPosition: "center 42%" }}
+          style={{ objectPosition: "center 36%" }}
         />
       </motion.div>
 
@@ -57,14 +57,14 @@ export function NightHawkBackdrop() {
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(180deg, rgba(4,4,7,0.30) 0%, rgba(4,4,7,0.40) 28%, rgba(4,4,7,0.66) 58%, rgba(4,4,7,0.88) 82%, #040407 100%)",
+            "linear-gradient(180deg, rgba(4,4,7,0.12) 0%, rgba(4,4,7,0.26) 32%, rgba(4,4,7,0.50) 64%, rgba(4,4,7,0.80) 88%, #040407 100%)",
         }}
       />
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(125% 80% at 50% 32%, transparent 42%, rgba(4,4,7,0.55) 100%)",
+            "radial-gradient(130% 85% at 50% 28%, transparent 55%, rgba(4,4,7,0.45) 100%)",
         }}
       />
     </div>

@@ -26,7 +26,7 @@ export default async function NightHawkPage() {
       {/* Radar paints the canvas, so suppress PageShell's own ambient backdrop and
           run full-bleed; the inner column re-creates the full-height desk flex
           context the .nighthawk-layout grid depends on. */}
-      <PageShell backdrop={false} fullBleed contentClassName="!py-0">
+      <PageShell backdrop={false} fullBleed contentClassName="!py-0" className="!bg-transparent">
         {/* Full-bleed desk column (max-w-none) preserving Night Hawk's edge-to-edge
             layout; the constrained height + flex re-creates the desk context the
             .nighthawk-content-canvas / .nighthawk-layout grid relies on. */}
