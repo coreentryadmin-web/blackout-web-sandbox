@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
-import { requireTier } from "@/lib/auth-access";
+import { requireAdmin } from "@/lib/admin-access";
 
-/** Premium gate for internal docs not covered by nested layouts. */
+/** Admin-only gate for internal engineering/architecture docs. These pages
+ * expose internal analysis and live UW/Polygon endpoint probes, so they must
+ * never be reachable by paying premium customers — admins only. */
 export default async function DocsLayout({ children }: { children: ReactNode }) {
-  await requireTier("premium");
+  await requireAdmin();
   return children;
 }

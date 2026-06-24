@@ -5,7 +5,7 @@
 > `cursor-api-analysis-data.ts`, and the `/docs/polygon/*` + `/docs/...` pages) — **those should be
 > regenerated from this file**, not edited independently.
 > **Method:** Synthesized from five docs-grounded section audits under
-> `blackout-web/BLACKOUT_AUDIT/API-DOCS/` (massive-stocks, massive-options, massive-indices, uw-rest,
+> `blackout-web/audit/API-DOCS/` (massive-stocks, massive-options, massive-indices, uw-rest,
 > websockets), each read **line-by-line from the official provider docs** — never inferred from our
 > code comments (that exact mistake caused incident **RT-5**).
 > **Audited:** 2026-06-24. **Plan posture:** Massive **Advanced** (Stocks + Options + Indices, with

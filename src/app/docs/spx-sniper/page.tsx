@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireTier } from "@/lib/auth-access";
+import { requireAdmin } from "@/lib/admin-access";
 import { Nav } from "@/components/Nav";
 
 export const revalidate = 0;
 
 export default async function SpxSniperPlaybookPage() {
-  await requireTier("premium");
+  await requireAdmin();
 
   return (
     <div className="docs-page">

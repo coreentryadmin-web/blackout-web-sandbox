@@ -9,37 +9,109 @@ import type {
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import { recordApiCall } from "@/lib/api-telemetry";
-import { SpendTracker, type AnthropicUsage } from "@/lib/ai-spend";
+import { SpendTracker, type AnthropicUsage, type SpendRecord } from "@/lib/ai-spend";
+import {
+  aiSpendKey,
+  aiSpendAlertThresholdUsd,
+  spendThresholdJustCrossed,
+  AI_SPEND_INCR_LUA,
+  secondsUntilEtMidnight,
+} from "@/lib/ai-spend-ledger";
+import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 
-// Per-process daily AI-spend tripwire. Multi-replica caveat documented in ai-spend.ts:
-// each replica tracks its own slice, so the org-wide total is the SUM across replicas.
+// Per-process daily AI-spend tripwire. It survives Redis loss, so it is kept as the
+// FALLBACK alerter (used only when the cross-replica ledger below is unreachable). The
+// per-process multi-replica caveat is documented in ai-spend.ts.
 const spendTracker = new SpendTracker({
-  thresholdUsd: Number(process.env.DAILY_AI_SPEND_ALERT_USD) || 50,
+  thresholdUsd: aiSpendAlertThresholdUsd(),
 });
 
+// Minimal Redis surface needed for the org-wide ledger. getUwCacheRedis returns a narrower
+// type; cast to this so we can call eval/get, which ioredis supports at runtime (same cast
+// approach as the Largo gate in largo/query/route.ts).
+type SpendRedis = {
+  get(key: string): Promise<string | null>;
+  eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
+} | null;
+
+/** Fire one ops-Discord alert describing a threshold crossing. `orgWide` distinguishes the
+ *  authoritative cross-replica total from the degraded per-process fallback in the message. */
+function fireSpendAlert(a: { day: string; total: number; threshold: number; orgWide: boolean }): void {
+  const scope = a.orgWide
+    ? "ORG-WIDE total (cross-replica Redis ledger)"
+    : "per-process only — Redis ledger unavailable, true org-wide total is higher";
+  void notifyOpsDiscord({
+    title: "AI spend threshold crossed",
+    body:
+      `Anthropic spend for ET day ${a.day} reached $${a.total.toFixed(2)} ` +
+      `(threshold $${a.threshold.toFixed(2)}). Scope: ${scope}.`,
+    severity: "warning",
+  });
+}
+
 /**
- * Fire-and-forget spend accounting. MUST NOT add latency to the AI path: no await,
- * no throw. No-ops when usage is missing or the model is unknown (estimateCostUsd
- * returns null inside the tracker). Fires notifyOpsDiscord('warning') exactly once
- * per ET day when the running per-process total first crosses the threshold.
+ * Cross-replica spend accounting. Atomically INCRBYFLOATs the org-wide daily counter in shared
+ * Redis and alerts ONCE when the org total crosses the threshold (the atomic increment makes
+ * "just crossed" cluster-unique — no flag needed). If Redis is unreachable, falls back to the
+ * per-process tripwire's crossing so an alert can still fire (under-counting true org spend).
+ * Best-effort throughout: never throws into the AI path.
  */
-function trackSpend(model: string, usage: AnthropicUsage | null | undefined): void {
+async function recordOrgSpend(localRec: SpendRecord): Promise<void> {
+  const added = localRec.added;
+  if (!(added > 0)) return; // unknown model / zero usage — nothing to record
+
+  let redis: SpendRedis = null;
   try {
-    const rec = spendTracker.record(model, usage);
-    if (rec.thresholdJustCrossed) {
-      void notifyOpsDiscord({
-        title: "AI spend threshold crossed",
-        body:
-          `Anthropic spend for ET day ${rec.day} reached $${rec.dayTotal.toFixed(2)} ` +
-          `(threshold $${rec.threshold.toFixed(2)}). Note: per-process total — ` +
-          `multiply by replica count for org-wide spend.`,
-        severity: "warning",
-      });
+    redis = (await getUwCacheRedis()) as SpendRedis;
+  } catch {
+    redis = null;
+  }
+
+  // Redis unavailable: the per-process tripwire is the only signal we have.
+  if (!redis) {
+    if (localRec.thresholdJustCrossed) {
+      fireSpendAlert({ day: localRec.day, total: localRec.dayTotal, threshold: localRec.threshold, orgWide: false });
+    }
+    return;
+  }
+
+  try {
+    // Format to micro-dollar precision: avoids INCRBYFLOAT rejecting JS scientific notation
+    // (e.g. "3e-7") for tiny costs, and keeps the crossing math consistent with what Redis stored.
+    const addedStr = added.toFixed(6);
+    const addedNum = Number(addedStr);
+    const newTotal = Number(
+      await redis.eval(AI_SPEND_INCR_LUA, 1, aiSpendKey(), addedStr, secondsUntilEtMidnight())
+    );
+    const threshold = aiSpendAlertThresholdUsd();
+    if (spendThresholdJustCrossed(newTotal, addedNum, threshold)) {
+      fireSpendAlert({ day: localRec.day, total: newTotal, threshold, orgWide: true });
     }
   } catch {
-    /* spend telemetry is best-effort — never throw into the AI path */
+    // Redis write failed mid-flight — fall back to the per-process crossing if it fired.
+    if (localRec.thresholdJustCrossed) {
+      fireSpendAlert({ day: localRec.day, total: localRec.dayTotal, threshold: localRec.threshold, orgWide: false });
+    }
   }
+}
+
+/**
+ * Fire-and-forget spend accounting. MUST NOT add latency to the AI path: no await, no throw.
+ * Always advances the per-process tripwire (cheap, sync) — its crossing is consumed only as the
+ * Redis-down fallback inside recordOrgSpend, so there is no double-alert when Redis is healthy.
+ * No-ops when usage is missing or the model is unknown (estimateCostUsd returns null).
+ */
+function trackSpend(model: string, usage: AnthropicUsage | null | undefined): void {
+  let rec: SpendRecord;
+  try {
+    rec = spendTracker.record(model, usage);
+  } catch {
+    return; // spend telemetry is best-effort — never throw into the AI path
+  }
+  void recordOrgSpend(rec).catch(() => {
+    /* best-effort: a failed ledger write must never surface in the AI path */
+  });
 }
 
 /** Client-level retry budget passed to the Anthropic SDK. The SDK retries

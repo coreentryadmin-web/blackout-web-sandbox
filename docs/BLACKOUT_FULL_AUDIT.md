@@ -1,6 +1,6 @@
 # BLACKOUT — Master Pre-Launch Audit (Full)
 
-> **Scope note.** This is the consolidated master report synthesizing ten area audits ahead of a ~500-concurrent-user launch. It deliberately stays at the summary/decision altitude. **Full per-issue detail — file path · code reference · why · severity · impact · fix · worked example — lives in the section files under `BLACKOUT_AUDIT/`** (`01-API.md` … `10-PRODUCT-UX.md`, plus `00-RUNTIME-FINDINGS.md` for live-log evidence). Every claim below traces back to a specific finding in those files; where a fact depends on production infrastructure we could not inspect from the repo (PgBouncer presence, web replica count, prod Clerk email policy, prod DB connection mode, CI gating), it is marked **[Not verified — needs prod/env]** rather than asserted.
+> **Scope note.** This is the consolidated master report synthesizing ten area audits ahead of a ~500-concurrent-user launch. It deliberately stays at the summary/decision altitude. **Full per-issue detail — file path · code reference · why · severity · impact · fix · worked example — lives in the section files under `audit/`** (`01-API.md` … `10-PRODUCT-UX.md`, plus `00-RUNTIME-FINDINGS.md` for live-log evidence). Every claim below traces back to a specific finding in those files; where a fact depends on production infrastructure we could not inspect from the repo (PgBouncer presence, web replica count, prod Clerk email policy, prod DB connection mode, CI gating), it is marked **[Not verified — needs prod/env]** rather than asserted.
 
 ---
 

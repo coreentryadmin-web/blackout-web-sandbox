@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { requireTier } from "@/lib/auth-access";
+import { requireAdmin } from "@/lib/admin-access";
 import { Nav } from "@/components/Nav";
 import { UwDocsNav } from "@/components/docs/UwDocsNav";
 
 export default async function UnusualWhalesDocsLayout({ children }: { children: ReactNode }) {
-  await requireTier("premium");
+  await requireAdmin();
 
   return (
     <div className="docs-page">

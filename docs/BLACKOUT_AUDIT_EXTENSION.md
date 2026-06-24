@@ -10,17 +10,17 @@
 
 This document is the **EXTENSION** master report. It supplements **`BLACKOUT_FULL_AUDIT.md`** (the core audit, sections **A–T**, overall grade **68/100**) and covers the expanded-audit deliverables that go *beyond* it: the per-provider deep-dives (Unusual Whales, Polygon/Massive, Claude/AI cost), the Railway/infrastructure audit, the feature inventory + feature-to-data-source matrix, the technology-utilization report, the consolidated total-cost model, and the multi-tier scalability simulation.
 
-**Full per-issue detail lives in the `BLACKOUT_AUDIT/` section files** — this report condenses and cross-references; it does not replace them:
+**Full per-issue detail lives in the `audit/` section files** — this report condenses and cross-references; it does not replace them:
 
 | § | Section file | Counts (C/H/M/L) |
 |---|---|---|
-| 11 | `BLACKOUT_AUDIT/11-UW-DEEP.md` — Unusual Whales deep-dive | 0 / 2 / 5 / 3 |
-| 12 | `BLACKOUT_AUDIT/12-POLYGON-DEEP.md` — Polygon/Massive deep-dive | 0 / 4 / 4 / 2 |
-| 13 | `BLACKOUT_AUDIT/13-CLAUDE-COST.md` — Claude/AI + cost model | 0 / 2 / 4 / 4 |
-| 14 | `BLACKOUT_AUDIT/14-INFRA-RAILWAY.md` — Railway/infrastructure | 1 / 5 / 6 / 5 |
-| 15 | `BLACKOUT_AUDIT/15-FEATURES-MATRIX.md` — features + tech utilization | 0 / 2 / 4 / 2 |
-| 16 | `BLACKOUT_AUDIT/16-COST-MODEL.md` — consolidated cost model | 0 / 2 / 3 / 0 |
-| 17 | `BLACKOUT_AUDIT/17-SCALE-TIERS.md` — 500/1k/5k scale simulation | 2 / 4 / 1 / 0 |
+| 11 | `audit/11-UW-DEEP.md` — Unusual Whales deep-dive | 0 / 2 / 5 / 3 |
+| 12 | `audit/12-POLYGON-DEEP.md` — Polygon/Massive deep-dive | 0 / 4 / 4 / 2 |
+| 13 | `audit/13-CLAUDE-COST.md` — Claude/AI + cost model | 0 / 2 / 4 / 4 |
+| 14 | `audit/14-INFRA-RAILWAY.md` — Railway/infrastructure | 1 / 5 / 6 / 5 |
+| 15 | `audit/15-FEATURES-MATRIX.md` — features + tech utilization | 0 / 2 / 4 / 2 |
+| 16 | `audit/16-COST-MODEL.md` — consolidated cost model | 0 / 2 / 3 / 0 |
+| 17 | `audit/17-SCALE-TIERS.md` — 500/1k/5k scale simulation | 2 / 4 / 1 / 0 |
 
 **Extension totals:** 3 Critical · 21 High · 27 Medium · 16 Low (after de-dup of cross-referenced core findings).
 

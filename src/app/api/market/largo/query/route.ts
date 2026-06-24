@@ -4,6 +4,8 @@ import { requireTierApi } from "@/lib/market-api-auth";
 import { largoConfigured, runLargoQuery, runLargoQueryStream, isSseClientDisconnect, SseClientDisconnected } from "@/lib/largo-terminal";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { largoBudgetKey, secondsUntilEtMidnight, largoDailyQueryBudget, isOverLargoBudget } from "@/lib/largo-budget";
+import { aiSpendKey, aiSpendKillSwitchUsd, isOverAiSpendCeiling } from "@/lib/ai-spend-ledger";
+import { LocalConcurrencyBackstop, largoLocalMaxConcurrent } from "@/lib/largo-local-gate";
 
 // ---------------------------------------------------------------------------
 // Largo concurrency gate — max 2 simultaneous queries per user, Redis-backed.
@@ -22,33 +24,51 @@ type GateRedis = {
 const MAX_LARGO_CONCURRENT = 2;
 const LARGO_TTL_S = 180; // 3 min — auto-expire stuck counters
 
+// Process-local concurrency backstop. The per-user Redis gate below FAILS OPEN on Redis
+// loss, which would let a premium surge uncork unbounded concurrent Claude tool-loops. This
+// in-memory counter is consulted ONLY in the fail-open paths so a Redis outage degrades to
+// (cap × replica count) instead of "unbounded"; with Redis healthy it is never touched and
+// the per-user gate stays fully authoritative. See largo-local-gate.ts for the rationale.
+const largoBackstop = new LocalConcurrencyBackstop(largoLocalMaxConcurrent());
+
+type LargoSlot = { acquired: boolean; redis: GateRedis; localSlot: boolean };
+
 // Atomic acquire: INCR + EXPIRE in one round-trip so a crash between the two can
 // never leave a counter with no TTL (which would lock the user out until their
 // next request re-applied expire) — LARGO-7. Returns the post-incr count.
 const ACQUIRE_LUA =
   "local c = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return c";
 
-async function acquireLargoSlot(userId: string): Promise<{ acquired: boolean; redis: GateRedis }> {
+// Fail-open fallback: no per-user Redis gate available, so admit iff the process-local
+// backstop has a free slot. `localSlot` flags that a backstop reservation is held (release
+// must give it back) and forces redis=null so downstream Redis ops correctly no-op.
+function acquireViaBackstop(): LargoSlot {
+  const ok = largoBackstop.tryAcquire();
+  return { acquired: ok, redis: null, localSlot: ok };
+}
+
+async function acquireLargoSlot(userId: string): Promise<LargoSlot> {
   // getUwCacheRedis returns a minimal RedisClient type; cast to GateRedis so we
   // can call incr/decr/expire/eval which ioredis supports at runtime.
   const redis = (await getUwCacheRedis()) as GateRedis;
-  if (!redis) return { acquired: true, redis: null }; // fail-open: no Redis → no gate
+  if (!redis) return acquireViaBackstop(); // fail-open WITH local backstop: no Redis → no per-user gate
 
   const key = `largo:active:${userId}`;
   try {
     const count = Number(await redis.eval(ACQUIRE_LUA, 1, key, LARGO_TTL_S));
     if (count > MAX_LARGO_CONCURRENT) {
       await redis.decr(key);
-      return { acquired: false, redis };
+      return { acquired: false, redis, localSlot: false };
     }
-    return { acquired: true, redis };
+    return { acquired: true, redis, localSlot: false };
   } catch {
-    // Redis error → fail-open so queries are never blocked by infra issues
-    return { acquired: true, redis: null };
+    // Redis error → fail-open, but still bounded by the local backstop
+    return acquireViaBackstop();
   }
 }
 
-async function releaseLargoSlot(userId: string, redis: GateRedis): Promise<void> {
+async function releaseLargoSlot(userId: string, redis: GateRedis, localSlot: boolean): Promise<void> {
+  if (localSlot) largoBackstop.release(); // give back the in-memory reservation, if any
   if (!redis) return;
   const key = `largo:active:${userId}`;
   try {
@@ -94,6 +114,29 @@ async function recordLargoBudgetUsage(userId: string, redis: GateRedis): Promise
   }
 }
 
+// ---------------------------------------------------------------------------
+// ORG-WIDE hard kill-switch — bounds total daily Anthropic spend across ALL users and
+// replicas. Reads the cross-replica spend ledger (anthropic.ts writes it) and rejects new
+// Largo queries once the org total is AT/over the absolute DAILY_AI_SPEND_KILL_USD ceiling.
+// OPT-IN: disabled unless the env ceiling is set (see aiSpendKillSwitchUsd). Fails OPEN on
+// Redis loss — the process-local concurrency backstop above bounds the outage blast radius.
+// ---------------------------------------------------------------------------
+
+/** True when the org-wide daily spend is AT/over the hard ceiling and new queries must be
+ *  rejected. Returns false (allow) when the kill-switch is disabled or Redis is unreachable. */
+async function isLargoKillSwitchTripped(): Promise<boolean> {
+  const ceiling = aiSpendKillSwitchUsd();
+  if (ceiling == null) return false; // kill-switch not armed → never blocks
+  const redis = (await getUwCacheRedis()) as GateRedis;
+  if (!redis) return false; // fail-open: no Redis → can't read the ledger (backstop bounds blast radius)
+  try {
+    const raw = await redis.get(aiSpendKey());
+    return isOverAiSpendCeiling(Number(raw ?? 0), ceiling);
+  } catch {
+    return false; // Redis error → fail-open, never block on infra issues
+  }
+}
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -134,6 +177,15 @@ export async function POST(req: NextRequest) {
 
   const resolvedSessionId = sessionId || `web-${authResult.userId}-${Date.now()}`;
 
+  // Org-wide kill-switch — checked FIRST (cheap GET, no side effects, holds no slot). If the
+  // whole org has burned past the hard daily spend ceiling, reject before doing any work.
+  if (await isLargoKillSwitchTripped()) {
+    return NextResponse.json(
+      { error: "Largo is temporarily paused: the platform-wide daily AI spend limit has been reached. Try again after midnight ET." },
+      { status: 503 }
+    );
+  }
+
   // Concurrency gate — max MAX_LARGO_CONCURRENT simultaneous queries per user.
   const userId = authResult.userId;
   const slot = await acquireLargoSlot(userId);
@@ -148,7 +200,7 @@ export async function POST(req: NextRequest) {
   // user has already consumed their per-day query allowance. Fail-open inside. One check
   // before BOTH the stream and non-stream branches.
   if (await isLargoBudgetExceeded(userId, slot.redis)) {
-    await releaseLargoSlot(userId, slot.redis);
+    await releaseLargoSlot(userId, slot.redis, slot.localSlot);
     return NextResponse.json(
       { error: `Daily Largo query limit reached (${largoDailyQueryBudget()}/day). Try again after midnight ET.` },
       { status: 429 }
@@ -201,7 +253,7 @@ export async function POST(req: NextRequest) {
           // isSseClientDisconnect early return (a mid-stream hangup still ran the loop).
           await recordLargoBudgetUsage(userId, slot.redis);
           // Release the concurrency slot before closing the stream controller.
-          await releaseLargoSlot(userId, slot.redis);
+          await releaseLargoSlot(userId, slot.redis, slot.localSlot);
           try {
             controller.close();
           } catch {
@@ -238,6 +290,6 @@ export async function POST(req: NextRequest) {
     // release the concurrency slot whether the non-streaming query succeeded or failed.
     // Billing on success and failure alike is the conservative cost-control choice.
     await recordLargoBudgetUsage(userId, slot.redis);
-    await releaseLargoSlot(userId, slot.redis);
+    await releaseLargoSlot(userId, slot.redis, slot.localSlot);
   }
 }
