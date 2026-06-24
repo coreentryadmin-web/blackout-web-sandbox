@@ -1,8 +1,9 @@
 ﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { clsx } from "clsx";
+import { Drawer } from "@/components/ui";
 import { fetchFlows, fetchDarkPoolPrints, fmtPremium, type FlowAlert, type DarkPoolRow } from "@/lib/api";
 
 function timeAgo(iso: string): string {
@@ -94,12 +95,6 @@ export function TickerDrawer({
     else setState({ flows: [], dp: [], loading: false });
   }, [ticker, load]);
 
-  useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", fn);
-    return () => window.removeEventListener("keydown", fn);
-  }, [onClose]);
-
   // Apply same typeFilter as the tape so drawer matches what the user is looking at
   const displayFlows = typeFilter && typeFilter !== "ALL"
     ? state.flows.filter((f) => f.option_type === typeFilter)
@@ -111,83 +106,53 @@ export function TickerDrawer({
   const callPct  = total > 0 ? Math.round((callPrem / total) * 100) : 0;
   const isBull   = callPrem >= putPrem;
 
+  const header = (
+    <div className="flex items-center gap-3">
+      {onToggleStar && ticker && (
+        <button
+          type="button"
+          onClick={() => onToggleStar(ticker)}
+          title={isStarred ? `Remove ${ticker} from watchlist` : `Add ${ticker} to watchlist`}
+          aria-pressed={!!isStarred}
+          className={clsx(
+            "leading-none text-[22px] transition-colors",
+            isStarred ? "text-gold" : "text-cyan-400 hover:text-gold"
+          )}
+        >
+          {isStarred ? "★" : "☆"}
+        </button>
+      )}
+      <span className="font-anton text-[28px] text-white leading-none tracking-wide">{ticker}</span>
+      {!state.loading && state.flows.length > 0 && (
+        <div className={clsx(
+          "px-2 py-1 rounded-md border font-mono text-[10px] font-semibold",
+          isBull ? "border-emerald-800 text-emerald-300 bg-emerald-950" : "border-rose-800 text-rose-300 bg-rose-950"
+        )}>
+          {isBull ? "↑" : "↓"} {callPct}% calls
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <AnimatePresence>
-      {ticker && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/70 z-40 backdrop-blur-sm"
-            onClick={onClose}
-          />
-
-          {/* Drawer */}
-          <motion.aside
-            key="drawer"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 26, stiffness: 280, mass: 0.9 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-[420px] flex flex-col bg-zinc-950 border-l border-zinc-800"
-            style={{ boxShadow: "-20px 0 60px rgba(0,0,0,0.5)" }}
-          >
-            {/* Top gradient line */}
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-600/30 to-transparent" />
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/80 flex-shrink-0 sticky top-0 bg-zinc-950/95 backdrop-blur z-10">
-              <div className="flex items-center gap-3">
-                {onToggleStar && ticker && (
-                  <button
-                    type="button"
-                    onClick={() => onToggleStar(ticker)}
-                    title={isStarred ? `Remove ${ticker} from watchlist` : `Add ${ticker} to watchlist`}
-                    aria-pressed={!!isStarred}
-                    className={clsx(
-                      "leading-none text-[22px] transition-colors",
-                      isStarred ? "text-gold" : "text-cyan-400 hover:text-gold"
-                    )}
-                  >
-                    {isStarred ? "★" : "☆"}
-                  </button>
-                )}
-                <span className="font-anton text-[28px] text-white leading-none tracking-wide">{ticker}</span>
-                {!state.loading && state.flows.length > 0 && (
-                  <div className={clsx(
-                    "px-2 py-1 rounded-md border font-mono text-[10px] font-semibold",
-                    isBull ? "border-emerald-800 text-emerald-300 bg-emerald-950" : "border-rose-800 text-rose-300 bg-rose-950"
-                  )}>
-                    {isBull ? "↑" : "↓"} {callPct}% calls
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-800 text-cyan-400 hover:text-sky-100 hover:border-zinc-600 hover:bg-zinc-900 transition-all font-mono text-lg"
-              >
-                ×
-              </button>
+    <Drawer
+      open={!!ticker}
+      onClose={onClose}
+      side="right"
+      title={header}
+    >
+      {/* Content */}
+      <div className="flow-scroll">
+        {state.loading ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flow-skeleton h-16 rounded-lg" />
+              <div className="flow-skeleton h-16 rounded-lg" />
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto flow-scroll">
-              {state.loading ? (
-                <div className="p-5 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flow-skeleton h-16 rounded-lg" />
-                    <div className="flow-skeleton h-16 rounded-lg" />
-                  </div>
-                  {[1, 2, 3, 4].map((n) => <div key={n} className="flow-skeleton h-14 rounded-lg" />)}
-                </div>
-              ) : (
-                <div className="p-5 space-y-5">
+            {[1, 2, 3, 4].map((n) => <div key={n} className="flow-skeleton h-14 rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="space-y-5">
                   {/* Premium summary */}
                   {displayFlows.length > 0 && (
                     <div className="grid grid-cols-2 gap-3">
@@ -275,12 +240,9 @@ export function TickerDrawer({
                       </div>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </Drawer>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
+import { Modal } from "@/components/ui";
 
 export function pct(n: number): string {
   return `${(n * 100).toFixed(0)}%`;
@@ -505,23 +506,20 @@ export function ConfirmModal({
   onCancel: () => void;
   loading?: boolean;
 }) {
-  if (!open) return null;
   return (
-    <div className="admin-confirm-backdrop" role="presentation" onClick={onCancel}>
-      <div className="admin-confirm-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
-        <p className="admin-confirm-kicker">Confirm action</p>
-        <h3 className="admin-confirm-title">{title}</h3>
-        <p className="admin-confirm-body">{body}</p>
-        <div className="admin-confirm-actions">
-          <ActionButton onClick={onCancel} disabled={loading}>
-            {cancelLabel}
-          </ActionButton>
-          <ActionButton onClick={onConfirm} disabled={loading} variant="primary">
-            {loading ? "Running…" : confirmLabel}
-          </ActionButton>
-        </div>
+    <Modal open={open} onClose={onCancel} size="sm" className="admin-confirm-modal">
+      <p className="admin-confirm-kicker">Confirm action</p>
+      <h3 className="admin-confirm-title">{title}</h3>
+      <p className="admin-confirm-body">{body}</p>
+      <div className="admin-confirm-actions">
+        <ActionButton onClick={onCancel} disabled={loading}>
+          {cancelLabel}
+        </ActionButton>
+        <ActionButton onClick={onConfirm} disabled={loading} variant="primary">
+          {loading ? "Running…" : confirmLabel}
+        </ActionButton>
       </div>
-    </div>
+    </Modal>
   );
 }
 

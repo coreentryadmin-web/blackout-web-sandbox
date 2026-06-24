@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { clsx } from "clsx";
-import { AnimatePresence, motion } from "framer-motion";
+import { Modal } from "@/components/ui";
 import useSWR from "swr";
 import { postNightHawkPlayExplain } from "@/lib/api";
 import type { PlaybookPlay } from "@/lib/nighthawk/types";
@@ -45,15 +45,6 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
-  useEffect(() => {
-    if (!play) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [play, onClose]);
-
   const paragraphs = useMemo(() => {
     if (!data?.explanation) return [];
     return data.explanation.split(/\n+/).filter((l) => l.trim());
@@ -64,60 +55,40 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
     play?.direction === "LONG" ||
     play?.direction?.toUpperCase().includes("CALL");
 
-  return (
-    <AnimatePresence>
-      {play && (
-        <motion.div
-          className="nighthawk-modal-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
+  const header = play && (
+    <div>
+      <p className="nighthawk-modal-kicker">Hawk Intel · Rank #{play.rank}</p>
+      <h2 id="nighthawk-play-detail-title" className="nighthawk-play-detail-title">
+        {play.ticker}{" "}
+        <span
+          className={clsx(
+            "nighthawk-play-direction",
+            isBull ? "nighthawk-play-direction-bull" : "nighthawk-play-direction-bear"
+          )}
         >
-          <motion.div
-            className={clsx(
-              "nighthawk-modal nighthawk-play-detail-modal",
-              isBull ? "nighthawk-modal-gold" : "nighthawk-modal-bear"
-            )}
-            initial={{ opacity: 0, y: 28, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.98 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="nighthawk-play-detail-title"
-          >
-            <header className="nighthawk-modal-header nighthawk-play-detail-header">
-              <div>
-                <p className="nighthawk-modal-kicker">Hawk Intel · Rank #{play.rank}</p>
-                <h2 id="nighthawk-play-detail-title" className="nighthawk-play-detail-title">
-                  {play.ticker}{" "}
-                  <span
-                    className={clsx(
-                      "nighthawk-play-direction",
-                      isBull ? "nighthawk-play-direction-bull" : "nighthawk-play-direction-bear"
-                    )}
-                  >
-                    {play.direction}
-                  </span>
-                </h2>
-                <p className="nighthawk-play-detail-sub">
-                  {play.conviction} conviction · Score {play.score}
-                  {play.flow_streak_days != null ? ` · ${play.flow_streak_days}d flow streak` : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="nighthawk-modal-close"
-                onClick={onClose}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </header>
+          {play.direction}
+        </span>
+      </h2>
+      <p className="nighthawk-play-detail-sub">
+        {play.conviction} conviction · Score {play.score}
+        {play.flow_streak_days != null ? ` · ${play.flow_streak_days}d flow streak` : ""}
+      </p>
+    </div>
+  );
 
-            <div className="nighthawk-play-detail-quick">
+  return (
+    <Modal
+      open={!!play}
+      onClose={onClose}
+      title={header}
+      className={clsx(
+        "nighthawk-modal nighthawk-play-detail-modal",
+        isBull ? "nighthawk-modal-gold" : "nighthawk-modal-bear"
+      )}
+    >
+      {play && (
+        <>
+          <div className="nighthawk-play-detail-quick">
               <span>
                 <em>Entry</em> {play.entry_range}
               </span>
@@ -160,9 +131,8 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
                 </div>
               )}
             </div>
-          </motion.div>
-        </motion.div>
+        </>
       )}
-    </AnimatePresence>
+    </Modal>
   );
 }
