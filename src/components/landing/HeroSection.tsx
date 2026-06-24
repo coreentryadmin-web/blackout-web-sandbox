@@ -54,19 +54,26 @@ export function HeroSection() {
     >
       {/* ── CINEMATIC BACKGROUND ── operator command desk; parallax drift, overscaled so
           the drift never reveals an edge. Reduced-motion users get the static frame. */}
-      <motion.div
-        aria-hidden
-        className="absolute inset-0 z-0"
-        style={{ x: px, y: py, scale: 1.08 }}
-      >
-        <Image
-          src={IMAGES.heroCommand}
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover object-center"
-        />
+      <motion.div aria-hidden className="absolute inset-0 z-0" style={{ x: px, y: py }}>
+        <motion.div
+          className="absolute inset-0"
+          initial={{ scale: 1.1 }}
+          animate={
+            reduced
+              ? { scale: 1.1 }
+              : { scale: [1.1, 1.18, 1.1], x: ["0%", "-1.6%", "0%"], y: ["0%", "-1.1%", "0%"] }
+          }
+          transition={{ duration: 40, ease: "easeInOut", repeat: Infinity }}
+        >
+          <Image
+            src={IMAGES.heroCommand}
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-center"
+          />
+        </motion.div>
       </motion.div>
 
       {/* legibility scrims — darken the headline band + top/bottom, keep the mid-frame
@@ -86,6 +93,18 @@ export function HeroSection() {
         style={{
           background:
             "radial-gradient(72% 56% at 50% 38%, rgba(4,4,7,0.58), rgba(4,4,7,0) 72%)",
+        }}
+      />
+
+      {/* drifting green aurora over the storm — perpetual life (screen-blended) */}
+      <motion.div
+        aria-hidden
+        className="absolute inset-0 z-[1] mix-blend-screen"
+        animate={reduced ? { opacity: 0.3 } : { opacity: [0.22, 0.5, 0.22], scale: [1, 1.16, 1] }}
+        transition={{ duration: 13, ease: "easeInOut", repeat: Infinity }}
+        style={{
+          background:
+            "radial-gradient(58% 44% at 50% 20%, rgba(0,230,118,0.22), rgba(0,230,118,0) 70%)",
         }}
       />
 
