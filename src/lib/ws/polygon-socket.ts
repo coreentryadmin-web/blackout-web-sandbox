@@ -106,7 +106,12 @@ function connectIndices() {
             indicesWs?.send(
               JSON.stringify({
                 action: "subscribe",
-                params: "A.I:SPX,A.I:VIX,A.I:VIX9D,A.I:VIX3M,A.I:TICK,A.I:TRIN,A.I:ADD",
+                // A = 1-second aggregate bars (OHLC) per index; V = TICK-LEVEL value (the index
+                // value between bars — doc-verified ev:"V", T:ticker, val:value). V keeps the desk
+                // price sub-second fresh and fills the gap on reconnect before the next A bar lands.
+                params:
+                  "A.I:SPX,A.I:VIX,A.I:VIX9D,A.I:VIX3M,A.I:TICK,A.I:TRIN,A.I:ADD," +
+                  "V.I:SPX,V.I:VIX,V.I:VIX9D,V.I:VIX3M,V.I:TICK,V.I:TRIN,V.I:ADD",
               })
             );
           } else if (
@@ -140,6 +145,28 @@ function connectIndices() {
                   }
                 } catch { /* non-fatal — SSE falls back to local indexStore */ }
               })();
+            }
+          } else if (ev === "V") {
+            // Indices Value channel — TICK-LEVEL value between the 1-second A bars (doc-verified
+            // schema: { ev:"V", T:ticker, val:value, t:ts } — note the ticker field is `T`, not
+            // `sym` like the aggregate channels). Refreshes the desk price + change_pct off the
+            // EXISTING session anchor (the A channel OWNS session_open / session_date / new-day
+            // reset; V never seeds them). Updates ONLY the local indexStore (the SSE pulse source);
+            // it deliberately does NOT write the Redis snapshot per tick — the A handler writes the
+            // ~1s cross-replica snapshot, so V can't hammer Redis at tick rate.
+            const sym = typeof msg.T === "string" ? (msg.T as string) : "";
+            const val = Number(msg.val);
+            if (sym && indexStore[sym] && Number.isFinite(val) && val > 0) {
+              const prev = indexStore[sym];
+              indexStore[sym] = {
+                ...prev,
+                price: val,
+                change_pct:
+                  prev.session_open > 0
+                    ? ((val - prev.session_open) / prev.session_open) * 100
+                    : prev.change_pct,
+                updatedAt: Date.now(),
+              };
             }
           }
         }
