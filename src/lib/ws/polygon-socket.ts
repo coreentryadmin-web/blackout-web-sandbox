@@ -42,6 +42,7 @@ let indicesAuthenticated = false;
 let polygonSocketInitialized = false;
 let indicesReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let indicesConsecutiveFailures = 0;
+let indicesShuttingDown = false;
 
 function polygonErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -52,6 +53,7 @@ function polygonErrorMessage(err: unknown): string {
 }
 
 function scheduleIndicesReconnect(reason: string) {
+  if (indicesShuttingDown) return; // shutting down — do not resurrect the socket
   if (indicesReconnectTimer) return;
   indicesConsecutiveFailures += 1;
   const base = Math.min(indicesReconnectDelay, 60_000);
@@ -68,6 +70,7 @@ function scheduleIndicesReconnect(reason: string) {
 }
 
 function connectIndices() {
+  if (indicesShuttingDown) return; // shutting down — do not open a new socket
   if (!POLYGON_API_KEY) {
     console.warn("[polygon-socket] POLYGON_API_KEY not set — WebSocket disabled");
     return;
@@ -169,6 +172,41 @@ export function initPolygonSocket() {
   polygonSocketInitialized = true;
   connectIndices();
   console.log("[polygon-socket] initialized");
+}
+
+/**
+ * Graceful shutdown for the indices socket. Sets the shutdown flag (so the
+ * reconnect scheduler + connect path bail and cannot resurrect the socket),
+ * clears the pending reconnect timer, and closes the live WS with a normal
+ * close (1000) so the upstream releases this container's indices slot
+ * immediately on SIGTERM. Idempotent and never throws.
+ */
+export function shutdownPolygonSocket(): void {
+  indicesShuttingDown = true;
+  if (indicesReconnectTimer) {
+    clearTimeout(indicesReconnectTimer);
+    indicesReconnectTimer = null;
+  }
+  const ws = indicesWs;
+  indicesWs = null;
+  if (ws) {
+    // Drop the close handler first so onclose can't schedule a reconnect.
+    try {
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.onopen = null;
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close(1000, "server shutdown");
+      }
+    } catch {
+      /* best-effort — must not block shutdown */
+    }
+  }
 }
 
 export function getIndexStoreStatus() {

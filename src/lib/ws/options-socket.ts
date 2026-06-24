@@ -217,6 +217,7 @@ class OptionsShard {
   private subscribed = new Set<string>();
   private lastMessageAt = 0;
   private authFailed = false;
+  private shuttingDown = false;
 
   constructor(id: number) {
     this.id = id;
@@ -259,6 +260,7 @@ class OptionsShard {
   }
 
   private scheduleReconnect(reason: string) {
+    if (this.shuttingDown) return; // shutting down — do not resurrect the socket
     if (this.reconnectTimer) return;
     if (this.symbols.size === 0) return; // nothing to stream — stay idle
     this.consecutiveFailures += 1;
@@ -277,6 +279,7 @@ class OptionsShard {
 
   /** Connect only if there is work to do and we are not already connected. */
   ensureConnected(): void {
+    if (this.shuttingDown) return; // shutting down — do not open a new socket
     if (this.symbols.size === 0) return;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -298,6 +301,7 @@ class OptionsShard {
   }
 
   private connect() {
+    if (this.shuttingDown) return; // shutting down — do not open a new socket
     if (!POLYGON_API_KEY) return;
     if (this.symbols.size === 0) return;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
@@ -427,6 +431,38 @@ class OptionsShard {
     this.scheduleReconnect("stall");
   }
 
+  /**
+   * Graceful shutdown of this shard. Sets the shutdown flag (so scheduleReconnect
+   * / ensureConnected / connect bail and cannot reopen), clears the reconnect
+   * timer, and closes the live WS with a normal close (1000). Best-effort,
+   * idempotent, never throws.
+   */
+  shutdown(): void {
+    this.shuttingDown = true;
+    this.clearReconnect();
+    const ws = this.ws;
+    this.ws = null;
+    this.authenticated = false;
+    if (ws) {
+      // Detach handlers first so onclose can't schedule a reconnect.
+      try {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.onopen = null;
+      } catch {
+        /* ignore */
+      }
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close(1000, "server shutdown");
+        }
+      } catch {
+        /* best-effort — must not block shutdown */
+      }
+    }
+  }
+
   status() {
     return {
       id: this.id,
@@ -453,6 +489,7 @@ class OptionsSocketPool {
   /** occ -> shard index, so removals find their owner in O(1). */
   private owner = new Map<string, number>();
   private overflowLogged = false;
+  private shuttingDown = false;
 
   private capacity(): number {
     return MAX_CONNECTIONS * MAX_CONTRACTS_PER_CONN;
@@ -464,6 +501,7 @@ class OptionsSocketPool {
 
   /** Subscribe a batch of OCC symbols (idempotent). Respects the global cap. */
   subscribe(symbols: string[]): void {
+    if (this.shuttingDown) return; // shutting down — accept no new subscriptions
     for (const occ of symbols) {
       if (!occ || this.owner.has(occ)) continue;
       const shard = this.pickShard();
@@ -510,10 +548,27 @@ class OptionsSocketPool {
 
   /** Periodic heartbeat: reconnect idle/stalled shards. */
   watchdog(stallMs: number): void {
+    if (this.shuttingDown) return; // shutting down — do not revive shards
     const now = Date.now();
     for (const s of this.shards) {
       s.ensureConnected();
       s.reconnectIfStalled(stallMs, now);
+    }
+  }
+
+  /**
+   * Graceful shutdown of the pool: set the flag (so subscribe / watchdog bail)
+   * and shut down every shard (each closes its WS + bails its own reconnect).
+   * Best-effort, idempotent, never throws.
+   */
+  shutdown(): void {
+    this.shuttingDown = true;
+    for (const s of this.shards) {
+      try {
+        s.shutdown();
+      } catch {
+        /* one shard failing must not block the others */
+      }
     }
   }
 
@@ -665,4 +720,19 @@ export function initOptionsSocket(): void {
     `[options-socket] initialized — reconcile every ${Math.round(RECONCILE_INTERVAL_MS / 1000)}s, ` +
       `cap ${MAX_CONNECTIONS}x${MAX_CONTRACTS_PER_CONN} contracts`
   );
+}
+
+/**
+ * Graceful shutdown for the options WS engine. Clears the reconcile/watchdog
+ * interval and shuts down every shard's connection (the pool sets its own
+ * shutdown flag so shards won't reconnect and reconcile won't re-subscribe).
+ * Best-effort, idempotent, never throws. Called on SIGTERM so the old container
+ * releases its Massive options slots immediately.
+ */
+export function shutdownOptionsSocket(): void {
+  if (reconcileTimer) {
+    clearInterval(reconcileTimer);
+    reconcileTimer = null;
+  }
+  pool.shutdown();
 }

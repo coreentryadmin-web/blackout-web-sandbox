@@ -73,6 +73,7 @@ class UwSocketManager {
   private lastCloseReason: string | null = null;
   private authFailedLogged = false;
   private connectStarted = false;
+  private shuttingDown = false;
 
   private channelsWithHandlers(): UwWsChannel[] {
     return ALL_CHANNELS.filter((ch) => (this.handlers.get(ch)?.size ?? 0) > 0);
@@ -113,6 +114,7 @@ class UwSocketManager {
   }
 
   private scheduleReconnect() {
+    if (this.shuttingDown) return; // shutting down — do not resurrect the socket
     if (this.channelsWithHandlers().length === 0) return;
     this.clearReconnect();
     const delay =
@@ -228,6 +230,7 @@ class UwSocketManager {
   }
 
   private connect() {
+    if (this.shuttingDown) return; // shutting down — do not open a new socket
     if (!UW_API_KEY) {
       this.markAuthFailed("UW_API_KEY not set");
       return;
@@ -349,6 +352,38 @@ class UwSocketManager {
     this.teardownSocket();
     this.scheduleReconnect();
     return true;
+  }
+
+  /**
+   * Graceful shutdown of the multiplex socket. Sets the shutdown flag (so
+   * scheduleReconnect / connect bail and cannot rejoin), clears the reconnect
+   * timer, and closes the live WS with a normal close (1000) so UW releases this
+   * container's slot immediately on SIGTERM. Idempotent and never throws.
+   */
+  shutdown(): void {
+    this.shuttingDown = true;
+    this.clearReconnect();
+    const ws = this.ws;
+    this.ws = null;
+    this.connectStarted = false;
+    if (ws) {
+      // Detach handlers first so onclose can't schedule a reconnect.
+      try {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.onopen = null;
+      } catch {
+        /* ignore */
+      }
+      try {
+        if (ws.readyState <= 1) {
+          ws.close(1000, "server shutdown");
+        }
+      } catch {
+        /* best-effort — must not block shutdown */
+      }
+    }
   }
 
   getStatus(): Record<string, string> {
@@ -653,6 +688,20 @@ export function initUwSocket() {
   console.log(
     `[uw-socket] initialized — multiplex ${ALL_CHANNELS.join(", ")}`
   );
+}
+
+/**
+ * Graceful shutdown for the UW multiplex socket. Clears the heartbeat/stall
+ * watchdog interval and closes the live multiplex connection (the manager sets
+ * its own shutdown flag so it won't rejoin). Best-effort, idempotent, never
+ * throws. Called on SIGTERM so the old container releases its UW slot at once.
+ */
+export function shutdownUwSocket(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  uwSocket.shutdown();
 }
 
 /**
