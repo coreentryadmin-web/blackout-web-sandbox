@@ -95,12 +95,13 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="font-mono text-[10px] tracking-[0.4em] uppercase text-bull inline-flex items-center gap-2"
+          className="font-mono text-xs md:text-[13px] font-bold tracking-[0.38em] uppercase text-bull inline-flex items-center gap-2.5"
+          style={{ textShadow: "0 1px 10px rgba(0,0,0,0.9), 0 0 18px rgba(0,230,118,0.4)" }}
         >
           <span
             aria-hidden
-            className="inline-block h-1.5 w-1.5 rounded-full bg-bull animate-pulse motion-reduce:animate-none"
-            style={{ boxShadow: "0 0 10px #00e676" }}
+            className="inline-block h-2 w-2 rounded-full bg-bull animate-pulse motion-reduce:animate-none"
+            style={{ boxShadow: "0 0 12px #00e676" }}
           />
           Institutional desk · 5 instruments
         </motion.p>
@@ -174,11 +175,12 @@ export function HeroSection() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8 }}
-          className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[0.15em] uppercase text-sky-300/90 mt-6"
+          className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-xs md:text-[13px] font-bold tracking-[0.18em] uppercase text-white mt-6"
+          style={{ textShadow: "0 1px 10px rgba(0,0,0,0.92)" }}
         >
           {CREDENTIALS.map((c, i) => (
             <li key={c} className="flex items-center gap-5">
-              {i > 0 && <span aria-hidden className="hidden sm:inline h-3 w-px bg-bull/30" />}
+              {i > 0 && <span aria-hidden className="hidden sm:inline h-3.5 w-px bg-bull/70" />}
               <span>{c}</span>
             </li>
           ))}
