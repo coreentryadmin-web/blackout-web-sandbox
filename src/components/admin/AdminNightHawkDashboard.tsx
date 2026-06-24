@@ -140,6 +140,8 @@ export function AdminNightHawkDashboard() {
   const [preview, setPreview] = useState<NighthawkPublishPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [runMsg, setRunMsg] = useState<string | null>(null);
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
@@ -162,6 +164,35 @@ export function AdminNightHawkDashboard() {
       setLoading(false);
     }
   }, [windowDays]);
+
+  const runNow = useCallback(async () => {
+    setRunning(true);
+    setRunMsg("Running the edition pipeline… Claude builds can take a few minutes — re-run to resume.");
+    try {
+      const res = await fetch("/api/admin/nighthawk/run", { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        job_status?: string;
+        current_stage?: string | null;
+        plays_count?: number;
+        edition_for?: string;
+        error?: string;
+        detail?: string;
+      };
+      if (json.job_status === "published") {
+        setRunMsg(`✓ Published ${json.edition_for ?? ""} — ${json.plays_count ?? 0} plays.`);
+      } else if (json.ok === false && (json.error || json.detail)) {
+        setRunMsg(`✗ ${json.error ?? "Failed"}${json.detail ? ` — ${json.detail}` : ""}`);
+      } else {
+        setRunMsg(`… ${json.current_stage ?? json.job_status ?? "in progress"} — click Run again to resume.`);
+      }
+      void load(false);
+    } catch (err) {
+      setRunMsg(`✗ ${err instanceof Error ? err.message : "Run failed"}`);
+    } finally {
+      setRunning(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void load(true);
@@ -192,16 +223,21 @@ export function AdminNightHawkDashboard() {
         titleAccent="outcomes"
         subtitle={`Last ${data.window_days} days · ${data.total_resolved} resolved · ${data.pending_count} pending`}
         actions={
-          <div className="admin-nh-window-tabs">
-            {WINDOW_OPTIONS.map((days) => (
-              <ActionButton
-                key={days}
-                variant={windowDays === days ? "primary" : undefined}
-                onClick={() => setWindowDays(days)}
-              >
-                {days}d
-              </ActionButton>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton variant="primary" onClick={() => void runNow()} disabled={running}>
+              {running ? "Running…" : "▶ Run now"}
+            </ActionButton>
+            <div className="admin-nh-window-tabs">
+              {WINDOW_OPTIONS.map((days) => (
+                <ActionButton
+                  key={days}
+                  variant={windowDays === days ? "primary" : undefined}
+                  onClick={() => setWindowDays(days)}
+                >
+                  {days}d
+                </ActionButton>
+              ))}
+            </div>
           </div>
         }
         rings={
@@ -242,6 +278,8 @@ export function AdminNightHawkDashboard() {
           </>
         }
       />
+
+      {runMsg && <p className="admin-muted" style={{ marginTop: 8 }}>{runMsg}</p>}
 
       {error && <p className="admin-error">{error}</p>}
 
