@@ -159,6 +159,9 @@ export type PositionDetail = {
   };
   sections: PositionDetailSections;
   dataSources: DataSource[];
+  /** Grounded Claude desk narrative (attached by the detail route; null when unavailable/
+   *  over-budget/anthropic unconfigured — the UI then falls back to whatToDo). */
+  narrative?: string | null;
   as_of: string;
 };
 

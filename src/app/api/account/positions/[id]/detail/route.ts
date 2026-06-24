@@ -12,6 +12,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { buildPositionDetail } from "@/lib/nights-watch/position-detail";
+import { buildPositionNarrative } from "@/lib/nights-watch/position-narrative";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   try {
     const detail = await buildPositionDetail(userId, id);
     if (!detail) return NextResponse.json({ error: "Position not found" }, { status: 404 });
-    return NextResponse.json(detail, { headers: { "Cache-Control": "no-store" } });
+    // Grounded Claude desk narrative — on-demand, cached per-position, globally budgeted.
+    // .catch(()=>null) guarantees a narrative failure never breaks the (already-built) detail.
+    const narrative = await buildPositionNarrative(detail).catch(() => null);
+    return NextResponse.json({ ...detail, narrative }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[account/positions/[id]/detail GET]", error);
     return NextResponse.json({ error: "Failed to build position detail" }, { status: 502 });
