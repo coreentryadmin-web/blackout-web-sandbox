@@ -49,3 +49,12 @@ export type { KickerProps } from "./Kicker";
 
 export { Modal, Drawer } from "./Modal";
 export type { ModalProps, ModalSide, ModalSize, DrawerProps } from "./Modal";
+
+export { Tabs, TabList, Tab, TabPanels, TabPanel } from "./Tabs";
+export type {
+  TabsProps,
+  TabListProps,
+  TabProps,
+  TabPanelsProps,
+  TabPanelProps,
+} from "./Tabs";
