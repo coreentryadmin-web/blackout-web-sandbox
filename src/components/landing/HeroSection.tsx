@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef } from "react";
+import Image from "next/image";
 import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
 import { LandingCta } from "@/components/landing/LandingCta";
-import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
-import { ProductMark } from "@/components/marks/ProductMark";
+import { IMAGES } from "@/lib/images";
 
 const HEAD_A = "READ THE TAPE.".split(" ");
 const HEAD_B = "TRADE THE EDGE.".split(" ");
@@ -18,14 +18,6 @@ const wordV = {
   }),
 };
 
-// 4 orbit stations (deg around the ring) — radius via CSS clamp on the stage
-const ORBIT = [
-  { p: "helix" as const, deg: -90 },
-  { p: "heatmap" as const, deg: 0 },
-  { p: "nighthawk" as const, deg: 90 },
-  { p: "largo" as const, deg: 180 },
-];
-
 const GRAD = "linear-gradient(90deg,#00e676,#34d399 55%,#7dd3fc)";
 
 const CREDENTIALS = [
@@ -37,15 +29,16 @@ const CREDENTIALS = [
 
 export function HeroSection() {
   const reduced = useReducedMotion();
-  const stage = useRef<HTMLDivElement>(null);
-  const px = useSpring(useMotionValue(0), { stiffness: 120, damping: 18 });
-  const py = useSpring(useMotionValue(0), { stiffness: 120, damping: 18 });
+  const stage = useRef<HTMLElement>(null);
+  // subtle parallax drift on the cinematic backdrop (mouse-tracked)
+  const px = useSpring(useMotionValue(0), { stiffness: 90, damping: 20 });
+  const py = useSpring(useMotionValue(0), { stiffness: 90, damping: 20 });
 
   const onMove = (e: React.MouseEvent) => {
     if (reduced || !stage.current) return;
     const r = stage.current.getBoundingClientRect();
-    px.set(((e.clientX - r.left) / r.width - 0.5) * 20); // ±10px
-    py.set(((e.clientY - r.top) / r.height - 0.5) * 20);
+    px.set(((e.clientX - r.left) / r.width - 0.5) * 24); // ±12px
+    py.set(((e.clientY - r.top) / r.height - 0.5) * 24);
   };
   const reset = () => {
     px.set(0);
@@ -53,8 +46,48 @@ export function HeroSection() {
   };
 
   return (
-    <section className="landing-section landing-section-hero relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-28 pb-20 px-4">
-      <LandingBackdrop />
+    <section
+      ref={stage}
+      onMouseMove={onMove}
+      onMouseLeave={reset}
+      className="landing-section landing-section-hero relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-28 pb-24 px-4"
+    >
+      {/* ── CINEMATIC BACKGROUND ── operator command desk; parallax drift, overscaled so
+          the drift never reveals an edge. Reduced-motion users get the static frame. */}
+      <motion.div
+        aria-hidden
+        className="absolute inset-0 z-0"
+        style={{ x: px, y: py, scale: 1.08 }}
+      >
+        <Image
+          src={IMAGES.heroCommand}
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center"
+        />
+      </motion.div>
+
+      {/* legibility scrims — darken the headline band + top/bottom, keep the mid-frame
+          (the operator + the storm) readable, and fade the base into the void so the
+          next section seams cleanly. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-[1]"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(4,4,7,0.90) 0%, rgba(4,4,7,0.46) 30%, rgba(4,4,7,0.30) 54%, rgba(4,4,7,0.80) 90%, #040407 100%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute inset-0 z-[1]"
+        style={{
+          background:
+            "radial-gradient(72% 56% at 50% 38%, rgba(4,4,7,0.58), rgba(4,4,7,0) 72%)",
+        }}
+      />
 
       <div className="relative z-10 w-full max-w-5xl mx-auto text-center flex flex-col items-center gap-7">
         {/* KICKER */}
@@ -73,7 +106,7 @@ export function HeroSection() {
         </motion.p>
 
         {/* HEADLINE */}
-        <h1 className="font-anton text-5xl md:text-7xl lg:text-8xl leading-[0.9] tracking-tight">
+        <h1 className="font-anton text-5xl md:text-7xl lg:text-8xl leading-[0.9] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.65)]">
           <span className="block text-white">
             {HEAD_A.map((w, i) => (
               <motion.span
@@ -115,7 +148,7 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="max-w-2xl text-white/70 text-base md:text-lg leading-relaxed font-light"
+          className="max-w-2xl text-white/80 text-base md:text-lg leading-relaxed font-light drop-shadow-[0_1px_12px_rgba(0,0,0,0.7)]"
         >
           The institutional data spine — live options flow, dealer gamma, an SPX 0DTE command desk,
           and an AI analyst — fused into one decision terminal. No chatroom. No signal-seller.
@@ -136,58 +169,12 @@ export function HeroSection() {
           </LandingCta>
         </motion.div>
 
-        {/* SIGIL CONSTELLATION */}
-        <div
-          ref={stage}
-          onMouseMove={onMove}
-          onMouseLeave={reset}
-          className="relative mt-6 grid place-items-center"
-          style={{ width: "clamp(300px,42vw,460px)", height: "clamp(300px,42vw,460px)" }}
-        >
-          {/* slow-rotating orbit ring */}
-          <span
-            aria-hidden
-            className="absolute rounded-full border border-dashed border-bull/20 motion-safe:animate-[spin_60s_linear_infinite]"
-            style={{ width: "82%", height: "82%" }}
-          />
-          <motion.div className="absolute inset-0" style={{ x: px, y: py }}>
-            {/* center SPX (large) */}
-            <motion.span
-              aria-hidden
-              initial={{ opacity: 0, scale: 0.7 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: "spring", stiffness: 120, damping: 16, delay: 0.45 }}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-            >
-              <ProductMark product="spx" size={160} hero title="SPX Slayer" />
-            </motion.span>
-            {/* 4 orbit stations on glass chips */}
-            {ORBIT.map((o, i) => (
-              <motion.span
-                key={o.p}
-                aria-hidden
-                initial={{ opacity: 0, scale: 0.4 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ type: "spring", stiffness: 140, damping: 18, delay: 0.55 + i * 0.12 }}
-                className="absolute left-1/2 top-1/2 grid place-items-center rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-2.5"
-                style={{
-                  transform: `translate(-50%,-50%) translate(${
-                    Math.cos((o.deg * Math.PI) / 180) * 42
-                  }%, ${Math.sin((o.deg * Math.PI) / 180) * 42}%)`,
-                }}
-              >
-                <ProductMark product={o.p} size={64} hero />
-              </motion.span>
-            ))}
-          </motion.div>
-        </div>
-
         {/* CREDENTIAL ROW — honest, no numbers */}
         <motion.ul
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8 }}
-          className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[0.15em] uppercase text-sky-300/80 mt-2"
+          className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[0.15em] uppercase text-sky-300/90 mt-6"
         >
           {CREDENTIALS.map((c, i) => (
             <li key={c} className="flex items-center gap-5">
