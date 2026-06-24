@@ -74,6 +74,14 @@ Read everything via the shared plane `marketPlatform` / `getPlatformSnapshot()` 
 
 ## 7. Phased build plan
 
+**STATUS (2026-06-24):** Phase 1 ✅ (10cfcfa) · Phase 2 ✅ (7a66da8: Polygon limiter active +
+pre-warm cron — cron needs Railway wiring) · Phase 4 options-WS engine **BUILT but DORMANT**
+(gated `OPTIONS_WS_ENABLED` off; fail-open snapshot fallback) · Phase 3 (verdict) + Phase 4 UI
++ Phase 5 (inbound cross-tool) = TODO. **Activate live WS marks:** set `OPTIONS_WS_ENABLED=1`
+(+ `POLYGON_API_KEY`) and wire `railway.nights-watch-warm.toml`. Tunables: `POLYGON_MAX_RPS`
+(~40), `OPTIONS_WS_MAX_CONNS`/`_PER_CONN`, `OPTIONS_WS_MARK_FRESH_MS`.
+
+
 **Phase 1 — Scalable valuation foundation (the P0 fix) ← IN PROGRESS**
 - Cache the per-`(underlying, expiry)` chain snapshot via `withServerCache` + Redis single-flight (TTL ~20–30s RTH); 500 users collapse to one upstream call per group per TTL.
 - Batch a user's positions by `(underlying, expiry)`; fetch each group once; slice every strike in-memory.
