@@ -17,6 +17,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { NightsWatchDetailModal } from "@/components/nights-watch/NightsWatchDetailModal";
 import type { EnrichedPosition, ValuationStatus } from "@/lib/nights-watch/valuation";
 import type { Verdict, VerdictAction } from "@/lib/nights-watch/verdict";
 
@@ -392,9 +393,11 @@ function AddPositionForm({ onCreated }: { onCreated: () => void }) {
 function PositionCard({
   position,
   onChanged,
+  onOpenDetail,
 }: {
   position: ApiPosition;
   onChanged: () => void;
+  onOpenDetail: (id: number) => void;
 }) {
   const [busy, setBusy] = useState<null | "close" | "delete">(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -455,8 +458,29 @@ function PositionCard({
     }
   }
 
+  // The whole card opens the detail modal (click / Enter / Space). The action buttons
+  // stop propagation so Close/Delete never trigger the modal open.
+  function openDetail() {
+    onOpenDetail(position.id);
+  }
+
   return (
-    <Card accent={VERDICT_CARD_ACCENT[position.verdict.action]} padding="sm" className="flex flex-col gap-3">
+    <Card
+      accent={VERDICT_CARD_ACCENT[position.verdict.action]}
+      padding="sm"
+      hover
+      role="button"
+      tabIndex={0}
+      aria-label={`View detail for ${position.ticker} ${position.strike}${position.option_type === "call" ? "C" : "P"}`}
+      onClick={openDetail}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openDetail();
+        }
+      }}
+      className="flex cursor-pointer flex-col gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+    >
       {/* Header: ticker + type + strike + expiry + side */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -548,14 +572,29 @@ function PositionCard({
         </p>
       )}
 
-      {/* Actions */}
+      {/* Actions — stopPropagation so the card's open-detail click never fires for these. */}
       <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          block
+          onClick={(e) => {
+            e.stopPropagation();
+            openDetail();
+          }}
+        >
+          Details
+        </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
           block
-          onClick={handleClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleClose();
+          }}
           loading={busy === "close"}
           disabled={busy != null}
         >
@@ -566,7 +605,10 @@ function PositionCard({
           variant="danger"
           size="sm"
           block
-          onClick={handleDelete}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleDelete();
+          }}
           loading={busy === "delete"}
           disabled={busy != null}
         >
@@ -588,6 +630,8 @@ type LoadState =
 
 export function NightsWatchPanel() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Which position's detail modal is open (null = closed). One fetch per open.
+  const [detailId, setDetailId] = useState<number | null>(null);
   // Keep a ref so the poll loop never shows a flash of skeleton on refetch.
   const loadedOnce = useRef(false);
 
@@ -689,7 +733,12 @@ export function NightsWatchPanel() {
         ) : state.kind === "ready" ? (
           <div className="flex flex-col gap-3">
             {state.positions.map((p) => (
-              <PositionCard key={p.id} position={p} onChanged={load} />
+              <PositionCard
+                key={p.id}
+                position={p}
+                onChanged={load}
+                onOpenDetail={setDetailId}
+              />
             ))}
           </div>
         ) : null}
@@ -699,6 +748,15 @@ export function NightsWatchPanel() {
       <p className="shrink-0 pt-2 font-mono text-[9px] leading-relaxed text-mute">
         Analysis from BlackOut signals — not financial advice. You decide.
       </p>
+
+      {/* Per-position detail modal — fetches the full cross-tool intel once per open. */}
+      {detailId != null && (
+        <NightsWatchDetailModal
+          positionId={detailId}
+          open={detailId != null}
+          onClose={() => setDetailId(null)}
+        />
+      )}
     </aside>
   );
 }
