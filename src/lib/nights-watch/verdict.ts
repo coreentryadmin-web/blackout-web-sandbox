@@ -65,6 +65,19 @@ export const VERDICT_THRESHOLDS = {
   /** Underlying must be PAST a wall by at least this many points to count as a decisive
    *  break (not merely sitting a tick on the wrong side) — prevents a hair-trigger SELL. */
   WALL_BREAK_PTS: 15,
+
+  // ----- Cross-tool enrichment signals (fire ONLY on present data) -----
+  /** Minimum total options-flow premium ($) for the flow signal to be trusted. Below
+   *  this it's noise — the flow signals are never evaluated. */
+  FLOW_MIN_PREMIUM: 250_000,
+  /** Dominant flow side must be at least this multiple of the other side to count as a
+   *  real lean (prevents a near-even tape from firing a directional signal). */
+  FLOW_SKEW_RATIO: 1.5,
+  /** Spot within this fraction of a technical key level = "approaching" it. */
+  LEVEL_APPROACH_PCT: 0.005, // 0.5%
+  /** A binary catalyst (earnings) within this many days, landing on/before expiry, is a
+   *  real risk worth acting on. */
+  EARNINGS_SOON_DAYS: 7,
 } as const;
 
 type SignalHit = { id: string; reason: string };
@@ -182,6 +195,112 @@ function pushedThroughWallAgainst(
 }
 
 /**
+ * Options-flow alignment for the position. Returns null (signal never evaluated) when:
+ *   - no flow context present, OR
+ *   - the lean is "mixed"/"neutral" (no clear direction), OR
+ *   - total premium is below FLOW_MIN_PREMIUM (noise), OR
+ *   - neither side dominates by at least FLOW_SKEW_RATIO (near-even tape).
+ * Otherwise reports whether the dominant flow lean AGREES with the position's exposure
+ * (`aligned`) and a human reason. HONEST: fires only on real, decisive flow data.
+ */
+function flowAlignment(
+  ctx: PositionContext | undefined,
+  wantsUp: boolean
+): { aligned: boolean; reason: string } | null {
+  const flows = ctx?.flows;
+  if (!flows) return null;
+  if (flows.lean !== "bullish" && flows.lean !== "bearish") return null;
+
+  const call = Number.isFinite(flows.callPremium) ? Math.max(0, flows.callPremium) : 0;
+  const put = Number.isFinite(flows.putPremium) ? Math.max(0, flows.putPremium) : 0;
+  const total = call + put;
+  if (total < VERDICT_THRESHOLDS.FLOW_MIN_PREMIUM) return null;
+
+  // Decisive skew: the dominant side must be >= FLOW_SKEW_RATIO x the other. The lean
+  // label and the premium skew must agree on which side is dominant, else it's noise.
+  const bullishDominant = call >= put * VERDICT_THRESHOLDS.FLOW_SKEW_RATIO;
+  const bearishDominant = put >= call * VERDICT_THRESHOLDS.FLOW_SKEW_RATIO;
+  const flowWantsUp =
+    flows.lean === "bullish" && bullishDominant
+      ? true
+      : flows.lean === "bearish" && bearishDominant
+      ? false
+      : null;
+  if (flowWantsUp == null) return null;
+
+  const aligned = flowWantsUp === wantsUp;
+  const callM = (call / 1_000_000).toFixed(1);
+  const putM = (put / 1_000_000).toFixed(1);
+  const reason = aligned
+    ? `Options flow leans ${flows.lean} ($${callM}m calls vs $${putM}m puts) — aligned with this position.`
+    : `Options flow leans ${flows.lean} against this position ($${
+        flows.lean === "bearish" ? putM : callM
+      }m ${flows.lean === "bearish" ? "puts" : "calls"} vs $${
+        flows.lean === "bearish" ? callM : putM
+      }m ${flows.lean === "bearish" ? "calls" : "puts"}).`;
+  return { aligned, reason };
+}
+
+/**
+ * Daily-trend alignment. Returns null unless ctx.trend is a directional label
+ * ("up"/"down"; "sideways"/null/absent never fire). Reports whether the trend AGREES
+ * with the position's exposure and a human reason.
+ */
+function trendAlignment(
+  ctx: PositionContext | undefined,
+  wantsUp: boolean
+): { aligned: boolean; reason: string } | null {
+  const trend = ctx?.trend;
+  if (trend !== "up" && trend !== "down") return null;
+  const trendWantsUp = trend === "up";
+  const aligned = trendWantsUp === wantsUp;
+  const reason = `Daily trend is ${trend}, ${
+    aligned ? "aligned with" : "against"
+  } this position.`;
+  return { aligned, reason };
+}
+
+/**
+ * Technical key-level proximity. Mirrors nearestWallSignal but for chart support/
+ * resistance levels: returns the nearest level in the THREATENING direction (resistance
+ * ABOVE for bullish exposure, support BELOW for bearish) when spot is within
+ * LEVEL_APPROACH_PCT of it. Returns null when no levels / no usable spot / no threatening
+ * level in range — so a level on the SAFE side never fires.
+ */
+function approachingKeyLevel(
+  ctx: PositionContext | undefined,
+  spot: number | null,
+  wantsUp: boolean
+): { reason: string } | null {
+  const levels = ctx?.levels;
+  if (!levels || levels.length === 0) return null;
+  if (spot == null || !(spot > 0)) return null;
+
+  // Threatening side: bullish exposure is threatened by RESISTANCE above; bearish by
+  // SUPPORT below.
+  const threatening = levels.filter((lvl) => {
+    if (!Number.isFinite(lvl.price)) return false;
+    return wantsUp
+      ? lvl.kind === "resistance" && lvl.price > spot
+      : lvl.kind === "support" && lvl.price < spot;
+  });
+  if (threatening.length === 0) return null;
+
+  // Closest threatening level to spot.
+  const lvl = threatening.reduce((closest, l) =>
+    Math.abs(l.price - spot) < Math.abs(closest.price - spot) ? l : closest
+  );
+  const withinPct = Math.abs(lvl.price - spot) / spot <= VERDICT_THRESHOLDS.LEVEL_APPROACH_PCT;
+  if (!withinPct) return null;
+
+  const src = lvl.source ? ` (${lvl.source})` : "";
+  const kindLabel = lvl.kind === "resistance" ? "resistance" : "support";
+  return {
+    reason: `Price approaching ${kindLabel} at ${lvl.price}${src} in the position's path.`,
+  };
+}
+
+/**
  * Deterministic Hold/Trim/Sell/Watch verdict for one enriched position.
  *
  * Resolution order:
@@ -215,6 +334,13 @@ export function computeVerdict(
   // below is side-aware. A long fears expiry-worthless + theta decay; a short WANTS them
   // (it's collecting premium) and instead fears assignment (the option going ITM).
   const isShort = position.side === "short";
+
+  // Bullish exposure = wants price up (long call OR short put). Else bearish.
+  // Computed ONCE here and reused by every side-aware cross-tool signal below
+  // (mirrors the same convention already used inside the GEX-wall helpers).
+  const wantsUp =
+    (position.option_type === "call" && position.side === "long") ||
+    (position.option_type === "put" && position.side === "short");
 
   const sellSignals: SignalHit[] = [];
   const trimSignals: SignalHit[] = [];
@@ -274,6 +400,28 @@ export function computeVerdict(
     });
   }
 
+  // -------------------- Cross-tool: catalyst / earnings (side-aware) --------------------
+  // A binary event (earnings) landing ON OR BEFORE expiry is a real, two-sided risk:
+  // the print can gap the underlying and IV collapses afterward. Fires ONLY when the
+  // catalyst data is present AND it's confirmed before expiry AND it's imminent.
+  // SELL-leaning for a SHORT here (gap/assignment risk through a binary event is more
+  // dangerous than a long's IV-crush risk); the LONG (TRIM) variant lives below.
+  const earnings = ctx?.catalysts;
+  const earningsDays = earnings?.daysToEarnings;
+  const earningsBeforeExpiry = earnings?.beforeExpiry === true;
+  const earningsImminent =
+    earningsBeforeExpiry &&
+    earningsDays != null &&
+    Number.isFinite(earningsDays) &&
+    earningsDays >= 0 &&
+    earningsDays <= T.EARNINGS_SOON_DAYS;
+  if (earningsImminent && isShort) {
+    sellSignals.push({
+      id: "earnings_before_expiry",
+      reason: `Earnings in ${earningsDays} days (before expiry) — gap/assignment risk on a short through a binary event; consider closing.`,
+    });
+  }
+
   // -------------------- TRIM-leaning --------------------
 
   // Lock partial on a strong gain. Side-aware "strong" line (a short's profit caps at +100%).
@@ -320,7 +468,54 @@ export function computeVerdict(
     });
   }
 
+  // LONG earnings before expiry → TRIM (IV-crush risk after the print; less severe than
+  // the SHORT's gap/assignment risk, which is SELL-leaning above).
+  if (earningsImminent && !isShort) {
+    trimSignals.push({
+      id: "earnings_before_expiry",
+      reason: `Earnings in ${earningsDays} days (before expiry) — IV-crush risk after the print; consider trimming.`,
+    });
+  }
+
+  // -------------------- Cross-tool: options flow alignment (side-aware) --------------------
+  // Fires ONLY when real flow data is present, the total premium clears the noise floor,
+  // and one side meaningfully dominates (skew ratio) — a mixed/neutral or near-even tape
+  // never fires. A lean that OPPOSES the position is TRIM-leaning; an aligned lean is a
+  // HOLD signal (added in the HOLD section below).
+  const flowSignal = flowAlignment(ctx, wantsUp);
+  if (flowSignal && !flowSignal.aligned) {
+    trimSignals.push({ id: "flow_against", reason: flowSignal.reason });
+  }
+
+  // -------------------- Cross-tool: chart trend alignment (side-aware) --------------------
+  // Fires ONLY when ctx.trend is a directional label ("up"/"down"; "sideways"/null never
+  // fire). A trend that OPPOSES the position's exposure is TRIM-leaning; an aligned trend
+  // is a HOLD signal (added below).
+  const trendSignal = trendAlignment(ctx, wantsUp);
+  if (trendSignal && !trendSignal.aligned) {
+    trimSignals.push({ id: "trend_against", reason: trendSignal.reason });
+  }
+
+  // -------------------- Cross-tool: technical key-level proximity (side-aware) -----------
+  // Mirrors the GEX-wall approaching logic but for chart support/resistance levels: if spot
+  // sits within LEVEL_APPROACH_PCT of a level in the THREATENING direction (resistance ABOVE
+  // for bullish exposure, support BELOW for bearish) → TRIM. Fires ONLY when ctx.levels has a
+  // real threatening level in range with a usable spot. A level on the SAFE side never fires.
+  const levelSignal = approachingKeyLevel(ctx, underlyingPrice, wantsUp);
+  if (levelSignal) {
+    trimSignals.push({ id: "approaching_key_level", reason: levelSignal.reason });
+  }
+
   // -------------------- HOLD-leaning --------------------
+
+  // Options flow / trend that AGREE with the position support holding it (only the aligned
+  // branch lands here; the opposing branch already pushed TRIM above).
+  if (flowSignal && flowSignal.aligned) {
+    holdSignals.push({ id: "flow_supports", reason: flowSignal.reason });
+  }
+  if (trendSignal && trendSignal.aligned) {
+    holdSignals.push({ id: "trend_aligned", reason: trendSignal.reason });
+  }
 
   // Directional exposure reads OPPOSITELY by side. For a LONG, high |delta| = healthy
   // conviction (the thesis is working) → hold. For a SHORT, high |delta| means the option

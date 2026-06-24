@@ -54,6 +54,42 @@ export type PositionContext = {
   gexWalls: GexWall[];
   /** Ranked key levels (HOD/PDH/VWAP/EMA/etc.) the desk surfaces. */
   keyLevels: SpxDeskLevel[];
+
+  // ---------------------------------------------------------------------------
+  // OPTIONAL cross-tool enrichment (default undefined). Populated by a separate
+  // aggregator — NOT by buildPositionContextMap (the list path leaves them unset,
+  // so nothing regresses). The verdict engine fires the dependent signals ONLY
+  // when the field is actually present (HONESTY RULE): no data → signal never
+  // fires, exactly like the GEX/wall signals when source:"none".
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Recent significant options flow for this underlying (from HELIX/Postgres).
+   * Optional. `lean` summarizes the net directional bias of the prints considered;
+   * callPremium/putPremium are $ totals; count is how many prints fed the summary.
+   */
+  flows?: {
+    lean: "bullish" | "bearish" | "mixed" | "neutral";
+    callPremium: number; // $ total
+    putPremium: number; // $ total
+    count: number; // number of prints considered
+  } | null;
+
+  /** Daily trend from chart technicals. Optional. */
+  trend?: "up" | "down" | "sideways" | null;
+
+  /**
+   * Key support/resistance levels near spot (from technicals or desk). Optional.
+   * Distinct from gexWalls (dealer-gamma): these are price-structure levels.
+   */
+  levels?: Array<{ kind: "support" | "resistance"; price: number; source?: string }> | null;
+
+  /** Next catalyst (earnings) for this underlying. Optional. */
+  catalysts?: {
+    earningsDate?: string | null; // ISO date
+    daysToEarnings?: number | null; // calendar days from now (>=0)
+    beforeExpiry?: boolean | null; // does it land on/before the position's expiry?
+  } | null;
 };
 
 const EMPTY_CONTEXT: PositionContext = {

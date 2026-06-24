@@ -329,3 +329,270 @@ test("wall break: LONG call, support wall 5980, spot 5960 (decisively below) →
   assert.equal(v.action, "sell");
   assert.ok(spot < 5980 - VERDICT_THRESHOLDS.WALL_BREAK_PTS);
 });
+
+// =============================================================================
+// CROSS-TOOL ENRICHMENT SIGNALS (flows / trend / key levels / catalysts)
+//
+// Every one of these fires ONLY when its data is actually present on the context.
+// The final REGRESSION block proves that a context WITHOUT any of the new fields
+// (and an undefined context) produces the EXACT same verdict as before — i.e. the
+// new signals are pure additions gated on honest, present data.
+// =============================================================================
+
+// A "quiet" enriched position whose only baseline hold signal is comfortable_dte:
+// neutral pnl, moderate delta (< HEALTHY), no breakeven/expiry triggers. Lets a
+// single cross-tool signal decide the action.
+function quietLong(overrides: Partial<EnrichedPosition> = {}): EnrichedPosition {
+  return makeEnriched({
+    side: "long",
+    option_type: "call",
+    strike: 100,
+    dte: 14,
+    pnl_pct: 0,
+    breakeven: null,
+    pct_to_breakeven: null,
+    valuation: makeValuation({ underlyingPrice: 105, delta: 0.25, theta: -0.001 }),
+    ...overrides,
+  });
+}
+
+// --- options flow alignment --------------------------------------------------
+
+test("flow_supports: bullish flow + LONG call (wantsUp) → 'hold' + 'flow_supports'", () => {
+  const ctx = makeContext({
+    flows: { lean: "bullish", callPremium: 3_000_000, putPremium: 500_000, count: 40 },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+  assert.equal(v.action, "hold");
+});
+
+test("flow_against: bearish flow + LONG call → 'trim' + 'flow_against'", () => {
+  const ctx = makeContext({
+    flows: { lean: "bearish", callPremium: 400_000, putPremium: 3_000_000, count: 40 },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("flow_against"));
+  assert.ok(!v.signals.includes("flow_supports"));
+  assert.equal(v.action, "trim");
+});
+
+test("flow side-aware: bearish flow + SHORT put (wantsUp) → aligned 'flow_supports'", () => {
+  // short put = bullish exposure (wantsUp). A BEARISH flow opposes that → flow_against.
+  // Conversely a bullish flow aligns. Here we use bullish flow to confirm alignment for
+  // a non-long-call wantsUp position.
+  const ctx = makeContext({
+    flows: { lean: "bullish", callPremium: 3_000_000, putPremium: 300_000, count: 50 },
+  });
+  const v = computeVerdict(
+    quietLong({ side: "short", option_type: "put", strike: 100 }),
+    ctx
+  );
+  assert.ok(v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+});
+
+test("flow does NOT fire when ctx.flows is null", () => {
+  const v = computeVerdict(quietLong(), makeContext({ flows: null }));
+  assert.ok(!v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+});
+
+test("flow does NOT fire when lean is 'mixed'", () => {
+  const ctx = makeContext({
+    flows: { lean: "mixed", callPremium: 3_000_000, putPremium: 2_900_000, count: 60 },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+});
+
+test("flow does NOT fire below FLOW_MIN_PREMIUM (noise floor)", () => {
+  // bullish lean but total premium 100k < 250k floor → never evaluated.
+  const ctx = makeContext({
+    flows: { lean: "bullish", callPremium: 90_000, putPremium: 10_000, count: 3 },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+});
+
+test("flow does NOT fire when skew below FLOW_SKEW_RATIO (near-even tape)", () => {
+  // bullish lean, premium clears the floor, but calls only 1.1x puts (< 1.5) → noise.
+  const ctx = makeContext({
+    flows: { lean: "bullish", callPremium: 1_100_000, putPremium: 1_000_000, count: 80 },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("flow_supports"));
+  assert.ok(!v.signals.includes("flow_against"));
+});
+
+// --- daily trend alignment ---------------------------------------------------
+
+test("trend_aligned: up trend + LONG call (wantsUp) → 'hold' + 'trend_aligned'", () => {
+  const v = computeVerdict(quietLong(), makeContext({ trend: "up" }));
+  assert.ok(v.signals.includes("trend_aligned"));
+  assert.ok(!v.signals.includes("trend_against"));
+  assert.equal(v.action, "hold");
+});
+
+test("trend_against: down trend + LONG call → 'trim' + 'trend_against'", () => {
+  const v = computeVerdict(quietLong(), makeContext({ trend: "down" }));
+  assert.ok(v.signals.includes("trend_against"));
+  assert.ok(!v.signals.includes("trend_aligned"));
+  assert.equal(v.action, "trim");
+});
+
+test("trend side-aware: down trend + LONG put (!wantsUp) → aligned 'trend_aligned'", () => {
+  const v = computeVerdict(
+    quietLong({ option_type: "put", strike: 110 }),
+    makeContext({ trend: "down" })
+  );
+  assert.ok(v.signals.includes("trend_aligned"));
+  assert.ok(!v.signals.includes("trend_against"));
+});
+
+test("trend does NOT fire when 'sideways' or null", () => {
+  for (const trend of ["sideways", null] as const) {
+    const v = computeVerdict(quietLong(), makeContext({ trend }));
+    assert.ok(!v.signals.includes("trend_aligned"));
+    assert.ok(!v.signals.includes("trend_against"));
+  }
+});
+
+// --- technical key-level proximity -------------------------------------------
+
+test("approaching_key_level: LONG call, resistance just above spot within % → 'trim'", () => {
+  // spot 105, resistance 105.3 → 0.29% away (< 0.5%) and in the threatening direction.
+  const ctx = makeContext({
+    levels: [{ kind: "resistance", price: 105.3, source: "PDH" }],
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("approaching_key_level"));
+  assert.equal(v.action, "trim");
+});
+
+test("approaching_key_level does NOT fire for a SAFE-side level (support below, LONG call)", () => {
+  // support below spot is NOT threatening for a long call (wantsUp) → never fires.
+  const ctx = makeContext({
+    levels: [{ kind: "support", price: 104.8, source: "VWAP" }],
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("approaching_key_level"));
+});
+
+test("approaching_key_level does NOT fire when threatening level is beyond the %", () => {
+  // resistance 107 vs spot 105 → ~1.9% away (> 0.5%) → not approaching.
+  const ctx = makeContext({
+    levels: [{ kind: "resistance", price: 107, source: "PDH" }],
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("approaching_key_level"));
+});
+
+test("approaching_key_level side-aware: LONG put threatened by support below within %", () => {
+  // long put = bearish exposure (!wantsUp): support BELOW is the threat. spot 105,
+  // support 104.7 → 0.29% below.
+  const ctx = makeContext({
+    levels: [{ kind: "support", price: 104.7, source: "VWAP" }],
+  });
+  const v = computeVerdict(
+    quietLong({ option_type: "put", strike: 110 }),
+    ctx
+  );
+  assert.ok(v.signals.includes("approaching_key_level"));
+  assert.equal(v.action, "trim");
+});
+
+// --- earnings / catalyst (side-aware) ----------------------------------------
+
+test("earnings_before_expiry: LONG → 'trim' + 'earnings_before_expiry'", () => {
+  const ctx = makeContext({
+    catalysts: { earningsDate: "2026-06-27", daysToEarnings: 3, beforeExpiry: true },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("earnings_before_expiry"));
+  assert.equal(v.action, "trim");
+});
+
+test("earnings_before_expiry: SHORT → 'sell' + 'earnings_before_expiry'", () => {
+  const ctx = makeContext({
+    catalysts: { earningsDate: "2026-06-27", daysToEarnings: 3, beforeExpiry: true },
+  });
+  // short call, OTM, comfortable DTE so no expiry/assignment signal masks it.
+  const v = computeVerdict(
+    quietLong({ side: "short", option_type: "call", strike: 120 }),
+    ctx
+  );
+  assert.ok(v.signals.includes("earnings_before_expiry"));
+  assert.equal(v.action, "sell");
+});
+
+test("earnings does NOT fire when beforeExpiry is false", () => {
+  const ctx = makeContext({
+    catalysts: { earningsDate: "2026-08-01", daysToEarnings: 3, beforeExpiry: false },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("earnings_before_expiry"));
+});
+
+test("earnings does NOT fire when daysToEarnings is large (> EARNINGS_SOON_DAYS)", () => {
+  const ctx = makeContext({
+    catalysts: { earningsDate: "2026-07-10", daysToEarnings: 16, beforeExpiry: true },
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(!v.signals.includes("earnings_before_expiry"));
+});
+
+test("earnings does NOT fire when ctx.catalysts is null", () => {
+  const v = computeVerdict(quietLong(), makeContext({ catalysts: null }));
+  assert.ok(!v.signals.includes("earnings_before_expiry"));
+});
+
+// --- REGRESSION: no new data → identical verdict -----------------------------
+
+const NEW_SIGNAL_IDS = [
+  "flow_supports",
+  "flow_against",
+  "trend_aligned",
+  "trend_against",
+  "approaching_key_level",
+  "earnings_before_expiry",
+];
+
+test("REGRESSION: context WITHOUT new fields fires NONE of the new signals", () => {
+  // A plain context (no flows/trend/levels/catalysts) must behave exactly as before.
+  const plain = makeContext({ source: "none" });
+  const withCtx = computeVerdict(quietLong(), plain);
+  for (const id of NEW_SIGNAL_IDS) assert.ok(!withCtx.signals.includes(id));
+});
+
+test("REGRESSION: undefined context === context-with-no-new-fields (same verdict, no new signals)", () => {
+  const pos = quietLong();
+  const noCtx = computeVerdict(pos); // ctx undefined entirely
+  const emptyCtx = computeVerdict(pos, makeContext()); // no new fields set
+  // Identical action/confidence/signals/reasons — the new fields are pure additions.
+  assert.deepEqual(noCtx, emptyCtx);
+  for (const id of NEW_SIGNAL_IDS) assert.ok(!noCtx.signals.includes(id));
+  // And the baseline verdict is unchanged: a quiet long with comfortable DTE still holds.
+  assert.equal(noCtx.action, "hold");
+  assert.ok(noCtx.signals.includes("comfortable_dte"));
+});
+
+test("REGRESSION: a sell-precedence position is unaffected by aligned cross-tool data", () => {
+  // Deep loss (sell) must still win even if bullish flow + up trend would lean hold.
+  const ctx = makeContext({
+    flows: { lean: "bullish", callPremium: 5_000_000, putPremium: 200_000, count: 90 },
+    trend: "up",
+  });
+  const base = computeVerdict(makeEnriched({ side: "long", pnl_pct: -70, dte: 14 }));
+  const enriched = computeVerdict(
+    makeEnriched({ side: "long", pnl_pct: -70, dte: 14 }),
+    ctx
+  );
+  // Sell precedence holds; the hold-leaning cross-tool signals never override it.
+  assert.equal(base.action, "sell");
+  assert.equal(enriched.action, "sell");
+  assert.ok(enriched.signals.includes("deep_loss"));
+});
