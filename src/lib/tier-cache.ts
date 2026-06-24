@@ -43,7 +43,7 @@ export async function resolveUserTier(userId: string): Promise<Tier> {
     return cached.tier;
   }
   try {
-    const user = await clerkClient.users.getUser(userId);
+    const user = await (await clerkClient()).users.getUser(userId);
     const tier = parseTier(user.publicMetadata?.tier);
     tierCache.set(userId, { tier, at: Date.now() });
     return tier;

@@ -50,11 +50,9 @@ const cpuCount = os.cpus()?.length || 1;
 const nextConfig = {
   experimental: {
     cpus: Math.max(1, cpuCount - 1),
-    // P1 (audit: "No external error tracking"): enable the instrumentation hook so
-    // src/instrumentation.ts register() runs at server startup. Required on Next
-    // 14.2.x (became stable/default in Next 15); accepted by 14.2.35.
-    instrumentationHook: true,
   },
+  // instrumentation.ts register() runs at server startup automatically in Next 15
+  // (the former experimental.instrumentationHook is now the default — flag removed).
   // Lint is enforced in CI via `npm run lint` (jsx-a11y) and `npm run lint:brand`
   // (no-grey brand guard), NOT during the production build — so a lint finding never
   // blocks a deploy. Build correctness is covered by tsc + next build itself.

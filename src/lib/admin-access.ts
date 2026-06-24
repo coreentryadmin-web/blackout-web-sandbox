@@ -15,7 +15,7 @@ export function isAdminEmail(email: string | null | undefined): boolean {
 }
 
 export async function isAdminUser(userId: string): Promise<boolean> {
-  const user = await clerkClient.users.getUser(userId);
+  const user = await (await clerkClient()).users.getUser(userId);
   const role = String(user.publicMetadata?.role ?? "").toLowerCase();
   if (role === "admin") return true;
   const email = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress;
@@ -24,7 +24,7 @@ export async function isAdminUser(userId: string): Promise<boolean> {
 
 export async function requireAdmin(): Promise<{ userId: string; email: string | null }> {
   const userId = await requireAuth();
-  const user = await clerkClient.users.getUser(userId);
+  const user = await (await clerkClient()).users.getUser(userId);
   const email =
     user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
 
@@ -38,7 +38,7 @@ export async function requireAdmin(): Promise<{ userId: string; email: string | 
 export async function getAdminStatus(): Promise<{ admin: boolean; email: string | null }> {
   const { userId } = await auth();
   if (!userId) return { admin: false, email: null };
-  const user = await clerkClient.users.getUser(userId);
+  const user = await (await clerkClient()).users.getUser(userId);
   const email =
     user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
   return { admin: await isAdminUser(userId), email };
@@ -67,7 +67,7 @@ export async function resolveAdminApi(): Promise<{
   // Single getUser covers BOTH the admin role/email gate and the actor email,
   // replacing the previous isAdminUser()+getUser() double fetch. Logic mirrors
   // isAdminUser() exactly so authorization is unchanged.
-  const user = await clerkClient.users.getUser(userId);
+  const user = await (await clerkClient()).users.getUser(userId);
   const role = String(user.publicMetadata?.role ?? "").toLowerCase();
   const email =
     user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;

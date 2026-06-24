@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { SignedIn, SignedOut, UserButton, useAuth } from "@clerk/nextjs";
+import { UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
 import { OnboardingTrigger } from "@/components/OnboardingTrigger";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
@@ -295,17 +295,19 @@ export function Nav() {
             {mobileOpen ? "✕" : "☰"}
           </button>
 
-          <SignedOut>
-            <Link href="/sign-in" className="nav-signin font-syne hidden sm:inline">
-              Sign In
-            </Link>
-            <Link href="/sign-up" className="nav-join font-syne glitch-hover">
-              Start Trading →
-            </Link>
-          </SignedOut>
-          <SignedIn>
-            <UserButton appearance={CLERK_APPEARANCE} />
-          </SignedIn>
+          {/* v7: <SignedIn>/<SignedOut> are server components; in this client nav we gate on
+              useAuth() (isLoaded prevents a signed-out flash before Clerk hydrates). */}
+          {isLoaded && !isSignedIn && (
+            <>
+              <Link href="/sign-in" className="nav-signin font-syne hidden sm:inline">
+                Sign In
+              </Link>
+              <Link href="/sign-up" className="nav-join font-syne glitch-hover">
+                Start Trading →
+              </Link>
+            </>
+          )}
+          {isLoaded && isSignedIn && <UserButton appearance={CLERK_APPEARANCE} />}
         </div>
       </div>
 
@@ -363,17 +365,17 @@ export function Nav() {
               )}
               <div className="nav-sheet-divider" />
               <div className="nav-sheet-auth">
-                <SignedOut>
-                  <Link href="/sign-in" className="nav-signin font-syne" onClick={() => setMobileOpen(false)}>
-                    Sign In
-                  </Link>
-                  <Link href="/sign-up" className="nav-join font-syne w-full justify-center" onClick={() => setMobileOpen(false)}>
-                    Start Trading →
-                  </Link>
-                </SignedOut>
-                <SignedIn>
-                  <UserButton appearance={CLERK_APPEARANCE} />
-                </SignedIn>
+                {isLoaded && !isSignedIn && (
+                  <>
+                    <Link href="/sign-in" className="nav-signin font-syne" onClick={() => setMobileOpen(false)}>
+                      Sign In
+                    </Link>
+                    <Link href="/sign-up" className="nav-join font-syne w-full justify-center" onClick={() => setMobileOpen(false)}>
+                      Start Trading →
+                    </Link>
+                  </>
+                )}
+                {isLoaded && isSignedIn && <UserButton appearance={CLERK_APPEARANCE} />}
               </div>
             </motion.div>
           </>
