@@ -52,6 +52,31 @@ function statsKey(provider: ApiProviderId, method: string, endpoint: string): st
   return `${provider}|${method}|${endpoint}`;
 }
 
+/**
+ * Collapse symbol/date/query cardinality in a provider path to a stable TEMPLATE, so per-ticker
+ * / per-OCC paths key into ONE bounded `endpointStats` entry instead of leaking a permanent entry
+ * per symbol (audit 03-BACKEND §3.1). Also de-cardinalizes the admin per-endpoint dashboard
+ * (a handful of templates, not thousands of one-off symbol rows). The raw path is preserved on
+ * each event in the ring buffer — only the aggregated stats are templated.
+ */
+export function endpointTemplate(endpoint: string): string {
+  const path = endpoint.split("?")[0]; // query values (e.g. ticker.any_of=O:...,O:...) are the biggest leak source
+  return path
+    .replace(/O:[A-Z0-9]+/g, ":occ") // OCC option symbols (O:SPXW250101C05850000)
+    .replace(/\b[A-Z]{1,6}\d{6}[CP]\d{8}\b/g, ":occ") // bare OCC (SPXW250101C05850000)
+    .replace(/I:[A-Z0-9]+/g, ":idx") // index symbols (I:SPX, I:VIX)
+    .replace(/\/ticker\/[^/]+/g, "/ticker/:sym") // /ticker/AAPL -> /ticker/:sym
+    .replace(/\d{4}-\d{2}-\d{2}/g, ":date"); // ISO dates in range/aggs paths
+}
+
+/**
+ * Hard cap on distinct `endpointStats` keys — a backstop LRU eviction in case a non-templated
+ * path ever slips through `endpointTemplate`. With templating, real cardinality is small
+ * (≈ number of endpoints), so this should never trigger in practice; it just guarantees the
+ * Map can never grow unbounded for the process lifetime (the §3.1 leak fix).
+ */
+const MAX_ENDPOINT_STATS = 500;
+
 let eventSeq = 0;
 let globalSeq = 0;
 
@@ -200,7 +225,10 @@ export function recordApiCall(input: {
   events.unshift(event);
   if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
 
-  const key = statsKey(event.provider, event.method, event.endpoint);
+  // Key stats by the TEMPLATED endpoint so per-ticker / per-OCC paths collapse into one bounded
+  // entry instead of leaking a permanent endpointStats row per symbol (audit §3.1).
+  const tmplEndpoint = endpointTemplate(event.endpoint);
+  const key = statsKey(event.provider, event.method, tmplEndpoint);
   const prev = endpointStats.get(key);
   const call_count = (prev?.call_count ?? 0) + 1;
   const error_count = (prev?.error_count ?? 0) + (event.ok ? 0 : 1);
@@ -216,8 +244,11 @@ export function recordApiCall(input: {
     ? prev?.latency_samples ?? []
     : [...(prev?.latency_samples ?? []), event.latency_ms].slice(-MAX_SAMPLES);
 
+  // LRU touch: delete+set re-inserts the key at the end (most-recently-active), so the bounded
+  // eviction below removes the LEAST-recently-active endpoint rather than an active one.
+  endpointStats.delete(key);
   endpointStats.set(key, {
-    endpoint: event.endpoint,
+    endpoint: tmplEndpoint,
     method: event.method,
     call_count,
     error_count,
@@ -231,6 +262,12 @@ export function recordApiCall(input: {
     p95_latency_ms: percentile(latency_samples, 95),
     p99_latency_ms: percentile(latency_samples, 99),
   });
+  // Backstop the templated key against any residual cardinality — evict the oldest entry so the
+  // Map can never grow unbounded for the process lifetime (audit §3.1 leak fix).
+  if (endpointStats.size > MAX_ENDPOINT_STATS) {
+    const oldest = endpointStats.keys().next().value;
+    if (oldest !== undefined) endpointStats.delete(oldest);
+  }
 
   emit(event);
   // Relative (not "@/lib") + .catch: this fires on every recorded API call. The
@@ -302,7 +339,7 @@ export function buildEventDetail(eventId: string) {
   if (!event) return null;
 
   const chain = getApiEventsByCorrelation(event.correlation_id);
-  const key = statsKey(event.provider, event.method, event.endpoint);
+  const key = statsKey(event.provider, event.method, endpointTemplate(event.endpoint));
   const stats = endpointStats.get(key) ?? null;
 
   return {
