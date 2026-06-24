@@ -845,9 +845,14 @@ export function NightsWatchDetailModal({
   // the contract is one fetch per open + a manual Refresh.
   const load = useCallback(async () => {
     setState({ kind: "loading" });
+    // 25s timeout so a hung backend (the detail aggregates several upstreams + Claude) can't
+    // leave an infinite spinner holding a connection.
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 25_000);
     try {
       const res = await fetch(`/api/account/positions/${positionId}/detail`, {
         cache: "no-store",
+        signal: ctrl.signal,
       });
       if (res.status === 401) {
         setState({ kind: "unauthed" });
@@ -864,8 +869,14 @@ export function NightsWatchDetailModal({
       }
       const detail = (await res.json()) as PositionDetail;
       setState({ kind: "ready", detail });
-    } catch {
-      setState({ kind: "error", message: "Network error — could not load position detail." });
+    } catch (err) {
+      const msg =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Timed out loading position detail — try Refresh."
+          : "Network error — could not load position detail.";
+      setState({ kind: "error", message: msg });
+    } finally {
+      clearTimeout(to);
     }
   }, [positionId]);
 

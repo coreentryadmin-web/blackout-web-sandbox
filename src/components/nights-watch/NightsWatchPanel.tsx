@@ -542,7 +542,7 @@ function PositionCard({
             </span>
             <span aria-hidden>·</span>
             <span className="text-white/80">
-              ×{position.contracts} @ {position.entry_premium}
+              ×{position.contracts} @ ${position.entry_premium.toFixed(2)}
             </span>
           </div>
         </div>
@@ -573,8 +573,9 @@ function PositionCard({
         <StatusTag status={position.valuation_status} />
       </div>
 
-      {/* Greeks / risk micro-grid — labeled, mono, tidy. */}
-      <div className="grid grid-cols-4 gap-x-2.5 gap-y-2.5">
+      {/* Greeks / risk micro-grid — labeled, mono, tidy. 2-col on narrow (mobile / the card at
+          ≤sm), 4-col once there's room so 8 cells never cram or overflow. */}
+      <div className="grid grid-cols-2 gap-x-2.5 gap-y-2.5 sm:grid-cols-4">
         <Metric label="Mark" value={live ? num(position.valuation?.mark) : EM_DASH} />
         <Metric label="Δ" value={live ? num(position.valuation?.delta) : EM_DASH} />
         <Metric label="Θ/day" value={live ? num(position.valuation?.theta) : EM_DASH} />
@@ -664,7 +665,8 @@ type Summary = {
 
 function summarize(positions: ApiPosition[]): Summary {
   const verdicts: Record<VerdictAction, number> = { hold: 0, trim: 0, sell: 0, watch: 0 };
-  let pnlSum = 0;
+  let pnlSum = 0; // aggregate $ — ALL live legs (a zero-entry leg still has real $ P&L)
+  let returnNum = 0; // return-% numerator — ONLY legs with a definable basis (must match denom)
   let basisSum = 0;
   let livePnlLegs = 0;
 
@@ -676,14 +678,20 @@ function summarize(positions: ApiPosition[]): Summary {
       livePnlLegs += 1;
       // Cost basis for this leg = entry premium × contracts × 100 (option multiplier).
       const basis = p.entry_premium * p.contracts * 100;
-      if (Number.isFinite(basis) && basis > 0) basisSum += basis;
+      // The return % numerator and denominator MUST cover the same leg set, else a zero-basis
+      // leg's P&L would inflate the ratio. So a leg counts toward returnNum only when it also
+      // contributes a basis. Its $ P&L still counts in pnlSum (the aggregate $ is honest).
+      if (Number.isFinite(basis) && basis > 0) {
+        basisSum += basis;
+        returnNum += p.unrealized_pnl;
+      }
     }
   }
 
   return {
     count: positions.length,
     pnlSum: livePnlLegs > 0 ? pnlSum : null,
-    returnPct: livePnlLegs > 0 && basisSum > 0 ? (pnlSum / basisSum) * 100 : null,
+    returnPct: basisSum > 0 ? (returnNum / basisSum) * 100 : null,
     verdicts,
   };
 }
@@ -777,8 +785,13 @@ export function NightsWatchPanel() {
   const [formOpen, setFormOpen] = useState<boolean | null>(null);
   // Keep a ref so the poll loop never shows a flash of skeleton on refetch.
   const loadedOnce = useRef(false);
+  // In-flight mutex: poll + focus + initial can all fire load(); if one is slow, skip the next
+  // rather than stack overlapping fetches (which would multiply upstream load near the ceiling).
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const res = await fetch("/api/account/positions", { cache: "no-store" });
       if (res.status === 401) {
@@ -798,6 +811,8 @@ export function NightsWatchPanel() {
     } catch {
       setState({ kind: "error", message: "Network error — could not load positions." });
       loadedOnce.current = true;
+    } finally {
+      inFlight.current = false;
     }
   }, []);
 

@@ -2883,6 +2883,18 @@ body {
     font-weight: 600;
   }
 
+  /* In the 2-col mobile summary the verdict breakdown gets tight — shrink so the four
+     hold/trim/sell/watch counts stay on one tidy row instead of wrapping unpredictably. */
+  @media (max-width: 639px) {
+    .nighthawk-watch-verdict-row {
+      font-size: 0.6875rem;
+      gap: 0.5rem;
+    }
+    .nighthawk-watch-verdict-chip span {
+      font-size: 0.4rem;
+    }
+  }
+
   .nighthawk-watch-vd-hold { color: #00e676; }
   .nighthawk-watch-vd-trim { color: #ffd23f; }
   .nighthawk-watch-vd-sell { color: #ff2d55; }

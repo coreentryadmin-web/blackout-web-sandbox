@@ -13,7 +13,7 @@
 //     falls back to the deterministic whatToDo. Never blocks, never throws.
 
 import { anthropicConfigured, anthropicText, LARGO_MODEL } from "@/lib/providers/anthropic";
-import { withServerCache } from "@/lib/server-cache";
+import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 import { secondsUntilEtMidnight } from "@/lib/largo-budget";
@@ -105,50 +105,80 @@ type GateRedis = {
  * Grounded Claude desk narrative for one position, or null (caller falls back to the
  * deterministic whatToDo). On-demand only; per-position cached; globally budgeted; fail-open.
  */
+// Per-instance in-flight dedup: a burst of detail-opens on the SAME position generates ONE
+// Claude call (the Redis shared cache handles cross-instance + subsequent windows).
+const NARRATIVE_INFLIGHT = new Map<string, Promise<string | null>>();
+
 export async function buildPositionNarrative(detail: PositionDetail): Promise<string | null> {
   if (!anthropicConfigured()) return null;
 
   const p = detail.position;
-  // Per-POSITION fingerprint (NOT per-user): same contract + same engine call + similar P&L
-  // bucket + same DTE → one shared Claude call cluster-wide for the cache window.
-  const pnlBucket = p.unrealized_pnl == null ? "na" : Math.round(p.unrealized_pnl / 10) * 10;
+  // Per-POSITION fingerprint (NOT per-user): same contract + same engine call + same P&L BAND
+  // (5% bands, so minor ticks don't churn the cache) + same DTE → one shared Claude call
+  // cluster-wide for the window. pnl_pct is null only at entry=0 → folds into the "na" band.
+  const pnlBand = p.pnl_pct == null ? "na" : Math.round(p.pnl_pct / 5) * 5;
   const tkr = String(p.ticker).trim().toUpperCase();
-  const cacheKey = `nw:narrative:${tkr}:${p.strike}${p.option_type === "call" ? "C" : "P"}:${p.side}:${p.verdict.action}:${pnlBucket}:${p.dte}`;
+  const cacheKey = `nw:narrative:${tkr}:${p.strike}${p.option_type === "call" ? "C" : "P"}:${p.side}:${p.verdict.action}:${pnlBand}:${p.dte}`;
 
+  // Shared cache (Redis-backed, cross-instance). We cache ONLY non-null below, so a transient
+  // anthropic failure never pins the deterministic fallback for the full TTL.
   try {
-    return await withServerCache(cacheKey, NARRATIVE_TTL_MS, async () => {
-      const redis = (await getUwCacheRedis()) as unknown as GateRedis;
+    const cached = await sharedCacheGet<string>(cacheKey);
+    if (cached) return cached;
+  } catch {
+    /* cache read miss/error → generate */
+  }
 
-      // Global daily budget gate — fail-open on Redis null/error.
-      if (redis) {
-        try {
-          const raw = await redis.get(narrativeBudgetKey());
-          if (isOverNarrativeBudget(Number(raw ?? 0), narrativeDailyBudget())) return null;
-        } catch {
-          /* fail-open: never block on infra */
+  const existing = NARRATIVE_INFLIGHT.get(cacheKey);
+  if (existing) return existing;
+
+  const job = (async (): Promise<string | null> => {
+    const redis = (await getUwCacheRedis()) as unknown as GateRedis;
+
+    // Global daily budget gate — fail-open on Redis null/error (logged for observability).
+    if (redis) {
+      try {
+        const raw = await redis.get(narrativeBudgetKey());
+        if (isOverNarrativeBudget(Number(raw ?? 0), narrativeDailyBudget())) {
+          console.warn("[nights-watch] narrative over daily budget — using deterministic fallback");
+          return null;
         }
+      } catch (err) {
+        console.warn("[nights-watch] narrative budget read failed (fail-open):", err);
       }
+    }
 
-      const text = await anthropicText(
-        buildContext(detail),
-        NARRATIVE_MAX_TOKENS,
-        NARRATIVE_SYSTEM_PROMPT,
-        { model: LARGO_MODEL, temperature: 0.3, maxRetries: 1, timeoutMs: 20_000 }
-      );
-      const out = text?.trim();
-      if (!out) return null;
+    const text = await anthropicText(
+      buildContext(detail),
+      NARRATIVE_MAX_TOKENS,
+      NARRATIVE_SYSTEM_PROMPT,
+      { model: LARGO_MODEL, temperature: 0.3, maxRetries: 1, timeoutMs: 20_000 }
+    );
+    const out = text?.trim();
+    if (!out) return null; // not cached → next open retries
 
-      // Record one generation against the global daily budget (best-effort, fail-open).
-      if (redis) {
-        try {
-          await redis.eval(BUDGET_INCR_LUA, 1, narrativeBudgetKey(), secondsUntilEtMidnight());
-        } catch {
-          /* non-fatal — under-counting one generation is acceptable */
-        }
+    // Cache the success + record one generation against the global daily budget (best-effort).
+    try {
+      await sharedCacheSet(cacheKey, out, Math.round(NARRATIVE_TTL_MS / 1000));
+    } catch {
+      /* non-fatal */
+    }
+    if (redis) {
+      try {
+        await redis.eval(BUDGET_INCR_LUA, 1, narrativeBudgetKey(), secondsUntilEtMidnight());
+      } catch {
+        /* non-fatal — under-counting one generation is acceptable */
       }
-      return out;
-    });
+    }
+    return out;
+  })();
+
+  NARRATIVE_INFLIGHT.set(cacheKey, job);
+  try {
+    return await job;
   } catch {
     return null;
+  } finally {
+    NARRATIVE_INFLIGHT.delete(cacheKey);
   }
 }
