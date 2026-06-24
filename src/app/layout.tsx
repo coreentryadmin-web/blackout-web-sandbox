@@ -93,6 +93,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
         <SharedSigilDefs />
+        {/* @clerk/nextjs v5 ClerkProvider already opts the tree into dynamic (per-request) auth
+            rendering by default — no `dynamic` prop (that's v6, where the default flipped to
+            static). The 5.7.x upgrade carries the protect()/handshake reliability fixes. */}
         <ClerkProvider>
           <MotionProvider>
             <SessionCacheGuard />
