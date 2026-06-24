@@ -162,9 +162,14 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
+  // Fast-move escape hatch: `?force=1` bypasses the shared matrix cache and recomputes
+  // immediately (then re-writes the cache fresh). The client only fires this on a >0.5%
+  // spot divergence, throttled to ≤1/8s, so it can't pressure the chain API — a normal
+  // request (no force) still reads the in-memory + Redis cache via fetchGexHeatmap.
+  const forceRefresh = req.nextUrl.searchParams.get("force") === "1";
 
   try {
-    const heatmap = await fetchGexHeatmap(ticker);
+    const heatmap = await fetchGexHeatmap(ticker, { forceRefresh });
     if (!heatmap) {
       // Polygon unavailable / empty chain — never fabricate. Client renders empty state.
       return NextResponse.json(

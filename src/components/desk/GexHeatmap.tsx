@@ -895,8 +895,24 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const [showFlow, setShowFlow] = useState(true);
   const [showDarkPool, setShowDarkPool] = useState(true);
 
-  const { data, isLoading, error } = useSWR<GexHeatmapResponse>(
-    `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`,
+  // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
+  // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
+  // the gamma/vanna profile recomputes immediately instead of waiting out the 20s cache.
+  // `forceNonce` busts SWR's key on each forced refresh; `fastFlash` drives a header pulse.
+  const [forceNonce, setForceNonce] = useState(0);
+  const [fastFlash, setFastFlash] = useState(false);
+  // Last time a force was actually fired — throttles to ≤1 per 8s so a fast move can't
+  // spam force-recomputes / blow the shared chain budget. Ref so it never re-renders.
+  const lastForceAtRef = useRef(0);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const matrixKey =
+    forceNonce > 0
+      ? `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}&force=1&n=${forceNonce}`
+      : `/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`;
+
+  const { data, isLoading, isValidating, error } = useSWR<GexHeatmapResponse>(
+    matrixKey,
     fetchGexHeatmap,
     { refreshInterval: 20_000, revalidateOnFocus: false, keepPreviousData: true }
   );
@@ -914,6 +930,58 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const fetchFailed = Boolean(error) && !isLoading;
 
   const spot = data?.spot ?? 0;
+
+  // ── Fast-move bypass: detect a >0.5% divergence between the LIVE quote price and the
+  // cached matrix snapshot spot, and force ONE immediate matrix recompute (throttled to
+  // ≤1 per 8s). This keeps the gamma/vanna profile ~20s when calm but refreshes it
+  // instantly during volatile moves. The steady-state 20s refresh is untouched — force
+  // is purely an ADDITIONAL trigger. Compares quote.price vs data.spot per the spec.
+  const quotePrice = quote?.price ?? 0;
+  useEffect(() => {
+    if (!(spot > 0) || !(quotePrice > 0)) return;
+    const divergence = Math.abs(quotePrice - spot) / spot;
+    if (divergence <= 0.005) return;
+    const nowMs = Date.now();
+    if (nowMs - lastForceAtRef.current < 8_000) return; // throttle: ≤1 force / 8s
+    lastForceAtRef.current = nowMs;
+    setForceNonce((n) => n + 1); // appends &force=1 to the matrix key for one refetch
+    // Subtle, reduced-motion-safe header flash so the forced refresh is visible.
+    setFastFlash(true);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFastFlash(false), 2_000);
+  }, [quotePrice, spot]);
+
+  // Once a forced refetch has resolved, drop back to the non-force key so the steady-state
+  // 20s refreshInterval reads cache again — force must NEVER become the steady state. With
+  // keepPreviousData, isValidating goes true while the forced (force=1) request is in
+  // flight, then false once it lands; that falling edge is our cue to clear the nonce.
+  const forceWasValidatingRef = useRef(false);
+  useEffect(() => {
+    if (forceNonce === 0) {
+      forceWasValidatingRef.current = false;
+      return;
+    }
+    if (isValidating) {
+      forceWasValidatingRef.current = true; // forced request is in flight
+    } else if (forceWasValidatingRef.current) {
+      forceWasValidatingRef.current = false;
+      setForceNonce(0); // forced refetch resolved → return to the cache-read key
+    }
+  }, [forceNonce, isValidating]);
+
+  // Reset throttle + force state when the ticker changes so a switch starts clean.
+  useEffect(() => {
+    lastForceAtRef.current = 0;
+    setForceNonce(0);
+    setFastFlash(false);
+  }, [ticker]);
+
+  // Clear any pending flash timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    };
+  }, []);
   const expiries = useMemo(() => data?.expiries ?? [], [data?.expiries]);
   const strikes = useMemo(() => data?.strikes ?? [], [data?.strikes]);
   const maxPain = data?.max_pain ?? null;
@@ -1074,13 +1142,26 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         </span>
       }
       actions={
-        live ? (
-          <Badge tone="bull" dot>
-            Live
-          </Badge>
-        ) : (
-          <Badge tone="neutral">Offline</Badge>
-        )
+        <span className="flex items-center gap-2">
+          {/* Fast-move refresh flash — fires when a >0.5% spot divergence forces an
+              immediate matrix recompute. Reduced-motion users get a static chip. */}
+          {fastFlash && (
+            <span
+              role="status"
+              className="inline-flex items-center gap-1 rounded-md bg-cyan-400/15 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-cyan-400 outline outline-1 outline-cyan-400/40 motion-safe:animate-pulse"
+              title="Fast move detected — gamma profile refreshed immediately"
+            >
+              <span aria-hidden>⚡</span> fast-move refresh
+            </span>
+          )}
+          {live ? (
+            <Badge tone="bull" dot>
+              Live
+            </Badge>
+          ) : (
+            <Badge tone="neutral">Offline</Badge>
+          )}
+        </span>
       }
     >
       {/* ── Controls: ticker switcher + GEX|VEX lens toggle ─────────────── */}
