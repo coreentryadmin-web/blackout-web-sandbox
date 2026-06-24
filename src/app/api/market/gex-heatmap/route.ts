@@ -177,6 +177,12 @@ export async function GET(req: NextRequest) {
   if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
+  // Validate BEFORE any force bookkeeping or fetchGexHeatmap/getOverlays — on a cache miss
+  // these trigger a paid per-ticker chain fetch + cache-key mint, so reject arbitrary input
+  // up front (mirrors the quote route guard).
+  if (!/^[A-Z0-9.\-]{1,8}$/.test(ticker)) {
+    return NextResponse.json({ error: "Invalid ticker" }, { status: 400 });
+  }
   // Fast-move escape hatch: `?force=1` bypasses the shared matrix cache and recomputes
   // immediately (then re-writes the cache fresh). The client only fires this on a >0.5%
   // spot divergence, throttled to ≤1/8s, so it can't pressure the chain API — a normal

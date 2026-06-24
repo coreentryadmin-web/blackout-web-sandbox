@@ -11,14 +11,10 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { redactWebhook } from "@/lib/discord-post";
 import { getPersonalWebhook, setPersonalWebhook } from "@/lib/personal-alert-store";
+import { parseTier, tierAtLeast } from "@/lib/tiers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isPremium(meta: unknown): boolean {
-  const tier = (meta as { tier?: string } | undefined)?.tier;
-  return tier === "premium";
-}
 
 export async function GET() {
   const { userId } = await auth();
@@ -35,7 +31,8 @@ export async function PUT(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const user = await currentUser();
-  if (!isPremium(user?.publicMetadata)) {
+  const tier = parseTier(user?.publicMetadata?.tier);
+  if (!tierAtLeast(tier, "premium")) {
     return NextResponse.json({ error: "Premium required" }, { status: 403 });
   }
 

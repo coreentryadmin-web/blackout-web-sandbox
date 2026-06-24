@@ -1569,9 +1569,10 @@ export async function updateUserPosition(
     }
   }
   if (!sets.length) {
-    // Nothing to change — return the current row (still user-scoped).
+    // Nothing to change — return the current OPEN row (still user-scoped). A settled
+    // (closed) position is immutable, so it does not match here.
     const cur = await (await getPool()).query(
-      `SELECT * FROM user_positions WHERE user_id = $1 AND id = $2`,
+      `SELECT * FROM user_positions WHERE user_id = $1 AND id = $2 AND status = 'open'`,
       [userId, id]
     );
     return cur.rows[0] ? mapUserPositionRow(cur.rows[0]) : null;
@@ -1581,8 +1582,10 @@ export async function updateUserPosition(
   const userIdx = values.length;
   values.push(id);
   const idIdx = values.length;
+  // `AND status = 'open'` makes settled positions immutable at the SQL layer — editing a
+  // closed row matches nothing and returns null.
   const res = await (await getPool()).query(
-    `UPDATE user_positions SET ${sets.join(", ")} WHERE user_id = $${userIdx} AND id = $${idIdx} RETURNING *`,
+    `UPDATE user_positions SET ${sets.join(", ")} WHERE user_id = $${userIdx} AND id = $${idIdx} AND status = 'open' RETURNING *`,
     values
   );
   return res.rows[0] ? mapUserPositionRow(res.rows[0]) : null;
@@ -1599,12 +1602,26 @@ export async function closeUserPosition(
     `
     UPDATE user_positions
     SET status = 'closed', exit_premium = $3, closed_at = NOW(), updated_at = NOW()
-    WHERE user_id = $1 AND id = $2
+    WHERE user_id = $1 AND id = $2 AND status = 'open'
     RETURNING *
     `,
     [userId, id, exitPremium]
   );
   return res.rows[0] ? mapUserPositionRow(res.rows[0]) : null;
+}
+
+/**
+ * Existence probe regardless of status — lets the PATCH route distinguish 404 (no such
+ * row) from 409 (row exists but is settled/closed, so the immutable-status SQL guard
+ * matched nothing).
+ */
+export async function userPositionExists(userId: string, id: number): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `SELECT 1 FROM user_positions WHERE user_id = $1 AND id = $2 LIMIT 1`,
+    [userId, id]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 /** Delete a user's position. Returns true if a row was removed. */

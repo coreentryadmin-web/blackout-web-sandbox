@@ -1168,7 +1168,13 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     case "search_ticker": {
       const q = String(input.query ?? ticker ?? "");
       if (!q) return { error: "query required" };
-      const limit = Number(input.limit ?? 10);
+      // Bound the cache-key cardinality (mirrors the HTTP ticker-search route): cap length,
+      // allow-list the charset, and clamp limit — so this path can't mint unbounded distinct
+      // cache keys upstream of the server-cache layer.
+      if (q.length > 32 || !/^[A-Za-z0-9.\-& ]+$/.test(q)) {
+        return { error: "invalid query" };
+      }
+      const limit = Math.min(20, Math.max(1, Number(input.limit ?? 10) || 10));
       return serverCache(`search:${q.toLowerCase()}:${limit}`, TTL.TICKER_SEARCH, async () => {
         const results = await fetchPolygonTickerSearch(q, limit);
         return { query: q, results, source: "polygon" };
@@ -1250,6 +1256,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       // TRUSTED dispatcher `userId` (Clerk auth() server-side); `status` is the ONLY
       // value read from model-controlled `input`. We never read userId/owner/email
       // from `input`. Reuses the SAME cached chain/desk layers (no new per-user upstream).
+      // Fail closed: never query the literal "default" bucket (the dispatcher default)
+      // — an unscoped caller must get an error, not a guess at another user's scope.
+      if (!userId || userId === "default") {
+        return { error: "get_my_positions requires an authenticated user scope." };
+      }
       const rawStatus = String(input.status ?? "open").toLowerCase();
       const statusArg: "open" | "closed" | undefined =
         rawStatus === "closed" ? "closed" : rawStatus === "all" ? undefined : "open";

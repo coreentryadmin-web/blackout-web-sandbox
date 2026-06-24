@@ -28,6 +28,13 @@ export async function GET(req: NextRequest) {
     Pragma: "no-cache",
   };
 
+  // Validate BEFORE getGexPositioning — on a cache miss it triggers a paid spot/chain
+  // fetch and mints a per-ticker cache key, so arbitrary input must be rejected up front
+  // (mirrors the quote route guard).
+  if (!/^[A-Z0-9.\-]{1,8}$/.test(ticker)) {
+    return NextResponse.json({ error: "Invalid ticker" }, { status: 400, headers: noStore });
+  }
+
   try {
     const positioning = await getGexPositioning(ticker);
     if (!positioning) {

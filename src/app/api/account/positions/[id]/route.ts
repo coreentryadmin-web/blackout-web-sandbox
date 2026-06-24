@@ -12,6 +12,7 @@ import {
   updateUserPosition,
   closeUserPosition,
   deleteUserPosition,
+  userPositionExists,
   type UserPositionPatch,
 } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
@@ -60,7 +61,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         );
       }
       const closed = await closeUserPosition(userId, id, exitPremium);
-      if (!closed) return NextResponse.json({ error: "Position not found" }, { status: 404 });
+      if (!closed) {
+        // Settled positions are immutable (SQL guard `AND status = 'open'` matched nothing).
+        // Distinguish a missing row (404) from an already-closed one (409).
+        const exists = await userPositionExists(userId, id);
+        return exists
+          ? NextResponse.json({ error: "Position already closed" }, { status: 409 })
+          : NextResponse.json({ error: "Position not found" }, { status: 404 });
+      }
       return NextResponse.json({ position: enrichPosition(closed, null) });
     }
 
@@ -122,7 +130,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     const updated = await updateUserPosition(userId, id, patch);
-    if (!updated) return NextResponse.json({ error: "Position not found" }, { status: 404 });
+    if (!updated) {
+      // Settled positions are immutable (SQL guard `AND status = 'open'` matched nothing).
+      // Distinguish a missing row (404) from an already-closed one (409).
+      const exists = await userPositionExists(userId, id);
+      return exists
+        ? NextResponse.json({ error: "Position already closed" }, { status: 409 })
+        : NextResponse.json({ error: "Position not found" }, { status: 404 });
+    }
 
     // Cheap write: persist + return immediately. Open positions report 'pending';
     // the next GET poll fills live valuation from the shared chain cache.

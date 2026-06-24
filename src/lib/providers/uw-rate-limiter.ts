@@ -190,6 +190,14 @@ async function acquireGlobalRedisSlot(): Promise<boolean> {
     );
     return allowed === 1;
   } catch {
+    // Redis died mid-session: arm the backoff so getSharedRedis() falls back to
+    // local-only pacing for SHARED_REDIS_RETRY_BACKOFF_MS instead of awaiting a
+    // dead client on every hot-path call. Tear down the old client (ioredis would
+    // otherwise keep auto-reconnecting in the background).
+    sharedRedisFailedAt = Date.now();
+    const dead = sharedRedis;
+    sharedRedis = null;
+    try { dead?.disconnect(); } catch { /* ignore */ }
     return true;
   }
 }
@@ -214,9 +222,18 @@ async function acquireLocalSlot(): Promise<void> {
   for (;;) {
     refillTokens();
     if (inFlight < MAX_CONCURRENCY && tokens >= 1) {
-      await waitMinSpacing();
+      // Reserve the slot synchronously BEFORE pacing so no concurrent acquirer can
+      // observe the un-consumed token/concurrency across the await and overshoot MAX_RPS.
       tokens -= 1;
       inFlight += 1;
+      try {
+        await waitMinSpacing();
+      } catch (err) {
+        // Release concurrency on failure; do NOT refund the token (rate budget is
+        // consumed per admitted call, mirroring releaseSlot which never refunds tokens).
+        inFlight = Math.max(0, inFlight - 1);
+        throw err;
+      }
       return;
     }
     const delay = inFlight >= MAX_CONCURRENCY ? 50 : waitMsForToken();

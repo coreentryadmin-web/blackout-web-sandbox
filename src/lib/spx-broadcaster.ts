@@ -10,6 +10,18 @@
 
 type Subscriber = (data: SpxBar) => void
 
+// Node's undici WebSocket does NOT expose `ErrorEvent` as a runtime global, so
+// `event instanceof ErrorEvent` throws ReferenceError on the WS error path. Extract
+// the message portably, mirroring polygonErrorMessage() in ws/polygon-socket.ts.
+function polygonErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  const evt = err as { message?: string; error?: unknown; type?: string }
+  if (typeof evt?.message === 'string') return evt.message
+  if (evt?.error instanceof Error) return evt.error.message
+  if (typeof evt?.type === 'string') return evt.type
+  return String(err)
+}
+
 export interface SpxBar {
   sym: string
   open: number
@@ -158,7 +170,7 @@ class SpxBroadcaster {
       this.scheduleReconnect()
     }
     ws.onerror = (event) => {
-      console.error('[SpxBroadcaster] WS error:', event instanceof ErrorEvent ? event.message : event.type)
+      console.error('[SpxBroadcaster] WS error:', polygonErrorMessage(event))
     }
   }
 

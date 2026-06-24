@@ -31,6 +31,15 @@ const inflight = new Map<string, Promise<unknown>>();
 const MAX_ENTRIES = 5_000;
 
 /**
+ * Hard cap on the failure-tracking sidecar structures. Failing keys never enter `store`
+ * (the .then that writes the store only runs on success), so they cannot be bounded by
+ * setStoreEntry's eviction — without their own cap, a sustained upstream outage over
+ * high-cardinality user-controlled keys leaks one permanent entry per distinct failing
+ * key. Bound them directly, insertion-order eviction, keeping degradedKeys a strict subset.
+ */
+const MAX_FAILURE_KEYS = 5_000;
+
+/**
  * Insert/refresh a store entry while keeping the Map bounded. Opportunistically
  * sweeps expired keys first (so a flood of short-TTL keys self-cleans), then
  * evicts oldest entries until under MAX_ENTRIES. Centralizing every store.set
@@ -197,6 +206,14 @@ async function refreshCache<T>(
       // FIX 5b: Track consecutive failures and flag key as degraded after threshold.
       const failures = (failureCount.get(key) ?? 0) + 1;
       failureCount.set(key, failures);
+      // Bound the failure-tracking maps (they never enter `store`, so store-eviction can't
+      // clean them). Evict oldest by insertion order, keeping degradedKeys in lockstep.
+      while (failureCount.size > MAX_FAILURE_KEYS) {
+        const oldest = failureCount.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        failureCount.delete(oldest);
+        degradedKeys.delete(oldest);
+      }
       if (failures >= FAILURE_THRESHOLD) {
         degradedKeys.add(key);
         console.error(

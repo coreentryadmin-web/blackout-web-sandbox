@@ -191,6 +191,14 @@ async function acquireGlobalRedisSlot(): Promise<boolean> {
     );
     return allowed === 1;
   } catch {
+    // Redis died mid-session: arm the backoff so getSharedRedis() falls back to
+    // local-only pacing for SHARED_REDIS_RETRY_BACKOFF_MS instead of awaiting a
+    // dead client on every hot-path call. Tear down the old client (ioredis would
+    // otherwise keep auto-reconnecting in the background).
+    sharedRedisFailedAt = Date.now();
+    const dead = sharedRedis;
+    sharedRedis = null;
+    try { dead?.disconnect(); } catch { /* ignore */ }
     return true; // FAIL-OPEN on any Redis error.
   }
 }
@@ -215,9 +223,18 @@ async function acquireLocalSlot(): Promise<void> {
   for (;;) {
     refillTokens();
     if (inFlight < MAX_CONCURRENCY && tokens >= 1) {
-      await waitMinSpacing();
+      // Reserve the slot synchronously BEFORE pacing so no concurrent acquirer can
+      // observe the un-consumed token/concurrency across the await and overshoot.
       tokens -= 1;
       inFlight += 1;
+      try {
+        await waitMinSpacing();
+      } catch (err) {
+        // Release concurrency on failure; do NOT refund the token (rate budget is
+        // consumed per admitted call, mirroring releaseSlot which never refunds tokens).
+        inFlight = Math.max(0, inFlight - 1);
+        throw err;
+      }
       return;
     }
     const delay = inFlight >= MAX_CONCURRENCY ? 50 : waitMsForToken();
@@ -228,13 +245,14 @@ async function acquireLocalSlot(): Promise<void> {
 /**
  * Await a REST slot before a Polygon REST call. PERMISSIVE + FAIL-OPEN: on the
  * uncontended path this returns after a synchronous token refill with no Redis hit and
- * no sleep. NOTE: this gate is reactive-breaker-aware — it does NOT block on the breaker
- * here; callers short-circuit via isPolygonCircuitOpen() (mirrors the old polygon.ts gate,
- * which threw immediately instead of waiting). The breaker subscription is ensured here so
- * a peer trip can still arrive passively.
+ * no sleep. The breaker subscription is ensured here so a peer trip can arrive passively,
+ * and acquirePolygonSlot blocks on the breaker via waitForCircuit() (mirroring the UW
+ * limiter) so the breaker is honored even for callers that don't pre-check
+ * isPolygonCircuitOpen(); polygonTrackedFetch still short-circuits via that helper too.
  */
 export async function acquirePolygonSlot(_lane?: "default" | "nights-watch"): Promise<void> {
   ensureBreakerSubscription();
+  await waitForCircuit();
   if (process.env.REDIS_URL?.trim()) {
     for (;;) {
       if (await acquireGlobalRedisSlot()) {

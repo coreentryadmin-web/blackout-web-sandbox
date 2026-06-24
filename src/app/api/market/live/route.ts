@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
   let closed = false
   let counted = false
   let unsub: (() => void) | null = null
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null
 
   // Idempotent teardown: decrements the count exactly once and drops the broadcaster
   // subscription. Reachable from start()'s abort handler / failed enqueue and from cancel().
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
     closed = true
     if (counted) activeStreams = Math.max(0, activeStreams - 1)
     if (unsub) unsub()
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
   }
 
   const stream = new ReadableStream({
@@ -71,6 +73,19 @@ export async function GET(req: NextRequest) {
         cleanup()
         try { controller.close() } catch { /* already closed */ }
       })
+
+      // Periodic SSE comment heartbeat — keeps the connection alive through proxies and
+      // load balancers with idle-timeout defaults (Railway, nginx, etc.). Between AM bars
+      // and off-hours no data flows, so without this idle timeouts silently drop the stream.
+      heartbeatInterval = setInterval(() => {
+        if (closed) return
+        try {
+          controller.enqueue(encoder.encode(': heartbeat\n\n'))
+        } catch {
+          cleanup()
+          try { controller.close() } catch { /* already closed */ }
+        }
+      }, 15_000)
     },
     cancel() {
       cleanup()
