@@ -10,13 +10,13 @@ export default async function HeatmapPage() {
     <>
       <PageShell>
         <PageHeader
-          kicker="◆ SECTOR ROTATION"
+          kicker="◆ DEALER POSITIONING"
           title="HEATMAPS"
-          subtitle="Sector rotation · Institutional movers"
+          subtitle="Dealer gamma & vanna exposure · GEX walls, flip & flow"
           badge={<ProductMark product="heatmap" size={44} />}
           actions={
             <Badge tone="accent" dot>
-              Thermal Scan
+              GEX · VEX
             </Badge>
           }
         />

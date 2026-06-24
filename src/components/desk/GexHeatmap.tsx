@@ -1084,7 +1084,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           title={isGex ? "GAMMA PROFILE IDLE" : "VANNA PROFILE IDLE"}
           description={
             isGex
-              ? "The dealer gamma profile prints from the live options chain during RTH. Standby until the bell."
+              ? "The options chain returned no contracts right now — the snapshot is quiet outside regular trading hours. Dealer gamma prints live during the session; try another ticker if it stays idle at the open."
               : "Vanna needs implied vol + time-to-expiry on the chain. No qualifying contracts right now — try GEX or another ticker."
           }
         />
