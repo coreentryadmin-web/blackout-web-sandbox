@@ -3,6 +3,7 @@ import {
   FLOW_TOOLS_RE,
   FUNDAMENTAL_RE,
   matchesIntent,
+  MY_POSITIONS_RE,
   NEWS_TOOLS_RE,
   NIGHTHAWK_RE,
   PREDICTIONS_RE,
@@ -341,6 +342,10 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_power_hour", "Current Power Hour (2:45–3:15 PM ET) play (read-only record): phase, direction, strike, levels, status."),
 
+  t("get_my_positions",
+    "Night's Watch — the signed-in user's OWN open option positions with live P&L, key Greeks, days-to-expiry, and the deterministic Hold/Trim/Sell verdict (+reasons). Use this whenever the user asks about 'my positions', 'my trades', 'my book', or 'what should I do with my <TICKER> calls/puts'. Returns only THIS user's positions.",
+    { status: { type: "string", enum: ["open", "closed", "all"], description: "Default open." } }),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -445,6 +450,10 @@ export const TOOL_GROUPS = {
     "get_nighthawk_outcomes",
     "get_nighthawk_dossier",
   ],
+  my_book: [
+    // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).
+    "get_my_positions",
+  ],
   screener: [
     "get_screener",
     "get_market_movers",
@@ -498,6 +507,12 @@ export function getToolsForIntent(question: string): string[] {
   }
   if (matchesIntent(lower, PREDICTIONS_RE)) {
     for (const n of [...TOOL_GROUPS.fundamental, "get_predictions_consensus"]) names.add(n);
+  }
+  // Night's Watch — "my positions / my book / what do I do with my NVDA calls".
+  // Surfaces the per-user position tool plus the desk/stock context Largo needs to
+  // reason about those holdings.
+  if (matchesIntent(lower, MY_POSITIONS_RE)) {
+    for (const n of [...TOOL_GROUPS.my_book, ...TOOL_GROUPS.stock_analysis]) names.add(n);
   }
 
   if (mentionsTicker(question)) {
