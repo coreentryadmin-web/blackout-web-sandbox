@@ -21,10 +21,14 @@ export function NightHawkBackdrop() {
         initial={{ scale: 1.04 }}
         animate={
           reduced
-            ? { scale: 1.04 }
+            ? { scale: 1.04, filter: "brightness(1.16) contrast(1.06)" }
             : {
                 scale: [1.03, 1.07, 1.03],
-                filter: ["brightness(0.9)", "brightness(1.12)", "brightness(0.9)"],
+                filter: [
+                  "brightness(1.08) contrast(1.06)",
+                  "brightness(1.28) contrast(1.06)",
+                  "brightness(1.08) contrast(1.06)",
+                ],
               }
         }
         transition={{ duration: 9, ease: "easeInOut", repeat: Infinity }}
@@ -36,7 +40,7 @@ export function NightHawkBackdrop() {
           priority
           sizes="100vw"
           className="object-cover"
-          style={{ objectPosition: "center 36%" }}
+          style={{ objectPosition: "center 55%" }}
         />
       </motion.div>
 
@@ -57,14 +61,14 @@ export function NightHawkBackdrop() {
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(180deg, rgba(4,4,7,0.12) 0%, rgba(4,4,7,0.26) 32%, rgba(4,4,7,0.50) 64%, rgba(4,4,7,0.80) 88%, #040407 100%)",
+            "linear-gradient(180deg, rgba(4,4,7,0.04) 0%, rgba(4,4,7,0.12) 38%, rgba(4,4,7,0.38) 72%, rgba(4,4,7,0.74) 90%, #040407 100%)",
         }}
       />
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(130% 85% at 50% 28%, transparent 55%, rgba(4,4,7,0.45) 100%)",
+            "radial-gradient(135% 90% at 50% 42%, transparent 62%, rgba(4,4,7,0.40) 100%)",
         }}
       />
     </div>
