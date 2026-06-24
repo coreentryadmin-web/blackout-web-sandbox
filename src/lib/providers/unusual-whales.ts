@@ -972,9 +972,28 @@ export async function fetchUwIvTermStructure(ticker = "SPX"): Promise<IvTermPoin
   return [];
 }
 
+/**
+ * Per-strike intraday flow ROWS. Cache-reader, like its ~25 sibling accessors: the upstream
+ * /flow-per-strike-intraday call is wrapped in `uwCacheGet` so staggered callers (heatmap overlay
+ * limit 250, Largo + cron limit 30) collapse to ONE upstream fetch per ticker per TTL — previously
+ * it was only request-COALESCED, so each staggered caller spent from the scarce 2-RPS cluster UW
+ * budget.
+ *
+ * KEY: a DISTINCT `flow_per_strike_rows:${ticker}` key (NOT the existing `UW_KEYS.flowPerStrike`,
+ * which `fetchUwFlow0dte` already uses for an incompatible AGGREGATE shape — reusing it would
+ * collide row-array vs {call_premium,put_premium,net}). TTL mirrors the sibling flow accessor
+ * (`UW_CACHE_TTL.flowPerStrike`, 2 min). We cache the UNSLICED rows and slice per-caller AFTER
+ * the read, so the 250-row heatmap caller and the 30-row Largo/cron callers share one cached fetch
+ * without one starving the other's window.
+ */
 export async function fetchUwFlowPerStrikeRows(ticker = "SPX", limit = 30) {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/flow-per-strike-intraday`, {});
-  return extractRows(data).slice(0, limit);
+  const sym = ticker.toUpperCase();
+  const redis = await getUwCacheRedis();
+  const rows = await uwCacheGet(redis, `flow_per_strike_rows:${sym}`, UW_CACHE_TTL.flowPerStrike, async () => {
+    const data = await uwGetSafe<unknown>(`/api/stock/${sym}/flow-per-strike-intraday`, {});
+    return extractRows(data);
+  });
+  return rows.slice(0, limit);
 }
 
 export async function fetchUwOiPerStrike(ticker = "SPX", limit = 40) {
