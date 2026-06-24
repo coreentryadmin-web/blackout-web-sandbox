@@ -2133,6 +2133,20 @@ body {
     background: radial-gradient(ellipse 120% 90% at 50% 45%, rgba(8, 4, 12, 0.4), #000 72%);
   }
 
+  /* Radar reduced to a faint recon-HUD layered over the operator backdrop: its opaque
+     black fill + vignette are neutralized and the green scope is screen-blended on top. */
+  .nighthawk-radar-hud {
+    @apply fixed inset-0 z-0 overflow-hidden pointer-events-none;
+    mix-blend-mode: screen;
+    opacity: 0.42;
+  }
+  .nighthawk-radar-hud .nighthawk-radar-backdrop {
+    background: transparent;
+  }
+  .nighthawk-radar-hud .nighthawk-radar-vignette {
+    display: none;
+  }
+
   .nighthawk-radar-vignette {
     @apply absolute inset-0;
     background:

@@ -6,14 +6,20 @@ import { ProductMark } from "@/components/marks/ProductMark";
 import { NightHawkFeed } from "@/components/NightHawkFeed";
 
 import { NightHawkRadarBackdrop } from "@/components/nighthawk/NightHawkRadarBackdrop";
+import { NightHawkBackdrop } from "@/components/nighthawk/NightHawkBackdrop";
 
 export default async function NightHawkPage() {
   await requireTier("premium");
 
   return (
     <>
-      {/* Radar canvas — fixed behind all content (Night Hawk paints its own backdrop). */}
-      <NightHawkRadarBackdrop />
+      {/* Cinematic night-vision operator scene — the dominant fixed backdrop. */}
+      <NightHawkBackdrop />
+
+      {/* Radar kept as a faint screen-blended recon-HUD over the operator. */}
+      <div className="nighthawk-radar-hud" aria-hidden>
+        <NightHawkRadarBackdrop />
+      </div>
 
       <div className="nv-scanlines" aria-hidden />
 
