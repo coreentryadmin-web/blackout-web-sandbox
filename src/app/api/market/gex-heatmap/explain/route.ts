@@ -7,6 +7,7 @@ import type {
 } from "@/lib/providers/polygon-options-gex";
 import { anthropicText, anthropicConfigured } from "@/lib/providers/anthropic";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
+import { gexContextBlock } from "@/lib/providers/gex-positioning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,43 +57,33 @@ function fmtNum(n: number | null | undefined): string {
  * Build a CONCISE context string from the cached heatmap (+ optional overlays) for the
  * prompt. Only includes what's actually present — never fabricates. Kept short so the
  * call stays cheap and the model stays grounded.
+ *
+ * The CORE GEX/VEX context is now sourced from the canonical shared helper
+ * `gexContextBlock(ticker)` (lib/providers/gex-positioning) — the single source of
+ * truth every tool/service/AI surface reads — so this route can't drift from what
+ * users see. This route then APPENDS its route-local overlay context (HELIX flow +
+ * dark-pool) that the shared helper intentionally does not carry.
  */
-function buildContext(
+async function buildContext(
   ticker: string,
   hm: GexHeatmap,
   overlays: GexHeatmapOverlays | null
-): string {
+): Promise<string> {
+  // Canonical core GEX/VEX block (Ticker/Spot/regime read/flip+posture+distance/walls+
+  // max-pain/net gamma+vanna/intraday shift). Reads the SAME shared matrix cache `hm`
+  // came from. Falls back to the local render only if the helper returns null (cold).
+  const core = await gexContextBlock(ticker).catch(() => null);
   const lines: string[] = [];
-  lines.push(`Ticker: ${ticker}`);
-  lines.push(
-    `Spot: ${fmtNum(hm.spot)} (${hm.change_pct >= 0 ? "+" : ""}${hm.change_pct.toFixed(2)}% on the day)`
-  );
-
-  const gex = hm.gex;
-  lines.push(`GEX regime read: ${gex.regime.read}`);
-  lines.push(
-    `Gamma flip: ${fmtNum(gex.flip)} | posture: ${gex.regime.posture ?? "undetermined"}`
-  );
-  lines.push(
-    `Call wall (resistance/pin): ${fmtNum(gex.call_wall)} | Put wall (support): ${fmtNum(gex.put_wall)}`
-  );
-  lines.push(`Max pain: ${fmtNum(hm.max_pain)}`);
-  lines.push(`Net dealer $-gamma total: ${fmtMoney(gex.total)}`);
-
-  // VEX regime read (vanna) — one line of context, not the focus.
-  if (hm.vex?.regime?.read) {
-    lines.push(`VEX (vanna) read: ${hm.vex.regime.read}`);
-  }
-
-  // Intraday gamma migration — only when a real diff exists.
-  if (hm.shift?.available) {
-    if (hm.shift.summary) lines.push(`Intraday gamma shift: ${hm.shift.summary}`);
-    const fm = hm.shift.flip_migration;
-    if (fm && fm.delta_pts != null && fm.delta_pts !== 0) {
-      lines.push(
-        `Flip migration: ${fmtNum(fm.from)} -> ${fmtNum(fm.to)} (${fm.delta_pts > 0 ? "+" : ""}${fm.delta_pts} pts)`
-      );
-    }
+  if (core) {
+    lines.push(core);
+  } else {
+    // Defensive fallback (helper returned null on a matrix we already validated as
+    // non-empty): keep the route honest with the minimal header + regime read.
+    lines.push(`Ticker: ${ticker}`);
+    lines.push(
+      `Spot: ${fmtNum(hm.spot)} (${hm.change_pct >= 0 ? "+" : ""}${hm.change_pct.toFixed(2)}% on the day)`
+    );
+    lines.push(`GEX regime read: ${hm.gex.regime.read}`);
   }
 
   // Top ~3 flow strikes by |net premium| (HELIX overlay), when present.
@@ -201,7 +192,7 @@ export async function GET(req: NextRequest) {
       /* overlays are optional context */
     }
 
-    const context = buildContext(ticker, heatmap, overlays);
+    const context = await buildContext(ticker, heatmap, overlays);
     const prompt =
       `Dealer positioning snapshot for ${ticker}:\n\n${context}\n\n` +
       `Give the desk read now (3-5 sentences, market-structure analysis only).`;
