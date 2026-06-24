@@ -134,6 +134,44 @@ function EditionWinRateTrend({ editions }: { editions: NighthawkMetrics["by_edit
   );
 }
 
+type OptionsWsStatus = {
+  enabled: boolean;
+  total_contracts: number;
+  marks_in_memory: number;
+  capacity?: number;
+  shards: { id: number; contracts: number; ws_state: string; authenticated: boolean; auth_failed?: boolean }[];
+};
+
+/** Live status strip for the Night's Watch options WebSocket (live option marks). */
+function OptionsWsStrip({ status }: { status: OptionsWsStatus }) {
+  const shards = status.shards ?? [];
+  const openAuthed = shards.filter((s) => s.ws_state === "OPEN" && s.authenticated).length;
+  const enabled = !!status.enabled;
+  const streaming = enabled && openAuthed > 0;
+  const label = !enabled
+    ? "OFF — set OPTIONS_WS_ENABLED=1"
+    : streaming
+      ? "STREAMING"
+      : status.total_contracts > 0
+        ? "CONNECTING…"
+        : "ARMED · idle (no open positions)";
+  const tone = !enabled ? "bg-[#9fb4d4]" : streaming ? "bg-bull" : "bg-gold";
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.6)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em]">
+      <span className="flex items-center gap-1.5">
+        <span className={`inline-block h-2 w-2 rounded-full ${tone}`} aria-hidden />
+        <span className="text-sky-300">Live marks · Options WS</span>
+      </span>
+      <span className="text-white">{label}</span>
+      <span className="text-sky-300/80">{status.total_contracts ?? 0} contracts</span>
+      <span className="text-sky-300/80">{status.marks_in_memory ?? 0} marks</span>
+      <span className="text-sky-300/80">
+        {openAuthed}/{shards.length} conn
+      </span>
+    </div>
+  );
+}
+
 export function AdminNightHawkDashboard() {
   const [windowDays, setWindowDays] = useState<(typeof WINDOW_OPTIONS)[number]>(30);
   const [data, setData] = useState<NighthawkMetrics | null>(null);
@@ -142,14 +180,16 @@ export function AdminNightHawkDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<string | null>(null);
+  const [wsStatus, setWsStatus] = useState<OptionsWsStatus | null>(null);
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     setError(null);
     try {
-      const [metricsRes, previewRes] = await Promise.all([
+      const [metricsRes, previewRes, wsRes] = await Promise.all([
         fetch(`/api/admin/nighthawk/analytics?window=${windowDays}`, { cache: "no-store" }),
         fetch("/api/admin/nighthawk/publish-preview", { cache: "no-store" }),
+        fetch("/api/admin/options-socket", { cache: "no-store" }),
       ]);
       if (!metricsRes.ok) throw new Error(metricsRes.status === 403 ? "Not authorized" : `HTTP ${metricsRes.status}`);
       setData((await metricsRes.json()) as NighthawkMetrics);
@@ -158,6 +198,8 @@ export function AdminNightHawkDashboard() {
       } else if (previewRes.status !== 404) {
         setPreview(null);
       }
+      // Live Options-WS status (secondary — never fails the dashboard load).
+      setWsStatus(wsRes.ok ? ((await wsRes.json().catch(() => null)) as OptionsWsStatus | null) : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -284,6 +326,8 @@ export function AdminNightHawkDashboard() {
       />
 
       {runMsg && <p className="admin-muted" style={{ marginTop: 8 }}>{runMsg}</p>}
+
+      {wsStatus && <OptionsWsStrip status={wsStatus} />}
 
       {error && <p className="admin-error">{error}</p>}
 
