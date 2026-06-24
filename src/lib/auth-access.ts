@@ -1,6 +1,7 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { parseTier, tierAtLeast, type Tier } from "@/lib/tiers";
+import { tierAtLeast, type Tier } from "@/lib/tiers";
+import { resolveUserTier, TierUnavailableError } from "@/lib/tier-cache";
 
 export async function requireAuth(): Promise<string> {
   const { userId } = await auth();
@@ -9,25 +10,25 @@ export async function requireAuth(): Promise<string> {
 }
 
 export async function getUserTier(userId: string): Promise<Tier> {
-  // NOTE (stale-JWT risk): this function reads publicMetadata directly from
-  // Clerk's backend, which is always current. However the *session JWT* that
-  // Clerk embeds in the browser is only refreshed on the next Clerk SDK poll
-  // cycle (default ≤60 s). If the calling context has no active session object
-  // (e.g. a background server action), session?.reload() cannot be called here
-  // and the in-flight JWT may be up to 60 s stale. The middleware tier-gate
-  // re-reads sessionClaims on every request and is not affected by this lag.
   if (!userId) {
-    // This path should not be reached because requireAuth() guards callers,
-    // but log a warning so stale-JWT conditions are visible in logs rather
-    // than silently producing a default "free" tier.
-    console.warn(
-      "[auth-access] getUserTier called with empty userId — " +
-        "session may be null or JWT stale. The Clerk SDK will refresh the " +
-        "token on the next poll cycle (≤60 s)."
-    );
+    // Guarded by requireAuth() upstream, but log so a stale-JWT/null-session window is
+    // visible rather than silently producing "free". The Clerk SDK refreshes on its next
+    // poll (≤60 s). Treat as "free" (deny) — never over-grant.
+    console.warn("[auth-access] getUserTier called with empty userId — treating as free.");
+    return "free";
   }
-  const user = await clerkClient.users.getUser(userId);
-  return parseTier(user.publicMetadata?.tier);
+  // Cache-first, shared with the API gate (one Clerk call per user per minute; a page
+  // render reuses a tier warmed by recent panel polls instead of a naked getUser).
+  try {
+    return await resolveUserTier(userId);
+  } catch (err) {
+    // Clerk Backend unreachable AND no cached tier. Degrade to the lowest tier so we
+    // NEVER over-grant premium on a Clerk outage — requireTier routes to /upgrade and it
+    // self-heals once Clerk recovers / a panel poll warms the cache.
+    if (!(err instanceof TierUnavailableError)) throw err;
+    console.warn("[auth-access] tier unavailable; denying (treating as free) to avoid over-grant.");
+    return "free";
+  }
 }
 
 export async function requireTier(minTier: Tier) {
