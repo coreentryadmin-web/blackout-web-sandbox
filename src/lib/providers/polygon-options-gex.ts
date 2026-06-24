@@ -565,24 +565,45 @@ async function fetchHeatmapBand(
 }
 
 /**
- * Compute the zero-gamma flip from per-strike NET dealer gamma totals: the strike
- * where cumulative dealer gamma (ascending by strike) crosses zero. Linear-interpolated
- * between the bracketing strikes. Returns null when no sign change is present.
+ * Compute the zero-gamma flip from per-strike NET dealer gamma totals.
+ *
+ * PRIMARY: the strike (linear-interpolated to gamma=0) where per-strike net gamma transitions
+ * negative→positive — the structural level below which dealers are net SHORT gamma and above
+ * which net LONG — choosing the crossing NEAREST spot. This is robust on heavily one-sided
+ * books (a deep net-short profile still has a clean sign flip), where the old cumulative-sum
+ * crossing returned null because the running total never crossed back through zero.
+ * FALLBACK: the legacy cumulative-crossing, then null.
  */
-function computeZeroGammaFlip(strikeTotals: Record<string, number>): number | null {
+function computeZeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
   const rows = Object.entries(strikeTotals)
     .map(([s, g]) => ({ strike: Number(s), gamma: g }))
-    .filter((r) => Number.isFinite(r.strike))
+    .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
     .sort((a, b) => a.strike - b.strike);
   if (rows.length < 2) return null;
 
+  // Primary: per-strike negative→positive sign transitions, interpolated to gamma = 0.
+  const crossings: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1];
+    const b = rows[i];
+    if (a.gamma < 0 && b.gamma > 0) {
+      const frac = (0 - a.gamma) / (b.gamma - a.gamma); // 0..1 where gamma crosses 0
+      crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
+    }
+  }
+  if (crossings.length) {
+    return spot > 0
+      ? crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best))
+      : crossings[crossings.length - 1];
+  }
+
+  // Fallback: cumulative-sum crossing (legacy) — for unusual profiles with no clean flip.
   let cumulative = 0;
   let prevStrike = rows[0].strike;
   let prevCum = 0;
   for (let i = 0; i < rows.length; i++) {
     const nextCum = cumulative + rows[i].gamma;
     if (i > 0 && prevCum !== 0 && Math.sign(nextCum) !== Math.sign(prevCum) && nextCum !== 0) {
-      // Cross between prevStrike and rows[i].strike — interpolate on cumulative gamma.
       const span = rows[i].strike - prevStrike;
       const frac = prevCum / (prevCum - nextCum); // 0..1
       return Number((prevStrike + span * frac).toFixed(2));
@@ -968,7 +989,7 @@ export async function fetchGexHeatmap(
   const maxPain = computeMaxPainFromChain(contracts);
 
   // GEX levels + regime.
-  const gexFlip = computeZeroGammaFlip(gexBuilt.strikeTotals);
+  const gexFlip = computeZeroGammaFlip(gexBuilt.strikeTotals, spot);
   const { callWall, putWall, regime: gexRegime } = computeGexRegime(
     gexBuilt.strikeTotals,
     spot,
@@ -977,7 +998,7 @@ export async function fetchGexHeatmap(
   );
 
   // VEX levels + regime (zero-vanna flip reuses the generic cumulative-cross helper).
-  const vexFlip = computeZeroGammaFlip(vexBuilt.strikeTotals);
+  const vexFlip = computeZeroGammaFlip(vexBuilt.strikeTotals, spot);
   const { posWall, negWall, regime: vexRegime } = computeVexRegime(
     vexBuilt.strikeTotals,
     vexBuilt.total || totalVanna
