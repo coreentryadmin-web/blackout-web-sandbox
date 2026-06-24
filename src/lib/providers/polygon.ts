@@ -69,13 +69,18 @@ export type StockQuoteSnapshot = {
   volume: number;
 };
 
-function _rowToSnapshot(sym: string, row: SnapshotTicker): StockQuoteSnapshot {
+function _rowToSnapshot(sym: string, row: SnapshotTicker): StockQuoteSnapshot | null {
   const day = row.day ?? {};
   const prev = row.prevDay ?? {};
   const last = row.lastTrade ?? {};
   const price = Number(last.p ?? day.c ?? 0);
-  if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) {
-    throw new Error(`[polygon] Invalid price for ${sym}: ${price}`);
+  // No usable price (no lastTrade AND no day close) is EXPECTED when the market is closed /
+  // pre-open / the ticker simply hasn't traded — not an error. Return null quietly and let
+  // callers degrade, instead of throwing (which used to surface as a misleading overnight
+  // "Invalid price: 0" warning for SPY etc.). Only a genuinely implausible price is logged.
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (price > 1_000_000) {
+    throw new Error(`[polygon] Implausible price for ${sym}: ${price}`);
   }
   const prevClose = Number(prev.c ?? 0);
   const changePct =
