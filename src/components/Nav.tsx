@@ -297,7 +297,7 @@ export function Nav() {
               Sign In
             </Link>
             <Link href="/sign-up" className="nav-join font-syne glitch-hover">
-              Deploy →
+              Start Trading →
             </Link>
           </SignedOut>
           <SignedIn>
@@ -365,7 +365,7 @@ export function Nav() {
                     Sign In
                   </Link>
                   <Link href="/sign-up" className="nav-join font-syne w-full justify-center" onClick={() => setMobileOpen(false)}>
-                    Deploy →
+                    Start Trading →
                   </Link>
                 </SignedOut>
                 <SignedIn>

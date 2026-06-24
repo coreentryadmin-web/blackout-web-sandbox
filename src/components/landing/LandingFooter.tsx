@@ -21,7 +21,7 @@ const PLATFORM = [
   { label: "FAQ", href: "/#faq" },
   { label: "Upgrade", href: "/upgrade" },
   { label: "Sign in", href: "/sign-in" },
-  { label: "Deploy", href: "/sign-up" },
+  { label: "Start Trading", href: "/sign-up" },
 ];
 
 const colReveal = {
@@ -145,7 +145,7 @@ export function LandingFooter() {
               Sign In
             </Link>
             <Link href="/sign-up" className="nav-join font-syne">
-              Deploy →
+              Start Trading →
             </Link>
           </div>
         </motion.div>

@@ -163,7 +163,7 @@ export function HeroSection() {
           className="flex flex-col sm:flex-row gap-4 mt-1"
         >
           <LandingCta href="/sign-up" className="btn-cta-primary">
-            Deploy →
+            Start Trading →
           </LandingCta>
           <LandingCta href="#features" variant="ghost">
             Tour the desk
