@@ -885,29 +885,37 @@ export function NightsWatchPanel() {
   const [formOpen, setFormOpen] = useState<boolean | null>(null);
   // Keep a ref so the poll loop never shows a flash of skeleton on refetch.
   const loadedOnce = useRef(false);
-  // In-flight mutex: poll + focus + initial can all fire load(); if one is slow, skip the next
-  // rather than stack overlapping fetches (which would multiply upstream load near the ceiling).
+  // In-flight mutex: poll + focus + initial + add/delete can all fire load(). We don't stack
+  // overlapping fetches (which would multiply upstream load near the ceiling) — but a request that
+  // arrives mid-flight must NOT be dropped, or a mutation's refresh is lost. So it sets `pending` and
+  // the running load does ONE trailing re-run. (The bug this fixes: adding a position left the list
+  // stale until the next poll because onCreated()'s load() hit the mutex and silently returned.)
   const inFlight = useRef(false);
+  const pending = useRef(false);
 
   const load = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) {
+      pending.current = true; // coalesce — the in-flight load will re-run once for us
+      return;
+    }
     inFlight.current = true;
     try {
-      const res = await fetch("/api/account/positions", { cache: "no-store" });
-      if (res.status === 401) {
-        setState({ kind: "unauthed" });
+      let runAgain = true;
+      while (runAgain) {
+        pending.current = false;
+        const res = await fetch("/api/account/positions", { cache: "no-store" });
+        if (res.status === 401) {
+          setState({ kind: "unauthed" });
+        } else if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as { error?: string } | null;
+          setState({ kind: "error", message: data?.error ?? "Failed to load positions." });
+        } else {
+          const data = (await res.json()) as { positions: ApiPosition[] };
+          setState({ kind: "ready", positions: data.positions ?? [] });
+        }
         loadedOnce.current = true;
-        return;
+        runAgain = pending.current; // a caller requested a refresh while we were fetching → re-run
       }
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setState({ kind: "error", message: data?.error ?? "Failed to load positions." });
-        loadedOnce.current = true;
-        return;
-      }
-      const data = (await res.json()) as { positions: ApiPosition[] };
-      setState({ kind: "ready", positions: data.positions ?? [] });
-      loadedOnce.current = true;
     } catch {
       setState({ kind: "error", message: "Network error — could not load positions." });
       loadedOnce.current = true;
