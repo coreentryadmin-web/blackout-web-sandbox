@@ -1296,6 +1296,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
           current_value: live ? round(p.current_value, 2) : null,
           pnl: live ? round(p.unrealized_pnl, 2) : null,
           pnl_pct: live ? round(p.pnl_pct, 1) : null,
+          // Realized (settled) P&L for a CLOSED leg — independent of any live mark, so it is
+          // reported whenever the position is closed with an exit on record (never fabricated:
+          // round() passes null through). Open positions report null here.
+          realized_pnl: p.status === "closed" ? round(p.realized_pnl, 2) : null,
+          realized_pnl_pct: p.status === "closed" ? round(p.realized_pnl_pct, 1) : null,
           dte: p.dte,
           breakeven: round(p.breakeven, 2),
           delta: live ? round(v.delta, 3) : null,

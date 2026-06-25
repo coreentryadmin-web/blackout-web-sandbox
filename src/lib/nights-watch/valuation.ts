@@ -263,6 +263,20 @@ export type EnrichedPosition = UserPositionRow & {
   current_value: number | null;
   unrealized_pnl: number | null;
   pnl_pct: number | null;
+  /**
+   * Realized P&L (dollars) for a CLOSED position with a recorded exit_premium:
+   * (exit_premium − entry_premium) × contracts × 100 × sideSign. Null while the
+   * position is OPEN or no exit price is on record. Mirrors the unrealized_pnl
+   * sign convention (long +1 / short −1). OPTIONAL so existing literal
+   * constructors stay compile-valid; enrichPosition always sets it.
+   */
+  realized_pnl?: number | null;
+  /**
+   * Realized P&L as a percent of the entry cost (|entry_premium × contracts × 100|),
+   * matching the unrealized pnl_pct denominator convention. Null while OPEN, with no
+   * exit on record, or when entry_premium is 0 (undefined denominator). OPTIONAL.
+   */
+  realized_pnl_pct?: number | null;
   dte: number;
   breakeven: number | null;
   pct_to_breakeven: number | null;
@@ -353,6 +367,22 @@ export function enrichPosition(
     }
   }
 
+  // Realized P&L — only for a CLOSED position with a recorded exit_premium. This is the
+  // settled result and is INDEPENDENT of any live valuation (a closed leg runs a null
+  // valuation). Same sideSign convention as unrealized P&L (long +1 / short −1), and the
+  // same entry-cost denominator for the percent (guarding entry_premium=0).
+  let realized_pnl: number | null = null;
+  let realized_pnl_pct: number | null = null;
+  if (position.status === "closed" && position.exit_premium != null) {
+    realized_pnl = Number(
+      ((position.exit_premium - position.entry_premium) * multiplier * sideSign).toFixed(2)
+    );
+    const cost = Math.abs(position.entry_premium * multiplier);
+    if (cost > 0) {
+      realized_pnl_pct = Number(((realized_pnl / cost) * 100).toFixed(2));
+    }
+  }
+
   // Freshness of the figure (truth mandate): mark_age_ms is known only when the mark
   // carries a timestamp (a live WS quote). A snapshot/chain mark has none here, so it
   // stays null and the surface ages it off the response's own as-of time. A day-close
@@ -381,6 +411,8 @@ export function enrichPosition(
     current_value,
     unrealized_pnl,
     pnl_pct,
+    realized_pnl,
+    realized_pnl_pct,
     dte,
     breakeven,
     pct_to_breakeven,

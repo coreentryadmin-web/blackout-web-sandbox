@@ -443,6 +443,11 @@ function PositionCard({
   const live = position.valuation_status === "live";
   const pnl = position.unrealized_pnl;
   const pnlTone = pnl != null && pnl >= 0 ? "text-bull" : "text-bear";
+  // A CLOSED position reports a settled REALIZED P&L instead of a live unrealized one.
+  const closed = position.status === "closed";
+  const realized = position.realized_pnl;
+  const hasRealized = realized != null && Number.isFinite(realized);
+  const realizedTone = realized != null && realized >= 0 ? "text-bull" : "text-bear";
 
   function openCloseForm() {
     setActionError(null);
@@ -561,13 +566,30 @@ function PositionCard({
         <VerdictChip verdict={position.verdict} />
       </div>
 
-      {/* P&L block — big colored number + % + LIVE/freshness tag. Honest "—" off-live. */}
+      {/* P&L block — big colored number + % + LIVE/freshness tag. Honest "—" off-live.
+          A CLOSED position shows its settled REALIZED P&L (same emerald/bear-by-sign
+          treatment) in place of the live unrealized figure. */}
       <div className="flex items-end justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3.5 py-3">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-mute">
-            Unrealized P&amp;L
+            {closed ? "Realized P&L" : "Unrealized P&L"}
           </span>
-          {live ? (
+          {closed ? (
+            hasRealized ? (
+              <div className="flex items-baseline gap-2">
+                <span className={clsx("font-mono text-[26px] font-bold leading-none tabular-nums", realizedTone)}>
+                  {money(realized)}
+                </span>
+                <span className={clsx("font-mono text-[14px] font-semibold tabular-nums", realizedTone)}>
+                  {pct(position.realized_pnl_pct)}
+                </span>
+              </div>
+            ) : (
+              <span className="font-mono text-[26px] font-bold leading-none tabular-nums text-mute">
+                {EM_DASH}
+              </span>
+            )
+          ) : live ? (
             <div className="flex items-baseline gap-2">
               <span className={clsx("font-mono text-[26px] font-bold leading-none tabular-nums", pnlTone)}>
                 {money(pnl)}
@@ -583,7 +605,7 @@ function PositionCard({
           )}
           {/* #7b truth: P&L driven off yesterday's session close (illiquid/overnight) must NOT read as
               a live mark. Surface it so the figure is honest rather than fabricated-fresh. */}
-          {live && position.mark_is_day_close && (
+          {!closed && live && position.mark_is_day_close && (
             <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-amber-300/90">
               prior close · not live
             </span>
