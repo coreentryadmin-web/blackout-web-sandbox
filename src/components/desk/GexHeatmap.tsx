@@ -612,6 +612,33 @@ function ExposureProfile({
     return -1;
   }, [rows, flip]);
 
+  // SPOT reference line — drawn ABOVE the first row (strikes desc) whose strike < spot,
+  // i.e. between the strikes that bracket the live price. Mirrors the flip divider so a
+  // trader instantly places price in the structure (the Curve view draws the same line).
+  const spotBoundary = useMemo(() => {
+    if (!(spot > 0)) return -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].strike < spot) return i;
+    }
+    return -1;
+  }, [rows, spot]);
+
+  // The row index that sits ON the gamma-flip strike — faint bg tint so the flip row pops
+  // (the spot row already carries its cyan outline tint via r.isSpot).
+  const flipRowIdx = useMemo(() => {
+    if (flip == null || rows.length === 0) return -1;
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < rows.length; i++) {
+      const d = Math.abs(rows[i].strike - flip);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }, [rows, flip]);
+
   // Resolve each dark-pool price level to the nearest profile-row index so the line is
   // drawn across that strike band. Only levels inside the rendered strike range appear.
   const darkPoolByRow = useMemo(() => {
@@ -667,12 +694,24 @@ function ExposureProfile({
 
         return (
           <div key={r.strike}>
+            {/* SPOT reference line between the bracketing strikes — cyan, mirrors the
+                Curve view's spot marker so price is instantly placeable in the ladder. */}
+            {spot > 0 && i === spotBoundary && (
+              <div className="flex items-center gap-2 py-1" aria-hidden>
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_10px_#22d3ee]" />
+                <span className="whitespace-nowrap font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400">
+                  spot {fmtSpot(spot)}
+                </span>
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_10px_#22d3ee]" />
+              </div>
+            )}
+
             {/* flip divider between the bracketing strikes */}
             {flip != null && i === flipBoundary && (
               <div className="flex items-center gap-2 py-1" aria-hidden>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-gold">
-                  {flipLabel} {fmtStrike(flip)}
+                <span className="whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.2em] text-gold">
+                  γ {flipLabel} {fmtStrike(flip)}
                 </span>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
               </div>
@@ -681,7 +720,9 @@ function ExposureProfile({
             <div
               className={clsx(
                 "group relative flex items-center gap-2 rounded-sm py-0.5 pr-1",
-                r.isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.06]"
+                r.isSpot
+                  ? "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.06]"
+                  : i === flipRowIdx && "bg-gold/[0.06]"
               )}
               title={`${fmtStrike(r.strike)} · ${fmtMoney(r.value)}`}
             >
@@ -702,8 +743,10 @@ function ExposureProfile({
                 </span>
               </span>
 
-              {/* bipolar bar track with a center axis */}
-              <span className="relative h-5 flex-1">
+              {/* bipolar bar track with a center axis — capped width so the bars don't
+                  stretch edge-to-edge on wide monitors (the prior full-bleed track left a
+                  big void between a short bar and the far-pinned value). */}
+              <span className="relative h-5 flex-1 max-w-[clamp(220px,42vw,420px)]">
                 {/* dark-pool level line — subtle horizontal rule across the band */}
                 {dpLevel != null && (
                   <span
@@ -761,14 +804,15 @@ function ExposureProfile({
                 )}
               </span>
 
-              {/* signed value + wall tag (right gutter) — value tinted by the lens identity */}
+              {/* signed value — sits INLINE just past the bar end (left-aligned, not pinned
+                  to the far edge) so the eye doesn't cross a void. Tinted by lens identity. */}
               <span
-                className="w-24 shrink-0 text-right font-mono text-[11px] font-semibold tabular-nums"
+                className="w-20 shrink-0 text-left font-mono text-[11px] font-semibold tabular-nums"
                 style={{ color: r.value === 0 ? undefined : positive ? c.posHex : c.negHex }}
               >
                 {fmtMoneySigned(r.value)}
               </span>
-              <span className="w-10 shrink-0 text-left">
+              <span className="ml-auto w-10 shrink-0 text-left">
                 {/* Wall tags only exist on GEX/VEX (DEX/CHARM have no walls → these never fire). */}
                 {r.isPosWall && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
