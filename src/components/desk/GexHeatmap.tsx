@@ -14,6 +14,7 @@ import {
   TabPanels,
   TabPanel,
 } from "@/components/ui";
+import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
@@ -2353,6 +2354,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     { refreshInterval: 1_500, revalidateOnFocus: true, keepPreviousData: true }
   );
 
+  // ── Sub-second INDEX spot via the pulse SSE (zero new REST cost) ───────────────
+  // The same proven pulse stream that feeds the SPX desk header / SpxLiveStrip
+  // (createPulseEventSource → /api/market/spx/pulse/stream, fed by the already-open
+  // Massive indices WS) also carries the index roots below. For an INDEX ticker we
+  // OVERLAY the pushed spot/change% on the header — ticking sub-second instead of the
+  // ~1.5s quote SWR — while the quote SWR stays mounted as the REST backstop and as
+  // the sole source for every stock/ETF (non-index) ticker. Reads a shared snapshot;
+  // no rate-limiter funnel, no per-ticker REST.
+  const [pulseSnap, setPulseSnap] = useState<PulseStreamSnapshot | null>(null);
+  useEffect(() => {
+    const conn = createPulseEventSource((snap) => setPulseSnap(snap));
+    return () => conn?.close();
+  }, []);
+
   // ── Stale cross-ticker gate (Rank 10) ───────────────────────────────────────
   // Both SWRs use keepPreviousData, so on a ticker switch the PREVIOUS ticker's
   // payload renders under the NEW title for ~one round-trip. `stale` is true while
@@ -2750,14 +2765,41 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // gamma profile + matrix spot marker stay on the MATRIX `spot` (the gamma was
   // computed at that 20s snapshot) — only this header line goes live.
   const quoteLive = quote?.available && (quote.price ?? 0) > 0;
-  const headerSpot = quoteLive ? (quote!.price as number) : spot;
-  const headerChangePct = quoteLive ? (quote!.change_pct ?? 0) : changePct;
+
+  // INDEX overlay: for the index roots the pulse SSE carries (SPX, VIX), prefer the
+  // SUB-SECOND pushed spot over the ~1.5s quote SWR. Resolved against the SELECTED
+  // ticker so a SPY/QQQ/NVDA header never picks up the SPX pulse; non-index tickers
+  // fall through to the quote feed untouched. The pulse snapshot only fires when
+  // `spx.price > 0` (createPulseEventSource gate), so this is push-fresh by nature.
+  const pulseField: "spx" | "vix" | null = (() => {
+    const t = ticker.toUpperCase().replace(/^I:/, "");
+    if (t === "SPX") return "spx";
+    if (t === "VIX") return "vix";
+    return null;
+  })();
+  const pushedSpot =
+    pulseField && quoteMatches ? (pulseSnap?.[pulseField]?.price ?? null) : null;
+  const pushedLive = pushedSpot != null && pushedSpot > 0;
+  const pushedChangePct = pulseField ? pulseSnap?.[pulseField]?.change_pct : undefined;
+
+  const headerSpot = pushedLive
+    ? (pushedSpot as number)
+    : quoteLive
+      ? (quote!.price as number)
+      : spot;
+  const headerChangePct = pushedLive
+    ? (pushedChangePct ?? (quoteLive ? (quote!.change_pct ?? 0) : changePct))
+    : quoteLive
+      ? (quote!.change_pct ?? 0)
+      : changePct;
   const headerChangeBull = headerChangePct >= 0;
-  // Bull pulse when the price is genuinely live: WS index, or a fresh REST quote.
+  // Bull pulse when the price is genuinely live: a sub-second SSE push, a WS index
+  // quote, or a fresh (<6s) REST quote.
   const quoteFresh =
-    quoteLive &&
-    (quote!.source === "ws" ||
-      (quote!.asof != null && Date.now() - new Date(quote!.asof).getTime() < 6_000));
+    pushedLive ||
+    (quoteLive &&
+      (quote!.source === "ws" ||
+        (quote!.asof != null && Date.now() - new Date(quote!.asof).getTime() < 6_000)));
 
   // ── GEX "vs prior close" tile deltas (HISTORY context) ───────────────────────
   // Built ONLY under the GEX lens (flip/walls/net-GEX are gamma concepts — we never
@@ -3421,11 +3463,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <span
               aria-hidden
               title={
-                quoteFresh
-                  ? quote?.source === "ws"
-                    ? "Live spot — real-time"
-                    : "Live spot — ~1.5s"
-                  : "Spot — 20s snapshot"
+                pushedLive
+                  ? "Live spot — real-time (push)"
+                  : quoteFresh
+                    ? quote?.source === "ws"
+                      ? "Live spot — real-time"
+                      : "Live spot — ~1.5s"
+                    : "Spot — 20s snapshot"
               }
               className={clsx(
                 "inline-block h-2 w-2 rounded-full",
