@@ -623,9 +623,13 @@ async function indexClosesAsc(
   // Daily: ~2.2× the window in calendar days (covers weekends/holidays) + buffer so the
   // EMA seed converges. Intraday: a few sessions of minute bars (plenty for window ≤ ~60).
   const from = timespan === "day" ? priorEtYmd(Math.ceil(window * 2.2) + 15) : priorEtYmd(6);
+  // fetchIndexDailyBars defaults to limit='10', which can't seed a 50/200-period MA — pass an
+  // explicit limit sized to the window so enough daily bars return for emaFromCloses/smaFromCloses
+  // (which require closes.length >= window) to populate the longer MAs during a Massive blip.
+  const dailyLimit = String(Math.ceil(window * 2.2) + 15);
   const bars =
     timespan === "day"
-      ? await fetchIndexDailyBars(sym, from, to).catch(() => [])
+      ? await fetchIndexDailyBars(sym, from, to, dailyLimit).catch(() => [])
       : await fetchIndexMinuteBars(sym, from, to).catch(() => []);
   return bars
     .filter((b) => Number.isFinite(b.c))

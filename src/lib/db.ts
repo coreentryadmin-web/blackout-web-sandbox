@@ -858,12 +858,14 @@ export async function fetchRecentFlows(params: {
            COALESCE(score, 0) AS score,
            CASE
              WHEN COALESCE(total_premium, 0) >= 1000000 THEN 'whale'
-             WHEN expiry = CURRENT_DATE THEN '0dte'
+             WHEN expiry = (NOW() AT TIME ZONE 'America/New_York')::date THEN '0dte'
              ELSE 'stock'
            END AS route,
            created_at AS alerted_at,
            created_at AS event_at,
-           (expiry - CURRENT_DATE) AS dte,
+           -- DTE against the ET calendar date (not UTC CURRENT_DATE) so labels match the rest of
+           -- the app and don't go off-by-one/negative in the 8pm–midnight ET window.
+           (expiry - (NOW() AT TIME ZONE 'America/New_York')::date) AS dte,
            NULLIF(COALESCE(
              raw_payload->>'alert_rule',
              raw_payload->>'rule_name'
