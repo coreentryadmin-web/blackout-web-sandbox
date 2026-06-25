@@ -239,10 +239,10 @@ function buildLevels(input: {
   const items: SpxDeskLevel[] = [
     level("HOD", input.hod, p, "resistance"),
     level("PDH", input.pdh, p, "resistance"),
-    // Magnet = argmax|net_gex|; it's often the PUT wall (support) and may sit below spot,
+    // Anchor = argmax|net_gex|; it's often the PUT wall (support) and may sit below spot,
     // so it carries no directional meaning — mark it neutral (sky/gold) to match the
-    // Heatmap MAGNET node + Dealer Desk gold treatment, not unconditional resistance/red (#80).
-    level("GEX Magnet", input.gex_king, p, "neutral"),
+    // Heatmap ANCHOR node + Dealer Desk gold treatment, not unconditional resistance/red (#80).
+    level("GEX Anchor", input.gex_king, p, "neutral"),
     level("Max Pain", input.max_pain, p, "neutral"),
     level("γ Flip", input.gamma_flip, p, "neutral"),
     level("EMA 20", input.ema20, p, "neutral"),

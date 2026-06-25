@@ -33,7 +33,7 @@ export function SpxTechnicalsPanel({ desk, live }: { desk?: SpxDeskPayload; live
 
         <Section title="Dealer · Flow">
           <Row label="GEX Net" value={live && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"} />
-          <Row label="GEX Magnet" value={live ? fmtPrice(desk?.gex_king ?? null) : "—"} />
+          <Row label="GEX Anchor" value={live ? fmtPrice(desk?.gex_king ?? null) : "—"} />
           <Row label="Max Pain" value={live ? fmtPrice(desk?.max_pain ?? null) : "—"} />
           <Row label="0DTE Net" value={live && desk?.flow_0dte_net != null ? fmtPremium(desk.flow_0dte_net) : "—"} />
           <Row label="Tide" value={live ? (desk?.tide_bias ?? "—") : "—"} accent={desk?.tide_bias === "bullish"} />

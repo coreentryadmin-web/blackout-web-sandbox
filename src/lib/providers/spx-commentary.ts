@@ -69,7 +69,7 @@ function computeDelta(
   }
 
   if (prev.gex_king != null && desk.gex_king != null && prev.gex_king !== desk.gex_king) {
-    lines.push(`GEX magnet moved: ${fmt(prev.gex_king)} → ${fmt(desk.gex_king)}`);
+    lines.push(`GEX anchor moved: ${fmt(prev.gex_king)} → ${fmt(desk.gex_king)}`);
   }
 
   if (prev.gamma_flip != null && desk.gamma_flip != null && prev.gamma_flip !== desk.gamma_flip) {

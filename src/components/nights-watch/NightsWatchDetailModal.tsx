@@ -494,7 +494,7 @@ function PositioningView({ data }: { data: PositioningSection }) {
         <Metric label="Underlying" value={price(data.underlyingPrice)} />
         <Metric label="Gamma flip" value={price(data.gammaFlip)} />
         <Metric label="Max pain" value={price(data.maxPain)} />
-        <Metric label="Magnet" value={price(data.kingStrike)} tone="text-gold" />
+        <Metric label="Anchor" value={price(data.kingStrike)} tone="text-gold" />
       </div>
 
       {data.walls.length > 0 && (

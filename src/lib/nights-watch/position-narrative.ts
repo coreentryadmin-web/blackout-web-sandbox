@@ -61,7 +61,7 @@ function buildContext(detail: PositionDetail): string {
   );
   if (s.positioning) {
     lines.push(
-      `DEALER GAMMA: regime ${s.positioning.gammaRegime ?? "n/a"}, flip ${n(s.positioning.gammaFlip)}, max-pain ${n(s.positioning.maxPain)}, magnet ${n(s.positioning.kingStrike)}, walls ${s.positioning.walls.map((w) => `${w.kind} ${w.strike}`).join(", ") || "n/a"}.`
+      `DEALER GAMMA: regime ${s.positioning.gammaRegime ?? "n/a"}, flip ${n(s.positioning.gammaFlip)}, max-pain ${n(s.positioning.maxPain)}, anchor ${n(s.positioning.kingStrike)}, walls ${s.positioning.walls.map((w) => `${w.kind} ${w.strike}`).join(", ") || "n/a"}.`
     );
   }
   if (s.flows) {

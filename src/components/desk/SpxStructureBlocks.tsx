@@ -74,7 +74,7 @@ export function SpxStructureBlocks({
           value={live && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
           tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
         />
-        <Row label="GEX Magnet" value={live ? fmtPrice(desk?.gex_king ?? null) : "—"} tone="gold" />
+        <Row label="GEX Anchor" value={live ? fmtPrice(desk?.gex_king ?? null) : "—"} tone="gold" />
         <Row label="γ Flip" value={live ? fmtPrice(desk?.gamma_flip ?? null) : "—"} tone="magenta" />
         <Row label="Max Pain" value={live ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
         <Row
