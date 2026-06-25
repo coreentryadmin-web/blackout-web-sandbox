@@ -712,10 +712,17 @@ export function createPulseEventSource(
 
 export function fmtPremium(n: number | null): string {
   if (n == null) return "—";
+  // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M".
+  const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  // Below $10K, keep 1 decimal so $1.4K and $1.5K don't collapse to the same
+  // string (premium size is the signal); $10K+ stays whole-K for compactness.
+  if (abs >= 1_000) {
+    const k = abs / 1_000;
+    return `${sign}$${k < 10 ? k.toFixed(1) : k.toFixed(0)}K`;
+  }
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
 export function fmtPrice(n: number | null, decimals = 2): string {
