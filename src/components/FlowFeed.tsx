@@ -168,13 +168,16 @@ export function FlowFeed() {
   // full filter() scans, and one memo recompute per SSE message instead of two.
   // (Both still depend on `alerts`; a new alert legitimately changes the counts,
   // so they must recompute — but we do it once, in O(n), not twice.)
-  const { callCount, putCount } = useMemo(() => {
+  const { callCount, putCount, allCount } = useMemo(() => {
     let call = 0, put = 0;
     for (const a of alerts) {
       if (a.option_type === "CALL") call++;
       else if (a.option_type === "PUT") put++;
     }
-    return { callCount: call, putCount: put };
+    // Gap #6: ALL must reconcile to CALL + PUT. Typeless UNKNOWN prints are dropped from the
+    // tape (FlowAlertStream), so counting them in ALL made the pill overstate the tape and
+    // ALL ≠ CALL + PUT. Sum the two typed buckets instead of using raw alerts.length.
+    return { callCount: call, putCount: put, allCount: call + put };
   }, [alerts]);
 
   // Bug 9: limit input to recent 500 alerts for strike-stack computation performance
@@ -304,7 +307,8 @@ export function FlowFeed() {
       const sector = getSector(alert.ticker);
       const cur = map.get(sector) ?? { callPremium: 0, putPremium: 0 };
       if (alert.option_type === "CALL") cur.callPremium += alert.premium;
-      else cur.putPremium += alert.premium;
+      else if (alert.option_type === "PUT") cur.putPremium += alert.premium;
+      // gap-#6: UNKNOWN/typeless prints count toward NEITHER side (never fabricate a put)
       map.set(sector, cur);
     }
 
@@ -549,7 +553,7 @@ export function FlowFeed() {
               {t}
               {t === "CALL" && <span className="flow-count-pill">{callCount}</span>}
               {t === "PUT"  && <span className="flow-count-pill">{putCount}</span>}
-              {t === "ALL"  && <span className="flow-count-pill">{alerts.length}</span>}
+              {t === "ALL"  && <span className="flow-count-pill">{allCount}</span>}
             </button>
           ))}
         </div>
@@ -758,6 +762,11 @@ export function FlowFeed() {
         isStarred={selectedTicker ? watchlist.watchlistSet.has(selectedTicker) : false}
         onToggleStar={watchlist.toggle}
       />
+
+      {/* Persistent compliance disclaimer (matches SPX / GEX wording) */}
+      <p className="font-mono text-[10px] text-sky-300/60 text-center pt-1">
+        Educational. Not advice. You decide.
+      </p>
     </div>
   );
 }

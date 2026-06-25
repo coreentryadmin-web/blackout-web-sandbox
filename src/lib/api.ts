@@ -323,6 +323,8 @@ export interface FlowAlert {
   direction: string;
   score: number;
   route: string;
+  /** Empty string '' for timestampless UW prints — the /flows REST read returns '' (not a fabricated
+   *  inserted_at) so the client excludes them from LIVE/sort, matching the SSE path + parser (gap-#6). */
   alerted_at: string;
   /** Real UW alert time (created_at); null when UW gave no timestamp. Used for
    *  velocity/freshness so a just-ingested stale print can't masquerade as "now". */

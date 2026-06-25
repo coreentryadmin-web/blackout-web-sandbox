@@ -65,8 +65,13 @@ function flowSkew(desk: SpxDeskPayload): {
   let bull = 0;
   let bear = 0;
   for (const f of desk.spx_flows?.slice(0, 12) ?? []) {
-    if (f.direction === "bullish" || f.option_type.toUpperCase().startsWith("C")) bull += f.premium;
-    else bear += f.premium;
+    // THREE-WAY (mirror spx-signals.tapeSkew): UNKNOWN-side prints (parser-truth
+    // option_type='UNKNOWN'/direction='unknown') must DROP — never fall into bear,
+    // which produced false SHORT/put-led lotto signals on typeless UW prints.
+    const opt = f.option_type.toUpperCase();
+    if (f.direction === "bullish" || opt.startsWith("C")) bull += f.premium;
+    else if (f.direction === "bearish" || opt.startsWith("P")) bear += f.premium;
+    // else: unknown/typeless — count neither side
   }
   const total = bull + bear;
   if (total < floor) {

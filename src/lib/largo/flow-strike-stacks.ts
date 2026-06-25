@@ -58,7 +58,11 @@ export function normalizeFlowAlertForStack(item: unknown): FlowAlertForStack | n
   if (!Number.isFinite(strike) || strike <= 0) return null;
   if (!Number.isFinite(premium) || premium <= 0) return null;
 
-  const opt = String(o.option_type ?? o.type ?? o.side ?? o.put_call ?? "call").toUpperCase();
+  // Parser-truth (gap #6): a typeless print must DROP, not default to CALL — defaulting
+  // mis-stacked UNKNOWN prints onto the CALL side of STRIKE STACKS / NET PREMIUM. Take the
+  // raw type only; if it doesn't resolve to a real call/put, return null and skip the row.
+  const opt = String(o.option_type ?? o.type ?? o.side ?? o.put_call ?? "").toUpperCase();
+  if (!opt.startsWith("C") && !opt.startsWith("P")) return null;
   const option_type = opt.startsWith("P") ? "PUT" : "CALL";
 
   let alerted_at = String(o.alerted_at ?? o.created_at ?? o.time ?? "");

@@ -64,9 +64,12 @@ export type StockQuoteSnapshot = {
   price: number;
   prev_close: number;
   change_pct: number;
-  day_high: number;
-  day_low: number;
-  vwap: number;
+  /** Day extremes / VWAP from the day aggregate. NULL when the aggregate is absent (pre-open /
+   *  market closed / untraded) — do NOT dress the spot price up as a real HOD/LOD/VWAP
+   *  (mirrors the gap #14 HOD/LOD null fix). */
+  day_high: number | null;
+  day_low: number | null;
+  vwap: number | null;
   volume: number;
 };
 
@@ -95,9 +98,11 @@ function _rowToSnapshot(sym: string, row: SnapshotTicker): StockQuoteSnapshot | 
     price,
     prev_close: prevClose,
     change_pct: changePct,
-    day_high: Number(day.h ?? price),
-    day_low: Number(day.l ?? price),
-    vwap: Number(day.vw ?? price),
+    // Gap #14 (truth): when the day aggregate is absent (pre-open / closed / untraded) we have
+    // no real HOD/LOD/VWAP — return null instead of dressing the spot price up as an extreme.
+    day_high: day.h != null ? Number(day.h) : null,
+    day_low: day.l != null ? Number(day.l) : null,
+    vwap: day.vw != null ? Number(day.vw) : null,
     volume: Number(day.v ?? 0),
   };
 }

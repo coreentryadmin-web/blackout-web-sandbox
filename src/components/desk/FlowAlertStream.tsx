@@ -121,9 +121,16 @@ export function FlowAlertStream({
 
   const feedStatus = loading ? undefined : live ? "live" : "reconnecting";
 
+  // Parser-truth (gap #6): typeless UW prints carry option_type='UNKNOWN'. They must NOT
+  // render as red PUT cards (the else-branch in cardCls / premium color), so DROP them from
+  // the tape entirely — mirroring the SPX-tape drop. Only real CALL/PUT prints reach a card.
+  const typed = flows.filter((f) => {
+    const t = f.option_type?.toUpperCase();
+    return t === "CALL" || t === "PUT";
+  });
   const visible = typeFilter === "ALL"
-    ? flows
-    : flows.filter((f) => f.option_type?.toUpperCase() === typeFilter);
+    ? typed
+    : typed.filter((f) => f.option_type?.toUpperCase() === typeFilter);
 
   // Bug 11: detect new alerts while user is scrolled down and show badge
   useEffect(() => {

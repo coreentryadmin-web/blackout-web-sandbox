@@ -798,6 +798,10 @@ export type FlowRow = {
   direction: string;
   score: number;
   route: string;
+  /** UW alert time (created_at). '' (empty) when UW gave no real time — must NOT be coerced to
+   *  now()/inserted_at, or FlowFeed sorts the timestampless row to the top as "LIVE". An empty
+   *  string makes the client's alertedAtMs exclude it from the LIVE badge + newest-first sort,
+   *  matching the SSE path + the parser's '' sentinel (gap #6). */
   alerted_at: string;
   /** Real created_at from UW; null when unknown (do NOT fall back to inserted_at). */
   event_at?: string | null;
@@ -846,14 +850,18 @@ export async function fetchRecentFlows(params: {
            option_type,
            TO_CHAR(expiry, 'YYYY-MM-DD') AS expiry,
            strike,
-           CASE WHEN LOWER(option_type) LIKE 'c%' THEN 'bullish' ELSE 'bearish' END AS direction,
+           CASE
+             WHEN LOWER(option_type) LIKE 'c%' THEN 'bullish'
+             WHEN LOWER(option_type) LIKE 'p%' THEN 'bearish'
+             ELSE 'unknown'
+           END AS direction,
            COALESCE(score, 0) AS score,
            CASE
              WHEN COALESCE(total_premium, 0) >= 1000000 THEN 'whale'
              WHEN expiry = CURRENT_DATE THEN '0dte'
              ELSE 'stock'
            END AS route,
-           COALESCE(created_at, inserted_at) AS alerted_at,
+           created_at AS alerted_at,
            created_at AS event_at,
            (expiry - CURRENT_DATE) AS dte,
            NULLIF(COALESCE(
@@ -891,7 +899,10 @@ export async function fetchRecentFlows(params: {
     direction: String(row.direction ?? "bullish"),
     score: Number(row.score ?? 0),
     route: String(row.route ?? "stock"),
-    alerted_at: row.alerted_at ? new Date(String(row.alerted_at)).toISOString() : new Date().toISOString(),
+    // Gap #6: when created_at is null UW gave no real alert time — return '' (the parser/SSE
+    // sentinel), never now()/inserted_at. FlowFeed's alertedAtMs then excludes the row from the
+    // LIVE badge + newest-first sort instead of faking a fresh, top-of-tape print.
+    alerted_at: row.alerted_at ? new Date(String(row.alerted_at)).toISOString() : "",
     event_at: row.event_at ? new Date(String(row.event_at)).toISOString() : null,
     dte: row.dte != null ? Number(row.dte) : undefined,
     alert_rule: row.alert_rule ? String(row.alert_rule) : undefined,
@@ -904,7 +915,12 @@ export async function fetchRecentFlows(params: {
         const stock = Number(row.underlying_price);
         const k     = Number(row.strike ?? 0);
         if (stock > 0 && k > 0) {
-          const isCall = String(row.option_type ?? "").toLowerCase().startsWith("c");
+          // Gap #6: only compute OTM% for a real call/put. An UNKNOWN/typeless row would
+          // otherwise silently take the put branch (stock - k) and print a bogus OTM%; leave
+          // it undefined so the tape omits the chip rather than mislabeling it.
+          const opt = String(row.option_type ?? "").toLowerCase();
+          if (!opt.startsWith("c") && !opt.startsWith("p")) return undefined;
+          const isCall = opt.startsWith("c");
           return Math.round(((isCall ? k - stock : stock - k) / stock) * 1000) / 10;
         }
       }

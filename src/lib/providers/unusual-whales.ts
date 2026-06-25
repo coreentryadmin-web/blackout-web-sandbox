@@ -723,7 +723,11 @@ export async function fetchUwDarkPool(
 
     for (const row of rows) {
       const execAt = String(row.executed_at ?? row.date ?? "");
-      if (execAt && !execAt.startsWith(today)) continue;
+      // Gap #6 (truth): a print with no real executed_at must be DROPPED, not stamped now()
+      // — fabricating the current time sorted undated prints into the live tape as
+      // just-executed. No trustworthy timestamp → not on the tape.
+      if (!execAt) continue;
+      if (!execAt.startsWith(today)) continue;
 
       const premium = Number(row.premium ?? row.size ?? row.notional ?? 0);
       if (premium <= 0) continue;
@@ -737,7 +741,7 @@ export async function fetchUwDarkPool(
         strike,
         premium,
         side,
-        executed_at: execAt.slice(0, 19) || new Date().toISOString(),
+        executed_at: execAt.slice(0, 19),
       });
       total += premium;
       if (optType.includes("call")) callPrem += premium;
@@ -786,14 +790,17 @@ export function normalizeDarkPoolWsPayload(raw: unknown): DarkPoolSnapshot | nul
           day: "2-digit",
         }).format(new Date(execAt))
       : "";
-    if (execAt && execDate !== today) continue;
+    // Gap #6 (truth): no real executed_at → DROP the print, never stamp now(). A fabricated
+    // timestamp sorted undated prints into the live tape as just-executed.
+    if (!execAt) continue;
+    if (execDate !== today) continue;
     const premium = Number(r.premium ?? r.size ?? r.notional ?? 0);
     if (premium <= 0) continue;
     const strikeRaw = Number(r.strike ?? r.price ?? r.ref_price ?? 0);
     const strike = Number.isFinite(strikeRaw) ? bucketPrice(strikeRaw) : 0;
     const side = String(r.side ?? r.direction ?? "unknown").toLowerCase();
     const optType = String(r.type ?? r.option_type ?? "").toLowerCase();
-    prints.push({ strike, premium, side, executed_at: execAt.slice(0, 19) || new Date().toISOString() });
+    prints.push({ strike, premium, side, executed_at: execAt.slice(0, 19) });
     total += premium;
     if (optType.includes("call")) callPrem += premium;
     else if (optType.includes("put")) putPrem += premium;

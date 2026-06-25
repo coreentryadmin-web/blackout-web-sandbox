@@ -15,7 +15,8 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
     for (const a of alerts) {
       const cur = map.get(a.ticker) ?? { calls: 0, puts: 0 };
       if (a.option_type === "CALL") cur.calls += a.premium;
-      else cur.puts += a.premium;
+      else if (a.option_type === "PUT") cur.puts += a.premium;
+      // gap-#6: UNKNOWN/typeless prints count toward neither side
       map.set(a.ticker, cur);
     }
     return Array.from(map.entries())
