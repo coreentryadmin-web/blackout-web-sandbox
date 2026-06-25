@@ -2333,7 +2333,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     fetchGexHeatmap,
     {
       refreshInterval: 20_000,
-      revalidateOnFocus: false,
+      // Refresh the moment the user returns to the tab. SWR pauses refreshInterval while
+      // the tab is hidden, so WITHOUT this the matrix reads up to 20s stale on return —
+      // which feels like "it only updates when I refresh". Server-cached (20s) + SWR
+      // deduping keep focus-triggered refetches cheap (they hit the warm cache).
+      revalidateOnFocus: true,
       keepPreviousData: true,
       onSuccess: clearForceNonce,
       onError: clearForceNonce,
@@ -2346,7 +2350,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const { data: quote } = useSWR<QuoteResponse>(
     `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,
     fetchQuote,
-    { refreshInterval: 1_500, revalidateOnFocus: false, keepPreviousData: true }
+    { refreshInterval: 1_500, revalidateOnFocus: true, keepPreviousData: true }
   );
 
   // ── Stale cross-ticker gate (Rank 10) ───────────────────────────────────────
