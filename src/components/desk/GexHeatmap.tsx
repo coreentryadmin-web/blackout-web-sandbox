@@ -301,6 +301,21 @@ function fmtExpiry(ymd: string): string {
   return `${months[m - 1]} ${d}`;
 }
 
+/**
+ * True when a YYYY-MM-DD is a standard US monthly options expiration (the THIRD FRIDAY) — the
+ * far-dated columns the server now appends (monthly + quarterly OpEx carry the dominant dealer
+ * walls). Mirrors the server's thirdFridayYmd calendar math. Used to classify expiries into the
+ * "monthly" horizon and to badge the far-dated matrix columns. Tolerant: a malformed date → false.
+ */
+function isMonthlyExpiry(ymd: string): boolean {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const dow = first.getUTCDay(); // 0=Sun..6=Sat
+  const firstFriday = 1 + ((5 - dow + 7) % 7);
+  return d === firstFriday + 14; // third Friday
+}
+
 type Lens = "gex" | "vex" | "dex" | "charm";
 
 /**
@@ -1850,19 +1865,26 @@ function FlowSummary({ flowByStrike }: { flowByStrike: Record<string, FlowByStri
 function ExpiryScopeBar({
   expiries,
   zeroDteExpiry,
+  monthlyExpiries,
   scope,
   onScope,
 }: {
   expiries: string[];
   zeroDteExpiry: string | null;
+  /** The far-dated standard-monthly (3rd-Friday) expiries present in the axis (may be empty). */
+  monthlyExpiries: string[];
   scope: string;
   onScope: (s: string) => void;
 }) {
   if (expiries.length === 0) return null;
   // 0DTE is redundant when there's a single expiry (it IS the only one) — hide it then.
   const showZeroDte = zeroDteExpiry != null && expiries.length > 1;
+  // Horizon presets only make sense once the axis actually spans near AND far columns.
+  const hasMonthly = monthlyExpiries.length > 0;
+  const nearCount = expiries.length - monthlyExpiries.length;
+  const showHorizon = hasMonthly && nearCount > 0;
 
-  const chip = (value: string, label: string, title: string) => {
+  const chip = (value: string, label: string, title: string, far = false) => {
     const active = scope === value;
     return (
       <button
@@ -1876,7 +1898,11 @@ function ExpiryScopeBar({
           "focus-visible:ring-2 focus-visible:ring-sky-400",
           active
             ? "bg-cyan-400/15 text-white outline outline-1 outline-cyan-400/60"
-            : "text-sky-300/70 hover:bg-white/[0.06] hover:text-white"
+            // Far-dated (monthly) per-expiry chips carry a faint gold tint so the OpEx columns
+            // read as a distinct horizon from the near-term dailies/weeklies. Brand gold, no grey.
+            : far
+              ? "text-gold/80 hover:bg-gold/[0.08] hover:text-gold"
+              : "text-sky-300/70 hover:bg-white/[0.06] hover:text-white"
         )}
       >
         {label}
@@ -1886,8 +1912,8 @@ function ExpiryScopeBar({
 
   // Whether a narrowed scope is active — drives the clarifying caption below. The scope filter
   // applies ONLY to the profile + cumulative curve; the regime tiles and key levels stay
-  // server-authoritative (all-expiry) by design, so we say so to avoid a "0DTE-but-all-expiry"
-  // mismatch reading as a bug.
+  // server-authoritative (near-term) by design, so we say so to avoid a scope/levels mismatch
+  // reading as a bug.
   const scoped = scope !== "all";
 
   return (
@@ -1895,20 +1921,32 @@ function ExpiryScopeBar({
       <span className="mr-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
         Expiry
       </span>
-      {chip("all", "All", "All expiries — the full-stack positioning")}
+      {chip("all", "All", "All expiries — near-term + far-dated monthly/quarterly OpEx")}
       {showZeroDte &&
         chip(
           "0dte",
           "0DTE",
           `Nearest expiry${zeroDteExpiry ? ` (${fmtExpiry(zeroDteExpiry)})` : ""} — today's positioning`
         )}
-      {expiries.map((e) => chip(e, fmtExpiry(e), `${fmtExpiry(e)} positioning only`))}
+      {/* Horizon presets — only when the axis spans both near AND far columns. */}
+      {showHorizon &&
+        chip("near", "Near", "Near-term dailies / weeklies only (the ~next 2 weeks)")}
+      {showHorizon &&
+        chip(
+          "monthly",
+          "Monthly",
+          "Standard monthly + quarterly OpEx only — where the dominant dealer walls park",
+          true
+        )}
+      {expiries.map((e) =>
+        chip(e, fmtExpiry(e), `${fmtExpiry(e)} positioning only`, isMonthlyExpiry(e))
+      )}
       {scoped && (
         <span
           className="ml-1 font-mono text-[9px] normal-case tracking-normal text-sky-300/50"
-          title="Scope narrows the profile bars and cumulative curve. Regime tiles and key levels stay all-expiry (server-authoritative)."
+          title="Scope narrows the profile bars and cumulative curve. Regime tiles and key levels stay near-term (server-authoritative)."
         >
-          filters profile &amp; curve · tiles &amp; levels stay all-expiry
+          filters profile &amp; curve · tiles &amp; levels stay near-term
         </span>
       )}
     </div>
@@ -2543,12 +2581,28 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     return expiries.includes(today) ? today : expiries[0];
   }, [expiries]);
 
-  // The expiries the profile + curve sum over. null ⇒ "All" (use server totals).
+  // Far-dated standard-monthly (3rd-Friday) expiries present in the axis — the OpEx columns the
+  // server now appends. Drives the "Monthly"/"Near" horizon presets + the gold far-dated chips.
+  const monthlyExpiries = useMemo<string[]>(
+    () => expiries.filter((e) => isMonthlyExpiry(e)),
+    [expiries]
+  );
+  // Near-term = everything that isn't a far-dated monthly OpEx column.
+  const nearExpiries = useMemo<string[]>(
+    () => expiries.filter((e) => !isMonthlyExpiry(e)),
+    [expiries]
+  );
+
+  // The expiries the profile + curve sum over. null ⇒ "All" (use server near-term totals).
+  // "near"/"monthly" are HORIZON presets summing the near-term vs far-dated OpEx columns; a bare
+  // date is a single-expiry scope. A horizon preset that resolves empty falls back to null ("All").
   const selectedExpiries = useMemo<string[] | null>(() => {
     if (expiryScope === "all") return null;
     if (expiryScope === "0dte") return zeroDteExpiry ? [zeroDteExpiry] : null;
+    if (expiryScope === "near") return nearExpiries.length ? nearExpiries : null;
+    if (expiryScope === "monthly") return monthlyExpiries.length ? monthlyExpiries : null;
     return [expiryScope];
-  }, [expiryScope, zeroDteExpiry]);
+  }, [expiryScope, zeroDteExpiry, nearExpiries, monthlyExpiries]);
 
   // Filtered per-strike totals (re-summed from cells when a subset is active; the server
   // strike_totals verbatim for "All" so it exactly matches today's behavior). These drive
@@ -2627,8 +2681,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
 
   // Human label for the active scope, used in the profile/curve footers.
   const scopeLabel = useMemo(() => {
-    if (expiryScope === "all") return "all-expiry";
+    if (expiryScope === "all") return "near-term";
     if (expiryScope === "0dte") return zeroDteExpiry ? `${fmtExpiry(zeroDteExpiry)} (0DTE)` : "0DTE";
+    if (expiryScope === "near") return "near-term";
+    if (expiryScope === "monthly") return "monthly OpEx";
     return fmtExpiry(expiryScope);
   }, [expiryScope, zeroDteExpiry]);
 
@@ -3024,6 +3080,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       <ExpiryScopeBar
         expiries={expiries}
         zeroDteExpiry={zeroDteExpiry}
+        monthlyExpiries={monthlyExpiries}
         scope={expiryScope}
         onScope={setExpiryScope}
       />
@@ -3095,6 +3152,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       <ExpiryScopeBar
         expiries={expiries}
         zeroDteExpiry={zeroDteExpiry}
+        monthlyExpiries={monthlyExpiries}
         scope={expiryScope}
         onScope={setExpiryScope}
       />
@@ -3185,6 +3243,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <span aria-hidden>per-day magnet</span>
           </span>
         )}
+        {/* Far-dated monthly/quarterly OpEx columns are gold-marked (◆) — where the dominant
+            dealer walls park. Only shown once the axis actually carries a monthly column. */}
+        {monthlyExpiries.length > 0 && (
+          <span className="flex items-center gap-1.5 text-gold/80" title="Standard monthly / quarterly OpEx expiry">
+            <span aria-hidden className="text-gold">◆</span>
+            <span aria-hidden>monthly OpEx</span>
+          </span>
+        )}
       </div>
 
       {/* Horizontal-scroll container with a subtle right-edge fade so on
@@ -3212,14 +3278,24 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 <th className="sticky left-0 top-0 z-20 bg-[rgba(8,9,14,0.92)] px-2 py-2 text-left text-[10px] uppercase tracking-widest text-cyan-400 backdrop-blur">
                   Strike
                 </th>
-                {expiries.map((e) => (
-                  <th
-                    key={e}
-                    className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-center text-[10px] uppercase tracking-wide text-sky-300 backdrop-blur"
-                  >
-                    {fmtExpiry(e)}
-                  </th>
-                ))}
+                {expiries.map((e) => {
+                  // Far-dated standard-monthly (3rd-Friday) OpEx columns read GOLD so the dominant
+                  // dealer-wall expiries are distinct from the near-term dailies/weeklies (sky).
+                  const isMonthly = isMonthlyExpiry(e);
+                  return (
+                    <th
+                      key={e}
+                      title={isMonthly ? `${fmtExpiry(e)} — standard monthly / quarterly OpEx` : fmtExpiry(e)}
+                      className={clsx(
+                        "sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-center text-[10px] uppercase tracking-wide backdrop-blur",
+                        isMonthly ? "text-gold" : "text-sky-300"
+                      )}
+                    >
+                      {fmtExpiry(e)}
+                      {isMonthly && <span aria-hidden className="ml-0.5 text-gold/70">◆</span>}
+                    </th>
+                  );
+                })}
                 <th className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-right text-[10px] uppercase tracking-wide text-cyan-400 backdrop-blur">
                   Net
                 </th>
