@@ -19,7 +19,16 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const url = await getPersonalWebhook(userId);
+  // getPersonalWebhook hits the Clerk Backend API (users.getUser), which can reject on a
+  // Clerk outage / rate limit. Guard it so a transient upstream blip returns a clean 502
+  // instead of an opaque unhandled 500 (mirrors the PUT/DELETE handlers below).
+  let url: string | null;
+  try {
+    url = await getPersonalWebhook(userId);
+  } catch (err) {
+    console.error("[personal-alerts GET]", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Failed to load webhook" }, { status: 502 });
+  }
   return NextResponse.json({
     configured: Boolean(url),
     host: url ? redactWebhook(url) : null,

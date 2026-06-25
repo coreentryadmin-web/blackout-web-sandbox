@@ -41,7 +41,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const lookbackDays = Number(req.nextUrl.searchParams.get("days") ?? "7");
+    // Guard against a non-numeric ?days override: Number("abc") → NaN, which would bind to
+    // the $1::int SQL param and make Postgres throw "invalid input syntax for type integer".
+    // Fall back to the 7-day default for anything non-finite or non-positive.
+    const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "7");
+    const lookbackDays = Number.isFinite(rawDays) && rawDays > 0 ? rawDays : 7;
     const result = await resolvePendingNighthawkOutcomes({ lookbackDays });
     const payload = { ok: true, ...result };
     await logCronRun("nighthawk-outcomes", started, {
