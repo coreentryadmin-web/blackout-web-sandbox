@@ -164,6 +164,16 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_flow_alerts_ticker_created
     ON flow_alerts(ticker, created_at DESC NULLS LAST);
   `);
+  // Supports fetchRecentFlows: WHERE COALESCE(created_at, inserted_at) >= cutoff
+  // ORDER BY COALESCE(total_premium, 0) DESC NULLS LAST LIMIT 5000.
+  // Expression index matches the actual predicate + sort (perf-only; no result change).
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_flow_alerts_recency_premium
+    ON flow_alerts(
+      (COALESCE(created_at, inserted_at)) DESC,
+      (COALESCE(total_premium, 0)) DESC
+    );
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS platform_meta (
       key TEXT PRIMARY KEY,
@@ -613,6 +623,13 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_user_positions_user_status
     ON user_positions(user_id, status);
+  `);
+  // Supports the per-user positions list (getUserPositions):
+  // WHERE user_id = $1 [AND status = $2] ORDER BY created_at DESC.
+  // Perf-only; does not change query results.
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_positions_user_created
+    ON user_positions(user_id, created_at DESC);
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
@@ -2616,6 +2633,20 @@ export async function recordCronJobRun(input: {
       JSON.stringify(input.meta_json ?? null),
     ]
   );
+
+  // Retention bound (audit B.7): cron_job_runs grows one row per cron tick and
+  // was unbounded. Keep 30 days of history. Sampled (~1 in 20 inserts) so the
+  // hot recording path stays cheap; the prune itself is a small, generous window.
+  // NOTE: timestamp column is started_at (this table has no created_at).
+  if (Math.random() < 0.05) {
+    try {
+      await (await getPool()).query(
+        `DELETE FROM cron_job_runs WHERE started_at < NOW() - INTERVAL '30 days'`
+      );
+    } catch {
+      // Best-effort prune; never let retention failures break run recording.
+    }
+  }
 }
 
 export async function fetchCronJobLastRuns(): Promise<CronJobRunRow[]> {
