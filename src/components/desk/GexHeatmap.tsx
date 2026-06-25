@@ -1764,6 +1764,87 @@ function RegimeTile({
 }
 
 // ---------------------------------------------------------------------------
+// KING NODE card — the lead key-level card. The single dominant dealer-gamma node
+// (max |net GEX| strike, all-expiry) — the strongest pin/magnet into expiry. Gold-
+// accented + visually distinct from the structural RegimeTiles so it reads as THE
+// node to navigate to. Renders nothing when there's no king (empty / all-zero scope).
+// ---------------------------------------------------------------------------
+
+function KingNodeCard({
+  strike,
+  netGex,
+  spot,
+  className,
+}: {
+  /** The KING NODE strike (argmax |net GEX|). */
+  strike: number;
+  /** Signed net dealer dollar-gamma at the king strike (sign drives the side + color). */
+  netGex: number;
+  /** Live/snapshot spot — drives the "+X pts above/below spot" distance line. */
+  spot: number;
+  className?: string;
+}) {
+  const positive = netGex >= 0;
+  // Sign of the dominant node names the side: net-positive gamma = a call-side / dealer-sell
+  // magnet (resistance); net-negative = a put-side support magnet. Colors follow the same
+  // emerald/bear convention as the other cards (gold is reserved for the KING marker chrome).
+  const valueHex = positive ? "#00e676" : "#ff2d55";
+  const sideLabel = positive ? "Call-side · dealer-sell magnet / resistance" : "Put-side · support magnet";
+  // Distance from spot in points — null when there's no spot to compare against.
+  const dist = spot > 0 ? strike - spot : null;
+  const distLabel =
+    dist == null
+      ? null
+      : dist === 0
+        ? "at spot"
+        : `${dist > 0 ? "+" : ""}${
+            Number.isInteger(dist) ? String(dist) : dist.toFixed(1)
+          } pts ${dist > 0 ? "above" : "below"} spot`;
+
+  return (
+    <div
+      className={clsx(
+        "relative flex flex-col justify-between overflow-hidden rounded-xl border border-gold/45 bg-[rgba(14,11,4,0.55)] px-4 py-3 backdrop-blur",
+        className
+      )}
+      style={{ boxShadow: "inset 0 0 28px rgba(255,210,63,0.08), 0 0 0 1px rgba(255,210,63,0.06)" }}
+    >
+      {/* gold accent hairline — the KING marker chrome (static, opacity-only) */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{ background: "linear-gradient(90deg, transparent, #ffd23f, transparent)" }}
+      />
+      <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-gold">
+        <span aria-hidden>♔</span>
+        King Node
+        <InfoTip
+          label="King Node"
+          text="The single strike with the largest absolute net dealer gamma — the dominant dealer-gamma concentration, i.e. the strongest pin/magnet price tends to gravitate toward into expiration."
+        />
+      </span>
+      <span className="mt-1.5 flex items-baseline gap-2">
+        <span className="font-anton text-3xl leading-none tabular-nums text-gold">{fmtStrike(strike)}</span>
+        <span className="font-mono text-sm font-bold tabular-nums" style={{ color: valueHex }}>
+          {fmtMoneySigned(netGex)}
+        </span>
+      </span>
+      <span className="mt-1.5 text-[11px] font-semibold leading-snug" style={{ color: valueHex }}>
+        {sideLabel}
+      </span>
+      {distLabel && (
+        <span className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-400">
+          {distLabel}
+        </span>
+      )}
+      <span className="mt-1.5 text-[11px] leading-snug text-sky-300/80">
+        Dominant dealer gamma node — the strongest pin/magnet into expiry.
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Key levels — a compact, right-aligned list of the structural price lines
 // (spot, flip, walls, max pain) + dark-pool levels. Always-useful rail content.
 // ---------------------------------------------------------------------------
@@ -2882,6 +2963,23 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               20s matrix payload (ZERO extra fetch). Dismissible, reduced-motion safe;
               renders nothing when empty/absent. Sits above the regime header. ── */}
           <AlertsStrip events={events} />
+
+          {/* ── KING NODE lead card (GEX only) — the dominant dealer-gamma node, the
+              strongest pin/magnet. Leads the key-level cards as a prominent gold-accented
+              card so the heatmap is instantly navigable. Uses the all-expiry strikeTotals
+              king (matrixKingStrike) so it agrees with the server-authoritative tiles
+              below; renders nothing when there's no king (empty / all-zero). The flip/walls
+              are GAMMA concepts, so the card shows under GEX only — same scope as the
+              "vs prior close" deltas. ── */}
+          {lens === "gex" && matrixKingStrike != null && (
+            <div className="mb-3">
+              <KingNodeCard
+                strike={matrixKingStrike}
+                netGex={strikeTotals[String(matrixKingStrike)] ?? 0}
+                spot={headerSpot > 0 ? headerSpot : spot}
+              />
+            </div>
+          )}
 
           {/* ── Regime tiles (full-width row) — evenly spread polished stat cards.
               GEX/VEX carry flip + two walls + max-pain + net; DEX/CHARM have NO
