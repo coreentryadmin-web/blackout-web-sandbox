@@ -2867,6 +2867,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         <Tabs value={lens} onValueChange={(v) => setLens(v as Lens)}>
           <TabList
             aria-label="Exposure lens"
+            unstyled
             className="flex items-center gap-1 rounded-lg border border-white/10 bg-[rgba(8,9,14,0.5)] p-1"
           >
             {(["gex", "vex", ...(hasDex ? (["dex"] as const) : []), ...(hasCharm ? (["charm"] as const) : [])] as Lens[]).map((l) => {
