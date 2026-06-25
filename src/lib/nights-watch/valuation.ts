@@ -30,6 +30,24 @@ export type ContractValuation = {
   openInterest: number | null;
   underlyingPrice: number | null;
   mark_source: MarkSource;
+  /**
+   * Freshness stamp for THIS mark (mirrors flow_data_age_ms on the desk):
+   *  - For a live WS mark it is the quote timestamp (liveMark.ts).
+   *  - For a snapshot/day-close mark there is no per-field timestamp inside this PURE
+   *    function, so it is null and the caller stamps `refreshedAt` from the snapshot/cache
+   *    age it owns. The UI grays-out / age-badges anything it cannot prove is live.
+   * Keeps the value REAL but lets the surface mark it not-live (truth mandate).
+   * OPTIONAL so existing literal constructors (e.g. tests) stay compile-valid; the
+   * valuers in this file always populate it.
+   */
+  refreshedAt?: number | null;
+  /**
+   * True when the resolved mark is the prior session's day/session close (the lowest
+   * price tier) — a REAL but DAY-OLD value. The UI must label it 'prior close' and must
+   * NOT present the derived current_value / unrealized_pnl as a live intraday figure.
+   * OPTIONAL for the same compat reason; the valuers always populate it.
+   */
+  mark_is_day_close?: boolean;
 };
 
 /**
@@ -69,15 +87,29 @@ type MarkInputs = {
 function resolveMark(
   inputs: MarkInputs,
   liveMark?: LiveMark | null
-): { mark: number; bid: number | null; ask: number | null; mark_source: MarkSource } | null {
+): {
+  mark: number;
+  bid: number | null;
+  ask: number | null;
+  mark_source: MarkSource;
+  /** Quote timestamp when the mark came from a live WS quote; null otherwise. */
+  refreshedAt: number | null;
+  /** The mark is the prior session's day/session close (real but day-old). */
+  mark_is_day_close: boolean;
+} | null {
   let bid = inputs.bid;
   let ask = inputs.ask;
   let mark: number | null = null;
+  // mark_source stays the EXISTING 3-value union ('ws' | 'snapshot' | 'none') so downstream
+  // consumers + tests are unchanged. Day-old-ness is surfaced via the ADDITIVE flag below.
   let mark_source: MarkSource = "none";
+  let refreshedAt: number | null = null;
+  let mark_is_day_close = false;
 
   if (liveMark && Number.isFinite(liveMark.mark) && liveMark.mark >= 0) {
     mark = liveMark.mark;
     mark_source = "ws";
+    refreshedAt = Number.isFinite(liveMark.ts) ? liveMark.ts : null;
     if (liveMark.bid != null) bid = liveMark.bid;
     if (liveMark.ask != null) ask = liveMark.ask;
   } else if (inputs.bid != null && inputs.ask != null && inputs.ask > 0 && inputs.bid >= 0) {
@@ -87,11 +119,14 @@ function resolveMark(
     mark = inputs.last;
     mark_source = "snapshot";
   } else if (inputs.dayClose != null && inputs.dayClose > 0) {
+    // Lowest price tier: a REAL but DAY-OLD prior-session close. Flag it so the surface
+    // labels it 'prior close' and never shows the derived P&L as a live intraday figure.
     mark = inputs.dayClose;
     mark_source = "snapshot";
+    mark_is_day_close = true;
   }
   if (mark == null || !(mark >= 0)) return null;
-  return { mark: Number(mark.toFixed(4)), bid, ask, mark_source };
+  return { mark: Number(mark.toFixed(4)), bid, ask, mark_source, refreshedAt, mark_is_day_close };
 }
 
 /**
@@ -120,7 +155,7 @@ export function valuationFromContract(
     liveMark
   );
   if (!resolved) return null;
-  const { mark, bid, ask, mark_source } = resolved;
+  const { mark, bid, ask, mark_source, refreshedAt, mark_is_day_close } = resolved;
 
   const up = finiteOrNull(contract.underlying_asset?.price) ?? (spot > 0 ? spot : null);
 
@@ -135,6 +170,8 @@ export function valuationFromContract(
     openInterest: finiteOrNull(contract.open_interest),
     underlyingPrice: up != null && up > 0 ? up : null,
     mark_source,
+    refreshedAt,
+    mark_is_day_close,
   };
 }
 
@@ -170,7 +207,7 @@ export function valuationFromSnapshot(
     liveMark
   );
   if (!resolved) return null;
-  const { mark, bid, ask, mark_source } = resolved;
+  const { mark, bid, ask, mark_source, refreshedAt, mark_is_day_close } = resolved;
 
   const up = snap.underlyingPrice != null && snap.underlyingPrice > 0 ? snap.underlyingPrice : null;
 
@@ -185,6 +222,8 @@ export function valuationFromSnapshot(
     openInterest: finiteOrNull(snap.openInterest),
     underlyingPrice: up,
     mark_source,
+    refreshedAt,
+    mark_is_day_close,
   };
 }
 
@@ -200,6 +239,20 @@ export type EnrichedPosition = UserPositionRow & {
   breakeven: number | null;
   pct_to_breakeven: number | null;
   distance_to_strike_pct: number | null;
+  /**
+   * Age (ms) of the mark current_value / unrealized_pnl are derived from, when known.
+   * Mirrors the desk's flow_data_age_ms. Null when the mark carries no timestamp (a
+   * snapshot/chain mark) — in that case the surface relies on `mark_is_day_close` and
+   * the response's own as-of time to decide whether to gray-out / age-badge the figure.
+   * OPTIONAL so existing literal constructors stay compile-valid; enrichPosition always sets it.
+   */
+  mark_age_ms?: number | null;
+  /**
+   * True when the P&L is derived from the prior session's close (real but DAY-OLD).
+   * The UI MUST label these 'prior close' and not present them as a live intraday P&L.
+   * OPTIONAL for the same compat reason; enrichPosition always sets it.
+   */
+  mark_is_day_close?: boolean;
 };
 
 /** Calendar days to expiry, measured against the ET session date. Clamped at >= 0. */
@@ -265,6 +318,16 @@ export function enrichPosition(
     }
   }
 
+  // Freshness of the figure (truth mandate): mark_age_ms is known only when the mark
+  // carries a timestamp (a live WS quote). A snapshot/chain mark has none here, so it
+  // stays null and the surface ages it off the response's own as-of time. A day-close
+  // mark is REAL but DAY-OLD — flag it so the UI labels it 'prior close', never as live.
+  const mark_age_ms =
+    valuation && valuation.refreshedAt != null
+      ? Math.max(0, now.getTime() - valuation.refreshedAt)
+      : null;
+  const mark_is_day_close = valuation?.mark_is_day_close ?? false;
+
   return {
     ...position,
     valuation_status: valuation ? "live" : pending ? "pending" : "unavailable",
@@ -276,5 +339,7 @@ export function enrichPosition(
     breakeven,
     pct_to_breakeven,
     distance_to_strike_pct,
+    mark_age_ms,
+    mark_is_day_close,
   };
 }

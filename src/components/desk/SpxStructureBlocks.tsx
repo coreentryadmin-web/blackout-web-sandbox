@@ -59,6 +59,16 @@ export function SpxStructureBlocks({
       </StructureCard>
 
       <StructureCard theme="dealer" title="Dealer Desk" subtitle="GEX · Flow" large={isLeftRail}>
+        {live && desk?.gex_stale && (
+          <p className="font-mono text-[10px] tracking-wider text-gold mb-1.5 flex items-center gap-1.5">
+            <span className="badge-live-dot" style={{ background: "var(--gold, #ffd23f)" }} aria-hidden />
+            GEX last-good
+            {desk?.gex_age_ms != null && desk.gex_age_ms > 0
+              ? ` · ${Math.round(desk.gex_age_ms / 1000)}s old`
+              : ""}{" "}
+            — not live
+          </p>
+        )}
         <Row
           label="GEX Net"
           value={live && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}

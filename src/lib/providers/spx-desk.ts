@@ -73,7 +73,7 @@ import {
 } from "./unusual-whales";
 import { runUwSequential } from "./uw-rate-limiter";
 import { fetchEngine } from "@/lib/engine";
-import { indexStore } from "@/lib/ws/polygon-socket";
+import { indexStore, getIndexFeedFreshness } from "@/lib/ws/polygon-socket";
 
 let lastGoodGexWalls: GexWall[] = [];
 let lastGoodStrikeLevels: GexStrikeLevel[] = [];
@@ -82,6 +82,27 @@ let lastGoodGammaRegime = "unknown";
 let lastGoodUnifiedTape: SpxTapeItem[] = [];
 let lastGoodSpxFlowBriefs: SpxFlowBrief[] = [];
 let lastPulseForSignals: SpxDeskPulse | null = null;
+
+// Audit gap #7a (truth mandate): when the Massive chain comes back empty (key/plan issue,
+// gateway outage) the desk serves the LAST-GOOD walls/flip/regime/structure. Without a stamp
+// those re-derive distances against the live price and look LIVE — a 2-min-old wall presented
+// as current. Stamp the moment fresh GEX levels last landed so the payload can carry a gex age
+// and the UI can age-badge stale walls. Updated ONLY when a fresh chain produces ranked levels.
+let lastGoodGexComputedAt = 0;
+/** Age (ms) of the freshest GEX strike ladder; null until one has ever been computed. */
+function gexDataAgeMs(now = Date.now()): number | null {
+  return lastGoodGexComputedAt > 0 ? Math.max(0, now - lastGoodGexComputedAt) : null;
+}
+/**
+ * Beyond this age the served GEX walls/flip/regime are treated as STALE (sticky fallback
+ * during a chain outage), so the UI grays them / shows an age badge instead of presenting a
+ * day-stale wall as a live node. ~30s per the audit. Env-tunable without a deploy.
+ */
+const GEX_STALE_MS = (() => {
+  const raw = process.env.SPX_GEX_STALE_SEC?.trim();
+  const sec = raw ? Number(raw) : 30;
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 30_000;
+})();
 
 const DARK_POOL_CACHE_MS = 10_000;
 const TIDE_STALE_MS = 10_000;
@@ -409,6 +430,21 @@ export type SpxDeskPayload = {
   data_quality?: DeskDataQuality;
   /** Milliseconds since last UW flow alert (WS or REST). Null if unknown. */
   flow_data_age_ms?: number | null;
+  /**
+   * Age (ms) of the live SPX index tick backing `price` (gap #11). Null when no tick has
+   * landed. When `feed_stalled` is true the index feed is FROZEN (TCP half-open / gateway
+   * hiccup) and the price must NOT be presented as live even though it is non-zero.
+   */
+  price_age_ms?: number | null;
+  feed_stalled?: boolean;
+  /**
+   * Age (ms) of the GEX strike ladder backing gex_walls / gamma_flip / gamma_regime (gap #7a),
+   * and whether it is STALE (sticky last-good served during a Massive chain outage). When
+   * `gex_stale` is true the walls are REAL but not live — the UI age-badges / grays them so a
+   * minutes-old wall is never shown as a current node. Null age = never computed this process.
+   */
+  gex_age_ms?: number | null;
+  gex_stale?: boolean;
   /** Dealer gamma concentration by expiry (UW greek-exposure/expiry). */
   greek_exposure: GreekExposureSummary | null;
   /** SPX premium flow by expiry bucket. */
@@ -460,6 +496,8 @@ export type SpxDeskPulse = Pick<
   | "market_open"
   | "market_status"
   | "market_label"
+  | "price_age_ms"
+  | "feed_stalled"
 > & { polled_at: string };
 
 /** UW fast lane — live tape, dark pool, 0DTE GEX walls (refreshed every ~4s). */
@@ -481,6 +519,9 @@ export type SpxDeskFlow = {
   flow_0dte_net: number | null;
   strike_stacks: FlowStrikeStack[];
   flow_data_age_ms?: number | null;
+  /** Age (ms) of the GEX ladder backing gex_walls; stale = sticky last-good (gap #7a). */
+  gex_age_ms?: number | null;
+  gex_stale?: boolean;
   net_prem_ticks: NetPremTick[];
   flow_by_expiry: Record<string, unknown>[];
   net_flow_by_expiry: Record<string, unknown>[];
@@ -795,6 +836,9 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   if (!spxSnap?.price) return empty;
 
   const price = spxSnap.price;
+  // Gap #11: liveness of the SPX index tick backing `price`. A frozen WS feed (TCP half-open)
+  // shows a non-zero-but-stale price; surface its age + stall so the UI never labels it live.
+  const spxFeed = getIndexFeedFreshness(SPX);
 
   const [polygonBundle, polygonIvRank] = await Promise.all([
     fetchPolygonOdteDeskBundle(price),
@@ -833,6 +877,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
   if (gexAnalysis.ranked_levels.length) {
     lastGoodStrikeLevels = gexAnalysis.ranked_levels;
+    lastGoodGexComputedAt = Date.now(); // fresh chain — stamp GEX freshness (gap #7a)
   }
   const levelsForWalls = gexAnalysis.ranked_levels.length
     ? gexAnalysis.ranked_levels
@@ -852,6 +897,13 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
   const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
+
+  // Gap #7a: GEX freshness. The ladder is fresh this cycle iff a chain produced ranked levels;
+  // otherwise we served sticky last-good (Massive outage). Mark stale when not-fresh AND the
+  // last good compute is older than the threshold, so a minutes-old wall is never shown as live.
+  const gexFreshThisCycle = gexAnalysis.ranked_levels.length > 0;
+  const gexAgeMs = gexDataAgeMs();
+  const gexStale = !gexFreshThisCycle && (gexAgeMs == null || gexAgeMs > GEX_STALE_MS);
 
   // Polygon is the sole GEX source — no UW GEX fallback.
   const gexNet = (intel?.gex_net as number | null) ?? gexAnalysis.net_gex ?? null;
@@ -1024,6 +1076,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     },
     data_quality: dataQuality,
     flow_data_age_ms: flowDataAgeMs(),
+    price_age_ms: spxFeed.ageMs,
+    feed_stalled: spxFeed.stalled === true,
+    gex_age_ms: gexAgeMs,
+    gex_stale: gexStale,
     sector_heat: sectorHeat,
     leader_stocks: leaderStocks ?? [],
     oi_changes: [],
@@ -1180,9 +1236,16 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
   if (!spxSnap?.price) return empty;
 
   const price = spxSnap.price;
+  // Gap #11: liveness of the SPX index tick on the FAST lane (the price the desk shows as live).
+  const spxFeed = getIndexFeedFreshness(SPX);
   const vwap = structure.vwap;
-  const lod = premarketPlan && !rthOpen ? prior.pdl ?? price : structure.lod ?? price;
-  const hod = premarketPlan && !rthOpen ? prior.pdh ?? price : structure.hod ?? price;
+  // Audit gap #14 (truth mandate): when there is NO real session extreme yet (empty minute
+  // bars early in RTH, or no prior-day bar in premarket), return null — NOT spot. Seeding
+  // HOD/LOD from the live price renders a fabricated extreme that looks like a real level.
+  // Premarket uses the prior day's high/low when present; RTH uses the live session extreme;
+  // both fall to null (→ UI shows 'unavailable') rather than the current price.
+  const lod = premarketPlan && !rthOpen ? prior.pdl ?? null : structure.lod ?? null;
+  const hod = premarketPlan && !rthOpen ? prior.pdh ?? null : structure.hod ?? null;
   const ema20 = structure.ema20;
   const ema50 = structure.ema50;
   const vixTerm = computeVixTermStructure(
@@ -1240,6 +1303,8 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
       detail: vixTerm.detail,
     },
     data_quality: dataQuality,
+    price_age_ms: spxFeed.ageMs,
+    feed_stalled: spxFeed.stalled === true,
     market_open: rthOpen,
     market_status: premarketPlan && !rthOpen ? "premarket" : marketNow?.market ?? "open",
     market_label: premarketPlan && !rthOpen ? "PRE-MARKET" : label,
@@ -1319,6 +1384,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
 
   if (gexAnalysis.ranked_levels.length) {
     lastGoodStrikeLevels = gexAnalysis.ranked_levels;
+    lastGoodGexComputedAt = Date.now(); // fresh chain — stamp GEX freshness (gap #7a)
   }
   const levelsForWalls = gexAnalysis.ranked_levels.length
     ? gexAnalysis.ranked_levels
@@ -1336,6 +1402,11 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const gRegime = gammaRegime(spot, gammaFlip);
   const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
+
+  // Gap #7a: fresh iff a chain produced ranked levels this cycle; else sticky last-good walls.
+  const gexFreshThisCycle = gexAnalysis.ranked_levels.length > 0;
+  const gexAgeMs = gexDataAgeMs();
+  const gexStale = !gexFreshThisCycle && (gexAgeMs == null || gexAgeMs > GEX_STALE_MS);
 
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
@@ -1374,6 +1445,8 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     flow_0dte_put_premium: uwFlow?.put_premium ?? null,
     flow_0dte_net: uwFlow?.net ?? null,
     flow_data_age_ms: flowDataAgeMs(),
+    gex_age_ms: gexAgeMs,
+    gex_stale: gexStale,
     net_prem_ticks: netPremTicks,
     flow_by_expiry: flowByExpiry,
     net_flow_by_expiry: netFlowByExpiry,

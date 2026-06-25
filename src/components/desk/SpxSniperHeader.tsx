@@ -29,6 +29,10 @@ export function SpxSniperHeader({ desk, live }: Props) {
     return () => clearInterval(id);
   }, []);
   const isStale = live && polledAtMs > 0 && (nowMs - polledAtMs) > 90_000;
+  // Gap #11: the index WS feed can sit OPEN while frozen (TCP half-open), so a non-zero price
+  // is shown as live while actually stuck. desk.feed_stalled is set server-side once the SPX
+  // index tick age exceeds the feed-stall window; surface it so the price reads NOT-live.
+  const feedStalled = Boolean(live && desk?.feed_stalled);
 
   return (
     <header className="spx-sniper-command">
@@ -123,9 +127,21 @@ export function SpxSniperHeader({ desk, live }: Props) {
           <div className="flex flex-col items-start xl:items-end gap-3 shrink-0">
             <div className="flex flex-wrap items-center gap-2">
               <MarketStatusPill label={desk?.market_label} live={live} />
-              <span className={clsx("spx-command-live", live && "spx-command-live-on animate-pulse")}>
-                <span className={clsx("badge-live-dot", live && "animate-pulse")} />
-                {live ? "Live Fire" : desk?.market_label === "CLOSED" ? "Session closed" : "Standby"}
+              <span
+                className={clsx(
+                  "spx-command-live",
+                  live && !feedStalled && "spx-command-live-on animate-pulse",
+                  feedStalled && "border-gold/60 text-gold"
+                )}
+              >
+                <span className={clsx("badge-live-dot", live && !feedStalled && "animate-pulse")} />
+                {feedStalled
+                  ? "Feed stalled"
+                  : live
+                  ? "Live Fire"
+                  : desk?.market_label === "CLOSED"
+                  ? "Session closed"
+                  : "Standby"}
               </span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full xl:w-auto min-w-[200px]">
@@ -143,7 +159,11 @@ export function SpxSniperHeader({ desk, live }: Props) {
 
         {live && (desk?.polled_at ?? desk?.as_of) && (
           <p className="spx-hero-desk-tick mt-4 font-mono text-[10px] tracking-wider flex items-center gap-2">
-            {isStale ? (
+            {feedStalled ? (
+              <span className="text-gold font-semibold text-xs animate-pulse">
+                FEED STALLED · price not live
+              </span>
+            ) : isStale ? (
               <span className="text-gold font-semibold text-xs animate-pulse">STALE</span>
             ) : (
               <span className="text-sky-300 text-xs">

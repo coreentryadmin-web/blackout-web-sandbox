@@ -77,7 +77,16 @@ function scheduleIndicesReconnect(reason: string) {
 // then freezes at its last value and serves stale SPX/VIX prices to every desk surface (incl. the
 // pulse SSE) until the socket actually closes — which may never happen. Parity with uw-socket /
 // options-socket's reconnectIfStalled.
-const INDICES_STALL_MS = 90_000;
+// Audit gap #11: a silent TCP half-open can sit OPEN while the upstream stops delivering
+// frames; with the old 90s window the desk showed a FROZEN SPX price as live for ~90-120s.
+// The watchdog only ever runs during RTH (inIndicesMarketHours gates it), so a tight 25s
+// stall window is safe — off-hours silence is already excluded and never churns the socket.
+// Env-tunable so ops can widen it without a deploy if a venue ever runs naturally sparse.
+const INDICES_STALL_MS = (() => {
+  const raw = process.env.POLYGON_INDICES_STALL_SEC?.trim();
+  const sec = raw ? Number(raw) : 25;
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 25_000;
+})();
 let lastIndicesMessageAt = 0;
 let indicesWatchdog: ReturnType<typeof setInterval> | null = null;
 
@@ -299,6 +308,35 @@ export function shutdownPolygonSocket(): void {
       /* best-effort — must not block shutdown */
     }
   }
+}
+
+/**
+ * Threshold (ms) past which a live index tick is treated as a FROZEN feed rather than a
+ * quiet tape, so the desk surfaces a "feed stalled" indicator and stops presenting the
+ * price as live (audit gap #11). The index Value (V) channel ticks sub-second on an active
+ * feed, so ~5s of total silence on I:SPX is already abnormal during RTH. Env-tunable.
+ */
+export const INDEX_FEED_STALL_MS = (() => {
+  const raw = process.env.POLYGON_INDEX_FEED_STALL_SEC?.trim();
+  const sec = raw ? Number(raw) : 5;
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 5_000;
+})();
+
+/**
+ * Liveness of a single index symbol in the in-process store (default I:SPX). Returns the
+ * tick age in ms and whether the feed is STALLED (age beyond INDEX_FEED_STALL_MS). `stalled`
+ * is null when there has never been a tick (age unknown — the desk treats it as not-live via
+ * its own price>0 / availability checks, never as a frozen-but-live price).
+ */
+export function getIndexFeedFreshness(
+  sym = "I:SPX",
+  now = Date.now()
+): { ageMs: number | null; stalled: boolean | null; updatedAt: number } {
+  const entry = indexStore[sym];
+  const updatedAt = entry?.updatedAt ?? 0;
+  if (!updatedAt) return { ageMs: null, stalled: null, updatedAt: 0 };
+  const ageMs = Math.max(0, now - updatedAt);
+  return { ageMs, stalled: ageMs > INDEX_FEED_STALL_MS, updatedAt };
 }
 
 export function getIndexStoreStatus() {

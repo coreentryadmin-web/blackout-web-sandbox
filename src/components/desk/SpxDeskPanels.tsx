@@ -159,6 +159,12 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
   const gammaRegime = useStableValue(desk?.gamma_regime, isValidGammaRegime);
   const spot = desk?.price ?? null;
   const hasWalls = walls.length > 0;
+  // Gap #7a: when the Massive chain is out, the desk serves last-good walls. gex_stale flags
+  // that these nodes are REAL but not live — surface an age badge so a minutes-old wall is
+  // never read as a current node (distances re-derive against live price and otherwise look live).
+  const gexStale = Boolean(desk?.gex_stale);
+  const gexAgeSec =
+    desk?.gex_age_ms != null && desk.gex_age_ms > 0 ? Math.round(desk.gex_age_ms / 1000) : null;
 
   return (
     <Panel
@@ -167,6 +173,12 @@ export function SpxGexLadder({ desk, refreshing }: DeskProps) {
       accent="spx-panel-gold"
       className={clsx(refreshing && hasWalls && "spx-desk-panel-refreshing")}
     >
+      {gexStale && hasWalls && (
+        <p className="font-mono text-[10px] tracking-wider text-gold mb-2 flex items-center gap-1.5">
+          <span className="badge-live-dot" style={{ background: "var(--gold, #ffd23f)" }} aria-hidden />
+          Last-good nodes{gexAgeSec != null ? ` · ${gexAgeSec}s old` : ""} — not live
+        </p>
+      )}
       {!hasWalls ? (
         <p className="font-mono text-[11px] text-cyan-400 py-2 spx-gex-ladder-empty">
           Mapping gamma nodes…
