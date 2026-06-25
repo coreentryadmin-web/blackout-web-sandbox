@@ -39,6 +39,24 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Browser autofill repaints inputs white/yellow and IGNORES background-color, which hides our light
+   input text on the dark theme — most visibly the Clerk sign-up/sign-in EMAIL field (white text on the
+   autofill-white box = invisible). The inset box-shadow is the only reliable override of the autofill
+   fill; pair it with -webkit-text-fill-color so an autofilled value stays readable, and a long
+   transition defers Chrome's repaint. App-wide on purpose: every input sits on the dark surface. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #f4f6fb !important;
+  caret-color: #f4f6fb !important;
+  -webkit-box-shadow: 0 0 0 1000px #0a0d14 inset !important;
+  box-shadow: 0 0 0 1000px #0a0d14 inset !important;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+
 html { scroll-behavior: smooth; }
 
 /* a11y: honor reduced-motion (tames the pervasive pulsing/scrolling animation) and give

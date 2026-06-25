@@ -38,7 +38,7 @@ export const WHOP_CHECKOUT_UNAVAILABLE_MESSAGE =
 // configured on the Whop product behind each checkout URL. Keep these in sync with the
 // Whop product prices so customers never see one price and get charged another.
 export const WHOP_PREMIUM_CHECKOUT_OPTIONS = [
-  { label: "Monthly — $111", href: WHOP_CHECKOUT.monthly },
-  { label: "Yearly — $1,111", href: WHOP_CHECKOUT.yearly },
-  { label: "Lifetime — $2,222", href: WHOP_CHECKOUT.lifetime },
+  { label: "Monthly — $199", href: WHOP_CHECKOUT.monthly },
+  { label: "Yearly — $1,999", href: WHOP_CHECKOUT.yearly },
+  { label: "Lifetime — $4,999", href: WHOP_CHECKOUT.lifetime },
 ].filter((option) => option.href);

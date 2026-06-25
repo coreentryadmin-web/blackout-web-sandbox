@@ -13,7 +13,7 @@ const PLANS: Record<
   { price: string; per: string; note: string; save: string | null; badge: string; href: string }
 > = {
   monthly: {
-    price: "$111",
+    price: "$199",
     per: "/ month",
     note: "Billed monthly · stand down anytime",
     save: null,
@@ -21,15 +21,15 @@ const PLANS: Record<
     href: WHOP_CHECKOUT.monthly,
   },
   yearly: {
-    price: "$1,111",
+    price: "$1,999",
     per: "/ year",
-    note: "≈ $93/mo · billed yearly",
-    save: "Save $221 vs monthly",
+    note: "≈ $167/mo · billed yearly",
+    save: "Save $389 vs monthly",
     badge: "Standard issue",
     href: WHOP_CHECKOUT.yearly,
   },
   lifetime: {
-    price: "$2,222",
+    price: "$4,999",
     per: "once",
     note: "One payment · permanent access",
     save: "No renewals",
@@ -40,7 +40,7 @@ const PLANS: Record<
 
 const TERMS: { key: Term; label: string; tag?: string }[] = [
   { key: "monthly", label: "Monthly" },
-  { key: "yearly", label: "Yearly", tag: "−17%" },
+  { key: "yearly", label: "Yearly", tag: "−16%" },
   { key: "lifetime", label: "Lifetime" },
 ];
 
