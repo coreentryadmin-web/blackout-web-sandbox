@@ -210,12 +210,13 @@ export function SpxGexLadder({ desk, live, refreshing }: DeskProps) {
                 <span className="font-mono text-[10px] uppercase text-cyan-400 w-16">{w.kind}</span>
                 <span className="font-mono text-sm text-white tabular-nums">{fmtPrice(w.strike)}</span>
                 {dist != null && (
-                  <span
-                    className={clsx(
-                      "font-mono text-[10px] tabular-nums",
-                      dist >= 0 ? "text-rose-300/80" : "text-emerald-300/80"
-                    )}
-                  >
+                  // Distance is geometry, not direction — it must stay NEUTRAL so it
+                  // can't contradict the desk's bull=emerald/bear=red language. (The
+                  // prior mapping colored a wall ABOVE spot red and one BELOW green —
+                  // inverted vs. % change / structure rows / tape.) The wall KIND
+                  // carries the bull/bear semantic via the left border above; here we
+                  // only show the signed point-distance, right-aligned, in neutral sky.
+                  <span className="font-mono text-[10px] tabular-nums text-sky-300/80">
                     {dist >= 0 ? "+" : ""}
                     {dist.toFixed(0)} pts
                   </span>
