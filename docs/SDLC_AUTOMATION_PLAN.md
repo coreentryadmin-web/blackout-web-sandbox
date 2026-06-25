@@ -50,6 +50,12 @@ Design polish + the "Living Terminal" visual language (#81 VITALS): consistency,
 ### 9. backlog-groomer — weekly (Sun)
 Keep the roadmap moving. Review the open TaskList + recent auto/audit logs; pick the highest-value, lowest-risk, well-specified pending item; implement it (build-gated → main if safe, else branch+flag); update the task. ONE item per run. Log what advanced.
 
+### 10. api-integration-audit — daily (aggressive, continuous learning)
+GOAL: continuously maximize + harden every external integration toward 0 open issues. Read the OFFICIAL provider docs (Polygon, Massive, Unusual Whales, Anthropic, Clerk, Whop) via WebFetch + our ACTUAL usage (grep src/lib/providers/*, ws/*, the API clients). Per provider identify: (a) endpoints/channels we USE; (b) available ones we DON'T use but should (better data / reliability / features / trust); (c) SUBOPTIMAL usage (REST where a WS fits, missing fallbacks/retries/circuit-breakers, wrong scale/units, the bare-channel UW class of bug, no prompt-caching/batching on LLM); (d) reliability/stability/trust gaps. Implement safe high-value adoptions + reliability fixes (build-gated → main); branch+flag bigger integration changes. Maintain docs/API_INTEGRATION_MAP.md (used / unused / opportunity per provider, updated each run). Continuous loop — each run deepens the map + closes gaps.
+
+## ⛳ CONVERGENCE GOAL — 0 OPEN ISSUES
+The automation runs continuously until the open-issue backlog (pending TaskList items + flagged findings + the API_INTEGRATION_MAP gaps) reaches ZERO and stays there. Every audit + the backlog-groomer drive toward this — do not stop at "good enough"; close issues until the board is clean, then keep watching for regressions.
+
 ## SCHEDULE (PT local; durable, recurring)
 | Job | Cron | When |
 |---|---|---|
