@@ -3308,10 +3308,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                         <td
                           key={e}
                           className={clsx(
-                            // Numbers are SECONDARY now — the cell color carries the
-                            // magnitude. Smaller + slightly dimmed so the heatmap reads
-                            // at a glance; white kicks in on deep cells (cellTextStyle).
-                            "relative whitespace-nowrap px-2 py-1.5 text-center text-[10px] tabular-nums",
+                            // Cell color carries the magnitude (the heatmap reads at a
+                            // glance), but the numerals now carry more weight + a notch
+                            // larger so the dollar values are easy to read in the dense
+                            // grid; white kicks in on deep cells (cellTextStyle). Values
+                            // are compacted ($1.2B / -$45.2M / $22.1K) so the bump can't
+                            // overflow — whitespace-nowrap + the scroll container hold.
+                            "relative whitespace-nowrap px-2 py-1.5 text-center text-[11px] font-semibold tabular-nums",
                             has
                               ? v > 0
                                 ? posColorClass
