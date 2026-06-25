@@ -543,19 +543,43 @@ const METRIC_HELP = {
 } as const;
 
 /**
- * Matrix cell background: positive ↔ negative per lens, opacity scaled by magnitude
- * relative to the matrix peak. Returns inline style so the alpha varies continuously.
+ * Matrix cell background: a STRONG diverging magnitude gradient normalized to the
+ * matrix peak |net|. Large positive → deep emerald (lens-positive); near-zero →
+ * near-black/transparent; large negative → deep bear-red. The point is glanceability:
+ * color alone encodes magnitude so positioning reads WITHOUT parsing the numbers.
+ *
+ * The prior shading topped out at α 0.60 with a pow(mag,0.7) curve that LIFTED low
+ * magnitudes — so a near-uniform faint wash where structure was invisible. We now use a
+ * steeper response (pow(mag,1.35)) that keeps small cells genuinely dim and lets big
+ * cells saturate hard (α up to ~0.92), plus an inset glow on the heaviest cells. Numbers
+ * stay legible: deep cells get white text downstream (resolved by cellTextStyle).
  */
 function cellStyle(value: number, peak: number, lens: Lens): React.CSSProperties {
   if (!value || peak <= 0) return {};
   const mag = Math.min(1, Math.abs(value) / peak);
-  const alpha = 0.08 + Math.pow(mag, 0.7) * 0.52;
+  // Steep, saturating ramp: tiny cells ≈ transparent (structure recedes), heavy cells
+  // ≈ opaque deep emerald / bear-red (structure pops). 0.04 floor keeps a hint of sign.
+  const alpha = 0.04 + Math.pow(mag, 1.35) * 0.88;
   const c = LENS_COLORS[lens];
   const rgb = value > 0 ? c.posRgb : c.negRgb;
   return {
     backgroundColor: `rgba(${rgb},${alpha.toFixed(3)})`,
-    boxShadow: mag > 0.6 ? `inset 0 0 14px rgba(${rgb},0.25)` : undefined,
+    boxShadow: mag > 0.45 ? `inset 0 0 18px rgba(${rgb},${(mag * 0.4).toFixed(2)})` : undefined,
   };
+}
+
+/**
+ * Text color for a matrix cell given its magnitude vs peak — readability companion to
+ * cellStyle. On the heaviest cells (deep saturated bg) the lens-tinted number drops below
+ * AA, so we switch to white there; lighter cells keep their directional tint. Returns a
+ * style object so the caller can spread it over the existing tint class.
+ */
+function cellTextStyle(value: number, peak: number): React.CSSProperties {
+  if (!value || peak <= 0) return {};
+  const mag = Math.min(1, Math.abs(value) / peak);
+  // Past ~0.5 magnitude the bg is dark/saturated enough that white reads cleaner (≥ AA)
+  // than the emerald/red tint; below that the tinted class (set on the <td>) wins.
+  return mag > 0.5 ? { color: "#ffffff" } : {};
 }
 
 const PRESET_TICKERS = [
@@ -3161,23 +3185,39 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                         return (
                           <tr
                             key={strike}
-                            className={clsx(isSpot && "outline outline-1 outline-cyan-400/70")}
+                            className={clsx(
+                              // Bold-highlight the SPOT and FLIP rows so price is findable in
+                              // the grid: a faint cyan/gold band across the whole row + a clear
+                              // left border (carried on the sticky strike cell below).
+                              isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.05]",
+                              isFlip && !isSpot && "bg-gold/[0.05]"
+                            )}
                           >
                             <th
                               scope="row"
                               className={clsx(
-                                "sticky left-0 z-10 whitespace-nowrap px-2 py-1.5 text-left font-semibold tabular-nums backdrop-blur",
+                                "sticky left-0 z-10 whitespace-nowrap py-1.5 pr-2 text-left font-semibold tabular-nums backdrop-blur",
                                 isSpot
-                                  ? "bg-cyan-400/[0.12] text-white"
+                                  ? "border-l-2 border-cyan-400 bg-cyan-400/[0.12] pl-1.5 text-white"
                                   : isFlip
-                                    ? "bg-gold/[0.10] text-gold"
-                                    : "bg-[rgba(8,9,14,0.92)] text-white"
+                                    ? "border-l-2 border-gold bg-gold/[0.10] pl-1.5 text-gold"
+                                    : "bg-[rgba(8,9,14,0.92)] pl-2 text-white"
                               )}
                             >
                               <span className="inline-flex items-center gap-1">
                                 {isSpot && <span aria-hidden className="text-cyan-400">●</span>}
                                 {isFlip && !isSpot && <span aria-hidden className="text-gold">◀</span>}
                                 {fmtStrike(strike)}
+                                {isSpot && (
+                                  <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-cyan-400">
+                                    spot
+                                  </span>
+                                )}
+                                {isFlip && !isSpot && (
+                                  <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-gold">
+                                    flip
+                                  </span>
+                                )}
                               </span>
                             </th>
                             {expiries.map((e) => {
@@ -3187,14 +3227,17 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                 <td
                                   key={e}
                                   className={clsx(
-                                    "whitespace-nowrap px-2 py-1.5 text-center tabular-nums",
+                                    // Numbers are SECONDARY now — the cell color carries the
+                                    // magnitude. Smaller + slightly dimmed so the heatmap reads
+                                    // at a glance; white kicks in on deep cells (cellTextStyle).
+                                    "whitespace-nowrap px-2 py-1.5 text-center text-[10px] tabular-nums",
                                     has
                                       ? v > 0
                                         ? posColorClass
                                         : "text-bear-text"
-                                      : "text-sky-300/30"
+                                      : "text-sky-300/25"
                                   )}
-                                  style={has ? cellStyle(v, peak, lens) : undefined}
+                                  style={has ? { ...cellStyle(v, peak, lens), ...cellTextStyle(v, peak) } : undefined}
                                   title={has ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}` : undefined}
                                 >
                                   {has ? fmtMoneySigned(v) : "·"}
@@ -3206,7 +3249,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                 "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
                                 rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-bear-text" : "text-sky-300/40"
                               )}
-                              style={rowTotal ? cellStyle(rowTotal, totalPeak, lens) : undefined}
+                              style={rowTotal ? { ...cellStyle(rowTotal, totalPeak, lens), ...cellTextStyle(rowTotal, totalPeak) } : undefined}
                             >
                               {rowTotal ? fmtMoneySigned(rowTotal) : "·"}
                             </td>
