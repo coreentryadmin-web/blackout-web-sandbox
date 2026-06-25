@@ -153,10 +153,15 @@ export function computeFlowStrikeStacks(
 }
 
 export function fmtFlowPremShort(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`.replace(/\.00M$/, "M");
-  if (n >= 10_000) return `$${Math.round(n / 1_000)}K`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${Math.round(n)}`;
+  if (!Number.isFinite(n)) return "—";
+  // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M"
+  // (matches fmtPremium in @/lib/api).
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`.replace(/\.00M$/, "M");
+  if (abs >= 10_000) return `${sign}$${Math.round(abs / 1_000)}K`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}$${Math.round(abs)}`;
 }
 
 export function formatFlowStrikeStackLine(stack: FlowStrikeStack): string {

@@ -146,9 +146,14 @@ function formatLiveSpxSection(
 }
 
 function fmtPrem(prem: number): string {
-  if (prem >= 1_000_000) return `$${(prem / 1_000_000).toFixed(1)}M`;
-  if (prem >= 1_000) return `$${Math.round(prem / 1_000)}K`;
-  return `$${Math.round(prem)}`;
+  if (!Number.isFinite(prem)) return "—";
+  // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M"
+  // (matches fmtPremium in @/lib/api). Output feeds the overnight LLM prompt.
+  const sign = prem < 0 ? "-" : "";
+  const abs = Math.abs(prem);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`;
+  return `${sign}$${Math.round(abs)}`;
 }
 
 export type TideBias = "BULLISH" | "BEARISH" | "NEUTRAL";
