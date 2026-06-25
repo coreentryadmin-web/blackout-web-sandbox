@@ -15,15 +15,23 @@ import {
   type UserPositionPatch,
 } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
+import { validateExpiryYmd } from "@/lib/nights-watch/expiry";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { requireTierApi } from "@/lib/market-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * YYYY-MM-DD calendar-date guard for stored labels (e.g. entry_date), where past
+ * dates are valid. Round-trips through Date so impossible dates that Date.parse
+ * silently rolls (2026-02-30 → 03-02) are rejected. Expiry uses the stricter
+ * validateExpiryYmd (no-past + weekend warning).
+ */
 function isValidYmd(v: unknown): v is string {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  return Number.isFinite(Date.parse(`${v}T00:00:00Z`));
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -94,10 +102,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       patch.strike = s;
     }
     if (body.expiry !== undefined) {
-      if (!isValidYmd(body.expiry)) {
-        return NextResponse.json({ error: "expiry must be a valid YYYY-MM-DD date" }, { status: 400 });
+      const expiryCheck = validateExpiryYmd(body.expiry);
+      if (!expiryCheck.ok) {
+        return NextResponse.json({ error: expiryCheck.error }, { status: 400 });
       }
-      patch.expiry = body.expiry;
+      patch.expiry = expiryCheck.ymd;
     }
     if (body.side !== undefined) {
       if (body.side !== "long" && body.side !== "short") {

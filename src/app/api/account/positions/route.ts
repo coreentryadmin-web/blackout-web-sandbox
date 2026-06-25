@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, createUserPosition } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
+import { validateExpiryYmd } from "@/lib/nights-watch/expiry";
 import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { requireToolApi } from "@/lib/tool-access-server";
@@ -16,11 +17,16 @@ import { requireTierApi } from "@/lib/market-api-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** YYYY-MM-DD calendar-date guard (and that it parses to a real date). */
+/**
+ * YYYY-MM-DD calendar-date guard for stored labels (e.g. entry_date), where past
+ * dates are valid. Verifies the date is REAL via round-trip — Date.parse silently
+ * rolls impossible dates (2026-02-30 → 03-02), which must not pass. Expiry has its
+ * own stricter guard (no-past + weekend warning) in validateExpiryYmd.
+ */
 function isValidYmd(v: unknown): v is string {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  const ms = Date.parse(`${v}T00:00:00Z`);
-  return Number.isFinite(ms);
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
 export async function GET(req: Request) {
@@ -90,9 +96,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "strike must be > 0" }, { status: 400 });
   }
 
-  if (!isValidYmd(body.expiry)) {
-    return NextResponse.json({ error: "expiry must be a valid YYYY-MM-DD date" }, { status: 400 });
+  const expiryCheck = validateExpiryYmd(body.expiry);
+  if (!expiryCheck.ok) {
+    return NextResponse.json({ error: expiryCheck.error }, { status: 400 });
   }
+  const expiry = expiryCheck.ymd;
 
   const side = body.side == null ? "long" : body.side;
   if (side !== "long" && side !== "short") {
@@ -124,7 +132,7 @@ export async function POST(req: Request) {
       ticker,
       option_type: optionType,
       strike,
-      expiry: body.expiry,
+      expiry,
       side,
       contracts,
       entry_premium: entryPremium,
@@ -134,7 +142,11 @@ export async function POST(req: Request) {
     // Cheap write: persist + return immediately as 'pending' (no inline upstream call).
     // Live valuation lands on the next GET poll, served from the shared chain cache.
     return NextResponse.json(
-      { position: enrichPosition(position, null, new Date(), true) },
+      {
+        position: enrichPosition(position, null, new Date(), true),
+        // Soft, non-blocking advisory (e.g. weekend expiry); absent when clean.
+        ...(expiryCheck.listingWarning ? { listing_warning: expiryCheck.listingWarning } : {}),
+      },
       { status: 201 }
     );
   } catch (error) {
