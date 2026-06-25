@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import useSWR from "swr";
-import { fetchSpxState, fmtPct, fmtPrice, type SpxState } from "@/lib/api";
+import { fetchSpxState, fmtPct, fmtPremium, fmtPrice, type SpxState } from "@/lib/api";
 import { clsx } from "clsx";
 import { EmbedFrame } from "./EmbedFrame";
 import { Skeleton } from "@/components/ui";
@@ -112,13 +112,13 @@ export function LiveMarketPulse({ compact, className }: LiveMarketPulseProps) {
         />
         <PulseBar
           label="GEX Net"
-          value={live ? (data.gex_net != null ? `$${(data.gex_net / 1e9).toFixed(2)}B` : "—") : "—"}
+          value={live && data.gex_net != null ? fmtPremium(data.gex_net) : "—"}
           bull={live && data.gex_net != null ? data.gex_net > 0 : null}
           loading={isLoading}
         />
         <PulseBar
           label="0DTE Flow"
-          value={live && data.flow_0dte_net != null ? `$${(data.flow_0dte_net / 1e6).toFixed(1)}M` : "—"}
+          value={live && data.flow_0dte_net != null ? fmtPremium(data.flow_0dte_net) : "—"}
           bull={live && data.flow_0dte_net != null ? data.flow_0dte_net > 0 : null}
           loading={isLoading}
         />
