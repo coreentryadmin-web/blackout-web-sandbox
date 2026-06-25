@@ -150,6 +150,52 @@ export type AnthropicSystemBlock = {
 
 export type AnthropicSystem = string | AnthropicSystemBlock[];
 
+/**
+ * Conservative cache-eligibility floor for AUTO-detected system caching (chars).
+ *
+ * Prompt caching is a prefix match and only kicks in above a model-specific MINIMUM cacheable
+ * prefix: 2,048 tokens for sonnet-4.6, 4,096 tokens for haiku-4.5 (per the claude-api prompt-caching
+ * reference). Below the minimum the API SILENTLY refuses to cache — you pay the ~1.25× cache-WRITE
+ * premium with zero reads, a net loss. anthropicText doesn't know the model's family for sure (it can
+ * be overridden by ANTHROPIC_MODEL env), so the auto path uses the HIGHER (haiku) bar so it never
+ * arms caching on a system that's too small to cache on the cheapest model. At ~4 chars/token (the
+ * audit's own estimate, docs/audit/13-CLAUDE-COST.md) 4,096 tok ≈ 16,384 chars. An explicit
+ * cacheSystem:true bypasses this — the caller owns its model/size and may target the 2,048 sonnet bar.
+ */
+const SYSTEM_CACHE_AUTODETECT_MIN_CHARS = 16_384;
+
+/**
+ * Normalize a system prompt into a single cacheable text block carrying cache_control:ephemeral.
+ * Returns the input unchanged when caching shouldn't apply, so this is safe to call unconditionally.
+ *
+ * Caching applies when EITHER the caller opts in (`force`) OR the system is large enough that the
+ * auto-detect floor is cleared. A string system becomes one block; a pre-built block array gets the
+ * marker on its LAST block (render order is tools→system→messages, and a marker on the last system
+ * block caches the whole tools+system prefix — the standard placement). If a block already carries a
+ * cache_control marker we leave the array as-is (the caller placed its own breakpoints intentionally).
+ */
+function applySystemCache(system: AnthropicSystem, force: boolean): AnthropicSystem {
+  if (typeof system === "string") {
+    const text = system.trim();
+    if (!text) return text;
+    const eligible = force || text.length >= SYSTEM_CACHE_AUTODETECT_MIN_CHARS;
+    if (!eligible) return text;
+    return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+  }
+
+  if (system.length === 0) return system;
+  // Respect caller-placed breakpoints — don't second-guess explicit placement.
+  if (system.some((b) => b.cache_control)) return system;
+
+  const totalChars = system.reduce((n, b) => n + (b.text?.length ?? 0), 0);
+  const eligible = force || totalChars >= SYSTEM_CACHE_AUTODETECT_MIN_CHARS;
+  if (!eligible) return system;
+
+  return system.map((b, i) =>
+    i === system.length - 1 ? { ...b, cache_control: { type: "ephemeral" } } : b
+  );
+}
+
 export function anthropicConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 }
@@ -290,6 +336,17 @@ export async function anthropicText(
     /** Per-request retry override. Client default is 3; lower it for big calls so a
      *  slow generation doesn't retry 3× and stack to ~60s before failing. */
     maxRetries?: number;
+    /**
+     * Opt in to prompt-caching the SYSTEM block. When set, the system is sent as a single block
+     * carrying cache_control:{type:'ephemeral'} so a stable preamble is billed at ~0.1× on repeat
+     * calls instead of full input price. PURELY ADDITIVE — default (undefined/false) preserves the
+     * exact prior behavior. Even without this flag, a system that clears the auto-detect floor
+     * (~16K chars, the haiku 4,096-tok minimum) is cached automatically. Only worth setting when the
+     * system is the large, STABLE part of the prompt and the volatile data lives in the user message
+     * — caching a system smaller than the model's minimum cacheable prefix is a silent no-op (and a
+     * tiny cache-write loss); see SYSTEM_CACHE_AUTODETECT_MIN_CHARS.
+     */
+    cacheSystem?: boolean;
   }
 ): Promise<string | null> {
   const client = getClient();
@@ -307,7 +364,10 @@ export async function anthropicText(
     messages: [{ role: "user", content: prompt }],
   };
   if (system) {
-    body.system = typeof system === "string" ? system.trim() : system;
+    // applySystemCache trims a string system and, when caching applies (explicit opt-in OR the
+    // auto-detect size floor), wraps it as a single cache_control:ephemeral block. When it doesn't
+    // apply it returns the (trimmed) value unchanged, so default behavior is byte-identical to before.
+    body.system = applySystemCache(system, options?.cacheSystem === true);
   }
   if (options?.output_config) {
     body.output_config = options.output_config;
