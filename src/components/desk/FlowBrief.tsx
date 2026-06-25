@@ -20,6 +20,17 @@ const AFTER_HOURS_LINES = [
   "Market closed. The desk reopens at 9:30 ET.",
 ];
 
+// ET hour (0–23), timezone-correct and hydration-stable — server and client
+// both resolve America/New_York, unlike new Date().getHours() (local time).
+function etHour(): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(new Date());
+  return Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24;
+}
+
 function isRTH(): boolean {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -39,8 +50,8 @@ function isRTH(): boolean {
 }
 
 function afterHoursLine(): string {
-  // deterministic pick by hour so it doesn't flash on re-render
-  const h = new Date().getHours();
+  // deterministic pick by ET hour so it doesn't flash on re-render
+  const h = etHour();
   return AFTER_HOURS_LINES[h % AFTER_HOURS_LINES.length];
 }
 

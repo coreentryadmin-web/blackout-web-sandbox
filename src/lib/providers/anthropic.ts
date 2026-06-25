@@ -13,6 +13,8 @@ import { SpendTracker, type AnthropicUsage, type SpendRecord } from "@/lib/ai-sp
 import {
   aiSpendKey,
   aiSpendAlertThresholdUsd,
+  aiSpendKillSwitchUsd,
+  isOverAiSpendCeiling,
   spendThresholdJustCrossed,
   AI_SPEND_INCR_LUA,
   secondsUntilEtMidnight,
@@ -237,6 +239,26 @@ function extractTextFromLastAssistant(messages: AnthropicMessage[]): string | nu
   return null;
 }
 
+/**
+ * Org-wide hard AI-spend kill-switch, shared by EVERY Anthropic surface — not just Largo (audit S-5;
+ * previously only largo/query checked it, so SPX commentary, GEX explain, NW narrative, NH critic etc.
+ * spent ungated). OPT-IN: a fast no-op when DAILY_AI_SPEND_KILL_USD is unset. Fails OPEN on Redis loss
+ * so an infra blip never blocks AI. When org daily spend is at/over the ceiling, callers degrade
+ * (skip the request) instead of adding more spend.
+ */
+async function isAiSpendCeilingTripped(): Promise<boolean> {
+  const ceiling = aiSpendKillSwitchUsd();
+  if (ceiling == null) return false; // kill-switch not armed
+  try {
+    const redis = await getUwCacheRedis();
+    if (!redis) return false; // fail-open on Redis loss
+    const raw = await redis.get(aiSpendKey());
+    return isOverAiSpendCeiling(Number(raw ?? 0), ceiling);
+  } catch {
+    return false; // fail-open on any Redis error
+  }
+}
+
 export async function anthropicText(
   prompt: string,
   maxTokens = 600,
@@ -255,6 +277,10 @@ export async function anthropicText(
 ): Promise<string | null> {
   const client = getClient();
   if (!client) return null;
+  if (await isAiSpendCeilingTripped()) {
+    console.warn("[anthropic] daily AI spend ceiling reached — skipping anthropic-text");
+    return null;
+  }
 
   const model = resolveModel(options?.model);
   const body: MessageCreateParamsNonStreaming = {
@@ -314,6 +340,10 @@ export async function anthropicToolLoop(params: {
 }): Promise<string | null> {
   const client = getClient();
   if (!client) return null;
+  if (await isAiSpendCeilingTripped()) {
+    console.warn("[anthropic] daily AI spend ceiling reached — skipping anthropic tool loop");
+    return null;
+  }
 
   const model = resolveModel(params.model);
   const maxTokens = params.maxTokens ?? 4096;

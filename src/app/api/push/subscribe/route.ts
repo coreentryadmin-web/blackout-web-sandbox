@@ -42,13 +42,17 @@ export async function POST(req: NextRequest) {
 
   try {
     await ensurePushTable();
+    // IDOR guard (audit 08-Med-4): only refresh the keys when the endpoint already belongs to THIS
+    // user. The conflict update must NOT reassign user_id — otherwise anyone who knows another user's
+    // (opaque, but exfiltratable) endpoint could overwrite the row's owner and hijack their push
+    // channel. A conflict on an endpoint owned by a different user is left untouched.
     await dbQuery(
       `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth)
          VALUES ($1, $2, $3, $4)
        ON CONFLICT (endpoint)
-         DO UPDATE SET user_id = EXCLUDED.user_id,
-                       p256dh  = EXCLUDED.p256dh,
-                       auth    = EXCLUDED.auth`,
+         DO UPDATE SET p256dh = EXCLUDED.p256dh,
+                       auth   = EXCLUDED.auth
+         WHERE push_subscriptions.user_id = EXCLUDED.user_id`,
       [endpoint, userId, p256dh, authKey]
     );
     return NextResponse.json({ ok: true });

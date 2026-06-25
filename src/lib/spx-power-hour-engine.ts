@@ -161,8 +161,9 @@ async function buildPowerHourOptionTicket(
     const minStrike = direction === "long" ? spot + 3 : spot - 3 - offsetPts * 2;
     const maxStrike = direction === "long" ? spot + 3 + offsetPts * 2 : spot - 3;
 
+    const base = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
     const url =
-      `https://api.polygon.io/v3/snapshot/options/I:SPX` +
+      `${base}/v3/snapshot/options/I:SPX` +
       `?contract_type=${optType}` +
       `&expiration_date=${exp}` +
       `&strike_price_gte=${Math.floor(minStrike)}` +

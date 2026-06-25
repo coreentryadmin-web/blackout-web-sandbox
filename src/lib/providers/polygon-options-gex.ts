@@ -814,6 +814,21 @@ const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
 /** In-memory mirror of the Redis matrix so co-located requests skip Redis too. */
 const cachedHeatmaps = new Map<string, { at: number; data: GexHeatmap }>();
 
+// Bound the ticker dimension so an unusual spread of (garbage) tickers can't leak
+// memory. Insertion-order LRU + delete-oldest eviction, same pattern as
+// server-cache.ts:setStoreEntry / shared-cache.ts:setMemoryEntry. TTL/semantics
+// are unchanged — this only caps how many distinct keys can live at once.
+const MAX_HEATMAP_CACHE = 500;
+function setCachedHeatmap(key: string, entry: { at: number; data: GexHeatmap }): void {
+  cachedHeatmaps.delete(key); // re-insert → most-recently-used position
+  while (cachedHeatmaps.size >= MAX_HEATMAP_CACHE) {
+    const oldest = cachedHeatmaps.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    cachedHeatmaps.delete(oldest);
+  }
+  cachedHeatmaps.set(key, entry);
+}
+
 function gexHeatmapCacheMs(): number {
   const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 20);
   return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 20_000;
@@ -1494,8 +1509,7 @@ export async function fetchGexHeatmap(
       const { sharedCacheGet } = await import("../shared-cache");
       const hit = await sharedCacheGet<{ at: number; data: GexHeatmap }>(cacheKey);
       if (hit && now - hit.at < ttlMs) {
-        if (cachedHeatmaps.size > 200) cachedHeatmaps.clear();
-        cachedHeatmaps.set(cacheKey, hit);
+        setCachedHeatmap(cacheKey, hit);
         return hit.data;
       }
     } catch {
@@ -1826,9 +1840,7 @@ export async function fetchGexHeatmap(
 
   // Cache once for everyone: in-memory + Redis. 500 users → one matrix, zero per-user fetch.
   const entry = { at: now, data: heatmap };
-  // Bound the in-memory map so an unusual spread of (garbage) tickers can't leak memory.
-  if (cachedHeatmaps.size > 200) cachedHeatmaps.clear();
-  cachedHeatmaps.set(cacheKey, entry);
+  setCachedHeatmap(cacheKey, entry);
   void import("../shared-cache").then(({ sharedCacheSet }) =>
     sharedCacheSet(cacheKey, entry, Math.ceil(ttlMs / 1000))
   );
@@ -1908,9 +1920,7 @@ function emptyHeatmap(
   };
   if (ctx?.cacheKey && ctx.now != null && ctx.ttlMs != null) {
     const entry = { at: ctx.now, data: heatmap };
-    // Bound: empty heatmaps are cached too, so garbage tickers must not grow the map unbounded.
-    if (cachedHeatmaps.size > 200) cachedHeatmaps.clear();
-    cachedHeatmaps.set(ctx.cacheKey, entry);
+    setCachedHeatmap(ctx.cacheKey, entry);
     void import("../shared-cache").then(({ sharedCacheSet }) =>
       sharedCacheSet(ctx.cacheKey!, entry, Math.ceil(ctx.ttlMs! / 1000))
     );
