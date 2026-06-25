@@ -4199,8 +4199,10 @@ body {
     @apply border-l-2 pl-4 py-2;
     align-self: flex-start;
     margin-right: auto;
-    border-left-color: rgba(0, 230, 118, 0.55);
-    background: rgba(0, 230, 118, 0.03);
+    /* Non-directional cyan accent (was emerald) so a bearish answer's bubble
+       does not read as "winning". */
+    border-left-color: rgba(34, 211, 238, 0.55);
+    background: rgba(34, 211, 238, 0.03);
   }
 
   .largo-chat-shell {
@@ -4304,8 +4306,10 @@ body {
     color: rgba(125, 211, 252, 0.9);
   }
 
+  /* Non-directional cyan bubble tint (was emerald) — a bearish answer must not
+     sit in a profit-green bubble. */
   .largo-msg-assistant {
-    background: linear-gradient(90deg, rgba(0, 230, 118, 0.05), transparent);
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.05), transparent);
     border-radius: 0 4px 4px 0;
   }
 
@@ -4780,14 +4784,15 @@ body {
     min-width: 7.5rem;
   }
 
-  /* ── Largo rich message formatting (Matrix neon) ── */
+  /* ── Largo rich message formatting ──
+     Answer body is NEUTRAL high-contrast (not profit-green) so a bearish thesis,
+     a SELL read or a -3% loss no longer renders in the green that means
+     "long/winning". Green/red are reserved for genuine directional emphasis;
+     the body itself carries no bias. Was #00e676 with a green glow. */
   .largo-message-body {
-    color: #00e676;
+    color: #f0f0f8;
     font-family: var(--font-jetbrains), monospace;
     line-height: 1.65;
-    text-shadow:
-      0 0 6px rgba(0, 230, 118, 0.4),
-      0 0 1px rgba(0, 230, 118, 0.75);
   }
 
   .largo-fmt-para {
@@ -4818,9 +4823,9 @@ body {
     content: "▸";
     position: absolute;
     left: -1rem;
-    color: #00e676;
+    color: #22d3ee;
     font-size: 0.75em;
-    text-shadow: 0 0 6px rgba(0, 230, 118, 0.5);
+    text-shadow: 0 0 6px rgba(34, 211, 238, 0.5);
   }
 
   .largo-fmt-bold {
@@ -4839,8 +4844,8 @@ body {
     font-family: var(--font-jetbrains), monospace;
     font-size: 0.88em;
     padding: 0.1em 0.35em;
-    border: 1px solid rgba(0, 230, 118, 0.28);
-    background: rgba(0, 230, 118, 0.06);
+    border: 1px solid rgba(34, 211, 238, 0.28);
+    background: rgba(34, 211, 238, 0.06);
     color: inherit;
   }
 
@@ -4850,34 +4855,43 @@ body {
     text-decoration: underline;
     text-decoration-thickness: 1.5px;
     text-underline-offset: 3px;
-    text-decoration-color: rgba(0, 230, 118, 0.9);
-    color: inherit;
+    /* Sky underline on the now-neutral body — was green-on-green (near
+       invisible) when the body was #00e676. Price levels stay neutral; sign
+       semantics are not asserted here. */
+    text-decoration-color: rgba(125, 211, 252, 0.85);
+    color: #ffffff;
     letter-spacing: 0.02em;
   }
 
+  /* Verdict block: non-directional cyan chrome (was emerald, which painted a
+     bearish "Bias: SHORT" verdict green). The body parser does not detect
+     direction, so we must not assert one via color. */
   .largo-fmt-verdict {
     margin: 0 0 0.85rem;
     padding: 0.65rem 0.85rem;
-    border: 1px solid rgba(0, 230, 118, 0.35);
-    background: rgba(0, 230, 118, 0.06);
+    border: 1px solid rgba(34, 211, 238, 0.32);
+    background: rgba(34, 211, 238, 0.05);
     font-weight: 700;
     line-height: 1.5;
     letter-spacing: 0.02em;
   }
 
+  /* Bottom-line panel uses the non-directional Largo cyan accent (was hard-locked
+     emerald, which made a bearish bottom line read as "winning"). The body text
+     is neutral; only genuinely directional tokens carry green/red. */
   .largo-fmt-bottomline {
     margin: 1rem 0 0.25rem;
     padding: 0.9rem 1rem 1rem;
-    border: 1px solid rgba(0, 230, 118, 0.42);
+    border: 1px solid rgba(34, 211, 238, 0.38);
     background: linear-gradient(
       135deg,
-      rgba(0, 230, 118, 0.1) 0%,
+      rgba(34, 211, 238, 0.09) 0%,
       rgba(0, 0, 0, 0.45) 55%,
-      rgba(191, 95, 255, 0.06) 100%
+      rgba(34, 211, 238, 0.05) 100%
     );
     box-shadow:
-      inset 0 0 28px rgba(0, 230, 118, 0.06),
-      0 0 22px rgba(0, 230, 118, 0.1);
+      inset 0 0 28px rgba(34, 211, 238, 0.05),
+      0 0 22px rgba(34, 211, 238, 0.09);
   }
 
   .largo-fmt-bottomline-title {
@@ -4895,8 +4909,7 @@ body {
     margin: 0 0 0.55rem;
     line-height: 1.7;
     font-size: 0.95em;
-    color: rgba(0, 230, 118, 0.96);
-    text-shadow: 0 0 8px rgba(0, 230, 118, 0.28);
+    color: #f0f0f8;
   }
 
   .largo-fmt-bottomline-body:last-child {
@@ -4920,7 +4933,7 @@ body {
     content: "◆";
     position: absolute;
     left: -1rem;
-    color: rgba(0, 230, 118, 0.85);
+    color: rgba(34, 211, 238, 0.85);
     font-size: 0.55em;
     top: 0.35em;
   }
@@ -4955,9 +4968,11 @@ body {
     margin-top: 0.15rem;
   }
 
+  /* Level grid chrome is non-directional cyan (was emerald) so a table of
+     downside levels doesn't read as profit-green. */
   .largo-level-grid {
     margin: 0.5rem 0 0.85rem;
-    border: 1px solid rgba(0, 230, 118, 0.22);
+    border: 1px solid rgba(34, 211, 238, 0.22);
     background: rgba(0, 0, 0, 0.35);
     overflow: hidden;
   }
@@ -4972,8 +4987,8 @@ body {
   }
 
   .largo-level-grid-head {
-    border-bottom: 1px solid rgba(0, 230, 118, 0.2);
-    background: rgba(0, 230, 118, 0.05);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.2);
+    background: rgba(34, 211, 238, 0.05);
   }
 
   .largo-level-grid-th {
@@ -4986,7 +5001,7 @@ body {
   }
 
   .largo-level-grid-row {
-    border-bottom: 1px solid rgba(0, 230, 118, 0.08);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.08);
     font-size: 0.88em;
     line-height: 1.45;
   }
@@ -4996,7 +5011,7 @@ body {
   }
 
   .largo-level-grid-row:nth-child(even) {
-    background: rgba(0, 230, 118, 0.025);
+    background: rgba(34, 211, 238, 0.025);
   }
 
   .largo-level-grid-label {
@@ -5008,7 +5023,7 @@ body {
     font-weight: 700;
     text-decoration: underline;
     text-underline-offset: 2px;
-    text-decoration-color: rgba(0, 230, 118, 0.85);
+    text-decoration-color: rgba(125, 211, 252, 0.85);
   }
 
   .largo-level-grid-note {
