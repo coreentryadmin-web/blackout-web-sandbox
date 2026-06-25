@@ -12,10 +12,25 @@ import {
   resolveDossierContext,
 } from "@/lib/nighthawk/play-explainer";
 import type { PlaybookPlay, PlayExplainRequest, PlayExplainResponse } from "@/lib/nighthawk/types";
+import { withServerCache } from "@/lib/server-cache";
 import { requireToolApi } from "@/lib/tool-access-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/**
+ * Edition play explanations are IDENTICAL for every user on a given trading day, so a cold
+ * edition must collapse to ONE Sonnet call cluster-wide — not N (the thundering-herd / launch
+ * Anthropic-rate landmine). The DB cache (meta.play_explanations) is the durable cross-day store,
+ * but it is only written AFTER generation completes, so it does NOT dedup the concurrent cold
+ * burst — N users all read it empty at once and all fire their own ~3,200-token call.
+ *
+ * withServerCache closes that window: its in-flight single-flight makes concurrent cold requests
+ * share ONE generation, and its Redis L1/L2 layer serves every subsequent user (this replica and
+ * others) from cache = 0 LLM calls. TTL is held through the trading day; the key is namespaced by
+ * editionFor + ticker so it self-rolls when a new edition publishes.
+ */
+const PLAY_EXPLAIN_TTL_MS = 18 * 60 * 60 * 1000; // 18h — well past one trading session
 
 export async function POST(req: NextRequest) {
   try {
@@ -69,25 +84,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
     }
 
-    const dossierContextMap = (meta.dossier_context ?? {}) as Record<string, string>;
-    const dossierContext = await resolveDossierContext(ticker, dossierContextMap[ticker]);
+    // CACHE-READER / single-flight: on a COLD edition, N concurrent users would each fire their
+    // own ~3,200-token Sonnet call (the DB cache is written only after generation, so it cannot
+    // dedup the concurrent burst). withServerCache collapses them to ONE generation via in-flight
+    // single-flight, then serves all subsequent users — this replica and others, through the
+    // trading day — from its Redis layer = 0 further LLM calls. The durable DB write is performed
+    // once, inside the loader, so the cron/preview path and next-day reads still find it.
+    let explanation: string;
+    try {
+      explanation = await withServerCache(
+        `nighthawk:play-explain:${row.edition_for}:${ticker}`,
+        PLAY_EXPLAIN_TTL_MS,
+        async () => {
+          const dossierContextMap = (meta.dossier_context ?? {}) as Record<string, string>;
+          const dossierContext = await resolveDossierContext(ticker, dossierContextMap[ticker]);
 
-    const explanation = await generatePlayExplanation({
-      play,
-      editionFor: row.edition_for,
-      recapHeadline: row.recap_headline,
-      recapSummary: row.recap_summary,
-      marketRecap: row.market_recap,
-      dossierContext,
-    });
+          const generated = await generatePlayExplanation({
+            play,
+            editionFor: row.edition_for,
+            recapHeadline: row.recap_headline,
+            recapSummary: row.recap_summary,
+            marketRecap: row.market_recap,
+            dossierContext,
+          });
 
-    if (!explanation?.trim()) {
+          // Throw so server-cache does NOT cache an empty/failed result (it only stores on
+          // success) — a transient Anthropic failure must not be pinned for the whole TTL.
+          if (!generated?.trim()) {
+            throw new Error("empty-explanation");
+          }
+
+          // Durable cross-day store. Fire-and-forget: the DB write must not gate the response,
+          // and a failed write simply means the next cold request regenerates.
+          void cacheNighthawkPlayExplanation(row.edition_for, ticker, generated).catch((err) => {
+            console.error("[nighthawk/play-explain] cache failed:", err);
+          });
+
+          return generated;
+        }
+      );
+    } catch {
       return NextResponse.json({ error: "Failed to generate explanation" }, { status: 502 });
     }
-
-    void cacheNighthawkPlayExplanation(row.edition_for, ticker, explanation).catch((err) => {
-      console.error("[nighthawk/play-explain] cache failed:", err);
-    });
 
     const response: PlayExplainResponse = {
       ticker,
