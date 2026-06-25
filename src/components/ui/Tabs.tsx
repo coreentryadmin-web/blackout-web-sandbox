@@ -135,6 +135,56 @@ export const TabList = forwardRef<HTMLDivElement, TabListProps>(function TabList
 ) {
   const { value, select, orderRef } = useTabsContext("TabList");
 
+  /**
+   * Rail Slide — ONE shared sliding indicator (VITALS micro-interaction).
+   * Instead of each Tab cross-fading its own underline opacity (which blinks
+   * rather than travels), we render a single 1px-wide sky→bull bar and drive
+   * `transform: translateX(x) scaleX(w)` to glide it onto the active tab.
+   * Transform-only (no width/left/box-shadow on the loop). ResizeObserver fires
+   * only on layout change. Reduced-motion: the global @media block zeroes the
+   * transition, so the bar simply jumps to position — the correct still fallback.
+   */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [indicator, setIndicator] = useState<{ x: number; w: number } | null>(null);
+
+  // Merge our internal measuring ref with the forwarded ref.
+  const setListRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      listRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    },
+    [ref]
+  );
+
+  const measure = useCallback(() => {
+    const list = listRef.current;
+    if (!list || unstyled) return;
+    const active = list.querySelector<HTMLElement>(`[role="tab"][data-value="${value}"]`);
+    if (!active) {
+      setIndicator(null);
+      return;
+    }
+    const x = active.offsetLeft;
+    const w = active.offsetWidth;
+    setIndicator((prev) => (prev && prev.x === x && prev.w === w ? prev : { x, w }));
+  }, [value, unstyled]);
+
+  // Re-measure when the active value changes (selection moves the rail).
+  useEffect(() => {
+    measure();
+  }, [measure]);
+
+  // Re-measure only on real layout change (resize / reflow), never on a timer.
+  useEffect(() => {
+    if (unstyled) return;
+    const list = listRef.current;
+    if (!list || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [measure, unstyled]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(e);
     if (e.defaultPrevented) return;
@@ -174,18 +224,31 @@ export const TabList = forwardRef<HTMLDivElement, TabListProps>(function TabList
 
   return (
     <div
-      ref={ref}
+      ref={setListRef}
       role="tablist"
       aria-orientation="horizontal"
       className={clsx(
         !unstyled &&
-          "flex items-center gap-1 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.4)] p-1 backdrop-blur",
+          "relative flex items-center gap-1 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.4)] p-1 backdrop-blur",
         className
       )}
       onKeyDown={handleKeyDown}
       {...rest}
     >
       {children}
+      {/* Rail Slide — single shared indicator that travels between tabs.
+          Base width is 1px; the real width is applied via scaleX so only
+          `transform` animates. `--ease-snap` gives a tiny hardware-selector
+          overshoot. Hidden until first measure (no flash at x=0). */}
+      {!unstyled && indicator && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute bottom-1 left-0 h-0.5 w-px origin-left rounded-full bg-gradient-to-r from-sky-400 to-bull shadow-[0_0_12px_rgba(0,230,118,0.5)] transition-transform duration-base ease-snap will-change-transform"
+          style={{
+            transform: `translateX(${indicator.x + 8}px) scaleX(${Math.max(indicator.w - 16, 1)})`,
+          }}
+        />
+      )}
     </div>
   );
 });
@@ -244,17 +307,9 @@ export const Tab = forwardRef<HTMLButtonElement, TabProps>(function Tab(
       {...rest}
     >
       {children}
-      {/* default active underline — sky→bull accent, no grey */}
-      {!unstyled && (
-        <span
-          aria-hidden
-          className={clsx(
-            "pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full transition-opacity duration-150",
-            "bg-gradient-to-r from-sky-400 to-bull shadow-[0_0_12px_rgba(0,230,118,0.5)]",
-            isActive ? "opacity-100" : "opacity-0"
-          )}
-        />
-      )}
+      {/* Active underline is now a single shared indicator owned by TabList
+          (Rail Slide) — it travels between tabs rather than each tab blinking
+          its own opacity. No per-tab underline span here. */}
     </button>
   );
 });
