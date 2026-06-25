@@ -492,7 +492,21 @@ export function FlowFeed() {
     }
     return max;
   }, [displayAlerts]);
-  const dataAgeMs = newestAt ? Date.now() - newestAt : null;
+  // Age ticker — without this the "Ns ago" label and the 5-min Stale flip only
+  // advance when a new flow event arrives, so during quiet periods the displayed
+  // age freezes (and a tape can read "Live" past the stale threshold). A 1s timer
+  // re-renders ONLY this label off the already-held newestAt — no network fetch.
+  const [ageTick, setAgeTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setAgeTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const dataAgeMs = useMemo(
+    () => (newestAt ? Date.now() - newestAt : null),
+    // ageTick is intentional: it is the heartbeat that re-evaluates Date.now().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [newestAt, ageTick],
+  );
   const dataStale = dataAgeMs != null && dataAgeMs > 5 * 60_000;
   const newestAgeLabel =
     dataAgeMs == null
