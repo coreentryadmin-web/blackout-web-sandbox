@@ -473,14 +473,24 @@ function PositioningView({ data }: { data: PositioningSection }) {
             GEX walls
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {data.walls.map((w, i) => (
-              <LevelChip
-                key={i}
-                label={w.kind === "support" ? "Support wall" : "Resistance wall"}
-                value={price(w.strike)}
-                tone={w.kind === "support" ? "bull" : "bear"}
-              />
-            ))}
+            {data.walls.map((w, i) => {
+              // Label/tone by net_gex SIGN (put wall = support = green), matching the
+              // "Levels to watch" chips (gexWallLabel) and the canonical Heatmap — NOT
+              // the geometric w.kind, which contradicted itself on the same strike (#80).
+              const hasSign = Number.isFinite(w.net_gex) && w.net_gex !== 0;
+              const isPut = w.net_gex < 0; // negative net-gamma => put wall (support)
+              const base = isPut ? "Put wall" : "Call wall";
+              const nativeRole = isPut ? "support" : "resistance";
+              const label = !hasSign
+                ? w.kind === "support"
+                  ? "Support wall"
+                  : "Resistance wall"
+                : w.kind === nativeRole
+                  ? base
+                  : `${base} (acting as ${w.kind})`;
+              const tone = !hasSign ? (w.kind === "support" ? "bull" : "bear") : isPut ? "bull" : "bear";
+              return <LevelChip key={i} label={label} value={price(w.strike)} tone={tone} />;
+            })}
           </div>
         </div>
       )}
