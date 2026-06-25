@@ -10717,6 +10717,47 @@ body {
     @apply text-sm text-sky-100 leading-relaxed m-0;
   }
 
+  /* #90 blind-spot: market-hours crons stale during RTH. Loud red banner so it can never hide. */
+  .admin-cron-rth-alert {
+    @apply rounded-xl border border-[color:rgb(255_92_120/0.5)] bg-[color:rgb(255_92_120/0.12)] p-4 md:p-5 flex flex-col gap-3;
+    box-shadow: 0 0 0 1px rgb(255 92 120 / 0.2), 0 0 28px rgb(255 92 120 / 0.18);
+  }
+
+  .admin-cron-rth-alert-head {
+    @apply flex items-center gap-2.5;
+  }
+
+  .admin-cron-rth-alert-dot {
+    @apply h-2.5 w-2.5 rounded-full bg-bear shrink-0;
+    box-shadow: 0 0 10px rgb(255 92 120 / 0.9);
+    animation: admin-cron-rth-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes admin-cron-rth-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  .admin-cron-rth-alert-title {
+    @apply text-sm md:text-base font-bold text-bear leading-snug;
+  }
+
+  .admin-cron-rth-alert-list {
+    @apply flex flex-col gap-1.5 m-0 p-0 list-none;
+  }
+
+  .admin-cron-rth-alert-item {
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs md:text-sm;
+  }
+
+  .admin-cron-rth-alert-job {
+    @apply font-semibold text-white;
+  }
+
+  .admin-cron-rth-alert-detail {
+    @apply text-sky-200 font-mono text-[11px] md:text-xs;
+  }
+
   .admin-cron-deck {
     @apply p-4 md:p-5 rounded-xl;
   }

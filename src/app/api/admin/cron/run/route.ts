@@ -1,35 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
-
-// Reuse the EXACT cron handlers — do NOT reimplement any warming/ingest logic here.
-// Each cron route exports a `GET(req: NextRequest)` that gates on `isCronAuthorized(req)`
-// (Bearer CRON_SECRET) and then runs its job. We invoke those handlers directly with a
-// synthetic, server-side-authorized request so an ADMIN can warm a cron from the browser
-// WITHOUT ever holding CRON_SECRET (it stays in process.env, never exposed to the client).
-import { GET as flowIngestGet } from "@/app/api/cron/flow-ingest/route";
-import { GET as uwCacheRefreshGet } from "@/app/api/cron/uw-cache-refresh/route";
-import { GET as nightsWatchWarmGet } from "@/app/api/cron/nights-watch-warm/route";
-import { GET as heatmapWarmGet } from "@/app/api/cron/heatmap-warm/route";
+// The dispatch table + synthetic-authorized invocation live in cron-dispatch.ts so the
+// staleness watchdog's self-heal can share the EXACT same safe/idempotent handler set.
+import {
+  dispatchCronWarm,
+  DISPATCHABLE_CRONS,
+  isDispatchableCron,
+} from "@/lib/cron-dispatch";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type CronHandler = (req: NextRequest) => Promise<Response>;
-
-/**
- * Dispatch table: cron id → { handler, force }. `force` adds `?force=1` so the
- * market-hours-gated warmers actually run when an admin triggers them off-window
- * (the whole point of the manual stopgap). Keys mirror cron-registry.ts.
- */
-const CRON_HANDLERS: Record<string, { handler: CronHandler; force: boolean }> = {
-  "flow-ingest": { handler: flowIngestGet, force: false },
-  "uw-cache-refresh": { handler: uwCacheRefreshGet, force: false },
-  "nights-watch-warm": { handler: nightsWatchWarmGet, force: true },
-  "heatmap-warm": { handler: heatmapWarmGet, force: true },
-};
-
-const SUPPORTED = Object.keys(CRON_HANDLERS);
+const SUPPORTED = DISPATCHABLE_CRONS;
 
 /**
  * Admin-triggered manual cron run/warm. Operational stopgap for when Railway's per-cron
@@ -63,67 +46,48 @@ export async function POST(req: NextRequest) {
   }
 
   const key = name.trim();
-  const entry = CRON_HANDLERS[key];
-  if (!entry) {
+  if (!isDispatchableCron(key)) {
     return NextResponse.json(
       { ok: false, error: `Unknown cron '${key}'`, supported: SUPPORTED },
       { status: 400 }
     );
   }
 
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    // Without CRON_SECRET the synthetic request can't pass isCronAuthorized — surface a
-    // clear ops error rather than letting the handler return an opaque 401.
-    return NextResponse.json(
-      { ok: false, name: key, error: "CRON_SECRET not configured on this deployment" },
-      { status: 503 }
-    );
-  }
-
-  // Build a synthetic, authorized cron request: same Bearer auth + (for the warmers) ?force=1
-  // so the handler runs identically to a real Railway cron fire. The host is arbitrary; the
-  // cron handlers only read the Authorization header and the `force` query param.
-  const url = entry.force
-    ? `https://internal.local/api/cron/${key}?force=1`
-    : `https://internal.local/api/cron/${key}`;
-  const cronReq = new NextRequest(url, {
-    method: "GET",
-    headers: { authorization: `Bearer ${secret}` },
-  });
-
-  const started = Date.now();
   try {
-    const res = await entry.handler(cronReq);
-    const durationMs = Date.now() - started;
+    const dispatch = await dispatchCronWarm(key);
 
-    let result: unknown = null;
-    try {
-      result = await res.clone().json();
-    } catch {
-      result = await res.clone().text();
+    // Map the dispatch result to this route's existing HTTP contract:
+    //   CRON_SECRET missing → 503, downstream handler non-ok → 502, dispatch ok → 200.
+    if (!dispatch.ok && dispatch.status === 503) {
+      return NextResponse.json(
+        { ok: false, name: dispatch.name, error: dispatch.error },
+        { status: 503 }
+      );
     }
 
     return NextResponse.json(
       {
-        ok: res.ok,
-        name: key,
-        ranAt: new Date(started).toISOString(),
-        durationMs,
-        status: res.status,
-        result,
+        ok: dispatch.ok,
+        name: dispatch.name,
+        ranAt: dispatch.ranAt,
+        durationMs: dispatch.durationMs,
+        status: dispatch.status,
+        result: dispatch.result,
+        ...(dispatch.error ? { error: dispatch.error } : {}),
+        ...(dispatch.detail ? { detail: dispatch.detail } : {}),
       },
-      { status: res.ok ? 200 : 502, headers: { "Cache-Control": "no-store" } }
+      { status: dispatch.ok ? 200 : 502, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
+    // dispatchCronWarm never throws, but keep the route's defensive 500 contract intact.
     recordAdminRouteError("admin/cron/run", error);
     const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       {
         ok: false,
         name: key,
-        ranAt: new Date(started).toISOString(),
-        durationMs: Date.now() - started,
+        ranAt: new Date().toISOString(),
+        durationMs: 0,
         error: "Cron run failed",
         detail,
       },

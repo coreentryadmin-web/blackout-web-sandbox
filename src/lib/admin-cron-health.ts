@@ -34,6 +34,13 @@ export type CronJobHealth = {
   description: string;
   status: CronJobHealthStatus;
   status_label: string;
+  /**
+   * True when this is a `market_hours_only` job that is STALE *right now during RTH* — i.e. the
+   * silent-death #90 case (a live-data warmer that should be ticking but isn't). This is the
+   * loud, never-invisible signal: the watchdog self-heals/alerts on it and the admin UI paints it
+   * red. Off-window staleness is already suppressed upstream, so this is only ever set in-window.
+   */
+  market_hours_stale: boolean;
   last_run_at: string | null;
   last_status: string | null;
   last_duration_ms: number | null;
@@ -59,6 +66,8 @@ export type CronHealthPayload = {
     stale: number;
     failed: number;
     unknown: number;
+    /** Count of market-hours jobs that are stale RIGHT NOW during RTH (the #90 blind spot). */
+    market_hours_stale: number;
   };
   jobs: CronJobHealth[];
   recent_events: Array<{
@@ -104,6 +113,7 @@ function evaluateJob(
       description: job.description,
       status: "unknown",
       status_label: "No runs logged",
+      market_hours_stale: false,
       last_run_at: null,
       last_status: null,
       last_duration_ms: null,
@@ -148,6 +158,10 @@ function evaluateJob(
     statusLabel = "Failures in last 24h";
   }
 
+  // Flag a market-hours warmer that is stale WHILE the market is open — the #90 silent-death case.
+  // `offWindow` is false here means we're in RTH, so a "stale" status is a genuine live-data outage.
+  const marketHoursStale = Boolean(job.market_hours_only) && !offWindow && status === "stale";
+
   return {
     key: job.key,
     name: job.name,
@@ -157,6 +171,7 @@ function evaluateJob(
     description: job.description,
     status,
     status_label: statusLabel,
+    market_hours_stale: marketHoursStale,
     last_run_at: last.started_at,
     last_status: last.status,
     last_duration_ms: last.duration_ms,
@@ -200,9 +215,14 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
       const cronStale = !offWindow && health.age_min != null && health.age_min > staleThreshold;
 
       if (cronStale && hbAgeMin != null) {
+        const overrideStatus = playHb.stale ? ("stale" as const) : ("warning" as const);
         return {
           ...health,
-          status: playHb.stale ? ("stale" as const) : ("warning" as const),
+          status: overrideStatus,
+          // Keep the RTH-stale flag in sync with the heartbeat override: spx-evaluate is a
+          // market-hours job, and `cronStale` is only true in-window, so a stale verdict here
+          // is a genuine in-RTH outage.
+          market_hours_stale: overrideStatus === "stale",
           status_label: playHb.stale
             ? `Cron stale · engine tick ${hbAgeMin}m ago (stale)`
             : `Cron stale · engine tick ${hbAgeMin}m ago (heartbeat only)`,
@@ -265,6 +285,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     stale: jobs.filter((j) => j.status === "stale").length,
     failed: jobs.filter((j) => j.status === "failed").length,
     unknown: jobs.filter((j) => j.status === "unknown").length,
+    market_hours_stale: jobs.filter((j) => j.market_hours_stale).length,
   };
 
   const jobNameByKey = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j.name]));

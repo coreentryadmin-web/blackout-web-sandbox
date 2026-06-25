@@ -26,7 +26,7 @@ const JOB_ICONS: Record<string, string> = {
 };
 
 // Crons the admin run/warm endpoint (/api/admin/cron/run) can dispatch. Keep in sync with
-// CRON_HANDLERS in src/app/api/admin/cron/run/route.ts — only these show a "Run now" button.
+// CRON_DISPATCH in src/lib/cron-dispatch.ts — only these show a "Run now" button.
 const RUNNABLE_CRONS = new Set([
   "flow-ingest",
   "uw-cache-refresh",
@@ -159,7 +159,9 @@ function CronJobCard({
   index: number;
   onRan: () => void;
 }) {
-  const tone = statusTone(job.status);
+  // A market-hours warmer stale DURING RTH is a live-data emergency (#90), not a soft "amber"
+  // staleness — paint it red so it's impossible to miss on the fleet grid.
+  const tone = job.market_hours_stale ? "bear" : statusTone(job.status);
   const total24 = job.runs_24h.ok + job.runs_24h.failed + job.runs_24h.skipped;
   const okShare = total24 > 0 ? job.runs_24h.ok / total24 : 0;
   const extra = nhJobMeta(job);
@@ -187,7 +189,7 @@ function CronJobCard({
         </div>
         <span className={clsx("admin-cron-card-badge", `admin-cron-card-badge-${tone}`)}>
           <span className={clsx("admin-cron-card-dot", job.status === "healthy" && "admin-cron-card-dot-pulse")} />
-          {statusLabel(job.status)}
+          {job.market_hours_stale ? "RTH-STALE" : statusLabel(job.status)}
         </span>
       </header>
 
@@ -329,6 +331,13 @@ export function AdminCronDashboard() {
     [data]
   );
 
+  // The #90 blind spot, made loud: market-hours warmers stale RIGHT NOW during RTH. When any
+  // exist we render a red alert strip above everything else so it can never be invisible again.
+  const rthStaleJobs = useMemo(
+    () => data?.jobs.filter((j) => j.market_hours_stale) ?? [],
+    [data]
+  );
+
   const fleetScore = useMemo(() => {
     if (!data) return 0;
     const { healthy, warning, total, failed, stale } = data.summary;
@@ -404,6 +413,25 @@ export function AdminCronDashboard() {
           </>
         }
       />
+
+      {rthStaleJobs.length > 0 && (
+        <div className="admin-cron-rth-alert" role="alert">
+          <div className="admin-cron-rth-alert-head">
+            <span className="admin-cron-rth-alert-dot" aria-hidden />
+            <span className="admin-cron-rth-alert-title">
+              {rthStaleJobs.length} market-hours cron{rthStaleJobs.length > 1 ? "s" : ""} STALE during RTH — live data is breaking
+            </span>
+          </div>
+          <ul className="admin-cron-rth-alert-list">
+            {rthStaleJobs.map((j) => (
+              <li key={j.key} className="admin-cron-rth-alert-item">
+                <span className="admin-cron-rth-alert-job">{j.name}</span>
+                <span className="admin-cron-rth-alert-detail">{j.status_label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {data.diagnostics_note && (
         <GlassPanel kicker="Diagnostics" title="Fleet note" accent="amber">

@@ -39,11 +39,17 @@ export async function notifyPlayDiscord(input: {
 // every alert.
 let opsFallbackWarned = false;
 
+/**
+ * Post an ops alert to Discord. Returns `true` ONLY if the message was actually delivered to a
+ * webhook — `false` if NO webhook is configured (silent drop) or delivery failed. Callers that
+ * MUST be heard (e.g. the cron-staleness watchdog) check the return value so an alert that went
+ * nowhere is surfaced loudly instead of vanishing. Never throws.
+ */
 export async function notifyOpsDiscord(input: {
   title: string;
   body: string;
   severity?: "critical" | "warning" | "info";
-}): Promise<void> {
+}): Promise<boolean> {
   // N-2: Warn ONCE per process if ops alerts will fall back to the play webhook (could pollute
   // the trade channel). Logging this on every alert just spams stderr every ~20 min.
   if (!process.env.DISCORD_OPS_WEBHOOK_URL && !opsFallbackWarned) {
@@ -53,11 +59,19 @@ export async function notifyOpsDiscord(input: {
   const url =
     process.env.DISCORD_OPS_WEBHOOK_URL?.trim() ||
     process.env.DISCORD_PLAY_WEBHOOK_URL?.trim();
-  if (!url) return;
+  if (!url) {
+    // No ops AND no play webhook: the alert has nowhere to go. This is the silent-no-op the #90
+    // post-mortem flagged — make it LOUD so it shows up in logs even though we can't reach Discord.
+    console.error(
+      `[notify] ops alert DROPPED — neither DISCORD_OPS_WEBHOOK_URL nor DISCORD_PLAY_WEBHOOK_URL is set. ` +
+        `Lost alert: ${input.title}`
+    );
+    return false;
+  }
 
   const emoji =
     input.severity === "critical" ? "🚨" : input.severity === "warning" ? "⚠️" : "ℹ️";
   const content = `${emoji} **${input.title}**\n${input.body}`.slice(0, 1900);
 
-  await postDiscordWebhook(url, { content }, "ops");
+  return postDiscordWebhook(url, { content }, "ops");
 }
