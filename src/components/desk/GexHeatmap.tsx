@@ -2693,7 +2693,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                 label="Call Wall"
                 value={posWall != null ? fmtStrike(posWall) : "—"}
                 sublabel="Resistance / pin"
-                tone="wall"
+                tone="bull"
                 active={posWall != null}
                 help={METRIC_HELP.callWall}
                 delta={gexTileDeltas?.callWall ?? null}
@@ -3192,7 +3192,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   lens === "gex"
                     ? [
                         { label: "Spot", value: spot > 0 ? spot : null, tone: "cyan", help: METRIC_HELP.spot },
-                        { label: "Gamma flip", value: flip, tone: "gold", help: METRIC_HELP.gammaFlip },
+                        { label: "Gamma flip", value: flip, tone: "sky", help: METRIC_HELP.gammaFlip },
                         { label: "Call wall", value: posWall, tone: "bull", help: METRIC_HELP.callWall },
                         { label: "Put wall", value: negWall, tone: "bear", help: METRIC_HELP.putWall },
                         { label: "Max pain", value: maxPain, tone: "sky", help: METRIC_HELP.maxPain },
