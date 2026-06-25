@@ -83,7 +83,7 @@ function FeatureCards({
 export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const path = usePathname();
   const isHome = path === "/";
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAuth();
   const reduced = useReducedMotion();
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -102,14 +102,18 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const isFeatureActive = FEATURE_LINKS.some((l) => path.startsWith(l.href));
   const solid = scrolled || !isHome; // single source of truth for the solid surface
 
-  // admin check — fetch at most once per browser session
+  // admin check — fetched once per (browser session × USER). The cache key is scoped to userId so a
+  // different user signing in within the same tab (e.g. admin → non-admin) can NEVER inherit the
+  // previous user's cached flag and see a stale "Admin" nav link. (The /admin route + every /api/admin
+  // endpoint are server-protected regardless — this governs only the cosmetic nav link.)
   useEffect(() => {
     if (!isLoaded) return;
-    if (!isSignedIn) {
+    if (!isSignedIn || !userId) {
       setIsAdmin(false);
       return;
     }
-    const cached = sessionStorage.getItem("__admin_flag");
+    const cacheKey = `__admin_flag:${userId}`;
+    const cached = sessionStorage.getItem(cacheKey);
     if (cached !== null) {
       setIsAdmin(cached === "1");
       return;
@@ -121,7 +125,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
         if (cancelled) return;
         const isAdminUser = Boolean(data?.admin);
         setIsAdmin(isAdminUser);
-        sessionStorage.setItem("__admin_flag", isAdminUser ? "1" : "0");
+        sessionStorage.setItem(cacheKey, isAdminUser ? "1" : "0");
       })
       .catch(() => {
         if (!cancelled) setIsAdmin(false);
@@ -129,7 +133,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, userId]);
 
   // scroll-aware: hysteresis (on at 16px, off at 8px) + progress hairline var
   useEffect(() => {
