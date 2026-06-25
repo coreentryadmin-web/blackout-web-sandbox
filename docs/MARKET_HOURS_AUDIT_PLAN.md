@@ -32,6 +32,12 @@ If market is CLOSED (before 6:30 / after 1 PM PT / weekend): do a light infra ch
 - Admin health (/admin or /api/admin/health): UW (≤2 RPS cluster-wide) — no 429s / circuit-breaker trips; Polygon/Massive — no errors; Redis — connected, no ETIMEDOUT; Postgres — no pool exhaustion / errors; WebSockets (options + polygon) — connected + fresh (not stale-churning).
 - No fabricated values (missing data → "—", never a fake 0 / now()). No sub-AA contrast on live numbers. Launch gating intact (locked tools 403 for non-admins; admin bypass). No data leaking into URLs/embeds.
 
+### 3b. Realtime-update validation (EVERY cycle, all RTH days — is the site auto-updating with NO manual refresh?)
+- For 2–3 rotating tool pages (SPX desk / HELIX / Heat Maps / Night's Watch), confirm the numericals AUTO-UPDATE without a manual refresh. Method: in the browser bridge run `performance.getEntriesByType('resource')` and confirm the page is RE-FETCHING its data endpoints on the expected cadence — Heat Maps matrix `/api/market/gex-heatmap` ~20s + quote `/api/market/quote` ~1.5s; Night's Watch `/api/account/positions` ~5s (RTH); SPX desk spot via live WS. OR read a rendered value, wait ~25–40s, re-read, confirm it changed.
+- GOTCHA: SWR pauses `refreshInterval` while the tab is hidden (`document.visibilityState==='hidden'`) — a CDP-driven tab reads hidden, so judge cadence by the resource-timing / code, not by "it didn't change while hidden". `revalidateOnFocus:true` (heatmap) means it refreshes on tab-return.
+- FLAG any surface that is refresh-only (fetches once, never re-polls), whose poll fired but the VALUE is frozen (cache not warming → cron/staleness issue), or that lags the live underlying beyond its cache TTL.
+- The one-time faster-update DESIGN (poll→SSE/WS push, free cache-polling, the rate-limit-safety proof) is a separate research deliverable; THIS recurring step just proves the auto-update keeps working day-to-day across the week.
+
 ### 4. Mock interactions (exercise the lifecycle live)
 - Place 1-2 dummy Night's Watch trades (vary call/put/long/short) → confirm they value within a cycle; then clean up extras (keep one for the running #74 check).
 - Ask Largo 2-3 RANDOM questions (a level, a position read, a "what's the gamma setup") → confirm answers are grounded in live data + numerically correct + cite the right ticker.
