@@ -2659,10 +2659,36 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     return bestExp;
   }, [matrixMagnetStrike, cells, expiries]);
 
-  // PER-DAY magnets across the Matrix columns are computed in Step 4 (next commit).
-  // For now this is an empty map so the per-day cell markers stay inert — the paired-view
-  // restructure (Step 3) ships with no behavior change to the magnet layer.
-  const perDayMagnetByExpiry = useMemo<Record<string, number>>(() => ({}), []);
+  // ── PER-DAY magnets across the Matrix columns (Step 4) ───────────────────────
+  // For EACH expiry column, the per-day magnet = the strike with argmax|cell net GEX| in
+  // that column — a SUBTLE gold marker on that cell. This complements the ONE prominent
+  // OVERALL magnet (max across all columns, matrixMagnetStrike/Expiry). Map keyed by expiry
+  // → owning strike; null-safe (a column with no finite/non-zero cells contributes nothing).
+  // Pure over `cells`/`expiries`/`strikes` (no Math.random/Date) → render-safe (#418).
+  // Tie-stable: strikes are scanned ASCENDING so an exact |value| tie keeps the lowest strike,
+  // matching the magnetStrike() tie-break convention. The Gamma Profile stays ONE magnet (it
+  // renders a single aggregated series, not per-expiry columns) — this only affects the matrix.
+  const perDayMagnetByExpiry = useMemo<Record<string, number>>(() => {
+    const out: Record<string, number> = {};
+    // Ascending strike order for deterministic tie-breaks (lowest strike wins a tie).
+    const strikesAsc = [...strikes].sort((a, b) => a - b);
+    for (const e of expiries) {
+      let bestStrike: number | null = null;
+      let bestMag = 0;
+      for (const sNum of strikesAsc) {
+        const v = cells[String(sNum)]?.[e];
+        if (typeof v !== "number" || v === 0) continue;
+        const mag = Math.abs(v);
+        // Strict `>` keeps the first (lowest) strike on a tie.
+        if (mag > bestMag) {
+          bestMag = mag;
+          bestStrike = sNum;
+        }
+      }
+      if (bestStrike != null) out[e] = bestStrike;
+    }
+    return out;
+  }, [cells, expiries, strikes]);
 
   // ── Matrix auto-center on the SPOT row (the anchoring) ───────────────────────
   // The matrix lists strikes high→low and mounts fresh each time its tab is opened (the
@@ -3099,6 +3125,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <MagnetGlyph size={11} />
             <span aria-hidden>magnet</span>
             <span className="text-white">{fmtStrike(matrixMagnetStrike)}</span>
+          </span>
+        )}
+        {/* Per-day magnet legend (Step 4) — the subtle ring/dot marking each expiry
+            column's own dominant strike. Only shown when ≥1 column has a per-day magnet. */}
+        {Object.keys(perDayMagnetByExpiry).length > 0 && (
+          <span className="flex items-center gap-1.5 text-gold/80">
+            <span
+              aria-hidden
+              className="h-2 w-2 rounded-sm"
+              style={{ outline: "1px solid rgba(255,210,63,0.7)", outlineOffset: "-1px" }}
+            />
+            <span aria-hidden>per-day magnet</span>
           </span>
         )}
       </div>
