@@ -453,7 +453,9 @@ export async function buildPositionDetail(
       regime: null,
       gammaFlip: gex.gex.flip,
       maxPain: gex.max_pain,
-      kingStrike: gex.gex.call_wall, // heatmap's largest +gamma strike ≈ "king"
+      // King = argmax|net_gex| over strike_totals (Heatmap KING NODE + desk gex_king rule),
+      // NOT call_wall (largest +gamma) — so all tools name the same king strike.
+      kingStrike: kingFromStrikeTotals(gex.gex.strike_totals) ?? gex.gex.call_wall,
       walls: gexWallsFromHeatmapSpot(gex),
     };
   }
@@ -619,6 +621,28 @@ export async function buildPositionDetail(
 // ---------------------------------------------------------------------------
 // Section builders / context assembly
 // ---------------------------------------------------------------------------
+
+/** King strike = argmax over strikes of |net_gex| — the SAME rule the Heatmap's KING NODE
+ *  (kingNodeStrike) and the desk's gex_king (gamma-desk analyzeStrikeGexRows, ranked by
+ *  Math.abs(net_gex)) use, so all tools crown the same strike (often the put wall). Replaces the
+ *  old `call_wall` (largest +gamma) pick, which disagreed with the Heatmap. Tie-stable on the
+ *  lowest strike; zero-only totals → null. Pure (no Math.random/Date), safe in render (#418). */
+function kingFromStrikeTotals(totals: Record<string, number>): number | null {
+  let king: number | null = null;
+  let best = 0;
+  const entries = Object.entries(totals)
+    .map(([s, v]) => ({ strike: Number(s), value: v }))
+    .filter((e) => Number.isFinite(e.strike))
+    .sort((a, b) => a.strike - b.strike);
+  for (const e of entries) {
+    const mag = Math.abs(e.value);
+    if (mag > best) {
+      best = mag;
+      king = e.strike;
+    }
+  }
+  return king;
+}
 
 /** GexHeatmap → GexWall[] with distance from spot. `kind` is GEOMETRIC (strike vs spot), matching the
  *  GexWall contract the verdict engine assumes — call_wall/put_wall are NOT guaranteed to sit on the
