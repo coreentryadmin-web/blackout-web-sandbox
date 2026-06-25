@@ -5571,7 +5571,10 @@ body {
   }
 
   .spx-structure-card-body {
-    @apply px-2 py-2 space-y-0.5 max-h-[140px] xl:max-h-[120px] overflow-y-auto;
+    /* No fixed max-h: the 0DTE level ladder (the most actionable rows) must be
+       visible without scrolling. Was max-h-[140px]/xl:max-h-[120px] which
+       buried the ladder below an overflow-y-auto scroll. */
+    @apply px-2 py-2 space-y-0.5;
   }
 
   .spx-structure-divider {
@@ -5591,7 +5594,10 @@ body {
   }
 
   .spx-structure-value {
-    @apply font-mono text-[10px] font-semibold tabular-nums;
+    /* Decision data must be the largest type in the card: value (13px) > label
+       (10px) so the hierarchy is glanceable in <2s. Was text-[10px], the same
+       size as its label. */
+    @apply font-mono text-[13px] font-semibold tabular-nums;
   }
 
   .spx-structure-level {
