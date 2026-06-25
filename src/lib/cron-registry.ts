@@ -85,6 +85,17 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm shared option-chain cache for all open user positions so Night's Watch GETs are pure cache hits",
   },
   {
+    key: "heatmap-warm",
+    name: "Heat Maps Warm",
+    kind: "http",
+    path: "/api/cron/heatmap-warm",
+    schedule_label: "~Every 30s (market hours)",
+    stale_after_min: 10,
+    weekdays_only: true,
+    market_hours_only: true,
+    description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Heat Maps presets so user GETs are pure cache hits (no cold-build bursts)",
+  },
+  {
     key: "db-cleanup",
     name: "DB Cleanup",
     kind: "http",

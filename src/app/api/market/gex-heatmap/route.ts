@@ -7,8 +7,10 @@ import type {
   GexHeatmapOverlays,
 } from "@/lib/providers/polygon-options-gex";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
+import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { requireToolApi } from "@/lib/tool-access-server";
+import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,10 +125,22 @@ async function buildDarkPoolLevels(ticker: string): Promise<GexDarkPoolLevel[] |
   }
 }
 
+/** The overlay-free (matrix-only) contract — both overlays unavailable, never fabricated. */
+const NO_OVERLAYS: GexHeatmapOverlays = { flow_by_strike: null, dark_pool_levels: null };
+
 /**
  * Cached overlay enrichment — one upstream fetch per ticker per TTL, shared across all users.
  * In-memory first, then Redis (cross-replica), else compute + write both. Best-effort: a
  * Redis miss/error just recomputes; the builders themselves never throw.
+ *
+ * CLUSTER-WIDE UW BUDGET PROTECTION: the UW overlay fetches (flow-per-strike + dark-pool) are
+ * the ONLY part of the heatmap that touches UW's 2-RPS budget. They are gated to a small
+ * server-side allowlist (preset chips + known-liquid names) so 1000 users on distinct tickers
+ * can't each mint a fresh UW fetch and starve the desk/Largo/Night Hawk/HELIX. Off-allowlist
+ * symbols serve the overlay-free contract (matrix only) — the matrix itself is a pure Polygon
+ * cache-reader and works for any ticker. A request-time circuit also drops overlays whenever the
+ * UW breaker is open (a 429 storm), so the heatmap degrades to matrix-only instead of piling onto
+ * a saturated UW. A warm overlay cache is STILL honored in both cases (it's already-paid data).
  */
 async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatmapOverlays> {
   const now = Date.now();
@@ -144,6 +158,16 @@ async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatma
   } catch {
     /* redis optional */
   }
+
+  // No warm cache → decide whether we're allowed to spend a fresh UW overlay fetch.
+  // (a) Off-allowlist tickers NEVER fetch overlays — serve the matrix-only contract. This is
+  //     what keeps 1000 distinct-ticker users from each minting a UW fetch.
+  // (b) Allowlisted tickers still drop overlays while the UW circuit breaker is open (429 storm)
+  //     so the heatmap degrades to matrix-only instead of piling onto a saturated UW.
+  // Neither case writes the overlay cache (we don't want to pin a `null` payload over a key that
+  // a warm path could legitimately fill once the breaker clears / for a real allowlisted name).
+  if (!isHeatmapOverlayAllowed(ticker)) return NO_OVERLAYS;
+  if (isUwCircuitOpen()) return NO_OVERLAYS;
 
   const [flow_by_strike, dark_pool_levels] = await Promise.all([
     buildFlowByStrike(ticker, strikes),

@@ -1,0 +1,22 @@
+# Railway config for the Heat-Maps-Warm cron service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.heatmap-warm.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/heatmap-warm"
+# Every minute during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
+# 11-21 UTC spans ~7AM-5PM ET. The route's in-process ET gate (inMarketHours, 9:30AM-4:00PM
+# ET weekdays, DST-aware) self-skips the pre-open / off-band minutes, so warms only fire while
+# the chains actually move. Mirrors railway.nights-watch-warm.toml's market-hours band convention.
+# NOTE: Railway cron granularity is per-MINUTE (standard 5-field cron), so this fires once/min.
+# The matrix's own ~20s TTL + the in-process single-flight guard + organic traffic cover the
+# sub-minute gap (the cron exists to KILL cold-build bursts at TTL boundaries, not to be the sole
+# refresh path). To warm more often than 1/min, run a second trigger service on this same TOML.
+# NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard
+# value overrides this TOML, so update it there too.
+cronSchedule = "* 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

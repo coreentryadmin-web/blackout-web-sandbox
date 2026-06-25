@@ -7,7 +7,7 @@ import type {
 } from "@/lib/providers/polygon-options-gex";
 import { anthropicText, anthropicConfigured } from "@/lib/providers/anthropic";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { gexContextBlock } from "@/lib/providers/gex-positioning";
+import { gexContextBlock, gexContextLine } from "@/lib/providers/gex-positioning";
 import { requireToolApi } from "@/lib/tool-access-server";
 
 export const runtime = "nodejs";
@@ -119,6 +119,96 @@ async function buildContext(
 }
 
 /**
+ * The set of PRICE LEVELS the narrative is allowed to cite — every strike on the matrix axis plus
+ * the named levels (flip / call wall / put wall / max pain / DEX & CHARM zero-levels / spot) and any
+ * dark-pool overlay price levels. These are the ONLY numbers a grounded desk read should name as a
+ * price. Built fresh from the SAME cached matrix the prompt was built from — never fabricated.
+ */
+function knownPriceLevels(hm: GexHeatmap, overlays: GexHeatmapOverlays | null): number[] {
+  const levels = new Set<number>();
+  const add = (n: number | null | undefined) => {
+    if (n != null && Number.isFinite(n) && n > 0) levels.add(Number(n));
+  };
+  for (const s of hm.strikes) add(s);
+  add(hm.spot);
+  add(hm.max_pain);
+  add(hm.gex?.flip);
+  add(hm.gex?.call_wall);
+  add(hm.gex?.put_wall);
+  add(hm.vex?.flip);
+  add(hm.vex?.pos_wall);
+  add(hm.vex?.neg_wall);
+  add(hm.dex?.zero_level);
+  add(hm.charm?.zero_level);
+  for (const lvl of overlays?.dark_pool_levels ?? []) add(lvl.price);
+  return Array.from(levels);
+}
+
+/**
+ * Cheap post-generation FABRICATION GUARD: extract every number in the prose that READS LIKE a
+ * price level and confirm it matches a known level within tolerance. The model is told to ground
+ * every level in the data, but that's only a prompt instruction — this verifies it. Returns true
+ * when the prose is grounded (or names no price levels at all), false when ANY cited price level is
+ * absent from the matrix → the caller falls back to the deterministic gexContextLine.
+ *
+ * Conservative by design — we only judge numbers that look like bare price levels and IGNORE:
+ *   • percentages ("0.42%"), which are day-change / distance figures, not levels;
+ *   • money magnitudes ("$688M", "$1.2B"), the net GEX/VEX figures;
+ *   • small integers <10 (sentence counts, "3 to 5 sentences", "0DTE");
+ * so we don't false-positive on legitimate non-level numbers. Tolerance scales with price so a
+ * "745" read against a 745.0 strike passes, but a hallucinated "812" on a 730–760 chain fails.
+ */
+function narrativeLevelsAreGrounded(
+  narrative: string,
+  hm: GexHeatmap,
+  overlays: GexHeatmapOverlays | null
+): boolean {
+  const known = knownPriceLevels(hm, overlays);
+  if (known.length === 0) return true; // nothing to check against → don't block
+
+  // Bracket of plausible levels for THIS chain — a number far outside the strike band can't be a
+  // real level even if it's numerically "close" to nothing. Use spot to anchor the absolute window.
+  const minKnown = Math.min(...known);
+  const maxKnown = Math.max(...known);
+  const tol = (lvl: number) => Math.max(lvl * 0.0015, 0.5); // ~0.15% or half a point
+
+  // Match decimal numbers; the trailing context lets us reject %/money/units in code below.
+  const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(narrative)) !== null) {
+    const raw = m[0];
+    const value = Number(raw.replace(/,/g, ""));
+    if (!Number.isFinite(value)) continue;
+
+    const start = m.index;
+    const end = start + raw.length;
+    const before = narrative.slice(Math.max(0, start - 1), start);
+    const after = narrative.slice(end, end + 2);
+
+    // Skip percentages and explicit money (those aren't price levels).
+    if (after.startsWith("%")) continue;
+    if (before === "$") continue;
+    // Skip a number immediately followed by a money/scale suffix (e.g. "688M", "1.2B", "250K").
+    if (/^[%MBK]/.test(after)) continue;
+    // Skip small integers — sentence counts, "0DTE", "3-5", single-digit references.
+    if (value < 10) continue;
+    // Only judge numbers that fall in (or very near) this chain's level band; anything wildly
+    // outside isn't being used as a price level for THIS ticker (e.g. a year, a count of contracts).
+    if (value < minKnown * 0.9 || value > maxKnown * 1.1) continue;
+
+    // Grounded iff it matches some known level within tolerance.
+    const grounded = known.some((lvl) => Math.abs(lvl - value) <= tol(lvl));
+    if (!grounded) {
+      console.warn(
+        `[market/gex-heatmap/explain] ungrounded level ${value} in narrative for ${hm.underlying} — falling back to deterministic read.`
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * GET /api/market/gex-heatmap/explain?ticker=SPY
  *
  * Returns a Largo desk-read narrative of the cached dealer positioning for `ticker`.
@@ -211,8 +301,27 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // FABRICATION GUARD (#12): the SYSTEM prompt tells the model to ground every level in the data,
+    // but a prompt is not a contract. Cheaply verify that any price level the prose NAMES actually
+    // exists on the matrix; if any cited level is hallucinated, discard the narrative and serve the
+    // deterministic, provably-grounded one-liner instead of shipping a fabricated number to a paying
+    // desk. The deterministic line is itself built ONLY from the matrix, so it's always safe.
+    let finalNarrative = narrative.trim();
+    if (!narrativeLevelsAreGrounded(finalNarrative, heatmap, overlays)) {
+      const deterministic = await gexContextLine(ticker).catch(() => null);
+      if (deterministic && deterministic.trim()) {
+        finalNarrative = deterministic.trim();
+      } else {
+        // No safe fallback available → never ship the ungrounded read.
+        return NextResponse.json(
+          { available: false, reason: "ungrounded", ticker },
+          { status: 200, headers: noStore }
+        );
+      }
+    }
+
     const asof = heatmap.asof ?? new Date().toISOString();
-    const entry: ExplainEntry = { at: now, narrative: narrative.trim(), asof };
+    const entry: ExplainEntry = { at: now, narrative: finalNarrative, asof };
 
     // Cache for everyone: bound the in-memory map, write Redis best-effort.
     if (explainMem.size > 200) explainMem.clear();

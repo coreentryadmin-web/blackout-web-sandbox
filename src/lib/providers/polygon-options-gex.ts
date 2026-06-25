@@ -2,6 +2,7 @@ import { polygonConfigured } from "./config";
 import { fetchStockSnapshot, fetchIndexSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
+import { isHeatmapPreset } from "../heatmap-allowlist";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -106,6 +107,42 @@ function isSpxFastMove(currentSpot: number): boolean {
   const oldest = spxPriceHistory[0].price;
   if (oldest <= 0) return false;
   return Math.abs(currentSpot - oldest) / oldest > 0.005;
+}
+
+// ── Per-ticker fast-move ring (heatmap presets) ────────────────────────────────
+// The SPX ring above is single-global (it backs the SPX desk bundle only). The heatmap
+// fast-move bypass needs PER-TICKER history so a >0.5% move in NVDA shortens NVDA's TTL
+// without touching SPY. Bounded to the warm presets at the call site so an arbitrary spread
+// of tickers can't grow this map. Mirrors the SPX ring's shape/window exactly.
+const heatmapPriceHistory = new Map<string, Array<{ price: number; at: number }>>();
+/** Fractional move that classifies a heatmap ticker as fast-moving (mirrors SPX's 0.5%). */
+const HEATMAP_FAST_MOVE_PCT = 0.005;
+
+/** Record a spot observation for a heatmap ticker's fast-move ring (preset tickers only). */
+function recordHeatmapPriceObservation(ticker: string, price: number): void {
+  if (!(price > 0)) return;
+  const now = Date.now();
+  const ring = heatmapPriceHistory.get(ticker) ?? [];
+  ring.push({ price, at: now });
+  const cutoff = now - SPX_HISTORY_WINDOW_MS;
+  while (ring.length > 0 && ring[0].at < cutoff) ring.shift();
+  heatmapPriceHistory.set(ticker, ring);
+}
+
+/**
+ * True when `ticker` has moved more than 0.5% across its in-window ring (oldest→newest).
+ * The newest ring entry is recorded on each fresh matrix compute, so this reflects the move
+ * SINCE the cache entry being served was built — exactly the signal needed to decide whether
+ * that cache entry is too stale to keep serving during a fast move. Returns false when the
+ * ring is too thin to judge (never fabricates a move).
+ */
+function isHeatmapFastMove(ticker: string): boolean {
+  const ring = heatmapPriceHistory.get(ticker);
+  if (!ring || ring.length < 2) return false;
+  const oldest = ring[0].price;
+  const newest = ring[ring.length - 1].price;
+  if (!(oldest > 0) || !(newest > 0)) return false;
+  return Math.abs(newest - oldest) / oldest > HEATMAP_FAST_MOVE_PCT;
 }
 
 function polygonGexCacheMs(): number {
@@ -814,6 +851,18 @@ const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
 /** In-memory mirror of the Redis matrix so co-located requests skip Redis too. */
 const cachedHeatmaps = new Map<string, { at: number; data: GexHeatmap }>();
 
+/**
+ * Single-flight guard for the matrix BUILD (cache-miss compute), keyed by cacheKey. Without it a
+ * cold preset under organic burst (or the warm cron racing a user GET) fires N concurrent
+ * resolveSpotSnapshot + fetchHeatmapBand chains for the SAME ticker — N× the upstream cost for
+ * one shared result. Concurrent callers that miss the cache AWAIT the in-flight build and read its
+ * result. Mirrors the coalescedInflight pattern in uw-rate-limiter. The entry is always cleared in
+ * a finally so a thrown build can't wedge the key. A forceRefresh build is NOT coalesced onto a
+ * normal in-flight build (it intentionally bypasses cache), but concurrent forceRefresh callers on
+ * the same key DO share one build.
+ */
+const heatmapInflight = new Map<string, Promise<GexHeatmap | null>>();
+
 // Bound the ticker dimension so an unusual spread of (garbage) tickers can't leak
 // memory. Insertion-order LRU + delete-oldest eviction, same pattern as
 // server-cache.ts:setStoreEntry / shared-cache.ts:setMemoryEntry. TTL/semantics
@@ -833,6 +882,25 @@ function gexHeatmapCacheMs(): number {
   const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 20);
   return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 20_000;
 }
+
+/**
+ * Negative-cache window for a NO-SPOT result (dead/unknown/transiently-quoteless ticker). Short
+ * by design: long enough to absorb a client's poll storm (so we don't re-fetch the spot snapshot
+ * every poll for a name with no quote), short enough that a name which momentarily had no spot
+ * isn't frozen empty for the full matrix TTL once it starts quoting again.
+ */
+const EMPTY_SPOT_NEGATIVE_TTL_MS = 10_000;
+
+/**
+ * Shortened accept-age for a SERVED heatmap entry during a preset fast move (>0.5% in-window).
+ * Mirrors the desk's fast-move intent: re-sync the matrix to the new price level quickly without
+ * abandoning caching entirely. Overridable via env; defaults to 5s.
+ */
+function gexHeatmapFastMoveTtlMs(): number {
+  const sec = Number(process.env.GEX_HEATMAP_FAST_MOVE_SEC ?? 5);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 5_000;
+}
+const GEX_HEATMAP_FAST_MOVE_TTL_MS = gexHeatmapFastMoveTtlMs();
 
 /**
  * Strike-banded options chain snapshot across ALL expiries in one paginated pass
@@ -1500,7 +1568,17 @@ export async function fetchGexHeatmap(
   // ONE cache key per ticker → GEX + VEX share a single cached chain fetch.
   const cacheKey = `${GEX_HEATMAP_CACHE_PREFIX}:${root}`;
   const now = Date.now();
-  const ttlMs = gexHeatmapCacheMs();
+  const baseTtlMs = gexHeatmapCacheMs();
+
+  // ── Fast-move freshness bypass (WARM PRESETS ONLY) ───────────────────────────
+  // Dealer GEX is otherwise served on a flat ~20s TTL even while price runs. For the ~11 warm
+  // presets we SHORTEN the acceptable cache age when that ticker has moved >0.5% across its
+  // in-window ring (recorded on each fresh compute below) so the matrix re-syncs to the new
+  // level sooner. Off-preset tickers keep the full 20s TTL — they have no per-ticker ring and
+  // aren't worth the extra recompute pressure. (DOCUMENTED tradeoff: a fast-moving off-preset
+  // name can serve up to ~20s-stale GEX.)
+  const fastMove = isHeatmapPreset(root) && isHeatmapFastMove(root);
+  const ttlMs = fastMove ? Math.min(baseTtlMs, GEX_HEATMAP_FAST_MOVE_TTL_MS) : baseTtlMs;
 
   if (!forceRefresh) {
     const mem = cachedHeatmaps.get(cacheKey);
@@ -1517,13 +1595,63 @@ export async function fetchGexHeatmap(
     }
   }
 
+  // ── Single-flight (#9): coalesce concurrent cache-miss builds for this ticker ──
+  // A cold preset under organic burst (or the warm cron racing a user GET) would otherwise fire
+  // N concurrent chain fetches for the SAME ticker. Share ONE in-flight build. forceRefresh shares
+  // with other forceRefresh callers but not with normal builds (it intentionally bypasses cache).
+  const inflightKey = forceRefresh ? `${cacheKey}:force` : cacheKey;
+  const existing = heatmapInflight.get(inflightKey);
+  if (existing) return existing;
+
+  const build = buildGexHeatmapUncached(root, optionsRoot, cacheKey, now, baseTtlMs).finally(
+    () => {
+      heatmapInflight.delete(inflightKey);
+    }
+  );
+  heatmapInflight.set(inflightKey, build);
+  return build;
+}
+
+/**
+ * The uncached matrix BUILD: resolve spot, fetch the banded chain, compute the full GEX/VEX/DEX/
+ * CHARM matrix + levels + shift + history context, then cache it (in-memory + Redis). Always
+ * caches via the FULL base TTL (`baseTtlMs`) — the fast-move bypass only shortens how long a
+ * SERVED entry is accepted, never how long it's stored. Wrapped by fetchGexHeatmap's single-flight
+ * so only one of these runs per ticker at a time.
+ */
+async function buildGexHeatmapUncached(
+  root: string,
+  optionsRoot: string,
+  cacheKey: string,
+  now: number,
+  ttlMs: number
+): Promise<GexHeatmap | null> {
   // Resolve spot + day change% from the same root. INDEX roots (I:SPX/NDX/RUT/VIX) must use
   // the indices snapshot — the stocks snapshot returns no row for I:* and yields spot 0.
   const snap = await resolveSpotSnapshot(optionsRoot);
   const spot = snap?.price ?? 0;
-  // Graceful empty: no spot (thin / unknown name) → valid empty payload, NOT a throw.
-  if (!(spot > 0)) return emptyHeatmap(root);
+  // Graceful empty: no spot (thin / unknown / dead name) → valid empty payload, NOT a throw.
+  // CRITICAL: cache this empty result with the SAME ctx the sibling empty paths pass (below),
+  // otherwise a dead/unknown ticker re-runs resolveSpotSnapshot — a fresh Polygon spot fetch —
+  // on EVERY poll (a per-poll upstream spot leak). A short negative-cache TTL is enough to absorb
+  // the poll storm without pinning a transient outage too long: a name that just had no spot this
+  // instant shouldn't be frozen empty for the full 20s matrix TTL once it recovers.
+  if (!(spot > 0)) {
+    return emptyHeatmap(root, {
+      spot: 0,
+      changePct: 0,
+      now,
+      cacheKey,
+      ttlMs: Math.min(ttlMs, EMPTY_SPOT_NEGATIVE_TTL_MS),
+    });
+  }
   const changePct = snap?.change_pct ?? 0;
+
+  // Feed the per-ticker fast-move ring on every fresh PRESET compute so isHeatmapFastMove can
+  // actually fire on the next cache-read; without this the ring stays empty and the bypass above
+  // is dead code (the SAME bug the SPX desk bundle's recordSpxPriceObservation call guards against).
+  // Preset-only — keeps the ring map bounded to ~11 keys.
+  if (isHeatmapPreset(root)) recordHeatmapPriceObservation(root, spot);
 
   // Band sizing stays RELATIVE (% of spot) so it works for $5 and $900 names.
   const contracts = await fetchHeatmapBand(optionsRoot, spot, 0.04);
