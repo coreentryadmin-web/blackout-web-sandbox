@@ -381,19 +381,19 @@ function filterStrikeTotals(
 }
 
 /**
- * The KING NODE strike = argmax over strikes of |aggregate net exposure| — the single
+ * The MAGNET strike = argmax over strikes of |aggregate net exposure| — the single
  * dominant dealer-gamma concentration in the current view (the strongest pin/magnet).
  * Computed from the SAME per-strike totals the caller is rendering (server `strike_totals`
  * for the all-expiry matrix, the client-filtered totals for a scoped profile) so the marker
  * always lands on the bar/row it's looking at.
  *
  * Null-safe + tie-stable: empty input → null; on an exact |value| tie the FIRST strike
- * (lowest, ascending) wins deterministically so the king never flickers between equals.
+ * (lowest, ascending) wins deterministically so the magnet never flickers between equals.
  * Zero-only input (every total 0) → null (no magnet to mark). No Math.random/Date — pure
  * over the passed totals, so it's safe in render (#418).
  */
-function kingNodeStrike(totals: Record<string, number>): number | null {
-  let king: number | null = null;
+function magnetStrike(totals: Record<string, number>): number | null {
+  let magnet: number | null = null;
   let best = 0;
   // Ascending strike order makes the tie-break deterministic (first/lowest strike wins).
   const entries = Object.entries(totals)
@@ -405,10 +405,10 @@ function kingNodeStrike(totals: Record<string, number>): number | null {
     // Strict `>` keeps the first strike on a tie; `mag > 0` skips zero-only totals.
     if (mag > best) {
       best = mag;
-      king = e.strike;
+      magnet = e.strike;
     }
   }
-  return king;
+  return magnet;
 }
 
 /**
@@ -617,6 +617,40 @@ const PRESET_TICKERS = [
   "SPY", "SPX", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "AMD", "META", "AMZN", "GOOGL",
 ];
 
+/**
+ * MAGNET marker — a clean inline gold horseshoe-magnet glyph (replacing the prior ♔ crown,
+ * which rendered inconsistently as an emoji across platforms). Pure SVG so it's pixel-stable
+ * everywhere, inherits `currentColor` (we drive it gold via the wrapping span's text color),
+ * and carries no motion (static — reduced-motion safe). `size` scales it inline with adjacent
+ * text. aria-hidden: the meaning is always carried by an adjacent text label.
+ */
+function MagnetGlyph({ size = 11, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+      className={className}
+      style={{ display: "inline-block", verticalAlign: "-0.12em" }}
+    >
+      {/* Horseshoe magnet: a U-shaped body with two poles + tip bands. Stroke uses
+          currentColor so the parent's gold text color tints the whole glyph. */}
+      <path
+        d="M6 3v8a6 6 0 0 0 12 0V3"
+        stroke="currentColor"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      {/* the two pole tips (bands) — short crossbars marking the magnet poles */}
+      <path d="M4.5 3h3M16.5 3h3" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Exposure profile (the hero) — vertical strike ladder of net exposure bars
 // ---------------------------------------------------------------------------
@@ -641,7 +675,7 @@ function ExposureProfile({
   peak,
   spot,
   flip,
-  kingStrike,
+  magnetStrike: magnet,
   lens,
   showFlow,
   flowPeak,
@@ -653,12 +687,12 @@ function ExposureProfile({
   spot: number;
   flip: number | null;
   /**
-   * The KING NODE strike — the dominant dealer-gamma concentration (max |net| in this
-   * scope). The row on this strike gets a gold ♔ marker + "KING NODE" label + gold ring,
+   * The MAGNET strike — the dominant dealer-gamma concentration (max |net| in this
+   * scope). The row on this strike gets a gold pin marker + "MAGNET" label + gold ring,
    * marking the strongest pin/magnet on top of its emerald/bear magnitude bar. Null when
    * there's nothing to mark (empty / all-zero scope).
    */
-  kingStrike: number | null;
+  magnetStrike: number | null;
   lens: Lens;
   showFlow: boolean;
   flowPeak: number;
@@ -784,9 +818,9 @@ function ExposureProfile({
         const positive = r.value > 0;
         const barColor = positive ? c.posHex : c.negHex;
         const wall = r.isPosWall || r.isNegWall;
-        // KING NODE — the dominant net-exposure strike in this scope. Gold marker + ring
+        // MAGNET — the dominant net-exposure strike in this scope. Gold marker + ring
         // sit ON TOP of the bar's own emerald/bear magnitude color (gold ≠ magnitude).
-        const isKing = kingStrike != null && r.strike === kingStrike;
+        const isMagnet = magnet != null && r.strike === magnet;
 
         // ── Flow overlay: net premium hitting this strike, colored bull/bear. ──
         const flow = showFlow ? r.flow : null;
@@ -833,18 +867,18 @@ function ExposureProfile({
             <div
               className={clsx(
                 "group relative flex items-center gap-2 rounded-sm py-0.5 pr-1",
-                // KING NODE ring wins the row treatment (the dominant node should pop hardest):
+                // MAGNET ring wins the row treatment (the dominant node should pop hardest):
                 // a gold 2px outline + gold wash, distinct from the spot row's cyan outline.
-                isKing
+                isMagnet
                   ? "outline outline-2 outline-gold/80 bg-gold/[0.10]"
                   : r.isSpot
                     ? "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.06]"
                     : i === flipRowIdx && "bg-gold/[0.06]"
               )}
-              style={isKing ? { boxShadow: "inset 0 0 18px rgba(255,210,63,0.10)" } : undefined}
+              style={isMagnet ? { boxShadow: "inset 0 0 18px rgba(255,210,63,0.10)" } : undefined}
               title={
-                isKing
-                  ? `KING NODE · ${fmtStrike(r.strike)} · ${fmtMoney(r.value)} — dominant dealer gamma node`
+                isMagnet
+                  ? `MAGNET · ${fmtStrike(r.strike)} · ${fmtMoney(r.value)} — dominant dealer gamma node`
                   : `${fmtStrike(r.strike)} · ${fmtMoney(r.value)}`
               }
             >
@@ -852,7 +886,7 @@ function ExposureProfile({
               <span
                 className={clsx(
                   "w-14 shrink-0 text-right font-mono text-[11px] tabular-nums",
-                  isKing
+                  isMagnet
                     ? "font-bold text-gold"
                     : r.isSpot
                       ? "font-bold text-white"
@@ -862,13 +896,13 @@ function ExposureProfile({
                 )}
               >
                 <span className="inline-flex items-center justify-end gap-1">
-                  {/* KING NODE crown — gold ♔, the unmistakable dominant-node marker. */}
-                  {isKing && (
-                    <span className="text-gold" title="KING NODE — dominant dealer gamma node" aria-hidden>
-                      ♔
+                  {/* MAGNET pin — gold horseshoe-magnet glyph, the unmistakable dominant-node marker. */}
+                  {isMagnet && (
+                    <span className="text-gold" title="MAGNET — dominant dealer gamma node">
+                      <MagnetGlyph size={11} />
                     </span>
                   )}
-                  {r.isSpot && !isKing && <span className="text-cyan-400">●</span>}
+                  {r.isSpot && !isMagnet && <span className="text-cyan-400">●</span>}
                   {fmtStrike(r.strike)}
                 </span>
               </span>
@@ -901,11 +935,11 @@ function ExposureProfile({
                     left: positive ? "50%" : undefined,
                     right: positive ? undefined : "50%",
                     backgroundColor: barColor,
-                    // KING NODE bar keeps its emerald/bear magnitude fill, but gets a gold
+                    // MAGNET bar keeps its emerald/bear magnitude fill, but gets a gold
                     // ring + glow on TOP so the dominant node is unmistakable. The ring is an
                     // outline (static, opacity-only glow) — reduced-motion safe.
-                    outline: isKing ? "1.5px solid #ffd23f" : undefined,
-                    boxShadow: isKing
+                    outline: isMagnet ? "1.5px solid #ffd23f" : undefined,
+                    boxShadow: isMagnet
                       ? "0 0 12px rgba(255,210,63,0.85)"
                       : wall
                         ? `0 0 10px ${barColor}`
@@ -949,24 +983,24 @@ function ExposureProfile({
                 {fmtMoneySigned(r.value)}
               </span>
               <span className="ml-auto w-16 shrink-0 text-left">
-                {/* KING NODE tag — leads the row's tag slot when this is the dominant node. */}
-                {isKing && (
-                  <span className="font-mono text-[8px] font-bold uppercase tracking-wider text-gold">
-                    ♔ King
+                {/* MAGNET tag — leads the row's tag slot when this is the dominant node. */}
+                {isMagnet && (
+                  <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-gold">
+                    <MagnetGlyph size={9} /> Magnet
                   </span>
                 )}
                 {/* Wall tags only exist on GEX/VEX (DEX/CHARM have no walls → these never fire). */}
-                {!isKing && r.isPosWall && (
+                {!isMagnet && r.isPosWall && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
                     {lens === "gex" ? "call" : "+vex"}
                   </span>
                 )}
-                {!isKing && r.isNegWall && (
+                {!isMagnet && r.isNegWall && (
                   <span className="font-mono text-[8px] uppercase tracking-wider text-gold">
                     {lens === "gex" ? "put" : "−vex"}
                   </span>
                 )}
-                {!isKing && flow != null && netFlow !== 0 && !r.isPosWall && !r.isNegWall && (
+                {!isMagnet && flow != null && netFlow !== 0 && !r.isPosWall && !r.isNegWall && (
                   <span
                     className="font-mono text-[8px] uppercase tracking-wider"
                     style={{ color: flowHex }}
@@ -998,12 +1032,12 @@ function ExposureProfile({
         </span>
       </div>
 
-      {/* KING NODE legend — explains the gold ♔ marker (the dominant node). Only when one
+      {/* MAGNET legend — explains the gold pin marker (the dominant node). Only when one
           is marked in the rendered scope. */}
-      {kingStrike != null && (
+      {magnet != null && (
         <div className="mt-2 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-gold">
-          <span aria-hidden>♔</span>
-          KING NODE · {fmtStrike(kingStrike)} — dominant dealer {v.noun.toLowerCase()} node (strongest pin/magnet)
+          <MagnetGlyph size={10} />
+          MAGNET · {fmtStrike(magnet)} — dominant dealer {v.noun.toLowerCase()} node (strongest pin/magnet)
         </div>
       )}
 
@@ -1764,21 +1798,21 @@ function RegimeTile({
 }
 
 // ---------------------------------------------------------------------------
-// KING NODE card — the lead key-level card. The single dominant dealer-gamma node
+// MAGNET card — the lead key-level cell. The single dominant dealer-gamma node
 // (max |net GEX| strike, all-expiry) — the strongest pin/magnet into expiry. Gold-
-// accented + visually distinct from the structural RegimeTiles so it reads as THE
-// node to navigate to. Renders nothing when there's no king (empty / all-zero scope).
+// accented + visually distinct from the structural metrics so it reads as THE
+// node to navigate to. Renders nothing when there's no magnet (empty / all-zero scope).
 // ---------------------------------------------------------------------------
 
-function KingNodeCard({
+function MagnetCard({
   strike,
   netGex,
   spot,
   className,
 }: {
-  /** The KING NODE strike (argmax |net GEX|). */
+  /** The MAGNET strike (argmax |net GEX|). */
   strike: number;
-  /** Signed net dealer dollar-gamma at the king strike (sign drives the side + color). */
+  /** Signed net dealer dollar-gamma at the magnet strike (sign drives the side + color). */
   netGex: number;
   /** Live/snapshot spot — drives the "+X pts above/below spot" distance line. */
   spot: number;
@@ -1787,7 +1821,7 @@ function KingNodeCard({
   const positive = netGex >= 0;
   // Sign of the dominant node names the side: net-positive gamma = a call-side / dealer-sell
   // magnet (resistance); net-negative = a put-side support magnet. Colors follow the same
-  // emerald/bear convention as the other cards (gold is reserved for the KING marker chrome).
+  // emerald/bear convention as the other cards (gold is reserved for the MAGNET marker chrome).
   const valueHex = positive ? "#00e676" : "#ff2d55";
   const sideLabel = positive ? "Call-side · dealer-sell magnet / resistance" : "Put-side · support magnet";
   // Distance from spot in points — null when there's no spot to compare against.
@@ -1809,17 +1843,17 @@ function KingNodeCard({
       )}
       style={{ boxShadow: "inset 0 0 28px rgba(255,210,63,0.08), 0 0 0 1px rgba(255,210,63,0.06)" }}
     >
-      {/* gold accent hairline — the KING marker chrome (static, opacity-only) */}
+      {/* gold accent hairline — the MAGNET marker chrome (static, opacity-only) */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-px"
         style={{ background: "linear-gradient(90deg, transparent, #ffd23f, transparent)" }}
       />
       <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-gold">
-        <span aria-hidden>♔</span>
-        King Node
+        <MagnetGlyph size={11} />
+        Magnet
         <InfoTip
-          label="King Node"
+          label="Magnet"
           text="The single strike with the largest absolute net dealer gamma — the dominant dealer-gamma concentration, i.e. the strongest pin/magnet price tends to gravitate toward into expiration."
         />
       </span>
@@ -2567,12 +2601,12 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const profileNegWall = filteredLevels.negWall;
   const profileFlip = filteredLevels.flip;
 
-  // KING NODE for the PROFILE — argmax |net| over the FILTERED totals so the gold marker
+  // MAGNET for the PROFILE — argmax |net| over the FILTERED totals so the gold marker
   // tracks the active expiry scope (it lands on the bar the profile is rendering). Null
-  // when the scope is empty / all-zero. The matrix + card recompute their own king from
+  // when the scope is empty / all-zero. The matrix + card recompute their own magnet from
   // the data they render (all-expiry strikeTotals) so each marker matches its own view.
-  const profileKingStrike = useMemo(
-    () => kingNodeStrike(filteredTotals),
+  const profileMagnetStrike = useMemo(
+    () => magnetStrike(filteredTotals),
     [filteredTotals]
   );
 
@@ -2643,19 +2677,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     );
   }, [strikes, flip]);
 
-  // ── KING NODE for the MATRIX (and the card) ──────────────────────────────────
+  // ── MAGNET for the MATRIX (and the card) ─────────────────────────────────────
   // The matrix renders the SERVER all-expiry `strikeTotals` (one row total per strike),
-  // so its king = argmax |strikeTotals| — the dominant net-exposure STRIKE (the card uses
-  // this same all-expiry king so it agrees with the server-authoritative top tiles). Within
-  // that king row we also find the single PEAK CELL: the expiry with the max |cells| at the
-  // king strike, which gets the in-cell ♔ marker. Both null-safe (empty/all-zero → null).
-  const matrixKingStrike = useMemo(
-    () => kingNodeStrike(strikeTotals),
+  // so its OVERALL magnet = argmax |strikeTotals| — the dominant net-exposure STRIKE (the
+  // card uses this same all-expiry magnet so it agrees with the server-authoritative top
+  // tiles). Within that magnet row we also find the single PEAK CELL: the expiry with the
+  // max |cells| at the magnet strike, which gets the prominent in-cell pin marker. Both
+  // null-safe (empty/all-zero → null).
+  const matrixMagnetStrike = useMemo(
+    () => magnetStrike(strikeTotals),
     [strikeTotals]
   );
-  const matrixKingExpiry = useMemo<string | null>(() => {
-    if (matrixKingStrike == null) return null;
-    const row = cells[String(matrixKingStrike)];
+  const matrixMagnetExpiry = useMemo<string | null>(() => {
+    if (matrixMagnetStrike == null) return null;
+    const row = cells[String(matrixMagnetStrike)];
     if (row == null) return null;
     let bestExp: string | null = null;
     let bestMag = 0;
@@ -2670,7 +2705,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       }
     }
     return bestExp;
-  }, [matrixKingStrike, cells, expiries]);
+  }, [matrixMagnetStrike, cells, expiries]);
 
   // ── Matrix auto-center on the SPOT row (the anchoring) ───────────────────────
   // The matrix lists strikes high→low and mounts fresh each time its tab is opened (the
@@ -2965,18 +3000,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               renders nothing when empty/absent. Sits above the regime header. ── */}
           <AlertsStrip events={events} />
 
-          {/* ── KING NODE lead card (GEX only) — the dominant dealer-gamma node, the
-              strongest pin/magnet. Leads the key-level cards as a prominent gold-accented
+          {/* ── MAGNET lead card (GEX only) — the dominant dealer-gamma node, the
+              strongest pin/magnet. Leads the key-level cells as a prominent gold-accented
               card so the heatmap is instantly navigable. Uses the all-expiry strikeTotals
-              king (matrixKingStrike) so it agrees with the server-authoritative tiles
-              below; renders nothing when there's no king (empty / all-zero). The flip/walls
+              magnet (matrixMagnetStrike) so it agrees with the server-authoritative tiles
+              below; renders nothing when there's no magnet (empty / all-zero). The flip/walls
               are GAMMA concepts, so the card shows under GEX only — same scope as the
               "vs prior close" deltas. ── */}
-          {lens === "gex" && matrixKingStrike != null && (
+          {lens === "gex" && matrixMagnetStrike != null && (
             <div className="mb-3">
-              <KingNodeCard
-                strike={matrixKingStrike}
-                netGex={strikeTotals[String(matrixKingStrike)] ?? 0}
+              <MagnetCard
+                strike={matrixMagnetStrike}
+                netGex={strikeTotals[String(matrixMagnetStrike)] ?? 0}
                 spot={headerSpot > 0 ? headerSpot : spot}
               />
             </div>
@@ -3298,7 +3333,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                   peak={filteredPeak}
                   spot={spot}
                   flip={profileFlip}
-                  kingStrike={profileKingStrike}
+                  magnetStrike={profileMagnetStrike}
                   lens={lens}
                   showFlow={showFlow && hasFlowOverlay}
                   flowPeak={flowPeak}
@@ -3383,10 +3418,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                       <span aria-hidden>● spot</span>
                     </span>
                   )}
-                  {matrixKingStrike != null && (
+                  {matrixMagnetStrike != null && (
                     <span className="flex items-center gap-1.5 text-gold">
-                      <span aria-hidden>♔ king node</span>
-                      <span className="text-white">{fmtStrike(matrixKingStrike)}</span>
+                      <MagnetGlyph size={11} />
+                      <span aria-hidden>magnet</span>
+                      <span className="text-white">{fmtStrike(matrixMagnetStrike)}</span>
                     </span>
                   )}
                 </div>
@@ -3433,9 +3469,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                         const row = cells[String(strike)] ?? {};
                         const isSpot = strike === spotStrike;
                         const isFlip = strike === flipStrike;
-                        // KING NODE row — the dominant net-exposure strike (all-expiry). Gets a
+                        // MAGNET row — the dominant net-exposure strike (all-expiry). Gets a
                         // gold band/left-border (like the spot/flip row treatment, but gold).
-                        const isKing = matrixKingStrike != null && strike === matrixKingStrike;
+                        const isMagnet = matrixMagnetStrike != null && strike === matrixMagnetStrike;
                         const rowTotal = strikeTotals[String(strike)] ?? 0;
                         return (
                           <tr
@@ -3446,23 +3482,23 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                             className={clsx(
                               // Bold-highlight the SPOT and FLIP rows so price is findable in
                               // the grid: a faint cyan/gold band across the whole row + a clear
-                              // left border (carried on the sticky strike cell below). The KING
+                              // left border (carried on the sticky strike cell below). The MAGNET
                               // row wins a stronger gold band so the dominant node pops hardest.
-                              isKing && "bg-gold/[0.08]",
+                              isMagnet && "bg-gold/[0.08]",
                               isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.05]",
-                              isFlip && !isSpot && !isKing && "bg-gold/[0.05]"
+                              isFlip && !isSpot && !isMagnet && "bg-gold/[0.05]"
                             )}
                           >
                             <th
                               scope="row"
                               className={clsx(
                                 "sticky left-0 z-10 whitespace-nowrap py-1.5 pr-2 text-left font-semibold tabular-nums backdrop-blur",
-                                // The spot row keeps its cyan border (primary anchor). The KING
+                                // The spot row keeps its cyan border (primary anchor). The MAGNET
                                 // row gets a 2px gold left-border + gold wash so the dominant node
                                 // is unmistakable; it outranks the flip row's lighter gold band.
                                 isSpot
                                   ? "border-l-2 border-cyan-400 bg-cyan-400/[0.12] pl-1.5 text-white"
-                                  : isKing
+                                  : isMagnet
                                     ? "border-l-2 border-gold bg-gold/[0.16] pl-1.5 text-gold"
                                     : isFlip
                                       ? "border-l-2 border-gold bg-gold/[0.10] pl-1.5 text-gold"
@@ -3470,22 +3506,22 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                               )}
                             >
                               <span className="inline-flex items-center gap-1">
-                                {/* KING crown leads even on the spot row (king can coincide with spot). */}
-                                {isKing && <span aria-hidden className="text-gold">♔</span>}
+                                {/* MAGNET pin leads even on the spot row (magnet can coincide with spot). */}
+                                {isMagnet && <span className="text-gold"><MagnetGlyph size={10} /></span>}
                                 {isSpot && <span aria-hidden className="text-cyan-400">●</span>}
-                                {isFlip && !isSpot && !isKing && <span aria-hidden className="text-gold">◀</span>}
+                                {isFlip && !isSpot && !isMagnet && <span aria-hidden className="text-gold">◀</span>}
                                 {fmtStrike(strike)}
-                                {isKing && (
+                                {isMagnet && (
                                   <span className="ml-1 font-mono text-[8px] font-bold uppercase tracking-wider text-gold">
-                                    king
+                                    magnet
                                   </span>
                                 )}
-                                {isSpot && !isKing && (
+                                {isSpot && !isMagnet && (
                                   <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-cyan-400">
                                     spot
                                   </span>
                                 )}
-                                {isFlip && !isSpot && !isKing && (
+                                {isFlip && !isSpot && !isMagnet && (
                                   <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-gold">
                                     flip
                                   </span>
@@ -3495,10 +3531,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                             {expiries.map((e) => {
                               const v = row[e];
                               const has = typeof v === "number";
-                              // The single PEAK CELL of the king row — the dominant expiry at the
-                              // king strike. Keeps its diverging magnitude color; a gold ♔ + gold
-                              // ring sit ON TOP so the king cell pops exactly like a starred cell.
-                              const isKingCell = isKing && matrixKingExpiry != null && e === matrixKingExpiry;
+                              // The single PEAK CELL of the magnet row — the dominant expiry at the
+                              // magnet strike. Keeps its diverging magnitude color; a gold pin + gold
+                              // ring sit ON TOP so the magnet cell pops exactly like a starred cell.
+                              const isMagnetCell = isMagnet && matrixMagnetExpiry != null && e === matrixMagnetExpiry;
                               return (
                                 <td
                                   key={e}
@@ -3515,9 +3551,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                   )}
                                   style={{
                                     ...(has ? { ...cellStyle(v, peak, lens), ...cellTextStyle(v, peak) } : {}),
-                                    // Gold inset ring + glow on the king peak cell (static, opacity-only
+                                    // Gold inset ring + glow on the magnet peak cell (static, opacity-only
                                     // glow → reduced-motion safe). The magnitude bg color is preserved.
-                                    ...(isKingCell
+                                    ...(isMagnetCell
                                       ? {
                                           outline: "2px solid #ffd23f",
                                           outlineOffset: "-2px",
@@ -3526,21 +3562,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                       : {}),
                                   }}
                                   title={
-                                    isKingCell
-                                      ? `KING NODE · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant dealer gamma cell`
+                                    isMagnetCell
+                                      ? `MAGNET · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant dealer gamma cell`
                                       : has
                                         ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}`
                                         : undefined
                                   }
                                 >
-                                  {/* gold crown pinned to the king cell's corner — the ★/♔ marker */}
-                                  {isKingCell && (
+                                  {/* gold pin pinned to the magnet cell's corner — the MAGNET marker */}
+                                  {isMagnetCell && (
                                     <span
-                                      aria-hidden
-                                      className="pointer-events-none absolute right-0.5 top-0 text-[9px] leading-none text-gold"
-                                      style={{ textShadow: "0 0 4px rgba(255,210,63,0.9)" }}
+                                      className="pointer-events-none absolute right-0.5 top-0 leading-none text-gold"
+                                      style={{ filter: "drop-shadow(0 0 4px rgba(255,210,63,0.9))" }}
                                     >
-                                      ♔
+                                      <MagnetGlyph size={9} />
                                     </span>
                                   )}
                                   {has ? fmtMoneySigned(v) : "·"}
