@@ -480,6 +480,26 @@ export function AdminOperationsDashboard() {
                   sub="flow feed"
                 />
                 <VitalRow
+                  label="Options WS"
+                  value={
+                    h == null
+                      ? "—"
+                      : !h.websockets.options.enabled
+                        ? "Disabled"
+                        : h.websockets.options.shards.some((s) => s.authenticated)
+                          ? "Live"
+                          : "Down"
+                  }
+                  ok={
+                    h == null
+                      ? null
+                      : !h.websockets.options.enabled
+                        ? null
+                        : h.websockets.options.shards.some((s) => s.authenticated)
+                  }
+                  sub={`Massive marks · ${h?.websockets.options.marks_in_memory ?? 0} in memory`}
+                />
+                <VitalRow
                   label="API Errors"
                   value={String(h?.counts.api_errors ?? 0)}
                   ok={h != null ? (h.counts.api_errors === 0) : null}

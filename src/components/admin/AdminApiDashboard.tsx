@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { ApiDashboardPayload } from "@/lib/admin-api-dashboard";
+import type { AdminHealthPayload } from "@/lib/admin-health";
 import type { RegistryEndpointRow } from "@/lib/admin-endpoint-registry";
 import {
   ActionButton,
@@ -66,8 +67,74 @@ function runtimeDot(status: RegistryEndpointRow["runtimeStatus"]) {
   return <span className={clsx("admin-api-dot", cls)} title={status} />;
 }
 
+/** One cluster rate-limiter card (UW or Polygon). UW reports recent429s; Polygon reports
+ *  consecutive429 — accept either so one tile renders both shapes. */
+function RateLimiterCard({
+  label,
+  stats,
+}: {
+  label: string;
+  stats: {
+    maxRps: number;
+    globalMaxRps: number;
+    replicaCount: number;
+    degradedLocalRps: number;
+    redisGlobal: boolean;
+    degraded: boolean;
+    circuitOpen: boolean;
+    inFlight: number;
+    recent429s?: number;
+    consecutive429?: number;
+  };
+}) {
+  const recent429 = stats.recent429s ?? stats.consecutive429 ?? 0;
+  return (
+    <div className={clsx("admin-cmd-ws-card", stats.degraded && "admin-cmd-health-card-fail")}>
+      <div className="admin-cmd-ws-card-head">
+        <span
+          className={clsx(
+            "admin-api-dot",
+            stats.circuitOpen ? "admin-api-dot-error" : stats.degraded ? "admin-api-dot-idle" : "admin-api-dot-ok"
+          )}
+        />
+        <p className="admin-ep-name">{label}</p>
+        {stats.degraded && (
+          <span className="admin-outcome-badge admin-outcome-badge-bear">DEGRADED</span>
+        )}
+        {stats.circuitOpen && (
+          <span className="admin-outcome-badge admin-outcome-badge-bear">CIRCUIT OPEN</span>
+        )}
+      </div>
+      <p className="admin-api-muted">
+        RPS cap{" "}
+        <strong className={stats.degraded ? "admin-cmd-ws-err" : "admin-cmd-ws-ok"}>
+          {stats.maxRps.toFixed(2)}
+        </strong>{" "}
+        / global {stats.globalMaxRps.toFixed(2)}
+        {stats.degraded ? ` · local ${stats.degradedLocalRps.toFixed(2)}/replica` : ""}
+      </p>
+      <p className="admin-api-muted">
+        429s (1m){" "}
+        <strong className={recent429 > 0 ? "admin-cmd-ws-err" : "admin-cmd-ws-ok"}>{recent429}</strong>
+        {" · "}circuit{" "}
+        <strong className={stats.circuitOpen ? "admin-cmd-ws-err" : "admin-cmd-ws-ok"}>
+          {stats.circuitOpen ? "OPEN" : "closed"}
+        </strong>
+      </p>
+      <p className="admin-api-muted">
+        Redis ceiling{" "}
+        <strong className={stats.redisGlobal ? "admin-cmd-ws-ok" : "admin-cmd-ws-err"}>
+          {stats.redisGlobal ? "on" : "off"}
+        </strong>
+        {" · "}replicas {stats.replicaCount} · in-flight {stats.inFlight}
+      </p>
+    </div>
+  );
+}
+
 export function AdminApiDashboard() {
   const [data, setData] = useState<ApiDashboardPayload | null>(null);
+  const [health, setHealth] = useState<AdminHealthPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
   const [rescanning, setRescanning] = useState(false);
@@ -106,6 +173,18 @@ export function AdminApiDashboard() {
     }
   }, [data]);
 
+  // Cluster rate-limiter posture lives in /api/admin/health (rate_limiters.uw/polygon), not the
+  // apis/dashboard payload — pull it alongside the telemetry poll so the Rate Limiters tile is live.
+  const loadHealth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/health", { cache: "no-store" });
+      if (!res.ok) return;
+      setHealth(await res.json());
+    } catch {
+      /* non-fatal — tile renders a placeholder until the next poll succeeds */
+    }
+  }, []);
+
   const rescan = useCallback(async () => {
     setRescanning(true);
     try {
@@ -121,13 +200,16 @@ export function AdminApiDashboard() {
 
   useEffect(() => {
     load(true);
+    loadHealth();
     const telemetryId = setInterval(() => load(false), 8_000);
     const probeId = setInterval(() => load(true), 120_000);
+    const healthId = setInterval(loadHealth, 8_000);
     return () => {
       clearInterval(telemetryId);
       clearInterval(probeId);
+      clearInterval(healthId);
     };
-  }, [load]);
+  }, [load, loadHealth]);
 
   const registry = data?.registry;
   const summary = registry?.summary;
@@ -305,6 +387,15 @@ export function AdminApiDashboard() {
                   </div>
                 </div>
               </section>
+              {health && (
+                <section className="admin-cmd-ws-status">
+                  <h3 className="admin-cmd-ws-title">Rate limiters · cluster</h3>
+                  <div className="admin-cmd-ws-grid">
+                    <RateLimiterCard label="Unusual Whales" stats={health.rate_limiters.uw} />
+                    <RateLimiterCard label="Polygon / Massive" stats={health.rate_limiters.polygon} />
+                  </div>
+                </section>
+              )}
               <section className="admin-cmd-ops-grid">
                 <div className="admin-cmd-ws-card">
                   <p className="admin-ep-name">Postgres pool</p>

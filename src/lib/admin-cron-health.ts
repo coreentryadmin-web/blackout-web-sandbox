@@ -9,6 +9,19 @@ import {
 } from "@/lib/db";
 import { loadPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
 import { isWeekdayEt } from "@/lib/nighthawk/session";
+import { etMinutes, etClock } from "@/lib/spx-play-session-time";
+
+/**
+ * RTH gate (DST-aware ET, weekdays only) mirroring the market-hours cron routes
+ * (e.g. nights-watch-warm / heatmap-warm): 9:30 AM–4:00 PM ET, Mon–Fri. Used to
+ * decide whether a `market_hours_only` cron that correctly skipped off-window
+ * should be treated as healthy rather than stale.
+ */
+function inMarketHoursEt(now = new Date()): boolean {
+  if (!isWeekdayEt()) return false;
+  const mins = etMinutes(now);
+  return mins >= etClock(9, 30) && mins <= etClock(16, 0);
+}
 
 export type CronJobHealthStatus = "healthy" | "warning" | "stale" | "failed" | "unknown";
 
@@ -106,12 +119,24 @@ function evaluateJob(
   const ageMin = (Date.now() - new Date(last.started_at).getTime()) / 60_000;
   const { effective: staleThreshold, multiplier: staleMultiplier } = effectiveStaleMinutes(job);
 
+  // Market-hours-only crons (flow-ingest, spx-evaluate, nights-watch-warm, gex-alerts, …)
+  // intentionally skip off-window. Once the market is closed they CANNOT log a fresh run,
+  // so age inevitably exceeds the threshold — flagging them STALE is a false alarm. While
+  // off-window, suppress the stale flag as long as the last logged run was a legitimate skip
+  // or success (a "failed" last run is still surfaced below regardless of window).
+  const offWindow = Boolean(job.market_hours_only) && !inMarketHoursEt();
+  const suppressStaleOffWindow =
+    offWindow && (last.status === "skipped" || last.status === "ok");
+
   let status: CronJobHealthStatus = "healthy";
   let statusLabel = "OK";
 
   if (last.status === "failed") {
     status = "failed";
     statusLabel = "Last run failed";
+  } else if (suppressStaleOffWindow) {
+    status = "healthy";
+    statusLabel = last.status === "skipped" ? "Idle (market closed)" : "OK (market closed)";
   } else if (ageMin > staleThreshold) {
     status = "stale";
     statusLabel = `No run in ${Math.round(ageMin)}m (limit ${Math.round(staleThreshold)}m${staleMultiplier > 1 ? ` · ${staleMultiplier}× weekend` : ""})`;
@@ -169,7 +194,10 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     if (job.key === "spx-evaluate" && playHb.last_tick_at) {
       const hbAgeMin = playHb.age_ms != null ? Math.round(playHb.age_ms / 60_000) : null;
       const { effective: staleThreshold } = effectiveStaleMinutes(job);
-      const cronStale = health.age_min != null && health.age_min > staleThreshold;
+      // Off-window the engine correctly idles, so a high cron age is expected — don't let
+      // the heartbeat block re-flag a healthy off-hours skip (FIX-1) as stale/warning.
+      const offWindow = Boolean(job.market_hours_only) && !inMarketHoursEt();
+      const cronStale = !offWindow && health.age_min != null && health.age_min > staleThreshold;
 
       if (cronStale && hbAgeMin != null) {
         return {
