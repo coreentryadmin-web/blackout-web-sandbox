@@ -223,13 +223,16 @@ function LevelChip({
 }: {
   label: string;
   value: string;
-  tone?: "sky" | "bull" | "bear" | "gold";
+  tone?: "sky" | "bull" | "bear" | "gold" | "white";
 }) {
   const TONE: Record<string, string> = {
     sky: "border-sky-400/30 bg-sky-400/[0.08] text-sky-300",
     bull: "border-bull/35 bg-bull/[0.08] text-bull",
-    bear: "border-bear/35 bg-bear/[0.08] text-bear",
+    // Small chip text → AA-safe --bear-text (#ff5c78) rather than display --bear.
+    bear: "border-bear/35 bg-bear/[0.08] text-bear-text",
     gold: "border-gold/35 bg-gold/[0.08] text-gold",
+    // Breakeven / structurally-neutral price markers — high-contrast white.
+    white: "border-white/20 bg-white/[0.06] text-white",
   };
   return (
     <div
@@ -323,6 +326,26 @@ function DetailHeader({ position }: { position: PositionDetail["position"] }) {
   );
 }
 
+// Semantic tone for a "levels to watch" chip, derived from its label so each
+// price reads its own meaning instead of a flat wall of amber:
+//   Support / put wall (acting as support) / target  → bull (emerald)
+//   Resistance / call wall / stop                    → bear
+//   Gamma flip / max pain / entry (neutral markers)  → sky
+//   Breakeven                                        → white
+// Wall labels carry their RESOLVED role ("acting as support/resistance",
+// cross-tool fix #80), so we key on the role words, not raw call/put.
+function levelTone(label: string): "bull" | "bear" | "sky" | "white" {
+  const l = label.toLowerCase();
+  if (l.includes("breakeven")) return "white";
+  // Resolved role wins for walls ("call wall (acting as support)" → support).
+  if (l.includes("support")) return "bull";
+  if (l.includes("resistance")) return "bear";
+  if (l.includes("stop")) return "bear";
+  if (l.includes("target")) return "bull";
+  // Neutral structural markers + entry.
+  return "sky";
+}
+
 // ---------------------------------------------------------------------------
 // WHAT TO DO — the visual centerpiece (verdict hero + levels to watch).
 // ---------------------------------------------------------------------------
@@ -392,7 +415,12 @@ function WhatToDo({
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {whatToDo.levelsToWatch.map((lvl, i) => (
-              <LevelChip key={i} label={lvl.label} value={price(lvl.price)} tone="gold" />
+              <LevelChip
+                key={i}
+                label={lvl.label}
+                value={price(lvl.price)}
+                tone={levelTone(lvl.label)}
+              />
             ))}
           </div>
         </div>
