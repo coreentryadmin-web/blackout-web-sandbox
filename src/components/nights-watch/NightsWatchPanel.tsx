@@ -608,6 +608,12 @@ function PositionCard({
           <Metric label="Dist→K" value={pct(position.distance_to_strike_pct)} />
           <Metric label="OI" value={num(position.valuation?.openInterest, 0)} />
         </div>
+      ) : position.valuation_unavailable_reason === "contract-not-found" ? (
+        // An unlisted / expired contract never "resumes at the open" — say so plainly so the
+        // card matches the detail modal instead of contradicting it with a false market-open promise.
+        <p className="font-mono text-[11px] leading-snug text-sky-300">
+          Unlisted contract · no live option chain
+        </p>
       ) : (
         <p className="font-mono text-[11px] leading-snug text-sky-300">
           Valuation resumes at market open ·{" "}
