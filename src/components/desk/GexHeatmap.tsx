@@ -803,10 +803,12 @@ function ExposureProfile({
       {/* Bounded internal scroller — the strike rows scroll INSIDE this box (centered on
           spot via scrollBoxRef) so the page never moves on load. Height shows ~the spot±walls
           band (≈18-26 strikes) comfortably; overscroll-contain stops the scroll chaining back
-          to the page at the band edges. Only the rows scroll — the legends below stay fixed. */}
+          to the page at the band edges. Only the rows scroll — the legends below stay fixed.
+          Retuned to ~clamp(360px,56vh,600px) — in the paired "Profile + Matrix" view it shares
+          the viewport with the matrix, so it's sized to match (Step 3). */}
       <div
         ref={scrollBoxRef}
-        className="max-h-[clamp(380px,60vh,640px)] space-y-px overflow-y-auto overscroll-contain pr-1"
+        className="max-h-[clamp(360px,56vh,600px)] space-y-px overflow-y-auto overscroll-contain pr-1"
       >
       {rows.map((r, i) => {
         const mag = peak > 0 ? Math.min(1, Math.abs(r.value) / peak) : 0;
@@ -2277,6 +2279,16 @@ function KeyLevelBox({ cells, kicker }: { cells: LevelCell[]; kicker: string }) 
   );
 }
 
+/** Small panel header label — sits above each paired view (Step 3). Module-level so it
+ *  isn't redefined per render (no nested-component remount churn). */
+function PanelLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300">
+      {children}
+    </div>
+  );
+}
+
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
@@ -2647,6 +2659,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     return bestExp;
   }, [matrixMagnetStrike, cells, expiries]);
 
+  // PER-DAY magnets across the Matrix columns are computed in Step 4 (next commit).
+  // For now this is an empty map so the per-day cell markers stay inert — the paired-view
+  // restructure (Step 3) ships with no behavior change to the magnet layer.
+  const perDayMagnetByExpiry = useMemo<Record<string, number>>(() => ({}), []);
+
   // ── Matrix auto-center on the SPOT row (the anchoring) ───────────────────────
   // The matrix lists strikes high→low and mounts fresh each time its tab is opened (the
   // TabPanel unmounts when inactive). Its rows live in a BOUNDED scroll box (matrixScrollRef)
@@ -2916,6 +2933,388 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     dexPosture,
     charmPosture,
   ]);
+
+  // ── Paired-view panels (Step 3) ──────────────────────────────────────────────
+  // The four views (Profile / Curve / Shift / Matrix) collapse from 4 tabs into 2
+  // PAIRED tabs. Each view's render JSX is REUSED verbatim (not rewritten) — lifted
+  // into a panel const here, then placed into a paired grid cell below. Each panel keeps
+  // its bounded scroller, spot/flip anchoring, magnet markers, diverging colors, sticky
+  // header + legends; a small header label rides above each so the pair reads clearly.
+  // Scrollers are retuned to ~clamp(360px,56vh,600px) since two panels now share the
+  // viewport. Tab A "Profile + Matrix" (default): Profile narrower (col-span-5), Matrix
+  // wider (col-span-7). Tab B "Curve + Shift": 50/50. Both stack on md/sm.
+
+  const profilePanel = (
+    <div className="min-w-0">
+      <PanelLabel>{`${vocab.noun} Profile`}</PanelLabel>
+      {/* Expiry scope — All · 0DTE · per-expiry (Rank 5). Re-sums the profile
+          + curve client-side over the chosen expiry/expiries. */}
+      <ExpiryScopeBar
+        expiries={expiries}
+        zeroDteExpiry={zeroDteExpiry}
+        scope={expiryScope}
+        onScope={setExpiryScope}
+      />
+      {/* Cross-tool overlay toggles — only shown when an overlay has data */}
+      {(hasFlowOverlay || hasDarkPoolOverlay) && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
+            Overlays
+          </span>
+          {hasFlowOverlay && (
+            <button
+              type="button"
+              onClick={() => setShowFlow((v) => !v)}
+              aria-pressed={showFlow}
+              className={clsx(
+                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-sky-400",
+                showFlow
+                  ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
+                  : "text-sky-300/70 hover:text-white"
+              )}
+            >
+              HELIX Flow
+            </button>
+          )}
+          {hasDarkPoolOverlay && (
+            <button
+              type="button"
+              onClick={() => setShowDarkPool((v) => !v)}
+              aria-pressed={showDarkPool}
+              className={clsx(
+                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-sky-400",
+                showDarkPool
+                  ? "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
+                  : "text-sky-300/70 hover:text-white"
+              )}
+            >
+              Dark Pool
+            </button>
+          )}
+        </div>
+      )}
+      <ExposureProfile
+        rows={profileRows}
+        peak={filteredPeak}
+        spot={spot}
+        flip={profileFlip}
+        magnetStrike={profileMagnetStrike}
+        lens={lens}
+        showFlow={showFlow && hasFlowOverlay}
+        flowPeak={flowPeak}
+        darkPoolLevels={darkPoolLevels}
+        showDarkPool={showDarkPool && hasDarkPoolOverlay}
+      />
+      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
+        {`Net dealer ${vocab.unit} per strike · ${vocab.pos} / ${vocab.neg} · `}
+        {scopeLabel} total{" "}
+        <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
+          {fmtMoney(filteredTotal)}
+        </span>
+      </p>
+    </div>
+  );
+
+  const curvePanel = (
+    <div className="min-w-0">
+      <PanelLabel>Cumulative Curve</PanelLabel>
+      <ExpiryScopeBar
+        expiries={expiries}
+        zeroDteExpiry={zeroDteExpiry}
+        scope={expiryScope}
+        onScope={setExpiryScope}
+      />
+      <CumulativeCurve rows={profileRows} spot={spot} flip={profileFlip} lens={lens} />
+      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
+        {`Cumulative net dealer ${vocab.unit} across strikes · zero-crossing = ${vocab.pivot} · `}
+        {scopeLabel} total{" "}
+        <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
+          {fmtMoney(filteredTotal)}
+        </span>
+      </p>
+    </div>
+  );
+
+  // Shift: intraday migration. GEX reads data.shift, VEX reads data.vex_shift (same
+  // GexShift shape). The engine ships NO shift for DEX/CHARM → the panel degrades to a
+  // "building history" empty state for those lenses (hasShiftForLens false) — never
+  // fabricated. Curve+Shift stays a real pair under every lens; Shift self-explains.
+  const shiftPanel = (
+    <div className="min-w-0">
+      <PanelLabel>Intraday Shift</PanelLabel>
+      {hasShiftForLens && shift && shift.available ? (
+        <>
+          <ShiftView shift={shift} strikes={strikes} spotStrike={spotStrike} lens={lens} />
+          <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
+            {`Δ net dealer ${vocab.unit} vs earlier snapshot · green built / red melted · pivot drift up = dealers longer`}
+          </p>
+        </>
+      ) : (
+        <EmptyState
+          icon="◷"
+          title="BUILDING POSITIONING HISTORY"
+          description={
+            hasShiftForLens
+              ? `The shift view fills in as snapshots accumulate (first read ~after the open). ${vocab.noun} migration — where dealer ${vocab.noun.toLowerCase()} is building vs melting and how the pivot drifts — appears once enough history is collected.`
+              : `Intraday migration is tracked for GEX and VEX. Switch the lens to GEX or VEX to see where dealer exposure is building vs melting and how the pivot drifts.`
+          }
+        />
+      )}
+    </div>
+  );
+
+  const matrixPanel = (
+    <div className="min-w-0">
+      <PanelLabel>Strike × Expiry Matrix</PanelLabel>
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
+        <span className="flex items-center gap-1.5 text-sky-300">
+          <span
+            className="inline-block h-3 w-3 rounded-sm"
+            style={{ backgroundColor: `rgba(${LENS_COLORS[lens].posRgb},0.5)` }}
+          />
+          {`${vocab.pos} (+)`}
+        </span>
+        <span className="flex items-center gap-1.5 text-sky-300">
+          <span
+            className="inline-block h-3 w-3 rounded-sm"
+            style={{ backgroundColor: `rgba(${LENS_COLORS[lens].negRgb},0.5)` }}
+          />
+          {`${vocab.neg} (−)`}
+        </span>
+        {flip != null && (
+          <span className="flex items-center gap-1.5 text-gold">
+            <span aria-hidden>◀ {vocab.pivot}</span>
+            <span className="text-white">{fmtStrike(flip)}</span>
+          </span>
+        )}
+        {spot > 0 && (
+          <span className="flex items-center gap-1.5 text-cyan-400">
+            <span aria-hidden>● spot</span>
+          </span>
+        )}
+        {matrixMagnetStrike != null && (
+          <span className="flex items-center gap-1.5 text-gold">
+            <MagnetGlyph size={11} />
+            <span aria-hidden>magnet</span>
+            <span className="text-white">{fmtStrike(matrixMagnetStrike)}</span>
+          </span>
+        )}
+      </div>
+
+      {/* Horizontal-scroll container with a subtle right-edge fade so on
+          phones the mono values scroll instead of colliding. The table gets
+          a min-width so columns keep their breathing room below the fold. */}
+      <div className="relative">
+        {/* Bounded scroll box: scrolls horizontally for expiry columns AND
+            vertically for strikes (the spot row is centered inside this box via
+            matrixScrollRef — the page never moves). overscroll-contain stops the
+            scroll chaining back to the page at the band edges; the sticky header
+            row + sticky Strike column stay visible while the rows scroll. Retuned
+            to ~clamp(360px,56vh,600px) since two panels share the viewport now. */}
+        <div
+          ref={matrixScrollRef}
+          className="max-h-[clamp(360px,56vh,600px)] overflow-auto overscroll-contain"
+          role="region"
+          tabIndex={0}
+          aria-label={`${data?.underlying ?? ticker} dealer ${vocab.noun.toLowerCase()} exposure matrix, strikes by expiration`}
+        >
+          <table className="w-full min-w-[34rem] border-separate border-spacing-0 font-mono text-[11px]">
+            <thead>
+              <tr>
+                {/* Top-left corner: sticky on BOTH axes (z-20 so it sits above the
+                    body's sticky strike column and the rest of the sticky header). */}
+                <th className="sticky left-0 top-0 z-20 bg-[rgba(8,9,14,0.92)] px-2 py-2 text-left text-[10px] uppercase tracking-widest text-cyan-400 backdrop-blur">
+                  Strike
+                </th>
+                {expiries.map((e) => (
+                  <th
+                    key={e}
+                    className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-center text-[10px] uppercase tracking-wide text-sky-300 backdrop-blur"
+                  >
+                    {fmtExpiry(e)}
+                  </th>
+                ))}
+                <th className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-right text-[10px] uppercase tracking-wide text-cyan-400 backdrop-blur">
+                  Net
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {strikes.map((strike) => {
+                const row = cells[String(strike)] ?? {};
+                const isSpot = strike === spotStrike;
+                const isFlip = strike === flipStrike;
+                // OVERALL MAGNET row — the dominant net-exposure strike (all-expiry). Gets a
+                // gold band/left-border (like the spot/flip row treatment, but gold).
+                const isMagnet = matrixMagnetStrike != null && strike === matrixMagnetStrike;
+                const rowTotal = strikeTotals[String(strike)] ?? 0;
+                // PER-DAY magnet (Step 4) — argmax|cell| in EACH expiry column. Computed
+                // for every row but only marked when this row owns a column's peak (see cell).
+                return (
+                  <tr
+                    key={strike}
+                    // Only the spot row carries the auto-center callback ref (it scrolls
+                    // itself into view on mount — i.e. when the Matrix tab is opened).
+                    ref={isSpot ? matrixSpotRowRef : undefined}
+                    className={clsx(
+                      // Bold-highlight the SPOT and FLIP rows so price is findable in
+                      // the grid: a faint cyan/gold band across the whole row + a clear
+                      // left border (carried on the sticky strike cell below). The MAGNET
+                      // row wins a stronger gold band so the dominant node pops hardest.
+                      isMagnet && "bg-gold/[0.08]",
+                      isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.05]",
+                      isFlip && !isSpot && !isMagnet && "bg-gold/[0.05]"
+                    )}
+                  >
+                    <th
+                      scope="row"
+                      className={clsx(
+                        "sticky left-0 z-10 whitespace-nowrap py-1.5 pr-2 text-left font-semibold tabular-nums backdrop-blur",
+                        // The spot row keeps its cyan border (primary anchor). The MAGNET
+                        // row gets a 2px gold left-border + gold wash so the dominant node
+                        // is unmistakable; it outranks the flip row's lighter gold band.
+                        isSpot
+                          ? "border-l-2 border-cyan-400 bg-cyan-400/[0.12] pl-1.5 text-white"
+                          : isMagnet
+                            ? "border-l-2 border-gold bg-gold/[0.16] pl-1.5 text-gold"
+                            : isFlip
+                              ? "border-l-2 border-gold bg-gold/[0.10] pl-1.5 text-gold"
+                              : "bg-[rgba(8,9,14,0.92)] pl-2 text-white"
+                      )}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {/* MAGNET pin leads even on the spot row (magnet can coincide with spot). */}
+                        {isMagnet && <span className="text-gold"><MagnetGlyph size={10} /></span>}
+                        {isSpot && <span aria-hidden className="text-cyan-400">●</span>}
+                        {isFlip && !isSpot && !isMagnet && <span aria-hidden className="text-gold">◀</span>}
+                        {fmtStrike(strike)}
+                        {isMagnet && (
+                          <span className="ml-1 font-mono text-[8px] font-bold uppercase tracking-wider text-gold">
+                            magnet
+                          </span>
+                        )}
+                        {isSpot && !isMagnet && (
+                          <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-cyan-400">
+                            spot
+                          </span>
+                        )}
+                        {isFlip && !isSpot && !isMagnet && (
+                          <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-gold">
+                            flip
+                          </span>
+                        )}
+                      </span>
+                    </th>
+                    {expiries.map((e) => {
+                      const v = row[e];
+                      const has = typeof v === "number";
+                      // The single OVERALL-magnet PEAK CELL — the dominant expiry at the
+                      // overall magnet strike. Keeps its diverging magnitude color; a gold pin
+                      // + gold ring sit ON TOP so it pops as the prominent magnet cell.
+                      const isMagnetCell = isMagnet && matrixMagnetExpiry != null && e === matrixMagnetExpiry;
+                      // PER-DAY magnet cell (Step 4) — this strike owns the argmax|net GEX| in
+                      // expiry column `e`. Subtle gold ring (no pin) so per-day magnets read as a
+                      // quiet secondary layer beneath the one prominent overall magnet. The overall
+                      // magnet cell always wins (we suppress the subtle ring there to avoid double).
+                      const isDayMagnetCell =
+                        !isMagnetCell && perDayMagnetByExpiry[e] === strike && has && v !== 0;
+                      return (
+                        <td
+                          key={e}
+                          className={clsx(
+                            // Numbers are SECONDARY now — the cell color carries the
+                            // magnitude. Smaller + slightly dimmed so the heatmap reads
+                            // at a glance; white kicks in on deep cells (cellTextStyle).
+                            "relative whitespace-nowrap px-2 py-1.5 text-center text-[10px] tabular-nums",
+                            has
+                              ? v > 0
+                                ? posColorClass
+                                : "text-bear-text"
+                              : "text-sky-300/25"
+                          )}
+                          style={{
+                            ...(has ? { ...cellStyle(v, peak, lens), ...cellTextStyle(v, peak) } : {}),
+                            // Gold inset ring + glow on the OVERALL magnet peak cell (static,
+                            // opacity-only glow → reduced-motion safe). Magnitude bg preserved.
+                            ...(isMagnetCell
+                              ? {
+                                  outline: "2px solid #ffd23f",
+                                  outlineOffset: "-2px",
+                                  boxShadow: "inset 0 0 14px rgba(255,210,63,0.55)",
+                                }
+                              : isDayMagnetCell
+                                ? {
+                                    // PER-DAY magnet — a SUBTLE thin gold ring, no glow/pin, so
+                                    // the column's own magnet is hinted without competing with the
+                                    // one prominent overall magnet. Reduced-motion safe (static).
+                                    outline: "1px solid rgba(255,210,63,0.55)",
+                                    outlineOffset: "-1px",
+                                  }
+                                : {}),
+                          }}
+                          title={
+                            isMagnetCell
+                              ? `MAGNET · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant dealer gamma cell (overall)`
+                              : isDayMagnetCell
+                                ? `${fmtExpiry(e)} magnet · ${strike} · ${fmtMoneySigned(v as number)} — this expiry's dominant strike`
+                                : has
+                                  ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}`
+                                  : undefined
+                          }
+                        >
+                          {/* gold pin pinned to the overall magnet cell's corner — the MAGNET marker */}
+                          {isMagnetCell && (
+                            <span
+                              className="pointer-events-none absolute right-0.5 top-0 leading-none text-gold"
+                              style={{ filter: "drop-shadow(0 0 4px rgba(255,210,63,0.9))" }}
+                            >
+                              <MagnetGlyph size={9} />
+                            </span>
+                          )}
+                          {/* per-day magnet — a tiny gold dot in the corner (subtle, no pin glyph) */}
+                          {isDayMagnetCell && (
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute right-0.5 top-0.5 h-1 w-1 rounded-full"
+                              style={{ backgroundColor: "rgba(255,210,63,0.8)" }}
+                            />
+                          )}
+                          {has ? fmtMoneySigned(v) : "·"}
+                        </td>
+                      );
+                    })}
+                    <td
+                      className={clsx(
+                        "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
+                        rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-bear-text" : "text-sky-300/40"
+                      )}
+                      style={rowTotal ? { ...cellStyle(rowTotal, totalPeak, lens), ...cellTextStyle(rowTotal, totalPeak) } : undefined}
+                    >
+                      {rowTotal ? fmtMoneySigned(rowTotal) : "·"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {/* right-edge scroll fade — hints there's more matrix to the right */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#040407] to-transparent"
+        />
+      </div>
+
+      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
+        {`Net dealer ${vocab.unit} per strike × expiry · ${vocab.pos} / ${vocab.neg} · total `}
+        <span className={clsx(total >= 0 ? posColorClass : "text-bear-text")}>
+          {fmtMoney(total)}
+        </span>
+      </p>
+    </div>
+  );
 
   return (
     <Panel
@@ -3215,380 +3614,55 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             </div>
           </details>
 
-          {/* ── Main area — single column < lg, 2-col at lg, widened profile
-              track at xl+ so the full-bleed width reads intentional on wide
-              monitors (the bipolar profile gets more track; the rail fans its
-              cards into 2 internal columns below). ──────────────── */}
-          <div className="mt-5 grid gap-5 lg:grid-cols-[1.62fr_1fr] xl:grid-cols-[1.85fr_1fr]">
-            {/* LEFT (~62–65%): the profile hero with Profile | Shift | Matrix toggle */}
-            <div className="min-w-0">
-          {/* ── Profile | Curve | Shift | Matrix toggle ───────────────────
-              Keyed on lens so switching lenses resets to Profile — the Shift tab
-              only exists for GEX (data.shift) and VEX (data.vex_shift); the engine
-              ships no shift for DEX/CHARM, so it must never be left selected when
-              the lens flips to one of those. */}
-          <Tabs key={lens} defaultValue="profile">
-            <TabList aria-label={`${lensUpper} view`} className="w-fit">
-              <Tab value="profile">{`${vocab.noun} Profile`}</Tab>
-              <Tab value="curve">Curve</Tab>
-              {hasShiftForLens && <Tab value="shift">Shift</Tab>}
-              <Tab value="matrix">Matrix</Tab>
+          {/* ── Main area — 2 PAIRED views (Step 3). The four single views collapse into
+              two paired tabs so two complementary panels share the viewport at once:
+                • "Profile + Matrix" (DEFAULT) — Profile narrower (lg:col-span-5) + Matrix
+                  wider (lg:col-span-7) on an lg 12-col grid; stacks on md/sm.
+                • "Curve + Shift" — Curve + Shift 50/50 (lg:grid-cols-2); stacks on md/sm.
+              Each panel const (built above) REUSES its view's render JSX verbatim, keeping
+              its bounded scroller, spot/flip anchoring, magnet markers, colors + legends.
+              This is the VIEW TabList — it uses the DEFAULT styled chrome (the `unstyled`
+              fix belongs to the LENS TabList above; we don't touch that here). Keyed on lens
+              so a lens switch resets to the default pair (Shift only carries data for GEX/VEX;
+              under DEX/CHARM the Shift half self-explains). ──────────────── */}
+          <Tabs key={lens} defaultValue="pair-a" className="mt-5">
+            <TabList aria-label={`${lensUpper} paired views`} className="w-fit">
+              <Tab value="pair-a">{`${vocab.noun} Profile + Matrix`}</Tab>
+              <Tab value="pair-b">Curve + Shift</Tab>
             </TabList>
 
             <TabPanels>
-              {/* Hero: exposure profile ladder */}
-              <TabPanel value="profile">
-                {/* Expiry scope — All · 0DTE · per-expiry (Rank 5). Re-sums the profile
-                    + curve client-side over the chosen expiry/expiries. */}
-                <ExpiryScopeBar
-                  expiries={expiries}
-                  zeroDteExpiry={zeroDteExpiry}
-                  scope={expiryScope}
-                  onScope={setExpiryScope}
-                />
-                {/* Cross-tool overlay toggles — only shown when an overlay has data */}
-                {(hasFlowOverlay || hasDarkPoolOverlay) && (
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
-                      Overlays
-                    </span>
-                    {hasFlowOverlay && (
-                      <button
-                        type="button"
-                        onClick={() => setShowFlow((v) => !v)}
-                        aria-pressed={showFlow}
-                        className={clsx(
-                          "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
-                          "focus-visible:ring-2 focus-visible:ring-sky-400",
-                          showFlow
-                            ? "bg-bull/15 text-bull outline outline-1 outline-bull/50"
-                            : "text-sky-300/70 hover:text-white"
-                        )}
-                      >
-                        HELIX Flow
-                      </button>
-                    )}
-                    {hasDarkPoolOverlay && (
-                      <button
-                        type="button"
-                        onClick={() => setShowDarkPool((v) => !v)}
-                        aria-pressed={showDarkPool}
-                        className={clsx(
-                          "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider outline-none transition-colors",
-                          "focus-visible:ring-2 focus-visible:ring-sky-400",
-                          showDarkPool
-                            ? "bg-sky-400/15 text-sky-300 outline outline-1 outline-sky-400/50"
-                            : "text-sky-300/70 hover:text-white"
-                        )}
-                      >
-                        Dark Pool
-                      </button>
-                    )}
-                  </div>
-                )}
-                <ExposureProfile
-                  rows={profileRows}
-                  peak={filteredPeak}
-                  spot={spot}
-                  flip={profileFlip}
-                  magnetStrike={profileMagnetStrike}
-                  lens={lens}
-                  showFlow={showFlow && hasFlowOverlay}
-                  flowPeak={flowPeak}
-                  darkPoolLevels={darkPoolLevels}
-                  showDarkPool={showDarkPool && hasDarkPoolOverlay}
-                />
-                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-                  {`Net dealer ${vocab.unit} per strike · ${vocab.pos} / ${vocab.neg} · `}
-                  {scopeLabel} total{" "}
-                  <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
-                    {fmtMoney(filteredTotal)}
-                  </span>
-                </p>
+              {/* Tab A — Profile (narrower) + Matrix (wider) on a 12-col grid. */}
+              <TabPanel value="pair-a">
+                <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-12">
+                  <div className="min-w-0 lg:col-span-5">{profilePanel}</div>
+                  <div className="min-w-0 lg:col-span-7">{matrixPanel}</div>
+                </div>
               </TabPanel>
 
-              {/* Cumulative exposure curve (Rank 12) — running sum of the FILTERED
-                  per-strike totals; zero-crossing = pivot, neg below / pos above. */}
-              <TabPanel value="curve">
-                <ExpiryScopeBar
-                  expiries={expiries}
-                  zeroDteExpiry={zeroDteExpiry}
-                  scope={expiryScope}
-                  onScope={setExpiryScope}
-                />
-                <CumulativeCurve rows={profileRows} spot={spot} flip={profileFlip} lens={lens} />
-                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-                  {`Cumulative net dealer ${vocab.unit} across strikes · zero-crossing = ${vocab.pivot} · `}
-                  {scopeLabel} total{" "}
-                  <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
-                    {fmtMoney(filteredTotal)}
-                  </span>
-                </p>
-              </TabPanel>
-
-              {/* Shift: intraday migration. GEX reads data.shift, VEX reads data.vex_shift
-                  (same GexShift shape). The engine ships NO shift for DEX/CHARM, so the tab
-                  itself is hidden for those lenses (hasShiftForLens) — never fabricated. */}
-              {hasShiftForLens && (
-                <TabPanel value="shift">
-                  {shift && shift.available ? (
-                    <>
-                      <ShiftView shift={shift} strikes={strikes} spotStrike={spotStrike} lens={lens} />
-                      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-                        {`Δ net dealer ${vocab.unit} vs earlier snapshot · green built / red melted · pivot drift up = dealers longer`}
-                      </p>
-                    </>
-                  ) : (
-                    <EmptyState
-                      icon="◷"
-                      title="BUILDING POSITIONING HISTORY"
-                      description={`The shift view fills in as snapshots accumulate (first read ~after the open). ${vocab.noun} migration — where dealer ${vocab.noun.toLowerCase()} is building vs melting and how the pivot drifts — appears once enough history is collected.`}
-                    />
-                  )}
-                </TabPanel>
-              )}
-
-              {/* Secondary detail: strike × expiry matrix */}
-              <TabPanel value="matrix">
-                <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
-                  <span className="flex items-center gap-1.5 text-sky-300">
-                    <span
-                      className="inline-block h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: `rgba(${LENS_COLORS[lens].posRgb},0.5)` }}
-                    />
-                    {`${vocab.pos} (+)`}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-sky-300">
-                    <span
-                      className="inline-block h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: `rgba(${LENS_COLORS[lens].negRgb},0.5)` }}
-                    />
-                    {`${vocab.neg} (−)`}
-                  </span>
-                  {flip != null && (
-                    <span className="flex items-center gap-1.5 text-gold">
-                      <span aria-hidden>◀ {vocab.pivot}</span>
-                      <span className="text-white">{fmtStrike(flip)}</span>
-                    </span>
-                  )}
-                  {spot > 0 && (
-                    <span className="flex items-center gap-1.5 text-cyan-400">
-                      <span aria-hidden>● spot</span>
-                    </span>
-                  )}
-                  {matrixMagnetStrike != null && (
-                    <span className="flex items-center gap-1.5 text-gold">
-                      <MagnetGlyph size={11} />
-                      <span aria-hidden>magnet</span>
-                      <span className="text-white">{fmtStrike(matrixMagnetStrike)}</span>
-                    </span>
-                  )}
+              {/* Tab B — Curve + Shift, 50/50. */}
+              <TabPanel value="pair-b">
+                <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  {curvePanel}
+                  {shiftPanel}
                 </div>
-
-                {/* Horizontal-scroll container with a subtle right-edge fade so on
-                    phones the mono values scroll instead of colliding. The table gets
-                    a min-width so columns keep their breathing room below the fold. */}
-                <div className="relative">
-                  {/* Bounded scroll box: scrolls horizontally for expiry columns AND
-                      vertically for strikes (the spot row is centered inside this box via
-                      matrixScrollRef — the page never moves). overscroll-contain stops the
-                      scroll chaining back to the page at the band edges; the sticky header
-                      row + sticky Strike column stay visible while the rows scroll. */}
-                  <div
-                    ref={matrixScrollRef}
-                    className="max-h-[clamp(380px,60vh,640px)] overflow-auto overscroll-contain"
-                    role="region"
-                    tabIndex={0}
-                    aria-label={`${data?.underlying ?? ticker} dealer ${vocab.noun.toLowerCase()} exposure matrix, strikes by expiration`}
-                  >
-                    <table className="w-full min-w-[34rem] border-separate border-spacing-0 font-mono text-[11px]">
-                    <thead>
-                      <tr>
-                        {/* Top-left corner: sticky on BOTH axes (z-20 so it sits above the
-                            body's sticky strike column and the rest of the sticky header). */}
-                        <th className="sticky left-0 top-0 z-20 bg-[rgba(8,9,14,0.92)] px-2 py-2 text-left text-[10px] uppercase tracking-widest text-cyan-400 backdrop-blur">
-                          Strike
-                        </th>
-                        {expiries.map((e) => (
-                          <th
-                            key={e}
-                            className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-center text-[10px] uppercase tracking-wide text-sky-300 backdrop-blur"
-                          >
-                            {fmtExpiry(e)}
-                          </th>
-                        ))}
-                        <th className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-right text-[10px] uppercase tracking-wide text-cyan-400 backdrop-blur">
-                          Net
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {strikes.map((strike) => {
-                        const row = cells[String(strike)] ?? {};
-                        const isSpot = strike === spotStrike;
-                        const isFlip = strike === flipStrike;
-                        // MAGNET row — the dominant net-exposure strike (all-expiry). Gets a
-                        // gold band/left-border (like the spot/flip row treatment, but gold).
-                        const isMagnet = matrixMagnetStrike != null && strike === matrixMagnetStrike;
-                        const rowTotal = strikeTotals[String(strike)] ?? 0;
-                        return (
-                          <tr
-                            key={strike}
-                            // Only the spot row carries the auto-center callback ref (it scrolls
-                            // itself into view on mount — i.e. when the Matrix tab is opened).
-                            ref={isSpot ? matrixSpotRowRef : undefined}
-                            className={clsx(
-                              // Bold-highlight the SPOT and FLIP rows so price is findable in
-                              // the grid: a faint cyan/gold band across the whole row + a clear
-                              // left border (carried on the sticky strike cell below). The MAGNET
-                              // row wins a stronger gold band so the dominant node pops hardest.
-                              isMagnet && "bg-gold/[0.08]",
-                              isSpot && "outline outline-1 outline-cyan-400/70 bg-cyan-400/[0.05]",
-                              isFlip && !isSpot && !isMagnet && "bg-gold/[0.05]"
-                            )}
-                          >
-                            <th
-                              scope="row"
-                              className={clsx(
-                                "sticky left-0 z-10 whitespace-nowrap py-1.5 pr-2 text-left font-semibold tabular-nums backdrop-blur",
-                                // The spot row keeps its cyan border (primary anchor). The MAGNET
-                                // row gets a 2px gold left-border + gold wash so the dominant node
-                                // is unmistakable; it outranks the flip row's lighter gold band.
-                                isSpot
-                                  ? "border-l-2 border-cyan-400 bg-cyan-400/[0.12] pl-1.5 text-white"
-                                  : isMagnet
-                                    ? "border-l-2 border-gold bg-gold/[0.16] pl-1.5 text-gold"
-                                    : isFlip
-                                      ? "border-l-2 border-gold bg-gold/[0.10] pl-1.5 text-gold"
-                                      : "bg-[rgba(8,9,14,0.92)] pl-2 text-white"
-                              )}
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                {/* MAGNET pin leads even on the spot row (magnet can coincide with spot). */}
-                                {isMagnet && <span className="text-gold"><MagnetGlyph size={10} /></span>}
-                                {isSpot && <span aria-hidden className="text-cyan-400">●</span>}
-                                {isFlip && !isSpot && !isMagnet && <span aria-hidden className="text-gold">◀</span>}
-                                {fmtStrike(strike)}
-                                {isMagnet && (
-                                  <span className="ml-1 font-mono text-[8px] font-bold uppercase tracking-wider text-gold">
-                                    magnet
-                                  </span>
-                                )}
-                                {isSpot && !isMagnet && (
-                                  <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-cyan-400">
-                                    spot
-                                  </span>
-                                )}
-                                {isFlip && !isSpot && !isMagnet && (
-                                  <span className="ml-1 font-mono text-[8px] uppercase tracking-wider text-gold">
-                                    flip
-                                  </span>
-                                )}
-                              </span>
-                            </th>
-                            {expiries.map((e) => {
-                              const v = row[e];
-                              const has = typeof v === "number";
-                              // The single PEAK CELL of the magnet row — the dominant expiry at the
-                              // magnet strike. Keeps its diverging magnitude color; a gold pin + gold
-                              // ring sit ON TOP so the magnet cell pops exactly like a starred cell.
-                              const isMagnetCell = isMagnet && matrixMagnetExpiry != null && e === matrixMagnetExpiry;
-                              return (
-                                <td
-                                  key={e}
-                                  className={clsx(
-                                    // Numbers are SECONDARY now — the cell color carries the
-                                    // magnitude. Smaller + slightly dimmed so the heatmap reads
-                                    // at a glance; white kicks in on deep cells (cellTextStyle).
-                                    "relative whitespace-nowrap px-2 py-1.5 text-center text-[10px] tabular-nums",
-                                    has
-                                      ? v > 0
-                                        ? posColorClass
-                                        : "text-bear-text"
-                                      : "text-sky-300/25"
-                                  )}
-                                  style={{
-                                    ...(has ? { ...cellStyle(v, peak, lens), ...cellTextStyle(v, peak) } : {}),
-                                    // Gold inset ring + glow on the magnet peak cell (static, opacity-only
-                                    // glow → reduced-motion safe). The magnitude bg color is preserved.
-                                    ...(isMagnetCell
-                                      ? {
-                                          outline: "2px solid #ffd23f",
-                                          outlineOffset: "-2px",
-                                          boxShadow: "inset 0 0 14px rgba(255,210,63,0.55)",
-                                        }
-                                      : {}),
-                                  }}
-                                  title={
-                                    isMagnetCell
-                                      ? `MAGNET · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant dealer gamma cell`
-                                      : has
-                                        ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}`
-                                        : undefined
-                                  }
-                                >
-                                  {/* gold pin pinned to the magnet cell's corner — the MAGNET marker */}
-                                  {isMagnetCell && (
-                                    <span
-                                      className="pointer-events-none absolute right-0.5 top-0 leading-none text-gold"
-                                      style={{ filter: "drop-shadow(0 0 4px rgba(255,210,63,0.9))" }}
-                                    >
-                                      <MagnetGlyph size={9} />
-                                    </span>
-                                  )}
-                                  {has ? fmtMoneySigned(v) : "·"}
-                                </td>
-                              );
-                            })}
-                            <td
-                              className={clsx(
-                                "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
-                                rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-bear-text" : "text-sky-300/40"
-                              )}
-                              style={rowTotal ? { ...cellStyle(rowTotal, totalPeak, lens), ...cellTextStyle(rowTotal, totalPeak) } : undefined}
-                            >
-                              {rowTotal ? fmtMoneySigned(rowTotal) : "·"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  </div>
-                  {/* right-edge scroll fade — hints there's more matrix to the right */}
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#040407] to-transparent"
-                  />
-                </div>
-
-                <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-                  {`Net dealer ${vocab.unit} per strike × expiry · ${vocab.pos} / ${vocab.neg} · total `}
-                  <span className={clsx(total >= 0 ? posColorClass : "text-bear-text")}>
-                    {fmtMoney(total)}
-                  </span>
-                </p>
               </TabPanel>
             </TabPanels>
           </Tabs>
-            </div>
 
-            {/* RIGHT (~35–38%): Largo desk read · dark-pool · flow summary.
-                The redundant "KEY LEVELS" list was dropped — spot / flip / call wall /
-                put wall / max pain already lead the page in the prominent top RegimeTile
-                cards, so repeating them here was pure duplication. ASK LARGO now gets the
-                full rail width (single-column stack) and the rail breathes; the two small
-                optional cards (dark-pool, flow) stack beneath and each self-hide when empty. */}
-            <aside className="min-w-0 grid content-start gap-4">
-              {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
-              <LargoRead key={ticker} ticker={ticker} />
-
-              {/* Dark-pool levels are NOT shown in the top cards, so they keep a focused
-                  rail card (self-hides when there's no dark-pool data). */}
+          {/* ── Rail (full-width row below the paired views): Largo desk read · dark-pool ·
+              flow summary. The redundant "KEY LEVELS" list was dropped — spot / flip / call
+              wall / put wall / max pain already lead the page in the consolidated key-level
+              box. ASK LARGO leads; the two small optional cards (dark-pool, flow) sit beside
+              it and each self-hides when empty. ── */}
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+            {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
+            <LargoRead key={ticker} ticker={ticker} />
+            {/* Optional rail cards — dark-pool levels + flow summary (each self-hides when empty). */}
+            <div className="grid content-start gap-4">
               <DarkPoolRail darkPoolLevels={darkPoolLevels} />
-
               <FlowSummary flowByStrike={flowByStrike} />
-            </aside>
+            </div>
           </div>
 
           {/* ── Methodology disclosure — honest about the dealer-sign assumption ── */}
