@@ -73,6 +73,10 @@ async function createPool(): Promise<Pool> {
       ssl: poolSsl(candidate.url),
       connectionTimeoutMillis: 10_000,
     });
+    // Swallow any idle-client 'error' from this short-lived probe pool — without a listener a
+    // transient network blip mid-probe would escalate to an unhandled 'error' and crash. The
+    // catch below still handles real connect failures (the awaited query rejects).
+    test.on("error", () => undefined);
     try {
       await test.query("SELECT 1");
       await test.end();
@@ -88,13 +92,24 @@ async function createPool(): Promise<Pool> {
       // PgBouncer sits in front of Postgres on Railway. It handles real connection pooling.
       // We keep our own pool small (default 5) — PgBouncer multiplexes these to many clients.
       // Set PG_POOL_MAX env var to override (e.g. PG_POOL_MAX=5 in Railway service env vars).
-      return new Pool({
+      const livePool = new Pool({
         connectionString: candidate.url,
         max: parseInt(process.env.PG_POOL_MAX ?? "5", 10),
         idleTimeoutMillis: 30_000,
         ssl: poolSsl(candidate.url),
         connectionTimeoutMillis: 15_000,
       });
+      // CRITICAL: Railway drops idle private-network connections; node-postgres surfaces that
+      // as an 'error' event on the pool's idle clients. With NO listener, Node escalates it to
+      // an unhandled 'error' and CRASHES the entire replica. Swallow + log — the pool
+      // transparently re-establishes on the next query. Mirrors the Redis fix in make-redis.ts.
+      livePool.on("error", (err) => {
+        console.warn(
+          "[db] idle pool client error (recovered, pool will reconnect):",
+          err instanceof Error ? err.message : err
+        );
+      });
+      return livePool;
     } catch (error) {
       lastError = error;
       await test.end().catch(() => undefined);
