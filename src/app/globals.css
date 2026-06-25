@@ -10896,6 +10896,22 @@ body {
     @apply text-[11px] text-cyan-400 mt-1 mb-0 relative z-[1];
   }
 
+  .admin-cron-card-run {
+    @apply mt-3 flex flex-col gap-1.5 relative z-[1];
+  }
+
+  .admin-cron-card-run-result {
+    @apply text-[11px] leading-snug mb-0 break-words;
+  }
+
+  .admin-cron-card-run-ok {
+    @apply text-bull;
+  }
+
+  .admin-cron-card-run-fail {
+    @apply text-bear;
+  }
+
   .admin-cron-count-ok {
     @apply text-bull;
   }

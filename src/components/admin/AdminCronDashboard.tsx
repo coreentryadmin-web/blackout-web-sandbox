@@ -25,6 +25,15 @@ const JOB_ICONS: Record<string, string> = {
   "nighthawk-playbook": "⏱",
 };
 
+// Crons the admin run/warm endpoint (/api/admin/cron/run) can dispatch. Keep in sync with
+// CRON_HANDLERS in src/app/api/admin/cron/run/route.ts — only these show a "Run now" button.
+const RUNNABLE_CRONS = new Set([
+  "flow-ingest",
+  "uw-cache-refresh",
+  "nights-watch-warm",
+  "heatmap-warm",
+]);
+
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-US", {
@@ -80,11 +89,81 @@ function nhJobMeta(job: CronJobHealth): string | null {
   return nh.status ?? null;
 }
 
-function CronJobCard({ job, index }: { job: CronJobHealth; index: number }) {
+function RunNowButton({ job, onRan }: { job: CronJobHealth; onRan: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = useCallback(async () => {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/cron/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ name: job.key }),
+      });
+      const data = await res.json().catch(() => null);
+      const ok = res.ok && data?.ok !== false;
+      const inner = data?.result;
+      const summary =
+        inner && typeof inner === "object"
+          ? Object.entries(inner)
+              .filter(([k]) => k !== "ok")
+              .slice(0, 4)
+              .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+              .join(" · ")
+          : typeof inner === "string"
+            ? inner.slice(0, 120)
+            : "";
+      const dur = typeof data?.durationMs === "number" ? ` (${fmtDuration(data.durationMs)})` : "";
+      setResult({
+        ok,
+        text: ok
+          ? `Ran${dur}${summary ? ` — ${summary}` : ""}`
+          : `Failed — ${data?.detail ?? data?.error ?? `HTTP ${res.status}`}`,
+      });
+      onRan();
+    } catch (e) {
+      setResult({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setRunning(false);
+    }
+  }, [job.key, onRan]);
+
+  return (
+    <div className="admin-cron-card-run">
+      <ActionButton variant="primary" onClick={run} disabled={running}>
+        {running ? "Warming…" : "Run now"}
+      </ActionButton>
+      {result && (
+        <p
+          className={clsx(
+            "admin-cron-card-run-result",
+            result.ok ? "admin-cron-card-run-ok" : "admin-cron-card-run-fail"
+          )}
+        >
+          {result.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CronJobCard({
+  job,
+  index,
+  onRan,
+}: {
+  job: CronJobHealth;
+  index: number;
+  onRan: () => void;
+}) {
   const tone = statusTone(job.status);
   const total24 = job.runs_24h.ok + job.runs_24h.failed + job.runs_24h.skipped;
   const okShare = total24 > 0 ? job.runs_24h.ok / total24 : 0;
   const extra = nhJobMeta(job);
+  const runnable = RUNNABLE_CRONS.has(job.key);
 
   return (
     <article
@@ -168,6 +247,8 @@ function CronJobCard({ job, index }: { job: CronJobHealth; index: number }) {
 
       <p className="admin-cron-card-detail">{job.status_label}</p>
       {extra && <p className="admin-cron-card-detail-sub">{extra}</p>}
+
+      {runnable && <RunNowButton job={job} onRan={onRan} />}
     </article>
   );
 }
@@ -349,7 +430,7 @@ export function AdminCronDashboard() {
 
         <div className="admin-cron-job-grid">
           {data.jobs.map((job, i) => (
-            <CronJobCard key={job.key} job={job} index={i} />
+            <CronJobCard key={job.key} job={job} index={i} onRan={() => load(true)} />
           ))}
         </div>
       </SectionDeck>
