@@ -23,3 +23,20 @@ test("reset clears breaker state between cases", async () => {
   resetUwCircuitForTest();
   assert.equal(isUwCircuitOpen(), false);
 });
+
+test("computeDegradedLocalRps divides the global budget across replicas — exact cluster cap (gap #1)", async () => {
+  const { computeDegradedLocalRps } = await import("./uw-rate-limiter");
+  // 1 replica → full budget: no regression for the common single-replica case (it IS the cluster).
+  assert.equal(computeDegradedLocalRps(2, 1), 2);
+  // N replicas → GLOBAL/N, so the cluster sum (N * per-replica) equals GLOBAL exactly, never N*MAX.
+  assert.equal(computeDegradedLocalRps(2, 2), 1);
+  assert.equal(computeDegradedLocalRps(2, 4), 0.5);
+  // Fractional is intentional: a floor-to-1 would yield 1 at N=3 and breach (cluster 3 > 2 ceiling).
+  assert.ok(Math.abs(computeDegradedLocalRps(2, 3) - 2 / 3) < 1e-9);
+  assert.ok(Math.abs(3 * computeDegradedLocalRps(2, 3) - 2) < 1e-9, "3 replicas must sum to the 2-rps ceiling");
+  // Polygon-scale budget divides the same way (40 rps / 3 replicas).
+  assert.ok(Math.abs(computeDegradedLocalRps(40, 3) - 40 / 3) < 1e-9);
+  // Guards: a misconfigured replica count never produces 0 / negative / NaN pacing.
+  assert.equal(computeDegradedLocalRps(2, 0), 2, "floor(0) must clamp the divisor to 1");
+  assert.equal(computeDegradedLocalRps(2, 1000), 0.1, "absurd replica count clamps to the starvation floor");
+});

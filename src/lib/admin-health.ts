@@ -5,6 +5,8 @@ import { getAdminRouteErrors } from "@/lib/admin-route-errors";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
+import { uwRateLimiterStats } from "@/lib/providers/uw-rate-limiter";
+import { polygonRateLimiterStats } from "@/lib/providers/polygon-rate-limiter";
 
 export type AdminHealthPayload = {
   generated_at: string;
@@ -20,6 +22,13 @@ export type AdminHealthPayload = {
   websockets: {
     polygon_indices: ReturnType<typeof getIndexStoreStatus>;
     unusual_whales: ReturnType<typeof getUwSocketHealth>;
+  };
+  // Cluster rate-limiter posture — `degraded:true` means the Redis ceiling is down AND we are
+  // multi-replica, so each limiter is on the per-replica DEGRADED_LOCAL_RPS budget (gap #1). If
+  // REPLICA_COUNT is unset/stale in that state the cluster can still overshoot the upstream ceiling.
+  rate_limiters: {
+    uw: ReturnType<typeof uwRateLimiterStats>;
+    polygon: ReturnType<typeof polygonRateLimiterStats>;
   };
   route_errors: ReturnType<typeof getAdminRouteErrors>;
   market_health_ok: boolean;
@@ -51,6 +60,10 @@ export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
     websockets: {
       polygon_indices: getIndexStoreStatus(),
       unusual_whales: getUwSocketHealth(),
+    },
+    rate_limiters: {
+      uw: uwRateLimiterStats(),
+      polygon: polygonRateLimiterStats(),
     },
     route_errors: getAdminRouteErrors(),
     market_health_ok: marketHealth.ok,

@@ -32,6 +32,22 @@ function envNumber(name: string, fallback: number): number {
 const MAX_RPS = envNumber("POLYGON_MAX_RPS", 40);
 /** Cluster-wide ceiling when REDIS_URL is set — shared by worker + web app. */
 const GLOBAL_MAX_RPS = envNumber("POLYGON_GLOBAL_MAX_RPS", 40);
+/** Live replica count of this service — divides the global budget across replicas on Redis loss. */
+const REPLICA_COUNT = Math.max(1, Math.floor(envNumber("REPLICA_COUNT", 1)));
+
+/**
+ * Per-replica RPS the local bucket may sustain when the Redis global ceiling is UNAVAILABLE.
+ * With Redis up, the atomic Lua ceiling is the real cluster cap and the local bucket is just a
+ * smoother (full MAX_RPS). With Redis DOWN (fail-open) the local bucket is the ONLY cap, so N
+ * replicas each pacing at MAX_RPS would emit N*MAX_RPS and breach the cluster ceiling (gap #1).
+ * Dividing GLOBAL/ N gives an EXACT cluster cap of GLOBAL_MAX_RPS; fractional on purpose so it
+ * stays exact at N>2. The 0.1 guard only protects a misconfigured-high REPLICA_COUNT from
+ * starvation; for realistic N the cluster cap stays exact.
+ */
+export function computeDegradedLocalRps(globalMaxRps: number, replicaCount: number): number {
+  return Math.max(0.1, globalMaxRps / Math.max(1, Math.floor(replicaCount)));
+}
+const DEGRADED_LOCAL_RPS = computeDegradedLocalRps(GLOBAL_MAX_RPS, REPLICA_COUNT);
 const MAX_CONCURRENCY = Math.max(1, Math.floor(envNumber("POLYGON_MAX_CONCURRENCY", 24)));
 /** Default 0 — no inter-call spacing on the permissive Polygon path. */
 const MIN_SPACING_MS = Math.max(0, Math.floor(envNumber("POLYGON_MIN_SPACING_MS", 0)));
@@ -126,19 +142,41 @@ async function getSharedRedis(): Promise<RedisClient | null> {
   }
 }
 
+/** True when the Redis global ceiling is currently active (REDIS_URL set, not in failure backoff). */
+function redisGlobalActive(): boolean {
+  return (
+    Boolean(process.env.REDIS_URL?.trim()) &&
+    !(sharedRedisFailedAt && Date.now() - sharedRedisFailedAt < SHARED_REDIS_RETRY_BACKOFF_MS)
+  );
+}
+
+/**
+ * Effective local token-bucket rate. Redis ceiling healthy → full per-process MAX_RPS (the Lua
+ * ceiling is the real cap). Redis down → the local bucket is the only cap, so it drops to the
+ * per-replica DEGRADED_LOCAL_RPS so the cluster sum can never exceed GLOBAL_MAX_RPS (gap #1).
+ */
+function effectiveMaxRps(): number {
+  return redisGlobalActive() ? MAX_RPS : DEGRADED_LOCAL_RPS;
+}
+
 function refillTokens(): void {
   const now = Date.now();
   const elapsedSec = (now - lastRefillMs) / 1000;
   if (elapsedSec <= 0) return;
-  tokens = Math.min(MAX_RPS, tokens + elapsedSec * MAX_RPS);
+  const rate = effectiveMaxRps();
+  // Burst capacity is >=1 so a call can always eventually admit even when the sustained rate is
+  // fractional (e.g. 40 RPS / 3 replicas = 13.3); the refill RATE is what paces the long run.
+  const capacity = Math.max(1, rate);
+  tokens = Math.min(capacity, tokens + elapsedSec * rate);
   lastRefillMs = now;
 }
 
 function waitMsForToken(): number {
   refillTokens();
   if (tokens >= 1) return 0;
+  const rate = effectiveMaxRps();
   const deficit = 1 - tokens;
-  return Math.max(25, Math.ceil((deficit / MAX_RPS) * 1000));
+  return Math.max(25, Math.ceil((deficit / rate) * 1000));
 }
 
 /**
@@ -199,6 +237,14 @@ async function acquireGlobalRedisSlot(): Promise<boolean> {
     const dead = sharedRedis;
     sharedRedis = null;
     try { dead?.disconnect(); } catch { /* ignore */ }
+    // Degraded mode: the global ceiling is gone, so the local bucket now paces at the per-replica
+    // DEGRADED_LOCAL_RPS budget. REPLICA_COUNT MUST be set for N>1 or the cluster can still
+    // overshoot. Logged ~once per backoff window (not per call) since getSharedRedis short-circuits.
+    console.warn(
+      `[polygon] Redis ceiling unavailable — degraded to per-replica pacing ${DEGRADED_LOCAL_RPS.toFixed(
+        2
+      )} rps (REPLICA_COUNT=${REPLICA_COUNT}). Set REPLICA_COUNT to the live replica count.`
+    );
     return true; // FAIL-OPEN on any Redis error.
   }
 }
@@ -376,27 +422,34 @@ export async function polygonTrackedFetch(
 export function polygonRateLimiterStats(): {
   maxRps: number;
   globalMaxRps: number;
+  replicaCount: number;
+  degradedLocalRps: number;
   maxConcurrency: number;
   minSpacingMs: number;
   inFlight: number;
   tokens: number;
   redisGlobal: boolean;
+  degraded: boolean;
   circuitOpen: boolean;
   circuitOpenUntil: number | null;
   consecutive429: number;
 } {
   refillTokens();
   const now = Date.now();
+  const redisGlobal = redisGlobalActive();
   return {
     maxRps: MAX_RPS,
     globalMaxRps: GLOBAL_MAX_RPS,
+    replicaCount: REPLICA_COUNT,
+    degradedLocalRps: DEGRADED_LOCAL_RPS,
     maxConcurrency: MAX_CONCURRENCY,
     minSpacingMs: MIN_SPACING_MS,
     inFlight,
     tokens,
-    redisGlobal:
-      Boolean(process.env.REDIS_URL?.trim()) &&
-      !(sharedRedisFailedAt && now - sharedRedisFailedAt < SHARED_REDIS_RETRY_BACKOFF_MS),
+    redisGlobal,
+    // Degraded = global ceiling gone AND we actually divide (multi-replica). A single replica on
+    // local pacing is NOT degraded — it is the whole cluster, so full MAX_RPS is correct.
+    degraded: !redisGlobal && REPLICA_COUNT > 1,
     circuitOpen: now < circuitOpenUntil,
     circuitOpenUntil: now < circuitOpenUntil ? circuitOpenUntil : null,
     consecutive429,
