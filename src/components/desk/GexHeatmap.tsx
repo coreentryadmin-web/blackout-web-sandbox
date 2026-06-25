@@ -2825,11 +2825,24 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           {/* regime read strip — clean full-width band below the tiles */}
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
             {lens === "gex" ? (
-              gexPosture != null && (
-                <Badge tone={gexPosture === "long" ? "bull" : "bear"} dot>
-                  {gexPosture === "long" ? "Long Gamma" : "Short Gamma"}
+              gexPosture != null &&
+              (gexPosture === "long" ? (
+                // Long gamma = the calm, mean-reverting regime → emerald.
+                <Badge tone="bull" dot>
+                  Long Gamma
                 </Badge>
-              )
+              ) : (
+                // Short gamma is a REGIME, not an alarm — amber caution, never alarm-red.
+                // (The Badge primitive carries no amber tone, so this mirrors its markup
+                // with the gold/amber token to keep the color-only scope.)
+                <span className="inline-flex items-center gap-1.5 rounded-full border font-mono font-semibold uppercase tracking-[0.14em] tabular-nums px-2 py-0.5 text-[10px] border-gold/35 bg-gold/12 text-gold">
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full bg-gold animate-pulse motion-reduce:animate-none"
+                  />
+                  Short Gamma
+                </span>
+              ))
             ) : lens === "vex" ? (
               vexPosture != null && (
                 <Badge tone={vexPosture === "positive" ? "sky" : "accent"} dot>
