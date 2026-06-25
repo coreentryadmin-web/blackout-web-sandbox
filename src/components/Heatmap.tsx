@@ -1,6 +1,5 @@
 "use client";
 
-import { EngineStatusBar } from "@/components/desk/EngineStatusBar";
 import { GexHeatmap } from "@/components/desk/GexHeatmap";
 
 /**
@@ -8,11 +7,14 @@ import { GexHeatmap } from "@/components/desk/GexHeatmap";
  * Profile|Matrix toggle inside GexHeatmap). The legacy GEX|Sectors switch and the
  * sector thermal / movers view were removed — those source components still exist
  * (used by other tools) but no longer render here.
+ *
+ * The "BlackOut Data Desk · live" EngineStatusBar sub-bar was removed (UI refactor):
+ * it duplicated the in-panel Live/Quote-only badge + spot, and the engine still
+ * surfaces its status there. The component file is kept for other desks.
  */
 export function Heatmap() {
   return (
     <div className="desk-layout space-y-5">
-      <EngineStatusBar />
       <GexHeatmap ticker="SPY" />
     </div>
   );

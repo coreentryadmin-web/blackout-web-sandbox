@@ -900,10 +900,11 @@ function ExposureProfile({
                   : `${fmtStrike(r.strike)} · ${fmtMoney(r.value)}`
               }
             >
-              {/* strike label (left gutter) */}
+              {/* strike label (left gutter) — compacted (w-12) so the bar keeps room
+                  in the now-narrower ~33% Profile column (UI refactor). */}
               <span
                 className={clsx(
-                  "w-14 shrink-0 text-right font-mono text-[11px] tabular-nums",
+                  "w-12 shrink-0 text-right font-mono text-[11px] tabular-nums",
                   isMagnet
                     ? "font-bold text-gold"
                     : r.isSpot
@@ -925,10 +926,10 @@ function ExposureProfile({
                 </span>
               </span>
 
-              {/* bipolar bar track with a center axis — capped width so the bars don't
-                  stretch edge-to-edge on wide monitors (the prior full-bleed track left a
-                  big void between a short bar and the far-pinned value). */}
-              <span className="relative h-5 flex-1 max-w-[clamp(220px,42vw,420px)]">
+              {/* bipolar bar track with a center axis — `flex-1` fills the column, so in the
+                  narrowed ~33% Profile column it compresses to fit. The max-w cap is relaxed
+                  (clamp 160→28vw→360) so the bar still reads in the slimmer column. */}
+              <span className="relative h-5 flex-1 max-w-[clamp(160px,28vw,360px)]">
                 {/* dark-pool level line — subtle horizontal rule across the band */}
                 {dpLevel != null && (
                   <span
@@ -1462,20 +1463,34 @@ function ShiftView({
 }
 
 // ---------------------------------------------------------------------------
-// Ticker switcher — preset chips + search input wired to /api/market/ticker-search
+// Ticker switcher — ONE compact searchable combobox (UI refactor). Replaces the
+// old full-width preset-chip + search row: a single pill shows the active ticker
+// (+ a small live spot beside it) and opens a type-to-search dropdown. The dropdown
+// keeps the EXACT preset set (filtered as you type) AND the search-any-ticker
+// capability wired to /api/market/ticker-search. Brand colors only, never grey;
+// keyboard-operable (↑/↓/Enter/Escape), closes on outside click.
 // ---------------------------------------------------------------------------
 
 function TickerSwitcher({
   ticker,
   onPick,
+  spot,
+  changePct,
+  showSpot,
 }: {
   ticker: string;
   onPick: (t: string) => void;
+  /** Live spot beside the selector — the ONE kept clean header spot reference. */
+  spot?: number;
+  changePct?: number;
+  showSpot?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounce the query feeding the SWR key (~250ms) so typing "GOOGL" mints ONE
   // fetch instead of five. The input stays fully responsive (`query`); only the
@@ -1494,7 +1509,32 @@ function TickerSwitcher({
     (url: string) => fetch(url, { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : { results: [] })),
     { revalidateOnFocus: false, dedupingInterval: 30_000 }
   );
-  const results = searchData?.results ?? [];
+  const searchResults = searchData?.results ?? [];
+
+  // Preset set filtered by the typed query — keeps the exact PRESET_TICKERS list
+  // as the always-available default options, narrowing as you type.
+  const q = query.trim().toUpperCase();
+  const presetMatches = useMemo(
+    () => (q ? PRESET_TICKERS.filter((t) => t.startsWith(q)) : PRESET_TICKERS),
+    [q]
+  );
+  // Combined option list (presets first, then remote matches not already shown).
+  // This flat list drives the keyboard cursor + Enter selection.
+  const options = useMemo(() => {
+    const seen = new Set(presetMatches);
+    const opts: { ticker: string; name?: string; preset: boolean }[] = presetMatches.map((t) => ({
+      ticker: t,
+      preset: true,
+    }));
+    for (const r of searchResults) {
+      const sym = r.ticker.toUpperCase();
+      if (!seen.has(sym)) {
+        seen.add(sym);
+        opts.push({ ticker: sym, name: r.name, preset: false });
+      }
+    }
+    return opts;
+  }, [presetMatches, searchResults]);
 
   // Close the dropdown on outside click.
   useEffect(() => {
@@ -1506,6 +1546,11 @@ function TickerSwitcher({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  // Reset the keyboard cursor to the top whenever the option set changes.
+  useEffect(() => {
+    setActive(0);
+  }, [query, open]);
+
   function pick(t: string) {
     const sym = t.trim().toUpperCase();
     if (!sym) return;
@@ -1515,75 +1560,151 @@ function TickerSwitcher({
     setOpen(false);
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {PRESET_TICKERS.map((t) => {
-        const active = t === ticker;
-        return (
-          <button
-            key={t}
-            type="button"
-            onClick={() => onPick(t)}
-            aria-pressed={active}
-            className={clsx(
-              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold tracking-wide outline-none transition-colors",
-              "focus-visible:ring-2 focus-visible:ring-sky-400",
-              active
-                ? "bg-cyan-400/15 text-white outline outline-1 outline-cyan-400/60"
-                : "text-sky-300 hover:bg-white/[0.06] hover:text-white"
-            )}
-          >
-            {t}
-          </button>
-        );
-      })}
+  function openMenu() {
+    setOpen(true);
+    // Focus the search field on the next frame so typing starts immediately.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
 
-      {/* search any ticker */}
-      <div ref={boxRef} className="relative">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              if (results[0]) pick(results[0].ticker);
-              else if (query.trim()) pick(query);
-            } else if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder="Search…"
-          aria-label="Search any ticker"
-          spellCheck={false}
-          className={clsx(
-            "w-28 rounded-md border border-white/12 bg-[rgba(8,9,14,0.6)] px-2 py-1 font-mono text-[11px] text-white",
-            "placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
-          )}
-        />
-        {open && results.length > 0 && (
-          <ul
-            role="listbox"
-            className="absolute right-0 z-30 mt-1 max-h-60 w-60 overflow-y-auto rounded-lg border border-white/12 bg-[rgba(8,9,14,0.97)] p-1 shadow-xl backdrop-blur"
-          >
-            {results.map((r) => (
-              <li key={r.ticker}>
-                <button
-                  type="button"
-                  onClick={() => pick(r.ticker)}
-                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-cyan-400/10 focus-visible:bg-cyan-400/10"
-                >
-                  <span className="font-mono text-[12px] font-semibold text-white">{r.ticker}</span>
-                  <span className="truncate text-[10px] text-sky-300/70">{r.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+  const changeBull = (changePct ?? 0) >= 0;
+
+  return (
+    <div ref={boxRef} className="relative flex items-center gap-2">
+      {/* Compact trigger — active ticker + caret. Opens the search dropdown. */}
+      <button
+        type="button"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Ticker: ${ticker}. Change ticker`}
+        className={clsx(
+          "inline-flex items-center gap-1.5 rounded-md border border-white/12 bg-[rgba(8,9,14,0.6)] px-2.5 py-1.5 outline-none transition-colors",
+          "hover:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400"
         )}
-      </div>
+      >
+        <span aria-hidden className="text-sky-300/70">🔍</span>
+        <span className="font-mono text-[12px] font-bold tracking-wide text-white">{ticker}</span>
+        <span aria-hidden className="text-[9px] leading-none text-sky-300/60">▾</span>
+      </button>
+
+      {/* The ONE kept clean spot reference — small, beside the selector. */}
+      {showSpot && spot != null && spot > 0 && (
+        <span
+          className="flex items-baseline gap-1.5 font-mono"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span className="sr-only">
+            {ticker} {fmtSpot(spot)}, {changeBull ? "up" : "down"}{" "}
+            {fmtPct(changePct ?? 0)}
+          </span>
+          <span aria-hidden className="text-[13px] font-bold tabular-nums text-white">
+            {fmtSpot(spot)}
+          </span>
+          {changePct != null && (
+            <span
+              aria-hidden
+              className={clsx(
+                "text-[10px] font-bold tabular-nums",
+                changeBull ? "text-bull" : "text-bear"
+              )}
+            >
+              {fmtPct(changePct)}
+            </span>
+          )}
+        </span>
+      )}
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-64 rounded-lg border border-white/12 bg-[rgba(8,9,14,0.97)] p-1.5 shadow-xl backdrop-blur">
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const opt = options[active] ?? options[0];
+                if (opt) pick(opt.ticker);
+                else if (query.trim()) pick(query);
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActive((i) => Math.min(i + 1, Math.max(0, options.length - 1)));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Escape") {
+                setOpen(false);
+              }
+            }}
+            placeholder="Search any ticker…"
+            aria-label="Search any ticker"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls="ticker-listbox"
+            spellCheck={false}
+            autoComplete="off"
+            className={clsx(
+              "w-full rounded-md border border-white/12 bg-[rgba(4,6,10,0.7)] px-2.5 py-1.5 font-mono text-[12px] text-white",
+              "placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
+            )}
+          />
+          <ul
+            id="ticker-listbox"
+            role="listbox"
+            aria-label="Tickers"
+            className="mt-1 max-h-60 overflow-y-auto overscroll-contain"
+          >
+            {options.length === 0 ? (
+              <li className="px-2 py-2 text-center font-mono text-[10px] uppercase tracking-widest text-sky-300/60">
+                No matches
+              </li>
+            ) : (
+              options.map((o, i) => {
+                const isActive = i === active;
+                const isCurrent = o.ticker === ticker;
+                return (
+                  <li key={o.ticker} role="option" aria-selected={isCurrent}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => pick(o.ticker)}
+                      className={clsx(
+                        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
+                        isActive ? "bg-cyan-400/12" : "hover:bg-cyan-400/10"
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className={clsx(
+                            "font-mono text-[12px] font-semibold",
+                            isCurrent ? "text-cyan-400" : "text-white"
+                          )}
+                        >
+                          {o.ticker}
+                        </span>
+                        {o.preset && (
+                          <span className="font-mono text-[8px] uppercase tracking-wider text-sky-300/50">
+                            preset
+                          </span>
+                        )}
+                      </span>
+                      {o.name && (
+                        <span className="truncate text-[10px] text-sky-300/70">{o.name}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -2331,6 +2452,10 @@ function PanelLabel({ children }: { children: React.ReactNode }) {
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
+  // Paired-view selection ("pair-a" = Profile + Matrix; "pair-b" = Curve + Shift).
+  // Lifted to a controlled state (UI refactor) so the view TabList can live on the
+  // top control row while its TabPanels render in the body — both share this value.
+  const [pairView, setPairView] = useState<"pair-a" | "pair-b">("pair-a");
   // Cross-tool overlay toggles (default on; auto-hidden when the overlay is null).
   const [showFlow, setShowFlow] = useState(true);
   const [showDarkPool, setShowDarkPool] = useState(true);
@@ -2639,6 +2764,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const blockEmpty = Object.keys(strikeTotals).length === 0;
   const empty = !isLoading && data != null && (!data.available || strikes.length === 0);
 
+  // Whether the body renders the paired views (Profile+Matrix / Curve+Shift). Mirrors
+  // the success-branch gate below so the view TabList on the control row only shows when
+  // there's a real block to switch between (not during load / stale / empty states).
+  const showViewTabs = !((isLoading && !data) || stale) && !empty && !blockEmpty;
+
   // Peak magnitude across the active block's cells drives the matrix color scale.
   const peak = useMemo(() => {
     let p = 0;
@@ -2848,14 +2978,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     : quoteLive
       ? (quote!.change_pct ?? 0)
       : changePct;
-  const headerChangeBull = headerChangePct >= 0;
-  // Bull pulse when the price is genuinely live: a sub-second SSE push, a WS index
-  // quote, or a fresh (<6s) REST quote.
-  const quoteFresh =
-    pushedLive ||
-    (quoteLive &&
-      (quote!.source === "ws" ||
-        (quote!.asof != null && Date.now() - new Date(quote!.asof).getTime() < 6_000)));
+  // NOTE: the old `headerChangeBull` + `quoteFresh` derivations powered the big central
+  // spot tape (removed in the UI refactor — spot was shown 4+ times). The compact spot
+  // beside the ticker selector derives its own up/down sign, and the panel's Live /
+  // Quote-only badge carries the freshness signal, so neither is needed here anymore.
 
   // ── GEX "vs prior close" tile deltas (HISTORY context) ───────────────────────
   // Built ONLY under the GEX lens (flip/walls/net-GEX are gamma concepts — we never
@@ -3520,66 +3646,43 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         </span>
       }
     >
-      {/* ── Control bar (full width, one tight row): tickers · live tape · lens ── */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
-        <TickerSwitcher ticker={ticker} onPick={setTicker} />
+      {/* ── ONE compact control row (UI refactor) ──────────────────────────────
+          [🔍 ticker + spot]  [ Profile+Matrix | Curve+Shift ]  …spacer…  [GEX VEX DEX CHARM]
+          The old full-width ticker-chip row, the big central spot readout, and the
+          separate lens box are gone — collapsed into this single row. The view tabs
+          (Profile+Matrix | Curve+Shift) ride here too via a controlled mirror of the
+          body's TabPanels (`pairView`); they only show once a real block is in hand.
+          Wraps gracefully on narrow widths (flex-wrap). */}
+      <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
+        {/* Compact searchable ticker + the ONE kept clean spot reference. */}
+        <TickerSwitcher
+          ticker={ticker}
+          onPick={setTicker}
+          spot={headerSpot}
+          changePct={headerChangePct}
+          showSpot={(live || quoteOnly) && headerSpot > 0}
+        />
 
-        {/* Live spot tape — centered/inline; ● pulse + price + change%.
-            Wrapped in an aria-live polite region so screen readers announce
-            price/change updates, with a visually-hidden label for context.
-            Shows whenever a current-ticker spot resolved (live OR quote-only). */}
-        {(live || quoteOnly) && headerSpot > 0 && (
-          <div
-            className="flex items-center gap-2.5 font-mono"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <span className="sr-only">
-              Live price for {data?.underlying ?? ticker}: {fmtSpot(headerSpot)},{" "}
-              {headerChangeBull ? "up" : "down"} {fmtPct(headerChangePct)}
-            </span>
-            <span
-              aria-hidden
-              title={
-                pushedLive
-                  ? "Live spot — real-time (push)"
-                  : quoteFresh
-                    ? quote?.source === "ws"
-                      ? "Live spot — real-time"
-                      : "Live spot — ~1.5s"
-                    : "Spot — 20s snapshot"
-              }
-              className={clsx(
-                "inline-block h-2 w-2 rounded-full",
-                quoteFresh
-                  ? "bg-bull shadow-[0_0_8px_#00e676] motion-safe:animate-pulse"
-                  : "bg-sky-300/60"
-              )}
-            />
-            <span aria-hidden className="text-[10px] uppercase tracking-[0.2em] text-sky-300/75">
-              {data?.underlying ?? ticker}
-            </span>
-            <span aria-hidden className="text-lg font-bold leading-none tabular-nums text-white">
-              {fmtSpot(headerSpot)}
-            </span>
-            <span
-              aria-hidden
-              className={clsx(
-                "rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums",
-                headerChangeBull ? "bg-bull/12 text-bull" : "bg-bear/12 text-bear"
-              )}
-            >
-              {fmtPct(headerChangePct)}
-            </span>
-          </div>
+        {/* View tabs — Profile+Matrix | Curve+Shift. Controlled mirror of the body
+            TabPanels (both driven by `pairView`). Only meaningful with a real block. */}
+        {showViewTabs && (
+          <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")}>
+            <TabList aria-label={`${lensUpper} paired views`} className="w-fit">
+              <Tab value="pair-a">{`${vocab.noun} Profile + Matrix`}</Tab>
+              <Tab value="pair-b">Curve + Shift</Tab>
+            </TabList>
+          </Tabs>
         )}
+
+        {/* Spacer pushes the lens toggles to the far right of the row. */}
+        <span className="ml-auto" aria-hidden />
 
         {/* Lens switcher — FOUR lenses on the shared Tabs primitive (controlled by `lens`)
             for consistent ARIA wiring + keyboard nav (Arrow/Home/End, roving tabindex).
             `unstyled` keeps each lens's distinct on-brand color identity. DEX/CHARM tabs
             appear only when their block ships in THIS payload (older caches omit them →
-            hide the tab rather than render an empty lens). */}
+            hide the tab rather than render an empty lens). Moved here (far right of the
+            control row) from the old header top-right. */}
         <Tabs value={lens} onValueChange={(v) => setLens(v as Lens)}>
           <TabList
             aria-label="Exposure lens"
@@ -3781,33 +3884,27 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
 
           {/* ── Main area — 2 PAIRED views (Step 3). The four single views collapse into
               two paired tabs so two complementary panels share the viewport at once:
-                • "Profile + Matrix" (DEFAULT) — Profile narrower (lg:col-span-5) + Matrix
-                  wider (lg:col-span-7) on an lg 12-col grid; stacks on md/sm.
+                • "Profile + Matrix" (DEFAULT) — Gamma Profile narrow (lg:col-span-4 ≈ 33%)
+                  + Matrix wide (lg:col-span-8 ≈ 67%) on an lg 12-col grid; stacks on md/sm.
                 • "Curve + Shift" — Curve + Shift 50/50 (lg:grid-cols-2); stacks on md/sm.
-              Each panel const (built above) REUSES its view's render JSX verbatim, keeping
-              its bounded scroller, spot/flip anchoring, magnet markers, colors + legends.
-              This is the VIEW TabList — it uses the DEFAULT styled chrome (the `unstyled`
-              fix belongs to the LENS TabList above; we don't touch that here). Keyed on lens
-              so a lens switch resets to the default pair (Shift only carries data for GEX/VEX;
-              under DEX/CHARM the Shift half self-explains). ──────────────── */}
-          <Tabs key={lens} defaultValue="pair-a" className="mt-5">
-            <TabList aria-label={`${lensUpper} paired views`} className="w-fit">
-              <Tab value="pair-a">{`${vocab.noun} Profile + Matrix`}</Tab>
-              <Tab value="pair-b">Curve + Shift</Tab>
-            </TabList>
-
+              The VIEW TabList now lives on the top control row (controlled by `pairView`);
+              this body `Tabs` is the same controlled value, so it renders ONLY the panels —
+              no duplicate tab strip here. Each panel const (built above) REUSES its view's
+              render JSX verbatim, keeping its bounded scroller, spot/flip anchoring, magnet
+              markers, colors + legends. ──────────────── */}
+          <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-5">
             <TabPanels>
-              {/* Tab A — Profile (narrower) + Matrix (wider) on a 12-col grid. */}
+              {/* Tab A — Profile (~33%) + Matrix (~67%) on a 12-col grid. */}
               <TabPanel value="pair-a">
-                <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-12">
-                  <div className="min-w-0 lg:col-span-5">{profilePanel}</div>
-                  <div className="min-w-0 lg:col-span-7">{matrixPanel}</div>
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+                  <div className="min-w-0 lg:col-span-4">{profilePanel}</div>
+                  <div className="min-w-0 lg:col-span-8">{matrixPanel}</div>
                 </div>
               </TabPanel>
 
               {/* Tab B — Curve + Shift, 50/50. */}
               <TabPanel value="pair-b">
-                <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                   {curvePanel}
                   {shiftPanel}
                 </div>
