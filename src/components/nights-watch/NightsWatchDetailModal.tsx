@@ -265,10 +265,12 @@ function DetailHeader({ position }: { position: PositionDetail["position"] }) {
           <span className="font-syne text-[22px] font-bold tracking-tight text-white">
             {position.ticker}
           </span>
+          {/* CALL strike/type emerald, PUT bear — direction (call/put), not side.
+              Small inline text → AA-safe --bear-text (mirrors the position card). */}
           <span
             className={clsx(
               "font-mono text-[15px] font-semibold tabular-nums",
-              position.option_type === "call" ? "text-bull" : "text-bear"
+              position.option_type === "call" ? "text-bull" : "text-bear-text"
             )}
           >
             {position.strike}

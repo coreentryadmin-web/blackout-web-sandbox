@@ -531,10 +531,15 @@ function PositionCard({
             <span className="font-anton text-[24px] leading-none tracking-tight text-white">
               {position.ticker}
             </span>
+            {/* Direction recognition: CALL strike/type in emerald, PUT in bear. This
+                is direction (call/put) — NOT side (long/short), which is shown
+                separately below. The strike is small (14px) inline text, so PUT uses
+                the AA-safe --bear-text (#ff5c78 ~5.0:1) rather than display --bear
+                (#ff2d55 ~4.0:1, sub-AA at this size); CALL emerald already clears AA. */}
             <span
               className={clsx(
                 "font-mono text-[14px] font-semibold tabular-nums",
-                position.option_type === "call" ? "text-bull" : "text-bear"
+                position.option_type === "call" ? "text-bull" : "text-bear-text"
               )}
             >
               {position.strike}
