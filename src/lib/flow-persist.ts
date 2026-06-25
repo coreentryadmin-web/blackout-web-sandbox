@@ -4,6 +4,15 @@ import { publishFlowEvent } from "@/lib/flow-events";
 import type { MarketFlowAlert } from "@/lib/providers/unusual-whales";
 import { shouldFanOut } from "@/lib/flow-fanout";
 import { flowFallbackAlertId } from "@/lib/flow-alert-id";
+import { markFlowFrameDelivered } from "@/lib/flow-liveness";
+
+/**
+ * SSE row shape published to the live tape. Extends FlowRow with the canonical
+ * `alert_id` so the client can dedup on the SAME id the persist layer uses for the
+ * Postgres ON-CONFLICT (audit gap #13) instead of reconstructing a lossy composite
+ * key — that composite missed/duplicated rows after an SSE reconnect.
+ */
+export type PublishedFlowRow = FlowRow & { alert_id: string };
 
 export const MIN_PREMIUM = Number(process.env.UW_FLOW_MIN_PREMIUM ?? 200_000);
 
@@ -72,8 +81,13 @@ export async function persistAndPublishFlowAlert(
     return null;
   })();
 
-  const event = toFlowRow(flow);
+  const event: PublishedFlowRow = { ...toFlowRow(flow), alert_id: id };
   event.event_at = realCreatedAt;
+  // alerted_at drives the live tape's sort + LIVE badge. Use the REAL UW time
+  // (realCreatedAt) when known; otherwise leave it null so the UI excludes the row
+  // from LIVE/sort rather than trusting parseUwFlowAlert's "" / a fabricated now()
+  // (audit gap #6). The DB-backed REST read keeps its own historical fallback.
+  event.alerted_at = realCreatedAt ?? "";
   let inserted = false;
   let insertFailed = false;
   const usingDb = dbConfigured();
@@ -108,6 +122,12 @@ export async function persistAndPublishFlowAlert(
   if (shouldPublish) {
     publishFlowEvent(event);
     if (flow.premium >= MIN_PREMIUM) markFlowDataFresh();
+    // Cluster-wide liveness heartbeat (audit gap #10): record that THIS replica
+    // just delivered a fresh flow frame so a replica running only the flow-ingest
+    // cron can tell the cluster already has a live WS and skip redundant REST.
+    // Throttled + best-effort + tagged with this process's id (the cron excludes
+    // its own writes), so it can never silence the cron that owns this process.
+    markFlowFrameDelivered();
     void notifyDiscord(event);
   }
 

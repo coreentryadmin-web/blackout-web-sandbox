@@ -180,15 +180,30 @@ export function parseUwFlowAlert(row: Record<string, unknown>): MarketFlowAlert 
       if (!optRaw) optRaw = occ.option_type.toLowerCase();
     }
   }
-  const opt = optRaw || "call";
-  const premium = Number(row.total_premium ?? row.premium ?? 0);
-  const dte = expiry ? Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000) : 99;
-  const route = premium >= 1_000_000 ? "whale" : dte <= 0 ? "0dte" : "stock";
+  // TRUTH MANDATE (audit gap #6): never DEFAULT a missing side to "call" — that
+  // rendered a real PUT as BULLISH and inverted the whole bull/bear read. When the
+  // side is genuinely unparseable, mark it UNKNOWN/non-directional so it is excluded
+  // from CALL/PUT tallies and live bias rather than fabricated as a bullish call.
+  const isPut = optRaw.startsWith("p");
+  const isCall = optRaw.startsWith("c");
+  const optionType = isPut ? "PUT" : isCall ? "CALL" : "UNKNOWN";
+  const direction = isPut ? "bearish" : isCall ? "bullish" : "unknown";
 
+  const premium = Number(row.total_premium ?? row.premium ?? 0);
+  // Leave dte null (route unknown) when expiry is absent — do NOT default dte to 99,
+  // which previously forced route="stock" on every timestamp/expiry-less print.
+  const dte = expiry ? Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000) : null;
+  const route =
+    premium >= 1_000_000 ? "whale" : dte == null ? "" : dte <= 0 ? "0dte" : "stock";
+
+  // Do NOT fall back to NOW: a timestampless print defaulted to now() looked fresh and
+  // produced false Velocity Radar / LIVE-badge spikes. Surface it as "" (unknown) — the
+  // persist layer derives the REAL event time from raw.created_at/start_time, and the
+  // live tape excludes empty alerted_at from LIVE + sort (audit gap #6).
   let alertedAt = String(row.created_at ?? "");
   if (!alertedAt && row.start_time) {
     const ts = Number(row.start_time);
-    alertedAt = new Date(ts > 1e12 ? ts : ts * 1000).toISOString();
+    if (Number.isFinite(ts)) alertedAt = new Date(ts > 1e12 ? ts : ts * 1000).toISOString();
   }
 
   const ruleRaw = String(row.alert_rule ?? row.rule_name ?? "").trim();
@@ -197,13 +212,15 @@ export function parseUwFlowAlert(row: Record<string, unknown>): MarketFlowAlert 
   return {
     ticker: String(row.ticker ?? "").toUpperCase(),
     premium,
-    option_type: opt.startsWith("p") ? "PUT" : "CALL",
+    option_type: optionType,
     expiry,
     strike,
-    direction: opt.startsWith("p") ? "bearish" : "bullish",
+    direction,
     score: Number(row.score ?? 0),
     route,
-    alerted_at: alertedAt || new Date().toISOString(),
+    // "" when UW gave no real timestamp — never a fabricated now(). An unknown-side
+    // row still carries its real time when UW sent one (side and time are independent).
+    alerted_at: alertedAt,
     alert_rule: ruleRaw || null,
     trade_count: Number.isFinite(tradeRaw) && tradeRaw > 0 ? tradeRaw : null,
     has_sweep: Boolean(row.has_sweep),

@@ -3,6 +3,7 @@ import { persistAndPublishFlowAlert } from "@/lib/flow-persist";
 import { fetchMarketFlowAlertRows } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import { uwSocket, isUwChannelFresh } from "@/lib/ws/uw-socket";
+import { isFlowFrameFreshFromCluster } from "@/lib/flow-liveness";
 
 const CURSOR_KEY = "uw_flow_cursor";
 const CURSOR_ID_KEY = "uw_flow_cursor_max_id";
@@ -39,6 +40,17 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   if (wsStatus["flow_alerts"] === "OPEN" && isUwChannelFresh("flow_alerts", 120_000)) {
     // WS path persists via persistAndPublishFlowAlert — skip REST to avoid duplicate UW calls.
     return { ok: true, ingested: 0, polled: 0, skipped: "ws_active" };
+  }
+
+  // Cluster-aware fallback (audit gap #10): the LOCAL socket above only sees THIS
+  // replica's WS. On multi-replica Railway a different replica may serve /flows and
+  // be the one delivering frames while this replica runs only the cron — its local
+  // socket is CLOSED, so the check above would run REST redundantly. If ANY OTHER
+  // replica delivered a flow frame recently (shared Redis heartbeat), skip REST too.
+  // Fail-open: when Redis is unavailable this returns false and we fall through to
+  // the normal REST path below, so behavior is never worse than the local-only gate.
+  if (await isFlowFrameFreshFromCluster(120_000)) {
+    return { ok: true, ingested: 0, polled: 0, skipped: "ws_active_cluster" };
   }
 
   if (!dbConfigured()) {

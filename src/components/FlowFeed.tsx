@@ -35,10 +35,35 @@ import { Skeleton } from "@/components/ui";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
 
 const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
-const FLOOR_PREMIUM = 100_000;
+// Audit gap #16: the client floor MUST match the server ingest floor (flow-persist
+// MIN_PREMIUM, default UW_FLOW_MIN_PREMIUM = $200K). A $100K floor was dead UI — no
+// row below $200K is ever persisted, so requesting them returned nothing. Keep this
+// in sync with UW_FLOW_MIN_PREMIUM if that env is lowered server-side.
+const FLOOR_PREMIUM = 200_000;
 type TypeFilter = "ALL" | "CALL" | "PUT";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
+
+// Audit gap #6: a usable alerted_at timestamp. parseUwFlowAlert now emits "" (and the
+// persist layer null) when UW gave no real time — those must be EXCLUDED from the LIVE
+// badge + sorted last, never coerced to now() (which faked a fresh tape). Returns the
+// epoch ms, or null when the row has no trustworthy time.
+function alertedAtMs(a: { alerted_at?: string | null }): number | null {
+  if (!a.alerted_at) return null;
+  const ms = new Date(a.alerted_at).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// Audit gap #13: dedup on the canonical alert_id the persist layer used for the
+// Postgres ON-CONFLICT. SSE rows now carry alert_id; DB-served REST rows do not, so we
+// fall back to the seconds-precision composite for cross-path (REST↔SSE) matching. The
+// SSE path registers BOTH keys so a reconnect can't slip a duplicate past either one.
+function flowCompositeKey(a: { ticker: string; strike: number; option_type: string; alerted_at?: string | null }): string {
+  return `${a.ticker}|${a.strike}|${a.option_type}|${String(a.alerted_at ?? "").slice(0, 19)}`;
+}
+function flowAlertId(a: { alert_id?: string }): string | null {
+  return a.alert_id ? `id:${a.alert_id}` : null;
+}
 
 // Bug 14: synthetic beep for whale prints (>$1M) using Web Audio API
 function playWhaleBeep() {
@@ -166,7 +191,11 @@ export function FlowFeed() {
     const byTicker  = new Map<string, { callPrem: number; putPrem: number }>();
 
     for (const alert of alerts) {
-      if (now - new Date(alert.alerted_at).getTime() > WINDOW_MS) continue;
+      // Gap #6: a row with no trustworthy alerted_at must be EXCLUDED from the 30-min
+      // split window — not silently kept (NaN compare fell through the old guard) where
+      // it could fabricate an opposing-flow signal out of an undated print.
+      const ms = alertedAtMs(alert);
+      if (ms == null || now - ms > WINDOW_MS) continue;
       const cur = byTicker.get(alert.ticker) ?? { callPrem: 0, putPrem: 0 };
       if (alert.option_type === "CALL") cur.callPrem += alert.premium;
       else if (alert.option_type === "PUT") cur.putPrem += alert.premium;
@@ -330,10 +359,16 @@ export function FlowFeed() {
   const loadFlows = useCallback(async () => {
     try {
       const d = await fetchFlows({ min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
-      // Bug 1: rebuild seenRef from REST data so SSE can't add duplicates after reconnect
-      seenRef.current = new Set(
-        d.flows.map((a: FlowAlert) => `${a.ticker}|${a.strike}|${a.option_type}|${String(a.alerted_at).slice(0, 19)}`)
-      );
+      // Bug 1 + gap #13: rebuild seenRef from REST so SSE can't re-add duplicates after a
+      // reconnect. Seed BOTH the canonical alert_id (when the row carries one) and the
+      // composite fallback, so an incoming SSE echo matches on whichever key it shares.
+      const seeded = new Set<string>();
+      for (const a of d.flows as Array<FlowAlert & { alert_id?: string }>) {
+        const id = flowAlertId(a);
+        if (id) seeded.add(id);
+        seeded.add(flowCompositeKey(a));
+      }
+      seenRef.current = seeded;
       setAlerts(d.flows);
       setLive(true);
     } catch {
@@ -352,10 +387,15 @@ export function FlowFeed() {
 
     const conn = createFlowEventSource(
       (alert) => {
-        // Bug 1: seconds-precision key tolerates sub-second timestamp drift between SSE and DB
-        const id = `${alert.ticker}|${alert.strike}|${alert.option_type}|${String(alert.alerted_at).slice(0, 19)}`;
-        if (seenRef.current.has(id)) return;
-        seenRef.current.add(id);
+        // Gap #13: prefer the canonical alert_id (matches the persist ON-CONFLICT id);
+        // the composite is the cross-path fallback that tolerates sub-second drift vs the
+        // DB-served REST rows (which carry no alert_id). A hit on EITHER key is a dupe.
+        const widened = alert as FlowAlert & { alert_id?: string };
+        const idKey = flowAlertId(widened);
+        const compositeKey = flowCompositeKey(alert);
+        if ((idKey && seenRef.current.has(idKey)) || seenRef.current.has(compositeKey)) return;
+        if (idKey) seenRef.current.add(idKey);
+        seenRef.current.add(compositeKey);
         // Trim seenRef when it grows large; keep newest 1000 to prevent unbounded memory growth
         if (seenRef.current.size > 2000) {
           const entries = Array.from(seenRef.current);
@@ -422,17 +462,32 @@ export function FlowFeed() {
     // Real-time tape → newest first. (Largest-by-premium ranking belongs in the
     // NET PREMIUM / STRIKE STACKS panels; sorting the TAPE by premium pinned old
     // whale prints to row 0 so a "REAL-TIME TAPE" looked frozen — HELIX flow audit.)
-    return [...base].sort(
-      (a, b) => new Date(b.alerted_at).getTime() - new Date(a.alerted_at).getTime()
-    );
+    // Gap #6: rows with no trustworthy alerted_at (UW gave no time) sort LAST instead
+    // of polluting row 0 with a NaN compare — they must never define "newest".
+    return [...base].sort((a, b) => {
+      const am = alertedAtMs(a);
+      const bm = alertedAtMs(b);
+      if (am == null && bm == null) return 0;
+      if (am == null) return 1;
+      if (bm == null) return -1;
+      return bm - am;
+    });
   }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium, typeFilter, watchlistOnly, watchlist.watchlistSet]);
 
   // Tape freshness — newest print age drives an honest LIVE/STALE badge.
   // Connection success alone is NOT data freshness: a stale tape over a weekend
   // or a dead ingest must read STALE, not green LIVE.
-  const newestAt = displayAlerts[0]?.alerted_at
-    ? new Date(displayAlerts[0].alerted_at).getTime()
-    : 0;
+  // Gap #6: derive "newest" from the freshest row with a TRUSTWORTHY alerted_at —
+  // never from a row whose time UW omitted (those would otherwise read as epoch 0 /
+  // NaN and either falsely age the tape or mask a genuinely stale one).
+  const newestAt = useMemo(() => {
+    let max = 0;
+    for (const a of displayAlerts) {
+      const ms = alertedAtMs(a);
+      if (ms != null && ms > max) max = ms;
+    }
+    return max;
+  }, [displayAlerts]);
   const dataAgeMs = newestAt ? Date.now() - newestAt : null;
   const dataStale = dataAgeMs != null && dataAgeMs > 5 * 60_000;
   const newestAgeLabel =

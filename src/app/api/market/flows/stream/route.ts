@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { initFlowEventBridge, subscribeFlowEvents } from "@/lib/flow-events";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
+import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,6 +16,12 @@ const MAX_STREAMS = Number(process.env.SSE_MAX_STREAMS ?? 500);
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
+
+  // Boot the UW WebSocket (idempotent) so a replica serving ONLY /flows traffic still
+  // initializes uwSocket — without this the live tape's SSE bridge never receives WS
+  // frames and silently goes empty unless the REST cron happens to run here (audit
+  // gap #4). nodejs runtime is declared above, so this is edge-safe.
+  ensureDataSockets();
 
   if (activeStreams >= MAX_STREAMS) {
     return new Response("Too many active streams — try again shortly", { status: 503 });

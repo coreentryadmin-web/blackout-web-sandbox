@@ -6,12 +6,20 @@ import { uwConfigured } from "@/lib/providers/config";
 import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
 import { marketPlatform } from "@/lib/platform";
 import { serverCache, TTL } from "@/lib/server-cache";
+import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const dynamic = "force-dynamic";
+// nodejs runtime is required: ensureDataSockets (and the pg/UW providers used below)
+// pull node-only modules (ioredis / ws / node:crypto) that the edge runtime rejects.
+export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
+
+  // Boot the UW WebSocket (idempotent) so a replica that only ever serves the /flows
+  // poll route still initializes uwSocket and keeps the live tape fed (audit gap #4).
+  ensureDataSockets();
 
   const sp = req.nextUrl.searchParams;
   const limit = Math.min(Number(sp.get("limit") ?? 500), 1000); // cap at 1000 to keep payload lean
