@@ -2169,11 +2169,30 @@ body {
 
   .platform-dot-grid {
     position: fixed;
-    inset: 0;
+    /* Overhang one tile (32px) on every edge so the ultra-slow drift below
+       never exposes an un-dotted strip at the viewport edge. */
+    inset: -32px;
     z-index: 1;
     pointer-events: none;
     background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     background-size: 32px 32px;
+    /* VITALS Phase 1 — Circuit Drift: ultra-slow lattice slide. Transform ONLY
+       (never background-position); 32px == tile size so the loop is seamless.
+       Subscribes to the shared cadence so it slows after-hours. */
+    animation: circuit-drift var(--pulse-period-slow, 80s) linear infinite;
+    will-change: transform;
+  }
+
+  @keyframes circuit-drift {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(32px, 32px, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .platform-dot-grid {
+      animation: none;
+      transform: none;
+    }
   }
 
   .platform-ambient-dashboard {
