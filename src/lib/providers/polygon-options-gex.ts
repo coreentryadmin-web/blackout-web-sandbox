@@ -386,7 +386,12 @@ export type GexHeatmap = {
   spot: number;
   change_pct: number;
   asof: string;
-  /** Ascending, ~8 nearest expirations present in the band (SHARED by both metrics). */
+  /**
+   * Ascending expiry axis (SHARED by all metrics): the ~8 NEAREST expirations (dailies/weeklies)
+   * FOLLOWED BY a bounded set of far-dated standard monthly / quarterly OpEx columns (3rd-Friday,
+   * out ~6 months) — the strikes where the dominant dealer-gamma walls park. The near-term block is
+   * unchanged; the far-dated columns are additive.
+   */
   expiries: string[];
   /** Descending, strike-banded around spot (SHARED by both metrics). */
   strikes: number[];
@@ -616,6 +621,62 @@ function yearsToExpiry(expiry: string, todayYmd: string): number {
   const nowMs = new Date(`${todayYmd}T00:00:00-04:00`).getTime();
   if (!Number.isFinite(expMs) || !Number.isFinite(nowMs)) return 0;
   return (expMs - nowMs) / (365 * 86_400_000);
+}
+
+// ---------------------------------------------------------------------------
+// FAR-DATED expiry selection — standard monthly (3rd-Friday) + quarterly OpEx.
+//
+// THE POINT: the dominant dealer-gamma walls park at the standard monthly / quarterly
+// OpEx open interest (e.g. a huge wall on the Sept monthly OpEx), which the near-term
+// 8-nearest view never sees. We add a BOUNDED set of standard monthly/quarterly TARGET
+// dates out ~6 months as extra expiry columns. These are computed from the calendar (NOT
+// every far-dated daily) and then MATCHED against the live chain, so the fetched + computed
+// set stays small (~6-10 extra columns) and the warm cost stays inside the rate budget.
+// ---------------------------------------------------------------------------
+
+/** How many months of standard monthly OpEx (3rd Friday) to target ahead, inclusive of this month. */
+const FAR_DATED_MONTHS_AHEAD = 6;
+/** Hard cap on the far-dated target dates returned — bounds the extra fetch + column count. */
+const FAR_DATED_MAX_TARGETS = 8;
+
+/**
+ * The standard US options monthly expiration for a given (year, month0): the THIRD FRIDAY.
+ * Returns a YYYY-MM-DD string. (We intentionally use the 3rd-Friday calendar date — when a
+ * holiday shifts settlement the listed contract is still keyed to this date on the chain, so
+ * matching against the live chain's expiry strings below tolerates the rare shift.)
+ */
+function thirdFridayYmd(year: number, month0: number): string {
+  // Day-of-week of the 1st (0=Sun..6=Sat), in UTC to avoid TZ drift on the date math.
+  const first = new Date(Date.UTC(year, month0, 1));
+  const dow = first.getUTCDay();
+  // First Friday date-of-month, then + 14 days → third Friday.
+  const firstFriday = 1 + ((5 - dow + 7) % 7);
+  const thirdFriday = firstFriday + 14;
+  const mm = String(month0 + 1).padStart(2, "0");
+  const dd = String(thirdFriday).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+
+/**
+ * Bounded set of FAR-DATED standard monthly (3rd-Friday) target expiries, ascending, that fall
+ * STRICTLY AFTER `afterYmd` (the last near-term expiry we already keep) and within ~6 months of
+ * `todayYmd`. Quarterly OpEx (Mar/Jun/Sep/Dec) are a subset of the monthlies, so they're included
+ * automatically — they simply carry the heaviest OI. Capped at FAR_DATED_MAX_TARGETS so the extra
+ * fetch + column count can never balloon. Pure calendar math (no upstream call).
+ */
+function farDatedTargetExpiries(todayYmd: string, afterYmd: string): string[] {
+  const [ty, tm] = todayYmd.split("-").map(Number);
+  if (!Number.isFinite(ty) || !Number.isFinite(tm)) return [];
+  const out: string[] = [];
+  for (let i = 0; i < FAR_DATED_MONTHS_AHEAD + 1; i++) {
+    const month0 = tm - 1 + i; // tm is 1-based; Date handles month overflow into next year
+    const d = new Date(Date.UTC(ty, month0, 1));
+    const ymd = thirdFridayYmd(d.getUTCFullYear(), d.getUTCMonth());
+    // Keep only standard monthlies AFTER the near-term window (and not in the past).
+    if (ymd > afterYmd && ymd >= todayYmd) out.push(ymd);
+  }
+  // Ascending + de-duped + bounded.
+  return Array.from(new Set(out)).sort().slice(0, FAR_DATED_MAX_TARGETS);
 }
 
 /**
@@ -914,6 +975,12 @@ async function resolveSpotSnapshot(
 }
 
 const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
+/**
+ * How many NEAR-TERM expiries (the nearest dailies/weeklies, ascending) the matrix keeps — the
+ * UNCHANGED legacy "8 nearest" behavior. The far-dated monthly/quarterly columns are ADDED to this
+ * block (never replace it), so the near-term view is preserved exactly.
+ */
+const NEAR_TERM_EXPIRY_COUNT = 8;
 /** In-memory mirror of the Redis matrix so co-located requests skip Redis too. */
 const cachedHeatmaps = new Map<string, { at: number; data: GexHeatmap }>();
 
@@ -1742,7 +1809,14 @@ async function buildGexHeatmapUncached(
   let totalDelta = 0;
   let totalCharm = 0;
 
-  for (const c of contracts) {
+  /**
+   * Accumulate ONE contract into all four metric cell-maps using the SAME math/sign convention
+   * the matrix has always used (UNCHANGED — including the #92 spot²·0.01 GEX scale). Factored into
+   * a closure so the IDENTICAL accumulation runs over BOTH the main banded snapshot AND the bounded
+   * far-dated targeted fetches below, without duplicating the per-greek math (a copy would risk the
+   * two paths drifting). Returns nothing; mutates the cell-maps + running totals captured above.
+   */
+  function accumulateContract(c: ChainContract): void {
     const strike = Number(c.details?.strike_price);
     const expiry = String(c.details?.expiration_date ?? "").slice(0, 10);
     const gamma = Number(c.greeks?.gamma ?? 0);
@@ -1750,10 +1824,10 @@ async function buildGexHeatmapUncached(
     const oi = Number(c.open_interest ?? 0);
     const iv = Number(c.implied_volatility ?? 0);
     const type = String(c.details?.contract_type ?? "").toLowerCase();
-    if (!Number.isFinite(strike) || strike <= 0 || !expiry || expiry < today) continue;
-    if (!oi) continue; // no open interest → skip, never fabricate
+    if (!Number.isFinite(strike) || strike <= 0 || !expiry || expiry < today) return;
+    if (!oi) return; // no open interest → skip, never fabricate
     const sign = type === "call" ? 1 : type === "put" ? -1 : 0;
-    if (sign === 0) continue;
+    if (sign === 0) return;
 
     // ── GEX: gamma × oi × 100 × spot² × 0.01 (SpotGamma per-1%-move $-gamma), call +/put − ──
     // The extra `× spot × 0.01` converts raw dollar-gamma (per $1 underlying move) into the
@@ -1833,13 +1907,64 @@ async function buildGexHeatmapUncached(
     }
   }
 
+  // Main banded snapshot — every expiry inside the ±4% strike window (the near-term dailies /
+  // weeklies dominate this single paginated pass).
+  for (const c of contracts) accumulateContract(c);
+
+  // ── FAR-DATED expiries (monthly / quarterly OpEx) ─────────────────────────────
+  // The near-term pass above is dominated by dailies/weeklies; the dominant dealer-gamma walls
+  // park at the standard monthly / quarterly OpEx OI (e.g. a huge wall on the Sept monthly), which
+  // a near-only view never shows. We add a BOUNDED set of standard 3rd-Friday monthlies (quarterly
+  // OpEx is a subset) out ~6 months as extra columns. Some of these MAY already be in the banded
+  // snapshot, but the paginated band can truncate before reaching them, so we GUARANTEE them with
+  // small targeted per-expiry band fetches — and ONLY for the dates the banded pass didn't already
+  // populate (no redundant fetch). Bounded to FAR_DATED_MAX_TARGETS so the warm cost stays tiny and
+  // inside the rate budget; each is a cheap ±2% single-expiry band. Best-effort: a failed far-dated
+  // fetch is skipped (the near-term matrix is never blocked).
+  const nearestSorted = Array.from(expirySet).sort();
+  const nearTermAxis = nearestSorted.slice(0, NEAR_TERM_EXPIRY_COUNT);
+  const lastNearTerm = nearTermAxis[nearTermAxis.length - 1] ?? today;
+  const farTargets = farDatedTargetExpiries(today, lastNearTerm);
+  // Only fetch targets the banded snapshot didn't already bring in (it sometimes reaches a monthly).
+  const farToFetch = farTargets.filter((e) => !expirySet.has(e));
+  if (farToFetch.length > 0) {
+    // Bounded fan-out (≤ FAR_DATED_MAX_TARGETS per ticker) through the SHARED rate-limited funnel
+    // (every fetchChainBand call goes via polygonTrackedFetch), so even with the warm cron firing
+    // all presets at once these can't trip the 429 breaker on the live desk / GEX path. Each is a
+    // tight ±2% single-expiry band → ~1 page. Settled independently so one empty/failed far date
+    // can't abort the rest — best-effort, the near-term matrix is never blocked.
+    const farResults = await Promise.allSettled(
+      farToFetch.map((expiry) => fetchChainBand(optionsRoot, spot, expiry, 0.02))
+    );
+    for (const r of farResults) {
+      if (r.status !== "fulfilled") continue;
+      for (const c of r.value) accumulateContract(c);
+    }
+  }
+
   if (expirySet.size === 0) {
     return emptyHeatmap(root, { spot, changePct, now, cacheKey, ttlMs });
   }
 
-  // Keep the nearest ~8 expiries (ascending) — SHARED axis for all metrics.
-  const expiries = Array.from(expirySet).sort().slice(0, 8);
+  // SHARED expiry axis (ascending) = the nearest NEAR_TERM_EXPIRY_COUNT expiries (UNCHANGED
+  // near-term behavior) UNION the far-dated monthly/quarterly targets that actually printed.
+  // De-duped + sorted ascending so the matrix columns read left→right in calendar order, with the
+  // far-dated columns appended after the near-term block. Bounded by construction (near cap + the
+  // far-target cap), so the column count can never balloon.
+  const sortedAll = Array.from(expirySet).sort();
+  const nearKeep = sortedAll.slice(0, NEAR_TERM_EXPIRY_COUNT);
+  const farKeep = farTargets.filter((e) => expirySet.has(e));
+  const expiries = Array.from(new Set([...nearKeep, ...farKeep])).sort();
   const expirySetKeep = new Set(expiries);
+  // The authoritative STRUCTURAL levels (walls / flip / net / posture) and ALL downstream
+  // consumers (gex-positioning → desk / Largo / Night's Watch, the shift ring, EOD history) are
+  // computed on the NEAR-TERM expiries ONLY. The far-dated monthly/quarterly OI is enormous and
+  // would otherwise swamp the actionable near-term walls (e.g. a −$66.7B Sept wall would always
+  // win call/put wall + dominate net GEX), REGRESSING every level consumer. So far-dated lives in
+  // the MATRIX CELLS for the new columns, while strike_totals stay near-term — exactly preserving
+  // today's levels. The client re-sums `cells` per chosen expiry (ExpiryScopeBar + recomputeLevels)
+  // to surface the far-dated walls on demand without changing the server-authoritative defaults.
+  const nearTermKeep = new Set(nearKeep);
   // SHARED strike axis = union of strikes touched by ANY metric, descending.
   const allStrikes = new Set<number>([
     ...Array.from(gammaCellMap.keys()),
@@ -1849,7 +1974,9 @@ async function buildGexHeatmapUncached(
   ]);
   const strikes = Array.from(allStrikes).sort((a, b) => b - a);
 
-  // Prune a per-metric cell map to the kept expiries → cells + strike_totals + total.
+  // Prune a per-metric cell map → cells (FULL near+far axis) + strike_totals/total (NEAR-TERM only).
+  // `cells` carry every kept expiry so the matrix renders the far-dated columns; `strike_totals`
+  // sum the NEAR-TERM subset so the structural levels + every downstream consumer are UNCHANGED.
   function buildMetric(cellMap: Map<number, Map<string, number>>): {
     cells: Record<string, Record<string, number>>;
     strikeTotals: Record<string, number>;
@@ -1862,16 +1989,20 @@ async function buildGexHeatmapUncached(
       const byExpiry = cellMap.get(strike);
       if (!byExpiry) continue;
       const row: Record<string, number> = {};
-      let strikeSum = 0;
+      let nearStrikeSum = 0;
       for (const [expiry, val] of Array.from(byExpiry.entries())) {
         if (!expirySetKeep.has(expiry)) continue;
-        row[expiry] = val;
-        strikeSum += val;
+        row[expiry] = val; // matrix cell: full near+far axis
+        if (nearTermKeep.has(expiry)) nearStrikeSum += val; // levels: near-term only
       }
       if (Object.keys(row).length === 0) continue;
       cells[String(strike)] = row;
-      strikeTotals[String(strike)] = strikeSum;
-      total += strikeSum;
+      // A far-only strike (no near-term cell) contributes 0 to strike_totals so it never appears
+      // as a near-term wall — it's still present in `cells` for the far-dated matrix columns.
+      if (nearStrikeSum !== 0) {
+        strikeTotals[String(strike)] = nearStrikeSum;
+        total += nearStrikeSum;
+      }
     }
     return { cells, strikeTotals, total };
   }
