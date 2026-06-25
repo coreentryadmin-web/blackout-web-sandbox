@@ -2,7 +2,7 @@ import Whop from "@whop/sdk";
 import type { MembershipListResponse } from "@whop/sdk/resources/memberships.js";
 import type { Tier } from "@/lib/tiers";
 
-type WhopMembershipLike = Pick<MembershipListResponse, "status" | "plan" | "product">;
+type WhopMembershipLike = Pick<MembershipListResponse, "id" | "status" | "plan" | "product">;
 
 export const PREMIUM_MEMBERSHIP_STATUSES: WhopMembershipLike["status"][] = [
   "active",
@@ -92,8 +92,17 @@ export function resolveTierFromMembership(membership: WhopMembershipLike): Tier 
   return null;
 }
 
-export function resolveTierFromMemberships(memberships: WhopMembershipLike[]): Tier {
+/**
+ * Resolve the best tier across a set of memberships. `revokedIds` (refunded / charged-back membership
+ * ids — audit launch-path #6) are skipped, so a still-'completed' one-time purchase that was refunded
+ * no longer grants premium. Pure: the caller supplies the revoked set (read from the denylist).
+ */
+export function resolveTierFromMemberships(
+  memberships: WhopMembershipLike[],
+  revokedIds?: ReadonlySet<string>
+): Tier {
   for (const membership of memberships) {
+    if (revokedIds?.has(membership.id)) continue;
     if (resolveTierFromMembership(membership) === "premium") return "premium";
   }
   return "free";

@@ -6,6 +6,7 @@ import {
   PREMIUM_MEMBERSHIP_STATUSES,
   resolveTierFromMemberships,
 } from "@/lib/whop";
+import { isMembershipRevoked } from "@/lib/whop-revocation";
 
 type MembershipMetadata = {
   tier?: Tier;
@@ -122,7 +123,16 @@ async function resolveMembershipTierForEmail(
   }
 
   const sorted = sortMemberships(memberships);
-  return { tier: resolveTierFromMemberships(sorted), activeMembership: sorted[0] };
+  // Exclude refunded / charged-back memberships (audit launch-path #6): a refund/dispute webhook adds
+  // the membership id to the revocation denylist, so a still-'completed' refunded purchase no longer
+  // grants premium.
+  const revoked = new Set<string>();
+  for (const m of sorted) {
+    if (m.id && (await isMembershipRevoked(m.id))) revoked.add(m.id);
+  }
+  const tier = resolveTierFromMemberships(sorted, revoked);
+  const activeMembership = sorted.find((m) => !revoked.has(m.id)) ?? sorted[0];
+  return { tier, activeMembership };
 }
 
 export async function syncWhopMembershipForEmail(email: string): Promise<{

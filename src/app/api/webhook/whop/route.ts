@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Whop from "@whop/sdk";
 import { syncWhopMembershipForEmail } from "@/lib/membership";
+import { markMembershipRevoked } from "@/lib/whop-revocation";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { recordApiCall } from "@/lib/api-telemetry";
 
@@ -120,6 +121,38 @@ export async function POST(req: NextRequest) {
           severity: "warning",
         }).catch(() => undefined);
       }
+    } else if (
+      event.type === "refund.created" ||
+      event.type === "refund.updated" ||
+      event.type === "dispute.created" ||
+      event.type === "dispute.updated"
+    ) {
+      // Refund / chargeback (audit launch-path #6): revoke the affected membership so it stops granting
+      // premium even if Whop leaves a one-time ("completed") purchase in 'completed'. The reconcile cron
+      // re-resolves the owner within the hour (now excluding the revoked id) → downgrade; we also attempt
+      // an immediate re-sync if the owner's email is reachable in the payload.
+      const data = event.data as unknown as {
+        membership?: { id?: string } | string;
+        payment?: { membership?: { id?: string } | string; member?: { email?: string | null } };
+        user?: { email?: string | null };
+        member?: { email?: string | null };
+      };
+      const mRaw = data?.membership ?? data?.payment?.membership;
+      const membershipId = typeof mRaw === "string" ? mRaw : mRaw?.id;
+      const email = data?.user?.email ?? data?.member?.email ?? data?.payment?.member?.email ?? null;
+      if (membershipId) await markMembershipRevoked(membershipId);
+      if (email) await syncWhopMembershipForEmail(email);
+      void notifyOpsDiscord({
+        title: "Whop refund/dispute — entitlement revoked",
+        body:
+          event.type +
+          ": membership=" +
+          (membershipId ?? "unknown") +
+          " added to the revocation denylist (premium revoked). Owner " +
+          (email ? "re-synced now" : "will be downgraded by the reconcile cron") +
+          ". Verify in Whop.",
+        severity: "warning",
+      }).catch(() => undefined);
     }
   } catch (error) {
     console.error("[whop webhook]", event.type, error);
