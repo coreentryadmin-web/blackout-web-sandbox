@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import {
@@ -627,6 +627,27 @@ function ExposureProfile({
   showDarkPool: boolean;
 }) {
   const c = LENS_COLORS[lens];
+
+  // ── Auto-center on the SPOT row (the anchoring) ──────────────────────────────
+  // The ladder lists strikes high→low, so it opens at the top (highest strikes) and the
+  // spot/flip zone — the actionable part — sits below the fold. On mount and whenever the
+  // spot row changes (ticker / lens / data shift) we scroll the spot row into the CENTER of
+  // its nearest scroll container (the page when there's no bounded scroller). Keyed on the
+  // spot STRIKE (not every 20s refresh) so a quiet refresh never re-yanks the view.
+  const spotRowRef = useRef<HTMLDivElement | null>(null);
+  const spotRowStrike = useMemo(() => {
+    const r = rows.find((row) => row.isSpot);
+    return r ? r.strike : null;
+  }, [rows]);
+  useEffect(() => {
+    // Client-only, after layout. Guard the ref so it never throws when the spot row isn't
+    // rendered (e.g. spot off the strike band, or too few strikes to have a spot row).
+    if (spotRowStrike == null) return;
+    const el = spotRowRef.current;
+    if (el == null || typeof el.scrollIntoView !== "function") return;
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+  }, [spotRowStrike]);
+
   // Index of the divider: drawn ABOVE the first row (strikes desc) whose strike < flip.
   const flipBoundary = useMemo(() => {
     if (flip == null) return -1;
@@ -717,7 +738,9 @@ function ExposureProfile({
         const dpHex = dpLevel && i % 2 === 0 ? DARK_POOL_HEX : DARK_POOL_ALT_HEX;
 
         return (
-          <div key={r.strike}>
+          // Tag the spot strike row's wrapper with the ref so the auto-center effect can
+          // scroll it into view. Only the spot row carries it (one ref, no per-row churn).
+          <div key={r.strike} ref={r.isSpot ? spotRowRef : undefined}>
             {/* SPOT reference line between the bracketing strikes — cyan, mirrors the
                 Curve view's spot marker so price is instantly placeable in the ladder. */}
             {spot > 0 && i === spotBoundary && (
@@ -2425,6 +2448,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     );
   }, [strikes, flip]);
 
+  // ── Matrix auto-center on the SPOT row (the anchoring) ───────────────────────
+  // The matrix lists strikes high→low and mounts fresh each time its tab is opened (the
+  // TabPanel unmounts when inactive). A CALLBACK ref on the spot <tr> scrolls it to the
+  // center of its scroll container the moment that row attaches — so opening the Matrix
+  // tab lands on price, not on the top (highest) strikes. Guards null/SSR so it never
+  // throws when there's no spot row (spot off-band, or too few strikes). Centered
+  // vertically; horizontal scroll is left to the user (the matrix scrolls sideways too).
+  const matrixSpotRowRef = useCallback((node: HTMLTableRowElement | null) => {
+    if (node == null || typeof node.scrollIntoView !== "function") return;
+    node.scrollIntoView({ block: "center", inline: "nearest" });
+  }, []);
+
   // Profile rows: strikes desc, each carrying its FILTERED net value + role flags + flow
   // overlay. Values + wall flags follow the rank-5 expiry scope so the profile and the
   // cumulative curve (which is fed these same rows) track the selected expiry/expiries.
@@ -3135,6 +3170,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                         return (
                           <tr
                             key={strike}
+                            // Only the spot row carries the auto-center callback ref (it scrolls
+                            // itself into view on mount — i.e. when the Matrix tab is opened).
+                            ref={isSpot ? matrixSpotRowRef : undefined}
                             className={clsx(
                               // Bold-highlight the SPOT and FLIP rows so price is findable in
                               // the grid: a faint cyan/gold band across the whole row + a clear
