@@ -10728,27 +10728,30 @@ body {
     transition: opacity 0.2s ease, width 0.2s ease;
   }
 
+  /* CALL = emerald, PUT = bear. One semantic per direction across frame,
+     badge and premium — a trader reads color first, so CALL must read green
+     everywhere on the card (was magenta/fuchsia, off-brand + ambiguous). */
   .flow-card-call {
-    border-color: rgba(217, 70, 239, 0.18);
-    background: rgba(217, 70, 239, 0.04);
+    border-color: rgba(0, 230, 118, 0.18);
+    background: rgba(0, 230, 118, 0.04);
   }
-  .flow-card-call::before { background: linear-gradient(180deg, #e879f9, #a21caf); }
+  .flow-card-call::before { background: linear-gradient(180deg, #00e676, #059669); }
   .flow-card-call:hover {
-    border-color: rgba(217, 70, 239, 0.35);
-    background: rgba(217, 70, 239, 0.08);
-    box-shadow: 0 0 24px rgba(217, 70, 239, 0.12);
+    border-color: rgba(0, 230, 118, 0.35);
+    background: rgba(0, 230, 118, 0.08);
+    box-shadow: 0 0 24px rgba(0, 230, 118, 0.12);
   }
   .flow-card-call:hover::before { width: 4px; }
 
   .flow-card-put {
-    border-color: rgba(244, 63, 94, 0.15);
-    background: rgba(244, 63, 94, 0.04);
+    border-color: rgba(255, 45, 85, 0.15);
+    background: rgba(255, 45, 85, 0.04);
   }
-  .flow-card-put::before { background: linear-gradient(180deg, #f43f5e, #e11d48); }
+  .flow-card-put::before { background: linear-gradient(180deg, #ff2d55, #c81e3a); }
   .flow-card-put:hover {
-    border-color: rgba(244, 63, 94, 0.3);
-    background: rgba(244, 63, 94, 0.08);
-    box-shadow: 0 0 24px rgba(244, 63, 94, 0.08);
+    border-color: rgba(255, 45, 85, 0.3);
+    background: rgba(255, 45, 85, 0.08);
+    box-shadow: 0 0 24px rgba(255, 45, 85, 0.08);
   }
   .flow-card-put:hover::before { width: 4px; }
 
@@ -10845,8 +10848,8 @@ body {
     border: 1px solid;
     line-height: 1;
   }
-  .flow-badge-call    { color: #f0abfc; border-color: rgba(217,70,239,0.5);   background: rgba(217,70,239,0.12); }
-  .flow-badge-put     { color: #fda4af; border-color: rgba(244,63,94,0.4);   background: rgba(244,63,94,0.1);   }
+  .flow-badge-call    { color: #34d399; border-color: rgba(0,230,118,0.5);   background: rgba(0,230,118,0.12); }
+  .flow-badge-put     { color: #ff8fa3; border-color: rgba(255,45,85,0.4);   background: rgba(255,45,85,0.1);   }
   .flow-badge-sweep   { color: #fdba74; border-color: rgba(249,115,22,0.4);  background: rgba(249,115,22,0.1);  }
   .flow-badge-floor   { color: #7dd3fc; border-color: rgba(14,165,233,0.4);  background: rgba(14,165,233,0.1);  }
   .flow-badge-grenade { color: #fca5a5; border-color: rgba(239,68,68,0.4);   background: rgba(239,68,68,0.1);   }
