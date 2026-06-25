@@ -563,7 +563,15 @@ function PositionCard({
             </span>
           </div>
         </div>
-        <VerdictChip verdict={position.verdict} />
+        {/* A settled position is done — its forward-looking verdict ("watch · can't judge yet")
+            would mislead, so closed cards show a neutral SETTLED tag instead of the verdict chip. */}
+        {closed ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/[0.1] px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">
+            Settled
+          </span>
+        ) : (
+          <VerdictChip verdict={position.verdict} />
+        )}
       </div>
 
       {/* P&L block — big colored number + % + LIVE/freshness tag. Honest "—" off-live.
@@ -619,7 +627,22 @@ function PositionCard({
           Off-live (unavailable / pending) the live-gated cells would all read "—", which looks
           broken. So instead of a grid of dashes we collapse to one honest "resumes at the open"
           line — the card reads as deliberately idle, waiting for the bell, not failed. */}
-      {live ? (
+      {closed ? (
+        // A settled position has no live greeks/valuation to show — surface the settled facts
+        // (exit price + when it closed) instead of a live-resumes line that would be untrue.
+        <div className="grid grid-cols-2 gap-x-2.5 gap-y-2.5 sm:grid-cols-4">
+          <Metric label="Entry" value={`$${position.entry_premium.toFixed(2)}`} />
+          <Metric
+            label="Exit"
+            value={position.exit_premium != null ? `$${position.exit_premium.toFixed(2)}` : EM_DASH}
+          />
+          <Metric label="×Contracts" value={num(position.contracts, 0)} />
+          <Metric
+            label="Closed"
+            value={position.closed_at ? position.closed_at.slice(0, 10) : EM_DASH}
+          />
+        </div>
+      ) : live ? (
         <div className="grid grid-cols-2 gap-x-2.5 gap-y-2.5 sm:grid-cols-4">
           <Metric label="Mark" value={num(position.valuation?.mark)} />
           <Metric label="Δ" value={num(position.valuation?.delta)} />
@@ -643,8 +666,9 @@ function PositionCard({
         </p>
       )}
 
-      {/* One-line "what to do" — first verdict reason, clamped. */}
-      {reason && (
+      {/* One-line "what to do" — first verdict reason, clamped. Suppressed for settled
+          positions (their verdict is the inert "can't judge" placeholder — not actionable). */}
+      {!closed && reason && (
         <p className="flex items-start gap-1.5 font-mono text-[11px] leading-snug">
           <span aria-hidden className={clsx("shrink-0", VERDICT_TEXT[position.verdict.action])}>
             ◆
@@ -767,18 +791,22 @@ function PositionCard({
           >
             Full intel →
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              openCloseForm();
-            }}
-            disabled={busy != null}
-          >
-            Close
-          </Button>
+          {/* A settled position can't be re-closed (the PATCH guard requires status='open'),
+              so the Close action is hidden for closed cards — only Full intel + Delete remain. */}
+          {!closed && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                openCloseForm();
+              }}
+              disabled={busy != null}
+            >
+              Close
+            </Button>
+          )}
           <Button
             type="button"
             variant="danger"
@@ -994,8 +1022,18 @@ export function NightsWatchPanel() {
 
   const ready = state.kind === "ready" ? state : null;
   const positions = ready?.positions ?? [];
+  // Split the loaded set: OPEN positions are the live book; CLOSED ones are settled and
+  // shown in their own group below. The GET returns open first, then a bounded tail of
+  // recently-closed — we re-split here so the header summary + the live grid only ever
+  // count OPEN legs (a closed leg must NOT inflate the open count or the unrealized total).
+  const openPositions = positions.filter((p) => p.status !== "closed");
+  const closedPositions = positions.filter((p) => p.status === "closed");
   const hasPositions = positions.length > 0;
-  const summary = ready ? summarize(positions) : null;
+  const hasOpen = openPositions.length > 0;
+  const hasClosed = closedPositions.length > 0;
+  // Summary is OPEN-only by construction: passing just the open set means its count, its
+  // unrealized P&L sum, its return %, and its verdict tallies all exclude settled legs.
+  const summary = ready ? summarize(openPositions) : null;
   // Resolve the collapsible default: collapsed when positions already exist.
   const isFormOpen = formOpen ?? !hasPositions;
   const showLive = state.kind === "ready";
@@ -1025,8 +1063,9 @@ export function NightsWatchPanel() {
 
       {/* ---- Scrollable body: summary · add-form · grid ---- */}
       <div className="nighthawk-watch-body">
-        {/* Tier 2: portfolio summary strip (only when we have a loaded set) */}
-        {summary && hasPositions && <PortfolioSummary summary={summary} />}
+        {/* Tier 2: portfolio summary strip — OPEN-only (count + unrealized + return cover the
+            live book only; settled legs are summarized separately by their realized P&L cards). */}
+        {summary && hasOpen && <PortfolioSummary summary={summary} />}
 
         {/* Tier 3a: collapsible add-position form */}
         {(state.kind === "ready" || state.kind === "loading") && (
@@ -1092,23 +1131,61 @@ export function NightsWatchPanel() {
               </Button>
             }
           />
-        ) : state.kind === "ready" && positions.length === 0 ? (
+        ) : state.kind === "ready" && !hasPositions ? (
           <EmptyState
             icon="◆"
             title="No open positions"
             description="No open positions — add your first above."
           />
         ) : state.kind === "ready" ? (
-          <div className="nighthawk-watch-grid">
-            {positions.map((p) => (
-              <PositionCard
-                key={p.id}
-                position={p}
-                onChanged={load}
-                onOpenDetail={setDetailId}
-              />
-            ))}
-          </div>
+          <>
+            {/* Live book — OPEN positions. When every position is settled (only a closed tail
+                remains), show an honest "no open positions" line above the settled group rather
+                than the full empty state (which would hide the closed cards entirely). */}
+            {hasOpen ? (
+              <div className="nighthawk-watch-grid">
+                {openPositions.map((p) => (
+                  <PositionCard
+                    key={p.id}
+                    position={p}
+                    onChanged={load}
+                    onOpenDetail={setDetailId}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="font-mono text-[11px] leading-relaxed text-sky-300/90">
+                No open positions — add your first above.
+              </p>
+            )}
+
+            {/* Settled book — recently-CLOSED positions, in their own clearly-labeled group.
+                Each card renders its REALIZED P&L (already wired in PositionCard's closed branch).
+                Bounded server-side to the recent tail so this never grows without limit. */}
+            {hasClosed && (
+              <section aria-label="Closed positions" className="flex flex-col gap-2.5">
+                <header className="flex items-center gap-2.5">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-300">
+                    Closed · Settled
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-mute">
+                    {closedPositions.length}
+                  </span>
+                  <span aria-hidden className="h-px flex-1 bg-white/[0.08]" />
+                </header>
+                <div className="nighthawk-watch-grid">
+                  {closedPositions.map((p) => (
+                    <PositionCard
+                      key={p.id}
+                      position={p}
+                      onChanged={load}
+                      onOpenDetail={setDetailId}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         ) : null}
       </div>
 

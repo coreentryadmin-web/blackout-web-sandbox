@@ -9,7 +9,10 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, createUserPosition } from "@/lib/db";
 import { enrichPosition } from "@/lib/nights-watch/valuation";
 import { validateExpiryYmd } from "@/lib/nights-watch/expiry";
-import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
+import {
+  getEnrichedPositionsForUser,
+  getEnrichedOpenAndRecentClosedForUser,
+} from "@/lib/nights-watch/enrichment";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { requireTierApi } from "@/lib/market-api-auth";
@@ -48,14 +51,30 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const statusParam = url.searchParams.get("status");
-  const status: "open" | "closed" | undefined =
-    statusParam === "closed" ? "closed" : statusParam === "all" ? undefined : "open";
+  // Explicit ?status= overrides (used by tools / tests) stay exact: "closed" → only closed,
+  // "all" → every status, "open" → only open. The DEFAULT view (no param) is special: it
+  // returns OPEN positions PLUS a bounded tail of recently-CLOSED ones so the panel can show
+  // realized P&L for just-settled legs without those closed rows growing unbounded.
+  const explicitStatus: "open" | "closed" | "all" | "default" =
+    statusParam === "closed"
+      ? "closed"
+      : statusParam === "all"
+        ? "all"
+        : statusParam === "open"
+          ? "open"
+          : "default";
 
   try {
     // Orchestration lives in the shared helper (one cached chain per distinct
     // underlying|expiry, one desk read) so the route and the Largo get_my_positions
     // tool can never drift. user_id is the trusted Clerk scope passed straight through.
-    const enriched = await getEnrichedPositionsForUser(userId, status);
+    const enriched =
+      explicitStatus === "default"
+        ? await getEnrichedOpenAndRecentClosedForUser(userId)
+        : await getEnrichedPositionsForUser(
+            userId,
+            explicitStatus === "all" ? undefined : explicitStatus
+          );
     return NextResponse.json({ positions: enriched });
   } catch (error) {
     console.error("[account/positions GET]", error);

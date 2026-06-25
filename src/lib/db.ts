@@ -1503,6 +1503,31 @@ export async function listUserPositions(
 }
 
 /**
+ * Recently-CLOSED positions for a user, newest-settled first, BOUNDED so the list can
+ * never grow without limit: only positions closed within the last `withinDays` days
+ * AND at most `limit` of them. This powers the "CLOSED · SETTLED" group on the Night's
+ * Watch panel (realized P&L) — open positions are listed separately via listUserPositions.
+ * Ordered by closed_at DESC (falling back to updated_at for any legacy row missing a
+ * closed_at) so the freshest settlements surface first.
+ */
+export async function listRecentClosedUserPositions(
+  userId: string,
+  { withinDays = 7, limit = 20 }: { withinDays?: number; limit?: number } = {}
+): Promise<UserPositionRow[]> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `SELECT * FROM user_positions
+      WHERE user_id = $1
+        AND status = 'closed'
+        AND COALESCE(closed_at, updated_at) >= NOW() - ($2 || ' days')::interval
+      ORDER BY COALESCE(closed_at, updated_at) DESC
+      LIMIT $3`,
+    [userId, String(withinDays), limit]
+  );
+  return res.rows.map(mapUserPositionRow);
+}
+
+/**
  * DISTINCT (ticker, expiry) across ALL users' OPEN positions — the batching key the
  * Night's Watch warm cron iterates so each shared chain is pre-fetched exactly once
  * (getNwChain dedups per (ticker, expiry)). NOT user-scoped on purpose: this is a

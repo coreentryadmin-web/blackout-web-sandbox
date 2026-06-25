@@ -10,7 +10,7 @@
 // and matches every strike in-memory. Upstream cost is O(distinct chains) regardless
 // of user/position count — never a per-position or per-user upstream call.
 
-import { listUserPositions } from "@/lib/db";
+import { listUserPositions, listRecentClosedUserPositions, type UserPositionRow } from "@/lib/db";
 import {
   enrichPosition,
   valuationFromContract,
@@ -37,6 +37,38 @@ export async function getEnrichedPositionsForUser(
   status?: "open" | "closed"
 ): Promise<Array<EnrichedPosition & { verdict: Verdict }>> {
   const positions = await listUserPositions(userId, status);
+  return enrichPositionRows(positions);
+}
+
+/**
+ * The Night's Watch panel default view: a user's OPEN positions PLUS their recently
+ * CLOSED (settled) positions, bounded so the closed set can never grow unbounded
+ * (closed within the last `withinDays` days, capped at `limit`). Both sets are enriched
+ * in ONE shared batch — distinct (underlying, expiry) chains are deduped ACROSS open and
+ * closed together, so adding the closed tail costs at most a few extra cache reads and
+ * never an extra upstream fetch per the cache-reader scaling rule. Closed legs run a null
+ * valuation (no live quote) but carry realized_pnl from enrichPosition; open legs are
+ * unchanged. Open positions always come first, then closed (newest-settled first).
+ */
+export async function getEnrichedOpenAndRecentClosedForUser(
+  userId: string,
+  { withinDays = 7, limit = 20 }: { withinDays?: number; limit?: number } = {}
+): Promise<Array<EnrichedPosition & { verdict: Verdict }>> {
+  const [open, closed] = await Promise.all([
+    listUserPositions(userId, "open"),
+    listRecentClosedUserPositions(userId, { withinDays, limit }),
+  ]);
+  return enrichPositionRows([...open, ...closed]);
+}
+
+/**
+ * Shared enrichment core — takes already-loaded rows and applies the batched, cache-reading
+ * valuation + verdict to each. Splitting the load from the enrich lets callers compose a
+ * combined open+closed set (panel default) while still deduping chains across the whole set.
+ */
+async function enrichPositionRows(
+  positions: UserPositionRow[]
+): Promise<Array<EnrichedPosition & { verdict: Verdict }>> {
   // Batch by (underlying, expiry): each distinct chain is fetched ONCE via the shared
   // single-flight cache, then every strike is matched in-memory. Upstream cost is
   // O(distinct chains) regardless of user/position count — never a per-position call.
