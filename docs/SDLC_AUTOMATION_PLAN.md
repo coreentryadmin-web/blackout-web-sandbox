@@ -2,11 +2,20 @@
 
 Turns idle compute (weeknights + weekends, when the RTH market-data audit is dormant) into a 24/7 SDLC engine: build/test health, UI rendering, E2E interactions, error triage, security, performance, a11y, UI enhancements, backlog grooming. Each scheduled task runs FRESH (no memory) — it reads its section here and executes autonomously.
 
+## ⚡ AGGRESSIVE MODE — ACTIVE (set 2026-06-25)
+Every job runs FULL-DEPTH, never a spot-check. Each run MUST:
+- **Launch a thorough multi-agent DEEP-PASS workflow** for its dimension (5–8 agents over disjoint sub-dimensions) — be EXHAUSTIVE, dive deep, leave no stone unturned. A light/quick check is unacceptable.
+- **Fix MORE per run** — every high-confidence, build-gated correctness/render/interaction/perf/a11y bug it finds, sequentially (not "a few"). Branch+flag the risky/large ones.
+- **Compound** — cross-check live + code + the prior run's log so coverage deepens over time.
+- Still build-gated + safe (the FIX-vs-FLAG policy governs main vs branch) and still TERMINATE (exhaustive within the run, then log — no infinite loop).
+The jobs run FREQUENTLY (multiple deep passes daily, see schedule), so depth × frequency = continuous thorough coverage.
+
 ## GLOBAL GUARDRAILS (every job obeys these)
 - **Repo:** `C:/Users/raidu/blackout-platform/blackout-web` (a junction; the literal string "blackout-web" alone is blocked by a git classifier — always use this full junction path for git). `git pull --ff-only` before working.
 - **Validate every change:** `npx tsc --noEmit` AND `npm run build` MUST both be green before ANY commit. Never commit broken code; if you can't get green, revert.
 - **FIX-vs-FLAG policy (critical):** AUTONOMOUSLY FIX + push to `main` ONLY for HIGH-CONFIDENCE, small, isolated, build-gated correctness/render/interaction bugs. For anything risky, large, ambiguous, design-altering, or product-deciding (refactors, UI redesigns, dependency MAJOR bumps, schema changes): create a branch `auto/<job>-<YYYY-MM-DD>`, commit + push the BRANCH, and FLAG it (TaskCreate + log) for human review — do NOT push to `main`.
-- **Bounded:** each run fixes at most a few targeted items, then logs the rest. Never an open-ended loop.
+- **Depth (AGGRESSIVE):** each run does a FULL multi-agent deep audit and fixes EVERY high-confidence build-gated issue it finds (branch+flag the risky ones). Not a light check. It must still terminate — exhaustive within the run, then log.
+- **Concurrency safety (jobs now overlap):** ALWAYS `git fetch && git pull --rebase origin main` before committing. If a push is rejected non-ff (a concurrent job pushed), `git pull --rebase origin main` + retry the push ONCE. Prefer `auto/<job>-<date>` branches for non-trivial changes (branches never collide on main); keep main pushes small + high-confidence so rebases stay clean.
 - **Brand:** emerald(bull)/bear(#ff5c78)/sky/gold; NO grey (no text-grey/zinc/neutral). Secrets never in client/NEXT_PUBLIC.
 - **Log:** append to `docs/auto/<job>-<YYYY-MM-DD>.md` (create if new): timestamp · ✅/⚠️/❌ · evidence · action taken (fixed+sha / branched / flagged).
 - **No duplication / no theater:** if another job owns a concern in its window, skip it; every run must fix something real or log a real finding.
