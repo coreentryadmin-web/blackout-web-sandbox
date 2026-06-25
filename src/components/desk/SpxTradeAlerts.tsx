@@ -8,7 +8,6 @@ import { useSpxPlay } from "@/hooks/useSpxPlay";
 import { useSpxLotto } from "@/hooks/useSpxLotto";
 import { useStablePlayConfirmations } from "@/hooks/useStablePlayConfirmations";
 import { SpxSniperBackdrop } from "@/components/desk/SpxSniperBackdrop";
-import { ProductMark } from "@/components/marks/ProductMark";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import type { LottoPlayPayload } from "@/lib/spx-lotto-engine";
@@ -304,18 +303,11 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           </p>
         ) : (
           <div className="spx-desk-closed">
-            <ProductMark
-              product="spx"
-              size={88}
-              title="SPX Slayer"
-              className="spx-desk-closed-sigil"
-            />
             <Kicker className="spx-desk-closed-kicker">0DTE WINDOW CLOSED</Kicker>
             <h4 className="spx-desk-closed-headline">MARKET CLOSED</h4>
             <p className="spx-desk-closed-sub">
-              The 0DTE command desk re-arms at{" "}
-              <span className="spx-desk-closed-time">6:30 AM PT</span> — live alerts,
-              GEX walls, and the play engine resume at the open.
+              Desk re-arms at{" "}
+              <span className="spx-desk-closed-time">6:30 AM PT</span>
             </p>
           </div>
         )
