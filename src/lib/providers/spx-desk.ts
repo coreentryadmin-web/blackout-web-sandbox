@@ -841,8 +841,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
     fetchIndexMinuteBars(SPX, today, today).catch(() => []),
     fetchIndexDailyBars(SPX, fromWeek, today),
-    fetchIndexEma(SPX, 20, "minute"),
-    fetchIndexEma(SPX, 50, "minute"),
+    fetchIndexEma(SPX, 20, "day"),
+    fetchIndexEma(SPX, 50, "day"),
     fetchIndexEma(SPX, 200, "day"),
     fetchIndexSma(SPX, 50, "day"),
     fetchIndexSma(SPX, 200, "day"),
@@ -1145,8 +1145,8 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
   const [minuteBars, ema20, ema50, ema200, sma50, sma200, breadthAll] =
     await Promise.all([
       fetchIndexMinuteBars(SPX, today, today).catch(() => []),
-      fetchIndexEma(SPX, 20, "minute"),
-      fetchIndexEma(SPX, 50, "minute"),
+      fetchIndexEma(SPX, 20, "day"),
+      fetchIndexEma(SPX, 50, "day"),
       fetchIndexEma(SPX, 200, "day"),
       fetchIndexSma(SPX, 50, "day"),
       fetchIndexSma(SPX, 200, "day"),
