@@ -210,10 +210,18 @@ function mergeWsIndexSnapshots(
   for (const sym of [SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]) {
     const ws = indexStore[sym];
     if (ws?.updatedAt && now - ws.updatedAt < INDEX_STORE_STALE_MS && ws.price > 0) {
+      // FIX-A: the live WS PRICE is always preferred (sub-second fresh). For the day CHANGE%,
+      // trust the WS value ONLY when its session_open is authoritative — i.e. REST-seeded
+      // (open_source === "rest"). When the anchor is still a raw first-seen bar open ("ws-bar")
+      // — the mid-session cold-start case — that change% is computed against the price AT BOOT and
+      // is WRONG, so keep the authoritative REST snapshot change_pct (out[sym]) until the anchor is
+      // reconciled. This stops a deploy-time bar open from clobbering the true day change for ~120s.
+      const wsChangeAuthoritative = ws.open_source === "rest";
+      const restChangePct = out[sym]?.change_pct ?? 0;
       out[sym] = {
         symbol: sym,
         price: ws.price,
-        change_pct: ws.change_pct ?? out[sym]?.change_pct ?? 0,
+        change_pct: wsChangeAuthoritative ? ws.change_pct ?? restChangePct : restChangePct,
       };
     }
   }
@@ -383,6 +391,14 @@ export type SpxDeskPayload = {
   tick: number | null;
   trin: number | null;
   add: number | null;
+  /**
+   * Provenance of tick/trin/add (FIX-C, truth mandate): true = a breadth-derived PROXY was
+   * substituted because Polygon returned no real I:TICK/I:TRIN/I:ADD. The UI badges 'est.' on any
+   * estimated reading so a computed proxy is never presented as a real internal. Optional so
+   * legacy full-payload literals (stubs/fixtures/merge) compile unchanged — buildSpxDesk /
+   * buildSpxDeskPulse always populate it, and the spx-desk-merge `...base` spread carries it.
+   */
+  internals_estimated?: { tick: boolean; trin: boolean; add: boolean };
   gex_net: number | null;
   gex_king: number | null;
   max_pain: number | null;
@@ -489,6 +505,7 @@ export type SpxDeskPulse = Pick<
   | "tick"
   | "trin"
   | "add"
+  | "internals_estimated"
   | "regime"
   | "leader_stocks"
   | "vix_term"
@@ -750,6 +767,7 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     tick: null,
     trin: null,
     add: null,
+    internals_estimated: { tick: false, trin: false, add: false },
     gex_net: null,
     gex_king: null,
     max_pain: null,
@@ -1046,6 +1064,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     tick: internals.tick,
     trin: internals.trin,
     add: internals.add,
+    internals_estimated: internals.estimated,
     gex_net: gexNet,
     gex_king: gexKing,
     max_pain: maxPain,
@@ -1199,6 +1218,7 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
     tick: null,
     trin: null,
     add: null,
+    internals_estimated: { tick: false, trin: false, add: false },
     regime: "unknown",
     leader_stocks: [],
     vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
@@ -1298,6 +1318,7 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
     tick: internals.tick,
     trin: internals.trin,
     add: internals.add,
+    internals_estimated: internals.estimated,
     regime: String(inferRegime(price, ema20, ema50)),
     leader_stocks: structure.leader_stocks,
     vix_term: {

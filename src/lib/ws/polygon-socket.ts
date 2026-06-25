@@ -19,15 +19,91 @@ export type PolygonAgg = {
 const POLYGON_WS_INDICES = process.env.POLYGON_WS_INDICES ?? "wss://socket.massive.com/indices";
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_KEY ?? "";
 
-export const indexStore: Record<string, { price: number; change_pct: number; session_open: number; session_date: string; updatedAt: number }> = {
-  "I:SPX": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:VIX": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:VIX9D": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:VIX3M": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:TICK": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:TRIN": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
-  "I:ADD": { price: 0, change_pct: 0, session_open: 0, session_date: "", updatedAt: 0 },
+/**
+ * `open_source` is the PROVENANCE of `session_open` (FIX-A):
+ *  - "rest": anchored to the authoritative REST prevClose-derived true-session open (correct day
+ *     change% on a mid-session cold start, e.g. a Railway deploy at 1pm).
+ *  - "ws-bar": anchored to the first WS A-bar open we observed. Correct ONLY when the socket was
+ *     up at/near 09:30; on a cold start mid-session it's the price AT BOOT, so change% is wrong.
+ *  - "": never anchored yet.
+ * spx-desk.mergeWsIndexSnapshots keeps the REST change_pct authoritative while a same-day anchor is
+ * still "ws-bar" (un-reconciled), so a boot-time bar open never clobbers the true day change.
+ */
+type IndexStoreEntry = {
+  price: number;
+  change_pct: number;
+  session_open: number;
+  session_date: string;
+  open_source: "rest" | "ws-bar" | "";
+  updatedAt: number;
 };
+
+export const indexStore: Record<string, IndexStoreEntry> = {
+  "I:SPX": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:VIX": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:VIX9D": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:VIX3M": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:TICK": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:TRIN": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+  "I:ADD": { price: 0, change_pct: 0, session_open: 0, session_date: "", open_source: "", updatedAt: 0 },
+};
+
+/** ET wall-clock minutes since midnight (DST-correct). Used to detect a mid-session cold start. */
+function etMinutesNow(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(now);
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24;
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return h * 60 + m;
+}
+
+/**
+ * FIX-A: Seed `session_open` from the authoritative REST index snapshot so day change% is correct
+ * the instant the socket connects — including a mid-session cold start where the first WS bar open
+ * would otherwise (wrongly) anchor the day to the price AT BOOT.
+ *
+ * The REST snapshot returns the live price + the true session change_pct (vs the official prevClose
+ * / 09:30 open), so the true session open is `price / (1 + change_pct/100)`. We seed ONLY when there
+ * is no same-day REST anchor yet, and we mark open_source="rest" so the A-bar handler will NOT
+ * overwrite it with a bar open. Fully best-effort: any failure leaves the WS path exactly as before.
+ */
+async function seedSessionOpenFromRest(): Promise<void> {
+  try {
+    const { fetchIndexSnapshots } = await import("@/lib/providers/polygon");
+    const syms = Object.keys(indexStore);
+    const snaps = await fetchIndexSnapshots(syms);
+    const todayET = barDateET();
+    for (const sym of syms) {
+      const snap = snaps[sym];
+      if (!snap || !(snap.price > 0)) continue;
+      const prev = indexStore[sym];
+      // Don't clobber a REST anchor already set today (a fresh, correct baseline).
+      if (prev.open_source === "rest" && prev.session_date === todayET && prev.session_open > 0) {
+        continue;
+      }
+      const changePct = Number.isFinite(snap.change_pct) ? snap.change_pct : 0;
+      // true session open = price discounted by the day's % change (vs official prevClose / open).
+      const sessionOpen = changePct !== 0 ? snap.price / (1 + changePct / 100) : snap.price;
+      if (!(sessionOpen > 0)) continue;
+      indexStore[sym] = {
+        ...prev,
+        // keep any live WS price we already have; otherwise seed the REST price so the desk isn't 0.
+        price: prev.price > 0 && prev.session_date === todayET ? prev.price : snap.price,
+        change_pct: changePct,
+        session_open: sessionOpen,
+        session_date: todayET,
+        open_source: "rest",
+        updatedAt: prev.updatedAt > 0 ? prev.updatedAt : Date.now(),
+      };
+    }
+  } catch {
+    /* best-effort — WS bar-open anchoring still applies, exactly as before this seed */
+  }
+}
 
 function barDateET(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -183,6 +259,14 @@ function connectIndices() {
                   "V.I:SPX,V.I:VIX,V.I:VIX9D,V.I:VIX3M,V.I:TICK,V.I:TRIN,V.I:ADD",
               })
             );
+            // FIX-A: on every (re)connect, seed session_open from the authoritative REST snapshot so
+            // day change% is correct immediately — including a mid-session cold start where the first
+            // WS bar open would otherwise anchor the day to the price AT BOOT (wrong on any deploy
+            // after ~09:31 ET). Only matters once the session has opened; before the open the bar
+            // open IS the session open, so we skip the REST round-trip. Best-effort & non-blocking.
+            if (etMinutesNow() >= etClock(9, 31)) {
+              void seedSessionOpenFromRest();
+            }
           } else if (
             ev === "auth_failed" ||
             (ev === "status" && (msg.status === "auth_failed" || msg.status === "unauthorized"))
@@ -197,13 +281,22 @@ function connectIndices() {
               // the reconnect time. Reset only when a new trading day is detected (ET date change).
               const todayET = barDateET();
               const prev = indexStore[agg.sym];
-              const isNewDay = prev.session_date && prev.session_date !== todayET;
-              const sessionOpen = (!isNewDay && prev.session_open > 0) ? prev.session_open : agg.o;
+              const isNewDay = Boolean(prev.session_date && prev.session_date !== todayET);
+              // FIX-A: prefer an existing SAME-DAY anchor (REST seed or an earlier bar). Only fall to
+              // this bar's open when we have no anchor yet for today. A REST anchor is authoritative
+              // and its provenance is preserved; a brand-new anchor sourced from a bar open is marked
+              // "ws-bar". On a NEW day, the first bar legitimately re-anchors the session.
+              const haveSameDayAnchor = !isNewDay && prev.session_open > 0;
+              const sessionOpen = haveSameDayAnchor ? prev.session_open : agg.o;
+              const openSource: IndexStoreEntry["open_source"] = haveSameDayAnchor
+                ? prev.open_source || "ws-bar"
+                : "ws-bar";
               indexStore[agg.sym] = {
                 price: agg.c,
                 change_pct: sessionOpen > 0 ? ((agg.c - sessionOpen) / sessionOpen) * 100 : 0,
                 session_open: sessionOpen,
                 session_date: todayET,
+                open_source: openSource,
                 updatedAt: Date.now(),
               };
               void (async () => {

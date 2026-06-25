@@ -117,16 +117,19 @@ export function SpxStructureBlocks({
           label="TICK"
           value={live && desk?.tick != null ? String(Math.round(desk.tick)) : "—"}
           tone={(desk?.tick ?? 0) >= 0 ? "bull" : "bear"}
+          estimated={live && desk?.tick != null && desk?.internals_estimated?.tick}
         />
         <Row
           label="TRIN"
           value={live && desk?.trin != null ? desk.trin.toFixed(2) : "—"}
           tone={(desk?.trin ?? 1) < 1 ? "bull" : "bear"}
+          estimated={live && desk?.trin != null && desk?.internals_estimated?.trin}
         />
         <Row
           label="ADD"
           value={live && desk?.add != null ? String(Math.round(desk.add)) : "—"}
           tone={(desk?.add ?? 0) >= 0 ? "bull" : "bear"}
+          estimated={live && desk?.add != null && desk?.internals_estimated?.add}
         />
         <Row
           label="Regime"
@@ -210,15 +213,28 @@ function Row({
   value,
   tone = "neutral",
   highlight,
+  estimated,
 }: {
   label: string;
   value: string;
   tone?: string;
   highlight?: boolean;
+  /** FIX-C: true when this reading is a breadth-derived PROXY, not a real internal. */
+  estimated?: boolean;
 }) {
   return (
     <div className={clsx("spx-structure-row", highlight && "spx-structure-row-hot")}>
-      <span className="spx-structure-label">{label}</span>
+      <span className="spx-structure-label">
+        {label}
+        {estimated && (
+          <span
+            className="ml-1.5 font-mono text-[8px] tracking-[0.18em] uppercase align-middle text-sky-300"
+            title="Estimated from market breadth — no real I:TICK/I:TRIN/I:ADD feed"
+          >
+            est.
+          </span>
+        )}
+      </span>
       <motion.span
         key={value}
         initial={{ opacity: 0.6, scale: 0.98 }}

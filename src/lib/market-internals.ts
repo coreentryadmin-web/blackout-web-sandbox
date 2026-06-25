@@ -53,14 +53,40 @@ export function estimateInternalsFromBreadth(samples: BreadthSample[]): {
   };
 }
 
+/**
+ * Provenance for the three internals readings. `false` = a real I:TICK/I:TRIN/I:ADD print from
+ * Polygon; `true` = a breadth-derived PROXY substituted because no real internal was available.
+ * The desk payload carries this so the UI can badge estimated readings instead of presenting a
+ * computed proxy in the same field as a real internal (truth mandate).
+ */
+export type MarketInternalsSource = {
+  tick: boolean;
+  trin: boolean;
+  add: boolean;
+};
+
 export function resolveMarketInternals(
   fromIndex: { tick: number | null; trin: number | null; add: number | null },
   breadthSamples: BreadthSample[]
-): { tick: number | null; trin: number | null; add: number | null } {
+): {
+  tick: number | null;
+  trin: number | null;
+  add: number | null;
+  estimated: MarketInternalsSource;
+} {
   const est = estimateInternalsFromBreadth(breadthSamples);
+  // A value is ESTIMATED when the real index print was null and the breadth proxy supplied it.
+  const tick = fromIndex.tick ?? est.tick;
+  const trin = fromIndex.trin ?? est.trin;
+  const add = fromIndex.add ?? est.add;
   return {
-    tick: fromIndex.tick ?? est.tick,
-    trin: fromIndex.trin ?? est.trin,
-    add: fromIndex.add ?? est.add,
+    tick,
+    trin,
+    add,
+    estimated: {
+      tick: fromIndex.tick == null && est.tick != null,
+      trin: fromIndex.trin == null && est.trin != null,
+      add: fromIndex.add == null && est.add != null,
+    },
   };
 }

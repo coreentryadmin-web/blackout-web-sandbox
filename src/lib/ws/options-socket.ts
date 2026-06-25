@@ -24,6 +24,28 @@
  * store null and never fabricate a mark.
  */
 import { MASSIVE_WS_OPTIONS } from "@/lib/polygon-docs-nav";
+import { etMinutes, etClock } from "@/lib/spx-play-session-time";
+import { getEarlyCloseMinutes } from "@/lib/spx-play-session-guards";
+
+/**
+ * RTH gate for the OPTIONS feed (live finding #75). Off-hours, no option quotes flow, so the
+ * any-frame stall watchdog would trip on legitimate silence and churn the socket (Railway logs:
+ * "stall watchdog OPEN but no data for 300s, reconnecting" → code=1006 loop). Mirror exactly how
+ * polygon-socket.ts gates its index watchdog on inIndicesMarketHours: DST-aware via etMinutes,
+ * weekdays only, upper bound honoring NYSE early-close half-days (13:00 ET). When the market is
+ * closed we simply do NOT treat silence as a stall, so the socket stays put instead of churning.
+ * (Full market holidays are not modeled — a holiday reconnect is rare and harmless: market closed.)
+ */
+function inOptionsMarketHours(now = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const mins = etMinutes(now);
+  const close = getEarlyCloseMinutes(now) ?? etClock(16, 0); // 13:00 ET on half-days, else 16:00
+  return mins >= etClock(9, 30) && mins <= close;
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -420,6 +442,11 @@ class OptionsShard {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     if (this.symbols.size === 0) return;
     if (this.lastMessageAt === 0) return; // never delivered yet — leave alone
+    // Live finding #75: off-hours the options feed is naturally SILENT (no quotes flow), so a
+    // stall is EXPECTED, not a half-open socket. Reconnecting on off-hours quiet just churns the
+    // socket (code=1006 backoff loop). Only treat silence as a stall during options RTH — same
+    // gate polygon-socket.ts applies to its index watchdog.
+    if (!inOptionsMarketHours(new Date(now))) return;
     if (now - this.lastMessageAt <= stallMs) return;
     console.warn(
       `[options-socket] shard ${this.id} stall watchdog — OPEN but no data for ${Math.round(

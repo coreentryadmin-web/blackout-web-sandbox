@@ -69,7 +69,13 @@ async function fetchBrief(): Promise<string | null> {
 export function FlowBrief() {
   const [brief, setBrief]     = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(isRTH());
+  // Hydration safety (React #418): isRTH() / afterHoursLine() read the wall clock, so SSR and the
+  // first client render can disagree (the RTH boundary or the ET hour can tick between them). Seed
+  // `marketOpen` to a STABLE value (true) for both passes and only resolve the real clock after a
+  // mounted useEffect — never during render. `mounted` gates the time-derived after-hours copy so
+  // SSR and first-paint markup match exactly; the real read lands one tick later.
+  const [mounted, setMounted] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!isRTH()) {
@@ -81,6 +87,12 @@ export function FlowBrief() {
     const text = await fetchBrief();
     setLoading(false);
     if (text) setBrief(text);
+  }, []);
+
+  // Resolve the real RTH state once on the client, after hydration — keeps SSR/first-paint stable.
+  useEffect(() => {
+    setMounted(true);
+    setMarketOpen(isRTH());
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -96,7 +108,9 @@ export function FlowBrief() {
     return () => clearInterval(id);
   }, []);
 
-  const showAfterHours = !marketOpen;
+  // Only ever show the after-hours (time-derived) branch AFTER mount — never during SSR/first paint,
+  // so the server and first client render produce identical markup (no #418).
+  const showAfterHours = mounted && !marketOpen;
   const displayText    = showAfterHours ? afterHoursLine() : brief;
 
   if (!displayText && !loading) return null;
