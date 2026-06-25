@@ -709,7 +709,11 @@ export async function fetchIndexRsi(
 const VIX = "I:VIX";
 let cachedVixIvRank: { at: number; rank: number | null } | null = null;
 
-/** VIX percentile vs ~1y of daily closes — Polygon Indices Advanced (replaces UW IV rank when available). */
+/**
+ * VIX true IV Rank vs ~1y of daily closes — Polygon Indices Advanced (replaces UW IV rank when available).
+ * TRUE IV RANK (TastyTrade convention): (current - min) / (max - min) * 100 over the trailing window — NOT a percentile.
+ * Matches the "IV Rank" label and the UW fallback (fetchUwIvRank) so both sources agree.
+ */
 export async function fetchVixIvRankPercentile(): Promise<number | null> {
   if (!polygonConfigured()) return null;
   const now = Date.now();
@@ -735,8 +739,11 @@ export async function fetchVixIvRankPercentile(): Promise<number | null> {
     return null;
   }
 
-  const below = closes.filter((c) => c <= current).length;
-  const rank = Math.round((below / closes.length) * 100);
+  // True IV Rank (TastyTrade convention): position of current within the trailing [min, max] window, not a percentile.
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = max - min;
+  const rank = span <= 0 ? 50 : Math.round(Math.min(100, Math.max(0, ((current - min) / span) * 100)));
   cachedVixIvRank = { at: now, rank };
   return rank;
 }
