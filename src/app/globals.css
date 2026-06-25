@@ -59,6 +59,13 @@
      glows/borders. */
   --bear-text: #ff5c78;
   --bull-text: #00e676;
+  /* Canonical directional display tokens — large/headline text + glows/borders
+     (the AA-safe small-number variants are --bull-text / --bear-text above).
+     Defines the previously-undefined var(--bull) referenced by
+     .largo-spx-live-label, which was silently inheriting instead of rendering
+     emerald. */
+  --bull: #00e676;
+  --bear: #ff2d55;
 }
 
 /* Page-padding ramp: nudge the gutter up at the sm tier, then lock to the
