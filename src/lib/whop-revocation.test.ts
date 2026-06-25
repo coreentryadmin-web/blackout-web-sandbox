@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { resolveTierFromMemberships } from "./whop";
 
-// Set the premium mapping BEFORE importing whop so resolveTierFromMembership classifies our test
-// products as premium (and the module-load guard doesn't warn). tsx --test allows top-level await.
+// resolveTierFromMembership reads getPremiumProductIds() (process.env) LIVE on each call, so setting
+// this before the test callbacks run is enough to classify our test product as premium.
 process.env.WHOP_PREMIUM_PRODUCT_IDS = "prod_premium";
-const { resolveTierFromMemberships } = await import("./whop");
 
 type Mem = Parameters<typeof resolveTierFromMemberships>[0][number];
 const mem = (id: string, status: string, productId: string): Mem =>
