@@ -715,6 +715,10 @@ export function fmtPremium(n: number | null): string {
   // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M".
   const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
+  // Billions branch BEFORE the millions branch — otherwise Net GEX (≈ -$5B) printed
+  // "$5000.0M" instead of "$5.0B" (GexDealerPanel.tsx:39). Mirrors the sibling
+  // fmtMoney formatters (GexHeatmap.tsx:254, gex-positioning.ts:80).
+  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
   // Below $10K, keep 1 decimal so $1.4K and $1.5K don't collapse to the same
   // string (premium size is the signal); $10K+ stays whole-K for compactness.
