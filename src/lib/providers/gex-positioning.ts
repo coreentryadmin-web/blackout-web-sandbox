@@ -1,6 +1,6 @@
 import "server-only";
 
-import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
+import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-options-gex";
 
 // ---------------------------------------------------------------------------
 // Canonical cross-tool GEX/VEX positioning contract.
@@ -105,6 +105,24 @@ export async function getGexPositioning(ticker: string): Promise<GexPositioning 
   if (!root) return null;
 
   const hm = await fetchGexHeatmap(root).catch(() => null);
+  return gexPositioningFromHeatmap(root, hm);
+}
+
+/**
+ * PURE mapper: derive the canonical positioning contract from an ALREADY-FETCHED matrix snapshot —
+ * NO upstream call, NO cache read. This is the exact derivation `getGexPositioning` applies; that
+ * function is now just `fetchGexHeatmap → this`. Exposed so a caller that ALREADY holds the matrix
+ * (e.g. the data-correctness verifier comparing positioning vs the matrix) can compare the contract
+ * against the SAME snapshot it derives from — a TEMPORAL-IMMUNE, like-for-like check that still
+ * catches a real derivation bug (a field copied from the wrong place) but never cries wolf over a
+ * cache-TTL refresh landing between two fetches. Returns null on a cold/empty/no-spot matrix.
+ */
+export function gexPositioningFromHeatmap(
+  ticker: string,
+  hm: GexHeatmap | null
+): GexPositioning | null {
+  const root = String(ticker ?? "").trim().toUpperCase();
+  if (!root) return null;
   // Cold / empty matrix → no honest positioning to report. Never fabricate.
   if (!hm || !(hm.spot > 0) || hm.strikes.length === 0) return null;
 

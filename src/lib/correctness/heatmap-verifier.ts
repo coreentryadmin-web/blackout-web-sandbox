@@ -7,7 +7,7 @@ import {
   type GexHeatmap,
   type ChainContract,
 } from "@/lib/providers/polygon-options-gex";
-import { getGexPositioning } from "@/lib/providers/gex-positioning";
+import { gexPositioningFromHeatmap } from "@/lib/providers/gex-positioning";
 import {
   type CheckResult,
   type MetricScore,
@@ -270,6 +270,49 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
             ? `Re-summed cells reconcile to strike_totals across ${Object.keys(strikeTotals).length} strikes (worst Δ ${(worstCellDiff * 100).toExponential(2)}%).`
             : `Cell-vs-strike_total reconciliation inconclusive at ${worstStrike} (Δ ${(worstCellDiff * 100).toFixed(2)}%) — likely the near-term expiry-axis approximation, not a bug; skipped to avoid false flag.`,
           { id: "cells-eq-strike-totals", tolerance: 0.001 }
+        )
+      );
+    }
+
+    // INV-2b: TEMPORAL-IMMUNE per-strike SIGN integrity — the served `cells` re-sum and the served
+    // `strike_totals` must AGREE IN SIGN at every strike, computed entirely from the matrix's OWN
+    // snapshot (NO fresh fetch, so cross-time skew can't fool it). This is the real-bug detector the
+    // shadow-recompute layer relies on after it (correctly) stops hard-flagging a lone fresh-vs-cached
+    // sign flip: a genuine flipped per-cell call(+)/put(−) sign, or a corrupted cells→strike_totals
+    // aggregation, would make a strike's net cell sum point the OPPOSITE way to its strike_total — a
+    // contradiction WITHIN one served payload. Unlike the magnitude check (INV-2), a SIGN check is
+    // robust to the near-term-axis approximation (a strike that is net-positive across its near cells
+    // stays positive whether we include 7 or 8 of them), so it can hard-FLAG without false positives.
+    // A real ×100 / dropped-×0.01 scale bug is sign-preserving, so it is caught by INV-1 (Σ==total)
+    // + the magnitude ceiling instead; together they cover the full ×100 / dropped-factor / sign class.
+    {
+      let signConflictStrike = "";
+      let conflictCellSum = 0;
+      let conflictTotal = 0;
+      for (const [k, totalRaw] of Object.entries(strikeTotals)) {
+        const total = Number(totalRaw);
+        const cellSum = Number(reSummed[k] ?? 0);
+        // Only meaningful when BOTH sides are materially non-zero (a near-zero side is sign-fragile and
+        // not a contradiction). Use a tiny fraction of |total| as the floor so fp dust never trips it.
+        if (!Number.isFinite(total) || !Number.isFinite(cellSum)) continue;
+        if (Math.abs(total) < 1 || Math.abs(cellSum) < Math.abs(total) * 1e-3) continue;
+        if (Math.sign(cellSum) !== Math.sign(total)) {
+          signConflictStrike = k;
+          conflictCellSum = cellSum;
+          conflictTotal = total;
+          break;
+        }
+      }
+      out.push(
+        mk(
+          ctx,
+          "invariant",
+          metricKey,
+          signConflictStrike === "" ? "consistency-only" : "flag",
+          signConflictStrike === ""
+            ? `Per-strike SIGN integrity holds: every strike's served cell re-sum agrees in sign with its strike_total (temporal-immune; no fresh fetch).`
+            : `Per-strike SIGN CONFLICT at ${signConflictStrike}: served cells re-sum to ${conflictCellSum.toExponential(3)} but strike_total is ${conflictTotal.toExponential(3)} — the served matrix contradicts ITSELF (per-cell sign / aggregation bug), independent of any timing.`,
+          { id: "cell-sign-eq-strike-total", expected: conflictTotal, actual: conflictCellSum }
         )
       );
     }
@@ -602,6 +645,23 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
     const fmtCell = (d: CellDiff) =>
       `strike ${d.strike}: raw ${d.raw.toExponential(3)} vs served ${d.served.toExponential(3)} (Δ ${(d.fd * 100).toFixed(2)}%${d.signFlip ? ", SIGN FLIP" : ""})`;
 
+    // ── TEMPORAL CLASSIFICATION (the load-bearing fix for the per-strike sign-flip flags) ──────────
+    // This whole block compares a cell from a FRESH raw fetch (sampled now) against a cell from the
+    // CACHED matrix (built up to a TTL ago). A genuine production transform/sign bug — a flipped
+    // call(+)/put(−) sign, a dropped ×0.01, a ×100 — lives in accumulateContract and therefore hits
+    // (nearly) EVERY two-sided strike with a CONSISTENT skew: it is SYSTEMATIC by construction, never
+    // a single strike. A LONE strike whose NET sign flips between the two time samples is the opposite
+    // signature: at a near-cancelling strike (call $-gamma ≈ put $-gamma) the net is sign-fragile, and
+    // its CACHED magnitude can be large precisely because the cancellation differed at build time —
+    // so "material magnitude" does NOT make a single flip a transform bug. Hence a lone sign-flip is
+    // downgraded to cross-time jitter; we only HARD-FLAG a SYSTEMATIC pattern (majority of cells off,
+    // OR ≥2 material divergences sharing the transform signature). The temporal-IMMUNE detectors that
+    // catch a real per-cell sign/aggregation bug WITHOUT a fresh fetch run separately below
+    // (internalCellIntegrityCheck) and in INV-1 (Σ==total) — so relaxing the cross-time flag here
+    // does NOT blind the cron to a genuine ×100 / dropped-factor / sign bug.
+    const materialFlips = materialOut.filter((d) => d.signFlip);
+    const isLoneSignFlip = !systematic && materialOut.length === materialFlips.length && materialFlips.length <= 1;
+
     if (outOfTol.length === 0) {
       out.push(
         mk(
@@ -613,9 +673,9 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
           { id: "raw-cell-gex", tolerance: TOL.rawNetFractional }
         )
       );
-    } else if (systematic || materialOut.length > 0) {
-      // Either a market-wide skew (majority off) OR a material-magnitude cell diverged/flipped — this
-      // is the real-transform-bug bucket. HARD FLAG with the worst offender.
+    } else if (systematic || (materialOut.length > 0 && !isLoneSignFlip)) {
+      // Either a market-wide skew (majority off) OR ≥2 material divergences — the transform-bug
+      // signature is SYSTEMATIC, so this is the real-bug bucket. HARD FLAG with the worst offender.
       out.push(
         mk(
           ctx,
@@ -624,20 +684,23 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
           "flag",
           systematic
             ? `Raw-chain recompute SYSTEMATICALLY diverges from served cells (${outOfTol.length}/${strikesCompared} cells out of ±${(TOL.rawNetFractional * 100).toFixed(0)}%): ${fmtCell(worst)} — scale/unit/sign transform bug.`
-            : `Raw-chain recompute diverges at a MATERIAL strike (net $-gamma ≥ ${(MATERIAL_FRACTION_OF_MEDIAN * 100).toFixed(0)}% of the median cell, not near-cancellation): ${fmtCell(materialOut.sort((a, b) => b.fd - a.fd)[0])} — likely an aggregation/sign bug.`,
+            : `Raw-chain recompute diverges at ${materialOut.length} MATERIAL strikes (net $-gamma ≥ ${(MATERIAL_FRACTION_OF_MEDIAN * 100).toFixed(0)}% of the median cell, not near-cancellation): ${fmtCell(materialOut.sort((a, b) => b.fd - a.fd)[0])} — multi-strike pattern points to an aggregation/sign bug, not timing jitter.`,
           { id: "raw-cell-gex", tolerance: TOL.rawNetFractional, expected: fmtCell(worst) }
         )
       );
     } else {
-      // ISOLATED, immaterial (near-cancellation / thin-strike) divergence → provider/timing jitter,
-      // NOT a transform bug. Downgrade to a consistency-only cross-provider-divergence (a gap, not a flag).
+      // ISOLATED divergence — a LONE sign-flip at a sign-fragile near-cancelling strike, or thin-tail
+      // immaterial diffs → FRESH-vs-CACHED timing skew on the SAME provider, NOT a transform bug.
+      // (A real transform/sign bug is systematic and is caught by internalCellIntegrityCheck + INV-1
+      // below, which need NO fresh fetch and so cannot be fooled by this cross-time skew.) Downgrade
+      // to a consistency-only cross-time-divergence (a gap, not a flag).
       out.push(
         mk(
           ctx,
           "shadow-recompute",
           "net_gex",
           "consistency-only",
-          `cross-provider-divergence: ${outOfTol.length}/${strikesCompared} ${nearestExpiry} cell(s) diverge but only at sign-fragile near-cancelling thin strikes (served |net| < ${(MATERIAL_FRACTION_OF_MEDIAN * 100).toFixed(0)}% of median) — explained by cache-vs-live timing jitter on the SAME provider, not a transform bug: ${fmtCell(worst)}. The systematic transform check (INV-1 Σ==total) holds.`,
+          `cross-time-divergence: ${outOfTol.length}/${strikesCompared} ${nearestExpiry} cell(s) diverge${materialFlips.length ? ` (incl. ${materialFlips.length} lone sign-flip at a sign-fragile near-cancelling strike)` : " at sign-fragile near-cancelling thin strikes"} — explained by FRESH-fetch-vs-CACHED-matrix timing on the SAME provider, NOT a transform bug (a real sign/scale bug is systematic, not one strike): ${fmtCell(worst)}. The temporal-immune detectors (per-cell integrity + INV-1 Σ==total) hold.`,
           { id: "raw-cell-gex", tolerance: TOL.rawNetFractional }
         )
       );
@@ -843,7 +906,18 @@ async function crossToolChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResult[]>
   // getGexPositioning (the canonical cross-tool contract Heatmap/Largo/Night's Watch read) must
   // report the SAME spot / flip / walls as the matrix it derives from. (Same source, so a mismatch
   // is a derivation bug in getGexPositioning, exactly the kind of label-divergence #80 was.)
-  const pos = await getGexPositioning(ctx.ticker).catch(() => null);
+  //
+  // TEMPORAL-IMMUNE (the load-bearing fix): derive the positioning contract from the SAME `hm`
+  // snapshot this verifier already holds, via the PURE mapper gexPositioningFromHeatmap — NOT a
+  // second fetchGexHeatmap. getGexPositioning is literally `fetchGexHeatmap → gexPositioningFrom
+  // Heatmap`, so calling getGexPositioning here re-fetched the matrix a SECOND time, seconds after
+  // `hm` was captured (after the shadow + UW network layers ran). With a 5-20s cache TTL that second
+  // read can land on a FRESH rebuild whose chain/spot moved a hair, so net_gex/flip differed by a
+  // few % / sub-point — a CACHE-REFRESH timing skew, NOT a cross-tool derivation bug. Mapping the
+  // held snapshot compares LIKE-FOR-LIKE at one instant: it still hard-flags a real derivation bug
+  // (e.g. net_gex sourced from the wrong field, a wall mis-copied) because the mapper's output is
+  // diffed against the very matrix it derives from — but it can never cry wolf over a TTL refresh.
+  const pos = gexPositioningFromHeatmap(ctx.ticker, hm);
   if (!pos) {
     out.push(
       mk(ctx, "cross-tool", "spot", "skipped", `getGexPositioning("${ctx.ticker}") returned null — cross-tool spot/flip skipped.`, {
