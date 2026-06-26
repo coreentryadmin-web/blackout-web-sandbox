@@ -151,7 +151,7 @@ export function SplitFlowRadar({
                     <span className="font-mono text-[10px] text-bull">
                       ▲ {fmtPremium(e.callPremium)} · {e.callPct}%
                     </span>
-                    <span className="font-mono text-[10px] text-bear">
+                    <span className="font-mono text-[10px] text-bear-text">
                       ▼ {fmtPremium(e.putPremium)} · {100 - e.callPct}%
                     </span>
                   </div>
@@ -165,7 +165,7 @@ export function SplitFlowRadar({
         </AnimatePresence>
 
         {/* Legend */}
-        <p className="font-mono text-[10px] text-sky-500 text-center pt-1">
+        <p className="font-mono text-[10px] text-sky-300/70 text-center pt-1">
           Both call &amp; put ≥ $500K within 30 min window
         </p>
       </div>

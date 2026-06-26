@@ -156,7 +156,7 @@ function OptionsWsStrip({ status }: { status: OptionsWsStatus }) {
       : status.total_contracts > 0
         ? "CONNECTING…"
         : "ARMED · idle (no open positions)";
-  const tone = !enabled ? "bg-[#9fb4d4]" : streaming ? "bg-bull" : "bg-gold";
+  const tone = !enabled ? "bg-mute" : streaming ? "bg-bull" : "bg-gold";
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.6)] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em]">
       <span className="flex items-center gap-1.5">

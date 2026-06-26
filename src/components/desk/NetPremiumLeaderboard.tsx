@@ -73,7 +73,7 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     <span className="font-anton text-[24px] text-gold leading-none tracking-wide">{row.ticker}</span>
                     <span className={clsx(
                       "font-mono text-[10px] font-bold tracking-wider",
-                      isBull ? "text-bull" : "text-bear"
+                      isBull ? "text-bull" : "text-bear-text"
                     )}
                     style={isBull
                       ? { textShadow: "0 0 8px rgba(0,230,118,0.7)" }

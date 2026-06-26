@@ -50,7 +50,7 @@ export function LiveFlowTape({ alerts, className }: LiveFlowTapeProps) {
             return (
               <div key={`${alert.ticker}-${i}`} className="flow-tape-item">
                 <span className="font-mono font-bold text-white">{alert.ticker}</span>
-                <span className={clsx("font-mono text-[10px]", isBull ? "text-bull" : "text-bear")}>
+                <span className={clsx("font-mono text-[10px]", isBull ? "text-bull" : "text-bear-text")}>
                   {alert.option_type?.toUpperCase() ?? "—"}
                 </span>
                 <span className="font-mono text-[10px] text-purple-light">

@@ -186,7 +186,7 @@ export function NightHawkFlowPanel({
           })}
         </AnimatePresence>
 
-        <p className="font-mono text-[10px] text-sky-500 text-center pt-1">
+        <p className="font-mono text-[10px] text-sky-300/70 text-center pt-1">
           Flow conviction from 7d tape · strong = $2M+ aligned
         </p>
       </div>

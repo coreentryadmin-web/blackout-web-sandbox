@@ -344,7 +344,7 @@ export function DarkPoolPanel() {
                 <EmptyState
                   className="!border-bear/30 !py-8"
                   icon={<span className="text-bear">⚠</span>}
-                  title={<span className="text-bear">Feed unavailable</span>}
+                  title={<span className="text-bear-text">Feed unavailable</span>}
                   description="Couldn't reach the dark pool tape — retrying shortly"
                   role="alert"
                 />

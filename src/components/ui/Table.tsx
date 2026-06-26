@@ -120,7 +120,7 @@ export const TH = forwardRef<HTMLTableCellElement, THProps>(function TH(
       ref={ref}
       scope="col"
       className={clsx(
-        "px-3 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9fb4d4]",
+        "px-3 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-mute",
         ALIGN[align],
         className
       )}

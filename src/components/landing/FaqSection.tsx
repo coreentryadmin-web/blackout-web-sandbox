@@ -191,7 +191,7 @@ export function FaqSection() {
                 </span>
               </h2>
             </div>
-            <p className="hidden md:block max-w-md text-left sm:text-right text-[14px] leading-relaxed text-white/70">
+            <p className="hidden md:block max-w-md text-left sm:text-right text-[14px] leading-relaxed text-secondary">
               Every tool, every signal, every answer — what BlackOut is and how the
               arsenal works, end to end.
             </p>

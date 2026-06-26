@@ -81,7 +81,7 @@ export const Stat = forwardRef<HTMLDivElement, StatProps>(function Stat(
       {...rest}
     >
       {/* label: mute (non-grey) at kicker scale */}
-      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#9fb4d4]">
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
         {label}
       </span>
       <div className="flex items-end gap-2">

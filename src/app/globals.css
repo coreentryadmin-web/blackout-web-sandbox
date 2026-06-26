@@ -1558,7 +1558,7 @@ body {
   .nav-bar {
     @apply fixed top-0 inset-x-0 z-[100];
     height: 76px;
-    transition: height 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: height 0.32s var(--ease-draw);
   }
   .nav-bar[data-scrolled="true"] { height: 60px; }
 
@@ -1571,7 +1571,7 @@ body {
     backdrop-filter: blur(20px) saturate(1.5);
     border-bottom: 1px solid rgba(125, 211, 252, 0.1);
     box-shadow: 0 8px 30px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 0.32s var(--ease-draw);
   }
   .nav-bar[data-scrolled="true"] .nav-surface { opacity: 1; }
 
@@ -1596,7 +1596,7 @@ body {
     @apply w-1.5 h-1.5 rounded-full shrink-0;
     background: #00e676;
     box-shadow: 0 0 8px #00e676;
-    transition: box-shadow 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: box-shadow 0.32s var(--ease-draw);
   }
   .nav-bar[data-scrolled="true"] .nav-dot { box-shadow: 0 0 13px #00e676; }
   .nav-brand-stack { @apply flex flex-col leading-none; }
@@ -1605,7 +1605,7 @@ body {
     letter-spacing: 0.04em;
     color: #fff;
     transform-origin: left center;
-    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), color 0.2s ease;
+    transition: transform 0.32s var(--ease-draw), color 0.2s ease;
   }
   .nav-bar[data-scrolled="true"] .nav-wordmark { transform: scale(0.84); }
   .nav-brand:hover .nav-wordmark { color: #00e676; }
@@ -1617,7 +1617,7 @@ body {
     overflow: hidden;
     max-height: 14px;
     opacity: 1;
-    transition: max-height 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+    transition: max-height 0.32s var(--ease-draw), opacity 0.25s ease;
   }
   .nav-bar[data-scrolled="true"] .nav-kicker { max-height: 0; opacity: 0; }
 
@@ -1629,7 +1629,7 @@ body {
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
     box-shadow: 0 0 0 1px rgba(0, 230, 118, 0.06), 0 8px 40px -12px rgba(0, 230, 118, 0.25);
-    transition: background 0.32s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.32s, box-shadow 0.32s;
+    transition: background 0.32s var(--ease-draw), border-color 0.32s, box-shadow 0.32s;
   }
   .nav-bar[data-scrolled="true"] .nav-pill {
     background: transparent;
@@ -1683,7 +1683,7 @@ body {
   .nav-card {
     @apply relative flex flex-col gap-2 rounded-xl p-5 no-underline;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s, background 0.2s;
+    transition: transform 0.2s var(--ease-draw), border-color 0.2s, background 0.2s;
   }
   .nav-card:last-child { @apply col-span-2 xl:col-span-1; }
   /* per-tool top accent divider (the product's color) */
@@ -7371,7 +7371,7 @@ body {
   }
 
   .admin-action-btn {
-    @apply px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-200
+    @apply px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-base
            border-white/15 bg-white/5 text-sky-100 hover:bg-white/10 hover:text-white
            disabled:opacity-40 disabled:pointer-events-none;
   }
@@ -11253,7 +11253,7 @@ body {
   .flow-leader-bar-fill {
     height: 100%;
     border-radius: 99px;
-    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: width 0.6s var(--ease-snap);
   }
 }
 

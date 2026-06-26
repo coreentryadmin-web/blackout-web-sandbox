@@ -138,7 +138,7 @@ export function VelocityRadar({
           })}
         </AnimatePresence>
 
-        <p className="font-mono text-[10px] text-sky-500 text-center pt-1">
+        <p className="font-mono text-[10px] text-sky-300/70 text-center pt-1">
           ≥3× acceleration vs prior 15 min window · min 2 prints
         </p>
       </div>

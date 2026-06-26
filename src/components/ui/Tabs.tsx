@@ -295,7 +295,7 @@ export const Tab = forwardRef<HTMLButtonElement, TabProps>(function Tab(
       className={clsx(
         !unstyled && [
           "relative inline-flex select-none items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold " +
-            "outline-none transition-colors duration-150 " +
+            "outline-none transition-colors duration-base " +
             "focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-void " +
             "disabled:pointer-events-none disabled:opacity-40",
           isActive

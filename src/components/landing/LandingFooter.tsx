@@ -166,7 +166,7 @@ export function LandingFooter() {
               <span className="font-anton text-3xl tracking-[0.04em] text-white text-glow-green">BLACKOUT</span>
             </div>
             <p className="mt-2 font-mono text-[10px] tracking-[0.35em] uppercase text-bull">{SITE.tagline}</p>
-            <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-white/60">{SITE.description}</p>
+            <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-secondary">{SITE.description}</p>
             <span className="badge-live mt-5 inline-flex">
               <span className="badge-live-dot" aria-hidden /> Market data — live
             </span>

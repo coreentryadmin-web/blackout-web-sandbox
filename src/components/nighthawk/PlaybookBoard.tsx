@@ -102,7 +102,7 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
               Recap live
             </Badge>
           ) : (
-            <Badge tone="bear">Awaiting close</Badge>
+            <Badge tone="sky">Awaiting close</Badge>
           )}
         </div>
       </header>
