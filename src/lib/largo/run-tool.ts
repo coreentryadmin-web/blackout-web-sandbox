@@ -1340,5 +1340,16 @@ async function toolNetPremTicks(ticker: string) {
     const last5 = recent.map((x) => Number(x.net ?? 0));
     momentum = last5[last5.length - 1] > last5[0] ? "accelerating" : "decelerating";
   }
-  return { ticker: sym, recent_ticks: recent, momentum, total_ticks: ticks?.length ?? 0 };
+  // SPX has no UW net-prem-ticks tape, so we serve SPY ticks as the index proxy.
+  // Surface that explicitly (proxy + source marker, mirroring the source-tagging in
+  // get_options_flow/get_gex) so Largo caveats it as SPY-derived instead of presenting
+  // SPY flow as if it were SPX. When sym === proxy the data is the real ticker — no marker.
+  const proxied = proxy !== sym;
+  return {
+    ticker: sym,
+    recent_ticks: recent,
+    momentum,
+    total_ticks: ticks?.length ?? 0,
+    ...(proxied ? { proxy, source: `unusual_whales (${proxy} proxy)` } : {}),
+  };
 }
