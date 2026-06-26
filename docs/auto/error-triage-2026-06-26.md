@@ -763,3 +763,60 @@ writers already skipping, so no RTH-push→writer-stall risk).
 - Prior carry-forwards stand: publish-preview external caller (RUN 3); `::int days_of_data` source-round
   (RUN 4, `spx-play-outcomes.ts:227`, `Math.floor`); trade-entry flow-stale gate corroboration (RUN 5);
   open `auto/*` branches awaiting human review.
+
+---
+
+## RUN 10 — 2026-06-26 ~21:43 UTC (daily slot, market CLOSED ~5:43 PM EDT Fri)
+
+Tenth pass today (RUN 1 04:42 → RUN 9 20:42 @ `8e655dc`). Repo `C:/Users/raidu/blackout-cron`,
+`git pull --ff-only` clean; a concurrent **api-integration-audit** push advanced `origin/main` to
+**`0126c40`** ("fix(#101/#102): Clerk user webhook + Polygon WS leader election") — local HEAD == origin/main,
+in sync. **This run queried PROD POSTGRES DIRECTLY** (Railway public proxy `thomas.proxy.rlwy.net`, `pg`
+client from the repo's `node_modules`) instead of the Chrome bridge — a more robust, deterministic read of the
+exact ground-truth tables the admin endpoints wrap (`error_events`, `admin_incidents`, `cron_job_runs`). DB
+clock at read: **2026-06-26 21:43 UTC**. **ZERO new or spiking signatures. No fix made (anti-theater).**
+
+### A. Full live surface — CLEAN (direct prod-DB read)
+
+| Source | Query | Result |
+|---|---|---|
+| Durable error sink | `error_events` max/recent | ✅ **`maxId 70`, total 70 — ZERO new since RUN 4**. `count where created_at > now()-6h` = **0**. Last event **#70 @ 13:50:09 UTC** (~8h stale). Only the 2 known fixed-and-holding signatures: `::date "Mon Jun 29"` (id 1–69, `admin_route/admin/nighthawk/publish-preview`, last 07:57:50 UTC, fix `cc17d83`) + `::int "87.293…"` (id 70, `unhandled_rejection`, fix `48d30b0`). No recurrence of either after its fix landed. |
+| Open incidents | `admin_incidents where status not in (resolved,closed)` | ✅ **0 open** |
+| Cron health | `cron_job_runs` latest-per-job + failures | ✅ **0 genuine failures**. 32 runs since RUN 9's 20:42 cutoff — all `OK` or `SKIPPED`; every SKIP is an expected off-hours guard (`heatmap-warm`/`nights-watch-warm`/`spx-evaluate` "Outside market hours/window"). `cron-staleness-watchdog` OK @ 21:41 (0.0h ago) → app live + ingest healthy. |
+| Live app smoke | `curl` homepage / embed / admin | ✅ `/` **200** (0.37s), `/embed/track-record` **200**, `/api/admin/errors` **401** anon (auth intact). Deploy of `0126c40` healthy, not 500-ing. |
+| Data-correctness | `cron_job_runs[data-correctness]` latest | ✅ Latest 3 runs (20:04/20:10/20:32 UTC) **`ok`, `flags:[]`**. The 8 earlier `failed`-status rows (15:36–18:34 UTC, "3–8 correctness flag(s)") are **RTH-window** and owned by the **data-correctness/market-hours-audit** job (no-duplication guardrail) — all cleared by close; not an error-triage signature. |
+
+### B. ✅ NIGHT HAWK EDITION RECOVERED — the multi-day carry-forward resolved itself (positive, no action)
+
+The long-standing `nighthawk-playbook` `failed` streak ("Claude returned no parseable plays.", every fire
+2026-06-24→25 for editions 2026-06-25/26, `plays_count:0`) is **OVER**. The **21:30:40 UTC** fire returned
+**`OK`** — `meta {ok:true, status:"accepted", job_status:"published", edition_for:"2026-06-29",
+current_stage:"published"}` → the next-session edition (**Mon 2026-06-29**) **synthesized and PUBLISHED**.
+`nighthawk-outcomes` also OK @ 21:33. This closes the RUN 1–9 carry-forward (Task #1 / #70 funnel concern):
+the funnel that the `cc35f9e` self-diagnosing instrumentation was waiting to expose simply **succeeded** on the
+real fire — no parse failure to diagnose this time. Nothing to fix; flagging the recovery for the operator.
+
+### C. Fix-history corroboration (git) — all prior fixes LIVE on origin/main
+
+`git merge-base --is-ancestor … origin/main` → **YES for all five**: `cc17d83` (`::date` boundary guard),
+`48d30b0` (`::int` Largo `window_days` clamp), `cc35f9e` (NH funnel observability), `994e2bd` (flow-stale
+corroboration), `1fbef6e` (breadth-ticker health cry-wolf). Railway deploys `origin/main` (tip `0126c40`), so
+all are deployed.
+
+### Result
+
+**✅ ZERO new or spiking production-error signatures** (durable sink flat at maxId 70 with 0 events in 6h;
+0 open incidents; 0 genuine cron failures; live app 200 + admin 401). **Plus a positive state change: the
+Night Hawk Edition publish pipeline recovered and published the 2026-06-29 edition**, retiring the run's
+single longest-standing carry-forward. All five prior fixes git-confirmed on `origin/main`. **No code fix made
+— the surface is clean; manufacturing a change would violate the no-theater guardrail.** Only main write is
+this log (safe: market closed, warm writers already skipping). Did NOT touch the concurrent
+`railway-monitor-log` working-tree edit (railway-deploy-monitor job's, left uncommitted).
+
+### Carry-forward (toward 0-open-issues)
+- ~~Night Hawk Edition synthesis funnel failure~~ → **RESOLVED this run** (2026-06-29 published). Residual:
+  the stale-`running` reaper (#70) is still a hardening nice-to-have, not an active failure — downgrade to low.
+- `auto/error-triage-2026-06-26-cron-watchpatterns` (RUN 7, Task #1) — still unmerged; safe to merge off-hours
+  after config-as-code verification per RUN 7 notes.
+- Prior carry-forwards stand: publish-preview external caller hardening (RUN 3); `::int days_of_data`
+  source-round (RUN 4, `spx-play-outcomes.ts:227`); open `auto/*` branches awaiting human review.
