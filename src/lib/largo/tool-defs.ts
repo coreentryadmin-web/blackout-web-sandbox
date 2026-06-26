@@ -149,13 +149,18 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_analyst_ratings", "Benzinga analyst-ratings channel primary; UW screener fallback.", T, ["ticker"]),
 
-  t("get_news", "Benzinga full-text primary → Polygon sentiment → UW fallback.", {
-
-    ticker: { type: "string" },
-
-    channels: { type: "string" },
-
-  }),
+  t(
+    "get_news",
+    "Benzinga full-text primary → Polygon sentiment → UW fallback. Optionally filter by Benzinga channel(s) to pull targeted, high-signal news.",
+    {
+      ticker: { type: "string", description: "e.g. NVDA, SPY. Omit for general/market-wide news." },
+      channels: {
+        type: "string",
+        description:
+          "Optional Benzinga channel filter. Space-delimited, lowercase; pass multiple by comma-separating (any-of match). Omit for general news. Available channels: 'analyst ratings', 'price target', 'upgrades', 'downgrades', 'analyst color', 'earnings', 'guidance', 'm&a', 'movers', 'after-hours center', 'insider trades', 'short sellers', 'fda', 'dividends', 'ipos', 'buybacks', 'offerings', 'top stories', 'trading ideas', 'rumors', 'exclusives'. Examples: 'fda', 'analyst ratings', 'guidance', 'm&a', 'insider trades'.",
+      },
+    }
+  ),
 
   t("get_web_search", "Internet search for breaking catalysts and macro context.", {
 
