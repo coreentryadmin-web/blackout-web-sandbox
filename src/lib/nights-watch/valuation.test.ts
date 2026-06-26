@@ -135,6 +135,43 @@ test("entry_premium = 0 → pnl_pct null (divide-by-zero guard) but unrealized_p
   assert.equal(pos.current_value, 800);
 });
 
+// -------------------- shares_per_contract (corp-action multiplier) --------------------
+
+test("absent sharesPerContract → defaults to 100 (standard contract, unchanged math)", () => {
+  // makeValuation omits sharesPerContract → enrichPosition must fall back to 100.
+  const pos = enrichPosition(
+    makeRow({ side: "long", option_type: "call", entry_premium: 5, contracts: 1 }),
+    makeValuation({ mark: 8 }),
+    NOW
+  );
+  assert.equal(pos.unrealized_pnl, 300); // (8-5)*100*1
+  assert.equal(pos.current_value, 800); // 8*100*1
+});
+
+test("non-100 sharesPerContract (e.g. 110 after a corp action) scales value + pnl", () => {
+  const pos = enrichPosition(
+    makeRow({ side: "long", option_type: "call", entry_premium: 5, contracts: 1 }),
+    makeValuation({ mark: 8, sharesPerContract: 110 }),
+    NOW
+  );
+  // multiplier = contracts(1) * 110
+  assert.equal(pos.current_value, 880); // 8 * 110
+  assert.equal(pos.unrealized_pnl, 330); // (8-5) * 110
+  assert.equal(pos.pnl_pct, 60); // ratio invariant to multiplier: (8-5)/5
+});
+
+test("invalid sharesPerContract (0 / negative / NaN) falls back to 100", () => {
+  for (const bad of [0, -100, NaN]) {
+    const pos = enrichPosition(
+      makeRow({ side: "long", option_type: "call", entry_premium: 5, contracts: 1 }),
+      makeValuation({ mark: 8, sharesPerContract: bad }),
+      NOW
+    );
+    assert.equal(pos.current_value, 800, `sharesPerContract=${bad} should default to 100`);
+    assert.equal(pos.unrealized_pnl, 300);
+  }
+});
+
 // ----------------------------- no-valuation states -----------------------------
 
 test("valuation null + pending=true → 'pending', money fields null, but DTE + breakeven still set", () => {

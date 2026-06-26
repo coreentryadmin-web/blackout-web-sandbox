@@ -48,6 +48,14 @@ export type ContractValuation = {
    * OPTIONAL for the same compat reason; the valuers always populate it.
    */
   mark_is_day_close?: boolean;
+  /**
+   * Deliverable shares per contract from the SAME snapshot/chain data this valuation is
+   * built from (Massive `details.shares_per_contract`) — 100 for standard listed options,
+   * NON-100 for corporate-action-adjusted contracts. P&L (enrichPosition) multiplies by this
+   * instead of a hardcoded 100. OPTIONAL/absent → enrichPosition defaults to 100 (so existing
+   * literal constructors and standard contracts are byte-identical to the old ×100 behavior).
+   */
+  sharesPerContract?: number | null;
 };
 
 /**
@@ -65,6 +73,16 @@ export type LiveMark = {
 function finiteOrNull(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Normalize a deliverable shares-per-contract value: keep it only when it is a finite number
+ * strictly > 0 (a real multiplier), otherwise null so the consumer defaults to 100. Standard
+ * listed options report 100; corporate-action-adjusted contracts report a different value.
+ */
+function spcOf(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 type MarkInputs = {
@@ -172,6 +190,9 @@ export function valuationFromContract(
     mark_source,
     refreshedAt,
     mark_is_day_close,
+    // Carry the REAL deliverable multiplier from the snapshot details (null when absent/invalid
+    // → enrichPosition defaults to 100). Lets corp-action-adjusted contracts price correctly.
+    sharesPerContract: spcOf(contract.details?.shares_per_contract),
   };
 }
 
@@ -224,6 +245,9 @@ export function valuationFromSnapshot(
     mark_source,
     refreshedAt,
     mark_is_day_close,
+    // Same REAL multiplier from the unified snapshot (already mapped on OptionSnapshot); null
+    // when absent → enrichPosition defaults to 100. Identical to the chain path by construction.
+    sharesPerContract: spcOf(snap.sharesPerContract),
   };
 }
 
@@ -338,7 +362,15 @@ export function enrichPosition(
   }
 
   const sideSign = position.side === "long" ? 1 : -1;
-  const multiplier = position.contracts * 100;
+  // Deliverable shares per contract — the REAL multiplier from the live valuation's snapshot
+  // (Massive details.shares_per_contract) so corporate-action-adjusted contracts (non-100)
+  // compute correct P&L. Defaults to 100 when absent — which covers (a) standard listed options
+  // and (b) the realized-P&L path on a CLOSED position, where valuation is null by design (so the
+  // settled figure is unchanged vs. the prior hardcoded ×100). The stored position row carries no
+  // multiplier, so 100 is the only available fallback there. spcOf rejects 0/negative/NaN (→ null)
+  // so any junk value also defaults to 100 rather than zeroing the P&L.
+  const sharesPerContract = spcOf(valuation?.sharesPerContract) ?? 100;
+  const multiplier = position.contracts * sharesPerContract;
 
   let current_value: number | null = null;
   let unrealized_pnl: number | null = null;

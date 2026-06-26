@@ -24,6 +24,13 @@ export type ChainContract = {
     strike_price?: number;
     contract_type?: string;
     expiration_date?: string;
+    /**
+     * Deliverable shares per contract (Massive `details.shares_per_contract`). Standard
+     * listed options are 100; a corporate action (split/merger/special dividend) can mint
+     * ADJUSTED contracts with a NON-100 multiplier. Carried so notional math uses the REAL
+     * multiplier instead of a hardcoded 100. Optional/absent → callers default to 100.
+     */
+    shares_per_contract?: number;
   };
   greeks?: { delta?: number; gamma?: number; theta?: number; vega?: number };
   implied_volatility?: number;
@@ -1844,13 +1851,23 @@ async function buildGexHeatmapUncached(
     const sign = type === "call" ? 1 : type === "put" ? -1 : 0;
     if (sign === 0) return;
 
+    // Deliverable shares per contract — 100 for standard listed options, but a corporate
+    // action (split/merger/special dividend) can mint ADJUSTED contracts with a non-100
+    // multiplier. Use the REAL value from the snapshot `details` so GEX/VEX/DEX/CHARM notional
+    // is correct for those; default to 100 when the field is absent/invalid (the overwhelming
+    // common case → byte-identical to the previous hardcoded ×100).
+    const sharesPerContract =
+      Number.isFinite(c.details?.shares_per_contract) && (c.details?.shares_per_contract ?? 0) > 0
+        ? Number(c.details?.shares_per_contract)
+        : 100;
+
     // ── GEX: gamma × oi × 100 × spot² × 0.01 (SpotGamma per-1%-move $-gamma), call +/put − ──
     // The extra `× spot × 0.01` converts raw dollar-gamma (per $1 underlying move) into the
     // industry-standard dealer $-gamma per 1% move (SpotGamma/Barchart convention), so our GEX
     // magnitudes match competitor scale. NOTE: VEX (~below) and CHARM use the distinct notional
     // `× 100 × spot` convention (per-1-unit-σ / per-year) — they are NOT on this per-1%-move scale.
     if (gamma) {
-      const signedGamma = sign * gamma * oi * 100 * spot * spot * 0.01;
+      const signedGamma = sign * gamma * oi * sharesPerContract * spot * spot * 0.01;
       if (signedGamma !== 0) {
         expirySet.add(expiry);
         const byExpiry = gammaCellMap.get(strike) ?? new Map<string, number>();
@@ -1873,7 +1890,7 @@ async function buildGexHeatmapUncached(
     // posture read is oriented correctly — positive dealer delta ⇒ dealers net LONG delta ⇒ they
     // SELL rallies / BUY dips ⇒ mean-reverting ⇒ STABILIZING (and negative ⇒ DESTABILIZING).
     if (Number.isFinite(delta) && delta !== 0) {
-      const signedDelta = -(delta * oi * 100 * spot);
+      const signedDelta = -(delta * oi * sharesPerContract * spot);
       if (signedDelta !== 0 && Number.isFinite(signedDelta)) {
         expirySet.add(expiry);
         const byExpiry = deltaCellMap.get(strike) ?? new Map<string, number>();
@@ -1893,7 +1910,7 @@ async function buildGexHeatmapUncached(
     // DISTINCT from GEX's per-1%-move scale (× spot² × 0.01) above. Do not align the two.
     const vps = vannaPerShare(spot, strike, t, iv);
     if (vps !== 0) {
-      const signedVanna = sign * vps * oi * 100 * spot;
+      const signedVanna = sign * vps * oi * sharesPerContract * spot;
       if (signedVanna !== 0 && Number.isFinite(signedVanna)) {
         expirySet.add(expiry);
         const byExpiry = vannaCellMap.get(strike) ?? new Map<string, number>();
@@ -1911,7 +1928,7 @@ async function buildGexHeatmapUncached(
     // charm at r=q=0, like gamma); the dealer call(+)/put(−) sign is applied here at accumulation.
     const cps = charmPerShare(spot, strike, t, iv);
     if (cps !== 0) {
-      const signedCharm = sign * cps * oi * 100 * spot;
+      const signedCharm = sign * cps * oi * sharesPerContract * spot;
       if (signedCharm !== 0 && Number.isFinite(signedCharm)) {
         expirySet.add(expiry);
         const byExpiry = charmCellMap.get(strike) ?? new Map<string, number>();

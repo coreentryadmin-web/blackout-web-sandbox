@@ -48,6 +48,8 @@ type UnifiedSnapshotResult = {
     exercise_style?: string;
     expiration_date?: string;
     underlying_ticker?: string;
+    /** Deliverable shares per contract — 100 standard, non-100 for corp-action-adjusted. */
+    shares_per_contract?: number;
   };
   underlying_asset?: { price?: number; ticker?: string; last_updated?: number };
   session?: {
@@ -96,6 +98,12 @@ export type OptionSnapshot = {
   optionType: "call" | "put" | null;
   /** Expiration date YYYY-MM-DD from details.expiration_date; null when absent. */
   expiry: string | null;
+  /**
+   * Deliverable shares per contract from details.shares_per_contract — 100 for standard
+   * listed options, NON-100 for corporate-action-adjusted contracts. null when absent;
+   * downstream P&L defaults to 100 in that case.
+   */
+  sharesPerContract: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -164,6 +172,11 @@ export function mapUnifiedSnapshotResult(r: UnifiedSnapshotResult): OptionSnapsh
   const expRaw = r.details?.expiration_date;
   const expiry = typeof expRaw === "string" && expRaw ? expRaw.slice(0, 10) : null;
 
+  // Deliverable shares per contract — kept REAL (non-100 for corp-action-adjusted contracts);
+  // null when absent/invalid so downstream P&L defaults to 100. Require >0 to reject junk.
+  const spcRaw = finiteOrNull(r.details?.shares_per_contract);
+  const sharesPerContract = spcRaw != null && spcRaw > 0 ? spcRaw : null;
+
   const up = finiteOrNull(r.underlying_asset?.price);
 
   return {
@@ -183,6 +196,7 @@ export function mapUnifiedSnapshotResult(r: UnifiedSnapshotResult): OptionSnapsh
     strike: finiteOrNull(r.details?.strike_price),
     optionType,
     expiry,
+    sharesPerContract,
   };
 }
 
