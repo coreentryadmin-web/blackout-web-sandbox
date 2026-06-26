@@ -247,9 +247,13 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     .map(flowRowToDict);
   const hotChains = aggregateHotChains(hotChainRows);
 
-  const indexFlows = await fetchIndexFlowsPooled();
+  // RECAP-MUST-NOT-THROW (#77 hardening C): every throw-prone tail call here must degrade to an
+  // empty default, never throw. If any of these throws BEFORE the function returns, the builder's
+  // outer catch fires and we get a failed/no-row edition (the #77 dark-fail relocated one stage
+  // earlier). With these guards fetchMarketWideContext can only return a (possibly thin) ctx.
+  const indexFlows = await fetchIndexFlowsPooled().catch(() => ({} as Record<string, unknown>));
 
-  const macroEvents = (await macroEventsOnDateLive(tomorrow))
+  const macroEvents = (await macroEventsOnDateLive(tomorrow).catch(() => []))
     .filter((e) => e.impact === "high")
     .map((e) => ({ ...e }) as Record<string, unknown>);
 
@@ -258,15 +262,27 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
   const priorCloses = dailyMarket?.results?.length
     ? await fetchPriorDayCloses(today).catch(() => ({}))
     : {};
-  const marketBreadth = dailyMarket?.results?.length
-    ? computeMarketBreadthFromSummary(dailyMarket.results, priorCloses)
-    : null;
+  // computeMarketBreadthFromSummary is synchronous — a .catch() can't guard it, so wrap in try/catch.
+  let marketBreadth: MarketBreadthMetrics | null = null;
+  if (dailyMarket?.results?.length) {
+    try {
+      marketBreadth = computeMarketBreadthFromSummary(dailyMarket.results, priorCloses);
+    } catch {
+      marketBreadth = null;
+    }
+  }
 
   const spxBars = mapBars(spxRaw as Array<{ o?: number; h?: number; l?: number; c?: number; t?: number }>);
   const spxIntraday5m = mapBars(
     spxIntradayRaw as Array<{ o?: number; h?: number; l?: number; c?: number; t?: number }>
   );
-  const spxGap = computeSpxGapContext(spxBars, spxIntraday5m);
+  // computeSpxGapContext is synchronous — guard it the same way so a gap-calc throw can't kill the recap.
+  let spxGap: SpxGapContext | null = null;
+  try {
+    spxGap = computeSpxGapContext(spxBars, spxIntraday5m);
+  } catch {
+    spxGap = null;
+  }
 
   return {
     today,

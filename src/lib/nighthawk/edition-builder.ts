@@ -131,7 +131,7 @@ async function publishRecapOnlyEdition(params: {
   candidates: number;
   checkpointing: boolean;
   force: boolean;
-}): Promise<void> {
+}) {
   const { editionFor, ctx, reason, candidates, checkpointing, force } = params;
   const recap = buildMarketRecap(ctx);
 
@@ -144,7 +144,7 @@ async function publishRecapOnlyEdition(params: {
     marketPlatform.flows.getFlowTapeSummary({ limit: 30 }).catch(() => null),
   ]);
 
-  await upsertNighthawkEdition({
+  const recapEdition = {
     edition_for: editionFor,
     session_date: ctx.today,
     recap_headline: recap.headline,
@@ -165,7 +165,7 @@ async function publishRecapOnlyEdition(params: {
       spx_desk: spxDesk,
       flow_tape: flowTape,
     },
-    plays: [],
+    plays: [] as PlaybookPlay[],
     meta: {
       candidates,
       ranked_tickers: [],
@@ -183,7 +183,19 @@ async function publishRecapOnlyEdition(params: {
         flow_alert_count: flowTape?.count ?? null,
       },
     },
-  });
+  };
+
+  // When the DB is not configured (!checkpointing === !dbConfigured()) upsertNighthawkEdition throws
+  // 'DATABASE_URL not set' (#77 hardening C). Skip the persist entirely and return the in-memory recap
+  // so a non-checkpointing run still yields a usable recap edition instead of throwing. When the DB IS
+  // configured, wrap the write so a transient DB error here can't take down the whole rescue path.
+  if (checkpointing) {
+    await upsertNighthawkEdition(recapEdition);
+  } else {
+    console.warn(
+      `[nighthawk/edition] recap-only: DB not configured — skipping upsert, returning in-memory recap (${reason})`
+    );
+  }
 
   if (checkpointing) {
     await upsertNighthawkJob(editionFor, {
@@ -195,6 +207,8 @@ async function publishRecapOnlyEdition(params: {
     await clearNighthawkStaging(editionFor);
     logNighthawkJob(editionFor, "info", "published", `Recap-only edition published (no plays) — ${reason}`);
   }
+
+  return recapEdition;
 }
 
 export async function buildEveningEdition(opts?: {
@@ -249,6 +263,11 @@ export async function buildEveningEdition(opts?: {
   // terminal exit below calls logFunnel(editionFor, funnel) so the drop point is always visible.
   const funnel: Partial<FunnelCounts> = {};
 
+  // Hoisted to function scope so the outer catch can route to a recap-only edition once context
+  // exists (#77 hardening C): if a LATER stage throws but ctx was already built, we still publish a
+  // real recap row instead of falling straight through to failed/no-row.
+  let ctx: MarketWideContext | null = null;
+
   try {
     if (checkpointing) {
       if (!job) {
@@ -262,7 +281,7 @@ export async function buildEveningEdition(opts?: {
     }
 
     // STAGE 1 — Market context
-    let ctx = (job?.context_json as MarketWideContext | null) ?? null;
+    ctx = (job?.context_json as MarketWideContext | null) ?? null;
     if (!ctx) {
       if (checkpointing) await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_context" });
       console.info("[nighthawk/edition] stage_context: market-wide context");
@@ -685,6 +704,47 @@ export async function buildEveningEdition(opts?: {
     // Emit whatever funnel counts we accumulated before the throw, so an exception path is also
     // self-diagnosing (which stage we got to before failing). published is left undefined ("-").
     const funnelLine = logFunnel(editionFor, funnel);
+
+    // RECAP-ONLY RESCUE (#77 hardening C): if context was already built before a LATER stage threw,
+    // we can STILL publish a real recap-only edition instead of going dark (failed/no-row). This
+    // catches the #77 dark-fail relocated to any post-context stage. Best-effort — if the recap
+    // publish itself throws, fall through to the failed path below.
+    if (ctx != null) {
+      try {
+        const reason = `Build threw after context (recap-only rescue): ${message}`;
+        console.warn(`[nighthawk/edition] recap-only rescue after exception — ${reason}`);
+        await publishRecapOnlyEdition({
+          editionFor,
+          ctx,
+          reason,
+          candidates: funnel.candidates ?? 0,
+          checkpointing,
+          force: Boolean(opts?.force),
+        });
+        // This is NOT a benign collapse — a mid-build exception forced a recap-only. Alert ops.
+        await notifyOpsDiscord({
+          severity: "warning",
+          title: `Night Hawk recap-only RESCUE (build threw) — ${editionFor}`,
+          body: `error: ${message}\n${funnelLine}`,
+        }).catch(() => undefined);
+        return {
+          ok: true,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: funnel.candidates ?? 0,
+          recap_only: true,
+          duration_ms: Date.now() - started,
+          job_status: "published",
+          current_stage: "published",
+        };
+      } catch (rescueError) {
+        // Recap publish itself failed (e.g. DATABASE_URL not set on a non-checkpointing run, or a
+        // transient DB error). Log and fall through to the hard-failed path so the failure is still
+        // recorded + alerted.
+        console.error("[nighthawk/edition] recap-only rescue failed:", rescueError);
+      }
+    }
+
     if (checkpointing) {
       await upsertNighthawkJob(editionFor, { status: "failed", error: message });
       logNighthawkJob(editionFor, "error", null, message);
