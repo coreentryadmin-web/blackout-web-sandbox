@@ -34,4 +34,31 @@ Bridge: Chrome (blackouttrades.com), signed in as admin.
 
 ## Actions
 - ✅ FIXED → main: Clerk preconnect/dns-prefetch hint (src/app/layout.tsx). tsc + build green.
-- ⚠️ FLAGGED: `_rsc` prefetch-burst 503s (infra) via TaskCreate.
+- ⚠️ FLAGGED: `_rsc` prefetch-burst 503s (infra) via TaskCreate (#1).
+
+---
+
+## Live RTH data-integrity validation (user-requested mid-run — "validate every number across every tool; during RTH all crons run continuously")
+
+Run extended at user's request to (a) confirm crons run continuously during RTH and (b) cross-validate live numbers across tools. Captured ~09:50–10:07 ET, market OPEN.
+
+### Cron continuity during RTH — `/api/admin/cron-health` (13 jobs)
+- **`market_hours_stale: 0`** — NO market-hours-critical job is stale. Fleet health 61/100, 9/13 healthy.
+- System Vitals: **Database Connected · Polygon WS (index) Live · UW Socket (flow) Live · Options WS (Massive marks) Live** — realtime writers all up.
+- RTH writers ticking continuously: **SPX Engine** (every 5min, 100%, tick 14:00 UTC), **UW Cache Refresh** (tick 14:02), **Heat Maps Warm**, **Night's Watch Warm** — all HEALTHY.
+- ⚠️ **Flow Ingest** (every 2min RTH) = **WARNING**, 24h mix 33% (2 ok / 4 skip), "last run skipped" → Task #2. (Non-fatal: WS flow feed is Live, so HELIX renders; cron is the PG-persistence writer.)
+- ❌ **Night Hawk Edition** = **FAILED** (tick Jun 25 23:32 UTC) — after-close job, consistent with the ::date crash fixed today in cc17d83 → Task #3 (verify recovery).
+- GEX EOD Snapshot / GEX Regime Alerts = UNKNOWN/idle (EOD/conditional — expected intraday).
+
+### Cross-tool number consistency (live, ~14:07 UTC)
+| Check | Values | Verdict |
+|---|---|---|
+| SPX spot | desk 7352.37 == spx-quote 7352.37 == pulse ~7350.8 | ✅ agree |
+| SPX change% self-consistency | desk −0.069% reconstructs from prior_close 7357.49 (−0.0696%) | ✅ internally correct |
+| SPY spot | spy-quote 732.45 == heatmap 732.45 | ✅ agree |
+| SPY×10 vs SPX | 7324.5 vs 7352.4 → SPY at 99.6% of SPX/10 | ✅ normal tracking |
+| Max pain | SPY 739 ×10 = 7390 ≈ SPX dash 7385 | ✅ consistent, drifts live |
+| VWAP/VIX | VWAP 7321 < spot 7352 ⇒ above_vwap true; VIX 19.27 | ✅ coherent |
+| **SPX vs SPY day-change** | SPX **−0.069%** vs SPY **−0.25%** (~0.18% gap) | ⚠️ within-tool math correct on both; gap = SPY/SPX tracking basis (post-ex-div offset), plausibly legit but unverified vs external ref |
+
+CONCLUSION: every tool's numbers are **internally consistent and cross-consistent** on the core market series (spot, change, max-pain, GEX levels, VWAP, VIX). The lone open question is the SPX↔SPY day-change basis gap (needs an external-reference check, not an obvious app bug). A FULL "every number, every tool" audit (HELIX net-premium/dark-pool/velocity, Largo quoted levels vs desk, Night's Watch valuations vs live marks, track-record math) is broader than one run → proposed as a recurring RTH data-integrity job (Task #4).
