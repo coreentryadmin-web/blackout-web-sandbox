@@ -102,3 +102,49 @@ The actual filter-vs-product decision stays flagged (not autonomously decidable)
   `auto/error-triage-2026-06-25`, `auto/anthropic-caching-2026-06-25`, `auto/clerk-webhook-2026-06-25`,
   `auto/far-dated-gex-2026-06-25`.
 - `play_engine.critical_stale` off-hours cosmetic (gate behind RTH check) — low-value flag.
+
+---
+
+## RUN 2 — 2026-06-26 ~05:41 UTC (daily slot)
+
+Second daily pass, ~1h after RUN 1 (04:42 UTC @ `cc35f9e`). Repo `C:/Users/raidu/blackout-cron`,
+`git pull` clean → base **`c476793`**, **tsc-green (exit 0)**. Market CLOSED (~10:41 PM PT, Thu).
+Re-checked all live error surfaces on `blackouttrades.com` (logged-in admin, Chrome bridge) for NEW or
+spiking signatures since RUN 1.
+
+### A. Full live surface — CLEAN (no new/spiking signatures)
+
+| Source | Endpoint | Result |
+|---|---|---|
+| Durable error sink | `/api/admin/errors?limit=200` | ✅ `events:[]` — 0 |
+| Open incidents | `/api/admin/incidents` | ✅ `incidents:[]` — 0 |
+| Admin health | `/api/admin/health` | ✅ `health_ok:true`; critical/warning/info/api_errors all 0; `issues:[]`; `route_errors:[]`; `redis_degraded:false`; `market_health_ok:true` |
+| Provider health (5m) | `/api/admin/health` | ✅ polygon `126 calls / 0 err` (200), UW `43 calls / 0 err` (200, `/net-flow/expiry`), anthropic idle; all WS OPEN+auth (polygon-indices 7 syms, UW 5 channels, Massive options 1 shard); rate-limiters healthy (uw circuit closed `recent429s:0`, polygon `consecutive429:0`) |
+| API dashboard | `/api/admin/apis/dashboard` | ✅ `summary.error_rate:0`, `recent_errors:[]`, `active_retries:[]`; **120/120 recent_events status 200**; 0 endpoints with `error_count>0` |
+| Cron health | `/api/admin/cron-health` | ⚠️ `failed:1` — **same** Night Hawk Edition signature as RUN 1 (§ below); other 12 jobs healthy/skipped/unknown |
+| Live route probe | `/`, `/api/health`, `/api/market/gex-positioning?ticker=SPX`, `/api/admin/cron-health` | ✅ all **200** (no 5xx) |
+
+### B. The one failure is UNCHANGED + already handled (no action — anti-theater)
+
+`cron-health` still reports the single `failed:1`: **Night Hawk Edition** (`nighthawk-playbook`),
+`last_run_at` **2026-06-25 23:32:14 UTC**, `last_message: "Claude returned no parseable plays."`,
+`meta.candidates:40 / plays_count:0`, `edition_for:2026-06-26`. This is **byte-identical** to RUN 1 —
+the worker has **not re-fired** (next fire is **Fri 5:30 PM ET**), so this is NOT new and NOT spiking;
+it is the same signature RUN 1 already (a) fixed for observability → `cc35f9e` and (b) flagged for the
+product decision → **Task #1**. The stale-`running` `nighthawk_job` ("Fri Jun 26", `stage_synthesis`,
+`updated_at 2026-06-26T00:45:43Z`) is likewise unchanged — already flagged as #70 concurrency work.
+
+**Verified the RUN 1 fix is actually live:** `git merge-base --is-ancestor cc35f9e origin/main` → **YES**
+(Railway deploys from `origin/main`). So Task #1's self-diagnosing funnel error IS armed for Friday's
+fire — the next failure will name its own killing stage in `cron-health meta.error`. Re-running
+"Run now" to force-recover the edition is a product/LLM decision and remains the **operator's** action
+(Task #1), not autonomously decidable → correctly left flagged, not auto-triggered.
+
+### Result
+
+**✅ ZERO new or spiking signatures since RUN 1.** Durable sink / incidents / health / `route_errors` /
+24h telemetry / live route probe all clean; the lone `failed:1` is the pre-existing Night Hawk Edition
+case (fix `cc35f9e` confirmed on `origin/main`, root cause flagged Task #1, hasn't re-fired). Nothing
+new to fix or flag — manufacturing a change here would violate the no-theater guardrail. Carry-forward
+items from RUN 1 stand unchanged (Task #1 operator-run; #70 reaper; open `auto/*` branches awaiting
+review).
