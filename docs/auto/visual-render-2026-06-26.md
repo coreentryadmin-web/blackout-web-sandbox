@@ -62,3 +62,19 @@ Run extended at user's request to (a) confirm crons run continuously during RTH 
 | **SPX vs SPY day-change** | SPX **−0.069%** vs SPY **−0.25%** (~0.18% gap) | ⚠️ within-tool math correct on both; gap = SPY/SPX tracking basis (post-ex-div offset), plausibly legit but unverified vs external ref |
 
 CONCLUSION: every tool's numbers are **internally consistent and cross-consistent** on the core market series (spot, change, max-pain, GEX levels, VWAP, VIX). The lone open question is the SPX↔SPY day-change basis gap (needs an external-reference check, not an obvious app bug). A FULL "every number, every tool" audit (HELIX net-premium/dark-pool/velocity, Largo quoted levels vs desk, Night's Watch valuations vs live marks, track-record math) is broader than one run → proposed as a recurring RTH data-integrity job (Task #4).
+
+---
+
+## SHIPPED (user-directed, full permission): recurring RTH data-integrity sweep — every 5 min, auto-open incidents
+
+User asked for a recurring sweep ("every 5 minutes, and auto open incidents"). Built + shipped to main (tsc + clean `next build` green):
+- **`src/lib/data-integrity-checks.ts`** — `runDataIntegrityChecks()` cross-validates, with WIDE bands + both-sides-fresh gating so it can't false-positive: C1 desk change% vs price/prior-close (±0.1%); C2 SPX spot desk-vs-heatmap (>0.5%); C3 SPY spot quote-vs-heatmap (>0.5%); C4 SPY×10/SPX tracking (>1.5%); C5 max-pain SPX vs SPY×10 (>2%); C6 GEX SPX/SPY freshness during RTH (>15m or cold). All `warning` severity in v1, category `data-integrity`, stable titles (numbers in detail) so each discrepancy = one upserting incident.
+- **`src/app/api/cron/data-integrity/route.ts`** — cron route (CRON_SECRET auth, self-skips outside RTH + when market closed), auto-opens/resolves incidents. Kill-switch `DATA_INTEGRITY_INCIDENTS=0` (ON by default).
+- **`src/lib/admin-incidents.ts`** + **`admin-spx-dashboard.ts`** — added a namespace-scoped reconcile (`resolveScope`) so the data-integrity cron and the SPX Operations dashboard share the `admin_incidents` table WITHOUT clobbering each other's incidents.
+- **`src/lib/cron-registry.ts`** + **`railway.data-integrity.toml`** — registered "Data Integrity" job, schedule `*/5 11-21 * * 1-5`.
+
+LIVE CALIBRATION (market open ~14:25 UTC): SPX heatmap available (spot 7362.54, 118 strikes); SPY×10 7338 vs SPX 7362 = −0.33% (band 1.5%); max-pain 7450 vs 7390 = 0.81% (band 2%); all asof current. → **zero discrepancies, zero false positives** on real data.
+
+⚠️ TWO follow-ups:
+1. **Commit-message mixup (concurrency collision):** a concurrent **api-integration-audit** job sharing the cron clone ran `git add -A` mid-edit and swept my 6 uncommitted data-integrity files into ITS commit **`49cb17d` "fix(api): cross-provider reliability hardening"** + pushed. Files are all correct on main and the COMBINED HEAD was re-validated green (tsc + build), but the feature is mislabeled in history. Root cause = the known shared-clone residual risk. → reinforces the need to serialize cron-clone git ops (Task: see #4 notes).
+2. **Railway service still needs wiring:** the cron won't fire on schedule until a Railway cron service is created with config-as-code path `railway.data-integrity.toml` (+ CRON_SECRET). Until wired, admin will show "Data Integrity" as never-fired and the staleness watchdog may flag it (accurate). MANUAL Railway step.
