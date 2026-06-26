@@ -575,10 +575,48 @@ function flowRowKey(row: MarketFlowRow): string {
   return `${f.ticker}|${f.alerted_at}|${f.strike}|${f.premium}`;
 }
 
+/**
+ * uwGet wrapper that retries ONLY transient upstream blips — connect-level network errors
+ * (the RT-2 class: UND_ERR_CONNECT_TIMEOUT, EHOSTUNREACH, `fetch failed`, ECONNRESET, DNS
+ * hiccups) and upstream 5xx — with bounded exponential backoff before rethrowing. 429 and
+ * every other HTTP-status error are NOT retried here: they bubble unchanged so the flow-alerts
+ * breaker accounting (noteUw429) + 403/partial-serve semantics in fetchMarketFlowAlertRows keep
+ * owning them exactly as before. This mirrors uwGetSafe's transient-network / 5xx branches for
+ * the DIRECT-uwGet flow path, which previously had NO retry at all — a single momentary
+ * api.unusualwhales.com blip on the first page threw straight to the outer catch and served `[]`
+ * (a blank HELIX tape) whenever no fresh-enough stale cache existed. Bounded to `retries`
+ * attempts (≤3 total, same ceiling as uwGetSafe) — no loop.
+ */
+async function uwGetWithTransientRetry<T>(
+  path: string,
+  params: Record<string, string | number>,
+  retries = 2
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await uwGet<T>(path, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const is5xx = isUwUpstream5xx(msg);
+      const isNet = isUwTransientNetwork(msg);
+      if ((!is5xx && !isNet) || attempt >= retries) throw err;
+      const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+      if (process.env.UW_DEBUG_RETRIES === "1") {
+        console.debug(
+          `[uw] flow-alerts ${is5xx ? "UPSTREAM_5XX" : "NETWORK_BLIP"} ${path} — retry ${attempt + 1} in ${delay.toFixed(0)}ms`
+        );
+      }
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 async function fetchMarketFlowAlertPage(
   query: Record<string, string | number>
 ): Promise<MarketFlowRow[]> {
-  const data = await uwGet<unknown>("/api/option-trades/flow-alerts", query);
+  // Retry transient connect/5xx blips before giving up (429 still bubbles to the caller's
+  // breaker + partial-serve logic). Without this a single blip blanked the HELIX tape.
+  const data = await uwGetWithTransientRetry<unknown>("/api/option-trades/flow-alerts", query);
   return extractRows(data).map((raw) => ({ raw, flow: rowToFlow(raw) }));
 }
 
@@ -633,9 +671,10 @@ export async function fetchMarketFlowAlertRows(params?: {
       try {
         batch = await fetchMarketFlowAlertPage(query);
       } catch (pageErr) {
-        // fetchMarketFlowAlertPage uses raw uwGet (no internal retry/stale fallback), so a
-        // 429/5xx on page 2+ used to throw out of the loop and DISCARD pages already merged,
-        // serving only the (older) marketFlowCache. Instead: keep the pages we have.
+        // fetchMarketFlowAlertPage now retries transient connect/5xx blips internally but still
+        // has no stale fallback and does NOT retry 429, so a 429 (or an exhausted transient blip)
+        // on page 2+ still throws out of the loop and would DISCARD pages already merged, serving
+        // only the (older) marketFlowCache. Instead: keep the pages we have.
         //  - first page failed (nothing merged yet) → rethrow so the outer catch runs the
         //    existing stale-cache / breaker-accounting path UNCHANGED.
         //  - already have pages → note the 429 here (the outer catch won't run; preserve the
