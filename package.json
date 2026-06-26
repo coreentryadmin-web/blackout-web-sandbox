@@ -37,6 +37,9 @@
     "swr": "^2.2.5",
     "ws": "^8.18.0"
   },
+  "overrides": {
+    "postcss": "$postcss"
+  },
   "devDependencies": {
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
@@ -48,7 +51,7 @@
     "eslint": "^8",
     "eslint-config-next": "^15.5.19",
     "eslint-plugin-tailwindcss": "^3.18.3",
-    "postcss": "^8",
+    "postcss": "^8.5.10",
     "stylelint": "^17.13.0",
     "stylelint-config-standard": "^40.0.0",
     "stylelint-config-tailwindcss": "^1.0.1",
