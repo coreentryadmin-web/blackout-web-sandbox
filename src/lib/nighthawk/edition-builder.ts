@@ -28,6 +28,37 @@ import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, MAX_CANDIDATES, MAX_DOSSIER
 import { nextTradingDayEt, todayEt } from "./session";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
 
+/**
+ * Consolidated funnel counts for ONE edition build (#77 deliverable (a)). Every stage of the
+ * candidate→play pipeline writes its count here, and `logFunnel` emits a single line at EVERY exit
+ * (success and all five recap-only fallbacks) so the next run pinpoints the exact drop without a
+ * Railway-log dig. Stages, left→right, mirror the pipeline order:
+ *   candidates  — extractCandidateTickers (flow feed → candidate tickers)
+ *   ranked      — rankCandidates output (scored dossiers → ranked pool)
+ *   dossiers    — dossiers actually sent to Claude synthesis (synthesisDossiers)
+ *   synthesized — RAW plays Claude returned & parsed, BEFORE strike/premium/stock filters (funnel.parsed)
+ *   critic_passed — plays surviving critiquePlays
+ *   published   — final plays written to the edition row (0 ⇒ recap-only)
+ */
+type FunnelCounts = {
+  candidates: number;
+  ranked: number;
+  dossiers: number;
+  synthesized: number;
+  critic_passed: number;
+  published: number;
+};
+
+function logFunnel(editionFor: string, f: Partial<FunnelCounts>): void {
+  const c = (n: number | undefined) => (n == null ? "-" : n);
+  const line =
+    `[nighthawk-funnel] ${editionFor}: candidates=${c(f.candidates)} extracted, ` +
+    `ranked=${c(f.ranked)}, dossiers=${c(f.dossiers)}, ` +
+    `synthesized=${c(f.synthesized)} (claude raw plays), ` +
+    `critic_passed=${c(f.critic_passed)}, published=${c(f.published)}`;
+  console.info(line);
+}
+
 export type EditionBuildResult = {
   ok: boolean;
   edition_for: string;
@@ -207,6 +238,10 @@ export async function buildEveningEdition(opts?: {
     };
   }
 
+  // Running funnel accumulator (#77 deliverable (a)) — each stage fills in its count and every
+  // terminal exit below calls logFunnel(editionFor, funnel) so the drop point is always visible.
+  const funnel: Partial<FunnelCounts> = {};
+
   try {
     if (checkpointing) {
       if (!job) {
@@ -248,6 +283,9 @@ export async function buildEveningEdition(opts?: {
         // returned nothing). Do NOT leave the UI "being built": publish a recap-only edition.
         const reason = `No flow candidates (stock_flows ${ctx.stock_flows.length}, hot_chains ${ctx.hot_chains.length}).`;
         console.warn(`[nighthawk/edition] stage_candidates zeroed — recap-only fallback: ${reason}`);
+        funnel.candidates = 0;
+        funnel.published = 0;
+        logFunnel(editionFor, funnel);
         await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: 0, checkpointing, force: Boolean(opts?.force) });
         return {
           ok: true,
@@ -271,6 +309,7 @@ export async function buildEveningEdition(opts?: {
     } else {
       console.info(`[nighthawk/edition] stage_candidates: loaded ${candidates.length} from checkpoint`);
     }
+    funnel.candidates = candidates.length;
 
     // STAGE 3 — Dossiers (resume-aware)
     resetEditionCongressCache();
@@ -320,6 +359,10 @@ export async function buildEveningEdition(opts?: {
       // (dossier fetch/scoring failures). Publish a recap-only edition rather than failing dark.
       const reason = `No scored dossiers after staging (${candidates.length} candidate(s)).`;
       console.warn(`[nighthawk/edition] stage_dossiers zeroed — recap-only fallback: ${reason}`);
+      funnel.ranked = 0;
+      funnel.dossiers = 0;
+      funnel.published = 0;
+      logFunnel(editionFor, funnel);
       await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
       return {
         ok: true,
@@ -369,9 +412,12 @@ export async function buildEveningEdition(opts?: {
       }
     }
 
+    funnel.ranked = ranked.length;
+
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
     const synthesisRanked = ranked.slice(0, EDITION_SYNTHESIS_POOL);
     const synthesisDossiers = synthesisRanked.map((s) => dossiers[s.ticker]).filter(Boolean);
+    funnel.dossiers = synthesisDossiers.length;
 
     if (!synthesisDossiers.length) {
       // Nothing survived to synthesis (e.g. every candidate halted, or ranking empty after rescue).
@@ -379,6 +425,9 @@ export async function buildEveningEdition(opts?: {
       // real published row is written instead of failing through the synthesis path.
       const reason = `No dossiers to synthesize (${candidates.length} candidate(s), 0 ranked).`;
       console.warn(`[nighthawk/edition] stage_synthesis pre-empty — recap-only fallback: ${reason}`);
+      funnel.synthesized = 0;
+      funnel.published = 0;
+      logFunnel(editionFor, funnel);
       await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
       return {
         ok: true,
@@ -430,8 +479,11 @@ export async function buildEveningEdition(opts?: {
       finalCriticNotes = Array.isArray(checkpointedSynthesis.critic_notes) ? checkpointedSynthesis.critic_notes : [];
       raw = checkpointedSynthesis.claude ? "checkpointed" : null;
       console.info(`[nighthawk/edition] stage_synthesis: loaded ${finalPlays.length} vetted plays from checkpoint`);
+      // Counts unknown on resume (synthesis/critic ran on a prior invocation) — record what we can.
+      funnel.synthesized = finalPlays.length;
+      funnel.critic_passed = finalPlays.length;
     } else {
-      const { plays: rawPlays, raw: synthRaw, funnel } = await generateEditionPlays({
+      const { plays: rawPlays, raw: synthRaw, funnel: synthFunnel } = await generateEditionPlays({
         ctx,
         dossiers: synthesisDossiers,
         ranked: synthesisRanked,
@@ -441,14 +493,19 @@ export async function buildEveningEdition(opts?: {
         playOutcomes,
       });
       raw = synthRaw;
+      // Synthesized = RAW Claude plays parsed BEFORE the strike/premium/stock filters (funnel.parsed).
+      // This is the single most important number for #77: parsed=0 means Claude returned nothing
+      // parseable (the timeout bug fixed in claude-edition.ts), whereas parsed>0 but published=0 means
+      // a downstream filter zeroed it.
+      funnel.synthesized = synthFunnel?.parsed ?? rawPlays.length;
 
       if (!rawPlays.length) {
         // Name the funnel stage that zeroed the plays so the empty state is self-diagnosing in
         // edition meta (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
-        const funnelMsg = funnel
-          ? funnel.parsed === 0
+        const funnelMsg = synthFunnel
+          ? synthFunnel.parsed === 0
             ? `Claude returned no parseable JSON plays (raw ${synthRaw?.length ?? 0} chars).`
-            : `All plays filtered out — funnel: ${funnel.parsed} parsed → ${funnel.stock} stock → ${funnel.premium_ok} within-cap → ${funnel.strike_ok} strike-valid.`
+            : `All plays filtered out — funnel: ${synthFunnel.parsed} parsed → ${synthFunnel.stock} stock → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid.`
           : "Claude returned no parseable plays.";
         const reason = anthropicConfigured()
           ? funnelMsg
@@ -456,6 +513,9 @@ export async function buildEveningEdition(opts?: {
         // Synthesis produced no plays — publish a recap-only edition instead of failing dark, so the
         // UI always shows tonight's market read. Never fabricate plays from nothing.
         console.warn(`[nighthawk/edition] stage_synthesis zeroed — recap-only fallback: ${reason}`);
+        funnel.critic_passed = 0;
+        funnel.published = 0;
+        logFunnel(editionFor, funnel);
         await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
         return {
           ok: true,
@@ -478,12 +538,15 @@ export async function buildEveningEdition(opts?: {
 
       finalPlays = vettedPlays;
       finalCriticNotes = criticNotes;
+      funnel.critic_passed = finalPlays.length;
       if (!finalPlays.length) {
         // Critic rejected every play — do NOT publish unvetted fallback content (no fabricated plays).
         // But still write a real published recap-only edition so the UI shows tonight's market read
         // instead of "being built" forever.
         const reason = "Critic rejected all plays — none passed quality review.";
         console.warn(`[nighthawk/edition] stage_critic zeroed — recap-only fallback: ${reason}`);
+        funnel.published = 0;
+        logFunnel(editionFor, funnel);
         await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
         return {
           ok: true,
@@ -517,6 +580,8 @@ export async function buildEveningEdition(opts?: {
     if (!finalPlays.length) {
       const reason = "Synthesis reached publish with zero plays (checkpoint/guard slip) — recap-only.";
       console.warn(`[nighthawk/edition] publish guard — empty finalPlays, recap-only fallback: ${reason}`);
+      funnel.published = 0;
+      logFunnel(editionFor, funnel);
       await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
       return {
         ok: true,
@@ -530,6 +595,8 @@ export async function buildEveningEdition(opts?: {
       };
     }
 
+    funnel.published = finalPlays.length;
+    logFunnel(editionFor, funnel);
     console.info("[nighthawk/edition] publish edition");
     await upsertNighthawkEdition({
       edition_for: editionFor,
@@ -608,6 +675,9 @@ export async function buildEveningEdition(opts?: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[nighthawk/edition] build failed:", error);
+    // Emit whatever funnel counts we accumulated before the throw, so an exception path is also
+    // self-diagnosing (which stage we got to before failing). published is left undefined ("-").
+    logFunnel(editionFor, funnel);
     if (checkpointing) {
       await upsertNighthawkJob(editionFor, { status: "failed", error: message });
       logNighthawkJob(editionFor, "error", null, message);

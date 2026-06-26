@@ -12,6 +12,21 @@ type PlaybookBoardProps = {
 
 const SLOT_COUNT = 5;
 
+/** Format an edition date safely for the "For {date}" headline (#77 Bug 1). The API now returns
+ *  edition_for as a clean ISO `YYYY-MM-DD`, but guard regardless: a non-ISO or malformed value must
+ *  never produce the literal "Invalid Date" headline. Returns null on anything we can't parse, so the
+ *  caller falls back to "Next session" instead of "FOR INVALID DATE". */
+function formatEditionDate(editionFor: string | null | undefined): string | null {
+  if (!editionFor) return null;
+  // Accept the ISO date part only; anchor at local noon so the displayed weekday/day never shifts
+  // across a timezone boundary. Reject anything that isn't a YYYY-MM-DD prefix.
+  const iso = String(editionFor).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
 /** A published edition has something to show (a recap) even with zero plays. Mirror the server-side
  *  gate (rowToNightHawkEdition / hasRecapContent) on the client so the recap state renders whenever
  *  ANY recap content is present — independent of the `recap_only` flag, which a stale/older row may
@@ -33,13 +48,7 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
   // "Playbook pending" — and we additionally self-heal any row where `available` lagged but a real
   // recap is present. recap_only is intentionally NOT consulted here.
   const showRecapState = (Boolean(edition?.available) || hasRecap) && !hasPlays;
-  const editionLabel = edition?.edition_for
-    ? new Date(`${edition.edition_for}T12:00:00`).toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      })
-    : null;
+  const editionLabel = formatEditionDate(edition?.edition_for);
 
   return (
     <section className="nighthawk-playbook">

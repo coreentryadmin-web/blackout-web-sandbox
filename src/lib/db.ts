@@ -952,6 +952,29 @@ function parseDate(value: string | null | undefined): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 }
 
+/**
+ * Normalize a pg DATE column to a clean ISO `YYYY-MM-DD` string (#77 Bug 1).
+ *
+ * node-postgres returns DATE columns as JS Date objects by default (no setTypeParser override here),
+ * so `String(r.edition_for).slice(0,10)` yields garbage like "Mon Jun 29" — which the client then
+ * fed to `new Date("Mon Jun 29T12:00:00")` → Invalid Date → the "FOR INVALID DATE" headline. Handle
+ * BOTH shapes: a Date object (read its UTC Y-M-D — DATE has no timezone, midnight-UTC is the day) and
+ * an already-ISO string (slice). Falls back to the raw stringified first 10 chars only if neither
+ * matches, so callers always get a stable value.
+ */
+function isoDateString(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const s = String(value ?? "");
+  // Already ISO (e.g. "2026-06-29" or "2026-06-29T00:00:00.000Z") — take the date part.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // A stringified Date ("Mon Jun 29 2026 …") — re-parse to recover the ISO date.
+  const reparsed = new Date(s);
+  if (!Number.isNaN(reparsed.getTime())) return reparsed.toISOString().slice(0, 10);
+  return s.slice(0, 10);
+}
+
 function parseTimestamptz(value: string | null | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
@@ -2099,8 +2122,8 @@ export async function fetchNighthawkEditionByDate(
   const r = res.rows[0];
   if (!r) return null;
   return {
-    edition_for: String(r.edition_for).slice(0, 10),
-    session_date: String(r.session_date).slice(0, 10),
+    edition_for: isoDateString(r.edition_for),
+    session_date: isoDateString(r.session_date),
     published_at: new Date(String(r.published_at)).toISOString(),
     recap_headline: r.recap_headline != null ? String(r.recap_headline) : null,
     recap_summary: r.recap_summary != null ? String(r.recap_summary) : null,
@@ -2124,8 +2147,8 @@ export async function fetchLatestNighthawkEdition(): Promise<NighthawkEditionRow
   const r = res.rows[0];
   if (!r) return null;
   return {
-    edition_for: String(r.edition_for).slice(0, 10),
-    session_date: String(r.session_date).slice(0, 10),
+    edition_for: isoDateString(r.edition_for),
+    session_date: isoDateString(r.session_date),
     published_at: new Date(String(r.published_at)).toISOString(),
     recap_headline: r.recap_headline != null ? String(r.recap_headline) : null,
     recap_summary: r.recap_summary != null ? String(r.recap_summary) : null,

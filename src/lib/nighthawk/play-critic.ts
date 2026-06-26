@@ -93,7 +93,16 @@ export async function critiquePlays(params: {
 
   // temperature:0 — structured JSON-array extraction (per-play keep/downgrade/cut verdicts),
   // not prose; deterministic output avoids nondeterminism + wasted retries on schema-constrained output.
-  const raw = await anthropicText(promptParts.join("\n"), 3000, SYSTEM, { temperature: 0 });
+  //
+  // TIMEOUT (#77). 3000 output tokens over a per-play dossier prompt also blows past the 20s client
+  // default; on timeout anthropicText returns null. Here that FAILS OPEN (the !raw branch returns the
+  // input plays unchanged), so a critic timeout does NOT zero the funnel — but it silently skips the
+  // quality review. Give it the same headroom as synthesis so the critic actually runs.
+  const raw = await anthropicText(promptParts.join("\n"), 3000, SYSTEM, {
+    temperature: 0,
+    timeoutMs: 60_000,
+    maxRetries: 1,
+  });
   if (!raw) {
     return { plays, notes: [] };
   }

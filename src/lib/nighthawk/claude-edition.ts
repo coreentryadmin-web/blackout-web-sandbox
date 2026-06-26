@@ -133,7 +133,22 @@ export async function generateEditionPlays(params: {
   });
   // temperature:0 — structured JSON-array extraction (ranked plays), not prose;
   // deterministic output avoids nondeterminism + wasted retries on schema-constrained output.
-  const raw = await anthropicText(prompt, 4500, SYSTEM, { temperature: 0 });
+  //
+  // TIMEOUT (#77 — THE zeroing bug). This is the LARGEST generation in the codebase: 4500 output
+  // tokens of structured JSON over a 12-dossier + chain-tables + full-market-context prompt. The
+  // Anthropic client default is a 20s per-request timeout (see getClient() in providers/anthropic.ts),
+  // which this generation routinely BLOWS PAST. With the default 3 retries, all three attempts time
+  // out (~60s+ wall) and anthropicText returns null → generateEditionPlays returns 0 parsed plays →
+  // the edition zeroes to recap-only. That is deterministic, market-independent, and explains why
+  // 17/17 prior runs + tonight all produced 0 ranked plays despite candidates existing. The sibling
+  // large generations already learned this: spx-commentary uses timeoutMs:45_000/maxRetries:1, the
+  // NW narrative uses timeoutMs:20_000/maxRetries:1. The synthesis call — the biggest of all — never
+  // got the fix. 90s gives a 4500-tok generation real headroom; maxRetries:1 avoids stacking 3×90s.
+  const raw = await anthropicText(prompt, 4500, SYSTEM, {
+    temperature: 0,
+    timeoutMs: 90_000,
+    maxRetries: 1,
+  });
   if (!raw) {
     return { plays: [], recap, raw: null, funnel: { parsed: 0, stock: 0, premium_ok: 0, strike_ok: 0 } };
   }
