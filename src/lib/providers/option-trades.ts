@@ -35,6 +35,7 @@ import { polygonRawJson, resolveOptionsRoot } from "./polygon-options-gex";
 import { fetchIndexSnapshot, fetchStockSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { serverCache, TTL } from "@/lib/server-cache";
+import { classifyTradeSide } from "./gex-intraday-adjust-core";
 
 // ── Bounds (all env-tunable; defaults are conservative) ────────────────────────
 function envInt(name: string, fallback: number): number {
@@ -94,6 +95,24 @@ export type StrikePremium = {
   putPremium: number;
   totalPremium: number;
   prints: number;
+  /**
+   * SIGNED net CUSTOMER premium classified via the quote rule (at/above ask → customer BUY → +,
+   * at/below bid → customer SELL → −, mid/unclassifiable → 0), split by option type. Positive =
+   * net customer buying. These power the intraday-adjusted GEX model; the gross *Premium fields
+   * above are unchanged. Only populated when an NBBO reference was available for the contract;
+   * otherwise the print contributes 0 here (and `classifiedPrints` does not count it).
+   */
+  netCallPremiumSigned: number;
+  netPutPremiumSigned: number;
+  /**
+   * SIGNED net CUSTOMER contract count (Σ side · size) by type — the quantity used to convert
+   * intraday flow into a dollar-gamma adjustment (premium is path-dependent on price; contracts
+   * are what hedging scales with). Positive = net customer LONG that side intraday.
+   */
+  netCallContractsSigned: number;
+  netPutContractsSigned: number;
+  /** Number of prints at this strike that COULD be side-classified (had a usable NBBO). */
+  classifiedPrints: number;
 };
 
 /** The aggregated reconstruction for one ticker/window. */
@@ -123,6 +142,13 @@ export type OptionTradesAggregate = {
     filteredPrints: number;
     /** true when at least one upstream contract pull failed (partial result). */
     partial: boolean;
+    /**
+     * SIDE-CLASSIFICATION coverage: how many counted prints carried a usable NBBO (from the SAME
+     * banded discovery snapshot — NO extra fan-out) so the quote rule could sign them, and the
+     * total counted. coverage = sideClassifiedPrints / totalPrints. Low coverage ⇒ the signed
+     * fields are a weak sample (the intraday-adjusted model degrades toward the OI base).
+     */
+    sideClassifiedPrints: number;
   };
 };
 
@@ -139,8 +165,20 @@ type TradesResponse = { results?: RawTrade[]; next_url?: string; status?: string
 type ChainRow = {
   ticker?: string; // OCC, e.g. "O:SPXW260626C07340000"
   details?: { strike_price?: number; contract_type?: string; expiration_date?: string };
+  /** Last NBBO from the SAME banded snapshot — used (for free) to side-classify trades. */
+  last_quote?: { bid?: number; ask?: number };
 };
 type ChainSnapResponse = { results?: ChainRow[]; next_url?: string };
+
+/** A discovered contract + its contemporaneous NBBO (bid/ask) from the banded snapshot. */
+type DiscoveredContract = {
+  occ: string;
+  strike: number;
+  type: "call" | "put";
+  /** NBBO bid/ask from the discovery snapshot; null when the contract had no usable quote. */
+  bid: number | null;
+  ask: number | null;
+};
 
 /** True iff this print's conditions exclude it (multi-leg or canceled/late). */
 function isExcludedTrade(conditions: number[] | undefined): boolean {
@@ -169,7 +207,7 @@ async function discoverNearTheMoneyContracts(
   optionsRoot: string,
   spot: number,
   expiry: string
-): Promise<{ contracts: Array<{ occ: string; strike: number; type: "call" | "put" }>; capped: boolean }> {
+): Promise<{ contracts: DiscoveredContract[]; capped: boolean }> {
   const band = Math.max(spot * STRIKE_BAND_PCT, 80);
   const lo = Math.floor(spot - band);
   const hi = Math.ceil(spot + band);
@@ -184,14 +222,19 @@ async function discoverNearTheMoneyContracts(
     "option-trades/chain-band"
   );
   const rows = page?.results ?? [];
-  const all: Array<{ occ: string; strike: number; type: "call" | "put" }> = [];
+  const all: DiscoveredContract[] = [];
   for (const r of rows) {
     const occ = typeof r.ticker === "string" ? r.ticker : "";
     const strike = Number(r.details?.strike_price);
     const t = String(r.details?.contract_type ?? "").toLowerCase();
     if (!occ || !Number.isFinite(strike) || strike <= 0) continue;
     if (t !== "call" && t !== "put") continue;
-    all.push({ occ, strike, type: t });
+    // Capture the contemporaneous NBBO from the SAME snapshot (no extra fetch) for side-classification.
+    const bRaw = Number(r.last_quote?.bid);
+    const aRaw = Number(r.last_quote?.ask);
+    const bid = Number.isFinite(bRaw) && bRaw > 0 ? bRaw : null;
+    const ask = Number.isFinite(aRaw) && aRaw > 0 ? aRaw : null;
+    all.push({ occ, strike, type: t, bid, ask });
   }
   // Keep the contracts CLOSEST to spot (most-traded ATM band) within the cap.
   all.sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot));
@@ -277,6 +320,7 @@ export async function fetchOptionTrades(
     let filteredPrints = 0;
     let contractsWithTrades = 0;
     let partial = false;
+    let sideClassifiedPrints = 0;
 
     // SEQUENTIAL fan-out: each call already awaits a funnel slot (token bucket + concurrency cap),
     // so iterating is naturally paced and bounded by MAX_CONTRACTS — no unbounded Promise.all burst.
@@ -309,17 +353,36 @@ export async function fetchOptionTrades(
           putPremium += premium;
           putPrints += 1;
         }
+        // SIDE classification via the quote rule against the contract's discovery-snapshot NBBO
+        // (no per-trade fetch). side ∈ {−1,0,+1}; 0 = at-mid/unclassifiable → not signed, not counted.
+        const side = classifyTradeSide(price, c.bid, c.ask);
+        const signedPremium = side !== 0 ? side * premium : 0;
+        if (side !== 0) sideClassifiedPrints += 1;
+        const signedContracts = side !== 0 ? side * size : 0;
         const sp = byStrike.get(c.strike) ?? {
           strike: c.strike,
           callPremium: 0,
           putPremium: 0,
           totalPremium: 0,
           prints: 0,
+          netCallPremiumSigned: 0,
+          netPutPremiumSigned: 0,
+          netCallContractsSigned: 0,
+          netPutContractsSigned: 0,
+          classifiedPrints: 0,
         };
-        if (c.type === "call") sp.callPremium += premium;
-        else sp.putPremium += premium;
+        if (c.type === "call") {
+          sp.callPremium += premium;
+          sp.netCallPremiumSigned += signedPremium;
+          sp.netCallContractsSigned += signedContracts;
+        } else {
+          sp.putPremium += premium;
+          sp.netPutPremiumSigned += signedPremium;
+          sp.netPutContractsSigned += signedContracts;
+        }
         sp.totalPremium += premium;
         sp.prints += 1;
+        if (side !== 0) sp.classifiedPrints += 1;
         byStrike.set(c.strike, sp);
       }
       if (counted > 0) contractsWithTrades += 1;
@@ -349,6 +412,7 @@ export async function fetchOptionTrades(
         contractsCapped: capped,
         filteredPrints,
         partial,
+        sideClassifiedPrints,
       },
     } satisfies OptionTradesAggregate;
   });
@@ -382,6 +446,7 @@ function emptyAggregate(
       contractsCapped: false,
       filteredPrints: 0,
       partial: false,
+      sideClassifiedPrints: 0,
       ...metaOverride,
     },
   };

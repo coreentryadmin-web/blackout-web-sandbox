@@ -1,6 +1,8 @@
 import "server-only";
 
 import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-options-gex";
+import { getGexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust";
+import type { GexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust-core";
 
 // ---------------------------------------------------------------------------
 // Canonical cross-tool GEX/VEX positioning contract.
@@ -65,6 +67,16 @@ export type GexPositioning = {
   distance_to_flip_pct: number | null;
   /** Intraday gamma-migration one-liner when a real diff exists, else null. */
   shift_summary: string | null;
+  /**
+   * 0DTE / FRONT-EXPIRY INTRADAY-ADJUSTED view (OI + volume model) — an ESTIMATE that ADDS today's
+   * not-yet-settled front-expiry net dealer positioning (signed buy-vs-sell from the trade tape) on
+   * top of the canonical OI base above. ADDITIVE + clearly LABELED — the canonical OI fields
+   * (`net_gex` / `flip` / `call_wall` / `put_wall`) are NEVER overwritten by it. `null` when the
+   * adjusted view can't be built (cold matrix / no front expiry / no flow) — never fabricated.
+   * Populated only by `getGexPositioning`; the pure `gexPositioningFromHeatmap` mapper leaves it
+   * undefined (it has no flow input), so existing matrix-vs-positioning checks are unaffected.
+   */
+  gex_intraday_adjusted?: GexIntradayAdjusted | null;
   /** Provenance — always the shared Polygon/Massive GEX matrix. */
   source: "polygon";
 };
@@ -100,12 +112,26 @@ function fmtNum(n: number | null | undefined): string {
  * Returns null when the matrix is cold/empty (no provider, no spot, or no strikes) —
  * cold data emits nothing rather than a fabricated read.
  */
-export async function getGexPositioning(ticker: string): Promise<GexPositioning | null> {
+export async function getGexPositioning(
+  ticker: string,
+  opts: { includeIntradayAdjusted?: boolean } = {}
+): Promise<GexPositioning | null> {
   const root = String(ticker ?? "").trim().toUpperCase();
   if (!root) return null;
 
   const hm = await fetchGexHeatmap(root).catch(() => null);
-  return gexPositioningFromHeatmap(root, hm);
+  const base = gexPositioningFromHeatmap(root, hm);
+  if (!base) return null;
+
+  // The base contract stays LIGHT by default (pure cache-reader, no extra upstream) so the many
+  // consumers that rely on the documented light guarantee (desk / Largo / Night's Watch / the
+  // gex-positioning route) are unchanged. The 0DTE intraday-adjusted lens is OPT-IN — only when a
+  // caller explicitly asks does it spend the bounded Trades tape + one front-expiry gamma band.
+  // Best-effort + bounded: a failure leaves the field null; the canonical OI fields are never
+  // affected. The pure mapper has no flow input, so matrix-vs-positioning checks stay like-for-like.
+  if (!opts.includeIntradayAdjusted) return base;
+  const intraday = await getGexIntradayAdjusted(root).catch(() => null);
+  return { ...base, gex_intraday_adjusted: intraday };
 }
 
 /**
@@ -224,7 +250,10 @@ export async function gexContextLine(ticker: string): Promise<string | null> {
  * Returns null when getGexPositioning is null (cold matrix → emit nothing).
  */
 export async function gexContextBlock(ticker: string): Promise<string | null> {
-  const p = await getGexPositioning(ticker);
+  // AI prompts benefit from the 0DTE intraday-adjusted lens (always clearly labeled an estimate),
+  // so this block opts INTO it. It's not on the high-frequency light path, so the bounded extra
+  // fetch is acceptable here. The canonical OI clauses above remain primary + unchanged.
+  const p = await getGexPositioning(ticker, { includeIntradayAdjusted: true });
   if (!p) return null;
 
   const lines: string[] = [];
@@ -262,6 +291,21 @@ export async function gexContextBlock(ticker: string): Promise<string | null> {
   }
 
   if (p.shift_summary) lines.push(`Intraday gamma shift: ${p.shift_summary}`);
+
+  // 0DTE intraday-adjusted lens — ALWAYS labeled as an estimate + that canonical GEX is OI-based, so
+  // the model can never present it as the primary number. Only emitted when a real adjustment exists.
+  const adj = p.gex_intraday_adjusted;
+  if (adj && adj.model === "signed-flow" && adj.net_gex_adjustment !== 0) {
+    lines.push(
+      `Intraday-adjusted (OI + volume model, 0DTE ${adj.front_expiry}, ESTIMATE — canonical GEX above is OI-based): ` +
+        `net $-gamma ${fmtMoney(adj.net_gex_adjusted)} (OI ${fmtMoney(adj.net_gex_oi)} ${
+          adj.net_gex_adjustment >= 0 ? "+" : "−"
+        }${fmtMoney(Math.abs(adj.net_gex_adjustment))} front-expiry flow), flip ${fmtNum(
+          adj.flip_adjusted
+        )}, call wall ${fmtNum(adj.call_wall_adjusted)}, put wall ${fmtNum(adj.put_wall_adjusted)}` +
+        ` [coverage ${(adj.meta.classification_coverage * 100).toFixed(0)}%]`
+    );
+  }
 
   return lines.join("\n");
 }

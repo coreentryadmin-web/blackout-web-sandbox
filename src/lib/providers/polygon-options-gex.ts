@@ -2389,6 +2389,84 @@ export function summarizeGexFromChain(contracts: ChainContract[], spot: number) 
   return aggregateGexRows(contracts, spot);
 }
 
+/**
+ * Per-strike GAMMA coefficient for ONE specified expiry (intended: the FRONT / 0DTE / nearest) —
+ * the dollar gamma ONE long contract contributes on the SAME per-1%-move scale the GEX matrix uses
+ * (`γ · shares_per_contract · spot² · 0.01`). This is the conversion factor the intraday-adjusted
+ * GEX model needs to turn today's SIGNED net customer contracts (from the Massive Trades tape) into
+ * a dollar-gamma nudge that is dimensionally identical to `gex.strike_totals`.
+ *
+ * BOUNDED + RATE-LIMITED + CACHED: exactly ONE `fetchChainBand` (the SINGLE given expiry, ~±4%
+ * strike band, ~1 page, through the shared Polygon funnel), wrapped in serverCache (OPTIONS_CHAIN
+ * TTL) so concurrent callers collapse to one fetch per window. It does NOT touch the canonical
+ * matrix build or its cache — an isolated, additive read used only by the intraday-adjust lens.
+ * Returns null when not configured / no spot / no contracts at that expiry (never fabricates).
+ */
+export type FrontExpiryGammaCoeffs = {
+  ticker: string;
+  optionsRoot: string;
+  /** The expiry these coefficients are for (YYYY-MM-DD) — caller passes the front/0DTE expiry. */
+  frontExpiry: string;
+  spot: number;
+  /**
+   * Per-strike GAMMA-per-long-contract dollar coefficient on the GEX per-1%-move scale
+   * (`γ · spc · spot² · 0.01`), keyed by strike string. Gamma is type-independent (call γ ≈ put γ
+   * at the same strike), so ONE coefficient per strike suffices; we keep the larger-OI side's value
+   * when both exist. Always ≥ 0. Absent strike = no usable gamma there.
+   */
+  gammaCoeffByStrike: Record<string, number>;
+};
+
+export async function fetchFrontExpiryGammaCoeffs(
+  underlying: string,
+  frontExpiry: string
+): Promise<FrontExpiryGammaCoeffs | null> {
+  if (!polygonConfigured()) return null;
+  const { root, optionsRoot } = resolveOptionsRoot(underlying);
+  if (!root) return null;
+  const expiry = String(frontExpiry ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return null;
+
+  const { serverCache, TTL } = await import("../server-cache");
+  return serverCache(`front-gamma-coeffs:${optionsRoot}:${expiry}`, TTL.OPTIONS_CHAIN, async () => {
+    const snap = await resolveSpotSnapshot(optionsRoot);
+    const spot = snap?.price ?? 0;
+    if (!(spot > 0)) return null;
+
+    // ONE tight single-expiry ±4% band (rate-limited, ~1 page). Never fabricates.
+    const contracts = await fetchChainBand(optionsRoot, spot, expiry, 0.04).catch(
+      () => [] as ChainContract[]
+    );
+    if (!contracts.length) return null;
+
+    const gammaCoeffByStrike: Record<string, number> = {};
+    const oiByStrike: Record<string, number> = {};
+    for (const c of contracts) {
+      const e = String(c.details?.expiration_date ?? "").slice(0, 10);
+      if (e !== expiry) continue;
+      const strike = Number(c.details?.strike_price);
+      const gamma = Number(c.greeks?.gamma ?? 0);
+      const oi = Number(c.open_interest ?? 0);
+      if (!Number.isFinite(strike) || strike <= 0 || !Number.isFinite(gamma) || gamma <= 0) continue;
+      const spc =
+        Number.isFinite(c.details?.shares_per_contract) && (c.details?.shares_per_contract ?? 0) > 0
+          ? Number(c.details?.shares_per_contract)
+          : 100;
+      // Dollar gamma per ONE long contract, same per-1%-move scale as the matrix GEX cells.
+      const coeff = gamma * spc * spot * spot * 0.01;
+      const key = String(strike);
+      // Gamma is ~type-independent; keep the deeper-OI leg's coeff (more reliable γ at that strike).
+      if (gammaCoeffByStrike[key] == null || oi > (oiByStrike[key] ?? -1)) {
+        gammaCoeffByStrike[key] = coeff;
+        oiByStrike[key] = oi;
+      }
+    }
+    if (Object.keys(gammaCoeffByStrike).length === 0) return null;
+
+    return { ticker: root, optionsRoot, frontExpiry: expiry, spot, gammaCoeffByStrike };
+  });
+}
+
 function aggregateGexRows(contracts: ChainContract[], spot: number): Record<string, unknown>[] {
   const byStrike = new Map<number, { call: number; put: number }>();
 

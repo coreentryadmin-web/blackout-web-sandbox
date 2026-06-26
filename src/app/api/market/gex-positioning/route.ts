@@ -42,8 +42,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid ticker" }, { status: 400, headers: noStore });
   }
 
+  // OPT-IN: the 0DTE intraday-adjusted lens (OI + volume model). Default OFF keeps this route the
+  // documented LIGHT cache-reader; `?intraday=1` spends the bounded Trades tape + one gamma band.
+  const wantIntraday = /^(1|true|yes)$/i.test(req.nextUrl.searchParams.get("intraday") ?? "");
+
   try {
-    const positioning = await getGexPositioning(ticker);
+    const positioning = await getGexPositioning(ticker, {
+      includeIntradayAdjusted: wantIntraday,
+    });
     if (!positioning) {
       // Cold / empty matrix — never fabricate. Mirrors the heatmap empty contract.
       return NextResponse.json(

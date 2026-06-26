@@ -55,6 +55,12 @@ type GexPositioning = {
 
   shift_summary: string | null;   // intraday gamma-migration one-liner, or null
 
+  // ADDITIVE, LABELED 0DTE lens — see "Intraday-adjusted GEX" below. ESTIMATE built ON TOP of the
+  // canonical OI fields above; NEVER overwrites net_gex / flip / call_wall / put_wall. null when it
+  // can't be built. Populated by getGexPositioning (the async accessor); the pure
+  // gexPositioningFromHeatmap mapper leaves it undefined (it has no flow input).
+  gex_intraday_adjusted?: GexIntradayAdjusted | null;
+
   source: "polygon";              // provenance (the shared Polygon/Massive matrix)
 };
 ```
@@ -80,6 +86,109 @@ type GexPositioning = {
 is `null` (or, for the always-present reads, a neutral string). When the matrix
 itself is cold/empty (no provider, no spot, or no strikes), the whole object is
 `null` — emit nothing rather than a fake read.
+
+---
+
+## Intraday-adjusted GEX (0DTE / front expiry) — ADDITIVE, LABELED lens
+
+> **The canonical OI-weighted GEX above is UNCHANGED and PRIMARY.** This is a
+> SEPARATE, clearly-labeled view — never a replacement.
+
+**The gap it fills.** Canonical dealer GEX (`net_gex` / walls / `flip`) is
+**open-interest weighted** — the industry standard (SpotGamma / Barchart) that
+users cross-reference, so it stays exactly as-is. But OI is **settled
+end-of-day**, so it is stale intraday; for the **front expiry (0DTE — >50% of
+SPX option volume)** OI is near-zero during the session because today's
+contracts haven't settled into OI yet. An OI-only view therefore **misses
+same-day dealer gamma** being built right now.
+
+**What we add (mirrors SpotGamma's "OI & Volume Adjustment").** For the **front
+expiry only**, estimate today's not-yet-settled net dealer positioning from the
+**Massive Trades tape** and ADD it to the OI base to produce
+`gex_intraday_adjusted` — a parallel view. The canonical fields are **never**
+overwritten.
+
+**Signed flow, not gross volume (decided).** Gross volume ≠ net dealer
+positioning, so each front-expiry trade is classified **buy-vs-sell via the
+quote rule** (`price ≥ ask` → customer buy `+`, `≤ bid` → customer sell `−`,
+strictly inside → unclassified `0`). The NBBO used is the `last_quote` **already
+present on the discovery snapshot** the Trades reconstruction fetches
+(`option-trades.ts`) — so signing costs **zero extra fan-out** (no per-trade
+`/v3/quotes` pull). Because that NBBO is a single near-real-time snapshot (not
+the quote at each trade's exact nanosecond), the signing is a **bounded
+approximation** — the view is labeled an **ESTIMATE**. When classification
+coverage is thin the adjustment shrinks toward 0 and the view degrades to the OI
+base (`model: "thin"`); never fabricated.
+
+**The math (dimensionally identical to `gex.strike_totals`).** For front-expiry
+strike `K`:
+
+```
+netCustomerGammaContracts(K) = netCallContractsSigned(K) + netPutContractsSigned(K)
+dealerGammaAdjust(K)         = − gammaCoeff(K) · netCustomerGammaContracts(K)
+   gammaCoeff(K) = γ · shares_per_contract · spot² · 0.01   // one long contract's $-gamma,
+                                                            // SAME per-1%-move scale as the matrix
+adjustedStrikeTotal(K)       = oiFrontStrikeTotal(K) + dealerGammaAdjust(K)
+```
+
+Both call and put long positions are long gamma for the buyer; the quote-rule
+sign already encodes who is net long, and dealers are the **counterparty** (the
+negation). Non-front strikes carry their OI total **unchanged**; `flip` / walls
+/ net are recomputed on the adjusted totals and surfaced as `*_adjusted`.
+
+**The `GexIntradayAdjusted` type** (on `gex_intraday_adjusted`):
+
+```ts
+type GexIntradayAdjusted = {
+  ticker: string;
+  front_expiry: string;            // YYYY-MM-DD the lens is scoped to
+  spot: number;
+  asof: string;
+  net_gex_adjusted: number;        // OI net GEX + front-expiry intraday nudge
+  net_gex_oi: number;              // canonical OI net GEX (UNCHANGED), for side-by-side
+  net_gex_adjustment: number;      // adjusted − OI
+  strike_totals_adjusted: Record<string, number>;
+  flip_adjusted: number | null;    // recomputed on adjusted totals (distinct from canonical flip)
+  call_wall_adjusted: number | null;
+  put_wall_adjusted: number | null;
+  meta: {
+    window_min: number;
+    total_prints: number;
+    side_classified_prints: number;
+    classification_coverage: number; // side_classified / total, 0..1 (low ⇒ view ≈ OI base)
+    partial: boolean;
+  };
+  label: string;    // "Intraday-adjusted (OI + volume model) — 0DTE"
+  tooltip: string;  // explains it's an estimate + canonical GEX is OI-based
+  model: "signed-flow" | "thin";
+  source: "polygon";
+};
+```
+
+**UI labeling requirement.** Any surface that renders this view MUST show the
+`label` ("Intraday-adjusted (OI + volume model) — 0DTE") and the `tooltip` (which
+states it is an estimate and that the canonical GEX is OI-based), so users never
+confuse it with the primary OI numbers.
+
+**Opt-in (keeps the light contract light).** `getGexPositioning` stays a pure
+cache-reader by default — `gex_intraday_adjusted` is populated only when a caller
+passes `{ includeIntradayAdjusted: true }` (or the route is hit with
+`?intraday=1`). The standalone accessor `getGexIntradayAdjusted(ticker)` returns
+the view directly. `gexContextBlock` opts in (AI prompts benefit; not the
+high-frequency path).
+
+**Cost / RPS.** `getGexIntradayAdjusted(ticker)`:
+- reads the **OI base via the SHARED matrix cache** (`fetchGexHeatmap`, cache-reader — no second matrix upstream),
+- one **bounded** front-expiry gamma-coefficient band (`fetchFrontExpiryGammaCoeffs`, cached, ~1 page through the shared Polygon funnel),
+- the **bounded + cached + rate-limited** Trades tape (`fetchOptionTrades` — contract cap + page cap + the one permissive Massive funnel),
+- whole result cached at the OPTIONS_CHAIN TTL so concurrent callers collapse to one build per window.
+
+**Files.**
+- `src/lib/providers/gex-intraday-adjust-core.ts` — PURE math + types (no `server-only`, unit-tested in `gex-intraday-adjust-core.test.ts`).
+- `src/lib/providers/gex-intraday-adjust.ts` — server orchestration (`getGexIntradayAdjusted`).
+- `src/lib/providers/option-trades.ts` — extended with quote-rule side classification (signed premium + signed contracts per strike) at zero extra fan-out.
+- `src/lib/providers/polygon-options-gex.ts` — `fetchFrontExpiryGammaCoeffs` (front-expiry per-strike gamma coefficients). The canonical matrix builder is **untouched**.
+- `getGexPositioning` populates `gex_intraday_adjusted`; `gexContextBlock` emits a labeled one-liner for AI prompts.
 
 ---
 
