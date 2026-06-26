@@ -851,6 +851,7 @@ body {
 .bento-accent-cyan { border-top-color: #22d3ee; }
 .bento-accent-red { border-top-color: #ff2d55; }
 .bento-accent-yellow { border-top-color: #ffd23f; }
+.bento-accent-gold { border-top-color: #ffcc4d; }
 
 .bento-card-watermark {
   position: absolute;
@@ -1738,6 +1739,7 @@ body {
   .nav-accent-orange { --accent: #ff6b2b; }
   .nav-accent-blue { --accent: #22d3ee; }
   .nav-accent-red { --accent: #ff2d55; }
+  .nav-accent-gold { --accent: #ffcc4d; }
   .nav-mega-foot { @apply mt-4 pt-3 text-center; border-top: 1px solid rgba(255, 255, 255, 0.06); font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: #7dd3fc; }
 
   /* RIGHT — auth */
@@ -6703,6 +6705,120 @@ body {
     @apply border-purple/40 bg-purple/5;
   }
 
+  /* ── BlackOut Grid — market-intelligence command center ──────────────────── */
+  /* Masonry: desktop 4-col / tablet 2-col / mobile 1-col. Panels theme off --grid-accent. */
+  .grid-board {
+    @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5;
+    grid-auto-rows: minmax(0, auto);
+  }
+
+  .grid-card {
+    @apply relative flex flex-col rounded-2xl border bg-black/55 backdrop-blur-md overflow-hidden min-h-[280px];
+    border-color: color-mix(in srgb, var(--grid-accent) 28%, transparent);
+    box-shadow: inset 0 0 60px color-mix(in srgb, var(--grid-accent) 6%, transparent);
+  }
+  .grid-card::before {
+    content: "";
+    @apply absolute inset-x-0 top-0 h-[2px];
+    background: linear-gradient(90deg, transparent, var(--grid-accent), transparent);
+    opacity: 0.8;
+  }
+
+  .grid-card-head {
+    @apply flex items-center gap-2.5 shrink-0 px-4 py-3 border-b border-white/10;
+  }
+  .grid-card-accent-bar {
+    @apply inline-block h-3.5 w-[3px] rounded-full;
+    background: var(--grid-accent);
+    box-shadow: 0 0 8px var(--grid-accent);
+  }
+  .grid-card-kicker {
+    @apply font-mono text-[9px] font-bold uppercase tracking-[0.3em];
+    color: var(--grid-accent);
+  }
+  .grid-card-title {
+    @apply font-syne text-[15px] font-bold tracking-tight text-white;
+  }
+  .grid-card-head-spacer { @apply ml-auto; }
+  .grid-card-dot {
+    @apply inline-block h-2 w-2 rounded-full shrink-0;
+  }
+  .grid-card-dot-live {
+    background: var(--grid-accent);
+    box-shadow: 0 0 8px var(--grid-accent);
+    @apply animate-pulse motion-reduce:animate-none;
+  }
+  .grid-card-dot-idle { @apply bg-sky-300/30; }
+
+  .grid-card-body { @apply flex-1 overflow-hidden relative; }
+  .grid-card-foot {
+    @apply shrink-0 px-4 py-2 border-t border-white/10;
+  }
+  .grid-foot-note { @apply font-mono text-[10px] text-sky-300/60; }
+
+  .grid-empty {
+    @apply font-mono text-[11px] text-cyan-400 p-6 text-center;
+  }
+
+  /* tone helpers (no grey — emerald/bear/sky/gold) */
+  .pulse-tone-emerald { color: #00e676; }
+  .pulse-tone-bear { color: #ff5c78; }
+  .pulse-tone-sky { color: #7dd3fc; }
+  .pulse-tone-gold { color: #ffcc4d; }
+
+  .grid-chip-btn {
+    @apply font-mono text-[10px] font-semibold px-2 py-[3px] rounded-md border border-white/15 text-sky-300 transition-colors;
+  }
+  .grid-chip-btn:hover { @apply text-white border-white/30; }
+  .grid-chip-btn-active {
+    border-color: color-mix(in srgb, var(--grid-accent) 70%, transparent);
+    color: var(--grid-accent);
+    background: color-mix(in srgb, var(--grid-accent) 12%, transparent);
+  }
+
+  /* Pulse hero */
+  .pulse-grid {
+    @apply grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 p-4;
+  }
+  .pulse-chip {
+    @apply flex flex-col gap-0.5 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5;
+  }
+  .pulse-chip-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/70;
+  }
+  .pulse-chip-value { @apply font-syne text-xl font-bold leading-none; }
+  .pulse-chip-sub { @apply font-mono text-[10px] text-sky-300/80; }
+
+  /* Notable Flow */
+  .grid-flow-list { @apply flex flex-col divide-y divide-white/[0.06] overflow-y-auto max-h-[440px]; }
+  .grid-flow-row {
+    @apply grid items-center gap-2 px-4 py-2 text-[12px] transition-colors;
+    grid-template-columns: 3rem 2.6rem 1fr auto auto;
+  }
+  .grid-flow-row:hover { @apply bg-white/[0.03]; }
+  .grid-flow-row-whale { background: color-mix(in srgb, #ffcc4d 7%, transparent); }
+  .grid-flow-ticker { @apply font-syne font-bold text-white; }
+  .grid-flow-type { @apply font-mono text-[10px] font-bold uppercase; }
+  .grid-flow-strike { @apply font-mono text-[11px] text-sky-300/80 text-right; }
+  .grid-flow-prem { @apply font-mono text-[12px] font-bold text-right; }
+  .grid-flow-whale { @apply text-[12px]; }
+
+  /* Analyst Actions */
+  .grid-analyst-list { @apply flex flex-col divide-y divide-white/[0.06] overflow-y-auto max-h-[440px]; }
+  .grid-analyst-row { @apply flex flex-col gap-1 px-4 py-2.5; }
+  .grid-analyst-top { @apply flex items-center gap-2; }
+  .grid-analyst-tag { @apply font-mono text-[9px] font-bold uppercase tracking-[0.16em]; }
+  .grid-analyst-tickers { @apply font-mono text-[10px] text-sky-300/80 truncate; }
+  .grid-analyst-ago { @apply ml-auto font-mono text-[10px] text-cyan-400 shrink-0; }
+  .grid-analyst-title { @apply text-[12.5px] leading-snug text-white line-clamp-2; }
+  .grid-analyst-title-link:hover { @apply opacity-80; }
+
+  /* News mount — let the reused rail fill the tile */
+  .grid-news-mount { @apply p-3 h-full; }
+  .grid-news-mount .news-rail {
+    @apply min-h-[400px] xl:min-h-[440px] xl:max-h-[440px] border-0 bg-transparent;
+  }
+
   /* ── SPX live commentary rail ── */
   .spx-commentary-rail {
     @apply flex flex-col rounded-2xl border border-purple/30 bg-black/55 backdrop-blur-md overflow-hidden flex-1 min-h-[280px];
@@ -11416,6 +11532,23 @@ html.nav-locked body { overflow: hidden; }
 .bo-nighthawk:hover .nh-bloom{animation-duration:1.8s}
 .bo-nighthawk:hover .nh-ring{transform:scale(.96);transition:transform .22s ease-out}
 
+/* ============ BLACKOUT GRID ============ */
+.bo-grid .bo-ring{transform-origin:32px 32px;transition:transform .32s ease-out}
+.bo-grid .bo-cells .c{transform-box:fill-box;transform-origin:center;animation:boHeat 3s var(--ease-breath) infinite}
+.bo-grid .bo-cells .d1{animation-delay:-.75s}
+.bo-grid .bo-cells .d2{animation-delay:-1.5s}
+.bo-grid .bo-cells .d3{animation-delay:-2.25s}
+.bo-grid .bo-scan{animation:boSweep var(--bo-pulse) var(--ease-sweep) infinite}
+.bo-grid .bo-glowgrp{animation:boShimmer 3s var(--ease-breath) infinite}
+.bo-grid .bo-node-core{transform-box:fill-box;transform-origin:center;animation:boBreath 1.5s var(--ease-breath) infinite}
+.bo-grid.is-live .bo-ring{animation:boRingExpand .6s var(--ease-draw) both}
+.bo-grid.is-live .bo-cells .c{animation:boPop .4s var(--ease-snap) both,boHeat 3s var(--ease-breath) 1.2s infinite}
+.bo-grid.is-live .bo-node{animation:boPop .4s var(--ease-snap) 1s both}
+.bo-grid:hover .bo-cells .c{animation-duration:1.8s}
+.bo-grid:hover .bo-scan{animation-duration:3.6s}
+.bo-grid:hover .bo-glowgrp{animation-duration:1.8s}
+.bo-grid:hover .bo-ring{transform:scale(.95);transition:transform .22s ease-out}
+
 /* hero glow upgrade */
 .bo-sigil.bo-hero [filter]{filter:url(#bo-glow-lg)}
 
@@ -11431,13 +11564,14 @@ html.nav-locked body { overflow: hidden; }
   .bo-helix .bo-focal,.bo-largo .bo-core-node,.bo-largo .bo-tick,
   .bo-heatmap .bo-node,.bo-nighthawk .nh-blip,.bo-nighthawk .nh-focal{transform:scale(1);opacity:1}
   .bo-glowgrp,.bo-glow-fill,.bo-core-bloom,.nh-bloom,.bo-heatmap .bo-focal{opacity:.6}
-  .bo-spx .bo-scan{opacity:.35;transform:translateX(0)}
+  .bo-spx .bo-scan,.bo-grid .bo-scan{opacity:.35;transform:translateX(0)}
   .bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-nighthawk .nh-wedge-fill{opacity:.35}
   .bo-heatmap .c.d1,.bo-heatmap .c.d2{opacity:.9} .bo-heatmap .c.d3{opacity:.6}
+  .bo-grid .bo-ring{transform:scale(1);opacity:.4} .bo-grid .bo-node-core{transform:scale(1);opacity:1}
 }
 /* duplicate the resting block scoped to .bo-static so animated={false} matches the poster frame */
 .bo-static.bo-spx .bo-curve,.bo-static.bo-helix .bo-strandA,.bo-static.bo-helix .bo-strandB,.bo-static.bo-largo .bo-wave-path{stroke-dashoffset:0}
 .bo-static .bo-glowgrp,.bo-static .bo-glow-fill,.bo-static .bo-core-bloom,.bo-static .nh-bloom{opacity:.6}
 .bo-static.bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-static.bo-nighthawk .nh-wedge-fill{opacity:.35}
-.bo-static.bo-spx .bo-scan{opacity:.35}
+.bo-static.bo-spx .bo-scan,.bo-static.bo-grid .bo-scan{opacity:.35}
 .bo-static.bo-heatmap .c.d1,.bo-static.bo-heatmap .c.d2{opacity:.9} .bo-static.bo-heatmap .c.d3{opacity:.6}

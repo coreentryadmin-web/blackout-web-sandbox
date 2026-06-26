@@ -7,12 +7,12 @@
 // env-overridable (LAUNCHED_TOOLS) so each tool can be flipped live with a single Railway var edit —
 // no code change, no redeploy, no risk of shipping a bug just to unlock a feature.
 
-export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk";
+export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "grid";
 
 /** ProductMark sigil keys — kept inline (not imported) so this module stays alias-free + test-safe.
  *  Structurally identical to MarkProduct in components/marks/ProductMark.tsx, so a ToolMeta.product
  *  is directly assignable to <ProductMark product>. */
-export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk";
+export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "grid";
 
 export type ToolMeta = {
   key: ToolKey;
@@ -32,6 +32,9 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "heatmap", label: "Heatmaps", href: "/heatmap", product: "heatmap", defaultLaunched: false },
   { key: "largo", label: "Largo AI", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: false },
+  // BlackOut Grid — market-intelligence command center. Ships LOCKED ("Launching Soon"); flip live via
+  // LAUNCHED_TOOLS=grid (additive env, no redeploy). Admin bypass is automatic (tool-access-server.ts).
+  { key: "grid", label: "BlackOut Grid", href: "/grid", product: "grid", defaultLaunched: false },
 ] as const;
 
 const TOOL_BY_KEY = new Map<ToolKey, ToolMeta>(TOOLS.map((t) => [t.key, t]));

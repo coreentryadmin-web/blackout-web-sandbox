@@ -100,6 +100,17 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Heat Maps presets so user GETs are pure cache hits (no cold-build bursts)",
   },
   {
+    key: "grid-warm",
+    name: "BlackOut Grid Warm",
+    kind: "http",
+    path: "/api/cron/grid-warm",
+    schedule_label: "~Every 2 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description: "Pre-warm the BlackOut Grid market-wide snapshots (Analyst Actions Benzinga channel) into Redis grid:* keys so /api/grid/* reads are pure cache hits (cache-reader rule)",
+  },
+  {
     key: "gex-eod-snapshot",
     name: "GEX EOD Snapshot",
     kind: "http",

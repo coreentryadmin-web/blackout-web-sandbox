@@ -6,14 +6,15 @@ import { isToolLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-ac
 
 const E = (v?: string): NodeJS.ProcessEnv => ({ LAUNCHED_TOOLS: v } as NodeJS.ProcessEnv);
 
-test("defaults: SPX + HELIX live; Heatmaps/Largo/Night Hawk locked", () => {
+test("defaults: SPX + HELIX live; Heatmaps/Largo/Night Hawk/Grid locked", () => {
   const env = {} as NodeJS.ProcessEnv;
   assert.equal(isToolLaunched("spx", env), true);
   assert.equal(isToolLaunched("flows", env), true);
   assert.equal(isToolLaunched("heatmap", env), false);
   assert.equal(isToolLaunched("largo", env), false);
   assert.equal(isToolLaunched("nighthawk", env), false);
-  assert.deepEqual(lockedToolKeys(env).sort(), ["heatmap", "largo", "nighthawk"]);
+  assert.equal(isToolLaunched("grid", env), false);
+  assert.deepEqual(lockedToolKeys(env).sort(), ["grid", "heatmap", "largo", "nighthawk"]);
 });
 
 test("LAUNCHED_TOOLS is additive — unlocking one tool leaves the others locked", () => {
@@ -21,19 +22,26 @@ test("LAUNCHED_TOOLS is additive — unlocking one tool leaves the others locked
   assert.equal(isToolLaunched("heatmap", env), true);
   assert.equal(isToolLaunched("largo", env), false);
   assert.equal(isToolLaunched("nighthawk", env), false);
-  assert.deepEqual(lockedToolKeys(env).sort(), ["largo", "nighthawk"]);
+  assert.deepEqual(lockedToolKeys(env).sort(), ["grid", "largo", "nighthawk"]);
+});
+
+test("LAUNCHED_TOOLS unlocks grid when included", () => {
+  const env = E("grid");
+  assert.equal(isToolLaunched("grid", env), true);
+  assert.equal(isToolLaunched("heatmap", env), false);
 });
 
 test("LAUNCHED_TOOLS parses CSV, trims, lowercases, ignores unknown keys", () => {
-  const env = E("  Largo , NIGHTHAWK , bogus ");
+  const env = E("  Largo , NIGHTHAWK , GRID , bogus ");
   assert.equal(isToolLaunched("largo", env), true);
   assert.equal(isToolLaunched("nighthawk", env), true);
+  assert.equal(isToolLaunched("grid", env), true);
   assert.equal(isToolLaunched("heatmap", env), false);
   assert.deepEqual(lockedToolKeys(env), ["heatmap"]);
 });
 
 test("can never accidentally lock the default-live tools via env", () => {
-  const env = E("heatmap,largo,nighthawk");
+  const env = E("heatmap,largo,nighthawk,grid");
   assert.equal(isToolLaunched("spx", env), true);
   assert.equal(isToolLaunched("flows", env), true);
   assert.deepEqual(lockedToolKeys(env), []); // all unlocked
