@@ -21,7 +21,7 @@ import dynamic from "next/dynamic";
 // behavior-identical; the loading placeholder matches its 72px container.
 const FlowMomentumChart = dynamic(
   () => import("@/components/desk/FlowMomentumChart").then((m) => m.FlowMomentumChart),
-  { ssr: false, loading: () => <div className="flow-panel"><div className="flow-panel-header"><span className="flow-panel-title">Flow Momentum</span></div><div className="px-1 pt-2 pb-1"><div className="h-[72px]"><Skeleton width="100%" height={72} rounded="md" /></div></div></div> },
+  { ssr: false, loading: () => <div className="flow-panel"><div className="flow-panel-header"><span className="flow-panel-title">Cumulative Net Prem (running)</span></div><div className="px-1 pt-2 pb-1"><div className="h-[72px]"><Skeleton width="100%" height={72} rounded="md" /></div></div></div> },
 );
 import { DarkPoolPanel } from "@/components/desk/DarkPoolPanel";
 import { TickerDrawer } from "@/components/desk/TickerDrawer";

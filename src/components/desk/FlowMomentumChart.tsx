@@ -18,7 +18,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: { valu
       <p className={clsx("font-mono text-[10px] font-semibold", net >= 0 ? "text-bull" : "text-bear")}>
         {net >= 0 ? "+" : ""}{fmtPremium(net)}
       </p>
-      <p className="font-mono text-[10px] text-cyan-400">net flow</p>
+      <p className="font-mono text-[10px] text-cyan-400">cumulative net premium</p>
     </div>
   );
 }
@@ -33,6 +33,10 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
     if (fp === lastFpRef.current) return;
     lastFpRef.current = fp;
 
+    // Each point is the CUMULATIVE call−put premium across the entire loaded tape at sample
+    // time — NOT per-window net flow. As the tape accumulates, this is a running total whose
+    // slope tracks how many alerts have loaded (and it jumps on reload). Labeled accordingly
+    // ("cumulative net premium") rather than rebuilt into a true event-time–bucketed series.
     const calls = alerts.filter((a) => a.option_type === "CALL").reduce((s, a) => s + a.premium, 0);
     const puts  = alerts.filter((a) => a.option_type === "PUT").reduce((s, a) => s + a.premium, 0);
 
@@ -48,7 +52,7 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
   return (
     <Panel
       accent="sky"
-      title="Flow Momentum"
+      title="Cumulative Net Prem (running)"
       bodyClassName="!px-2 !py-2"
       actions={
         points.length >= 2 ? (
@@ -95,7 +99,7 @@ export function FlowMomentumChart({ alerts }: { alerts: FlowAlert[] }) {
             </ResponsiveContainer>
           </div>
         )}
-        <p className="font-mono text-[10px] text-cyan-500 text-center mt-1">call − put premium · {points.length} samples</p>
+        <p className="font-mono text-[10px] text-cyan-500 text-center mt-1">cumulative (call − put) premium of loaded tape · {points.length} samples</p>
       </div>
     </Panel>
   );
