@@ -148,25 +148,53 @@ function firstPriceInText(text: string): number | null {
   return Number.isFinite(v) && v > 0 ? v : null;
 }
 
-/** Strip any analyst price-target claim from prose. dossier.price_target is hardcoded null, so a PT
- *  in prose is ALWAYS fabricated. We neutralize the phrase rather than delete the sentence so the
- *  surrounding thesis stays readable. */
-export function stripPriceTargetClaims(text: string): { text: string; stripped: boolean } {
+/** Each pattern captures (group 1) the numeric dollar value of the PT claim so callers can RECONCILE
+ *  a prose PT against a real source PT, not just blindly strip it. */
+const PT_PATTERNS: RegExp[] = [
+  /\b(?:analyst|street|consensus)?\s*price\s*target[s]?\s*(?:of|:|is|at|=)?\s*\$?\s*(\d[\d,]*(?:\.\d+)?)/gi,
+  /\bPT\s*(?:of|:|at|=)?\s*\$?\s*(\d[\d,]*(?:\.\d+)?)/g,
+  /\$\s*(\d[\d,]*(?:\.\d+)?)\s*PT\b/g,
+  /\banalyst[s]?\s*(?:see|target|expect)[a-z]*\s*\$?\s*(\d[\d,]*(?:\.\d+)?)/gi,
+];
+
+/** Tolerance band for reconciling a prose PT against the parsed source PT. Within ±20% ⇒ keep. */
+export const PRICE_TARGET_TOLERANCE_PCT = 0.2;
+
+/**
+ * Strip / reconcile analyst price-target claims in prose.
+ *
+ *  - When NO `sourcePt` is supplied (dossier has no parsed PT), every PT claim is fabricated → strip.
+ *  - When a `sourcePt` exists, a prose PT WITHIN ±20% of it is legitimate → keep; one OUTSIDE the
+ *    band is fabricated/misquoted → strip. The phrase is neutralized (not the whole sentence) so the
+ *    surrounding thesis stays readable.
+ */
+export function stripPriceTargetClaims(
+  text: string,
+  sourcePt?: number | null
+): { text: string; stripped: boolean } {
   if (!text) return { text, stripped: false };
   let stripped = false;
-  // "analyst price target of $X", "PT $X", "price target: $123", "$123 PT", "Street target $X"
-  const patterns: RegExp[] = [
-    /\b(?:analyst|street|consensus)?\s*price\s*target[s]?\s*(?:of|:|is|at|=)?\s*\$?\s*\d[\d,]*(?:\.\d+)?/gi,
-    /\bPT\s*(?:of|:|at|=)?\s*\$?\s*\d[\d,]*(?:\.\d+)?/g,
-    /\$\s*\d[\d,]*(?:\.\d+)?\s*PT\b/g,
-    /\banalyst[s]?\s*(?:see|target|expect)[a-z]*\s*\$?\s*\d[\d,]*(?:\.\d+)?/gi,
-  ];
   let out = text;
-  for (const re of patterns) {
-    if (re.test(out)) {
+  for (const re of PT_PATTERNS) {
+    re.lastIndex = 0;
+    out = out.replace(re, (match, num: string) => {
+      // No source PT → always fabricated.
+      if (sourcePt == null || !Number.isFinite(sourcePt)) {
+        stripped = true;
+        return "[price target unavailable]";
+      }
+      const claimed = Number(String(num).replace(/,/g, ""));
+      if (!Number.isFinite(claimed) || sourcePt <= 0) {
+        stripped = true;
+        return "[price target unavailable]";
+      }
+      // Within tolerance of the real PT → legitimate, keep the original text.
+      if (Math.abs(claimed - sourcePt) / sourcePt <= PRICE_TARGET_TOLERANCE_PCT) {
+        return match;
+      }
       stripped = true;
-      out = out.replace(re, "[price target unavailable]");
-    }
+      return "[price target unavailable]";
+    });
   }
   return { text: out, stripped };
 }
@@ -276,19 +304,24 @@ export function groundPlay(
     }
   }
 
-  // ── CHECK 5: KILL fabricated analyst price target (SOFT — strip from prose) ───────────────────
-  // dossier.price_target is hardcoded null, so any PT claim is fabricated. Strip it from every prose
-  // field. Done as a mutation so the published prose never carries a made-up target.
+  // ── CHECK 5: RECONCILE / kill analyst price target (SOFT — strip from prose) ──────────────────
+  // We now have a parsed Benzinga PT in the dossier (price target news channel). Reconcile any prose
+  // PT against it: WITHIN ±20% of the real PT ⇒ keep; OUTSIDE the band, or when there is NO source
+  // PT, ⇒ strip. Done as a mutation so the published prose never carries a made-up/misquoted target.
   {
-    const t1 = stripPriceTargetClaims(mutated.thesis);
-    const t2 = stripPriceTargetClaims(mutated.key_signal);
-    const t3 = stripPriceTargetClaims(mutated.target);
+    const sourcePt = dossier?.benzinga_price_target?.price_target ?? null;
+    const t1 = stripPriceTargetClaims(mutated.thesis, sourcePt);
+    const t2 = stripPriceTargetClaims(mutated.key_signal, sourcePt);
+    const t3 = stripPriceTargetClaims(mutated.target, sourcePt);
     if (t1.stripped || t2.stripped || t3.stripped) {
       mutated = { ...mutated, thesis: t1.text, key_signal: t2.text, target: t3.text };
       issues.push({
         check: "price_target",
         severity: "flag",
-        detail: `${play.ticker} fabricated analyst price target stripped from prose (no PT source — dossier.price_target is null).`,
+        detail:
+          sourcePt != null
+            ? `${play.ticker} prose price target stripped — outside ±${Math.round(PRICE_TARGET_TOLERANCE_PCT * 100)}% of the parsed analyst PT $${sourcePt}.`
+            : `${play.ticker} fabricated analyst price target stripped from prose (no parsed PT source for this ticker).`,
       });
     }
   }

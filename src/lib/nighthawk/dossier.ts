@@ -1,4 +1,18 @@
-import { fetchBenzingaNews, fetchPolygonFinancialRatios, fetchShortInterest, fetchVixIvRankPercentile, type PolygonFinancialRatios } from "@/lib/providers/polygon";
+import {
+  fetchBenzingaNews,
+  fetchBenzingaPriceTarget,
+  fetchPolygonBalanceSheets,
+  fetchPolygonCashFlowStatements,
+  fetchPolygonFinancialRatios,
+  fetchPolygonIncomeStatements,
+  fetchShortInterest,
+  fetchVixIvRankPercentile,
+  computeFundamentalSignals,
+  type BenzingaPriceTarget,
+  type FundamentalSignals,
+  type PolygonFinancialRatios,
+} from "@/lib/providers/polygon";
+import { serverCache, TTL } from "@/lib/server-cache";
 import { fetchPolygonRealizedVol } from "@/lib/providers/polygon-options-gex";
 import { fetchPolygonNews, fetchPolygonTickerDetails } from "@/lib/providers/polygon-largo";
 import { uwConfigured } from "@/lib/providers/config";
@@ -57,9 +71,57 @@ export type TickerDossier = {
   sector: string | null;
   short_days_to_cover: number | null;
   fundamental_ratios: PolygonFinancialRatios | null;
+  /** Derived revenue/margin/FCF/debt/EPS/share-count trends from the three statements. */
+  fundamental_signals: FundamentalSignals | null;
+  /** Parsed Benzinga analyst price target (price target news channel). */
+  benzinga_price_target: BenzingaPriceTarget | null;
   trading_halt: boolean;
   scored?: ScoredCandidate;
 };
+
+/**
+ * Per-ticker financials bundle: widened ratios + derived statement signals + parsed analyst PT.
+ * Financials change SLOWLY, so this is cached on a long (1h REFERENCE) TTL — the cache-reader rule:
+ * 500 concurrent edition builds / users share ONE upstream pull per ticker per window, with NO
+ * uncapped fan-out (the three statement calls + ratios + PT run as a bounded Promise.all).
+ */
+type FinancialsBundle = {
+  ratios: PolygonFinancialRatios | null;
+  signals: FundamentalSignals | null;
+  priceTarget: BenzingaPriceTarget | null;
+};
+
+async function fetchFinancialsBundle(sym: string): Promise<FinancialsBundle> {
+  return serverCache(`nighthawk:financials:${sym}`, TTL.REFERENCE, async () => {
+    const [ratios, income, balance, cashFlow, priceTarget] = await Promise.all([
+      fetchPolygonFinancialRatios(sym).catch(() => null),
+      fetchPolygonIncomeStatements(sym, 6).catch(() => []),
+      fetchPolygonBalanceSheets(sym, 6).catch(() => []),
+      fetchPolygonCashFlowStatements(sym, 6).catch(() => []),
+      fetchBenzingaPriceTarget(sym).catch(() => null),
+    ]);
+    return {
+      ratios,
+      signals: computeFundamentalSignals(income, balance, cashFlow),
+      priceTarget,
+    };
+  });
+}
+
+/** One-line analyst summary built from the parsed Benzinga PT. */
+function analystSummaryFromPt(pt: BenzingaPriceTarget | null): string | null {
+  if (!pt) return null;
+  const firm = pt.firm ? `${pt.firm} ` : "";
+  const act = pt.action ? `${pt.action} ` : "";
+  return `${firm}${act}PT to $${pt.price_target.toLocaleString()}`.trim();
+}
+
+/** "Analyst PT $X (Firm)" line for the dossier price_target field. */
+function priceTargetLineFromPt(pt: BenzingaPriceTarget | null): string | null {
+  if (!pt) return null;
+  const firm = pt.firm ? ` (${pt.firm})` : "";
+  return `Analyst PT $${pt.price_target.toLocaleString()}${firm}`;
+}
 
 /**
  * Per-build cache for edition-wide API calls (congress trades, predictions,
@@ -219,7 +281,7 @@ export async function fetchTickerDossier(
     congress,
     predictionsSignal,
     screenerConfirmed,
-    fundamentalRatios,
+    financials,
   ] = await Promise.all([
     dossierFetch(() => fetchMarketFlowAlertRows({ ticker: sym, limit: 80, min_premium: 50_000 }), [], t),
     dossierFetch(() => resolveIvRank(sym), null, t),
@@ -246,8 +308,15 @@ export async function fetchTickerDossier(
     dossierFetch(() => getEditionCongressTrades(sym, cache), [], t),
     dossierFetch(() => getEditionPredictionsSignal(sym, cache), null, t),
     dossierFetch(() => isScreenerConfirmed(sym, cache), false, t),
-    dossierFetch(() => fetchPolygonFinancialRatios(sym), null, t),
+    dossierFetch(
+      () => fetchFinancialsBundle(sym),
+      { ratios: null, signals: null, priceTarget: null },
+      t
+    ),
   ]);
+  const fundamentalRatios = financials.ratios;
+  const fundamentalSignals = financials.signals;
+  const benzingaPriceTarget = financials.priceTarget;
 
   const [
     darkPool,
@@ -328,12 +397,14 @@ export async function fetchTickerDossier(
     tech,
     news_headlines: headlines,
     polygon_sentiment: polygonSentiment,
-    analyst_summary: null,
-    price_target: null,
+    analyst_summary: analystSummaryFromPt(benzingaPriceTarget),
+    price_target: priceTargetLineFromPt(benzingaPriceTarget),
     insider_buys: insiderBuys,
     sector: sectorFromPolygonDetails(profile),
     short_days_to_cover: shortSi?.days_to_cover ?? null,
     fundamental_ratios: fundamentalRatios,
+    fundamental_signals: fundamentalSignals,
+    benzinga_price_target: benzingaPriceTarget,
     trading_halt: tradingHalt,
   };
 
@@ -353,6 +424,7 @@ export async function fetchTickerDossier(
       congress_trades: congress,
       institutional_activity: institutional,
       fundamental_ratios: fundamentalRatios,
+      fundamental_signals: fundamentalSignals,
       trading_halt: tradingHalt,
       risk_reversal_skew: riskReversalSkew,
     },

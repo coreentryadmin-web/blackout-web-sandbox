@@ -424,11 +424,77 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
   }
 
   if (dossier.sector) lines.push(`Sector: ${dossier.sector}`);
+
+  // Fundamentals — widened real-time ratios + derived statement signals. These are the ONLY
+  // company-financial figures Claude may cite; the prompt rules pin citations to this line.
+  const fundLine = formatFundamentals(dossier);
+  if (fundLine) lines.push(`Fundamentals: ${fundLine}`);
+
+  const fundExtra =
+    scored.fundamental_score != null && scored.fundamental_score !== 0
+      ? ` · fundamentals ${scored.fundamental_score >= 0 ? "+" : ""}${scored.fundamental_score}`
+      : "";
   lines.push(
-    `Score breakdown: flow ${scored.flow_score}/38 · technical ${scored.tech_score}/28 · positioning ${scored.pos_score}/18 · news ${scored.news_score}/8 · smart money ${scored.smart_money_score}/8`
+    `Score breakdown: flow ${scored.flow_score}/38 · technical ${scored.tech_score}/28 · positioning ${scored.pos_score}/18 · news ${scored.news_score}/8 · smart money ${scored.smart_money_score}/8${fundExtra}`
   );
 
   return lines.join("\n");
+}
+
+/** Compact, comma-free-of-thousands fundamentals line: "P/E 29.7 · ROE 82% · rev +18% YoY · FCF+ · net cash". */
+function formatFundamentals(dossier: TickerDossier): string {
+  const r = dossier.fundamental_ratios;
+  const s = dossier.fundamental_signals;
+  if (!r && !s) return "";
+  const parts: string[] = [];
+
+  // Valuation.
+  if (r?.pe_ratio != null) parts.push(`P/E ${r.pe_ratio.toFixed(1)}`);
+  if (r?.price_to_sales != null) parts.push(`P/S ${r.price_to_sales.toFixed(1)}`);
+  if (r?.ev_to_ebitda != null) parts.push(`EV/EBITDA ${r.ev_to_ebitda.toFixed(1)}`);
+
+  // Profitability / returns. ROE may arrive as a fraction (0.82) or a percent (82); normalize to %.
+  if (r?.roe != null) {
+    const roePct = Math.abs(r.roe) > 1 ? r.roe : r.roe * 100;
+    parts.push(`ROE ${roePct.toFixed(0)}%`);
+  }
+  if (s?.net_margin_pct != null) {
+    const t =
+      s.margin_trend === "expanding" ? "↑" : s.margin_trend === "contracting" ? "↓" : "";
+    parts.push(`net margin ${s.net_margin_pct.toFixed(0)}%${t}`);
+  }
+
+  // Growth.
+  if (s?.revenue_yoy_pct != null) {
+    parts.push(`rev ${s.revenue_yoy_pct >= 0 ? "+" : ""}${s.revenue_yoy_pct.toFixed(0)}% YoY`);
+  }
+  if (s?.eps_trajectory && s.eps_trajectory !== "flat") {
+    parts.push(`EPS ${s.eps_trajectory === "rising" ? "rising" : "falling"}`);
+  }
+
+  // Free cash flow.
+  if (s?.fcf_positive != null) {
+    const trend = s.fcf_trend === "rising" ? "↑" : s.fcf_trend === "falling" ? "↓" : "";
+    parts.push(`FCF${s.fcf_positive ? "+" : "−"}${trend}`);
+  }
+
+  // Balance sheet.
+  if (s?.net_cash_positive != null) {
+    parts.push(s.net_cash_positive ? "net cash" : "net debt");
+  } else if (r?.debt_to_equity != null) {
+    parts.push(`D/E ${r.debt_to_equity.toFixed(1)}`);
+  }
+
+  // Capital return.
+  if (s?.share_count_trend === "buyback") parts.push("buyback");
+  else if (s?.share_count_trend === "dilution") parts.push("dilution");
+
+  // Liquidity guard (only when stretched).
+  if (r?.current_ratio != null && r.current_ratio < 1.2) {
+    parts.push(`current ${r.current_ratio.toFixed(2)}`);
+  }
+
+  return parts.join(" · ");
 }
 
 export function buildClaudePrompt(params: {
@@ -496,7 +562,8 @@ RULES — CRITICAL:
 - You MUST select a strike from the provided chain that has OI > 500 on the chosen side (call or put).
 - entry_premium must match the chain's ask price for that strike and side (C_ASK for calls, P_ASK for puts).
 - Do not invent strikes — use only strikes listed in the chain table.
-- NEVER cite an analyst price target, Street target, or "PT" — no analyst price-target data is provided, so any such number would be fabricated. The "target" field is a TECHNICAL level from the dossier S/R, not an analyst PT.
+- ANALYST PRICE TARGETS: cite a PT ONLY when the dossier has an explicit "Analyst PT $X" line for that ticker, and quote that exact figure. If a ticker has no "Analyst PT" line, do NOT mention any analyst/Street/"PT" target — it would be fabricated. The "target" field is ALWAYS a TECHNICAL level from the dossier S/R, never an analyst PT.
+- FUNDAMENTALS: you may cite company-financial figures (P/E, ROE, revenue growth, margins, FCF, net cash/debt, buyback) ONLY from the ticker's "Fundamentals:" line — quote those exact values; never invent or infer fundamentals not on that line.
 - The "target" price and "stop" price MUST be an actual support/resistance level from the ticker's dossier (Support:/Resistance: lines). Do not invent price levels.
 - Any total-flow $ figure you cite in key_signal must equal the dossier's "Flow today:" figure — do not invent or round it beyond recognition.
 

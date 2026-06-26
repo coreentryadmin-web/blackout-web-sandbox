@@ -1,5 +1,5 @@
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
-import type { PolygonFinancialRatios } from "@/lib/providers/polygon";
+import type { FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
 import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";import type { TideBias } from "./format";
 import { tideBias } from "./format";
 import type { FlowStreak } from "./flow-streak";
@@ -21,6 +21,8 @@ export type ScoredCandidate = {
   pos_score: number;
   news_score: number;
   smart_money_score: number;
+  /** Signed fundamental tailwind/headwind contribution (bounded ±FUNDAMENTAL_CAP). */
+  fundamental_score?: number;
   conviction: string;
   regime_multiplier?: number;
   fundamental_block?: boolean;
@@ -51,26 +53,114 @@ function normalizeRatioPct(v: number | null): number | null {
   return Math.abs(v) > 1 ? v / 100 : v;
 }
 
-/** Polygon P/E, ROE, D/E sanity check — blocks broken fundamentals from Night Hawk ranking. */
-export function passesFundamentalSanity(ratios: PolygonFinancialRatios | null): {
+/**
+ * Fundamental sanity check — flags broken fundamentals for SOFT demotion in Night Hawk ranking.
+ * Uses the widened real-time ratios (valuation/leverage/liquidity) PLUS the derived statement
+ * signals (collapsing margins, P/S blowout). Each flag is a soft demotion, never a hard cut (#77).
+ */
+export function passesFundamentalSanity(
+  ratios: PolygonFinancialRatios | null,
+  signals?: FundamentalSignals | null
+): {
   ok: boolean;
   reasons: string[];
 } {
-  if (!ratios) return { ok: true, reasons: [] };
+  if (!ratios && !signals) return { ok: true, reasons: [] };
   const reasons: string[] = [];
-  const pe = ratios.pe_ratio;
-  if (pe != null && (pe < 0 || pe > 120)) {
-    reasons.push(`P/E ${pe.toFixed(1)} extreme`);
+  if (ratios) {
+    const pe = ratios.pe_ratio;
+    if (pe != null && (pe < 0 || pe > 120)) {
+      reasons.push(`P/E ${pe.toFixed(1)} extreme`);
+    }
+    const roe = normalizeRatioPct(ratios.roe);
+    if (roe != null && roe < -0.05) {
+      reasons.push(`ROE ${(roe * 100).toFixed(1)}% negative`);
+    }
+    const de = ratios.debt_to_equity;
+    if (de != null && de > 3) {
+      reasons.push(`D/E ${de.toFixed(1)} elevated`);
+    }
+    // Liquidity: a current ratio below 1 (or negative/zero) means current liabilities exceed
+    // current assets — a working-capital squeeze. Negative is nonsensical = data break.
+    const cr = ratios.current_ratio;
+    if (cr != null && cr < 1) {
+      reasons.push(`current ratio ${cr.toFixed(2)} (<1, working-capital squeeze)`);
+    }
+    // P/S blowout: a price-to-sales multiple north of 30 is a froth/valuation-risk signal.
+    const ps = ratios.price_to_sales;
+    if (ps != null && ps > 30) {
+      reasons.push(`P/S ${ps.toFixed(1)} blowout`);
+    }
   }
-  const roe = normalizeRatioPct(ratios.roe);
-  if (roe != null && roe < -0.05) {
-    reasons.push(`ROE ${(roe * 100).toFixed(1)}% negative`);
-  }
-  const de = ratios.debt_to_equity;
-  if (de != null && de > 3) {
-    reasons.push(`D/E ${de.toFixed(1)} elevated`);
+  // Collapsing margins: a contracting net margin AND a falling EPS trajectory together = a
+  // deteriorating earnings engine the flow may be running ahead of.
+  if (signals) {
+    if (signals.margin_trend === "contracting" && signals.eps_trajectory === "falling") {
+      reasons.push("margins contracting + EPS falling");
+    }
+    if (signals.net_margin_pct != null && signals.net_margin_pct < -10) {
+      reasons.push(`net margin ${signals.net_margin_pct.toFixed(0)}% deeply negative`);
+    }
   }
   return { ok: reasons.length === 0, reasons };
+}
+
+/**
+ * Fundamental tailwind/headwind MODIFIER. Returns a small signed point adjustment (bounded
+ * ±FUNDAMENTAL_CAP) layered onto the technical/flow base — a nudge, NOT an override. Rewards
+ * revenue growth, strong/expanding margins, positive/rising FCF, low debt / net cash, and buybacks;
+ * demotes the opposite. Direction-aware: for SHORTs the sign flips (weak fundamentals favor the short).
+ */
+export const FUNDAMENTAL_CAP = 8;
+
+export function scoreFundamentalTailwind(
+  ratios: PolygonFinancialRatios | null | undefined,
+  signals: FundamentalSignals | null | undefined,
+  direction: "long" | "short"
+): number {
+  if (!ratios && !signals) return 0;
+  let raw = 0;
+
+  if (signals) {
+    // Revenue growth.
+    if (signals.revenue_yoy_pct != null) {
+      if (signals.revenue_yoy_pct >= 25) raw += 3;
+      else if (signals.revenue_yoy_pct >= 10) raw += 2;
+      else if (signals.revenue_yoy_pct < 0) raw -= 2;
+    }
+    // Margins (level + trend).
+    if (signals.operating_margin_pct != null && signals.operating_margin_pct >= 20) raw += 1;
+    if (signals.margin_trend === "expanding") raw += 2;
+    else if (signals.margin_trend === "contracting") raw -= 2;
+    // Free cash flow.
+    if (signals.fcf_positive === true) raw += 2;
+    else if (signals.fcf_positive === false) raw -= 2;
+    if (signals.fcf_trend === "rising") raw += 1;
+    else if (signals.fcf_trend === "falling") raw -= 1;
+    // Balance sheet: net cash vs net debt.
+    if (signals.net_cash_positive === true) raw += 2;
+    else if (signals.net_cash_positive === false) raw -= 1;
+    // Capital return / dilution.
+    if (signals.share_count_trend === "buyback") raw += 2;
+    else if (signals.share_count_trend === "dilution") raw -= 1;
+    // EPS trajectory.
+    if (signals.eps_trajectory === "rising") raw += 1;
+    else if (signals.eps_trajectory === "falling") raw -= 1;
+  }
+
+  if (ratios) {
+    // Strong returns on equity (normalized — handles 0.82 or 82 input).
+    const roe = normalizeRatioPct(ratios.roe);
+    if (roe != null && roe >= 0.2) raw += 1;
+    // Low leverage bonus when statements didn't already cover debt.
+    const de = ratios.debt_to_equity;
+    if (de != null && de >= 0 && de < 0.5) raw += 1;
+  }
+
+  // For a SHORT, weak fundamentals SUPPORT the thesis — flip the sign so a deteriorating name
+  // contributes positively to a short and a pristine balance sheet works against it.
+  const signed = direction === "short" ? -raw : raw;
+  return Math.max(-FUNDAMENTAL_CAP, Math.min(FUNDAMENTAL_CAP, signed));
 }
 
 function safeFloat(v: unknown): number {
@@ -386,6 +476,7 @@ export function scoreCandidate(
     congress_trades?: Record<string, unknown>[];
     institutional_activity?: Record<string, unknown>[];
     fundamental_ratios?: PolygonFinancialRatios | null;
+    fundamental_signals?: FundamentalSignals | null;
     trading_halt?: boolean;
     risk_reversal_skew?: number | null;
   },
@@ -421,18 +512,28 @@ export function scoreCandidate(
   const skewAdj = flow.directionFlippedBySkew
     ? 0
     : scoreSkewConfirmation(dossierExtras.risk_reversal_skew, flow.direction);
+  // Fundamental tailwind/headwind is a MODIFIER layered on the flow/technical base — never an override.
+  const fundamentalScore = scoreFundamentalTailwind(
+    dossierExtras.fundamental_ratios,
+    dossierExtras.fundamental_signals,
+    flow.direction
+  );
   const regimeMultiplier = computeRegimeMultiplier(regime);
-  let total = Math.min(
+  const total = Math.min(
     100,
     Math.max(
       0,
       Math.round(
-        (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj) * regimeMultiplier
+        (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj + fundamentalScore) *
+          regimeMultiplier
       )
     )
   );
 
-  const fundCheck = passesFundamentalSanity(dossierExtras.fundamental_ratios ?? null);
+  const fundCheck = passesFundamentalSanity(
+    dossierExtras.fundamental_ratios ?? null,
+    dossierExtras.fundamental_signals ?? null
+  );
 
   return {
     ticker,
@@ -443,6 +544,7 @@ export function scoreCandidate(
     pos_score: posScore,
     news_score: newsScore,
     smart_money_score: smartMoneyScore,
+    fundamental_score: fundamentalScore,
     conviction: convictionFromScore(total),
     regime_multiplier: regimeMultiplier,
     fundamental_block: !fundCheck.ok,
