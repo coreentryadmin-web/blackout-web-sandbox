@@ -422,7 +422,14 @@ export async function fetchBenzingaEarnings(ticker: string, limit = 15) {
 }
 
 export async function fetchBenzingaAnalystRatings(ticker: string, limit = 15) {
-  return fetchBenzingaNews(limit, { ticker, channels: "analyst-ratings" });
+  // Benzinga channel names are SPACE-delimited + lowercase (verified live vs api.massive.com).
+  // "analyst-ratings" (hyphen) returns ZERO results — the working name is "analyst ratings".
+  // Broadened to the full analyst surface (ratings + price targets + up/downgrades + color)
+  // for richer coverage; all confirmed to return data via the channels.any_of comma-list.
+  return fetchBenzingaNews(limit, {
+    ticker,
+    channels: "analyst ratings,price target,upgrades,downgrades,analyst color",
+  });
 }
 
 // ── SPX structure (indices) ───────────────────────────────────────────────────
