@@ -1,16 +1,20 @@
 // Cron: DATA-CORRECTNESS AUDITOR — continuously verify the numbers the platform SHOWS are correct.
 //
-// Heat Maps (GEX/VEX/DEX/CHARM) is the first + primary target. This runs a LAYERED verifier
-// (strongest → weakest) per ticker and builds a SCORECARD:
-//   L1 shadow-recompute — independent re-derivation of net/King/flip/walls from the raw chain
-//   L2 invariants       — relationships that MUST hold (Σ strikes == total, King == argmax|net|, …)
-//   L3 sanity bounds    — no NaN/Inf, plausible magnitudes, valid expiries, level near spot
-//   L4 cross-provider   — UW native GEX oracle (SPX): King strike + net-GEX sign (independently confirmed)
-//   L5 cross-tool       — same spot/flip/walls across getGexPositioning, SPX desk
-//   L6 freshness        — served asof within TTL during RTH (never stale-shown-as-live)
+// ONE run audits the WHOLE platform → one rolled-up SCORECARD. Surfaces covered:
+//   • Heat Maps (GEX/VEX/DEX/CHARM) — the original layered per-ticker verifier
+//   • SPX desk      — spot vs the real index, MAs from daily bars, IV rank, GEX, dark pool
+//   • HELIX flows   — premium faithfulness + recompute call/put%/net/totals + Σ invariants + recency
+//   • Night's Watch — P&L / mark / Δ/Θ/IV / DTE / breakeven recompute + chain-confirmation
+//   • Night Hawk    — latest published edition re-audited vs its dossier snapshot + chain-confirm
+//   • Market context— SPX/VIX vs a 2nd source; breadth recomputed from constituents
+//   • Track record  — wins/losses/scratch/hit-rate recomputed from the graded-outcomes ledger
+//   • Largo         — numeric-grounding engine (scaffolded; coverage gap until answer logging lands)
+//
+// Each surface emits the SAME layered CheckResults (shadow-recompute / invariant / sanity / cross-
+// provider / cross-tool / freshness) on one scorecard schema.
 //
 // HONESTY: a metric with no second source is reported "consistency-only" (a coverage gap), never a
-// false green. Only SPX King + net-GEX sign are independently confirmed today (#104 UW oracle).
+// false green. See the rolled-up scorecard `note` for what is independently-confirmed vs consistency-only.
 //
 // AUTH: Bearer CRON_SECRET (isCronAuthorized), force-dynamic, bounded maxDuration. Self-skips outside
 // the RTH window unless ?force=1. Fires notifyOpsDiscord({critical}) on any FLAG and {warning} on new
@@ -25,7 +29,7 @@ import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import {
-  runHeatmapCorrectness,
+  runFullCorrectness,
   correctnessTickers,
   renderScorecardMarkdown,
   scorecardStatus,
@@ -50,7 +54,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const tickers = correctnessTickers();
-    const card = await runHeatmapCorrectness(tickers);
+    const card = await runFullCorrectness(tickers);
     const overall = scorecardStatus(card);
 
     // ── Markdown scorecard → docs/auto/data-correctness-<date>.md (best-effort) ──

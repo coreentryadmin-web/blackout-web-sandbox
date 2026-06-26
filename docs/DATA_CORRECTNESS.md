@@ -1,22 +1,116 @@
 # Data-Correctness Auditor
 
-A continuous verifier that checks **the numbers the platform shows are correct** — starting with
-Heat Maps (the GEX / VEX / DEX / CHARM dealer-positioning matrix), the most numerically dense and
-highest-stakes surface. It is built to extend to the SPX desk, flows, Night's Watch, and Night Hawk
-plays without changing the scorecard schema.
+A continuous verifier that checks **the numbers the platform shows are correct**. ONE
+`/api/cron/data-correctness` run now audits **every numeric surface on the platform** — Heat Maps,
+the SPX desk, HELIX flows, Night's Watch, Night Hawk, market context, the track record, and Largo —
+into a single rolled-up scorecard. Heat Maps (the GEX / VEX / DEX / CHARM matrix) was the first
+target; the same six-layer model and scorecard schema now carry the rest.
 
 It is distinct from the existing **Data Integrity** sweep (`/api/cron/data-integrity`), which
 cross-checks live numbers *across tools* (desk vs heatmap vs quote, SPY/SPX tracking). The
-Data-Correctness auditor goes a layer deeper: it **independently re-derives** the Heat Maps
-aggregates from the raw chain and confirms them against a **second provider**, answering "is this
+Data-Correctness auditor goes a layer deeper: it **independently re-derives** each surface's
+aggregates and confirms them against a **second source** where one exists, answering "is this
 number *right*?" — not just "do two surfaces agree?".
 
-- Verifier lib: `src/lib/correctness/heatmap-verifier.ts`
 - Scorecard types: `src/lib/correctness/types.ts`
-- Orchestrator + markdown render: `src/lib/correctness/run-correctness.ts`
+- Orchestrator + markdown render: `src/lib/correctness/run-correctness.ts` (`runFullCorrectness`)
 - Cron route: `src/app/api/cron/data-correctness/route.ts`
+- Verifiers (one per surface):
+  - Heat Maps — `src/lib/correctness/heatmap-verifier.ts`
+  - SPX desk — `src/lib/correctness/desk-verifier.ts`
+  - HELIX flows — `src/lib/correctness/flows-verifier.ts`
+  - Night's Watch — `src/lib/correctness/nights-watch-verifier.ts`
+  - Night Hawk — `src/lib/correctness/nighthawk-verifier.ts`
+  - Market context — `src/lib/correctness/market-context-verifier.ts`
+  - Track record — `src/lib/correctness/track-record-verifier.ts`
+  - Largo (scaffold) — `src/lib/correctness/largo-verifier.ts`
 - Schedule: `railway.data-correctness.toml` + registry entry `data-correctness`
 - Scorecard output: `docs/auto/data-correctness-<date>.md` (best-effort; structured result also in the cron run log)
+
+---
+
+## Per-surface COVERAGE MATRIX
+
+Every metric is honestly labeled **confirmed** (an independent second source agreed within tolerance)
+vs **consistency-only** (single source — internally reconciled + invariant-clean, but a coverage gap,
+never a false green). "2nd source needed" is what would promote a gap to confirmed.
+
+### Heat Maps — `heatmap-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| King strike | argmax\|net\| from scratch; UW GEX ladder | **confirmed** (SPX, UW answers) / consistency-only (others) | UW `spot-exposures` for non-SPX |
+| Net-GEX sign | sum from scratch; UW ladder | **confirmed** (SPX) / consistency-only | per-ticker UW oracle |
+| Net-GEX magnitude | Σ strike_totals == total | consistency-only | a 2nd source on the same $-gamma scale |
+| Call/put walls, flip | argmax/argmin/sign-cross from scratch | consistency-only | a 2nd per-strike ladder |
+| Per-cell $-gamma | raw-chain recompute (`gamma·oi·100·spot²·0.01`) | consistency-only | (faithfulness; convention needs oracle) |
+| Spot (cross-tool) | vs getGexPositioning + SPX desk | consistency-checked | (covered by desk spot-vs-index below) |
+| Freshness | asof within 15m RTH | asserted (RTH) | — |
+
+### SPX desk — `desk-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| Spot / price | vs **Polygon I:SPX index** snapshot | **confirmed** (I:SPX answers) | — |
+| Moving averages (EMA20/50/200, SMA50/200) | recomputed from scratch over Polygon daily bars | consistency-only (vs own source) | a 2nd bar vendor |
+| GEX King + net-sign | shared UW native-GEX oracle | **confirmed** (UW answers) | per-ticker oracle |
+| Spot ∈ [day low, day high] | invariant | consistency-only (invariant) | — |
+| above_vwap / above_gamma_flip labels | invariant vs spot | consistency-only | — |
+| IV rank | bounded [0,100] | consistency-only | a 2nd IV-rank source |
+| VIX, max-pain, flip | sanity bounds / near-spot | consistency-only | — |
+| Freshness | price_age_ms ≤ 90s RTH | asserted (RTH) | — |
+
+### HELIX flows — `flows-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| Premium (per row) | == UW `total_premium` verbatim; finite, non-negative | **faithful-to-source** (consistency-only) | a 2nd flow provider |
+| call$ / put$ / net / total | recompute + Σ partition invariant | consistency-only | a 2nd flow provider |
+| call% / put% | derivation == float share, bounded [0,100] | consistency-only | — |
+| Recency ordering | recency view derivable + monotone, none future-dated | consistency-only | — (the `order:"recent"` param is the on-main change) |
+| Freshness | newest event ≤ 30m RTH | asserted (RTH) | — |
+
+### Night's Watch — `nights-watch-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| Unrealized P&L, current value, pnl% | (mark−entry)×100×qty×side recomputed; diffed vs enrichPosition | consistency-only (formula confirmed) | — (formula is exact) |
+| Breakeven, DTE, distance | independent re-derivation vs enrichPosition | consistency-only (formula confirmed) | — |
+| Strike present in chain | held contract matched in shared chain cache | **chain-confirmed** | — |
+| Mark / Δ / Θ / IV values | sane + trace to real chain contract | consistency-only (chain-confirmed, values not oracle'd) | a 2nd options-pricing source |
+
+### Night Hawk — `nighthawk-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| Play grounded in dossier | every play ticker has a staged dossier snapshot | consistency-only (invariant) | — |
+| flow_streak_days, iv_rank | vs dossier snapshot they were built from | consistency-only (shadow-recompute) | — (snapshot itself needs the desk/flows oracles) |
+| Strike + OI floor | parsed from options_play; live ATM chain | **chain-confirmed** (when in ATM/front-expiry window) | wider chain pull for swing/leap |
+| Entry premium | within live chain bid/ask band | **chain-confirmed** (matched strikes) | — |
+| Ranks, premium-cap, conviction vocab | invariant / sanity | consistency-only | — |
+
+### Market context — `market-context-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| SPX | vs a 2nd Polygon index snapshot | **confirmed** (snapshot answers) | — |
+| VIX | vs a 2nd index snapshot | **confirmed** (snapshot answers) | — |
+| Market breadth (% advancing, A/D) | recomputed from Polygon grouped daily summary (constituents) | consistency-only (vs own source) | a 2nd breadth provider |
+| Sector / leader % | finite + within ±40%/day | consistency-only (bounded) | a 2nd sector-quote source |
+
+### Track record — `track-record-verifier.ts`
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| wins / losses / scratch (breakeven) | recomputed from the graded-outcomes ledger | **confirmed-against-ledger** | — (internal ledger is the ground truth) |
+| wins+losses+scratch == closed | partition invariant | confirmed (invariant) | — |
+| hit-rate | wins/closed recompute == desk stats == public surface | **confirmed-against-ledger** | — |
+
+> "scratch" in the product == `breakeven` in the outcomes ledger; the verifier treats them as one metric.
+
+### Largo — `largo-verifier.ts` (SCAFFOLD)
+| Metric | Method | Status today | 2nd source needed |
+|---|---|---|---|
+| Numeric grounding (every answer number traces to a tool result) | grounding engine shipped + self-tested; FLAGs ungrounded numbers | **COVERAGE GAP — needs answer + tool-result logging** | persist each tool_call result JSON beside the answer + a cron-readable recent-answers reader |
+
+**Why Largo is a gap, honestly:** `largo_messages` persists the answer TEXT and tool NAMES only — tool
+RESULTS are discarded after the turn, and `fetchLargoMessagesPublic` requires sessionId+userId (no
+cross-user reader). So real answers cannot be traced to their tool results yet. The verifier ships the
+real FLAG machinery (`extractNumericTokens` / `collectResultNumbers` / `traceNumbersToResults`) and
+self-tests it each run, so the trace activates the moment logging lands — but it never reports a green.
 
 ---
 
@@ -136,9 +230,12 @@ admin tile or report can render a false "verified" badge.
 ### Env switches
 | Var | Effect |
 |---|---|
-| `CORRECTNESS_TICKERS` | CSV ticker set (default `SPX,SPY,QQQ,NVDA`, capped at 10) |
-| `CORRECTNESS_SHADOW_RAW=0` | disable the raw-chain shadow recompute (run pure cache-reader) |
-| `CORRECTNESS_UW_ORACLE=0` | disable the UW cross-provider oracle (SPX King/sign become consistency-only) |
+| `CORRECTNESS_TICKERS` | CSV ticker set for Heat Maps (default `SPX,SPY,QQQ,NVDA`, capped at 10) |
+| `CORRECTNESS_SHADOW_RAW=0` | disable raw-chain / MA / breadth shadow recomputes everywhere (pure cache-reader) |
+| `CORRECTNESS_UW_ORACLE=0` | disable the UW cross-provider GEX oracle (Heat Maps + desk King/sign become consistency-only) |
+| `CORRECTNESS_NW_SAMPLE` | Night's Watch: max distinct (ticker,expiry) chains to chain-confirm (default 12, ≤40) |
+| `CORRECTNESS_NIGHTHAWK_CHAIN=0` | disable Night Hawk live chain-confirm (strikes stay dossier-grounded only) |
+| `CORRECTNESS_NIGHTHAWK_SAMPLE` | Night Hawk: max plays to chain-confirm (default 3, ≤8) |
 
 ---
 
