@@ -425,6 +425,131 @@ export async function fetchBenzingaAnalystRatings(ticker: string, limit = 15) {
   return fetchBenzingaNews(limit, { ticker, channels: "analyst-ratings" });
 }
 
+// ---------------------------------------------------------------------------
+// Benzinga analyst price target (corrected channel).
+//   The plan is NEWS-only — the structured /benzinga/v1/ratings + consensus-ratings
+//   endpoints 403 (NOT ENTITLED) and the `analyst-ratings` channel returns []. The ONLY
+//   working source is the `price target` channel on /benzinga/v2/news, where PTs appear
+//   in article titles/teasers ("BofA raised MU price target to $1,500"). So we PARSE the
+//   PT + firm + action out of the prose with a target-anchored regex.
+// ---------------------------------------------------------------------------
+
+export type BenzingaPriceTarget = {
+  /** The parsed dollar target (the NEW target when an article cites both old→new). */
+  price_target: number;
+  firm: string | null;
+  action: "raised" | "lowered" | "initiated" | "reiterated" | "maintained" | "set" | null;
+  /** A one-line analyst summary suitable for the dossier. */
+  summary: string;
+  published: string;
+  url: string;
+};
+
+const PT_FIRM_RE =
+  /\b(BofA|Bank of America|Morgan Stanley|Goldman Sachs|Goldman|JPMorgan|JP Morgan|J\.P\. Morgan|Citigroup|Citi|Wells Fargo|Barclays|Deutsche Bank|UBS|Jefferies|Wedbush|Piper Sandler|Mizuho|Raymond James|Oppenheimer|Cowen|Evercore|Stifel|Truist|KeyBanc|Baird|Needham|Canaccord|Bernstein|RBC|BMO|Scotiabank|TD Cowen|HSBC|Susquehanna|Rosenblatt|Loop Capital|DA Davidson|Guggenheim|Wolfe Research|Argus|Benchmark|Roth|Craig-Hallum|Northland|William Blair|Macquarie)\b/i;
+
+const PT_ACTION_RE =
+  /\b(raise[sd]?|lift[sed]*|hike[sd]?|boost[sed]*|increase[sd]?|lower[sed]?|cut[s]?|reduce[sd]?|slash[esd]*|trim[sed]*|initiate[sd]?|start[s]?|reiterate[sd]?|maintain[sed]*|reaffirm[sed]*|keep[s]?|set[s]?)\b/i;
+
+function normalizePtAction(raw: string | null): BenzingaPriceTarget["action"] {
+  if (!raw) return null;
+  const w = raw.toLowerCase();
+  if (/rais|lift|hike|boost|increas/.test(w)) return "raised";
+  if (/lower|cut|reduc|slash|trim/.test(w)) return "lowered";
+  if (/initiat|start/.test(w)) return "initiated";
+  if (/reiterat|reaffirm/.test(w)) return "reiterated";
+  if (/maintain|keep/.test(w)) return "maintained";
+  if (/set/.test(w)) return "set";
+  return null;
+}
+
+/**
+ * Parse a price target out of a single article's text. A `$` figure ONLY counts when it sits near a
+ * "price target" / "PT" / "target" cue (within ~40 chars), so a random dollar figure in the body is
+ * not mistaken for a PT. When the text cites old→new ("from $X to $Y" / "to $Y"), the NEW (last) value
+ * near the cue wins. Returns null when no anchored target is found.
+ */
+export function parsePriceTargetFromText(text: string): { value: number; action: BenzingaPriceTarget["action"]; firm: string | null } | null {
+  if (!text) return null;
+  // Anchor: a "price target" / "PT" / "target" cue, then capture every $-figure within the trailing window.
+  const cueRe = /(?:price\s*target|price\s*tgt|\bPT\b|\btarget\b)([^.;\n]{0,60})/gi;
+  const dollarToken = /\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
+  const firstDollar = (s: string): number | null => {
+    const mm = s.match(dollarToken);
+    if (!mm) return null;
+    const v = Number(mm[1]!.replace(/,/g, ""));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  let best: { value: number } | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = cueRe.exec(text)) !== null) {
+    const window = m[1] ?? "";
+    let chosen: number | null = null;
+    // "raised ... to $1,500 from $1,200" / "from $1,200 to $1,500": the NEW target is the value
+    // following "to". Prefer that explicitly so an old→new revision never picks the old figure.
+    const toM = window.match(/\bto\s+\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/i);
+    if (toM) {
+      const v = Number(toM[1]!.replace(/,/g, ""));
+      if (Number.isFinite(v) && v > 0) chosen = v;
+    }
+    // Otherwise the first $-figure right after the cue ("price target of $X", "price target: $123").
+    if (chosen == null) chosen = firstDollar(window);
+    // Finally, a $-figure IMMEDIATELY BEFORE the cue ("$1,500 price target").
+    if (chosen == null) {
+      const pre = text.slice(Math.max(0, m.index - 24), m.index);
+      const preM = pre.match(/\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*$/);
+      if (preM) {
+        const v = Number(preM[1]!.replace(/,/g, ""));
+        if (Number.isFinite(v) && v > 0) chosen = v;
+      }
+    }
+    if (chosen != null) {
+      // Prefer the FIRST anchored target in the article (usually the headline claim).
+      if (!best) best = { value: chosen };
+    }
+  }
+  if (!best) return null;
+  const actionM = text.match(PT_ACTION_RE);
+  const firmM = text.match(PT_FIRM_RE);
+  return {
+    value: best.value,
+    action: normalizePtAction(actionM?.[0] ?? null),
+    firm: firmM?.[0] ?? null,
+  };
+}
+
+/**
+ * Fetch the most recent analyst price target for a ticker via the Benzinga `price target` news channel.
+ * Returns null when no PT can be parsed from any recent article. (Channel fix: `price target`, NOT the
+ * empty `analyst-ratings` channel.)
+ */
+export async function fetchBenzingaPriceTarget(
+  ticker: string,
+  limit = 10
+): Promise<BenzingaPriceTarget | null> {
+  const sym = ticker.toUpperCase();
+  try {
+    const articles = await fetchBenzingaNews(limit, { ticker: sym, channels: "price target" });
+    for (const a of articles) {
+      const text = `${a.title} ${a.teaser} ${a.body}`;
+      const parsed = parsePriceTargetFromText(text);
+      if (parsed) {
+        return {
+          price_target: parsed.value,
+          firm: parsed.firm,
+          action: parsed.action,
+          summary: (a.title || a.teaser || "").slice(0, 200),
+          published: a.published,
+          url: a.url,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── SPX structure (indices) ───────────────────────────────────────────────────
 
 type AggBar = { t?: number; o: number; h: number; l: number; c: number; v?: number };
@@ -544,10 +669,36 @@ export async function fetchShortInterest(ticker: string) {
   }
 }
 
+/**
+ * REAL-TIME valuation / profitability / leverage / liquidity ratios.
+ * GET /stocks/financials/v1/ratios?tickers=<SYM>&limit=1 (confirmed: filter is `tickers=`, NOT `ticker=`).
+ * The endpoint returns one current snapshot per ticker; pe_ratio/roe/debt_to_equity are kept as the
+ * original field names for backward-compat with passesFundamentalSanity + every existing consumer.
+ */
 export type PolygonFinancialRatios = {
+  // — back-compat trio (do not rename: scorer.passesFundamentalSanity reads these) —
   pe_ratio: number | null;
   roe: number | null;
   debt_to_equity: number | null;
+  // — widened valuation —
+  price_to_book: number | null;
+  price_to_sales: number | null;
+  price_to_cash_flow: number | null;
+  price_to_free_cash_flow: number | null;
+  ev_to_ebitda: number | null;
+  ev_to_sales: number | null;
+  // — profitability / returns —
+  return_on_assets: number | null;
+  // — liquidity —
+  current_ratio: number | null;
+  quick_ratio: number | null;
+  // — scale / cash / income —
+  market_cap: number | null;
+  enterprise_value: number | null;
+  free_cash_flow: number | null;
+  earnings_per_share: number | null;
+  dividend_yield: number | null;
+  price: number | null;
   as_of: string | null;
 };
 
@@ -556,13 +707,16 @@ function ratioNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** TTM valuation / leverage ratios — GET /stocks/financials/v1/ratios */
+/** Real-time valuation / leverage / liquidity ratios — GET /stocks/financials/v1/ratios */
 export async function fetchPolygonFinancialRatios(ticker: string): Promise<PolygonFinancialRatios | null> {
   const sym = ticker.toUpperCase();
   try {
     const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
       "/stocks/financials/v1/ratios",
-      { ticker: sym, limit: "1", sort: "date", order: "desc" }
+      // The ratios endpoint filters on `tickers=` (plural) and returns the current snapshot.
+      // We also keep the legacy `ticker`/sort params as harmless extras for resilience if the
+      // upstream ever changes which alias it honors.
+      { tickers: sym, ticker: sym, limit: "1", sort: "period_end.desc" }
     );
     const row = data.results?.[0];
     if (!row) return null;
@@ -574,11 +728,326 @@ export async function fetchPolygonFinancialRatios(ticker: string): Promise<Polyg
       debt_to_equity: ratioNum(
         row.debt_to_equity ?? row.debt_to_equity_ratio ?? row.debtToEquity
       ),
-      as_of: row.date != null ? String(row.date).slice(0, 10) : null,
+      price_to_book: ratioNum(row.price_to_book ?? row.priceToBook),
+      price_to_sales: ratioNum(row.price_to_sales ?? row.priceToSales),
+      price_to_cash_flow: ratioNum(row.price_to_cash_flow ?? row.priceToCashFlow),
+      price_to_free_cash_flow: ratioNum(row.price_to_free_cash_flow ?? row.priceToFreeCashFlow),
+      ev_to_ebitda: ratioNum(row.ev_to_ebitda ?? row.evToEbitda),
+      ev_to_sales: ratioNum(row.ev_to_sales ?? row.evToSales),
+      return_on_assets: ratioNum(row.return_on_assets ?? row.roa ?? row.returnOnAssets),
+      current_ratio: ratioNum(row.current ?? row.current_ratio ?? row.currentRatio),
+      quick_ratio: ratioNum(row.quick ?? row.quick_ratio ?? row.quickRatio),
+      market_cap: ratioNum(row.market_cap ?? row.marketCap),
+      enterprise_value: ratioNum(row.enterprise_value ?? row.enterpriseValue),
+      free_cash_flow: ratioNum(row.free_cash_flow ?? row.freeCashFlow),
+      earnings_per_share: ratioNum(row.earnings_per_share ?? row.eps ?? row.earningsPerShare),
+      dividend_yield: ratioNum(row.dividend_yield ?? row.dividendYield),
+      price: ratioNum(row.price),
+      // The ratios snapshot anchors to a period_end (or date) — surface whichever it returns.
+      as_of:
+        row.period_end != null
+          ? String(row.period_end).slice(0, 10)
+          : row.date != null
+            ? String(row.date).slice(0, 10)
+            : null,
     };
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Company financial statements (Massive `/stocks/financials/v1/*`).
+//   CRITICAL: the filter param is `tickers=` (plural). Default sort is OLDEST-first,
+//   so every call MUST pass `sort=period_end.desc` to get the latest periods first.
+//   Pull enough periods (limit 5–8) to compute YoY growth + trends.
+// ---------------------------------------------------------------------------
+
+export type PolygonIncomeStatement = {
+  period_end: string | null;
+  fiscal_year: number | null;
+  fiscal_quarter: string | null;
+  timeframe: string | null; // "quarterly" | "annual"
+  revenue: number | null;
+  cost_of_revenue: number | null;
+  gross_profit: number | null;
+  operating_income: number | null;
+  net_income: number | null;
+  basic_eps: number | null;
+  diluted_eps: number | null;
+  research_development: number | null;
+  ebitda: number | null;
+  basic_shares: number | null;
+  diluted_shares: number | null;
+};
+
+export type PolygonBalanceSheet = {
+  period_end: string | null;
+  fiscal_year: number | null;
+  timeframe: string | null;
+  cash_and_equivalents: number | null;
+  debt_current: number | null;
+  long_term_debt: number | null;
+  total_assets: number | null;
+  total_liabilities: number | null;
+  total_equity: number | null;
+  inventories: number | null;
+  goodwill: number | null;
+};
+
+export type PolygonCashFlowStatement = {
+  period_end: string | null;
+  fiscal_year: number | null;
+  timeframe: string | null;
+  operating_cash_flow: number | null;
+  capex: number | null;
+  dividends: number | null;
+  net_income: number | null;
+};
+
+function stmtParams(ticker: string, limit: number, timeframe?: "quarterly" | "annual"): Record<string, string> {
+  const p: Record<string, string> = {
+    tickers: ticker.toUpperCase(),
+    sort: "period_end.desc",
+    limit: String(Math.max(1, Math.min(limit, 12))),
+  };
+  if (timeframe) p.timeframe = timeframe;
+  return p;
+}
+
+/** GET /stocks/financials/v1/income-statements — newest-first. */
+export async function fetchPolygonIncomeStatements(
+  ticker: string,
+  limit = 6,
+  timeframe?: "quarterly" | "annual"
+): Promise<PolygonIncomeStatement[]> {
+  try {
+    const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+      "/stocks/financials/v1/income-statements",
+      stmtParams(ticker, limit, timeframe)
+    );
+    return (data.results ?? []).map((r) => ({
+      period_end: r.period_end != null ? String(r.period_end).slice(0, 10) : null,
+      fiscal_year: ratioNum(r.fiscal_year),
+      fiscal_quarter: r.fiscal_quarter != null ? String(r.fiscal_quarter) : null,
+      timeframe: r.timeframe != null ? String(r.timeframe) : null,
+      revenue: ratioNum(r.revenue),
+      cost_of_revenue: ratioNum(r.cost_of_revenue),
+      gross_profit: ratioNum(r.gross_profit),
+      operating_income: ratioNum(r.operating_income),
+      net_income: ratioNum(r.consolidated_net_income_loss ?? r.net_income ?? r.net_income_loss),
+      basic_eps: ratioNum(r.basic_earnings_per_share ?? r.basic_eps),
+      diluted_eps: ratioNum(r.diluted_earnings_per_share ?? r.diluted_eps),
+      research_development: ratioNum(r.research_development ?? r.research_and_development),
+      ebitda: ratioNum(r.ebitda),
+      basic_shares: ratioNum(r.basic_shares_outstanding ?? r.basic_average_shares),
+      diluted_shares: ratioNum(r.diluted_shares_outstanding ?? r.diluted_average_shares),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** GET /stocks/financials/v1/balance-sheets — newest-first. */
+export async function fetchPolygonBalanceSheets(
+  ticker: string,
+  limit = 6,
+  timeframe?: "quarterly" | "annual"
+): Promise<PolygonBalanceSheet[]> {
+  try {
+    const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+      "/stocks/financials/v1/balance-sheets",
+      stmtParams(ticker, limit, timeframe)
+    );
+    return (data.results ?? []).map((r) => ({
+      period_end: r.period_end != null ? String(r.period_end).slice(0, 10) : null,
+      fiscal_year: ratioNum(r.fiscal_year),
+      timeframe: r.timeframe != null ? String(r.timeframe) : null,
+      cash_and_equivalents: ratioNum(r.cash_and_equivalents ?? r.cash_and_cash_equivalents),
+      debt_current: ratioNum(r.debt_current ?? r.current_debt ?? r.short_term_debt),
+      long_term_debt: ratioNum(
+        r.long_term_debt_and_capital_lease_obligations ?? r.long_term_debt
+      ),
+      total_assets: ratioNum(r.total_assets),
+      total_liabilities: ratioNum(r.total_liabilities),
+      total_equity: ratioNum(r.total_equity ?? r.total_stockholders_equity),
+      inventories: ratioNum(r.inventories ?? r.inventory),
+      goodwill: ratioNum(r.goodwill),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** GET /stocks/financials/v1/cash-flow-statements — newest-first. */
+export async function fetchPolygonCashFlowStatements(
+  ticker: string,
+  limit = 6,
+  timeframe?: "quarterly" | "annual"
+): Promise<PolygonCashFlowStatement[]> {
+  try {
+    const data = await polygonGet<{ results?: Array<Record<string, unknown>> }>(
+      "/stocks/financials/v1/cash-flow-statements",
+      stmtParams(ticker, limit, timeframe)
+    );
+    return (data.results ?? []).map((r) => ({
+      period_end: r.period_end != null ? String(r.period_end).slice(0, 10) : null,
+      fiscal_year: ratioNum(r.fiscal_year),
+      timeframe: r.timeframe != null ? String(r.timeframe) : null,
+      operating_cash_flow: ratioNum(
+        r.net_cash_from_operating_activities ?? r.operating_cash_flow ?? r.cash_from_operations
+      ),
+      capex: ratioNum(
+        r.purchase_of_property_plant_and_equipment ?? r.capital_expenditure ?? r.capex
+      ),
+      dividends: ratioNum(r.dividends ?? r.payment_of_dividends ?? r.dividends_paid),
+      net_income: ratioNum(r.net_income ?? r.net_income_loss),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Derived fundamental signals from the three statements. All trends are computed newest-vs-prior
+ * over the supplied (newest-first) period arrays. Everything is null-tolerant: a missing input
+ * yields a null signal rather than a fabricated 0.
+ */
+export type FundamentalSignals = {
+  revenue_yoy_pct: number | null;       // latest revenue vs the same period a year ago
+  revenue_qoq_pct: number | null;       // latest vs immediately prior period
+  gross_margin_pct: number | null;
+  operating_margin_pct: number | null;
+  net_margin_pct: number | null;
+  margin_trend: "expanding" | "contracting" | "flat" | null; // net margin direction
+  fcf: number | null;                   // operating CF − |capex|, latest period
+  fcf_positive: boolean | null;
+  fcf_trend: "rising" | "falling" | "flat" | null;
+  total_debt: number | null;            // debt_current + long_term_debt, latest
+  cash: number | null;
+  net_cash: number | null;              // cash − total_debt (>0 ⇒ net cash)
+  net_cash_positive: boolean | null;
+  eps_trajectory: "rising" | "falling" | "flat" | null;
+  share_count_trend: "buyback" | "dilution" | "flat" | null;
+  latest_period_end: string | null;
+  timeframe: string | null;
+};
+
+function pctChange(latest: number | null, prior: number | null): number | null {
+  if (latest == null || prior == null || !Number.isFinite(latest) || !Number.isFinite(prior)) return null;
+  if (prior === 0) return null;
+  return ((latest - prior) / Math.abs(prior)) * 100;
+}
+
+function marginPct(part: number | null, whole: number | null): number | null {
+  if (part == null || whole == null || !Number.isFinite(part) || !Number.isFinite(whole) || whole === 0) {
+    return null;
+  }
+  return (part / whole) * 100;
+}
+
+function trendOf(latest: number | null, prior: number | null, flatPct = 2):
+  | "rising"
+  | "falling"
+  | "flat"
+  | null {
+  const chg = pctChange(latest, prior);
+  if (chg == null) return null;
+  if (chg > flatPct) return "rising";
+  if (chg < -flatPct) return "falling";
+  return "flat";
+}
+
+export function computeFundamentalSignals(
+  income: PolygonIncomeStatement[],
+  balance: PolygonBalanceSheet[],
+  cashFlow: PolygonCashFlowStatement[]
+): FundamentalSignals | null {
+  if (!income.length && !balance.length && !cashFlow.length) return null;
+
+  const inc0 = income[0] ?? null;
+  const incPrior = income[1] ?? null;
+  // YoY: for quarterly series the same quarter a year ago is 4 periods back; for annual it's index 1.
+  const isQuarterly = (inc0?.timeframe ?? "").toLowerCase().startsWith("q");
+  const incYoY = isQuarterly ? income[4] ?? null : income[1] ?? null;
+
+  const revenue_yoy_pct = pctChange(inc0?.revenue ?? null, incYoY?.revenue ?? null);
+  const revenue_qoq_pct = pctChange(inc0?.revenue ?? null, incPrior?.revenue ?? null);
+
+  const gross_margin_pct = marginPct(inc0?.gross_profit ?? null, inc0?.revenue ?? null);
+  const operating_margin_pct = marginPct(inc0?.operating_income ?? null, inc0?.revenue ?? null);
+  const net_margin_pct = marginPct(inc0?.net_income ?? null, inc0?.revenue ?? null);
+  const priorNetMargin = marginPct(incPrior?.net_income ?? null, incPrior?.revenue ?? null);
+  let margin_trend: FundamentalSignals["margin_trend"] = null;
+  if (net_margin_pct != null && priorNetMargin != null) {
+    const d = net_margin_pct - priorNetMargin;
+    margin_trend = d > 0.5 ? "expanding" : d < -0.5 ? "contracting" : "flat";
+  }
+
+  const cf0 = cashFlow[0] ?? null;
+  const cf1 = cashFlow[1] ?? null;
+  const fcfOf = (cf: PolygonCashFlowStatement | null): number | null => {
+    if (!cf || cf.operating_cash_flow == null) return null;
+    const capexAbs = cf.capex != null ? Math.abs(cf.capex) : 0;
+    return cf.operating_cash_flow - capexAbs;
+  };
+  const fcf = fcfOf(cf0);
+  // Prefer the ratios-snapshot FCF in the dossier; here FCF derives from statements so the scorer
+  // can reason about its TREND even when the snapshot only gives a single point.
+  const fcfPrior = fcfOf(cf1);
+  const fcf_positive = fcf != null ? fcf > 0 : null;
+  const fcf_trend: FundamentalSignals["fcf_trend"] =
+    fcf != null && fcfPrior != null
+      ? fcf > fcfPrior * 1.02
+        ? "rising"
+        : fcf < fcfPrior * 0.98
+          ? "falling"
+          : "flat"
+      : null;
+
+  const bs0 = balance[0] ?? null;
+  const total_debt =
+    bs0 && (bs0.debt_current != null || bs0.long_term_debt != null)
+      ? (bs0.debt_current ?? 0) + (bs0.long_term_debt ?? 0)
+      : null;
+  const cash = bs0?.cash_and_equivalents ?? null;
+  const net_cash =
+    cash != null && total_debt != null ? cash - total_debt : null;
+  const net_cash_positive = net_cash != null ? net_cash > 0 : null;
+
+  const eps_trajectory = trendOf(
+    inc0?.diluted_eps ?? inc0?.basic_eps ?? null,
+    incPrior?.diluted_eps ?? incPrior?.basic_eps ?? null
+  );
+
+  // Share count: FEWER shares ⇒ buyback (bullish); more ⇒ dilution.
+  const sharesLatest = inc0?.diluted_shares ?? inc0?.basic_shares ?? null;
+  const sharesPrior = incPrior?.diluted_shares ?? incPrior?.basic_shares ?? null;
+  let share_count_trend: FundamentalSignals["share_count_trend"] = null;
+  const shareChg = pctChange(sharesLatest, sharesPrior);
+  if (shareChg != null) {
+    share_count_trend = shareChg < -0.5 ? "buyback" : shareChg > 0.5 ? "dilution" : "flat";
+  }
+
+  return {
+    revenue_yoy_pct,
+    revenue_qoq_pct,
+    gross_margin_pct,
+    operating_margin_pct,
+    net_margin_pct,
+    margin_trend,
+    fcf,
+    fcf_positive,
+    fcf_trend,
+    total_debt,
+    cash,
+    net_cash,
+    net_cash_positive,
+    eps_trajectory,
+    share_count_trend,
+    latest_period_end: inc0?.period_end ?? bs0?.period_end ?? cf0?.period_end ?? null,
+    timeframe: inc0?.timeframe ?? bs0?.timeframe ?? cf0?.timeframe ?? null,
+  };
 }
 
 export async function fetchShortVolume(ticker: string, limit = 5) {
