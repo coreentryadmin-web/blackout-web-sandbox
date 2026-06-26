@@ -157,13 +157,23 @@ export async function buildSpxAdminIssues(input: {
         detail: `State: ${polygonWs.wsState}`,
       });
     }
+    // I:TICK/I:TRIN/I:ADD are NYSE breadth internals that Polygon frequently does NOT print on our
+    // plan — `market-internals.ts` is built precisely for this: it substitutes a breadth-derived PROXY
+    // (with provenance badging) when the real internal is null, so a 0/stale here is EXPECTED, designed
+    // operation, not a feed fault. Surfacing them as `warning` flipped health_ok:false for the entire
+    // RTH session (cry-wolf that masks genuine warnings) → keep them visible as `info` instead. A real
+    // index feed (SPX/VIX/VIX9D/VIX3M) at price<=0 during RTH stays a `warning`.
+    const PROXY_BACKED_INTERNALS = new Set(["I:TICK", "I:TRIN", "I:ADD"]);
     for (const sym of polygonWs.symbols) {
       if (marketOpen && sym.price <= 0 && sym.ageMs > 30_000) {
+        const proxyBacked = PROXY_BACKED_INTERNALS.has(sym.sym);
         push(issues, {
-          severity: "warning",
+          severity: proxyBacked ? "info" : "warning",
           category: "websocket",
           title: `${sym.sym} stale or zero`,
-          detail: `price=${sym.price} age=${Math.round(sym.ageMs / 1000)}s`,
+          detail: proxyBacked
+            ? `price=${sym.price} age=${Math.round(sym.ageMs / 1000)}s — expected; breadth proxy supplies this reading`
+            : `price=${sym.price} age=${Math.round(sym.ageMs / 1000)}s`,
         });
       }
     }
