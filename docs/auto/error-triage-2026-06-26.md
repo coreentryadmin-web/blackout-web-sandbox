@@ -820,3 +820,37 @@ this log (safe: market closed, warm writers already skipping). Did NOT touch the
   after config-as-code verification per RUN 7 notes.
 - Prior carry-forwards stand: publish-preview external caller hardening (RUN 3); `::int days_of_data`
   source-round (RUN 4, `spx-play-outcomes.ts:227`); open `auto/*` branches awaiting human review.
+
+---
+
+## RUN 10 — ADDENDUM (~21:51 UTC): RAILWAY BUILD + CRON DEPLOYS WERE RED (operator-reported, FIXED → main)
+
+The §A "all surfaces clean" pass above read the *application-level* sinks (error_events / incidents / cron
+RUN rows) — all of which were genuinely clean **because they reflect the last GOOD deploy**. It did NOT inspect
+the **Railway BUILD/DEPLOY layer**, which the operator flagged as failing ("Build failing / Crons failing").
+Root-caused both to **two concurrent auto-job commits that violated the build-gate guardrail**:
+
+1. **`0126c40`** (api-integration-audit, "Clerk webhook + Polygon WS") added `"svix": "^1.45.1"` to
+   `package.json` **without updating `package-lock.json` or installing it**. nixpacks runs **`npm ci`** in the
+   install phase for **every** service — and `npm ci` hard-fails on a manifest/lockfile mismatch. So **all
+   services failed at install**, including the cron-trigger services (whose `buildCommand` is a no-op echo but
+   which still run `npm ci`). → **this is why "build" AND "crons" went red together.** Also broke local
+   `tsc` ("Cannot find module 'svix'").
+2. **`46e913d`** (BlackOut Grid Phases 2-5) used `border-current/30 bg-current/10` in `.grid-tag` — Tailwind v3
+   cannot put an opacity modifier on the `currentColor`-based `border-current`/`bg-current` utilities → webpack
+   "class does not exist" → app build fail (second, app-only break).
+
+**Fix (`deab461`, → main):** (1) `npm install` synced `svix@1.96.1` into the lockfile (+node_modules); (2)
+`.grid-tag` rewritten to raw CSS `color-mix(in srgb, currentColor N%, transparent)` (the file's existing
+idiom; pill still inherits color from sibling `text-*`/`pulse-tone-*`, renders identically).
+**`npx tsc --noEmit` exit 0 · `npm run build` "Compiled successfully" 21/21 exit 0** → high-confidence,
+build-gating correctness → main (`9c404bf..deab461`).
+
+**Verified live recovery:** Railway `blackout-web` Building→Deploying→**Online**; all services settled
+(none Building/Failed/Crashed); homepage **200**; crons firing post-deploy (`uw-cache-refresh` OK 21:50,
+`flow-ingest` OK 21:49, `nighthawk-playbook` OK 21:46). ✅ Build + crons GREEN.
+
+**Process note for future runs:** error-triage must also check the **Railway deploy/build layer** (`railway
+status` for Failed/Crashed builds), not only the app-level error sinks — a red build is invisible in
+`error_events`/`cron_job_runs` because those keep reflecting the last good image. Lockfile desync is the
+highest-leverage class: it red-lines EVERY service at once.
