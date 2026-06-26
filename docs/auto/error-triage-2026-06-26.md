@@ -411,3 +411,75 @@ fixes confirmed holding (no recurrence). All other `health_ok:false` is the beni
   (RUN 4, `spx-play-outcomes.ts:227`, use `Math.floor`); Night Hawk Edition synthesis funnel + stale-
   `running` reaper (#70); off-hours WS-staleness/breadth-ticker RTH gate (cosmetic); cron-health +
   apis/dashboard RTH latency (admin-only); open `auto/*` branches awaiting human review.
+
+---
+
+## RUN 6 — 2026-06-26 ~17:50 UTC (daily slot, market OPEN ~1:50 PM EDT Fri)
+
+Sixth pass today (RUN 1 04:42 @ `cc35f9e`, RUN 2 05:41 @ `c476793`, RUN 3 13:54 @ `cc17d83`, RUN 4 15:48
+@ `48d30b0`, RUN 5 16:40 @ `994e2bd`). Repo `C:/Users/raidu/blackout-cron`, `git pull --ff-only` clean →
+base **`35d4442`** (picked up the concurrent benzinga channel fix), **tsc-green (exit 0)**.
+
+### A. PRIMARY error source (durable sink) — read OK, CLEAN (no new/spiking signature)
+
+`/api/admin/errors?limit=200` read cleanly via the Chrome bridge (logged-in admin) **before** the bridge
+degraded mid-run (see §C):
+
+| field | value |
+|---|---|
+| total events | **70** — `maxId 70`, **ZERO new since RUN 4/5** |
+| signature 1 | `invalid input syntax for type date: "Mon Jun 29"` ×69 (id 1–69) — RUN 3, **fixed `cc17d83`**; last event **07:57:50 UTC** (no recurrence) |
+| signature 2 | `invalid input syntax for type integer: "87.29305922597204"` ×1 (id 70) — RUN 4, **fixed `48d30b0`**; last/only event **13:50:09 UTC** (no recurrence) |
+
+No third signature. Both pre-existing signatures are **fixed-and-holding**: id 69 (`::date`) stopped at
+07:57 UTC and id 70 (`::int`) has not repeated since 13:50 UTC — neither has logged a single new event
+across RUN 5 (16:40) → RUN 6 (17:50). The durable sink is the authoritative production-error ground truth
+and shows nothing new to triage.
+
+### B. Fix-history corroboration (git, reliable) — all prior fixes live
+
+`git merge-base --is-ancestor … origin/main` → **YES for all four**: `cc35f9e` (Night Hawk funnel
+observability), `cc17d83` (`::date` boundary guard), `48d30b0` (`::int` Largo `window_days` clamp +
+db backstop), `994e2bd` (per-replica flow-stale corroboration). Railway deploys `origin/main`, so every
+RUN 1–5 fix is deployed. `origin/main` tip = `35d4442`.
+
+### C. Secondary aggregation surfaces — UNREADABLE this run (bridge degraded) — NOT claimed clean
+
+After the primary-sink read, the Chrome bridge entered the **degraded state** the e2e-interaction-sweep
+documented earlier today (`docs/auto/e2e-2026-06-26.md`): the heavy `/api/admin/incidents` JSON froze the
+renderer, and **every subsequent `navigate` reported success but never committed off `chrome://newtab`** —
+across a fresh tab, a new window, a full `select_browser` reconnect, a 12 s recovery wait, and a plain
+homepage load. `javascript_tool`/`get_page_text` returned `Cannot access a chrome:// URL` each time. One
+`navigate` also returned the hard **"Claude in Chrome is not connected"** banner before momentarily
+reconnecting. Compounded by the **known RTH latency** on these aggregation endpoints (RUN 5 §B: cron-health
++ apis/dashboard exceed the 45 s CDP eval window during market hours).
+
+**Honest coverage gap:** `/api/admin/incidents`, `/api/admin/health`, `/api/admin/cron-health`, and
+`/api/admin/apis/dashboard` could **not** be read this pass. I am **not** asserting them clean. What is
+known about them from the last successful read (RUN 5, 16:40, 70 min ago) + git:
+- The only outstanding cron-health item is the **Night Hawk Edition `failed:1`** (RUN 1 §A) — fix
+  `cc35f9e` confirmed live (§B); next fire is **5:30 PM EDT today (~21:30 UTC, ~3.7 h out)**, so it
+  cannot have produced a *new* failure since RUN 5.
+- The only standing health `issues` were the benign off-hours/early-session breadth-ticker warnings
+  (`I:TICK`/`I:TRIN`/`I:ADD` `price=0`) — cosmetic carry-forward, not a production error.
+- The per-replica flow-stale false-CRITICAL was fixed RUN 5 (`994e2bd`, live per §B).
+
+### Result
+
+**✅ No new or spiking production-error signature.** The PRIMARY durable sink — the authoritative source —
+read CLEAN (maxId 70, zero new since RUN 4/5; both existing signatures fixed-and-holding, last events
+07:57 and 13:50 UTC with no recurrence). All four RUN 1–5 fixes are git-confirmed on `origin/main`
+(Railway-deployed). **No fix made — manufacturing one with the sink clean would violate the no-theater
+guardrail.** The secondary admin aggregation surfaces were **unreadable** this run (degraded Chrome bridge
++ known RTH latency) and are honestly logged as a coverage gap, not claimed clean — the next run (or a
+bridge recovery) should re-read incidents/health/cron-health/dashboard.
+
+### Carry-forward (toward 0-open-issues)
+- **Bridge-degraded (this run):** the Chrome bridge cannot commit navigation off `chrome://newtab` —
+  re-verify incidents/health/cron-health/dashboard next run; if it persists, a Chrome/extension restart
+  may be needed (same condition the e2e sweep hit today).
+- All prior carry-forwards stand unchanged: trade-entry flow-stale gate corroboration
+  (`spx-play-gates.ts:236-238`, RUN 5); publish-preview external caller (RUN 3); `::int` `days_of_data`
+  source-round (RUN 4, `spx-play-outcomes.ts:227`, `Math.floor`); Night Hawk Edition synthesis funnel +
+  stale-`running` reaper (#70); off-hours WS-staleness/breadth-ticker RTH gate (cosmetic); cron-health +
+  apis/dashboard RTH latency (admin-only); open `auto/*` branches awaiting human review.
