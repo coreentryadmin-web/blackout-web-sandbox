@@ -4,6 +4,7 @@ import { buildMarketHealthSnapshot } from "@/lib/market-health";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { isProductionRuntime, dbConfigured } from "@/lib/db";
 import { freshestFeedAgeMs, classifyFeedStaleness } from "@/lib/ws/feed-staleness";
+import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 
 export type SpxIssueSeverity = "critical" | "warning" | "info";
 
@@ -98,12 +99,33 @@ export async function buildSpxAdminIssues(input: {
         detail: "No UW flow timestamp tracked yet",
       });
     } else if (flowAge > 120_000) {
-      push(issues, {
-        severity: "critical",
-        category: "flow",
-        title: "Flow data stale",
-        detail: `Last flow update ${Math.round(flowAge / 1000)}s ago`,
-      });
+      // `flowAge` (desk.flow_data_age_ms) is a PER-REPLICA in-memory value: on a
+      // replica whose recent desk builds returned no fresh SPX flow rows it reads
+      // stale even while the cluster keeps delivering frames. Before escalating to
+      // CRITICAL (which pages ops + opens an incident), corroborate against the
+      // shared cluster flow-liveness heartbeat. If SOME replica delivered a frame
+      // recently, this is a local reading artifact → keep a visible WARNING rather
+      // than a false critical. A genuine cluster-wide stall lapses the heartbeat
+      // (90s TTL) → not fresh → the real critical fires. Fail-open (Redis down →
+      // not fresh → critical fires), so no real stall is ever masked.
+      const clusterFlowLive = await isFlowFrameFreshAnywhere(120_000);
+      if (clusterFlowLive) {
+        push(issues, {
+          severity: "warning",
+          category: "flow",
+          title: "Flow data stale on this replica",
+          detail: `Last local flow update ${Math.round(
+            flowAge / 1000
+          )}s ago, but the cluster flow heartbeat is live — per-replica reading, not a cluster stall`,
+        });
+      } else {
+        push(issues, {
+          severity: "critical",
+          category: "flow",
+          title: "Flow data stale",
+          detail: `Last flow update ${Math.round(flowAge / 1000)}s ago`,
+        });
+      }
     } else if (flowAge > 45_000) {
       push(issues, {
         severity: "warning",

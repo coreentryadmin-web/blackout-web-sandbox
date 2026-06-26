@@ -82,3 +82,31 @@ export async function isFlowFrameFreshFromCluster(maxAgeMs = 120_000): Promise<b
     return false;
   }
 }
+
+/**
+ * Observability variant of {@link isFlowFrameFreshFromCluster} WITHOUT the
+ * anti-self-skip instance guard: true when ANY replica — including this one —
+ * delivered a live UW flow frame within `maxAgeMs`.
+ *
+ * Used by admin health to corroborate a per-replica "Flow data stale" reading
+ * against cluster truth before escalating to CRITICAL. `flow_data_age_ms` is a
+ * per-replica in-memory value (lastFlowDataAt); on a replica whose recent desk
+ * builds returned no fresh SPX flow rows it reads stale even though the cluster
+ * is delivering frames — a false critical that pages ops. The instance guard is
+ * only meaningful for the cron's REST-skip decision, never for a freshness probe,
+ * so it is dropped here.
+ *
+ * Fail-open: a genuine cluster-wide flow stall lets the heartbeat lapse (90s TTL)
+ * → returns false → the caller's critical still fires (no real stall is masked).
+ * Redis-down / no heartbeat → false → caller keeps its original behavior. Never
+ * throws.
+ */
+export async function isFlowFrameFreshAnywhere(maxAgeMs = 120_000): Promise<boolean> {
+  try {
+    const record = await sharedCacheGet<HeartbeatRecord>(HEARTBEAT_KEY);
+    if (!record || typeof record.at !== "number") return false;
+    return Date.now() - record.at <= maxAgeMs;
+  } catch {
+    return false;
+  }
+}
