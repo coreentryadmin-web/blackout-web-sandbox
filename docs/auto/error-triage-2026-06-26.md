@@ -483,3 +483,70 @@ bridge recovery) should re-read incidents/health/cron-health/dashboard.
   source-round (RUN 4, `spx-play-outcomes.ts:227`, `Math.floor`); Night Hawk Edition synthesis funnel +
   stale-`running` reaper (#70); off-hours WS-staleness/breadth-ticker RTH gate (cosmetic); cron-health +
   apis/dashboard RTH latency (admin-only); open `auto/*` branches awaiting human review.
+
+---
+
+## RUN 6 — ADDENDUM ~18:20 UTC (secondary surfaces RE-READ; bridge recovered)
+
+The operator opened a **fresh Chrome** (logged out → new window w/ site + Railway + Clerk), which cleared
+the degraded bridge that blocked RUN 6 §C. All four previously-unreadable admin aggregation surfaces were
+re-read directly. **Closing the RUN 6 coverage gap revealed one NEW-but-transient signal that has already
+self-healed — no fix warranted (verified by live recovery, not assumption).**
+
+### Re-read results (18:20 UTC, market OPEN)
+
+| Source | Result |
+|---|---|
+| Durable sink | ✅ `maxId 70` — still 0 new (unchanged from RUN 6 §A) |
+| Incidents | ✅ `incidents:[]` — **0 open** (the writer staleness did NOT open an incident) |
+| API dashboard (24h) | ✅ `error_rate:0`, `recent_errors:0`, `active_retries:0` — the RUN 3/4 `::date`/`::int` spikes have now rolled out of the 24h window. Fully clean. |
+| Admin health | ⚠️ `health_ok:false` — driven **solely** by the 3 benign breadth-ticker warnings (`I:TICK`/`I:TRIN`/`I:ADD` `price=0`, age=epoch); `route_errors:0`, `redis_degraded:false`, `market_health_ok:true`. Known cosmetic carry-forward. |
+| Cron health | ⚠️ **NEW:** `Data Correctness` `last_status:"failed"` @ **18:03:34 UTC**, msg **"3 correctness flag(s)"** — investigated below. (Plus the known Night Hawk Edition `failed:1`.) |
+
+### The new signal: 3 STALE critical writers @ 18:03 — TRANSIENT, self-healed (no fix)
+
+The Data Correctness audit (`meta.flags`, `layer:"freshness"`) flagged 3 critical live-data writers stale
+during RTH, all 10–11 m old:
+- `writer_uw_cache_refresh` — **UW Cache Refresh** (no run in 11m, limit 10m)
+- `writer_nights_watch_warm` — **Night's Watch Warm** (no run in 10m, limit 10m)
+- `writer_heatmap_warm` — **Heat Maps Warm** (no run in 11m, limit 10m)
+
+**Live ground-truth re-check (the decisive evidence) — all 3 RECOVERED by 18:20 UTC:**
+
+| Writer | last_run_at | age | status |
+|---|---|---|---|
+| UW Cache Refresh | 18:17:04 UTC | 3m | `ok` |
+| Night's Watch Warm | 18:16:05 UTC | 4m | `ok` |
+| Heat Maps Warm | 18:16:34 UTC | 4m | `ok` |
+
+**Root cause — deploy-restart bounce, NOT a dead writer.** The writers' last good run before the flag was
+~17:52 UTC; resumption was ~18:13–18:17. That gap coincides with a cluster of pushes to `main` at
+~17:39–17:55 UTC — benzinga `35d4442`, my own RUN 6 log push `b371191`, and the financials merge `9787e9f`
+(now `origin/main` tip... superseded). Each push restarts the Railway deploy and bounces the cron
+scheduler; three back-to-back restarts left the warm-writers paused across a ~20 min window, and the 18:03
+data-correctness cycle sampled them mid-gap. **Data VALUES stayed consistent throughout** (audit totals:
+7 independentlyConfirmed, 7 pass, **0 value-discrepancy flags**; the 67 `consistencyOnly` are
+can't-independently-confirm coverage, not errors) — only freshness blipped, and `incidents:[]` confirms it
+never escalated to an ops page.
+
+**FIX vs FLAG → no code change (anti-theater + safety).** The auditor reported a *real* (if brief)
+staleness correctly; the writers self-healed; fabricating a sensitivity/suppression change to the
+**critical** data-correctness freshness auditor would be theater AND would risk masking a genuine future
+writer death. The `Data Correctness last_status:"failed"` is a stale 18:03 snapshot — the next RTH
+data-correctness cycle will clear it now that all writers are fresh. **Verified via live recovery, not
+assumed.**
+
+### NEW carry-forward (ops/process — flag, not auto-fix)
+- **Autonomous main-pushes during RTH restart Railway and briefly stall live-data writers** (UW cache /
+  Night's Watch / Heat Maps warm), which (a) trips the data-correctness auditor and (b) gives users a
+  short real data-staleness window mid-session. Three rapid pushes compounded it to ~20 min today.
+  Mitigation is a process decision (defer non-urgent autonomous `main` pushes outside RTH, batch them, or
+  speed writer resume post-deploy) → flagged for human review, not auto-changed. Ties into the SDLC
+  concurrency-safety guardrail.
+
+### Addendum result
+**✅ RUN 6 coverage gap closed.** Re-read of all secondary surfaces on the fresh bridge: incidents 0,
+dashboard error_rate 0 (spikes aged out), health = benign breadth-ticker class only. The one new cron-health
+signal (3 stale writers @ 18:03) was **transient deploy-restart fallout, fully self-healed** (all 3 `ok`,
+<4m old by 18:20) with no value-correctness impact and no incident — **no fix made**; the RTH-push→writer-
+stall pattern is flagged as an ops carry-forward. Sink/fixes from RUNs 1–5 all still holding.
