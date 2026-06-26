@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { EmbedFrame } from "./EmbedFrame";
 import type { PublicTrackRecord } from "@/lib/track-record-public";
@@ -44,9 +45,9 @@ export function TrackRecordEmbed({
         </div>
 
         <div className="grid grid-cols-3 gap-2 mb-5">
-          <Stat label="Wins" value={live ? record.wins : 0} tone="bull" />
-          <Stat label="Losses" value={live ? record.losses : 0} tone="bear" />
-          <Stat label="Scratch" value={live ? record.breakeven : 0} tone="sky" />
+          <Stat label="Wins" value={live ? record.wins : "—"} tone="bull" />
+          <Stat label="Losses" value={live ? record.losses : "—"} tone="bear" />
+          <Stat label="Scratch" value={live ? record.breakeven : "—"} tone="sky" />
         </div>
 
         <div className="space-y-2">
@@ -78,7 +79,9 @@ function Stat({
   tone,
 }: {
   label: string;
-  value: number;
+  // ReactNode (not number) so a fail-path can pass "—" — a PUBLIC social-proof
+  // embed must never render a fabricated 0W/0L when no data is available.
+  value: ReactNode;
   tone: "bull" | "bear" | "sky";
 }) {
   return (
