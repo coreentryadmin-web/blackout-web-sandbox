@@ -1726,6 +1726,45 @@ function fmtAsof(iso: string | undefined): string | null {
   });
 }
 
+/** Seconds-precision ET time for the matrix freshness chip (traders read the grid directly,
+ *  so the matrix's own sample time must be visible — not buried in the Largo panel). */
+function fmtAsofSeconds(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: "America/New_York",
+  });
+}
+
+/** The matrix is on a 20s cache; tint the freshness chip amber once the sample is older than
+ *  ~2× that window so a sitting-stale grid (e.g. an off-warm-preset ticker) is visibly flagged. */
+const MATRIX_STALE_MS = 40_000;
+
+/** Always-visible "as of HH:MM:SS ET" freshness anchor for the matrix header. Renders null when
+ *  there is no usable timestamp so it never fabricates freshness. */
+function MatrixFreshness({ asof }: { asof: string | undefined }) {
+  const label = fmtAsofSeconds(asof);
+  if (!label) return null;
+  const t = asof ? new Date(asof).getTime() : NaN;
+  const stale = Number.isFinite(t) && Date.now() - t > MATRIX_STALE_MS;
+  return (
+    <span
+      className={clsx(
+        "flex items-center gap-1.5 tabular-nums normal-case",
+        stale ? "text-gold/90" : "text-sky-300/75"
+      )}
+      title={stale ? "Matrix sample is older than its 20s refresh window" : "Matrix sample time"}
+    >
+      <span aria-hidden>{stale ? "◷" : "●"}</span>
+      <span>as of {label} ET</span>
+    </span>
+  );
+}
+
 /**
  * "Ask Largo" panel. Lazy on click: the narrative is fetched only when the user opens it,
  * keyed by ticker so it clears/refetches when the ticker changes. The route itself caches
@@ -3366,6 +3405,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     <div className="min-w-0">
       <PanelLabel>Strike × Expiry Matrix</PanelLabel>
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
+        {/* Always-visible matrix freshness anchor — the gamma matrix / walls / KING NODE /
+            gamma-flip are the numbers traders act on, so the sample time belongs here on the
+            grid header, not only inside the collapsible Largo panel (#8). */}
+        <MatrixFreshness asof={data?.asof} />
         <span className="flex items-center gap-1.5 text-sky-300">
           <span
             className="inline-block h-3 w-3 rounded-sm"
