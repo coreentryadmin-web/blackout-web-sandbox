@@ -6813,6 +6813,63 @@ body {
   .grid-analyst-title { @apply text-[12.5px] leading-snug text-white line-clamp-2; }
   .grid-analyst-title-link:hover { @apply opacity-80; }
 
+  /* Shared grid tag pill */
+  .grid-tag {
+    @apply inline-block font-mono text-[9px] font-bold uppercase tracking-[0.15em] px-1.5 py-[2px] rounded border border-current/30 bg-current/10 shrink-0;
+  }
+
+  /* Dark Pool Prints */
+  .grid-dp-list { @apply flex flex-col divide-y divide-white/[0.06] overflow-y-auto max-h-[440px]; }
+  .grid-dp-row { @apply flex items-center gap-2.5 px-4 py-2 text-[12px]; }
+  .grid-dp-ticker { @apply font-syne font-bold text-white w-14 shrink-0; }
+  .grid-dp-premium { @apply font-mono text-[11px] ml-auto text-sky-300; }
+
+  /* Earnings Radar */
+  .grid-earn-list { @apply grid grid-cols-1 sm:grid-cols-2 gap-px content-start overflow-y-auto max-h-[440px]; }
+  .grid-earn-row { @apply flex items-center gap-2 px-4 py-2 text-[11px] border-b border-white/[0.06]; }
+  .grid-earn-ticker { @apply font-syne font-bold text-white w-14 shrink-0; }
+  .grid-earn-est { @apply font-mono text-[10px] shrink-0; }
+  .grid-earn-act { @apply font-mono text-[10px] text-white shrink-0; }
+
+  /* Congress Trades */
+  .grid-congress-list { @apply flex flex-col divide-y divide-white/[0.06] overflow-y-auto max-h-[440px]; }
+  .grid-congress-row { @apply flex items-center gap-2 px-4 py-2 text-[11px]; }
+  .grid-congress-dot { @apply text-[8px] shrink-0; }
+  .grid-congress-name { @apply text-sky-300/90 truncate flex-1 min-w-0; }
+  .grid-congress-ticker { @apply font-syne font-bold text-white shrink-0 w-14; }
+  .grid-congress-amt { @apply font-mono text-[10px] text-sky-300/60 shrink-0; }
+
+  /* Economic Calendar (macro tiles grid) */
+  .grid-econ-tiles {
+    @apply grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 p-4;
+  }
+  .grid-econ-tile {
+    @apply flex flex-col gap-0.5 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5;
+  }
+  .grid-econ-label { @apply font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70; }
+  .grid-econ-value { @apply font-syne text-lg font-bold leading-none text-white; }
+  .grid-econ-sub { @apply flex items-center gap-1.5 mt-0.5; }
+  .grid-econ-chg { @apply font-mono font-bold; }
+
+  /* Sector Heat */
+  .grid-sector-tiles {
+    @apply grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 p-4;
+  }
+  .grid-sector-cell {
+    @apply flex flex-col gap-0.5 rounded-xl px-3 py-2.5 cursor-default transition-opacity;
+  }
+  .grid-sector-cell:hover { @apply opacity-80; }
+  .grid-sector-name { @apply font-mono text-[9px] uppercase tracking-[0.12em] leading-tight; }
+  .grid-sector-pct { @apply font-syne text-base font-bold leading-none; }
+
+  /* Top Movers */
+  .grid-movers-cols { @apply grid grid-cols-2 gap-x-4 px-4 py-2 overflow-y-auto max-h-[440px]; }
+  .grid-movers-header { @apply font-mono text-[9px] font-bold uppercase tracking-[0.2em] py-1.5; }
+  .grid-mover-list { @apply flex flex-col divide-y divide-white/[0.06]; }
+  .grid-mover-row { @apply flex items-center gap-1.5 py-1.5 text-[12px]; }
+  .grid-mover-ticker { @apply font-syne font-bold text-white; }
+  .grid-mover-price { @apply font-mono text-[10px]; }
+
   /* News mount — let the reused rail fill the tile */
   .grid-news-mount { @apply p-3 h-full; }
   .grid-news-mount .news-rail {

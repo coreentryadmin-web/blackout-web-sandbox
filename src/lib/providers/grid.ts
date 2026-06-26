@@ -5,13 +5,7 @@
 // upstream pull is fetched ONCE by the `grid-warm` cron and written to Redis under a `grid:*` key.
 // The `/api/grid/*` route handlers ONLY read those snapshots — they never fetch upstream per request.
 //
-// Phase 0/1 datasets live here:
-//   • Analyst Actions  — market-wide Benzinga analyst channel (ratings / price targets / up+downgrades
-//     / analyst color). Benzinga news has no rate limit, but we still warm ONCE so 500 concurrent
-//     viewers share a single upstream pull per window.
-//
-// Market Pulse reuses the existing SPX desk merged payload (client-side, already cached), Unified News
-// reuses /api/market/news, and Notable Flow reuses the HELIX flow stream — none need a new warm here.
+// Warmers live here; the cron calls them; the routes call the readers.
 
 import {
   getUwCacheRedis,
@@ -19,28 +13,45 @@ import {
   uwCacheSet,
 } from "@/lib/providers/uw-shared-cache";
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
+import {
+  fetchUwDarkPoolRecent,
+  fetchUwEarningsPremarket,
+  fetchUwEarningsAfterhours,
+  fetchUwCongressTrades,
+  fetchUwMacroIndicators,
+  type UwMacroIndicatorSnapshot,
+} from "@/lib/providers/unusual-whales";
+import { fetchMarketMovers, fetchSectorPerformance } from "@/lib/providers/polygon";
 
-// `grid:*` namespace — distinct from the `uw_cache:` keys uwCacheSet/Get prefix with, so Grid
-// snapshots never collide with the per-ticker UW cache.
+// ── key + TTL registry ────────────────────────────────────────────────────────
+
 export const GRID_KEYS = {
   analysts: "grid:analysts",
+  darkPool: "grid:dark-pool",
+  earnings: "grid:earnings",
+  congress: "grid:congress",
+  economy: "grid:economy",
+  sectors: "grid:sectors",
+  movers: "grid:movers",
 } as const;
 
-// Snapshots are warmed every ~2-5 min during RTH; a generous TTL lets a viewer still read the last
-// good snapshot through a brief warm gap (a cache-reader serves stale-but-real over fabricated).
 export const GRID_TTL = {
-  analysts: 600, // 10 min — analyst actions trickle in; the warm cadence is faster than the TTL
+  analysts: 600,   // 10 min — analyst actions trickle in slowly
+  darkPool: 120,   // 2 min — dark pool prints are live during RTH
+  earnings: 300,   // 5 min — earnings reporters update a few times per day
+  congress: 600,   // 10 min — congress trades are slow to file
+  economy: 3600,   // 1 hr — macro indicators update rarely
+  sectors: 120,    // 2 min — sector performance during RTH
+  movers: 90,      // 90s — movers change quickly during RTH
 } as const;
 
-/** The exact market-wide Benzinga analyst channel set (space-delimited lowercase, comma-listed).
- *  Mirrors fetchBenzingaAnalystRatings — verified live vs api.massive.com; "analyst-ratings" (hyphen)
- *  returns ZERO results, the working name is "analyst ratings". */
+// ── PANEL 4 — Analyst Actions ─────────────────────────────────────────────────
+
 const ANALYST_CHANNELS = "analyst ratings,price target,upgrades,downgrades,analyst color";
 
 export type GridAnalystAction = {
   id: string;
   title: string;
-  /** Coarse action derived from the headline/channels — drives the row color (up=emerald/down=bear). */
   action: "upgrade" | "downgrade" | "initiate" | "maintain" | "target" | "other";
   tickers: string[];
   published: string;
@@ -52,7 +63,6 @@ export type GridAnalystsSnapshot = {
   actions: GridAnalystAction[];
 };
 
-/** Classify a Benzinga analyst headline into a coarse action for display coloring. */
 function classifyAnalystAction(title: string, channels: string[]): GridAnalystAction["action"] {
   const hay = `${title} ${channels.join(" ")}`.toLowerCase();
   if (/\bupgrade|raises? to|raised to\b/.test(hay)) return "upgrade";
@@ -63,8 +73,6 @@ function classifyAnalystAction(title: string, channels: string[]): GridAnalystAc
   return "other";
 }
 
-/** Fetch + shape the market-wide analyst feed. Called by the warmer (and, on a cold cache, by the
- *  reader as a one-time fallback through uwCacheGet's single-flight dedup). */
 async function fetchAnalystActions(limit = 30): Promise<GridAnalystsSnapshot> {
   const articles = await fetchBenzingaNews(limit, { channels: ANALYST_CHANNELS });
   const actions: GridAnalystAction[] = articles.map((a) => ({
@@ -78,8 +86,6 @@ async function fetchAnalystActions(limit = 30): Promise<GridAnalystsSnapshot> {
   return { as_of: new Date().toISOString(), actions };
 }
 
-/** WARMER (grid-warm cron) — fetch ONCE and write the Redis snapshot. Returns the snapshot it wrote
- *  (null only if the upstream pull yielded nothing, so the cron can report an honest failure). */
 export async function warmGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
   const snapshot = await fetchAnalystActions(30);
   if (!snapshot.actions.length) return null;
@@ -88,9 +94,6 @@ export async function warmGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
   return snapshot;
 }
 
-/** READER (/api/grid/analysts) — pure cache hit. On a cold cache it falls through to ONE deduped
- *  upstream fetch (uwCacheGet single-flight), then caches it, so the first viewer after a cold boot
- *  doesn't get an empty board. Returns null only when even the fallback fetch yields nothing. */
 export async function readGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
   const redis = await getUwCacheRedis();
   const snapshot = await uwCacheGet(
@@ -100,4 +103,315 @@ export async function readGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
     () => fetchAnalystActions(30),
   );
   return snapshot.actions.length ? snapshot : null;
+}
+
+// ── PANEL 5 — Dark Pool Prints ────────────────────────────────────────────────
+
+export type GridDarkPoolPrint = {
+  ticker: string;
+  premium: number;
+  size: number;
+  price: number;
+  side: string;
+  executed_at: string;
+};
+
+export type GridDarkPoolSnapshot = {
+  as_of: string;
+  prints: GridDarkPoolPrint[];
+};
+
+async function fetchDarkPoolPrints(): Promise<GridDarkPoolSnapshot> {
+  const rows = (await fetchUwDarkPoolRecent(40)) as Record<string, unknown>[];
+  const prints: GridDarkPoolPrint[] = [];
+  for (const r of rows) {
+    const ticker = String(r.ticker ?? r.symbol ?? "").toUpperCase();
+    if (!ticker) continue;
+    const premium = Number(r.premium ?? r.size ?? r.notional ?? 0);
+    if (premium <= 0) continue;
+    prints.push({
+      ticker,
+      premium,
+      size: Number(r.size ?? r.quantity ?? r.volume ?? 0),
+      price: Number(r.price ?? r.ref_price ?? r.execution_price ?? 0),
+      side: String(r.side ?? r.direction ?? "unknown").toLowerCase(),
+      executed_at: String(r.executed_at ?? r.date ?? ""),
+    });
+  }
+  return { as_of: new Date().toISOString(), prints };
+}
+
+export async function warmGridDarkPool(): Promise<GridDarkPoolSnapshot | null> {
+  const snapshot = await fetchDarkPoolPrints();
+  if (!snapshot.prints.length) return null;
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.darkPool, GRID_TTL.darkPool, snapshot);
+  return snapshot;
+}
+
+export async function readGridDarkPool(): Promise<GridDarkPoolSnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.darkPool,
+    GRID_TTL.darkPool,
+    () => fetchDarkPoolPrints(),
+  );
+  return (snapshot as GridDarkPoolSnapshot).prints?.length
+    ? (snapshot as GridDarkPoolSnapshot)
+    : null;
+}
+
+// ── PANEL 6 — Earnings Radar ──────────────────────────────────────────────────
+
+export type GridEarningsItem = {
+  ticker: string;
+  name: string;
+  eps_estimate: number | null;
+  eps_actual: number | null;
+  surprise_pct: number | null;
+  when: "premarket" | "afterhours";
+};
+
+export type GridEarningsSnapshot = {
+  as_of: string;
+  items: GridEarningsItem[];
+};
+
+function shapeEarningsRows(
+  rows: Record<string, unknown>[],
+  when: "premarket" | "afterhours"
+): GridEarningsItem[] {
+  return rows.map((r) => {
+    const epsEst = r.eps_estimate ?? r.estimate ?? r.estimated_eps ?? null;
+    const epsAct = r.eps_actual ?? r.actual ?? r.reported_eps ?? null;
+    const est = epsEst != null ? Number(epsEst) : null;
+    const act = epsAct != null ? Number(epsAct) : null;
+    const surprise =
+      est != null && act != null && est !== 0
+        ? Number((((act - est) / Math.abs(est)) * 100).toFixed(1))
+        : null;
+    return {
+      ticker: String(r.ticker ?? r.symbol ?? "").toUpperCase(),
+      name: String(r.name ?? r.company ?? ""),
+      eps_estimate: est != null && Number.isFinite(est) ? est : null,
+      eps_actual: act != null && Number.isFinite(act) ? act : null,
+      surprise_pct: surprise != null && Number.isFinite(surprise) ? surprise : null,
+      when,
+    };
+  }).filter((x) => x.ticker);
+}
+
+async function fetchEarnings(): Promise<GridEarningsSnapshot> {
+  const [pm, ah] = await Promise.all([
+    fetchUwEarningsPremarket(20).then((r) =>
+      shapeEarningsRows(r as Record<string, unknown>[], "premarket")
+    ).catch(() => [] as GridEarningsItem[]),
+    fetchUwEarningsAfterhours(20).then((r) =>
+      shapeEarningsRows(r as Record<string, unknown>[], "afterhours")
+    ).catch(() => [] as GridEarningsItem[]),
+  ]);
+  return { as_of: new Date().toISOString(), items: [...pm, ...ah] };
+}
+
+export async function warmGridEarnings(): Promise<GridEarningsSnapshot | null> {
+  const snapshot = await fetchEarnings();
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.earnings, GRID_TTL.earnings, snapshot);
+  return snapshot.items.length ? snapshot : null;
+}
+
+export async function readGridEarnings(): Promise<GridEarningsSnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.earnings,
+    GRID_TTL.earnings,
+    () => fetchEarnings(),
+  );
+  return snapshot as GridEarningsSnapshot;
+}
+
+// ── PANEL 7 — Congress Trades ─────────────────────────────────────────────────
+
+export type GridCongresstrade = {
+  politician: string;
+  ticker: string;
+  type: string;
+  amount: string;
+  filed_at: string;
+  party: string;
+};
+
+export type GridCongressSnapshot = {
+  as_of: string;
+  trades: GridCongresstrade[];
+};
+
+async function fetchCongressTrades(): Promise<GridCongressSnapshot> {
+  const data = await fetchUwCongressTrades(undefined, 25);
+  const rows = Array.isArray(data)
+    ? (data as Record<string, unknown>[])
+    : typeof data === "object" && data != null
+    ? [data as Record<string, unknown>]
+    : [];
+
+  const trades: GridCongresstrade[] = rows
+    .map((r) => ({
+      politician: String(r.politician ?? r.name ?? r.senator ?? r.representative ?? ""),
+      ticker: String(r.ticker ?? r.symbol ?? "").toUpperCase(),
+      type: String(r.transaction_type ?? r.type ?? r.trade_type ?? ""),
+      amount: String(r.amount ?? r.value ?? ""),
+      filed_at: String(r.filed_at ?? r.date ?? r.disclosure_date ?? ""),
+      party: String(r.party ?? ""),
+    }))
+    .filter((t) => t.politician && t.ticker);
+
+  return { as_of: new Date().toISOString(), trades };
+}
+
+export async function warmGridCongress(): Promise<GridCongressSnapshot | null> {
+  const snapshot = await fetchCongressTrades();
+  if (!snapshot.trades.length) return null;
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.congress, GRID_TTL.congress, snapshot);
+  return snapshot;
+}
+
+export async function readGridCongress(): Promise<GridCongressSnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.congress,
+    GRID_TTL.congress,
+    () => fetchCongressTrades(),
+  );
+  const s = snapshot as GridCongressSnapshot;
+  return s.trades?.length ? s : null;
+}
+
+// ── PANEL 8 — Economic Calendar ───────────────────────────────────────────────
+
+const MACRO_IDS = ["CPI", "UNEMPLOYMENT", "GDP", "FED-FUNDS", "RETAIL-SALES", "PAYROLLS", "TREASURY-YIELD"];
+
+export type GridEconomySnapshot = {
+  as_of: string;
+  indicators: UwMacroIndicatorSnapshot[];
+};
+
+async function fetchEconomy(): Promise<GridEconomySnapshot> {
+  const indicators = await fetchUwMacroIndicators(MACRO_IDS);
+  return { as_of: new Date().toISOString(), indicators };
+}
+
+export async function warmGridEconomy(): Promise<GridEconomySnapshot | null> {
+  const snapshot = await fetchEconomy();
+  if (!snapshot.indicators.length) return null;
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.economy, GRID_TTL.economy, snapshot);
+  return snapshot;
+}
+
+export async function readGridEconomy(): Promise<GridEconomySnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.economy,
+    GRID_TTL.economy,
+    () => fetchEconomy(),
+  );
+  const s = snapshot as GridEconomySnapshot;
+  return s.indicators?.length ? s : null;
+}
+
+// ── PANEL 9 — Sector Heat ─────────────────────────────────────────────────────
+
+export type GridSectorRow = {
+  name: string;
+  ticker: string;
+  change_pct: number;
+};
+
+export type GridSectorsSnapshot = {
+  as_of: string;
+  sectors: GridSectorRow[];
+};
+
+async function fetchSectors(): Promise<GridSectorsSnapshot> {
+  const rows = await fetchSectorPerformance();
+  const sectors: GridSectorRow[] = rows.map((r) => ({
+    name: r.name,
+    ticker: r.ticker,
+    change_pct: r.change_pct,
+  }));
+  return { as_of: new Date().toISOString(), sectors };
+}
+
+export async function warmGridSectors(): Promise<GridSectorsSnapshot | null> {
+  const snapshot = await fetchSectors();
+  if (!snapshot.sectors.length) return null;
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.sectors, GRID_TTL.sectors, snapshot);
+  return snapshot;
+}
+
+export async function readGridSectors(): Promise<GridSectorsSnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.sectors,
+    GRID_TTL.sectors,
+    () => fetchSectors(),
+  );
+  const s = snapshot as GridSectorsSnapshot;
+  return s.sectors?.length ? s : null;
+}
+
+// ── PANEL 10 — Top Movers ─────────────────────────────────────────────────────
+
+export type GridMover = {
+  ticker: string;
+  change_pct: number;
+  price: number;
+};
+
+export type GridMoversSnapshot = {
+  as_of: string;
+  gainers: GridMover[];
+  losers: GridMover[];
+};
+
+async function fetchMovers(): Promise<GridMoversSnapshot> {
+  const all = await fetchMarketMovers(12);
+  const gainers = all.filter((m) => m.change_pct > 0).map((m) => ({
+    ticker: m.ticker,
+    change_pct: m.change_pct,
+    price: m.price,
+  }));
+  const losers = all.filter((m) => m.change_pct < 0).map((m) => ({
+    ticker: m.ticker,
+    change_pct: m.change_pct,
+    price: m.price,
+  }));
+  return { as_of: new Date().toISOString(), gainers, losers };
+}
+
+export async function warmGridMovers(): Promise<GridMoversSnapshot | null> {
+  const snapshot = await fetchMovers();
+  if (!snapshot.gainers.length && !snapshot.losers.length) return null;
+  const redis = await getUwCacheRedis();
+  await uwCacheSet(redis, GRID_KEYS.movers, GRID_TTL.movers, snapshot);
+  return snapshot;
+}
+
+export async function readGridMovers(): Promise<GridMoversSnapshot | null> {
+  const redis = await getUwCacheRedis();
+  const snapshot = await uwCacheGet(
+    redis,
+    GRID_KEYS.movers,
+    GRID_TTL.movers,
+    () => fetchMovers(),
+  );
+  const s = snapshot as GridMoversSnapshot;
+  return s.gainers != null ? s : null;
 }

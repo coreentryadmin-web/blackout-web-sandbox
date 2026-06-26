@@ -15,7 +15,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { warmGridAnalysts } from "@/lib/providers/grid";
+import {
+  warmGridAnalysts,
+  warmGridDarkPool,
+  warmGridEarnings,
+  warmGridCongress,
+  warmGridEconomy,
+  warmGridSectors,
+  warmGridMovers,
+} from "@/lib/providers/grid";
 import { etMinutes, etClock } from "@/lib/spx-play-session-time";
 
 export const runtime = "nodejs";
@@ -55,7 +63,15 @@ export async function GET(req: NextRequest) {
   }
 
   // Settle-all so one failing warm can't abort the rest as the Grid grows more panels.
-  const results = await Promise.allSettled([warmGridAnalysts()]);
+  const results = await Promise.allSettled([
+    warmGridAnalysts(),
+    warmGridDarkPool(),
+    warmGridEarnings(),
+    warmGridCongress(),
+    warmGridEconomy(),
+    warmGridSectors(),
+    warmGridMovers(),
+  ]);
 
   let warmed = 0;
   for (const r of results) {
