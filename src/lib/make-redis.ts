@@ -56,6 +56,11 @@ export async function makeRedis(
     // 0 is safe everywhere: a public IPv4 URL still resolves its A record; this just additionally
     // supports Railway's IPv6 internal DNS. Can be overridden by a ?family= in the URL if ever needed.
     family: 0,
+    // READONLY failover: if Redis is ever moved to a replicated/managed tier (ElastiCache, a
+    // promoted replica), a write hitting a read-only node returns a READONLY error. Returning 2
+    // forces a reconnect AND re-sends the failed command. No-op on single-node Railway Redis
+    // (which never returns READONLY), so it's free insurance with zero behavior change today.
+    reconnectOnError: (err: Error) => (/READONLY/.test(err.message) ? 2 : false),
   });
   // Without an 'error' listener, ioredis throws on the EventEmitter when the
   // connection drops post-connect — which crashes the whole process/replica.

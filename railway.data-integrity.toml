@@ -1,0 +1,17 @@
+# Railway config for the Data-Integrity sweep cron service.
+# Wire it up: create a cron service -> Settings -> Config-as-code -> set path to "railway.data-integrity.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/data-integrity"
+# Every 5 minutes across the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
+# 11-21 UTC spans ~7AM-5PM ET. The route self-skips outside isSpxEngineCronWindow and when the
+# market is closed, so the extra ticks are cheap no-ops. Mirrors railway.spx-evaluate.toml.
+# NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard value
+# overrides this TOML, so update it there too.
+cronSchedule = "*/5 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

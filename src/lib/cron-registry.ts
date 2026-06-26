@@ -139,6 +139,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Resync Whop membership → Clerk tier; self-heals dropped webhooks (lockouts + revenue leaks)",
   },
   {
+    key: "data-integrity",
+    name: "Data Integrity",
+    kind: "http",
+    path: "/api/cron/data-integrity",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 20,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Cross-validate live numbers across every tool (desk vs heatmap vs quote, SPY/SPX tracking, max-pain scaling, desk internal math, GEX freshness) — auto-opens admin incidents on any discrepancy",
+  },
+  {
     key: "cron-staleness-watchdog",
     name: "Cron Watchdog",
     kind: "http",

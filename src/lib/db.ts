@@ -92,12 +92,19 @@ async function createPool(): Promise<Pool> {
       // PgBouncer sits in front of Postgres on Railway. It handles real connection pooling.
       // We keep our own pool small (default 5) — PgBouncer multiplexes these to many clients.
       // Set PG_POOL_MAX env var to override (e.g. PG_POOL_MAX=5 in Railway service env vars).
+      // statement_timeout (server-enforced) + query_timeout (driver-enforced) bound EVERY runtime
+      // query so a single blocked/slow query can't pin a pooled connection forever. With max:5,
+      // five unbounded queries would exhaust the pool and stall the replica. Override via
+      // PG_STATEMENT_TIMEOUT_MS — keep it above the slowest legit query (heavy flow_alerts JSONB scans).
+      const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS ?? "30000", 10);
       const livePool = new Pool({
         connectionString: candidate.url,
         max: parseInt(process.env.PG_POOL_MAX ?? "5", 10),
         idleTimeoutMillis: 30_000,
         ssl: poolSsl(candidate.url),
         connectionTimeoutMillis: 15_000,
+        statement_timeout: statementTimeoutMs,
+        query_timeout: statementTimeoutMs + 5_000,
       });
       // CRITICAL: Railway drops idle private-network connections; node-postgres surfaces that
       // as an 'error' event on the pool's idle clients. With NO listener, Node escalates it to

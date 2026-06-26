@@ -49,7 +49,20 @@ function fingerprintFor(issue: SpxAdminIssue): string {
   return `${issue.category}:${issue.title}`;
 }
 
-export async function syncAdminIncidents(issues: SpxAdminIssue[]): Promise<void> {
+/**
+ * Reconcile open incidents against the current active issue set.
+ *
+ * `options.resolveScope` makes the AUTO-RESOLVE step namespace-aware so two
+ * independent reconcilers can share this table without clobbering each other:
+ * each caller only resolves incidents in the categories it owns. The SPX
+ * Operations dashboard owns everything EXCEPT `data-integrity*`; the
+ * data-integrity cron owns only `data-integrity*`. When omitted, the legacy
+ * behavior (resolve every open incident not in the active set) is preserved.
+ */
+export async function syncAdminIncidents(
+  issues: SpxAdminIssue[],
+  options?: { resolveScope?: (category: string) => boolean }
+): Promise<void> {
   if (!dbConfigured()) return;
   await ensureIncidentSchema();
 
@@ -77,10 +90,13 @@ export async function syncAdminIncidents(issues: SpxAdminIssue[]): Promise<void>
     );
   }
 
-  const openRows = await dbQuery<{ fingerprint: string }>(
-    `SELECT fingerprint FROM admin_incidents WHERE status IN ('open', 'acked')`
+  const openRows = await dbQuery<{ fingerprint: string; category: string }>(
+    `SELECT fingerprint, category FROM admin_incidents WHERE status IN ('open', 'acked')`
   );
   for (const row of openRows.rows) {
+    // Namespace ownership: skip incidents this caller doesn't own so a scoped
+    // reconciler never resolves another reconciler's incidents.
+    if (options?.resolveScope && !options.resolveScope(row.category)) continue;
     if (!activeFp.has(row.fingerprint)) {
       await dbQuery(
         `UPDATE admin_incidents SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()

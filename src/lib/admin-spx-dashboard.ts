@@ -223,7 +223,9 @@ export async function fetchSpxAdminDashboard(options?: {
     marketOpen: merged.market_open === true,
   });
 
-  await syncAdminIncidents(issues.issues);
+  // Reconcile everything EXCEPT the data-integrity namespace — that's owned by the
+  // data-integrity cron's own reconcile, so the dashboard must not resolve its incidents.
+  await syncAdminIncidents(issues.issues, { resolveScope: (cat) => !cat.startsWith("data-integrity") });
   const openIncidents = await listOpenAdminIncidents(12);
   const routeErrors = getAdminRouteErrors();
 

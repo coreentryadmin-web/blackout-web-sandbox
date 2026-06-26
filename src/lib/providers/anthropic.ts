@@ -210,6 +210,15 @@ function resolveModel(explicit?: string): string {
   return explicit?.trim() || process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
 }
 
+/**
+ * Sampling params (temperature / top_p / top_k) return a 400 on Opus 4.7+ and the Fable family.
+ * Our default models (Sonnet 4.6, Haiku 4.5) accept them, but ANTHROPIC_MODEL can be overridden to
+ * an Opus/Fable model — in which case sending temperature would 400 EVERY call. Strip it for those.
+ */
+function modelRejectsSamplingParams(model: string): boolean {
+  return /claude-opus-4-(?:[7-9]|\d\d)|claude-fable/i.test(model);
+}
+
 async function withTelemetry<T>(
   endpointKey: string,
   fn: () => Promise<T>,
@@ -360,9 +369,11 @@ export async function anthropicText(
   const body: MessageCreateParamsNonStreaming = {
     model,
     max_tokens: maxTokens,
-    temperature: options?.temperature ?? TEMPERATURE,
     messages: [{ role: "user", content: prompt }],
   };
+  if (!modelRejectsSamplingParams(model)) {
+    body.temperature = options?.temperature ?? TEMPERATURE;
+  }
   if (system) {
     // applySystemCache trims a string system and, when caching applies (explicit opt-in OR the
     // auto-detect size floor), wraps it as a single cache_control:ephemeral block. When it doesn't
@@ -463,11 +474,13 @@ export async function anthropicToolLoop(params: {
     const createParams: MessageCreateParams = {
       model,
       max_tokens: maxTokens,
-      temperature: loopTemperature,
       system: systemParam,
       tools,
       messages,
     };
+    if (!modelRejectsSamplingParams(model)) {
+      createParams.temperature = loopTemperature;
+    }
 
     let content: ContentBlock[];
 

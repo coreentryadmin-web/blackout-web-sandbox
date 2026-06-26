@@ -104,10 +104,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
   }
 
+  // Defense-in-depth: the signature already proves the payload was signed with OUR webhook secret,
+  // but if that secret were ever reused across companies, assert the event targets our company so a
+  // foreign delivery can't drive entitlement changes. Unknown/absent company_id is allowed (ack-drop
+  // only on a definite mismatch) so we never reject a legitimately-signed event over a missing field.
+  const expectedCompanyId = process.env.WHOP_COMPANY_ID?.trim();
+  if (expectedCompanyId && event.company_id && event.company_id !== expectedCompanyId) {
+    console.warn(
+      "[whop webhook] dropping event for foreign company_id=" +
+        event.company_id +
+        " (expected " +
+        expectedCompanyId +
+        "), type=" +
+        event.type
+    );
+    return NextResponse.json({ ok: true, dropped: "company_mismatch" }, { status: 200 });
+  }
+
   try {
     if (
       event.type === "membership.activated" ||
-      event.type === "membership.deactivated"
+      event.type === "membership.deactivated" ||
+      // A user toggling "cancel at period end" — re-sync so the grace/canceling status is reflected
+      // in real time instead of waiting for the hourly reconcile to observe the eventual deactivation.
+      event.type === "membership.cancel_at_period_end_changed"
     ) {
       const email = event.data.user?.email;
       if (email) {

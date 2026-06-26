@@ -66,10 +66,17 @@ const MAX_CONTRACTS_PER_CONN = Math.max(
   1,
   Math.min(1000, Number(process.env.OPTIONS_WS_MAX_PER_CONN ?? 1000) || 1000)
 );
-/** Max concurrent connections to shard across (Massive ~10/connection limit). */
+/**
+ * Max concurrent connections to shard across. Massive's DOCUMENTED default entitlement is ONE
+ * simultaneous WebSocket connection per asset class per cluster — opening a 2nd connection on the
+ * same /options cluster boots the first, causing a reconnect storm the instant held contracts
+ * exceed one shard (MAX_CONTRACTS_PER_CONN). So we default to 1 (overflow degrades gracefully to
+ * the REST snapshot fallback) and require an explicit OPTIONS_WS_MAX_CONNS override — which should
+ * ONLY be raised above 1 after confirming a multi-connection entitlement with Massive support.
+ */
 const MAX_CONNECTIONS = Math.max(
   1,
-  Math.min(10, Number(process.env.OPTIONS_WS_MAX_CONNS ?? 10) || 10)
+  Math.min(10, Number(process.env.OPTIONS_WS_MAX_CONNS ?? 1) || 1)
 );
 
 /** Short TTL for the Redis write-through (seconds). Marks are intraday + ephemeral. */

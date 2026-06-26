@@ -698,12 +698,18 @@ export async function fetchIndexRsi(
   timespan: "minute" | "hour" | "day" = "minute"
 ): Promise<number | null> {
   const sym = symbol.toUpperCase();
-  const data = await polygonGet<{ results?: { values?: Array<{ value?: number }> } }>(
-    `/v1/indicators/rsi/${sym}`,
-    { window: String(window), timespan, series_type: "close", limit: "1" }
-  );
-  const v = data?.results?.values?.[0]?.value;
-  return v != null && Number.isFinite(v) ? v : null;
+  // Null-safe like the other indicator getters (latestIndicator) — polygonGet THROWS on a non-OK
+  // response, so a transient blip here would reject into callers instead of degrading to null.
+  try {
+    const data = await polygonGet<{ results?: { values?: Array<{ value?: number }> } }>(
+      `/v1/indicators/rsi/${sym}`,
+      { window: String(window), timespan, series_type: "close", limit: "1" }
+    );
+    const v = data?.results?.values?.[0]?.value;
+    return v != null && Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 const VIX = "I:VIX";
