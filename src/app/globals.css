@@ -6815,7 +6815,9 @@ body {
 
   /* Shared grid tag pill */
   .grid-tag {
-    @apply inline-block font-mono text-[9px] font-bold uppercase tracking-[0.15em] px-1.5 py-[2px] rounded border border-current/30 bg-current/10 shrink-0;
+    @apply inline-block font-mono text-[9px] font-bold uppercase tracking-[0.15em] px-1.5 py-[2px] rounded shrink-0;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentColor 10%, transparent);
   }
 
   /* Dark Pool Prints */
