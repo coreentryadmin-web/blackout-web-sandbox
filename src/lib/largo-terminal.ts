@@ -171,6 +171,9 @@ export async function runLargoQuery(
       model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 12,
+      // Per-round timeout so a single slow round falls back to partial text instead of 500ing (#77 E).
+      timeoutMs: 60_000,
+      maxRetries: 1,
       runTool: async (name, input) => {
         toolsUsed.push(name);
         return runLargoTool(name, input, userId);
@@ -231,6 +234,9 @@ export async function runLargoQueryStream(
       model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 12,
+      // Per-round timeout so a single slow round falls back to partial text instead of 500ing (#77 E).
+      timeoutMs: 60_000,
+      maxRetries: 1,
       onEvent: (event) => emit(event),
       runTool: async (name, input) => {
         toolsUsed.push(name);

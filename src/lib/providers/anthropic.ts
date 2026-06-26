@@ -412,6 +412,13 @@ export async function anthropicToolLoop(params: {
   maxTokens?: number;
   maxRounds?: number;
   temperature?: number;
+  /** Per-request timeout override (ms) applied to EVERY round + the final synthesis pass. The SDK
+   *  client default is 20s — too tight for a Largo round that fans out heavy tool calls. Defaults
+   *  to 60s here. (#77 hardening E / LARGO timeout gap.) */
+  timeoutMs?: number;
+  /** Per-request retry override threaded into every round. Defaults to 1 so a slow round doesn't
+   *  retry 3× and stack into a multi-minute hang before falling back. */
+  maxRetries?: number;
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
   onEvent?: (event: AnthropicToolLoopEvent) => void;
 }): Promise<string | null> {
@@ -426,6 +433,16 @@ export async function anthropicToolLoop(params: {
   const maxTokens = params.maxTokens ?? 4096;
   const maxRounds = params.maxRounds ?? 12;
   const loopTemperature = params.temperature ?? TEMPERATURE;
+
+  // Per-request options threaded into EVERY round create/stream + the final synthesis pass, so a
+  // single slow round can't hang on the 20s client default × 3 retries. Defaults: 60s timeout, 1
+  // retry. (#77 hardening E.)
+  const loopTimeoutMs = params.timeoutMs ?? 60_000;
+  const loopMaxRetries = params.maxRetries ?? 1;
+  const reqOpts: { timeout: number; maxRetries: number } = {
+    timeout: loopTimeoutMs,
+    maxRetries: loopMaxRetries,
+  };
   const messages: MessageParam[] = params.messages.map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content as MessageParam["content"],
@@ -455,7 +472,7 @@ export async function anthropicToolLoop(params: {
     let content: ContentBlock[];
 
     if (params.onEvent) {
-      const stream = client.messages.stream(createParams);
+      const stream = client.messages.stream(createParams, reqOpts);
       stream.on("text", (delta) => {
         try {
           params.onEvent?.({ type: "token", text: delta });
@@ -466,16 +483,28 @@ export async function anthropicToolLoop(params: {
       const finalMessage = await withTelemetry(
         "anthropic-tool-loop-stream",
         () => stream.finalMessage(),
-        DEFAULT_MAX_RETRIES
+        loopMaxRetries
       );
       trackSpend(model, finalMessage.usage);
       content = finalMessage.content;
     } else {
-      const data = await withTelemetry(
-        "anthropic-tool-loop",
-        () => client.messages.create(createParams),
-        DEFAULT_MAX_RETRIES
-      );
+      // Wrap the non-stream round create so a round timeout/429/network error doesn't 500 the whole
+      // loop and its Largo callers. On failure, fall back to whatever assistant text we've already
+      // accumulated across prior rounds (often a usable partial answer), else null. (#77 hardening E.)
+      let data;
+      try {
+        data = await withTelemetry(
+          "anthropic-tool-loop",
+          () => client.messages.create(createParams, reqOpts),
+          loopMaxRetries
+        );
+      } catch (err) {
+        console.error(
+          "[anthropic] tool-loop round create failed — falling back to accumulated assistant text",
+          err instanceof Error ? err.message : String(err)
+        );
+        return extractTextFromLastAssistant(messages as unknown as AnthropicMessage[]) ?? null;
+      }
       trackSpend(model, data.usage);
       content = data.content;
     }
@@ -534,14 +563,17 @@ export async function anthropicToolLoop(params: {
     const final = await withTelemetry(
       "anthropic-tool-loop-final",
       () =>
-        client.messages.create({
-          model,
-          max_tokens: maxTokens,
-          temperature: loopTemperature,
-          system: systemParam,
-          messages,
-        }),
-      DEFAULT_MAX_RETRIES
+        client.messages.create(
+          {
+            model,
+            max_tokens: maxTokens,
+            temperature: loopTemperature,
+            system: systemParam,
+            messages,
+          },
+          reqOpts
+        ),
+      loopMaxRetries
     );
     trackSpend(model, final.usage);
     return extractTextFromBlocks(final.content as Array<{ type: string; text?: string }>) || null;

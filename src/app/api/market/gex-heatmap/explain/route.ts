@@ -292,7 +292,7 @@ export async function GET(req: NextRequest) {
       `Dealer positioning snapshot for ${ticker}:\n\n${context}\n\n` +
       `Give the desk read now (3-5 sentences, market-structure analysis only).`;
 
-    const narrative = await anthropicText(prompt, 600, SYSTEM);
+    const narrative = await anthropicText(prompt, 600, SYSTEM, { timeoutMs: 25_000, maxRetries: 1 });
     if (!narrative || !narrative.trim()) {
       // Model returned nothing usable — graceful, never fabricated.
       return NextResponse.json(

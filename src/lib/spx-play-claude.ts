@@ -305,7 +305,7 @@ Respond ONLY valid JSON (verdict must be exactly "APPROVE_BUY" or "VETO"):
 
   // temperature:0 — schema-constrained JSON extraction (verdict/direction/headline/thesis),
   // not prose; deterministic output avoids wasted retries on malformed JSON.
-  const raw = await anthropicText(prompt, 500, undefined, { temperature: 0 });
+  const raw = await anthropicText(prompt, 500, undefined, { timeoutMs: 20_000, maxRetries: 1, temperature: 0 });
   if (!raw) {
     if (playClaudeGateEnabled() || forceClaude) {
       return {

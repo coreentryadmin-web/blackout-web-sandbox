@@ -158,7 +158,8 @@ export async function GET(req: NextRequest) {
       const brief = await anthropicText(
         prompt,
         180,
-        "You are a terse trading desk analyst. 2-3 sentences only. Highlight $15M+ signals by ticker name."
+        "You are a terse trading desk analyst. 2-3 sentences only. Highlight $15M+ signals by ticker name.",
+        { maxRetries: 1 }
       );
 
       return { brief: brief?.trim() ?? null, massive_signals: massiveCount };
