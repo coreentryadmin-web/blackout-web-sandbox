@@ -1,0 +1,20 @@
+# Railway config for the Data-Correctness Auditor cron service.
+# Wire it up: create a cron service -> Settings -> Config-as-code -> set path to "railway.data-correctness.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/data-correctness"
+# Every 30 minutes across the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
+# :00 and :30 within 11-21 UTC spans ~7AM-5PM ET. The route self-skips outside isSpxEngineCronWindow,
+# so the edge ticks are cheap no-ops. Mirrors the market-hours pattern used by railway.data-integrity.toml.
+# This is a heavier sweep (independent raw-chain recompute + UW oracle), so it runs at 30-min cadence
+# rather than every 5 min — frequent enough to catch a deploy that broke a transform within ~30 min,
+# light enough to stay well inside the rate budget (one near-money chain per ticker + SPX UW oracle).
+# NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard value
+# overrides this TOML, so update it there too.
+cronSchedule = "0,30 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

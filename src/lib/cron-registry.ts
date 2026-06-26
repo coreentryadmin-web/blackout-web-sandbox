@@ -151,6 +151,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
       "Cross-validate live numbers across every tool (desk vs heatmap vs quote, SPY/SPX tracking, max-pain scaling, desk internal math, GEX freshness) — auto-opens admin incidents on any discrepancy",
   },
   {
+    key: "data-correctness",
+    name: "Data Correctness",
+    kind: "http",
+    path: "/api/cron/data-correctness",
+    schedule_label: "~Every 30 min (market hours)",
+    stale_after_min: 90,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Data-correctness auditor — independently re-derives Heat Maps GEX/VEX numbers (net/King/flip/walls) from the raw chain, asserts invariants/sanity/freshness, confirms SPX King + net-GEX sign against the UW oracle, and cross-checks getGexPositioning vs the SPX desk; FLAGs any wrong number to Discord",
+  },
+  {
     key: "cron-staleness-watchdog",
     name: "Cron Watchdog",
     kind: "http",
