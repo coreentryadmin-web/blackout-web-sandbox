@@ -2,9 +2,10 @@
 
 A continuous verifier that checks **the numbers the platform shows are correct**. ONE
 `/api/cron/data-correctness` run now audits **every numeric surface on the platform** — Heat Maps,
-the SPX desk, HELIX flows, Night's Watch, Night Hawk, market context, the track record, and Largo —
-into a single rolled-up scorecard. Heat Maps (the GEX / VEX / DEX / CHARM matrix) was the first
-target; the same six-layer model and scorecard schema now carry the rest.
+the SPX desk, HELIX flows, Night's Watch, Night Hawk, market context, the track record, Largo, and the
+**data layer itself** (Postgres + Redis + pipeline-hop + writer-cron integrity) — into a single
+rolled-up scorecard. Heat Maps (the GEX / VEX / DEX / CHARM matrix) was the first target; the same
+six-layer model and scorecard schema now carry the rest.
 
 It is distinct from the existing **Data Integrity** sweep (`/api/cron/data-integrity`), which
 cross-checks live numbers *across tools* (desk vs heatmap vs quote, SPY/SPX tracking). The
@@ -24,6 +25,7 @@ number *right*?" — not just "do two surfaces agree?".
   - Market context — `src/lib/correctness/market-context-verifier.ts`
   - Track record — `src/lib/correctness/track-record-verifier.ts`
   - Largo (scaffold) — `src/lib/correctness/largo-verifier.ts`
+  - Data layer + pipeline integrity — `src/lib/correctness/data-integrity-verifier.ts`
 - Schedule: `railway.data-correctness.toml` + registry entry `data-correctness`
 - Scorecard output: `docs/auto/data-correctness-<date>.md` (best-effort; structured result also in the cron run log)
 
@@ -111,6 +113,39 @@ RESULTS are discarded after the turn, and `fetchLargoMessagesPublic` requires se
 cross-user reader). So real answers cannot be traced to their tool results yet. The verifier ships the
 real FLAG machinery (`extractNumericTokens` / `collectResultNumbers` / `traceNumbersToResults`) and
 self-tests it each run, so the trace activates the moment logging lands — but it never reports a green.
+
+### Data layer + pipeline integrity — `data-integrity-verifier.ts`
+
+A surface ONE LEVEL BELOW the others. Every other verifier asks "is the served number *correct*?";
+this one asks "is the data LAYER healthy end-to-end — source → Postgres/Redis → API → website?". A
+correct formula over a STALE/EMPTY table or an EXPIRED cache still ships a wrong page, and that is
+exactly what this catches. It is a strict **cache-reader**: Postgres is touched with small AGGREGATE
+reads only (`COUNT` / `MAX(ts)` / null-rate over a recent window — no row dumps), Redis is read through
+the SAME public cache-readers the app uses (`getGexPositioning` → the `gex-heatmap:{t}` cache;
+`sharedCacheGetWithTtl` for the raw TTL), writer health reuses `buildCronHealthSnapshot`. NO raw Redis
+client is opened, NO credential is read or printed, NO new uncapped provider fan-out is introduced. All
+checks are **market-hours aware** — expected after-hours/weekend quiet SKIPS, it is never a flag.
+
+| Layer | Check | FLAG-capable? | Status today |
+|---|---|---|---|
+| **PG — flow_alerts** | latest row ≤ 20m during RTH; ≥1 row in last 60m during RTH; `total_premium` not ≤0/null on ~all of last 24h | **FLAG** (RTH only) | pass / FLAG |
+| **PG — cron_job_runs** | newest run ≤ 30m during RTH (the whole cron plane is logging) | **FLAG** (RTH only) | pass / FLAG |
+| **PG — nighthawk_editions** | latest `published_at` within a 96h cadence ceiling; empty table noted (no baseline) | **FLAG** (cadence) | pass / FLAG / consistency-only (empty) |
+| **PG — nighthawk_play_outcomes** | every `outcome` in-vocabulary (clean ledger behind hit-rate) | **FLAG** | pass / FLAG |
+| **PG — user_positions** | contracts>0, entry_premium≥0, strike present (clean P&L inputs); empty is legit | **FLAG** (garbage only) | pass / FLAG / skipped (empty) |
+| **Redis — gex-heatmap:{SPX,SPY}** | key present (non-null reader); value parses + spot>0 + finite net GEX; `asof` ≤ 15m during RTH; SPX cold during RTH is a real miss | **FLAG** (RTH; SPX cold) | pass / FLAG |
+| **Redis — gex-heatmap TTL** | raw Redis TTL present + bounded (1–600s); no-expiry/absurd TTL flagged (stale-as-live) | **FLAG** | pass / FLAG / consistency-only (miss) |
+| **Pipeline hop — SPX spot** | gex-positioning cache spot == SPX desk spot within 0.5% (the two hops feed the website the same number) | **FLAG** | consistency-only / FLAG |
+| **Pipeline hop — edition** | `fetchNighthawkEditionByDate(latest.edition_for)` reproduces the latest row (the website's served-by-date path; the #77 DATE-cast class) | **FLAG** | consistency-only / FLAG |
+| **Writer crons** | flow-ingest, uw-cache-refresh, nights-watch-warm, heatmap-warm, nighthawk-playbook, nighthawk-outcomes: last run not failed; not stale-during-RTH (#90 silent death) | **FLAG** (failed / RTH-stale) | pass / FLAG / consistency-only (off-window) |
+
+**FLAG-capable vs consistency-only:** the PG freshness/row-count/garbage checks, Redis presence/TTL/
+sanity checks, and writer failed/RTH-stale checks all emit a real **FLAG** (and report PASS when they
+hold — they are an independent second VIEW of the pipeline, a stronger claim than the single-source
+consistency checks). The two cross-hop reconciliations (spot, edition) are **consistency-only** when
+they agree (one underlying, no second oracle) but FLAG on a genuine divergence/mismatch. A missing
+source (DB unconfigured, Redis unset, market closed, empty pre-launch table) **SKIPS** — never a false
+green and never a false flag.
 
 ---
 
@@ -236,6 +271,8 @@ admin tile or report can render a false "verified" badge.
 | `CORRECTNESS_NW_SAMPLE` | Night's Watch: max distinct (ticker,expiry) chains to chain-confirm (default 12, ≤40) |
 | `CORRECTNESS_NIGHTHAWK_CHAIN=0` | disable Night Hawk live chain-confirm (strikes stay dossier-grounded only) |
 | `CORRECTNESS_NIGHTHAWK_SAMPLE` | Night Hawk: max plays to chain-confirm (default 3, ≤8) |
+| `CORRECTNESS_DATA_INTEGRITY=0` | disable the whole data-layer + pipeline-integrity surface (PG/Redis/hop/writers) |
+| `CORRECTNESS_DATA_INTEGRITY_REDIS=0` | disable just the Redis layer of the data-integrity surface (e.g. a deploy with `REDIS_URL` intentionally unset) |
 
 ---
 

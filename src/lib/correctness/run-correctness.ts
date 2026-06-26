@@ -8,6 +8,7 @@ import { verifyNightHawk } from "@/lib/correctness/nighthawk-verifier";
 import { verifyMarketContext } from "@/lib/correctness/market-context-verifier";
 import { verifyTrackRecord } from "@/lib/correctness/track-record-verifier";
 import { verifyLargo } from "@/lib/correctness/largo-verifier";
+import { verifyDataIntegrity } from "@/lib/correctness/data-integrity-verifier";
 import {
   type CorrectnessScorecard,
   type TickerScore,
@@ -29,6 +30,8 @@ import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 //   • Market context — SPX/VIX vs a 2nd source; breadth recomputed from constituents.
 //   • Track record — wins/losses/scratch/hit-rate recomputed from the graded-outcomes ledger.
 //   • Largo — numeric-grounding engine (scaffolded; coverage gap until answer+tool-result logging).
+//   • Data layer — PG/Redis/pipeline-hop/writer-cron integrity ("are the numbers actually WRITTEN +
+//                  FLOWING to the website?" — one level below the per-surface correctness checks).
 //
 // Each surface produces TickerScore(s) on the SAME scorecard schema (expected/actual/tolerance,
 // pass / consistency-only / flag), every metric HONESTLY labeled confirmed (independent oracle) vs
@@ -208,6 +211,7 @@ export async function runFullCorrectness(
     ["market-context", "MARKET", () => verifyMarketContext(marketOpen)],
     ["track-record", "TRACKREC", () => verifyTrackRecord(marketOpen)],
     ["largo", "LARGO", () => verifyLargo(marketOpen)],
+    ["data-integrity", "DATALAYER", () => verifyDataIntegrity(marketOpen)],
   ];
   for (const [name, label, run] of surfaces) {
     perTicker.push(await safeSurface(name, label, run));
@@ -225,7 +229,10 @@ export async function runFullCorrectness(
     "CONSISTENCY-ONLY (coverage gaps, single source): HELIX flow aggregates (UW sole provider), MAs / " +
     "GEX magnitude / walls / flip, NW mark+greek VALUES (no 2nd pricing oracle), sector %, NH dossier " +
     "cross-checks. Largo numeric-grounding is SCAFFOLDED — coverage gap pending answer+tool-result " +
-    "logging. Consistency-only is never a false green.";
+    "logging. DATA-LAYER integrity (PG freshness/row-count/garbage-rate, Redis presence/TTL/sanity, " +
+    "writer-cron liveness) is asserted as PASS where it holds — an independent second VIEW of the " +
+    "pipeline, market-hours-gated so off-window quiet is skipped not flagged; cross-hop spot/edition " +
+    "reconciliations stay consistency-only (single underlying). Consistency-only is never a false green.";
 
   return {
     ranAt,
