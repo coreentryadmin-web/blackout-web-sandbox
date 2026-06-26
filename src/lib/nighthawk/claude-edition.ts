@@ -16,10 +16,12 @@ import {
 } from "./play-constraints";
 import {
   EDITION_CHAIN_PREFETCH,
+  GROUNDING_ENFORCE,
   MAX_OPTION_COST_PER_CONTRACT,
   MAX_OPTION_PREMIUM_PER_SHARE,
   PLAYBOOK_PREMIUM_CAP_LINE,
 } from "./constants";
+import { groundPlays, type GroundingSummary } from "./grounding";
 import type { ScoredCandidate } from "./scorer";
 import type { PlaybookPlay } from "./types";
 import type { HuntMode } from "./types";
@@ -85,8 +87,18 @@ export async function generateEditionPlays(params: {
   recap: ReturnType<typeof buildMarketRecap>;
   raw: string | null;
   // Per-stage funnel counts so a 0-play outcome is self-diagnosing (which filter zeroed it)
-  // without needing Railway logs. parsed → stock-only → within-premium-cap → strike-valid.
-  funnel?: { parsed: number; stock: number; premium_ok: number; strike_ok: number };
+  // without needing Railway logs. parsed → stock-only → within-premium-cap → strike-valid → grounded.
+  funnel?: {
+    parsed: number;
+    stock: number;
+    premium_ok: number;
+    strike_ok: number;
+    grounded: number;
+    dropped_ungrounded: number;
+    flagged: number;
+  };
+  // Numeric-grounding summary (audit P0) so the build can stamp grounded/dropped/flagged into meta.
+  grounding?: GroundingSummary;
 }> {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
@@ -150,7 +162,12 @@ export async function generateEditionPlays(params: {
     maxRetries: 1,
   });
   if (!raw) {
-    return { plays: [], recap, raw: null, funnel: { parsed: 0, stock: 0, premium_ok: 0, strike_ok: 0 } };
+    return {
+      plays: [],
+      recap,
+      raw: null,
+      funnel: { parsed: 0, stock: 0, premium_ok: 0, strike_ok: 0, grounded: 0, dropped_ungrounded: 0, flagged: 0 },
+    };
   }
 
   const parsed = parsePlaysJson(raw).slice(0, 8);
@@ -179,7 +196,29 @@ export async function generateEditionPlays(params: {
       strikeRejected.map((p) => `${p.ticker}: ${p.options_play.slice(0, 80)}`)
     );
   }
-  const capped = strikeOk.slice(0, 5).map((p, i) => ({ ...p, rank: i + 1 }));
+  // NUMERIC-GROUNDING ENFORCEMENT (audit P0). Deterministic arithmetic grounding of each play
+  // against the SAME prefetched chain (chainData: spot + ATM±5% front-two-expiry rows) + dossier
+  // that was put in front of Claude — NO new live fan-out (chainData is the cache-reader prefetch
+  // from fetchEditionChains above; groundPlays only READS it). HARD failures (off-chain/illiquid
+  // strike, null/way-off premium vs a confirmed contract) DROP the play; SOFT issues (flow/level/
+  // prose/PT divergence) keep the play but strip/flag the number. Run on the FULL strikeOk list
+  // BEFORE the top-5 slice so a dropped play lets a lower-ranked grounded play fill its slot.
+  const { plays: groundedPlays, summary: grounding } = groundPlays(strikeOk, chainData, dossierMap);
+
+  // The flag only controls whether HARD drops take effect — the checks + summary always run/log.
+  // When enforcement is OFF we keep strikeOk (so output is unchanged) but still emit the summary so a
+  // dry-run shows exactly what WOULD have dropped.
+  const postGrounding = GROUNDING_ENFORCE
+    ? groundedPlays
+    : strikeOk.map((p, i) => ({ ...p, rank: i + 1 }));
+  if (grounding.notes.length) {
+    console.warn(
+      `[nighthawk/grounding] summary (enforce=${GROUNDING_ENFORCE ? "on" : "off"}): ` +
+        `grounded=${grounding.grounded}, dropped_ungrounded=${grounding.dropped_ungrounded}, flagged=${grounding.flagged}`
+    );
+  }
+
+  const capped = postGrounding.slice(0, 5).map((p, i) => ({ ...p, rank: i + 1 }));
 
   if (rejected.length) {
     console.warn(
@@ -192,6 +231,15 @@ export async function generateEditionPlays(params: {
     plays: capped,
     recap,
     raw,
-    funnel: { parsed: parsed.length, stock: mapped.length, premium_ok: plays.length, strike_ok: capped.length },
+    funnel: {
+      parsed: parsed.length,
+      stock: mapped.length,
+      premium_ok: plays.length,
+      strike_ok: strikeOk.length,
+      grounded: grounding.grounded,
+      dropped_ungrounded: grounding.dropped_ungrounded,
+      flagged: grounding.flagged,
+    },
+    grounding,
   };
 }

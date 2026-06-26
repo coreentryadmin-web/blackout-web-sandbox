@@ -496,6 +496,9 @@ RULES — CRITICAL:
 - You MUST select a strike from the provided chain that has OI > 500 on the chosen side (call or put).
 - entry_premium must match the chain's ask price for that strike and side (C_ASK for calls, P_ASK for puts).
 - Do not invent strikes — use only strikes listed in the chain table.
+- NEVER cite an analyst price target, Street target, or "PT" — no analyst price-target data is provided, so any such number would be fabricated. The "target" field is a TECHNICAL level from the dossier S/R, not an analyst PT.
+- The "target" price and "stop" price MUST be an actual support/resistance level from the ticker's dossier (Support:/Resistance: lines). Do not invent price levels.
+- Any total-flow $ figure you cite in key_signal must equal the dossier's "Flow today:" figure — do not invent or round it beyond recognition.
 
 MARKET RECAP:
 Tide: ${recap.tide}

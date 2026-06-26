@@ -50,3 +50,15 @@ export const MAX_OPTION_PREMIUM_PER_SHARE = 20;
 export const MAX_OPTION_COST_PER_CONTRACT = MAX_OPTION_PREMIUM_PER_SHARE * 100;
 
 export const PLAYBOOK_PREMIUM_CAP_LINE = `Entry option premium MUST be ≤ $${MAX_OPTION_PREMIUM_PER_SHARE}/share (≤ $${MAX_OPTION_COST_PER_CONTRACT.toLocaleString()} per 1-lot contract). If no suitable contract exists under this cap, skip the ticker and substitute the next-ranked candidate.`;
+
+/**
+ * NUMERIC-GROUNDING enforcement (data-correctness audit P0). When ON (default), a play that fails a
+ * HARD grounding check (off-chain/illiquid strike, null/way-off premium vs the confirmed chain ask)
+ * is DROPPED from the edition; SOFT issues (flow/level/prose/PT divergence) keep the play but
+ * strip/flag the number. The grounding CHECKS always run and always log a summary regardless of this
+ * flag — the flag only controls whether HARD failures actually drop the play, so it can be turned OFF
+ * (NIGHTHAWK_GROUNDING_ENFORCE=0) for one run to observe what WOULD be dropped without changing output.
+ * Deploy-risk knob: this is what changes what publishes, so it is env-overridable for instant rollback.
+ */
+export const GROUNDING_ENFORCE =
+  (process.env.NIGHTHAWK_GROUNDING_ENFORCE ?? "1").trim() !== "0";
