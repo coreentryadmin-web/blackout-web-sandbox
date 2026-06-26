@@ -13,6 +13,7 @@ import {
 } from "@/components/desk/SpxDeskPanels";
 import { SpxDayPerformancePanel } from "@/components/desk/SpxDayPerformancePanel";
 import { SpxTrackRecordPanel } from "@/components/desk/SpxTrackRecordPanel";
+import { BenzingaNewsRail } from "@/components/desk/BenzingaNewsRail";
 import { EmptyState, Button } from "@/components/ui";
 
 class SpxPanelErrorBoundary extends React.Component<
@@ -82,6 +83,7 @@ export function SpxDashboard() {
             <SpxTrackRecordPanel />
             <SpxGexLadder desk={desk} live={live} refreshing={refreshing} />
             <SpxUnifiedTape desk={desk} live={live} refreshing={refreshing} />
+            <BenzingaNewsRail />
           </aside>
         </SpxPanelErrorBoundary>
 

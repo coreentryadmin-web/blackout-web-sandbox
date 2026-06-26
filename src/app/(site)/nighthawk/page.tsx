@@ -7,6 +7,7 @@ import { PageShell, PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 
 import { NightHawkFeed } from "@/components/NightHawkFeed";
+import { BenzingaNewsTicker } from "@/components/desk/BenzingaNewsTicker";
 
 import { NightHawkRadarBackdrop } from "@/components/nighthawk/NightHawkRadarBackdrop";
 import { NightHawkBackdrop } from "@/components/nighthawk/NightHawkBackdrop";
@@ -52,6 +53,10 @@ export default async function NightHawkPage() {
             }
             className="mb-3 shrink-0"
           />
+
+          <div className="mb-3 shrink-0">
+            <BenzingaNewsTicker />
+          </div>
 
           <NightHawkFeed />
         </div>

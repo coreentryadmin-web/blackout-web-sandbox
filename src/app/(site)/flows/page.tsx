@@ -3,6 +3,7 @@ import { requireTier } from "@/lib/auth-access";
 import { PageShell, PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/components/FlowFeed";
+import { BenzingaNewsTicker } from "@/components/desk/BenzingaNewsTicker";
 import { DnaHelixBackgroundLazy as DnaHelixBackground } from "@/components/DnaHelixBackgroundLazy";
 
 export const metadata: Metadata = {
@@ -31,7 +32,10 @@ export default async function FlowsPage() {
             badge={<ProductMark product="helix" size={44} />}
           />
         </div>
-        <div className="mt-6 max-w-none px-2 md:px-3">
+        <div className="mt-4 max-w-none px-2 md:px-3">
+          <BenzingaNewsTicker />
+        </div>
+        <div className="mt-4 max-w-none px-2 md:px-3">
           <FlowFeed />
         </div>
       </PageShell>
