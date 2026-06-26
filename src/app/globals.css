@@ -7095,6 +7095,35 @@ body {
 
   .spx-gex-ladder-list {
     min-height: 9.5rem;
+    /* Bug #93: the balanced two-sided ladder runs ~8–10 rows (call wall above spot,
+       put wall below). Cap the height and scroll internally so the fuller ladder never
+       pushes the Live Tape below it off-screen. */
+    max-height: 17rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 210, 63, 0.35) transparent;
+  }
+
+  .spx-gex-ladder-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .spx-gex-ladder-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 210, 63, 0.3);
+    border-radius: 3px;
+  }
+
+  .spx-gex-ladder-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Spot anchor row dividing the call side (above) from the put side (below). */
+  .spx-gex-ladder-spot {
+    @apply flex items-center gap-2 my-1 px-1 py-1 rounded-sm;
+    background: rgba(0, 212, 255, 0.06);
+    border-top: 1px solid rgba(0, 212, 255, 0.25);
+    border-bottom: 1px solid rgba(0, 212, 255, 0.25);
   }
 
   .spx-gex-ladder-empty {

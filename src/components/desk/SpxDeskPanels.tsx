@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback } from "react";
+import { Fragment, useCallback } from "react";
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { useLiveSpxTape } from "@/hooks/useLiveSpxTape";
@@ -157,6 +157,61 @@ function tapeSideClass(t: { kind: string; side: string }) {
   return { tag: "CALL", tagClass: "text-bull", labelClass: "text-bull" };
 }
 
+type GexWallRow = { strike: number; net_gex: number; kind: string; distance_pts?: number | null };
+
+/**
+ * One GEX-wall row. Bug #93: the ladder is two-sided, so a row can be a CALL wall
+ * (positive net_gex → resistance/magnet, bull green) or a PUT wall (negative net_gex →
+ * support, bear #ff5c78). The role label is derived from the net_gex SIGN so "Call Wall" /
+ * "Put Wall" mean the SAME strike as the canonical Heatmap + Night's Watch (#80). `kind` is
+ * GEOMETRIC (strike vs spot); when spot has already traded through a wall (sign ≠ geometry)
+ * we append the acting-as role, e.g. "call wall · support".
+ */
+function renderGexWallRow(w: GexWallRow, spot: number | null) {
+  const dist =
+    w.distance_pts ?? (spot != null ? Math.round((w.strike - spot) * 100) / 100 : null);
+  const hasSign = Number.isFinite(w.net_gex) && w.net_gex !== 0;
+  const isPut = w.net_gex < 0; // negative net-gamma => put wall (support)
+  const nativeRole = isPut ? "support" : "resistance";
+  const roleWord = isPut ? "put wall" : "call wall";
+  const roleLabel = !hasSign
+    ? w.kind
+    : w.kind === nativeRole
+      ? `${roleWord} (${nativeRole})`
+      : `${roleWord} · ${w.kind}`;
+  // Call wall = bull green; put wall = bear #ff5c78 (matches the Heatmap wall palette).
+  const callTone = hasSign ? !isPut : w.kind === "resistance";
+  return (
+    <li
+      className={clsx(
+        "spx-desk-list-row border-l-2",
+        callTone ? "border-l-emerald-500/50" : "border-l-rose-500/50"
+      )}
+    >
+      <span className="font-mono text-[10px] uppercase text-cyan-400 w-16 leading-tight">
+        {roleLabel}
+      </span>
+      <span className="font-mono text-sm text-white tabular-nums">{fmtPrice(w.strike)}</span>
+      {dist != null && (
+        // Distance is geometry, not direction — kept NEUTRAL (sky) so it can't contradict
+        // the bull=green / bear=red wall language carried by the border + net value.
+        <span className="font-mono text-[10px] tabular-nums text-sky-300/80">
+          {dist >= 0 ? "+" : ""}
+          {dist.toFixed(0)} pts
+        </span>
+      )}
+      <span
+        className={clsx(
+          "font-mono text-xs tabular-nums ml-auto",
+          w.net_gex >= 0 ? "num-bull" : "num-bear"
+        )}
+      >
+        {fmtPremium(w.net_gex)}
+      </span>
+    </li>
+  );
+}
+
 export function SpxGexLadder({ desk, live, refreshing }: DeskProps) {
   const walls = useStableArray(desk?.gex_walls ?? []);
   const isValidGammaFlip = useCallback((v: number | null | undefined) => v != null, []);
@@ -175,6 +230,15 @@ export function SpxGexLadder({ desk, live, refreshing }: DeskProps) {
   const gexAgeSec =
     desk?.gex_age_ms != null && desk.gex_age_ms > 0 ? Math.round(desk.gex_age_ms / 1000) : null;
 
+  // Bug #93: the ladder is built two-sided (call wall above spot, put wall below). A wall
+  // with positive net_gex is a CALL wall (resistance/magnet); negative is a PUT wall
+  // (support) — the SAME sign convention as the canonical Heatmap call_wall/put_wall (#80).
+  const hasCallWall = walls.some((w) => Number.isFinite(w.net_gex) && w.net_gex > 0);
+  // Honest, grounded note: when the live chain has NO positive-net_gex strike anywhere,
+  // we do NOT invent a call wall — the day is genuinely put-dominated. (Suppress while
+  // serving stale last-good nodes, which may simply pre-date the call wall building.)
+  const fullyPutDominated = hasWalls && !hasCallWall && !gexStale;
+
   return (
     <Panel
       title="GEX Walls"
@@ -189,60 +253,41 @@ export function SpxGexLadder({ desk, live, refreshing }: DeskProps) {
           Last-good nodes{gexAgeSec != null ? ` · ${gexAgeSec}s old` : ""} — not live
         </p>
       )}
+      {fullyPutDominated && (
+        <p className="font-mono text-[10px] tracking-wider mb-2" style={{ color: "var(--bear-text, #ff5c78)" }}>
+          No call wall — fully put-dominated
+        </p>
+      )}
       {!hasWalls ? (
         <p className="font-mono text-[11px] text-cyan-400 py-2 spx-gex-ladder-empty">
           Mapping gamma nodes…
         </p>
       ) : (
         <ul className="spx-desk-list spx-gex-ladder-list">
-          {walls.map((w) => {
-            const dist =
-              w.distance_pts ??
-              (spot != null ? Math.round((w.strike - spot) * 100) / 100 : null);
-            // Role from net_gex SIGN (put wall = support = green; call wall =
-            // resistance = red), NOT strike-vs-spot geometry — so the SPX desk agrees
-            // with the canonical Heatmap + Night's Watch (#80). When spot has broken
-            // through the wall (geometry disagrees), note the acting-as role.
-            const hasSign = Number.isFinite(w.net_gex) && w.net_gex !== 0;
-            const isPut = w.net_gex < 0; // negative net-gamma => put wall (support)
-            const nativeRole = isPut ? "support" : "resistance";
-            const roleLabel = !hasSign
-              ? w.kind
-              : w.kind === nativeRole
-                ? `${isPut ? "put" : "call"} wall`
-                : `${isPut ? "put" : "call"} wall · ${w.kind}`;
-            const supportTone = hasSign ? isPut : w.kind === "support";
+          {walls.map((w, i) => {
+            // Spot anchor between the call side (above spot) and put side (below). Walls
+            // arrive sorted descending by strike, so insert it where strike first drops
+            // to/below spot — the boundary that separates resistance from support.
+            const prev = i > 0 ? walls[i - 1] : null;
+            const showSpotAnchorBefore =
+              spot != null && w.strike <= spot && (prev == null || prev.strike > spot);
             return (
-              <li
-                key={`${w.kind}-${w.strike}`}
-                className={clsx(
-                  "spx-desk-list-row border-l-2",
-                  supportTone ? "border-l-emerald-500/50" : "border-l-rose-500/50"
+              <Fragment key={`${w.kind}-${w.strike}`}>
+                {showSpotAnchorBefore && (
+                  <li className="spx-gex-ladder-spot" aria-label="spot">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-cyan-300 w-16">
+                      ◂ spot ▸
+                    </span>
+                    <span className="font-mono text-sm tabular-nums text-cyan-200">
+                      {fmtPrice(spot!)}
+                    </span>
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-cyan-400/70 ml-auto">
+                      calls ↑ · puts ↓
+                    </span>
+                  </li>
                 )}
-              >
-                <span className="font-mono text-[10px] uppercase text-cyan-400 w-16">{roleLabel}</span>
-                <span className="font-mono text-sm text-white tabular-nums">{fmtPrice(w.strike)}</span>
-                {dist != null && (
-                  // Distance is geometry, not direction — it must stay NEUTRAL so it
-                  // can't contradict the desk's bull=emerald/bear=red language. (The
-                  // prior mapping colored a wall ABOVE spot red and one BELOW green —
-                  // inverted vs. % change / structure rows / tape.) The wall KIND
-                  // carries the bull/bear semantic via the left border above; here we
-                  // only show the signed point-distance, right-aligned, in neutral sky.
-                  <span className="font-mono text-[10px] tabular-nums text-sky-300/80">
-                    {dist >= 0 ? "+" : ""}
-                    {dist.toFixed(0)} pts
-                  </span>
-                )}
-                <span
-                  className={clsx(
-                    "font-mono text-xs tabular-nums ml-auto",
-                    w.net_gex >= 0 ? "num-bull" : "num-bear"
-                  )}
-                >
-                  {fmtPremium(w.net_gex)}
-                </span>
-              </li>
+                {renderGexWallRow(w, spot)}
+              </Fragment>
             );
           })}
         </ul>

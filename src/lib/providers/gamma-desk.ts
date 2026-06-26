@@ -129,44 +129,96 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
+/**
+ * Build the GEX-wall ladder shown on the SPX desk.
+ *
+ * BALANCED, TWO-SIDED selection (fix for the put-only ladder, bug #93): the panel must
+ * always surface BOTH the upside CALL wall and the downside PUT wall, anchored to spot —
+ * not just the biggest-magnitude strikes, which on a negative-gamma day are all puts and
+ * left the call wall dropped entirely.
+ *
+ * Wall semantics match the canonical Heatmap (`computeGexRegime` in polygon-options-gex.ts)
+ * so "Call Wall"/"Put Wall" mean the SAME strike everywhere (cross-tool consistency, #80):
+ *   - #1 Call Wall  = strike with the LARGEST POSITIVE net_gex (dealer long-gamma → resistance/magnet)
+ *   - #1 Put Wall   = strike with the LARGEST NEGATIVE net_gex (support)
+ * These two anchors are GUARANTEED in the output whenever they exist in the live chain.
+ *
+ * `kind` stays GEOMETRIC (strike > spot → "resistance", else "support"), preserving the
+ * GexWall contract the verdict engine + recalcGexWallDistances assume. The component derives
+ * the "call/put wall" label from net_gex SIGN and notes the acting-as role when spot has
+ * already traded through a wall (geometry ≠ sign).
+ *
+ * GROUNDED: every wall is a REAL strike from the chain. If the chain genuinely has no
+ * positive-net_gex strike anywhere, NO call wall is invented — the ladder is honestly
+ * put-only (the component surfaces a "fully put-dominated" note).
+ */
 export function topGexWalls(levels: GexStrikeLevel[], spot: number, limit = 6): GexWall[] {
   if (!levels.length || spot <= 0) return [];
 
-  const band = Math.max(spot * 0.012, 75);
-  const near = levels.filter((l) => Math.abs(l.strike - spot) <= band);
-  const pool =
-    near.length >= 3
-      ? near
-      : [...levels]
-          .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
-          .slice(0, Math.max(limit * 4, 24));
+  const mkWall = (lv: GexStrikeLevel): GexWall => ({
+    strike: lv.strike,
+    net_gex: lv.net_gex,
+    // Geometric kind (see contract note above) — NOT net_gex sign.
+    kind: lv.strike > spot ? "resistance" : "support",
+    distance_pts: Math.round((lv.strike - spot) * 100) / 100,
+  });
 
-  const above = pool
+  // Canonical extrema across the WHOLE chain (mirrors heatmap computeGexRegime): the largest
+  // positive net-gamma strike is the call wall, the largest negative is the put wall. These
+  // are the guaranteed anchors and are picked by SIGN, never by proximity, so they survive a
+  // one-sided-by-magnitude day.
+  let callWall: GexStrikeLevel | null = null; // max positive net_gex
+  let putWall: GexStrikeLevel | null = null; // max negative net_gex (most negative)
+  for (const lv of levels) {
+    if (!Number.isFinite(lv.net_gex)) continue;
+    if (lv.net_gex > 0 && (callWall === null || lv.net_gex > callWall.net_gex)) callWall = lv;
+    if (lv.net_gex < 0 && (putWall === null || lv.net_gex < putWall.net_gex)) putWall = lv;
+  }
+
+  // Secondary fill: walk OUT from spot on each side and take the nearest real strikes, so the
+  // ladder reads as a balanced spot-anchored map (calls above, puts below). Magnitude breaks
+  // proximity ties so the more significant node wins at equal distance.
+  const half = Math.max(1, Math.ceil(limit / 2));
+  const above = levels
     .filter((l) => l.strike > spot)
     .sort((a, b) => a.strike - b.strike || Math.abs(b.net_gex) - Math.abs(a.net_gex));
-  const below = pool
+  const below = levels
     .filter((l) => l.strike <= spot)
     .sort((a, b) => b.strike - a.strike || Math.abs(b.net_gex) - Math.abs(a.net_gex));
 
-  const half = Math.ceil(limit / 2);
-  const walls: GexWall[] = [];
+  const picked = new Map<number, GexStrikeLevel>();
+  const add = (lv: GexStrikeLevel | null | undefined) => {
+    if (lv && !picked.has(lv.strike)) picked.set(lv.strike, lv);
+  };
 
-  for (const lv of below.slice(0, half)) {
-    walls.push({
-      strike: lv.strike,
-      net_gex: lv.net_gex,
-      kind: "support",
-      distance_pts: Math.round((lv.strike - spot) * 100) / 100,
-    });
-  }
-  for (const lv of above.slice(0, half)) {
-    walls.push({
-      strike: lv.strike,
-      net_gex: lv.net_gex,
-      kind: "resistance",
-      distance_pts: Math.round((lv.strike - spot) * 100) / 100,
-    });
-  }
+  // Guaranteed anchors first so they're never crowded out by the proximity fill.
+  add(callWall);
+  add(putWall);
 
-  return walls.sort((a, b) => b.strike - a.strike);
+  // Then fill ~half a side from each side, nearest-to-spot first, until the limit is reached.
+  let ai = 0;
+  let bi = 0;
+  let callCount = callWall && callWall.strike > spot ? 1 : 0;
+  let putCount = putWall && putWall.strike <= spot ? 1 : 0;
+  while (picked.size < limit && (ai < above.length || bi < below.length)) {
+    if (ai < above.length && (callCount < half || bi >= below.length)) {
+      const lv = above[ai++];
+      if (!picked.has(lv.strike)) {
+        picked.set(lv.strike, lv);
+        callCount++;
+      }
+    } else if (bi < below.length) {
+      const lv = below[bi++];
+      if (!picked.has(lv.strike)) {
+        picked.set(lv.strike, lv);
+        putCount++;
+      }
+    } else {
+      break;
+    }
+  }
+  void putCount;
+
+  // Descending by strike → calls render above the spot anchor, puts below.
+  return [...picked.values()].map(mkWall).sort((a, b) => b.strike - a.strike);
 }

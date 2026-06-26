@@ -75,6 +75,10 @@ import { runUwSequential } from "./uw-rate-limiter";
 import { fetchEngine } from "@/lib/engine";
 import { indexStore, getIndexFeedFreshness } from "@/lib/ws/polygon-socket";
 
+/** GEX-wall ladder size — a balanced ~5-per-side two-sided ladder (call wall above spot,
+ *  put wall below). 10 fits the scrollable panel without crushing the Live Tape (bug #93). */
+const GEX_WALL_LADDER_LIMIT = 10;
+
 let lastGoodGexWalls: GexWall[] = [];
 let lastGoodStrikeLevels: GexStrikeLevel[] = [];
 let lastGoodGammaFlip: number | null = null;
@@ -900,7 +904,9 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     (intel?.gamma_flip as number | null) ?? computedFlip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
   const gRegime = gammaRegime(price, gammaFlip);
-  const walls = topGexWalls(levelsForWalls, price, 6);
+  // 10 → a balanced ~5-per-side ladder so BOTH the call wall (resistance) and put wall
+  // (support) always render, anchored to spot (bug #93 — was put-only at limit 6).
+  const walls = topGexWalls(levelsForWalls, price, GEX_WALL_LADDER_LIMIT);
   if (walls.length) lastGoodGexWalls = walls;
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
   if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
@@ -1166,7 +1172,7 @@ function gexSnapshotForPrice(price: number) {
   const levelsForWalls = lastGoodStrikeLevels;
   const flipLevels = levelsForWalls.map((l) => ({ strike: l.strike, net_gex: l.net_gex }));
   const gammaFlip = computeGammaFlip(flipLevels, price) ?? lastGoodGammaFlip;
-  const walls = topGexWalls(levelsForWalls, price, 6);
+  const walls = topGexWalls(levelsForWalls, price, GEX_WALL_LADDER_LIMIT);
   // ISSUE-41: The previous fallback `topGexWalls(lastGoodStrikeLevels, price, 6)` was
   // identical to the primary call (levelsForWalls IS lastGoodStrikeLevels), so it always
   // returned the same empty result. Use lastGoodGexWalls as the real cross-call fallback.
@@ -1416,7 +1422,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   }));
   const spot = price || spxSnap?.price || 0;
   const gammaFlip = computeGammaFlip(flipLevels, spot) ?? lastGoodGammaFlip;
-  const walls = topGexWalls(levelsForWalls, spot, 6);
+  const walls = topGexWalls(levelsForWalls, spot, GEX_WALL_LADDER_LIMIT);
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
   if (finalWalls.length) lastGoodGexWalls = finalWalls;
   if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
