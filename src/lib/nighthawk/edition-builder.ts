@@ -38,6 +38,8 @@ export type EditionBuildResult = {
   job_status?: string;
   current_stage?: string | null;
   resumed?: boolean;
+  /** True when a real edition row was published with a recap but plays:[] (no plays survived the funnel). */
+  recap_only?: boolean;
 };
 
 function stagedToDossierMap(
@@ -71,6 +73,90 @@ function serializeBuildError(error: unknown): string {
     }
   }
   return String(error);
+}
+
+/**
+ * RECAP-ONLY FALLBACK (audit P0 / #77). When the candidate→play funnel legitimately collapses to
+ * zero (no flow candidates, no scored dossiers, all candidates fundamentally blocked, Claude/critic
+ * returns nothing), we STILL publish a real edition row — a genuine market recap with `plays: []` —
+ * and mark the job `published` instead of `failed`. This is what guarantees the UI shows a recap
+ * instead of a perpetual "being built" state. It NEVER fabricates plays.
+ *
+ * The recap is deterministic from `ctx` (already fetched at stage_context), so it is always available
+ * once we are past the API-key guard. `reason` records WHICH funnel stage zeroed so the empty state is
+ * self-explaining in meta. Idempotent: upsert keys on edition_for, job flips to published, staging cleared.
+ */
+async function publishRecapOnlyEdition(params: {
+  editionFor: string;
+  ctx: MarketWideContext;
+  reason: string;
+  candidates: number;
+  checkpointing: boolean;
+  force: boolean;
+}): Promise<void> {
+  const { editionFor, ctx, reason, candidates, checkpointing, force } = params;
+  const recap = buildMarketRecap(ctx);
+
+  // Best-effort enrich the recap with index context + desk/tape so the recap-only edition is still a
+  // useful market read, not a bare headline. All optional — never let an enrichment failure block the
+  // guaranteed row write.
+  const [indexDossiers, spxDesk, flowTape] = await Promise.all([
+    fetchIndexDossiers(ctx).catch(() => []),
+    marketPlatform.spx.getSpxDeskSummary().catch(() => null),
+    marketPlatform.flows.getFlowTapeSummary({ limit: 30 }).catch(() => null),
+  ]);
+
+  await upsertNighthawkEdition({
+    edition_for: editionFor,
+    session_date: ctx.today,
+    recap_headline: recap.headline,
+    recap_summary: recap.summary,
+    market_recap: {
+      tide: recap.tide,
+      spx_vix: recap.spx_vix,
+      sector_strength: recap.sector_strength,
+      sector_weakness: recap.sector_weakness,
+      catalysts: recap.catalysts,
+      hot_chains: ctx.hot_chains.slice(0, 10),
+      sector_tides: ctx.sector_tides,
+      index_flows: ctx.index_flows,
+      top_net_impact: ctx.top_net_impact.slice(0, 10),
+      vix_iv_rank: ctx.vix_iv_rank,
+      vix_term: ctx.vix_term,
+      index_dossiers: indexDossiers,
+      spx_desk: spxDesk,
+      flow_tape: flowTape,
+    },
+    plays: [],
+    meta: {
+      candidates,
+      ranked_tickers: [],
+      claude: false,
+      recap_only: true,
+      recap_only_reason: reason,
+      built_at: new Date().toISOString(),
+      force,
+      play_explanations: {},
+      critic_notes: [],
+      critic_applied: false,
+      platform: {
+        spx_price: spxDesk?.price ?? null,
+        spx_regime: spxDesk?.gamma_regime ?? null,
+        flow_alert_count: flowTape?.count ?? null,
+      },
+    },
+  });
+
+  if (checkpointing) {
+    await upsertNighthawkJob(editionFor, {
+      status: "published",
+      current_stage: "published",
+      published_at: new Date().toISOString(),
+      error: null,
+    });
+    await clearNighthawkStaging(editionFor);
+    logNighthawkJob(editionFor, "info", "published", `Recap-only edition published (no plays) — ${reason}`);
+  }
 }
 
 export async function buildEveningEdition(opts?: {
@@ -158,16 +244,20 @@ export async function buildEveningEdition(opts?: {
       console.info("[nighthawk/edition] stage_candidates: selection");
       candidates = await extractCandidateTickers(ctx.stock_flows, ctx.hot_chains, MAX_CANDIDATES);
       if (!candidates.length) {
-        const err = "No flow candidates found for today's session.";
-        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        // Funnel collapsed at stage_candidates — the flow feed was genuinely empty (thin tape, or UW
+        // returned nothing). Do NOT leave the UI "being built": publish a recap-only edition.
+        const reason = `No flow candidates (stock_flows ${ctx.stock_flows.length}, hot_chains ${ctx.hot_chains.length}).`;
+        console.warn(`[nighthawk/edition] stage_candidates zeroed — recap-only fallback: ${reason}`);
+        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: 0, checkpointing, force: Boolean(opts?.force) });
         return {
-          ok: false,
+          ok: true,
           edition_for: editionFor,
           plays_count: 0,
           candidates: 0,
-          error: err,
+          recap_only: true,
           duration_ms: Date.now() - started,
-          job_status: "failed",
+          job_status: "published",
+          current_stage: "published",
         };
       }
       if (checkpointing) {
@@ -226,16 +316,20 @@ export async function buildEveningEdition(opts?: {
       .map((d) => d.scored!);
 
     if (!scoredList.length) {
-      const err = "No scored dossiers available after staging.";
-      if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+      // Funnel collapsed at stage_dossiers — candidates existed but none produced a scored dossier
+      // (dossier fetch/scoring failures). Publish a recap-only edition rather than failing dark.
+      const reason = `No scored dossiers after staging (${candidates.length} candidate(s)).`;
+      console.warn(`[nighthawk/edition] stage_dossiers zeroed — recap-only fallback: ${reason}`);
+      await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
       return {
-        ok: false,
+        ok: true,
         edition_for: editionFor,
         plays_count: 0,
         candidates: candidates.length,
-        error: err,
+        recap_only: true,
         duration_ms: Date.now() - started,
-        job_status: "failed",
+        job_status: "published",
+        current_stage: "published",
       };
     }
 
@@ -251,6 +345,20 @@ export async function buildEveningEdition(opts?: {
     } else {
       const { ranked: freshRanked, exclusionReason: rankExclusionReason } = rankCandidates(scoredList, MAX_DOSSIER_STOCKS);
       ranked = freshRanked;
+      // Over-strict-filter rescue: rankCandidates drops EVERY candidate flagged fundamental_block.
+      // If that zeroes the pool while non-halted candidates exist, fall back to ranking those
+      // (halts stay excluded — you cannot trade a halted name). This keeps a genuine flow feed from
+      // silently collapsing to 0 plays just because mega-cap P/E etc. tripped the fundamental sanity
+      // gate. Claude + the critic still vet each play downstream.
+      if (!ranked.length) {
+        const tradable = scoredList.filter((c) => !c.trading_halt);
+        if (tradable.length) {
+          ranked = [...tradable].sort((a, b) => b.score - a.score).slice(0, MAX_DOSSIER_STOCKS);
+          console.warn(
+            `[nighthawk/edition] stage_scoring rescue — fundamental filter zeroed ranking; ranking ${ranked.length} non-halted candidate(s) instead.${rankExclusionReason ? ` (${rankExclusionReason})` : ""}`
+          );
+        }
+      }
       if (checkpointing) {
         await upsertNighthawkJob(editionFor, {
           scored_json: ranked,
@@ -264,6 +372,25 @@ export async function buildEveningEdition(opts?: {
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
     const synthesisRanked = ranked.slice(0, EDITION_SYNTHESIS_POOL);
     const synthesisDossiers = synthesisRanked.map((s) => dossiers[s.ticker]).filter(Boolean);
+
+    if (!synthesisDossiers.length) {
+      // Nothing survived to synthesis (e.g. every candidate halted, or ranking empty after rescue).
+      // A Claude call with no dossiers can only return nothing — short-circuit to recap-only so a
+      // real published row is written instead of failing through the synthesis path.
+      const reason = `No dossiers to synthesize (${candidates.length} candidate(s), 0 ranked).`;
+      console.warn(`[nighthawk/edition] stage_synthesis pre-empty — recap-only fallback: ${reason}`);
+      await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
+      return {
+        ok: true,
+        edition_for: editionFor,
+        plays_count: 0,
+        candidates: candidates.length,
+        recap_only: true,
+        duration_ms: Date.now() - started,
+        job_status: "published",
+        current_stage: "published",
+      };
+    }
 
     // Index context for recap only
     console.info("[nighthawk/edition] stage_synthesis: index recap + Claude");
@@ -316,25 +443,29 @@ export async function buildEveningEdition(opts?: {
       raw = synthRaw;
 
       if (!rawPlays.length) {
-        // Name the funnel stage that zeroed the plays so the failure is self-diagnosing in
-        // cron-health meta.error (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
+        // Name the funnel stage that zeroed the plays so the empty state is self-diagnosing in
+        // edition meta (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
         const funnelMsg = funnel
           ? funnel.parsed === 0
             ? `Claude returned no parseable JSON plays (raw ${synthRaw?.length ?? 0} chars).`
             : `All plays filtered out — funnel: ${funnel.parsed} parsed → ${funnel.stock} stock → ${funnel.premium_ok} within-cap → ${funnel.strike_ok} strike-valid.`
           : "Claude returned no parseable plays.";
-        const err = anthropicConfigured()
+        const reason = anthropicConfigured()
           ? funnelMsg
           : "Claude not configured and mechanical fallback empty.";
-        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        // Synthesis produced no plays — publish a recap-only edition instead of failing dark, so the
+        // UI always shows tonight's market read. Never fabricate plays from nothing.
+        console.warn(`[nighthawk/edition] stage_synthesis zeroed — recap-only fallback: ${reason}`);
+        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
         return {
-          ok: false,
+          ok: true,
           edition_for: editionFor,
           plays_count: 0,
           candidates: candidates.length,
-          error: err,
+          recap_only: true,
           duration_ms: Date.now() - started,
-          job_status: "failed",
+          job_status: "published",
+          current_stage: "published",
         };
       }
 
@@ -348,18 +479,21 @@ export async function buildEveningEdition(opts?: {
       finalPlays = vettedPlays;
       finalCriticNotes = criticNotes;
       if (!finalPlays.length) {
-        // Critic rejected every play — do NOT publish unvetted fallback content.
-        // Return an explicit error so the caller can send a "no plays tonight" notice.
-        const err = "Critic rejected all plays — no plays passed quality review.";
-        if (checkpointing) await upsertNighthawkJob(editionFor, { status: "failed", error: err });
+        // Critic rejected every play — do NOT publish unvetted fallback content (no fabricated plays).
+        // But still write a real published recap-only edition so the UI shows tonight's market read
+        // instead of "being built" forever.
+        const reason = "Critic rejected all plays — none passed quality review.";
+        console.warn(`[nighthawk/edition] stage_critic zeroed — recap-only fallback: ${reason}`);
+        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
         return {
-          ok: false,
+          ok: true,
           edition_for: editionFor,
           plays_count: 0,
           candidates: candidates.length,
-          error: err,
+          recap_only: true,
           duration_ms: Date.now() - started,
-          job_status: "failed",
+          job_status: "published",
+          current_stage: "published",
         };
       }
 
