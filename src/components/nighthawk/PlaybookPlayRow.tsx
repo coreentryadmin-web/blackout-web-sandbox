@@ -68,7 +68,9 @@ export function PlaybookPlayRow({ rank, play, empty, onSelect }: PlaybookPlayRow
               >
                 {play.direction}
               </span>
-              <span className="nighthawk-play-conviction">{play.conviction}</span>
+              {play.conviction && (
+                <span className="nighthawk-play-conviction">{play.conviction}</span>
+              )}
               {play.play_type !== "stock" && (
                 <span className="nighthawk-play-type">{play.play_type}</span>
               )}
@@ -76,7 +78,7 @@ export function PlaybookPlayRow({ rank, play, empty, onSelect }: PlaybookPlayRow
 
             <div className="nighthawk-play-stats">
               <span className="nighthawk-play-stat">
-                <em>Score</em> {play.score}
+                <em>Score</em> {play.score != null ? play.score : "—"}
               </span>
               {play.flow_streak_days != null && (
                 <span className="nighthawk-play-stat">

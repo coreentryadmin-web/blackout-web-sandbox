@@ -60,7 +60,7 @@ export function DayTradeSignalCard({ play, rank, selected, onSelect }: DayTradeS
           <span className="dayhawk-signal-badge dayhawk-signal-badge-phase">
             {play.phase ?? "CANDIDATE"}
           </span>
-          <span className="dayhawk-signal-score">{play.score}</span>
+          <span className="dayhawk-signal-score">{play.score != null ? play.score : "—"}</span>
         </div>
       </header>
 

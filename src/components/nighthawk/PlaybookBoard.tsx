@@ -49,6 +49,13 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
   // recap is present. recap_only is intentionally NOT consulted here.
   const showRecapState = (Boolean(edition?.available) || hasRecap) && !hasPlays;
   const editionLabel = formatEditionDate(edition?.edition_for);
+  // A stale (older fallback) or degraded (legacy-engine) edition must NOT be asserted as a fresh
+  // "Edition live" — the plays may carry levels that are no longer actionable, or come from a
+  // degraded source. Show an honest notice + a muted badge instead.
+  const isStale = Boolean(edition?.stale);
+  const isDegraded = Boolean(edition?.degraded);
+  const servedForLabel = formatEditionDate(edition?.served_for ?? edition?.edition_for);
+  const showFreshBadge = hasPlays && !isStale && !isDegraded;
 
   return (
     <section className="nighthawk-playbook">
@@ -82,7 +89,11 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
           )}
           {loading ? (
             <Badge tone="sky">Syncing…</Badge>
-          ) : hasPlays ? (
+          ) : isStale ? (
+            <Badge tone="sky">Showing prior edition</Badge>
+          ) : isDegraded ? (
+            <Badge tone="sky">Legacy source</Badge>
+          ) : showFreshBadge ? (
             <Badge tone="bull" dot>
               Edition live
             </Badge>
@@ -95,6 +106,19 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
           )}
         </div>
       </header>
+
+      {isStale && (
+        <p className="nighthawk-playbook-recap" role="status">
+          Showing {servedForLabel ?? "the last published"} edition — tonight&apos;s playbook isn&apos;t
+          published yet. These levels may no longer be current.
+        </p>
+      )}
+      {isDegraded && (
+        <p className="nighthawk-playbook-recap" role="status">
+          Served from a degraded fallback source — treat these as provisional until tonight&apos;s
+          edition publishes.
+        </p>
+      )}
 
       {edition?.recap_summary && (
         <p className="nighthawk-playbook-recap">{edition.recap_summary}</p>

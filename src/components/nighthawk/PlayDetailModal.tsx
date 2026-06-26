@@ -70,7 +70,7 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
         </span>
       </h2>
       <p className="nighthawk-play-detail-sub">
-        {play.conviction} conviction · Score {play.score}
+        {play.conviction ? `${play.conviction} conviction · ` : ""}Score {play.score != null ? play.score : "—"}
         {play.flow_streak_days != null ? ` · ${play.flow_streak_days}d flow streak` : ""}
       </p>
     </div>

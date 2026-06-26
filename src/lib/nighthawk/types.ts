@@ -18,7 +18,8 @@ export type PlaybookPlay = {
   entry_cost_per_contract?: number;
   premium_cap_ok?: boolean;
   risk_note?: string;
-  score: number;
+  /** Optional so a degraded/legacy source with no real score renders "—", never a fabricated 0. */
+  score?: number;
   flow_streak_days?: number;
   iv_rank?: number;
 };
@@ -49,6 +50,16 @@ export type NightHawkEdition = {
   /** True when this edition published a market recap but no ranked plays survived the funnel.
    *  Lets the UI show a recap-only state distinct from both "5 plays" and "awaiting close". */
   recap_only?: boolean;
+  /** True when this edition came from a degraded/legacy source (e.g. the BlackOut intel engine
+   *  fallback) rather than the first-class published pipeline. The UI must NOT present a degraded
+   *  edition as a fresh "Edition live" recap — show a legacy/degraded notice instead. */
+  degraded?: boolean;
+  /** True when the served edition is an OLDER stored edition returned because the requested
+   *  session's edition isn't published yet (the latest-fallback path). The UI must NOT assert
+   *  "Edition live" — it should show "Showing {served_for} edition — tonight's not published yet". */
+  stale?: boolean;
+  /** The edition_for date that was actually served when `stale` is true (the older edition's date). */
+  served_for?: string | null;
 };
 
 export type AgentFilterValues = Record<string, string | number | boolean>;
@@ -66,7 +77,9 @@ export type HuntPlay = {
   entry: string;
   target: string;
   stop: string;
-  score: number;
+  /** Optional — propagates an unknown score (e.g. from a degraded source) as undefined → "—",
+   *  never a fabricated 0. */
+  score?: number;
   /** Day Trade Agent lifecycle phase. */
   phase?: "CANDIDATE" | "WATCH" | "ACTIONABLE" | "EXPIRED";
   /** Whether play aligns with SPX desk bias when spx_context filter is on. */

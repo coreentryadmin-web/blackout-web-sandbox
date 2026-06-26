@@ -351,7 +351,7 @@ function SignalDetailPanel({ play }: { play: HuntPlay }) {
         <span className={clsx("dayhawk-signal-direction", `dayhawk-signal-direction-${tone}`)}>
           {play.direction}
         </span>
-        <span className="dayhawk-detail-score">Score {play.score}</span>
+        <span className="dayhawk-detail-score">Score {play.score != null ? play.score : "—"}</span>
       </header>
       <p className="dayhawk-detail-thesis">{play.thesis}</p>
       <dl className="dayhawk-detail-levels">

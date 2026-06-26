@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
-import { nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
+import { convictionFromScore } from "@/lib/nighthawk/scorer";
+import { nextTradingDayEt, priorEt, todayEt } from "@/lib/nighthawk/session";
 import { requireToolApi } from "@/lib/tool-access-server";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
 
@@ -48,33 +49,53 @@ async function fetchLegacyPlays(): Promise<NightHawkEdition | null> {
       },
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { plays?: Array<Record<string, unknown>> };
-    const plays = (data.plays ?? []).slice(0, 5).map((p, i) => ({
-      rank: i + 1,
-      ticker: String(p.ticker ?? "?").toUpperCase(),
-      direction: String(p.direction ?? "LONG"),
-      conviction: "B",
-      play_type: "stock" as const,
-      thesis: String(p.summary ?? ""),
-      key_signal: String(p.summary ?? ""),
-      entry_range: "—",
-      target: "—",
-      stop: "—",
-      options_play: "—",
-      score: Number(p.score ?? 0),
-      flow_streak_days: Number(p.streak_days ?? 0) || undefined,
-      iv_rank: Number(p.iv_rank ?? 0) || undefined,
-    }));
+    const data = (await res.json()) as {
+      plays?: Array<Record<string, unknown>>;
+      generated_at?: unknown;
+      as_of?: unknown;
+      scanned_at?: unknown;
+    };
+    const plays = (data.plays ?? []).slice(0, 5).map((p, i) => {
+      // Use the engine's real score when present — never fabricate a 0 that reads as a real
+      // reading. A missing score becomes undefined so the UI renders "—".
+      const score = Number(p.score);
+      const realScore = Number.isFinite(score) ? score : undefined;
+      return {
+        rank: i + 1,
+        ticker: String(p.ticker ?? "?").toUpperCase(),
+        direction: String(p.direction ?? "LONG"),
+        // Derive conviction from the real score instead of hardcoding "B"; leave it blank
+        // when there is no score to derive from.
+        conviction: realScore != null ? convictionFromScore(realScore) : "",
+        play_type: "stock" as const,
+        thesis: String(p.summary ?? ""),
+        key_signal: String(p.summary ?? ""),
+        entry_range: "—",
+        target: "—",
+        stop: "—",
+        options_play: "—",
+        score: realScore,
+        flow_streak_days: Number(p.streak_days ?? 0) || undefined,
+        iv_rank: Number(p.iv_rank ?? 0) || undefined,
+      };
+    });
     if (!plays.length) return null;
     const editionFor = nextTradingDayEt(todayEt());
+    // Carry the engine's real timestamp if it provides one; otherwise null (unknown publish
+    // time) — never stamp `now` over possibly-old engine data, which would assert freshness.
+    const engineTs = data.generated_at ?? data.as_of ?? data.scanned_at;
+    const publishedAt = typeof engineTs === "string" && !Number.isNaN(new Date(engineTs).getTime())
+      ? new Date(engineTs).toISOString()
+      : null;
     return {
       available: true,
       edition_for: editionFor,
-      published_at: new Date().toISOString(),
+      published_at: publishedAt,
       recap_headline: "Legacy engine plays",
-      recap_summary: "Served from BlackOut intel engine fallback.",
+      recap_summary: "Served from BlackOut intel engine fallback — degraded source.",
       market_recap: null,
       plays,
+      degraded: true,
     };
   } catch {
     return null;
@@ -94,9 +115,26 @@ export async function GET(req: NextRequest) {
 
   const editionFor = req.nextUrl.searchParams.get("date") ?? nextTradingDayEt(todayEt());
 
-  const row = (await fetchNighthawkEditionByDate(editionFor)) ?? (await fetchLatestNighthawkEdition());
-  if (row) {
-    return NextResponse.json(rowToNightHawkEdition(row), { headers: NO_STORE_HEADERS });
+  // Exact requested edition — always fresh, render as-is.
+  const exact = await fetchNighthawkEditionByDate(editionFor);
+  if (exact) {
+    return NextResponse.json(rowToNightHawkEdition(exact), { headers: NO_STORE_HEADERS });
+  }
+
+  // Requested edition isn't published yet. Fall back to the latest stored edition ONLY if it is
+  // recent enough to still be actionable — within the recency window (requested session, current,
+  // or prior trading day). An older fallback is still served (so the page isn't blank), but flagged
+  // `stale: true` so the UI shows "Showing {date} edition — tonight's not published yet" instead of
+  // asserting a green "Edition live" over plays whose levels are no longer current (#77 residual).
+  const latest = await fetchLatestNighthawkEdition();
+  if (latest) {
+    const edition = rowToNightHawkEdition(latest);
+    const recencyWindow = new Set([editionFor, todayEt(), priorEt()]);
+    if (edition.edition_for && !recencyWindow.has(edition.edition_for)) {
+      edition.stale = true;
+      edition.served_for = edition.edition_for;
+    }
+    return NextResponse.json(edition, { headers: NO_STORE_HEADERS });
   }
 
   const legacy = await fetchLegacyPlays();
