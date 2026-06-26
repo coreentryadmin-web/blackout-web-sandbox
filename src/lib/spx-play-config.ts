@@ -388,8 +388,21 @@ export function playTrailingStopTrailWindowPts(): number {
   return num(process.env.SPX_TRAILING_STOP_TRAIL_WINDOW, 7);
 }
 
+/**
+ * When TRUE, a missing/illiquid 0DTE option chain VETOES opening an otherwise
+ * approved A-grade play (engine returns SCANNING). This previously defaulted TRUE,
+ * which — combined with the wrong-underlying chain-fetch bug — meant approved plays
+ * NEVER opened and the outcome ledger stayed empty forever.
+ *
+ * Defaults FALSE: an approved play OPENS using the index-plan fallback ticket
+ * (buildOptionTicket emits a fallback strike with block_reason "No liquid chain
+ * match — index plan only") rather than being silently vetoed. The chain is a
+ * presentation/sizing aid, not an entry gate — the entry decision is the confluence
+ * + Claude approval on the index. Set SPX_OPTION_CHAIN_REQUIRED=true to restore the
+ * hard gate.
+ */
 export function playOptionChainRequired(): boolean {
-  return flag(process.env.SPX_OPTION_CHAIN_REQUIRED, true);
+  return flag(process.env.SPX_OPTION_CHAIN_REQUIRED, false);
 }
 
 export function outcomeAdaptiveMinTrades(): number {

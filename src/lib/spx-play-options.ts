@@ -8,6 +8,15 @@ import { round5 } from "@/lib/round5";
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
+// Underlying ROOT used to query the options snapshot. On Massive (and Polygon),
+// the SPX-complex options chain — including the SPXW weekly 0DTE contracts whose
+// OCC ticker is "O:SPXW...EXP..." — is indexed under underlying_ticker "SPX", NOT
+// "SPXW". Querying /v3/snapshot/options/SPXW returns 0 results, which silently
+// blocked every play open (empty ledger). Query "SPX" to retrieve the real chain;
+// per-contract details.ticker still resolves to the correct O:SPXW... symbol.
+// Overridable in case the provider's indexing changes.
+const CHAIN_UNDERLYING = (process.env.SPX_CHAIN_UNDERLYING ?? "SPX").trim();
+
 type ChainContract = {
   details?: {
     strike_price?: number;
@@ -45,7 +54,7 @@ async function fetchChainUrl(url: string): Promise<{ results?: ChainContract[]; 
   if (!polygonConfigured()) return null;
   const sep = url.includes("?") ? "&" : "?";
   const full = url.startsWith("http") ? `${url}${sep}apiKey=${KEY}` : `${BASE}${url}${sep}apiKey=${KEY}`;
-  const label = url.startsWith("http") ? "/v3/snapshot/options/SPXW" : url.split("?")[0];
+  const label = url.startsWith("http") ? `/v3/snapshot/options/${CHAIN_UNDERLYING}` : url.split("?")[0];
   try {
     const res = await polygonTrackedFetch(label, full, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!res.ok) return null;
@@ -68,7 +77,7 @@ async function fetchOdteContracts(spot: number, expiry: string): Promise<ChainCo
   });
 
   const out: ChainContract[] = [];
-  let page = await fetchChainUrl(`/v3/snapshot/options/SPXW?${params}`);
+  let page = await fetchChainUrl(`/v3/snapshot/options/${CHAIN_UNDERLYING}?${params}`);
   let guard = 0;
   while (page && guard < 6) {
     out.push(...(page.results ?? []));
