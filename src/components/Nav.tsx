@@ -11,7 +11,7 @@ import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
 
-type Accent = "green" | "purple" | "orange" | "blue" | "red";
+type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
 
 const FEATURE_LINKS: FeatureLink[] = [
@@ -20,6 +20,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/heatmap", label: "Heatmaps", sub: "Read the regime at a glance", accent: "orange" },
   { href: "/terminal", label: "Largo AI", sub: "The desk officer on call", accent: "blue" },
   { href: "/nighthawk", label: "Night Hawk", sub: "Tomorrow's plan, tonight", accent: "red" },
+  { href: "/grid", label: "BlackOut Grid", sub: "Market-intelligence command center", accent: "gold" },
 ];
 
 const TOP_LINKS = [
@@ -261,7 +262,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                   style={{ transformOrigin: "top" }}
                 >
                   <div className="nav-mega-head">
-                    <span className="nav-mega-kicker font-mono">The Desk · 5 Instruments</span>
+                    <span className="nav-mega-kicker font-mono">The Desk · 6 Instruments</span>
                     <Link
                       href={isHome ? "#features" : "/#features"}
                       className="nav-mega-all font-mono"

@@ -163,6 +163,36 @@ export const MARK_GEOMETRY: Record<MarkProduct, ReactNode> = {
     </>
   ),
 
+  // === BLACKOUT GRID (gold) — a market-intelligence masonry: four live tiles ===
+  // A 2x2 grid of rounded panels (the "command center") with a sweeping scan over
+  // them and a glowing focal tile. Reuses the shared bo-* defs (glow / accent
+  // radial+linear / scan sweep) + the bo-scan-clip so the draw-on animation
+  // matches the rest of the sigil system. No own defs (they live in SharedSigilDefs).
+  grid: (
+    <>
+      <line x1="12" y1="40" x2="52" y2="40" stroke="url(#bo-emerald-thread)" strokeWidth="0.7" />
+      <circle className="bo-ring bo-r3" cx="32" cy="32" r="25.3" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2.6 3.9" opacity="0.4" />
+      {/* the masonry frame — four tiles outlined, drawn-on like the other strokes */}
+      <g className="bo-cells" fill="none" stroke="url(#bo-accent-linear)" strokeWidth="2.4" strokeLinejoin="round">
+        <rect className="c d0" x="13" y="13" width="16" height="16" rx="3" opacity="0.85" />
+        <rect className="c d1" x="35" y="13" width="16" height="16" rx="3" opacity="0.6" />
+        <rect className="c d2" x="13" y="35" width="16" height="16" rx="3" opacity="0.6" />
+        <rect className="c d3" x="35" y="35" width="16" height="16" rx="3" opacity="0.85" />
+      </g>
+      {/* sweeping scan across the board */}
+      <g clipPath="url(#bo-scan-clip)">
+        <rect className="bo-scan" x="8" y="6" width="10" height="52" fill="url(#bo-scan-sweep)" />
+      </g>
+      {/* glowing focal tile — the "live" cell */}
+      <g className="bo-node">
+        <g className="bo-glowgrp" filter="url(#bo-glow)">
+          <rect x="36" y="36" width="14" height="14" rx="3" fill="url(#bo-accent-radial)" />
+        </g>
+        <circle className="bo-node-core" cx="43" cy="43" r="2.1" fill="currentColor" />
+      </g>
+    </>
+  ),
+
   // === NIGHT HAWK (red) — dusk radar sweep painting threat blips ===
   // Re-centered per cleanup note: geometry stays authored at 24-center inside the
   // translate(8 8) wrapper; rotation pivots on the visual center via CSS

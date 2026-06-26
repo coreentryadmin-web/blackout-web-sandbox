@@ -71,6 +71,16 @@ const ARSENAL: Weapon[] = [
     desc: "Your AI evening playbook — after the close it builds ranked swing and leap setups with a per-ticker dossier, so you walk in tomorrow with a plan.",
   },
   {
+    mark: "grid",
+    accentKey: "gold",
+    accent: MARK_ACCENT.grid,
+    name: "BlackOut Grid",
+    spec: "Market-Intelligence Command Center",
+    meta: "Instrument · 06",
+    href: "/grid",
+    desc: "The whole tape on one board — a live masonry of market-wide news, notable flow, analyst actions and the market pulse, so you read the entire session at a glance.",
+  },
+  {
     mark: null,
     accentKey: "yellow",
     accent: "#ffd23f",
@@ -110,7 +120,7 @@ export function FeaturesGrid() {
               className="inline-block h-[6px] w-[6px] rounded-full bg-bull animate-pulse motion-reduce:animate-none"
               style={{ boxShadow: "0 0 10px #00e676" }}
             />
-            The Desk · 5 Instruments
+            The Desk · 6 Instruments
           </p>
           <h2 className="font-anton text-5xl md:text-[4.5rem] leading-[0.92] tracking-tight text-white">
             THE{" "}
