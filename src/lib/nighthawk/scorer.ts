@@ -1,5 +1,5 @@
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
-import type { FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
+import type { BenzingaCatalyst, FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
 import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";import type { TideBias } from "./format";
 import { tideBias } from "./format";
 import type { FlowStreak } from "./flow-streak";
@@ -23,6 +23,10 @@ export type ScoredCandidate = {
   smart_money_score: number;
   /** Signed fundamental tailwind/headwind contribution (bounded ±FUNDAMENTAL_CAP). */
   fundamental_score?: number;
+  /** Small signed catalyst-awareness nudge (bounded ±CATALYST_CAP) — minor modifier, never an override. */
+  catalyst_score?: number;
+  /** Human-readable catalyst notes surfaced into the dossier/edition meta (e.g. "binary FDA event ahead"). */
+  catalyst_flags?: string[];
   conviction: string;
   regime_multiplier?: number;
   fundamental_block?: boolean;
@@ -161,6 +165,81 @@ export function scoreFundamentalTailwind(
   // contributes positively to a short and a pristine balance sheet works against it.
   const signed = direction === "short" ? -raw : raw;
   return Math.max(-FUNDAMENTAL_CAP, Math.min(FUNDAMENTAL_CAP, signed));
+}
+
+/**
+ * CONSERVATIVE catalyst-awareness MODIFIER from the free Benzinga catalyst channels.
+ *
+ * Deliberately small (bounded ±CATALYST_CAP) — a NUDGE on top of the flow/technical base, NEVER an
+ * override of flow. Two effects, both conservative:
+ *   1. PENALIZE buying directional premium straight into a known BINARY (FDA decision). A binary is a
+ *      coin-flip on a gap, not a flow-confirmable edge — we shade the score DOWN regardless of
+ *      direction so a play into an unhedged binary ranks below an equivalent play with no binary risk.
+ *   2. NOTE positive catalysts (buyback authorizations, M&A involvement, guidance) with a small
+ *      direction-aware tailwind: supportive for a long, a (smaller) headwind for a short.
+ *
+ * Returns the signed nudge plus human-readable flags for the dossier/meta. Empty catalysts ⇒ 0.
+ */
+export const CATALYST_CAP = 5;
+
+export function scoreCatalystAwareness(
+  catalysts: BenzingaCatalyst[] | null | undefined,
+  direction: "long" | "short"
+): { score: number; flags: string[] } {
+  if (!catalysts || !catalysts.length) return { score: 0, flags: [] };
+  let raw = 0;
+  const flags: string[] = [];
+
+  let binaryFlagged = false;
+  let positiveFlagged = false;
+  for (const c of catalysts) {
+    switch (c.type) {
+      case "binary":
+        // FDA-type binary ahead — penalize a directional premium play regardless of side. Only
+        // count it ONCE so a name with three FDA headlines isn't triple-penalized.
+        if (!binaryFlagged) {
+          raw -= 3;
+          binaryFlagged = true;
+          flags.push("binary event ahead (FDA) — directional premium is a coin-flip");
+        }
+        break;
+      case "buyback":
+        if (!positiveFlagged) {
+          raw += direction === "long" ? 2 : -1;
+          positiveFlagged = true;
+          flags.push("buyback authorization");
+        }
+        break;
+      case "m&a":
+        if (!positiveFlagged) {
+          raw += direction === "long" ? 2 : -1;
+          positiveFlagged = true;
+          flags.push("M&A involvement");
+        }
+        break;
+      case "guidance":
+        // Guidance is a known catalyst but direction-ambiguous from the channel alone — a tiny,
+        // side-neutral awareness note only (no scoring weight), so we don't guess raise vs cut.
+        flags.push("guidance update");
+        break;
+      case "insider":
+        flags.push("insider transaction");
+        break;
+      case "offering":
+        // A dilutive offering is a headwind for a long; mild tailwind for a short.
+        raw += direction === "long" ? -2 : 1;
+        flags.push("offering (potential dilution)");
+        break;
+      case "short":
+        flags.push("short-seller activity");
+        break;
+      default:
+        break;
+    }
+  }
+
+  const score = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, raw));
+  return { score, flags };
 }
 
 function safeFloat(v: unknown): number {
@@ -477,6 +556,7 @@ export function scoreCandidate(
     institutional_activity?: Record<string, unknown>[];
     fundamental_ratios?: PolygonFinancialRatios | null;
     fundamental_signals?: FundamentalSignals | null;
+    catalysts?: BenzingaCatalyst[] | null;
     trading_halt?: boolean;
     risk_reversal_skew?: number | null;
   },
@@ -518,13 +598,23 @@ export function scoreCandidate(
     dossierExtras.fundamental_signals,
     flow.direction
   );
+  // Catalyst awareness — a SMALL, conservative nudge (binary-event penalty + positive-catalyst note).
+  // Like the fundamental modifier, it layers on the base and never overrides flow direction.
+  const catalyst = scoreCatalystAwareness(dossierExtras.catalysts, flow.direction);
   const regimeMultiplier = computeRegimeMultiplier(regime);
   const total = Math.min(
     100,
     Math.max(
       0,
       Math.round(
-        (flow.score + techScore + posScore + newsScore + smartMoneyScore + skewAdj + fundamentalScore) *
+        (flow.score +
+          techScore +
+          posScore +
+          newsScore +
+          smartMoneyScore +
+          skewAdj +
+          fundamentalScore +
+          catalyst.score) *
           regimeMultiplier
       )
     )
@@ -545,6 +635,8 @@ export function scoreCandidate(
     news_score: newsScore,
     smart_money_score: smartMoneyScore,
     fundamental_score: fundamentalScore,
+    catalyst_score: catalyst.score,
+    catalyst_flags: catalyst.flags,
     conviction: convictionFromScore(total),
     regime_multiplier: regimeMultiplier,
     fundamental_block: !fundCheck.ok,

@@ -1,4 +1,4 @@
-import { fetchSectorPerformance, fetchIndexDailyBars, fetchIndex5MinBars, fetchIndexSnapshots, fetchVixIvRankPercentile, computeVixTermStructure, fetchDailyMarketSummary, fetchPriorDayCloses, computeMarketBreadthFromSummary, type MarketBreadthMetrics } from "@/lib/providers/polygon";
+import { fetchSectorPerformance, fetchIndexDailyBars, fetchIndex5MinBars, fetchIndexSnapshots, fetchVixIvRankPercentile, computeVixTermStructure, fetchDailyMarketSummary, fetchPriorDayCloses, computeMarketBreadthFromSummary, fetchBenzingaAfterHoursMovers, type BenzingaCatalyst, type MarketBreadthMetrics } from "@/lib/providers/polygon";
 import { fetchPolygonMarketNews } from "@/lib/providers/polygon-largo";
 import { macroEventsOnDateLive } from "@/lib/providers/macro-events";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
@@ -55,6 +55,8 @@ export type MarketWideContext = {
   predictions_consensus: PredictionConsensusSignal[];
   mag7_greek_flow: GroupGreekFlowSummary | null;
   macro_indicators: UwMacroIndicatorSnapshot[];
+  /** Market-wide after-hours / movers headlines (free Benzinga channels) — the night's AH context. */
+  after_hours_catalysts: BenzingaCatalyst[];
 };
 
 function flowRowToDict(row: { raw: Record<string, unknown>; flow: { ticker: string; premium: number } }) {
@@ -214,6 +216,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     predictionsRaw,
     mag7Rows,
     macroIndicators,
+    afterHoursCatalysts,
   ] = await Promise.all([
     uwConfigured() ? fetchUwMarketTide().catch(() => null) : Promise.resolve(null),
     uwConfigured()
@@ -233,6 +236,9 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     uwConfigured() ? fetchUwPredictionsConsensus(15).catch(() => null) : Promise.resolve(null),
     uwConfigured() ? fetchUwGroupGreekFlow("mag7").catch(() => []) : Promise.resolve([]),
     uwConfigured() ? fetchUwMacroIndicators().catch(() => []) : Promise.resolve([]),
+    // Free Benzinga after-hours / movers context for the evening recap (the edition is after-hours
+    // recon). Cached on a shared key inside the provider, so every concurrent build shares one pull.
+    polygonConfigured() ? fetchBenzingaAfterHoursMovers(15).catch(() => []) : Promise.resolve([]),
   ]);
 
   const stockFlows = flowRows
@@ -308,5 +314,6 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     predictions_consensus: predictionsRaw?.top_signals ?? [],
     mag7_greek_flow: summarizeGroupGreekFlow("mag7", mag7Rows as Record<string, unknown>[]),
     macro_indicators: macroIndicators,
+    after_hours_catalysts: afterHoursCatalysts,
   };
 }

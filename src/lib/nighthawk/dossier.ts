@@ -1,4 +1,5 @@
 import {
+  fetchBenzingaCatalysts,
   fetchBenzingaNews,
   fetchBenzingaPriceTarget,
   fetchPolygonBalanceSheets,
@@ -8,6 +9,7 @@ import {
   fetchShortInterest,
   fetchVixIvRankPercentile,
   computeFundamentalSignals,
+  type BenzingaCatalyst,
   type BenzingaPriceTarget,
   type FundamentalSignals,
   type PolygonFinancialRatios,
@@ -64,6 +66,8 @@ export type TickerDossier = {
   screener_confirmed: boolean;
   tech: TechnicalCard | null;
   news_headlines: string[];
+  /** Recent corporate catalysts (FDA/guidance/M&A/insider/buyback/offering) from free Benzinga channels. */
+  catalysts: BenzingaCatalyst[];
   polygon_sentiment: string[];
   analyst_summary: string | null;
   price_target: string | null;
@@ -282,6 +286,7 @@ export async function fetchTickerDossier(
     predictionsSignal,
     screenerConfirmed,
     financials,
+    catalysts,
   ] = await Promise.all([
     dossierFetch(() => fetchMarketFlowAlertRows({ ticker: sym, limit: 80, min_premium: 50_000 }), [], t),
     dossierFetch(() => resolveIvRank(sym), null, t),
@@ -313,6 +318,10 @@ export async function fetchTickerDossier(
       { ratios: null, signals: null, priceTarget: null },
       t
     ),
+    // Free Benzinga catalysts — folded into the existing bounded Promise.all (NO new uncapped
+    // fan-out). fetchBenzingaCatalysts is itself per-ticker cache-read, so concurrent builds share
+    // one upstream pull per ticker per window (cache-reader rule).
+    dossierFetch(() => fetchBenzingaCatalysts(sym), [] as BenzingaCatalyst[], t),
   ]);
   const fundamentalRatios = financials.ratios;
   const fundamentalSignals = financials.signals;
@@ -396,6 +405,7 @@ export async function fetchTickerDossier(
     screener_confirmed: screenerConfirmed,
     tech,
     news_headlines: headlines,
+    catalysts,
     polygon_sentiment: polygonSentiment,
     analyst_summary: analystSummaryFromPt(benzingaPriceTarget),
     price_target: priceTargetLineFromPt(benzingaPriceTarget),
@@ -418,6 +428,7 @@ export async function fetchTickerDossier(
       positioning,
       strike_stacks: strikeStacks,
       news_headlines: [...headlines, ...polygonSentiment],
+      catalysts,
       insider_buys: insiderBuys,
       predictions_signal: predictionsSignal,
       congress_unusual: congressUnusual,

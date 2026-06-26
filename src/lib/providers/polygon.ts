@@ -4,6 +4,7 @@ export { computeVixTermStructure, type VixTermSnapshot } from "@/lib/vix-term-ut
 import { polygonConfigured } from "./config";
 import { sessionStatsFromMinuteBars, todayEtYmd, priorEtYmd } from "./spx-session";
 import { smaFromCloses, emaFromCloses } from "./ma-math";
+import { serverCache, TTL } from "@/lib/server-cache";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -429,6 +430,107 @@ export async function fetchBenzingaAnalystRatings(ticker: string, limit = 15) {
   return fetchBenzingaNews(limit, {
     ticker,
     channels: "analyst ratings,price target,upgrades,downgrades,analyst color",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Benzinga CATALYSTS (free on plan — confirmed-working channels, space-delimited lowercase).
+//   These channels are entitled on the current plan and return data via
+//   /benzinga/v2/news?channels.any_of=… but were previously unused. Benzinga news has no
+//   rate limit, but we still CACHE per-ticker so 500 concurrent edition builds / users share
+//   ONE upstream pull per ticker per window (the cache-reader rule). Catalysts move within a
+//   session (an FDA decision / guidance cut breaks intraday), so they get a NEWS-grade TTL
+//   (2 min) rather than the slow REFERENCE TTL the financials bundle uses.
+// ---------------------------------------------------------------------------
+
+/** A single recent corporate/event catalyst parsed from a confirmed-working Benzinga channel. */
+export type BenzingaCatalyst = {
+  /** The Benzinga channel(s) the article carried (e.g. "fda", "guidance", "m&a"). */
+  channel: string;
+  /** A coarse catalyst TYPE derived from the channel — drives the conservative scorer nudge. */
+  type: "binary" | "guidance" | "m&a" | "insider" | "buyback" | "offering" | "short" | "ipo" | "other";
+  title: string;
+  published: string;
+};
+
+/** Confirmed-working, free, per-ticker catalyst channels (space-delimited lowercase, comma-listed). */
+const BENZINGA_CATALYST_CHANNELS =
+  "m&a,guidance,short sellers,insider trades,fda,buybacks,offerings,ipos";
+
+/** Map a raw Benzinga channel name to a coarse catalyst type for downstream scoring/display. */
+function catalystTypeFromChannels(channels: string[]): BenzingaCatalyst["type"] {
+  const set = channels.map((c) => c.toLowerCase());
+  const has = (needle: string) => set.some((c) => c.includes(needle));
+  // FDA decisions are the canonical binary event — surface first so the scorer can flag it.
+  if (has("fda")) return "binary";
+  if (has("guidance")) return "guidance";
+  if (has("m&a") || has("m&amp;a") || has("merger") || has("acquisition")) return "m&a";
+  if (has("insider")) return "insider";
+  if (has("buyback")) return "buyback";
+  if (has("offering")) return "offering";
+  if (has("short")) return "short";
+  if (has("ipo")) return "ipo";
+  return "other";
+}
+
+/**
+ * Recent corporate catalysts for a ticker via the free Benzinga catalyst channels — ONE call,
+ * sorted most-recent-first. Cached per-ticker (NEWS TTL) so concurrent consumers share one pull.
+ * Returns [] on any failure so the dossier degrades gracefully (never throws into the batch).
+ */
+export async function fetchBenzingaCatalysts(
+  ticker: string,
+  limit = 8
+): Promise<BenzingaCatalyst[]> {
+  const sym = ticker.toUpperCase();
+  return serverCache(`benzinga:catalysts:${sym}`, TTL.NEWS, async () => {
+    try {
+      const articles = await fetchBenzingaNews(limit, {
+        ticker: sym,
+        channels: BENZINGA_CATALYST_CHANNELS,
+      });
+      return articles
+        .map((a) => ({
+          channel: a.channels[0] ?? "",
+          type: catalystTypeFromChannels(a.channels),
+          title: a.title,
+          published: a.published,
+        }))
+        .filter((c) => c.title)
+        .sort((a, b) => (b.published > a.published ? 1 : b.published < a.published ? -1 : 0))
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * Market-wide after-hours / movers context for the evening edition — the night's after-hours
+ * center + movers headlines. ONE call across the whole market (no ticker filter). Cached on a
+ * shared key (NEWS TTL) so every concurrent edition build / user shares one pull per window.
+ */
+export async function fetchBenzingaAfterHoursMovers(
+  limit = 15
+): Promise<BenzingaCatalyst[]> {
+  return serverCache(`benzinga:afterhours-movers:${limit}`, TTL.NEWS, async () => {
+    try {
+      const articles = await fetchBenzingaNews(limit, {
+        channels: "after-hours center,movers",
+      });
+      return articles
+        .map((a) => ({
+          channel: a.channels[0] ?? "",
+          type: catalystTypeFromChannels(a.channels),
+          title: a.title,
+          published: a.published,
+        }))
+        .filter((c) => c.title)
+        .sort((a, b) => (b.published > a.published ? 1 : b.published < a.published ? -1 : 0))
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
   });
 }
 

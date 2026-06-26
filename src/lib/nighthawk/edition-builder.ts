@@ -195,6 +195,7 @@ async function publishRecapOnlyEdition(params: {
       index_dossiers: indexDossiers,
       spx_desk: spxDesk,
       flow_tape: flowTape,
+      after_hours_catalysts: ctx.after_hours_catalysts?.slice(0, 10) ?? [],
     },
     plays: [] as PlaybookPlay[],
     meta: {
@@ -690,6 +691,7 @@ export async function buildEveningEdition(opts?: {
         index_dossiers: indexDossiers,
         spx_desk: spxDesk,
         flow_tape: flowTape,
+        after_hours_catalysts: ctx.after_hours_catalysts?.slice(0, 10) ?? [],
       },
       plays: finalPlays,
       meta: {

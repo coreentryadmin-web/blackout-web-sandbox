@@ -275,7 +275,20 @@ export function buildMarketRecap(ctx: MarketWideContext): {
     .filter(Boolean)
     .join(", ");
 
-  const catalysts = [macro && `Macro: ${macro}`, earnings && `Earnings: ${earnings}`]
+  // After-hours / movers context from the free Benzinga channels — the edition is after-hours recon,
+  // so surface the night's AH headlines alongside macro + earnings in the recap catalysts line.
+  const afterHours = (ctx.after_hours_catalysts ?? [])
+    .slice(0, 4)
+    .map((c) => String(c.title ?? "").trim())
+    .filter(Boolean)
+    .map((t) => t.slice(0, 80))
+    .join("; ");
+
+  const catalysts = [
+    macro && `Macro: ${macro}`,
+    earnings && `Earnings: ${earnings}`,
+    afterHours && `After-hours: ${afterHours}`,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -392,6 +405,10 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
     lines.push("News:");
     for (const h of dossier.news_headlines.slice(0, 4)) lines.push(`  · ${h.slice(0, 140)}`);
   }
+  // Catalysts — recent corporate/event items from the free Benzinga channels. This is the ONLY
+  // catalyst line Claude may cite; the prompt rules pin catalyst citations to it.
+  const catalystLine = formatCatalysts(dossier);
+  if (catalystLine) lines.push(`Catalysts: ${catalystLine}`);
   if (dossier.polygon_sentiment.length) {
     lines.push(`Polygon sentiment: ${dossier.polygon_sentiment.slice(0, 2).join(" | ")}`);
   }
@@ -434,8 +451,12 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
     scored.fundamental_score != null && scored.fundamental_score !== 0
       ? ` · fundamentals ${scored.fundamental_score >= 0 ? "+" : ""}${scored.fundamental_score}`
       : "";
+  const catExtra =
+    scored.catalyst_score != null && scored.catalyst_score !== 0
+      ? ` · catalysts ${scored.catalyst_score >= 0 ? "+" : ""}${scored.catalyst_score}`
+      : "";
   lines.push(
-    `Score breakdown: flow ${scored.flow_score}/38 · technical ${scored.tech_score}/28 · positioning ${scored.pos_score}/18 · news ${scored.news_score}/8 · smart money ${scored.smart_money_score}/8${fundExtra}`
+    `Score breakdown: flow ${scored.flow_score}/38 · technical ${scored.tech_score}/28 · positioning ${scored.pos_score}/18 · news ${scored.news_score}/8 · smart money ${scored.smart_money_score}/8${fundExtra}${catExtra}`
   );
 
   return lines.join("\n");
@@ -494,6 +515,50 @@ function formatFundamentals(dossier: TickerDossier): string {
     parts.push(`current ${r.current_ratio.toFixed(2)}`);
   }
 
+  return parts.join(" · ");
+}
+
+/** Short human label for a catalyst type — drives the compact "Catalysts:" dossier line. */
+function catalystLabel(type: string): string {
+  switch (type) {
+    case "binary":
+      return "FDA/binary";
+    case "m&a":
+      return "M&A";
+    case "guidance":
+      return "guidance";
+    case "insider":
+      return "insider trade";
+    case "buyback":
+      return "buyback";
+    case "offering":
+      return "offering";
+    case "short":
+      return "short interest";
+    case "ipo":
+      return "IPO";
+    default:
+      return "catalyst";
+  }
+}
+
+/**
+ * Compact catalysts line: "FDA/binary: <title> · buyback · M&A". Leads with the typed label so a
+ * binary stands out, then a trimmed headline for the freshest item. Empty ⇒ "".
+ */
+function formatCatalysts(dossier: TickerDossier): string {
+  const cats = dossier.catalysts ?? [];
+  if (!cats.length) return "";
+  // De-dupe by type so three FDA headlines collapse to one "FDA/binary" tag; keep the newest title.
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const c of cats.slice(0, 6)) {
+    if (seen.has(c.type)) continue;
+    seen.add(c.type);
+    const title = c.title ? `: ${c.title.slice(0, 90)}` : "";
+    parts.push(`${catalystLabel(c.type)}${title}`);
+    if (parts.length >= 3) break;
+  }
   return parts.join(" · ");
 }
 
@@ -564,6 +629,7 @@ RULES — CRITICAL:
 - Do not invent strikes — use only strikes listed in the chain table.
 - ANALYST PRICE TARGETS: cite a PT ONLY when the dossier has an explicit "Analyst PT $X" line for that ticker, and quote that exact figure. If a ticker has no "Analyst PT" line, do NOT mention any analyst/Street/"PT" target — it would be fabricated. The "target" field is ALWAYS a TECHNICAL level from the dossier S/R, never an analyst PT.
 - FUNDAMENTALS: you may cite company-financial figures (P/E, ROE, revenue growth, margins, FCF, net cash/debt, buyback) ONLY from the ticker's "Fundamentals:" line — quote those exact values; never invent or infer fundamentals not on that line.
+- CATALYSTS: you may reference corporate/event catalysts (FDA/binary, M&A, guidance, insider trades, buyback, offering, short interest, IPO) ONLY from the ticker's "Catalysts:" line. Do NOT invent or infer any catalyst not on that line. If a "Catalysts:" line flags an FDA/binary event ahead, treat a directional premium play into it as elevated risk (it is a coin-flip on a gap) and say so in risk_note.
 - The "target" price and "stop" price MUST be an actual support/resistance level from the ticker's dossier (Support:/Resistance: lines). Do not invent price levels.
 - Any total-flow $ figure you cite in key_signal must equal the dossier's "Flow today:" figure — do not invent or round it beyond recognition.
 

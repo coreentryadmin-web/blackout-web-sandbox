@@ -92,6 +92,7 @@ function dossierHasCatalyst(dossier: TickerDossier): boolean {
   return (
     dossier.news_headlines.length > 0 ||
     dossier.polygon_sentiment.length > 0 ||
+    (dossier.catalysts?.length ?? 0) > 0 ||
     dossier.predictions_signal != null ||
     dossier.congress_unusual.length > 0 ||
     dossier.insider_buys > 0
@@ -144,6 +145,7 @@ function rescoreDossier(
       positioning: dossier.positioning,
       strike_stacks: dossier.strike_stacks,
       news_headlines: [...dossier.news_headlines, ...dossier.polygon_sentiment],
+      catalysts: dossier.catalysts,
       insider_buys: dossier.insider_buys,
       predictions_signal: dossier.predictions_signal,
       congress_unusual: dossier.congress_unusual,
