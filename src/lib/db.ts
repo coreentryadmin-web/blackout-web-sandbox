@@ -1139,7 +1139,7 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
   if (!r) return null;
   return {
     id: Number(r.id),
-    session_date: String(r.session_date).slice(0, 10),
+    session_date: isoDateString(r.session_date),
     direction: r.direction === "short" ? "short" : "long",
     entry_price: Number(r.entry_price),
     entry_score: Number(r.entry_score ?? 0),
@@ -1279,7 +1279,7 @@ function mapPlayOutcomeRow(r: QueryResultRow): import("@/lib/spx-play-outcomes")
   return {
     id: Number(r.id),
     open_play_id: Number(r.open_play_id),
-    session_date: String(r.session_date).slice(0, 10),
+    session_date: isoDateString(r.session_date),
     direction: r.direction === "short" ? "short" : "long",
     entry_path: r.entry_path === "watch_promote" ? "watch_promote" : "cold_buy",
     grade: String(r.grade),
@@ -2042,7 +2042,7 @@ export async function fetchLottoPlaysForDate(sessionDate: string): Promise<
   );
   return res.rows.map((r) => ({
     id: Number(r.id),
-    session_date: String(r.session_date).slice(0, 10),
+    session_date: isoDateString(r.session_date),
     pick_index: Number(r.pick_index),
     phase: String(r.phase),
     direction: String(r.direction),
@@ -2202,7 +2202,7 @@ export async function fetchTickerFlowDailyNet(
     const call = Number(row.call_prem ?? 0);
     const put = Number(row.put_prem ?? 0);
     return {
-      day: String(row.day).slice(0, 10),
+      day: isoDateString(row.day),
       call,
       put,
       net: call - put,
@@ -2273,7 +2273,7 @@ export async function fetchTickersFlowDailyNets(
     const put = Number(row.put_prem ?? 0);
     const bucket = out[ticker] ?? [];
     bucket.push({
-      day: String(row.day).slice(0, 10),
+      day: isoDateString(row.day),
       call,
       put,
       net: call - put,
@@ -2308,7 +2308,7 @@ export type NighthawkPlayOutcomeRow = {
 function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow {
   return {
     id: Number(r.id),
-    edition_for: String(r.edition_for).slice(0, 10),
+    edition_for: isoDateString(r.edition_for),
     ticker: String(r.ticker),
     direction: String(r.direction) as "LONG" | "SHORT",
     conviction: String(r.conviction),
@@ -2498,7 +2498,7 @@ function mapNighthawkJobRow(r: QueryResultRow): NighthawkJobRow {
   const candidates = r.candidates_json;
   return {
     id: Number(r.id),
-    edition_for: String(r.edition_for).slice(0, 10),
+    edition_for: isoDateString(r.edition_for),
     status: String(r.status),
     current_stage: r.current_stage != null ? String(r.current_stage) : null,
     context_json: (r.context_json as Record<string, unknown>) ?? null,
