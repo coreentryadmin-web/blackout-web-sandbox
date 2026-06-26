@@ -23,12 +23,15 @@ import { fetchMarketMovers } from "@/lib/providers/polygon";
 
 const INDEX_TICKERS = ["SPX", "SPY", "QQQ", "IWM"] as const;
 const FLOW_STRIKE_TICKERS = ["SPX", "SPY"] as const;
+// UW Sector Tide enum names (GICS/Yahoo-style; matched case-insensitively). NOT the classic
+// GICS "financials"/"consumer discretionary" labels — UW 400s ("Invalid sector") on those.
+// fetchUwSectorTide also normalizes aliases, but keep these canonical so cache keys are clean.
 const SECTORS = [
   "technology",
-  "financials",
+  "financial services",
   "energy",
   "healthcare",
-  "consumer_discretionary",
+  "consumer cyclical",
 ] as const;
 
 export async function GET(req: NextRequest) {

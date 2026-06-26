@@ -1022,10 +1022,47 @@ export async function fetchUwGreeksByStrike(ticker: string, expiry?: string, lim
   return extractRows(data).slice(0, limit);
 }
 
+// UW's Sector Tide enum uses Yahoo/ETF-style GICS sector NAMES (e.g. "Financial Services",
+// "Consumer Cyclical"), matched case-insensitively. Single-word sectors (technology/energy/
+// healthcare) worked by luck; "financials" and "consumer_discretionary" are the classic GICS
+// labels UW does NOT accept and were 400ing ("Invalid sector") on every uw-cache-refresh cron
+// + any Largo get_sector_flow call. This normalizes common GICS/legacy aliases to the exact UW
+// enum name so both call sites stop failing. Unknown values pass through (lowercased) unchanged.
+const UW_SECTOR_ALIASES: Record<string, string> = {
+  financials: "financial services",
+  financial: "financial services",
+  "financial-services": "financial services",
+  consumer: "consumer cyclical",
+  "consumer discretionary": "consumer cyclical",
+  consumer_discretionary: "consumer cyclical",
+  "consumer-discretionary": "consumer cyclical",
+  "consumer staples": "consumer defensive",
+  consumer_staples: "consumer defensive",
+  "consumer-staples": "consumer defensive",
+  materials: "basic materials",
+  "basic-materials": "basic materials",
+  communications: "communication services",
+  communication: "communication services",
+  telecom: "communication services",
+  "communication-services": "communication services",
+  "information technology": "technology",
+  tech: "technology",
+  "health care": "healthcare",
+  reit: "real estate",
+  reits: "real estate",
+  "real-estate": "real estate",
+};
+
+export function normalizeUwSector(sector: string): string {
+  const lower = sector.trim().toLowerCase().replace(/\s+/g, " ");
+  return UW_SECTOR_ALIASES[lower] ?? lower;
+}
+
 export async function fetchUwSectorTide(sector = "technology") {
+  const normalized = normalizeUwSector(sector);
   const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.sectorTide(sector), UW_CACHE_TTL.sectorTide, async () => {
-    const data = await uwGetSafe<Record<string, unknown>>(`/api/market/${sector.toLowerCase()}/sector-tide`, {});
+  return uwCacheGet(redis, UW_KEYS.sectorTide(normalized), UW_CACHE_TTL.sectorTide, async () => {
+    const data = await uwGetSafe<Record<string, unknown>>(`/api/market/${encodeURIComponent(normalized)}/sector-tide`, {});
     if (!data) return null;
     const block = data.data;
     const row = Array.isArray(block) ? block[block.length - 1] : block;
