@@ -142,10 +142,13 @@ const NO_OVERLAYS: GexHeatmapOverlays = { flow_by_strike: null, dark_pool_levels
  * UW breaker is open (a 429 storm), so the heatmap degrades to matrix-only instead of piling onto
  * a saturated UW. A warm overlay cache is STILL honored in both cases (it's already-paid data).
  */
-async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatmapOverlays> {
+async function getOverlays(
+  ticker: string,
+  strikes: number[]
+): Promise<{ overlays: GexHeatmapOverlays; at: number | null }> {
   const now = Date.now();
   const mem = overlayMem.get(ticker);
-  if (mem && now - mem.at < OVERLAY_TTL_MS) return mem.overlays;
+  if (mem && now - mem.at < OVERLAY_TTL_MS) return { overlays: mem.overlays, at: mem.at };
 
   try {
     const hit = await sharedCacheGet<{ at: number; overlays: GexHeatmapOverlays }>(
@@ -153,7 +156,7 @@ async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatma
     );
     if (hit && now - hit.at < OVERLAY_TTL_MS) {
       overlayMem.set(ticker, hit);
-      return hit.overlays;
+      return { overlays: hit.overlays, at: hit.at };
     }
   } catch {
     /* redis optional */
@@ -166,8 +169,8 @@ async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatma
   //     so the heatmap degrades to matrix-only instead of piling onto a saturated UW.
   // Neither case writes the overlay cache (we don't want to pin a `null` payload over a key that
   // a warm path could legitimately fill once the breaker clears / for a real allowlisted name).
-  if (!isHeatmapOverlayAllowed(ticker)) return NO_OVERLAYS;
-  if (isUwCircuitOpen()) return NO_OVERLAYS;
+  if (!isHeatmapOverlayAllowed(ticker)) return { overlays: NO_OVERLAYS, at: null };
+  if (isUwCircuitOpen()) return { overlays: NO_OVERLAYS, at: null };
 
   const [flow_by_strike, dark_pool_levels] = await Promise.all([
     buildFlowByStrike(ticker, strikes),
@@ -181,7 +184,7 @@ async function getOverlays(ticker: string, strikes: number[]): Promise<GexHeatma
   void sharedCacheSet(`gex-overlay:${ticker}`, entry, Math.ceil(OVERLAY_TTL_MS / 1000)).catch(
     () => {}
   );
-  return overlays;
+  return { overlays, at: now };
 }
 
 /**
@@ -236,10 +239,18 @@ export async function GET(req: NextRequest) {
     }
     // Cross-tool overlays (HELIX flow-per-strike + dark-pool), cached per ticker (~30s) so the
     // route never pressures UW's 2-RPS cluster-wide budget regardless of user count.
-    const overlays = await getOverlays(ticker, heatmap.strikes);
+    const { overlays, at: overlaysAt } = await getOverlays(ticker, heatmap.strikes);
 
     return NextResponse.json(
-      { available: true, ...heatmap, overlays },
+      {
+        available: true,
+        ...heatmap,
+        overlays,
+        // The overlay sample time (#9) — a painted dark-pool / flow-by-strike level can be
+        // ~30s–2min stale on the same matrix; surface its real fetch time so the legend can
+        // show "dark pool as of …" instead of implying it's as fresh as the matrix.
+        overlays_at: overlaysAt != null ? new Date(overlaysAt).toISOString() : null,
+      },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

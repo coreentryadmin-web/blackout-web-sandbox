@@ -191,6 +191,11 @@ type GexHeatmapResponse = {
     sessions: number;
   };
   overlays?: Overlays;
+  /** Overlay sample time (#9) — the dark-pool / flow-by-strike overlays ride a separate ~30s
+   *  cache (dark-pool source under it up to ~2min), so they can be staler than the matrix.
+   *  Surfaced so the overlay legend can show its own "as of …" instead of implying matrix
+   *  freshness. null when no overlays were served. */
+  overlays_at?: string | null;
   error?: string;
 };
 
@@ -3327,6 +3332,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             >
               Dark Pool
             </button>
+          )}
+          {/* Overlay freshness (#9) — the dark-pool / flow-by-strike overlays ride a separate
+              ~30s cache (dark-pool source up to ~2min) and can be staler than the matrix, so
+              label their OWN sample time rather than letting them inherit the matrix's. */}
+          {fmtAsofSeconds(data?.overlays_at ?? undefined) && (
+            <span className="font-mono text-[9px] tabular-nums normal-case text-sky-300/60">
+              as of {fmtAsofSeconds(data?.overlays_at ?? undefined)} ET
+            </span>
           )}
         </div>
       )}
