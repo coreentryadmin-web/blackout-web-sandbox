@@ -1036,6 +1036,20 @@ function gexHeatmapFastMoveTtlMs(): number {
 const GEX_HEATMAP_FAST_MOVE_TTL_MS = gexHeatmapFastMoveTtlMs();
 
 /**
+ * Signal silent chain truncation. A banded options-chain pagination loop exited because
+ * it hit its page-guard cap while `next_url` was STILL set — so the chain was cut short
+ * and the derived walls / OI / IV-term are UNDERSTATED with (previously) no signal at all.
+ * Observability only: emits one warning so the truncation is no longer invisible. Raising
+ * the cap / fully following next_url is a value-changing follow-up (API_INTEGRATION_MAP →
+ * "Pagination guards can silently truncate the chain").
+ */
+function warnChainTruncated(label: string, underlying: string, pages: number): void {
+  console.warn(
+    `[polygon-gex] ${label}(${underlying}) truncated: hit ${pages}-page guard with next_url still set — chain incomplete, walls/OI/IV understated. Raise the page guard or paginate fully if this recurs.`
+  );
+}
+
+/**
  * Strike-banded options chain snapshot across ALL expiries in one paginated pass
  * (NO expiration_date filter — the snapshot returns every expiry inside the strike
  * window). Reuses polygonFetchUrl + the next_url pagination exactly like fetchChainBand.
@@ -1066,6 +1080,7 @@ async function fetchHeatmapBand(
     page = await polygonFetchUrl(page.next_url);
     guard += 1;
   }
+  if (page?.next_url) warnChainTruncated("fetchHeatmapBand", underlying, guard);
   return out;
 }
 
@@ -2348,6 +2363,7 @@ async function fetchChainBand(
     page = await polygonFetchUrl(page.next_url);
     guard += 1;
   }
+  if (page?.next_url) warnChainTruncated("fetchChainBand", underlying, guard);
 
   return out;
 }
@@ -2599,6 +2615,7 @@ export async function fetchPolygonOiByExpiry(
     page = await polygonRefFetch(page.next_url);
     guard += 1;
   }
+  if (page?.next_url) warnChainTruncated("fetchPolygonOiByExpiry", underlying, guard);
 
   return Array.from(byExpiry.entries())
     .map(([expiry, oi]) => ({
@@ -2697,6 +2714,7 @@ export async function fetchPolygonIvTermStructure(
     page = await polygonFetchUrl(page.next_url) as SnapshotResponse | null;
     guard += 1;
   }
+  if (page?.next_url) warnChainTruncated("fetchPolygonIvTermStructure", root, guard);
 
   const data: PolygonIvTermPoint[] = Array.from(byExpiry.entries())
     .map(([expiry, row]) => {
