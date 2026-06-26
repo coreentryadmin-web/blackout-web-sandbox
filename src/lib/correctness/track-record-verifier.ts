@@ -7,8 +7,8 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { fetchClosedPlayOutcomes } from "@/lib/db";
-import { fetchPlayOutcomeStats } from "@/lib/spx-play-outcomes";
+import { fetchClosedPlayOutcomes, fetchPlayLifecycleCounts } from "@/lib/db";
+import { fetchPlayOutcomeStats, readPlayWriteFailures } from "@/lib/spx-play-outcomes";
 import { buildPublicTrackRecord } from "@/lib/track-record-public";
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,62 @@ export async function verifyTrackRecord(_marketOpen: boolean): Promise<TickerSco
   );
 
   if (myClosed === 0) {
+    // Empty closed-ledger. "Warming up" (genuinely no plays yet) is a benign SKIP.
+    // But two failure modes ALSO present as zero-closed and must NOT be silently
+    // skipped, because they are the bug that keeps the panels permanently empty:
+    //   (1) the engine is opening plays but recordPlayEntry is THROWING (durable
+    //       write-failure counter > 0, or spx_open_play has rows but
+    //       spx_play_outcomes has none) → FLAG;
+    //   (2) opens record but nothing ever closes them (outcome='open' rows exist,
+    //       0 closed, and time has passed) → FLAG.
+    let lifecycle = { open_play_outcomes: 0, ever_opened_outcomes: 0, open_plays: 0 };
+    try {
+      lifecycle = await fetchPlayLifecycleCounts();
+    } catch {
+      /* counts unavailable — fall back to a plain warming-up skip below */
+    }
+    let writeFailures = { count: 0, last_at: null as string | null, last_message: null as string | null };
+    try {
+      const wf = await readPlayWriteFailures();
+      writeFailures = { count: wf.count, last_at: wf.last_at, last_message: wf.last_message };
+    } catch {
+      /* counter unavailable */
+    }
+
+    const recordFailing =
+      writeFailures.count > 0 ||
+      (lifecycle.open_plays > 0 && lifecycle.ever_opened_outcomes === 0);
+    const closesNotFiring = lifecycle.open_play_outcomes > 0;
+
+    if (recordFailing) {
+      const flag = mk(
+        "invariant",
+        "lifecycle",
+        "flag",
+        `Track record empty but the engine HAS opened plays — recordPlayEntry is failing. ` +
+          `write_failures=${writeFailures.count}` +
+          (writeFailures.last_message ? ` (last: ${writeFailures.last_message})` : "") +
+          `; spx_open_play rows=${lifecycle.open_plays}, spx_play_outcomes rows=${lifecycle.ever_opened_outcomes}. ` +
+          `Plays open but never record — the empty-ledger root cause.`,
+        { id: "entry-write-failing", expected: ">0 outcome rows", actual: `${lifecycle.ever_opened_outcomes} rows / ${writeFailures.count} failures` }
+      );
+      const metrics = groupMetrics(ticker, [flag]);
+      return { ticker, status: worstStatus(metrics.map((m) => m.status)), metrics };
+    }
+
+    if (closesNotFiring) {
+      const flag = mk(
+        "invariant",
+        "lifecycle",
+        "flag",
+        `Track record empty but ${lifecycle.open_play_outcomes} play(s) are recorded as outcome='open' with ZERO closed — ` +
+          `the close path (THETA/SESSION/STOP/TARGET grading) is not firing. Plays open but never close.`,
+        { id: "close-not-firing", expected: "closed outcome rows", actual: `${lifecycle.open_play_outcomes} stuck open` }
+      );
+      const metrics = groupMetrics(ticker, [flag]);
+      return { ticker, status: worstStatus(metrics.map((m) => m.status)), metrics };
+    }
+
     const skip: CheckResult = {
       id: "TRACKREC:ledger:freshness:cold",
       layer: "freshness",

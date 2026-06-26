@@ -1422,9 +1422,9 @@ export async function closePlayOutcomeRow(
     closed_at: string;
   },
   db?: Db
-): Promise<void> {
+): Promise<number> {
   await ensureSchema();
-  await (db ?? await getPool()).query(
+  const res = await (db ?? await getPool()).query(
     `
     UPDATE spx_play_outcomes
     SET exit_price = $2,
@@ -1449,6 +1449,39 @@ export async function closePlayOutcomeRow(
       close.closed_at,
     ]
   );
+  // rowCount lets the recorder detect the silent "play closed but no outcome row
+  // to grade" case (the empty-ledger bug). null-coalesce for driver safety.
+  return res.rowCount ?? 0;
+}
+
+/**
+ * Lifecycle-health counts for the track-record data-correctness verifier.
+ * - open_play_outcomes: rows in spx_play_outcomes still outcome='open' (recorded entries
+ *   awaiting a close grade). >0 with 0 closed == opens record but closes don't fire.
+ * - ever_opened_outcomes: total rows ever written to spx_play_outcomes (any outcome).
+ *   0 here while spx_open_play has rows == the entry-INSERT is failing (empty-ledger bug).
+ * - open_plays: rows in spx_open_play (the engine's own open-position table). >0 while
+ *   ever_opened_outcomes==0 is the smoking gun that recordPlayEntry is throwing.
+ */
+export async function fetchPlayLifecycleCounts(): Promise<{
+  open_play_outcomes: number;
+  ever_opened_outcomes: number;
+  open_plays: number;
+}> {
+  await ensureSchema();
+  const pool = await getPool();
+  const [openOutcomes, everOutcomes, openPlays] = await Promise.all([
+    pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM spx_play_outcomes WHERE outcome = 'open'`
+    ),
+    pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM spx_play_outcomes`),
+    pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM spx_open_play`),
+  ]);
+  return {
+    open_play_outcomes: Number(openOutcomes.rows[0]?.n ?? 0),
+    ever_opened_outcomes: Number(everOutcomes.rows[0]?.n ?? 0),
+    open_plays: Number(openPlays.rows[0]?.n ?? 0),
+  };
 }
 
 export type UserJournalRow = { open_play_id: number; note: string; tags: string[]; updated_at: string };

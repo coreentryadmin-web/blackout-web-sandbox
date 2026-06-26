@@ -870,8 +870,15 @@ async function evaluateFlatPlay(
         opened_at: openedAt,
       });
     } catch (err) {
+      // The play HAS opened in spx_open_play (openPlay above succeeded) but the
+      // matching spx_play_outcomes entry failed to write. We intentionally do NOT
+      // crash the engine on a record failure — the live position must keep being
+      // managed — but this leaves an orphaned open whose eventual close will grade
+      // 0 rows. recordPlayEntry already bumped the durable write-failure counter
+      // (read by the track-record data-correctness verifier); log loudly here too.
       console.error(
-        "[spx-play-engine] recordPlayEntry:",
+        `[spx-play-engine] recordPlayEntry FAILED for open_play_id=${opened.id} ` +
+          `(play opened but NOT recorded — track record will not grade it):`,
         err instanceof Error ? err.message : err
       );
     }

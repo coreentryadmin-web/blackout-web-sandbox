@@ -75,6 +75,97 @@ export type PlayOutcomeStats = {
 
 const memoryOutcomes: PlayOutcomeRow[] = [];
 
+// ---------------------------------------------------------------------------
+// Write-failure observability. recordPlayEntry runs behind a swallow-and-log
+// try/catch in the engine (a record failure must NEVER crash the live trading
+// engine mid-tick). But a swallowed failure here is exactly the class of bug
+// that leaves spx_play_outcomes permanently empty — the engine opens a play in
+// spx_open_play, the matching outcome INSERT throws, and the later close UPDATE
+// (WHERE outcome='open') silently affects 0 rows. To make that diagnosable in
+// production we keep a durable, cross-replica counter in platform_meta that the
+// data-correctness track-record verifier reads. In-memory fallback keeps it
+// working (per-replica) when DATABASE_URL is unset.
+// ---------------------------------------------------------------------------
+const PLAY_WRITE_FAILURE_META_KEY = "spx_play_outcome_write_failures";
+
+export type PlayWriteFailureState = {
+  count: number;
+  last_at: string | null;
+  last_phase: "entry" | "close" | null;
+  last_open_play_id: number | null;
+  last_message: string | null;
+};
+
+let memoryWriteFailures: PlayWriteFailureState = {
+  count: 0,
+  last_at: null,
+  last_phase: null,
+  last_open_play_id: null,
+  last_message: null,
+};
+
+/**
+ * Record a play-outcome write failure loudly + durably. Never throws (best-effort
+ * persistence so a meta-write blip can't cascade into the engine). Always logs a
+ * structured console.error so Railway/Vercel logs surface the failure immediately.
+ */
+export async function recordPlayWriteFailure(
+  phase: "entry" | "close",
+  openPlayId: number | null,
+  err: unknown
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  // LOUD: this is the failure that silently starves the track record.
+  console.error(
+    `[spx-play-outcomes] WRITE FAILURE phase=${phase} open_play_id=${openPlayId ?? "?"}: ${message}`
+  );
+
+  const next: PlayWriteFailureState = {
+    count: memoryWriteFailures.count + 1,
+    last_at: new Date().toISOString(),
+    last_phase: phase,
+    last_open_play_id: openPlayId,
+    last_message: message.slice(0, 500),
+  };
+  memoryWriteFailures = next;
+
+  if (!dbConfigured()) return;
+  try {
+    const { getMeta, setMeta } = await import("@/lib/db");
+    // Read-modify-write the durable cross-replica count so the counter survives
+    // restarts and is visible on the API replica (not just the cron replica).
+    let persisted: PlayWriteFailureState = next;
+    const raw = await getMeta(PLAY_WRITE_FAILURE_META_KEY);
+    if (raw) {
+      try {
+        const prev = JSON.parse(raw) as PlayWriteFailureState;
+        persisted = { ...next, count: (prev.count ?? 0) + 1 };
+      } catch {
+        /* corrupt meta — overwrite with the fresh single-count state */
+      }
+    }
+    await setMeta(PLAY_WRITE_FAILURE_META_KEY, JSON.stringify(persisted));
+  } catch (metaErr) {
+    console.error(
+      "[spx-play-outcomes] failed to persist write-failure counter:",
+      metaErr instanceof Error ? metaErr.message : metaErr
+    );
+  }
+}
+
+/** Read the durable play-outcome write-failure state (for data-correctness/admin health). */
+export async function readPlayWriteFailures(): Promise<PlayWriteFailureState> {
+  if (!dbConfigured()) return memoryWriteFailures;
+  try {
+    const { getMeta } = await import("@/lib/db");
+    const raw = await getMeta(PLAY_WRITE_FAILURE_META_KEY);
+    if (raw) return JSON.parse(raw) as PlayWriteFailureState;
+  } catch {
+    /* fall through to in-memory */
+  }
+  return memoryWriteFailures;
+}
+
 function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven" {
   if (close.exit_action === "THETA" || close.exit_action === "SESSION") {
     // Any negative PnL is a loss — the old -1 floor was classifying -0.5 pt exits
@@ -130,25 +221,38 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
 
   await ensureSchema();
   const { insertPlayOutcomeEntry } = await import("@/lib/db");
-  return insertPlayOutcomeEntry({
-    open_play_id: snapshot.open_play_id,
-    session_date: snapshot.session_date,
-    direction: snapshot.direction,
-    entry_path: snapshot.entry_path,
-    grade: snapshot.grade,
-    score: snapshot.score,
-    confidence: snapshot.confidence,
-    entry_price: snapshot.entry_price,
-    stop: snapshot.stop,
-    target: snapshot.target,
-    headline: snapshot.headline,
-    factors: snapshot.factors,
-    confirmations: snapshot.confirmations,
-    mtf: snapshot.mtf,
-    claude: snapshot.claude,
-    option_ticket: snapshot.option_ticket,
-    opened_at: snapshot.opened_at,
-  });
+  try {
+    const id = await insertPlayOutcomeEntry({
+      open_play_id: snapshot.open_play_id,
+      session_date: snapshot.session_date,
+      direction: snapshot.direction,
+      entry_path: snapshot.entry_path,
+      grade: snapshot.grade,
+      score: snapshot.score,
+      confidence: snapshot.confidence,
+      entry_price: snapshot.entry_price,
+      stop: snapshot.stop,
+      target: snapshot.target,
+      headline: snapshot.headline,
+      factors: snapshot.factors,
+      confirmations: snapshot.confirmations,
+      mtf: snapshot.mtf,
+      claude: snapshot.claude,
+      option_ticket: snapshot.option_ticket,
+      opened_at: snapshot.opened_at,
+    });
+    // insertPlayOutcomeEntry uses ON CONFLICT (open_play_id) WHERE outcome='open'
+    // DO NOTHING — a 0 return means an 'open' outcome row for this play already
+    // existed (idempotent re-tick), NOT a failure. id>0 == fresh insert succeeded.
+    return id;
+  } catch (err) {
+    // Surface loudly + bump the durable counter, then RE-THROW so the engine's
+    // own try/catch (which logs) still sees it. The engine intentionally does not
+    // crash on this — but it MUST be visible, because a swallowed entry-insert is
+    // the bug that leaves spx_play_outcomes empty forever.
+    await recordPlayWriteFailure("entry", snapshot.open_play_id, err);
+    throw err;
+  }
 }
 
 export async function recordPlayClose(
@@ -174,16 +278,37 @@ export async function recordPlayClose(
 
   await ensureSchema();
   const { closePlayOutcomeRow } = await import("@/lib/db");
-  await closePlayOutcomeRow(openPlayId, {
-    exit_price: close.exit_price,
-    exit_action: close.exit_action,
-    mfe_pts: close.mfe_pts,
-    mae_pts: close.mae_pts,
-    trim_done: close.trim_done,
-    pnl_pts: close.pnl_pts,
-    outcome,
-    closed_at: new Date().toISOString(),
-  }, db);
+  try {
+    const updated = await closePlayOutcomeRow(openPlayId, {
+      exit_price: close.exit_price,
+      exit_action: close.exit_action,
+      mfe_pts: close.mfe_pts,
+      mae_pts: close.mae_pts,
+      trim_done: close.trim_done,
+      pnl_pts: close.pnl_pts,
+      outcome,
+      closed_at: new Date().toISOString(),
+    }, db);
+    // A close UPDATE that affects 0 rows is the silent half of the empty-ledger
+    // bug: the play closed in spx_open_play but there was never a matching
+    // outcome='open' row to grade (because the entry INSERT had failed). Treat it
+    // as a write failure so the counter + logs catch it — but do NOT throw, since
+    // this runs inside the close transaction and the play itself IS closing
+    // correctly; failing the txn here would needlessly roll back a good close.
+    if (updated === 0) {
+      await recordPlayWriteFailure(
+        "close",
+        openPlayId,
+        new Error(
+          `closePlayOutcomeRow matched 0 rows for open_play_id=${openPlayId} — ` +
+            `no outcome='open' row to grade (entry INSERT likely failed earlier).`
+        )
+      );
+    }
+  } catch (err) {
+    await recordPlayWriteFailure("close", openPlayId, err);
+    throw err;
+  }
 }
 
 export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {
