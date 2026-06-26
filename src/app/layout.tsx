@@ -85,6 +85,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${anton.variable} ${syne.variable} ${jetbrainsMono.variable} ${inter.variable}`}
     >
+      <head>
+        {/* Warm the connection to Clerk's Frontend API (separate origin) so clerk-js + @clerk/ui
+            chunks start loading during HTML parse instead of after hydration — this is what was
+            tripping Clerk's "Component renderer did not mount within 10s" watchdog on cold loads.
+            Resource hints are behavior-neutral (no-op if unused). */}
+        <link rel="preconnect" href="https://clerk.blackouttrades.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://clerk.blackouttrades.com" />
+      </head>
       <body className="void-bg antialiased">
         <a
           href="#main"
