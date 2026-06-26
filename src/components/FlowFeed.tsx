@@ -288,7 +288,11 @@ export function FlowFeed() {
     const coordinated = new Set<string>();
 
     for (const alert of alerts) {
-      const alertTime = new Date(alert.alerted_at).getTime();
+      // Gap #6: raw new Date(alerted_at) was NaN for undated rows, so abs(NaN) > WINDOW
+      // is always false and COORD never fired. Use alertedAtMs (the file's helper) and
+      // skip rows with no trustworthy time — they can't be time-correlated to a block.
+      const alertTime = alertedAtMs(alert);
+      if (alertTime == null) continue;
       const hasBlock = darkPoolPrints.some(
         (dp) =>
           dp.ticker === alert.ticker &&
