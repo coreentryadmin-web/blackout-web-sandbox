@@ -975,6 +975,33 @@ function isoDateString(value: unknown): string {
   return s.slice(0, 10);
 }
 
+/**
+ * Normalize an UNTRUSTED inbound date string to a clean ISO `YYYY-MM-DD`, or null if it is not a safe
+ * date (#77 Bug 1, inbound twin). Use this on any value bound for a `$n::date` parameter: a non-ISO
+ * string (e.g. the legacy year-stripped `String(Date).slice(0,10)` label "Mon Jun 29") makes Postgres
+ * throw `invalid input syntax for type date`, which surfaces as a 502 + error-sink record for what is
+ * really bad client input. Accept an already-ISO value as-is; recover a stringified Date that still
+ * carries a 4-digit year; reject a yearless/garbage label (a reparse would silently query the wrong
+ * year). The inverse of {@link isoDateString} (which normalizes outbound DATE columns to ISO).
+ */
+export function normalizeIsoDateInput(raw: string | null | undefined): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  // Already ISO-shaped — round-trip through Date to reject structurally-ISO-but-invalid values
+  // (e.g. "2026-13-45", "2026-02-30") that would still throw at `$1::date`.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const iso = s.slice(0, 10);
+    const d = new Date(`${iso}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+  }
+  // A stringified Date that still carries a 4-digit year (e.g. "Mon Jun 29 2026 …") — recover it.
+  if (/\b\d{4}\b/.test(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 function parseTimestamptz(value: string | null | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
@@ -2108,6 +2135,11 @@ export async function upsertNighthawkEdition(row: {
 export async function fetchNighthawkEditionByDate(
   editionFor: string
 ): Promise<NighthawkEditionRow | null> {
+  // Guard the `$1::date` cast against untrusted callers (#77 Bug 1, inbound twin): a non-ISO value
+  // (e.g. the legacy "Mon Jun 29" label) would make Postgres throw rather than miss. Treat garbage as
+  // "no such edition" (null) so callers degrade gracefully instead of 502-ing into the error sink.
+  const normalized = normalizeIsoDateInput(editionFor);
+  if (!normalized) return null;
   await ensureSchema();
   const res = await (await getPool()).query<QueryResultRow>(
     `
@@ -2117,7 +2149,7 @@ export async function fetchNighthawkEditionByDate(
     WHERE edition_for = $1::date
     LIMIT 1
     `,
-    [editionFor]
+    [normalized]
   );
   const r = res.rows[0];
   if (!r) return null;
