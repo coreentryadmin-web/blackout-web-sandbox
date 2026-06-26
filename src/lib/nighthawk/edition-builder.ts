@@ -48,6 +48,12 @@ type FunnelCounts = {
   synthesized: number;
   critic_passed: number;
   published: number;
+  // NUMERIC-GROUNDING (audit P0): plays that passed deterministic chain/dossier grounding, plays
+  // HARD-dropped as ungrounded (off-chain strike / null|way-off premium), and plays kept-but-flagged
+  // for a SOFT divergence (flow/level/prose/PT). Emitted on the funnel line so grounding is observable.
+  grounded: number;
+  dropped_ungrounded: number;
+  flagged: number;
 };
 
 function formatFunnelLine(editionFor: string, f: Partial<FunnelCounts>): string {
@@ -56,7 +62,9 @@ function formatFunnelLine(editionFor: string, f: Partial<FunnelCounts>): string 
     `[nighthawk-funnel] ${editionFor}: candidates=${c(f.candidates)} extracted, ` +
     `ranked=${c(f.ranked)}, dossiers=${c(f.dossiers)}, ` +
     `synthesized=${c(f.synthesized)} (claude raw plays), ` +
-    `critic_passed=${c(f.critic_passed)}, published=${c(f.published)}`
+    `critic_passed=${c(f.critic_passed)}, ` +
+    `grounded=${c(f.grounded)}, dropped_ungrounded=${c(f.dropped_ungrounded)}, flagged=${c(f.flagged)}, ` +
+    `published=${c(f.published)}`
   );
 }
 
@@ -525,6 +533,9 @@ export async function buildEveningEdition(opts?: {
     let finalPlays: PlaybookPlay[];
     let finalCriticNotes: string[];
     let raw: string | null;
+    // Numeric-grounding summary captured from synthesis so it can be stamped into edition meta and
+    // re-stamped onto the funnel counts. Null on a resumed run (synthesis ran on a prior invocation).
+    let groundingSummary: { grounded: number; dropped_ungrounded: number; flagged: number; notes: string[] } | null = null;
 
     if (checkpointedSynthesis && Array.isArray(checkpointedSynthesis.plays) && checkpointedSynthesis.plays.length) {
       finalPlays = checkpointedSynthesis.plays;
@@ -535,7 +546,7 @@ export async function buildEveningEdition(opts?: {
       funnel.synthesized = finalPlays.length;
       funnel.critic_passed = finalPlays.length;
     } else {
-      const { plays: rawPlays, raw: synthRaw, funnel: synthFunnel } = await generateEditionPlays({
+      const { plays: rawPlays, raw: synthRaw, funnel: synthFunnel, grounding: synthGrounding } = await generateEditionPlays({
         ctx,
         dossiers: synthesisDossiers,
         ranked: synthesisRanked,
@@ -545,6 +556,12 @@ export async function buildEveningEdition(opts?: {
         playOutcomes,
       });
       raw = synthRaw;
+      // Stamp grounding counts onto the funnel so EVERY exit (incl. recap-only fallbacks below)
+      // reports them. The checks already ran inside generateEditionPlays before any drop took effect.
+      groundingSummary = synthGrounding ?? null;
+      funnel.grounded = synthFunnel?.grounded ?? 0;
+      funnel.dropped_ungrounded = synthFunnel?.dropped_ungrounded ?? 0;
+      funnel.flagged = synthFunnel?.flagged ?? 0;
       // Synthesized = RAW Claude plays parsed BEFORE the strike/premium/stock filters (funnel.parsed).
       // This is the single most important number for #77: parsed=0 means Claude returned nothing
       // parseable (the timeout bug fixed in claude-edition.ts), whereas parsed>0 but published=0 means
@@ -557,7 +574,7 @@ export async function buildEveningEdition(opts?: {
         const funnelMsg = synthFunnel
           ? synthFunnel.parsed === 0
             ? `Claude returned no parseable JSON plays (raw ${synthRaw?.length ?? 0} chars).`
-            : `All plays filtered out — funnel: ${synthFunnel.parsed} parsed → ${synthFunnel.stock} stock → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid.`
+            : `All plays filtered out — funnel: ${synthFunnel.parsed} parsed → ${synthFunnel.stock} stock → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid → 0 grounded (${synthFunnel.dropped_ungrounded} dropped ungrounded, ${synthFunnel.flagged} flagged).`
           : "Claude returned no parseable plays.";
         const reason = anthropicConfigured()
           ? funnelMsg
