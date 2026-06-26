@@ -144,5 +144,5 @@ ${params.dossierContext}
 
 Write the full detailed briefing for ${params.play.ticker} ranked #${params.play.rank}.`;
 
-  return anthropicText(prompt, 3200, SYSTEM);
+  return anthropicText(prompt, 3200, SYSTEM, { timeoutMs: 60_000, maxRetries: 1 });
 }

@@ -1,10 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction, fetchNighthawkJob } from "@/lib/db";
-import { buildEveningEdition } from "@/lib/nighthawk/edition-builder";
+import { buildEveningEdition, serializeBuildError } from "@/lib/nighthawk/edition-builder";
 import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
+import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 
 const CRON_KEY = "nighthawk-playbook";
 
@@ -178,7 +179,7 @@ export async function GET(req: NextRequest) {
       { status }
     );
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = serializeBuildError(error);
     console.error("[cron/nighthawk-edition]", error);
     // Record the REAL failure reason + the stage we died at into the cron-run meta so it is visible in
     // /api/admin/errors (#77: the build was failing but the cause was invisible there). Re-read the job
@@ -193,6 +194,16 @@ export async function GET(req: NextRequest) {
       job_status: failedJob?.status ?? job?.status ?? "unknown",
       current_stage: stage,
     });
+    // Ops alert on the route-level 500 (#77 was invisible to ops). No-op until DISCORD_OPS_WEBHOOK_URL
+    // is set; never throws.
+    await notifyOpsDiscord({
+      severity: "critical",
+      title: `Night Hawk cron edition build FAILED — ${editionFor}`,
+      body:
+        `stage=${stage ?? "unknown"}\n` +
+        `error: ${detail}\n` +
+        `[nighthawk-funnel] ${editionFor}: route-level exception (see edition-builder funnel log for stage counts)`,
+    }).catch(() => undefined);
     return NextResponse.json(
       {
         ok: false,

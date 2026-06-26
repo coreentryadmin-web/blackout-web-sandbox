@@ -26,6 +26,7 @@ import { critiquePlays } from "./play-critic";
 import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { nextTradingDayEt, todayEt } from "./session";
+import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
 
 /**
@@ -49,14 +50,20 @@ type FunnelCounts = {
   published: number;
 };
 
-function logFunnel(editionFor: string, f: Partial<FunnelCounts>): void {
+function formatFunnelLine(editionFor: string, f: Partial<FunnelCounts>): string {
   const c = (n: number | undefined) => (n == null ? "-" : n);
-  const line =
+  return (
     `[nighthawk-funnel] ${editionFor}: candidates=${c(f.candidates)} extracted, ` +
     `ranked=${c(f.ranked)}, dossiers=${c(f.dossiers)}, ` +
     `synthesized=${c(f.synthesized)} (claude raw plays), ` +
-    `critic_passed=${c(f.critic_passed)}, published=${c(f.published)}`;
+    `critic_passed=${c(f.critic_passed)}, published=${c(f.published)}`
+  );
+}
+
+function logFunnel(editionFor: string, f: Partial<FunnelCounts>): string {
+  const line = formatFunnelLine(editionFor, f);
   console.info(line);
+  return line;
 }
 
 export type EditionBuildResult = {
@@ -89,7 +96,7 @@ function stagedToDossierMap(
  *  Promise.reject(obj), a fetch-response-shaped reject) otherwise becomes the useless "[object Object]"
  *  in job.error — which is exactly what hid the real edition-build failure from admin/#77. Prefer a
  *  .message/.error/.detail field, else a bounded JSON dump, so the next failure is diagnosable. */
-function serializeBuildError(error: unknown): string {
+export function serializeBuildError(error: unknown): string {
   if (error instanceof Error) return error.message || error.name || "Error";
   if (error && typeof error === "object") {
     const o = error as Record<string, unknown>;
@@ -673,16 +680,26 @@ export async function buildEveningEdition(opts?: {
       resumed: alreadyDone.length > 0,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = serializeBuildError(error);
     console.error("[nighthawk/edition] build failed:", error);
     // Emit whatever funnel counts we accumulated before the throw, so an exception path is also
     // self-diagnosing (which stage we got to before failing). published is left undefined ("-").
-    logFunnel(editionFor, funnel);
+    const funnelLine = logFunnel(editionFor, funnel);
     if (checkpointing) {
       await upsertNighthawkJob(editionFor, { status: "failed", error: message });
       logNighthawkJob(editionFor, "error", null, message);
     }
     const failedJob = checkpointing ? await fetchNighthawkJob(editionFor) : null;
+    // Ops alert on a hard edition-build failure (#77 was invisible to ops). No-op until
+    // DISCORD_OPS_WEBHOOK_URL is set; never throws (notifyOpsDiscord swallows its own errors).
+    await notifyOpsDiscord({
+      severity: "critical",
+      title: `Night Hawk edition build FAILED — ${editionFor}`,
+      body:
+        `stage=${failedJob?.current_stage ?? "unknown"}\n` +
+        `error: ${message}\n` +
+        funnelLine,
+    }).catch(() => undefined);
     return {
       ok: false,
       edition_for: editionFor,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
-import { buildEveningEdition } from "@/lib/nighthawk/edition-builder";
+import { buildEveningEdition, serializeBuildError } from "@/lib/nighthawk/edition-builder";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -32,7 +32,7 @@ export async function POST() {
     );
   } catch (error) {
     recordAdminRouteError("admin/nighthawk/run", error);
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = serializeBuildError(error);
     return NextResponse.json(
       { ok: false, error: "Edition build failed", detail },
       { status: 500 }
