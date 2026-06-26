@@ -252,12 +252,29 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
       const nonTerminal = latestNhJob.status !== "published" && latestNhJob.status !== "failed";
       const stuck = nonTerminal && ageMin != null && ageMin > STUCK_JOB_MIN;
 
+      // Is the published edition RECENT? Heal a stale handshake only when the writer's real target was
+      // refreshed within the registry staleness window — a published edition from days ago with no
+      // fresh attempt is itself stale and must NOT be painted healthy.
+      const { effective: nhStaleMin } = effectiveStaleMinutes(job);
+      const publishFresh = ageMin != null && ageMin <= nhStaleMin;
+
       if (latestNhJob.status === "failed") {
         status = "failed";
         statusLabel = `Job failed: ${latestNhJob.error ?? latestNhJob.current_stage ?? "unknown"}`;
       } else if (latestNhJob.status === "published") {
-        status = health.status === "unknown" || health.status === "stale" ? "healthy" : health.status;
-        statusLabel = `Published ${latestNhJob.edition_for}`;
+        // The edition PUBLISHED — when its row is fresh, the writer's actual target (nighthawk_editions)
+        // is current, so the run is HEALTHY regardless of what the last cron_job_runs handshake row says.
+        // Before the fire-and-forget cron (#77 hardening D) the route AWAITED the multi-minute build and
+        // lost the hit-cron 60s handshake / logged timeout-budget checkpoints as ok:false, leaving STALE
+        // `failed` rows in cron_job_runs. Healing only `unknown`/`stale` (not `failed`) let such a stale
+        // `failed` row keep the run painted "failed" while the label read "Published <date>" — a
+        // contradictory state the data-integrity writer check then surfaced as a false flag. The
+        // published nighthawk_job is the authoritative outcome of THIS job: a FRESH published edition
+        // heals to healthy; a STALE one (no fresh build) stays stale so the watchdog still alerts.
+        status = publishFresh ? "healthy" : "stale";
+        statusLabel = publishFresh
+          ? `Published ${latestNhJob.edition_for}`
+          : `Last published ${latestNhJob.edition_for} (${ageMin}m ago > ${Math.round(nhStaleMin)}m) — no fresh build`;
       } else if (stuck) {
         status = "stale";
         statusLabel = `Stuck ${ageMin}m at ${latestNhJob.current_stage ?? latestNhJob.status} (no publish, no progress)`;

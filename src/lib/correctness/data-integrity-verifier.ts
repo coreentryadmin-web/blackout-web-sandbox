@@ -652,8 +652,40 @@ async function checkWriters(_ctx: Ctx): Promise<CheckResult[]> {
     if (!CRITICAL_WRITERS.has(job.key)) continue;
     const metric = `writer_${job.key.replace(/-/g, "_")}`;
 
+    // GROUND-TRUTH GUARD (live finding 2026-06-26): flag on the writer's actual TARGET freshness, not a
+    // stale cron_job_runs HANDSHAKE row. The fire-and-forget nighthawk cron (#77 hardening D) can leave
+    // an old `failed` handshake row in cron_job_runs from the pre-fire-and-forget await/timeout code,
+    // even though tonight's edition PUBLISHED fine. buildCronHealthSnapshot already reconciles
+    // nighthawk-playbook's status against the published nighthawk_job, but assert the target directly
+    // here too so this check is correct independent of that module: if the writer's authoritative
+    // target shows a fresh successful write, a `failed` handshake row is NOT a data-integrity failure.
+    const targetFreshDespiteFailedHandshake = (() => {
+      const nh = (job.meta?.nighthawk_job ?? null) as
+        | { status?: string; published_at?: string | null; updated_at?: string | null }
+        | null;
+      if (!nh || nh.status !== "published") return false;
+      const ts = nh.published_at ?? nh.updated_at ?? null;
+      if (!ts) return false;
+      const ageMin = (Date.now() - new Date(ts).getTime()) / 60_000;
+      // Fresh within the writer's own staleness window — a recently published edition means the PG
+      // target is current regardless of the handshake log.
+      return Number.isFinite(ageMin) && ageMin <= job.effective_stale_min;
+    })();
+
     // Loud states: failed last run, OR market-hours-stale (the snapshot's #90 in-RTH silent-death flag).
-    if (job.status === "failed") {
+    if (job.status === "failed" && targetFreshDespiteFailedHandshake) {
+      // Handshake row says failed but the writer's target published fresh — a stale-log artifact, not a
+      // data outage. Record it as consistency-only so the scorecard stays accurate and loud-but-real.
+      checks.push(
+        mk(
+          "freshness",
+          metric,
+          "consistency-only",
+          `Writer "${job.name}" has a stale 'failed' cron handshake row, but its target is FRESH (${job.status_label}) — the edition published on schedule. Treated as a logging artifact (fire-and-forget cron), not a data-integrity failure.`,
+          { id: `writer-${job.key}`, actual: "published-fresh" }
+        )
+      );
+    } else if (job.status === "failed") {
       checks.push(
         mk(
           "freshness",

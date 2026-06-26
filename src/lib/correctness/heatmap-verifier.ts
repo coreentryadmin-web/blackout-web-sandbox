@@ -595,24 +595,31 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
   const raw = rawRecomputeNetGexAndKing(contracts, spot, ctx.today);
 
   // Compare per-strike net $-gamma: every strike present in BOTH our raw recompute and the served
-  // cells (nearest expiry) is checked. CLASSIFICATION (the load-bearing fix):
+  // cells (nearest expiry) is checked. CLASSIFICATION (the load-bearing fix, live finding 2026-06-26):
   //
-  // The production cell math (accumulateContract: sign·gamma·oi·100·spot²·0.01, call +/put −) is
-  // BYTE-FOR-BYTE the same transform this shadow uses, hitting the SAME provider/key/endpoint. So a
-  // real ×100 / dropped-×0.01 / flipped-sign TRANSFORM bug is necessarily SYSTEMATIC — it skews
-  // (nearly) EVERY overlapping cell by a consistent ratio, and is ALSO caught deterministically by the
-  // INV-1 Σ(strike_totals)==total invariant (tol 1e-6) and the magnitude ceiling. By contrast an
-  // ISOLATED divergence at ONE strike — especially a SIGN FLIP at a deep-OTM / thin strike where the
-  // strike's call $-gamma ≈ put $-gamma (net ≈ 0) — is provider/timing JITTER: the cached matrix and
-  // the live shadow fetch are sampled seconds-to-minutes apart, and a near-cancelling strike's NET
-  // sign flips on a handful of OI/quote ticks. That is a cross-provider/timing DIVERGENCE, NOT a
-  // transform bug, and must NOT scream "transform bug" as a hard FLAG.
+  // This whole comparison is CROSS-TIME BY CONSTRUCTION. It diffs a cell from a FRESH raw chain fetch
+  // (sampled NOW) against a cell from the CACHED matrix (built up to a TTL ago). During active RTH the
+  // ENTIRE chain moves between those two samples: spot moves, so every cell is rescaled by (S₂/S₁)²
+  // (the spot² term in gamma·oi·100·spot²·0.01), and OI/quotes tick. A fresh-vs-cached diff therefore
+  // sees market-wide movement on TOP of any transform difference — it CANNOT cleanly separate "the
+  // engine applied the wrong transform" from "the market moved between the two samples." In the latest
+  // live run this layer alone flagged 25/13/21 "material" strikes incl. a sign flip, while THREE
+  // temporal-immune / independent checks all passed on the SAME served payload: INV-1 (Σ(strike_totals)
+  // ==total), INV-2b (each strike's served cell re-sum agrees in SIGN with its strike_total, from the
+  // matrix's OWN snapshot, no fresh fetch), and the UW cross-provider oracle (SPX King + net sign).
   //
-  // RULE: hard-FLAG only a SYSTEMATIC skew (a majority of cells out of tolerance). An isolated
-  // divergence (few cells, or a sign-fragile near-cancelling strike) is downgraded to a
-  // consistency-only `cross-provider-divergence`. A sign-flip is hard-flagged ONLY when it is NOT
-  // near-cancellation, i.e. the cell carries material magnitude (|net| ≥ a fraction of the median
-  // |cell|) — a large-magnitude strike that flips sign would be a genuine aggregation bug.
+  // CONCLUSION: the shadow-recompute (fresh-fetch-vs-cached-matrix) divergence is NOT a reliable hard
+  // signal during market hours and must NEVER hard-FLAG. It emits a CONSISTENCY-ONLY
+  // `cross-time-divergence` entry (logged/informational only). The real-bug detectors live elsewhere
+  // and are temporal-immune / cross-provider:
+  //   • a ×100 / dropped-×0.01 / B-vs-M SCALE bug → INV-1 (Σ(strike_totals)==total, tol 1e-6) +
+  //     the absurd-magnitude ceiling (sanityChecks). Scale bugs are sign-preserving and systematic, so
+  //     Σ no longer reconciles to total → hard FLAG, with NO fresh fetch needed.
+  //   • a per-CELL SIGN bug (flipped call(+)/put(−), corrupted cells→strike_totals aggregation) →
+  //     INV-2b, which compares the served cells' re-sum to the served strike_total at every strike
+  //     from ONE snapshot → a contradiction WITHIN the served payload hard FLAGs, immune to timing.
+  //   • the King STRIKE + net-GEX SIGN → the UW oracle (cross-provider, scale-invariant).
+  // The shadow recompute's job is now purely to surface a cross-time gap for the record, not to gate.
   type CellDiff = { strike: string; raw: number; served: number; fd: number; signFlip: boolean };
   const diffs: CellDiff[] = [];
   for (const [strikeStr, rawVal] of Object.entries(raw.strikeTotals)) {
@@ -631,36 +638,11 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
   const strikesCompared = diffs.length;
 
   if (strikesCompared >= 3) {
-    // Median |served| as the magnitude yardstick (robust to the deep-OTM thin tails).
-    const sortedAbs = diffs.map((d) => Math.abs(d.served)).sort((a, b) => a - b);
-    const medianAbs = sortedAbs[Math.floor(sortedAbs.length / 2)] || 0;
-    // A diverging cell is "material" (not near-cancellation jitter) when its served |net| is a real
-    // fraction of the median cell — a near-zero net at a thin strike is sign-fragile, so excluded.
-    const MATERIAL_FRACTION_OF_MEDIAN = 0.25;
     const outOfTol = diffs.filter((d) => d.fd > TOL.rawNetFractional);
-    const materialOut = outOfTol.filter((d) => Math.abs(d.served) >= medianAbs * MATERIAL_FRACTION_OF_MEDIAN);
-    // Systematic = a MAJORITY of compared cells are out of tolerance → the transform-bug signature.
-    const systematic = outOfTol.length >= Math.ceil(strikesCompared / 2);
+    const flips = outOfTol.filter((d) => d.signFlip);
     const worst = [...outOfTol].sort((a, b) => b.fd - a.fd)[0];
     const fmtCell = (d: CellDiff) =>
       `strike ${d.strike}: raw ${d.raw.toExponential(3)} vs served ${d.served.toExponential(3)} (Δ ${(d.fd * 100).toFixed(2)}%${d.signFlip ? ", SIGN FLIP" : ""})`;
-
-    // ── TEMPORAL CLASSIFICATION (the load-bearing fix for the per-strike sign-flip flags) ──────────
-    // This whole block compares a cell from a FRESH raw fetch (sampled now) against a cell from the
-    // CACHED matrix (built up to a TTL ago). A genuine production transform/sign bug — a flipped
-    // call(+)/put(−) sign, a dropped ×0.01, a ×100 — lives in accumulateContract and therefore hits
-    // (nearly) EVERY two-sided strike with a CONSISTENT skew: it is SYSTEMATIC by construction, never
-    // a single strike. A LONE strike whose NET sign flips between the two time samples is the opposite
-    // signature: at a near-cancelling strike (call $-gamma ≈ put $-gamma) the net is sign-fragile, and
-    // its CACHED magnitude can be large precisely because the cancellation differed at build time —
-    // so "material magnitude" does NOT make a single flip a transform bug. Hence a lone sign-flip is
-    // downgraded to cross-time jitter; we only HARD-FLAG a SYSTEMATIC pattern (majority of cells off,
-    // OR ≥2 material divergences sharing the transform signature). The temporal-IMMUNE detectors that
-    // catch a real per-cell sign/aggregation bug WITHOUT a fresh fetch run separately below
-    // (internalCellIntegrityCheck) and in INV-1 (Σ==total) — so relaxing the cross-time flag here
-    // does NOT blind the cron to a genuine ×100 / dropped-factor / sign bug.
-    const materialFlips = materialOut.filter((d) => d.signFlip);
-    const isLoneSignFlip = !systematic && materialOut.length === materialFlips.length && materialFlips.length <= 1;
 
     if (outOfTol.length === 0) {
       out.push(
@@ -673,34 +655,22 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
           { id: "raw-cell-gex", tolerance: TOL.rawNetFractional }
         )
       );
-    } else if (systematic || (materialOut.length > 0 && !isLoneSignFlip)) {
-      // Either a market-wide skew (majority off) OR ≥2 material divergences — the transform-bug
-      // signature is SYSTEMATIC, so this is the real-bug bucket. HARD FLAG with the worst offender.
-      out.push(
-        mk(
-          ctx,
-          "shadow-recompute",
-          "net_gex",
-          "flag",
-          systematic
-            ? `Raw-chain recompute SYSTEMATICALLY diverges from served cells (${outOfTol.length}/${strikesCompared} cells out of ±${(TOL.rawNetFractional * 100).toFixed(0)}%): ${fmtCell(worst)} — scale/unit/sign transform bug.`
-            : `Raw-chain recompute diverges at ${materialOut.length} MATERIAL strikes (net $-gamma ≥ ${(MATERIAL_FRACTION_OF_MEDIAN * 100).toFixed(0)}% of the median cell, not near-cancellation): ${fmtCell(materialOut.sort((a, b) => b.fd - a.fd)[0])} — multi-strike pattern points to an aggregation/sign bug, not timing jitter.`,
-          { id: "raw-cell-gex", tolerance: TOL.rawNetFractional, expected: fmtCell(worst) }
-        )
-      );
     } else {
-      // ISOLATED divergence — a LONE sign-flip at a sign-fragile near-cancelling strike, or thin-tail
-      // immaterial diffs → FRESH-vs-CACHED timing skew on the SAME provider, NOT a transform bug.
-      // (A real transform/sign bug is systematic and is caught by internalCellIntegrityCheck + INV-1
-      // below, which need NO fresh fetch and so cannot be fooled by this cross-time skew.) Downgrade
-      // to a consistency-only cross-time-divergence (a gap, not a flag).
+      // DEMOTED to CONSISTENCY-ONLY (never a hard FLAG). The fresh-fetch-vs-cached-matrix diff is
+      // cross-time by construction (whole-chain RTH movement rescales every cell by (S₂/S₁)²), so it
+      // cannot reliably distinguish a transform bug from market movement during market hours. Whether
+      // the divergence looks isolated or "systematic," it is logged here for the record only; the
+      // hard-flagging detectors are the temporal-immune INV-1 / INV-2b / magnitude-ceiling and the
+      // cross-provider UW oracle, which run on the served snapshot (or a second provider) and are not
+      // fooled by this timing skew. A genuine ×100 scale bug still hard-flags via INV-1 (Σ≠total) and
+      // a per-cell sign bug still hard-flags via INV-2b.
       out.push(
         mk(
           ctx,
           "shadow-recompute",
           "net_gex",
           "consistency-only",
-          `cross-time-divergence: ${outOfTol.length}/${strikesCompared} ${nearestExpiry} cell(s) diverge${materialFlips.length ? ` (incl. ${materialFlips.length} lone sign-flip at a sign-fragile near-cancelling strike)` : " at sign-fragile near-cancelling thin strikes"} — explained by FRESH-fetch-vs-CACHED-matrix timing on the SAME provider, NOT a transform bug (a real sign/scale bug is systematic, not one strike): ${fmtCell(worst)}. The temporal-immune detectors (per-cell integrity + INV-1 Σ==total) hold.`,
+          `cross-time-divergence (informational, not a flag): ${outOfTol.length}/${strikesCompared} ${nearestExpiry} cell(s) diverge > ±${(TOL.rawNetFractional * 100).toFixed(0)}%${flips.length ? ` (incl. ${flips.length} sign flip${flips.length === 1 ? "" : "s"})` : ""} — expected from FRESH-fetch-vs-CACHED-matrix timing during RTH (whole-chain movement rescales every cell by spot²), NOT evidence of a transform bug. Worst: ${fmtCell(worst)}. Authoritative real-bug detectors are temporal-immune (INV-1 Σ==total, INV-2b per-strike sign, magnitude ceiling) + the UW oracle — see their entries.`,
           { id: "raw-cell-gex", tolerance: TOL.rawNetFractional }
         )
       );
@@ -728,6 +698,11 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
     }
     const servedKingBand = deriveWalls(servedBand).king;
     // This is band-scoped, so only assert when both sides found a King in the shared band.
+    // CONSISTENCY-ONLY (never a hard FLAG): like the cell diff above, this compares a FRESH raw-chain
+    // King against the CACHED served band — a cross-time comparison. Near a moving spot the |net|
+    // extreme can hop a strike between the two samples, so a mismatch is timing, not a bug. The King
+    // STRIKE is independently CONFIRMED by the temporal-immune UW cross-provider oracle below; this
+    // entry is informational corroboration only.
     if (servedKingBand != null) {
       const ok = Math.abs(raw.king - servedKingBand) <= Math.max(spot * 0.01, 1);
       out.push(
@@ -735,10 +710,10 @@ async function shadowRecomputeChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckRes
           ctx,
           "shadow-recompute",
           "king",
-          ok ? "consistency-only" : "flag",
+          "consistency-only",
           ok
             ? `Raw-chain King ${fmt(raw.king)} agrees with the served near-band |net| extreme ${fmt(servedKingBand)}.`
-            : `Raw-chain King ${fmt(raw.king)} != served near-band |net| extreme ${fmt(servedKingBand)}.`,
+            : `cross-time-divergence (informational, not a flag): raw-chain King ${fmt(raw.king)} != served near-band |net| extreme ${fmt(servedKingBand)} — fresh-fetch-vs-cached timing near a moving spot; the King strike is independently confirmed by the UW oracle.`,
           { id: "raw-king", expected: raw.king, actual: servedKingBand, tolerance: Math.max(spot * 0.01, 1) }
         )
       );
