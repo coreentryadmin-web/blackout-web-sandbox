@@ -632,3 +632,75 @@ main push of code this run; the only main write is this log.
   preview external caller (RUN 3); `::int` `days_of_data` source-round (RUN 4, `Math.floor`); trade-entry
   flow-stale gate corroboration (RUN 5); off-hours WS-staleness/breadth-ticker RTH gate + SLA-latency-as-error
   display class (cosmetic); open `auto/*` branches awaiting human review.
+
+---
+
+## RUN 8 — 2026-06-26 ~19:48 UTC (daily slot, market OPEN ~3:48 PM EDT Fri)
+
+Eighth pass today (~1h after RUN 7 @ 18:48 UTC). Repo `C:/Users/raidu/blackout-cron`, `git pull` clean,
+**tsc-green (exit 0)** at base `1030f8a`. Re-checked all live error surfaces on `blackouttrades.com`
+(logged-in admin, Chrome bridge — healthy) for NEW/spiking signatures since RUN 7. **PRIMARY durable
+sink CLEAN; no new errors.** The one actionable item is an observability correctness bug surfaced by the
+health check — `health_ok` permanently `false` during RTH from an EXPECTED-by-design condition →
+high-confidence isolated **FIX → main (`1fbef6e`)**.
+
+### A. Live error surfaces — CLEAN (no new/spiking signature)
+
+| Source | Endpoint | Result |
+|---|---|---|
+| Durable error sink | `/api/admin/errors` | ✅ 70 events, **ZERO new since RUN 7**. Only the 2 known fixed signatures: `::date "Mon Jun 29"` ×69 (RUN 3 fix `cc17d83`, last event **07:11 UTC** → ~12.6h with no recurrence = holding) + `::int "87.29…"` ×1 (RUN 4 fix `48d30b0`). Both fixed-and-holding. |
+| Open incidents | `/api/admin/incidents` | ✅ `count:0, open:0` |
+| Admin health | `/api/admin/health` | ⚠️ `health_ok:false` driven **solely** by the 3 breadth-ticker `info`-class warnings (`I:TICK/I:TRIN/I:ADD` "stale or zero") — §B. `critical:0`, `route_errors:0`, `redis_degraded:false`, `market_health_ok:true`. No flow-stale critical (RUN 5 `994e2bd` holding). |
+| API dashboard (24h) | `/api/admin/apis/dashboard` | ⚠️ `error_rate:0.125`, 1 `recent_error` = `/v3/snapshot/indices` **status:200** = the known SLA-latency-as-error display class (NOT a real failure). `active_retries:0`, 0 endpoints with error_count>0. RUN 3/4 spikes aged out. |
+| Cron health | `/api/admin/cron-health` | ✅ summary `failed:0` (15 jobs: 10 healthy, 1 warning, 1 stale, 3 unknown). The single job with `last_status:failed` is **Night Hawk Edition** (last run **Thu 23:32**, "no parseable plays" — unchanged carry-forward; fix `cc35f9e` live, next fire 5:30 PM EDT today). **Data Correctness is NO LONGER failing** — RUN 7's warm-writer RTH-push stall self-healed again (no recurrence post RUN 7 log push). |
+
+So the surface is identical to RUN 7 minus the warm-writer stall, which recovered. Both prior `::date`/`::int`
+fixes are holding; sector-tide (`40fcc24`) holding; flow-stale (`994e2bd`) holding.
+
+### B. THE FINDING — `health_ok` is cry-wolf during all RTH → FIX → main (`1fbef6e`)
+
+`health_ok` has been **`false` for the entire market session, every session**, driven solely by 3
+`websocket` warnings: `I:TICK/I:TRIN/I:ADD` "stale or zero" (`price=0`, age>30s during RTH). Prior runs
+repeatedly noted these as "benign cosmetic carry-forward (gate behind RTH check) — low-value flag." This
+run **root-caused and fixed it** because a permanently-false top-level health flag is genuine cry-wolf: it
+masks any *real* warning that appears (admin can't distinguish "always-false" from "newly-broken").
+
+**Root cause (two loci):**
+- `admin-spx-issues.ts:371` — `health_ok = counts.critical === 0 && counts.warning === 0 && health.ok`, so
+  **any** warning flips it false.
+- `admin-spx-issues.ts:160-168` — the per-symbol loop emits `severity:"warning"` for **every** polygon WS
+  symbol at `price<=0 && age>30s` during RTH, with no exception for the breadth internals.
+
+**Why the breadth-internal warning is a FALSE alarm (verified, not assumed):** `market-internals.ts:1`
+documents — and the whole module exists — that *"Polygon does not return I:TICK / I:TRIN / I:ADD"* on our
+plan, so `resolveMarketInternals` substitutes a **breadth-derived PROXY with provenance badging**
+(`market-internals.ts:56-80`) when the real print is null. A 0/stale on those three is therefore EXPECTED,
+designed operation — the consuming desk already handles it correctly with proxies. (`polygon-socket.ts:46-48`
++ `:258-259` confirm exactly `I:TICK/I:TRIN/I:ADD` are the subscribed internals.) So suppressing the *warning*
+does NOT hide a real data gap — it removes a false one. (Truth mandate respected: the value users see is the
+proxy, already correct + badged; this changes only the health *severity*, never any number.)
+
+**Fix (`1fbef6e`, 1 file, observability-only):** the symbol loop now downgrades the 3 documented
+proxy-backed internals (`PROXY_BACKED_INTERNALS = {I:TICK, I:TRIN, I:ADD}`) to `severity:"info"` (still
+**visible** in the issues list, with detail "expected; breadth proxy supplies this reading"), so they no
+longer flip `health_ok`. **A real index feed (SPX/VIX/VIX9D/VIX3M) at `price<=0` during RTH still emits a
+`warning`** — that genuine failure class is untouched. `npx tsc --noEmit` exit 0 · `npm run build` exit 0 →
+high-confidence, small, isolated, build-gated observability correctness → `main` (clean ff `1030f8a..1fbef6e`).
+
+**Net effect:** `health_ok` becomes a meaningful signal again — `true` in normal RTH, flips `false` only on a
+real critical/warning. The next time a genuine warning fires, it will actually be distinguishable.
+
+### Result
+
+**✅ Live surface CLEAN of new/spiking signatures (durable sink 0 new; incidents 0; dashboard 0 real errors;
+cron 0 failed besides the known Night Hawk carry-forward). Data Correctness warm-writer stall (RUN 7) recovered
+with no recurrence.** ONE real fix this run: the perpetual-`health_ok:false` cry-wolf — root-caused to the
+breadth-internal warnings being emitted for an expected, proxy-handled condition, fixed to `info` → **main
+(`1fbef6e`)**, build-gated. No theater: every other surface verified clean and all prior fixes confirmed holding.
+
+### Carry-forward (toward 0-open-issues)
+- **Night Hawk Edition** synthesis funnel (now self-diagnosing via `cc35f9e`) + stale-`running` reaper (#70) — flag.
+- `auto/error-triage-2026-06-26-cron-watchpatterns` (RUN 7, Task #1) — merge OFF-HOURS; the warm-writer RTH-push
+  stall recovered this run but the structural cause (15 trigger TOMLs lacked `watchPatterns`) is unmerged.
+- Prior carry-forwards stand: publish-preview external caller (RUN 3); `::int days_of_data` source-round (RUN 4);
+  open `auto/*` branches awaiting human review.
