@@ -149,3 +149,202 @@ curl -s -w '%{http_code}' "https://api.massive.com/benzinga/v2/news?tickers.any_
 ```
 
 Base `https://api.massive.com`; auth `?apiKey=...`. Channel names are space-delimited, lowercase, URL-encode the space.
+
+---
+
+## Usage → Gap → Add-Plan (2026-06-26)
+
+> Companion to §1–§5 above. §1–§5 answer **"what can we access"** (entitlement
+> matrix). This section answers **"what do we actually USE, what are we MISSING
+> within the plan, how do we ADD it, and is an UPGRADE worth paying for."**
+> Written against **origin/main HEAD `be21109`**, verified live in source.
+
+### 0. Corrections vs the earlier raw findings (and vs §3 above)
+
+The earlier audit pass (and §3 "live bug" above) assumed the analyst-channel fix
+and the dossier price-target wiring were still unmerged. **Both have since landed
+on main.** Verified in source:
+
+- **Analyst channel hyphen bug — FIXED.** `fetchBenzingaAnalystRatings`
+  (`src/lib/providers/polygon.ts:429-432`) now passes the correct space-form
+  comma-list `"analyst ratings,price target,upgrades,downgrades,analyst color"`.
+  The dead hyphen `"analyst-ratings"` is gone from every **fetch** — it survives
+  only in two **description strings** (`tool-defs.ts:150` and a polygon.ts code
+  comment), which are cosmetic and should be corrected for accuracy. **§3's bug
+  snippet (lines 94-102) is now historical, not live.**
+- **Dossier price-target wiring — LANDED.** `fetchBenzingaPriceTarget` +
+  `parsePriceTargetFromText` exist (`polygon.ts:533+`, `:479+`), pull the
+  `price target` channel, and the dossier populates `analyst_summary` +
+  `price_target` from the parsed PT (`dossier.ts:101, 400-401, 407`).
+- **Grounding reconciles instead of blanket-stripping.** `grounding.ts:307-324`
+  now reconciles prose PTs against the parsed `benzinga_price_target` (±tol)
+  rather than always deleting them.
+
+Net effect: the single highest-leverage fix from the prior audit is **already
+done**. The remaining opportunity is **surfacing** (mount what's built) and
+**breadth** (use more of the free channels), not bug-fixing.
+
+### 1. HOW MUCH WE USE TODAY — usage map
+
+Only **two** channel strings are ever passed in `src/`: `"earnings"` and the
+analyst comma-list. Every other call hits the feed **channel-less**.
+
+| Surface / call site | Channels | Status | Notes |
+|---|---|---|---|
+| `fetchBenzingaNews` core fetcher (`polygon.ts:389-418`) | caller-supplied | **USED** | The single real Benzinga surface; every other helper delegates here. |
+| `fetchBenzingaEarnings` → Largo `get_earnings` (`run-tool.ts:748`), Night's Watch `position-detail.ts:198` | `earnings` | **USED** | Prose only; next-earnings *date* still from UW. |
+| `fetchBenzingaAnalystRatings` → Largo `get_analyst_ratings` (`run-tool.ts:772`) | `analyst ratings,price target,upgrades,downgrades,analyst color` | **USED** *(was broken, now fixed)* | Now actually consumes Benzinga vs always falling through to the UW screener. |
+| `fetchBenzingaPriceTarget` → dossier financials (`dossier.ts:101`) | `price target` | **USED** *(newly landed)* | Parses PT/firm/action; populates dossier `price_target` + `analyst_summary`. |
+| Largo `get_news` / `toolNews` (`run-tool.ts:247-311`) | model-driven free-form | **USED** | Most flexible consumer; Benzinga-first merge over Polygon. |
+| `/api/market/news` route (`route.ts:19`) | **none** | **PARTIAL** | `fetchBenzingaNews(15)`, channel-less. Only consumers are the two orphaned components below. |
+| SPX desk news strip (`spx-desk.ts:837`) | **none** | **PARTIAL** | Computed `news_headlines` + fed to macro-events merge, **but renders only in admin debug JSON — not on the public desk.** |
+| Night Hawk dossier per-ticker (`dossier.ts:300`) | **none** | **PARTIAL** | `fetchBenzingaNews(5,{ticker})`; titles only; teaser/body/channels discarded; no catalyst filtering. |
+
+**Bottom line:** machinery healthy and headline bugs fixed, but **breadth is
+tiny** — only `earnings` + the analyst list are requested by name; the flagship
+after-hours product fetches the firehose channel-less.
+
+### 2. HOW MUCH WE ARE MISSING — unused entitled channels (prioritized)
+
+All free + unlimited on the current plan (same endpoint, different
+`channels.any_of`). Grep confirms **zero** call-sites request any of these.
+
+**Tier A — highest value / best fit (do first):**
+
+- **`after-hours center`** — the **single best-fit unused channel.** Night Hawk
+  builds the *next* session's edition *after the close*; earnings reactions,
+  guidance cuts, halts live here. Today AH items appear only by luck in the
+  channel-less feed. → Night Hawk `market-wide.ts` "After-Hours Wire."
+- **`movers`** — NH derives movers only from UW flow + Polygon snapshots; no
+  curated "why it's moving" narrative. → NH edition-wide + per-dossier "why it
+  moved"; cross-ref `hot_chains`.
+- **`m&a`** — highest-impact single-name gap catalyst, **completely absent**. →
+  dossier flag + Night's Watch/watchlist alert.
+- **`guidance`** — raises/cuts are pure per-ticker catalysts, invisible to
+  dossier + alerts. → `guidance_events[]` → `scoreCandidate` + alert.
+- **`short sellers`** — activist-short reports are major gap catalysts; dossier
+  has only structural `short_days_to_cover`. → pair high-DTC + fresh report =
+  squeeze/gap alert.
+- **`insider trades`** — dossier insider data is **UW-only** (2 RPS cap);
+  Benzinga is a **free corroborator** → relieves UW quota (cache-reader rule).
+- **`fda`** — Largo `get_fda_calendar` is **UW-only + calendar-only**; no
+  breaking approval/CRL/PDUFA news. → biotech dossiers + calendar complement.
+
+**Tier B — solid value:** `offerings` (bearish dilution flag), `buybacks`
+(bullish), `top stories` (curated macro lead for the desk strip + Largo
+context), `ipos` (richer `get_ipo_calendar` fallback before web search),
+`trading ideas` (Largo menu).
+
+**Tier C — low value / enumerate-for-Largo only:** `dividends` (Polygon
+structured already covers), `rumors` (noisy — label UNCONFIRMED, never score),
+`exclusives`, `options` (redundant with UW/Polygon GEX), `economics`/`government`
+(macro covered by macro-events), `events`.
+
+**Cross-cutting gaps:**
+- **`get_news` discoverability** — `get_news` takes a free-form `channels`
+  string (`tool-defs.ts:152-158`) but enumerates **no channel names**, so Largo
+  never knows it can request `after-hours center`/`movers`/`m&a`/`fda`/etc. The
+  whole surface is reachable but **undiscoverable** to the model.
+- **Alerts** — grep of `src/lib/alerts` + `src/app/api/cron` finds **zero**
+  `fetchBenzinga`. The personalized-alerts scaffold (task #13) has no catalyst
+  feed; these free channels make event alerts ~zero-cost.
+
+### 3. HOW TO ADD IT — ordered add-plan (free items first)
+
+Format: **channel → parse → surface → effort.**
+
+**Cheapest wins (no new fetch, or one-line desc change):**
+
+1. **Mount the dead news components.** `BenzingaNewsRail.tsx` /
+   `BenzingaNewsTicker.tsx` (`src/components/desk/`) consume `/api/market/news`
+   via `useSWR("benzinga-news")` but are **imported by nothing**. → Mount on the
+   SPX desk. *XS.* The cheapest high-value win — makes the entitled feed render
+   to users. If declined, delete both + the route.
+2. **Enumerate channels in `get_news`** (`tool-defs.ts:152`): a one-line menu
+   (`after-hours center, movers, guidance, m&a, buybacks, insider trades, short
+   sellers, fda, offerings, ipos, top stories, trading ideas, analyst color,
+   upgrades, downgrades, price target, rumors, exclusives`). *XS.* Unlocks the
+   whole free surface for Largo with zero new fetch code. Also fix the two stale
+   "analyst-ratings" description strings while here.
+3. **Surface the SPX desk strip publicly** — `news_headlines` is computed
+   (`spx-desk.ts:837`) but admin-only. Render it; pass
+   `channels:"top stories,movers"` to sharpen the firehose. *S.*
+
+**Night Hawk (after-hours thesis — marquee fit):**
+
+4. **`after-hours center` + `movers` → NH edition** (`market-wide.ts`). Add
+   `fetchBenzingaNews(25,{channels:"after-hours center,movers"})` alongside
+   `fetchMarketNewsPreferPolygon`; map `ticker→headline`; surface an
+   "After-Hours Wire" recap block + per-dossier "why it moved." *M.*
+
+**Dossier catalyst broadening (ONE batched per-ticker call):**
+
+5. **`m&a,guidance,short sellers,offerings,buybacks` → dossier** (fold into the
+   `Promise.all` at `dossier.ts:300`). Parse into typed catalyst fields; feed
+   `scoreCandidate` (m&a/short = gap risk, guidance ±, buyback = mild bullish,
+   offering = bearish). *M.*
+6. **`insider trades` → dossier corroborator** — cross-check
+   `isRecentInsiderBuy()`; relieves UW quota. *S.*
+7. **Catalyst-grade dossier news** — change the channel-less
+   `fetchBenzingaNews(5,{ticker})` at `dossier.ts:300` to
+   `channels:"analyst ratings,price target,upgrades,downgrades,guidance,m&a,fda"`.
+   *XS (param only).*
+
+**Largo tool enrichment:**
+
+8. **`fda` → `get_fda_calendar`** (`run-tool.ts:799`) — breaking-news complement
+   to the UW calendar. *S.*
+9. **`ipos` → `get_ipo_calendar`** (`run-tool.ts:801`) — fallback **before** web
+   search. *S.*
+10. **`top stories` → market context** (`market-wide.ts`
+    `fetchMarketNewsPreferPolygon`). *S.*
+
+**Alerts (depends on #5/#6):**
+
+11. **Catalyst alerts** off the new dossier channels (m&a, guidance, downgrades,
+    short sellers, fda, offerings) → per-holder (Night's Watch) + per-watchlist.
+    *M.* Free channels → ~zero-cost event alerts.
+
+**Verify after #5-#7:** confirm the UW screener fallback at `run-tool.ts:775`
+stops firing for Benzinga-covered tickers, reclaiming UW RPS for
+flow/tide/dark-pool.
+
+### 4. UPGRADE ANALYSIS — the 403 structured endpoints
+
+(Endpoint detail in §1 + §4 above. This is the **pay-or-not** verdict, weighing
+each 403 against its accessible news-channel proxy. Priority 1 = highest.)
+
+| 403 endpoint | Net-new vs proxy? | Verdict | Priority |
+|---|---|---|---|
+| `/v1/consensus-ratings/{ticker}` | **YES — no proxy.** Channels echo single headlines; UW `predictions-consensus` is *crowd* consensus, not Street. Dossier carries one parsed PT, not a range. | **MUST-HAVE if upgrading.** Real consensus PT range + buy/hold/sell split nothing accessible reproduces → ticker header, Largo thesis, NW scoring. | **1 (tie)** |
+| `/v1/analyst-insights` | **YES — no proxy.** `analyst color` is generic articles, not per-rating rationale. Richest text payload. | **MUST-HAVE for Largo.** Answers "*why* did Firm X upgrade" in the analyst's words. | **1 (tie)** |
+| `/v1/ratings` | **Partial — strongest proxy already wired** (`fetchBenzingaPriceTarget` parses PT from `price target` channel; grounding reconciles). | **NICE-TO-HAVE.** Buys structured old→new PT + reliable action filtering, kills regex fragility. Only if PT-parse proves too noisy. | **2** |
+| `/v1/earnings` | **No — UW covers it** (`fetchUwEarnings*` gives structured beat/miss/est/timing). | **NICE-TO-HAVE.** Only if NH/NW earnings-risk scaling against the 2 RPS UW budget becomes the bottleneck. | **3** |
+| `/v1/guidance` | **Weak proxy** — `guidance` channel accessible but not yet wired; structured `positioning` (above/below street) has no headline equivalent. | **Do the FREE win first** (add-plan #5). Upgrade only if `positioning` becomes a needed deterministic NH signal. | **3** |
+| `/v1/bulls-bears-say` | **YES — no proxy at all.** | **NICE-TO-HAVE.** Differentiated but editorial, not numeric. Pursue after the numeric endpoints → desk bull/bear card + Largo balanced framing. | **4** |
+| `/v1/analysts` | **YES — no proxy.** But useless alone (enrichment on the 403 ratings/insights). | **Enrichment only** — never upgrade alone; bundle with a ratings/insights tier, then weight signals by analyst track record. | **4** |
+| `/v1/firms` | Companion lookup for the (403) feeds. | **SKIP as a standalone target** — comes free with any ratings/insights tier. | **lowest** |
+
+**Upgrade recommendation:** the only two endpoints that are net-new, have **no
+substitute**, AND carry a numeric trading signal are **`consensus-ratings`** and
+**`analyst-insights`** (Priority 1). If a paid tier is pursued it should bundle
+both (they typically drag `ratings`/`firms`/`analysts` along). Everything else is
+covered (earnings via UW; ratings/PT via the now-working `price target` proxy) or
+is editorial color. **Before paying, exhaust the free channel wins in §3 —
+especially `guidance`, `after-hours center`, `movers` — since they cost nothing
+on the current entitlement.**
+
+### 5. Executive summary
+
+We use the News-only entitlement at ~**two channels out of ~25**; the prior
+audit's headline bugs (analyst hyphen, blank dossier PT) are **already fixed on
+main**. The real gap is **breadth + surfacing**: the best-fit channels for our
+flagship after-hours product — **`after-hours center` and `movers`** — are
+completely unconsumed; the two built Benzinga news components are **unmounted
+dead code**; the SPX desk strip renders **admin-only**; and Largo can't
+**discover** the free channel menu. Add-plan is free-first: mount the components,
+enumerate channels for Largo, then wire `after-hours center`/`movers` into Night
+Hawk and a batched `m&a/guidance/short sellers/offerings/buybacks/insider trades`
+catalyst pull into the dossier + alerts — all $0 on the current plan. **Only two
+403 endpoints justify paying — `consensus-ratings` and `analyst-insights` — and
+only once the free channels are exhausted.**
