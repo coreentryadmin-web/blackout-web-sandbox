@@ -23,6 +23,7 @@
     "@anthropic-ai/sdk": "^0.105.0",
     "@clerk/nextjs": "^7.5.8",
     "@clerk/types": "^4.101.25",
+    "@types/web-push": "^3.6.4",
     "@whop/sdk": "0.0.40",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
@@ -36,6 +37,7 @@
     "sharp": "^0.35.1",
     "svix": "^1.45.1",
     "swr": "^2.2.5",
+    "web-push": "^3.6.7",
     "ws": "^8.18.0"
   },
   "overrides": {
