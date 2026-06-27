@@ -86,8 +86,8 @@ export function GridNewsPanel() {
                 No news found for {ticker}
               </p>
             ) : (
-              <div className="news-rail-track" style={{ animationPlayState: "paused" }}>
-                {data!.articles!.slice(0, 15).map((article, i) => (
+              <div className="flex flex-col gap-2 overflow-y-auto max-h-[320px] pr-1">
+                {data!.articles!.slice(0, 20).map((article, i) => (
                   <TickerNewsCard key={`${article.id}-${i}`} article={article} />
                 ))}
               </div>
@@ -95,7 +95,7 @@ export function GridNewsPanel() {
           </div>
         </>
       ) : (
-        <div className="grid-news-mount">
+        <div className="grid-news-mount overflow-y-auto max-h-[320px]">
           <BenzingaNewsRail />
         </div>
       )}

@@ -336,14 +336,21 @@ async function fetchCongressTrades(): Promise<GridCongressSnapshot> {
     : [];
 
   const trades: GridCongresstrade[] = rows
-    .map((r) => ({
-      politician: String(r.politician ?? r.name ?? r.senator ?? r.representative ?? ""),
-      ticker: String(r.ticker ?? r.symbol ?? "").toUpperCase(),
-      type: String(r.transaction_type ?? r.type ?? r.trade_type ?? ""),
-      amount: String(r.amount ?? r.value ?? ""),
-      filed_at: String(r.filed_at ?? r.date ?? r.disclosure_date ?? ""),
-      party: String(r.party ?? ""),
-    }))
+    .map((r) => {
+      const ticker = String(r.ticker ?? r.symbol ?? r.stock ?? "").toUpperCase();
+      const senator = String(r.senator ?? r.representative ?? r.politician ?? r.name ?? r.full_name ?? "");
+      const txDate = String(r.transaction_date ?? r.date ?? r.filed_at ?? r.disclosure_date ?? "").slice(0, 10);
+      const txType = String(r.transaction ?? r.type ?? r.trade_type ?? r.transaction_type ?? "").toLowerCase();
+      const amount = String(r.amount ?? r.range ?? r.amount_range ?? r.value ?? "");
+      return {
+        politician: senator,
+        ticker,
+        type: txType,
+        amount,
+        filed_at: txDate,
+        party: String(r.party ?? ""),
+      };
+    })
     .filter((t) => t.politician && t.ticker);
 
   return { as_of: new Date().toISOString(), trades };
@@ -366,7 +373,8 @@ export async function readGridCongress(): Promise<GridCongressSnapshot | null> {
     () => fetchCongressTrades(),
   );
   const s = snapshot as GridCongressSnapshot;
-  return s.trades?.length ? s : null;
+  // Return the snapshot even if trades is empty so callers see the as_of timestamp
+  return s ?? null;
 }
 
 // ── PANEL 8 — Economic Calendar ───────────────────────────────────────────────

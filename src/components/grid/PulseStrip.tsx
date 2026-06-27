@@ -46,6 +46,15 @@ export function PulseStrip() {
     refreshInterval: 20_000,
   });
 
+  const { data: gex } = useSWR(
+    "grid-pulse-gex",
+    () => fetch("/api/market/gex-positioning", { credentials: "same-origin" }).then((r) => r.json()),
+    { refreshInterval: 60_000 }
+  );
+  const gexLabel = gex?.net_gex != null ? (gex.net_gex < 0 ? "NEG" : "POS") : "—";
+  const gexTone: "emerald" | "bear" | "sky" = gex?.net_gex != null ? (gex.net_gex < 0 ? "bear" : "emerald") : "sky";
+  const gexSub = gex?.regime_label ?? undefined;
+
   const s = data;
   const live = !error && !!s?.available && (s?.price ?? 0) > 0;
 
@@ -95,6 +104,7 @@ export function PulseStrip() {
             value={s.gamma_flip != null ? fmt(s.gamma_flip, 0) : "—"}
             tone="gold"
           />
+          <Chip label="GEX" value={gexLabel} tone={gexTone} sub={gexSub} />
         </div>
       )}
     </GridCard>

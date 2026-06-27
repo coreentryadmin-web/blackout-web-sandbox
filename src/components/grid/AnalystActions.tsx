@@ -81,7 +81,7 @@ export function AnalystActions() {
             : "Reading the wire…"}
         </p>
       ) : (
-        <ul className="grid-analyst-list">
+        <ul className="grid-analyst-list overflow-y-auto max-h-[280px]">
           {actions.map((a) => {
             const tone = ACTION_TONE[a.action];
             const ago = timeAgo(a.published);
