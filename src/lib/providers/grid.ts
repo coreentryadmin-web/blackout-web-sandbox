@@ -31,7 +31,7 @@ export const GRID_KEYS = {
   analysts: "grid:analysts",
   darkPool: "grid:dark-pool",
   earnings: "grid:earnings",
-  congress: "grid:congress:v3",
+  congress: "grid:congress:v4",
   economy: "grid:economy:v2",
   sectors: "grid:sectors",
   movers: "grid:movers",
