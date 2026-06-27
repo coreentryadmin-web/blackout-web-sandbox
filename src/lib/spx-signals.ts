@@ -170,6 +170,44 @@ function buildLevels(
   return { entry, stop, target, invalidation, support, resistance };
 }
 
+const NEWS_BEAR_RE =
+  /\b(fed|fomc|halt|circuit.?breaker|crash|missile|attack|explosion|tariff.?hike|surprise.?cpi|surprise.?pce|geopolit|war|sanctions|default|downgrade)\b/i;
+const NEWS_BULL_RE =
+  /\b(rate.?cut|dovish|ceasefire|stimulus|deal|beat.?estimates|record.?high|rally)\b/i;
+
+/**
+ * Scan up to 10 desk news headlines for macro-shock keywords.
+ * Returns a score modifier in [−6, +3] and pushes a factor when non-zero.
+ */
+function scoreNewsRisk(
+  headlines: SpxDeskPayload["news_headlines"],
+  factors: SpxSignalFactor[],
+): number {
+  if (!headlines || headlines.length === 0) return 0;
+  let bearHits = 0;
+  let bullHits = 0;
+  for (const h of headlines.slice(0, 10)) {
+    const text = h.title ?? "";
+    if (NEWS_BEAR_RE.test(text)) bearHits++;
+    if (NEWS_BULL_RE.test(text)) bullHits++;
+  }
+  if (bearHits === 0 && bullHits === 0) return 0;
+  // Net skew: negative is stronger than positive (macro shocks are asymmetric).
+  const net = bullHits - bearHits * 2;
+  const w = net >= 2 ? 3 : net <= -3 ? -6 : net <= -2 ? -4 : net <= -1 ? -2 : 0;
+  if (w !== 0) {
+    factors.push({
+      label: "News risk",
+      weight: w,
+      detail:
+        w < 0
+          ? `${bearHits} high-risk headline${bearHits > 1 ? "s" : ""} (Fed/halt/macro shock)`
+          : `${bullHits} positive headline${bullHits > 1 ? "s" : ""} (rate cut/deal/beat)`,
+    });
+  }
+  return w;
+}
+
 /** Full confluence with grade, conflicts, and extended desk inputs. */
 export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null {
   const price = desk.price;
@@ -471,6 +509,11 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
   }
 
   score += scoreHelixFlowAlignment(desk, factors);
+
+  // News risk: scan headlines for macro shock keywords and apply a sentiment
+  // modifier (−6 to +3). Extreme negative news gates aggressive plays downstream.
+  const newsWeight = scoreNewsRisk(desk.news_headlines ?? [], factors);
+  score += newsWeight;
 
   score = clamp(score, -100, 100);
   const abs = Math.abs(score);
