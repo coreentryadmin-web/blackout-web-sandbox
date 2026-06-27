@@ -59,6 +59,68 @@ function nearestWall(
   });
 }
 
+/**
+ * Score HELIX 0DTE institutional sweep alignment from desk.spx_flows.
+ * Filters for SPX/SPY sweeps expiring today, alerted within the last 30 minutes,
+ * then scores net call vs put premium: ±4 (mild skew ≥1.5:1) or ±8 (strong ≥3:1).
+ * Returns 0 if there is insufficient flow data.
+ */
+function scoreHelixFlowAlignment(
+  desk: SpxDeskPayload,
+  factors: SpxSignalFactor[]
+): number {
+  const flows = desk.spx_flows;
+  if (!flows?.length) return 0;
+
+  const nowMs = Date.now();
+  const thirtyMinMs = 30 * 60 * 1000;
+  // Today in ET approximation — expiry strings are YYYY-MM-DD
+  const todayYmd = new Date(nowMs).toISOString().slice(0, 10);
+
+  let callPrem = 0;
+  let putPrem = 0;
+
+  for (const f of flows) {
+    const ticker = (f.ticker ?? "").toUpperCase();
+    if (ticker !== "SPX" && ticker !== "SPXW" && ticker !== "SPY") continue;
+    if (!f.has_sweep) continue;
+    if (f.expiry !== todayYmd) continue;
+    const alertedAt = f.alerted_at ? new Date(f.alerted_at).getTime() : 0;
+    if (!alertedAt || nowMs - alertedAt > thirtyMinMs) continue;
+
+    const optType = (f.option_type ?? "").toUpperCase();
+    if (optType.startsWith("C")) callPrem += f.premium;
+    else if (optType.startsWith("P")) putPrem += f.premium;
+  }
+
+  const total = callPrem + putPrem;
+  if (total < 500_000) return 0; // not enough notional to be meaningful
+
+  const ratio = callPrem > putPrem
+    ? callPrem / Math.max(putPrem, 1)
+    : putPrem / Math.max(callPrem, 1);
+
+  const bullish = callPrem > putPrem;
+  let w = 0;
+  if (ratio >= 3) {
+    w = bullish ? 8 : -8;
+  } else if (ratio >= 1.5) {
+    w = bullish ? 4 : -4;
+  }
+
+  if (w !== 0) {
+    factors.push({
+      label: "HELIX sweeps",
+      weight: w,
+      detail: bullish
+        ? `0DTE call sweeps dominant — $${(callPrem / 1e6).toFixed(1)}M vs $${(putPrem / 1e6).toFixed(1)}M puts (30min)`
+        : `0DTE put sweeps dominant — $${(putPrem / 1e6).toFixed(1)}M vs $${(callPrem / 1e6).toFixed(1)}M calls (30min)`,
+    });
+  }
+
+  return w;
+}
+
 function tapeSkew(desk: SpxDeskPayload): { bull: number; bear: number } {
   let bull = 0;
   let bear = 0;
@@ -407,6 +469,8 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
       });
     }
   }
+
+  score += scoreHelixFlowAlignment(desk, factors);
 
   score = clamp(score, -100, 100);
   const abs = Math.abs(score);
