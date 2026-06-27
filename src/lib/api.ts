@@ -713,6 +713,32 @@ export function createPulseEventSource(
   );
 }
 
+// ── Night's Watch position stream (per-user SSE) ─────────────────────────────
+
+export type NwPositionStreamPayload =
+  | { positions: Record<string, unknown>[] }
+  | { heartbeat: true };
+
+export function createPositionEventSource(
+  onMessage: (payload: { positions: Record<string, unknown>[] }) => void,
+  hooks?: { onOpen?: () => void; onClose?: () => void }
+): ReconnectingEventSource | null {
+  if (typeof window === "undefined") return null;
+  return createReconnectingEventSource(
+    "/api/account/positions/stream",
+    (raw) => {
+      try {
+        const data = JSON.parse(raw) as NwPositionStreamPayload;
+        if ("heartbeat" in data) return; // skip heartbeat ticks
+        if ("positions" in data) onMessage(data as { positions: Record<string, unknown>[] });
+      } catch {
+        /* ignore */
+      }
+    },
+    hooks
+  );
+}
+
 // Removed deprecated createFlowSocket() — it was never called and was the only
 // client reference to NEXT_PUBLIC_ENGINE_WS_KEY / NEXT_PUBLIC_ENGINE_WS_URL,
 // which inlined a static engine WS key into the browser bundle. The live feed

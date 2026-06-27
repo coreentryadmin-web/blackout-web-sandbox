@@ -224,7 +224,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     full_edition: { type: "boolean", description: "Include full Night Hawk play objects." },
   }),
 
-  t("get_gex", "GEX/dealer map. Polygon chain GEX first; UW spot exposures fallback.", {
+  t("get_gex", "GEX/dealer map. Polygon chain GEX first; UW spot exposures fallback. For SPX/I:SPX, all strike levels are SPX-denomination (thousands). Default to I:SPX (not SPY) when the user asks about index GEX or gamma walls.", {
 
     ...T,
 
@@ -332,7 +332,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
   // --- Cross-tool objects the platform already computes (Largo audit wiring) ---
   t("get_spx_confluence", "SPX confluence engine — the scored desk thesis: action (BUY_CALL/BUY_PUT/HOLD/WAIT), bias, score (-100..100), grade A+..D, agreeing vs conflicting factors with weights, entry/stop/target/invalidation. Explains WHY the desk leans a direction. Pure compute on the live desk."),
 
-  t("get_positioning", "Dealer positioning for ANY ticker — net GEX, gex king strike, gamma flip, gamma regime, net vex (vanna), max pain, negative-gamma flag, wall summary.", T, ["ticker"]),
+  t("get_positioning", "Dealer positioning for ANY ticker — net GEX, gex king strike, gamma flip, gamma regime, net vex (vanna), max pain, negative-gamma flag, wall summary. For SPX/I:SPX queries, all strike levels returned are SPX-denomination (thousands, e.g. 5500) — never SPY (hundreds).", T, ["ticker"]),
 
   t("get_nighthawk_outcomes", "Night Hawk track record — realized win/loss vs target/stop over a window, plus still-pending plays. Use to cite credibility (e.g. hit-rate over 30d).", {
     window_days: { type: "integer", default: 30 },

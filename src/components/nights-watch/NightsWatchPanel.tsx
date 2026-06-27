@@ -11,6 +11,7 @@
 // mute/white only. Reduced-motion safe (all motion is gated in the design system).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePositionStream } from "@/hooks/usePositionStream";
 import { clsx } from "clsx";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -1351,6 +1352,19 @@ export function NightsWatchPanel() {
   const inFlight = useRef(false);
   const pending = useRef(false);
 
+  // SSE stream for real-time P&L — pushes every 3s from the server.
+  // Falls back gracefully to the polling loop if SSE is unavailable.
+  const { positions: streamPositions, sseConnected } = usePositionStream<ApiPosition>();
+
+  // When SSE delivers a payload, update state immediately (no round-trip needed).
+  // The polling loop below remains active as a backup — both can coexist safely.
+  useEffect(() => {
+    if (streamPositions && streamPositions.length >= 0) {
+      setState({ kind: "ready", positions: streamPositions });
+      loadedOnce.current = true;
+    }
+  }, [streamPositions]);
+
   const load = useCallback(async () => {
     if (inFlight.current) {
       pending.current = true; // coalesce — the in-flight load will re-run once for us
@@ -1437,7 +1451,7 @@ export function NightsWatchPanel() {
           )}
         >
           <span className="nighthawk-watch-live-dot" aria-hidden />
-          {showLive ? "Live · updating" : "Connecting"}
+          {showLive ? (sseConnected ? "Live · SSE" : "Live · updating") : "Connecting"}
         </span>
       </header>
 
