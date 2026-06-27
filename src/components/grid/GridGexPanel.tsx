@@ -106,11 +106,7 @@ export function GridGexPanel() {
       {isFiltered && ticker && (
         <p className="grid-ticker-badge">GEX regime for {ticker}</p>
       )}
-      {isFiltered && !data?.available && data ? (
-        <p className="grid-empty text-sky-400/60">
-          GEX regime data is available for index symbols only (SPX, NDX, QQQ). Select a market-wide view to see GEX.
-        </p>
-      ) : !data && !error ? (
+      {!data && !error ? (
         <p className="grid-empty">Loading GEX regime…</p>
       ) : error || !available ? (
         <p className="grid-empty">GEX data unavailable</p>

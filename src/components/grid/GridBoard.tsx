@@ -73,10 +73,11 @@ export function GridBoard() {
         {/* Row 0 — hero */}
         <PulseStrip />
 
-        {/* Row 1 — news + flow + analysts */}
+        {/* Row 1 — news + flow + analysts + GEX regime (top-right) */}
         <GridNewsPanel />
         <GridFlowPanel />
         <AnalystActions />
+        <GridGexPanel />
 
         {/* Row 2 — movers */}
         <GridMoversPanel />
@@ -89,9 +90,8 @@ export function GridBoard() {
         <GridCongressPanel />
         <GridEconomyPanel />
 
-        {/* Row 5 — corporate catalysts + GEX dealer regime */}
+        {/* Row 5 — corporate catalysts */}
         <GridCatalystsPanel />
-        <GridGexPanel />
 
         {/* Row 6 — sector heatmap from /api/market/heatmap (Polygon sector ETFs) */}
         <GridSectorHeatmapPanel />

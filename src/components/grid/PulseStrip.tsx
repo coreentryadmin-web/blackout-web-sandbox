@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { clsx } from "clsx";
 import { fetchSpxState, type SpxState } from "@/lib/api";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 
 function fmt(n: number | null | undefined, digits = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -42,18 +43,21 @@ function Chip({
  * rule. Surfaces SPX, VIX, breadth (adv/dec/TRIN/TICK), the market tide bias and key chart levels.
  */
 export function PulseStrip() {
+  const { ticker } = useGridTicker();
   const { data, error } = useSWR<SpxState>("grid-pulse", fetchSpxState, {
     refreshInterval: 20_000,
   });
 
+  // GEX chip — follows the active ticker; defaults to market-wide SPX
+  const gexTicker = ticker ?? "SPX";
   const { data: gex } = useSWR(
-    "grid-pulse-gex",
-    () => fetch("/api/market/gex-positioning", { credentials: "same-origin" }).then((r) => r.json()),
+    `grid-pulse-gex-${gexTicker}`,
+    () => fetch(`/api/market/gex-positioning?ticker=${gexTicker}`, { credentials: "same-origin" }).then((r) => r.json()),
     { refreshInterval: 60_000 }
   );
-  const gexLabel = gex?.net_gex != null ? (gex.net_gex < 0 ? "NEG" : "POS") : "—";
+  const gexLabel = gex?.net_gex != null ? (gex.net_gex < 0 ? "NEG γ" : "POS γ") : "—";
   const gexTone: "emerald" | "bear" | "sky" = gex?.net_gex != null ? (gex.net_gex < 0 ? "bear" : "emerald") : "sky";
-  const gexSub = gex?.regime_label ?? undefined;
+  const gexSub = gex?.gamma_posture != null ? `${gexTicker} flip ${gex?.flip ?? "—"}` : undefined;
 
   const s = data;
   const live = !error && !!s?.available && (s?.price ?? 0) > 0;
