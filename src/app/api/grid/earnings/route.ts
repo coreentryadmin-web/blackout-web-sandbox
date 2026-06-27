@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { uwConfigured } from "@/lib/providers/config";
-import { readGridEarnings } from "@/lib/providers/grid";
+import { readGridEarnings, fetchTickerEarnings } from "@/lib/providers/grid";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
   if (!uwConfigured()) return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
   try {
     const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;
+    if (ticker) {
+      const snapshot = await fetchTickerEarnings(ticker);
+      return NextResponse.json({ available: true, mode: "ticker", ...snapshot }, { status: 200, headers: NO_STORE });
+    }
     const snapshot = await readGridEarnings();
     if (!snapshot) return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
     if (ticker && Array.isArray(snapshot.items)) {

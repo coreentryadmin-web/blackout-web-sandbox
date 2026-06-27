@@ -19,6 +19,8 @@ import {
   fetchUwEarningsAfterhours,
   fetchUwCongressTrades,
   fetchUwMacroIndicators,
+  fetchUwTickerEarningsHistory,
+  fetchUwTickerNextEarnings,
   type UwMacroIndicatorSnapshot,
 } from "@/lib/providers/unusual-whales";
 import { fetchMarketMovers, fetchSectorPerformance } from "@/lib/providers/polygon";
@@ -232,6 +234,81 @@ export async function readGridEarnings(): Promise<GridEarningsSnapshot | null> {
     () => fetchEarnings(),
   );
   return snapshot as GridEarningsSnapshot;
+}
+
+// ── Per-ticker Earnings Snapshot ─────────────────────────────────────────────
+
+export type GridEarningsHistoryItem = {
+  quarter: string;        // e.g. "Q1 2026"
+  date: string;           // ISO date
+  eps_actual: number | null;
+  eps_estimate: number | null;
+  surprise_pct: number | null;
+  revenue: number | null;  // in dollars, null if unavailable
+  when: "premarket" | "afterhours" | null;
+};
+
+export type GridEarningsTickerSnapshot = {
+  ticker: string;
+  history: GridEarningsHistoryItem[];
+  next_date: string | null;     // ISO date string
+  next_when: "premarket" | "afterhours" | null;
+  as_of: string;
+};
+
+function dateToQuarter(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const m = d.getMonth(); // 0-indexed
+  const y = d.getFullYear();
+  const q = m < 2 ? 4 : m < 5 ? 1 : m < 8 ? 2 : m < 11 ? 3 : 4;
+  const qy = m < 2 ? y - 1 : y;
+  return `Q${q} ${qy}`;
+}
+
+export async function fetchTickerEarnings(ticker: string): Promise<GridEarningsTickerSnapshot> {
+  const sym = ticker.toUpperCase();
+  let rows: Record<string, unknown>[] = [];
+  try {
+    rows = await fetchUwTickerEarningsHistory(sym);
+  } catch { /* ignore */ }
+
+  const history: GridEarningsHistoryItem[] = rows.map((r) => {
+    const epsAct = r.eps_actual ?? r.actual ?? r.reported_eps ?? null;
+    const epsEst = r.eps_estimate ?? r.estimate ?? r.estimated_eps ?? null;
+    const act = epsAct != null ? Number(epsAct) : null;
+    const est = epsEst != null ? Number(epsEst) : null;
+    const surprise = act != null && est != null && est !== 0 ? ((act - est) / Math.abs(est)) * 100 : null;
+    const dateStr = String(r.earnings_date ?? r.date ?? r.report_date ?? r.period_end_date ?? "").slice(0, 10);
+    const rev = r.revenue ?? r.total_revenue ?? r.net_revenue ?? null;
+    const rawQuarter = String(r.fiscal_quarter ?? r.quarter ?? r.period ?? "");
+    const quarter = rawQuarter || dateToQuarter(dateStr);
+    const whenRaw = String(r.when ?? r.time ?? "").toLowerCase();
+    const when: "premarket" | "afterhours" | null = whenRaw.includes("pre") ? "premarket" : whenRaw.includes("after") || whenRaw.includes("ah") ? "afterhours" : null;
+    return {
+      quarter,
+      date: dateStr,
+      eps_actual: act,
+      eps_estimate: est,
+      surprise_pct: surprise != null ? Math.round(surprise * 10) / 10 : null,
+      revenue: rev != null ? Number(rev) : null,
+      when,
+    };
+  }).filter(x => x.date).sort((a, b) => b.date.localeCompare(a.date));
+
+  let next_date: string | null = null;
+  let next_when: "premarket" | "afterhours" | null = null;
+  try {
+    const nextRow = await fetchUwTickerNextEarnings(sym);
+    if (nextRow) {
+      next_date = String(nextRow.earnings_date ?? nextRow.date ?? nextRow.report_date ?? "").slice(0, 10) || null;
+      const wh = String(nextRow.when ?? nextRow.time ?? "").toLowerCase();
+      next_when = wh.includes("pre") ? "premarket" : wh.includes("after") || wh.includes("ah") ? "afterhours" : null;
+    }
+  } catch { /* ignore */ }
+
+  return { ticker: sym, history, next_date, next_when, as_of: new Date().toISOString() };
 }
 
 // ── PANEL 7 — Congress Trades ─────────────────────────────────────────────────

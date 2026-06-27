@@ -1810,6 +1810,24 @@ export async function fetchUwEarningsAfterhours(limit = 25) {
   return extractRows(data).slice(0, limit);
 }
 
+// Fetches historical earnings for a specific ticker
+export async function fetchUwTickerEarningsHistory(ticker: string, limit = 8) {
+  const data = await uwGetSafe<unknown>(`/api/earnings/${ticker.toUpperCase()}`, { limit });
+  return extractRows(data as Record<string, unknown>).slice(0, limit);
+}
+
+// Next expected earnings date
+export async function fetchUwTickerNextEarnings(ticker: string) {
+  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/earnings-dates`, {});
+  const rows = extractRows(data as Record<string, unknown>);
+  // Return first future date
+  const today = new Date().toISOString().slice(0, 10);
+  return rows.find((r) => {
+    const d = String(r.earnings_date ?? r.date ?? r.report_date ?? "").slice(0, 10);
+    return d >= today;
+  }) ?? null;
+}
+
 export async function fetchUwOptionChains(ticker: string, limit = 500) {
   const data = await uwGetSafe<unknown>(`/api/stock/${sym(ticker)}/option-chains`, { limit: Math.min(limit, 500) });
   return extractRows(data);
