@@ -16,7 +16,10 @@ export type MtfHybrid = {
 };
 
 function soft3mAllowed(grade: string, score: number): boolean {
-  return gradeRank(grade) >= 2 && Math.abs(score) >= 58;
+  // Was 58 (the BUY threshold) — circular: couldn't get the MTF bypass that
+  // helps reach 58 without already being at 58. Lowered to 45 to unblock
+  // B-grade setups in the WATCHING band from the promote path.
+  return gradeRank(grade) >= 2 && Math.abs(score) >= 45;
 }
 
 function soft5mAllowed(grade: string): boolean {

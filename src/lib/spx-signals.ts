@@ -75,8 +75,8 @@ function scoreHelixFlowAlignment(
 
   const nowMs = Date.now();
   const thirtyMinMs = 30 * 60 * 1000;
-  // Today in ET approximation — expiry strings are YYYY-MM-DD
-  const todayYmd = new Date(nowMs).toISOString().slice(0, 10);
+  // Today in ET — expiry strings are YYYY-MM-DD (UTC date would flip at 7 PM ET)
+  const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(nowMs));
 
   let callPrem = 0;
   let putPrem = 0;

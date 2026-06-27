@@ -21,7 +21,9 @@ export function playStarterMinScore(): number {
 }
 
 export function playFullMinScore(): number {
-  return num(process.env.SPX_PLAY_FULL_MIN_SCORE, 58);
+  // Was 58 — compound gate audit showed max reliable score on quiet days is 40-55.
+  // 52 keeps the quality bar high while allowing B-grade setups to qualify.
+  return num(process.env.SPX_PLAY_FULL_MIN_SCORE, 52);
 }
 
 export function playWatchMinScore(): number {
@@ -37,7 +39,9 @@ export function playConflictBlockMin(): number {
 }
 
 export function playMinAgreeingFactors(): number {
-  return num(process.env.SPX_PLAY_MIN_AGREEING_FACTORS, 4);
+  // Was 4 — at score 48-57 (grade B) there are typically 3-5 total factors; requiring
+  // 4 agreeing silently killed entry_mode for valid B setups. 3 is still selective.
+  return num(process.env.SPX_PLAY_MIN_AGREEING_FACTORS, 3);
 }
 
 export function playMinGradeRank(): number {
@@ -207,8 +211,11 @@ export function playIdealTargetPts(): number {
 export function playDynamicTargetPts(vix?: number | null): number {
   if (process.env.SPX_PLAY_IDEAL_TARGET_PTS) return num(process.env.SPX_PLAY_IDEAL_TARGET_PTS, 10);
   if (vix != null && vix > 22) return 18;
-  if (vix != null && vix > 16) return 12;
-  return 8;
+  if (vix != null && vix > 16) return 14;
+  // Was 8 — made R:R gate fail for virtually every low-VIX day. GEX stop walls are
+  // typically 8-14 pts away; an 8-pt target with 1.5 R:R requires the stop within 5.3 pts.
+  // 12 pts is the minimum realistic scalp target even in calm markets.
+  return 12;
 }
 
 /**
@@ -231,7 +238,10 @@ export function playDynamicTrailWindowPts(vix?: number | null): number {
  * not blocked here (they have their own invalidation text warning).
  */
 export function playMinRiskReward(): number {
-  return num(process.env.SPX_PLAY_MIN_RISK_REWARD, 1.5);
+  // Was 1.5 — combined with the old 8-pt low-VIX target, this required the stop
+  // within 5.3 pts of price (virtually never true for GEX walls). Now 1.2 with 12-pt
+  // target allows stops up to 10 pts, matching typical GEX wall distances.
+  return num(process.env.SPX_PLAY_MIN_RISK_REWARD, 1.2);
 }
 
 export function playLottoMaxPicksPerDay(): number {
@@ -328,7 +338,8 @@ export function playStructureProximityPts(): number {
 }
 
 export function playMinConfirmationsRequired(): number {
-  return num(process.env.SPX_PLAY_MIN_CONFIRMATIONS, 6);
+  // Was 6 of 11 total checks. 5 is still meaningful given 4 required checks must all pass.
+  return num(process.env.SPX_PLAY_MIN_CONFIRMATIONS, 5);
 }
 
 export function playTechnicalsCacheSec(): number {
