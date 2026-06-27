@@ -76,6 +76,9 @@ export async function GET(req: NextRequest) {
       market_open: merged.market_open,
       play_action: play.action,
       play_phase: play.phase,
+      play_score: play.score,
+      play_grade: play.grade,
+      play_blocks: play.gates?.blocks?.slice(0, 3) ?? [],
       lotto_phase: lotto.phase,
       power_hour_phase: powerHour.phase,
     };
