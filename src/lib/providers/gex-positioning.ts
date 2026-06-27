@@ -21,6 +21,10 @@ import type { GexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust-co
 export type GammaPosture = "long" | "short" | null;
 /** Dealer vanna posture (net dollar-vanna sign). Mirrors vex.regime.posture. */
 export type VannaPosture = "positive" | "negative" | null;
+/** Dealer delta posture: 'long' = net long delta (stabilizing), 'short' = net short (destabilizing). Mirrors dex.regime.posture. */
+export type DeltaPosture = "long" | "short" | null;
+/** Dealer charm posture: 'positive' = pins upward, 'negative' = drags downward. Mirrors charm.regime.posture. */
+export type CharmPosture = "positive" | "negative" | null;
 
 /**
  * The canonical light positioning contract for one ticker. Every field is derived
@@ -57,6 +61,25 @@ export type GexPositioning = {
   vanna_posture: VannaPosture;
   /** One-liner vanna regime read (always a string; neutral when data is thin). */
   vanna_regime_read: string;
+  /**
+   * Net dealer dollar-DELTA across the matrix (signed). Positive = dealers net long delta
+   * (stabilizing / mean-reverting); negative = net short delta (trend-amplifying / destabilizing).
+   * Null when the matrix predates DEX computation (optional field on GexHeatmap).
+   */
+  net_dex: number | null;
+  /** Dealer delta posture: 'long' (stabilizing) | 'short' (destabilizing) | null. */
+  dex_posture: DeltaPosture;
+  /** One-liner delta regime read, or null when DEX data is absent. */
+  dex_regime_read: string | null;
+  /**
+   * Net dealer dollar-CHARM across the matrix (signed). Positive = delta-decay hedging pins price
+   * upward toward heavy strikes; negative = drags downward. Null when absent from matrix.
+   */
+  net_charm: number | null;
+  /** Dealer charm posture: 'positive' (pins up) | 'negative' (drags down) | null. */
+  charm_posture: CharmPosture;
+  /** One-liner charm / pinning regime read, or null when CHARM data is absent. */
+  charm_regime_read: string | null;
   /** Closer of call/put wall to spot, classified resistance/support, with point distance — or null. */
   nearest_wall: {
     strike: number;
@@ -155,6 +178,8 @@ export function gexPositioningFromHeatmap(
   const spot = hm.spot;
   const gex = hm.gex;
   const vex = hm.vex;
+  const dex = hm.dex ?? null;
+  const charm = hm.charm ?? null;
   const flip = gex.flip;
   const callWall = gex.call_wall;
   const putWall = gex.put_wall;
@@ -197,6 +222,12 @@ export function gexPositioningFromHeatmap(
     net_vex: vex.total,
     vanna_posture: vex.regime.posture,
     vanna_regime_read: vex.regime.read,
+    net_dex: dex ? dex.total : null,
+    dex_posture: dex ? dex.regime.posture : null,
+    dex_regime_read: dex ? dex.regime.read : null,
+    net_charm: charm ? charm.total : null,
+    charm_posture: charm ? charm.regime.posture : null,
+    charm_regime_read: charm ? charm.regime.read : null,
     nearest_wall: nearest,
     distance_to_flip_pct,
     shift_summary,
@@ -291,6 +322,18 @@ export async function gexContextBlock(ticker: string): Promise<string | null> {
   }
 
   if (p.shift_summary) lines.push(`Intraday gamma shift: ${p.shift_summary}`);
+
+  // DEX: dealer delta posture (stabilizing vs destabilizing).
+  if (p.dex_regime_read) lines.push(`DEX (delta) read: ${p.dex_regime_read}`);
+  if (p.net_dex != null && Number.isFinite(p.net_dex) && p.net_dex !== 0) {
+    lines.push(`Net dealer $-delta total: ${fmtMoney(p.net_dex)}`);
+  }
+
+  // CHARM: delta-decay pinning read (pre-OPEX / end-of-day pin direction).
+  if (p.charm_regime_read) lines.push(`CHARM (pinning) read: ${p.charm_regime_read}`);
+  if (p.net_charm != null && Number.isFinite(p.net_charm) && p.net_charm !== 0) {
+    lines.push(`Net dealer $-charm total: ${fmtMoney(p.net_charm)}`);
+  }
 
   // 0DTE intraday-adjusted lens — ALWAYS labeled as an estimate + that canonical GEX is OI-based, so
   // the model can never present it as the primary number. Only emitted when a real adjustment exists.

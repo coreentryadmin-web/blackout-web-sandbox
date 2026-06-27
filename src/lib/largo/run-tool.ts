@@ -63,6 +63,9 @@ import {
   fetchBenzingaNews,
   fetchBenzingaEarnings,
   fetchBenzingaAnalystRatings,
+  fetchBenzingaCatalysts,
+  fetchBenzingaPriceTarget,
+  fetchBenzingaAfterHoursMovers,
   fetchBreadthUniverseSnapshots,
   computeMarketBreadthFromSummary,
   fetchDailyMarketSummary,
@@ -1323,6 +1326,25 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       });
 
       return { count: positions.length, as_of: new Date().toISOString(), positions };
+    }
+
+    case "get_catalysts": {
+      const sym = uwTicker(ticker);
+      const limit = Math.min(20, Math.max(1, Number(input.limit ?? 8) || 8));
+      const catalysts = await fetchBenzingaCatalysts(sym, limit);
+      return { ticker: sym, source: "benzinga", catalysts };
+    }
+    case "get_price_targets": {
+      const sym = uwTicker(ticker);
+      const pt = await fetchBenzingaPriceTarget(sym);
+      return pt
+        ? { ticker: sym, source: "benzinga", price_target: pt }
+        : { ticker: sym, source: "benzinga", price_target: null, note: "No recent price target found for this ticker." };
+    }
+    case "get_ah_movers": {
+      const limit = Math.min(30, Math.max(1, Number(input.limit ?? 15) || 15));
+      const movers = await fetchBenzingaAfterHoursMovers(limit);
+      return { source: "benzinga", movers };
     }
 
     default:

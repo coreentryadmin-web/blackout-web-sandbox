@@ -577,7 +577,10 @@ export async function buildPositionDetail(
   //    from the positioning section; the optional cross-tool fields (flows/trend/levels/
   //    catalysts) are populated ONLY when real data exists (else left undefined → the
   //    dependent verdict signals never fire). For SPX the desk context is the richer one.
-  const ctx = buildVerdictContext({ spx, deskBundle, gex, positioning, flows, technicals, catalysts, techLevels });
+  //    Night Hawk dossier enrichment signals are derived from the staged dossier and
+  //    folded in here so the verdict engine can reason over analyst/IV/dark-pool/insider/
+  //    short-squeeze signals without any new upstream fetches.
+  const ctx = buildVerdictContext({ spx, deskBundle, gex, positioning, flows, technicals, catalysts, techLevels, dossier: dossierSection });
 
   // 4) Authoritative verdict — recomputed from the rich context.
   const verdict = computeVerdict(position, ctx);
@@ -680,6 +683,66 @@ function gexWallsFromHeatmapSpot(
  * are attached ONLY when their data is real, so the verdict's honesty rule holds (no
  * data → field undefined → signal never fires).
  */
+/** Derive Night Hawk dossier enrichment signals from a staged dossier Record. Pure. */
+function dossierEnrichmentSignals(dossier: DossierSection | null): {
+  analystDowngrade: boolean | null;
+  highIvCrushRisk: boolean | null;
+  darkPoolBias: "bullish" | "bearish" | "neutral" | null;
+  insiderNetSell: boolean | null;
+  shortSqueezeRisk: boolean | null;
+} {
+  const empty = {
+    analystDowngrade: null,
+    highIvCrushRisk: null,
+    darkPoolBias: null,
+    insiderNetSell: null,
+    shortSqueezeRisk: null,
+  } as const;
+  if (!dossier) return { ...empty };
+
+  const d = dossier.dossier;
+
+  // Analyst downgrade: analyst_summary contains "downgrade" (case-insensitive).
+  const analystSummary = typeof d.analyst_summary === "string" ? d.analyst_summary : null;
+  const analystDowngrade =
+    analystSummary != null ? /downgrade/i.test(analystSummary) : null;
+
+  // High IV crush risk: iv_rank >= 70.
+  const ivRank = typeof d.iv_rank === "number" && Number.isFinite(d.iv_rank) ? d.iv_rank : null;
+  const highIvCrushRisk = ivRank != null ? ivRank >= 70 : null;
+
+  // Dark pool bias from dark_pool.bias field.
+  const dpRaw = d.dark_pool as Record<string, unknown> | null | undefined;
+  const dpBiasStr = dpRaw ? String(dpRaw.bias ?? "").toLowerCase() : "";
+  const darkPoolBias: "bullish" | "bearish" | "neutral" | null =
+    dpBiasStr === "bullish" ? "bullish"
+    : dpBiasStr === "bearish" ? "bearish"
+    : dpBiasStr ? "neutral"
+    : null;
+
+  // Insider net sell: insider_buys is present but we need to compare to insider sells.
+  // The staged dossier exposes insider_buys (count of recent buys). A net-sell signal
+  // requires sells > buys. We look for a parallel insider_sells field if present;
+  // otherwise when insider_buys === 0 and there are any insider rows we flag net-sell.
+  const insiderBuys = typeof d.insider_buys === "number" ? d.insider_buys : null;
+  const insiderSells = typeof d.insider_sells === "number" ? d.insider_sells : null;
+  let insiderNetSell: boolean | null = null;
+  if (insiderSells != null && insiderBuys != null) {
+    insiderNetSell = insiderSells > insiderBuys;
+  } else if (insiderBuys === 0 && insiderSells == null) {
+    // Cannot confirm net sell without sell count — leave null (never fabricate).
+    insiderNetSell = null;
+  }
+
+  // Short squeeze risk: short_days_to_cover >= 5.
+  const dtc = typeof d.short_days_to_cover === "number" && Number.isFinite(d.short_days_to_cover)
+    ? d.short_days_to_cover
+    : null;
+  const shortSqueezeRisk = dtc != null ? dtc >= 5 : null;
+
+  return { analystDowngrade, highIvCrushRisk, darkPoolBias, insiderNetSell, shortSqueezeRisk };
+}
+
 function buildVerdictContext(args: {
   spx: boolean;
   deskBundle: Awaited<ReturnType<typeof loadMergedSpxDesk>> | null;
@@ -689,8 +752,9 @@ function buildVerdictContext(args: {
   technicals: TechnicalsSection | null;
   catalysts: CatalystsSection | null;
   techLevels: Array<{ kind: "support" | "resistance"; price: number; source: string }>;
+  dossier: DossierSection | null;
 }): PositionContext {
-  const { spx, deskBundle, positioning, flows, technicals, catalysts, techLevels } = args;
+  const { spx, deskBundle, positioning, flows, technicals, catalysts, techLevels, dossier } = args;
 
   // Base desk/positioning context.
   let base: PositionContext;
@@ -752,6 +816,16 @@ function buildVerdictContext(args: {
       beforeExpiry: catalysts.beforeExpiry,
     };
   }
+
+  // Night Hawk dossier enrichment signals — derived from staged dossier if present.
+  // Only attach when the value is actually non-null so the honesty rule holds: undefined
+  // means "no data" and those verdict signal branches never fire.
+  const enrichment = dossierEnrichmentSignals(dossier);
+  if (enrichment.analystDowngrade != null) base.analystDowngrade = enrichment.analystDowngrade;
+  if (enrichment.highIvCrushRisk != null) base.highIvCrushRisk = enrichment.highIvCrushRisk;
+  if (enrichment.darkPoolBias != null) base.darkPoolBias = enrichment.darkPoolBias;
+  if (enrichment.insiderNetSell != null) base.insiderNetSell = enrichment.insiderNetSell;
+  if (enrichment.shortSqueezeRisk != null) base.shortSqueezeRisk = enrichment.shortSqueezeRisk;
 
   return base;
 }

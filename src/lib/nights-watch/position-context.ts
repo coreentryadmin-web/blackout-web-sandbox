@@ -90,6 +90,43 @@ export type PositionContext = {
     daysToEarnings?: number | null; // calendar days from now (>=0)
     beforeExpiry?: boolean | null; // does it land on/before the position's expiry?
   } | null;
+
+  // ---------------------------------------------------------------------------
+  // Night Hawk dossier enrichment signals (optional; populated by the detail view
+  // from the staged dossier). Each fires a verdict signal ONLY when present (honesty
+  // rule). The list path leaves these undefined → those signals never fire.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * True when the most recent analyst action for this ticker is a downgrade (i.e.
+   * the Benzinga analyst summary contains "downgrade"). A downgrade is directionally
+   * bearish — it supports trimming a long or holding a short.
+   */
+  analystDowngrade?: boolean | null;
+
+  /**
+   * True when IV rank is high (≥ 70) — elevated implied volatility that could collapse
+   * after a binary event (earnings/FDA), causing IV crush on a long options position.
+   */
+  highIvCrushRisk?: boolean | null;
+
+  /**
+   * Directional bias of dark-pool prints for this ticker ("bullish" | "bearish" | "neutral").
+   * The verdict engine compares this to the position's exposure to determine alignment.
+   */
+  darkPoolBias?: "bullish" | "bearish" | "neutral" | null;
+
+  /**
+   * True when recent insider transactions show net selling (sells > buys in the recent window).
+   * Insider selling is a soft bearish signal — it supports trimming a long.
+   */
+  insiderNetSell?: boolean | null;
+
+  /**
+   * True when short days-to-cover exceeds the squeeze threshold (≥ 5 days), which means a
+   * sharp move up could trigger a short squeeze — supportive of a long call / short put.
+   */
+  shortSqueezeRisk?: boolean | null;
 };
 
 const EMPTY_CONTEXT: PositionContext = {

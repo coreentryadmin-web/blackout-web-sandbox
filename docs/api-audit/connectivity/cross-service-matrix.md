@@ -227,3 +227,19 @@ Backed by shared providers (Benzinga / UW / Polygon), not a Grid-private store.
   non-SPX ticker until converged).
 
 ---
+
+## Re-run delta — 2026-06-27 04:55 ET
+**No change from the 04:14 entry (PASS=16 FAIL=0 WARN=3, commit 4d5be18).** Independent
+source-level re-audit this run reproduced every wiring conclusion from cited import/call sites:
+
+- **Largo → ALL: connected.** `src/lib/largo/run-tool.ts` exposes GEX (`get_gex` → `getLargoSpxLiveDesk`, "same as SPX Sniper dashboard"), HELIX flows (`get_options_flow`/`get_postgres_flows`/`get_flow_tape`), Night's Watch (`get_my_positions`/`get_open_plays` via `getEnrichedPositionsForUser`), Night Hawk (`get_nighthawk_edition`), and Grid (`get_news`/`get_economic_calendar`/`get_congress_trades`/`get_dark_pool`/`get_earnings`/`get_macro_indicator`). No data silo → no hallucination surface. **This is the most important PASS.**
+- **HELIX → SPX:** `spx-desk-merge.ts:262 mergeFlowIntoDesk()` folds `spx_flows` + flow-strike-stacks into the desk. PASS.
+- **HELIX → NHAWK:** `nighthawk/candidates.ts aggregateTickerFlows` (premium, `has_sweep`, flow-streak) + `grounding.ts` reconciles stated flow $ to the dossier figure (±35%). PASS, live-grounded.
+- **{SPX,HEATMAP} → NWATCH:** `nights-watch/position-context.ts` supplies `gexWalls` (source `spx-desk` via `loadMergedSpxDesk`, or `gex-heatmap` via `fetchGexHeatmap`), HELIX/Postgres flow premium, and spot; `verdict.ts` consumes all three, fail-closed never-faked. PASS.
+- **W1 (standing WARN): dual GEX path.** Largo SPX `get_gex` + NH dossier read the merged desk / `fetchPolygonOdteGexRows`, while Heatmap + NW non-SPX read `fetchGexHeatmap` — same dealer-gamma, different fetch path; values can diverge on non-SPX until converged. Empirical numeric diff still deferred (auth-gated).
+- **GRID → SPX (standing WARN, missing-enrichment not data-silo):** `spx-desk-merge.ts:471` initializes `news_headlines: []` and the merge has **no** econ/FOMC/CPI/earnings awareness — the desk produces correct GEX/flow numbers but carries no event-risk context. Not a wrong-value silo; an enrichment gap. (NH dossier, by contrast, DOES pull news/sentiment/catalyst.)
+
+**Liveness:** all data routes 401 (Clerk-gated, route up, gating works — no 500s/no service down); `/api/health` 200. Market closed (Sat) + unauthenticated → numeric value-consistency (orig Phases 2/3/9) still SKIP, as in the 04:14 entry.
+
+**No commit this run:** conclusions identical to committed 4d5be18 (41 min prior, overlapping trigger on a 2h-cadence task); re-committing an unchanged matrix would be deploy churn. Next substantive capture ~06:14 ET or on the next deploy.
+---

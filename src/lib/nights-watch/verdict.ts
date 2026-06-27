@@ -563,6 +563,93 @@ export function computeVerdict(
     }
   }
 
+  // -------------------- Night Hawk dossier enrichment signals --------------------
+  // These fire ONLY when the detail view has populated the corresponding PositionContext
+  // fields from the staged dossier (list path leaves them undefined → never fires).
+  // Each signal is side-aware and follows the honesty rule: data absent → skip.
+
+  // Analyst downgrade → bearish signal. Trimming a long / holding a short.
+  if (ctx?.analystDowngrade === true) {
+    if (!isShort) {
+      trimSignals.push({
+        id: "analyst_downgrade",
+        reason: "Recent analyst downgrade — bearish fundamental shift; consider trimming the long.",
+      });
+    } else {
+      holdSignals.push({
+        id: "analyst_downgrade_supports_short",
+        reason: "Recent analyst downgrade supports the short thesis.",
+      });
+    }
+  }
+
+  // High IV crush risk → trim a long (IV collapse after a print erodes the premium paid).
+  // For a short, elevated IV is income — it's a tailwind, so we add a hold signal.
+  if (ctx?.highIvCrushRisk === true) {
+    if (!isShort) {
+      trimSignals.push({
+        id: "high_iv_crush_risk",
+        reason: "IV rank is elevated — high risk of IV crush collapsing option premium after a catalyst.",
+      });
+    } else {
+      holdSignals.push({
+        id: "high_iv_premium_tailwind",
+        reason: "Elevated IV rank — high premium supports this short; decay accelerates from a high base.",
+      });
+    }
+  }
+
+  // Dark pool bias against the position → trim (smart money leaning the wrong way).
+  // Dark pool bias aligned with the position → hold support.
+  if (ctx?.darkPoolBias && ctx.darkPoolBias !== "neutral") {
+    const dpBullish = ctx.darkPoolBias === "bullish";
+    const dpAligned = dpBullish === wantsUp;
+    if (!dpAligned) {
+      trimSignals.push({
+        id: "dark_pool_against",
+        reason: `Dark pool prints lean ${ctx.darkPoolBias} — against this position's exposure.`,
+      });
+    } else {
+      holdSignals.push({
+        id: "dark_pool_aligned",
+        reason: `Dark pool prints lean ${ctx.darkPoolBias} — aligned with this position.`,
+      });
+    }
+  }
+
+  // Insider net selling → trim a long (directors/officers reducing exposure is bearish).
+  // For a short, insider selling supports the thesis.
+  if (ctx?.insiderNetSell === true) {
+    if (!isShort) {
+      trimSignals.push({
+        id: "insider_sell",
+        reason: "Recent insider net selling — insiders reducing exposure; consider trimming.",
+      });
+    } else {
+      holdSignals.push({
+        id: "insider_sell_supports_short",
+        reason: "Recent insider net selling supports the short thesis.",
+      });
+    }
+  }
+
+  // Short squeeze risk → hold/trim-aware signal. High days-to-cover means a sharp up move
+  // could trigger a squeeze — bullish for a long call/short put. For a long put/short call
+  // (bearish exposure), it's a headwind.
+  if (ctx?.shortSqueezeRisk === true) {
+    if (wantsUp) {
+      holdSignals.push({
+        id: "short_squeeze_risk",
+        reason: "High short interest (days-to-cover ≥ 5) — squeeze potential supports the bullish position.",
+      });
+    } else {
+      trimSignals.push({
+        id: "short_squeeze_against",
+        reason: "High short interest (days-to-cover ≥ 5) — squeeze risk is a headwind for this bearish position.",
+      });
+    }
+  }
+
   // -------------------- Resolve action by precedence --------------------
 
   let action: VerdictAction;

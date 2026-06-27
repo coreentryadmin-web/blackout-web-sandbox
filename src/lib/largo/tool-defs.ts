@@ -351,6 +351,17 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     "Night's Watch — the signed-in user's OWN open option positions with live P&L, key Greeks, days-to-expiry, and the deterministic Hold/Trim/Sell verdict (+reasons). Use this whenever the user asks about 'my positions', 'my trades', 'my book', or 'what should I do with my <TICKER> calls/puts'. Returns only THIS user's positions.",
     { status: { type: "string", enum: ["open", "closed", "all"], description: "Default open." } }),
 
+  t("get_catalysts", "Benzinga catalyst pipeline for a ticker — FDA, guidance, M&A, earnings, upgrades, and other event-driven catalysts from confirmed Benzinga channels.", {
+    ...T,
+    limit: { type: "integer", default: 8 },
+  }, ["ticker"]),
+
+  t("get_price_targets", "Benzinga analyst price target for a ticker — most recent PT, action (Maintains/Raises/Lowers), analyst firm, and prior target.", T, ["ticker"]),
+
+  t("get_ah_movers", "Benzinga after-hours movers — tickers moving in the after-hours session with catalyst context from the Benzinga after-hours center channel.", {
+    limit: { type: "integer", default: 15 },
+  }),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -433,6 +444,9 @@ export const TOOL_GROUPS = {
     "get_earnings_market",
     "get_fda_calendar",
     "get_ipo_calendar",
+    "get_catalysts",
+    "get_price_targets",
+    "get_ah_movers",
   ],
   fundamental: [
     "get_analyst_ratings",
