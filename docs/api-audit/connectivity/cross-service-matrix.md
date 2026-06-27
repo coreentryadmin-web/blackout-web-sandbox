@@ -286,3 +286,43 @@ ope\ (run-tool get_options_flow) |
 All entitled data endpoints return **401 (Clerk auth)** unauthenticated; only \/api/health\ is public. The spec's Phase 1 paths were also stale (corrected: spx/pulse, market/flows, market/nighthawk/edition). So Phases 2/3/9 (live wall/price/flow VALUE comparison + timestamp desync) could **not** run from this machine. Structural wiring is verified (every consumer reads the canonical shared source), but a numeric "do the values match RIGHT NOW" check needs an authenticated canary. **Recommendation:** add a server-side cron (Bearer CRON_SECRET) that pulls each surface in-process and diffs callWall/putWall/spot/asOf — that is the only way to catch a runtime value desync, which source inspection cannot.
 
 ---
+
+## Connectivity Matrix — 2026-06-27 09:00 ET
+**Method: SOURCE-LEVEL wiring audit** (all live data endpoints are Clerk-gated → 401 from the unauthenticated cron context; `/api/health` + `/api/market/health` = 200, system up). Verdicts below are grounded in *which shared data function each service calls* — a stronger structural guarantee than a single live numeric spot-check, but live numeric equality *at this moment* is NOT verified here.
+
+### Headline
+- **W1 (dual GEX path) is now CONVERGED.** `getGexPositioning()` is a pure cache-reader: `fetchGexHeatmap → gexPositioningFromHeatmap`. It NO LONGER calls `fetchPolygonPositioningBundle`. Every full-matrix consumer (Largo, Night Hawk, Night's Watch, the `/gex-positioning` route) now reads the SAME `gex-heatmap:{ticker}` cache. The bundle survives ONLY as a documented cold-cache fallback.
+- **Three GEX primitives, by design, not silo:**
+  - `fetchGexHeatmap` = full-expiry matrix → **Heatmap UI, Night's Watch, Largo (regime), Night Hawk (primary)**
+  - `fetchPolygonOdteDeskBundle` = **0DTE-only** → **SPX desk** (intraday scalp lens)
+  - `fetchPolygonPositioningBundle` = cold-cache fallback only
+  - All three hit the SAME Polygon/Massive chain provider, same spot, same dealer-sign GEX math. SPX-desk-vs-Heatmap walls differ by EXPIRY SCOPE (0DTE vs full-term), which is correct — NOT a data divergence.
+- **Largo's `get_gex(SPX, today)` deliberately returns the SPX-desk cache** (`spx_sniper_desk`), so Largo agrees with what the user sees on the desk; the full-matrix regime is injected separately via `getGexPositioning`. Largo holds BOTH lenses from shared caches — no independent 3rd fetch.
+
+### Matrix (source → consumer)
+| Channel | Status | Evidence |
+|---|---|---|
+| SPX → HEATMAP | CONSISTENT (by-design) | desk=0DTE `fetchPolygonOdteDeskBundle`, heatmap=full `fetchGexHeatmap`; same provider/spot/math, different expiry scope |
+| HELIX → SPX | PASS | spx-desk.ts carries `flow_0dte_call/put_premium`, `flow_0dte_net`, `net_prem_ticks`, darkPool (UW flow lane) |
+| HEATMAP → LARGO | PASS | largo-live-feed.ts injects `getGexPositioning("SPX")` regime; run-tool get_gex/get_positioning |
+| HEATMAP → NHAWK | PASS | nighthawk/positioning.ts PRIMARY `getGexPositioning` (→fetchGexHeatmap), bundle only on cold cache |
+| HEATMAP → NWATCH | PASS | nights-watch/position-context.ts `fetchGexHeatmap` per-ticker (nw:gex cache) + spx-desk cache for SPX |
+| SPX → NWATCH | PASS | position-context source:"spx-desk" populates `gexWalls`; verdict.ts evaluates wall approach/break |
+| HELIX → NWATCH | PASS | position-context `flows` (from HELIX/Postgres); verdict.ts has flow-premium trust thresholds |
+| HELIX → NHAWK | PASS | 27 nighthawk/*.ts reference flow/premium/sweep (dossier, scorer, candidates, data-sources) |
+| HELIX → LARGO | PASS | tools: get_options_flow, get_flow_tape, get_postgres_flows, get_unusual_trades, get_net_prem_ticks |
+| GRID → SPX | PASS | spx-desk.ts carries UW economy snapshots (GDP/CPI/unemployment) + earnings (NOT in spx-desk-merge.ts — task grepped wrong file) |
+| GRID → LARGO | PASS | tools: get_economic_calendar, get_congress_trades, get_dark_pool, get_earnings, get_sector_flow, get_analyst_ratings, get_market_movers |
+| NHAWK → LARGO | PASS | tools: get_nighthawk_edition, get_nighthawk_outcomes, get_nighthawk_dossier |
+| SPX → LARGO | PASS | tools: get_spx_structure, get_spx_confluence, get_spx_play, get_gex(SPX)→desk cache |
+| LARGO cross-access | PASS (~85 tools) | covers quote/GEX/flow/darkpool/earnings/econ/congress/nighthawk/plays/positioning |
+
+### Deliberate boundaries (NOT silos)
+- **Largo has no per-user Night's Watch portfolio tool.** `get_open_plays` = SPX engine plays, not a user's NW positions. NW is privacy-scoped per-user; Largo is market analysis. Intentional.
+- **Heatmap shows no HELIX flow / no econ** — it is a pure dealer-gamma (OI) matrix. Flow overlay is optional, by design.
+
+### P-items / follow-ups
+- **[DOC-DRIFT, fix the skill]** The scheduled-task SKILL.md uses stale endpoint paths + field names: `/api/market/spx-pulse` → `/api/market/spx/pulse`; `/api/flows` → `/api/market/flows`; `/api/nighthawk/latest-edition` → `/api/market/nighthawk/edition`; `/api/grid/news` does not exist (use `/api/market/news`); field `flowBias/netFlow` → `flow_0dte_net/net_prem_ticks`. Phase 8 greps `spx-desk-merge.ts` for econ but econ lives in `spx-desk.ts`. These caused false 404/"disconnected" reads.
+- **[CANNOT-VERIFY-LIVE]** Numeric cross-consistency (SPX vs Heatmap walls, timestamp desync) needs an authenticated session/cron-secret call. Architecturally bounded: all GEX consumers read the ONE `gex-heatmap:{ticker}` cache, so they see the SAME `asof` by construction — desync is structurally near-impossible for full-matrix consumers. SPX desk has its own 0DTE cache with independent `asof` (expected).
+
+---
