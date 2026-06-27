@@ -11,6 +11,9 @@ export const CLEANUP_TARGETS: Readonly<Record<string, readonly string[]>> = {
   nighthawk_dossiers_staging: ["created_at"],
   nighthawk_job_log: ["created_at"],
   admin_audit_log: ["created_at"],
+  // Signal intelligence tables — long-lived analytics data, generous retention.
+  spx_signal_observations: ["observed_at"],
+  spx_signal_weight_reports: ["computed_at"],
   // High-write outcome tables — prune CLOSED/RESOLVED rows only (see route.ts guards).
   // Age column for spx is closed_at (NULL while open => open rows never match).
   spx_play_outcomes: ["closed_at"],

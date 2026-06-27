@@ -94,6 +94,8 @@ async function runCleanup(): Promise<Record<string, number>> {
     adminAuditLog,
     spxPlayOutcomes,
     nighthawkPlayOutcomes,
+    spxSignalObservations,
+    spxSignalWeightReports,
   ] = await Promise.all([
     // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
     // NOTE: this table's timestamp column is "at", not "created_at"
@@ -126,6 +128,12 @@ async function runCleanup(): Promise<Record<string, number>> {
     // nighthawk_play_outcomes: high-write outcome ledger. Prune RESOLVED rows only
     // (pending/open excluded by status guard). Default 365d, >=90d floor.
     deleteOlderThan("nighthawk_play_outcomes", "created_at", nighthawkOutcomeDays),
+
+    // spx_signal_observations: every-5-min RTH snapshots — keep 180 days for analytics
+    deleteOlderThan("spx_signal_observations", "observed_at", 180),
+
+    // spx_signal_weight_reports: one row per nightly run — keep 365 days
+    deleteOlderThan("spx_signal_weight_reports", "computed_at", 365),
   ]);
 
   return {
@@ -138,5 +146,7 @@ async function runCleanup(): Promise<Record<string, number>> {
     admin_audit_log: adminAuditLog,
     spx_play_outcomes: spxPlayOutcomes,
     nighthawk_play_outcomes: nighthawkPlayOutcomes,
+    spx_signal_observations: spxSignalObservations,
+    spx_signal_weight_reports: spxSignalWeightReports,
   };
 }

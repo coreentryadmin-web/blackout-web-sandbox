@@ -1,0 +1,12 @@
+# Railway config for the Positions-Expiry cron service.
+# Fires at 5:30 PM ET (21:30 UTC) Mon-Fri — auto-closes expired user option positions.
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/positions-expiry"
+# 5:30 PM ET = 21:30 UTC
+cronSchedule = "30 21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1
