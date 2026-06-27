@@ -10,6 +10,7 @@ import {
   SpxGexLadder,
   SpxIntelStrip,
   SpxUnifiedTape,
+  SpxDarkPoolCard,
 } from "@/components/desk/SpxDeskPanels";
 import { SpxDayPerformancePanel } from "@/components/desk/SpxDayPerformancePanel";
 import { SpxTrackRecordPanel } from "@/components/desk/SpxTrackRecordPanel";
@@ -82,6 +83,7 @@ export function SpxDashboard() {
             <SpxTrackRecordPanel />
             <SpxGexLadder desk={desk} live={live} refreshing={refreshing} />
             <SpxUnifiedTape desk={desk} live={live} refreshing={refreshing} />
+            <SpxDarkPoolCard desk={desk} live={live} />
           </aside>
         </SpxPanelErrorBoundary>
 
