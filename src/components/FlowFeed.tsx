@@ -505,11 +505,13 @@ export function FlowFeed() {
   }, [displayAlerts]);
   // Age ticker — without this the "Ns ago" label and the 5-min Stale flip only
   // advance when a new flow event arrives, so during quiet periods the displayed
-  // age freezes (and a tape can read "Live" past the stale threshold). A 1s timer
+  // age freezes (and a tape can read "Live" past the stale threshold). A 10s timer
   // re-renders ONLY this label off the already-held newestAt — no network fetch.
+  // 10s precision is sufficient: the stale threshold is 5 min and the age label
+  // rounds to the nearest second/minute anyway.
   const [ageTick, setAgeTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setAgeTick((t) => t + 1), 1000);
+    const id = setInterval(() => setAgeTick((t) => t + 1), 10_000);
     return () => clearInterval(id);
   }, []);
   const dataAgeMs = useMemo(

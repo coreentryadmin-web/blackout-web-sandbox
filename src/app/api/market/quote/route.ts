@@ -42,10 +42,10 @@ type QuotePayload = {
 const WS_INDEX_KEYS = new Set(Object.keys(indexStore));
 /** A WS index entry older than this is treated as cold → REST fallback. */
 const WS_STALE_MS = 10_000;
-/** Shared REST cache window — one upstream call per ticker per ~1.5s across all users. */
-const QUOTE_CACHE_MS = 1_500;
-/** Redis TTL must be an integer ≥1s; 2s comfortably covers the 1.5s window. */
-const QUOTE_REDIS_TTL_SEC = 2;
+/** Shared REST cache window — one upstream call per ticker per 5s across all users. */
+const QUOTE_CACHE_MS = 5_000;
+/** Redis TTL must be an integer ≥1s; 6s comfortably covers the 5s window. */
+const QUOTE_REDIS_TTL_SEC = 6;
 
 /** Per-process REST cache (in-memory L1), shared across all concurrent requests. */
 const quoteMem = new Map<string, { at: number; payload: QuotePayload }>();

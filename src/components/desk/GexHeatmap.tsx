@@ -2557,12 +2557,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   );
 
   // Live spot tape — a SEPARATE, fast (~1.5s) SWR just for the header price. Index
-  // spot is true real-time WS; stocks/ETFs are ~1.5s shared-cached REST. The gamma
-  // matrix keeps its own 20s cache above; only the header tape goes live.
+  // spot is true real-time WS; stocks/ETFs are shared-cached REST. The gamma
+  // matrix keeps its own 20s cache above; the header quote polls at 15s to avoid
+  // fan-out load (~10× reduction vs the prior 1.5s interval).
   const { data: quote } = useSWR<QuoteResponse>(
     `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,
     fetchQuote,
-    { refreshInterval: 1_500, revalidateOnFocus: true, keepPreviousData: true }
+    { refreshInterval: 15_000, revalidateOnFocus: true, keepPreviousData: true }
   );
 
   // ── Sub-second INDEX spot via the pulse SSE (zero new REST cost) ───────────────

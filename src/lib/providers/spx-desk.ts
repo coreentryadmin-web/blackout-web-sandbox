@@ -1,4 +1,5 @@
 import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured, deskPulseStructureCacheTtlMs } from "./config";
+import { serverCache } from "@/lib/server-cache";
 import { safeTime } from "@/lib/safe-time";
 import { tapeDedupKey } from "@/lib/tape-dedup-key";
 import { fetchPolygonOdteDeskBundle } from "./polygon-options-gex";
@@ -837,7 +838,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchIndexEma(SPX, 200, "day"),
     fetchIndexSma(SPX, 50, "day"),
     fetchIndexSma(SPX, 200, "day"),
-    fetchBreadthUniverseSnapshots().catch(() => []),
+    serverCache("breadth-universe", 60_000, () => fetchBreadthUniverseSnapshots()).catch(() => []),
     fetchBenzingaNews(15).catch(() => []),
     intelPromise,
   ]);
@@ -1147,7 +1148,7 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
       fetchIndexEma(SPX, 200, "day"),
       fetchIndexSma(SPX, 50, "day"),
       fetchIndexSma(SPX, 200, "day"),
-      fetchBreadthUniverseSnapshots().catch(() => []),
+      serverCache("breadth-universe", 60_000, () => fetchBreadthUniverseSnapshots()).catch(() => []),
     ]);
 
   const session = sessionStatsFromMinuteBars(minuteBars);
