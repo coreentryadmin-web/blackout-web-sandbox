@@ -110,6 +110,12 @@ export function HeroSection() {
         }}
       />
 
+      {/* VITALS Phase 2 — CSS grid overlay (5% opacity) */}
+      <div aria-hidden className="vitals-hero-grid" />
+
+      {/* VITALS Phase 2 — scanline: 1px cyan sweep, 4s loop, 3% opacity */}
+      <div aria-hidden className="vitals-hero-scanline" />
+
       {/* drifting green aurora over the storm — perpetual life (screen-blended) */}
       <motion.div
         aria-hidden
@@ -174,6 +180,8 @@ export function HeroSection() {
                 {w}
               </motion.span>
             ))}
+            {/* VITALS Phase 2 — terminal cursor blink at end of headline */}
+            <span aria-hidden className="vitals-cursor-blink">|</span>
           </span>
         </h1>
 

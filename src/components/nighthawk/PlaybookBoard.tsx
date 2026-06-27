@@ -58,7 +58,13 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
   const showFreshBadge = hasPlays && !isStale && !isDegraded;
 
   return (
-    <section className="nighthawk-playbook">
+    // VITALS Phase 4: border-pulse fires once when a fresh edition with plays lands.
+    // The key forces React to remount (and re-run the CSS animation) each time the
+    // play count changes — zero cost when static, one 1.8s pulse on new data.
+    <section
+      key={`nh-board-${plays.length}`}
+      className={`nighthawk-playbook${hasPlays && !isStale ? " vitals-nh-border-pulse" : ""}`}
+    >
       <header className="nighthawk-playbook-header">
         <div className="nighthawk-playbook-header-main">
           <p className="nighthawk-playbook-kicker">Tonight&apos;s playbook</p>

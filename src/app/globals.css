@@ -633,6 +633,133 @@ body::before {
   .data-flash { animation: none; }
 }
 
+/* ── VITALS Phase 2 — Hero animations ──────────────────────────────────────
+   Scanline: 1px cyan line sweeping top→bottom on 4s loop, 3% opacity.
+   Cursor blink: terminal | on the hero headline, 1.1s step blink.
+   Grid overlay: subtle CSS dot/grid pattern at 5% opacity.
+   All respect prefers-reduced-motion. */
+
+@keyframes vitals-hero-scanline {
+  0%   { top: -2%; opacity: 0; }
+  3%   { opacity: 0.03; }
+  97%  { opacity: 0.03; }
+  100% { top: 102%; opacity: 0; }
+}
+
+.vitals-hero-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.5) 40%, rgba(34,211,238,0.9) 50%, rgba(34,211,238,0.5) 60%, transparent 100%);
+  animation: vitals-hero-scanline 4s linear infinite;
+  pointer-events: none;
+  z-index: 8;
+  will-change: top;
+}
+
+@keyframes vitals-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.vitals-cursor-blink {
+  display: inline-block;
+  width: 3px;
+  margin-left: 4px;
+  vertical-align: baseline;
+  animation: vitals-cursor-blink 1.1s step-end infinite;
+  color: rgba(34,211,238,0.85);
+  font-weight: 300;
+}
+
+.vitals-hero-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.05;
+  background-image:
+    linear-gradient(rgba(34,211,238,0.6) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34,211,238,0.6) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 80%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vitals-hero-scanline { animation: none; opacity: 0; }
+  .vitals-cursor-blink  { animation: none; opacity: 1; }
+}
+
+/* ── VITALS Phase 3 — Micro-interactions ────────────────────────────────────
+   Card appear: slide-up + fade-in for panels/cards on mount.
+   Nav underline: thin cyan bar slides in from left on hover.
+   Button power-on: handled in Button.tsx via EMERALD_SWEEP (already shipped).
+   All respect prefers-reduced-motion. */
+
+@keyframes vitals-appear {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.vitals-appear {
+  animation: vitals-appear 200ms var(--ease-draw, cubic-bezier(0.4,0,0.2,1)) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vitals-appear { animation: none; }
+}
+
+/* Nav pill item underline slide — width 0→100% from left in 150ms */
+.nav-pill-item {
+  position: relative;
+}
+.nav-pill-item::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: rgba(34,211,238,0.8);
+  transition: width 150ms ease-out;
+}
+.nav-pill-item:hover::after,
+.nav-pill-item-active::after {
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-pill-item::after { transition: none; }
+}
+
+/* ── VITALS Phase 4 — Live signal micro-animations ──────────────────────────
+   Flow row entry: slide in from right (translateX 20px→0) in 150ms.
+   Night Hawk grade-A border pulse: 3-step cyan border flash.
+   Both respect prefers-reduced-motion. */
+
+@keyframes vitals-flow-entry {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Applied via CSS class; framer-motion in FlowAlertStream handles entry via x:20 */
+
+@keyframes vitals-nh-border-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,211,238,0.0),  inset 0 0 0 1px rgba(34,211,238,0.0); }
+  30%  { box-shadow: 0 0 18px 2px rgba(34,211,238,0.5), inset 0 0 0 1px rgba(34,211,238,0.6); }
+  60%  { box-shadow: 0 0 8px 1px rgba(34,211,238,0.2), inset 0 0 0 1px rgba(34,211,238,0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.0),  inset 0 0 0 1px rgba(34,211,238,0.0); }
+}
+
+.vitals-nh-border-pulse {
+  animation: vitals-nh-border-pulse 1.8s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vitals-nh-border-pulse { animation: none; }
+}
+
 @keyframes landing-hero-scan {
   0% { transform: translateY(-100%); opacity: 0; }
   10% { opacity: 0.3; }

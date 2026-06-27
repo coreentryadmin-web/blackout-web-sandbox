@@ -277,13 +277,13 @@ export function FlowAlertStream({
                     <motion.div
                       key={`${flow.ticker}-${flow.alerted_at}-${i}`}
                       layout="position"
-                      initial={{ opacity: 0, x: -12, scale: 0.98 }}
+                      initial={{ opacity: 0, x: 20, scale: 0.98 }}
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
                       transition={{
-                        opacity:   { duration: 0.25, delay: i < 5 ? i * STAGGER : 0 },
-                        x:         { duration: 0.3,  delay: i < 5 ? i * STAGGER : 0, type: "spring", damping: 22, stiffness: 280 },
-                        scale:     { duration: 0.25 },
+                        opacity:   { duration: 0.15, delay: i < 5 ? i * STAGGER : 0 },
+                        x:         { duration: 0.15, delay: i < 5 ? i * STAGGER : 0, ease: "easeOut" },
+                        scale:     { duration: 0.15 },
                       }}
                       onClick={() => onTickerClick?.(flow.ticker)}
                       // I-04 a11y: the tape card is the flagship drill-down; make it keyboard- +
