@@ -969,6 +969,225 @@ function PortfolioSummary({ summary }: { summary: Summary }) {
 }
 
 // ---------------------------------------------------------------------------
+// Coaching alerts panel.
+// ---------------------------------------------------------------------------
+type AlertUrgency = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+type CoachingAlert = {
+  id: string;
+  generatedAt: string;
+  trigger: string;
+  alert: string;
+  urgency: AlertUrgency;
+  spxPrice?: number;
+  callWall?: number;
+  putWall?: number;
+  forLongs?: string;
+  forShorts?: string;
+};
+
+const URGENCY_CLASSES: Record<AlertUrgency, { border: string; bg: string; text: string; dot: string }> = {
+  CRITICAL: {
+    border: "border-red-800/40",
+    bg: "bg-red-950/30",
+    text: "text-red-400",
+    dot: "bg-red-400",
+  },
+  HIGH: {
+    border: "border-amber-800/40",
+    bg: "bg-amber-950/30",
+    text: "text-amber-400",
+    dot: "bg-amber-400",
+  },
+  MEDIUM: {
+    border: "border-cyan-800/40",
+    bg: "bg-cyan-950/30",
+    text: "text-cyan-400",
+    dot: "bg-cyan-400",
+  },
+  LOW: {
+    border: "border-sky-800/40",
+    bg: "bg-sky-950/30",
+    text: "text-sky-300",
+    dot: "bg-sky-300",
+  },
+};
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) return "just now";
+  const secs = Math.floor(diffMs / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+type CoachState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; alerts: CoachingAlert[] };
+
+const COACH_POLL_MS = 30_000;
+
+function CoachingAlertsPanel() {
+  const [state, setState] = useState<CoachState>({ kind: "loading" });
+  const loadedOnce = useRef(false);
+  const inFlight = useRef(false);
+  const pending = useRef(false);
+  // Force re-render every 30s so relative timestamps stay fresh.
+  const [, setTick] = useState(0);
+
+  const load = useCallback(async () => {
+    if (inFlight.current) {
+      pending.current = true;
+      return;
+    }
+    inFlight.current = true;
+    try {
+      let runAgain = true;
+      while (runAgain) {
+        pending.current = false;
+        const res = await fetch("/api/coaching/alerts", { cache: "no-store" });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as { error?: string } | null;
+          setState({ kind: "error", message: data?.error ?? "Failed to load coaching alerts." });
+        } else {
+          const data = (await res.json()) as { alerts: CoachingAlert[] };
+          setState({ kind: "ready", alerts: data.alerts ?? [] });
+        }
+        loadedOnce.current = true;
+        runAgain = pending.current;
+      }
+    } catch {
+      setState({ kind: "error", message: "Network error — could not load coaching alerts." });
+      loadedOnce.current = true;
+    } finally {
+      inFlight.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      void load();
+      // Also nudge the timestamp display.
+      setTick((n) => n + 1);
+      timer = setTimeout(tick, COACH_POLL_MS);
+    };
+    timer = setTimeout(tick, COACH_POLL_MS);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
+
+  const alerts = state.kind === "ready" ? state.alerts : [];
+
+  return (
+    <section aria-label="Position Coach" className="flex flex-col gap-3">
+      {/* Section header */}
+      <header className="flex items-center gap-2.5">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-300">
+          🛡 Position Coach
+        </span>
+        {state.kind === "ready" && alerts.length > 0 && (
+          <span className="font-mono text-[10px] tabular-nums text-mute">{alerts.length}</span>
+        )}
+        <span aria-hidden className="h-px flex-1 bg-white/[0.08]" />
+      </header>
+
+      {/* States */}
+      {state.kind === "loading" && !loadedOnce.current ? (
+        <div className="flex flex-col gap-2">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-[72px] animate-pulse rounded-xl border border-white/[0.07] bg-white/[0.025]"
+            />
+          ))}
+        </div>
+      ) : state.kind === "error" ? (
+        <p className="font-mono text-[11px] text-bear">{state.message}</p>
+      ) : alerts.length === 0 ? (
+        <p className="font-mono text-[11px] leading-relaxed text-sky-300/80">
+          No active coaching alerts — positions look healthy.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {alerts.map((a) => {
+            const styles = URGENCY_CLASSES[a.urgency] ?? URGENCY_CLASSES.LOW;
+            return (
+              <div
+                key={a.id}
+                className={clsx(
+                  "flex flex-col gap-2 rounded-xl border px-3.5 py-3",
+                  styles.border,
+                  styles.bg
+                )}
+              >
+                {/* Top row: urgency badge + trigger label + timestamp */}
+                <div className="flex items-center gap-2">
+                  <span
+                    className={clsx(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]",
+                      styles.text,
+                      styles.border,
+                      styles.bg
+                    )}
+                  >
+                    <span className={clsx("h-1.5 w-1.5 rounded-full", styles.dot)} aria-hidden />
+                    {a.urgency}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-mute">
+                    {a.trigger}
+                  </span>
+                  <span className="ml-auto font-mono text-[10px] tabular-nums text-mute">
+                    {relativeTime(a.generatedAt)}
+                  </span>
+                </div>
+
+                {/* Alert message */}
+                <p className="font-mono text-[12px] leading-snug text-white">{a.alert}</p>
+
+                {/* For-longs / for-shorts guidance, if present */}
+                {(a.forLongs ?? a.forShorts) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {a.forLongs && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-mute">
+                          For longs
+                        </span>
+                        <span className="font-mono text-[11px] leading-snug text-bull">{a.forLongs}</span>
+                      </div>
+                    )}
+                    {a.forShorts && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-mute">
+                          For shorts
+                        </span>
+                        <span className="font-mono text-[11px] leading-snug text-bear-text">
+                          {a.forShorts}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // The panel.
 // ---------------------------------------------------------------------------
 type LoadState =
@@ -1210,6 +1429,11 @@ export function NightsWatchPanel() {
             )}
           </>
         ) : null}
+      </div>
+
+      {/* ---- Position Coach: coaching alerts below the positions list ---- */}
+      <div className="nighthawk-watch-body">
+        <CoachingAlertsPanel />
       </div>
 
       {/* Persistent disclaimer */}

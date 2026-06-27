@@ -3,6 +3,7 @@ import { requireTier } from "@/lib/auth-access";
 import { PageShell, PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/components/FlowFeed";
+import { FlowAnomalyBanner } from "@/components/FlowAnomalyBanner";
 import { DnaHelixBackgroundLazy as DnaHelixBackground } from "@/components/DnaHelixBackgroundLazy";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default async function FlowsPage() {
           />
         </div>
         <div className="mt-4 max-w-none px-2 md:px-3">
+          <FlowAnomalyBanner />
           <FlowFeed />
         </div>
       </PageShell>
