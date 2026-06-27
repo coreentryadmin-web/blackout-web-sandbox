@@ -129,6 +129,24 @@ export async function captureLargoLiveFeed(
     channel_stale: isTradingHaltChannelStale(),
     has_active: activeHalts.length > 0,
   };
+
+  // Tide — full tideStore shape (call_premium, put_premium, net, bias) from the UW WS.
+  // Synchronous in-process read — zero API cost, same pattern as the halts store above.
+  feed.tide = {
+    call_premium: tideStore.call_premium,
+    put_premium: tideStore.put_premium,
+    net: tideStore.net,
+    bias: tideStore.bias,
+    updated_at: tideStore.updatedAt || null,
+  };
+
+  // Net-flow — reuse the spx_structure desk snapshot's net_flow_by_expiry when present,
+  // so Largo sees the per-expiry 0DTE net-flow breakdown without an extra upstream call.
+  const spxSnap = feed.spx_structure as Record<string, unknown> | null | undefined;
+  if (spxSnap && Array.isArray(spxSnap.net_flow_by_expiry)) {
+    feed.net_flow = spxSnap.net_flow_by_expiry;
+  }
+
   return feed;
 }
 
@@ -635,6 +653,43 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
           .join(" · ")
       );
     }
+    lines.push("");
+  }
+
+  // Market tide — standalone top-level key (call_premium, put_premium, net, bias).
+  // Bias drives HELIX flow direction context; cite if present and non-zero.
+  const tide = asObj(feed.tide);
+  if (tide && (tide.net !== 0 || tide.bias)) {
+    lines.push("### Market tide (UW WS)");
+    lines.push(
+      [
+        tide.call_premium != null ? `calls $${Number(tide.call_premium).toLocaleString()}` : null,
+        tide.put_premium != null ? `puts $${Number(tide.put_premium).toLocaleString()}` : null,
+        tide.net != null ? `net $${Number(tide.net).toLocaleString()}` : null,
+        tide.bias ? `bias ${tide.bias}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    );
+    lines.push("");
+  }
+
+  // Net-flow by expiry — top-level key reused from desk snapshot; shows 0DTE vs weekly splits.
+  const netFlow = asArr(feed.net_flow).slice(0, 8);
+  if (netFlow.length) {
+    lines.push("### Net flow by expiry");
+    lines.push(
+      netFlow
+        .map((r) => {
+          const o = asObj(r);
+          if (!o) return "";
+          const exp = String(o.expiry ?? o.dte ?? "").slice(0, 10);
+          const net = o.net_premium ?? o.net ?? "";
+          return exp && net !== "" ? `${exp}: $${Number(net).toLocaleString()}` : "";
+        })
+        .filter(Boolean)
+        .join(" · ")
+    );
     lines.push("");
   }
 

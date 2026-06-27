@@ -671,12 +671,6 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     }
     case "get_risk_reversal_skew":
       return { ticker: uwTicker(ticker), skew: await fetchUwRiskReversalSkew(uwTicker(ticker)) };
-    case "get_vol_anomaly":
-      return {
-        error: "not_available",
-        message: "Volatility anomaly data requires the UW volatility scope — not included in current plan.",
-      };
-
     case "get_market_context": {
       // spx desk is per-user-session and must stay outside the shared cache
       const desk = await getLargoSpxLiveDesk(userId).catch(() => null);

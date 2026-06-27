@@ -858,7 +858,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     fetchIndexSma(SPX, 50, "day"),
     fetchIndexSma(SPX, 200, "day"),
     serverCache("breadth-universe", 60_000, () => fetchBreadthUniverseSnapshots()).catch(() => []),
-    fetchBenzingaNews(15).catch(() => []),
+    // Cache the market-wide Benzinga news so concurrent desk builds and other consumers
+    // (Largo live feed, Night's Watch, etc.) share one upstream pull per window.
+    // TTL matches TTL.NEWS (2 min). fetchBenzingaNews is itself idempotent / GET-only.
+    serverCache("bz:news:market", 120_000, () => fetchBenzingaNews(15)).catch(() => []),
     intelPromise,
   ]);
 

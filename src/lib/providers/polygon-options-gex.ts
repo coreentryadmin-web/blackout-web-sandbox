@@ -466,6 +466,14 @@ export type GexEodSnapshot = {
   net_gex: number;
   /** Max-pain strike at close, or null. */
   max_pain: number | null;
+  /** Total net dealer dollar-DELTA (DEX) at close, or null when unavailable. */
+  net_dex: number | null;
+  /** Dealer delta posture at close: 'long' (stabilizing) | 'short' (destabilizing) | null. */
+  dex_posture: "long" | "short" | null;
+  /** Total net dealer dollar-CHARM at close, or null when unavailable. */
+  net_charm: number | null;
+  /** Dealer charm posture at close: 'positive' | 'negative' | null. */
+  charm_posture: "positive" | "negative" | null;
 };
 
 /**
@@ -1232,6 +1240,11 @@ export async function appendGexEodSnapshot(ticker: string): Promise<GexEodSnapsh
       put_wall: heatmap.gex.put_wall,
       net_gex: heatmap.gex.total,
       max_pain: heatmap.max_pain,
+      // DEX + CHARM — optional blocks; older cached payloads may omit them (null safe).
+      net_dex: heatmap.dex?.total ?? null,
+      dex_posture: heatmap.dex?.regime?.posture ?? null,
+      net_charm: heatmap.charm?.total ?? null,
+      charm_posture: heatmap.charm?.regime?.posture ?? null,
     };
 
     const key = `${GEX_EOD_PREFIX}:${root}`;

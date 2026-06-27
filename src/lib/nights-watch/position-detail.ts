@@ -39,7 +39,12 @@ import {
   type SpxConfluence,
 } from "@/lib/spx-signals";
 import { fetchPolygonMtfTechnicals, fetchPolygonNews } from "@/lib/providers/polygon-largo";
-import { fetchBenzingaEarnings } from "@/lib/providers/polygon";
+import {
+  fetchBenzingaEarnings,
+  fetchBenzingaAnalystRatings,
+  fetchBenzingaCatalysts,
+  type BenzingaCatalyst,
+} from "@/lib/providers/polygon";
 import { fetchUwEarnings, fetchUwEarningsEstimates } from "@/lib/providers/unusual-whales";
 import { fetchRecentFlows, fetchStagedDossiers, type FlowRow } from "@/lib/db";
 import { getLatestNightHawkEdition } from "@/lib/platform/nighthawk-service";
@@ -117,6 +122,10 @@ export type CatalystsSection = {
   daysToEarnings: number | null;
   beforeExpiry: boolean | null;
   source: string;
+  /** Compact analyst snapshot: latest rating action headlines from Benzinga (max 5). */
+  analyst_snapshot: string[] | null;
+  /** Catalyst channel flags from Benzinga: M&A, FDA, guidance, insider, etc. (max 5). */
+  catalyst_flags: Array<{ type: BenzingaCatalyst["type"]; title: string; published: string }> | null;
 };
 
 export type ConfluenceSection = {
@@ -411,6 +420,8 @@ export async function buildPositionDetail(
     earningsR,
     deskR,
     dossierR,
+    analystR,
+    bzCatalystR,
   ] = await Promise.allSettled([
     spx ? Promise.resolve(null) : getNwTickerGex(sym), // SPX positioning comes from the desk instead
     fetchRecentFlows({ ticker: sym, since_hours: 48 }),
@@ -419,6 +430,9 @@ export async function buildPositionDetail(
     getCachedEarnings(sym),
     spx ? loadMergedSpxDesk() : Promise.resolve(null),
     loadDossierForTicker(sym),
+    // Benzinga analyst ratings + catalysts — cached per-ticker, zero UW RPS cost.
+    fetchBenzingaAnalystRatings(sym, 5),
+    fetchBenzingaCatalysts(sym, 5),
   ]);
 
   const gex = settledValue(gexR);
@@ -428,6 +442,8 @@ export async function buildPositionDetail(
   const earnings = settledValue(earningsR);
   const deskBundle = settledValue(deskR);
   const dossier = settledValue(dossierR);
+  const analystRatingsRaw = settledValue(analystR) ?? [];
+  const bzCatalystsRaw = settledValue(bzCatalystR) ?? [];
 
   // ── Build each section (HONEST: null when no real data) ──────────────────────
 
@@ -530,18 +546,44 @@ export async function buildPositionDetail(
   }
 
   // Catalysts — only when a real structured forward earnings date exists.
+  // Also appends compact analyst_snapshot + catalyst_flags from Benzinga (cached, zero UW cost).
   let catalysts: CatalystsSection | null = null;
   const earningsDate = nextEarningsDateFromPayload(earnings);
-  if (earningsDate) {
-    const daysToEarnings = daysBetween(todayEt(), earningsDate);
+
+  // Build Benzinga analyst snapshot: compact headline strings from ratings articles.
+  const analystSnapshot =
+    analystRatingsRaw.length > 0
+      ? analystRatingsRaw
+          .slice(0, 5)
+          .map((a) => {
+            const item = a as { title?: string; published?: string };
+            return item.title ? `${item.title.slice(0, 120)} (${(item.published ?? "").slice(0, 10)})` : "";
+          })
+          .filter(Boolean)
+      : null;
+
+  // Build Benzinga catalyst flags: type + title for material events.
+  const catalystFlags =
+    bzCatalystsRaw.length > 0
+      ? bzCatalystsRaw.slice(0, 5).map((c) => ({
+          type: c.type,
+          title: c.title.slice(0, 100),
+          published: c.published.slice(0, 10),
+        }))
+      : null;
+
+  if (earningsDate || analystSnapshot || catalystFlags) {
+    const daysToEarnings = earningsDate ? daysBetween(todayEt(), earningsDate) : null;
     const expiry = position.expiry.slice(0, 10);
     const beforeExpiry =
-      /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? earningsDate <= expiry : null;
+      earningsDate && /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? earningsDate <= expiry : null;
     catalysts = {
-      earningsDate,
+      earningsDate: earningsDate ?? null,
       daysToEarnings,
       beforeExpiry,
-      source: "unusual_whales (cached get_earnings)",
+      source: "unusual_whales (cached get_earnings) + benzinga",
+      analyst_snapshot: analystSnapshot,
+      catalyst_flags: catalystFlags,
     };
   }
 

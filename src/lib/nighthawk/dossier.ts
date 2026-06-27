@@ -1,5 +1,6 @@
 import {
   fetchBenzingaCatalysts,
+  fetchBenzingaEarnings,
   fetchBenzingaNews,
   fetchBenzingaPriceTarget,
   fetchPolygonBalanceSheets,
@@ -302,7 +303,26 @@ export async function fetchTickerDossier(
     }, t),
     dossierFetch(() => buildTechnicalCard(sym), null, t),
     dossierFetch(() => fetchPolygonNews(sym, 8), [], t),
-    dossierFetch(() => fetchBenzingaNews(5, { ticker: sym }), [], t),
+    // Merge Benzinga general news + earnings articles so the dossier scoring pass
+    // sees earnings-channel items (guidance beats/misses, reaction pieces) that the
+    // plain fetchBenzingaNews call omits. Bounded: 5 general + 5 earnings = 10 max.
+    dossierFetch(async () => {
+      const [general, earnings] = await Promise.all([
+        fetchBenzingaNews(5, { ticker: sym }),
+        fetchBenzingaEarnings(sym, 5),
+      ]);
+      // Deduplicate by title (earnings articles sometimes appear in general too).
+      const seen = new Set<string>();
+      const merged: typeof general = [];
+      for (const item of [...general, ...earnings]) {
+        const key = (item as { title?: string }).title ?? "";
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(item);
+        }
+      }
+      return merged;
+    }, [], t),
     dossierFetch(() => fetchPolygonTickerDetails(sym), null, t),
     dossierFetch(() => fetchShortInterest(sym), null, t),
     dossierFetch(
