@@ -11,6 +11,65 @@
 
 ---
 
+## Run — 2026-06-27 04:13 ET (re-verification; live endpoints auth-gated)
+
+**Verdict unchanged: connectivity is structurally STRONG.** Independently re-traced
+every consumer's import/call site this run — all prior `✓` cells still hold, no new
+silo, no regression since the 01:00 run. The two standing WARNs persist, and one new
+consistency-risk note (W3) is added.
+
+**Matrix (source → consumer), by shared-function evidence:**
+
+| Source ↓ / Consumer → | SPX | HELIX | HEATMAP | LARGO | NHAWK | NWATCH | GRID |
+|---|---|---|---|---|---|---|---|
+| **SPX Desk**   | — | n/a | n/a | ✓ `get_spx_structure`/`get_spx_confluence` | n/a | ✓ `loadMergedSpxDesk` | n/a |
+| **HELIX**      | ✓ `spx_flows`/`unified_tape`/`strike_stacks` | — | n/a | ✓ `get_flow_tape`/`get_postgres_flows` | ✓ `flow_alerts` (Postgres) candidate select | ⚠️ **W2** (signal exists, list path unset) | n/a |
+| **Heatmaps/GEX** | ✓ desk computes `gex_walls`/`gex_king` | n/a | — | ✓ `get_gex`/`get_positioning` (⚠️ **W1**) | ✓ `fetchPolygonPositioningBundle` (⚠️ **W1**) | ✓ `fetchGexHeatmap` (=`getGexPositioning`) | n/a |
+| **Largo**      | n/a | n/a | n/a | — | n/a | n/a | n/a |
+| **Night Hawk** | n/a | n/a | n/a | ✓ `get_nighthawk_edition`/`outcomes`/`dossier` | — | n/a | n/a |
+| **Night's Watch** | n/a | n/a | n/a | ✓ `get_my_positions` | n/a | — | n/a |
+| **Grid**       | ✓ desk `macro_events`/`news_headlines` (⚠️ **W3**) | n/a | n/a | ✓ `get_news`/`get_earnings`/`get_congress_trades`/`get_economic_calendar` | n/a | n/a | — |
+
+*(n/a = no directional data dependency between that pair — e.g. HELIX does not consume the SPX desk; Grid is a leaf intelligence aggregator with no downstream-into-tools requirement beyond SPX macro.)*
+
+**Tally: PASS = 16 wired channels · FAIL = 0 · WARN = 3 (W1, W2, W3).**
+
+### Findings (re-confirmed + new)
+
+- **W1 — Dual per-ticker GEX path (standing, still open).** Heatmap, `getGexPositioning`,
+  and Night's Watch non-SPX all route through **`fetchGexHeatmap`** (`polygon-options-gex.ts:1715`;
+  `getGexPositioning` is now literally `fetchGexHeatmap → this`, `gex-positioning.ts:115`).
+  Largo `get_positioning` (`run-tool.ts:1216` → `fetchPositioningSummary`) and Night Hawk
+  dossiers (`nighthawk/positioning.ts:88`) route through **`fetchPolygonPositioningBundle`**
+  (`polygon-options-gex.ts:2634`). **Severity is bounded:** both ultimately call the SAME
+  `aggregateGexRows` core with the SAME call(+)/put(−) dealer-sign convention
+  (`polygon-options-gex.ts:2470`, mirrored at :1823), so the *math* is identical — divergence
+  can only come from different strike-banding + independent caches (`gex-heatmap:{ticker}` ~20s
+  vs `positioningCache`). So a Largo "where's the SPY call wall" answer can still differ by a
+  strike from the Heatmap. WARN, not a silo.
+- **W2 — Night's Watch panel verdict omits HELIX flows (standing, still open).** The verdict
+  engine HAS a real `flowAlignment` signal reading `ctx.flows` (`verdict.ts:206`), but
+  `buildPositionContextMap` (the LIST path) leaves `flows` **unset** by design
+  (`position-context.ts:59-76` — "Populated by a separate aggregator, NOT by
+  buildPositionContextMap"). So the panel verdict never fires a flow signal; only the detail
+  view does. Asymmetry between panel and modal verdicts persists.
+- **W3 — Grid econ calendar vs SPX desk macro use different providers (NEW, low severity).**
+  Connectivity is PASS — the SPX desk DOES carry event awareness via
+  `mergeMacroEventsToday` (`spx-desk.ts:986/1107`) + UW macro indicators, so it is NOT blind
+  to FOMC/CPI (the original task's Phase-8 assumption is false). But Grid `/api/grid/economy`
+  sources from `readGridEconomy` (UW, `grid/economy/route.ts:5`) while the desk uses
+  `macro-events.ts:mergeMacroEventsToday` — two different calendars that could disagree on
+  dates/labels. Converge to one macro-events source so Grid and the desk show the same schedule.
+
+### Method this run
+- Live numeric cross-check again NOT possible: every `www.blackouttrades.com` data route
+  returned **401 (Clerk-gated)** unauthenticated, and it is ~04:13 ET (market closed). Re-ran
+  the audit as a **source-code wiring trace** (the stronger structural signal). Every cell
+  above cites an import/call site verified this run.
+- No commit needed for code changes (none made); doc updated with this re-verification entry.
+
+---
+
 ## Run — 2026-06-27 01:00 ET (source-code audit; live endpoints auth-gated)
 
 **Verdict: connectivity is structurally STRONG.** Every consumer that should read a
