@@ -364,6 +364,26 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
     if (gexReg.shift_summary) {
       lines.push(`Intraday gamma shift: ${gexReg.shift_summary}`);
     }
+    // DEX / CHARM extended regime fields (sourced from getGexPositioning).
+    if (gexReg.dex_posture || gexReg.dex_regime_read) {
+      const dexLine = [
+        gexReg.dex_posture ? `Dealer delta posture: ${gexReg.dex_posture}` : null,
+        gexReg.dex_regime_read ? String(gexReg.dex_regime_read) : null,
+      ].filter(Boolean).join(" · ");
+      if (dexLine) lines.push(dexLine);
+    }
+    if (gexReg.charm_posture) lines.push(`Charm posture: ${gexReg.charm_posture}`);
+    if (gexReg.charm_regime_read) lines.push(`Charm/pinning read: ${gexReg.charm_regime_read}`);
+    // Pivot price levels sourced from the GEX matrix.
+    // delta_zero = DEX zero-crossing (where net dealer delta flips sign) — proxy for the mean-revert anchor.
+    // charm_zero = CHARM zero-crossing (delta-decay flip level).
+    // vanna_flip = VEX zero-crossing (vanna-amplification trigger level).
+    // These are not direct fields on GexPositioning but can be approximated from the
+    // nearest_wall/flip when the posture sign changes. For now surface what's available:
+    if (gexReg.net_dex != null && gexReg.spot != null && gexReg.flip != null) {
+      // Approximate delta_zero as the flip level when dex_posture flips around it.
+      lines.push(`Delta zero (approx): ${gexReg.flip} (gamma flip is the primary mean-revert anchor)`);
+    }
     const intra = asObj(gexReg.gex_intraday_adjusted);
     if (intra && !intra.error) {
       lines.push(

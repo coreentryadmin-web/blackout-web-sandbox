@@ -62,3 +62,16 @@ Automated TLS, availability, security-header, redirect, and CDN health checks fo
 - /pricing: apex `307 → /#pricing` (unchanged); www `/pricing 301 → apex /pricing` (→ then 307 → /#pricing).
 ### CDN: **PASS** — Cloudflare edge (CF-Ray a124c21b98491639-SEA), Railway request ID present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. Step-5 "API may be cached" WARN is a known false positive (unauth SPX-pulse 401 carries no Cache-Control header to read).
 ---
+
+## 2026-06-27 11:22 ET
+### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
+### Availability: 12/12 routes healthy — **PASS**
+- Pages 200 (probe hits www, follows www→apex 301 to 200): Landing 600ms, Sign In 170ms, Sign Up 183ms, /dashboard 240ms, /flows 233ms, /heatmap 237ms, /grid 140ms, /nighthawk 249ms; /api/health 200 (105ms)
+- Auth-gated APIs 401 as intended (~90–98ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <650ms).**
+### Security Headers: 6/6 present on rendered apex page — **PASS** (HSTS max-age=31536000 +includeSubDomains +preload, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin-when-cross-origin, CSP default-src 'self', Permissions-Policy camera=()/microphone=()/geolocation=())
+- Reading note (recurring): headers appear only on the final 200 page; the www→apex 301 hop carries none, so an unfollowed read falsely reports "CSP MISSING". Confirmed present by re-probing the apex directly.
+- WARN (low priority, expected): `Server: cloudflare` is the CF edge header, not an app info leak.
+### Redirects: **PASS** — `https://www/` → 301 → https://blackouttrades.com/ ; `http://www/` → 301 → https://blackouttrades.com/ (canonical = apex, unchanged from 09:22 run); www `/pricing` → 301 → apex /pricing.
+### CDN: **PASS** — Cloudflare edge (CF-Ray a12571fdeaecdee1-SEA), Railway request ID present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
+---

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
+import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
+import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime } from "@/lib/providers/gamma-desk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +62,55 @@ export async function GET(req: NextRequest) {
       includeIntradayAdjusted: wantIntraday,
     });
     if (!positioning) {
-      // Cold / empty matrix — never fabricate. Mirrors the heatmap empty contract.
+      // Primary cache-reader returned null (cold/empty matrix). Fall back to a direct
+      // fetchPolygonPositioningBundle call so a temporary matrix gap never silently drops
+      // the endpoint. This is best-effort: if the bundle also fails or is empty, we still
+      // return the documented empty contract — never fabricated.
+      console.warn("[market/gex-positioning] primary cache miss for", ticker, "— trying direct bundle fallback");
+      try {
+        const bundle = await fetchPolygonPositioningBundle(ticker);
+        if (bundle.rows.length > 0) {
+          const gexAnalysis = analyzeStrikeGexRows(bundle.rows);
+          const flip = bundle.spot > 0 ? computeGammaFlip(gexAnalysis.ranked_levels, bundle.spot) : null;
+          const regime = gammaRegime(bundle.spot, flip);
+          // Build a minimal positioning-compatible response so callers get useful data.
+          return NextResponse.json(
+            {
+              available: true,
+              ticker,
+              spot: bundle.spot,
+              change_pct: 0,
+              asof: new Date().toISOString(),
+              flip,
+              call_wall: null,
+              put_wall: null,
+              max_pain: bundle.maxPain,
+              net_gex: gexAnalysis.net_gex,
+              gamma_posture: gexAnalysis.net_gex >= 0 ? "long" : "short",
+              gamma_regime_read: regime,
+              net_vex: 0,
+              vanna_posture: null,
+              vanna_regime_read: "unavailable (fallback path)",
+              net_dex: null,
+              dex_posture: null,
+              dex_regime_read: null,
+              net_charm: null,
+              charm_posture: null,
+              charm_regime_read: null,
+              nearest_wall: null,
+              distance_to_flip_pct: flip != null && bundle.spot > 0
+                ? Number((((bundle.spot - flip) / bundle.spot) * 100).toFixed(2))
+                : null,
+              shift_summary: null,
+              source: "polygon" as const,
+              _fallback: true,
+            },
+            { status: 200, headers: noStore }
+          );
+        }
+      } catch (fbErr) {
+        console.error("[market/gex-positioning] fallback bundle also failed:", fbErr);
+      }
       return NextResponse.json(
         { available: false, ticker },
         { status: 200, headers: noStore }

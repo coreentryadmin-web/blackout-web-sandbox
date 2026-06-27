@@ -7,6 +7,7 @@ import {
 import { polygonConfigured } from "@/lib/providers/config";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
+import { getGexPositioning } from "@/lib/providers/gex-positioning";
 
 export type PositioningSummary = {
   net_gex: number;
@@ -83,7 +84,43 @@ function buildSummary(
 export async function fetchPositioningSummary(ticker: string): Promise<PositioningSummary> {
   const sym = ticker.toUpperCase();
 
-  // Polygon is the sole GEX source — UW spot-exposures endpoints are 503 in production.
+  // PRIMARY: use the shared GEX matrix cache (getGexPositioning) — the same cache key
+  // that Heatmaps, Largo, and the SPX desk all read. This collapses the Night Hawk GEX
+  // path into the shared cache so all surfaces are guaranteed to agree on flip/walls/regime.
+  // Falls through to the direct bundle only if the cache is cold or unavailable.
+  try {
+    const gex = await getGexPositioning(sym);
+    if (gex && gex.spot > 0) {
+      // Build PositioningSummary from the canonical positioning contract.
+      const flip = gex.flip ?? null;
+      const regime = gammaRegime(gex.spot, flip);
+      // Reconstruct wall_summary from call_wall/put_wall.
+      const walls: string[] = [];
+      if (gex.call_wall != null) {
+        const dist = +(gex.call_wall - gex.spot).toFixed(0);
+        walls.push(`call wall $${gex.call_wall} (${dist >= 0 ? "+" : ""}${dist}pts)`);
+      }
+      if (gex.put_wall != null) {
+        const dist = +(gex.put_wall - gex.spot).toFixed(0);
+        walls.push(`put wall $${gex.put_wall} (${dist >= 0 ? "+" : ""}${dist}pts)`);
+      }
+      return {
+        net_gex: gex.net_gex,
+        gex_king_strike: null, // not available in the light contract
+        gamma_flip: flip,
+        gamma_regime: regime,
+        net_vex: gex.net_vex !== 0 ? gex.net_vex : null,
+        max_pain: gex.max_pain ?? null,
+        negative_gamma: gex.net_gex < 0,
+        wall_summary: walls.length ? walls.join(" · ") : "n/a",
+        source: "polygon",
+      };
+    }
+  } catch (err) {
+    console.warn("[nighthawk/positioning] getGexPositioning failed, falling back to direct bundle:", err);
+  }
+
+  // FALLBACK: direct fetchPolygonPositioningBundle call when the shared cache is cold.
   if (polygonConfigured()) {
     const bundle = await fetchPolygonPositioningBundle(sym);
     if (bundle.rows.length) {

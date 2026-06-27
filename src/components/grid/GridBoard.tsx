@@ -11,6 +11,7 @@ import { GridDarkPoolPanel } from "./GridDarkPoolPanel";
 import { GridCongressPanel } from "./GridCongressPanel";
 import { GridEconomyPanel } from "./GridEconomyPanel";
 import { GridCatalystsPanel } from "./GridCatalystsPanel";
+import { GridGexPanel } from "./GridGexPanel";
 
 /**
  * GridBoard — the BlackOut Grid masonry (Phases 0-4). Client board that owns layout: a full-width
@@ -52,8 +53,9 @@ export function GridBoard() {
       <GridCongressPanel />
       <GridEconomyPanel />
 
-      {/* Row 5 — corporate catalysts */}
+      {/* Row 5 — corporate catalysts + GEX dealer regime */}
       <GridCatalystsPanel />
+      <GridGexPanel />
     </div>
   );
 }

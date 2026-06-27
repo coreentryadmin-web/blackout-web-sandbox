@@ -4,6 +4,24 @@ import { syncWhopMembershipForEmail } from "@/lib/membership";
 import { markMembershipRevoked } from "@/lib/whop-revocation";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { recordApiCall } from "@/lib/api-telemetry";
+import { makeRedis } from "@/lib/make-redis";
+
+/** Idempotency: mark a Whop event as processed. Returns true if this is the FIRST time.
+ * Uses a Redis SET NX with a 24-hour TTL so duplicate deliveries are silently ack'd. */
+async function markWhopEventProcessed(eventId: string): Promise<boolean> {
+  const url = process.env.REDIS_URL?.trim();
+  if (!url) return true; // no Redis → can't deduplicate, always proceed
+  try {
+    const redis = await makeRedis("whop-idempotency", url, { maxRetriesPerRequest: 1, connectTimeoutMs: 1_500 });
+    const key = `whop:event:${eventId}`;
+    const result = await redis.set(key, "1", "EX", 86_400, "NX");
+    await redis.quit().catch(() => undefined);
+    return result === "OK"; // OK → first time; null → already processed
+  } catch (err) {
+    console.warn("[whop webhook] idempotency check failed (Redis unavailable) — proceeding:", err);
+    return true; // fail-open: if Redis is down, process anyway
+  }
+}
 
 // Telemetry endpoint label for the API ops dashboard. Recorded under the
 // `blackout_engine` provider (same convention as recordAdminRouteError) so the
@@ -102,6 +120,25 @@ export async function POST(req: NextRequest) {
       phase: "failure",
     });
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
+  }
+
+  // Idempotency: if this event was already processed (Whop retries on 5xx), ack and skip.
+  // The Redis key `whop:event:{id}` is SET NX with 24h TTL; a null result means already seen.
+  const eventId = (event as unknown as { id?: string }).id;
+  if (eventId) {
+    const isFirst = await markWhopEventProcessed(eventId);
+    if (!isFirst) {
+      console.log("[whop webhook] duplicate event", eventId, event.type, "— already processed, acking");
+      recordApiCall({
+        provider: "blackout_engine",
+        endpoint: WHOP_WEBHOOK_ENDPOINT,
+        method: "POST",
+        status: 200,
+        ok: true,
+        latency_ms: Date.now() - startedAt,
+      });
+      return NextResponse.json({ ok: true, duplicate: true });
+    }
   }
 
   // Defense-in-depth: the signature already proves the payload was signed with OUR webhook secret,

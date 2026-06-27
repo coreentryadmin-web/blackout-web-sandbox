@@ -586,6 +586,53 @@ body {
   }
 }
 
+/* ── VITALS Phase 0 — ambient background breathe ──────────────────────────
+   A very slow (8s) radial-gradient opacity pulse on the app background.
+   CSS-only, no JS. Sits behind everything via the ::before pseudo on body.
+   Reduced-motion: animation removed, the gradient stays at its mid opacity.   */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(0, 230, 118, 0.045),
+    transparent 65%
+  );
+  animation: vitals-ambient-breathe 8s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes vitals-ambient-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; opacity: 0.8; }
+}
+
+/* ── VITALS Phase 1 — live-data flash ─────────────────────────────────────
+   Apply `data-flash` to any numeric element when its value updates.
+   Flash cyan (#00e5ff) for 300ms then fade back. Remove the class after
+   the animation ends (or use JS: el.classList.add("data-flash") — the
+   animation-fill-mode:forwards then setTimeout removes it). */
+.data-flash {
+  animation: vitals-data-flash 300ms var(--ease-snap, cubic-bezier(.34,1.56,.64,1)) forwards;
+}
+
+@keyframes vitals-data-flash {
+  0%   { color: #00e5ff; text-shadow: 0 0 8px rgba(0, 229, 255, 0.8); }
+  60%  { color: #00e5ff; text-shadow: 0 0 4px rgba(0, 229, 255, 0.4); }
+  100% { color: inherit;  text-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-flash { animation: none; }
+}
+
 @keyframes landing-hero-scan {
   0% { transform: translateY(-100%); opacity: 0; }
   10% { opacity: 0.3; }

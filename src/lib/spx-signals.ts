@@ -4,6 +4,7 @@
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { computeWeightedConflicts } from "@/lib/spx-play-conflicts";
 import { playDynamicTargetPts } from "@/lib/spx-play-config";
+import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
 
 export type SpxSignalAction = "BUY_CALL" | "BUY_PUT" | "HOLD" | "WAIT";
 export type SpxPlayAction = "SCANNING" | "WATCHING" | "BUY" | "HOLD" | "TRIM" | "SELL";
@@ -206,6 +207,39 @@ function scoreNewsRisk(
     });
   }
   return w;
+}
+
+/**
+ * Score flow-strike concentration bonus for the confluence engine.
+ *
+ * Returns +3 when the top strike stack has > 3 repeated prints in the play direction
+ * within 30 points of the current price, 0 otherwise. Only the strongest stack (sorted
+ * by total_premium descending) is evaluated — we want the dominant institutional bid,
+ * not noisy accumulation across many strikes.
+ *
+ * "Play direction" match: long = CALL stack, short = PUT stack.
+ */
+export function scoreFlowStrikeConcentration(
+  strikeStacks: FlowStrikeStack[],
+  currentPrice: number,
+  playDirection: "long" | "short" | null
+): number {
+  if (!strikeStacks.length || !playDirection || !(currentPrice > 0)) return 0;
+
+  // Sort by total premium descending so the dominant stack is first.
+  const sorted = [...strikeStacks].sort((a, b) => b.total_premium - a.total_premium);
+  const top = sorted[0];
+
+  const expectedOptType = playDirection === "long" ? "CALL" : "PUT";
+  if (top.option_type.toUpperCase() !== expectedOptType) return 0;
+
+  const strikeDistance = Math.abs(top.strike - currentPrice);
+  if (strikeDistance > 30) return 0;
+
+  // Must have more than 3 repeated prints (alert_count > 3 is the threshold).
+  if (top.alert_count <= 3) return 0;
+
+  return 3;
 }
 
 /** Full confluence with grade, conflicts, and extended desk inputs. */
@@ -514,6 +548,25 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
   // modifier (−6 to +3). Extreme negative news gates aggressive plays downstream.
   const newsWeight = scoreNewsRisk(desk.news_headlines ?? [], factors);
   score += newsWeight;
+
+  // Flow-strike concentration: +3 bonus when the dominant strike stack has > 3 repeated
+  // institutional prints in the play direction within 30 pts of spot.
+  // Derive a provisional direction from the pre-clamp score to avoid a chicken-and-egg.
+  const provisionalDir: "long" | "short" | null = score > 0 ? "long" : score < 0 ? "short" : null;
+  const strikeBonus = scoreFlowStrikeConcentration(
+    desk.strike_stacks ?? [],
+    price,
+    provisionalDir
+  );
+  if (strikeBonus !== 0) {
+    score += strikeBonus;
+    const top = [...(desk.strike_stacks ?? [])].sort((a, b) => b.total_premium - a.total_premium)[0];
+    factors.push({
+      label: "Strike stack",
+      weight: strikeBonus,
+      detail: `${top.option_type} $${top.strike} — ${top.alert_count} repeated prints (${provisionalDir})`,
+    });
+  }
 
   score = clamp(score, -100, 100);
   const abs = Math.abs(score);

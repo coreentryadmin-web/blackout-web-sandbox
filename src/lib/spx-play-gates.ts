@@ -117,8 +117,17 @@ export function evaluatePlayGates(
     blocks.push("Session closed — no new entries");
   }
 
+  // Stale halt feed → fail-OPEN (allow play to proceed) with a warning so the operator
+  // can see feed degradation without blocking valid entries. A real, fresh active-halt
+  // still blocks as before. The previous fail-closed-on-stale behavior was too aggressive:
+  // a transient UW WS gap during RTH would block all entries even when no halt existed.
+  const haltStale = desk.halt_channel_stale === true;
+  if (haltStale) {
+    console.warn("[spx-play-gates] halt channel stale — failing OPEN (allowing play); monitor UW WS");
+    warnings.push("Halt feed stale (UW channel offline) — proceeding fail-open; verify no active halts");
+  }
   const halt = shouldBlockForTradingHalt(undefined, {
-    failClosedOnStale: desk.market_open === true,
+    failClosedOnStale: false, // never block on staleness — only block on a confirmed live halt
   });
   if (halt.block && halt.reason) {
     blocks.push(halt.reason);

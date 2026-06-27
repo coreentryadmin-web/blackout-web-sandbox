@@ -1,12 +1,45 @@
 ﻿"use client";
 
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useTransform } from "framer-motion";
 import { clsx } from "clsx";
+import { useEffect, useRef } from "react";
 import type { SpxState } from "@/lib/api";
 import { fmtPct, fmtPrice } from "@/lib/api";
 
+/**
+ * VITALS Phase 1 — attach data-flash on value update.
+ * Adds the CSS class, animation plays (300ms), then the class is removed.
+ * The `key` prop on the parent element already handles React re-mount,
+ * but this hook provides the flash on the element's DOM node directly so
+ * it fires even on framer-motion-animated wrappers.
+ */
+function useDataFlash(value: number | null | undefined, ref: React.RefObject<HTMLElement | null>) {
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current !== value && value != null && ref.current) {
+      const el = ref.current;
+      el.classList.remove("data-flash");
+      // Force reflow so removing + re-adding the class restarts animation.
+      void el.offsetWidth;
+      el.classList.add("data-flash");
+      const tid = window.setTimeout(() => el.classList.remove("data-flash"), 350);
+      prev.current = value;
+      return () => window.clearTimeout(tid);
+    }
+    prev.current = value;
+  }, [value, ref]);
+}
+
 export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean }) {
   const bull = (data?.spx_change_pct ?? 0) >= 0;
+
+  // VITALS Phase 1 — data-flash refs for live numeric values.
+  const priceRef = useRef<HTMLParagraphElement>(null);
+  const vixRef = useRef<HTMLSpanElement>(null);
+  const pctRef = useRef<HTMLSpanElement>(null);
+  useDataFlash(live ? (data?.price ?? null) : null, priceRef);
+  useDataFlash(live ? (data?.vix ?? null) : null, vixRef);
+  useDataFlash(live ? (data?.spx_change_pct ?? null) : null, pctRef);
 
   return (
     <div className="desk-hero-ticker">
