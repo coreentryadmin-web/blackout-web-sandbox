@@ -65,8 +65,6 @@ function FeatureCards({
             key={it.href}
             role="menuitem"
             href={it.href}
-            // Protected route: don't prefetch (the RSC prefetch runs auth().protect() and at the
-            // ~60s token boundary gets 307'd to /sign-in, surfacing as a bounce on the next click).
             prefetch={false}
             onClick={onNavigate}
             className={clsx(
@@ -111,12 +109,9 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
 
   const showAdmin = isLoaded && isSignedIn && isAdmin;
   const isFeatureActive = FEATURE_LINKS.some((l) => path.startsWith(l.href));
-  const solid = scrolled || !isHome; // single source of truth for the solid surface
+  const solid = scrolled || !isHome;
+  const isLearnActive = path.startsWith("/learn");
 
-  // admin check — fetched once per (browser session × USER). The cache key is scoped to userId so a
-  // different user signing in within the same tab (e.g. admin → non-admin) can NEVER inherit the
-  // previous user's cached flag and see a stale "Admin" nav link. (The /admin route + every /api/admin
-  // endpoint are server-protected regardless — this governs only the cosmetic nav link.)
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn || !userId) {
@@ -146,11 +141,9 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
     };
   }, [isLoaded, isSignedIn, userId]);
 
-  // scroll-aware: hysteresis (on at 16px, off at 8px) + progress hairline var
   useEffect(() => {
     let ticking = false;
-    const ON = 16,
-      OFF = 8;
+    const ON = 16, OFF = 8;
     const read = () => {
       const y = window.scrollY;
       const next = scrolledRef.current ? y > OFF : y > ON;
@@ -174,13 +167,11 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // close menus on route change
   useEffect(() => {
     setFeaturesOpen(false);
     setMobileOpen(false);
   }, [path]);
 
-  // outside-click closes the Features mega-menu
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
       if (!featuresRef.current?.contains(e.target as Node)) setFeaturesOpen(false);
@@ -189,8 +180,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
 
-  // Esc closes the Features mega-menu and returns focus to its trigger.
-  // (The mobile drawer's Esc + return-focus is handled by useFocusTrap below.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -203,14 +192,11 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [featuresOpen]);
 
-  // lock body scroll while the mobile drawer is open
   useEffect(() => {
     document.documentElement.classList.toggle("nav-locked", mobileOpen);
     return () => document.documentElement.classList.remove("nav-locked");
   }, [mobileOpen]);
 
-  // Trap Tab within the mobile drawer; Esc closes it and focus returns to the
-  // hamburger trigger. Scroll-lock stays with the nav-locked class above.
   useFocusTrap(sheetRef, {
     active: mobileOpen,
     onEscape: () => setMobileOpen(false),
@@ -232,7 +218,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
       </div>
 
       <div className="nav-inner">
-        {/* LEFT — brand */}
         <Link href="/" className="nav-brand group">
           <span className="nav-dot" aria-hidden />
           <span className="nav-brand-stack">
@@ -241,7 +226,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
           </span>
         </Link>
 
-        {/* CENTER — floating glass pill */}
         <ul className="nav-pill" role="menubar">
           <li ref={featuresRef} className="nav-pill-li">
             <button
@@ -302,6 +286,15 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
           })}
 
           <li className="nav-pill-li">
+            <Link
+              href="/learn"
+              className={clsx("nav-pill-item", isLearnActive && "nav-pill-item-active")}
+            >
+              Learn
+            </Link>
+          </li>
+
+          <li className="nav-pill-li">
             <OnboardingTrigger className="nav-pill-item onboarding-nav-trigger" />
           </li>
 
@@ -314,7 +307,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
           )}
         </ul>
 
-        {/* RIGHT — auth */}
         <div className="nav-auth">
           <button
             ref={hamburgerRef}
@@ -328,8 +320,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
             {mobileOpen ? "✕" : "☰"}
           </button>
 
-          {/* v7: <SignedIn>/<SignedOut> are server components; in this client nav we gate on
-              useAuth() (isLoaded prevents a signed-out flash before Clerk hydrates). */}
           {isLoaded && !isSignedIn && (
             <>
               <Link href="/sign-in" className="nav-signin font-syne hidden sm:inline">
@@ -344,7 +334,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
         </div>
       </div>
 
-      {/* MOBILE — right slide-in drawer */}
       <AnimatePresence>
         {mobileOpen && (
           <>
@@ -390,6 +379,13 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                   {label}
                 </Link>
               ))}
+              <Link
+                href="/learn"
+                onClick={() => setMobileOpen(false)}
+                className={clsx("nav-sheet-link font-syne", isLearnActive && "nav-pill-item-active")}
+              >
+                Learn
+              </Link>
               <OnboardingTrigger className="nav-sheet-link font-syne onboarding-nav-trigger" />
               {showAdmin && (
                 <Link href="/admin" prefetch={false} onClick={() => setMobileOpen(false)} className="nav-sheet-link font-syne nav-pill-admin">
