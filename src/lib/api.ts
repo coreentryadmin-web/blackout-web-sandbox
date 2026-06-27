@@ -341,6 +341,10 @@ export interface FlowAlert {
   open_interest?: number;
   implied_volatility?: number;
   otm_pct?: number;
+  /** GEX wall cross-reference computed server-side. One of: 'at_gamma_flip' | 'at_call_wall' |
+   *  'at_put_wall' | 'near_call_wall' | 'near_put_wall'. Absent when GEX data is cold or the
+   *  strike is not near any key level. Never fabricated — null/absent = no signal. */
+  gex_proximity?: string;
 }
 
 export interface DarkPoolRow {

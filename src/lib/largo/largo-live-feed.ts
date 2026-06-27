@@ -8,7 +8,7 @@ import {
 } from "@/lib/largo/flow-strike-stacks";
 import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
-import { getActiveTradingHalts, isTradingHaltChannelStale } from "@/lib/ws/uw-socket";
+import { getActiveTradingHalts, isTradingHaltChannelStale, tideStore } from "@/lib/ws/uw-socket";
 
 type FeedKey =
   | "market"
@@ -28,7 +28,9 @@ type FeedKey =
   | "group_greek_flow"
   | "macro_indicators"
   | "gex_regime"
-  | "halts";
+  | "halts"
+  | "tide"
+  | "net_flow";
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 

@@ -365,6 +365,36 @@ export function FlowAlertStream({
                               ⬡ COORD
                             </span>
                           )}
+                          {flow.gex_proximity === "at_gamma_flip" && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border text-purple-light border-purple/50 bg-purple/10"
+                              style={{ letterSpacing: "0.06em" }}>
+                              ◈ FLIP
+                            </span>
+                          )}
+                          {flow.gex_proximity === "at_call_wall" && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                              style={{ color: "#00e676", borderColor: "rgba(0,230,118,0.45)", background: "rgba(0,230,118,0.08)", letterSpacing: "0.06em" }}>
+                              ▲ CALL WALL
+                            </span>
+                          )}
+                          {flow.gex_proximity === "at_put_wall" && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                              style={{ color: "#ff2d55", borderColor: "rgba(255,45,85,0.45)", background: "rgba(255,45,85,0.08)", letterSpacing: "0.06em" }}>
+                              ▼ PUT WALL
+                            </span>
+                          )}
+                          {flow.gex_proximity === "near_call_wall" && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                              style={{ color: "rgba(0,230,118,0.7)", borderColor: "rgba(0,230,118,0.25)", background: "rgba(0,230,118,0.05)", letterSpacing: "0.06em" }}>
+                              ~ CALL WALL
+                            </span>
+                          )}
+                          {flow.gex_proximity === "near_put_wall" && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                              style={{ color: "rgba(255,45,85,0.7)", borderColor: "rgba(255,45,85,0.25)", background: "rgba(255,45,85,0.05)", letterSpacing: "0.06em" }}>
+                              ~ PUT WALL
+                            </span>
+                          )}
                           {earnIn !== null && earnIn <= 14 && (
                             <span className={clsx(
                               "font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border",

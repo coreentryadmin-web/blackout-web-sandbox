@@ -7,8 +7,46 @@ import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
 import { marketPlatform } from "@/lib/platform";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
+import { getGexPositioning } from "@/lib/providers/gex-positioning";
 
 export const dynamic = "force-dynamic";
+
+// ---------------------------------------------------------------------------
+// GEX proximity helpers
+// ---------------------------------------------------------------------------
+
+/** Within 0.5% of a level — covers roughly ±2 strikes for SPX/SPY/single-names. */
+function isNear(strike: number, level: number | null): boolean {
+  if (level == null || !Number.isFinite(level) || level === 0) return false;
+  return Math.abs(strike - level) / level < 0.005;
+}
+
+/** Within 0.15% — "at" rather than merely "near". */
+function isAt(strike: number, level: number | null): boolean {
+  if (level == null || !Number.isFinite(level) || level === 0) return false;
+  return Math.abs(strike - level) / level < 0.0015;
+}
+
+type GexProximityLabel =
+  | "at_gamma_flip"
+  | "at_call_wall"
+  | "at_put_wall"
+  | "near_call_wall"
+  | "near_put_wall";
+
+function computeGexProximity(
+  strike: number,
+  flip: number | null,
+  callWall: number | null,
+  putWall: number | null,
+): GexProximityLabel | null {
+  if (isAt(strike, flip))       return "at_gamma_flip";
+  if (isAt(strike, callWall))   return "at_call_wall";
+  if (isAt(strike, putWall))    return "at_put_wall";
+  if (isNear(strike, callWall)) return "near_call_wall";
+  if (isNear(strike, putWall))  return "near_put_wall";
+  return null;
+}
 // nodejs runtime is required: ensureDataSockets (and the pg/UW providers used below)
 // pull node-only modules (ioredis / ws / node:crypto) that the edge runtime rejects.
 export const runtime = "nodejs";
@@ -47,8 +85,31 @@ export async function GET(req: NextRequest) {
             marketPlatform.nighthawk.getLatestNightHawkSummary().catch(() => null),
           ]).then(([spx, nighthawk]) => ({ spx, nighthawk })),
         ]);
+
+        // GEX proximity enrichment — cache-reader, no upstream pressure.
+        // Fetch positioning for each distinct ticker in parallel (best-effort: a failure
+        // leaves the flow row unannotated, never throws). Cap at 30 unique tickers to
+        // bound latency on large result sets with many single names.
+        const uniqueTickers = [...new Set(flows.map((f: { ticker: string }) => f.ticker))].slice(0, 30) as string[];
+        const gexMap = new Map<string, { flip: number | null; call_wall: number | null; put_wall: number | null }>();
+        await Promise.all(
+          uniqueTickers.map(async (t) => {
+            try {
+              const pos = await getGexPositioning(t);
+              if (pos) gexMap.set(t, { flip: pos.flip, call_wall: pos.call_wall, put_wall: pos.put_wall });
+            } catch { /* best-effort */ }
+          })
+        );
+        const enrichedFlows = flows.map((f: { ticker: string; strike: number }) => {
+          const gex = gexMap.get(f.ticker);
+          if (!gex) return f;
+          const proximity = computeGexProximity(f.strike, gex.flip, gex.call_wall, gex.put_wall);
+          if (!proximity) return f;
+          return { ...f, gex_proximity: proximity };
+        });
+
         console.log(`[market/flows] postgres ok — ${flows.length} rows (min_premium=${min_premium}, since_hours=${since_hours})`);
-        return { source: "postgres" as const, flows, count: flows.length, platform_refs: platform };
+        return { source: "postgres" as const, flows: enrichedFlows, count: enrichedFlows.length, platform_refs: platform };
       });
       return NextResponse.json(payload);
     } catch (error) {

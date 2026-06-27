@@ -19,6 +19,8 @@ import { todayEt } from "@/lib/et-date";
 import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-options-gex";
 import type { GexWall } from "@/lib/providers/gamma-desk";
 import type { SpxDeskLevel } from "@/lib/providers/spx-desk";
+import { fetchRecentFlows } from "@/lib/db";
+import { fetchPolygonMtfTechnicals } from "@/lib/providers/polygon-largo";
 
 /**
  * Cheap, already-cached cross-tool context for one underlying.
@@ -221,6 +223,94 @@ function contextFromHeatmap(hm: GexHeatmap | null): PositionContext {
   };
 }
 
+/** Cache TTL for per-ticker flows snapshot used on the list poll path (ms). */
+const NW_FLOWS_TTL_MS = 30_000; // 30s — cheap Postgres read; stays ahead of the 5s poll cadence
+
+/** Cache TTL for per-ticker MTF technicals on the list poll path (ms). */
+const NW_TECH_TTL_MS = 60_000; // 60s — matches the detail-view cache key so they share an entry
+
+/**
+ * Summarize recent flow prints for one ticker into the verdict's compact `flows` shape.
+ * PURE over already-fetched FlowRow[]. Returns null when no prints exist (signal skipped).
+ * Mirrors the logic in position-detail.ts summarizeFlows but produces only the fields the
+ * verdict engine needs (lean + callPremium + putPremium + count), without topStrikes/sinceHours.
+ */
+function summarizeFlowsCompact(
+  rows: Awaited<ReturnType<typeof fetchRecentFlows>>
+): PositionContext["flows"] {
+  if (!rows.length) return null;
+  let callPremium = 0;
+  let putPremium = 0;
+  for (const r of rows) {
+    if (r.option_type.toUpperCase().startsWith("C")) callPremium += r.premium;
+    else putPremium += r.premium;
+  }
+  const total = callPremium + putPremium;
+  let lean: NonNullable<PositionContext["flows"]>["lean"] = "neutral";
+  if (total > 0) {
+    if (callPremium >= putPremium * 1.25) lean = "bullish";
+    else if (putPremium >= callPremium * 1.25) lean = "bearish";
+    else lean = "mixed";
+  }
+  return { lean, callPremium, putPremium, count: rows.length };
+}
+
+/**
+ * Map a fetchPolygonMtfTechnicals trend_stack string → the verdict's "up"/"down"/"sideways".
+ * Mirrors trendFromStack in position-detail.ts exactly.
+ */
+function trendFromStack(stack: string): "up" | "down" | "sideways" | null {
+  if (stack === "bullish") return "up";
+  if (stack === "bearish") return "down";
+  if (stack === "mixed") return "sideways";
+  return null;
+}
+
+/**
+ * Cache READER for one ticker's recent flows summary, shared across ALL users.
+ *
+ * Wraps fetchRecentFlows (Postgres, cheap) in withServerCache keyed by (TICKER, ET-date) so
+ * N users holding the same underlying collapse to ONE DB read per 30s window (single-flight
+ * + Redis + SWR). Best-effort: any error yields null → flows signal skipped (honesty rule).
+ */
+async function getNwTickerFlows(
+  ticker: string
+): Promise<PositionContext["flows"]> {
+  const root = ticker.trim().toUpperCase();
+  if (!root) return null;
+  const cacheKey = `nw:flows:${root}:${todayEt()}`;
+  return withServerCache<PositionContext["flows"]>(cacheKey, NW_FLOWS_TTL_MS, async () => {
+    const rows = await fetchRecentFlows({ ticker: root, since_hours: 48, order: "premium" });
+    return summarizeFlowsCompact(rows);
+  }).catch(() => null);
+}
+
+/**
+ * Cache READER for one ticker's MTF technicals (trend label only), shared across ALL users.
+ *
+ * Uses the SAME cache key as position-detail.ts ("nw:tech:<sym>:<date>") so the two callers
+ * share one entry — a detail-view click pre-warms it for the next list poll, and vice versa.
+ * Best-effort: any error yields null → trend signal skipped (honesty rule).
+ */
+async function getNwTickerTrend(
+  ticker: string
+): Promise<"up" | "down" | "sideways" | null> {
+  const root = ticker.trim().toUpperCase();
+  if (!root) return null;
+  // Polygon index tickers use "I:" prefix (matches detail-view convention for SPX/VIX).
+  const polygonSym = root === "SPX" ? "I:SPX" : root === "VIX" ? "I:VIX" : root;
+  const cacheKey = `nw:tech:${polygonSym}:${todayEt()}`;
+  return withServerCache<"up" | "down" | "sideways" | null>(
+    cacheKey,
+    NW_TECH_TTL_MS,
+    async () => {
+      const mtf = await fetchPolygonMtfTechnicals(polygonSym).catch(() => null);
+      if (!mtf) return null;
+      return trendFromStack(mtf.trend_stack);
+    }
+  ).catch(() => null);
+}
+
 /**
  * Build a Map<underlying, PositionContext> for a user's positions, resolved ONCE
  * per request. Upstream cost is O(distinct underlyings) regardless of how many
@@ -269,7 +359,10 @@ export async function buildPositionContextMap(
         .catch(() => EMPTY_CONTEXT)
     : Promise.resolve(EMPTY_CONTEXT);
 
-  const [spxContext, gexEntries] = await Promise.all([
+  // Fetch flows + trend for ALL distinct underlyings in parallel alongside the desk/GEX reads.
+  // Both are cache READERS (shared, single-flight, keyed only by ticker+date — never per-user).
+  // Best-effort: any failure yields null → the flow/trend signal is simply skipped (honesty rule).
+  const [spxContext, gexEntries, flowsEntries, trendEntries] = await Promise.all([
     spxDeskPromise,
     Promise.all(
       nonSpxUnderlyings.map(async (u) => {
@@ -278,9 +371,33 @@ export async function buildPositionContextMap(
         return [u, contextFromHeatmap(hm)] as const;
       })
     ),
+    // Flows for every underlying (SPX included — HELIX captures SPX index flows).
+    Promise.all(
+      underlyings.map(async (u) => [u, await getNwTickerFlows(u)] as const)
+    ),
+    // MTF trend for every underlying (SPX → "I:SPX" remapped inside getNwTickerTrend).
+    Promise.all(
+      underlyings.map(async (u) => [u, await getNwTickerTrend(u)] as const)
+    ),
   ]);
 
-  for (const u of spxUnderlyings) map.set(u, spxContext);
-  for (const [u, ctx] of gexEntries) map.set(u, ctx);
+  // Index flows/trend by ticker for O(1) lookup when assembling the final contexts.
+  const flowsByTicker = new Map(flowsEntries);
+  const trendByTicker = new Map(trendEntries);
+
+  for (const u of spxUnderlyings) {
+    map.set(u, {
+      ...spxContext,
+      flows: flowsByTicker.get(u) ?? undefined,
+      trend: trendByTicker.get(u) ?? undefined,
+    });
+  }
+  for (const [u, ctx] of gexEntries) {
+    map.set(u, {
+      ...ctx,
+      flows: flowsByTicker.get(u) ?? undefined,
+      trend: trendByTicker.get(u) ?? undefined,
+    });
+  }
   return map;
 }
