@@ -118,13 +118,18 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
   });
 }
 
-function extractRows(payload: unknown): Record<string, unknown>[] {
+function extractRows(payload: unknown, depth = 0): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter((r) => r && typeof r === "object") as Record<string, unknown>[];
   if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
     for (const key of ["data", "flow_alerts", "alerts", "body", "results", "indicators", "rows"]) {
       const block = obj[key];
       if (Array.isArray(block)) return block as Record<string, unknown>[];
+      // Recurse one level for doubly-nested wrappers e.g. UW economy {"data":{"data":[...]}}
+      if (depth === 0 && block && typeof block === "object" && !Array.isArray(block)) {
+        const nested = extractRows(block, 1);
+        if (nested.length > 0) return nested;
+      }
     }
     // Fallback: treat the object itself as a single row if it has any numeric/string values
     const hasData = Object.values(obj).some(v => v !== null && v !== undefined && typeof v !== 'object');
@@ -1121,7 +1126,7 @@ export async function fetchUwCongressTrades(ticker?: string, limit = 25) {
   return uwCacheGet(redis, UW_KEYS.congress(), UW_CACHE_TTL.congress, async () => {
     const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
     if (ticker) params.ticker = ticker.toUpperCase();
-    return uwGetSafe<unknown>("/api/congress/trades", params);
+    return uwGetSafe<unknown>("/api/congress/recent-trades", params);
   });
 }
 

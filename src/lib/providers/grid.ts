@@ -31,8 +31,8 @@ export const GRID_KEYS = {
   analysts: "grid:analysts",
   darkPool: "grid:dark-pool",
   earnings: "grid:earnings",
-  congress: "grid:congress:v2",
-  economy: "grid:economy",
+  congress: "grid:congress:v3",
+  economy: "grid:economy:v2",
   sectors: "grid:sectors",
   movers: "grid:movers",
   catalysts: "grid:catalysts",
@@ -348,8 +348,8 @@ async function fetchCongressTrades(): Promise<GridCongressSnapshot> {
       const ticker = String(r.ticker ?? r.symbol ?? r.stock ?? "").toUpperCase();
       const senator = String(r.senator ?? r.representative ?? r.politician ?? r.name ?? r.full_name ?? "");
       const txDate = String(r.transaction_date ?? r.date ?? r.filed_at ?? r.disclosure_date ?? "").slice(0, 10);
-      const txType = String(r.transaction ?? r.type ?? r.trade_type ?? r.transaction_type ?? "").toLowerCase();
-      const amount = String(r.amount ?? r.range ?? r.amount_range ?? r.value ?? "");
+      const txType = String(r.txn_type ?? r.transaction ?? r.type ?? r.trade_type ?? r.transaction_type ?? "").toLowerCase();
+      const amount = String(r.amounts ?? r.amount ?? r.range ?? r.amount_range ?? r.value ?? "");
       return {
         politician: senator,
         ticker,
