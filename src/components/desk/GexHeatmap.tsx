@@ -3118,6 +3118,17 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     };
   }, [lens, historyContext]);
 
+  // Net GEX shift scalar — sum of all strike deltas in the intraday GEX shift snapshot.
+  // Used as a "shift since last refresh" proxy for DEX/CHARM lenses (they have no own
+  // shift data). Absent/unavailable → null → cell omitted (honesty rule, never fabricated).
+  const gexShiftNet = useMemo<number | null>(() => {
+    const s = data?.shift;
+    if (!s?.available || !s.delta_by_strike) return null;
+    const vals = Object.values(s.delta_by_strike);
+    if (vals.length === 0) return null;
+    return vals.reduce((acc, v) => acc + (typeof v === "number" ? v : 0), 0);
+  }, [data?.shift]);
+
   // ── Consolidated key-level cells (Step 2) ────────────────────────────────────
   // The old ~6 big cards (flip / call wall / put wall / max pain / net / anchor) collapse
   // into ONE compact box of small label-over-value cells. Per-lens cell sets mirror the
@@ -3230,7 +3241,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       ];
     }
     if (lens === "dex") {
-      return [
+      const cells: LevelCell[] = [
         {
           key: "zero",
           label: "Delta-Zero",
@@ -3255,9 +3266,21 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           help: METRIC_HELP.dexPosture,
         },
       ];
+      // GEX shift Δ — intraday net gamma migration since last snapshot (proxy for regime shift).
+      // Absent when no GEX shift history collected yet (honesty rule — never fabricated).
+      if (gexShiftNet != null) {
+        cells.push({
+          key: "gexShiftDelta",
+          label: "GEX Shift Δ",
+          value: fmtMoneySigned(gexShiftNet),
+          tone: gexShiftNet >= 0 ? "bull" : "bear",
+          help: "Net intraday GEX migration since the last snapshot — indicates whether dealer gamma is building (positive) or unwinding (negative) this session.",
+        });
+      }
+      return cells;
     }
     // charm
-    return [
+    const charmCells: LevelCell[] = [
       {
         key: "zero",
         label: "Charm-Zero",
@@ -3282,6 +3305,17 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         help: METRIC_HELP.charmPosture,
       },
     ];
+    // GEX shift Δ — same intraday proxy as DEX (charm has no own shift data).
+    if (gexShiftNet != null) {
+      charmCells.push({
+        key: "gexShiftDelta",
+        label: "GEX Shift Δ",
+        value: fmtMoneySigned(gexShiftNet),
+        tone: gexShiftNet >= 0 ? "bull" : "bear",
+        help: "Net intraday GEX migration since the last snapshot — indicates whether dealer gamma is building (positive) or unwinding (negative) this session.",
+      });
+    }
+    return charmCells;
   }, [
     lens,
     flip,
@@ -3293,6 +3327,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     gexTileDeltas,
     dexPosture,
     charmPosture,
+    gexShiftNet,
   ]);
 
   // ── View panels (Step 3) ─────────────────────────────────────────────────────

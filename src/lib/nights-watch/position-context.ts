@@ -21,6 +21,7 @@ import type { GexWall } from "@/lib/providers/gamma-desk";
 import type { SpxDeskLevel } from "@/lib/providers/spx-desk";
 import { fetchRecentFlows } from "@/lib/db";
 import { fetchPolygonMtfTechnicals } from "@/lib/providers/polygon-largo";
+import { fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 
 /**
  * Cheap, already-cached cross-tool context for one underlying.
@@ -324,6 +325,37 @@ async function getNwTickerTrend(
   ).catch(() => null);
 }
 
+/** Dark pool cache TTL for the list path — 2min, matches fetchUwDarkPool's own UW cache. */
+const NW_DARK_POOL_TTL_MS = 120_000;
+
+/**
+ * Cache READER for one ticker's dark pool bias, shared across ALL users.
+ *
+ * Wraps fetchUwDarkPool in withServerCache keyed by (ticker, ET-date) so N users
+ * holding the same underlying collapse to ONE UW fetch per TTL window. Dark pool
+ * data already has a 2-min UW-side cache; this adds a thin NW layer so the NW
+ * poller (5s) never hammers through to the UW tier.
+ * Best-effort: any error → null → signal skipped (honesty rule).
+ */
+async function getNwTickerDarkPool(
+  ticker: string
+): Promise<PositionContext["darkPoolBias"]> {
+  const root = ticker.trim().toUpperCase();
+  if (!root) return null;
+  const cacheKey = `nw:dp:${root}:${todayEt()}`;
+  return withServerCache<PositionContext["darkPoolBias"]>(
+    cacheKey,
+    NW_DARK_POOL_TTL_MS,
+    async () => {
+      const snap = await fetchUwDarkPool(root).catch(() => null);
+      if (!snap) return null;
+      const b = snap.bias;
+      if (b === "bullish" || b === "bearish" || b === "neutral") return b;
+      return null;
+    }
+  ).catch(() => null);
+}
+
 /**
  * Build a Map<underlying, PositionContext> for a user's positions, resolved ONCE
  * per request. Upstream cost is O(distinct underlyings) regardless of how many
@@ -375,7 +407,7 @@ export async function buildPositionContextMap(
   // Fetch flows + trend for ALL distinct underlyings in parallel alongside the desk/GEX reads.
   // Both are cache READERS (shared, single-flight, keyed only by ticker+date — never per-user).
   // Best-effort: any failure yields null → the flow/trend signal is simply skipped (honesty rule).
-  const [spxContext, gexEntries, flowsEntries, trendEntries] = await Promise.all([
+  const [spxContext, gexEntries, flowsEntries, trendEntries, darkPoolEntries] = await Promise.all([
     spxDeskPromise,
     Promise.all(
       nonSpxUnderlyings.map(async (u) => {
@@ -392,17 +424,24 @@ export async function buildPositionContextMap(
     Promise.all(
       underlyings.map(async (u) => [u, await getNwTickerTrend(u)] as const)
     ),
+    // Dark pool bias for every underlying — shared UW-cached read (2-min TTL).
+    // Best-effort: null → signal skipped (honesty rule).
+    Promise.all(
+      underlyings.map(async (u) => [u, await getNwTickerDarkPool(u)] as const)
+    ),
   ]);
 
-  // Index flows/trend by ticker for O(1) lookup when assembling the final contexts.
+  // Index flows/trend/dark-pool by ticker for O(1) lookup when assembling final contexts.
   const flowsByTicker = new Map(flowsEntries);
   const trendByTicker = new Map(trendEntries);
+  const darkPoolByTicker = new Map(darkPoolEntries);
 
   for (const u of spxUnderlyings) {
     map.set(u, {
       ...spxContext,
       flows: flowsByTicker.get(u) ?? undefined,
       trend: trendByTicker.get(u) ?? undefined,
+      darkPoolBias: darkPoolByTicker.get(u) ?? undefined,
     });
   }
   for (const [u, ctx] of gexEntries) {
@@ -410,6 +449,7 @@ export async function buildPositionContextMap(
       ...ctx,
       flows: flowsByTicker.get(u) ?? undefined,
       trend: trendByTicker.get(u) ?? undefined,
+      darkPoolBias: darkPoolByTicker.get(u) ?? undefined,
     });
   }
   return map;

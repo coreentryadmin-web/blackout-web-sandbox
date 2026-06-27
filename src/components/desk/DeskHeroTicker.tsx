@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { motion, useMotionValue, useTransform } from "framer-motion";
+import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { useEffect, useRef } from "react";
 import type { SpxState } from "@/lib/api";
@@ -50,6 +50,7 @@ export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean
             ◆ SPX Live
           </p>
           <motion.p
+            ref={priceRef}
             key={data?.price}
             initial={{ opacity: 0.6, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -58,10 +59,10 @@ export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean
             {live ? fmtPrice(data?.price ?? null, 2) : "— — —"}
           </motion.p>
           <div className="flex flex-wrap items-center gap-4 mt-4">
-            <span className={clsx("font-mono text-xl font-bold tabular-nums", bull ? "num-bull" : "num-bear")}>
+            <span ref={pctRef} className={clsx("font-mono text-xl font-bold tabular-nums", bull ? "num-bull" : "num-bear")}>
               {live ? fmtPct(data?.spx_change_pct ?? null) : "—"}
             </span>
-            <span className="font-mono text-sm text-sky-200">
+            <span ref={vixRef} className="font-mono text-sm text-sky-200">
               VIX {live && data?.vix != null ? fmtPrice(data.vix, 2) : "—"}
             </span>
             <span className="font-mono text-sm text-sky-300">
