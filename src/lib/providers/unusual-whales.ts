@@ -1121,7 +1121,7 @@ export async function fetchUwCongressTrades(ticker?: string, limit = 25) {
   return uwCacheGet(redis, UW_KEYS.congress(), UW_CACHE_TTL.congress, async () => {
     const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
     if (ticker) params.ticker = ticker.toUpperCase();
-    return uwGetSafe<unknown>("/api/congress/recent-trades", params);
+    return uwGetSafe<unknown>("/api/congress/trades", params);
   });
 }
 
