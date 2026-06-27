@@ -364,3 +364,78 @@ SPX-desk GEX walls (0DTE) vs Heatmap walls (full-expiry) can differ NUMERICALLY 
 Stale paths/fields in the task file keep forcing the live phase into 404/401 (Phases 1-9 unusable live): `spx-pulse`→`market/spx`, `/api/flows`→`/api/market/flows`, `/api/nighthawk/latest-edition`→`/api/market/nighthawk`, `/api/grid/*` is `/api/grid/{analysts,catalysts,congress,dark-pool,earnings,economy,movers,sectors}`; field `flowBias/netFlow`→`flow_0dte_net/net_prem_ticks`; Phase 8 econ grep should target `spx-desk.ts` not `spx-desk-merge.ts`. Source paths `lib/run-tool.ts`/`lib/tools`/`nights-watch/verdict.ts` → `lib/largo/{run-tool,tool-defs}.ts` / `lib/nights-watch/verdict.ts`.
 
 ---
+
+## Connectivity Matrix — 2026-06-27 14:58 ET
+**PASS: 17 | FAIL: 0 | WARN: 2 | SKIP(auth): live-value-compare**
+
+> Method note: all live data endpoints (`/api/market/spx/pulse`, `/api/market/gex-positioning`,
+> `/api/market/flows`, `/api/market/nighthawk/edition`, `/api/grid/*`) return **401 unauthenticated**
+> from this machine, so live-value cross-checks (walls match, spot match, timestamp desync) could
+> NOT be run. This run is **source-grounded**: every channel verified by confirming the consumer reads
+> the SAME shared function/cache the producer writes (the only silo that matters). SKILL endpoint paths
+> were stale and corrected (`spx-pulse`→`spx/pulse`, `flows`→`market/flows`, `nighthawk/latest-edition`→
+> `market/nighthawk/edition`, `grid/news`→`market/news`).
+
+### Verified channels (Source → Consumer)
+| Channel | Status | Evidence |
+|---|---|---|
+| HEATMAP→SPX | PASS | SPX desk walls from same Polygon GEX chain (`topGexWalls`/`analyzeStrikeGexRows`, spx-desk.ts:932); gex_king at :949 |
+| HEATMAP→LARGO | PASS | `get_gex`/`get_positioning` → `getGexPositioning` → `fetchGexHeatmap` cache-reader (gex-positioning.ts:157); same cache Heatmaps UI reads (gex-heatmap/route.ts:3) |
+| HEATMAP→NWATCH | PASS | verdict reads `ctx.gexWalls` (`pushedThroughWallAgainst` verdict.ts:395, `nearestWallSignal` :463); ctx from per-ticker heatmap (position-context.ts:198) |
+| HEATMAP→NHAWK | PASS | dossier `fetchPositioningSummary`→`getGexPositioning` (positioning.ts:92); wall_summary into Claude prompt (format.ts:384) |
+| HELIX→SPX | PASS | **(SKILL hypothesized FAIL — DISPROVEN)** `scoreHelixFlowAlignment` (spx-signals.ts:70,369), `flow_0dte_net`, strike-stack concentration (:595) all confluated |
+| HELIX→LARGO | PASS | `get_options_flow`/`get_flow_tape`/`get_postgres_flows` merge live desk tape + Postgres HELIX + UW alerts (run-tool.ts:483-569) |
+| HELIX→NWATCH | PASS | verdict `flowAlignment(ctx.flows)` (verdict.ts:485); ctx.flows ← `getNwTickerFlows`→`fetchRecentFlows` Postgres (position-context.ts:296) |
+| HELIX→NHAWK | PASS | candidates from `fetchMarketFlowAlertRows` (market-wide.ts:231) + live `getFlowTapeSummary` to Claude (edition-builder.ts:510) |
+| SPX→LARGO | PASS | `get_spx_confluence`/`get_spx_structure` → `computeSpxConfluence(desk)` (run-tool.ts:1205) |
+| SPX→NWATCH | PASS | verdict underlyingPrice ← `loadMergedSpxDesk` (position-context.ts:388) |
+| SPX→NHAWK | PASS | `getSpxDeskSummary` snapshot into Claude prompt (edition-builder.ts:509, claude-edition.ts:82) |
+| GRID(econ)→SPX | PASS | `macroHardBlock` gates FOMC/CPI/NFP/PPI/GDP (spx-play-gates.ts:48-62); `mergeMacroEventsToday` live UW feed + curated fallback (macro-events.ts:216) |
+| GRID(news)→SPX | PASS | `scoreNewsRisk(desk.news_headlines)` Benzinga (spx-signals.ts:588; fetchBenzingaNews spx-desk.ts:864) |
+| GRID→LARGO | PASS | `get_news`,`get_catalysts`,`get_economic_calendar`,`get_earnings`,`get_dark_pool`,`get_congress_trades` (run-tool.ts:250-320,740,592,1325) |
+| GRID→NHAWK | PASS | `fetchBenzingaCatalysts`+news+flow_streak+dark_pool in dossier (dossier.ts:40,317,359) |
+| LARGO→ALL | PASS | 89 tools cover all 9 data domains (SPX, GEX, HELIX, NWatch positions, NHawk, news, earnings, dark-pool, econ) — no blind domain |
+| NWATCH context integrity | PASS | honesty rule: signals fire only when data present (verdict.ts:12-18); no fabrication |
+
+### WARN (wired but incomplete — not a silo, a coverage gap)
+| Item | Status | Detail |
+|---|---|---|
+| GRID(earnings)→SPX | WARN | Earnings only absorbed via Benzinga headline sentiment; `/api/earnings-calendar` exists but is NOT a distinct SPX confluence factor (spx-signals.ts:180-216 has no earnings regex). Mega-cap morning gap risk not gated explicitly. |
+| macro_indicators→SPX confluence | WARN | UW economy snapshots (GDP/CPI/unemployment) placed on desk payload (spx-desk.ts:1137) but never read by `computeSpxConfluence` — present as data, contributes 0 to scoring. |
+
+### GEX unification (the central silo risk) — CLEAN
+One source: `fetchGexHeatmap()` → cache `gex-heatmap:{ticker}`. Consumed identically by Heatmaps UI,
+Largo (`get_gex`/`get_positioning`), SPX desk, Night's Watch, Night Hawk. Cache-reader pattern (no
+forceRefresh fan-out) preserves the UW 2-RPS budget. gex-positioning.ts header asserts it is "the ONE
+source every other tool/service/AI surface consumes." No independent GEX recomputation found anywhere.
+
+### Live-value & timestamp consistency (Phases 2/9)
+SKIP — auth-gated (401). Cannot compare wall/spot values or asof-timestamp desync unauthenticated.
+Recommend running these from an authenticated session or server-side cron with CRON_SECRET.
+---
+
+## Re-verification — 2026-06-27 16:55 ET
+**Source-connectivity PASS: all channels hold | Live phases (2/3/9): SKIP (auth 401) | Open WARNs: 2 (unchanged)**
+
+Independent re-audit this cycle corroborated the matrix above — no regression on any deploy since 14:59.
+Confirmed by re-reading source (not cached): the single GEX source `getGexPositioning`
+(`providers/gex-positioning.ts`) is consumed identically by Heatmaps, Largo (`get_gex`/`get_positioning`),
+Night Hawk (`nighthawk/positioning.ts:92`), and Night's Watch (`position-context.ts` `fetchGexHeatmap`).
+HELIX flows reach Night's Watch (`fetchRecentFlows`→`verdict.flowAlignment`), Night Hawk (`data-sources.ts`
+`flow_alerts` streak), and Largo (`get_options_flow` = "same feed as dashboard", run-tool.ts:510). SPX desk
+(`loadMergedSpxDesk`) feeds Largo + Night's Watch; Grid macro events gate SPX plays
+(`spx-play-gates.ts:48` FOMC/CPI/NFP hard-block + `spx-lotto-catalyst.ts:206` catalyst scoring). Largo's
+~89-tool catalog reaches every domain — no blind service.
+
+**Carried-forward residuals (no new failures this cycle):**
+- WARN `GRID(earnings)→SPX` — earnings only via Benzinga headline sentiment, not a distinct confluence factor.
+- WARN `macro_indicators→SPX` — UW GDP/CPI/unemployment placed on desk payload but read by 0 confluence scorers.
+- Watch item: `spx-desk-merge.ts` defaults `macro_events:[]`/`news_headlines:[]` — verify the loader populates
+  them live (the gate logic is correct; an empty feed would silently disable macro hard-blocks).
+
+**Live numeric/timestamp consistency (Phases 2,3,9): not verifiable from this session.** All data endpoints
+(`spx/pulse`, `gex-positioning`, `flows`, `nighthawk/edition`, `grid/*`) return 401 unauth; only
+`/api/public/track-record` is open. The SKILL's endpoint paths are stale (real paths use `spx/pulse`,
+`market/flows`, `market/nighthawk/edition`, `grid/catalysts`). Run Phases 2/3/9 from an authenticated
+server-side context (CRON_SECRET) to compare live wall/spot values and asof-timestamp desync.
+---
