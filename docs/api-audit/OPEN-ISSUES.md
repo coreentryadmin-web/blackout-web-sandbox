@@ -1,5 +1,10 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-27 07:15 ET
+Last updated: 2026-06-27 08:20 ET
+
+> 08:20 run: full re-audit from scratch — NO new issues, NO regressions. Every item below
+> re-verified live this run (SPX ledger still 0/0 & veto confirmed neutered + `SPX_OPTION_CHAIN_REQUIRED`
+> not set in env; anomalies/regime still 200 unauthenticated; `tsc` 0 errors; all Railway services Online;
+> `UW_API_KEY` set). P2-C stays WATCH pending Monday 2026-06-29 post-RTH re-query.
 
 > Master running list of unfixed findings from the deep-platform-audit cron (every 4h).
 > P0 = user-facing breakage/data integrity · P1 = feature broken/degraded · P2 = wrong but not visible · P3 = tech debt / tooling.
