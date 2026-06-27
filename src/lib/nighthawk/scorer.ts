@@ -1,5 +1,5 @@
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
-import type { BenzingaCatalyst, FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
+import type { BenzingaCatalyst, BenzingaPriceTarget, FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
 import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";import type { TideBias } from "./format";
 import { tideBias } from "./format";
 import type { FlowStreak } from "./flow-streak";
@@ -600,6 +600,8 @@ export function scoreCandidate(
     today_ymd?: string | null;
     /** Tomorrow's date (YYYY-MM-DD ET). Used for earnings proximity calculation. */
     tomorrow_ymd?: string | null;
+    /** Most recent analyst price target action from Benzinga. Used to nudge catalyst_score. */
+    benzinga_price_target?: BenzingaPriceTarget | null;
   },
   flowStreak?: FlowStreak,
   regime?: NightHawkRegimeContext | null,
@@ -663,7 +665,26 @@ export function scoreCandidate(
     }
   }
 
-  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty));
+  // Analyst PT direction nudge: if the most recent PT action is within 7 days, apply a direction-
+  // aware nudge (+2 raise for long, -2 cut for long) capped within CATALYST_CAP with everything else.
+  // Honesty rule: only fires when benzinga_price_target is present and dated within 7 days.
+  let ptNudge = 0;
+  const ptData = dossierExtras.benzinga_price_target;
+  if (ptData?.published && ptData.action) {
+    const ptAgeMs = Date.now() - new Date(ptData.published).getTime();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    if (ptAgeMs >= 0 && ptAgeMs <= sevenDaysMs) {
+      if (ptData.action === "raised" && flow.direction === "long") {
+        ptNudge = 2;
+        catalyst.flags.push(`analyst PT raised within 7 days (${ptData.firm ?? "firm unknown"})`);
+      } else if (ptData.action === "lowered" && flow.direction === "long") {
+        ptNudge = -2;
+        catalyst.flags.push(`analyst PT cut within 7 days (${ptData.firm ?? "firm unknown"}) — headwind for long`);
+      }
+    }
+  }
+
+  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge));
 
   const regimeMultiplier = computeRegimeMultiplier(regime);
   const total = Math.min(

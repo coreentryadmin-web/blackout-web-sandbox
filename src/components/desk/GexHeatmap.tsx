@@ -1983,7 +1983,7 @@ function FlowSummary({
     return (
       <div className="rounded-xl border border-white/5 bg-[rgba(8,9,14,0.35)] px-4 py-3">
         <div className="flex items-center gap-2">
-          <Badge tone="muted" size="sm">HELIX</Badge>
+          <Badge tone="neutral" size="sm">HELIX</Badge>
           <span className="font-mono text-[11px] text-sky-300/50">
             Flow overlay unavailable for this ticker
           </span>
@@ -4020,7 +4020,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             {/* Optional rail cards — dark-pool levels + flow summary (each self-hides when empty). */}
             <div className="grid content-start gap-4">
               <DarkPoolRail darkPoolLevels={darkPoolLevels} />
-              <FlowSummary flowByStrike={flowByStrike} />
+              <FlowSummary flowByStrike={flowByStrike} overlaysLoaded={data != null} />
             </div>
           </div>
 
