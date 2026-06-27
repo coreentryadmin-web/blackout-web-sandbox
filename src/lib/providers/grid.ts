@@ -336,11 +336,14 @@ export type GridCongressSnapshot = {
 
 async function fetchCongressTrades(): Promise<GridCongressSnapshot> {
   const data = await fetchUwCongressTrades(undefined, 25);
-  console.log('[CONGRESS] raw data=', JSON.stringify(data).slice(0, 500));
-  const rows = Array.isArray(data)
-    ? (data as Record<string, unknown>[])
-    : typeof data === "object" && data != null
-    ? [data as Record<string, unknown>]
+  const obj = data as Record<string, unknown> | null;
+  // UW returns {"data": [{...},...]} — unwrap the data array
+  const rows: Record<string, unknown>[] = Array.isArray(obj)
+    ? (obj as Record<string, unknown>[])
+    : Array.isArray(obj?.data)
+    ? (obj!.data as Record<string, unknown>[])
+    : obj && typeof obj === "object"
+    ? [obj]
     : [];
 
   const trades: GridCongresstrade[] = rows
