@@ -84,6 +84,11 @@ const nextConfig = {
   // (no-grey brand guard), NOT during the production build — so a lint finding never
   // blocks a deploy. Build correctness is covered by tsc + next build itself.
   eslint: { ignoreDuringBuilds: true },
+  async redirects() {
+    return [
+      { source: "/pricing", destination: "/#pricing", permanent: false },
+    ];
+  },
   async headers() {
     // These two rules are MUTUALLY EXCLUSIVE by construction. Next.js does not
     // dedupe headers across matching `source` entries — if both a catch-all and an
