@@ -126,6 +126,9 @@ function extractRows(payload: unknown): Record<string, unknown>[] {
       const block = obj[key];
       if (Array.isArray(block)) return block as Record<string, unknown>[];
     }
+    // Fallback: treat the object itself as a single row if it has any numeric/string values
+    const hasData = Object.values(obj).some(v => v !== null && v !== undefined && typeof v !== 'object');
+    if (hasData) return [obj];
   }
   return [];
 }
@@ -1691,8 +1694,16 @@ function parseEconomyIndicatorRows(
   });
   const latest = sorted[0];
   const prior = sorted[1];
-  const latestVal = latest ? Number(latest.value ?? latest.actual ?? latest.reading ?? latest.release ?? latest.release_value ?? latest.indicator_value ?? latest.period_value ?? NaN) : NaN;
-  const priorVal = prior ? Number(prior.value ?? prior.actual ?? prior.reading ?? prior.release ?? prior.release_value ?? prior.indicator_value ?? prior.period_value ?? NaN) : NaN;
+  const latestVal = latest ? Number(
+    latest.value ?? latest.actual ?? latest.reading ?? latest.release ??
+    latest.release_value ?? latest.indicator_value ?? latest.period_value ??
+    latest.consensus ?? latest.estimate ?? NaN
+  ) : NaN;
+  const priorVal = prior ? Number(
+    prior.value ?? prior.actual ?? prior.reading ?? prior.release ??
+    prior.release_value ?? prior.indicator_value ?? prior.period_value ??
+    prior.consensus ?? prior.estimate ?? NaN
+  ) : NaN;
   const latest_value = Number.isFinite(latestVal) ? latestVal : null;
   const prior_value = Number.isFinite(priorVal) ? priorVal : null;
   const change_pct =
@@ -1715,7 +1726,9 @@ export async function fetchUwEconomyIndicator(indicator: string): Promise<UwMacr
   const slug = resolveUwEconomySlug(indicator);
   const label = resolveMacroLabel(indicator, slug);
   const data = await uwGetSafe<unknown>(`/api/economy/${slug}`, {});
-  const rows = extractRows(data) as Record<string, unknown>[];
+  console.log(`[UW-ECONOMY] slug=${slug} raw=`, JSON.stringify(data).slice(0, 500));
+  const rows = extractRows(data as Record<string, unknown>);
+  console.log(`[UW-ECONOMY] slug=${slug} rows.length=`, rows.length, rows[0] ? JSON.stringify(rows[0]).slice(0,200) : 'EMPTY');
   return parseEconomyIndicatorRows(id, label, rows);
 }
 

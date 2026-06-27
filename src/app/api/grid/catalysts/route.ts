@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { readGridCatalysts } from "@/lib/providers/grid";
+import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,16 +16,28 @@ export async function GET(req: NextRequest) {
   if (locked) return locked;
   try {
     const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;
+
+    // Per-ticker: direct Benzinga fetch — market-wide cache only stores 20 articles and
+    // may not include recent ticker-specific catalysts.
+    if (ticker) {
+      const catalysts = await fetchBenzingaCatalysts(ticker, 15);
+      const items = catalysts.map((c) => ({
+        channel: c.channel,
+        type: c.type,
+        title: c.title,
+        published: c.published,
+        ticker,
+        tickers: [ticker],
+      }));
+      return NextResponse.json(
+        { available: true, as_of: new Date().toISOString(), items, ticker },
+        { status: 200, headers: NO_STORE },
+      );
+    }
+
+    // Market-wide: cache-reader path
     const snapshot = await readGridCatalysts();
     if (!snapshot) return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
-    if (ticker && Array.isArray(snapshot.items)) {
-      const filtered = snapshot.items.filter(
-        (item: { ticker?: string; tickers?: string[]; title?: string }) =>
-          (item.ticker && item.ticker.toUpperCase() === ticker) ||
-          (item.tickers && item.tickers.some((t) => t.toUpperCase() === ticker)),
-      );
-      return NextResponse.json({ available: true, ...snapshot, items: filtered, ticker }, { status: 200, headers: NO_STORE });
-    }
     return NextResponse.json({ available: true, ...snapshot }, { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });

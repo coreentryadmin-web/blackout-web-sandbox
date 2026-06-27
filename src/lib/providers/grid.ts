@@ -31,7 +31,7 @@ export const GRID_KEYS = {
   analysts: "grid:analysts",
   darkPool: "grid:dark-pool",
   earnings: "grid:earnings",
-  congress: "grid:congress",
+  congress: "grid:congress:v2",
   economy: "grid:economy",
   sectors: "grid:sectors",
   movers: "grid:movers",
@@ -67,7 +67,7 @@ export type GridAnalystsSnapshot = {
   actions: GridAnalystAction[];
 };
 
-function classifyAnalystAction(title: string, channels: string[]): GridAnalystAction["action"] {
+export function classifyAnalystAction(title: string, channels: string[]): GridAnalystAction["action"] {
   const hay = `${title} ${channels.join(" ")}`.toLowerCase();
   if (/\bupgrade|raises? to|raised to\b/.test(hay)) return "upgrade";
   if (/\bdowngrade|cuts? to|lowered? to|lowers? to\b/.test(hay)) return "downgrade";
@@ -308,6 +308,13 @@ export async function fetchTickerEarnings(ticker: string): Promise<GridEarningsT
     }
   } catch { /* ignore */ }
 
+  // Fallback: if fetchUwTickerNextEarnings returned nothing, check history for a future date
+  const today = new Date().toISOString().slice(0, 10);
+  if (!next_date) {
+    const futureRow = history.find(h => h.date > today);
+    next_date = futureRow?.date ?? null;
+  }
+
   return { ticker: sym, history, next_date, next_when, as_of: new Date().toISOString() };
 }
 
@@ -329,6 +336,7 @@ export type GridCongressSnapshot = {
 
 async function fetchCongressTrades(): Promise<GridCongressSnapshot> {
   const data = await fetchUwCongressTrades(undefined, 25);
+  console.log('[CONGRESS] raw data=', JSON.stringify(data).slice(0, 500));
   const rows = Array.isArray(data)
     ? (data as Record<string, unknown>[])
     : typeof data === "object" && data != null

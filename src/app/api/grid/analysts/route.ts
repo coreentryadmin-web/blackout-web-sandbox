@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { polygonConfigured } from "@/lib/providers/config";
-import { readGridAnalysts } from "@/lib/providers/grid";
+import { readGridAnalysts, classifyAnalystAction } from "@/lib/providers/grid";
+import { fetchBenzingaAnalystRatings } from "@/lib/providers/polygon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,16 +36,29 @@ export async function GET(req: NextRequest) {
 
   try {
     const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;
+
+    // Per-ticker: direct Benzinga fetch (market-wide cache only covers the last 200 articles and
+    // filters by tickers[] field which may miss the stock). Direct call is authoritative.
+    if (ticker) {
+      const articles = await fetchBenzingaAnalystRatings(ticker, 20);
+      const actions = articles.map((a) => ({
+        id: a.id,
+        title: a.title,
+        action: classifyAnalystAction(a.title, a.channels),
+        tickers: a.tickers.slice(0, 6),
+        published: a.published,
+        url: a.url,
+      }));
+      return NextResponse.json(
+        { available: true, as_of: new Date().toISOString(), actions, ticker },
+        { status: 200, headers: noStore },
+      );
+    }
+
+    // Market-wide: cache-reader path
     const snapshot = await readGridAnalysts();
     if (!snapshot) {
       return NextResponse.json({ available: false }, { status: 200, headers: noStore });
-    }
-    if (ticker && Array.isArray(snapshot.actions)) {
-      const filtered = snapshot.actions.filter(
-        (a: { tickers?: string[] }) =>
-          Array.isArray(a.tickers) && a.tickers.some((t: string) => t.toUpperCase() === ticker),
-      );
-      return NextResponse.json({ available: true, ...snapshot, actions: filtered, ticker }, { status: 200, headers: noStore });
     }
     return NextResponse.json({ available: true, ...snapshot }, { status: 200, headers: noStore });
   } catch (error) {
