@@ -48,6 +48,24 @@ Automated TLS, availability, security-header, redirect, and CDN health checks fo
 ### CDN: **PASS** — Cloudflare edge (CF-Ray a12411551a60c643-SEA), Railway request ID present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. The Step-5 "API may be cached" WARN is a false positive: the unauthenticated SPX-pulse probe 401s with no Cache-Control header, so the check has nothing to read — not a real caching exposure.
 ---
 
+## 2026-06-27 13:22 ET
+### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; cert covers both apex + www SAN — www handshake succeeds)
+### ⚠️ NOTABLE CHANGE — canonical host flipped from `www` → apex (`blackouttrades.com`)
+- Prior runs today (03:23 / 07:14 / 07:21) had **www serve the app directly (200)** and all redirects pointed to `https://www…`. This run: **`https://www.blackouttrades.com/` now 301-redirects to `https://blackouttrades.com/`** (apex). The apex is the live origin (200, Next.js, full headers); www is now a Cloudflare-level redirect host.
+- **Not an outage / not a P0** — every www request resolves correctly (301→apex→200) and the availability probe (which follows redirects) saw 12/12 healthy. This is a host-canonicalization config change, harmless to users.
+- **Action for the monitor itself:** header/redirect checks that hit `www` with `MaximumRedirection 0` now read the *redirect* response, not the served page — this is what produced the spurious "CSP MISSING" below. The task should probe the **apex** (or follow redirects) for header verification. No app defect.
+### Availability: 12/12 routes healthy — **PASS**
+- Landing 200 (1377ms), Sign In 200 (227ms), Sign Up 200 (186ms), /api/health 200 (106ms)
+- Protected page routes followed (Accept: text/html → 307→/sign-in chain) to 200: /dashboard 200 (278ms), /flows 200 (320ms), /heatmap 200 (231ms), /grid 200 (158ms), /nighthawk 200 (342ms)
+- Auth-gated APIs 401 as intended (~88–97ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <1.4s; landing 1.38s likely cold edge, well under the 3s WARN line).**
+### Security Headers: **PASS on served origin (apex)** — CSP "MISSING" on www was a FALSE ALARM (read the redirect, not the page)
+- Verified directly against `https://blackouttrades.com/`: **CSP present** (`default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tradingview.com …`), plus HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy — all present.
+- WARN (unchanged, low priority): `X-Powered-By: Next.js` leaking on apex → harden with `poweredByHeader: false`. `Server: cloudflare` expected (CF edge).
+### Redirects: **PASS** — http→https 301 → https://blackouttrades.com/ ; www→apex 301 ; /pricing 301 → https://blackouttrades.com/pricing (host-normalized at edge first; apex then applies the in-app 307→/#pricing)
+### CDN: **PASS** — Cloudflare edge (CF-Ray a12621d90b505b4d-SEA), apex CF-Cache-Status DYNAMIC + X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`.
+---
+
 ## 2026-06-27 09:22 ET
 ### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid for both www and apex)
 ### Availability: 12/12 routes healthy — **PASS**
