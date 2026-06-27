@@ -122,7 +122,7 @@ function extractRows(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter((r) => r && typeof r === "object") as Record<string, unknown>[];
   if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
-    for (const key of ["data", "flow_alerts", "alerts"]) {
+    for (const key of ["data", "flow_alerts", "alerts", "body", "results", "indicators", "rows"]) {
       const block = obj[key];
       if (Array.isArray(block)) return block as Record<string, unknown>[];
     }
@@ -1685,14 +1685,14 @@ function parseEconomyIndicatorRows(
   rows: Record<string, unknown>[]
 ): UwMacroIndicatorSnapshot {
   const sorted = [...rows].sort((a, b) => {
-    const ta = String(a.date ?? a.as_of ?? a.period ?? "");
-    const tb = String(b.date ?? b.as_of ?? b.period ?? "");
+    const ta = String(a.date ?? a.as_of ?? a.period ?? a.release_date ?? a.period_date ?? a.updated_at ?? "");
+    const tb = String(b.date ?? b.as_of ?? b.period ?? b.release_date ?? b.period_date ?? b.updated_at ?? "");
     return tb.localeCompare(ta);
   });
   const latest = sorted[0];
   const prior = sorted[1];
-  const latestVal = latest ? Number(latest.value ?? latest.actual ?? latest.reading ?? NaN) : NaN;
-  const priorVal = prior ? Number(prior.value ?? prior.actual ?? prior.reading ?? NaN) : NaN;
+  const latestVal = latest ? Number(latest.value ?? latest.actual ?? latest.reading ?? latest.release ?? latest.release_value ?? latest.indicator_value ?? latest.period_value ?? NaN) : NaN;
+  const priorVal = prior ? Number(prior.value ?? prior.actual ?? prior.reading ?? prior.release ?? prior.release_value ?? prior.indicator_value ?? prior.period_value ?? NaN) : NaN;
   const latest_value = Number.isFinite(latestVal) ? latestVal : null;
   const prior_value = Number.isFinite(priorVal) ? priorVal : null;
   const change_pct =
@@ -1705,7 +1705,7 @@ function parseEconomyIndicatorRows(
     latest_value,
     prior_value,
     change_pct,
-    as_of: latest ? String(latest.date ?? latest.as_of ?? latest.period ?? "") || null : null,
+    as_of: latest ? String(latest.date ?? latest.as_of ?? latest.period ?? latest.release_date ?? latest.period_date ?? latest.updated_at ?? "") || null : null,
     rows: sorted.slice(0, 12),
   };
 }

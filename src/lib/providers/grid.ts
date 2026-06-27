@@ -75,7 +75,7 @@ function classifyAnalystAction(title: string, channels: string[]): GridAnalystAc
   return "other";
 }
 
-async function fetchAnalystActions(limit = 30): Promise<GridAnalystsSnapshot> {
+async function fetchAnalystActions(limit = 200): Promise<GridAnalystsSnapshot> {
   const articles = await fetchBenzingaNews(limit, { channels: ANALYST_CHANNELS });
   const actions: GridAnalystAction[] = articles.map((a) => ({
     id: a.id,
@@ -89,7 +89,7 @@ async function fetchAnalystActions(limit = 30): Promise<GridAnalystsSnapshot> {
 }
 
 export async function warmGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
-  const snapshot = await fetchAnalystActions(30);
+  const snapshot = await fetchAnalystActions(200);
   if (!snapshot.actions.length) return null;
   const redis = await getUwCacheRedis();
   await uwCacheSet(redis, GRID_KEYS.analysts, GRID_TTL.analysts, snapshot);
@@ -102,7 +102,7 @@ export async function readGridAnalysts(): Promise<GridAnalystsSnapshot | null> {
     redis,
     GRID_KEYS.analysts,
     GRID_TTL.analysts,
-    () => fetchAnalystActions(30),
+    () => fetchAnalystActions(200),
   );
   return snapshot.actions.length ? snapshot : null;
 }
