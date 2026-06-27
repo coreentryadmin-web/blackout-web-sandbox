@@ -1,11 +1,55 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Night's Watch — Options Position Manager | BlackOut Trading",
-  description:
-    "Per-user options position manager with live P&L, Greeks tracking, and AI verdict engine. Track your 0DTE and short-dated SPX options with HOLD, TRIM, and SELL alerts.",
-};
+import Link from "next/link";
+import { useState } from "react";
+
+const VERDICTS = [
+  {
+    id: "hold",
+    label: "HOLD",
+    color: "text-green-400",
+    border: "border-green-500/30",
+    bg: "bg-green-500/5",
+    description: "The position is within expected parameters. No action required. The setup remains intact, theta decay is within tolerance, and no GEX or flow signals suggest the thesis has changed.",
+    triggers: [
+      "DTE is adequate for the expected move",
+      "P&L is within normal drawdown range",
+      "IV has not moved adversarially",
+      "GEX alignment still supports the direction",
+      "No significant counter-flow detected",
+    ],
+  },
+  {
+    id: "trim",
+    label: "TRIM",
+    color: "text-yellow-400",
+    border: "border-yellow-500/30",
+    bg: "bg-yellow-500/5",
+    description: "Partial exit is advisable. The position has either reached a partial profit target, theta decay is accelerating toward an unfavorable threshold, or the GEX or flow context has shifted against the trade but not materially invalidated it. Trim to reduce exposure.",
+    triggers: [
+      "P&L is at a meaningful gain and DTE is declining",
+      "IV has moved partially against the position",
+      "GEX structure has weakened but not reversed",
+      "Position is significantly in-the-money — delta near 1",
+      "A partial exit improves the risk profile without abandoning the thesis",
+    ],
+  },
+  {
+    id: "sell",
+    label: "SELL",
+    color: "text-red-400",
+    border: "border-red-500/30",
+    bg: "bg-red-500/5",
+    description: "Full exit is recommended. The original thesis has been invalidated, stop-loss criteria have been met, or time decay has reduced the position to a lottery ticket without meaningful remaining delta.",
+    triggers: [
+      "Stop level has been breached",
+      "Profit target reached",
+      "GEX structure has inverted against the position",
+      "Strong counter-flow confirms reversal",
+      "DTE is critically low relative to remaining move potential",
+    ],
+  },
+];
 
 const TOC = [
   { id: "overview", label: "Overview" },
@@ -20,6 +64,8 @@ const TOC = [
 ];
 
 export default function NightsWatchPage() {
+  const [activeVerdict, setActiveVerdict] = useState("hold");
+  const selected = VERDICTS.find((v) => v.id === activeVerdict)!;
   return (
     <div className="min-h-screen text-white" style={{ background: "#040407" }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -64,7 +110,7 @@ export default function NightsWatchPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
                 {[
-                  { label: "Data Source", value: "Live Chain", sub: "Live options chain via Polygon" },
+                  { label: "Data Source", value: "Live Chain", sub: "Live options chain via our market data engine" },
                   { label: "Valuation", value: "Mark-to-Market", sub: "Continuous bid/ask mid pricing" },
                   { label: "Exit Verdicts", value: "3 States", sub: "HOLD / TRIM / SELL" },
                 ].map((stat) => (
@@ -98,33 +144,37 @@ export default function NightsWatchPage() {
             <section id="verdict-engine">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Verdict Engine</h2>
               <p className="text-slate-300 leading-relaxed mb-6">
-                The verdict engine runs continuously during Regular Trading Hours. For each open position, it evaluates a multi-factor model and emits one of three verdicts.
+                The verdict engine runs continuously during Regular Trading Hours. For each open position, it evaluates a multi-factor model and emits one of three verdicts. Select each to see what drives it.
               </p>
-              <div className="space-y-4 mb-8">
-                {[
-                  {
-                    verdict: "HOLD",
-                    color: "cyan",
-                    description: "The position is within expected parameters. No action required. The setup remains intact, theta decay is within tolerance, and no GEX or flow signals suggest the thesis has changed.",
-                  },
-                  {
-                    verdict: "TRIM",
-                    color: "sky",
-                    description: "Partial exit is advisable. The position has either reached a partial profit target, theta decay is accelerating toward an unfavorable threshold, or the GEX or flow context has shifted against the trade but not materially invalidated it. Trim to reduce exposure.",
-                  },
-                  {
-                    verdict: "SELL",
-                    color: "red",
-                    description: "Full exit is recommended. The original thesis has been invalidated, stop-loss criteria have been met, or time decay has reduced the position to a lottery ticket without meaningful remaining delta.",
-                  },
-                ].map((v) => (
-                  <div key={v.verdict} className={`border rounded-xl p-5 ${v.color === "cyan" ? "border-cyan-800/50 bg-cyan-950/15" : v.color === "sky" ? "border-sky-800/50 bg-sky-950/15" : "border-red-900/40 bg-red-950/10"}`}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className={`font-mono font-bold text-sm px-3 py-1 rounded border ${v.color === "cyan" ? "text-cyan-400 border-cyan-700/50 bg-cyan-900/30" : v.color === "sky" ? "text-sky-300 border-sky-700/50 bg-sky-900/30" : "text-red-400 border-red-700/50 bg-red-900/20"}`}>{v.verdict}</span>
-                    </div>
-                    <p className="text-slate-300 text-sm leading-relaxed">{v.description}</p>
-                  </div>
+
+              {/* Interactive verdict tabs */}
+              <div className="flex gap-3 mb-4">
+                {VERDICTS.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setActiveVerdict(v.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors border ${
+                      activeVerdict === v.id
+                        ? `${v.border} ${v.bg} ${v.color}`
+                        : "border-white/10 text-slate-300 hover:border-white/30 hover:text-white"
+                    }`}
+                  >
+                    {v.label}
+                  </button>
                 ))}
+              </div>
+
+              <div className={`rounded-lg border ${selected.border} ${selected.bg} p-6 mb-8`}>
+                <p className={`font-bold text-lg mb-3 ${selected.color}`}>{selected.label}</p>
+                <p className="text-slate-300 text-sm leading-relaxed mb-4">{selected.description}</p>
+                <p className="text-xs uppercase tracking-widest text-white/50 mb-2">Common Triggers</p>
+                <ul className="space-y-1">
+                  {selected.triggers.map((t) => (
+                    <li key={t} className="text-sm text-slate-300 flex gap-2">
+                      <span className={`mt-0.5 ${selected.color}`}>◆</span> {t}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className="border border-cyan-900/30 rounded-xl bg-white/[0.02] p-6">

@@ -1,11 +1,7 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Heat Maps — GEX, VEX, DEX & CHARM Dealer Positioning | BlackOut Trading",
-  description:
-    "Understand dealer gamma exposure across every SPX strike and expiry. Learn to read GEX profiles, gamma flip levels, call/put walls, and CHARM decay flows to trade with structural edge.",
-};
+import Link from "next/link";
+import { useState } from "react";
 
 const TOC = [
   { id: "overview", label: "Overview" },
@@ -19,7 +15,36 @@ const TOC = [
   { id: "faq", label: "FAQ" },
 ];
 
+const VIEWS = [
+  {
+    id: "profile",
+    label: "GEX Profile",
+    tag: "Bar Chart",
+    body: ["The primary view. Each bar represents the net gamma exposure the dealer community holds at that strike. The tallest positive bar above spot is the Call Wall — the strongest mechanical resistance. The tallest positive bar below spot is the Put Wall — structural support.", "The bar that dominates across all strikes is the King Node: wherever price is trading when the session opens, it will spend most of the day gravitating toward the King Node unless a catalyst drives a regime shift."],
+  },
+  {
+    id: "curve",
+    label: "GEX Curve",
+    tag: "Smooth Distribution",
+    body: ["A smoothed, continuous representation of the gamma distribution across strikes. Where the Profile gives you discrete bar magnitudes, the Curve shows you the shape — peaks, troughs, and the width of concentration.", "The Gamma Flip crossover (where the curve crosses zero) is visible here with precision. A narrow, tall peak means gamma is tightly concentrated — expect strong pinning but a sharp transition once price moves away."],
+  },
+  {
+    id: "shift",
+    label: "GEX Shift",
+    tag: "Overnight Change",
+    body: ["A differential view: today's gamma distribution minus yesterday's. Green areas indicate strikes where gamma has increased overnight; red areas show where it has decreased.", "Significant shifts often precede meaningful price movement. If the Call Wall has shifted 50 points higher overnight, dealers have repositioned defensively."],
+  },
+  {
+    id: "matrix",
+    label: "GEX Matrix",
+    tag: "Strike × Expiry Grid",
+    body: ["A two-dimensional heat map: rows are strikes, columns are expiries. Each cell shows the gamma concentration at that exact strike-expiry intersection.", "This view answers which expiry is driving the dominant GEX structure at a given strike. 0DTE-heavy walls are volatile and can flip during the session. Multi-expiry walls are structurally more persistent."],
+  },
+];
+
 export default function HeatMapsPage() {
+  const [activeView, setActiveView] = useState("profile");
+  const selected = VIEWS.find((v) => v.id === activeView)!;
   return (
     <div className="min-h-screen text-white" style={{ background: "#040407" }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -97,43 +122,32 @@ export default function HeatMapsPage() {
 
             <section id="four-views">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">The Four Views</h2>
-              <div className="space-y-8">
-                {[
-                  {
-                    name: "GEX Profile",
-                    tag: "Bar Chart",
-                    color: "cyan",
-                    body: ["The primary view. Each bar represents the net gamma exposure the dealer community holds at that strike. The tallest positive bar above spot is the Call Wall — the strongest mechanical resistance. The tallest positive bar below spot is the Put Wall — structural support.", "The bar that dominates across all strikes is the King Node: wherever price is trading when the session opens, it will spend most of the day gravitating toward the King Node unless a catalyst drives a regime shift."],
-                  },
-                  {
-                    name: "GEX Curve",
-                    tag: "Smooth Distribution",
-                    color: "sky",
-                    body: ["A smoothed, continuous representation of the gamma distribution across strikes. Where the Profile gives you discrete bar magnitudes, the Curve shows you the shape — peaks, troughs, and the width of concentration.", "The Gamma Flip crossover (where the curve crosses zero) is visible here with precision. A narrow, tall peak means gamma is tightly concentrated — expect strong pinning but a sharp transition once price moves away."],
-                  },
-                  {
-                    name: "GEX Shift",
-                    tag: "Overnight Change",
-                    color: "cyan",
-                    body: ["A differential view: today's gamma distribution minus yesterday's. Green areas indicate strikes where gamma has increased overnight; red areas show where it has decreased.", "Significant shifts often precede meaningful price movement. If the Call Wall has shifted 50 points higher overnight, dealers have repositioned defensively."],
-                  },
-                  {
-                    name: "GEX Matrix",
-                    tag: "Strike × Expiry Grid",
-                    color: "sky",
-                    body: ["A two-dimensional heat map: rows are strikes, columns are expiries. Each cell shows the gamma concentration at that exact strike-expiry intersection.", "This view answers which expiry is driving the dominant GEX structure at a given strike. 0DTE-heavy walls are volatile and can flip during the session. Multi-expiry walls are structurally more persistent."],
-                  },
-                ].map((view) => (
-                  <div key={view.name} className="border border-cyan-900/30 rounded-xl bg-white/[0.02] p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <h3 className="text-lg font-bold text-white">{view.name}</h3>
-                      <span className={`text-xs font-mono px-2 py-0.5 rounded border ${view.color === "cyan" ? "text-cyan-400 border-cyan-700/50 bg-cyan-950/30" : "text-sky-300 border-sky-700/50 bg-sky-950/30"}`}>{view.tag}</span>
-                    </div>
-                    <div className="space-y-3 text-slate-300 leading-relaxed">
-                      {view.body.map((para, i) => <p key={i}>{para}</p>)}
-                    </div>
-                  </div>
+
+              {/* Interactive tabs */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {VIEWS.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setActiveView(v.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                      activeView === v.id
+                        ? "border-cyan-400 bg-cyan-400/10 text-cyan-400"
+                        : "border-white/10 text-slate-300 hover:border-white/30 hover:text-white"
+                    }`}
+                  >
+                    {v.label}
+                  </button>
                 ))}
+              </div>
+
+              <div className="border border-cyan-900/30 rounded-xl bg-white/[0.02] p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="text-lg font-bold text-white">{selected.label}</h3>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded border text-cyan-400 border-cyan-700/50 bg-cyan-950/30">{selected.tag}</span>
+                </div>
+                <div className="space-y-3 text-slate-300 leading-relaxed">
+                  {selected.body.map((para, i) => <p key={i}>{para}</p>)}
+                </div>
               </div>
             </section>
 

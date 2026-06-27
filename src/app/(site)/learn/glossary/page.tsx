@@ -1,11 +1,7 @@
-import Link from "next/link";
-import type { Metadata } from "next";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Glossary — BlackOut Trading Platform Terminology",
-  description:
-    "Complete glossary for BlackOut Trading: dealer Greeks, structural levels, options fundamentals, institutional flow signals, and platform-specific terminology.",
-};
+import Link from "next/link";
+import { useState, useMemo } from "react";
 
 const TOC = [
   { id: "dealer-greeks", label: "Dealer Greeks" },
@@ -71,7 +67,38 @@ const TERMS: Record<string, { term: string; def: string }[]> = {
   ],
 };
 
+const CATEGORIES = [
+  { id: "all", label: "All Terms" },
+  { id: "dealer-greeks", label: "Dealer Greeks" },
+  { id: "structural-levels", label: "Structural Levels" },
+  { id: "options-fundamentals", label: "Options Fundamentals" },
+  { id: "price-volume", label: "Price & Volume" },
+  { id: "institutional-flow", label: "Institutional Flow" },
+  { id: "platform-terms", label: "Platform Terms" },
+];
+
 export default function GlossaryPage() {
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    const result: Record<string, { term: string; def: string }[]> = {};
+    for (const [key, terms] of Object.entries(TERMS)) {
+      if (activeCategory !== "all" && activeCategory !== key) continue;
+      const matches = terms.filter(
+        (t) =>
+          !q ||
+          t.term.toLowerCase().includes(q) ||
+          t.def.toLowerCase().includes(q)
+      );
+      if (matches.length > 0) result[key] = matches;
+    }
+    return result;
+  }, [search, activeCategory]);
+
+  const totalVisible = Object.values(filtered).flat().length;
+
   return (
     <div className="min-h-screen text-white" style={{ background: "#040407" }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -98,7 +125,38 @@ export default function GlossaryPage() {
             </div>
           </aside>
 
-          <main className="flex-1 min-w-0 space-y-16">
+          <main className="flex-1 min-w-0 space-y-10">
+
+            {/* Search + filter bar */}
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search terms and definitions..."
+                className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400/50 focus:outline-none transition-colors"
+              />
+              <div className="flex flex-wrap gap-2">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                      activeCategory === cat.id
+                        ? "border-cyan-400 bg-cyan-400/10 text-cyan-400"
+                        : "border-white/10 text-slate-300 hover:border-white/30 hover:text-white"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              {search && (
+                <p className="text-xs text-slate-400">
+                  {totalVisible} term{totalVisible !== 1 ? "s" : ""} matching &ldquo;{search}&rdquo;
+                </p>
+              )}
+            </div>
 
             {[
               { id: "dealer-greeks", title: "Dealer Greeks", subtitle: "The Greek sensitivities that drive dealer hedging — the mechanical engine behind structural levels.", accent: "cyan" },
@@ -107,15 +165,17 @@ export default function GlossaryPage() {
               { id: "price-volume", title: "Price & Volume Reference", subtitle: "Standard market microstructure terminology used across the BlackOut desk and flow surfaces.", accent: "sky" },
               { id: "institutional-flow", title: "Institutional Flow Signals", subtitle: "The vocabulary of how large institutions position and execute in the options and dark pool markets.", accent: "cyan" },
               { id: "platform-terms", title: "Platform-Specific Terms", subtitle: "BlackOut-specific terminology used across tools, verdicts, and the engine architecture.", accent: "sky" },
-            ].map((section) => (
+            ]
+              .filter((s) => filtered[s.id])
+              .map((section) => (
               <section key={section.id} id={section.id}>
                 <div className="mb-6 pb-2 border-b border-cyan-900/30">
                   <h2 className="text-2xl font-bold text-white mb-1">{section.title}</h2>
                   <p className="text-sm text-slate-400 leading-relaxed">{section.subtitle}</p>
                 </div>
                 <div className="space-y-4">
-                  {(TERMS[section.id] || []).map((entry) => (
-                    <div key={entry.term} className="border border-white/8 rounded-lg bg-white/[0.015] p-5 hover:border-cyan-900/50 transition-colors">
+                  {(filtered[section.id] || []).map((entry) => (
+                    <div key={entry.term} className="border border-white/[0.08] rounded-lg bg-white/[0.015] p-5 hover:border-cyan-900/50 transition-colors">
                       <p className={`font-mono font-bold text-sm mb-2 ${section.accent === "cyan" ? "text-cyan-400" : "text-sky-300"}`}>{entry.term}</p>
                       <p className="text-slate-300 text-sm leading-relaxed">{entry.def}</p>
                     </div>

@@ -82,7 +82,7 @@ export default function BlackoutGridPage() {
                     name: "News",
                     color: "cyan",
                     description: "Real-time equity and macro news. Each story is tagged with sentiment (positive/negative/neutral) and relevance weight. The feed prioritizes market-moving headlines over general financial commentary.",
-                    dataSource: "Benzinga, aggregated financial newswires",
+                    dataSource: "Real-time financial newswire aggregation",
                     usage: "Monitor this panel continuously during the first 30 minutes of RTH. Intraday reversals are frequently news-driven — Grid News surfaces the cause faster than most news terminals.",
                   },
                   {
@@ -90,7 +90,7 @@ export default function BlackoutGridPage() {
                     name: "Options Flow",
                     color: "sky",
                     description: "Institutional-grade unusual options activity across the broad market, not just SPX. Large-premium prints, sweeps, and dark pool options activity on individual names appear here.",
-                    dataSource: "Unusual Whales institutional options flow feed",
+                    dataSource: "Our flow intelligence engine — institutional options feed",
                     usage: "Use this panel to identify institutional conviction in single-name positions. When Grid Options Flow and HELIX SPX flow agree on direction, structural conviction is high.",
                   },
                   {
@@ -114,15 +114,15 @@ export default function BlackoutGridPage() {
                     name: "Analyst Activity",
                     color: "cyan",
                     description: "Real-time analyst rating changes, price target revisions, and initiations of coverage. Includes the firm, the new and prior rating, price target change, and the analyst&apos;s historical accuracy for that name.",
-                    dataSource: "Benzinga analyst ratings feed",
-                    usage: "Large-cap analyst upgrades from top-tier firms (Goldman, Morgan Stanley, JPMorgan) can generate institutional order flow detectable on HELIX within 15–30 minutes of the rating crossing the wire.",
+                    dataSource: "Institutional analyst ratings feed",
+                    usage: "Large-cap analyst upgrades from bulge-bracket and top-tier institutional firms can generate detectable order flow on HELIX within 15–30 minutes of the rating crossing the wire.",
                   },
                   {
                     num: "06",
                     name: "Dark Pool",
                     color: "sky",
                     description: "Large off-exchange (dark pool) block trade prints on major indices and single names. Dark pool activity represents institutional positioning that bypasses lit exchange book — the largest risk-capital moves happen here.",
-                    dataSource: "Unusual Whales dark pool data",
+                    dataSource: "Our market data engine — institutional dark pool feed",
                     usage: "Large dark pool blocks on SPX or SPY in pre-market are a reliable early indication of institutional directional bias. A large block short print in a negative GEX regime is a high-conviction setup.",
                   },
                   {
@@ -130,7 +130,7 @@ export default function BlackoutGridPage() {
                     name: "Congress Trades",
                     color: "cyan",
                     description: "Congressional stock trading disclosures under the STOCK Act. Filters for statistically significant trades in names with relevant regulatory exposure. Not a primary trading signal — a macro context indicator.",
-                    dataSource: "Unusual Whales congressional trading tracker",
+                    dataSource: "Congressional trading disclosure aggregator",
                     usage: "Most relevant for sector-level context: a cluster of congressional buys in defense names during a foreign policy event is noteworthy macro context, not a direct trade signal.",
                   },
                   {
@@ -169,10 +169,10 @@ export default function BlackoutGridPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Data Sources</h2>
               <div className="space-y-4">
                 {[
-                  { provider: "Benzinga", panels: "News, Analyst Activity", notes: "Real-time newswire and analyst ratings API. News is tagged with sentiment classification. Analyst ratings include historical accuracy scores for that specific analyst-name pairing." },
-                  { provider: "Unusual Whales", panels: "Options Flow, Dark Pool, Congress Trades", notes: "Institutional-grade options and dark pool flow data. Unusual Whales is the primary source for large-block dark pool prints and congressional trading disclosures." },
+                  { provider: "Financial Newswire", panels: "News, Analyst Activity", notes: "Real-time newswire and analyst ratings. News is tagged with sentiment classification. Analyst ratings include historical accuracy scores for that specific analyst-name pairing." },
+                  { provider: "Flow Intelligence Engine", panels: "Options Flow, Dark Pool, Congress Trades", notes: "Institutional-grade options and dark pool flow data powering large-block dark pool prints and congressional trading disclosures." },
                   { provider: "Structured Calendars", panels: "Earnings, Catalysts, Economic Data", notes: "Aggregated calendar data with consensus estimates for earnings and economic releases. Catalyst data is curated from multiple sources and updated continuously." },
-                  { provider: "Polygon", panels: "Supplementary price/volume reference", notes: "Used for supplementary real-time price reference in the options flow and dark pool panels." },
+                  { provider: "Market Data Engine", panels: "Supplementary price/volume reference", notes: "Used for supplementary real-time price reference in the options flow and dark pool panels." },
                 ].map((source) => (
                   <div key={source.provider} className="flex gap-4 border border-cyan-900/20 rounded-lg bg-white/[0.015] p-5">
                     <div className="shrink-0 w-44">
@@ -252,7 +252,7 @@ export default function BlackoutGridPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">FAQ</h2>
               <div className="space-y-5">
                 {[
-                  { q: "How frequently does the News panel update?", a: "The News panel updates in near-real time via the Benzinga newswire API. There is typically a 1–3 second latency between headline publication and appearance in the Grid panel." },
+                  { q: "How frequently does the News panel update?", a: "The News panel updates in near-real time from our financial newswire feed. There is typically a 1–3 second latency between headline publication and appearance in the Grid panel." },
                   { q: "Is the Dark Pool data real-time?", a: "Dark pool block print data has a disclosure lag inherent to how off-exchange trades are reported. The Grid surfaces dark pool prints as quickly as the exchange reporting infrastructure allows, but the data is not millisecond-precise." },
                   { q: "Why are Congressional trade disclosures delayed so much?", a: "By law, members of Congress must disclose stock trades within 45 days. The Grid surfaces disclosures as soon as they are filed. You are seeing the disclosure, not the trade date — use Congress Trades only for long-horizon sector context." },
                   { q: "Can Largo access the Grid's data?", a: "Yes. Largo's get_market_context tool call draws from the same catalyst and economic calendar data that powers the Grid panels. Largo synthesizes this information into its responses rather than showing raw panel data." },
