@@ -654,6 +654,16 @@ async function evaluateFlatPlay(
   const sessionExtras = { session_phase: currentSessionPhase(desk) };
 
   if (!entryGatesRaw.passed) {
+    console.log('[spx-play-engine] entry gates blocked:', {
+      grade: confluence.grade,
+      score: confluence.score,
+      direction: confluence.direction,
+      blocks: entryGatesRaw.blocks,
+      entry_mode: entryGatesRaw.entry_mode,
+      mutate,
+      flow_data_age_ms: desk.flow_data_age_ms,
+      gex_walls_count: desk.gex_walls?.length ?? 0,
+    });
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), entryGatesView, sessionExtras),
       confirmations,
@@ -698,6 +708,16 @@ async function evaluateFlatPlay(
   }
 
   if (!claude.approved || !confluence.direction) {
+    console.log('[spx-play-engine] Claude blocked play:', {
+      verdict: claude.verdict,
+      source: claude.source,
+      approved: claude.approved,
+      headline: claude.headline,
+      grade: confluence.grade,
+      score: confluence.score,
+      direction: confluence.direction,
+      mutate,
+    });
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         ...entryGatesView,
@@ -722,6 +742,17 @@ async function evaluateFlatPlay(
 
   const dir = confluence.direction;
   const optionTicket = await buildOptionTicket(desk.price, dir, confluence.grade);
+
+  console.log('[spx-play-engine] optionTicket check:', {
+    blocked: optionTicket.blocked,
+    reason: optionTicket.block_reason,
+    ticker: optionTicket.ticker,
+    strike: optionTicket.strike,
+    option_type: optionTicket.option_type,
+    contract_label: optionTicket.contract_label,
+    bid: optionTicket.bid,
+    ask: optionTicket.ask,
+  });
 
   if (optionTicket.blocked && playOptionChainRequired()) {
     return {
@@ -798,6 +829,18 @@ async function evaluateFlatPlay(
       as_of: confluence.as_of,
     };
   }
+
+  console.log('[spx-play-engine] ALL GATES PASSED — opening play:', {
+    grade: confluence.grade,
+    score: confluence.score,
+    direction: dir,
+    price: desk.price,
+    mutate,
+    optionBlocked: optionTicket.blocked,
+    optionLabel: optionTicket.contract_label,
+    claudeVerdict: claude.verdict,
+    claudeSource: claude.source,
+  });
 
   const openedAt = new Date().toISOString();
   const { row: opened, created } = await openPlay({
