@@ -93,3 +93,29 @@ Automated TLS, availability, security-header, redirect, and CDN health checks fo
 ### Redirects: **PASS** — `https://www/` → 301 → https://blackouttrades.com/ ; `http://www/` → 301 → https://blackouttrades.com/ (canonical = apex, unchanged from 09:22 run); www `/pricing` → 301 → apex /pricing.
 ### CDN: **PASS** — Cloudflare edge (CF-Ray a12571fdeaecdee1-SEA), Railway request ID present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
 ---
+
+## 2026-06-27 15:22 ET
+### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
+### Availability: 12/12 routes healthy — **PASS**
+- Pages 200 (probe hits www, follows www→apex 301 to 200): Landing 666ms, Sign In 178ms, Sign Up 171ms, /dashboard 228ms, /flows 192ms, /heatmap 293ms, /grid 128ms, /nighthawk 211ms; /api/health 200 (113ms)
+- Auth-gated APIs 401 as intended (~83–108ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <700ms).**
+### Security Headers: 6/6 present on rendered apex page — **PASS** (HSTS max-age + preload, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin, CSP `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tr…`, Permissions-Policy camera=())
+- Reading note (recurring false alarm): the Step-3 check probes `www` with `MaximumRedirection 0`, so it reads the www→apex **301 hop** (which carries no CSP) and falsely reports "CSP MISSING". Re-probing `https://blackouttrades.com/` directly this run confirmed CSP present — no app defect.
+- WARN (low priority, unchanged): `X-Powered-By: Next.js` leaking on apex → harden with `poweredByHeader: false` in next.config. `Server: cloudflare` expected (CF edge header, not an app leak).
+### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex, unchanged from prior runs; apex then applies in-app 307→/#pricing).
+### CDN: **PASS** — Cloudflare edge (CF-Ray a126d18338dba362-SEA), apex CF-Cache-Status DYNAMIC + X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
+---
+
+## 2026-06-27 17:22 ET
+### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
+### Availability: 12/12 routes healthy — **PASS**
+- Pages 200 (probe hits www, follows www→apex 301 to 200): Landing 594ms, Sign In 176ms, Sign Up 185ms, /dashboard 234ms, /flows 204ms, /heatmap 213ms, /grid 147ms, /nighthawk 337ms; /api/health 200 (85ms)
+- Auth-gated APIs 401 as intended (~96–117ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <600ms).**
+### Security Headers: 6/6 present on rendered apex page — **PASS** (HSTS max-age, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin, CSP `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tr…`, Permissions-Policy camera=())
+- Reading note (recurring false alarm): the Step-3 check probes `www` with `MaximumRedirection 0`, so it reads the www→apex **301 hop** (no CSP) and falsely reports "CSP MISSING". Re-probing `https://blackouttrades.com/` directly this run confirmed CSP present — no app defect.
+- WARN (low priority, unchanged): `X-Powered-By: Next.js` leaking on apex → harden with `poweredByHeader: false` in next.config. `Server: cloudflare` expected (CF edge header, not an app leak).
+### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex; apex then applies in-app 307→/#pricing).
+### CDN: **PASS** — Cloudflare edge (CF-Ray a12781535871df0d-SEA), apex CF-Cache-Status DYNAMIC + X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
+---
