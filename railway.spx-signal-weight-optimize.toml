@@ -1,0 +1,15 @@
+# Railway config for the SPX-Signal-Weight-Optimize cron service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.spx-signal-weight-optimize.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/spx-signal-weight-optimize"
+# 10 PM UTC daily Mon–Fri = 6 PM ET (EDT) / 5 PM ET (EST) — well after market close.
+# Runs even with no data (route self-skips if < 10 observations) so the service
+# is ready the moment 2 weeks of data accumulate.
+cronSchedule = "0 22 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1
