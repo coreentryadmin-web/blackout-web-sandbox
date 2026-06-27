@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 
 type SectorRow = {
   name: string;
@@ -51,6 +52,7 @@ function SectorTile({ sector }: { sector: SectorRow }) {
  * "heatmap" tool so it degrades gracefully when the user doesn't have access.
  */
 export function GridSectorHeatmapPanel() {
+  const { isFiltered, ticker } = useGridTicker();
   const { data, error } = useSWR<HeatmapResponse | null>(
     "grid-sector-heatmap",
     fetcher,
@@ -65,7 +67,7 @@ export function GridSectorHeatmapPanel() {
       title="Sector Heatmap"
       kicker="SECTORS"
       accent="gold"
-      live={live}
+      live={live && !isFiltered}
       span={2}
       footer={
         <span className="grid-foot-note">
@@ -73,7 +75,11 @@ export function GridSectorHeatmapPanel() {
         </span>
       }
     >
-      {!data && !error ? (
+      {isFiltered && ticker ? (
+        <p className="grid-empty text-sky-400/60">
+          Sector heatmap is market-wide — not available in {ticker} mode. Clear the filter to see all sectors.
+        </p>
+      ) : !data && !error ? (
         <p className="grid-empty">Loading sector data…</p>
       ) : error || !live ? (
         <p className="grid-empty">Sector feed unavailable</p>

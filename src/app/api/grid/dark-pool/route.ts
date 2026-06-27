@@ -16,8 +16,15 @@ export async function GET(req: NextRequest) {
   if (locked) return locked;
   if (!uwConfigured()) return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
   try {
+    const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;
     const snapshot = await readGridDarkPool();
     if (!snapshot) return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
+    if (ticker && Array.isArray(snapshot.prints)) {
+      const filtered = snapshot.prints.filter(
+        (p: { ticker?: string }) => p.ticker?.toUpperCase() === ticker,
+      );
+      return NextResponse.json({ available: true, ...snapshot, prints: filtered, ticker }, { status: 200, headers: NO_STORE });
+    }
     return NextResponse.json({ available: true, ...snapshot }, { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });

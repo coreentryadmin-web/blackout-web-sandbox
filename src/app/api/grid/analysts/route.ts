@@ -34,9 +34,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;
     const snapshot = await readGridAnalysts();
     if (!snapshot) {
       return NextResponse.json({ available: false }, { status: 200, headers: noStore });
+    }
+    if (ticker && Array.isArray(snapshot.actions)) {
+      const filtered = snapshot.actions.filter(
+        (a: { tickers?: string[] }) =>
+          Array.isArray(a.tickers) && a.tickers.some((t: string) => t.toUpperCase() === ticker),
+      );
+      return NextResponse.json({ available: true, ...snapshot, actions: filtered, ticker }, { status: 200, headers: noStore });
     }
     return NextResponse.json({ available: true, ...snapshot }, { status: 200, headers: noStore });
   } catch (error) {

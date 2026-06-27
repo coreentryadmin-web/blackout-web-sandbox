@@ -3,12 +3,13 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridEarningsItem, GridEarningsSnapshot } from "@/lib/providers/grid";
 
-type Res = { available: boolean } & Partial<GridEarningsSnapshot>;
+type Res = { available: boolean; ticker?: string } & Partial<GridEarningsSnapshot>;
 
-const fetcher = () =>
-  fetch("/api/grid/earnings", { cache: "no-store", credentials: "same-origin" })
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<Res>;
 
 function SurpriseTag({ pct }: { pct: number | null }) {
@@ -43,7 +44,9 @@ function EarningsRow({ item }: { item: GridEarningsItem }) {
 }
 
 export function GridEarningsPanel() {
-  const { data, error } = useSWR<Res>("grid-earnings", fetcher, { refreshInterval: 300_000 });
+  const { ticker, isFiltered } = useGridTicker();
+  const url = `/api/grid/earnings${ticker ? `?ticker=${ticker}` : ""}`;
+  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
   const items: GridEarningsItem[] = data?.items ?? [];
   const live = !error && (data?.available ?? false) && items.length > 0;
 
@@ -56,9 +59,18 @@ export function GridEarningsPanel() {
       span={2}
       footer={<span className="grid-foot-note">Unusual Whales · pre-market + after-hours reporters</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} earnings</p>
+      )}
       {items.length === 0 ? (
         <p className="grid-empty">
-          {data ? "No earnings today" : error ? "Earnings feed offline" : "Loading earnings…"}
+          {data
+            ? isFiltered && ticker
+              ? `No earnings found for ${ticker}`
+              : "No earnings today"
+            : error
+            ? "Earnings feed offline"
+            : "Loading earnings…"}
         </p>
       ) : (
         <ul className="grid-earn-list">

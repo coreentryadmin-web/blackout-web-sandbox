@@ -9,6 +9,7 @@ import {
   type FlowAlert,
 } from "@/lib/api";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 
 const WHALE_PREMIUM = 1_000_000;
 const FLOOR_PREMIUM = 200_000;
@@ -26,6 +27,7 @@ function rowKey(a: FlowAlert & { alert_id?: string }): string {
  * fallback, so the LIVE badge is honest (green only while the SSE is connected).
  */
 export function GridFlowPanel() {
+  const { ticker, isFiltered } = useGridTicker();
   const [alerts, setAlerts] = useState<FlowAlert[]>([]);
   const [live, setLive] = useState(false);
   const [whaleOnly, setWhaleOnly] = useState(false);
@@ -33,7 +35,11 @@ export function GridFlowPanel() {
 
   const loadFlows = useCallback(async () => {
     try {
-      const d = await fetchFlows({ min_premium: FLOOR_PREMIUM, limit: 60 });
+      const d = await fetchFlows({
+        min_premium: FLOOR_PREMIUM,
+        limit: 60,
+        ...(ticker ? { ticker } : {}),
+      });
       const seeded = new Set<string>();
       for (const a of d.flows as Array<FlowAlert & { alert_id?: string }>) seeded.add(rowKey(a));
       seenRef.current = seeded;
@@ -42,11 +48,14 @@ export function GridFlowPanel() {
     } catch {
       setLive(false);
     }
-  }, []);
+  }, [ticker]);
 
+  // Reset alerts when ticker changes so stale data doesn't linger
   useEffect(() => {
+    setAlerts([]);
+    seenRef.current = new Set();
     loadFlows();
-  }, [loadFlows]);
+  }, [loadFlows, ticker]);
 
   useEffect(() => {
     let poll: ReturnType<typeof setInterval> | null = null;
@@ -55,6 +64,8 @@ export function GridFlowPanel() {
 
     const conn = createFlowEventSource(
       (alert) => {
+        // When filtering by ticker, drop SSE events that don't match
+        if (ticker && alert.ticker?.toUpperCase() !== ticker) return;
         const key = rowKey(alert as FlowAlert & { alert_id?: string });
         if (seenRef.current.has(key)) return;
         seenRef.current.add(key);
@@ -69,7 +80,7 @@ export function GridFlowPanel() {
     if (conn) return () => { conn.close(); stop(); };
     go();
     return () => stop();
-  }, [loadFlows]);
+  }, [loadFlows, ticker]);
 
   const rows = useMemo(() => {
     const base = whaleOnly ? alerts.filter((a) => a.premium >= WHALE_PREMIUM) : alerts;
@@ -95,8 +106,17 @@ export function GridFlowPanel() {
       }
       footer={<span className="grid-foot-note">HELIX tape · educational, not advice</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} flow</p>
+      )}
       {rows.length === 0 ? (
-        <p className="grid-empty">{live ? "Wire quiet — no prints" : "Acquiring flow tape…"}</p>
+        <p className="grid-empty">
+          {live
+            ? isFiltered && ticker
+              ? `No flow for ${ticker} above $${(FLOOR_PREMIUM / 1000).toFixed(0)}K`
+              : "Wire quiet — no prints"
+            : "Acquiring flow tape…"}
+        </p>
       ) : (
         <ul className="grid-flow-list">
           {rows.map((a) => {

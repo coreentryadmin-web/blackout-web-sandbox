@@ -3,12 +3,13 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridCatalystItem, GridCatalystsSnapshot } from "@/lib/providers/grid";
 
-type Res = { available: boolean } & Partial<GridCatalystsSnapshot>;
+type Res = { available: boolean; ticker?: string } & Partial<GridCatalystsSnapshot>;
 
-const fetcher = () =>
-  fetch("/api/grid/catalysts", { cache: "no-store", credentials: "same-origin" })
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<Res>;
 
 const TYPE_ACCENT: Record<GridCatalystItem["type"], string> = {
@@ -70,7 +71,9 @@ function CatalystRow({ item }: { item: GridCatalystItem }) {
  * Compact list — ticker, type, time, one-line description. Refreshes every 5 min.
  */
 export function GridCatalystsPanel() {
-  const { data, error } = useSWR<Res>("grid-catalysts", fetcher, { refreshInterval: 300_000 });
+  const { ticker, isFiltered } = useGridTicker();
+  const url = `/api/grid/catalysts${ticker ? `?ticker=${ticker}` : ""}`;
+  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
   const items: GridCatalystItem[] = data?.items ?? [];
   const live = !error && (data?.available ?? false) && items.length > 0;
 
@@ -83,9 +86,18 @@ export function GridCatalystsPanel() {
       span={2}
       footer={<span className="grid-foot-note">FDA · M&amp;A · Guidance · Insider · Buybacks · Offerings</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} catalysts</p>
+      )}
       {items.length === 0 ? (
         <p className="grid-empty">
-          {data ? "No catalysts" : error ? "Catalyst feed offline" : "Loading catalysts…"}
+          {data
+            ? isFiltered && ticker
+              ? `No catalysts found for ${ticker}`
+              : "No catalysts"
+            : error
+            ? "Catalyst feed offline"
+            : "Loading catalysts…"}
         </p>
       ) : (
         <ul className="grid-earn-list">

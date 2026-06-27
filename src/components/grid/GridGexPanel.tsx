@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 
 type GexRegimeData = {
   available: boolean;
@@ -20,8 +21,8 @@ type GexRegimeData = {
   nearest_wall?: { strike: number; kind: string; distance_pts: number } | null;
 };
 
-const fetcher = () =>
-  fetch("/api/market/gex-positioning?ticker=SPX", { cache: "no-store", credentials: "same-origin" })
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<GexRegimeData>;
 
 function fmtLevel(n: number | null | undefined): string {
@@ -70,7 +71,10 @@ function RegimeRow({ label, value, accent }: { label: string; value: string; acc
  * every 30 seconds (the route itself is cache-reader — no upstream pressure).
  */
 export function GridGexPanel() {
-  const { data, error } = useSWR<GexRegimeData>("grid-gex-regime", fetcher, { refreshInterval: 30_000 });
+  const { ticker, isFiltered } = useGridTicker();
+  const gexTicker = ticker ?? "SPX";
+  const url = `/api/market/gex-positioning?ticker=${gexTicker}`;
+  const { data, error } = useSWR<GexRegimeData>(url, fetcher, { refreshInterval: 30_000 });
 
   const available = !error && (data?.available ?? false);
   const live = available && data?.spot != null;
@@ -95,10 +99,13 @@ export function GridGexPanel() {
       live={live}
       footer={
         <span className="grid-foot-note">
-          Polygon/Massive matrix · SPX · {data?.available ? "live" : "unavailable"}
+          Polygon/Massive matrix · {gexTicker} · {data?.available ? "live" : "unavailable"}
         </span>
       }
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">GEX regime for {ticker}</p>
+      )}
       {!data && !error ? (
         <p className="grid-empty">Loading GEX regime…</p>
       ) : error || !available ? (

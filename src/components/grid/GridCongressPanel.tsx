@@ -3,12 +3,13 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridCongresstrade, GridCongressSnapshot } from "@/lib/providers/grid";
 
-type Res = { available: boolean } & Partial<GridCongressSnapshot>;
+type Res = { available: boolean; ticker?: string } & Partial<GridCongressSnapshot>;
 
-const fetcher = () =>
-  fetch("/api/grid/congress", { cache: "no-store", credentials: "same-origin" })
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<Res>;
 
 function tradeColor(type: string): string {
@@ -32,7 +33,9 @@ function shortName(name: string): string {
 }
 
 export function GridCongressPanel() {
-  const { data, error } = useSWR<Res>("grid-congress", fetcher, { refreshInterval: 300_000 });
+  const { ticker, isFiltered } = useGridTicker();
+  const url = `/api/grid/congress${ticker ? `?ticker=${ticker}` : ""}`;
+  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
   const trades: GridCongresstrade[] = data?.trades ?? [];
   const live = !error && (data?.available ?? false) && trades.length > 0;
 
@@ -44,9 +47,18 @@ export function GridCongressPanel() {
       live={live}
       footer={<span className="grid-foot-note">Unusual Whales · congressional stock disclosures</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} congress trades</p>
+      )}
       {trades.length === 0 ? (
         <p className="grid-empty">
-          {data ? "No recent congress trades" : error ? "Congress feed offline" : "Loading trades…"}
+          {data
+            ? isFiltered && ticker
+              ? `No congress trades for ${ticker}`
+              : "No recent congress trades"
+            : error
+            ? "Congress feed offline"
+            : "Loading trades…"}
         </p>
       ) : (
         <ul className="grid-congress-list">

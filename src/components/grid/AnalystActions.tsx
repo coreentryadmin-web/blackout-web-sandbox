@@ -3,12 +3,13 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridAnalystAction } from "@/lib/providers/grid";
 
-type AnalystsResponse = { available: boolean; as_of?: string; actions?: GridAnalystAction[] };
+type AnalystsResponse = { available: boolean; as_of?: string; actions?: GridAnalystAction[]; ticker?: string };
 
-async function fetchAnalysts(): Promise<AnalystsResponse> {
-  const res = await fetch("/api/grid/analysts", { cache: "no-store", credentials: "same-origin" });
+async function fetchAnalysts(url: string): Promise<AnalystsResponse> {
+  const res = await fetch(url, { cache: "no-store", credentials: "same-origin" });
   if (!res.ok) throw new Error(`grid/analysts ${res.status}`);
   return res.json();
 }
@@ -48,8 +49,10 @@ function timeAgo(published: string): string {
  * Rows colored by action — upgrade emerald, downgrade bear.
  */
 export function AnalystActions() {
-  const { data, error } = useSWR<AnalystsResponse>("grid-analysts", fetchAnalysts, {
-    refreshInterval: 120_000,
+  const { ticker, isFiltered } = useGridTicker();
+  const url = `/api/grid/analysts${ticker ? `?ticker=${ticker}` : ""}`;
+  const { data, error } = useSWR<AnalystsResponse>(url, fetchAnalysts, {
+    refreshInterval: isFiltered ? 30_000 : 120_000,
   });
 
   const actions = data?.actions ?? [];
@@ -64,9 +67,18 @@ export function AnalystActions() {
       span={1}
       footer={<span className="grid-foot-note">Benzinga · ratings · targets · up/downgrades</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} analyst coverage</p>
+      )}
       {actions.length === 0 ? (
         <p className="grid-empty">
-          {data ? "No fresh analyst actions" : error ? "Analyst wire offline" : "Reading the wire…"}
+          {data
+            ? isFiltered && ticker
+              ? `No analyst actions for ${ticker}`
+              : "No fresh analyst actions"
+            : error
+            ? "Analyst wire offline"
+            : "Reading the wire…"}
         </p>
       ) : (
         <ul className="grid-analyst-list">

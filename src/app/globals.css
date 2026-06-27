@@ -6952,6 +6952,11 @@ body::before {
     @apply font-mono text-[11px] text-cyan-400 p-6 text-center;
   }
 
+  /* Ticker filter mode: compact pill shown above panel content */
+  .grid-ticker-badge {
+    @apply font-mono text-[10px] text-cyan-400 tracking-wide px-2 py-1 mb-1 border-b border-cyan-400/15;
+  }
+
   /* tone helpers (no grey — emerald/bear/sky/gold) */
   .pulse-tone-emerald { color: #00e676; }
   .pulse-tone-bear { color: #ff5c78; }

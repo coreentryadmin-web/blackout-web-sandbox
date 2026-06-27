@@ -3,12 +3,13 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridDarkPoolPrint, GridDarkPoolSnapshot } from "@/lib/providers/grid";
 
-type Res = { available: boolean } & Partial<GridDarkPoolSnapshot>;
+type Res = { available: boolean; ticker?: string } & Partial<GridDarkPoolSnapshot>;
 
-const fetcher = () =>
-  fetch("/api/grid/dark-pool", { cache: "no-store", credentials: "same-origin" })
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<Res>;
 
 function fmtPremium(n: number): string {
@@ -34,7 +35,9 @@ function SideTag({ side }: { side: string }) {
 }
 
 export function GridDarkPoolPanel() {
-  const { data, error } = useSWR<Res>("grid-dark-pool", fetcher, { refreshInterval: 90_000 });
+  const { ticker, isFiltered } = useGridTicker();
+  const url = `/api/grid/dark-pool${ticker ? `?ticker=${ticker}` : ""}`;
+  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 90_000 });
   const prints: GridDarkPoolPrint[] = data?.prints ?? [];
   const live = !error && (data?.available ?? false) && prints.length > 0;
 
@@ -46,9 +49,18 @@ export function GridDarkPoolPanel() {
       live={live}
       footer={<span className="grid-foot-note">Unusual Whales · market-wide off-lit prints</span>}
     >
+      {isFiltered && ticker && (
+        <p className="grid-ticker-badge">Showing {ticker} dark pool prints</p>
+      )}
       {prints.length === 0 ? (
         <p className="grid-empty">
-          {data ? "No dark pool prints" : error ? "Dark pool offline" : "Loading prints…"}
+          {data
+            ? isFiltered && ticker
+              ? `No dark pool prints for ${ticker}`
+              : "No dark pool prints"
+            : error
+            ? "Dark pool offline"
+            : "Loading prints…"}
         </p>
       ) : (
         <ul className="grid-dp-list">
