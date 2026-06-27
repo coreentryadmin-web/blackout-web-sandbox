@@ -507,7 +507,13 @@ export type SpxDeskPulse = Pick<
   | "market_label"
   | "price_age_ms"
   | "feed_stalled"
-> & { polled_at: string };
+> & {
+  polled_at: string;
+  /** UW market tide — optionally pushed via SSE overlay when fresh. */
+  tide_bias?: string | null;
+  tide_call_premium?: number | null;
+  tide_put_premium?: number | null;
+};
 
 /** UW fast lane — live tape, dark pool, 0DTE GEX walls (refreshed every ~4s). */
 export type SpxDeskFlow = {

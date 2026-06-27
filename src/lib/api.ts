@@ -586,6 +586,10 @@ export type PulseStreamSnapshot = {
   tick?: { price: number };
   trin?: { price: number };
   add?: { price: number };
+  /** UW market tide — pushed from the server-side tideStore when fresh. */
+  tide?: { call_premium: number; put_premium: number; net: number; bias: string };
+  /** UW dark-pool snapshot — pushed from the server-side darkPoolStore when fresh. */
+  darkPool?: Record<string, unknown>;
   t?: number;
 };
 

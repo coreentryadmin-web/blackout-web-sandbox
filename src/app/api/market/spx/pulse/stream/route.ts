@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { indexStore } from "@/lib/ws/polygon-socket";
+import { tideStore, darkPoolStore } from "@/lib/ws/uw-socket";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
@@ -115,6 +116,8 @@ export async function GET(req: NextRequest) {
         }
         try {
           const snapshot = latestSnapshot;
+          const tideFresh = tideStore.updatedAt > 0;
+          const darkPoolFresh = darkPoolStore.updatedAt > 0 && darkPoolStore.data != null;
           const data = JSON.stringify({
             spx: snapshot["I:SPX"],
             vix: snapshot["I:VIX"],
@@ -123,6 +126,15 @@ export async function GET(req: NextRequest) {
             tick: snapshot["I:TICK"],
             trin: snapshot["I:TRIN"],
             add: snapshot["I:ADD"],
+            tide: tideFresh
+              ? {
+                  call_premium: tideStore.call_premium,
+                  put_premium: tideStore.put_premium,
+                  net: tideStore.net,
+                  bias: tideStore.bias,
+                }
+              : undefined,
+            darkPool: darkPoolFresh ? darkPoolStore.data : undefined,
             t: Date.now(),
           });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));

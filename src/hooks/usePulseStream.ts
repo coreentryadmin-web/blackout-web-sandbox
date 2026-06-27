@@ -29,6 +29,14 @@ function overlayFromStream(
       ? computeVixTermStructure(vix, vix9d, vix3m)
       : base?.vix_term;
 
+  const tideOverlay: Partial<SpxDeskPulse> = snap.tide
+    ? {
+        tide_bias: snap.tide.bias,
+        tide_call_premium: snap.tide.call_premium,
+        tide_put_premium: snap.tide.put_premium,
+      }
+    : {};
+
   return {
     available: true,
     polled_at: snap.t ? new Date(snap.t).toISOString() : new Date().toISOString(),
@@ -42,6 +50,7 @@ function overlayFromStream(
     vix_term: vixTerm,
     above_vwap:
       base?.vwap != null && base.vwap > 0 ? price >= base.vwap : base?.above_vwap ?? false,
+    ...tideOverlay,
   };
 }
 

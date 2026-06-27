@@ -174,6 +174,8 @@ export async function runLargoQuery(
       // Per-round timeout so a single slow round falls back to partial text instead of 500ing (#77 E).
       timeoutMs: 60_000,
       maxRetries: 1,
+      // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
+      cacheSystem: true,
       runTool: async (name, input) => {
         toolsUsed.push(name);
         return runLargoTool(name, input, userId);
@@ -237,6 +239,8 @@ export async function runLargoQueryStream(
       // Per-round timeout so a single slow round falls back to partial text instead of 500ing (#77 E).
       timeoutMs: 60_000,
       maxRetries: 1,
+      // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
+      cacheSystem: true,
       onEvent: (event) => emit(event),
       runTool: async (name, input) => {
         toolsUsed.push(name);

@@ -430,6 +430,12 @@ export async function anthropicToolLoop(params: {
   /** Per-request retry override threaded into every round. Defaults to 1 so a slow round doesn't
    *  retry 3× and stack into a multi-minute hang before falling back. */
   maxRetries?: number;
+  /** Opt in to prompt-caching the system block — same semantics as `cacheSystem` in anthropicText.
+   *  When true, `applySystemCache` wraps the system as a cache_control:ephemeral block so repeat
+   *  Largo calls with the same system prompt (same tools+context) hit the 5-minute cache and save
+   *  ~50% on system-prompt tokens. Force=true bypasses the auto-detect char floor (the Largo system
+   *  is Sonnet-sized — 2,048 tok minimum, not the conservative haiku 4,096 floor). */
+  cacheSystem?: boolean;
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
   onEvent?: (event: AnthropicToolLoopEvent) => void;
 }): Promise<string | null> {
@@ -465,10 +471,10 @@ export async function anthropicToolLoop(params: {
     input_schema: t.input_schema as Tool["input_schema"],
   }));
 
-  const systemParam =
-    typeof params.system === "string"
-      ? params.system
-      : params.system;
+  const systemParam = applySystemCache(
+    typeof params.system === "string" ? params.system : params.system,
+    params.cacheSystem === true
+  );
 
   for (let round = 0; round < maxRounds; round++) {
     const createParams: MessageCreateParams = {
