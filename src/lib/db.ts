@@ -653,6 +653,28 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_user_positions_user_created
     ON user_positions(user_id, created_at DESC);
   `);
+  // Clerk webhook user provisioning table — clerk_user_id is the Clerk sub ("user_xxx").
+  // Provisioned on user.created, updated on user.updated. whop_user_id + tier are written
+  // by the Whop webhook (or manually by admin) after the Clerk record already exists.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      clerk_user_id TEXT UNIQUE NOT NULL,
+      email TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      whop_user_id TEXT,
+      tier TEXT DEFAULT 'free',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS users_clerk_user_id_idx ON users(clerk_user_id);
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
+  `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
     try { await lockClient.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]); } catch { /* ignore */ }
