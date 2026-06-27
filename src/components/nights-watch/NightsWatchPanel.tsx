@@ -24,6 +24,17 @@ import type { Verdict, VerdictAction } from "@/lib/nights-watch/verdict";
 // The shape the GET route returns per position: the enriched row + a verdict.
 type ApiPosition = EnrichedPosition & { verdict: Verdict };
 
+// Portfolio Greeks aggregate from the GET response.
+type PortfolioGreeks = {
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  totalPremiumAtRisk: number;
+  totalDeltaDollars: number;
+  liveLegs: number;
+};
+
 // Adaptive poll cadence: fast during the RTH session (live WS marks move), relaxed off-hours.
 // The GET is a pure cache-reader (cached chain spot + WS marks + pure verdict, no per-user
 // upstream), so 5s polling is safe even at 500–1000 users — actual Polygon stays <0.2 rps
@@ -969,6 +980,133 @@ function PortfolioSummary({ summary }: { summary: Summary }) {
 }
 
 // ---------------------------------------------------------------------------
+// Portfolio Exposure — aggregate Greeks across all LIVE open positions.
+//
+// Honesty: legs whose valuation_status !== "live" contribute nothing (no greek
+// exists to sum). If liveLegs === 0 all cells read "—". Side is signed:
+// short positions flip the exposure (negative delta = short, etc.).
+// ---------------------------------------------------------------------------
+function computePortfolioGreeks(positions: ApiPosition[]): PortfolioGreeks {
+  return positions
+    .filter((p) => p.status !== "closed" && p.valuation_status === "live" && p.valuation != null)
+    .reduce(
+      (acc, p) => {
+        const sideSign = p.side === "short" ? -1 : 1;
+        const size = (p.contracts ?? 1) * sideSign;
+        const mult = 100;
+        acc.delta += (p.valuation!.delta ?? 0) * size * mult;
+        acc.gamma += (p.valuation!.gamma ?? 0) * size * mult;
+        acc.theta += (p.valuation!.theta ?? 0) * size * mult;
+        acc.vega += (p.valuation!.vega ?? 0) * size * mult;
+        acc.totalPremiumAtRisk += (p.valuation!.mark ?? p.entry_premium ?? 0) * Math.abs(size) * mult;
+        const spot = p.valuation!.underlyingPrice ?? 5500;
+        acc.totalDeltaDollars += (p.valuation!.delta ?? 0) * size * mult * spot;
+        acc.liveLegs += 1;
+        return acc;
+      },
+      { delta: 0, gamma: 0, theta: 0, vega: 0, totalPremiumAtRisk: 0, totalDeltaDollars: 0, liveLegs: 0 }
+    );
+}
+
+function gk(n: number, digits = 4): string {
+  if (!Number.isFinite(n)) return "—";
+  const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+  return `${sign}${Math.abs(n).toFixed(digits)}`;
+}
+
+function PortfolioExposure({ positions }: { positions: ApiPosition[] }) {
+  const g = computePortfolioGreeks(positions);
+  if (g.liveLegs === 0) return null;
+
+  const deltaClass = g.delta >= 0 ? "text-cyan-400" : "text-red-400";
+  const thetaClass = "text-amber-400"; // always decaying — always amber
+
+  const deltaDollars = Math.abs(g.totalDeltaDollars);
+  const deltaDollarStr = deltaDollars >= 1000
+    ? `$${(deltaDollars / 1000).toFixed(1)}k/pt`
+    : `$${deltaDollars.toFixed(0)}/pt`;
+
+  const thetaDay = g.theta; // theta is already per-day from the greeks model
+  const thetaDayStr = `${thetaDay < 0 ? "-" : "+"}$${Math.abs(thetaDay).toLocaleString(undefined, { maximumFractionDigits: 0 })}/day`;
+
+  const premRisk = g.totalPremiumAtRisk;
+  const premStr = premRisk >= 1000
+    ? `$${(premRisk / 1000).toFixed(1)}k`
+    : `$${premRisk.toFixed(0)}`;
+
+  return (
+    <div
+      className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.04] px-3.5 py-3"
+      aria-label="Portfolio exposure"
+    >
+      {/* Header */}
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-400">
+          Portfolio Exposure
+        </span>
+        <span className="font-mono text-[10px] tabular-nums text-sky-300/60">
+          {g.liveLegs} live leg{g.liveLegs !== 1 ? "s" : ""}
+        </span>
+        <span aria-hidden className="h-px flex-1 bg-white/[0.08]" />
+      </div>
+
+      {/* Greek cells */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 sm:grid-cols-4">
+        {/* Net Delta + dollar delta */}
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">Net Delta</span>
+          <span className={clsx("font-mono text-[13px] font-semibold tabular-nums", deltaClass)}>
+            {gk(g.delta, 2)}
+          </span>
+          <span className={clsx("font-mono text-[10px] tabular-nums", deltaClass, "opacity-70")}>
+            {g.delta >= 0 ? "+" : "-"}{deltaDollarStr}
+          </span>
+        </div>
+
+        {/* Net Gamma */}
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">Net Gamma</span>
+          <span className="font-mono text-[13px] font-semibold tabular-nums text-white">
+            {gk(g.gamma, 4)}
+          </span>
+        </div>
+
+        {/* Net Theta — always amber, always decaying */}
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">Net Theta</span>
+          <span className={clsx("font-mono text-[13px] font-semibold tabular-nums", thetaClass)}>
+            {gk(g.theta, 2)}
+          </span>
+          <span className={clsx("font-mono text-[10px] tabular-nums", thetaClass, "opacity-70")}>
+            {thetaDayStr}
+          </span>
+        </div>
+
+        {/* Net Vega */}
+        <div className="flex flex-col gap-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/70">Net Vega</span>
+          <span className="font-mono text-[13px] font-semibold tabular-nums text-white">
+            {gk(g.vega, 2)}
+          </span>
+        </div>
+      </div>
+
+      {/* Premium at risk */}
+      <div className="mt-2.5 border-t border-white/[0.06] pt-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/70">
+            Total premium at risk
+          </span>
+          <span className="font-mono text-[12px] font-semibold tabular-nums text-white">
+            {premStr}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Coaching alerts panel.
 // ---------------------------------------------------------------------------
 type AlertUrgency = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -1230,7 +1368,7 @@ export function NightsWatchPanel() {
           const data = (await res.json().catch(() => null)) as { error?: string } | null;
           setState({ kind: "error", message: data?.error ?? "Failed to load positions." });
         } else {
-          const data = (await res.json()) as { positions: ApiPosition[] };
+          const data = (await res.json()) as { positions: ApiPosition[]; portfolioGreeks?: PortfolioGreeks };
           setState({ kind: "ready", positions: data.positions ?? [] });
         }
         loadedOnce.current = true;
@@ -1305,7 +1443,12 @@ export function NightsWatchPanel() {
 
       {/* ---- Scrollable body: summary · add-form · grid ---- */}
       <div className="nighthawk-watch-body">
-        {/* Tier 2: portfolio summary strip — OPEN-only (count + unrealized + return cover the
+        {/* Tier 2a: portfolio Greeks exposure — OPEN live legs only, rendered above the
+            position list so the user sees net delta/gamma/theta/vega/premium at a glance
+            before scrolling into individual cards. Hidden when no live leg exists yet. */}
+        {ready && hasOpen && <PortfolioExposure positions={openPositions} />}
+
+        {/* Tier 2b: portfolio summary strip — OPEN-only (count + unrealized + return cover the
             live book only; settled legs are summarized separately by their realized P&L cards). */}
         {summary && hasOpen && <PortfolioSummary summary={summary} />}
 

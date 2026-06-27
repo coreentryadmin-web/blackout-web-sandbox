@@ -26,6 +26,7 @@ export type ContractValuation = {
   delta: number | null;
   gamma: number | null;
   theta: number | null;
+  vega: number | null;
   iv: number | null;
   openInterest: number | null;
   underlyingPrice: number | null;
@@ -184,6 +185,7 @@ export function valuationFromContract(
     delta: finiteOrNull(contract.greeks?.delta),
     gamma: finiteOrNull(contract.greeks?.gamma),
     theta: finiteOrNull(contract.greeks?.theta),
+    vega: finiteOrNull(contract.greeks?.vega),
     iv: finiteOrNull(contract.implied_volatility),
     openInterest: finiteOrNull(contract.open_interest),
     underlyingPrice: up != null && up > 0 ? up : null,
@@ -239,6 +241,7 @@ export function valuationFromSnapshot(
     delta: finiteOrNull(snap.delta),
     gamma: finiteOrNull(snap.gamma),
     theta: finiteOrNull(snap.theta),
+    vega: finiteOrNull(snap.vega),
     iv: finiteOrNull(snap.iv),
     openInterest: finiteOrNull(snap.openInterest),
     underlyingPrice: up,

@@ -75,7 +75,33 @@ export async function GET(req: Request) {
             userId,
             explicitStatus === "all" ? undefined : explicitStatus
           );
-    return NextResponse.json({ positions: enriched });
+    // Aggregate portfolio Greeks across OPEN positions only (closed legs no longer
+    // have live greeks/marks — including them would fabricate exposure). Each leg's
+    // signed size: long = +contracts, short = -contracts. Standard multiplier = 100
+    // (sharesPerContract from the snapshot overrides this in enrichPosition's P&L, but
+    // Greeks aggregation uses 100 universally since non-standard contracts are rare and
+    // the snapshot greek is already scaled per-share).
+    const openLegs = enriched.filter((p) => p.status !== "closed");
+    const portfolioGreeks = openLegs.reduce(
+      (acc, p) => {
+        if (p.valuation_status !== "live" || p.valuation == null) return acc;
+        const sideSign = p.side === "short" ? -1 : 1;
+        const size = (p.contracts ?? 1) * sideSign;
+        const mult = 100;
+        acc.delta += (p.valuation.delta ?? 0) * size * mult;
+        acc.gamma += (p.valuation.gamma ?? 0) * size * mult;
+        acc.theta += (p.valuation.theta ?? 0) * size * mult;
+        acc.vega += (p.valuation.vega ?? 0) * size * mult;
+        acc.totalPremiumAtRisk += (p.valuation.mark ?? p.entry_premium ?? 0) * Math.abs(size) * mult;
+        const spot = p.valuation.underlyingPrice ?? 5500;
+        acc.totalDeltaDollars += (p.valuation.delta ?? 0) * size * mult * spot;
+        acc.liveLegs += 1;
+        return acc;
+      },
+      { delta: 0, gamma: 0, theta: 0, vega: 0, totalPremiumAtRisk: 0, totalDeltaDollars: 0, liveLegs: 0 }
+    );
+
+    return NextResponse.json({ positions: enriched, portfolioGreeks });
   } catch (error) {
     console.error("[account/positions GET]", error);
     return NextResponse.json({ error: "Failed to load positions" }, { status: 502 });
