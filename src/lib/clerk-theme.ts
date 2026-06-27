@@ -32,7 +32,7 @@ export const clerkAppearance: Appearance = {
     // "Optional" + hints clearly tertiary
     formFieldHintText: "font-mono text-[10px] text-white/55 normal-case tracking-normal",
     formFieldInput:
-      "bg-[#040407]/70 border border-white/12 rounded-xl py-2.5 text-white placeholder:text-white/55 focus:border-bull/60 focus:ring-2 focus:ring-bull/30 transition-colors",
+      "!bg-[#040407] border border-white/12 rounded-xl py-2.5 text-white placeholder:text-white/55 focus:border-bull/60 focus:ring-2 focus:ring-bull/30 transition-colors [&:-webkit-autofill]:!bg-[#040407] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_#040407_inset] [&:-webkit-autofill]:![-webkit-text-fill-color:#f4f6fb]",
     formFieldInputShowPasswordButton: "text-sky-300 hover:text-bull",
     formFieldSuccessText: "text-bull",
     formFieldErrorText: "text-bear font-mono text-xs",

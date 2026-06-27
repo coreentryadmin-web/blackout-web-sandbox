@@ -29,10 +29,20 @@ const TOP_LINKS = [
 ] as const;
 
 const CLERK_APPEARANCE = {
+  variables: {
+    colorBackground: "#040407",
+    colorText: "#f4f6fb",
+    colorTextSecondary: "#9fb4d4",
+    colorPrimary: "#00e676",
+    colorNeutral: "rgba(255,255,255,0.16)",
+    borderRadius: "12px",
+  },
   elements: {
     avatarBox: "w-9 h-9 ring-1 ring-bull/40",
-    userButtonPopoverCard: "bg-[#040407] border border-bull/15",
-    userButtonPopoverActionButton: "text-sky-200 hover:text-white",
+    userButtonPopoverCard: "!bg-[#040407] border border-white/10 shadow-[0_8px_40px_-8px_rgba(0,0,0,0.9)]",
+    userButtonPopoverActionButton: "text-sky-200 hover:text-white hover:!bg-white/5",
+    userButtonPopoverActionButtonText: "text-sky-200",
+    userButtonPopoverFooter: "!bg-[#040407] border-t border-white/8",
   },
 } as const;
 
