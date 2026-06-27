@@ -15,9 +15,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "POLYGON_API_KEY not configured", articles: [] }, { status: 503 });
   }
 
+  // News is market-wide (not user-personalized). 120s CDN cache reduces
+  // upstream Polygon/Benzinga calls under load; auth gate above enforces entitlement.
+  const CDN_CACHE = { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=30" };
+
   try {
     const articles = await serverCache("news:benzinga:15", TTL.NEWS, () => fetchBenzingaNews(15));
-    return NextResponse.json({ source: "benzinga", articles });
+    return NextResponse.json({ source: "benzinga", articles }, { headers: CDN_CACHE });
   } catch (error) {
     console.error("[market/news]", error);
     return NextResponse.json({ error: "News fetch failed" }, { status: 502 });

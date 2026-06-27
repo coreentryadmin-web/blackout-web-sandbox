@@ -77,6 +77,38 @@ const cpuCount = os.cpus()?.length || 1;
 const nextConfig = {
   experimental: {
     cpus: Math.max(1, cpuCount - 1),
+    // Trust Cloudflare + Railway reverse-proxy CIDRs so req.ip resolves to the
+    // real visitor IP (from CF-Connecting-IP / X-Forwarded-For) rather than the
+    // proxy node IP. Cloudflare IP ranges: https://www.cloudflare.com/ips-v4/
+    // and https://www.cloudflare.com/ips-v6/ (reviewed 2026-06-27).
+    trustProxies: [
+      // Cloudflare IPv4
+      "103.21.244.0/22",
+      "103.22.200.0/22",
+      "103.31.4.0/22",
+      "104.16.0.0/13",
+      "104.24.0.0/14",
+      "108.162.192.0/18",
+      "131.0.72.0/22",
+      "141.101.64.0/18",
+      "162.158.0.0/15",
+      "172.64.0.0/13",
+      "173.245.48.0/20",
+      "188.114.96.0/20",
+      "190.93.240.0/20",
+      "197.234.240.0/22",
+      "198.41.128.0/17",
+      // Cloudflare IPv6
+      "2400:cb00::/32",
+      "2606:4700::/32",
+      "2803:f800::/32",
+      "2405:b500::/32",
+      "2405:8100::/32",
+      "2a06:98c0::/29",
+      "2c0f:f248::/32",
+      // Railway internal proxy / Tailscale CGNAT range
+      "100.64.0.0/10",
+    ],
   },
   // instrumentation.ts register() runs at server startup automatically in Next 15
   // (the former experimental.instrumentationHook is now the default — flag removed).

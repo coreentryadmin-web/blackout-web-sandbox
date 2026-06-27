@@ -30,6 +30,15 @@ export async function GET(req: NextRequest) {
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
 
+  // Shared-CDN cache headers for the success path. GEX matrix data is market-wide
+  // (not per-user), so a short CDN TTL is safe. Auth check above already gates
+  // entitlement; the response content itself is identical for all authorized callers.
+  // stale-while-revalidate allows Cloudflare to serve a 5s stale copy while
+  // refreshing in the background so latency never spikes at TTL expiry.
+  const cdnCache = {
+    "Cache-Control": "public, s-maxage=8, stale-while-revalidate=5",
+  };
+
   const noStore = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     Pragma: "no-cache",
@@ -59,7 +68,7 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(
       { available: true, ...positioning },
-      { status: 200, headers: noStore }
+      { status: 200, headers: cdnCache }
     );
   } catch (error) {
     console.error("[market/gex-positioning]", error);

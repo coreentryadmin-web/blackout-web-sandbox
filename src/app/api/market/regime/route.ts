@@ -8,6 +8,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" };
+// Public GET: regime data is market-wide, not user-specific. 30s CDN TTL reduces
+// DB load; POST writes are unaffected (no cache on mutations).
+const CDN_CACHE = { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=10" };
 
 export async function GET() {
   try {
@@ -31,7 +34,7 @@ export async function GET() {
       netGex: regime.net_gex,
       ivPercentile: regime.iv_percentile,
       aboveVwap: regime.above_vwap,
-    }, { status: 200, headers: NO_STORE });
+    }, { status: 200, headers: CDN_CACHE });
   } catch {
     return NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
   }
