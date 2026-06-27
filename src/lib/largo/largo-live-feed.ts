@@ -7,6 +7,7 @@ import {
   type FlowStrikeStack,
 } from "@/lib/largo/flow-strike-stacks";
 import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
+import { getGexPositioning } from "@/lib/providers/gex-positioning";
 
 type FeedKey =
   | "market"
@@ -24,7 +25,8 @@ type FeedKey =
   | "greek_flow"
   | "breadth"
   | "group_greek_flow"
-  | "macro_indicators";
+  | "macro_indicators"
+  | "gex_regime";
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 
@@ -62,6 +64,16 @@ export async function captureLargoLiveFeed(
 
   if (intent.needsSpxDesk || scopeTicker === "SPX") {
     jobs.push({ key: "spx_structure", promise: tool("get_spx_structure") });
+    // Inject live GEX dealer regime directly (cache-reader — zero extra upstream calls).
+    // getGexPositioning is not a Largo tool; call it directly so Largo gets the same
+    // structured regime the Heatmaps UI shows: gamma_posture, vanna_posture, walls, flip,
+    // shift_summary. This satisfies cross-tool access (audit P0) and partially fixes #73.
+    jobs.push({
+      key: "gex_regime",
+      promise: getGexPositioning("SPX").catch((e) => ({
+        error: e instanceof Error ? e.message : "failed",
+      })),
+    });
   }
 
   if (scopeTicker) {
@@ -251,6 +263,51 @@ export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string
         .filter(Boolean)
         .join(" · ");
       if (macroLine) lines.push("Macro calendar: " + macroLine);
+    }
+    lines.push("");
+  }
+
+  // GEX dealer regime — from getGexPositioning (same cache as Heatmaps, zero extra API calls).
+  // Gives Largo named regime context on every SPX desk question. Placed outside the spx block
+  // so it renders even when spx_structure is stale/missing (e.g. after-hours).
+  const gexReg = asObj(feed.gex_regime);
+  if (gexReg && !gexReg.error) {
+    lines.push("### GEX dealer regime (Polygon/Massive matrix)");
+    const regimeLine = [
+      gexReg.gamma_posture ? `Dealer gamma: ${gexReg.gamma_posture}` : null,
+      gexReg.gamma_regime_read ? String(gexReg.gamma_regime_read) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    if (regimeLine) lines.push(regimeLine);
+    if (gexReg.vanna_posture || gexReg.vanna_regime_read) {
+      const vannaLine = [
+        gexReg.vanna_posture ? `Dealer vanna: ${gexReg.vanna_posture}` : null,
+        gexReg.vanna_regime_read ? String(gexReg.vanna_regime_read) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (vannaLine) lines.push(vannaLine);
+    }
+    if (gexReg.flip != null) lines.push(`Gamma flip: ${gexReg.flip}`);
+    if (gexReg.call_wall != null) lines.push(`Call wall: ${gexReg.call_wall}`);
+    if (gexReg.put_wall != null) lines.push(`Put wall: ${gexReg.put_wall}`);
+    if (gexReg.spot != null) lines.push(`SPX spot (matrix): ${gexReg.spot}`);
+    const nw = asObj(gexReg.nearest_wall);
+    if (nw) {
+      lines.push(`Nearest wall: ${nw.strike} (${nw.kind}, ${nw.distance_pts} pts away)`);
+    }
+    if (gexReg.distance_to_flip_pct != null) {
+      lines.push(`Distance to flip: ${gexReg.distance_to_flip_pct}%`);
+    }
+    if (gexReg.shift_summary) {
+      lines.push(`Intraday gamma shift: ${gexReg.shift_summary}`);
+    }
+    const intra = asObj(gexReg.gex_intraday_adjusted);
+    if (intra && !intra.error) {
+      lines.push(
+        `0DTE intraday-adjusted flip: ${intra.adjusted_flip ?? "—"} · net GEX adj: ${intra.adjusted_net_gex ?? "—"}`
+      );
     }
     lines.push("");
   }
