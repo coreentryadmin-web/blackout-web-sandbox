@@ -326,3 +326,41 @@ All entitled data endpoints return **401 (Clerk auth)** unauthenticated; only \/
 - **[CANNOT-VERIFY-LIVE]** Numeric cross-consistency (SPX vs Heatmap walls, timestamp desync) needs an authenticated session/cron-secret call. Architecturally bounded: all GEX consumers read the ONE `gex-heatmap:{ticker}` cache, so they see the SAME `asof` by construction — desync is structurally near-impossible for full-matrix consumers. SPX desk has its own 0DTE cache with independent `asof` (expected).
 
 ---
+
+## Connectivity Matrix — 2026-06-27 12:55 ET
+**Method: SOURCE-LEVEL wiring audit (re-run).** Live endpoints again Clerk-gated (401 unauth) / stale paths in SKILL (404); `/api/market/regime` = 200 (system up). Independent re-trace of every shared-data function. **Verdict: NO REGRESSION vs 09:00 ET — all channels PASS, 0 FAIL.**
+
+### Result: PASS=all · FAIL=0 · WARN=0 (1 by-design lens note)
+Re-verified the three load-bearing shared sources directly in source this run:
+- **GEX — single provider, convergent.** `getGexPositioning()` (Heatmap contract) is a pure cache-reader of `fetchGexHeatmap` (gex-positioning.ts:142-157). SPX desk imports `fetchPolygonOdteDeskBundle` from the **same** `polygon-options-gex.ts` module (spx-desk.ts:5,879-885). Heatmap = full-expiry matrix; SPX desk = **0DTE bundle** — same provider/spot/dealer-sign math, expiry-scope only. Consumed identically by Night's Watch (`fetchGexHeatmap` per-ticker + `loadMergedSpxDesk` for SPX), Night Hawk (Polygon snapshot primary), Largo (`get_gex`/`get_positioning`).
+- **Flows — single source of truth.** HELIX `flow_alerts` (Postgres) + live tape consumed by: SPX desk (`spx_flows`, `flow_0dte_*`, `strike_stacks`, `net_prem_ticks` via merge), Night's Watch (`fetchRecentFlows` in position-context.ts), Night Hawk (UW flow-alerts + Postgres `flow_alerts` multi-day streak), Largo (`get_flow_tape`/`get_postgres_flows`/`get_options_flow`).
+- **Grid intelligence — fanned out.** `spx-desk.ts:1130-1137` populates `macro_events` + `news_headlines` + `macro_indicators` (GRID→SPX confirmed in desk, NOT merge — task Phase 8 greps the wrong file). Full Grid surface reaches Largo (`get_economic_calendar`/`get_news`/`get_earnings`/`get_catalysts`/`get_congress_trades`/`get_dark_pool`/`get_analyst_ratings`), Night Hawk (news/earnings/congress/dark-pool/sector), Night's Watch (`darkPoolBias`/`catalysts`/`analystDowngrade`/`insiderNetSell`/`ivRank` enrichment in position-context.ts).
+
+| Channel | Status |
+|---|---|
+| SPX → HEATMAP | CONSISTENT (by-design 0DTE vs full-expiry lens, one provider module) |
+| HELIX → SPX | PASS (spx_flows / flow_0dte / strike_stacks / net_prem_ticks) |
+| HEATMAP → LARGO | PASS (get_gex / get_positioning) |
+| HEATMAP → NHAWK | PASS (Polygon GEX snapshot primary) |
+| HEATMAP → NWATCH | PASS (fetchGexHeatmap + spx-desk cache) |
+| SPX → NWATCH | PASS (loadMergedSpxDesk walls + price → verdict.ts) |
+| HELIX → NWATCH | PASS (fetchRecentFlows → flow alignment signal) |
+| HELIX → NHAWK | PASS (UW flow-alerts + Postgres flow_alerts streak) |
+| HELIX → LARGO | PASS (get_flow_tape / get_postgres_flows) |
+| GRID → SPX | PASS (macro_events + news_headlines + macro_indicators in spx-desk.ts) |
+| GRID → LARGO | PASS (econ/news/earnings/catalysts/congress/dark-pool/analyst tools) |
+| GRID → NHAWK | PASS (news/earnings/congress/dark-pool/sector) |
+| GRID → NWATCH | PASS (darkPoolBias/catalysts/analyst/insider/IV enrichment) |
+| NHAWK → LARGO | PASS (get_nighthawk_edition/outcomes/dossier) |
+| NHAWK → NWATCH | PASS (position-detail dossier enrichment) |
+| SPX → LARGO | PASS (get_spx_structure/get_spx_confluence/get_spx_play) |
+| NWATCH → LARGO | PASS (get_my_positions, per-user scoped) |
+| LARGO cross-access | PASS (~85 tools across every service) |
+
+### Note for the data-correctness auditor
+SPX-desk GEX walls (0DTE) vs Heatmap walls (full-expiry) can differ NUMERICALLY by strike — this is the intended expiry-scope lens, NOT a data divergence. Don't flag the gap as a bug.
+
+### Action items (unchanged from 09:00 ET — DOC-DRIFT in this SKILL)
+Stale paths/fields in the task file keep forcing the live phase into 404/401 (Phases 1-9 unusable live): `spx-pulse`→`market/spx`, `/api/flows`→`/api/market/flows`, `/api/nighthawk/latest-edition`→`/api/market/nighthawk`, `/api/grid/*` is `/api/grid/{analysts,catalysts,congress,dark-pool,earnings,economy,movers,sectors}`; field `flowBias/netFlow`→`flow_0dte_net/net_prem_ticks`; Phase 8 econ grep should target `spx-desk.ts` not `spx-desk-merge.ts`. Source paths `lib/run-tool.ts`/`lib/tools`/`nights-watch/verdict.ts` → `lib/largo/{run-tool,tool-defs}.ts` / `lib/nights-watch/verdict.ts`.
+
+---
