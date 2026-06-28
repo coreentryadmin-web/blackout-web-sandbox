@@ -27,7 +27,7 @@ export default function LargoAiPage() {
         <div className="mb-12 border-b border-white/10 pb-10">
           <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">BlackOut Platform — Learn</p>
           <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">Largo AI Terminal</h1>
-          <p className="text-secondary text-lg max-w-2xl leading-relaxed">
+          <p className="text-slate-300 text-lg max-w-2xl leading-relaxed">
             Our AI engine wired to live BlackOut data. Ask hard questions about current dealer positioning, flow context, and structural market mechanics.
           </p>
         </div>
@@ -38,7 +38,7 @@ export default function LargoAiPage() {
               <p className="text-xs font-mono text-cyan-400 uppercase tracking-widest mb-4">On This Page</p>
               <nav className="space-y-1">
                 {sections.map((s) => (
-                  <a key={s.id} href={`#${s.id}`} className="block text-sm text-secondary hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3">
+                  <a key={s.id} href={`#${s.id}`} className="block text-sm text-slate-300 hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3">
                     {s.label}
                   </a>
                 ))}
@@ -50,7 +50,7 @@ export default function LargoAiPage() {
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-white/10">Overview</h2>
-              <div className="space-y-4 text-secondary leading-relaxed">
+              <div className="space-y-4 text-slate-300 leading-relaxed">
                 <p>
                   Largo is BlackOut&apos;s AI analysis terminal, powered by our AI engine. It is not a chatbot. It is a market analyst with live read access to the platform&apos;s core data — GEX structure, flow tape, dealer positioning, and open positions.
                 </p>
@@ -63,7 +63,7 @@ export default function LargoAiPage() {
               </div>
               <div className="mt-6 p-4 rounded-lg border border-amber-400/20 bg-amber-400/5">
                 <p className="text-amber-400 text-sm font-semibold mb-1">When not to use Largo</p>
-                <p className="text-secondary text-sm leading-relaxed">
+                <p className="text-slate-300 text-sm leading-relaxed">
                   Do not query Largo for live price quotes. Use SPX Slayer for current price, bid/ask, and option marks. Largo interprets data — it does not stream it.
                 </p>
               </div>
@@ -71,7 +71,7 @@ export default function LargoAiPage() {
 
             <section id="how-it-works">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-white/10">How It Works</h2>
-              <p className="text-secondary leading-relaxed mb-6">
+              <p className="text-slate-300 leading-relaxed mb-6">
                 Largo operates through a tool-calling architecture. When you submit a query, Largo evaluates which live data it needs and executes the appropriate tool calls before composing a response.
               </p>
               <div className="space-y-4">
@@ -84,7 +84,7 @@ export default function LargoAiPage() {
                 ].map((t) => (
                   <div key={t.tool} className="flex gap-4 p-4 rounded-lg border border-white/10 bg-white/[0.02]">
                     <code className="text-cyan-400 text-sm font-mono shrink-0 mt-0.5">{t.tool}</code>
-                    <p className="text-secondary text-sm leading-relaxed">{t.desc}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{t.desc}</p>
                   </div>
                 ))}
               </div>
@@ -103,7 +103,7 @@ export default function LargoAiPage() {
                 ].map(({ title, body }) => (
                   <div key={title} className="p-5 rounded-lg border border-white/10 bg-white/[0.02]">
                     <h3 className="text-white font-semibold mb-2">{title}</h3>
-                    <p className="text-secondary text-sm leading-relaxed">{body}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{body}</p>
                   </div>
                 ))}
               </div>
@@ -126,7 +126,7 @@ export default function LargoAiPage() {
                     </div>
                     <div>
                       <p className="text-white font-semibold mb-1">{item.title}</p>
-                      <p className="text-secondary text-sm leading-relaxed">{item.body}</p>
+                      <p className="text-slate-300 text-sm leading-relaxed">{item.body}</p>
                     </div>
                   </li>
                 ))}
@@ -140,7 +140,7 @@ export default function LargoAiPage() {
                   <p className="text-emerald-400 font-semibold mb-4 uppercase text-xs tracking-widest">Do</p>
                   <ul className="space-y-3">
                     {["Ask Largo to challenge your thesis, not confirm it.", "Use natural language for position logging.", "Ask about data freshness when making time-sensitive decisions.", "Use Largo'\''s GEX analysis alongside Heat Maps for visual context.", "Bring unusual flow patterns from HELIX to Largo for interpretation."].map((t, i) => (
-                      <li key={i} className="flex gap-2 text-secondary text-sm"><span className="text-emerald-400 shrink-0">+</span>{t}</li>
+                      <li key={i} className="flex gap-2 text-slate-300 text-sm"><span className="text-emerald-400 shrink-0">+</span>{t}</li>
                     ))}
                   </ul>
                 </div>
@@ -148,7 +148,7 @@ export default function LargoAiPage() {
                   <p className="text-red-400 font-semibold mb-4 uppercase text-xs tracking-widest">Don&apos;t</p>
                   <ul className="space-y-3">
                     {["Do not ask Largo for real-time price quotes.", "Do not treat a HOLD verdict as permission to add size.", "Do not over-query during rapidly moving markets.", "Do not expect Largo to hallucinate data it does not have.", "Do not use Largo as a replacement for your own judgment."].map((t, i) => (
-                      <li key={i} className="flex gap-2 text-secondary text-sm"><span className="text-red-400 shrink-0">-</span>{t}</li>
+                      <li key={i} className="flex gap-2 text-slate-300 text-sm"><span className="text-red-400 shrink-0">-</span>{t}</li>
                     ))}
                   </ul>
                 </div>
@@ -169,9 +169,9 @@ export default function LargoAiPage() {
                   <Link key={ref.href} href={ref.href} className="flex gap-4 p-5 rounded-lg border border-white/10 bg-white/[0.02] hover:border-cyan-400/20 transition-all group">
                     <div className="flex-1">
                       <p className="text-cyan-400 font-semibold mb-1 group-hover:text-white transition-colors">{ref.name}</p>
-                      <p className="text-secondary text-sm leading-relaxed">{ref.desc}</p>
+                      <p className="text-slate-300 text-sm leading-relaxed">{ref.desc}</p>
                     </div>
-                    <span className="text-mute group-hover:text-cyan-400 transition-colors mt-1">&rarr;</span>
+                    <span className="text-slate-500 group-hover:text-cyan-400 transition-colors mt-1">&rarr;</span>
                   </Link>
                 ))}
               </div>
@@ -187,7 +187,7 @@ export default function LargoAiPage() {
                 ].map((item) => (
                   <div key={item.q} className="rounded-lg border border-white/10 bg-white/[0.02] p-5">
                     <p className="text-white font-semibold mb-3">{item.q}</p>
-                    <p className="text-secondary text-sm leading-relaxed">{item.a}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{item.a}</p>
                   </div>
                 ))}
               </div>
@@ -205,7 +205,7 @@ export default function LargoAiPage() {
                 ].map((t) => (
                   <div key={t.term} className="flex gap-4 bg-white/3 border border-white/8 rounded-lg p-3">
                     <code className="text-cyan-400 text-sm font-mono w-40 shrink-0">{t.term}</code>
-                    <p className="text-secondary text-sm leading-relaxed">{t.def}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{t.def}</p>
                   </div>
                 ))}
               </div>

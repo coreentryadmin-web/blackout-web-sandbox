@@ -29,7 +29,7 @@ class SpxPanelErrorBoundary extends React.Component<
     if (this.state.hasError)
       return (
         <div className="text-bear p-4 text-xs font-mono">
-          Panel unavailable — reload the page to reconnect.
+          Panel offline — reload to reconnect
         </div>
       );
     return this.props.children;
@@ -45,8 +45,9 @@ export function SpxDashboard() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-4">
         <EmptyState
-          title="Premium membership required"
-          description="This account does not have an active Premium membership. Upgrade to access the live desk."
+          icon="◆"
+          title="Premium clearance required"
+          description="This session no longer has Premium access. Re-authenticate or unlock Premium to re-enter the desk."
           action={
             <Button href="/upgrade" variant="primary" size="sm">
               Unlock Premium

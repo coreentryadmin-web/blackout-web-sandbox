@@ -14,12 +14,12 @@ type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
 
 const FEATURE_LINKS: FeatureLink[] = [
-  { href: "/dashboard", label: "SPX Slayer", sub: "SPX structure & 0DTE desk", accent: "green" },
-  { href: "/flows", label: "HELIX", sub: "Institutional options flow", accent: "purple" },
-  { href: "/heatmap", label: "Heatmaps", sub: "Dealer gamma & vanna map", accent: "orange" },
-  { href: "/terminal", label: "Largo AI", sub: "AI desk analyst", accent: "blue" },
-  { href: "/nighthawk", label: "Night Hawk", sub: "Overnight playbook", accent: "red" },
-  { href: "/grid", label: "BlackOut Grid", sub: "Cross-market intelligence", accent: "gold" },
+  { href: "/dashboard", label: "SPX Slayer", sub: "The 0DTE war room", accent: "green" },
+  { href: "/flows", label: "HELIX", sub: "Follow the smart money", accent: "purple" },
+  { href: "/heatmap", label: "Heatmaps", sub: "Read the regime at a glance", accent: "orange" },
+  { href: "/terminal", label: "Largo AI", sub: "The desk officer on call", accent: "blue" },
+  { href: "/nighthawk", label: "Night Hawk", sub: "Tomorrow's plan, tonight", accent: "red" },
+  { href: "/grid", label: "BlackOut Grid", sub: "Market-intelligence command center", accent: "gold" },
 ];
 
 const TOP_LINKS = [
@@ -79,7 +79,7 @@ function FeatureCards({
             <span className="nav-card-label font-syne">{it.label}</span>
             <span className="nav-card-sub font-mono">{it.sub}</span>
             <span className="nav-card-open font-mono" aria-hidden>
-              {locked ? "Preview" : "Open →"}
+              {locked ? "🔒 Launching Soon" : "Open →"}
             </span>
           </Link>
         );
@@ -255,13 +255,13 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                   style={{ transformOrigin: "top" }}
                 >
                   <div className="nav-mega-head">
-                    <span className="nav-mega-kicker font-mono">Six instruments · one desk</span>
+                    <span className="nav-mega-kicker font-mono">The Desk · 6 Instruments</span>
                     <Link
                       href={isHome ? "#features" : "/#features"}
                       className="nav-mega-all font-mono"
                       onClick={() => setFeaturesOpen(false)}
                     >
-                      Overview →
+                      View the Arsenal →
                     </Link>
                   </div>
                   <div className="nav-mega-grid">
@@ -323,8 +323,8 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
               <Link href="/sign-in" className="nav-signin font-syne hidden sm:inline">
                 Sign In
               </Link>
-              <Link href="/sign-up" className="nav-join font-syne">
-                Get access →
+              <Link href="/sign-up" className="nav-join font-syne glitch-hover">
+                Start Trading →
               </Link>
             </>
           )}
@@ -401,7 +401,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                       Sign In
                     </Link>
                     <Link href="/sign-up" className="nav-join font-syne w-full justify-center" onClick={() => setMobileOpen(false)}>
-                      Get access →
+                      Start Trading →
                     </Link>
                   </>
                 )}

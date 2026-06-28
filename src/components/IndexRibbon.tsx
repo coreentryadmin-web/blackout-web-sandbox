@@ -2,7 +2,6 @@
 
 import useSWR from "swr";
 import { clsx } from "clsx";
-import { FreshnessChip } from "@/components/ui/FreshnessChip";
 
 type IndexSnap = {
   price?: number | null;
@@ -50,14 +49,13 @@ function IndexChip({
   return (
     <span className="index-ribbon-chip">
       <span className="index-ribbon-label">{label}</span>
-      <span className="index-ribbon-price t-num">{fmtNum(price)}</span>
+      <span className="index-ribbon-price">{fmtNum(price)}</span>
       <span
         className={clsx(
-          "index-ribbon-chg t-num inline-flex items-center gap-0.5",
-          isUp ? "text-bull" : "text-bear-text"
+          "index-ribbon-chg",
+          isUp ? "text-emerald-400" : "text-[#ff5c78]"
         )}
       >
-        <span aria-hidden>{isUp ? "↑" : "↓"}</span>
         {fmtPct(changePct)}
       </span>
     </span>
@@ -65,32 +63,36 @@ function IndexChip({
 }
 
 /**
- * Market strip — SPX + VIX with honest freshness from API as_of timestamp.
+ * IndexRibbon — compact top bar showing live SPX + VIX quotes from /api/market/indices.
+ * Sits below the Nav in the site layout. Polls every 30s (the route itself is cache-reader).
+ * Hidden when data is unavailable (market closed / Polygon unconfigured) so it takes no
+ * space and doesn't show placeholder dashes when offline.
  */
 export function IndexRibbon() {
   const { data } = useSWR<IndicesResponse | null>("index-ribbon", fetcher, {
     refreshInterval: 30_000,
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
   });
 
+  // Don't render until we have a successful response — avoids a flash of "—" on mount.
   if (!data || data.error || (!data.spx && !data.vix)) return null;
 
-  const asOf = data.as_of ? new Date(data.as_of) : null;
-  const ageMs = asOf ? Date.now() - asOf.getTime() : null;
-  const status =
-    ageMs == null ? "syncing" : ageMs > 120_000 ? "stale" : "live";
-
   return (
-    <div className="index-ribbon" aria-label="Market indices">
-      <div className="index-ribbon-quotes">
-        {data.spx && (
-          <IndexChip label="SPX" price={data.spx.price} changePct={data.spx.change_pct} />
-        )}
-        {data.vix && (
-          <IndexChip label="VIX" price={data.vix.price} changePct={data.vix.change_pct} />
-        )}
-      </div>
-      <FreshnessChip status={status} asOf={asOf} className="index-ribbon-freshness" />
+    <div className="index-ribbon" aria-label="Index quotes">
+      {data.spx && (
+        <IndexChip
+          label="SPX"
+          price={data.spx.price}
+          changePct={data.spx.change_pct}
+        />
+      )}
+      {data.vix && (
+        <IndexChip
+          label="VIX"
+          price={data.vix.price}
+          changePct={data.vix.change_pct}
+        />
+      )}
     </div>
   );
 }

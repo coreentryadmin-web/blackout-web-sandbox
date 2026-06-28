@@ -47,7 +47,7 @@ export function DeskHeroTicker({ data, live }: { data?: SpxState; live?: boolean
       <div className="relative z-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 p-6 md:p-8">
         <div>
           <p className="font-mono text-[10px] tracking-[0.5em] text-bull uppercase mb-2">
-            SPX · Live
+            ◆ SPX Live
           </p>
           <motion.p
             ref={priceRef}

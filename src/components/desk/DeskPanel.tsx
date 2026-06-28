@@ -63,6 +63,7 @@ export function DeskPanel({
         </div>
       )}
       <div className={clsx("desk-panel-body", bare && "desk-panel-body-bare")}>{children}</div>
+      <div className="desk-panel-scan" aria-hidden />
     </div>
   );
 }

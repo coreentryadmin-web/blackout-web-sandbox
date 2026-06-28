@@ -25,7 +25,7 @@ export default async function HeatmapPage() {
               subtitle is trimmed for the same reason: the desk states the
               dealer-gamma/vanna read in-panel. */}
           <PageHeader
-            kicker="Dealer positioning"
+            kicker="◆ DEALER POSITIONING"
             title="HEATMAPS"
             subtitle="Dealer gamma & vanna exposure"
             badge={<ProductMark product="heatmap" size={44} />}

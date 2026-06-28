@@ -2,19 +2,6 @@
 
 Automated TLS, availability, security-header, redirect, and CDN health checks for `www.blackouttrades.com`.
 
-## 2026-06-28 15:23 ET
-### TLS: cert expires 2026-09-14 — 78 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
-### Availability: 12/12 routes healthy — **PASS**
-- Pages 200 (Accept:text/html, follows redirects): Sign In 248ms, Sign Up 196ms, /dashboard 283ms, /flows 309ms, /heatmap 318ms, /grid 186ms, /nighthawk 301ms; /api/health 200 (110ms)
-- Auth-gated APIs 401 as intended (~106–129ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
-- **No 5xx. No P0.**
-- ⚠️ WARN (transient, self-resolved): Landing first-hit 15903ms on cold session start (DNS+TLS+origin cold). Immediate 3× re-probe = 355/128/112ms, all `CF-Cache-Status: HIT` (Age 1880s). Not persistent — first-request spike only.
-### Security Headers: 6/6 present on canonical apex page — **PASS** (HSTS max-age=31536000 includeSubDomains preload, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin-when-cross-origin, CSP default-src, Permissions-Policy camera=()). Step-3 apex-probe fix holding — no CSP false alarm.
-- `X-Powered-By` not leaking. `Server: cloudflare` expected (CF edge header, not an app leak).
-### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex).
-### CDN: **PASS** — Cloudflare edge (CF-Ray a12f1001e8cf683a-SEA), X-Railway-Request-Id present. Landing `Cache-Control: s-maxage=31536000` (Age 1860s, marketing force-static + CF edge cache). Auth-gated API 401 carries no Cache-Control (Clerk rejects at edge before route headers; real route cache policy not measurable unauthenticated — inconclusive, not a finding).
----
-
 ## 2026-06-28 13:21 ET
 ### TLS: cert expires 2026-09-14 — 78 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
 ### Availability: 12/12 routes healthy — **PASS**

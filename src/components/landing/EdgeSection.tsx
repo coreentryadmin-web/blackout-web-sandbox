@@ -12,14 +12,14 @@ const GRAD = "linear-gradient(90deg,#00e676,#34d399 55%,#7dd3fc)";
 const STEPS = [
   {
     n: "01",
-    title: "Read the structure",
+    title: "Recon the floor",
     accent: "#00e676",
     mark: "spx" as const,
     desc: "Live SPX, options flow, dealer gamma and dark-pool prints — the whole floor on one surface, the moment the market moves.",
   },
   {
     n: "02",
-    title: "Score the setup",
+    title: "Grade the setup",
     accent: "#22d3ee",
     mark: "largo" as const,
     desc: "A graded read and Largo's call surface the setup, the strike, and the invalidation level.",
@@ -50,8 +50,8 @@ const PILLARS = [
     c: "#bf5fff",
   },
   {
-    claim: "Built for focused traders",
-    proof: "One decision surface — no feeds, no followers, no noise.",
+    claim: "Built for the operator",
+    proof: "A command surface for one decision-maker — no feeds, no followers, no noise.",
     c: "#ff6b2b",
   },
 ];
@@ -63,10 +63,10 @@ export function EdgeSection() {
       <div className="relative z-10 mx-auto max-w-7xl">
         {/* ROW A — HOW IT WORKS */}
         <p className="font-mono text-[10px] tracking-[0.5em] uppercase text-cyan-400 mb-2">
-          How it works
+          ◆ How it works
         </p>
         <h2 className="font-anton text-5xl md:text-7xl leading-none tracking-tight text-white">
-          READ. SCORE.{" "}
+          RECON. GRADE.{" "}
           <span
             style={{
               background: GRAD,
@@ -151,7 +151,7 @@ export function EdgeSection() {
           style={{ background: "linear-gradient(90deg, rgba(0,230,118,0.3), transparent 70%)" }}
         />
         <p className="font-mono text-[10px] tracking-[0.5em] uppercase text-cyan-400 mt-10 mb-6">
-          Why BlackOut
+          ◆ Why BlackOut
         </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {PILLARS.map((p, i) => (

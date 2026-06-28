@@ -10,7 +10,7 @@ import { GridTickerProvider } from "@/lib/grid/grid-ticker-context";
 
 export const metadata: Metadata = {
   title: "BlackOut Grid · BlackOut",
-  description: "Cross-market intelligence — news, flow, analyst actions, and market pulse on one board.",
+  description: "Market-intelligence command center — news, flow, analyst actions and the pulse on one live board.",
 };
 
 /**
@@ -30,7 +30,7 @@ export default async function GridPage() {
       <div className="px-3 md:px-5">
         <GridTickerProvider>
           <PageHeader
-            kicker="Market intelligence"
+            kicker="◆ MARKET INTELLIGENCE"
             title="BLACKOUT GRID"
             subtitle="The whole tape on one board · News · Flow · Analysts · Pulse"
             badge={<ProductMark product="grid" size={44} />}
