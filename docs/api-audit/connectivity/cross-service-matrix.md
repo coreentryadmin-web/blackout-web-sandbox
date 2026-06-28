@@ -498,3 +498,43 @@ Phase 1 endpoint paths are wrong: real paths are `market/spx/pulse`, `market/gex
 Phase 3 ("SPX desk blind to HELIX flow") and Phase 8 ("SPX desk ignores FOMC/CPI") remain DISPROVEN by source.
 Largo registry lives at `src/lib/largo/run-tool.ts` + `tool-defs.ts` (not `src/lib/run-tool.ts`/`src/lib/tools`).
 ---
+
+---
+
+## Connectivity Matrix — 2026-06-27 22:58 ET (source-grounded run)
+
+**Mode:** SOURCE-LEVEL (code wiring). Live-data consistency phases (2/3/9) SKIPPED — all
+data endpoints returned **401 Unauthorized** unauthenticated and today is **Saturday (market closed)**,
+so live RTH cross-tool value comparison is not meaningful. Verified convergence by reading the
+shared data-source code paths instead — the durable signal.
+
+**Verdict: PASS — no source-level silos. Every consumer reads a shared ground-truth source.**
+
+| Source → Consumer | Status | Shared source / evidence |
+|---|---|---|
+| SPX Desk → Heatmaps | PASS | `getGexPositioning` = pure `fetchGexHeatmap` cache-reader (converged, W1) |
+| HELIX → SPX Desk | PASS | desk payload carries `flow_0dte` / `spx_option_flows` (sweeps/blocks) / `strike_stacks` (spx-commentary.ts:544) |
+| Heatmaps → Largo | PASS | `get_gex` returns `getLargoSpxLiveDesk` walls — *"same as SPX Sniper dashboard"* (run-tool.ts:919); non-SPX path = `fetchGexHeatmap` |
+| Heatmaps → Night's Watch | PASS | position-context.ts:19 imports `fetchGexHeatmap`; walls read off shared `gexWalls` field (verdict.ts) |
+| HELIX → Night Hawk | PASS | candidates.ts `aggregateTickerFlows` builds plays FROM flow prints (premium/sweep bonus) |
+| HELIX → Night's Watch | PASS | position-context.ts:22 `fetchRecentFlows` (HELIX/Postgres); verdict FLOW_MIN_PREMIUM/SKEW signals |
+| SPX Desk → Night's Watch | PASS | position-context.ts:16 `loadMergedSpxDesk`; verdict uses `underlyingPrice` + walls |
+| Largo → ALL services | PASS | **89 tools** spanning every service (see below) |
+| Grid → SPX Desk | PASS | desk `macro_events` = `mergeMacroEventsToday` + `news_headlines` = `fetchBenzingaNews` (spx-desk.ts:1130-1131) |
+| Grid → Largo | PASS | `get_catalysts` / `get_economic_calendar` / `get_market_context` / `get_earnings` / `get_dark_pool` |
+
+### Largo cross-service access (89 tools — fully connected, zero blind spots)
+- **SPX:** get_spx_structure, get_spx_play, get_spx_confluence (`computeSpxConfluence` on cached desk), get_spx_play
+- **GEX/Heatmap:** get_gex (= live merged SPX desk for 0DTE), get_positioning, get_oi_per_strike
+- **HELIX flows:** get_flow_tape, get_options_flow, get_postgres_flows, get_global_flow, get_signal_log, get_greek_flow
+- **Night's Watch:** get_my_positions, get_open_plays, get_trade_history
+- **Night Hawk:** get_nighthawk_edition, get_nighthawk_dossier, get_nighthawk_outcomes
+- **Grid:** get_catalysts, get_economic_calendar, get_earnings(_market/_history), get_dark_pool, get_congress_trades, get_analyst_ratings, get_market_movers, get_market_context, get_web_search
+- **Aggregator:** get_platform_snapshot (single cross-tool snapshot)
+
+### Notes / caveats
+- The SKILL's hardcoded paths are STALE: real paths are `/api/market/spx/pulse`, `/api/market/flows`, `/api/market/gex-positioning`, `/api/market/nighthawk/edition`, `/api/grid/*` — and all are **auth-gated** (401 unauth). Only `/api/public/track-record` is public.
+- SKILL Phase-3 heuristic (looking for `flowBias`/`netFlow`/`flowSignal` field names) would **false-FAIL**: the SPX desk DOES carry HELIX flow, just under `flow_0dte`/`spx_option_flows`. Source truth = PASS.
+- Live-value divergence (the only thing source review can't catch — e.g. a stale cache serving different numbers to two consumers) requires an authenticated RTH run; re-verify Monday market-open.
+
+---
