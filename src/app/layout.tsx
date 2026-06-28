@@ -92,6 +92,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Resource hints are behavior-neutral (no-op if unused). */}
         <link rel="preconnect" href="https://clerk.blackouttrades.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://clerk.blackouttrades.com" />
+        {/* In-app detection: the iOS app shell (Capacitor) appends "BlackOutiOSApp" to the
+            WKWebView user-agent. When present, flag <html> so CSS can hide all pricing /
+            purchase UI (App Store guideline 3.1.1 — no external-purchase links in-app).
+            Runs during head parse, before paint, so there's no flash of purchase UI. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(/BlackOutiOSApp/.test(navigator.userAgent)){document.documentElement.classList.add('ios-app')}}catch(e){}",
+          }}
+        />
       </head>
       <body className="void-bg antialiased">
         <a

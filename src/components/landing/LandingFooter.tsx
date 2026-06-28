@@ -17,9 +17,11 @@ const ARSENAL = [
 ];
 
 const PLATFORM = [
-  { label: "Pricing", href: "/#pricing" },
+  // iosHide: hidden inside the iOS app (App Store guideline 3.1.1 — no in-app
+  // pricing / purchase entry points).
+  { label: "Pricing", href: "/#pricing", iosHide: true },
   { label: "FAQ", href: "/#faq" },
-  { label: "Upgrade", href: "/upgrade" },
+  { label: "Upgrade", href: "/upgrade", iosHide: true },
   { label: "Sign in", href: "/sign-in" },
   { label: "Start Trading", href: "/sign-up" },
 ];
@@ -100,7 +102,7 @@ function FooterCol({
       <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-bull/80 mb-4">{title}</p>
       <ul className="flex flex-col gap-2.5">
         {items.map((it) => (
-          <li key={it.label}>
+          <li key={it.label} className={(it as { iosHide?: boolean }).iosHide ? "hide-in-ios-app" : undefined}>
             <Link
               href={it.href}
               className="group inline-flex items-center gap-2 text-[14px] text-white/75 transition-colors hover:text-white"

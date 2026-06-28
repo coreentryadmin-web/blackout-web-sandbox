@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== iOS app (App Store compliance) =====
+   When the site runs INSIDE the iOS app, <html> gets the `ios-app` class (set by an
+   early inline script in layout.tsx, keyed off the "BlackOutiOSApp" user-agent token).
+   Apple guideline 3.1.1 forbids pricing / external-purchase links inside the app, so:
+     - `.hide-in-ios-app`  → visible on web, hidden in the iOS app
+     - `.show-in-ios-app`  → hidden on web, shown only in the iOS app
+   Purchasing happens on the website (Whop); the app is sign-in only. */
+html.ios-app .hide-in-ios-app { display: none !important; }
+.show-in-ios-app { display: none; }
+html.ios-app .show-in-ios-app { display: revert; }
+
 :root {
   /* Fonts are provided by next/font (see layout.tsx) as
      --font-anton / --font-syne / --font-jetbrains / --font-inter. */

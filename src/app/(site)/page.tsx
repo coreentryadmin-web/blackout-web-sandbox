@@ -19,7 +19,11 @@ export default function LandingPage() {
         <FeaturesGrid />
         <EdgeSection />
         <FaqSection />
-        <PricingSection />
+        {/* Pricing hidden inside the iOS app (App Store guideline 3.1.1 — no in-app
+            pricing / external-purchase links). Visible normally on the web. */}
+        <div className="hide-in-ios-app">
+          <PricingSection />
+        </div>
       </main>
       <LandingFooter />
     </div>

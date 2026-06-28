@@ -275,8 +275,11 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
 
           {TOP_LINKS.map(({ hash, label }) => {
             const href = isHome ? `#${hash}` : `/#${hash}`;
+            // Hide the Pricing link inside the iOS app (it scrolls to the hidden
+            // pricing section — App Store guideline 3.1.1).
+            const li = hash === "pricing" ? "nav-pill-li hide-in-ios-app" : "nav-pill-li";
             return (
-              <li key={hash} className="nav-pill-li">
+              <li key={hash} className={li}>
                 <Link href={href} className="nav-pill-item">
                   {label}
                 </Link>
@@ -369,7 +372,11 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                   key={hash}
                   href={isHome ? `#${hash}` : `/#${hash}`}
                   onClick={() => setMobileOpen(false)}
-                  className="nav-sheet-link font-syne"
+                  className={
+                    hash === "pricing"
+                      ? "nav-sheet-link font-syne hide-in-ios-app"
+                      : "nav-sheet-link font-syne"
+                  }
                 >
                   {label}
                 </Link>
