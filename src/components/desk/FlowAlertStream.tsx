@@ -9,7 +9,6 @@ import { DeskPanel } from "./DeskPanel";
 import { Skeleton, EmptyState } from "@/components/ui";
 
 const WHALE_PREMIUM = 1_000_000;
-const STAGGER = 0.04;
 const RENDER_LIMIT = 150; // Bug 8: cap per-render to prevent browser freeze on large datasets
 
 function timeAgo(iso: string): string {
@@ -224,7 +223,6 @@ export function FlowAlertStream({
           ) : visible.length === 0 ? (
             <EmptyState
               className="!border-transparent !bg-transparent !py-16"
-              icon="◆"
               title={
                 tickerFilter
                   ? `No prints for ${tickerFilter}`
@@ -246,7 +244,6 @@ export function FlowAlertStream({
             />
           ) : (
             <div className="flex flex-col gap-1.5 py-1">
-              <AnimatePresence initial={false}>
                 {displayed.map((flow, i) => {
                   const isCall     = flow.option_type?.toUpperCase() === "CALL";
                   const isWhale    = flow.premium >= WHALE_PREMIUM;
@@ -274,17 +271,8 @@ export function FlowAlertStream({
                   );
 
                   return (
-                    <motion.div
+                    <div
                       key={`${flow.ticker}-${flow.alerted_at}-${i}`}
-                      layout="position"
-                      initial={{ opacity: 0, x: 20, scale: 0.98 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
-                      transition={{
-                        opacity:   { duration: 0.15, delay: i < 5 ? i * STAGGER : 0 },
-                        x:         { duration: 0.15, delay: i < 5 ? i * STAGGER : 0, ease: "easeOut" },
-                        scale:     { duration: 0.15 },
-                      }}
                       onClick={() => onTickerClick?.(flow.ticker)}
                       // I-04 a11y: the tape card is the flagship drill-down; make it keyboard- +
                       // screen-reader-reachable (Enter/Space activate the same open), mirroring
@@ -508,10 +496,9 @@ export function FlowAlertStream({
                           )}
                         </div>
                       )}
-                    </motion.div>
+                    </div>
                   );
                 })}
-              </AnimatePresence>
 
               {/* Bug 8: load-more button instead of rendering all 5000 items */}
               {hasMore && (

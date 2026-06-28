@@ -26,7 +26,7 @@ export default async function TerminalPage() {
       <main id="main" className="largo-page-main">
         <PageHeader
           className="largo-page-header"
-          kicker="AI DESK ANALYST"
+          kicker="AI desk analyst"
           title={
             <span className="flex items-center gap-3">
               <ProductMark product="largo" size={36} />

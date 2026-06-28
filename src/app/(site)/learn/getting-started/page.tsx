@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Getting Started | BlackOut Trading",
   description:
-    "Platform overview for BlackOut Trading â€” how SPX Slayer, HELIX, Largo, Night Hawk, Heat Maps, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
+    "Platform overview for BlackOut Trading — how SPX Slayer, HELIX, Largo, Night Hawk, Heat Maps, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
 };
 
 const sections = [
@@ -25,7 +25,7 @@ const tools = [
   {
     name: "Night Hawk",
     href: "/learn/night-hawk",
-    timing: "Evening â€” before market close / after hours",
+    timing: "Evening — before market close / after hours",
     role: "Scans the options chain each evening and publishes a curated playbook of high-conviction SPX setups for the following session. Your pre-market briefing.",
   },
   {
@@ -44,7 +44,7 @@ const tools = [
     name: "Largo AI Terminal",
     href: "/learn/largo-ai",
     timing: "On demand",
-    role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data â€” not generic commentary.",
+    role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data — not generic commentary.",
   },
   {
     name: "Heat Maps",
@@ -62,7 +62,7 @@ const tools = [
     name: "BlackOut Grid",
     href: "/learn/blackout-grid",
     timing: "Continuous",
-    role: "Market intelligence hub. News, dark pool prints, earnings calendars, analyst revisions, congressional trades, and economic events â€” all in one structured feed.",
+    role: "Market intelligence hub. News, dark pool prints, earnings calendars, analyst revisions, congressional trades, and economic events — all in one structured feed.",
   },
 ];
 
@@ -71,15 +71,15 @@ export default function GettingStartedPage() {
     <div className="min-h-screen" style={{ backgroundColor: "#040407" }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Page header */}
-        <div className="mb-12 border-b border-slate-800 pb-10">
+        <div className="mb-12 border-b border-white/10 pb-10">
           <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">
             BlackOut Trading / Learn
           </p>
           <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
             Getting Started
           </h1>
-          <p className="text-slate-300 text-lg max-w-2xl leading-relaxed">
-            A complete orientation to the BlackOut platform â€” how each tool
+          <p className="text-secondary text-lg max-w-2xl leading-relaxed">
+            A complete orientation to the BlackOut platform — how each tool
             works, how they connect, and the workflow that puts institutional
             dealer intelligence at the center of every trade decision.
           </p>
@@ -97,7 +97,7 @@ export default function GettingStartedPage() {
                   <a
                     key={s.id}
                     href={`#${s.id}`}
-                    className="block text-sm text-slate-400 hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3"
+                    className="block text-sm text-mute hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3"
                   >
                     {s.label}
                   </a>
@@ -110,21 +110,21 @@ export default function GettingStartedPage() {
           <main className="flex-1 min-w-0 space-y-16">
             {/* Overview */}
             <section id="overview">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Platform Overview
               </h2>
-              <div className="space-y-4 text-slate-300 leading-relaxed">
+              <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
                   BlackOut Trading is a professional-grade SPX and 0DTE options
                   intelligence platform built around one conviction: the only
                   edge that compounds is seeing what institutional dealers are
-                  positioned for â€” not what retail sentiment says.
+                  positioned for — not what retail sentiment says.
                 </p>
                 <p>
                   Every surface on the platform is designed to surface dealer
                   hedging flows, institutional positioning, and structural market
                   mechanics in real time. The toolset is not a collection of
-                  independent indicators. It is a pipeline â€” data enters raw
+                  independent indicators. It is a pipeline — data enters raw
                   from the options chain, gets processed through GEX and flow
                   analytics, and emerges as actionable intelligence on your
                   screen.
@@ -157,7 +157,7 @@ export default function GettingStartedPage() {
                 ].map((stat) => (
                   <div
                     key={stat.label}
-                    className="rounded-lg border border-slate-800 bg-slate-900/40 p-5"
+                    className="rounded-lg border border-white/10 bg-white/[0.03] p-5"
                   >
                     <p className="text-xs text-cyan-400 font-mono uppercase tracking-wider mb-1">
                       {stat.label}
@@ -165,7 +165,7 @@ export default function GettingStartedPage() {
                     <p className="text-white font-semibold text-lg">
                       {stat.value}
                     </p>
-                    <p className="text-slate-400 text-sm mt-1">{stat.sub}</p>
+                    <p className="text-mute text-sm mt-1">{stat.sub}</p>
                   </div>
                 ))}
               </div>
@@ -173,10 +173,10 @@ export default function GettingStartedPage() {
 
             {/* How It Works */}
             <section id="how-it-works">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 How It Works
               </h2>
-              <div className="space-y-4 text-slate-300 leading-relaxed">
+              <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
                   BlackOut ingests raw options chain data from{" "}
                   <span className="text-cyan-400 font-medium">our market data engine</span>{" "}
@@ -218,7 +218,7 @@ export default function GettingStartedPage() {
               </div>
 
               {/* Data flow diagram */}
-              <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/30 p-6">
+              <div className="mt-8 rounded-lg border border-white/10 bg-white/[0.03] p-6">
                 <p className="text-xs text-cyan-400 font-mono uppercase tracking-wider mb-5">
                   Data Pipeline
                 </p>
@@ -260,7 +260,7 @@ export default function GettingStartedPage() {
                       <div
                         className={`w-28 shrink-0 rounded border-l-2 ${row.color} pl-3 py-1`}
                       >
-                        <span className="text-xs text-slate-400 font-mono">
+                        <span className="text-xs text-mute font-mono">
                           {row.layer}
                         </span>
                       </div>
@@ -268,7 +268,7 @@ export default function GettingStartedPage() {
                         {row.items.map((item) => (
                           <span
                             key={item}
-                            className="text-xs bg-slate-800 text-slate-300 rounded px-2 py-1 border border-slate-700"
+                            className="text-xs bg-white/[0.06] text-secondary rounded px-2 py-1 border border-white/12"
                           >
                             {item}
                           </span>
@@ -282,14 +282,14 @@ export default function GettingStartedPage() {
 
             {/* Account Setup */}
             <section id="account-setup">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Account Setup
               </h2>
-              <div className="space-y-4 text-slate-300 leading-relaxed">
+              <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
                   BlackOut Trading membership is provisioned through our subscription platform. Once your
                   subscription is active, your account is automatically
-                  authorized â€” no additional API keys or configuration is
+                  authorized — no additional API keys or configuration is
                   required on your end. All data feeds are platform-managed.
                 </p>
               </div>
@@ -303,7 +303,7 @@ export default function GettingStartedPage() {
                   {
                     step: "2",
                     title: "Sign in with your account",
-                    body: "Use the email address associated with your subscription. Authentication is handled via our auth system â€” no separate password setup required if you use a social login.",
+                    body: "Use the email address associated with your subscription. Authentication is handled via our auth system — no separate password setup required if you use a social login.",
                   },
                   {
                     step: "3",
@@ -318,14 +318,14 @@ export default function GettingStartedPage() {
                 ].map((item) => (
                   <li
                     key={item.step}
-                    className="flex gap-4 rounded-lg border border-slate-800 bg-slate-900/30 p-5"
+                    className="flex gap-4 rounded-lg border border-white/10 bg-white/[0.03] p-5"
                   >
                     <span className="shrink-0 w-8 h-8 rounded-full bg-cyan-500/10 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-mono text-sm font-semibold">
                       {item.step}
                     </span>
                     <div>
                       <p className="text-white font-medium mb-1">{item.title}</p>
-                      <p className="text-slate-400 text-sm leading-relaxed">
+                      <p className="text-mute text-sm leading-relaxed">
                         {item.body}
                       </p>
                     </div>
@@ -336,20 +336,20 @@ export default function GettingStartedPage() {
 
             {/* Suggested Workflow */}
             <section id="workflow">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Suggested Workflow
               </h2>
-              <p className="text-slate-300 mb-8 leading-relaxed">
+              <p className="text-secondary mb-8 leading-relaxed">
                 The platform is designed around a repeatable daily rhythm. Each
                 tool occupies a specific phase of the trading day. Used in
-                sequence, they provide context layering â€” each surface confirms,
+                sequence, they provide context layering — each surface confirms,
                 qualifies, or challenges the signals from the previous one.
               </p>
               <div className="space-y-4">
                 {[
                   {
                     phase: "Evening",
-                    time: "4:30 PM â€“ 8:00 PM ET",
+                    time: "4:30 PM – 8:00 PM ET",
                     tool: "Night Hawk",
                     href: "/learn/night-hawk",
                     action:
@@ -357,7 +357,7 @@ export default function GettingStartedPage() {
                   },
                   {
                     phase: "Pre-Market",
-                    time: "8:00 AM â€“ 9:30 AM ET",
+                    time: "8:00 AM – 9:30 AM ET",
                     tool: "BlackOut Grid",
                     href: "/learn/blackout-grid",
                     action:
@@ -385,7 +385,7 @@ export default function GettingStartedPage() {
                     tool: "Largo AI",
                     href: "/learn/largo-ai",
                     action:
-                      "When context is ambiguous or you want a structured read on current positioning, query Largo. It interprets live data â€” not generic market commentary.",
+                      "When context is ambiguous or you want a structured read on current positioning, query Largo. It interprets live data — not generic market commentary.",
                   },
                   {
                     phase: "Trade Management",
@@ -398,7 +398,7 @@ export default function GettingStartedPage() {
                 ].map((item) => (
                   <div
                     key={item.phase}
-                    className="flex gap-0 rounded-lg border border-slate-800 overflow-hidden"
+                    className="flex gap-0 rounded-lg border border-white/10 overflow-hidden"
                   >
                     <div className="w-2 shrink-0 bg-cyan-500/30" />
                     <div className="flex flex-col sm:flex-row gap-4 p-5 flex-1">
@@ -406,7 +406,7 @@ export default function GettingStartedPage() {
                         <p className="text-cyan-400 font-semibold text-sm">
                           {item.phase}
                         </p>
-                        <p className="text-slate-500 text-xs mt-0.5 font-mono">
+                        <p className="text-mute text-xs mt-0.5 font-mono">
                           {item.time}
                         </p>
                       </div>
@@ -417,7 +417,7 @@ export default function GettingStartedPage() {
                         >
                           {item.tool} &rarr;
                         </Link>
-                        <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+                        <p className="text-mute text-sm mt-1 leading-relaxed">
                           {item.action}
                         </p>
                       </div>
@@ -429,10 +429,10 @@ export default function GettingStartedPage() {
 
             {/* Tool Map */}
             <section id="tools">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Tool Map
               </h2>
-              <p className="text-slate-300 mb-8 leading-relaxed">
+              <p className="text-secondary mb-8 leading-relaxed">
                 Every tool on the platform is described below with its primary
                 function, timing, and role in the overall workflow.
               </p>
@@ -440,7 +440,7 @@ export default function GettingStartedPage() {
                 {tools.map((tool) => (
                   <div
                     key={tool.name}
-                    className="rounded-lg border border-slate-800 bg-slate-900/30 p-5"
+                    className="rounded-lg border border-white/10 bg-white/[0.03] p-5"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                       <Link
@@ -453,7 +453,7 @@ export default function GettingStartedPage() {
                         {tool.timing}
                       </span>
                     </div>
-                    <p className="text-slate-400 text-sm leading-relaxed">
+                    <p className="text-mute text-sm leading-relaxed">
                       {tool.role}
                     </p>
                   </div>
@@ -463,7 +463,7 @@ export default function GettingStartedPage() {
 
             {/* Dos & Don'ts */}
             <section id="dos-donts">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Dos & Don&apos;ts
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -473,14 +473,14 @@ export default function GettingStartedPage() {
                   </p>
                   <ul className="space-y-3">
                     {[
-                      "Use Night Hawk as pre-session preparation, not as a live trade signal. Context built the evening before is context â€” validate it at open.",
+                      "Use Night Hawk as pre-session preparation, not as a live trade signal. Context built the evening before is context — validate it at open.",
                       "Cross-reference GEX walls in Heat Maps before entering a position at a level SPX Slayer flags. Visual confirmation reduces false edges.",
                       "Use Largo when you want structured analysis, not when you want reassurance. Ask it hard questions about current data.",
                       "Log every position in Night's Watch immediately. Real-time Greeks and P&L tracking requires position data to be current.",
                       "Check HELIX for flow confirmation when price approaches a key GEX level. Large prints at a wall are structurally meaningful.",
                       "Read the BlackOut Grid's economic calendar before the open. Macro catalysts override GEX mechanics.",
                     ].map((item) => (
-                      <li key={item} className="flex gap-3 text-sm text-slate-300">
+                      <li key={item} className="flex gap-3 text-sm text-secondary">
                         <span className="text-emerald-400 mt-0.5 shrink-0">&#10003;</span>
                         <span>{item}</span>
                       </li>
@@ -493,14 +493,14 @@ export default function GettingStartedPage() {
                   </p>
                   <ul className="space-y-3">
                     {[
-                      "Don't treat GEX walls as guaranteed support/resistance. They are dealer hedge concentration points â€” they can break, especially into binary events.",
+                      "Don't treat GEX walls as guaranteed support/resistance. They are dealer hedge concentration points — they can break, especially into binary events.",
                       "Don't rely on a single tool in isolation. SPX Slayer without HELIX confirmation and Heat Map context is half the picture.",
-                      "Don't query Largo for real-time price levels â€” it is an analysis engine, not a live quote feed. Use SPX Slayer for current price action.",
+                      "Don't query Largo for real-time price levels — it is an analysis engine, not a live quote feed. Use SPX Slayer for current price action.",
                       "Don't override a Night Hawk thesis based on early pre-market noise without checking the Grid for a legitimate catalyst.",
                       "Don't ignore the flow tape during high-GEX environments. When dealers are heavily hedged, institutional order flow has outsized impact.",
                       "Don't enter a 0DTE position without confirming that the GEX data on-screen is current. Check the data timestamp on SPX Slayer.",
                     ].map((item) => (
-                      <li key={item} className="flex gap-3 text-sm text-slate-300">
+                      <li key={item} className="flex gap-3 text-sm text-secondary">
                         <span className="text-red-400 mt-0.5 shrink-0">&#10007;</span>
                         <span>{item}</span>
                       </li>
@@ -512,7 +512,7 @@ export default function GettingStartedPage() {
 
             {/* Cross-References */}
             <section id="cross-references">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 All Tools
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -528,15 +528,15 @@ export default function GettingStartedPage() {
                   <Link
                     key={tool.name}
                     href={tool.href}
-                    className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/30 hover:border-cyan-700 hover:bg-slate-900/60 transition-all p-4 group"
+                    className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] hover:border-cyan-700 hover:bg-white/[0.05] transition-all p-4 group"
                   >
                     <div>
                       <p className="text-sky-300 font-medium group-hover:text-cyan-400 transition-colors">
                         {tool.name}
                       </p>
-                      <p className="text-slate-500 text-xs mt-0.5">{tool.desc}</p>
+                      <p className="text-mute text-xs mt-0.5">{tool.desc}</p>
                     </div>
-                    <span className="text-slate-600 group-hover:text-cyan-400 transition-colors text-lg">
+                    <span className="text-mute/70 group-hover:text-cyan-400 transition-colors text-lg">
                       &rarr;
                     </span>
                   </Link>
@@ -546,7 +546,7 @@ export default function GettingStartedPage() {
 
             {/* FAQ */}
             <section id="faq">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 FAQ
               </h2>
               <div className="space-y-6">
@@ -561,7 +561,7 @@ export default function GettingStartedPage() {
                   },
                   {
                     q: "What is the difference between Night Hawk and SPX Slayer?",
-                    a: "Night Hawk is an asynchronous evening publication â€” it processes the prior session and publishes a curated playbook for the next one. SPX Slayer is a live, real-time desk intended for active use during market hours. Night Hawk provides context and bias; SPX Slayer provides execution intelligence.",
+                    a: "Night Hawk is an asynchronous evening publication — it processes the prior session and publishes a curated playbook for the next one. SPX Slayer is a live, real-time desk intended for active use during market hours. Night Hawk provides context and bias; SPX Slayer provides execution intelligence.",
                   },
                   {
                     q: "Can Largo AI access live market data?",
@@ -572,9 +572,9 @@ export default function GettingStartedPage() {
                     a: "Night's Watch requires you to log positions manually or via the platform's entry flow. It does not connect to your brokerage account. Once a position is logged, it pulls live options pricing to compute real-time P&L and Greeks.",
                   },
                 ].map((item) => (
-                  <div key={item.q} className="rounded-lg border border-slate-800 bg-slate-900/30 p-6">
+                  <div key={item.q} className="rounded-lg border border-white/10 bg-white/[0.03] p-6">
                     <p className="text-white font-semibold mb-3">{item.q}</p>
-                    <p className="text-slate-400 text-sm leading-relaxed">{item.a}</p>
+                    <p className="text-mute text-sm leading-relaxed">{item.a}</p>
                   </div>
                 ))}
               </div>
@@ -582,7 +582,7 @@ export default function GettingStartedPage() {
 
             {/* Glossary */}
             <section id="glossary">
-              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-slate-800">
+              <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
                 Glossary
               </h2>
               <div className="space-y-10">
@@ -625,7 +625,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "Open Interest (OI)",
-                        def: "The total number of outstanding options contracts at a given strike and expiry. High OI concentrations inform GEX computation â€” they represent where dealer hedging obligations are largest.",
+                        def: "The total number of outstanding options contracts at a given strike and expiry. High OI concentrations inform GEX computation — they represent where dealer hedging obligations are largest.",
                       },
                       {
                         term: "0DTE",
@@ -650,7 +650,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "RTH (Regular Trading Hours)",
-                        def: "9:30 AM â€“ 4:00 PM ET. BlackOut's real-time data feeds are most active during RTH. GEX recomputation, HELIX flow, and SPX Slayer signals are all RTH-primary.",
+                        def: "9:30 AM – 4:00 PM ET. BlackOut's real-time data feeds are most active during RTH. GEX recomputation, HELIX flow, and SPX Slayer signals are all RTH-primary.",
                       },
                       {
                         term: "Setup Score",
@@ -667,12 +667,12 @@ export default function GettingStartedPage() {
                       {group.terms.map((entry) => (
                         <div
                           key={entry.term}
-                          className="flex gap-4 border-b border-slate-800/60 pb-4 last:border-0"
+                          className="flex gap-4 border-b border-white/10/60 pb-4 last:border-0"
                         >
                           <dt className="w-40 shrink-0 text-sky-300 font-medium text-sm pt-0.5">
                             {entry.term}
                           </dt>
-                          <dd className="text-slate-400 text-sm leading-relaxed flex-1">
+                          <dd className="text-mute text-sm leading-relaxed flex-1">
                             {entry.def}
                           </dd>
                         </div>

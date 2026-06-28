@@ -1837,10 +1837,10 @@ body::before {
 
   /* ===== Index Ribbon — compact SPX/VIX quote bar below the nav ===== */
   .index-ribbon {
-    @apply fixed inset-x-0 z-[99] flex items-center justify-center gap-4 px-4;
+    @apply fixed inset-x-0 z-[99] flex items-center justify-between gap-3 px-4;
     top: 76px;
     height: 26px;
-    background: rgba(4, 4, 7, 0.9);
+    background: rgba(4, 4, 7, 0.92);
     border-bottom: 1px solid rgba(255,255,255,0.06);
     backdrop-filter: blur(8px);
     font-family: var(--font-mono, monospace);
@@ -1848,6 +1848,8 @@ body::before {
     pointer-events: none;
     transition: top 0.32s var(--ease-draw);
   }
+  .index-ribbon-quotes { @apply flex items-center justify-center gap-4 flex-1; }
+  .index-ribbon-freshness { @apply shrink-0 scale-[0.92]; transform-origin: right center; }
   .index-ribbon-chip { @apply flex items-center gap-1.5; }
   .index-ribbon-label { @apply text-sky-400 font-bold tracking-wider uppercase; font-size: 10px; }
   .index-ribbon-price { @apply text-white tabular-nums; }

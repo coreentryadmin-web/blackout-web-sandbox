@@ -1,0 +1,15 @@
+---
+description: BlackOut institutional UI — benchmark against pro trading platforms, not Discord cosplay
+globs: blackout-web/src/**/*.{tsx,css}
+alwaysApply: false
+---
+
+# Institutional design (BlackOut)
+
+Read `blackout-web/DESIGN_BENCHMARK.md` before changing UI.
+
+**Bar:** Bloomberg density · TradingView quote clarity · Stripe trust · Linear restraint.
+
+**Never:** military copy, ◆ sigils by default, scanlines, text-glow on prices, fake LIVE badges, Anton titles in-app, emoji padlocks in nav.
+
+**Always:** `FreshnessChip` for live state, JetBrains Mono for numbers, Syne/Inter for tool titles, plain professional copy.

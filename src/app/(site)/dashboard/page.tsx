@@ -8,7 +8,7 @@ export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "SPX Slayer · BlackOut",
-  description: "The 0DTE command desk — live GEX walls, dealer positioning and options flow.",
+  description: "Live SPX structure — GEX walls, dealer positioning, and session levels.",
 };
 
 export default async function DashboardPage() {

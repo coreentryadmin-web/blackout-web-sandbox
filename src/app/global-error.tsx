@@ -50,7 +50,7 @@ export default function GlobalError({
               color: "#7dd3fc",
             }}
           >
-            ◆ SYSTEM FAULT
+            Something went wrong
           </span>
 
           <h1
@@ -64,11 +64,11 @@ export default function GlobalError({
               color: "#ffffff",
             }}
           >
-            BLACKOUT — SYSTEM FAULT
+            BlackOut — critical error
           </h1>
 
           <p style={{ margin: 0, maxWidth: "26rem", color: "#7dd3fc" }}>
-            The terminal dropped offline. Reset to bring the desk back up.
+            The app failed to load. Reset to try again.
           </p>
 
           <button
@@ -88,7 +88,7 @@ export default function GlobalError({
               backgroundColor: "#00e676",
             }}
           >
-            Reset
+            Try again
           </button>
         </div>
       </body>

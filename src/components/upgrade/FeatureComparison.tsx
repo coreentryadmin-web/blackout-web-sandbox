@@ -11,7 +11,7 @@ export function FeatureComparison() {
   return (
     <section className="mx-auto mt-16 max-w-3xl text-left" aria-label="Plan comparison">
       <p className="mb-4 text-center font-mono text-[10px] uppercase tracking-[0.4em] text-bull">
-        ◆ Free vs Premium
+        Free vs Premium
       </p>
 
       <div className="overflow-hidden rounded-2xl border border-bull/15 bg-[#050608]/60 backdrop-blur-md">

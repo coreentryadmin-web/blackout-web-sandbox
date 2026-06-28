@@ -30,7 +30,7 @@ const VERDICTS = [
       "P&L is at a meaningful gain and DTE is declining",
       "IV has moved partially against the position",
       "GEX structure has weakened but not reversed",
-      "Position is significantly in-the-money â€” delta near 1",
+      "Position is significantly in-the-money — delta near 1",
       "A partial exit improves the risk profile without abandoning the thesis",
     ],
   },
@@ -74,7 +74,7 @@ export default function NightsWatchPage() {
           <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">Position Management</p>
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Night&apos;s Watch</h1>
           <p className="text-sky-300 text-xl max-w-3xl leading-relaxed">
-            Your personal options position manager. Live P&amp;L, Greeks tracking, and structured exit guidance â€” wired directly to live options chain data.
+            Your personal options position manager. Live P&amp;L, Greeks tracking, and structured exit guidance — wired directly to live options chain data.
           </p>
         </div>
 
@@ -84,7 +84,7 @@ export default function NightsWatchPage() {
               <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-4">On This Page</p>
               <nav className="space-y-1">
                 {TOC.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-slate-300 hover:text-cyan-400 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors">
+                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-secondary hover:text-cyan-400 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors">
                     {item.label}
                   </a>
                 ))}
@@ -96,9 +96,9 @@ export default function NightsWatchPage() {
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Overview</h2>
-              <div className="space-y-4 text-slate-300 leading-relaxed">
+              <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
-                  Night&apos;s Watch is your options position manager â€” the place where trades go after they are placed. While SPX Slayer and HELIX focus on entry decisions, Night&apos;s Watch focuses entirely on what to do after you are in a position.
+                  Night&apos;s Watch is your options position manager — the place where trades go after they are placed. While SPX Slayer and HELIX focus on entry decisions, Night&apos;s Watch focuses entirely on what to do after you are in a position.
                 </p>
                 <p>
                   The tool tracks every open position across your portfolio with live mark-to-market pricing sourced from the live options chain. For each position, it surfaces real-time P&amp;L, live Greeks (Delta, Gamma, Theta, Vega), valuation status, and a continuous AI verdict recommending whether to HOLD, TRIM, or SELL.
@@ -117,7 +117,7 @@ export default function NightsWatchPage() {
                   <div key={stat.label} className="border border-cyan-900/30 rounded-lg bg-white/[0.02] p-4">
                     <p className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-1">{stat.label}</p>
                     <p className="text-white font-semibold">{stat.value}</p>
-                    <p className="text-slate-400 text-sm mt-1">{stat.sub}</p>
+                    <p className="text-mute text-sm mt-1">{stat.sub}</p>
                   </div>
                 ))}
               </div>
@@ -125,7 +125,7 @@ export default function NightsWatchPage() {
 
             <section id="how-it-works">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">How It Works</h2>
-              <div className="space-y-5 text-slate-300 leading-relaxed">
+              <div className="space-y-5 text-secondary leading-relaxed">
                 <p>
                   Each position in Night&apos;s Watch is defined by the standard options contract parameters: ticker, strike, expiry, side (call/put), size, and your average entry price. You can add positions via Largo&apos;s <code className="text-cyan-400 bg-cyan-950/50 px-1.5 py-0.5 rounded text-sm font-mono">add_position</code> natural-language command, or directly from the Night&apos;s Watch interface.
                 </p>
@@ -134,8 +134,8 @@ export default function NightsWatchPage() {
                 </p>
                 <div className="p-4 rounded-lg border border-amber-500/20 bg-amber-950/10">
                   <p className="text-amber-400 font-semibold text-sm mb-1">Valuation Status</p>
-                  <p className="text-slate-300 text-sm leading-relaxed">
-                    Every position displays one of three valuation status indicators: <span className="text-cyan-400 font-mono">live</span> (chain data fresh within 30 seconds), <span className="text-sky-300 font-mono">stale</span> (chain data present but older than 30 seconds), or <span className="text-slate-400 font-mono">unavailable</span> (options chain cannot be fetched â€” market closed or contract has expired). Do not rely on P&amp;L figures when status shows <span className="text-slate-400 font-mono">unavailable</span>.
+                  <p className="text-secondary text-sm leading-relaxed">
+                    Every position displays one of three valuation status indicators: <span className="text-cyan-400 font-mono">live</span> (chain data fresh within 30 seconds), <span className="text-sky-300 font-mono">stale</span> (chain data present but older than 30 seconds), or <span className="text-mute font-mono">unavailable</span> (options chain cannot be fetched — market closed or contract has expired). Do not rely on P&amp;L figures when status shows <span className="text-mute font-mono">unavailable</span>.
                   </p>
                 </div>
               </div>
@@ -143,7 +143,7 @@ export default function NightsWatchPage() {
 
             <section id="verdict-engine">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Verdict Engine</h2>
-              <p className="text-slate-300 leading-relaxed mb-6">
+              <p className="text-secondary leading-relaxed mb-6">
                 The verdict engine runs continuously during Regular Trading Hours. For each open position, it evaluates a multi-factor model and emits one of three verdicts. Select each to see what drives it.
               </p>
 
@@ -156,7 +156,7 @@ export default function NightsWatchPage() {
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors border ${
                       activeVerdict === v.id
                         ? `${v.border} ${v.bg} ${v.color}`
-                        : "border-white/10 text-slate-300 hover:border-white/30 hover:text-white"
+                        : "border-white/10 text-secondary hover:border-white/30 hover:text-white"
                     }`}
                   >
                     {v.label}
@@ -166,12 +166,12 @@ export default function NightsWatchPage() {
 
               <div className={`rounded-lg border ${selected.border} ${selected.bg} p-6 mb-8`}>
                 <p className={`font-bold text-lg mb-3 ${selected.color}`}>{selected.label}</p>
-                <p className="text-slate-300 text-sm leading-relaxed mb-4">{selected.description}</p>
+                <p className="text-secondary text-sm leading-relaxed mb-4">{selected.description}</p>
                 <p className="text-xs uppercase tracking-widest text-white/50 mb-2">Common Triggers</p>
                 <ul className="space-y-1">
                   {selected.triggers.map((t) => (
-                    <li key={t} className="text-sm text-slate-300 flex gap-2">
-                      <span className={`mt-0.5 ${selected.color}`}>â—†</span> {t}
+                    <li key={t} className="text-sm text-secondary flex gap-2">
+                      <span className={`mt-0.5 ${selected.color}`}></span> {t}
                     </li>
                   ))}
                 </ul>
@@ -179,18 +179,18 @@ export default function NightsWatchPage() {
 
               <div className="border border-cyan-900/30 rounded-xl bg-white/[0.02] p-6">
                 <p className="text-cyan-400 font-semibold mb-4">Verdict Inputs</p>
-                <p className="text-slate-300 text-sm leading-relaxed mb-4">The verdict engine evaluates the following signals for each position on every cycle:</p>
+                <p className="text-secondary text-sm leading-relaxed mb-4">The verdict engine evaluates the following signals for each position on every cycle:</p>
                 <ul className="space-y-2">
                   {[
                     "Current P&L as a percentage of entry premium (profit-target and stop-loss thresholds)",
                     "Time to expiry and theta decay rate relative to position size",
-                    "Delta and Gamma values â€” whether the contract retains meaningful directional sensitivity",
+                    "Delta and Gamma values — whether the contract retains meaningful directional sensitivity",
                     "Current GEX regime (positive/negative) relative to trade direction",
                     "Recent HELIX flow bias aligned or opposed to the trade thesis",
                     "Current SPX spot position relative to key GEX levels (Call Wall, Gamma Flip, Put Wall)",
                   ].map((signal, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-slate-300">
-                      <span className="text-cyan-400 shrink-0 mt-0.5">â€”</span>
+                    <li key={i} className="flex gap-2 text-sm text-secondary">
+                      <span className="text-cyan-400 shrink-0 mt-0.5">—</span>
                       <span className="leading-relaxed">{signal}</span>
                     </li>
                   ))}
@@ -203,7 +203,7 @@ export default function NightsWatchPage() {
               <div className="grid sm:grid-cols-2 gap-4">
                 {[
                   { title: "Live P&L", description: "Continuous mark-to-market against live bid/ask mid price. Unrealized P&L updates with each valuation cycle." },
-                  { title: "Live Greeks Panel", description: "Delta, Gamma, Theta, and Vega for each position sourced from the live options chain â€” not Black-Scholes estimates." },
+                  { title: "Live Greeks Panel", description: "Delta, Gamma, Theta, and Vega for each position sourced from the live options chain — not Black-Scholes estimates." },
                   { title: "Valuation Status Indicator", description: "Clear live/stale/unavailable status so you always know whether the P&L figure is trustworthy." },
                   { title: "Natural Language Entry", description: "Add positions via Largo AI terminal with plain-English commands: 'Add 5 SPX 5800 calls expiring today at $3.20'" },
                   { title: "Closed Position History", description: "All closed positions move to the history view with realized P&L, entry and exit prices, and trade duration." },
@@ -211,7 +211,7 @@ export default function NightsWatchPage() {
                 ].map((f) => (
                   <div key={f.title} className="border border-cyan-900/25 rounded-lg bg-white/[0.015] p-5">
                     <p className="text-cyan-400 font-semibold mb-2 text-sm">{f.title}</p>
-                    <p className="text-slate-300 text-sm leading-relaxed">{f.description}</p>
+                    <p className="text-secondary text-sm leading-relaxed">{f.description}</p>
                   </div>
                 ))}
               </div>
@@ -222,9 +222,9 @@ export default function NightsWatchPage() {
               <div className="space-y-6">
                 {[
                   { step: "01", title: "Add Your Position", body: "After executing a trade in your broker, add it to Night's Watch. You can use the manual entry form (ticker, strike, expiry, side, size, entry price) or tell Largo: 'Track my SPX 5800C 0DTE, 10 contracts, avg $2.15'." },
-                  { step: "02", title: "Monitor Valuation Status", body: "During RTH, your position's valuation status should be live. If you see stale, wait one valuation cycle â€” the chain fetch may be delayed. If it shows unavailable, verify your broker's position status and check the market hours indicator." },
-                  { step: "03", title: "Read the Verdict Continuously", body: "Night's Watch runs the verdict engine continuously. Treat a HOLD verdict as confirmation, not complacency. A TRIM verdict should prompt immediate position sizing review. A SELL verdict is a hard exit signal â€” act on it." },
-                  { step: "04", title: "Use Greeks to Guide Sizing", body: "As a 0DTE approaches expiry, Gamma spikes and Theta accelerates. When Theta is consuming premium faster than your thesis is playing out, the verdict engine will reflect this â€” typically as a TRIM or SELL." },
+                  { step: "02", title: "Monitor Valuation Status", body: "During RTH, your position's valuation status should be live. If you see stale, wait one valuation cycle — the chain fetch may be delayed. If it shows unavailable, verify your broker's position status and check the market hours indicator." },
+                  { step: "03", title: "Read the Verdict Continuously", body: "Night's Watch runs the verdict engine continuously. Treat a HOLD verdict as confirmation, not complacency. A TRIM verdict should prompt immediate position sizing review. A SELL verdict is a hard exit signal — act on it." },
+                  { step: "04", title: "Use Greeks to Guide Sizing", body: "As a 0DTE approaches expiry, Gamma spikes and Theta accelerates. When Theta is consuming premium faster than your thesis is playing out, the verdict engine will reflect this — typically as a TRIM or SELL." },
                   { step: "05", title: "Cross-Reference Structural Levels", body: "The GEX level annotations show you how your strike relates to the current Call Wall, Put Wall, and Gamma Flip. If SPX is moving away from your strike and through a structural wall, the verdict engine will factor this." },
                   { step: "06", title: "Close and Archive", body: "When you exit a position in your broker, mark it as closed in Night's Watch. The realized P&L will be calculated and archived to your history. Review closed positions periodically to identify thesis errors and timing patterns." },
                 ].map((s) => (
@@ -234,7 +234,7 @@ export default function NightsWatchPage() {
                     </div>
                     <div>
                       <h3 className="text-white font-semibold mb-2">{s.title}</h3>
-                      <p className="text-slate-300 leading-relaxed text-sm">{s.body}</p>
+                      <p className="text-secondary leading-relaxed text-sm">{s.body}</p>
                     </div>
                   </div>
                 ))}
@@ -246,17 +246,17 @@ export default function NightsWatchPage() {
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="border border-cyan-800/40 rounded-xl bg-cyan-950/10 p-6">
                   <p className="text-cyan-400 font-bold font-mono text-sm uppercase tracking-wider mb-4">Do</p>
-                  <ul className="space-y-3 text-slate-300 text-sm">
-                    {["Log every position immediately after execution â€” don't batch-enter at end of day.", "Respect SELL verdicts as hard signals, not suggestions.", "Check valuation status before acting on a P&L figure.", "Use Largo to add positions if you prefer natural language over forms.", "Review closed position history weekly to identify recurrent errors.", "Monitor Theta decay rate on 0DTE positions â€” trim early if decay is outpacing the trade."].map((item, i) => (
+                  <ul className="space-y-3 text-secondary text-sm">
+                    {["Log every position immediately after execution — don't batch-enter at end of day.", "Respect SELL verdicts as hard signals, not suggestions.", "Check valuation status before acting on a P&L figure.", "Use Largo to add positions if you prefer natural language over forms.", "Review closed position history weekly to identify recurrent errors.", "Monitor Theta decay rate on 0DTE positions — trim early if decay is outpacing the trade."].map((item, i) => (
                       <li key={i} className="flex gap-2"><span className="text-cyan-400 mt-0.5 shrink-0">+</span><span className="leading-relaxed">{item}</span></li>
                     ))}
                   </ul>
                 </div>
                 <div className="border border-sky-900/40 rounded-xl bg-sky-950/10 p-6">
                   <p className="text-sky-300 font-bold font-mono text-sm uppercase tracking-wider mb-4">Don&apos;t</p>
-                  <ul className="space-y-3 text-slate-300 text-sm">
-                    {["Don't use P&L figures when valuation status shows unavailable.", "Don't override a SELL verdict without a concrete reason grounded in updated live data.", "Don't use Night's Watch for long-dated positions (LEAPS, multi-week swing trades) â€” it's calibrated for 0DTE and 1â€“5 DTE.", "Don't confuse the Night's Watch verdict with broker trade recommendations.", "Don't ignore TRIM verdicts â€” partial exits often save capital that loses value holding through the close."].map((item, i) => (
-                      <li key={i} className="flex gap-2"><span className="text-sky-300 mt-0.5 shrink-0">â€“</span><span className="leading-relaxed">{item}</span></li>
+                  <ul className="space-y-3 text-secondary text-sm">
+                    {["Don't use P&L figures when valuation status shows unavailable.", "Don't override a SELL verdict without a concrete reason grounded in updated live data.", "Don't use Night's Watch for long-dated positions (LEAPS, multi-week swing trades) — it's calibrated for 0DTE and 1–5 DTE.", "Don't confuse the Night's Watch verdict with broker trade recommendations.", "Don't ignore TRIM verdicts — partial exits often save capital that loses value holding through the close."].map((item, i) => (
+                      <li key={i} className="flex gap-2"><span className="text-sky-300 mt-0.5 shrink-0">–</span><span className="leading-relaxed">{item}</span></li>
                     ))}
                   </ul>
                 </div>
@@ -276,7 +276,7 @@ export default function NightsWatchPage() {
                 ].map((ref) => (
                   <Link key={ref.href} href={ref.href} className="block border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5 hover:border-cyan-700/50 hover:bg-cyan-950/20 transition-all group">
                     <p className="text-cyan-400 font-semibold group-hover:text-cyan-300 transition-colors mb-2">{ref.name} &rarr;</p>
-                    <p className="text-slate-300 text-sm leading-relaxed">{ref.rel}</p>
+                    <p className="text-secondary text-sm leading-relaxed">{ref.rel}</p>
                   </Link>
                 ))}
               </div>
@@ -287,11 +287,11 @@ export default function NightsWatchPage() {
               <div className="space-y-3">
                 {[
                   { term: "Delta", def: "The rate of change of an option's price relative to a $1 move in the underlying. For calls: 0 to +1. For puts: âˆ’1 to 0." },
-                  { term: "Gamma", def: "The rate of change of Delta per $1 move in the underlying. High Gamma means Delta â€” and therefore P&L sensitivity â€” changes rapidly." },
+                  { term: "Gamma", def: "The rate of change of Delta per $1 move in the underlying. High Gamma means Delta — and therefore P&L sensitivity — changes rapidly." },
                   { term: "Theta", def: "The time decay of an option's value per day. Theta accelerates for 0DTE options, particularly in the final hours before expiry." },
                   { term: "Vega", def: "The sensitivity of an option's value to a 1% change in implied volatility." },
                   { term: "Mark-to-Market", def: "Valuing a position at its current market price (bid/ask mid) rather than cost basis." },
-                  { term: "Valuation Status", def: "Live / Stale / Unavailable â€” the freshness indicator for Night's Watch chain data." },
+                  { term: "Valuation Status", def: "Live / Stale / Unavailable — the freshness indicator for Night's Watch chain data." },
                   { term: "TRIM", def: "A partial exit verdict: reduce position size to lock in partial gains or limit further loss exposure." },
                   { term: "SELL", def: "A full exit verdict: close the entire position. Triggered by thesis invalidation, stop-loss, or terminal theta decay." },
                 ].map((g) => (
@@ -299,7 +299,7 @@ export default function NightsWatchPage() {
                     <div className="shrink-0 w-28">
                       <span className="text-cyan-400 font-mono text-sm font-semibold">{g.term}</span>
                     </div>
-                    <p className="text-slate-300 text-sm leading-relaxed">{g.def}</p>
+                    <p className="text-secondary text-sm leading-relaxed">{g.def}</p>
                   </div>
                 ))}
               </div>
@@ -311,12 +311,12 @@ export default function NightsWatchPage() {
                 {[
                   { q: "Night's Watch is showing stale valuation status. What does this mean?", a: "Stale means the chain data backing your P&L is more than 30 seconds old. This typically happens during brief data latency windows. Wait 60 seconds and refresh. If the status persists and market is open, check the platform status page. Do not make sizing decisions based on stale marks." },
                   { q: "Why is my closed position showing no Realized P&L?", a: "Realized P&L is computed from your entry price and the price at which you marked the position as closed. Ensure you entered your exit price when closing the position. If the exit price field was left empty, the system cannot compute a realized figure." },
-                  { q: "Can Night's Watch automatically exit positions at my broker?", a: "No. Night's Watch is a monitoring and advisory tool â€” it does not connect to broker APIs or place orders. All order execution happens in your broker platform." },
+                  { q: "Can Night's Watch automatically exit positions at my broker?", a: "No. Night's Watch is a monitoring and advisory tool — it does not connect to broker APIs or place orders. All order execution happens in your broker platform." },
                   { q: "Night's Watch issued a SELL verdict but my broker fill looks fine. Should I follow it?", a: "Night's Watch verdicts are advisory, not mandatory. However, treat a SELL verdict seriously. The engine has evaluated the position against live GEX, flow, and decay inputs. If your reason for overriding the verdict is based on live data you have that the system does not, that is valid. If it is purely emotional, follow the verdict." },
                 ].map((item, i) => (
                   <div key={i} className="border border-cyan-900/25 rounded-xl bg-white/[0.015] p-6">
                     <p className="text-white font-semibold mb-3 leading-snug">{item.q}</p>
-                    <p className="text-slate-300 text-sm leading-relaxed">{item.a}</p>
+                    <p className="text-secondary text-sm leading-relaxed">{item.a}</p>
                   </div>
                 ))}
               </div>

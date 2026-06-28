@@ -85,7 +85,7 @@ export function AgentPowerModal({ mode, onClose }: AgentPowerModalProps) {
               {error && <p className="nighthawk-modal-error">{error}</p>}
               <div className="nighthawk-modal-actions">
                 <Button variant="ghost" size="sm" onClick={onClose}>
-                  Stand down
+                  Cancel
                 </Button>
                 <button type="button" className="nighthawk-btn-power" onClick={handlePowerUp}>
                   {config.powerLabel}

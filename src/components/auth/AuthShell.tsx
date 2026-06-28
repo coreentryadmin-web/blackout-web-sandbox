@@ -43,14 +43,14 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
             aria-label="Back to BlackOut home"
             className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.35em] uppercase text-sky-300 transition-colors hover:text-bull"
           >
-            <span className="nav-dot" aria-hidden /> ← BLACKOUT.TERMINAL
+            <span className="nav-dot" aria-hidden /> ← BlackOut
           </Link>
         </motion.div>
 
         <div className="relative z-10 max-w-[30rem]">
           <motion.h1
             variants={riseItem}
-            className="font-anton text-7xl leading-none tracking-[0.04em] text-white text-glow-green xl:text-8xl"
+            className="font-anton text-7xl leading-none tracking-[0.04em] text-white xl:text-8xl"
           >
             BLACKOUT
           </motion.h1>
@@ -64,7 +64,7 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
               </>
             ) : (
               <>
-                Clear in. <span className="auth-grad">Take the floor.</span>
+                Create your account. <span className="auth-grad">Open the desk.</span>
               </>
             )}
           </motion.p>
@@ -74,10 +74,7 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
         </div>
 
         <motion.div variants={riseItem} className="relative z-10 flex flex-wrap items-center gap-3">
-          <span className="badge-live">
-            <span className="badge-live-dot" aria-hidden /> Market Open
-          </span>
-          <span className="font-mono text-[10px] text-sky-300/80">Encrypted by Clerk · Brokerless by design</span>
+          <span className="font-mono text-[10px] text-secondary">Encrypted by Clerk · Brokerless by design</span>
         </motion.div>
       </motion.section>
 
@@ -105,9 +102,9 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
               aria-label="Back to BlackOut home"
               className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.35em] uppercase text-sky-300 hover:text-bull"
             >
-              <span className="nav-dot" aria-hidden /> ← Stand down
+              <span className="nav-dot" aria-hidden /> ← Back home
             </Link>
-            <h1 className="mt-4 font-anton text-5xl tracking-[0.04em] text-white text-glow-green">BLACKOUT</h1>
+            <h1 className="mt-4 font-anton text-5xl tracking-[0.04em] text-white">BLACKOUT</h1>
             <p className="mt-2 font-mono text-[10px] tracking-[0.4em] uppercase text-bull">Institutional 0DTE · Options Flow</p>
           </div>
 

@@ -36,8 +36,8 @@ const CONFIG: Record<
   dashboard: {
     ambient: "platform-ambient-dashboard",
     frame: "platform-frame-dashboard",
-    label: "◆ SPX SLAYER OPS",
-    titleClass: "text-white platform-title-glow-green",
+    label: "SPX Slayer",
+    titleClass: "text-white",
     heroArt: "platform-hero-dashboard",
     badgeClass: "badge-live",
     imagePosition: "object-[center_22%]",
@@ -45,7 +45,7 @@ const CONFIG: Record<
   flows: {
     ambient: "platform-ambient-flows",
     frame: "platform-frame-flows",
-    label: "◆ INSTITUTIONAL FLOW",
+    label: "Institutional flow",
     titleClass: "platform-title-flow",
     heroArt: "platform-hero-flows",
     badgeClass: "badge-live badge-live-purple",
@@ -53,16 +53,16 @@ const CONFIG: Record<
   heatmap: {
     ambient: "platform-ambient-heatmap",
     frame: "platform-frame-heatmap",
-    label: "◆ SECTOR ROTATION",
-    titleClass: "platform-title-thermal glow-text-amber",
+    label: "Dealer positioning",
+    titleClass: "text-white",
     heroArt: "platform-hero-heatmap",
     badgeClass: "badge-thermal",
   },
   largo: {
     ambient: "platform-ambient-largo",
     frame: "platform-frame-largo",
-    label: "◆ AI DESK — LARGO",
-    titleClass: "text-purple-light platform-title-glow-purple glow-text-purple",
+    label: "Largo AI desk",
+    titleClass: "text-purple-light",
     heroArt: "platform-hero-largo",
     badgeClass: "badge-ai",
     imagePosition: "object-[center_30%]",
@@ -70,8 +70,8 @@ const CONFIG: Record<
   nighthawk: {
     ambient: "platform-ambient-nighthawk",
     frame: "platform-frame-nighthawk",
-    label: "◆ NIGHT OPS",
-    titleClass: "platform-title-nighthawk glow-text-gold",
+    label: "Night Hawk",
+    titleClass: "text-white",
     heroArt: "platform-hero-nighthawk",
     badgeClass: "badge-ops",
   },
@@ -79,29 +79,7 @@ const CONFIG: Record<
 
 function HeroArt({ variant }: { variant: PlatformVariant }) {
   const art = CONFIG[variant].heroArt;
-
-  return (
-    <div className={clsx("platform-hero-art", art)} aria-hidden>
-      {variant === "flows" && (
-        <>
-          <span className="platform-ghost-text">FLOW</span>
-          <div className="platform-stream-lines" />
-        </>
-      )}
-      {variant === "heatmap" && (
-        <>
-          <span className="platform-ghost-text platform-ghost-thermal">HEAT</span>
-          <div className="platform-thermal-grid" />
-        </>
-      )}
-      {variant === "nighthawk" && (
-        <>
-          <div className="platform-nv-scope" />
-          <span className="platform-ghost-text platform-ghost-nv">HAWK</span>
-        </>
-      )}
-    </div>
-  );
+  return <div className={clsx("platform-hero-art", art)} aria-hidden />;
 }
 
 function HeroImage({
@@ -116,7 +94,7 @@ function HeroImage({
   const { imagePosition } = CONFIG[variant];
 
   return (
-    <div className="platform-hero-image-wrap scan-line">
+    <div className="platform-hero-image-wrap">
       <div className="relative aspect-[16/9] md:aspect-[2/1] min-h-[240px] md:min-h-[320px]">
         <Image
           src={src}
@@ -173,32 +151,28 @@ export function PlatformShell({
             )}
           >
             <div>
-              <p className="font-mono text-[10px] tracking-[0.45em] text-sky-200 uppercase mb-2">
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-secondary">
                 {theme.label}
               </p>
               <motion.h1
                 key={variant}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 className={clsx(
-                  "font-anton leading-[0.9] tracking-wide uppercase",
-                  deskMode ? (fullWidth ? "text-3xl md:text-4xl" : "text-4xl md:text-5xl") : "text-5xl md:text-7xl lg:text-8xl",
+                  "font-syne font-bold leading-tight tracking-tight",
+                  deskMode ? (fullWidth ? "text-2xl md:text-3xl" : "text-3xl md:text-4xl") : "text-4xl md:text-5xl",
                   theme.titleClass
                 )}
               >
                 {title}
               </motion.h1>
               {subtitle && (
-                <p className="font-mono text-xs md:text-sm text-sky-100 mt-2 tracking-widest uppercase">
+                <p className="mt-2 font-mono text-xs tracking-wide text-secondary md:text-sm">
                   {subtitle}
                 </p>
               )}
             </div>
-            <span className={theme.badgeClass}>
-              <span className="badge-live-dot" />
-              {variant === "largo" ? "AI Online" : variant === "heatmap" ? "Thermal Scan" : variant === "nighthawk" ? "Night Ops" : "Live"}
-            </span>
           </div>
         </header>
 

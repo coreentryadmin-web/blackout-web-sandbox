@@ -197,10 +197,10 @@ function StructureCard({
 }
 
 const TONE_CLASS: Record<string, string> = {
-  bull: "text-bull text-glow-green",
+  bull: "text-bull",
   // Small structure values (GEX Net, 0DTE Net, internals) — AA-safe bear fill,
   // keep the red glow for the bearish feel.
-  bear: "text-bear-text text-glow-red",
+  bear: "text-bear-text",
   support: "text-emerald-400",
   resistance: "text-rose-400",
   neutral: "text-sky-200",

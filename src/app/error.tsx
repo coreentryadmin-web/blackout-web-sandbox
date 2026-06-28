@@ -14,24 +14,22 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Surface to the console for diagnostics; never render the raw error.
     console.error(error);
   }, [error]);
 
   return (
     <main className="grid min-h-screen place-items-center bg-void px-6 text-center">
       <div className="flex max-w-lg flex-col items-center gap-5">
-        <span className="font-mono text-xs uppercase tracking-[0.3em] text-sky-300">
-          ◆ SYSTEM FAULT
+        <span className="font-mono text-xs uppercase tracking-[0.3em] text-mute">
+          Something went wrong
         </span>
 
-        <h1 className="font-anton text-4xl uppercase leading-[0.95] tracking-tight text-white sm:text-5xl">
-          THE DESK HIT A SNAG.
+        <h1 className="font-anton text-4xl leading-[0.95] tracking-tight text-white sm:text-5xl">
+          We couldn&apos;t load this page.
         </h1>
 
-        <p className="max-w-md text-sky-300">
-          Something tripped on the wire. Retry the request — if it keeps faulting,
-          fall back to base and the terminal reconnects.
+        <p className="max-w-md text-secondary">
+          Try again. If the problem persists, return home and reopen the desk.
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
@@ -40,13 +38,13 @@ export default function Error({
             onClick={reset}
             className="rounded-full bg-bull px-6 py-2.5 font-mono text-xs font-medium uppercase tracking-[0.2em] text-[#021c14] shadow-glow-green transition hover:brightness-110"
           >
-            Retry
+            Try again
           </button>
           <Link
             href="/"
-            className="rounded-full border border-bull/40 px-6 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-bull transition hover:bg-bull/10"
+            className="rounded-full border border-white/15 px-6 py-2.5 font-mono text-xs uppercase tracking-[0.2em] text-secondary transition hover:border-white/25 hover:text-white"
           >
-            Return to base →
+            Go home
           </Link>
         </div>
       </div>

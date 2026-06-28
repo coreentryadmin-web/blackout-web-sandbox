@@ -38,7 +38,7 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
       <div className="min-w-0">
         {kicker != null && <Kicker className="mb-2">{kicker}</Kicker>}
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="t-h1 text-white">
+          <h1 className="font-syne text-2xl font-bold tracking-tight text-white md:text-3xl">
             {title}
             {titleAccent != null && (
               <>
@@ -50,7 +50,7 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
           {badge != null && <span className="shrink-0">{badge}</span>}
         </div>
         {subtitle != null && (
-          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-sky-300/75">{subtitle}</p>
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-secondary">{subtitle}</p>
         )}
       </div>
       {actions != null && (

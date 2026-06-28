@@ -165,13 +165,10 @@ export function LandingFooter() {
           >
             <div className="flex items-center gap-2.5">
               <span className="nav-dot" aria-hidden />
-              <span className="font-anton text-3xl tracking-[0.04em] text-white text-glow-green">BLACKOUT</span>
+              <span className="font-anton text-3xl tracking-[0.04em] text-white">BLACKOUT</span>
             </div>
             <p className="mt-2 font-mono text-[10px] tracking-[0.35em] uppercase text-bull">{SITE.tagline}</p>
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-secondary">{SITE.description}</p>
-            <span className="badge-live mt-5 inline-flex">
-              <span className="badge-live-dot" aria-hidden /> Market data — live
-            </span>
             <div className="mt-6 flex flex-col gap-1.5">
               <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[13px] text-sky-300 transition-colors hover:text-bull">
                 {SUPPORT_EMAIL}
@@ -182,7 +179,7 @@ export function LandingFooter() {
             </div>
           </motion.div>
 
-          <FooterCol title="The Arsenal" items={ARSENAL} index={1} />
+          <FooterCol title="Instruments" items={ARSENAL} index={1} />
           <FooterCol title="Platform" items={PLATFORM} index={2} />
 
           {/* disclaimer column */}
