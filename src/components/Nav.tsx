@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { UserButton, useAuth } from "@clerk/nextjs";
 import { clsx } from "clsx";
-import { OnboardingTrigger } from "@/components/OnboardingTrigger";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
@@ -294,10 +293,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
             </Link>
           </li>
 
-          <li className="nav-pill-li">
-            <OnboardingTrigger className="nav-pill-item onboarding-nav-trigger" />
-          </li>
-
           {showAdmin && (
             <li className="nav-pill-li">
               <Link href="/admin" prefetch={false} className={clsx("nav-pill-item nav-pill-admin", path.startsWith("/admin") && "nav-pill-item-active")}>
@@ -386,7 +381,6 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
               >
                 Learn
               </Link>
-              <OnboardingTrigger className="nav-sheet-link font-syne onboarding-nav-trigger" />
               {showAdmin && (
                 <Link href="/admin" prefetch={false} onClick={() => setMobileOpen(false)} className="nav-sheet-link font-syne nav-pill-admin">
                   Admin
