@@ -1,3 +1,5 @@
+﻿export const dynamic = "force-static";
+
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -25,7 +27,7 @@ export default function HelixFlowsPage() {
         {/* Header */}
         <div className="mb-12">
           <p className="text-cyan-400 text-sm font-mono tracking-widest uppercase mb-3">
-            BlackOut Learn — Tool Documentation
+            BlackOut Learn â€” Tool Documentation
           </p>
           <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
             HELIX Options Flow
@@ -59,7 +61,7 @@ export default function HelixFlowsPage() {
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-3 border-b border-white/10">Overview</h2>
               <p className="text-slate-300 leading-relaxed mb-4">
-                HELIX is BlackOut&apos;s live institutional options flow tape. Every print that crosses the tape above the configured premium threshold is delivered to your session in real time via server-sent events — no polling, no stale data. The feed is purpose-built to surface what institutional participants are doing, not what retail is speculating on.
+                HELIX is BlackOut&apos;s live institutional options flow tape. Every print that crosses the tape above the configured premium threshold is delivered to your session in real time via server-sent events â€” no polling, no stale data. The feed is purpose-built to surface what institutional participants are doing, not what retail is speculating on.
               </p>
               <p className="text-slate-300 leading-relaxed mb-4">
                 Raw options tape is noise. HELIX applies premium and structural filters to reduce that stream to the prints that carry institutional weight: large-dollar sweeps, coordinated multi-exchange fills, dark pool blocks, and concentrated strike stacks.
@@ -70,7 +72,7 @@ export default function HelixFlowsPage() {
               <div className="mt-6 p-4 rounded-lg border border-cyan-400/20 bg-cyan-400/5">
                 <p className="text-cyan-400 text-sm font-semibold mb-1">When to use HELIX</p>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Use HELIX before entering any SPX or high-conviction single-name trade. Confirm that institutional flow is aligned with your directional thesis before sizing up. Do not trade flow prints in isolation — always cross-reference with GEX levels in SPX Slayer.
+                  Use HELIX before entering any SPX or high-conviction single-name trade. Confirm that institutional flow is aligned with your directional thesis before sizing up. Do not trade flow prints in isolation â€” always cross-reference with GEX levels in SPX Slayer.
                 </p>
               </div>
             </section>
@@ -105,7 +107,7 @@ export default function HelixFlowsPage() {
                 {[
                   { title: "Live Flow Tape", body: "Every print above the premium threshold delivered via SSE as it occurs. Ticker, strike, expiry, side, size, premium, and timestamp visible at-a-glance." },
                   { title: "Sweep Indicator", body: "Prints that hit multiple exchanges simultaneously are flagged as sweeps. Sweep activity is the clearest structural signal of institutional urgency." },
-                  { title: "0DTE Flags", body: "Same-day expiry contracts are highlighted distinctly. 0DTE flow demands immediate attention — these positions expire within hours." },
+                  { title: "0DTE Flags", body: "Same-day expiry contracts are highlighted distinctly. 0DTE flow demands immediate attention â€” these positions expire within hours." },
                   { title: "Strike Stacks", body: "Aggregated premium at each strike, ranked in real time. Identifies where the market's largest participants are concentrating positioning." },
                   { title: "Alert Premium Ticker", body: "A scrolling marquee surfaces the highest-premium single prints as they arrive." },
                   { title: "Net Flow Bias", body: "Session-level call vs. put premium ratio sourced from our flow intelligence engine. Provides the macro directional lean from institutional flow." },
@@ -156,9 +158,9 @@ export default function HelixFlowsPage() {
                       "Set a meaningful premium floor. Noise below your threshold obscures the signal above it.",
                       "Watch sweep clusters, not individual prints. Three bullish sweeps in 10 minutes outweigh one large isolated print.",
                       "Cross-reference every significant strike with SPX Slayer GEX walls before acting.",
-                      "Track the direction of strike stacks over time — building stacks are more meaningful than single prints.",
+                      "Track the direction of strike stacks over time â€” building stacks are more meaningful than single prints.",
                       "Log every flow-based trade in Night's Watch immediately after entry.",
-                      "Treat 0DTE prints with urgency — they expire today.",
+                      "Treat 0DTE prints with urgency â€” they expire today.",
                     ].map((item) => (
                       <li key={item} className="text-slate-300 text-sm leading-relaxed flex gap-2">
                         <span className="text-green-400 mt-0.5 flex-shrink-0">+</span>{item}
@@ -216,7 +218,7 @@ export default function HelixFlowsPage() {
                     category: "Print Attributes",
                     terms: [
                       { term: "0DTE", def: "Zero days to expiry. A print with same-day expiration. Elevated gamma risk; highly directional or hedging in nature." },
-                      { term: "Premium", def: "Total dollar value of a single print (price per contract × size × 100). The primary filter for institutional significance." },
+                      { term: "Premium", def: "Total dollar value of a single print (price per contract Ã— size Ã— 100). The primary filter for institutional significance." },
                       { term: "Side", def: "Whether the print is a call (bullish directional or hedge) or a put (bearish directional or hedge)." },
                       { term: "Size", def: "Number of contracts in a single print. Large size at mid or ask price is the strongest signal of directional conviction." },
                       { term: "Strike", def: "The price level the contract conveys the right to buy (call) or sell (put). Strike placement relative to GEX walls is critical context." },
@@ -253,8 +255,8 @@ export default function HelixFlowsPage() {
               <div className="space-y-8">
                 {[
                   { q: "How delayed is the HELIX feed?", a: "HELIX delivers prints via server-sent events as they clear BlackOut's ingestion pipeline. In normal market conditions, prints appear within seconds of exchange execution." },
-                  { q: "What does it mean when a large put sweep prints at the ask during a rally?", a: "A put sweep at the ask during an uptrend is typically a hedging print — an institution buying protection against a long equity book. Context matters: if SPX is near a GEX resistance wall and multiple put sweeps appear, the probability of a directional bet increases." },
-                  { q: "What is the difference between a sweep and a block?", a: "A sweep executes across multiple exchanges simultaneously. A block is a single large print — often a dark pool print — that executes as one transaction. Sweeps signal urgency; blocks signal scale." },
+                  { q: "What does it mean when a large put sweep prints at the ask during a rally?", a: "A put sweep at the ask during an uptrend is typically a hedging print â€” an institution buying protection against a long equity book. Context matters: if SPX is near a GEX resistance wall and multiple put sweeps appear, the probability of a directional bet increases." },
+                  { q: "What is the difference between a sweep and a block?", a: "A sweep executes across multiple exchanges simultaneously. A block is a single large print â€” often a dark pool print â€” that executes as one transaction. Sweeps signal urgency; blocks signal scale." },
                   { q: "Can I use HELIX for single-name stocks as well as SPX?", a: "Yes. HELIX displays flow across all tickers that produce prints above your configured premium threshold. You can filter the tape to a specific ticker using the ticker filter in the panel." },
                 ].map(({ q, a }) => (
                   <div key={q} className="p-5 rounded-lg border border-white/10 bg-white/[0.02]">

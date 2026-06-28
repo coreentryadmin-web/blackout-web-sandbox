@@ -1,3 +1,5 @@
+export const dynamic = "force-static";
+
 import { CustomCursor } from "@/components/CustomCursor";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { MarqueeBlock } from "@/components/landing/MarqueeStrip";

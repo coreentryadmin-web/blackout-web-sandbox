@@ -1,16 +1,18 @@
+﻿export const dynamic = "force-static";
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageShell, PageHeader } from "@/components/ui";
 
 export const metadata: Metadata = {
-  title: "Learn · BlackOut",
+  title: "Learn Â· BlackOut",
   description: "Documentation and guides for every BlackOut Trading tool.",
 };
 
 const TOOLS = [
   {
     slug: "getting-started",
-    emoji: "🚀",
+    emoji: "ðŸš€",
     label: "Getting Started",
     desc: "Platform overview and how all tools connect. Start here if you are new.",
     accent: "border-cyan-400/30 hover:border-cyan-400/60",
@@ -18,7 +20,7 @@ const TOOLS = [
   },
   {
     slug: "spx-slayer",
-    emoji: "⚔️",
+    emoji: "âš”ï¸",
     label: "SPX Slayer",
     desc: "Real-time SPX options desk with GEX walls, play engine, and 0DTE war-room setup.",
     accent: "border-emerald-400/30 hover:border-emerald-400/60",
@@ -26,15 +28,15 @@ const TOOLS = [
   },
   {
     slug: "helix-flows",
-    emoji: "🧬",
+    emoji: "ðŸ§¬",
     label: "HELIX Options Flow",
-    desc: "Live institutional options flow tape — whale alerts, dark-pool prints, anomaly scanner.",
+    desc: "Live institutional options flow tape â€” whale alerts, dark-pool prints, anomaly scanner.",
     accent: "border-purple-400/30 hover:border-purple-400/60",
     tag: null,
   },
   {
     slug: "largo-ai",
-    emoji: "🤖",
+    emoji: "ðŸ¤–",
     label: "Largo AI Terminal",
     desc: "AI-powered market analysis desk with live tool access, GEX context, and flow data.",
     accent: "border-sky-400/30 hover:border-sky-400/60",
@@ -42,15 +44,15 @@ const TOOLS = [
   },
   {
     slug: "night-hawk",
-    emoji: "🦅",
+    emoji: "ðŸ¦…",
     label: "Night Hawk",
-    desc: "Evening SPX play scanner — tomorrow's setups, tonight. Curated playbook delivery.",
+    desc: "Evening SPX play scanner â€” tomorrow's setups, tonight. Curated playbook delivery.",
     accent: "border-red-400/30 hover:border-red-400/60",
     tag: null,
   },
   {
     slug: "heat-maps",
-    emoji: "🌡️",
+    emoji: "ðŸŒ¡ï¸",
     label: "Heat Maps",
     desc: "GEX, VEX, DEX, and CHARM dealer-positioning heatmaps. Read the regime at a glance.",
     accent: "border-orange-400/30 hover:border-orange-400/60",
@@ -58,7 +60,7 @@ const TOOLS = [
   },
   {
     slug: "nights-watch",
-    emoji: "🛡️",
+    emoji: "ðŸ›¡ï¸",
     label: "Night's Watch",
     desc: "Personal options position manager with live P&L, greeks, and expiry tracking.",
     accent: "border-indigo-400/30 hover:border-indigo-400/60",
@@ -66,15 +68,15 @@ const TOOLS = [
   },
   {
     slug: "blackout-grid",
-    emoji: "⚡",
+    emoji: "âš¡",
     label: "BlackOut Grid",
-    desc: "Market intelligence command center — news, flows, earnings, catalysts, analyst moves.",
+    desc: "Market intelligence command center â€” news, flows, earnings, catalysts, analyst moves.",
     accent: "border-yellow-400/30 hover:border-yellow-400/60",
     tag: null,
   },
   {
     slug: "glossary",
-    emoji: "📖",
+    emoji: "ðŸ“–",
     label: "Glossary",
     desc: "Key terms, metrics, and concepts used across the platform, clearly defined.",
     accent: "border-slate-400/30 hover:border-slate-400/60",
@@ -87,7 +89,7 @@ export default function LearnPage() {
     <PageShell>
       <div className="content-rail py-12">
         <PageHeader
-          kicker="◆ DOCUMENTATION"
+          kicker="â—† DOCUMENTATION"
           title="BlackOut Docs"
           subtitle="Everything you need to master the platform."
         />
@@ -97,12 +99,12 @@ export default function LearnPage() {
           href="/learn/getting-started"
           className="mt-10 flex items-center gap-4 rounded-xl border border-cyan-400/40 bg-cyan-400/5 px-5 py-4 transition-colors hover:border-cyan-400/70 hover:bg-cyan-400/10"
         >
-          <span className="text-2xl" aria-hidden>🚀</span>
+          <span className="text-2xl" aria-hidden>ðŸš€</span>
           <div>
             <p className="font-syne text-sm font-semibold uppercase tracking-widest text-cyan-400">Start Here</p>
-            <p className="mt-0.5 font-mono text-base text-white">Getting Started — Platform overview and how all tools connect</p>
+            <p className="mt-0.5 font-mono text-base text-white">Getting Started â€” Platform overview and how all tools connect</p>
           </div>
-          <span className="ml-auto font-mono text-cyan-400" aria-hidden>→</span>
+          <span className="ml-auto font-mono text-cyan-400" aria-hidden>â†’</span>
         </Link>
 
         {/* Tool grid */}
@@ -119,14 +121,14 @@ export default function LearnPage() {
               </div>
               <p className="font-mono text-sm leading-relaxed text-slate-300">{tool.desc}</p>
               <span className="mt-auto font-mono text-xs text-sky-300 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden>
-                Read docs →
+                Read docs â†’
               </span>
             </Link>
           ))}
         </div>
 
         <p className="mt-12 font-mono text-xs text-slate-300">
-          BlackOut Trading · Documentation is updated continuously as features ship.
+          BlackOut Trading Â· Documentation is updated continuously as features ship.
         </p>
       </div>
     </PageShell>

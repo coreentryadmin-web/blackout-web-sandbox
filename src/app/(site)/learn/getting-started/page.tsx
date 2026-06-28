@@ -1,10 +1,12 @@
+﻿export const dynamic = "force-static";
+
 import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Getting Started | BlackOut Trading",
   description:
-    "Platform overview for BlackOut Trading — how SPX Slayer, HELIX, Largo, Night Hawk, Heat Maps, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
+    "Platform overview for BlackOut Trading â€” how SPX Slayer, HELIX, Largo, Night Hawk, Heat Maps, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
 };
 
 const sections = [
@@ -23,7 +25,7 @@ const tools = [
   {
     name: "Night Hawk",
     href: "/learn/night-hawk",
-    timing: "Evening — before market close / after hours",
+    timing: "Evening â€” before market close / after hours",
     role: "Scans the options chain each evening and publishes a curated playbook of high-conviction SPX setups for the following session. Your pre-market briefing.",
   },
   {
@@ -42,7 +44,7 @@ const tools = [
     name: "Largo AI Terminal",
     href: "/learn/largo-ai",
     timing: "On demand",
-    role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data — not generic commentary.",
+    role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data â€” not generic commentary.",
   },
   {
     name: "Heat Maps",
@@ -60,7 +62,7 @@ const tools = [
     name: "BlackOut Grid",
     href: "/learn/blackout-grid",
     timing: "Continuous",
-    role: "Market intelligence hub. News, dark pool prints, earnings calendars, analyst revisions, congressional trades, and economic events — all in one structured feed.",
+    role: "Market intelligence hub. News, dark pool prints, earnings calendars, analyst revisions, congressional trades, and economic events â€” all in one structured feed.",
   },
 ];
 
@@ -77,7 +79,7 @@ export default function GettingStartedPage() {
             Getting Started
           </h1>
           <p className="text-slate-300 text-lg max-w-2xl leading-relaxed">
-            A complete orientation to the BlackOut platform — how each tool
+            A complete orientation to the BlackOut platform â€” how each tool
             works, how they connect, and the workflow that puts institutional
             dealer intelligence at the center of every trade decision.
           </p>
@@ -116,13 +118,13 @@ export default function GettingStartedPage() {
                   BlackOut Trading is a professional-grade SPX and 0DTE options
                   intelligence platform built around one conviction: the only
                   edge that compounds is seeing what institutional dealers are
-                  positioned for — not what retail sentiment says.
+                  positioned for â€” not what retail sentiment says.
                 </p>
                 <p>
                   Every surface on the platform is designed to surface dealer
                   hedging flows, institutional positioning, and structural market
                   mechanics in real time. The toolset is not a collection of
-                  independent indicators. It is a pipeline — data enters raw
+                  independent indicators. It is a pipeline â€” data enters raw
                   from the options chain, gets processed through GEX and flow
                   analytics, and emerges as actionable intelligence on your
                   screen.
@@ -287,7 +289,7 @@ export default function GettingStartedPage() {
                 <p>
                   BlackOut Trading membership is provisioned through our subscription platform. Once your
                   subscription is active, your account is automatically
-                  authorized — no additional API keys or configuration is
+                  authorized â€” no additional API keys or configuration is
                   required on your end. All data feeds are platform-managed.
                 </p>
               </div>
@@ -301,7 +303,7 @@ export default function GettingStartedPage() {
                   {
                     step: "2",
                     title: "Sign in with your account",
-                    body: "Use the email address associated with your subscription. Authentication is handled via our auth system — no separate password setup required if you use a social login.",
+                    body: "Use the email address associated with your subscription. Authentication is handled via our auth system â€” no separate password setup required if you use a social login.",
                   },
                   {
                     step: "3",
@@ -340,14 +342,14 @@ export default function GettingStartedPage() {
               <p className="text-slate-300 mb-8 leading-relaxed">
                 The platform is designed around a repeatable daily rhythm. Each
                 tool occupies a specific phase of the trading day. Used in
-                sequence, they provide context layering — each surface confirms,
+                sequence, they provide context layering â€” each surface confirms,
                 qualifies, or challenges the signals from the previous one.
               </p>
               <div className="space-y-4">
                 {[
                   {
                     phase: "Evening",
-                    time: "4:30 PM – 8:00 PM ET",
+                    time: "4:30 PM â€“ 8:00 PM ET",
                     tool: "Night Hawk",
                     href: "/learn/night-hawk",
                     action:
@@ -355,7 +357,7 @@ export default function GettingStartedPage() {
                   },
                   {
                     phase: "Pre-Market",
-                    time: "8:00 AM – 9:30 AM ET",
+                    time: "8:00 AM â€“ 9:30 AM ET",
                     tool: "BlackOut Grid",
                     href: "/learn/blackout-grid",
                     action:
@@ -383,7 +385,7 @@ export default function GettingStartedPage() {
                     tool: "Largo AI",
                     href: "/learn/largo-ai",
                     action:
-                      "When context is ambiguous or you want a structured read on current positioning, query Largo. It interprets live data — not generic market commentary.",
+                      "When context is ambiguous or you want a structured read on current positioning, query Largo. It interprets live data â€” not generic market commentary.",
                   },
                   {
                     phase: "Trade Management",
@@ -471,7 +473,7 @@ export default function GettingStartedPage() {
                   </p>
                   <ul className="space-y-3">
                     {[
-                      "Use Night Hawk as pre-session preparation, not as a live trade signal. Context built the evening before is context — validate it at open.",
+                      "Use Night Hawk as pre-session preparation, not as a live trade signal. Context built the evening before is context â€” validate it at open.",
                       "Cross-reference GEX walls in Heat Maps before entering a position at a level SPX Slayer flags. Visual confirmation reduces false edges.",
                       "Use Largo when you want structured analysis, not when you want reassurance. Ask it hard questions about current data.",
                       "Log every position in Night's Watch immediately. Real-time Greeks and P&L tracking requires position data to be current.",
@@ -491,9 +493,9 @@ export default function GettingStartedPage() {
                   </p>
                   <ul className="space-y-3">
                     {[
-                      "Don't treat GEX walls as guaranteed support/resistance. They are dealer hedge concentration points — they can break, especially into binary events.",
+                      "Don't treat GEX walls as guaranteed support/resistance. They are dealer hedge concentration points â€” they can break, especially into binary events.",
                       "Don't rely on a single tool in isolation. SPX Slayer without HELIX confirmation and Heat Map context is half the picture.",
-                      "Don't query Largo for real-time price levels — it is an analysis engine, not a live quote feed. Use SPX Slayer for current price action.",
+                      "Don't query Largo for real-time price levels â€” it is an analysis engine, not a live quote feed. Use SPX Slayer for current price action.",
                       "Don't override a Night Hawk thesis based on early pre-market noise without checking the Grid for a legitimate catalyst.",
                       "Don't ignore the flow tape during high-GEX environments. When dealers are heavily hedged, institutional order flow has outsized impact.",
                       "Don't enter a 0DTE position without confirming that the GEX data on-screen is current. Check the data timestamp on SPX Slayer.",
@@ -559,7 +561,7 @@ export default function GettingStartedPage() {
                   },
                   {
                     q: "What is the difference between Night Hawk and SPX Slayer?",
-                    a: "Night Hawk is an asynchronous evening publication — it processes the prior session and publishes a curated playbook for the next one. SPX Slayer is a live, real-time desk intended for active use during market hours. Night Hawk provides context and bias; SPX Slayer provides execution intelligence.",
+                    a: "Night Hawk is an asynchronous evening publication â€” it processes the prior session and publishes a curated playbook for the next one. SPX Slayer is a live, real-time desk intended for active use during market hours. Night Hawk provides context and bias; SPX Slayer provides execution intelligence.",
                   },
                   {
                     q: "Can Largo AI access live market data?",
@@ -623,7 +625,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "Open Interest (OI)",
-                        def: "The total number of outstanding options contracts at a given strike and expiry. High OI concentrations inform GEX computation — they represent where dealer hedging obligations are largest.",
+                        def: "The total number of outstanding options contracts at a given strike and expiry. High OI concentrations inform GEX computation â€” they represent where dealer hedging obligations are largest.",
                       },
                       {
                         term: "0DTE",
@@ -648,7 +650,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "RTH (Regular Trading Hours)",
-                        def: "9:30 AM – 4:00 PM ET. BlackOut's real-time data feeds are most active during RTH. GEX recomputation, HELIX flow, and SPX Slayer signals are all RTH-primary.",
+                        def: "9:30 AM â€“ 4:00 PM ET. BlackOut's real-time data feeds are most active during RTH. GEX recomputation, HELIX flow, and SPX Slayer signals are all RTH-primary.",
                       },
                       {
                         term: "Setup Score",

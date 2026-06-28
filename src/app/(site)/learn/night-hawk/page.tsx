@@ -1,8 +1,10 @@
+﻿export const dynamic = "force-static";
+
 import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Night Hawk — Evening SPX Play Scanner | BlackOut Trading",
+  title: "Night Hawk â€” Evening SPX Play Scanner | BlackOut Trading",
   description:
     "Night Hawk scans overnight GEX positioning, catalyst calendars, and historical patterns each evening to identify directional SPX setups for the next trading day.",
 };
@@ -31,7 +33,7 @@ export default function NightHawkPage() {
           </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight mb-4">Night Hawk</h1>
           <p className="text-xl text-slate-300 max-w-3xl leading-relaxed">
-            Evening SPX play scanner. Each night, Night Hawk synthesizes GEX positioning, the next-day catalyst calendar, and historical pattern data into a structured edition — directional theses, key levels, and specific play ideas for the following session.
+            Evening SPX play scanner. Each night, Night Hawk synthesizes GEX positioning, the next-day catalyst calendar, and historical pattern data into a structured edition â€” directional theses, key levels, and specific play ideas for the following session.
           </p>
         </div>
 
@@ -51,9 +53,9 @@ export default function NightHawkPage() {
               <div className="mt-10 p-4 bg-cyan-400/5 border border-cyan-400/20 rounded-xl">
                 <p className="text-xs font-mono uppercase tracking-widest text-cyan-400 mb-2">Schedule</p>
                 <ul className="text-sm text-slate-300 space-y-2">
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Primary: 5:30 PM ET daily</span></li>
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Backup: 4:30 PM ET</span></li>
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Morning update: 9:15 AM ET</span></li>
+                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">â€”</span><span>Primary: 5:30 PM ET daily</span></li>
+                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">â€”</span><span>Backup: 4:30 PM ET</span></li>
+                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">â€”</span><span>Morning update: 9:15 AM ET</span></li>
                 </ul>
               </div>
 
@@ -73,10 +75,10 @@ export default function NightHawkPage() {
               </h2>
               <div className="space-y-5 text-slate-300 leading-relaxed">
                 <p>
-                  Night Hawk runs each evening after market close, before the next session opens. The scanner ingests three primary data streams — dealer GEX positioning, the next-day economic and earnings catalyst calendar, and historical overnight pattern data — and produces a structured edition for the following day.
+                  Night Hawk runs each evening after market close, before the next session opens. The scanner ingests three primary data streams â€” dealer GEX positioning, the next-day economic and earnings catalyst calendar, and historical overnight pattern data â€” and produces a structured edition for the following day.
                 </p>
                 <p>
-                  Unlike intraday signals, Night Hawk operates on positioning data that is inherently forward-looking. Dealer hedging flows create measurable structural levels — call walls, put walls, and gamma flip points — that tend to act as gravitational zones throughout the next session.
+                  Unlike intraday signals, Night Hawk operates on positioning data that is inherently forward-looking. Dealer hedging flows create measurable structural levels â€” call walls, put walls, and gamma flip points â€” that tend to act as gravitational zones throughout the next session.
                 </p>
                 <p>
                   The output is a play edition: a structured document containing a market context summary, catalyst scan, GEX level map, directional thesis, and specific play ideas with strikes, expiries, and risk parameters. A morning confirmation update at 9:15 AM ET refreshes the edition with pre-market price action.
@@ -118,8 +120,8 @@ export default function NightHawkPage() {
                   { label: "Market Context", color: "cyan", description: "A brief assessment of where SPX closed relative to key structural levels, the prevailing volatility regime, and any relevant macro backdrop." },
                   { label: "Catalyst Scan", color: "sky", description: "Next-day economic releases, Fed speakers, major earnings, and any events that could affect overnight or intraday positioning." },
                   { label: "GEX Positioning", color: "cyan", description: "The key gamma exposure levels for the next session: call wall, put wall, and the gamma flip point." },
-                  { label: "Directional Thesis", color: "sky", description: "The core view for the next session — bullish, bearish, or range-bound — anchored to GEX structure, catalyst risk, and historical pattern context." },
-                  { label: "Play Ideas", color: "cyan", description: "Specific option play concepts with suggested strike ranges, expiry (0DTE or 1DTE), and risk-reward parameters. Strike prices are priced at prior day's close — always verify live pricing at open." },
+                  { label: "Directional Thesis", color: "sky", description: "The core view for the next session â€” bullish, bearish, or range-bound â€” anchored to GEX structure, catalyst risk, and historical pattern context." },
+                  { label: "Play Ideas", color: "cyan", description: "Specific option play concepts with suggested strike ranges, expiry (0DTE or 1DTE), and risk-reward parameters. Strike prices are priced at prior day's close â€” always verify live pricing at open." },
                   { label: "Invalidation Levels", color: "sky", description: "The price levels at which the thesis is no longer valid. If SPX breaks through these levels at open, Night Hawk's directional bias should be abandoned." },
                 ].map((block, i) => (
                   <div key={i} className={`p-5 rounded-xl border ${block.color === "cyan" ? "bg-cyan-400/5 border-cyan-400/20" : "bg-sky-300/5 border-sky-300/20"}`}>
@@ -142,18 +144,18 @@ export default function NightHawkPage() {
               <div className="space-y-6">
                 {[
                   {
-                    time: "Evening (5:30–7:00 PM ET)",
+                    time: "Evening (5:30â€“7:00 PM ET)",
                     steps: [
-                      "Open the Night Hawk feed and read the current edition in full — do not skip directly to the play ideas.",
+                      "Open the Night Hawk feed and read the current edition in full â€” do not skip directly to the play ideas.",
                       "Identify the three GEX levels (call wall, put wall, gamma flip) and mark them on your chart.",
                       "Note the directional thesis and its stated confidence level.",
                       "Review the invalidation levels. Write them down.",
-                      "If there are high-impact catalysts flagged for the next day, mentally discount the thesis — catalyst days require tighter risk framing.",
+                      "If there are high-impact catalysts flagged for the next day, mentally discount the thesis â€” catalyst days require tighter risk framing.",
                       "Review the play ideas as frameworks, not orders. The strikes are yesterday's prices.",
                     ],
                   },
                   {
-                    time: "Pre-Market (8:30–9:15 AM ET)",
+                    time: "Pre-Market (8:30â€“9:15 AM ET)",
                     steps: [
                       "Read the morning confirmation block when it publishes at 9:15 AM ET.",
                       "Compare overnight futures positioning to the Night Hawk call wall and put wall.",
@@ -162,10 +164,10 @@ export default function NightHawkPage() {
                     ],
                   },
                   {
-                    time: "Market Open (9:30–10:00 AM ET)",
+                    time: "Market Open (9:30â€“10:00 AM ET)",
                     steps: [
                       "Open SPX Slayer to monitor the live desk at the open.",
-                      "Check HELIX for the direction of institutional flow in the first 5–10 minutes.",
+                      "Check HELIX for the direction of institutional flow in the first 5â€“10 minutes.",
                       "Confirm that flow direction aligns with Night Hawk's directional bias.",
                       "If SPX opens beyond your invalidation level: stand down. Do not force the Night Hawk thesis against contrary live data.",
                     ],
@@ -206,8 +208,8 @@ export default function NightHawkPage() {
                 <div className="p-6 bg-red-400/5 border border-red-400/20 rounded-xl">
                   <p className="font-semibold text-red-400 mb-4 text-sm uppercase tracking-wider font-mono">Don&apos;t</p>
                   <ul className="space-y-3">
-                    {["Place limit orders overnight based on Night Hawk strike prices — premiums will be different at open.", "Ignore the morning confirmation update.", "Trade the Night Hawk thesis if SPX opens through an invalidation level.", "Use Night Hawk plays without confirming live flow direction on HELIX at the open.", "Mistake Night Hawk's directional bias for a guaranteed outcome.", "Skip the catalyst scan section. Macro risk can overwhelm GEX structure."].map((item, i) => (
-                      <li key={i} className="flex gap-3 text-sm"><span className="text-red-400 flex-shrink-0 mt-0.5">—</span><span className="text-slate-300 leading-relaxed">{item}</span></li>
+                    {["Place limit orders overnight based on Night Hawk strike prices â€” premiums will be different at open.", "Ignore the morning confirmation update.", "Trade the Night Hawk thesis if SPX opens through an invalidation level.", "Use Night Hawk plays without confirming live flow direction on HELIX at the open.", "Mistake Night Hawk's directional bias for a guaranteed outcome.", "Skip the catalyst scan section. Macro risk can overwhelm GEX structure."].map((item, i) => (
+                      <li key={i} className="flex gap-3 text-sm"><span className="text-red-400 flex-shrink-0 mt-0.5">â€”</span><span className="text-slate-300 leading-relaxed">{item}</span></li>
                     ))}
                   </ul>
                 </div>
@@ -235,7 +237,7 @@ export default function NightHawkPage() {
                       </div>
                       <p className="text-sm text-slate-300 leading-relaxed">{tool.description}</p>
                     </div>
-                    <span className="text-slate-300 group-hover:text-cyan-400 transition-colors flex-shrink-0 mt-1">→</span>
+                    <span className="text-slate-300 group-hover:text-cyan-400 transition-colors flex-shrink-0 mt-1">â†’</span>
                   </Link>
                 ))}
               </div>
@@ -247,8 +249,8 @@ export default function NightHawkPage() {
               </h2>
               <div className="space-y-5">
                 {[
-                  { q: "Night Hawk published an edition but I don't see a morning confirmation. What happened?", a: "The morning confirmation publishes at 9:15 AM ET on trading days. If it is after 9:15 AM and you do not see an update, the system may have detected no material changes to the thesis from overnight data — in which case the prior evening's edition stands." },
-                  { q: "The Night Hawk thesis is bullish but SPX opens below the gamma flip. Should I still take the trade?", a: "No. Opening below the gamma flip is a structural negative — dealer positioning shifts from a stabilizing regime to an amplifying one. If Night Hawk's thesis was predicated on SPX holding above the gamma flip, an open below that level constitutes a thesis invalidation." },
+                  { q: "Night Hawk published an edition but I don't see a morning confirmation. What happened?", a: "The morning confirmation publishes at 9:15 AM ET on trading days. If it is after 9:15 AM and you do not see an update, the system may have detected no material changes to the thesis from overnight data â€” in which case the prior evening's edition stands." },
+                  { q: "The Night Hawk thesis is bullish but SPX opens below the gamma flip. Should I still take the trade?", a: "No. Opening below the gamma flip is a structural negative â€” dealer positioning shifts from a stabilizing regime to an amplifying one. If Night Hawk's thesis was predicated on SPX holding above the gamma flip, an open below that level constitutes a thesis invalidation." },
                   { q: "If Night Hawk and HELIX are giving opposite signals at the open, which do I follow?", a: "HELIX represents live institutional positioning; Night Hawk represents overnight structural analysis. When they conflict at the open, live flow takes precedence over overnight positioning. Do not force a Night Hawk trade against contrary institutional flow." },
                 ].map((item, i) => (
                   <div key={i} className="p-6 bg-white/3 border border-white/10 rounded-xl">
