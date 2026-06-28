@@ -1,6 +1,4 @@
-﻿export const dynamic = "force-static";
-
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState, useMemo } from "react";

@@ -55,6 +55,13 @@ export function ensureDataSockets() {
   void initFlowEventBridge();
   initUwSocket();
   initPolygonSocket();
+  // Once-per-deploy Cloudflare edge purge for the static marketing pages. Fired from
+  // HERE (a nodejs-only path that is never edge-traced) rather than instrumentation.ts,
+  // because cf-purge-on-deploy pulls in ioredis. No-op unless CF_API_TOKEN + CF_ZONE_ID
+  // are set; cross-replica deduped via Redis; fire-and-forget so it can never block boot.
+  void import("@/lib/cf-purge-on-deploy")
+    .then(({ maybePurgeCloudflareOnDeploy }) => maybePurgeCloudflareOnDeploy())
+    .catch((err) => console.warn("[init-data-sockets] cf-purge skipped (non-fatal):", err));
   // Night's Watch live option marks — env-gated + isolated. A strict no-op unless
   // OPTIONS_WS_ENABLED is set, so it can never destabilize the uw/polygon sockets
   // or the REST snapshot fallback. Wrapped so an init throw can't break the others.
