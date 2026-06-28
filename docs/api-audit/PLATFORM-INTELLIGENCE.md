@@ -1,195 +1,127 @@
 # BlackOut Platform Intelligence
-**Last updated:** 2026-06-27 05:30 ET
-**Run type:** 🧠 **INAUGURAL BASELINE** (first learning-brain run — no prior history)
-**Reports analyzed (last 26h):** 7 — 3× deep-platform-audit, 1× CTO audit, 1× HTTPS/network monitor, 1× connectivity matrix, OPEN-ISSUES log
-**Today's findings (curated, deduped):** 31 total · **2 active P0** · 1 latent-at-scale P0 · 14 P1 · 8 P2 · 3 P3 · 3 WARN
-**Platform trend:** BASELINE — no comparison possible until ≥2 days of history. First trend read available **2026-06-28**.
+**Last updated:** 2026-06-28 05:41 ET
+**Reports analyzed (last 26h):** 16 — cto-audit, 5× deep-audit, pentest, https-monitor, connectivity-matrix, night-hawk, whop, OPEN-ISSUES, error-log
+**Today's findings:** 21 (8 P1 · 1 P0-class systemic · 8 P2 · 2 P3 · 2 WARN) — **6 recurring · 15 new**
+**Platform trend:** **STABLE / HEALTHY** (user-facing) — audit *coverage* deepening, not platform degrading
+**History:** 31 findings on record (day 1) → 52 after today (day 2 of learning)
 
-> **Method note (intentional, for every future run to follow):** I did **not** use the SKILL's regex
-> extraction — it would have produced ~40 noisy, near-duplicate finding strings that poison future
-> pattern-matching. Instead I read all 7 reports in full and wrote **31 canonical, deduplicated
-> findings** to `learning/history.jsonl`, each with a stable `id`, `category`, `service`, and the
-> *corrected* severity (e.g. the SPX ledger is logged as **P2-C**, the git-timing-corrected
-> classification, not the CTO's pre-correction P0-1). Clean keys today = meaningful recurrence
-> detection tomorrow.
+> **One-line read:** The live platform is healthy — 0 open P0, all pages 200, all data routes correctly 401, no 5xx, no error logs, connectivity STRONG. Every material finding this cycle clusters into **two root causes**: (1) an **auth boundary with no default-deny** keeps leaking a new endpoint each audit, and (2) **code that was built but never wired to a running writer**, leaving durable tables empty against the live-data mandate.
 
 ---
 
-## ⚖️ THE ONE DISAGREEMENT THAT MATTERS THIS CYCLE
-The two deepest audits **disagree on the platform's single highest-stakes item**, and reconciling
-that disagreement is the whole job of this brain:
+## THE TWO ROOT CAUSES (fix these, ~15 findings collapse)
 
-- **CTO audit (03:00 ET)** filed the empty SPX track record as **P0-1 / P0-2** — "members see an
-  empty/wrong P&L on the launched flagship."
-- **Deep-platform-audit (07:10 ET)** *self-corrected* to **P2-C WATCH** after checking git: the
-  fetch-bug fix `6f00a5e` merged **~20 min after Friday's RTH close**, so **no trading session has
-  run with the fix yet**. An empty ledger is **EXPECTED**, not a regression.
+### ROOT CAUSE #1 — Auth enforced by convention, no default-deny → a new leak every audit
+This is the single most important pattern on the platform. There is **no structural guarantee** that an API route is authorized — each route self-guards, and nothing fails the build when one forgets. The result is a steady drip: **every audit cycle discovers a *different* unguarded route.**
 
-**Brain's verdict:** the **07:10 reclassification is correct** on the *symptom* (empty ledger ≠ proof
-of breakage), **but the CTO's P0-2 is a real, separate code bug** that survives the veto fix:
-`recordPlayEntry` failures are swallowed (`spx-play-engine.ts:915-927`) and `insertOpenSpxPlay`
-force-closes the prior open **with no outcome row** (`db.ts:1234-1238`). So the resolution is:
-**ledger-emptiness = WATCH (verify Mon 06-29); durable-write correctness = FIX NOW.** These are two
-different things that got collapsed into one P0. Separating them is recommendation #1.
+Two manifestations of the *same* missing guarantee:
 
----
+**(a) Unauthenticated premium GET endpoints — now 5 found:**
+| Route | Leaks | Found |
+|---|---|---|
+| `/api/market/anomalies`, `/api/market/regime` | market regime / flow anomalies | 06-27 (now annotated-public) |
+| `/api/signals/open` | paid signals: grade/ticker/strike/expiry/entry_mark/confluence | 06-28 |
+| `/api/brief/premarket` | SPX price, call/put wall, king strike, net GEX, bias | 06-28 (pentest) |
+| `/api/platform/intel` | **live JSON body** — regime, anomalies, coaching, win-rates by source | 06-28 (pentest) |
 
-## PLATFORM HEALTH SCORECARD (baseline)
-| Service | Findings (today) | Worst | Headline issue |
+**(b) Fail-open cron-write guards — now 4 instances:** `if (cronSecret && auth !== Bearer)` accepts unauthenticated POST when `CRON_SECRET` is unset (and is non-constant-time): `coaching/alerts` (P0, CTO), `market/anomalies`, `market/regime`, `track-record/publish:9`. Latent today (secret is set in prod) but one missing env var = an open public write endpoint.
+
+**THE FIX (one PR closes the whole class):** add a CI/build grep-test asserting every `src/app/api/**/route.ts` calls one of `{requireTierApi, isCronAuthorized, authorizeCronOrTierApi, resolveAdminApi/requireAdminApi}` — fail the build on an un-allowlisted miss. Then sweep the 4 known endpoints onto `authorizeCronOrTierApi(req,'premium')` / `isCronAuthorized` (fail-closed). *Until the default-deny test exists, the next audit will find leak #6.*
+
+### ROOT CAUSE #2 — "Built but never running" → empty durable tables vs the live-data mandate
+A cluster of tables have **live consumers but no live writer**, so users (or admins) see blank/degraded surfaces — a direct hit on the values-live-correct-grounded rule.
+
+| Table / feature | State | Why empty | Consumer that degrades |
 |---|---|---|---|
-| SPX Slayer | 5 | P1 | Swallowed `recordPlayEntry` write + force-close w/o outcome row; ledger empty (pending Mon validation) |
-| Postgres | 6 | P1 | Re-init stampede on DB blip; 305MB write-only telemetry; FK indexes missing pre-fill |
-| Polygon WS | 3 | P1 | Lock-refresh TOCTOU + wedge-on-construct-fail + 88-wide far-dated fan-out |
-| UW WS | 2 | P0(scale) | **No leader election at all** + unbounded persist fan-out |
-| Frontend | 4 | P0 | **No per-route error boundaries** → whole-app whiteout |
-| Security/auth | 4 | P0 | `coaching/alerts` fails OPEN on unset env; auth is convention-only |
-| Heatmaps/Largo/NWatch/Grid | 3 | WARN | Dual GEX path (W1), panel omits flows (W2), dual macro calendar (W3) |
-| Telemetry/cache | 2 | P1 | Per-replica memory read-path; split-brain with no alarm |
-| Network | 1 | P3 | `X-Powered-By` leak |
-| Audit tooling | 1 | P3 | Stale probes generate false P0/P1 (found by **4** crons independently) |
+| `market_regime`, `flow_anomalies` | 0 rows all-time | **Writer is fully built in code** but the Railway cron *service* was never created (not in the 23-service list) | FlowAnomalyBanner (paid /flows) never renders; NH morning-confirm → regime=UNKNOWN |
+| `spx_play_outcomes`, `spx_open_play` | 0 rows all-time | Engine never reached a BUY (198 SCANNING/24 WATCHING/**0 BUY** over 3 days); gates not approving, NOT the veto | SPX Slayer P&L / track-record panels empty |
+| `spx_signal_log` | 0 rows (was 06-17) | No writer anywhere | Any admin/analytics reader |
+| `spx_pulse_snapshots`, `spx_watch_setups` | 0 rows, no INSERT refs | Dead/legacy | none (drop them) |
+| Night Hawk editions | 1 row; 4 trading days missing | #77 synthesis-zeroing (resolved 6/26, one-deep) | Launch-gated → admin-only impact |
+
+**THE FIX:** (1) create the `market-regime-detector` Railway service via Config-as-code (no code change) and confirm first write; (2) **verify Monday 2026-06-29 RTH** that SPX plays open AND write an outcome row — if still 0 BUY after a full session, escalate P2-C→P1 and read the `63567cb` gate-diagnostic logs; (3) retire the dead tables.
 
 ---
 
-## 🔁 SYSTEMIC PATTERNS (the dots the individual crons each miss)
-No day-over-day recurrence exists yet, but **cross-report corroboration within this single cycle**
-is itself strong signal. Five patterns, ranked by leverage:
-
-### 1. 🔴 Fail-OPEN on a missing/empty env var — *a named, recurring failure CLASS on this platform*
-`coaching/alerts` POST is unauthenticated whenever `CRON_SECRET` is empty (`if (cronSecret && …)` —
-the guard is *skipped* when the var is falsy). The CTO explicitly tags this "a recurring failure
-class on this platform," and institutional memory independently records the same class (Redis
-fail-open ETIMEDOUT cascade; npm-ci lockfile red-lining all services). **The danger is not this one
-route — it's the pattern: a single absent env var silently disables a guard.** One audited sweep for
-`if (SECRET &&` / fail-open branches would catch the whole class.
-
-### 2. 🔴 Auth-by-convention with no default-deny — *4 endpoints, one root*
-`coaching/alerts` (fails open), `/api/market/anomalies` + `/api/market/regime` (serve 200
-unauthenticated), and `middleware.ts` itself (documents "each route must self-authorize" but enforces
-nothing). **One fix covers all four:** a build-time grep test asserting every
-`src/app/api/**/route.ts` calls one of `{requireTierApi, isCronAuthorized, resolveAdminApi}` and
-fails CI on an unallowlisted miss. This is the highest-leverage single PR in the security column.
-
-### 3. 🟠 Distributed-systems seams unguarded — *single-process-correct, multi-replica-unsafe*
-Polygon got leader election; **UW did not** (P0-4). `reconcileAllMemberships` has no lock.
-Telemetry reads per-replica memory. Cache split-brains silently. Even Polygon's *own* lock has a
-TOCTOU refresh + wedge-on-construct-fail. **The platform is hardened for one process and exposed at
-every replica boundary.** The repo already contains the fix pattern once
-(`polygon-socket.ts:117-156`) — porting it to UW is the single biggest scale-out win.
-
-### 4. 🟠 Dual-path / divergent-source — *same logical value derived two ways*
-W1 (GEX walls: `fetchPolygonPositioningBundle` vs `fetchGexHeatmap`) and W3 (macro calendar:
-`readGridEconomy` vs `mergeMacroEventsToday`). Both are bounded (same math / both grounded), but both
-can show a user **two different answers for the same question** depending on which surface they ask.
-Converge each to one source-of-truth function.
-
-### 5. 🔵 The audit tooling lies to itself — *rediscovered by 4 crons this cycle*
-Every one of deep-audit-00, deep-audit-07, the HTTPS monitor, and the connectivity matrix
-**independently** hit the same stale probe paths (`/api/market/spx-pulse`, `/api/flows`,
-`/api/nighthawk/latest-edition`, `/api/grid/news`), wrong env names
-(`UNUSUAL_WHALES_API_KEY`→`UW_API_KEY`), and the `pool.on`→`livePool.on` regex miss — and each
-wasted effort overriding false P0/P1s. **This is P3 by severity but #1 by frequency.** Until the
-SKILL probe lists are fixed, every future audit (and this brain) starts by re-debunking phantoms.
-Fixing it makes *all* downstream intelligence more trustworthy.
+## PLATFORM HEALTH SCORECARD
+| Surface | Status | Evidence |
+|---|---|---|
+| Availability / TLS | ✅ PASS | 12/12 routes healthy, no 5xx, cert 78d, all <650ms |
+| Security headers | ✅ PASS | HSTS preload, nosniff, CSP, Referrer/Permissions all present |
+| Injection / secrets / XSS / IDOR | ✅ CLEAN | pentest: 0 reachable; `$n` params, allow-lists, no `dangerouslySetInnerHTML` |
+| Auth boundary | ⚠️ **ROOT #1** | self-guard-by-convention, 5 leaks + 4 fail-open guards found |
+| Cross-service connectivity | ✅ STRONG | 16–19 channels PASS, 0 FAIL; W1 converged, W2 resolved |
+| Durable data correctness | ⚠️ **ROOT #2** | flagship ledger + regime/anomaly tables empty |
+| Distributed-systems seams | ⚠️ latent | UW WS no leader election; reconcile serial/unlocked (masked at ~2–5 replicas) |
+| WebSocket health | ⚠️ minor | options-socket shard 0 in 1006 loop (benign off-hours; verify Mon RTH) |
+| Payments (Whop) | ⚠️ coverage gap | `payment.failed` + dunning lifecycle unhandled (revenue leak window) |
 
 ---
 
-## 📉 TRADING IMPACT SUMMARY
-| Impact Type | Count | Severity | What the user would experience |
+## TRADING / MONEY IMPACT (ranked)
+| Impact | Severity | Findings |
+|---|---|---|
+| Empty flagship track record (SPX P&L blank) | 🔴 CRITICAL | spx-ledger-empty, recordPlayEntry swallow, force-close w/o outcome |
+| Premium signal/brief leaked free | 🔴 CRITICAL | signals/open, brief/premarket, platform/intel unauthenticated |
+| Revenue leak on failed payments | 🟠 HIGH | whop `payment.failed` unhandled → premium through full dunning window |
+| Stale/degraded signals shown | 🟠 HIGH | NH edition built on Thursday data for Monday; regime=UNKNOWN; engine/health static |
+| Disconnected / divergent numbers | 🟡 MEDIUM | W1 (converged, monitor), macro_indicators+earnings not scored into SPX confluence |
+| Wrong *price* shown to user | 🟢 NONE | no wrong-price finding this cycle |
+
+---
+
+## RECURRING (root causes not yet fixed — these are where to spend effort)
+| # | Issue | Days seen | Note |
 |---|---|---|---|
-| Data integrity (wrong/contaminated values) | 3 | 🔴 CRITICAL | W1 wrong wall strike in Largo vs Heatmap; `spx-desk-merge` cross-request structure bleed; ledger empty→wrong P&L (pending) |
-| Security fail-open (paid/AI surface exposure) | 3 | 🔴 CRITICAL | `coaching/alerts` open write; anomalies/regime open read; no default-deny |
-| Stale data (old info shown as live) | 3 | 🟠 HIGH | `spx_signal_log` 10d stale; `engine/health` build-time snapshot; cache split-brain ≥30s |
-| Disconnected channels | 2 | 🟠 HIGH | NWatch panel verdict can't fire flow signal (W2); Grid vs desk macro disagree (W3) |
-| Broken feature / whiteout | 2 | 🟡 MEDIUM | No error boundaries → one bad payload whites out app; SPX opens (pending Mon) |
-| Cost / perf ballast | 4 | 🟡 MEDIUM | 305MB write-only telemetry; 88-wide GEX fan-out; 187KB sync bundle; 24/7 polling |
-
-**No confirmed "wrong price shown to a user" today** — the market is closed and every data endpoint
-correctly 401s. The two CRITICAL data-integrity items (W1, desk-merge race) are *latent* — they bite
-during RTH under concurrency. **First authenticated RTH numeric cross-check (W1 empirical confirm) is
-the most valuable missing measurement** and should be the connectivity cron's Monday priority.
+| 1 | **Audit tooling stale probes** | 2 | #1 by frequency — re-rediscovered this cycle by deep-audit-04 + https-monitor + connectivity. The audit *instruments* are miscalibrated, wasting cycles re-finding the same tooling bug. Fix the SKILL probe paths/env names at source. |
+| 2 | **Fail-open cron guards** (Root #1b) | 2 | Grew from 1→4 instances. |
+| 3 | **Auth no-default-deny** (Root #1) | 2 | Grew from 2→5 leaked endpoints. |
+| 4 | **SPX ledger empty** (Root #2) | 2 | WATCH Mon 2026-06-29 RTH. |
+| 5 | **spx_signal_log empty** | 2 | Was 06-17-stale, now 0 rows. |
+| 6 | **W1 dual GEX path** | 2 | Now structurally CONVERGED (cache-reader); downgrade to monitor-for-drift. |
 
 ---
 
-## 🎯 INTELLIGENT RECOMMENDATIONS (priority order)
-
-### 1. [DATA INTEGRITY] Separate the SPX ledger WATCH from the durable-write FIX
-- **Do now (code bug, veto-independent):** wrap the open + `recordPlayEntry` in **one transaction**
-  and **fail-closed on durability** — never run a live managed play whose outcome row didn't persist;
-  never force-close a prior open without writing its outcome (`db.ts:1234-1238`,
-  `spx-play-engine.ts:915-927`).
-- **Do Monday (verification, not code):** after 06-29 RTH close, re-query prod `spx_open_play` (≥1 row
-  if opens work) + `spx_play_outcomes` (populates on close). If still 0 → read the `63567cb`
-  diagnostic logs for the rejecting gate; **do NOT re-touch the veto** (already fixed).
-- **Why:** this is the launched flagship's headline proof. The fix and the verification are different
-  jobs — conflating them (as the single P0-1) risks "we waited for Monday" standing in for "we fixed
-  the swallowed write."
-
-### 2. [SCALE] Port Polygon's leader election to UW (P0-4) + bound the persist fan-out
-- Copy `polygon-socket.ts:117-156` Redis-SETNX leader lock to `uw-socket.ts`; non-leaders read from
-  Redis. Add a `p-limit` semaphore to the `flow_alerts` persist fan-out (`uw-socket.ts:592-615`).
-- **Why:** masked today at ~2 replicas; it's the **thing that breaks first** the moment you autoscale
-  for a launch-day traffic spike — 5× joins against a 2-RPS cap → reconnect storm → flapping flow feed
-  during exactly the window you scaled for. While there, fix the Polygon lock TOCTOU + wedge.
-
-### 3. [SECURITY] One CI grep-test kills the whole auth-by-convention class
-- Add a build-time test asserting every `route.ts` calls an auth helper (allowlist the
-  intentional-public ones); fix `coaching/alerts` to `isCronAuthorized(req)` (one-line); guard or
-  annotate `anomalies`/`regime`.
-- **Why:** this is **pattern #1 + #2** above in one PR. The platform is one forgotten guard away from
-  a public Anthropic-spend endpoint, and the fail-open class has already bitten twice in memory.
-  <1 hour, removes disproportionate risk.
-
-### 4. [FRONTEND] Add scoped `error.tsx` to live-data route groups
-- `(site)/heatmap`, `/terminal`, `/grid`, `/nighthawk`, `/track-record`.
-- **Why:** a single malformed market payload currently whites out the **entire app shell**, not just
-  the panel. For a live-data product this is a when-not-if. <1 hour.
-
-### 5. [CONSISTENCY] Converge the two dual-path sources (W1, W3)
-- Route Largo `get_positioning` + Night Hawk dossier through the same `fetchGexHeatmap` matrix the
-  Heatmap/NWatch use; converge Grid econ + desk macro on one calendar.
-- **Why:** standing W1 has been on the books across multiple audits and in memory — it is the most
-  likely "Largo told me a different SPY call wall than the Heatmap" complaint. Confirm empirically on
-  Monday's authenticated RTH run before/after the converge.
+## SYSTEMIC PATTERNS (multi-service)
+- ⚠️ **Auth boundary erosion** — 5 unauth GETs + 4 fail-open POSTs across `market/`, `signals/`, `brief/`, `platform/`, `coaching/`, `track-record/`. One root: no default-deny. *(Root #1)*
+- ⚠️ **Built-but-not-running** — `market_regime`, `flow_anomalies`, `spx_play_outcomes`, `spx_signal_log` all have code and 0 rows. *(Root #2)*
+- ⚠️ **Off-hours WS churn masks RTH failures** — options-socket 1006 loop counter unbounded; reconnect/heartbeat not gated off-hours like the stall watchdog is. Park sockets off-hours so the failure counter means something.
+- ⚠️ **Distributed-systems seams unguarded** — UW WS has no leader election (Polygon does); `reconcileAllMemberships` serial+unlocked. Both masked at current replica count; first to break on horizontal scale-out.
 
 ---
 
-## 🔌 DISCONNECTED / DIVERGENT CHANNELS
-Connectivity is **structurally STRONG: 16 wired channels, 0 hard silos, 3 WARN.** No service is
-fabricating data. The three open WARNs are consistency risks, not silos:
-- **W1** Dual per-ticker GEX path → Largo/NHawk can name a different wall strike than Heatmap/NWatch.
-- **W2** Night's Watch *panel* verdict omits HELIX flows (detail view has them) → panel can't fire a
-  flow signal; asymmetric verdicts between list and modal.
-- **W3** Grid `/api/grid/economy` (UW) vs SPX desk `mergeMacroEventsToday` → two macro calendars that
-  can disagree on dates/labels.
+## LEARNING VELOCITY (what improved since 06-27)
+**Resolved / improving — the platform IS learning:**
+- ✅ **`X-Powered-By` leak FIXED** — `poweredByHeader:false` now live (was P3 06-27).
+- ✅ **W2 (NW panel verdict omitted HELIX flows) RESOLVED** — `verdict.ts` now consumes `ctx.flows` on both list + detail paths.
+- ✅ **W1 dual GEX path CONVERGED** — `getGexPositioning` is now a pure `fetchGexHeatmap` cache-reader.
+- ✅ **anomalies/regime auth** — annotated intentionally-public (no paid data); substance folded into Root #2.
+- ✅ **VAPID push armed** — alerts no longer inert.
+- ✅ **https-monitor self-corrected** its own recurring CSP false-alarm (Step-3 now probes the canonical apex).
+- ✅ **Confirmed-fixed re-verified live:** #97 dark-pool card, #100 pg pool handler, #101 Clerk webhook, #102 Polygon leader election, SPX veto neuter, Redis `family:0`.
+
+**Velocity stats:** 31 findings day 1 → 6 recurred + 15 net-new day 2. ~5 findings resolved/downgraded. The audit fleet is widening (pentest + whop came online and surfaced latent auth/payment gaps) — so the rising new-finding count reflects **deeper coverage, not a degrading platform.**
 
 ---
 
-## ✅ WHAT'S ALREADY GOOD (verified-fixed this cycle — the baseline to defend)
-Closed and re-confirmed across reports: **#100** pg pool error handler (`db.ts:113`), **#101** Clerk
-`user.created` webhook, **#102** Polygon WS leader election, **#73** Largo SPX confluence grounding,
-**#97** `SpxDarkPoolCard` now mounted (`SpxDashboard.tsx`), SPX option-chain veto neutered, Redis
-`family:0`, the WIP `platform/intel` TS errors (now `tsc --noEmit` clean), and **prompt caching is
-live** (`anthropic.ts:165-197`). Engineering health graded **B+/A-**. **Memory correction:** task
-**#103 "no prompt caching" is STALE — caching is implemented.**
-
-## WHAT GOOD LOOKS LIKE (the bar)
-- ✓ All service data timestamps within ~2 min during RTH · ✓ Largo walls == Heatmap walls (W1 closed)
-- ✓ SPX opens write an outcome row on open AND close · ✓ Every `route.ts` provably behind an auth helper
-- ✓ Every WS has multi-replica leader election · ✓ Zero fail-open-on-missing-env branches
-- ✓ P0 count trending down week-over-week · ✓ Zero recurring findings (every finding new = learning)
+## INTELLIGENT RECOMMENDATIONS (priority order)
+1. **[ROOT #1] Add the default-deny CI test, then sweep 4 endpoints + 4 fail-open guards.** Closes ~9 findings and prevents leak #6. Highest leverage, mostly mechanical.
+2. **[ROOT #2 — verify first] Monday 2026-06-29 RTH:** confirm SPX plays open + write outcome rows, and create the `market-regime-detector` Railway service. These two unblock the flagship's headline proof (track record) and the paid /flows banner. *No code needed for the regime service.*
+3. **[REVENUE] Handle Whop `payment.failed` + dunning lifecycle.** Lowest-effort/highest-leverage payment gap — stops premium being served free through the entire dunning window. Reuse the existing `syncWhopMembershipForEmail` + `notifyOpsDiscord` path.
+4. **[NIGHT HAWK] Make the evening cron authoritative** (force-rebuild when published `session_date` is older than the latest completed RTH) + reap orphaned `running` jobs >2h. Keep #77 open until ≥2 clean evening cycles.
+5. **[TOOLING] Fix the audit SKILL probe paths/env names at source** so the fleet stops burning cycles re-finding stale-probe false positives every run.
+6. **[SCALE — pre-emptive] Port Polygon's SETNX leader election to the UW socket** + advisory-lock `reconcileAllMemberships`. Not urgent at current scale; the trigger is the first horizontal scale-out.
 
 ---
 
-## 📈 LEARNING VELOCITY
-- **Days of history:** 1 (baseline established today)
-- **Findings on record:** 31 (curated, deduplicated)
-- **Recurring root causes:** 0 detectable yet — recurrence needs ≥2 days
-- **Resolved & defended:** 9 prior tasks confirmed fixed this cycle (see "What's Already Good")
-- **Next milestone:** 2026-06-28 — first day-over-day trend; **2026-06-29 (Mon RTH)** — first
-  authenticated numeric cross-check (resolves SPX ledger WATCH + W1 empirical confirm).
+## WHAT GOOD LOOKS LIKE
+- ✓ Every `route.ts` provably calls an auth helper (enforced by CI, not convention)
+- ✓ Zero "built-but-not-running" tables: every table with a consumer has a live writer
+- ✓ SPX `spx_play_outcomes` accrues rows each RTH; track-record panel non-empty
+- ✓ Night Hawk publishes a fresh edition every evening off that day's close
+- ✓ Whop `payment.failed`/dunning observed in real time, not inferred from `membership.deactivated`
+- ✓ Recurring-issue count → 0 (every finding is new = platform fully learning)
+- ✓ All GEX/flow/price values match provider ground truth within tolerance during RTH
 
 ---
-*Generated by the platform learning-brain cron (05:30 ET daily). Reads every audit from the prior 24h,
-deduplicates into canonical findings, reconciles cross-report disagreements, and tracks recurrence to
-drive root-cause fixes. No secrets, keys, DB URLs, or user data printed. This is the inaugural run —
-its chief output is a clean baseline so tomorrow's run can detect what recurred.*
+*Generated by the platform-learning-brain cron (05:30 ET). Reads every audit report from the prior 24h, finds cross-report patterns, tracks recurrence/trend, and drives the one goal: users see 100% correct real data. No secrets/keys/DB-URLs/user values printed. Source findings: `docs/api-audit/learning/history.jsonl`.*
