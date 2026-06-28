@@ -859,12 +859,39 @@ body::before {
 }
 
 .btn-cta-primary {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   transition: box-shadow 0.3s ease, transform 0.2s ease;
 }
 
+/* Periodic premium "sheen" sweep across the primary CTA — draws the eye without being
+   loud. Pauses for reduced-motion users (below). */
+.btn-cta-primary::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: skewX(-20deg);
+  animation: cta-sheen 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes cta-sheen {
+  0% { left: -60%; }
+  16%, 100% { left: 140%; }
+}
+
 .btn-cta-primary:hover {
-  box-shadow: 0 0 25px rgba(0, 230, 118, 0.5);
-  transform: scale(1.02);
+  box-shadow: 0 0 28px rgba(0, 230, 118, 0.55);
+  transform: translateY(-1px) scale(1.02);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-cta-primary::before { animation: none; opacity: 0; }
 }
 
 .landing-marquee-dot {
@@ -1232,6 +1259,13 @@ body::before {
 
 .landing-section-hero {
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 2rem), 0 100%);
+  /* Baked-in cinematic backdrop so the FIRST paint is a designed emerald/cyan-on-void
+     scene instead of a flash of pure black while the hero photo lazy-loads. The <Image>
+     sits above this (z-0) and covers it once decoded. */
+  background:
+    radial-gradient(90% 55% at 50% -5%, rgba(0, 230, 118, 0.12), rgba(4, 4, 7, 0) 58%),
+    radial-gradient(70% 45% at 50% 108%, rgba(34, 211, 238, 0.07), rgba(4, 4, 7, 0) 60%),
+    #040407;
 }
 
 .landing-overlap-panel {
