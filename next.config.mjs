@@ -75,6 +75,7 @@ import os from "os";
 const cpuCount = os.cpus()?.length || 1;
 
 const nextConfig = {
+  poweredByHeader: false,
   experimental: {
     cpus: Math.max(1, cpuCount - 1),
   },
