@@ -467,3 +467,34 @@ real paths are `market/spx/pulse`, `market/gex-positioning`, `market/flows`, `ma
 (all 401 unauth); Phase 3 ("SPX desk blind to HELIX flow") and Phase 8 ("SPX desk doesn't know FOMC/CPI") are both
 DISPROVEN by source. Live numeric/timestamp consistency (Phases 2/3/9) remains unverifiable without CRON_SECRET.
 ---
+
+## Connectivity Matrix — 2026-06-27 20:55 ET
+**Source-grounded verdict | structural PASS: 14 | FAIL: 0 | WARN: 2 (carried) | live numeric: UNVERIFIABLE (401 unauth, market closed Sat)**
+
+Fifth cycle today. Independently re-derived the entire matrix from source again (cold, not from prior entries)
+and reached an identical verdict — no regression on any deploy since the 16:55 run.
+
+| Channel | Status | Evidence |
+|---|---|---|
+| SPX→{HELIX,NWATCH,LARGO} | PASS | desk via `getLargoSpxLiveDesk`+`computeSpxConfluence`; verdict reads SPX price/VWAP (50 refs) |
+| HELIX→{SPX,NHAWK,NWATCH,LARGO} | PASS | spx-desk-merge flow refs (57) + `computeFlowStrikeStacks`; NHawk candidates/scorer (42/72); verdict (55); Largo `marketPlatform.flows` |
+| HEATMAP→{LARGO,HELIX,NHAWK,NWATCH} | PASS | single `getGexPositioning` cache-reader of `fetchGexHeatmap` — same source for flows route, largo-live-feed, `nighthawk/positioning.ts`, `position-context.ts:184` |
+| HEATMAP→SPX | BY-DESIGN | SPX desk uses 0DTE-lens `gamma-desk` path (spx-desk.ts:21), not the cache-reader — documented, converged, monitor for drift |
+| LARGO→ALL | PASS | run-tool reaches GEX, flows, spx structure/confluence, positions, nighthawk, earnings, news, dark-pool, macro-events, web search |
+| GRID→{SPX,LARGO,NHAWK,NWATCH} | PASS | shared `macro-events` provider (spx-desk.ts:1010 ↔ run-tool.ts:32) + `fetchBenzingaCatalysts` shared across grid/largo/nighthawk/nights-watch/position-detail |
+
+### Carried-forward residuals (coverage gaps, NOT data silos — unchanged)
+- WARN `GRID(earnings)→SPX` — earnings reach SPX desk only as Benzinga headline sentiment, not a distinct confluence factor.
+- WARN `macro_indicators→SPX` — UW GDP/CPI/unemployment present on desk payload (spx-desk.ts:1137) but read by 0 confluence scorers.
+
+### Live-data limitation this cycle
+All entitled data endpoints returned 401 (unauthenticated) and it is Saturday (market closed). Numeric/timestamp
+consistency Phases (2/3/9) are UNVERIFIABLE without CRON_SECRET — only structural wiring was re-confirmed from source.
+`market/health` = 200.
+
+### SKILL maintenance flag (recurring — task file is stale)
+Phase 1 endpoint paths are wrong: real paths are `market/spx/pulse`, `market/gex-positioning`, `market/flows`,
+`market/nighthawk/edition`, `grid/*` (no `grid/news`; `api/flows` and `nighthawk/latest-edition` do not exist).
+Phase 3 ("SPX desk blind to HELIX flow") and Phase 8 ("SPX desk ignores FOMC/CPI") remain DISPROVEN by source.
+Largo registry lives at `src/lib/largo/run-tool.ts` + `tool-defs.ts` (not `src/lib/run-tool.ts`/`src/lib/tools`).
+---
