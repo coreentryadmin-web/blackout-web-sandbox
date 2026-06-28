@@ -2842,9 +2842,9 @@ body::before {
   .nighthawk-play-row {
     @apply flex gap-0 min-h-0 overflow-hidden;
     border: 1px solid rgba(255, 45, 85, 0.2);
-    background: rgba(4, 4, 7, 0.86);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: rgba(4, 4, 7, 0.55);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
     box-shadow: inset 0 0 50px rgba(255, 45, 85, 0.03);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
@@ -2986,7 +2986,8 @@ body::before {
     @apply font-mono uppercase;
     font-size: 0.7rem;
     letter-spacing: 0.08em;
-    color: #7dd3fc; /* sky-300 */
+    color: #7dd3fc;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
 
   .nighthawk-play-stat em {
@@ -3007,7 +3008,8 @@ body::before {
   .nighthawk-play-thesis {
     @apply font-mono leading-snug;
     font-size: 0.82rem;
-    color: #bae6fd; /* sky-200 — pops on dark without blending into nebula art */
+    color: #bae6fd;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.9), 0 0 16px rgba(0,0,0,0.8);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -3017,7 +3019,8 @@ body::before {
   .nighthawk-play-signal {
     @apply font-mono leading-snug;
     font-size: 0.72rem;
-    color: #7dd3fc; /* sky-300 */
+    color: #7dd3fc;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
 
   .nighthawk-play-signal em {
@@ -3046,14 +3049,16 @@ body::before {
     @apply block font-mono uppercase;
     font-size: 0.625rem;
     letter-spacing: 0.18em;
-    color: rgba(255, 210, 63, 0.8);
+    color: rgba(255, 210, 63, 0.9);
     margin-bottom: 0.1rem;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
 
   .nighthawk-play-level-value {
     @apply block font-mono leading-tight;
     font-size: 0.8rem;
-    color: #e0f2fe; /* sky-100 — bright but distinct from gold labels */
+    color: #e0f2fe;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.9), 0 0 16px rgba(0,0,0,0.8);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -3077,7 +3082,8 @@ body::before {
   .nighthawk-play-risk {
     @apply font-mono leading-snug mt-auto;
     font-size: 0.68rem;
-    color: #fca5a5; /* red-300 — legible on dark */
+    color: #fca5a5;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
 
   .nighthawk-play-risk em {
