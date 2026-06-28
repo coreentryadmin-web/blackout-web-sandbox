@@ -1,5 +1,29 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-28 00:14 PT
+Last updated: 2026-06-28 04:08 ET
+
+> 04:08 ET run (Sunday, market closed): **1 NET-NEW P2** + both standing P1s re-confirmed open.
+> **NEW P2 — options-socket shard 0 stuck in a code=1006 reconnect loop (`failures=531`).** Live
+> `blackout-web` logs cycle every 60s: `connected (1 contracts)` → `reconnect in 60000ms
+> (code=1006, failures=531)`. `consecutiveFailures` resets only on successful auth
+> (`src/lib/ws/options-socket.ts:405-406`), so 531 = no sustained authed stream in ~8h. Closes are
+> **server-initiated 1006**, not the stall watchdog (which already gates off-hours, `:453-457`).
+> Benign now (market closed, `MAX_CONNECTIONS=1` slot just churning + log noise) BUT the unbounded
+> counter masks a real RTH failure. **ACTION: re-check after 09:30 ET Mon** — if `failures` resets
+> toward 0 once quotes flow it's cosmetic off-hours churn; if pinned, Night's Watch live valuations
+> degrade → promote to P1. Suggested fix: gate `scheduleReconnect`/heartbeat on options-RTH like the
+> stall watchdog already is. **P1-B STILL OPEN:** `/api/signals/open` → **200 unauthenticated**
+> (`{"ok":true,"signals":[]}` now, empty/EOD-scored — but leaks paid SPX_SLAYER/NIGHT_HAWK signals
+> during RTH); sibling POST routes correctly 405 on GET. Fix: add `isCronAuthorized` or delete
+> (`signals/open/route.ts:8`). **P1-A STILL OPEN:** no `Market-Regime-Detector` service in
+> `railway status` (`.toml` exists, never created → `market_regime`/`flow_anomalies` writers never
+> run). Re-verified GREEN: site 200s + correct 401s on all tool/admin endpoints, tsc 0 (needs ≥4GB
+> heap), db Pool error handler (`db.ts:113`) + pool max:5, redis family:0+reconnect, SPX veto
+> neutered (`SPX_OPTION_CHAIN_REQUIRED` unset → defaults false), #97/#100/#101/#102 fixed, VAPID
+> fully armed (public+private SET), all required env vars set (note: code uses `UW_API_KEY` not
+> `UNUSUAL_WHALES_API_KEY`), all Railway services Online (5/5 replicas), no error logs.
+> **P2-C SPX play opens: Monday 2026-06-29 RTH verification still pending.** Full report:
+> `docs/api-audit/deep-audit-20260628-04.md`.
+
 
 > 00:14 run (2026-06-28, Saturday night, market closed): **1 NET-NEW P1 (P1-B)** —
 > `/api/signals/open` serves **200 unauthenticated** and returns up to 500 `signal_events`
