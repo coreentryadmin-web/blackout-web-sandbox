@@ -25,6 +25,14 @@ export async function register(): Promise<void> {
   if (g[INSTALLED_FLAG]) return; // idempotent: already installed (HMR-safe)
   g[INSTALLED_FLAG] = true;
 
+  // Once-per-deploy Cloudflare edge purge for the static marketing pages (no-op
+  // unless CF_API_TOKEN + CF_ZONE_ID are set; cross-replica deduped via Redis).
+  // Lazy import keeps ioredis out of the edge graph; fire-and-forget so a slow or
+  // failing purge never blocks server startup.
+  void import("@/lib/cf-purge-on-deploy")
+    .then(({ maybePurgeCloudflareOnDeploy }) => maybePurgeCloudflareOnDeploy())
+    .catch((e) => console.warn("[instrumentation] cf-purge skipped:", e));
+
   // NOTE: the shared data sockets (uw/polygon/options) are NOT booted here, and the
   // graceful SIGTERM/SIGINT shutdown is NOT registered here either. Next statically
   // traces instrumentation.ts for the EDGE runtime too, and even a dynamic import()
