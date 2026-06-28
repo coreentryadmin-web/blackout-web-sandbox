@@ -1,5 +1,26 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-28 04:08 ET
+Last updated: 2026-06-28 08:13 ET
+
+> 08:13 ET run (Sunday, market closed): **P1-B FIXED IN THIS RUN.** The unauthenticated
+> paid-signal leak `/api/signals/open` (200 → up to 500 `signal_events` rows incl.
+> grade/ticker/strike/expiry/option_type/entry_mark/confluence_score) is now gated behind
+> `isCronAuthorized` (`signals/open/route.ts:8-16`). Verified orphaned first (grep: no consumer,
+> cited `signal-outcome-tracker` cron doesn't exist), so lockdown breaks nothing; `tsc`=0 after
+> edit; deploys on this commit (expect anon GET → 401 post-deploy). **P1-A STILL OPEN
+> (re-confirmed via `railway status`):** no `Market-Regime-Detector` service among the 13 live
+> cron services → `market_regime`/`flow_anomalies` writers never run. `.toml`+code exist;
+> needs the manual Railway "add service (Config-as-code)" step — left for operator (deploy-risky
+> infra, not auto-created by audit). **P2-C** SPX play opens + **P2-D** options-socket code=1006
+> loop both carry to **Mon 2026-06-29 RTH** (not sampleable market-closed). **NEW P3-META:** the
+> audit skill's own PowerShell checks throw systematic FALSE POSITIVES — stale endpoint paths
+> (`spx-pulse`→`spx/pulse`, `flows`→`market/flows`, `grid/news` nonexistent) and auth/handler
+> regexes that miss real names (`livePool.on`, `authorizeCronOrTierApi`, `requireTierApi`,
+> `webhooks/clerk` plural). SKILL.md should be corrected. Re-verified GREEN: site 200s + correct
+> 401s on all tool/admin endpoints, tsc 0, db Pool error handler (`db.ts:113`)+max:5, redis
+> family:0+reconnect, SPX veto neutered + `openPlay()` reached, #97/#100/#101/#102 fixed,
+> blackout-web Online 5/5 + Postgres/Redis Online + all 13 crons Online/Completed.
+> Full report: `docs/api-audit/deep-audit-20260628-08.md`.
+
 
 > 04:08 ET run (Sunday, market closed): **1 NET-NEW P2** + both standing P1s re-confirmed open.
 > **NEW P2 — options-socket shard 0 stuck in a code=1006 reconnect loop (`failures=531`).** Live

@@ -1,11 +1,20 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
+import { isCronAuthorized } from "@/lib/market-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  // This endpoint returns raw signal_events rows — grade/ticker/strike/expiry/option_type/
+  // entry_mark/confluence_score — i.e. the paid SPX_SLAYER + NIGHT_HAWK signal output. It is a
+  // scoring helper for cron consumers ONLY, never a member-facing surface, so it must require the
+  // shared CRON_SECRET. Without this gate it served 200 to any anonymous caller and leaked live
+  // paid signals during RTH (deep-audit P1-B). Mirrors the sibling signal write routes.
+  if (!isCronAuthorized(req)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   try {
     // Return all signal_events that have no EOD outcome checkpoint yet.
     // The signal-outcome-tracker cron uses this list to know what to score this cycle.
