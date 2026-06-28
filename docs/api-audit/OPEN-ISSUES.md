@@ -1,5 +1,27 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-28 12:23 ET
+Last updated: 2026-06-28 16:12 ET
+
+
+> 16:12 ET run (Sunday, market closed): **No net-new user-facing breakage. Platform GREEN on
+> everything sampleable.** **P1-A STILL OPEN (re-confirmed `railway status`):** the 13 live cron
+> jobs do NOT include `Market-Regime-Detector` → `market_regime`/`flow_anomalies` writers never
+> run; needs the manual Railway "add service (Config-as-code)" step (deploy-risky, operator-only).
+> **NEW P2 — regime POST fails open:** `src/app/api/market/regime/route.ts:48` guards the DB-write
+> POST with `if (cronSecret && auth !== Bearer …)` — if `CRON_SECRET` is ever unset the guard is
+> SKIPPED and `market_regime` becomes a public injection endpoint. Dormant (CRON_SECRET present)
+> but should fail CLOSED. **NEW P2 — Grid over-promises:** `/grid` metadata+subtitle advertise
+> "News · Flow" panels that don't exist (`grid/page.tsx:13,35`; no `/api/grid/news` route, no
+> news/flow panel fetched) — wire them or fix the copy. **P2-C** SPX play opens + **P2-D**
+> options-socket `code=1006` loop (not re-sampled, market closed) both carry to **Mon 06-29 RTH**.
+> **P3-META re-confirmed:** audit SKILL.md still uses stale paths (`spx-pulse`→`spx/pulse`,
+> `/api/flows`→`market/flows`, `nighthawk/latest-edition`→`market/nighthawk/edition`,
+> `grid/news` nonexistent) + wrong env name (`UNUSUAL_WHALES_API_KEY`→`UW_API_KEY`, which IS
+> present) → systematic false positives; correct it. Re-verified GREEN: tsc source-clean (3 errors
+> are stale `.next/types` learn/layout cache only), db Pool error handler (`db.ts:79,113`)+max:5,
+> redis family:0+reconnectOnError, 1 TODO total, #97/#100/#101/#102 all resolved, plays-veto now
+> opt-in (`SPX_OPTION_CHAIN_REQUIRED` defaults false), blackout-web Online 5/5 + Postgres/Redis
+> Online + all crons scheduled + all required secrets present. Full report:
+> `docs/api-audit/deep-audit-20260628-16.md`.
 
 
 > 12:23 ET run (Sunday, market closed): **No net-new issues. Platform GREEN on everything
