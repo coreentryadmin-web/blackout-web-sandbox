@@ -439,3 +439,31 @@ HELIX flows reach Night's Watch (`fetchRecentFlows`→`verdict.flowAlignment`), 
 `market/flows`, `market/nighthawk/edition`, `grid/catalysts`). Run Phases 2/3/9 from an authenticated
 server-side context (CRON_SECRET) to compare live wall/spot values and asof-timestamp desync.
 ---
+
+## Re-verification — 2026-06-27 18:55 ET
+**Source-connectivity PASS: all 17 channels hold | FAIL: 0 | Live phases (2/3/9): SKIP (auth 401) | Open WARNs: 2**
+
+Fourth cycle today; independently re-derived the full matrix from source (not from the entries above) and
+reached the same verdict — no regression on any deploy since 16:55. Re-confirmed the central silo risk is
+clean: `getGexPositioning` (`providers/gex-positioning.ts:150`) is a pure cache-reader of
+`fetchGexHeatmap` → `gex-heatmap:{ticker}`, consumed identically by Heatmaps, Largo (`get_gex`/
+`get_positioning` run-tool.ts:919,1213), Night Hawk (`nighthawk/positioning.ts:92`), and Night's Watch
+(`position-context.ts:184`). Largo's full cross-tool surface routes through shared functions — `get_spx_structure`/
+`get_spx_confluence` → `getLargoSpxLiveDesk`+`computeSpxConfluence` (run-tool.ts:870,1207), `get_flow_tape`/
+`get_postgres_flows` → `marketPlatform.flows` (HELIX), `get_nighthawk_*` → `marketPlatform.nighthawk`+staged
+dossiers, `get_my_positions` → `getEnrichedPositionsForUser` (Night's Watch). No parallel/independent fetch found.
+
+**Watch item from 16:55 — CLOSED.** The `spx-desk-merge.ts` empty `macro_events:[]`/`news_headlines:[]` are only
+the skeleton defaults (spx-desk.ts:812); the live build populates them from real feeds: `macro_events` ←
+`mergeMacroEventsToday` (spx-desk.ts:1010,1130), `news_headlines` ← Benzinga (`fetchBenzingaNews` :864 → :978,1131),
+`macro_indicators` ← UW economy (:1022,1137). Macro hard-blocks are NOT silently disabled by an empty feed.
+
+**Carried-forward residuals (unchanged — coverage gaps, not silos):**
+- WARN `GRID(earnings)→SPX` — earnings absorbed only via Benzinga headline sentiment, not a distinct confluence factor.
+- WARN `macro_indicators→SPX` — UW GDP/CPI/unemployment present on desk payload (:1137) but read by 0 confluence scorers.
+
+**SKILL maintenance flag (recurring):** the task's Phase 1 endpoint paths AND its Phase 3/8 hypotheses are stale —
+real paths are `market/spx/pulse`, `market/gex-positioning`, `market/flows`, `market/nighthawk/edition`, `grid/*`
+(all 401 unauth); Phase 3 ("SPX desk blind to HELIX flow") and Phase 8 ("SPX desk doesn't know FOMC/CPI") are both
+DISPROVEN by source. Live numeric/timestamp consistency (Phases 2/3/9) remains unverifiable without CRON_SECRET.
+---
