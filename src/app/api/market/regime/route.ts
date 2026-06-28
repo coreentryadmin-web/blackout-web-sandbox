@@ -1,4 +1,5 @@
-// GET: returns the most recent regime snapshot
+// GET: returns the most recent regime snapshot — intentionally public (market-wide,
+// no user-specific or paid-tier data; equivalent to the CDN-cached GEX endpoint).
 // POST: stores a new regime snapshot (called by market-regime-detector cron)
 
 import { NextRequest, NextResponse } from "next/server";

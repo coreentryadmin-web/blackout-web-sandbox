@@ -214,6 +214,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Validates overnight Night Hawk plays vs pre-market SPX; writes CONFIRMED/DEGRADED/INVALIDATED status to Redis for UI badges",
   },
   {
+    key: "market-regime-detector",
+    name: "Market Regime Detector",
+    kind: "http",
+    path: "/api/cron/market-regime-detector",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 20,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Derives composite market regime (GEX/vol/trend/flow) from the SPX desk + HELIX flows and writes to market_regime + flow_anomalies tables — feeds FlowAnomalyBanner and Night Hawk morning confirm",
+  },
+  {
     key: "positions-expiry",
     name: "Positions Expiry",
     kind: "http",

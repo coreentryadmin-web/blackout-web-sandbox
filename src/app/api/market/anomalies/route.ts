@@ -1,3 +1,8 @@
+// GET: intentionally public — anomaly data is market-wide, not user-specific.
+// No paid data leaks today (table populated only during RTH by market-regime-detector
+// cron from already-public HELIX flow aggregates). Review if ticker-specific
+// paid content is added to this endpoint in the future.
+
 import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 
