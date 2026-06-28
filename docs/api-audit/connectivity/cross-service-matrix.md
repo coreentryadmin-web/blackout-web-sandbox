@@ -675,3 +675,34 @@ No blind spots found — Largo can reach every other service's data.
 - **Live-consistency arm is blind without a service token.** The numeric wall/price/timestamp diff checks (the part that catches real-time desync) need authenticated access. Recommend wiring a service/cron token so this auditor can pull the gated endpoints; right now it can only verify structural wiring.
 - **Grid econ vs SPX macro share UW but via distinct feeds:** SPX desk uses the UW economic-*calendar* (event dates/times, for blocking); Grid economy uses UW macro-*indicators* (released series). Both UW, different endpoints — by design, not a silo.
 ---
+
+## Connectivity Matrix — 2026-06-28 10:57 ET
+**Source-wiring verdict: 11 PASS · 1 WARN · 0 FAIL** · Live-consistency: UNVERIFIED (auth-gated endpoints return 401; market closed Sun 2026-06-28 — live numbers not pulled, not fabricated)
+
+### Method note
+Live HTTP probes returned 401 (auth-gated) on every data endpoint and the SKILL's literal paths are stale (`/api/market/spx-pulse` is `/api/market/spx/pulse`; no `/api/grid/news`). Sunday = no live RTH numbers to compare. This run therefore audits the **source-level wiring** — whether every consumer reads from the *same shared data functions* — which is the durable, deploy-sensitive guarantee. Numeric-consistency cells (Phases 2/3/9) require an authed RTH run.
+
+### Convergence backbone
+`marketPlatform.spx` / `marketPlatform.flows` (src/lib/platform/) is the single shared access layer. Largo (run-tool.ts), Night Hawk (edition-builder.ts), and Night's Watch all read through it or through the same caches (`fetchGexHeatmap` → `gex-heatmap:{ticker}` in-memory+Redis). GEX has one source of truth: `fetchGexHeatmap`; `getGexPositioning` is a **pure cache-reader** of it (no upstream call).
+
+| Channel | Status | Evidence |
+|---|---|---|
+| SPX→HEATMAP | PASS | Both derive from the `fetchGexHeatmap` matrix; `spx-desk-merge.mergeFlowIntoDesk` carries the same `gex_walls`; `getGexPositioning` is a pure cache-reader (gex-positioning.ts:142). |
+| HELIX→SPX | PASS | `mergeFlowIntoDesk` overlays `spx_flows`, `flow_0dte_*_premium`, `unified_tape`, `dark_pool` onto the desk (spx-desk-merge.ts:262-296). SKILL's "SPX desk blind to flows" prediction is **false**. |
+| HEATMAP→LARGO | **WARN** | SPX/0DTE `get_gex` → `getLargoSpxLiveDesk` ("same as SPX Sniper dashboard") = converged. **Non-SPX / non-0DTE `get_gex` falls through to `fetchPolygonOdteGexRows` + raw UW fetches, bypassing the shared `fetchGexHeatmap` cache-reader** (run-tool.ts:919-960). W3 residual. |
+| HELIX→LARGO | PASS | `get_flow_tape`/`get_postgres_flows` → `marketPlatform.flows.getFlowTape(Summary)` (run-tool.ts:886,905). |
+| HELIX→NHAWK | PASS | edition-builder pulls `getFlowTapeSummary({limit:30})`; format.ts emits "HELIX tape (top 5 of N)" into the edition (format.ts:137-142). PASS, not WARN. |
+| HEATMAP→NHAWK | PASS | edition-builder pulls `spxDesk` (carries `gex_walls`); format.ts renders walls into overnight context (format.ts:117). |
+| SPX→NWATCH | PASS | position-context.ts `loadMergedSpxDesk` → `gexWalls`+`underlyingPrice`; verdict.ts evaluates price vs walls (verdict.ts:91-131). |
+| HEATMAP→NWATCH | PASS | Non-SPX positions read `fetchGexHeatmap(root)` (same cache) → source:"gex-heatmap" walls (position-context.ts:185,230). |
+| HELIX→NWATCH | PASS | verdict.ts evaluates flow signals (FLOW_MIN_PREMIUM 250k / FLOW_SKEW_RATIO 1.5, verdict.ts:70-75). SKILL's "verdict ignores flows" prediction is **false**. |
+| GRID/MACRO→SPX | PASS | Desk is event-aware via `macro_events` threaded merge→spx-service (spx-service.ts:55). NOT "blind to FOMC". |
+| LARGO→ALL | PASS | 80+ tools incl get_spx_structure/play/open_plays/trade_history, get_gex, get_flow_tape, get_nighthawk_edition, get_platform_snapshot, get_economic_calendar, get_congress_trades, get_dark_pool, get_earnings, get_analyst_ratings. |
+| GRID→LARGO | PASS | get_news, get_economic_calendar, get_dark_pool, get_congress_trades, get_earnings, get_sector_flow, get_market_movers. |
+
+### The one real divergence (WARN)
+**Largo non-SPX / non-0DTE `get_gex` does not read the shared `fetchGexHeatmap` cache.** For SPX 0DTE it is fully converged with the desk/Heatmap; for any other ticker or expiry it computes GEX from a separate raw UW/Polygon path. Impact is low while Heatmaps remains SPX-centric in the live product, but a user asking Largo about non-SPX GEX could get numbers derived differently than a hypothetical Heatmap of that ticker. Fix: route the non-SPX branch through `fetchGexHeatmap(root)` (the same call NW's `getNwTickerGex` already uses) so all GEX answers share one cache.
+
+### Corrections to the SKILL's pessimistic predictions
+The SKILL pre-wrote FAIL/WARN for HELIX→SPX, HELIX→NHAWK, SPX→NWATCH, HEATMAP→NWATCH, HELIX→NWATCH, and GRID→SPX. **All six are actually PASS** — those consumers do read the shared signals. The SKILL's keyword checks looked for field names (`flowBias`, `netFlow`) that don't exist under those literal names; the wiring is real under different identifiers.
+---
