@@ -22,6 +22,14 @@ const WELCOME: Message = {
     "Largo online. Ask anything specific — SPX levels, a ticker, flow, news. I pull live data on every question and keep the thread.",
 };
 
+// Starter prompts shown in the empty state — fill the void + teach what Largo can do.
+const LARGO_SUGGESTIONS = [
+  "What's the SPX setup right now?",
+  "Is this flow real or noise?",
+  "Where are dealers trapped on the gamma map?",
+  "Give me today's market structure in 3 lines",
+] as const;
+
 export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
@@ -62,9 +70,8 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const q = input.trim();
+  async function runQuery(rawQ: string) {
+    const q = rawQ.trim();
     if (!q || loading || !hydrated) return;
 
     setInput("");
@@ -109,6 +116,13 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
       setStreaming(false);
     }
   }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    void runQuery(input);
+  }
+
+  const isFresh = messages.length === 1 && messages[0]?.id === "welcome";
 
   return (
     <DeskPanel
@@ -183,6 +197,31 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
               </motion.div>
             ))}
           </AnimatePresence>
+
+          {/* Empty-state starter prompts — one tap deploys the question. */}
+          {isFresh && !loading && hydrated && (
+            <motion.div
+              className="largo-suggestions"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <p className="largo-suggestions-label">Try asking</p>
+              <div className="largo-suggestions-grid">
+                {LARGO_SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="largo-suggestion-chip"
+                    onClick={() => void runQuery(s)}
+                  >
+                    <span aria-hidden className="largo-suggestion-arrow">▸</span>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           <AnimatePresence mode="wait">
             {loading && !streaming && (
