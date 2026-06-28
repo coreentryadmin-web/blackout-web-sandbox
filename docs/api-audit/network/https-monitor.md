@@ -132,3 +132,16 @@ Automated TLS, availability, security-header, redirect, and CDN health checks fo
 ### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex; apex then applies in-app 307→/#pricing).
 ### CDN: **PASS** — Cloudflare edge (CF-Ray a12831275c447627-SEA), X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
 ---
+
+## 2026-06-28 01:22 ET
+### TLS: cert expires 2026-09-14 — 79 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
+### Availability: 12/12 routes healthy — **PASS**
+- Pages 200 (probe hits www, follows www→apex 301 to 200): Landing 732ms, Sign In 248ms, Sign Up 230ms, /dashboard 275ms, /flows 258ms, /heatmap 297ms, /grid 184ms, /nighthawk 257ms; /api/health 200 (115ms)
+- Auth-gated APIs 401 as intended (~108–119ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <750ms).**
+### Security Headers: 6/6 present on rendered apex page — **PASS** (HSTS max-age=31536000 includeSubDomains preload, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin-when-cross-origin, CSP `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s.tr…`, Permissions-Policy camera=())
+- Reading note (recurring false alarm): the Step-3 check probes `www` with `MaximumRedirection 0`, so it reads the www→apex **301 hop** (no CSP) and falsely reports "CSP MISSING". Re-probing `https://blackouttrades.com/` directly this run confirmed CSP present — no app defect.
+- RESOLVED: `X-Powered-By` no longer leaking on apex (prior `poweredByHeader:false` hardening applied; header now empty). `Server: cloudflare` expected (CF edge header, not an app leak).
+### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex; apex then applies in-app 307→/#pricing).
+### CDN: **PASS** — Cloudflare edge (CF-Ray a128e1076cd0e2da-SEA), apex CF-Cache-Status DYNAMIC + X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
+---
