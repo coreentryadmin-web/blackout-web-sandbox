@@ -6,7 +6,8 @@ Last updated: 2026-06-28 08:13 ET
 > grade/ticker/strike/expiry/option_type/entry_mark/confluence_score) is now gated behind
 > `isCronAuthorized` (`signals/open/route.ts:8-16`). Verified orphaned first (grep: no consumer,
 > cited `signal-outcome-tracker` cron doesn't exist), so lockdown breaks nothing; `tsc`=0 after
-> edit; deploys on this commit (expect anon GET → 401 post-deploy). **P1-A STILL OPEN
+> edit; deploys on this commit. **✅ DEPLOY VERIFIED LIVE:** post-deploy `GET /api/signals/open`
+> → **401** confirmed (was 200) — P1-B closed end-to-end. **P1-A STILL OPEN
 > (re-confirmed via `railway status`):** no `Market-Regime-Detector` service among the 13 live
 > cron services → `market_regime`/`flow_anomalies` writers never run. `.toml`+code exist;
 > needs the manual Railway "add service (Config-as-code)" step — left for operator (deploy-risky
