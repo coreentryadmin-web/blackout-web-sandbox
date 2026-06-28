@@ -1036,6 +1036,13 @@ body::before {
   padding: 1px;
   overflow: hidden;
   isolation: isolate;
+  transition: box-shadow 0.4s ease;
+}
+
+/* Accent-tinted glow under the card on hover so the lift (framer y:-6) reads as a real
+   rise off the page rather than a flat shift. Color comes from the per-card accent var. */
+.bento-card-wrap:hover {
+  box-shadow: 0 22px 55px -22px var(--card-accent-color);
 }
 
 .bento-card-wrap::before {
