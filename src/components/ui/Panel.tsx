@@ -104,7 +104,7 @@ export const Panel = forwardRef<HTMLElement, PanelProps>(function Panel(
     <section
       ref={ref as React.Ref<HTMLElement>}
       className={clsx(
-        "relative overflow-hidden rounded-2xl border bg-[rgba(8,9,14,0.6)] backdrop-blur",
+        "desk-panel relative overflow-hidden rounded-2xl border backdrop-blur",
         ACCENT_BORDER[accent],
         className
       )}

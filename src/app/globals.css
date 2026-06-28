@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Canonical desk panel (used by 40+ tool panels via <Panel>) =====
+   One primitive upgrade lifts every panel across every tool page: a richer glass
+   surface with a top inner-highlight, a soft drop, a subtle entrance fade-rise on
+   mount, and a gentle accent-glow on hover. Reduced-motion users skip the entrance. */
+@keyframes panel-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.desk-panel {
+  background: linear-gradient(180deg, rgba(13, 15, 22, 0.74), rgba(7, 8, 12, 0.66));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 34px -22px rgba(0, 0, 0, 0.85);
+  animation: panel-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: box-shadow 0.32s ease, border-color 0.32s ease;
+}
+.desk-panel:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 18px 44px -22px rgba(0, 0, 0, 0.92),
+    0 0 0 1px rgba(125, 211, 252, 0.07);
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-panel { animation: none; }
+}
+
 /* ===== iOS app (App Store compliance) =====
    When the site runs INSIDE the iOS app, <html> gets the `ios-app` class (set by an
    early inline script in layout.tsx, keyed off the "BlackOutiOSApp" user-agent token).
