@@ -22,6 +22,9 @@ export type { StatProps, StatTone, DeltaTone } from "./Stat";
 export { Badge } from "./Badge";
 export type { BadgeProps, BadgeTone, BadgeSize } from "./Badge";
 
+export { FreshnessChip } from "./FreshnessChip";
+export type { FreshnessChipProps, FreshnessStatus } from "./FreshnessChip";
+
 export { Table, THead, TBody, TR, TH, TD } from "./Table";
 export type {
   TableProps,
