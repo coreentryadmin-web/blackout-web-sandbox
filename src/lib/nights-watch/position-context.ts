@@ -14,14 +14,15 @@
 
 import { isSpxTicker } from "@/lib/spx-desk-live";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { withServerCache } from "@/lib/server-cache";
+import { withServerCache, serverCache, TTL } from "@/lib/server-cache";
 import { todayEt } from "@/lib/et-date";
 import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-options-gex";
 import type { GexWall } from "@/lib/providers/gamma-desk";
 import type { SpxDeskLevel } from "@/lib/providers/spx-desk";
 import { fetchRecentFlows } from "@/lib/db";
 import { fetchPolygonMtfTechnicals } from "@/lib/providers/polygon-largo";
-import { fetchUwDarkPool } from "@/lib/providers/unusual-whales";
+import { fetchBenzingaEarnings } from "@/lib/providers/polygon";
+import { fetchUwDarkPool, fetchUwEarnings, fetchUwEarningsEstimates } from "@/lib/providers/unusual-whales";
 
 /**
  * Cheap, already-cached cross-tool context for one underlying.
@@ -356,6 +357,83 @@ async function getNwTickerDarkPool(
   ).catch(() => null);
 }
 
+/** Earnings cache TTL — 5 min, matches the Largo get_earnings tool so they share one entry. */
+const NW_EARNINGS_TTL_MS = TTL.EARNINGS; // 300_000
+
+/**
+ * Extract the NEXT future earnings date from a UW earnings payload.
+ * Pure — mirrors nextEarningsDateFromPayload in position-detail.ts exactly.
+ * Returns null when no structured future date exists (honesty: never fabricated).
+ */
+function nextEarningsDateFromUwRows(
+  rows: Array<Record<string, unknown>>,
+  todayYmd: string
+): string | null {
+  let best: string | null = null;
+  for (const row of rows) {
+    const raw = String(
+      row.report_date ?? row.expected_date ?? row.earnings_date ?? row.announce_date ?? row.date ?? ""
+    ).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) continue;
+    if (raw < todayYmd) continue;
+    if (best == null || raw < best) best = raw;
+  }
+  return best;
+}
+
+/** Calendar days from todayYmd to targetYmd, clamped >= 0. Returns null on bad input. */
+function calendarDaysTo(todayYmd: string, targetYmd: string): number | null {
+  const a = Date.parse(`${todayYmd}T00:00:00Z`);
+  const b = Date.parse(`${targetYmd}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
+/**
+ * Cache READER for one ticker's next earnings date + days-to-earnings.
+ *
+ * Uses the SAME cache key ("earnings:{sym}") as position-detail.ts and the Largo
+ * get_earnings tool, so all three callers share ONE upstream fetch per 5-min window.
+ * Only UW earnings rows carry machine-readable dates; Benzinga is fetched anyway
+ * because that's what the shared cache key stores (the three callers all need it).
+ * Best-effort: any error → null → catalysts section omitted (honesty rule).
+ *
+ * NOT called for SPX/SPXW — index tickers have no earnings.
+ */
+async function getNwTickerEarnings(
+  ticker: string
+): Promise<{ earningsDate: string | null; daysToEarnings: number | null }> {
+  const root = ticker.trim().toUpperCase();
+  if (!root) return { earningsDate: null, daysToEarnings: null };
+  return serverCache<{ earningsDate: string | null; daysToEarnings: number | null }>(
+    `nw:earnings:${root}:${todayEt()}`,
+    NW_EARNINGS_TTL_MS,
+    async () => {
+      // Mirror getCachedEarnings in position-detail.ts: Benzinga primary + UW supplemental.
+      // The raw earnings payload is stored under "earnings:{sym}" (shared with Largo/detail).
+      const rawPayload = await serverCache<{
+        benzinga_news: unknown;
+        unusual_whales: unknown;
+        estimates: unknown;
+      }>(`earnings:${root}`, NW_EARNINGS_TTL_MS, async () => {
+        const benzinga = await fetchBenzingaEarnings(root, 15).catch(() => null);
+        const [uw, estimates] = await Promise.all([
+          fetchUwEarnings(root).catch(() => null),
+          fetchUwEarningsEstimates(root).catch(() => null),
+        ]);
+        return { benzinga_news: benzinga, unusual_whales: uw, estimates };
+      });
+      const rows = Array.isArray(rawPayload?.unusual_whales)
+        ? (rawPayload.unusual_whales as Array<Record<string, unknown>>)
+        : [];
+      const today = todayEt();
+      const earningsDate = nextEarningsDateFromUwRows(rows, today);
+      const daysToEarnings = earningsDate != null ? calendarDaysTo(today, earningsDate) : null;
+      return { earningsDate, daysToEarnings };
+    }
+  ).catch(() => ({ earningsDate: null, daysToEarnings: null }));
+}
+
 /**
  * Build a Map<underlying, PositionContext> for a user's positions, resolved ONCE
  * per request. Upstream cost is O(distinct underlyings) regardless of how many
@@ -407,7 +485,7 @@ export async function buildPositionContextMap(
   // Fetch flows + trend for ALL distinct underlyings in parallel alongside the desk/GEX reads.
   // Both are cache READERS (shared, single-flight, keyed only by ticker+date — never per-user).
   // Best-effort: any failure yields null → the flow/trend signal is simply skipped (honesty rule).
-  const [spxContext, gexEntries, flowsEntries, trendEntries, darkPoolEntries] = await Promise.all([
+  const [spxContext, gexEntries, flowsEntries, trendEntries, darkPoolEntries, earningsEntries] = await Promise.all([
     spxDeskPromise,
     Promise.all(
       nonSpxUnderlyings.map(async (u) => {
@@ -429,12 +507,19 @@ export async function buildPositionContextMap(
     Promise.all(
       underlyings.map(async (u) => [u, await getNwTickerDarkPool(u)] as const)
     ),
+    // Earnings: next date + days-to-earnings for non-SPX underlyings only (SPX has no earnings).
+    // Shares the "earnings:{sym}" cache entry with the detail view + Largo tool — free if pre-warmed.
+    // Best-effort: { earningsDate: null, daysToEarnings: null } on any failure → catalysts omitted.
+    Promise.all(
+      nonSpxUnderlyings.map(async (u) => [u, await getNwTickerEarnings(u)] as const)
+    ),
   ]);
 
-  // Index flows/trend/dark-pool by ticker for O(1) lookup when assembling final contexts.
+  // Index flows/trend/dark-pool/earnings by ticker for O(1) lookup when assembling final contexts.
   const flowsByTicker = new Map(flowsEntries);
   const trendByTicker = new Map(trendEntries);
   const darkPoolByTicker = new Map(darkPoolEntries);
+  const earningsByTicker = new Map(earningsEntries);
 
   for (const u of spxUnderlyings) {
     map.set(u, {
@@ -442,14 +527,23 @@ export async function buildPositionContextMap(
       flows: flowsByTicker.get(u) ?? undefined,
       trend: trendByTicker.get(u) ?? undefined,
       darkPoolBias: darkPoolByTicker.get(u) ?? undefined,
+      // SPX has no earnings; catalysts intentionally omitted.
     });
   }
   for (const [u, ctx] of gexEntries) {
+    const earn = earningsByTicker.get(u);
+    const catalysts: PositionContext["catalysts"] =
+      earn?.earningsDate != null
+        ? { earningsDate: earn.earningsDate, daysToEarnings: earn.daysToEarnings }
+        : null;
     map.set(u, {
       ...ctx,
       flows: flowsByTicker.get(u) ?? undefined,
       trend: trendByTicker.get(u) ?? undefined,
       darkPoolBias: darkPoolByTicker.get(u) ?? undefined,
+      // beforeExpiry is position-level (depends on each position's expiry); computeVerdict
+      // derives it from earningsDate vs position.expiry rather than reading it from here.
+      catalysts,
     });
   }
   return map;

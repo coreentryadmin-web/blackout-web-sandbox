@@ -408,7 +408,11 @@ export function computeVerdict(
   // dangerous than a long's IV-crush risk); the LONG (TRIM) variant lives below.
   const earnings = ctx?.catalysts;
   const earningsDays = earnings?.daysToEarnings;
-  const earningsBeforeExpiry = earnings?.beforeExpiry === true;
+  // beforeExpiry: explicit value from the detail path wins; panel path stores only
+  // earningsDate (ticker-level) and we derive it here from position.expiry (position-level).
+  const earningsBeforeExpiry =
+    earnings?.beforeExpiry === true ||
+    (earnings?.earningsDate != null && earnings.earningsDate <= position.expiry.slice(0, 10));
   const earningsImminent =
     earningsBeforeExpiry &&
     earningsDays != null &&
