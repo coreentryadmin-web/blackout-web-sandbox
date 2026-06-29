@@ -1,5 +1,7 @@
 # API Audit Reports
 
+**Audit automation reference (probe paths, env names):** [AUDIT-SKILL-REFERENCE.md](AUDIT-SKILL-REFERENCE.md) — sync external scheduled-task SKILL files to this doc.
+
 Weekly automated audits comparing official API docs vs our actual usage across all providers.
 
 | Provider | Report | Schedule |
