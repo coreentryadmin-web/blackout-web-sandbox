@@ -249,3 +249,15 @@ Automated TLS, availability, security-header, redirect, and CDN health checks fo
 ### CDN: **PASS** — Cloudflare edge (CF-Ray a12990c49aa2ba01-SEA), X-Railway-Request-Id present, root Cache-Control `private, no-cache, no-store, max-age=0, must-revalidate`. /api/health carries no Cache-Control (dynamic, not CDN-cached).
 ### Monitor maintenance: prior entry timestamped `2026-06-28 01:22 ET` is clock-skewed ~2h ahead of true ET (harness date + verified TimeZoneInfo EDT conversion both = 2026-06-27 23:23 ET this run). Cosmetic only — no health impact.
 ---
+
+## 2026-06-28 23:22 ET
+### TLS: cert expires 2026-09-14 — 78 days remaining — **PASS** (CN=blackouttrades.com, issuer Google Trust Services WE1; handshake valid)
+### Availability: 12/12 routes healthy — **PASS**
+- Pages 200 (probe hits www, follows www→apex 301 to 200): Landing 391ms, Sign In 161ms, Sign Up 138ms, /dashboard 184ms, /flows 207ms, /heatmap 193ms, /grid 142ms, /nighthawk 191ms; /api/health 200 (100ms)
+- Auth-gated APIs 401 as intended (~80–103ms): /api/market/spx/pulse, /api/market/gex-positioning, /api/market/flows
+- **No 5xx. No P0. No slow routes (all <400ms — fastest run in recent history).**
+### Security Headers: 6/6 present on rendered apex page — **PASS** (HSTS max-age=31536000, X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin, CSP default-src present, Permissions-Policy camera=())
+- `Server: cloudflare` expected (CF edge header, not an app leak). `X-Powered-By` not leaking.
+### Redirects: **PASS** — `http://www/` → 301 → https://blackouttrades.com/ ; www `/pricing` → 301 → https://blackouttrades.com/pricing (canonical = apex).
+### CDN: **PASS** — Cloudflare edge (CF-Ray a131cd9318f0ebee-SEA), X-Railway-Request-Id present, root Cache-Control `s-maxage=31536000` (static marketing page, Age 1160s = CDN-served as intended). /api/health carries no Cache-Control (dynamic, not CDN-cached).
+---
