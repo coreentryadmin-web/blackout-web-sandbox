@@ -2,21 +2,21 @@
  * POST /api/admin/run-migration
  *
  * Applies a named SQL migration file from src/lib/migrations/.
- * Restricted to cron secret or admin-tier users.
+ * Restricted to admin users only.
  *
  * Body: { "filename": "004_god_tier_features.sql" }
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { requireAdminApi } from "@/lib/admin-access";
 import { applyMigrationFile } from "@/lib/run-migration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const auth = await authorizeMarketDeskApi(req);
-  if (auth instanceof Response) return auth;
+  const denied = await requireAdminApi();
+  if (denied) return denied;
 
   let filename: string;
   try {
