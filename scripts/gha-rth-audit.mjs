@@ -112,6 +112,7 @@ async function cronHttpChecks() {
   const routes = [
     { path: "/api/cron/data-correctness?force=1", label: "data-correctness" },
     { path: "/api/cron/data-integrity?force=1", label: "data-integrity" },
+    { path: "/api/cron/provider-health-reconcile?force=1", label: "provider-health" },
     { path: "/api/cron/cron-staleness-watchdog", label: "cron-watchdog" },
   ];
 

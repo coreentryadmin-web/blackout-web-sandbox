@@ -5,8 +5,8 @@ Last updated: 2026-06-29
 > **Purpose:** Scheduled deep-audit / connectivity / https-monitor tasks often ship with a
 > `SKILL.md` outside this repo. When those probes use stale paths or env names they generate
 > **false P0/P1 every run** and drown real regressions. **This file is the source of truth**
-> for probe lists, env names, and field-name heuristics. Copy sections into external SKILL files
-> when updating audit automation.
+> for probe lists, env names, and field-name heuristics. In-repo Cursor skill copy:
+> `.cursor/skills/platform-audit/SKILL.md`
 
 ---
 

@@ -1,6 +1,7 @@
 # Railway config for the Cron-Staleness-Watchdog service.
 # Wire it up: service Settings -> Config-as-code -> set path to "railway.cron-staleness-watchdog.toml"
 # Requires CRON_SECRET on this service (same value as blackout-web).
+# Optional on blackout-web (not this trigger): CRON_WATCHDOG_SELF_HEAL=1 auto re-warms stale RTH crons.
 [build]
 builder = "nixpacks"
 buildCommand = "echo 'cron trigger service: no app build needed'"

@@ -162,6 +162,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
       "Cross-validate live numbers across every tool (desk vs heatmap vs quote, SPY/SPX tracking, max-pain scaling, desk internal math, GEX freshness) — auto-opens admin incidents on any discrepancy",
   },
   {
+    key: "provider-health-reconcile",
+    name: "Provider Health Reconcile",
+    kind: "http",
+    path: "/api/cron/provider-health-reconcile",
+    schedule_label: "~Every 10 min (market hours)",
+    stale_after_min: 25,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Roll up api_telemetry_events upstream failures and rate limits into admin incidents — catches sustained UW/Polygon/Anthropic outages without watching the dashboard",
+  },
+  {
     key: "data-correctness",
     name: "Data Correctness",
     kind: "http",

@@ -28,6 +28,7 @@ node scripts/rth-open-check.mjs --force
    - `spx-evaluate` ok run in last 20m
    - `market_regime` writes in last 20m
    - `data-correctness` latest run ok
+   - `provider-health-reconcile` latest run ok (when Railway service provisioned)
    - options-socket **authenticated** (after 09:30 ET)
    - no uw-socket stall storms
 
@@ -49,6 +50,19 @@ node scripts/rth-open-check.mjs --force
 | **`rth-prod-smoke.yml`** | **09:35** | `CRON_SECRET` optional (enables SPX desk probe) |
 | **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL`, `SENTRY_AUTH_TOKEN` optional |
 | **`rth-post-close-smoke.yml`** | **17:15** | `CRON_SECRET`, `SENTRY_AUTH_TOKEN` optional |
+| **`ops-auto-fix.yml`** | **every 20 min** | `CURSOR_API_KEY`, `GITHUB_TOKEN` (repo) |
+
+### Railway env (blackout-web service)
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `CRON_WATCHDOG_SELF_HEAL` | `1` | Auto re-warm stale RTH crons when watchdog fires (safe writers only) |
+
+Provision new cron trigger services with:
+
+```bash
+node scripts/railway-apply-cron-config.mjs provider-health-reconcile
+```
 
 All scheduled workflows also support **Run workflow** (manual) from GitHub → Actions.
 
@@ -78,6 +92,6 @@ Repo → **Settings → Secrets and variables → Actions**:
 
 ## References
 
-- Probe paths for audits: `docs/api-audit/AUDIT-SKILL-REFERENCE.md`
+- Probe paths for audits: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` · in-repo SKILL: `.cursor/skills/platform-audit/SKILL.md`
 - Open issues: `docs/api-audit/OPEN-ISSUES.md`
 - Agent instructions: `AGENTS.md` § Autonomous RTH resume

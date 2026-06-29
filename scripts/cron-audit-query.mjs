@@ -25,6 +25,7 @@ const JOB_KEYS = [
   "db-cleanup",
   "membership-reconcile",
   "data-integrity",
+  "provider-health-reconcile",
   "data-correctness",
   "cron-staleness-watchdog",
   "spx-signal-observe",

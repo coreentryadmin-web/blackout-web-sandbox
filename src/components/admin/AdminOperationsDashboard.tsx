@@ -17,6 +17,17 @@ import type { AdminIncidentRow } from "@/lib/admin-incidents";
 import type { AuditLogEntry } from "@/app/api/admin/audit-log/route";
 import type { AdminHealthPayload } from "@/lib/admin-health";
 
+type ErrorEventRow = {
+  id: number;
+  source: string;
+  scope: string | null;
+  name: string;
+  message: string;
+  stack: string | null;
+  meta_json: unknown;
+  created_at: string;
+};
+
 // ─── Timing & constants ───────────────────────────────────────────────────────
 const REFRESH_MS = 20_000; // incidents + health
 const AUDIT_MS   = 30_000; // audit trail (slower — less volatile)
@@ -467,16 +478,65 @@ function DataPipelineHealthTile({ health }: { health: AdminHealthPayload | null 
   );
 }
 
+// ─── Error event row ──────────────────────────────────────────────────────────
+function ErrorEventRowView({ event }: { event: ErrorEventRow }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasStack = Boolean(event.stack?.trim());
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="rounded-lg border border-white/10 bg-black/30 px-3 py-2"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-mono text-[11px] font-bold text-bear truncate">
+            {event.source}
+            {event.scope ? ` · ${event.scope}` : ""}
+          </p>
+          <p className="font-mono text-[10px] text-sky-300 mt-0.5 line-clamp-2">{event.message}</p>
+        </div>
+        <span className="font-mono text-[10px] text-cyan flex-shrink-0">{timeAgo(event.created_at)}</span>
+      </div>
+      {hasStack && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="font-mono text-[10px] text-cyan hover:text-sky-300 mt-1 transition-colors"
+        >
+          {expanded ? "▲ hide stack" : "▼ stack"}
+        </button>
+      )}
+      <AnimatePresence>
+        {expanded && hasStack && (
+          <motion.pre
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="font-mono text-[10px] text-sky-300 bg-black/60 border border-white/10 rounded p-2 mt-1 overflow-x-auto max-h-40"
+          >
+            {event.stack}
+          </motion.pre>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type IncidentsState = { incidents: AdminIncidentRow[]; loading: boolean; error: string | null; lastAt: string | null };
 type AuditState = { entries: AuditLogEntry[]; total: number; loading: boolean; error: string | null; lastAt: string | null };
 type HealthState = { payload: AdminHealthPayload | null; loading: boolean };
+type ErrorsState = { events: ErrorEventRow[]; loading: boolean; error: string | null; lastAt: string | null };
 
 export function AdminOperationsDashboard() {
   const [incidents, setIncidents] = useState<IncidentsState>({ incidents: [], loading: true, error: null, lastAt: null });
   const [audit, setAudit] = useState<AuditState>({ entries: [], total: 0, loading: true, error: null, lastAt: null });
   const [health, setHealth] = useState<HealthState>({ payload: null, loading: true });
+  const [errors, setErrors] = useState<ErrorsState>({ events: [], loading: true, error: null, lastAt: null });
   const [auditAction, setAuditAction] = useState("");
   const [auditActor, setAuditActor] = useState("");
 
@@ -519,14 +579,32 @@ export function AdminOperationsDashboard() {
     }
   }, []);
 
+  const loadErrors = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/errors?limit=50");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { events: ErrorEventRow[] };
+      setErrors({
+        events: data.events ?? [],
+        loading: false,
+        error: null,
+        lastAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      setErrors((s) => ({ ...s, loading: false, error: String(e) }));
+    }
+  }, []);
+
   // Initial + interval refresh
   useEffect(() => {
     loadIncidents();
     loadHealth();
+    loadErrors();
     const id1 = setInterval(loadIncidents, REFRESH_MS);
     const id2 = setInterval(loadHealth, REFRESH_MS);
-    return () => { clearInterval(id1); clearInterval(id2); };
-  }, [loadIncidents, loadHealth]);
+    const id3 = setInterval(loadErrors, REFRESH_MS);
+    return () => { clearInterval(id1); clearInterval(id2); clearInterval(id3); };
+  }, [loadIncidents, loadHealth, loadErrors]);
 
   useEffect(() => {
     loadAudit();
@@ -551,12 +629,13 @@ export function AdminOperationsDashboard() {
         kicker="Operations Center"
         title="Incidents"
         titleAccent="& Audit"
-        subtitle="Real-time incident management · audit trail · system vitals · 20s auto-refresh"
+        subtitle="Real-time incident management · error sink · audit trail · system vitals · 20s auto-refresh"
         chips={
           <>
             <MetricChip label="critical" value={String(critical)} tone={critical > 0 ? "bear" : "neutral"} />
             <MetricChip label="warning"  value={String(warning)}  tone={warning  > 0 ? "amber" : "neutral"} />
             <MetricChip label="open"     value={String(open)}     tone={open     > 0 ? "bear" : "bull"} />
+            <MetricChip label="errors"   value={String(errors.events.length)} tone={errors.events.length > 0 ? "bear" : "bull"} />
             <MetricChip label="audit"    value={`${audit.total} entries`} tone="violet" />
           </>
         }
@@ -726,6 +805,46 @@ export function AdminOperationsDashboard() {
 
       {/* ── Data Pipeline Health ── */}
       <DataPipelineHealthTile health={h} />
+
+      {/* ── Durable error sink (error_events) ── */}
+      <GlassPanel
+        title="Error Sink"
+        accent="bear"
+        kicker={`${errors.events.length} recent · Postgres error_events · last updated ${timeAgo(errors.lastAt)}`}
+      >
+        <div className="mt-2 space-y-2">
+          {errors.loading && errors.events.length === 0 ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="admin-skeleton h-14 rounded-lg" />
+              ))}
+            </div>
+          ) : errors.error ? (
+            <p className="font-mono text-[11px] text-bear py-4 text-center">{errors.error}</p>
+          ) : errors.events.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="font-mono text-[24px] mb-2 text-bull">✓</p>
+              <p className="font-mono text-[12px] font-bold text-bull">Error sink clear</p>
+              <p className="font-mono text-[10px] text-cyan mt-1">No durable errors in the last 50 rows</p>
+            </div>
+          ) : (
+            errors.events.slice(0, 12).map((event) => (
+              <ErrorEventRowView key={event.id} event={event} />
+            ))
+          )}
+        </div>
+        {errors.events.length > 0 && (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={loadErrors}
+              className="font-mono text-[10px] text-cyan hover:text-sky-200 transition-colors"
+            >
+              ↺ refresh
+            </button>
+          </div>
+        )}
+      </GlassPanel>
 
       {/* ── Audit Trail ── */}
       <GlassPanel title="Audit Trail" accent="violet" kicker={`${audit.total} total actions logged`}>

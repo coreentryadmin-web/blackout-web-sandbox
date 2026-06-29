@@ -1,0 +1,13 @@
+# Railway config for provider API health reconcile (api_telemetry_events → admin incidents).
+# Wire: create cron service → Settings → Config-as-code → railway.provider-health-reconcile.toml
+# Requires CRON_SECRET (same as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/provider-health-reconcile"
+# Every 10 minutes during RTH UTC band (route self-skips off-hours).
+cronSchedule = "*/10 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

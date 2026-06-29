@@ -239,7 +239,7 @@ if (dbUrl) {
     const cronKeys = [
       "flow-ingest", "spx-evaluate", "largo-cleanup", "nighthawk-outcomes", "nighthawk-playbook",
       "uw-cache-refresh", "nights-watch-warm", "heatmap-warm", "grid-warm", "gex-eod-snapshot",
-      "gex-alerts", "db-cleanup", "membership-reconcile", "data-integrity", "data-correctness",
+      "gex-alerts", "db-cleanup", "membership-reconcile", "data-integrity", "provider-health-reconcile", "data-correctness",
       "cron-staleness-watchdog", "spx-signal-observe", "spx-signal-weight-optimize",
       "nighthawk-morning-confirm", "market-regime-detector", "positions-expiry",
     ];
