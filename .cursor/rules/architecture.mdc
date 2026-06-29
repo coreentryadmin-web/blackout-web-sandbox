@@ -6,6 +6,9 @@ alwaysApply: true
 
 # BlackOut — orient before you change anything
 
+**Why we build (the goals every change serves):** `blackout-web/docs/NORTH_STAR.md` — prime
+directive is *every number a user sees is real, live, and correct, or it isn't shown*; priority when
+goals conflict is **Truth > Reliability > Security > Correct-logic > everything else**.
 **Full map:** read `blackout-web/docs/ONBOARDING.md` (product, code geography, data pipeline, APIs,
 infra, "where to look"). **Current known bugs:** `blackout-web/docs/api-audit/OPEN-ISSUES.md`.
 Canonical repo is `blackout-platform/blackout-web` — `BO-AAI/` and any root `blackout-web/` are
