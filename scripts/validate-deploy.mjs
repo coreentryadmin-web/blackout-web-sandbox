@@ -8,7 +8,7 @@
  *
  * Env (optional):
  *   DATABASE_PUBLIC_URL or DATABASE_URL — Postgres smoke (errors, cron, API telemetry)
- *   SENTRY_AUTH_TOKEN + SENTRY_ORG + SENTRY_PROJECT — Sentry unresolved issue count
+ *   SENTRY_AUTH_TOKEN — Sentry dashboard check (ORG/PROJECT auto-discovered from token + DSN)
  *
  * Requires: railway CLI (logged in), curl, node 20+, pg (npm package)
  */
@@ -34,6 +34,64 @@ function fail(msg) {
 
 function sh(cmd) {
   return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+}
+
+function loadRailwayVars() {
+  try {
+    return JSON.parse(sh("railway variables --service blackout-web --json 2>/dev/null"));
+  } catch {
+    return {};
+  }
+}
+
+/** Parse numeric project id from SENTRY_DSN (no secrets returned). */
+function dsnProjectId(dsn) {
+  const m = String(dsn ?? "").match(/@[^/]+\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+/** Resolve org slug (+ optional project slug) from token alone — ORG/PROJECT env not required. */
+async function resolveSentryFromToken(token) {
+  const orgRes = await fetch("https://sentry.io/api/0/organizations/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!orgRes.ok) {
+    throw new Error(`organizations API ${orgRes.status}`);
+  }
+  const orgs = await orgRes.json();
+  if (!Array.isArray(orgs) || orgs.length === 0) {
+    throw new Error("token returned 0 organizations");
+  }
+  const org = orgs[0];
+  let projectSlug = null;
+  try {
+    const projRes = await fetch(
+      `https://sentry.io/api/0/organizations/${org.slug}/projects/`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (projRes.ok) {
+      const projects = await projRes.json();
+      const rw = loadRailwayVars();
+      const dsnId = dsnProjectId(rw.SENTRY_DSN || rw.NEXT_PUBLIC_SENTRY_DSN);
+      if (dsnId && Array.isArray(projects)) {
+        const hit = projects.find((p) => String(p.id) === dsnId);
+        projectSlug = hit?.slug ?? null;
+      }
+      if (!projectSlug && projects?.length === 1) projectSlug = projects[0].slug;
+    }
+  } catch {
+    /* project list optional */
+  }
+  return { orgSlug: org.slug, orgName: org.name, projectSlug };
+}
+
+async function fetchSentryUnresolved(token, orgSlug, projectSlug) {
+  const url = projectSlug
+    ? `https://sentry.io/api/0/projects/${orgSlug}/${projectSlug}/issues/?query=is:unresolved&limit=25&statsPeriod=24h`
+    : `https://sentry.io/api/0/organizations/${orgSlug}/issues/?query=is:unresolved&limit=25&statsPeriod=24h`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`issues API ${res.status}`);
+  return res.json();
 }
 
 async function fetchJson(path, opts = {}) {
@@ -152,41 +210,44 @@ if (dbUrl) {
   warn("DATABASE_PUBLIC_URL not set — skipping Postgres checks");
 }
 
-// ── 4. Sentry (optional — needs auth token) ─────────────────────────────────
+// ── 4. Sentry (token only — auto-discovers org/project) ─────────────────────
 console.log("\n4. Sentry");
-const sentryToken = process.env.SENTRY_AUTH_TOKEN;
-const sentryOrg = process.env.SENTRY_ORG;
-const sentryProject = process.env.SENTRY_PROJECT;
+const rwVars = loadRailwayVars();
+const sentryToken =
+  process.env.SENTRY_AUTH_TOKEN?.trim() || rwVars.SENTRY_AUTH_TOKEN?.trim() || "";
+const sentryOrgOverride = process.env.SENTRY_ORG?.trim() || rwVars.SENTRY_ORG?.trim() || "";
+const sentryProjectOverride =
+  process.env.SENTRY_PROJECT?.trim() || rwVars.SENTRY_PROJECT?.trim() || "";
 
-if (sentryToken && sentryOrg) {
+if (sentryToken) {
   try {
-    const url = sentryProject
-      ? `https://sentry.io/api/0/projects/${sentryOrg}/${sentryProject}/issues/?query=is:unresolved&limit=10`
-      : `https://sentry.io/api/0/organizations/${sentryOrg}/issues/?query=is:unresolved&limit=10`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${sentryToken}` } });
-    if (res.ok) {
-      const issues = await res.json();
-      if (!issues.length) ok("Sentry: 0 unresolved issues (sampled)");
-      else {
-        warn(`Sentry: ${issues.length}+ unresolved issues`);
-        issues.slice(0, 3).forEach((i) => console.log(`       · ${i.title?.slice(0, 80)}`));
-      }
-    } else {
-      warn(`Sentry API ${res.status} — check SENTRY_AUTH_TOKEN scopes`);
+    const resolved = sentryOrgOverride
+      ? { orgSlug: sentryOrgOverride, orgName: sentryOrgOverride, projectSlug: sentryProjectOverride || null }
+      : await resolveSentryFromToken(sentryToken);
+    ok(
+      `Token valid — org: ${resolved.orgName} (${resolved.orgSlug})` +
+        (resolved.projectSlug ? `, project: ${resolved.projectSlug}` : " (org-wide issues)")
+    );
+    const issues = await fetchSentryUnresolved(
+      sentryToken,
+      resolved.orgSlug,
+      sentryProjectOverride || resolved.projectSlug
+    );
+    if (!issues.length) ok("Sentry dashboard: 0 unresolved issues (last 24h sample)");
+    else {
+      warn(`Sentry dashboard: ${issues.length} unresolved issue(s) in sample`);
+      issues.slice(0, 5).forEach((i) => {
+        const when = i.lastSeen ? new Date(i.lastSeen).toISOString().slice(0, 16) : "?";
+        console.log(`       · [${when}] ${(i.title ?? i.culprit ?? "issue").slice(0, 90)}`);
+      });
     }
   } catch (e) {
-    warn(`Sentry check failed: ${e.message}`);
+    fail(`Sentry API: ${e.message} — verify token scopes (event:read, org:read, project:read)`);
   }
 } else {
-  warn("SENTRY_AUTH_TOKEN unset — using error_events table as mirror (see step 3)");
-  try {
-    const raw = sh("railway variables --service blackout-web --json 2>/dev/null");
-    const vars = JSON.parse(raw);
-    if (vars.SENTRY_DSN) ok("SENTRY_DSN configured on Railway (events forwarding active)");
-    else warn("SENTRY_DSN not set on Railway");
-  } catch {
-    /* ignore */
-  }
+  warn("SENTRY_AUTH_TOKEN not found (env or Railway blackout-web) — using error_events mirror");
+  if (rwVars.SENTRY_DSN) ok("SENTRY_DSN configured on Railway (capture forwarding active)");
+  else warn("SENTRY_DSN not set on Railway");
 }
 
 // ── 5. Railway logs — options-socket / uw-socket churn ───────────────────────
