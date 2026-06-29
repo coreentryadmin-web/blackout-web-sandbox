@@ -8,14 +8,18 @@ import { round5 } from "@/lib/round5";
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
-// Underlying ROOT used to query the options snapshot. On Massive (and Polygon),
-// the SPX-complex options chain — including the SPXW weekly 0DTE contracts whose
-// OCC ticker is "O:SPXW...EXP..." — is indexed under underlying_ticker "SPX", NOT
-// "SPXW". Querying /v3/snapshot/options/SPXW returns 0 results, which silently
-// blocked every play open (empty ledger). Query "SPX" to retrieve the real chain;
+// Underlying ROOT used to query the options snapshot. The SPX-complex options chain
+// — including the SPXW weekly 0DTE contracts whose OCC ticker is "O:SPXW...EXP..." —
+// must be queried under the INDEX ticker "I:SPX". Verified live against the provider:
+//   - "SPXW"  → 0 results (blocked every play open historically; empty ledger).
+//   - "SPX"   → returns contracts but with NO greeks (delta = undefined), so the
+//               delta-band filter in the chain matcher rejects EVERY contract →
+//               "No liquid chain match — index plan only" → tickets show premium "—".
+//   - "I:SPX" → returns the same contracts WITH greeks + quotes + OI/volume, so the
+//               matcher resolves a real liquid 0DTE strike and a live premium range.
 // per-contract details.ticker still resolves to the correct O:SPXW... symbol.
 // Overridable in case the provider's indexing changes.
-const CHAIN_UNDERLYING = (process.env.SPX_CHAIN_UNDERLYING ?? "SPX").trim();
+const CHAIN_UNDERLYING = (process.env.SPX_CHAIN_UNDERLYING ?? "I:SPX").trim();
 
 type ChainContract = {
   details?: {
