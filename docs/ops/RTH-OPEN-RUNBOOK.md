@@ -39,6 +39,26 @@ node scripts/rth-open-check.mjs --force
 4. Re-run `npm run validate:rth-open`
 5. Confirm first SPX play / lotto ticket shows **real premium** (not "—") after chain fixes (#36, #39)
 
+## Scheduled automations
+
+| Method | Who sets it up | What it does |
+|---|---|---|
+| **Cursor Automations** | [cursor.com/automations](https://cursor.com/automations) (dashboard only — agents cannot create this from code) | Native cron + tools; attach repo `blackout-web` |
+| **GitHub `rth-prod-smoke.yml`** | In repo (done) | Mon–Fri 09:35 ET public HTTP smoke; fails workflow if prod unhealthy |
+| **GitHub `rth-cloud-agent.yml`** | In repo (done) | Mon–Fri 09:32 ET launches Cloud Agent via API if `CURSOR_API_KEY` repo secret is set |
+
+### One-time: enable API-triggered agents
+
+1. Cursor → Settings → Integrations → create **User API key** (or service account)
+2. GitHub repo → Settings → Secrets → Actions → add `CURSOR_API_KEY`
+3. Next weekday 09:32 ET, `rth-cloud-agent.yml` starts an agent with this runbook prompt
+
+### Cursor Automation template (dashboard)
+
+- **Schedule:** Mon–Fri 09:32 AM ET (cron `32 13 * * 1-5` in EDT months; add `32 14` for EST)
+- **Repo:** `coreentryadmin-web/blackout-web` on `main`
+- **Prompt:** same as `rth-cloud-agent.yml` (run RTH-OPEN-RUNBOOK autonomously)
+
 ## References
 
 - Probe paths for audits: `docs/api-audit/AUDIT-SKILL-REFERENCE.md`

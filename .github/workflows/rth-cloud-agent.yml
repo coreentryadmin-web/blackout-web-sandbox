@@ -1,0 +1,52 @@
+# Launch a Cursor Cloud Agent for RTH-open validation (weekdays ~09:32 ET).
+#
+# Requires repo secret: CURSOR_API_KEY (Cursor dashboard → Integrations → User API keys
+# or a service account key with Cloud Agents scope).
+#
+# Without the secret this job no-ops successfully — use cursor.com/automations for
+# fully managed scheduling inside Cursor.
+
+name: RTH Cloud Agent launch
+
+on:
+  schedule:
+    - cron: "32 13 * * 1-5" # 09:32 ET EDT
+    - cron: "32 14 * * 1-5" # 09:32 ET EST
+  workflow_dispatch:
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Cloud Agent (RTH-open runbook)
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "CURSOR_API_KEY not set — skipping agent launch."
+            echo "Add the secret in GitHub repo settings, or create an Automation at cursor.com/automations"
+            exit 0
+          fi
+
+          PROMPT='Autonomous RTH-open session. Read and execute docs/ops/RTH-OPEN-RUNBOOK.md. Run npm run validate:rth-open. Fix any failures, commit, push, re-validate until GREEN. Do NOT ask the user for permission.'
+          export PROMPT
+
+          payload=$(node -e "
+            console.log(JSON.stringify({
+              prompt: { text: process.env.PROMPT },
+              repos: [{ url: 'https://github.com/coreentryadmin-web/blackout-web', startingRef: 'main' }],
+              autoCreatePR: true
+            }));
+          ")
+
+          resp=$(curl -sf -X POST https://api.cursor.com/v1/agents \
+            -u "${CURSOR_API_KEY}:" \
+            -H 'Content-Type: application/json' \
+            -d "$payload")
+
+          echo "$resp" | node -e "
+            const r = JSON.parse(require('fs').readFileSync(0,'utf8'));
+            const url = r.agent?.url ?? r.url ?? '(see response)';
+            console.log('Cloud Agent started:', url);
+          "
