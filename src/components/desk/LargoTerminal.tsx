@@ -154,7 +154,10 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
           aria-atomic="false"
           className={clsx(
             "flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2 largo-messages-scroll",
-            fullPage ? "largo-messages-fullpage" : "max-h-[420px]"
+            fullPage ? "largo-messages-fullpage" : "max-h-[420px]",
+            // Empty state: center the welcome + starter prompts in the tall chat area so it reads as an
+            // intentional resting state instead of content stuck at the top above a large empty void.
+            isFresh && !loading && "justify-center"
           )}
         >
           <AnimatePresence initial={false}>
