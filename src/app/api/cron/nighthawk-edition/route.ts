@@ -51,10 +51,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
-  await failStaleNighthawkJobs().catch((err) =>
-    console.warn("[cron/nighthawk-edition] stale-job cleanup failed:", err)
-  );
-
   const force = req.nextUrl.searchParams.get("force") === "1";
   const statusOnly = req.nextUrl.searchParams.get("status") === "1";
   // Use ET date explicitly so the edition target doesn't flip at UTC midnight.
@@ -73,6 +69,10 @@ export async function GET(req: NextRequest) {
       note: "Long runs execute via `npm run nighthawk:run` (Railway cron worker). This route nudges/resumes within 300s.",
     });
   }
+
+  await failStaleNighthawkJobs().catch((err) =>
+    console.warn("[cron/nighthawk-edition] stale-job cleanup failed:", err)
+  );
 
   if (!inEditionWindow(force) && !(job && job.status !== "published")) {
     const payload = {

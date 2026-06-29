@@ -201,7 +201,7 @@ if (dbUrl) {
     });
     await client.connect();
 
-    const q = async (sql) => (await client.query(sql)).rows;
+    const q = async (sql, params) => (await client.query(sql, params)).rows;
     const errors1h = (await q("SELECT COUNT(*)::int AS n FROM error_events WHERE created_at > NOW() - INTERVAL '1 hour'"))[0].n;
     const errors24h = (await q("SELECT COUNT(*)::int AS n FROM error_events WHERE created_at > NOW() - INTERVAL '24 hours'"))[0].n;
     // Latest run per job — historical failures during rolling deploys are not actionable.
