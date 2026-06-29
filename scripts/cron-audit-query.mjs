@@ -35,6 +35,9 @@ const JOB_KEYS = [
   "positions-expiry",
 ];
 
+/** Registered in code + TOML but Railway trigger service not yet provisioned — warn, don't fail CI. */
+const PROVISION_PENDING = new Set(["provider-health-reconcile"]);
+
 const dbUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
 if (!dbUrl) {
   console.error("[cron-audit] DATABASE_PUBLIC_URL not set");
@@ -77,11 +80,16 @@ for (const r of totals) {
 }
 
 const zeroRuns = totals.filter((r) => r.total_runs === 0).map((r) => r.job_key);
+const pendingZero = zeroRuns.filter((k) => PROVISION_PENDING.has(k));
+const fatalZero = zeroRuns.filter((k) => !PROVISION_PENDING.has(k));
 const badLatest = latest.filter((r) => r.status !== "ok" && r.status !== "skipped");
 
 console.log("\n=== CRON AUDIT: summary ===\n");
 console.log(`Jobs with zero runs ever: ${zeroRuns.length ? zeroRuns.join(", ") : "(none)"}`);
+if (pendingZero.length) {
+  console.log(`Provision pending (expected zero until Railway wired): ${pendingZero.join(", ")}`);
+}
 console.log(`Jobs with latest status != ok/skipped: ${badLatest.length ? badLatest.map((r) => r.job_key).join(", ") : "(none)"}`);
 
 await client.end();
-process.exit(zeroRuns.length || badLatest.length ? 1 : 0);
+process.exit(fatalZero.length || badLatest.length ? 1 : 0);
