@@ -1834,9 +1834,14 @@ export async function fetchUwTickerEarningsHistory(ticker: string, limit = 8) {
   return extractRows(data as Record<string, unknown>).slice(0, limit);
 }
 
-// Next expected earnings date
+// Next expected earnings date.
+// NOTE: the old path `/api/stock/{ticker}/earnings-dates` is not a real UW route — it 404s
+// ("Route not found") for every ticker, so this silently returned null everywhere. UW exposes
+// per-ticker earnings (including the upcoming estimated `report_date`) under `/api/earnings/{ticker}`
+// — the same endpoint fetchUwTickerEarningsHistory already uses. Verified live: 200 with a future
+// report_date row.
 export async function fetchUwTickerNextEarnings(ticker: string) {
-  const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/earnings-dates`, {});
+  const data = await uwGetSafe<unknown>(`/api/earnings/${ticker.toUpperCase()}`, {});
   const rows = extractRows(data as Record<string, unknown>);
   // Return first future date
   const today = new Date().toISOString().slice(0, 10);
