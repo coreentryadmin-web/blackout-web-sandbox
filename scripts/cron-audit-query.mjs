@@ -36,7 +36,7 @@ const JOB_KEYS = [
 ];
 
 /** Registered in code + TOML but Railway trigger service not yet provisioned — warn, don't fail CI. */
-const PROVISION_PENDING = new Set(["provider-health-reconcile"]);
+const PROVISION_PENDING = new Set([]);
 
 const dbUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
 if (!dbUrl) {

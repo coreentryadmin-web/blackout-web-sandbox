@@ -36,8 +36,8 @@ function run(cmd, args, opts = {}) {
 
 function requireAuth() {
   try {
-    const who = sh("railway whoami 2>/dev/null");
-    console.log(`✓ Railway auth: ${who.split("\n")[0]}`);
+    JSON.parse(sh("railway service list --json 2>/dev/null"));
+    console.log("✓ Railway auth OK (project token)");
   } catch {
     console.error("✗ RAILWAY_TOKEN invalid or missing — create one at https://railway.com/account/tokens");
     process.exit(1);
@@ -70,7 +70,6 @@ if (existing === "1") {
   const r = run("railway", [
     "variable", "set", "CRON_WATCHDOG_SELF_HEAL=1",
     "--service", "blackout-web",
-    "--project", PROJECT,
     "--environment", ENV,
   ]);
   if (r.status !== 0) {
@@ -98,8 +97,6 @@ if (!names[cronKey]) {
     "--service", cronKey,
     "--repo", REPO,
     "--branch", BRANCH,
-    "--project", PROJECT,
-    "--environment", ENV,
     "--variables", `CRON_SECRET=${cronSecret}`,
     "--variables", "CRON_TARGET_BASE_URL=https://blackouttrades.com",
     "--json",
@@ -115,7 +112,6 @@ if (!names[cronKey]) {
     const r = run("railway", [
       "variable", "set", `CRON_SECRET=${cronSecret}`,
       "--service", cronKey,
-      "--project", PROJECT,
       "--environment", ENV,
     ]);
     if (r.status !== 0) {

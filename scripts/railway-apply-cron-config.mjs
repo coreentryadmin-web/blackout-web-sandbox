@@ -52,7 +52,7 @@ function parseTomlCron(key) {
 }
 
 const envJson = JSON.parse(
-  sh(`railway environment config --project ${PROJECT} --environment ${ENV} --json`)
+  sh(`railway environment config --environment ${ENV} --json`)
 );
 
 const serviceList = JSON.parse(sh("railway service list --json"));
@@ -98,7 +98,7 @@ const msg = `Wire cron config-as-code: ${keys.join(", ")}`;
 const input = `\n${readFileSync(tmp, "utf8")}`;
 const r = spawnSync(
   "railway",
-  ["environment", "edit", "-p", PROJECT, "-e", ENV, "-m", msg, "--json"],
+  ["environment", "edit", "-e", ENV, "-m", msg, "--json"],
   { input, encoding: "utf8" }
 );
 

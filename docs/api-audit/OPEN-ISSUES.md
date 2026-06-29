@@ -26,8 +26,8 @@ Last updated: 2026-06-29 23:10 ET
 
 | ID | Item | Action |
 |---|---|---|
-| **OPS-1** | **`provider-health-reconcile` Railway service** | Provision cron trigger service with `railway.provider-health-reconcile.toml` + `CRON_SECRET` (same as other crons). Run: `node scripts/railway-apply-cron-config.mjs provider-health-reconcile` |
-| **OPS-2** | **`CRON_WATCHDOG_SELF_HEAL=1`** on `blackout-web` | Set on Railway `blackout-web` service — auto re-warms stale RTH crons via watchdog |
+| **OPS-1** | **`provider-health-reconcile` Railway service** | **DONE** — service live, TOML wired (`*/10 11-21 * * 1-5`), CRON_SECRET set |
+| **OPS-2** | **`CRON_WATCHDOG_SELF_HEAL=1`** on `blackout-web` | **DONE** — set on Railway `blackout-web` |
 | **OPS-3** | **Night Hawk edition cron** | Watch `nighthawk-playbook` during evening window; draft fixes in PR #56 |
 | **OPS-4** | **`signal_outcomes` table** | Dead path after #47; optional schema cleanup |
 | **OPS-5** | **External Cursor Cloud audit configs** | Copy from `.cursor/skills/platform-audit/SKILL.md` if tasks live outside this repo |
