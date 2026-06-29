@@ -36,6 +36,18 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   paid tier and market-data API keys (`UW_API_KEY`, `POLYGON_API_KEY`/`MASSIVE_API_KEY`), so they
   cannot be fully exercised locally without those third-party keys.
 
+### Production edge (Cloudflare) — security headers / CSP are NOT served from `next.config.mjs`
+- Production is fronted by **Cloudflare**, and the security **response headers are delivered by a
+  Cloudflare Transform Rule** ("Add security headers to all responses") in the
+  `http_response_headers_transform` ruleset — **not** by the `headers()` block in `next.config.mjs`.
+  Editing CSP / HSTS / X-Frame-Options etc. in `next.config.mjs` has **no effect in production**
+  (the live values differ from the code: e.g. the CF rule sets `X-XSS-Protection`, which isn't in
+  the code at all, and HSTS at 1y vs the code's 2y).
+- The `Content-Security-Policy` specifically is served by a **separate** Transform Rule (scoped to
+  non-`/embed` paths) whose value mirrors `baseCsp` in `next.config.mjs`. To change prod security
+  headers, edit the Cloudflare Transform Rules (dash: Rules → Transform Rules → Modify Response
+  Header, or the Rulesets API) — keep the code's `baseCsp` in sync as the source of truth for the value.
+
 ### Postgres (optional, for persistence testing)
 - The app runs fine without a DB (`/api/health` returns `db: "skipped"`). Postgres is only needed to
   exercise persistence (flows, SPX plays, nighthawk, positions, telemetry, etc.).
