@@ -15,6 +15,7 @@
     "lint:css": "stylelint \"src/**/*.css\"",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "validate:deploy": "node scripts/validate-deploy.mjs",
+    "validate:rth-open": "node scripts/rth-open-check.mjs",
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
     "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
     "probe:docs:uw": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs --uw-only",

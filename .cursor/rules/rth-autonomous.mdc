@@ -1,0 +1,30 @@
+---
+description: Autonomous RTH-open resume — cloud agents must self-trigger at market open without user prompt
+alwaysApply: true
+---
+
+# RTH autonomous resume (Cloud Agent)
+
+**User preference: never ask for permission — keep going until GREEN.**
+
+## On every Cloud Agent session (weekday)
+
+1. Read `docs/ops/RTH-OPEN-RUNBOOK.md`.
+2. If **America/New_York** is a weekday and local time ≥ **09:00**, immediately run:
+   ```bash
+   npm run validate:rth-open
+   ```
+3. Do **not** wait for the user to say "market is open" or "continue tomorrow."
+4. If validation fails → diagnose → fix → commit → push → poll deploy → re-run until GREEN.
+5. After 09:35 ET, verify in Postgres that `spx-evaluate` is ticking and options-socket logs show `authenticated`.
+
+## After hours
+
+- Skip RTH-specific checks (script exits 0 off-hours).
+- Still run `validate:deploy` after any push to `main`.
+
+## Scheduled Cursor task (operator)
+
+If using Cursor scheduled Cloud Agents, set cron to **09:32 AM ET Mon–Fri** with prompt:
+
+> Execute `docs/ops/RTH-OPEN-RUNBOOK.md` autonomously. Run `npm run validate:rth-open`, fix any failures, do not ask me.
