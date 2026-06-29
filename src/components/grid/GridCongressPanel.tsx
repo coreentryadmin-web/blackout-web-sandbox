@@ -45,7 +45,7 @@ export function GridCongressPanel() {
       kicker="CONGRESS"
       accent="bear"
       live={live}
-      footer={<span className="grid-foot-note">Unusual Whales · congressional stock disclosures</span>}
+      footer={<span className="grid-foot-note">Disclosures feed · congressional stock disclosures</span>}
     >
       {isFiltered && ticker && (
         <p className="grid-ticker-badge">Showing {ticker} congress trades</p>

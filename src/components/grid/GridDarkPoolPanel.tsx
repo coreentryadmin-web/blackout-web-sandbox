@@ -42,7 +42,7 @@ export function GridDarkPoolPanel() {
       kicker="DARK POOL"
       accent="violet"
       live={live}
-      footer={<span className="grid-foot-note">Unusual Whales · market-wide off-lit prints</span>}
+      footer={<span className="grid-foot-note">Live feed · market-wide off-lit prints</span>}
     >
       {isFiltered && ticker && (
         <p className="grid-ticker-badge">Showing {ticker} dark pool prints</p>

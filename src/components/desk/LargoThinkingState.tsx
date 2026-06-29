@@ -7,7 +7,7 @@ export const LARGO_THINKING_PHRASES = [
   "Pulling the live tape…",
   "Reading dealer gamma…",
   "Cross-referencing flow against GEX…",
-  "Pulling Polygon feeds…",
+  "Pulling market feeds…",
   "Scanning the 0DTE chain…",
   "Syncing the SPX Slayer desk…",
   "Running confluence on your ask…",
@@ -22,10 +22,10 @@ export const LARGO_THINKING_PHRASES = [
 ] as const;
 
 const PIPELINE_NODES = [
-  { label: "POLYGON", color: "cyan" },
+  { label: "TAPE", color: "cyan" },
   { label: "DESK", color: "green" },
   { label: "FLOW", color: "purple" },
-  { label: "CLAUDE", color: "magenta" },
+  { label: "ENGINE", color: "magenta" },
 ] as const;
 
 type LargoThinkingStateProps = {

@@ -71,7 +71,7 @@ export function GridSectorHeatmapPanel() {
       span={2}
       footer={
         <span className="grid-foot-note">
-          Polygon · 11 SPDR sectors · intraday % change
+          Live sectors · 11 SPDR sectors · intraday % change
         </span>
       }
     >

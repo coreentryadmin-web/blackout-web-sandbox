@@ -23,7 +23,7 @@ export function SectorThermal({ data, live }: { data?: HeatmapData; live?: boole
   return (
     <Panel
       accent="ember"
-      kicker="Polygon indices"
+      kicker="Live indices"
       title="Sector Thermal"
       actions={<FeedBadge live={live} />}
       className="col-span-full"
@@ -50,7 +50,7 @@ export function MoversTape({ data, live }: { data?: HeatmapData; live?: boolean 
   const movers = data?.movers ?? [];
 
   return (
-    <Panel accent="sky" kicker="Polygon stocks" title="Top Movers" actions={<FeedBadge live={live} />}>
+    <Panel accent="sky" kicker="Live stocks" title="Top Movers" actions={<FeedBadge live={live} />}>
       <div
         className="space-y-1 max-h-[400px] overflow-y-auto"
         role="log"

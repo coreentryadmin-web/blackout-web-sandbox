@@ -49,7 +49,7 @@ export function GridEconomyPanel() {
       accent="emerald"
       live={live}
       span={2}
-      footer={<span className="grid-foot-note">Unusual Whales · CPI · Fed Funds · GDP · Payrolls · Unemployment</span>}
+      footer={<span className="grid-foot-note">Macro calendar · CPI · Fed Funds · GDP · Payrolls · Unemployment</span>}
     >
       {isFiltered && (
         <p className="grid-empty text-sky-400/60 text-[10px]">Market-wide · ticker filter not applicable</p>

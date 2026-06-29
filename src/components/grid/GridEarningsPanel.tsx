@@ -136,7 +136,7 @@ export function GridEarningsPanel() {
       accent="sky"
       live={live}
       span={2}
-      footer={<span className="grid-foot-note">Unusual Whales · {isTickerMode ? "per-ticker history + next date" : "pre-market + after-hours reporters"}</span>}
+      footer={<span className="grid-foot-note">Live feed · {isTickerMode ? "per-ticker history + next date" : "pre-market + after-hours reporters"}</span>}
     >
       {isTickerMode ? (
         <TickerEarningsView data={data as TickerRes} />

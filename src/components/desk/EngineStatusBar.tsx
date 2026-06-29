@@ -26,7 +26,7 @@ export function EngineStatusBar() {
         </span>
         <span className="font-mono text-[10px] text-cyan-400 hidden sm:inline">
           {marketOn
-            ? `${polygon ? "Polygon" : ""}${polygon && uw ? " · " : ""}${uw ? "UW" : ""} live`
+            ? `${polygon && uw ? "Indices · flow live" : polygon ? "Indices live" : uw ? "Flow live" : "Market live"}`
             : "Market feed offline — reconnecting"}
         </span>
         {intelOn && (

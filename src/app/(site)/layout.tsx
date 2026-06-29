@@ -39,7 +39,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <MarketPulseLayer />
       <Nav lockedTools={lockedTools} />
       {/* IndexRibbon: live SPX + VIX quotes below the nav bar. Renders only when data is
-          available (null-renders when market closed / Polygon unconfigured). */}
+          available (null-renders when market closed / indices feed unconfigured). */}
       <IndexRibbon />
       {children}
     </>

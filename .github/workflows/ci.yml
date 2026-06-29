@@ -19,6 +19,8 @@ jobs:
         run: npx tsc --noEmit
       - name: Brand guard (no grey)
         run: npm run lint:brand
+      - name: Vendor surface guard (no provider names in UI)
+        run: npm run lint:vendor
       - name: Accessibility lint (jsx-a11y, non-blocking)
         run: npm run lint
         continue-on-error: true

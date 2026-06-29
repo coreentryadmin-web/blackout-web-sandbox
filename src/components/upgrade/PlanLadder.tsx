@@ -12,7 +12,7 @@ export function PlanLadder() {
   if (WHOP_PREMIUM_CHECKOUT_OPTIONS.length === 0) {
     return WHOP_CHECKOUT.store ? (
       <a href={WHOP_CHECKOUT.store} target="_blank" rel="noopener noreferrer" className="btn-primary">
-        View plans on Whop →
+        View plans →
       </a>
     ) : (
       <p className="text-bear text-sm">{WHOP_CHECKOUT_UNAVAILABLE_MESSAGE}</p>

@@ -46,7 +46,7 @@ export function GridSectorsPanel() {
       accent="gold"
       live={live}
       span={2}
-      footer={<span className="grid-foot-note">Polygon · 11 SPDR sector ETFs · intraday % change</span>}
+      footer={<span className="grid-foot-note">Live sectors · 11 SPDR sector ETFs · intraday % change</span>}
     >
       {isFiltered && (
         <p className="grid-empty text-sky-400/60 text-[10px]">Market-wide · ticker filter not applicable</p>

@@ -292,7 +292,7 @@ export function PricingSection() {
               {hasCheckout ? "Unlock Premium →" : "Open account first →"}
             </LandingCta>
             <p className="mt-4 text-center font-mono text-[10px] tracking-[0.12em] text-secondary uppercase">
-              Secure checkout · Whop · stand down anytime
+              Secure checkout · cancel anytime
             </p>
           </motion.div>
         </div>
@@ -305,7 +305,7 @@ export function PricingSection() {
           className="mt-10 text-center text-sm md:text-[15px] leading-relaxed font-medium text-white/85"
           style={{ textShadow: "0 2px 14px rgba(0,0,0,0.7)" }}
         >
-          Sign up on BlackOut, then unlock on Whop with the same email — same login, instant access.{" "}
+          Sign up on BlackOut, then complete checkout with the same email — same login, instant access.{" "}
           <span className="text-bull font-bold">Educational tools, not financial advice. Every trade is your own decision.</span>
         </motion.p>
         <p

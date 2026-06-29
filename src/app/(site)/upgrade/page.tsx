@@ -47,7 +47,7 @@ export default function UpgradePage() {
 
         <div className="hide-in-ios-app mx-auto mt-10 flex max-w-md flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-5 py-4 backdrop-blur-md sm:flex-row">
           <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-mute">
-            Already paid on Whop?
+            Already paid?
           </span>
           <SyncMembershipButton />
         </div>
@@ -64,7 +64,7 @@ export default function UpgradePage() {
             ← Back to home
           </Link>
           <p className="hide-in-ios-app font-mono text-[10px] text-mute">
-            Pay on Whop with the same email as your BlackOut account, then sync access above.
+            Pay with the same email as your BlackOut account at checkout, then sync access above.
             Educational tools only — not financial advice.
           </p>
         </div>

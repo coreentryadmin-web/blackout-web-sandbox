@@ -37,7 +37,7 @@ export function GridMoversPanel() {
       kicker="MOVERS"
       accent="gold"
       live={live}
-      footer={<span className="grid-foot-note">Polygon · intraday gainers + losers</span>}
+      footer={<span className="grid-foot-note">Live movers · intraday gainers + losers</span>}
     >
       {isFiltered && (
         <p className="grid-empty text-sky-400/60 text-[10px]">Market-wide · ticker filter not applicable</p>

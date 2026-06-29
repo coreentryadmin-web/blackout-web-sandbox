@@ -74,7 +74,7 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
         </div>
 
         <motion.div variants={riseItem} className="relative z-10 flex flex-wrap items-center gap-3">
-          <span className="font-mono text-[10px] text-secondary">Encrypted by Clerk · Brokerless by design</span>
+          <span className="font-mono text-[10px] text-secondary">End-to-end encrypted · Brokerless by design</span>
         </motion.div>
       </motion.section>
 

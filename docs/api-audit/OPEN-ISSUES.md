@@ -26,8 +26,9 @@ Last updated: 2026-06-29 19:30 ET
 ## 🔵 Remaining (non-code / deferred)
 
 - **P3-META** — Scheduled audit `SKILL.md` stale probe paths/env names. File lives outside this repo; fix in the audit task config to stop false P0/P1 noise.
-- **P3-2 scaffold tables** — `spx_pulse_snapshots`, `spx_watch_setups` still in prod until an operator runs `005_drop_dead_tables.sql` (safe — zero readers/writers in `src/`).
-- **UI vendor names** — Some learn/marketing copy still references provider names in prose (not API JSON). Low priority; not a data-integrity bug.
+- **P3-2 scaffold tables** — **CLOSED** — `spx_pulse_snapshots` / `spx_watch_setups` absent in prod (migration 005 no-op; tables never created).
+- **UI vendor names** — **CLOSED** — grid/desk/landing/upgrade/auth surfaces scrubbed; `npm run lint:vendor` guards regressions.
+- **P3-META** — Scheduled audit `SKILL.md` stale probe paths/env names. File lives outside this repo; fix in the audit task config to stop false P0/P1 noise.
 
 ## Verified GREEN (2026-06-29)
 

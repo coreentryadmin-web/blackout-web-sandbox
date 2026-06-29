@@ -100,7 +100,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
     },
     {
       q: "Can I cancel anytime?",
-      a: "Yes. Billing is handled securely through Whop, and you can manage or cancel your membership anytime from your account. Questions about a charge, an invoice, or your plan? Email billing@blackouttrades.com and we'll sort it out personally.",
+      a: "Yes. Billing is handled through our secure checkout partner, and you can manage or cancel your membership anytime from your account. Questions about a charge, an invoice, or your plan? Email billing@blackouttrades.com and we'll sort it out personally.",
     },
   ],
   start: [

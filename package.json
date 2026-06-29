@@ -11,6 +11,7 @@
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "next lint",
     "lint:brand": "node scripts/check-brand.mjs",
+    "lint:vendor": "node scripts/check-vendor-surfaces.mjs",
     "lint:css": "stylelint \"src/**/*.css\"",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "validate:deploy": "node scripts/validate-deploy.mjs",

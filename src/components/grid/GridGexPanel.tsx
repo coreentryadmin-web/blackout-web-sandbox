@@ -99,7 +99,7 @@ export function GridGexPanel() {
       live={live}
       footer={
         <span className="grid-foot-note">
-          Polygon/Massive matrix · {gexTicker} · {!data ? "loading…" : data.available ? "live" : "unavailable"}
+          Live GEX matrix · {gexTicker} · {!data ? "loading…" : data.available ? "live" : "unavailable"}
         </span>
       }
     >

@@ -93,7 +93,7 @@ export function GridBoard() {
         {/* Row 5 — corporate catalysts */}
         <GridCatalystsPanel />
 
-        {/* Row 6 — sector heatmap from /api/market/heatmap (Polygon sector ETFs) */}
+        {/* Row 6 — sector heatmap from /api/market/heatmap (sector ETFs) */}
         <GridSectorHeatmapPanel />
       </div>
     </>
