@@ -1,0 +1,28 @@
+# One-off prod cron_job_runs audit (workflow_dispatch only).
+name: Cron audit query
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/cron-audit-query.mjs
+      - .github/workflows/cron-audit-query.yml
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Query prod cron_job_runs
+        env:
+          DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: node scripts/cron-audit-query.mjs
