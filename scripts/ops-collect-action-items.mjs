@@ -99,6 +99,38 @@ async function postgresItems() {
     items[items.length - 1].detail += ` Top: ${detail}`;
   }
 
+  // Night Hawk: after the edition window, tomorrow's row should be published (plays or recap-only).
+  const staleJobs = await q(
+    `SELECT edition_for::text, status, current_stage, updated_at
+     FROM nighthawk_jobs
+     WHERE status NOT IN ('published', 'failed')
+       AND updated_at < NOW() - INTERVAL '4 hours'`
+  );
+  for (const r of staleJobs) {
+    add(
+      "P1",
+      "nighthawk",
+      `nighthawk:stale-job:${r.edition_for}`,
+      `Night Hawk job stuck: ${r.edition_for}`,
+      `status=${r.status} stage=${r.current_stage ?? "?"} updated=${String(r.updated_at).slice(0, 19)}Z`
+    );
+  }
+
+  const failedJobs = await q(
+    `SELECT edition_for::text, error, updated_at FROM nighthawk_jobs
+     WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '36 hours'
+     ORDER BY updated_at DESC LIMIT 3`
+  );
+  for (const r of failedJobs) {
+    add(
+      "P1",
+      "nighthawk",
+      `nighthawk:failed-job:${r.edition_for}`,
+      `Night Hawk build failed: ${r.edition_for}`,
+      String(r.error ?? "failed").slice(0, 200)
+    );
+  }
+
   await c.end();
 }
 
@@ -139,6 +171,61 @@ async function httpItems() {
   } catch {
     /* optional probe */
   }
+
+  try {
+    const nh = await fetch(`${BASE}/api/cron/nighthawk-edition?status=1`, { headers: H });
+    const nj = await nh.json().catch(() => ({}));
+    if (nh.status === 200 && nj.edition_for) {
+      const ed = await fetch(`${BASE}/api/market/nighthawk/edition?date=${nj.edition_for}`, { headers: H });
+      const ej = await ed.json().catch(() => ({}));
+      const playCount = Array.isArray(ej.plays) ? ej.plays.length : 0;
+      const inWindow = inEtEditionCatchup();
+      if (inWindow && nj.job_status !== "published") {
+        add(
+          "P0",
+          "nighthawk",
+          `nighthawk:unpublished:${nj.edition_for}`,
+          `Night Hawk edition not published: ${nj.edition_for}`,
+          `job_status=${nj.job_status ?? "?"} stage=${nj.current_stage ?? "?"} error=${nj.error ?? "none"}`
+        );
+      } else if (inWindow && nj.job_status === "published" && playCount === 0 && !ej.recap_only) {
+        add(
+          "P1",
+          "nighthawk",
+          `nighthawk:zero-plays:${nj.edition_for}`,
+          `Night Hawk published with zero plays: ${nj.edition_for}`,
+          "Edition row exists but plays=[] without recap_only — investigate funnel collapse."
+        );
+      } else if (inWindow && nj.job_status === "published" && playCount > 0 && playCount < 3) {
+        add(
+          "P2",
+          "nighthawk",
+          `nighthawk:thin-edition:${nj.edition_for}`,
+          `Night Hawk thin edition (${playCount} plays): ${nj.edition_for}`,
+          "Critic/grounding may be over-pruning — review funnel logs."
+        );
+      }
+    }
+  } catch (e) {
+    add("P2", "nighthawk", "nighthawk:probe", "Night Hawk health probe failed", e.message);
+  }
+}
+
+/** True during 5:30–7:30 PM ET catchup on weekdays (edition should land). */
+function inEtEditionCatchup(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    weekday: "short",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value ?? "";
+  const wd = get("weekday");
+  if (wd === "Sat" || wd === "Sun") return false;
+  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  const target = 17 * 60 + 30;
+  return mins >= target + 60 && mins <= target + 120;
 }
 
 await postgresItems();

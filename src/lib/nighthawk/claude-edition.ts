@@ -16,6 +16,7 @@ import {
 } from "./play-constraints";
 import {
   EDITION_CHAIN_PREFETCH,
+  EDITION_SYNTHESIS_OVERSHOOT,
   GROUNDING_ENFORCE,
   MAX_OPTION_COST_PER_CONTRACT,
   MAX_OPTION_PREMIUM_PER_SHARE,
@@ -170,7 +171,7 @@ export async function generateEditionPlays(params: {
     };
   }
 
-  const parsed = parsePlaysJson(raw).slice(0, 8);
+  const parsed = parsePlaysJson(raw).slice(0, EDITION_SYNTHESIS_OVERSHOOT + 1);
   const mapped = parsed
     .map((p, i) => mapClaudePlayToEdition(p, i + 1, dossierMap))
     .filter((p) => p.play_type === "stock");
@@ -218,7 +219,7 @@ export async function generateEditionPlays(params: {
     );
   }
 
-  const capped = postGrounding.slice(0, 5).map((p, i) => ({ ...p, rank: i + 1 }));
+  const capped = postGrounding.slice(0, EDITION_SYNTHESIS_OVERSHOOT).map((p, i) => ({ ...p, rank: i + 1 }));
 
   if (rejected.length) {
     console.warn(

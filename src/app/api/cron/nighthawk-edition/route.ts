@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse, after } from "next/server";
-import { requireDatabaseInProduction, fetchNighthawkJob } from "@/lib/db";
+import { requireDatabaseInProduction, fetchNighthawkJob, failStaleNighthawkJobs } from "@/lib/db";
 import { buildEveningEdition, serializeBuildError } from "@/lib/nighthawk/edition-builder";
 import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 import { isCronAuthorized } from "@/lib/market-api-auth";
@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
     await logCronRun(CRON_KEY, started, payload);
     return NextResponse.json(payload);
   }
+
+  await failStaleNighthawkJobs().catch((err) =>
+    console.warn("[cron/nighthawk-edition] stale-job cleanup failed:", err)
+  );
 
   const force = req.nextUrl.searchParams.get("force") === "1";
   const statusOnly = req.nextUrl.searchParams.get("status") === "1";

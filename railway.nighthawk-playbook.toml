@@ -21,6 +21,7 @@ buildCommand = "echo 'cron trigger service: no app build needed'"
 
 [deploy]
 startCommand = "CRON_HTTP_TIMEOUT_MS=180000 node scripts/hit-cron.mjs /api/cron/nighthawk-edition"
-cronSchedule = "*/15 21-23 * * 1-5"
+# First fire at :30 past the hour (5:30 PM ET in EDT) — avoids two wasted skips before the edition window opens.
+cronSchedule = "30/15 21-23 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1

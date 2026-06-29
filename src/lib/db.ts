@@ -2791,6 +2791,30 @@ export async function clearNighthawkStaging(editionFor: string): Promise<void> {
   await (await getPool()).query(`DELETE FROM nighthawk_dossiers_staging WHERE edition_for = $1::date`, [editionFor]);
 }
 
+/** Fail jobs stuck in `running` (or intermediate stage) long enough to block resume/idempotency. */
+export async function failStaleNighthawkJobs(
+  staleAfterHours = Number(process.env.NIGHTHAWK_STALE_JOB_HOURS ?? "4")
+): Promise<number> {
+  await ensureSchema();
+  const hours = Number.isFinite(staleAfterHours) && staleAfterHours > 0 ? staleAfterHours : 4;
+  const res = await (await getPool()).query<{ edition_for: string }>(
+    `
+    UPDATE nighthawk_jobs
+    SET status = 'failed',
+        error = COALESCE(error, 'Stale running job cleared for resume'),
+        updated_at = NOW()
+    WHERE status NOT IN ('published', 'failed')
+      AND updated_at < NOW() - ($1::text || ' hours')::interval
+    RETURNING edition_for::text AS edition_for
+    `,
+    [String(hours)]
+  );
+  for (const row of res.rows) {
+    logNighthawkJob(String(row.edition_for), "warn", null, `Stale job marked failed after ${hours}h idle`);
+  }
+  return res.rowCount ?? 0;
+}
+
 export async function fetchLatestNighthawkJob(): Promise<NighthawkJobRow | null> {
   await ensureSchema();
   const res = await (await getPool()).query(

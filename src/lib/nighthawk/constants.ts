@@ -32,6 +32,10 @@ export const CANDIDATE_MIN_BASELINE_PREMIUM = 75_000;
 export const MAX_DOSSIER_STOCKS = 40;
 /** Top dossiers sent to Claude for play synthesis (not the full ranked pool). */
 export const EDITION_SYNTHESIS_POOL = 12;
+/** Final play count shown in the UI (PlaybookBoard renders 5 slots). */
+export const EDITION_TARGET_PLAYS = 5;
+/** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
+export const EDITION_SYNTHESIS_OVERSHOOT = 7;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays). */
 export const EDITION_CHAIN_PREFETCH = 12;
 export const MIN_STOCK_FLOW_PREMIUM = 100_000;

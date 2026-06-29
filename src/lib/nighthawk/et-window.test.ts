@@ -35,6 +35,14 @@ test("weekend rejection: Saturday in-window-by-clock returns false", () => {
   assert.equal(inEtWindow(OUTCOME, new Date("2026-01-17T21:30:00Z")), false);
 });
 
-test("before target: 16:29 ET (EST, = 21:29 UTC) is OUT", () => {
-  assert.equal(inEtWindow(OUTCOME, new Date("2026-01-15T21:29:00Z")), false);
+test("edition cron: 21:00 UTC = 17:00 ET (EDT) is OUT — before 5:30 window", () => {
+  assert.equal(inEtWindow({ targetHour: 17, targetMinute: 30, catchupMin: 120 }, new Date("2026-06-29T21:00:00Z")), false);
+});
+
+test("edition cron: 21:30 UTC = 17:30 ET (EDT) is IN window", () => {
+  assert.equal(inEtWindow({ targetHour: 17, targetMinute: 30, catchupMin: 120 }, new Date("2026-06-29T21:30:00Z")), true);
+});
+
+test("edition cron step 30/15: 21:45 UTC = 17:45 ET (EDT) is IN window", () => {
+  assert.equal(inEtWindow({ targetHour: 17, targetMinute: 30, catchupMin: 120 }, new Date("2026-06-29T21:45:00Z")), true);
 });
