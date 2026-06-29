@@ -168,8 +168,19 @@ async function prepareLargoTurn(
   toolsUsed: string[];
   tickerHint: string | null;
 }> {
-  const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
-  await ensureLargoSession(sid, userId);
+  let sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
+  try {
+    await ensureLargoSession(sid, userId);
+  } catch {
+    // The supplied session id is owned by ANOTHER user (a client-generated `web-<ts>` id
+    // collision — e.g. a shared device or same-ms timestamp) or is otherwise unusable.
+    // ensureLargoSession throws on the ownership mismatch, which previously surfaced to the
+    // user as a hard "Connection interrupted" error. Recover gracefully: abandon the foreign
+    // id (never grant cross-user access) and start a FRESH session owned by THIS user. The new
+    // id flows back in the done event, so the client adopts it for subsequent turns.
+    sid = `web-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await ensureLargoSession(sid, userId);
+  }
 
   const history = await fetchLargoHistory(sid, userId);
   history.push({ role: "user", content: question });
