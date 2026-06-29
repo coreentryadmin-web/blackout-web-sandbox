@@ -638,9 +638,13 @@ function cellStyle(value: number, peak: number, lens: Lens): React.CSSProperties
 function cellTextStyle(value: number, peak: number): React.CSSProperties {
   if (!value || peak <= 0) return {};
   const mag = Math.min(1, Math.abs(value) / peak);
-  // Past ~0.5 magnitude the bg is dark/saturated enough that white reads cleaner (≥ AA)
-  // than the emerald/red tint; below that the tinted class (set on the <td>) wins.
-  return mag > 0.5 ? { color: "#ffffff" } : {};
+  // Legibility: in the mid-magnitude band (~0.3–0.5) the colored wash competed with the
+  // directional tint (tint-on-tint dropped below AA — the "red number on dark-red" issue).
+  // A subtle dark halo keeps the meaningful directional color readable across that band, and
+  // past ~0.45 the bg is saturated enough that white reads cleanest. Halo is opacity/shadow
+  // only (no layout cost) and reduced-motion-irrelevant.
+  if (mag > 0.45) return { color: "#ffffff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" };
+  return { textShadow: "0 1px 2px rgba(0,0,0,0.72)" };
 }
 
 const PRESET_TICKERS = [
