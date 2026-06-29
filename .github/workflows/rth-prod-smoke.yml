@@ -1,0 +1,43 @@
+# RTH prod smoke — weekdays 09:35 ET (covers EDT + EST via dual cron)
+#
+# Public endpoint checks only (no Railway CLI / DB secrets required).
+# Failures notify via GitHub Actions; pair with rth-cloud-agent.yml for auto-fix.
+
+name: RTH prod smoke
+
+on:
+  schedule:
+    # 09:35 AM ET during EDT (UTC-4)
+    - cron: "35 13 * * 1-5"
+    # 09:35 AM ET during EST (UTC-5)
+    - cron: "35 14 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Live HTTP smoke (blackouttrades.com)
+        run: |
+          set -euo pipefail
+          BASE="https://blackouttrades.com"
+          check() {
+            local path="$1" expect="$2"
+            code=$(curl -sf -o /tmp/body -w "%{http_code}" "$BASE$path" || echo "000")
+            if [ "$code" != "$expect" ]; then
+              echo "FAIL $path → $code (expected $expect)"
+              cat /tmp/body 2>/dev/null | head -c 200 || true
+              exit 1
+            fi
+            echo "OK $path → $code"
+          }
+          check /api/health 200
+          check /api/ready 200
+          check /api/market/regime 200
+          check /api/public/track-record 200
+          check /api/signals/open 401
+          check /api/admin/debug-uw 401
+          check /api/engine/health 401
+
+      - name: Summary
+        run: echo "RTH prod smoke passed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
