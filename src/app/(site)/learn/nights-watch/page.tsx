@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 const VERDICTS = [
   {
@@ -67,32 +68,11 @@ export default function NightsWatchPage() {
   const [activeVerdict, setActiveVerdict] = useState("hold");
   const selected = VERDICTS.find((v) => v.id === activeVerdict)!;
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
-        <div className="mb-12 pb-10 border-b border-cyan-900/40">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">Position Management</p>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Night&apos;s Watch</h1>
-          <p className="text-sky-300 text-xl max-w-3xl leading-relaxed">
-            Your personal options position manager. Live P&amp;L, Greeks tracking, and structured exit guidance — wired directly to live options chain data.
-          </p>
-        </div>
-
-        <div className="flex gap-10 items-start">
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8 border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5">
-              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-4">On This Page</p>
-              <nav className="space-y-1">
-                {TOC.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-secondary hover:text-cyan-400 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors">
-                    {item.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 space-y-16">
+    <LearnDoc
+      title="Night's Watch"
+      description="Your personal options position manager. Live P&L, Greeks tracking, and structured exit guidance — wired directly to live options chain data."
+      sections={TOC}
+    >
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Overview</h2>
@@ -286,7 +266,7 @@ export default function NightsWatchPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Glossary</h2>
               <div className="space-y-3">
                 {[
-                  { term: "Delta", def: "The rate of change of an option's price relative to a $1 move in the underlying. For calls: 0 to +1. For puts: âˆ’1 to 0." },
+                  { term: "Delta", def: "The rate of change of an option's price relative to a $1 move in the underlying. For calls: 0 to +1. For puts: −1 to 0." },
                   { term: "Gamma", def: "The rate of change of Delta per $1 move in the underlying. High Gamma means Delta — and therefore P&L sensitivity — changes rapidly." },
                   { term: "Theta", def: "The time decay of an option's value per day. Theta accelerates for 0DTE options, particularly in the final hours before expiry." },
                   { term: "Vega", def: "The sensitivity of an option's value to a 1% change in implied volatility." },
@@ -322,9 +302,6 @@ export default function NightsWatchPage() {
               </div>
             </section>
 
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

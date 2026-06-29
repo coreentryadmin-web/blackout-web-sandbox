@@ -20,7 +20,7 @@ import {
 const JOB_ICONS: Record<string, string> = {
   "flow-ingest": "⬡",
   "spx-evaluate": "◎",
-  "largo-cleanup": "◆",
+  "largo-cleanup": "◇",
   "nighthawk-outcomes": "◈",
   "nighthawk-playbook": "⏱",
 };

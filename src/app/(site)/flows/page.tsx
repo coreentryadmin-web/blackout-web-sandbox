@@ -19,7 +19,7 @@ export default async function FlowsPage() {
       <div className="content-rail">
         <PageHeader
           kicker="Institutional flow"
-          title="HELIX"
+          title="Helix"
           subtitle="Whale and dark-pool alerts on a single live tape."
           badge={<ProductMark product="helix" size={44} animated={false} />}
         />

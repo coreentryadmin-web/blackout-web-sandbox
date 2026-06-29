@@ -197,7 +197,6 @@ export function TickerDrawer({
                     {displayFlows.length === 0 ? (
                       <EmptyState
                         className="!py-6"
-                        icon="◆"
                         title="No flow alerts"
                         description={`No ${typeFilter && typeFilter !== "ALL" ? typeFilter.toLowerCase() + " " : ""}flow alerts for ${ticker} on the current tape`}
                       />

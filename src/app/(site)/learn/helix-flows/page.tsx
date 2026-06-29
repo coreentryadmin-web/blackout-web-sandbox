@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "HELIX Options Flow | BlackOut Trading",
@@ -22,43 +23,12 @@ const sections = [
 
 export default function HelixFlowsPage() {
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
-        <div className="mb-12">
-          <p className="text-cyan-400 text-sm font-mono tracking-widest uppercase mb-3">
-            BlackOut Learn — Tool Documentation
-          </p>
-          <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
-            HELIX Options Flow
-          </h1>
-          <p className="text-secondary text-lg max-w-2xl leading-relaxed">
-            Real-time institutional options flow tape. Filter noise. Read conviction. Act with precision.
-          </p>
-          <div className="mt-6 flex items-center gap-4 flex-wrap">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-semibold bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">LIVE FEED</span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-semibold bg-sky-400/10 text-sky-300 border border-sky-400/20">SSE REAL-TIME</span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-semibold bg-white/5 text-secondary border border-white/10">INSTITUTIONAL FLOW</span>
-          </div>
-        </div>
-
-        <div className="flex gap-12 items-start">
-          {/* Sidebar */}
-          <aside className="hidden lg:block w-56 flex-shrink-0 sticky top-8">
-            <p className="text-xs font-mono text-cyan-400 uppercase tracking-widest mb-4">On This Page</p>
-            <nav className="space-y-1">
-              {sections.map((s) => (
-                <a key={s.id} href={`#${s.id}`} className="block text-sm text-secondary hover:text-white py-1.5 px-3 rounded hover:bg-white/5 transition-colors border-l border-transparent hover:border-cyan-400/50">
-                  {s.label}
-                </a>
-              ))}
-            </nav>
-          </aside>
-
-          {/* Main Content */}
-          <main className="flex-1 min-w-0 space-y-16">
-
-            <section id="overview">
+    <LearnDoc
+      title="HELIX Options Flow"
+      description="Real-time institutional options flow tape. Filter noise. Read conviction. Act with precision."
+      sections={sections}
+    >
+<section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-3 border-b border-white/10">Overview</h2>
               <p className="text-secondary leading-relaxed mb-4">
                 HELIX is BlackOut&apos;s live institutional options flow tape. Every print that crosses the tape above the configured premium threshold is delivered to your session in real time via server-sent events — no polling, no stale data. The feed is purpose-built to surface what institutional participants are doing, not what retail is speculating on.
@@ -218,7 +188,7 @@ export default function HelixFlowsPage() {
                     category: "Print Attributes",
                     terms: [
                       { term: "0DTE", def: "Zero days to expiry. A print with same-day expiration. Elevated gamma risk; highly directional or hedging in nature." },
-                      { term: "Premium", def: "Total dollar value of a single print (price per contract Ã— size Ã— 100). The primary filter for institutional significance." },
+                      { term: "Premium", def: "Total dollar value of a single print (price per contract × size × 100). The primary filter for institutional significance." },
                       { term: "Side", def: "Whether the print is a call (bullish directional or hedge) or a put (bearish directional or hedge)." },
                       { term: "Size", def: "Number of contracts in a single print. Large size at mid or ask price is the strongest signal of directional conviction." },
                       { term: "Strike", def: "The price level the contract conveys the right to buy (call) or sell (put). Strike placement relative to GEX walls is critical context." },
@@ -271,9 +241,6 @@ export default function HelixFlowsPage() {
               <Link href="/learn" className="text-sm text-mute hover:text-cyan-400 transition-colors">&larr; Back to Learn</Link>
               <Link href="/learn/spx-slayer" className="text-sm text-mute hover:text-cyan-400 transition-colors">Next: SPX Slayer &rarr;</Link>
             </div>
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

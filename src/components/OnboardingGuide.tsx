@@ -134,13 +134,13 @@ export function OnboardingGuide() {
                     className="onboarding-btn-primary"
                     onClick={() => (last ? close() : setStep((s) => s + 1))}
                   >
-                    {last ? "Step onto the floor" : "Next"}
+                    {last ? "Get started" : "Next"}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="onboarding-body">
-                <p className="onboarding-kicker">◆ Options Basics</p>
+                <p className="onboarding-kicker">Options basics</p>
                 <h2 className="onboarding-title">Options 101</h2>
                 <dl className="onboarding-glossary">
                   {OPTIONS_GLOSSARY.map((g) => (

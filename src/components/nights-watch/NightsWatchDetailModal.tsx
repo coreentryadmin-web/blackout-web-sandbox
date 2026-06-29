@@ -200,7 +200,7 @@ function Section({
     <section className="rounded-2xl border border-white/10 bg-[rgba(8,9,14,0.6)] p-4 backdrop-blur">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-sky-300">
-          ◆ {kicker}
+          {kicker}
         </p>
         {right}
       </div>
@@ -396,7 +396,7 @@ function WhatToDo({
         ACTION_GLOW[action]
       )}
     >
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-mute">◆ What to do</p>
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-mute">Recommended action</p>
 
       {/* Big action + confidence */}
       <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -425,13 +425,10 @@ function WhatToDo({
 
       {/* Reasons the verdict fired on */}
       {verdict.reasons.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1.5">
+        <ul className="mt-3 flex flex-col gap-1.5 list-disc pl-5">
           {verdict.reasons.map((reason, i) => (
-            <li key={i} className="flex gap-2 text-[12px] leading-snug text-white/85">
-              <span aria-hidden className={clsx("shrink-0", ACTION_TEXT[action])}>
-                ◆
-              </span>
-              <span>{reason}</span>
+            <li key={i} className="text-[12px] leading-snug text-white/85">
+              {reason}
             </li>
           ))}
         </ul>
@@ -467,7 +464,7 @@ function DeskNarrative({ text }: { text: string }) {
   return (
     <div className="rounded-lg border border-gold/25 bg-gradient-to-br from-gold/[0.06] to-bull/[0.04] p-3.5">
       <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-gold/80">
-        ◆ Desk read · Claude, grounded in verified signals
+        Desk read · grounded in verified signals
       </p>
       <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-sky-100/90">{text}</p>
     </div>
@@ -847,7 +844,7 @@ function DataSourcesLedger({ sources, asOf }: { sources: DataSource[]; asOf: str
     <section className="rounded-2xl border border-bull/20 bg-bull/[0.03] p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-bull">
-          ◆ Verified data sources
+          Data sources
         </p>
         <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-mute">
           as of {stamp(asOf)}
@@ -971,7 +968,7 @@ export function NightsWatchDetailModal({
   const title = (
     <div className="flex items-center gap-3">
       <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-bull">
-        ◆ Night&apos;s Watch
+        Night&apos;s Watch
       </span>
       <span className="font-syne text-[15px] font-semibold text-white">Position detail</span>
     </div>
@@ -997,7 +994,6 @@ export function NightsWatchDetailModal({
         <LoadingBody />
       ) : state.kind === "unauthed" ? (
         <EmptyState
-          icon="◆"
           title="Sign in to view this position"
           description="Night's Watch keeps your positions private to your account. Sign in to see the full decision intel."
           action={

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 const TOC = [
   { id: "overview", label: "Overview" },
@@ -37,7 +38,7 @@ const VIEWS = [
   {
     id: "matrix",
     label: "GEX Matrix",
-    tag: "Strike Ã— Expiry Grid",
+    tag: "Strike × Expiry Grid",
     body: ["A two-dimensional heat map: rows are strikes, columns are expiries. Each cell shows the gamma concentration at that exact strike-expiry intersection.", "This view answers which expiry is driving the dominant GEX structure at a given strike. 0DTE-heavy walls are volatile and can flip during the session. Multi-expiry walls are structurally more persistent."],
   },
 ];
@@ -46,32 +47,11 @@ export default function HeatMapsPage() {
   const [activeView, setActiveView] = useState("profile");
   const selected = VIEWS.find((v) => v.id === activeView)!;
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Page Header */}
-        <div className="mb-12 border-b border-cyan-900/40 pb-10">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">BlackOut Intelligence Suite</p>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4 leading-tight">Heat Maps</h1>
-          <p className="text-sky-300 text-xl max-w-3xl leading-relaxed">
-            Dealer gamma, vanna, delta, and charm exposure mapped across every SPX strike and expiry — the structural skeleton behind price action.
-          </p>
-        </div>
-
-        <div className="flex gap-10 items-start">
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8 border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5">
-              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-4">On This Page</p>
-              <nav className="space-y-1">
-                {TOC.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-secondary hover:text-cyan-400 transition-colors py-1 px-2 rounded hover:bg-cyan-950/30">
-                    {item.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 space-y-16">
+    <LearnDoc
+      title="Heat Maps"
+      description="Dealer gamma, vanna, delta, and charm exposure mapped across every SPX strike and expiry — the structural skeleton behind price action."
+      sections={TOC}
+    >
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Overview</h2>
@@ -296,9 +276,6 @@ export default function HeatMapsPage() {
               <Link href="/learn/spx-slayer" className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors">&larr; SPX Slayer</Link>
               <Link href="/learn/helix-flows" className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors">HELIX Options Flow &rarr;</Link>
             </div>
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

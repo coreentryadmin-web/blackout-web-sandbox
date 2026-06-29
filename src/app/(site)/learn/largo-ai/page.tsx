@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "Largo AI Terminal | BlackOut Trading",
@@ -20,33 +21,14 @@ const sections = [
   { id: "glossary", label: "Glossary" },
 ];
 
-export default function LargoAiPage() {
+export default function Page() {
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="mb-12 border-b border-white/10 pb-10">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">BlackOut Platform — Learn</p>
-          <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">Largo AI Terminal</h1>
-          <p className="text-secondary text-lg max-w-2xl leading-relaxed">
-            Our AI engine wired to live BlackOut data. Ask hard questions about current dealer positioning, flow context, and structural market mechanics.
-          </p>
-        </div>
+    <LearnDoc
+      title="Largo AI Terminal"
+      description="Our AI engine wired to live BlackOut data. Ask hard questions about current dealer positioning, flow context, and structural market mechanics."
+      sections={sections}
+    >
 
-        <div className="flex gap-12">
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8">
-              <p className="text-xs font-mono text-cyan-400 uppercase tracking-widest mb-4">On This Page</p>
-              <nav className="space-y-1">
-                {sections.map((s) => (
-                  <a key={s.id} href={`#${s.id}`} className="block text-sm text-secondary hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3">
-                    {s.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 space-y-16">
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-white/10">Overview</h2>
@@ -210,10 +192,6 @@ export default function LargoAiPage() {
                 ))}
               </div>
             </section>
-
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

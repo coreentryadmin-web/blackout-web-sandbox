@@ -23,7 +23,7 @@ export type GlossaryTerm = {
 };
 
 /** Versioned so re-onboarding can be forced by bumping the number. */
-export const ONBOARDING_VERSION = 1;
+export const ONBOARDING_VERSION = 2;
 
 /** localStorage key holding the completed/dismissed version (string number). */
 export const ONBOARDING_STORAGE_KEY = "blackout:onboarding:v";
@@ -35,13 +35,13 @@ export const ONBOARDING_OPEN_EVENT = "blackout:open-onboarding";
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: "welcome",
-    kicker: "◆ Briefing",
-    title: "Step onto the floor",
+    kicker: "Briefing",
+    title: "Welcome to BlackOut",
     body: "BlackOut is a market-intelligence desk, not a broker. We surface institutional flow, dealer positioning, and live structure so you are never flying blind on the setup. You place every trade on your own broker. Nothing here is financial advice — it is education and pattern recognition.",
   },
   {
     id: "spx",
-    kicker: "◆ 0DTE Command Desk",
+    kicker: "SPX · 0DTE desk",
     title: "SPX Slayer",
     body: "Live 0DTE SPX desk: GEX walls, VWAP, regime detection, and dealer positioning. Watch the levels; wait for the setup; the desk surfaces structure as it aligns — before price moves.",
     href: "/dashboard",
@@ -49,7 +49,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "flows",
-    kicker: "◆ Institutional Flow",
+    kicker: "Institutional flow",
     title: "HELIX Flow Feed",
     body: "Real-time whale and dark-pool options flow. Large premium prints show where size is positioning — use it as confirmation, not as a signal on its own.",
     href: "/flows",
@@ -57,7 +57,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "heatmap",
-    kicker: "◆ Dealer Positioning",
+    kicker: "Dealer positioning",
     title: "GEX / VEX Heatmaps",
     body: "Dealer positioning by strike — GEX, VEX, DEX and charm. See the gamma walls, the flip level, and where dealer flow is forced to pin or repel price, so you read the regime before you trade it.",
     href: "/heatmap",
@@ -65,7 +65,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "largo",
-    kicker: "◆ AI Desk",
+    kicker: "Largo AI",
     title: "Largo AI Terminal",
     body: "Ask Largo about any ticker. It reads live flow, GEX, VWAP, news, and analyst ratings, then answers like a desk trader — a research partner, not a chatbot.",
     href: "/terminal",
@@ -73,7 +73,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "nighthawk",
-    kicker: "◆ Night Ops",
+    kicker: "Night Hawk",
     title: "Night Hawk Scanner",
     body: "Your AI evening playbook. After the close, Night Hawk publishes an edition of ranked next-session swing and leap setups, each with a per-ticker dossier — so you walk into tomorrow with a plan instead of a blank chart.",
     href: "/nighthawk",
@@ -81,7 +81,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "nights-watch",
-    kicker: "◆ Position Manager",
+    kicker: "Position manager",
     title: "Night's Watch",
     body: "Once you're in a trade, Night's Watch tracks it for you — live valuation on your options positions and a plain-English verdict on whether the structure still backs the trade or it's time to step out. You'll find it on the Night Hawk page.",
     href: "/nighthawk",
@@ -89,9 +89,9 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "finish",
-    kicker: "◆ You’re Set",
-    title: "Trade With Structure",
-    body: "That is the arsenal. Open SPX Slayer or put a ticker to Largo. Reopen this briefing any time from the Learn button in the top nav.",
+    kicker: "You're set",
+    title: "Trade with structure",
+    body: "That covers the desk. Open SPX Slayer or ask Largo about a ticker. Reopen this guide any time from Learn in the nav.",
   },
 ];
 

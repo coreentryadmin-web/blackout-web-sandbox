@@ -76,7 +76,7 @@ export function LargoThinkingState({ active = true }: LargoThinkingStateProps) {
 
       <div className="largo-thinking-copy">
         {/* kicker color is purple in globals.css → cyan brand override (Largo accent). */}
-        <p className="largo-thinking-kicker text-cyan-300">◆ LARGO · WORKING</p>
+        <p className="largo-thinking-kicker text-secondary">Largo · working</p>
         <AnimatePresence mode="wait">
           <motion.p
             key={phrase}

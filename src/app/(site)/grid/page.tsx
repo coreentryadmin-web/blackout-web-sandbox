@@ -31,8 +31,8 @@ export default async function GridPage() {
         <GridTickerProvider>
           <PageHeader
             kicker="Market intelligence"
-            title="BLACKOUT GRID"
-            subtitle="The whole tape on one board · News · Flow · Analysts · Pulse"
+            title="BlackOut Grid"
+            subtitle="News, flow, analyst actions, and market pulse on one board."
             badge={<ProductMark product="grid" size={44} />}
             actions={<GridSearchBar />}
           />

@@ -3469,7 +3469,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       ) : (
         <EmptyState
           icon="◷"
-          title="BUILDING POSITIONING HISTORY"
+          title="Building positioning history"
           description={
             hasShiftForLens
               ? `The shift view fills in as snapshots accumulate (first read ~after the open). ${vocab.noun} migration — where dealer ${vocab.noun.toLowerCase()} is building vs melting and how the pivot drifts — appears once enough history is collected.`
@@ -3570,6 +3570,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       {/* Horizontal-scroll container with a subtle right-edge fade so on
           phones the mono values scroll instead of colliding. The table gets
           a min-width so columns keep their breathing room below the fold. */}
+      <p className="mb-2 font-mono text-[10px] text-mute md:hidden">
+        Swipe horizontally to view all expiry columns.
+      </p>
       <div className="relative">
         {/* Bounded scroll box: scrolls horizontally for expiry columns AND
             vertically for strikes (the spot row is centered inside this box via
@@ -3857,9 +3860,12 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             TabPanels (both driven by `pairView`). Only meaningful with a real block. */}
         {showViewTabs && (
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")}>
-            <TabList aria-label={`${lensUpper} views`} className="w-fit">
+            <TabList aria-label={`${lensUpper} views`} className="max-w-full overflow-x-auto">
               <Tab value="pair-a">Matrix</Tab>
-              <Tab value="pair-b">{`${vocab.noun} Profile + Curve + Shift`}</Tab>
+              <Tab value="pair-b">
+                <span className="sm:hidden">Profile</span>
+                <span className="hidden sm:inline">{`${vocab.noun} Profile + Curve + Shift`}</span>
+              </Tab>
             </TabList>
           </Tabs>
         )}
@@ -4011,14 +4017,12 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         </div>
       ) : empty ? (
         <EmptyState
-          icon="◆"
-          title="NO OPTIONS CHAIN"
+          title="No options chain"
           description={`No options chain for ${data?.underlying ?? ticker}. Pick a more liquid name or wait for the chain to print.`}
         />
       ) : blockEmpty ? (
         <EmptyState
-          icon="◆"
-          title={`${vocab.noun.toUpperCase()} PROFILE IDLE`}
+          title={`${vocab.noun} profile idle`}
           description={
             isGex
               ? "The options chain returned no contracts right now — the snapshot is quiet outside regular trading hours. Dealer gamma prints live during the session; try another ticker if it stays idle at the open."

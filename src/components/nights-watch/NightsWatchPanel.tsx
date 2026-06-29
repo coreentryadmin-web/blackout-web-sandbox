@@ -705,9 +705,6 @@ function PositionCard({
           positions (their verdict is the inert "can't judge" placeholder — not actionable). */}
       {!closed && reason && (
         <p className="flex items-start gap-1.5 font-mono text-[11px] leading-snug">
-          <span aria-hidden className={clsx("shrink-0", VERDICT_TEXT[position.verdict.action])}>
-            ◆
-          </span>
           <span className="line-clamp-2 text-sky-300/90">{reason}</span>
         </p>
       )}
@@ -1437,7 +1434,7 @@ export function NightsWatchPanel() {
       {/* ---- Tier 1: header ---- */}
       <header className="nighthawk-watch-header">
         <div className="min-w-0">
-          <p className="nighthawk-watch-kicker">◆ NIGHT&apos;S WATCH</p>
+          <p className="nighthawk-watch-kicker">Night&apos;s Watch</p>
           <h2 className="nighthawk-watch-title">Your Positions</h2>
           <p className="nighthawk-watch-sub">
             Live P&amp;L + a hold / trim / sell read on every contract — grounded in
@@ -1510,7 +1507,6 @@ export function NightsWatchPanel() {
           </div>
         ) : state.kind === "unauthed" ? (
           <EmptyState
-            icon="◆"
             title="Sign in to track positions"
             description="Night's Watch keeps your positions private to your account. Sign in to add and monitor them."
             action={
@@ -1532,7 +1528,6 @@ export function NightsWatchPanel() {
           />
         ) : state.kind === "ready" && !hasPositions ? (
           <EmptyState
-            icon="◆"
             title="No open positions"
             description="No open positions — add your first above."
           />

@@ -15,7 +15,7 @@ export default async function AdminPage() {
       <main id="main" className="admin-page-main">
         <PageHeader
           className="mb-6"
-          kicker="◆ OPERATIONS"
+          kicker="Operations"
           title="ADMIN"
           subtitle="Live engine, incidents, API command & desk telemetry — the BlackOut control room."
           badge={<ProductMark product="spx" size={44} />}

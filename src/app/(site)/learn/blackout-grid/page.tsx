@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "BlackOut Grid — Market Intelligence Hub | BlackOut Trading",
@@ -19,46 +20,14 @@ const TOC = [
   { id: "faq", label: "FAQ" },
 ];
 
-export default function BlackoutGridPage() {
+export default function Page() {
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
-        <div className="mb-12 pb-10 border-b border-cyan-900/40">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">Intelligence Suite</p>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">BlackOut Grid</h1>
-          <p className="text-sky-300 text-xl max-w-3xl leading-relaxed">
-            Eight panels of structured market intelligence — news, flow, catalysts, dark pool, analyst revisions, congressional trades, and economic events — unified in a single continuous feed.
-          </p>
-        </div>
+    <LearnDoc
+      title="BlackOut Grid"
+      description="Eight panels of structured market intelligence — news, flow, catalysts, dark pool, analyst revisions, congressional trades, and economic events — unified in a single continuous feed."
+      sections={TOC}
+    >
 
-        <div className="flex gap-10 items-start">
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8 border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5">
-              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-4">On This Page</p>
-              <nav className="space-y-1">
-                {TOC.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-secondary hover:text-cyan-400 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors">
-                    {item.label}
-                  </a>
-                ))}
-              </nav>
-
-              <div className="mt-8 p-4 bg-cyan-400/5 border border-cyan-400/20 rounded-xl">
-                <p className="text-xs font-mono text-cyan-400 uppercase tracking-widest mb-2">8 Panels</p>
-                <ul className="text-xs text-secondary space-y-1.5">
-                  {["News", "Options Flow", "Earnings", "Catalysts", "Analyst Activity", "Dark Pool", "Congress Trades", "Economic Data"].map((p, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <span className="text-cyan-400 font-mono">{String(i + 1).padStart(2, "0")}</span>
-                      <span>{p}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 space-y-16">
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Overview</h2>
@@ -266,10 +235,6 @@ export default function BlackoutGridPage() {
                 ))}
               </div>
             </section>
-
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

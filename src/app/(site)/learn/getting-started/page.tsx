@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "Getting Started | BlackOut Trading",
@@ -32,7 +33,7 @@ const tools = [
     name: "SPX Slayer",
     href: "/learn/spx-slayer",
     timing: "Market open through close",
-    role: "The flagship real-time desk. Live GEX walls, dealer positioning, technicals, and AI-scored setups converge here. The command center for the trading day.",
+    role: "The flagship real-time desk. Live GEX walls, dealer positioning, technicals, and AI-scored setups converge here. Your primary desk for the trading day.",
   },
   {
     name: "HELIX Options Flow",
@@ -68,46 +69,11 @@ const tools = [
 
 export default function GettingStartedPage() {
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* Page header */}
-        <div className="mb-12 border-b border-white/10 pb-10">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">
-            BlackOut Trading / Learn
-          </p>
-          <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
-            Getting Started
-          </h1>
-          <p className="text-secondary text-lg max-w-2xl leading-relaxed">
-            A complete orientation to the BlackOut platform — how each tool
-            works, how they connect, and the workflow that puts institutional
-            dealer intelligence at the center of every trade decision.
-          </p>
-        </div>
-
-        <div className="flex gap-12 relative">
-          {/* Sticky sidebar */}
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8">
-              <p className="text-xs font-mono text-cyan-400 uppercase tracking-widest mb-4">
-                On This Page
-              </p>
-              <nav className="space-y-1">
-                {sections.map((s) => (
-                  <a
-                    key={s.id}
-                    href={`#${s.id}`}
-                    className="block text-sm text-mute hover:text-cyan-400 transition-colors py-1 border-l-2 border-transparent hover:border-cyan-400 pl-3"
-                  >
-                    {s.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </aside>
-
-          {/* Main content */}
-          <main className="flex-1 min-w-0 space-y-16">
+    <LearnDoc
+      title="Getting Started"
+      description="A complete orientation to the BlackOut platform — how each tool works, how they connect, and the workflow that puts institutional dealer intelligence at the center of every trade decision."
+      sections={sections}
+    >
             {/* Overview */}
             <section id="overview">
               <h2 className="text-2xl font-semibold text-white mb-6 pb-3 border-b border-white/10">
@@ -369,7 +335,7 @@ export default function GettingStartedPage() {
                     tool: "SPX Slayer",
                     href: "/learn/spx-slayer",
                     action:
-                      "Open SPX Slayer as your primary desk. Monitor live GEX walls, setup scores, and price action relative to key dealer levels. This is your command center.",
+                      "Open SPX Slayer as your primary desk. Monitor live GEX walls, setup scores, and price action relative to key dealer levels. This is your primary desk.",
                   },
                   {
                     phase: "Intraday",
@@ -682,9 +648,6 @@ export default function GettingStartedPage() {
                 ))}
               </div>
             </section>
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

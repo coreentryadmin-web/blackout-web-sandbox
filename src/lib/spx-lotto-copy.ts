@@ -20,19 +20,19 @@ export type LottoCopyLine = {
 export function lottoPhaseKicker(phase: LottoPhase, isReversal = false): string {
   switch (phase) {
     case "SCAN":
-      return "◆ SCANNING";
+      return "Scanning";
     case "WATCH":
-      return isReversal ? "◆ THESIS FLIPPED" : "◆ SETUP ARMED";
+      return isReversal ? "Thesis flipped" : "Setup armed";
     case "BUY":
-      return "◆ ENTRY LIVE";
+      return "Entry live";
     case "HOLD":
-      return "◆ POSITION OPEN";
+      return "Position open";
     case "SELL":
-      return "◆ TARGET REACHED";
+      return "Target reached";
     case "INVALID":
-      return "◆ STOPPED OUT";
+      return "Stopped out";
     default:
-      return "◆ 0DTE STANDBY";
+      return "0DTE standby";
   }
 }
 
@@ -40,43 +40,43 @@ export function lottoNoneCopy(reason: LottoNoneReason): LottoCopyLine {
   switch (reason) {
     case "off_hours":
       return {
-        kicker: "◆ 0DTE STANDBY",
+        kicker: "0DTE standby",
         headline: "Pre-market scan resumes at the open.",
         thesis: "The 0DTE window opens 7:00 AM ET — catalysts, gap and flow get scored then.",
       };
     case "no_qualify":
       return {
-        kicker: "◆ NO SETUP",
+        kicker: "No setup",
         headline: "No 0DTE setup cleared the filter today.",
-        thesis: "Catalyst thin or direction split — the desk stands down rather than force a play.",
+        thesis: "Catalyst thin or direction split — the desk waits rather than force a play.",
       };
     case "expired":
       return {
-        kicker: "◆ WINDOW CLOSED",
+        kicker: "Window closed",
         headline: "10:30 ET — the 0DTE entry window is closed.",
         thesis: "Far-OTM premium decays fast past the open. No entry surfaced inside the window.",
       };
     case "stopped":
       return {
-        kicker: "◆ STOPPED OUT",
+        kicker: "Stopped out",
         headline: "Stopped — −8pt from entry.",
         thesis: "0DTE premium decays fast against you. Defined risk, small size — that's the point.",
       };
     case "invalidated_no_reversal":
       return {
-        kicker: "◆ INVALIDATED",
+        kicker: "Invalidated",
         headline: "Thesis invalidated at the open — no reversal setup.",
         thesis: "Price ran ≥8pt against the anchor before fill. Reversal scan surfaced nothing.",
       };
     case "max_picks":
       return {
-        kicker: "◆ DAILY LIMIT",
+        kicker: "Daily limit",
         headline: "0DTE setups capped for the day.",
         thesis: "Primary and reversal both used. The main desk stays live for the rest of the session.",
       };
     case "closed_for_today":
       return {
-        kicker: "◆ SESSION CLOSED",
+        kicker: "Session closed",
         headline: "0DTE session closed for today.",
         thesis: "Last setup settled. The scan re-arms at the next pre-market open.",
       };
@@ -129,7 +129,7 @@ export function lottoWinStatusMessage(targetPts: number): string {
 
 export function lottoPanelLoadingCopy(): LottoCopyLine {
   return {
-    kicker: "◆ ACQUIRING",
+    kicker: "Acquiring",
     headline: "Scoring catalysts, flow, and the overnight gap…",
     thesis: "Stand by — the scan surfaces a setup or stands down.",
     footnote: "Scanning pre-market intel",

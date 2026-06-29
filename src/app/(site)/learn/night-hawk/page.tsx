@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "Night Hawk — Evening SPX Play Scanner | BlackOut Trading",
@@ -21,53 +22,14 @@ const sections = [
   { id: "glossary", label: "Glossary" },
 ];
 
-export default function NightHawkPage() {
+export default function Page() {
   return (
-    <div className="min-h-screen bg-[#040407] text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Page Header */}
-        <div className="mb-12 border-b border-cyan-400/20 pb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-xs font-mono uppercase tracking-widest text-cyan-400 bg-cyan-400/10 border border-cyan-400/30 px-3 py-1 rounded-full">Evening Scanner</span>
-            <span className="text-xs font-mono uppercase tracking-widest text-secondary bg-white/5 border border-white/10 px-3 py-1 rounded-full">Post-Market</span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight mb-4">Night Hawk</h1>
-          <p className="text-xl text-secondary max-w-3xl leading-relaxed">
-            Evening SPX play scanner. Each night, Night Hawk synthesizes GEX positioning, the next-day catalyst calendar, and historical pattern data into a structured edition — directional theses, key levels, and specific play ideas for the following session.
-          </p>
-        </div>
+    <LearnDoc
+      title="Night Hawk"
+      description="Evening SPX play scanner. Each night, Night Hawk synthesizes GEX positioning, the next-day catalyst calendar, and historical pattern data into a structured edition — directional theses, key levels, and specific play ideas for the following session."
+      sections={sections}
+    >
 
-        <div className="flex flex-col lg:flex-row gap-12">
-          {/* Sticky Sidebar */}
-          <aside className="lg:w-64 flex-shrink-0">
-            <div className="lg:sticky lg:top-8">
-              <p className="text-xs font-mono uppercase tracking-widest text-cyan-400 mb-4">On This Page</p>
-              <nav className="space-y-1">
-                {sections.map((s) => (
-                  <a key={s.id} href={`#${s.id}`} className="block text-sm text-secondary hover:text-cyan-400 hover:bg-cyan-400/5 transition-colors px-3 py-2 rounded-md border-l-2 border-transparent hover:border-cyan-400">
-                    {s.label}
-                  </a>
-                ))}
-              </nav>
-
-              <div className="mt-10 p-4 bg-cyan-400/5 border border-cyan-400/20 rounded-xl">
-                <p className="text-xs font-mono uppercase tracking-widest text-cyan-400 mb-2">Schedule</p>
-                <ul className="text-sm text-secondary space-y-2">
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Primary: 5:30 PM ET daily</span></li>
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Backup: 4:30 PM ET</span></li>
-                  <li className="flex items-start gap-2"><span className="text-cyan-400 mt-0.5">—</span><span>Morning update: 9:15 AM ET</span></li>
-                </ul>
-              </div>
-
-              <div className="mt-6 p-4 bg-amber-400/5 border border-amber-400/20 rounded-xl">
-                <p className="text-xs font-mono uppercase tracking-widest text-amber-400 mb-2">Important</p>
-                <p className="text-sm text-secondary leading-relaxed">Night Hawk plays are suggestions, not signals. Always validate at market open with live desk data.</p>
-              </div>
-            </div>
-          </aside>
-
-          {/* Main Content */}
-          <main className="flex-1 min-w-0 space-y-16">
 
             <section id="overview">
               <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
@@ -237,7 +199,7 @@ export default function NightHawkPage() {
                       </div>
                       <p className="text-sm text-secondary leading-relaxed">{tool.description}</p>
                     </div>
-                    <span className="text-secondary group-hover:text-cyan-400 transition-colors flex-shrink-0 mt-1">â†’</span>
+                    <span className="text-secondary group-hover:text-cyan-400 transition-colors flex-shrink-0 mt-1">→</span>
                   </Link>
                 ))}
               </div>
@@ -283,10 +245,6 @@ export default function NightHawkPage() {
                 ))}
               </div>
             </section>
-
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

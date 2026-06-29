@@ -26,7 +26,7 @@ export default async function HeatmapPage() {
               dealer-gamma/vanna read in-panel. */}
           <PageHeader
             kicker="Dealer positioning"
-            title="HEATMAPS"
+            title="Heatmaps"
             subtitle="Dealer gamma & vanna exposure"
             badge={<ProductMark product="heatmap" size={44} />}
           />

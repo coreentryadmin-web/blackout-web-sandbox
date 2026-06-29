@@ -50,7 +50,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "◎" },
   { id: "live", label: "Live Engine", icon: "⚡" },
   { id: "desk", label: "Desk Intel", icon: "◈" },
-  { id: "lotto", label: "Lotto", icon: "◆" },
+  { id: "lotto", label: "Lotto", icon: "◇" },
   { id: "outcomes", label: "Outcomes", icon: "▣" },
   { id: "signals", label: "Signals", icon: "◉" },
   { id: "analytics", label: "Analytics", icon: "◐" },

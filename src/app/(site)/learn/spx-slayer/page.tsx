@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
   title: "SPX Slayer — Real-Time SPX Options Desk | BlackOut Trading",
@@ -20,49 +21,14 @@ const TOC = [
   { id: "glossary", label: "Glossary" },
 ];
 
-export default function SpxSlayerPage() {
+export default function Page() {
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      {/* Header */}
-      <div className="border-b border-white/10 px-6 py-10 md:px-12">
-        <p className="text-xs uppercase tracking-widest text-cyan-400 mb-2">
-          BlackOut Platform — Learn
-        </p>
-        <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
-          SPX Slayer
-        </h1>
-        <p className="mt-3 text-lg text-sky-300 max-w-2xl">
-          The flagship real-time SPX options desk. Dealer positioning, AI play
-          verdicts, live flow, and 0DTE execution — integrated into a single
-          institutional terminal.
-        </p>
-      </div>
+    <LearnDoc
+      title="SPX Slayer"
+      description="The flagship real-time SPX options desk. Dealer positioning, AI play verdicts, live flow, and 0DTE execution — integrated into a single institutional terminal."
+      sections={TOC}
+    >
 
-      {/* Body: sidebar + content */}
-      <div className="flex flex-col md:flex-row gap-0">
-        {/* Sticky Sidebar */}
-        <aside className="hidden md:block md:w-64 shrink-0 border-r border-white/10">
-          <nav className="sticky top-8 px-6 py-8">
-            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-400 mb-4">
-              On This Page
-            </p>
-            <ul className="space-y-2">
-              {TOC.map((item) => (
-                <li key={item.id}>
-                  <a
-                    href={`#${item.id}`}
-                    className="block text-sm text-secondary hover:text-cyan-400 transition-colors py-0.5"
-                  >
-                    {item.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </aside>
-
-        {/* Main content */}
-        <main className="flex-1 px-6 md:px-12 py-10 max-w-4xl space-y-16">
 
           {/* OVERVIEW */}
           <section id="overview">
@@ -427,8 +393,6 @@ export default function SpxSlayerPage() {
             </div>
           </section>
 
-        </main>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

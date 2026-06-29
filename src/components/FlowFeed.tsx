@@ -117,6 +117,7 @@ export function FlowFeed() {
   // P2: saved-tickers watchlist (localStorage-backed, client-only)
   const watchlist = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
+  const [showMorePanels, setShowMorePanels] = useState(false);
   const [replayMode, setReplayMode]         = useState(false);
   const [replayAlerts, setReplayAlerts]     = useState<FlowAlert[]>([]);
   // Bug 12: replay speed control
@@ -764,20 +765,34 @@ export function FlowFeed() {
           />
         </div>
 
-        {/* Right column — 4 cols */}
+        {/* Right column — primary analytics; expand for full desk */}
         <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
+            <button
+              type="button"
+              onClick={() => setShowMorePanels((v) => !v)}
+              className="font-mono text-[10px] font-semibold text-secondary transition-colors hover:text-white"
+            >
+              {showMorePanels ? "Fewer panels" : "More panels"}
+            </button>
+          </div>
           <NetPremiumLeaderboard alerts={alerts} />
-          <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
-          <NightHawkFlowPanel
-            plays={nighthawkPlaysWithFlow}
-            editionFor={nighthawkEdition?.edition_for}
-            onTickerClick={setSelectedTicker}
-          />
-          <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
-          <SectorFlowPanel entries={sectorFlowEntries} />
           <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
-          <FlowMomentumChart alerts={alerts} />
           <DarkPoolPanel />
+          {showMorePanels && (
+            <>
+              <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+              <NightHawkFlowPanel
+                plays={nighthawkPlaysWithFlow}
+                editionFor={nighthawkEdition?.edition_for}
+                onTickerClick={setSelectedTicker}
+              />
+              <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
+              <SectorFlowPanel entries={sectorFlowEntries} />
+              <FlowMomentumChart alerts={alerts} />
+            </>
+          )}
         </div>
       </div>
 

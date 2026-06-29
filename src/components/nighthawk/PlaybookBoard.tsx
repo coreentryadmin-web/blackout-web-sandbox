@@ -156,7 +156,7 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
         // available||recap-content (NOT recap_only) so a stale row missing the flag still renders here.
         <div className="nighthawk-playbook-pending" role="status">
           <div className="nighthawk-playbook-pending-inner">
-            <p className="nighthawk-playbook-pending-kicker">◆ Overnight recon</p>
+            <p className="nighthawk-playbook-pending-kicker">Overnight playbook</p>
             <h3 className="nighthawk-playbook-pending-title">Market recap published</h3>
             <p className="nighthawk-playbook-pending-sub">
               No ranked plays cleared tonight&apos;s screen — the market read above is your
@@ -167,7 +167,7 @@ export function PlaybookBoard({ edition, loading, onPlaySelect }: PlaybookBoardP
       ) : (
         <div className="nighthawk-playbook-pending" role="status">
           <div className="nighthawk-playbook-pending-inner">
-            <p className="nighthawk-playbook-pending-kicker">◆ Overnight recon</p>
+            <p className="nighthawk-playbook-pending-kicker">Overnight playbook</p>
             <h3 className="nighthawk-playbook-pending-title">Playbook pending</h3>
             <p className="nighthawk-playbook-pending-sub">
               Five ranked swing + leap setups publish after the cash close —{" "}

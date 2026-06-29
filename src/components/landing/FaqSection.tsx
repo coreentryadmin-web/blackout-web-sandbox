@@ -12,7 +12,7 @@ type Faq = { id: string; catKey: CatKey; cat: string; q: string; a: string };
 
 const CATEGORIES: { key: CatKey; label: string; n: string; blurb: string; wide?: boolean }[] = [
   { key: "platform", label: "Platform", n: "01", blurb: "What BlackOut is, and how it runs." },
-  { key: "arsenal", label: "The Arsenal", n: "02", blurb: "Every instrument on the desk, broken down." },
+  { key: "arsenal", label: "Instruments", n: "02", blurb: "Every instrument on the desk, broken down." },
   { key: "signals", label: "Signals & Data", n: "03", blurb: "Alerts, latency, and the proof." },
   { key: "member", label: "Membership", n: "04", blurb: "Access, pricing, and cancellation.", wide: true },
   { key: "start", label: "Getting Started", n: "05", blurb: "From zero to live in one session.", wide: true },
@@ -22,7 +22,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
   platform: [
     {
       q: "What exactly is BlackOut?",
-      a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It fuses live options flow, the SPX Slayer 0DTE command desk, dealer gamma positioning, dark-pool activity, an AI desk analyst (Largo), and an evening swing/leap scanner (Night Hawk) into a single command surface — what a hedge-fund desk sees, compressed for one operator.",
+      a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It combines live options flow, the SPX Slayer desk, dealer gamma positioning, dark-pool activity, Largo AI analysis, and the Night Hawk overnight playbook into one surface — what a professional desk sees, built for individual traders.",
     },
     {
       q: "Who is BlackOut built for?",

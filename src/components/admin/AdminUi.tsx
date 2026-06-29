@@ -114,7 +114,7 @@ export function GlassPanel({
 }) {
   return (
     <section className={clsx("admin-glass admin-deck-panel admin-glass-shimmer", `admin-glass-${accent}`, className)}>
-      <div className="admin-glass-scanline" aria-hidden />
+      <div className="admin-glass" aria-hidden />
       {kicker && <p className="admin-deck-kicker">{kicker}</p>}
       {title && <h3 className="admin-glass-title admin-deck-title">{title}</h3>}
       <div className="admin-glass-body">{children}</div>
@@ -410,7 +410,6 @@ export function TabCanvas({
         <div className="admin-tab-canvas-grid" />
         <div className="admin-tab-canvas-orb admin-tab-canvas-orb-a" />
         <div className="admin-tab-canvas-orb admin-tab-canvas-orb-b" />
-        <div className="admin-tab-canvas-scanline" />
       </div>
       <div className="admin-tab-canvas-inner">{children}</div>
     </div>

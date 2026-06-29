@@ -268,6 +268,23 @@ body {
   .grid-desk {
     @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3;
   }
+
+  /* Learn documentation body — shared by LearnDoc wrapper */
+  .learn-prose {
+    @apply text-secondary leading-relaxed;
+  }
+  .learn-prose > section {
+    @apply scroll-mt-24;
+  }
+  .learn-prose h2 {
+    @apply font-syne text-xl font-bold text-white md:text-2xl;
+  }
+  .learn-prose h3 {
+    @apply font-semibold text-white;
+  }
+  .learn-prose a:not([class]) {
+    @apply text-cyan-400 transition-colors hover:text-cyan-300;
+  }
 }
 
 /* UI primitive: Skeleton shimmer sweep (src/components/ui/Skeleton.tsx).

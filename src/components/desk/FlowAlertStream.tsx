@@ -5,8 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
-import { DeskPanel } from "./DeskPanel";
-import { Skeleton, EmptyState } from "@/components/ui";
+import { Panel, Skeleton, EmptyState } from "@/components/ui";
 
 const WHALE_PREMIUM = 1_000_000;
 const RENDER_LIMIT = 150; // Bug 8: cap per-render to prevent browser freeze on large datasets
@@ -160,16 +159,12 @@ export function FlowAlertStream({
   };
 
   return (
-    <DeskPanel
-      title={replayMode ? "HELIX · REPLAY" : "HELIX"}
-      subtitle={undefined}
-      variant="purple"
-      /* Connection-only LIVE/RECONNECTING badge suppressed here: it can read
-         green while data is stale. The freshness-aware toolbar tri-state in
-         FlowFeed (live + dataStale) is the single source of truth on HELIX. */
-      feedStatus={undefined}
-      glow
-      className="h-full"
+    <Panel
+      title={replayMode ? "HELIX · Replay" : "HELIX"}
+      accent="accent"
+      strip={false}
+      className="h-full !rounded-2xl"
+      bodyClassName="!p-0"
     >
       <div className="relative">
         {/* Distinct fetch-failure banner — bear accent, role=alert. Sits above the
@@ -398,15 +393,10 @@ export function FlowAlertStream({
 
                         <div className="flex items-center gap-3 ml-auto flex-shrink-0">
                           <span
-                            className="font-mono text-[19px] font-black tabular-nums tracking-tight"
-                            style={{
-                              color: isCompound ? "#ffd23f"
-                                   : isCall     ? "#00e676"
-                                   :              "#ff2d55",
-                              textShadow: isCompound ? "0 0 10px rgba(255,210,63,0.7)"
-                                        : isCall     ? "0 0 12px rgba(0,230,118,0.65)"
-                                        :              "0 0 12px rgba(255,45,85,0.65)",
-                            }}
+                            className={clsx(
+                              "t-num text-[19px] font-bold tabular-nums tracking-tight",
+                              isCompound ? "text-gold" : isCall ? "text-bull" : "text-bear-text"
+                            )}
                           >
                             {fmtPremium(flow.premium)}
                           </span>
@@ -448,15 +438,16 @@ export function FlowAlertStream({
                             </span>
                           )}
                           <span
-                            className="font-mono text-[10px] font-black uppercase tracking-wider"
-                            style={{
-                              color: flow.direction?.toLowerCase() === "bullish" ? "#00e676"
-                                   : flow.direction?.toLowerCase() === "bearish" ? "#ff2d55"
-                                   : isCall ? "#00e676" : "#ff2d55",
-                              textShadow: flow.direction?.toLowerCase() === "bullish"
-                                ? "0 0 8px rgba(0,230,118,0.55)"
-                                : "0 0 8px rgba(255,45,85,0.55)",
-                            }}
+                            className={clsx(
+                              "t-num text-[10px] font-semibold uppercase tracking-wider",
+                              flow.direction?.toLowerCase() === "bullish"
+                                ? "text-bull"
+                                : flow.direction?.toLowerCase() === "bearish"
+                                  ? "text-bear-text"
+                                  : isCall
+                                    ? "text-bull"
+                                    : "text-bear-text"
+                            )}
                           >
                             {flow.direction}
                           </span>
@@ -514,6 +505,6 @@ export function FlowAlertStream({
           )}
         </div>
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }

@@ -5,10 +5,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import { queryLargoStream, fetchLargoSession } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
-import { DeskPanel } from "./DeskPanel";
+import { Panel, PanelHeader, FreshnessChip, Button } from "@/components/ui";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
-import { Button } from "@/components/ui";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; tools?: string[] };
 
@@ -125,20 +124,28 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
   const isFresh = messages.length === 1 && messages[0]?.id === "welcome";
 
   return (
-    <DeskPanel
-      title="Largo Terminal"
-      subtitle="Your AI desk officer · grounded in live data"
-      variant="neutral"
-      bare={fullPage}
-      feedStatus={loading ? undefined : hydrated ? "live" : undefined}
+    <Panel
+      accent="accent"
+      strip={!fullPage}
+      header={
+        fullPage ? undefined : (
+          <PanelHeader
+            kicker="Desk AI"
+            title="Largo Terminal"
+            actions={
+              loading ? undefined : hydrated ? <FreshnessChip status="live" /> : undefined
+            }
+          >
+            <p className="mt-1 text-sm text-secondary">Grounded in live platform data</p>
+          </PanelHeader>
+        )
+      }
       className={clsx(
-        // Largo accent = cyan (#22d3ee). Override DeskPanel's grey `neutral`
-        // border + drop the hardcoded-purple `glow`/`purple` variants in favour
-        // of a brand-correct cyan border + glow.
-        "flex flex-col largo-chat-shell !border-cyan-400/30 shadow-[0_0_30px_rgba(34,211,238,0.15),inset_0_0_40px_rgba(34,211,238,0.06)]",
+        "flex flex-col largo-chat-shell",
         fullPage ? "largo-terminal-fullpage" : "min-h-[560px]",
         loading && "largo-chat-shell-processing"
       )}
+      bodyClassName="flex flex-1 flex-col min-h-0 !p-0 desk-panel-body-bare"
     >
       <div className="flex-1 flex flex-col min-h-0 largo-chat-container">
         <div
@@ -168,7 +175,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
                 )}
               >
                 <p className="largo-msg-label">
-                  {msg.role === "user" ? "◆ YOU" : "◆ LARGO"}
+                  {msg.role === "user" ? "You" : "Largo"}
                 </p>
                 {msg.role === "assistant" ? (
                   <LargoMessageBody
@@ -291,11 +298,11 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
                 WORKING
               </span>
             ) : (
-              "DEPLOY"
+              "Send"
             )}
           </Button>
         </form>
       </div>
-    </DeskPanel>
+    </Panel>
   );
 }

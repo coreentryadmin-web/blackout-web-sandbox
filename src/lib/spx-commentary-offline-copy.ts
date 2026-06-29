@@ -1,5 +1,3 @@
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-
 export type CommentaryOfflineTone = "weekend" | "premarket" | "extended" | "closed";
 
 export type CommentaryOfflineCopy = {
@@ -14,72 +12,72 @@ const POOLS: Record<CommentaryOfflineTone, CommentaryOfflineCopy[]> = {
   weekend: [
     {
       tone: "weekend",
-      kicker: "◆ MARKETS LOCKED",
-      headline: "MARKETS LOCKED",
-      body: "No SPX session, no 0DTE window. Largo runs on live tape — there is none until Monday's open.",
-      tagline: "The desk re-arms Monday pre-market.",
+      kicker: "Markets closed",
+      headline: "Markets closed",
+      body: "No SPX session and no 0DTE window. Commentary resumes at Monday's pre-market open.",
+      tagline: "Session resumes Monday pre-market.",
     },
     {
       tone: "weekend",
-      kicker: "◆ WEEKEND",
-      headline: "DESK STAND-DOWN",
-      body: "Equity markets are closed through the weekend. Nothing to read until the bell.",
-      tagline: "Largo returns Monday pre-market.",
+      kicker: "Weekend",
+      headline: "Desk offline",
+      body: "Equity markets are closed through the weekend. No live structure until the bell.",
+      tagline: "Live commentary returns Monday pre-market.",
     },
   ],
   premarket: [
     {
       tone: "premarket",
-      kicker: "◆ PRE-MARKET",
-      headline: "DESK WARMING UP",
-      body: "GEX, flow and levels are loading. Largo goes live with the cash session.",
+      kicker: "Pre-market",
+      headline: "Desk warming up",
+      body: "GEX, flow, and levels are loading. Commentary goes live with the cash session.",
       tagline: "RTH opens 6:30 AM PT.",
     },
     {
       tone: "premarket",
-      kicker: "◆ DAWN PATROL",
-      headline: "SYSTEMS ONLINE",
-      body: "GEX and flow are loading. Tonight's Night Hawk playbook is in. Largo arms at the bell.",
+      kicker: "Pre-market",
+      headline: "Systems online",
+      body: "GEX and flow are loading. Night Hawk playbook is available. Commentary arms at the bell.",
       tagline: "Pre-market standby before the 0DTE session.",
     },
   ],
   extended: [
     {
       tone: "extended",
-      kicker: "◆ AFTER-HOURS",
-      headline: "SESSION WRAPPED",
-      body: "RTH is closed. Extended-hours prints are thin and unreliable — Largo waits for the cash session.",
-      tagline: "Real structure resumes at the bell.",
+      kicker: "After hours",
+      headline: "Session wrapped",
+      body: "RTH is closed. Extended-hours prints are thin — commentary waits for the cash session.",
+      tagline: "Live structure resumes at the bell.",
     },
     {
       tone: "extended",
-      kicker: "◆ 0DTE WINDOW CLOSED",
-      headline: "WINDOW CLOSED",
-      body: "The 0DTE window has closed for today. Night Hawk is already scoring tomorrow's playbook.",
-      tagline: "Tomorrow's edition is being built.",
+      kicker: "0DTE closed",
+      headline: "Window closed",
+      body: "The 0DTE window has closed for today. Night Hawk is building tomorrow's playbook.",
+      tagline: "Next edition publishes this evening.",
     },
   ],
   closed: [
     {
       tone: "closed",
-      kicker: "◆ SIGNAL LOST",
-      headline: "SIGNAL LOST",
-      body: "No live SPX feed means no live intel. Largo doesn't make up data — it waits for real tape.",
-      tagline: "Largo re-arms when the desk wakes. Precision doesn't guess.",
+      kicker: "Feed offline",
+      headline: "No live feed",
+      body: "No live SPX feed means no live commentary. We do not synthesize data when the tape is dark.",
+      tagline: "Commentary resumes when the session opens.",
     },
     {
       tone: "closed",
-      kicker: "◆ DESK DARK",
-      headline: "DESK DARK",
-      body: "The market just isn't open. No live feed, no live read — by design.",
-      tagline: "Largo returns with the session. Patience is a position.",
+      kicker: "Session closed",
+      headline: "Session closed",
+      body: "The market is not open. Commentary surfaces only when underlying data is live.",
+      tagline: "Structure resumes at the next session.",
     },
     {
       tone: "closed",
-      kicker: "◆ STANDING BY",
-      headline: "STANDING BY",
-      body: "There is no live session to read right now. Largo surfaces intel only when the data is real.",
-      tagline: "Structure resumes tomorrow.",
+      kicker: "Standing by",
+      headline: "Standing by",
+      body: "There is no live session to summarize right now.",
+      tagline: "Commentary returns with the open.",
     },
   ],
 };
@@ -93,7 +91,7 @@ function etWeekday(now = new Date()): number {
   return map[wd] ?? 0;
 }
 
-export function commentaryOfflineTone(desk?: SpxDeskPayload | null): CommentaryOfflineTone {
+export function commentaryOfflineTone(desk?: { market_label?: string } | null): CommentaryOfflineTone {
   const day = etWeekday();
   if (day === 0 || day === 6) return "weekend";
 
@@ -104,8 +102,7 @@ export function commentaryOfflineTone(desk?: SpxDeskPayload | null): CommentaryO
   return "closed";
 }
 
-/** Pick a stable-but-rotating offline card (changes hourly). */
-export function pickCommentaryOfflineCopy(desk?: SpxDeskPayload | null): CommentaryOfflineCopy {
+export function pickCommentaryOfflineCopy(desk?: { market_label?: string } | null): CommentaryOfflineCopy {
   const tone = commentaryOfflineTone(desk);
   const pool = POOLS[tone];
   const hour = Number(

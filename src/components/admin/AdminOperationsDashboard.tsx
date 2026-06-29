@@ -54,7 +54,7 @@ const ACTION_META: Record<string, { icon: string; color: string }> = {
   api_rescan:          { icon: "↺", color: "text-sky-300" },
   spx_live_engine:     { icon: "◎", color: "text-gold"   },
   incident_ack:        { icon: "✓", color: "text-gold"   },
-  incident_resolve:    { icon: "◆", color: "text-bull"   },
+  incident_resolve:    { icon: "✓", color: "text-bull"   },
 };
 
 function actionMeta(action: string) {
@@ -75,7 +75,7 @@ function SeverityPip({ severity }: { severity: string }) {
         isCrit ? "admin-outcome-badge-bear" : "admin-outcome-badge-amber"
       )}
     >
-      {isCrit ? "● CRITICAL" : "◆ WARNING"}
+      {isCrit ? "● CRITICAL" : "WARNING"}
     </span>
   );
 }

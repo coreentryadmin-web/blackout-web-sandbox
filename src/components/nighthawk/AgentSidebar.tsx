@@ -25,7 +25,7 @@ export function AgentSidebar({ activeMode, onSelect }: AgentSidebarProps) {
   return (
     <aside className="nighthawk-agent-sidebar">
       <header className="nighthawk-agent-sidebar-header">
-        <p className="nighthawk-agent-kicker">◆ HUNT MODES</p>
+        <p className="nighthawk-agent-kicker">Hunt modes</p>
         <h2 className="nighthawk-agent-title">Arm an agent</h2>
         <p className="nighthawk-agent-sub">
           Flow, technicals, and contract logic tuned to your horizon.

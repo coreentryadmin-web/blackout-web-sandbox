@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useMemo } from "react";
+import { LearnDoc } from "@/components/learn/LearnDoc";
 
 const TOC = [
   { id: "dealer-greeks", label: "Dealer Greeks" },
@@ -33,7 +34,7 @@ const TERMS: Record<string, { term: string; def: string }[]> = {
     { term: "0DTE — Zero Days to Expiration", def: "An options contract expiring on the current trading day. SPX PM-settled 0DTE contracts are the primary instrument for the BlackOut play engine. 0DTE options experience extreme theta decay and gamma amplification in the final hours of the session." },
     { term: "Ask", def: "The price at which the market maker (dealer) is willing to sell an options contract. Buying at the ask is the standard execution point for retail options buyers." },
     { term: "Bid", def: "The price at which the market maker (dealer) is willing to buy an options contract back. Selling at the bid is the standard execution for retail options sellers." },
-    { term: "Delta", def: "The rate of change of an option's price for a $1 move in the underlying. Calls have positive delta (0 to +1); puts have negative delta (âˆ’1 to 0). A 50-delta call gains approximately $0.50 in value for each $1 rise in the underlying." },
+    { term: "Delta", def: "The rate of change of an option's price for a $1 move in the underlying. Calls have positive delta (0 to +1); puts have negative delta (−1 to 0). A 50-delta call gains approximately $0.50 in value for each $1 rise in the underlying." },
     { term: "Gamma", def: "The rate of change of delta per $1 move in the underlying. High gamma means delta — and therefore P&L — changes rapidly with small moves. ATM 0DTE options have the highest gamma and therefore the most violent P&L swings." },
     { term: "Implied Volatility (IV)", def: "The market's implied forecast of future price volatility, derived from option prices. Higher IV inflates option premiums. Lower IV (IV crush, typically post-event) deflates them. IV is expressed as an annualized percentage." },
     { term: "IV Percentile (IVP)", def: "The current implied volatility level expressed as a percentile relative to the past year's IV range. IVP 90 means current IV is higher than 90% of all readings over the past year — options are expensive relative to recent history." },
@@ -45,7 +46,7 @@ const TERMS: Record<string, { term: string; def: string }[]> = {
     { term: "VWAP — Volume-Weighted Average Price", def: "The average price of a security weighted by volume over a given time period (typically the trading day from market open). VWAP is used by institutional participants as an intraday execution benchmark. SPX trading above VWAP is a bullish structural signal; below is bearish." },
     { term: "EMA — Exponential Moving Average", def: "A moving average that places greater weight on recent price data. SPX Slayer uses the 5, 9, and 21 EMA as part of its play engine gate logic. When the EMA stack is aligned (5 > 9 > 21 for bullish; 5 < 9 < 21 for bearish), the trend is confirmed by momentum." },
     { term: "Bid-Ask Spread", def: "The difference between the highest price a buyer will pay (bid) and the lowest price a seller will accept (ask) for an option contract. Tight spreads indicate liquid markets; wide spreads indicate illiquid markets where execution costs are higher." },
-    { term: "Premium", def: "The total dollar value of an options contract (price Ã— contract multiplier). SPX options have a $100 multiplier, so a $1.00 option costs $100 per contract in premium." },
+    { term: "Premium", def: "The total dollar value of an options contract (price × contract multiplier). SPX options have a $100 multiplier, so a $1.00 option costs $100 per contract in premium." },
   ],
   "institutional-flow": [
     { term: "Block Trade", def: "A large options or equity transaction executed off the lit exchange (in a dark pool) to minimize market impact. Block trades are a primary indicator of institutional conviction." },
@@ -100,32 +101,11 @@ export default function GlossaryPage() {
   const totalVisible = Object.values(filtered).flat().length;
 
   return (
-    <div className="min-h-screen text-white" style={{ background: "#040407" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
-        <div className="mb-12 pb-10 border-b border-cyan-900/40">
-          <p className="text-cyan-400 text-sm font-mono uppercase tracking-widest mb-3">Reference</p>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Glossary</h1>
-          <p className="text-sky-300 text-xl max-w-3xl leading-relaxed">
-            Complete terminology reference for the BlackOut Trading platform — every key term, clearly defined with context for how it applies to your workflow.
-          </p>
-        </div>
-
-        <div className="flex gap-10 items-start">
-          <aside className="hidden lg:block w-56 shrink-0">
-            <div className="sticky top-8 border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5">
-              <p className="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-4">Categories</p>
-              <nav className="space-y-1">
-                {TOC.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block text-sm text-secondary hover:text-cyan-400 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors">
-                    {item.label}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 space-y-10">
+    <LearnDoc
+      title="Glossary"
+      description="Complete terminology reference for the BlackOut Trading platform — every key term, clearly defined with context for how it applies to your workflow."
+      sections={TOC}
+    >
 
             {/* Search + filter bar */}
             <div className="space-y-4">
@@ -245,9 +225,6 @@ export default function GlossaryPage() {
               <Link href="/learn/blackout-grid" className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors">&larr; BlackOut Grid</Link>
               <Link href="/learn" className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors">Back to Learn &rarr;</Link>
             </div>
-          </main>
-        </div>
-      </div>
-    </div>
+    </LearnDoc>
   );
 }

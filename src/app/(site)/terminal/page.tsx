@@ -30,15 +30,10 @@ export default async function TerminalPage() {
           title={
             <span className="flex items-center gap-3">
               <ProductMark product="largo" size={36} />
-              LARGO
+              Largo
             </span>
           }
-          subtitle={
-            <>
-              Live desk intel ·{" "}
-              <span className="text-cyan-300">your AI desk officer</span>
-            </>
-          }
+          subtitle="Live desk intel · grounded in platform data"
           badge={
             <Badge tone="accent" dot>
               AI Online
@@ -46,13 +41,10 @@ export default async function TerminalPage() {
           }
         />
         <LargoTerminal fullPage />
-        {/* Persistent compliance disclaimer (matches SPX / GEX desk wording) */}
         <p className="font-mono text-[10px] text-sky-300/60 text-center pt-1">
           Educational. Not advice. You decide.
         </p>
       </main>
-      <div className="platform-ambient platform-ambient-largo" aria-hidden />
-      <div className="platform-dot-grid" aria-hidden />
     </div>
   );
 }
