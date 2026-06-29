@@ -1,5 +1,6 @@
 import { formatFlowStrikeStackLine } from "@/lib/largo/flow-strike-stacks";
 import {
+  EDITION_SYNTHESIS_OVERSHOOT,
   MAX_OPTION_COST_PER_CONTRACT,
   MAX_OPTION_PREMIUM_PER_SHARE,
   PLAYBOOK_PREMIUM_CAP_LINE,
@@ -10,6 +11,7 @@ import { huntDteGuidance } from "./hunt-mode";
 import type { MarketWideContext } from "./market-wide";
 import type { ScoredCandidate } from "./scorer";
 import { formatSpxGapContext } from "./spx-gap";
+import { formatPlatformIntelForPrompt } from "./platform-intel-snapshot";
 import type { SpxDeskSummary, FlowTapeSummary } from "@/lib/platform/types";
 import type { PlayOutcomeStats } from "@/lib/spx-play-outcomes";
 import type { marketPlatform } from "@/lib/platform";
@@ -619,13 +621,13 @@ export function buildClaudePrompt(params: {
     .filter(Boolean)
     .join(" · ");
 
-  return `You are the lead options strategist for BlackOut Trading. Generate exactly 5 next-session plays for ${ctx.tomorrow} (today was ${ctx.today}).
+  return `You are the lead options strategist for BlackOut Trading. Generate exactly ${EDITION_SYNTHESIS_OVERSHOOT} next-session plays for ${ctx.tomorrow} (today was ${ctx.today}). The quality-review step will cut the weakest — produce ${EDITION_SYNTHESIS_OVERSHOOT} so 5 strong plays survive after review.
 ${huntMode && maxDte != null ? `\nHUNT MODE: ${huntDteGuidance(huntMode, maxDte)}\n` : ""}
 
 RULES — CRITICAL:
 - Use ONLY data provided below. Never invent premiums, strikes, flow, or levels.
 - Output valid JSON array ONLY — no markdown, no prose outside JSON.
-- Exactly 5 plays: 5 individual STOCKS. Do NOT include index/ETF plays (SPY, QQQ, IWM, etc.).
+- Exactly ${EDITION_SYNTHESIS_OVERSHOOT} plays: individual STOCKS only. Do NOT include index/ETF plays (SPY, QQQ, IWM, etc.).
 - Each play must align flow direction with technical structure.
 - Entry, target, stop must reference actual support/resistance from dossiers.
 - options_play must specify call/put, strike, expiry (0DTE/weekly), size 1-3 contracts, and estimated entry premium per share.
@@ -662,10 +664,12 @@ ${formatEngineState(engineState)}${trackRecordLine ? `\n${trackRecordLine}` : ""
 Hot chains: ${hotChains || "n/a"}
 ${vixContext ? `Vol regime: ${vixContext}` : ""}
 ${liveSpxSection ? `\nLIVE SPX / 0DTE + HELIX TAPE (real-time desk snapshot - anchor index-level bias and confirm/contradict single-name flow):\n${liveSpxSection}\n` : ""}
+PLATFORM INTEL (cross-service — regime detector, flow anomalies, desk brief):
+${formatPlatformIntelForPrompt(ctx.platform_intel)}
 TOP STOCK DOSSIERS (ranked):
 ${stockBlocks || "No stock dossiers available."}
 
-OUTPUT SCHEMA — JSON array of 5 objects:
+OUTPUT SCHEMA — JSON array of ${EDITION_SYNTHESIS_OVERSHOOT} objects:
 {
   "ticker": "SYMBOL",
   "type": "stock",

@@ -9,6 +9,7 @@ import {
   logNighthawkJob,
   saveDossierStaging,
   upsertNighthawkJob,
+  failStaleNighthawkJobs,
 } from "@/lib/db";
 import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
@@ -24,7 +25,7 @@ import { fetchIndexDossiers } from "./index-dossier";
 import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
 import { critiquePlays } from "./play-critic";
 import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
-import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
+import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -249,6 +250,12 @@ export async function buildEveningEdition(opts?: {
   const started = Date.now();
   const editionFor = nextTradingDayEt(todayEt());
   const checkpointing = dbConfigured();
+
+  if (checkpointing) {
+    await failStaleNighthawkJobs().catch((err) =>
+      console.warn("[nighthawk/edition] stale-job cleanup failed:", err)
+    );
+  }
 
   if (!uwConfigured() && !polygonConfigured()) {
     return {
@@ -539,7 +546,10 @@ export async function buildEveningEdition(opts?: {
     let groundingSummary: { grounded: number; dropped_ungrounded: number; flagged: number; notes: string[] } | null = null;
 
     if (checkpointedSynthesis && Array.isArray(checkpointedSynthesis.plays) && checkpointedSynthesis.plays.length) {
-      finalPlays = checkpointedSynthesis.plays;
+      finalPlays = checkpointedSynthesis.plays.slice(0, EDITION_TARGET_PLAYS).map((p, i) => ({
+        ...p,
+        rank: i + 1,
+      }));
       finalCriticNotes = Array.isArray(checkpointedSynthesis.critic_notes) ? checkpointedSynthesis.critic_notes : [];
       raw = checkpointedSynthesis.claude ? "checkpointed" : null;
       console.info(`[nighthawk/edition] stage_synthesis: loaded ${finalPlays.length} vetted plays from checkpoint`);
@@ -607,7 +617,7 @@ export async function buildEveningEdition(opts?: {
         ctx,
       });
 
-      finalPlays = vettedPlays;
+      finalPlays = vettedPlays.slice(0, EDITION_TARGET_PLAYS).map((p, i) => ({ ...p, rank: i + 1 }));
       finalCriticNotes = criticNotes;
       funnel.critic_passed = finalPlays.length;
       if (!finalPlays.length) {
@@ -716,6 +726,8 @@ export async function buildEveningEdition(opts?: {
           spx_price: spxDesk?.price ?? null,
           spx_regime: spxDesk?.gamma_regime ?? null,
           flow_alert_count: flowTape?.count ?? null,
+          composite_regime: ctx.platform_intel?.composite_regime ?? null,
+          critical_anomalies: ctx.platform_intel?.critical_anomaly_count ?? 0,
         },
       },
     });

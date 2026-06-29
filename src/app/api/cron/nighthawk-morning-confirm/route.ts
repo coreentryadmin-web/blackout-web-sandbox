@@ -119,11 +119,11 @@ async function fetchPlatformIntel(baseUrl: string): Promise<{
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json() as any;
     return {
-      regime: data?.regime?.label ?? data?.regime?.type ?? null,
+      regime: data?.regime?.composite ?? data?.intelligence?.currentRegime ?? null,
       anomalies: Array.isArray(data?.anomalies) ? data.anomalies : [],
-      gex_bias: data?.brief?.gex_bias ?? null,
-      call_wall: typeof data?.brief?.call_wall === "number" ? data.brief.call_wall : null,
-      put_wall: typeof data?.brief?.put_wall === "number" ? data.brief.put_wall : null,
+      gex_bias: data?.lastBrief?.gexBias ?? null,
+      call_wall: typeof data?.lastBrief?.callWall === "number" ? data.lastBrief.callWall : null,
+      put_wall: typeof data?.lastBrief?.putWall === "number" ? data.lastBrief.putWall : null,
       // prior_close not in the intel payload — we'll derive from the edition's dossier or spx bar
       prior_close: null,
     };

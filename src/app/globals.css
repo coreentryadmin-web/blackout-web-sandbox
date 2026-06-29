@@ -2827,64 +2827,173 @@ body::before {
     }
   }
 
-  /* Playbook board — 75% width, full height, 5 equal rows */
+  /* Playbook board — institutional panel */
   .nighthawk-playbook {
-    @apply relative flex flex-col min-h-0 h-full;
-    border: 1px solid rgba(255, 210, 63, 0.18);
-    background: linear-gradient(165deg, rgba(10, 6, 8, 0.10) 0%, rgba(0, 0, 0, 0.04) 100%);
-    box-shadow: inset 0 0 80px rgba(255, 45, 85, 0.04), 0 0 40px rgba(0, 0, 0, 0.35);
+    @apply relative flex flex-col min-h-0 h-full rounded-sm overflow-hidden;
+    border: 1px solid rgba(56, 189, 248, 0.14);
+    background: rgba(4, 4, 7, 0.94);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 12px 40px rgba(0, 0, 0, 0.45);
   }
 
   .nighthawk-playbook-header {
-    @apply flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 shrink-0;
-    padding: clamp(0.5rem, 1.2vh, 0.75rem) clamp(0.65rem, 1.4vw, 1rem);
-    border-bottom: 1px solid rgba(255, 210, 63, 0.15);
-    background: linear-gradient(90deg, rgba(255, 210, 63, 0.06), transparent 55%);
+    @apply flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 shrink-0;
+    padding: clamp(0.65rem, 1.4vh, 0.85rem) clamp(0.75rem, 1.5vw, 1rem);
+    border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, transparent 100%);
   }
 
   .nighthawk-playbook-header-main {
-    @apply min-w-0;
+    @apply min-w-0 flex-1;
+  }
+
+  .nighthawk-playbook-title-row {
+    @apply flex flex-wrap items-center justify-between gap-2 mb-0.5;
+  }
+
+  .nighthawk-play-fill {
+    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-400 tabular-nums;
   }
 
   .nighthawk-playbook-header-meta {
-    @apply flex flex-col sm:flex-row sm:items-center gap-2 shrink-0;
+    @apply flex flex-wrap items-center gap-2 shrink-0;
+  }
+
+  .nighthawk-record-strip {
+    @apply flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-x-4 gap-y-1.5 shrink-0 font-mono text-[11px];
+    padding: 0.45rem clamp(0.75rem, 1.5vw, 1rem);
+    border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+    background: rgba(4, 4, 7, 0.6);
+  }
+
+  .nighthawk-record-label {
+    @apply uppercase tracking-[0.16em] text-cyan-400 shrink-0;
+  }
+
+  .nighthawk-record-value {
+    @apply text-sky-300 leading-relaxed;
+  }
+
+  .nighthawk-record-metrics {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .nighthawk-metric-pill {
+    @apply inline-flex items-baseline gap-1.5 rounded border px-2 py-0.5;
+    border-color: rgba(56, 189, 248, 0.18);
+    background: rgba(56, 189, 248, 0.05);
+  }
+
+  .nighthawk-metric-pill-label {
+    @apply uppercase tracking-wider text-[9px] text-cyan-400;
+  }
+
+  .nighthawk-metric-pill-value {
+    @apply text-white tabular-nums font-semibold text-[11px];
+  }
+
+  .nighthawk-market-context {
+    @apply grid gap-2 shrink-0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    padding: 0.5rem clamp(0.75rem, 1.5vw, 1rem);
+    border-bottom: 1px solid rgba(255, 210, 63, 0.1);
+    background: rgba(255, 210, 63, 0.03);
+  }
+
+  .nighthawk-market-context-item {
+    @apply min-w-0 flex flex-col gap-0.5;
+  }
+
+  .nighthawk-market-context-label {
+    @apply font-mono uppercase text-[9px] tracking-[0.2em] text-cyan-400;
+  }
+
+  .nighthawk-market-context-value {
+    @apply font-mono text-[11px] leading-snug text-sky-300;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .nighthawk-morning-summary {
+    @apply flex flex-wrap items-baseline gap-2 font-mono text-[11px] text-sky-300 shrink-0;
+    padding: 0.35rem clamp(0.75rem, 1.5vw, 1rem);
+    border-bottom: 1px solid rgba(74, 222, 128, 0.12);
+    background: rgba(74, 222, 128, 0.04);
+  }
+
+  .nighthawk-morning-summary-label {
+    @apply uppercase tracking-[0.16em] text-emerald-300;
+  }
+
+  .nighthawk-play-morning-badge {
+    @apply font-mono text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded;
+  }
+
+  .nighthawk-play-morning-confirmed {
+    color: rgb(74 222 128);
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.35);
+  }
+
+  .nighthawk-play-morning-degraded {
+    color: rgb(250 204 21);
+    background: rgba(250, 204, 21, 0.1);
+    border: 1px solid rgba(250, 204, 21, 0.3);
+  }
+
+  .nighthawk-play-morning-invalidated {
+    color: rgb(248 113 113);
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.35);
   }
 
   .nighthawk-playbook-kicker {
-    @apply font-mono uppercase mb-0.5;
-    font-size: clamp(0.625rem, 0.75vh, 0.625rem);
-    letter-spacing: 0.42em;
-    color: rgba(255, 210, 63, 0.75);
+    @apply font-mono uppercase;
+    font-size: 0.625rem;
+    letter-spacing: 0.28em;
+    color: rgba(255, 210, 63, 0.85);
   }
 
   .nighthawk-playbook-title {
-    @apply font-anton uppercase tracking-wide;
-    font-size: clamp(1.5rem, 2.4vh, 1.65rem);
-    color: #fff8e8;
-    text-shadow: 0 0 20px rgba(255, 210, 63, 0.25);
+    @apply font-syne font-bold tracking-tight text-white;
+    font-size: clamp(1.25rem, 2vh, 1.5rem);
+    line-height: 1.15;
   }
 
   .nighthawk-playbook-headline {
-    @apply font-mono leading-snug mt-0.5;
-    font-size: clamp(0.625rem, 1vh, 0.7rem);
-    color: rgba(255, 210, 63, 0.85);
+    @apply font-mono leading-snug mt-1;
+    font-size: 0.72rem;
+    color: rgba(255, 210, 63, 0.9);
     max-width: 48rem;
   }
 
+  .nighthawk-playbook-notice {
+    @apply shrink-0 font-mono text-[11px] leading-relaxed text-sky-300 px-3 py-2 border-b;
+    border-color: rgba(56, 189, 248, 0.1);
+    background: rgba(56, 189, 248, 0.04);
+  }
+
+  .nighthawk-recap-block {
+    @apply shrink-0 border-b;
+    border-color: rgba(255, 45, 85, 0.08);
+  }
+
+  .nighthawk-recap-toggle {
+    @apply w-full text-left font-mono uppercase text-[10px] tracking-[0.18em] text-cyan-400 px-3 py-2;
+    @apply hover:text-sky-300 transition-colors;
+  }
+
   .nighthawk-playbook-recap {
-    @apply shrink-0 font-mono leading-relaxed px-3 py-1.5 border-b;
-    font-size: clamp(0.625rem, 0.95vh, 0.68rem);
-    color: rgba(255, 235, 200, 0.75);
-    border-color: rgba(255, 45, 85, 0.12);
-    background: rgba(255, 45, 85, 0.03);
+    @apply shrink-0 font-mono leading-relaxed px-3 pb-3;
+    font-size: 0.72rem;
+    color: rgba(186, 230, 253, 0.92);
   }
 
   .nighthawk-playbook-recap-grid {
-    @apply flex flex-wrap gap-x-3 gap-y-0.5 font-mono uppercase;
-    font-size: 0.65rem;
-    letter-spacing: 0.06em;
-    color: rgba(255, 200, 180, 0.9);
-    max-width: 36rem;
+    @apply hidden;
   }
 
   .nighthawk-status-pill {
@@ -2915,152 +3024,129 @@ body::before {
   .nighthawk-playbook-rows {
     @apply flex-1 min-h-0 grid;
     grid-template-rows: repeat(5, minmax(0, 1fr));
-    gap: 2px;
-    padding: 2px;
+    gap: 0.375rem;
+    padding: 0.375rem;
   }
 
-  /* Pre-publish state: before tonight's edition runs there are no plays. Rather than
-     five empty "Slot open" rows (which read as broken), the playbook column shows one
-     deliberate "Playbook pending" block. The left-to-right dark scrim keeps the copy
-     legible over the bright cinematic hero backdrop behind the panel. */
   .nighthawk-playbook-pending {
     @apply flex-1 min-h-0 flex items-center justify-center;
-    padding: clamp(1rem, 4vh, 2.5rem) clamp(1rem, 4vw, 2rem);
-    background: linear-gradient(
-      90deg,
-      rgba(4, 4, 7, 0.74) 0%,
-      rgba(4, 4, 7, 0.58) 55%,
-      rgba(4, 4, 7, 0.34) 100%
-    );
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    padding: clamp(1.25rem, 4vh, 2.5rem) clamp(1rem, 4vw, 2rem);
+    background: rgba(4, 4, 7, 0.88);
+    border-top: 1px solid rgba(56, 189, 248, 0.08);
   }
 
   .nighthawk-playbook-pending-inner {
     @apply flex flex-col items-center text-center;
-    max-width: 30rem;
+    max-width: 28rem;
   }
 
   .nighthawk-playbook-pending-kicker {
     @apply font-mono uppercase mb-2;
-    font-size: clamp(0.625rem, 0.85vh, 0.625rem);
-    letter-spacing: 0.42em;
-    color: rgba(110, 231, 183, 0.9); /* emerald-300 */
+    font-size: 0.625rem;
+    letter-spacing: 0.28em;
+    color: rgba(110, 231, 183, 0.95);
   }
 
   .nighthawk-playbook-pending-title {
-    @apply font-anton uppercase tracking-wide mb-2.5;
-    font-size: clamp(1.85rem, 4.2vh, 2.6rem);
+    @apply font-syne font-bold tracking-tight mb-2;
+    font-size: clamp(1.35rem, 3vh, 1.75rem);
     color: #fff;
-    text-shadow: 0 0 24px rgba(110, 231, 183, 0.22);
   }
 
   .nighthawk-playbook-pending-sub {
     @apply font-mono leading-relaxed text-sky-300;
-    font-size: clamp(0.72rem, 1.15vh, 0.82rem);
+    font-size: 0.78rem;
   }
 
   .nighthawk-playbook-pending-time {
-    @apply text-emerald-300;
+    @apply text-emerald-300 font-semibold;
   }
 
   .nighthawk-play-row {
-    @apply flex gap-0 min-h-0 overflow-hidden;
-    border: 1px solid rgba(255, 45, 85, 0.2);
-    background: rgba(4, 4, 7, 0.18);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: inset 0 0 50px rgba(255, 45, 85, 0.03);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    @apply flex gap-0 min-h-0 overflow-hidden rounded-sm;
+    border: 1px solid rgba(56, 189, 248, 0.12);
+    background: rgba(8, 8, 14, 0.85);
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
   }
 
   .nighthawk-play-row:hover:not(.nighthawk-play-row-empty) {
     border-color: rgba(255, 210, 63, 0.28);
-    box-shadow: inset 0 0 40px rgba(255, 210, 63, 0.04);
+    background: rgba(12, 10, 8, 0.95);
   }
 
   .nighthawk-play-row-bull {
-    border-left: 3px solid rgba(255, 210, 63, 0.75);
+    border-left: 3px solid rgba(255, 210, 63, 0.85);
   }
 
   .nighthawk-play-row-bear {
-    border-left: 3px solid rgba(255, 45, 85, 0.8);
+    border-left: 3px solid rgba(255, 45, 85, 0.85);
   }
 
   .nighthawk-play-row-neutral {
-    border-left: 3px solid rgba(255, 140, 43, 0.55);
+    border-left: 3px solid rgba(56, 189, 248, 0.55);
   }
 
   .nighthawk-play-row-empty {
-    border-left: 3px solid rgba(255, 255, 255, 0.06);
-    /* Scrim: the playbook panel renders a bright hero image behind these rows, and a near-
-       transparent fill let the nebula bleed through and washed out the "Slot open" copy. A solid
-       dark backing (+ blur) keeps the empty-state text legible regardless of the art behind it. */
-    background: rgba(4, 4, 7, 0.58);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    border-color: rgba(255, 255, 255, 0.06);
+    border-left: 3px dashed rgba(56, 189, 248, 0.2);
+    background: rgba(4, 4, 7, 0.65);
+    border-color: rgba(56, 189, 248, 0.08);
   }
 
   .nighthawk-play-rank {
     @apply flex flex-col items-center justify-center shrink-0;
-    width: clamp(2.5rem, 4vw, 3.25rem);
-    background: linear-gradient(180deg, rgba(255, 210, 63, 0.1), rgba(255, 45, 85, 0.06));
-    border-right: 1px solid rgba(255, 210, 63, 0.14);
+    width: clamp(2.25rem, 3.5vw, 2.75rem);
+    background: rgba(255, 210, 63, 0.04);
+    border-right: 1px solid rgba(255, 210, 63, 0.1);
   }
 
   .nighthawk-play-rank-num {
-    @apply font-anton leading-none;
-    font-size: clamp(1.5rem, 3.2vh, 2rem);
-    color: rgba(255, 210, 63, 0.55);
-    text-shadow: 0 0 16px rgba(255, 210, 63, 0.35);
+    @apply font-syne font-bold leading-none tabular-nums text-cyan-400;
+    font-size: clamp(1.1rem, 2.2vh, 1.35rem);
   }
 
   .nighthawk-play-row-empty .nighthawk-play-rank {
-    background: rgba(255, 255, 255, 0.02);
-    border-right-color: rgba(255, 255, 255, 0.06);
+    background: transparent;
+    border-right-color: rgba(56, 189, 248, 0.08);
   }
 
   .nighthawk-play-row-empty .nighthawk-play-rank-num {
-    @apply text-cyan-400;
-    text-shadow: none;
+    @apply text-sky-300;
   }
 
   .nighthawk-play-body {
-    @apply flex-1 min-w-0 min-h-0 flex flex-col justify-start gap-1;
-    padding: clamp(0.35rem, 0.9vh, 0.55rem) clamp(0.5rem, 1.1vw, 0.85rem);
+    @apply flex-1 min-w-0 min-h-0 flex flex-col justify-start gap-1.5;
+    padding: clamp(0.45rem, 1vh, 0.6rem) clamp(0.55rem, 1.2vw, 0.75rem);
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 210, 63, 0.25) transparent;
+    scrollbar-color: rgba(56, 189, 248, 0.25) transparent;
   }
 
   .nighthawk-play-body-empty {
-    @apply justify-center gap-0.5;
+    @apply justify-center gap-1;
   }
 
   .nighthawk-play-empty-title {
     @apply font-mono uppercase text-sky-300;
-    font-size: clamp(0.625rem, 0.85vh, 0.625rem);
-    letter-spacing: 0.28em;
+    font-size: 0.625rem;
+    letter-spacing: 0.2em;
   }
 
   .nighthawk-play-empty-copy {
     @apply font-mono text-cyan-400;
-    font-size: clamp(0.625rem, 0.75vh, 0.6rem);
+    font-size: 0.625rem;
   }
 
   .nighthawk-play-top {
-    @apply flex flex-col xl:flex-row xl:items-start xl:justify-between gap-1 shrink-0;
+    @apply flex flex-col lg:flex-row lg:items-start lg:justify-between gap-1.5 shrink-0;
   }
 
   .nighthawk-play-identity {
-    @apply flex items-center gap-2 flex-wrap min-w-0;
+    @apply flex items-center gap-1.5 flex-wrap min-w-0;
   }
 
   .nighthawk-play-ticker {
-    @apply font-anton tracking-wide text-white;
-    font-size: clamp(1.5rem, 2.4vh, 1.65rem);
-    text-shadow: 0 0 14px rgba(255, 210, 63, 0.2);
+    @apply font-syne font-bold tracking-tight text-white tabular-nums;
+    font-size: clamp(1.15rem, 2vh, 1.35rem);
   }
 
   .nighthawk-play-direction {
@@ -3104,55 +3190,44 @@ body::before {
   }
 
   .nighthawk-play-stats {
-    @apply flex items-center flex-wrap gap-2 shrink-0;
+    @apply flex items-center flex-wrap gap-1.5 shrink-0;
+  }
+
+  .nighthawk-play-stat-pill {
+    @apply font-mono text-[10px] uppercase tracking-wide text-sky-300 rounded border px-1.5 py-0.5;
+    border-color: rgba(56, 189, 248, 0.15);
+    background: rgba(56, 189, 248, 0.05);
+  }
+
+  .nighthawk-play-stat-pill strong {
+    @apply text-white font-semibold tabular-nums not-italic;
   }
 
   .nighthawk-play-stat {
-    @apply font-mono uppercase;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    color: #7dd3fc;
-    text-shadow: 0 0 8px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1);
-  }
-
-  .nighthawk-play-stat em {
-    @apply not-italic mr-1;
-    color: rgba(255, 210, 63, 0.85);
+    @apply hidden;
   }
 
   .nighthawk-play-prem-cap {
-    @apply font-mono uppercase border;
+    @apply font-mono uppercase rounded border;
     font-size: 0.625rem;
     letter-spacing: 0.06em;
     color: rgba(255, 210, 63, 0.95);
-    border-color: rgba(255, 210, 63, 0.3);
-    background: rgba(255, 210, 63, 0.05);
-    padding: 0.12rem 0.4rem;
+    border-color: rgba(255, 210, 63, 0.25);
+    background: rgba(255, 210, 63, 0.06);
+    padding: 0.15rem 0.45rem;
   }
 
   .nighthawk-play-thesis {
-    @apply font-mono leading-snug;
-    font-size: 0.82rem;
-    color: #bae6fd;
-    text-shadow: 0 0 8px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.95);
+    @apply font-mono leading-snug text-sky-300;
+    font-size: 0.75rem;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
   .nighthawk-play-signal {
-    @apply font-mono leading-snug;
-    font-size: 0.72rem;
-    color: #7dd3fc;
-    text-shadow: 0 0 8px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1);
-  }
-
-  .nighthawk-play-signal em {
-    @apply not-italic uppercase mr-1;
-    font-size: 0.9em;
-    letter-spacing: 0.12em;
-    color: rgba(255, 45, 85, 0.85);
+    @apply hidden;
   }
 
   .nighthawk-play-levels {
@@ -3172,18 +3247,15 @@ body::before {
 
   .nighthawk-play-level-label {
     @apply block font-mono uppercase;
-    font-size: 0.625rem;
-    letter-spacing: 0.18em;
+    font-size: 0.5625rem;
+    letter-spacing: 0.16em;
     color: rgba(255, 210, 63, 0.9);
-    margin-bottom: 0.1rem;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    margin-bottom: 0.12rem;
   }
 
   .nighthawk-play-level-value {
-    @apply block font-mono leading-tight;
-    font-size: 0.8rem;
-    color: #e0f2fe;
-    text-shadow: 0 0 8px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.95);
+    @apply block font-mono leading-tight text-white;
+    font-size: 0.72rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -3195,9 +3267,8 @@ body::before {
   }
 
   .nighthawk-play-contract {
-    @apply font-mono leading-snug;
-    font-size: clamp(0.625rem, 0.9vh, 0.7rem);
-    color: rgba(255, 210, 63, 0.82);
+    @apply font-mono leading-snug text-cyan-400;
+    font-size: 0.68rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -3205,16 +3276,13 @@ body::before {
   }
 
   .nighthawk-play-risk {
-    @apply font-mono leading-snug mt-auto;
-    font-size: 0.68rem;
-    color: #fca5a5;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    @apply font-mono leading-snug text-sky-300;
+    font-size: 0.65rem;
   }
 
-  .nighthawk-play-risk em {
-    @apply not-italic uppercase mr-1;
-    letter-spacing: 0.1em;
-    color: rgba(255, 45, 85, 0.85);
+  .nighthawk-play-risk-label {
+    @apply uppercase tracking-wide text-bear-text mr-1;
+    font-size: 0.85em;
   }
 
   .nighthawk-play-row-clickable {
@@ -3222,43 +3290,53 @@ body::before {
   }
 
   .nighthawk-playbook-hint {
-    @apply font-mono shrink-0;
-    font-size: 0.625rem;
-    letter-spacing: 0.12em;
-    color: rgba(255, 210, 63, 0.65);
-    padding: 0.25rem clamp(0.65rem, 1.4vw, 1rem);
+    @apply shrink-0 font-mono uppercase text-center border-b text-cyan-400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.16em;
+    padding: 0.35rem 0.75rem;
+    border-color: rgba(56, 189, 248, 0.1);
+    background: rgba(4, 4, 7, 0.5);
   }
 
   .nighthawk-play-open-hint {
-    @apply font-mono uppercase self-end mt-auto;
-    font-size: 0.625rem;
-    letter-spacing: 0.2em;
-    color: rgba(255, 210, 63, 0.7);
+    @apply font-mono uppercase self-end mt-auto text-cyan-400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.16em;
   }
 
-  .nighthawk-play-row-clickable:hover {
-    border-color: rgba(255, 210, 63, 0.42) !important;
+  .nighthawk-play-row-clickable:hover .nighthawk-play-open-hint {
+    color: rgba(255, 210, 63, 0.95);
   }
 
   .nighthawk-play-row-clickable:focus-visible {
-    outline: 2px solid rgba(255, 210, 63, 0.55);
+    outline: 2px solid rgba(255, 210, 63, 0.5);
     outline-offset: 1px;
   }
 
-  .nighthawk-play-open-hint {
-    @apply font-mono uppercase shrink-0 mt-auto self-end;
-    font-size: clamp(0.625rem, 0.65vh, 0.52rem);
-    letter-spacing: 0.22em;
-    color: rgba(255, 210, 63, 0.55);
+  /* Loading skeleton */
+  .nighthawk-playbook-skeleton {
+    @apply animate-pulse motion-reduce:animate-none;
   }
 
-  .nighthawk-playbook-hint {
-    @apply shrink-0 font-mono uppercase text-center border-b;
-    font-size: clamp(0.625rem, 0.72vh, 0.5625rem);
-    letter-spacing: 0.28em;
-    color: rgba(255, 210, 63, 0.45);
-    padding: 0.25rem 0.5rem 0.35rem;
-    border-color: rgba(255, 45, 85, 0.1);
+  .nighthawk-skeleton-bar {
+    @apply mx-3 mt-3 h-3 rounded bg-sky-400/10;
+  }
+
+  .nighthawk-skeleton-bar-lg {
+    @apply h-6 w-2/5 max-w-xs;
+  }
+
+  .nighthawk-skeleton-rows {
+    @apply flex-1 grid gap-2 p-3;
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+  }
+
+  .nighthawk-skeleton-row {
+    @apply rounded-sm bg-sky-400/8 min-h-[3.5rem];
+  }
+
+  .nighthawk-skeleton-row-tall {
+    @apply min-h-[5rem];
   }
 
   /* Play detail modal */
@@ -3279,19 +3357,16 @@ body::before {
   }
 
   .nighthawk-play-detail-sub {
-    @apply font-mono mt-1;
-    font-size: clamp(0.625rem, 0.85vh, 0.68rem);
-    color: rgba(255, 220, 180, 0.6);
-    letter-spacing: 0.06em;
+    @apply font-mono mt-1 text-sky-300;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
   }
 
   .nighthawk-play-detail-quick {
-    @apply shrink-0 grid gap-2 px-5 py-3 border-b font-mono;
+    @apply shrink-0 grid gap-2 px-5 py-3 border-b;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    border-color: rgba(255, 210, 63, 0.12);
-    background: rgba(255, 210, 63, 0.03);
-    font-size: clamp(0.625rem, 0.85vh, 0.68rem);
-    color: rgba(255, 235, 210, 0.78);
+    border-color: rgba(56, 189, 248, 0.12);
+    background: rgba(4, 4, 7, 0.6);
   }
 
   @media (min-width: 640px) {
@@ -3300,16 +3375,24 @@ body::before {
     }
   }
 
-  .nighthawk-play-detail-quick em {
-    @apply not-italic uppercase block;
-    font-size: 0.85em;
+  .nighthawk-play-detail-quick-cell em {
+    @apply not-italic uppercase block text-cyan-400;
+    font-size: 0.5625rem;
     letter-spacing: 0.14em;
-    color: rgba(255, 210, 63, 0.45);
-    margin-bottom: 0.15rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .nighthawk-play-detail-quick-cell span {
+    @apply block font-mono text-[11px] leading-snug text-white;
   }
 
   .nighthawk-play-detail-contract {
     grid-column: 1 / -1;
+  }
+
+  .nighthawk-play-detail-disclaimer {
+    @apply font-mono text-[10px] text-sky-300 px-5 py-2 border-b;
+    border-color: rgba(56, 189, 248, 0.08);
   }
 
   .nighthawk-play-detail-body {

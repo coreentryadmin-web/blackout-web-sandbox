@@ -70,8 +70,10 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
         </span>
       </h2>
       <p className="nighthawk-play-detail-sub">
-        {play.conviction ? `${play.conviction} conviction · ` : ""}Score {play.score != null ? play.score : "—"}
+        {play.conviction ? `${play.conviction} conviction · ` : ""}
+        Score {play.score != null ? play.score : "—"}
         {play.flow_streak_days != null ? ` · ${play.flow_streak_days}d flow streak` : ""}
+        {play.iv_rank != null ? ` · IV ${play.iv_rank}` : ""}
       </p>
     </div>
   );
@@ -89,48 +91,52 @@ export function PlayDetailModal({ play, editionFor, onClose }: PlayDetailModalPr
       {play && (
         <>
           <div className="nighthawk-play-detail-quick">
-              <span>
-                <em>Entry</em> {play.entry_range}
-              </span>
-              <span>
-                <em>Target</em> {play.target}
-              </span>
-              <span>
-                <em>Stop</em> {play.stop}
-              </span>
-              <span className="nighthawk-play-detail-contract">
-                <em>Contract</em> {play.options_play}
-              </span>
+            <div className="nighthawk-play-detail-quick-cell">
+              <em>Entry</em>
+              <span>{play.entry_range}</span>
             </div>
-
-            <p className="font-mono text-[10px] text-sky-300/60 mt-2">
-              Educational. Not advice. Every trade is your own decision.
-            </p>
-
-            <div className="nighthawk-play-detail-body">
-              {isLoading && (
-                <div className="nighthawk-play-detail-loading">
-                  <div className="nighthawk-power-ring" />
-                  <p>Building the Hawk Intel briefing…</p>
-                  <span>Synthesizing flow, positioning, technicals and catalysts</span>
-                </div>
-              )}
-
-              {error && (
-                <p className="nighthawk-modal-error">
-                  Could not load Hawk Intel. {error instanceof Error ? error.message : "Try again."}
-                </p>
-              )}
-
-              {!isLoading && !error && paragraphs.length > 0 && (
-                <div className="nighthawk-play-explain-text">
-                  {data?.cached && (
-                    <p className="nighthawk-play-explain-cached">Cached edition briefing</p>
-                  )}
-                  {paragraphs.map((line, i) => renderExplainLine(line, i))}
-                </div>
-              )}
+            <div className="nighthawk-play-detail-quick-cell">
+              <em>Target</em>
+              <span>{play.target}</span>
             </div>
+            <div className="nighthawk-play-detail-quick-cell">
+              <em>Stop</em>
+              <span>{play.stop}</span>
+            </div>
+            <div className="nighthawk-play-detail-quick-cell nighthawk-play-detail-contract">
+              <em>Contract</em>
+              <span>{play.options_play}</span>
+            </div>
+          </div>
+
+          <p className="nighthawk-play-detail-disclaimer">
+            Educational only — not investment advice. Every trade is your own decision.
+          </p>
+
+          <div className="nighthawk-play-detail-body">
+            {isLoading && (
+              <div className="nighthawk-play-detail-loading">
+                <div className="nighthawk-power-ring" />
+                <p>Building Hawk Intel briefing</p>
+                <span>Synthesizing flow, positioning, technicals, and catalysts</span>
+              </div>
+            )}
+
+            {error && (
+              <p className="nighthawk-modal-error">
+                Could not load Hawk Intel. {error instanceof Error ? error.message : "Try again."}
+              </p>
+            )}
+
+            {!isLoading && !error && paragraphs.length > 0 && (
+              <div className="nighthawk-play-explain-text">
+                {data?.cached && (
+                  <p className="nighthawk-play-explain-cached">Cached edition briefing</p>
+                )}
+                {paragraphs.map((line, i) => renderExplainLine(line, i))}
+              </div>
+            )}
+          </div>
         </>
       )}
     </Modal>

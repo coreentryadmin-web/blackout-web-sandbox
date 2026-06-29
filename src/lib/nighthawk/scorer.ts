@@ -12,6 +12,10 @@ export type NightHawkRegimeContext = {
   tide_bias: TideBias;
   /** Percentage of advancing issues (0–100). Used in breadth-regime multiplier. */
   advance_pct?: number | null;
+  /** Composite regime from market_regime table (platform intel). */
+  composite_regime?: string | null;
+  /** Critical flow anomalies in the last hour — names to treat cautiously. */
+  anomaly_tickers?: string[];
 };
 
 export type ScoredCandidate = {
@@ -45,6 +49,8 @@ export function regimeContextFromMarket(ctx: MarketWideContext): NightHawkRegime
     vix_iv_rank: ctx.vix_iv_rank,
     tide_bias: tideBias(ctx.tide),
     advance_pct: ctx.market_breadth?.pct_advancing ?? null,
+    composite_regime: ctx.platform_intel?.composite_regime ?? null,
+    anomaly_tickers: ctx.platform_intel?.anomaly_tickers ?? [],
   };
 }
 
@@ -722,6 +728,14 @@ export function scoreCandidate(
 
   const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge));
 
+  // Flow-anomaly penalty: names flagged critical in the last hour get demoted unless flow is exceptional.
+  let anomalyPenalty = 0;
+  const anomalySet = new Set((regime?.anomaly_tickers ?? []).map((t) => t.toUpperCase()));
+  if (anomalySet.has(ticker.toUpperCase())) {
+    anomalyPenalty = -10;
+    catalyst.flags.push("critical flow anomaly in last 60m — size down or skip unless flow confirms");
+  }
+
   const regimeMultiplier = computeRegimeMultiplier(regime);
   const total = Math.min(
     100,
@@ -736,7 +750,8 @@ export function scoreCandidate(
           skewAdj +
           fundamentalScore +
           shortInterestScore +
-          totalCatalystScore) *
+          totalCatalystScore +
+          anomalyPenalty) *
           regimeMultiplier
       )
     )

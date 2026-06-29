@@ -23,7 +23,7 @@ export default async function NightHawkPage() {
           title="Night Hawk"
           subtitle="Tomorrow's ranked setups — published after the close, ready before the open."
           badge={<ProductMark product="nighthawk" size={44} animated={false} />}
-          className="mb-3 shrink-0"
+          className="mb-3 shrink-0 [&_p]:text-sky-300"
         />
         <NightHawkFeed />
       </div>

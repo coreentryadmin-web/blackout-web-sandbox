@@ -32,6 +32,7 @@ import { computeSpxGapContext, type SpxGapContext } from "./spx-gap";
 import { nextTradingDayEt, todayEt } from "./session";
 import { priorEtYmd } from "@/lib/providers/spx-session";
 import { runUwPool, runUwSequential } from "@/lib/providers/uw-rate-limiter";
+import { fetchPlatformIntelSnapshot, type PlatformIntelSnapshot } from "./platform-intel-snapshot";
 
 export type MarketWideContext = {
   today: string;
@@ -63,6 +64,8 @@ export type MarketWideContext = {
   total_options_volume: unknown | null;
   /** UW market-wide open-interest change — stocks with the biggest OI shifts today. */
   market_oi_change: Record<string, unknown>[];
+  /** Cross-service platform intel (market_regime, anomalies, brief) — same source as /api/platform/intel. */
+  platform_intel: PlatformIntelSnapshot | null;
 };
 
 function flowRowToDict(row: { raw: Record<string, unknown>; flow: { ticker: string; premium: number } }) {
@@ -225,6 +228,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     afterHoursCatalysts,
     totalOptionsVolume,
     marketOiChange,
+    platformIntel,
   ] = await Promise.all([
     uwConfigured() ? fetchUwMarketTide().catch(() => null) : Promise.resolve(null),
     uwConfigured()
@@ -251,6 +255,7 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     uwConfigured() ? fetchUwMarketTotalOptionsVolume().catch(() => null) : Promise.resolve(null),
     // UW market-wide OI change — top movers by open-interest shift (Redis-cached).
     uwConfigured() ? fetchUwMarketOiChange(20).catch(() => []) : Promise.resolve([]),
+    fetchPlatformIntelSnapshot().catch(() => null),
   ]);
 
   const stockFlows = flowRows
@@ -329,5 +334,6 @@ export async function fetchMarketWideContext(): Promise<MarketWideContext> {
     after_hours_catalysts: afterHoursCatalysts,
     total_options_volume: totalOptionsVolume ?? null,
     market_oi_change: (marketOiChange as Record<string, unknown>[]) ?? [],
+    platform_intel: platformIntel,
   };
 }

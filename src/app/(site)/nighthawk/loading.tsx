@@ -1,5 +1,5 @@
-import { DeskLoadingSkeleton } from "@/components/desk/DeskLoadingSkeleton";
+import { NightHawkLoadingSkeleton } from "@/components/nighthawk/NightHawkLoadingSkeleton";
 
 export default function NighthawkLoading() {
-  return <DeskLoadingSkeleton />;
+  return <NightHawkLoadingSkeleton />;
 }

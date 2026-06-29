@@ -440,6 +440,30 @@ export const fetchNightHawkPlays = () =>
 export const fetchNightHawkEdition = () =>
   marketFetch<import("@/lib/nighthawk/types").NightHawkEdition>("/nighthawk/edition");
 
+export const fetchNightHawkPlayStatus = (date?: string) =>
+  fetch(
+    `/api/nighthawk/play-status${date ? `?date=${encodeURIComponent(date)}` : ""}`,
+    { cache: "no-store", credentials: "same-origin" }
+  )
+    .then((res) => (res.ok ? res.json() : { available: false }))
+    .catch(() => ({ available: false })) as Promise<
+    import("@/lib/nighthawk/types").NightHawkPlayStatusResponse
+  >;
+
+export const fetchNightHawkRecord = (days = 30) =>
+  marketFetch<import("@/lib/nighthawk/types").NightHawkRecordResponse>(
+    `/nighthawk/record?days=${days}`
+  ).catch(() => ({
+    available: false,
+    window_days: days,
+    total_resolved: 0,
+    pending_count: 0,
+    win_rate_pct: 0,
+    profitable_rate_pct: 0,
+    avg_return_pct: 0,
+    by_conviction: [],
+  }));
+
 export const postNightHawkHunt = (body: import("@/lib/nighthawk/types").HuntRequest) =>
   marketFetch<import("@/lib/nighthawk/types").HuntResponse>("/nighthawk/hunt", {
     method: "POST",

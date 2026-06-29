@@ -62,6 +62,41 @@ export type NightHawkEdition = {
   served_for?: string | null;
 };
 
+export type PlayConfirmStatus = "CONFIRMED" | "DEGRADED" | "INVALIDATED";
+
+export type PlayMorningStatus = {
+  rank: number;
+  ticker: string;
+  direction: string;
+  status: PlayConfirmStatus;
+  reason: string;
+};
+
+export type NightHawkPlayStatusResponse = {
+  available: boolean;
+  edition_for?: string;
+  date?: string;
+  reason?: string;
+  checked_at?: string;
+  spx_premarket?: number | null;
+  overnight_gap_pts?: number | null;
+  regime?: string | null;
+  gex_bias?: string | null;
+  plays?: PlayMorningStatus[];
+  summary?: { confirmed: number; degraded: number; invalidated: number };
+};
+
+export type NightHawkRecordResponse = {
+  available: boolean;
+  window_days: number;
+  total_resolved: number;
+  pending_count: number;
+  win_rate_pct: number;
+  profitable_rate_pct: number;
+  avg_return_pct: number;
+  by_conviction: Array<{ conviction: string; n: number; win_rate_pct: number }>;
+};
+
 export type AgentFilterValues = Record<string, string | number | boolean>;
 
 export type HuntRequest = {
