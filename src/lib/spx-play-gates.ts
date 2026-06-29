@@ -138,19 +138,34 @@ export function evaluatePlayGates(
   }
 
   const polledAt = desk.polled_at ?? desk.as_of;
+  let deskStaleSec: number | null = null;
   if (polledAt) {
-    const ageSec = (Date.now() - new Date(polledAt).getTime()) / 1000;
-    if (ageSec > playGexStaleMaxSec()) {
-      blocks.push(`Desk data stale (${Math.round(ageSec)}s)`);
+    deskStaleSec = (Date.now() - new Date(polledAt).getTime()) / 1000;
+  }
+  if (desk.gex_age_ms != null) {
+    const gexSec = desk.gex_age_ms / 1000;
+    deskStaleSec = deskStaleSec != null ? Math.max(deskStaleSec, gexSec) : gexSec;
+  }
+  if (deskStaleSec != null && deskStaleSec > playGexStaleMaxSec()) {
+    blocks.push(`Desk data stale (${Math.round(deskStaleSec)}s)`);
+  }
+
+  const mixedTapeMsg = "Tape's mixed — too many conflicting signals for clean entry";
+  if (confluence.weighted_conflicts >= playWeightedConflictBlockMin()) {
+    if (buyIntent) {
+      blocks.push(mixedTapeMsg);
+    } else {
+      warnings.push(mixedTapeMsg);
     }
   }
 
-  if (confluence.weighted_conflicts >= playWeightedConflictBlockMin()) {
-    blocks.push("Tape's mixed — too many conflicting signals for clean entry");
-  }
-
   if (gradeRank(confluence.grade) < playMinGradeRank()) {
-    blocks.push(`Grade ${confluence.grade} below minimum (need B or better)`);
+    const gradeMsg = `Grade ${confluence.grade} below minimum (need B or better)`;
+    if (buyIntent) {
+      blocks.push(gradeMsg);
+    } else {
+      warnings.push(gradeMsg);
+    }
   }
 
   const macro = macroHardBlock(desk);

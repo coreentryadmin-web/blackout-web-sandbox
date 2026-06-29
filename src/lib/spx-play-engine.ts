@@ -565,11 +565,15 @@ async function evaluateFlatPlay(
       ? evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score)
       : null;
 
-  const gates = evaluatePlayGates(desk, confluence, session, confirmations, {
+  const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "buy",
   });
-  const gatesView = intelGates(desk, confluence, gates);
+  const gatesWatch = evaluatePlayGates(desk, confluence, session, confirmations, {
+    min_score_boost: adaptive.global_min_score_boost,
+    entry_intent: "watch",
+  });
+  const gatesView = intelGates(desk, confluence, gatesWatch);
   const abs = Math.abs(confluence.score);
   const techSum = technicalsSummary(technicals, mtf);
 
@@ -628,7 +632,7 @@ async function evaluateFlatPlay(
     // Guard: don't show WATCHING if any required check (3m MTF, 5m trend, S/R) is
     // still failing — the setup isn't actually close, just numerically passing on optionals.
     !confirmations.checks.some((c) => c.required && !c.passed) &&
-    !gates.passed &&
+    !gatesBuy.passed &&
     !promoteEligible;
 
   const watchBand =
@@ -671,14 +675,14 @@ async function evaluateFlatPlay(
     };
   }
 
-  let entryGatesRaw: PlayGateResult = gates;
+  let entryGatesRaw: PlayGateResult = gatesBuy;
   if (promoteEligible && direction != null) {
-    const promoteBlocks = [...gates.blocks];
+    const promoteBlocks = [...gatesBuy.blocks];
     if (adaptive.promote_blocked && adaptive.promote_block_reason) {
       promoteBlocks.push(adaptive.promote_block_reason);
     }
     entryGatesRaw = {
-      ...gates,
+      ...gatesBuy,
       blocks: promoteBlocks.filter(
         (b) =>
           !b.includes(GATE_BLOCK.BUY_COOLDOWN) &&
@@ -692,7 +696,7 @@ async function evaluateFlatPlay(
             : !b.includes(GATE_BLOCK.REENTRY_LOCK))
       ),
       warnings: [
-        ...gates.warnings,
+        ...gatesBuy.warnings,
         ...(adaptive.promote_min_score_boost > 0
           ? [`Telemetry promote floor +${adaptive.promote_min_score_boost}`]
           : []),
