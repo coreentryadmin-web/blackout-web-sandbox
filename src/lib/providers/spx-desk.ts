@@ -2,7 +2,8 @@ import { polygonConfigured, engineIntelOverlayEnabled, uwConfigured, deskPulseSt
 import { serverCache } from "@/lib/server-cache";
 import { safeTime } from "@/lib/safe-time";
 import { tapeDedupKey } from "@/lib/tape-dedup-key";
-import { fetchPolygonOdteDeskBundle } from "./polygon-options-gex";
+import { fetchGexHeatmap } from "./polygon-options-gex";
+import { gexPositioningFromHeatmap } from "./gex-positioning";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { flowDataAgeMs, markFlowDataFromBriefs } from "@/lib/flow-data-freshness";
 import {
@@ -12,8 +13,6 @@ import {
 import { mergeMacroEventsToday, type MacroEvent } from "./macro-events";
 import { resolveDeskGap } from "./gap-proxy";
 import {
-  analyzeStrikeGexRows,
-  computeGammaFlip,
   gammaRegime,
   topGexWalls,
   type GexStrikeLevel,
@@ -64,7 +63,6 @@ import {
   fetchUwNetFlowExpiry,
   fetchUwNetPremTicks,
   fetchUwNope,
-  fetchUwOdteGexLadder,
   fetchUwTickerFlowAlerts,
   type DarkPoolSnapshot,
   type IvTermPoint,
@@ -109,6 +107,118 @@ const GEX_STALE_MS = (() => {
   const sec = raw ? Number(raw) : 30;
   return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 30_000;
 })();
+
+type CanonicalDeskGexSnapshot = {
+  gex_net: number | null;
+  gex_king: number | null;
+  max_pain: number | null;
+  gamma_flip: number | null;
+  above_gamma_flip: boolean;
+  gamma_regime: string;
+  gex_walls: GexWall[];
+  gex_age_ms: number | null;
+  gex_stale: boolean;
+  fresh_this_cycle: boolean;
+};
+
+/** Map the shared matrix strike_totals into the gamma-desk ladder shape for wall rendering. */
+function strikeTotalsToLevels(totals: Record<string, number>): GexStrikeLevel[] {
+  return Object.entries(totals)
+    .map(([s, net]) => {
+      const strike = Number(s);
+      if (!Number.isFinite(strike) || net === 0) return null;
+      return {
+        strike,
+        net_gex: net,
+        call_gex: net > 0 ? net : 0,
+        put_gex: net < 0 ? net : 0,
+      };
+    })
+    .filter((l): l is GexStrikeLevel => l != null)
+    .sort((a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex));
+}
+
+/** King strike = argmax |net_gex| — same rule as Heat Maps ANCHOR / desk GEX Anchor. */
+function kingFromStrikeTotals(totals: Record<string, number>): number | null {
+  let king: number | null = null;
+  let best = 0;
+  const entries = Object.entries(totals)
+    .map(([s, v]) => ({ strike: Number(s), value: v }))
+    .filter((e) => Number.isFinite(e.strike))
+    .sort((a, b) => a.strike - b.strike);
+  for (const e of entries) {
+    const mag = Math.abs(e.value);
+    if (mag > best) {
+      best = mag;
+      king = e.strike;
+    }
+  }
+  return king;
+}
+
+function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
+  const flip = lastGoodGammaFlip;
+  const gRegime = gammaRegime(spot, flip);
+  const wallsFromLevels = lastGoodStrikeLevels.length
+    ? topGexWalls(lastGoodStrikeLevels, spot, GEX_WALL_LADDER_LIMIT)
+    : [];
+  const finalWalls = wallsFromLevels.length ? wallsFromLevels : lastGoodGexWalls;
+  const gexAgeMs = gexDataAgeMs();
+  return {
+    gex_net: null,
+    gex_king: null,
+    max_pain: null,
+    gamma_flip: flip,
+    above_gamma_flip: flip != null ? spot > flip : false,
+    gamma_regime: gRegime !== "unknown" ? gRegime : lastGoodGammaRegime,
+    gex_walls: finalWalls,
+    gex_age_ms: gexAgeMs,
+    gex_stale: gexAgeMs == null || gexAgeMs > GEX_STALE_MS,
+    fresh_this_cycle: false,
+  };
+}
+
+/**
+ * Single-source SPX desk structural GEX through the shared heatmap matrix
+ * (`getGexPositioning` / `gex-heatmap:SPX` cache). Replaces the old 0DTE-only
+ * `fetchPolygonOdteDeskBundle` dual path (audit F-1).
+ */
+async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSnapshot> {
+  const hm = await fetchGexHeatmap("SPX").catch(() => null);
+  const pos = gexPositioningFromHeatmap("SPX", hm);
+  if (!pos || !hm) return stickyDeskGexFallback(spot);
+
+  const levels = strikeTotalsToLevels(hm.gex.strike_totals);
+  const king = kingFromStrikeTotals(hm.gex.strike_totals);
+  const flip = pos.flip;
+  const regime = gammaRegime(spot, flip);
+  const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
+
+  if (levels.length) {
+    lastGoodStrikeLevels = levels;
+    const asofMs = Date.parse(pos.asof);
+    lastGoodGexComputedAt = Number.isFinite(asofMs) ? asofMs : Date.now();
+  }
+  if (walls.length) lastGoodGexWalls = walls;
+  if (flip != null) lastGoodGammaFlip = flip;
+  if (regime !== "unknown") lastGoodGammaRegime = regime;
+
+  const asofMs = Date.parse(pos.asof);
+  const gexAgeMs = Number.isFinite(asofMs) ? Math.max(0, Date.now() - asofMs) : gexDataAgeMs();
+
+  return {
+    gex_net: pos.net_gex,
+    gex_king: king,
+    max_pain: pos.max_pain,
+    gamma_flip: flip,
+    above_gamma_flip: flip != null ? spot > flip : false,
+    gamma_regime: regime !== "unknown" ? regime : lastGoodGammaRegime,
+    gex_walls: walls.length ? walls : lastGoodGexWalls,
+    gex_age_ms: gexAgeMs,
+    gex_stale: false,
+    fresh_this_cycle: levels.length > 0,
+  };
+}
 
 const DARK_POOL_CACHE_MS = 10_000;
 const TIDE_STALE_MS = 10_000;
@@ -876,18 +986,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   // shows a non-zero-but-stale price; surface its age + stall so the UI never labels it live.
   const spxFeed = getIndexFeedFreshness(SPX);
 
-  const [polygonBundle, polygonIvRank] = await Promise.all([
-    fetchPolygonOdteDeskBundle(price),
+  const [canonicalGex, polygonIvRank] = await Promise.all([
+    resolveCanonicalDeskGex(price),
     fetchVixIvRankPercentile(),
   ]);
-  // Polygon/Massive is the primary GEX source; when the chain comes back empty (e.g. a
-  // Massive key/plan issue), fall back to UW's GEX strike ladder so walls don't go blank.
-  let strikeRows = polygonBundle.rows;
-  let maxPain = polygonBundle.maxPain;
-  if (!strikeRows.length && uwConfigured()) {
-    const uwLadder = await fetchUwOdteGexLadder("SPX").catch(() => ({ rows: [], source: "none" }));
-    if (uwLadder.rows.length) strikeRows = uwLadder.rows;
-  }
 
   // Polygon is the sole GEX source — uwGex slot removed (UW spot-exposures are 503).
   const uwExclusive = uwConfigured()
@@ -896,13 +998,16 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
         () => fetchUwNope("SPX").catch(() => null),
         () => resolveFlow0dte("SPX"),
         () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-        () => (maxPain != null ? Promise.resolve(null) : fetchUwMaxPain("SPX").catch(() => null)),
+        () =>
+          canonicalGex.max_pain != null
+            ? Promise.resolve(null)
+            : fetchUwMaxPain("SPX").catch(() => null),
         () => (polygonIvRank != null ? Promise.resolve(null) : fetchUwIvRank("SPX").catch(() => null)),
       ])
     : [null, null, null, null, null, null];
 
   const [uwTide, uwNope, uwFlow, darkPool, uwMaxPain, uwIv] = uwExclusive;
-  if (maxPain == null) maxPain = uwMaxPain ?? null;
+  let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
 
   const session = sessionStatsFromMinuteBars(minuteBars);
   const prior = priorDayFromDailyBars(dailyBars);
@@ -910,43 +1015,20 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const lod = session.lod ?? (intel?.lod as number | null) ?? null;
   const hod = session.hod ?? (intel?.hod as number | null) ?? null;
 
-  const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
-  if (gexAnalysis.ranked_levels.length) {
-    lastGoodStrikeLevels = gexAnalysis.ranked_levels;
-    lastGoodGexComputedAt = Date.now(); // fresh chain — stamp GEX freshness (gap #7a)
-  }
-  const levelsForWalls = gexAnalysis.ranked_levels.length
-    ? gexAnalysis.ranked_levels
-    : lastGoodStrikeLevels;
-  const flipLevels = levelsForWalls.map((l) => ({
-    strike: l.strike,
-    net_gex: l.net_gex,
-  }));
-  const computedFlip = computeGammaFlip(flipLevels, price);
   const gammaFlip =
-    (intel?.gamma_flip as number | null) ?? computedFlip ?? lastGoodGammaFlip ?? null;
+    (intel?.gamma_flip as number | null) ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
-  const gRegime = gammaRegime(price, gammaFlip);
-  // 10 → a balanced ~5-per-side ladder so BOTH the call wall (resistance) and put wall
-  // (support) always render, anchored to spot (bug #93 — was put-only at limit 6).
-  const walls = topGexWalls(levelsForWalls, price, GEX_WALL_LADDER_LIMIT);
-  if (walls.length) lastGoodGexWalls = walls;
-  const finalWalls = walls.length ? walls : lastGoodGexWalls;
-  if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
-  const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
-  if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
+  const gammaRegimeLabel =
+    canonicalGex.gamma_regime !== "unknown"
+      ? canonicalGex.gamma_regime
+      : lastGoodGammaRegime;
+  const finalWalls = canonicalGex.gex_walls;
+  const gexAgeMs = canonicalGex.gex_age_ms;
+  const gexStale = canonicalGex.gex_stale;
 
-  // Gap #7a: GEX freshness. The ladder is fresh this cycle iff a chain produced ranked levels;
-  // otherwise we served sticky last-good (Massive outage). Mark stale when not-fresh AND the
-  // last good compute is older than the threshold, so a minutes-old wall is never shown as live.
-  const gexFreshThisCycle = gexAnalysis.ranked_levels.length > 0;
-  const gexAgeMs = gexDataAgeMs();
-  const gexStale = !gexFreshThisCycle && (gexAgeMs == null || gexAgeMs > GEX_STALE_MS);
-
-  // Polygon is the sole GEX source — no UW GEX fallback.
-  const gexNet = (intel?.gex_net as number | null) ?? gexAnalysis.net_gex ?? null;
-  const gexKing =
-    (intel?.gex_king as number | null) ?? gexAnalysis.gex_king_strike ?? null;
+  // Canonical matrix is the sole GEX source — no 0DTE recompute.
+  const gexNet = (intel?.gex_net as number | null) ?? canonicalGex.gex_net ?? null;
+  const gexKing = (intel?.gex_king as number | null) ?? canonicalGex.gex_king ?? null;
   maxPain = (intel?.max_pain as number | null) ?? maxPain ?? null;
 
   const regime =
@@ -1192,13 +1274,8 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
 }
 
 function gexSnapshotForPrice(price: number) {
-  const levelsForWalls = lastGoodStrikeLevels;
-  const flipLevels = levelsForWalls.map((l) => ({ strike: l.strike, net_gex: l.net_gex }));
-  const gammaFlip = computeGammaFlip(flipLevels, price) ?? lastGoodGammaFlip;
-  const walls = topGexWalls(levelsForWalls, price, GEX_WALL_LADDER_LIMIT);
-  // ISSUE-41: The previous fallback `topGexWalls(lastGoodStrikeLevels, price, 6)` was
-  // identical to the primary call (levelsForWalls IS lastGoodStrikeLevels), so it always
-  // returned the same empty result. Use lastGoodGexWalls as the real cross-call fallback.
+  const gammaFlip = lastGoodGammaFlip;
+  const walls = topGexWalls(lastGoodStrikeLevels, price, GEX_WALL_LADDER_LIMIT);
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
   const gRegime = gammaRegime(price, gammaFlip);
   return {
@@ -1424,46 +1501,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const price = spxSnap?.price ?? 0;
   if (!price && !spxFlowsRaw.length) return empty;
 
-  // Polygon/Massive is the primary GEX source; fall back to UW's GEX ladder when empty.
-  let strikeRows: Record<string, unknown>[] = [];
-  if (polygonConfigured() && price > 0) {
-    const bundle = await fetchPolygonOdteDeskBundle(price);
-    strikeRows = bundle.rows;
-  }
-  if (!strikeRows.length && uwConfigured() && price > 0) {
-    const uwLadder = await fetchUwOdteGexLadder("SPX").catch(() => ({ rows: [], source: "none" }));
-    if (uwLadder.rows.length) strikeRows = uwLadder.rows;
-  }
-
-  const gexAnalysis = analyzeStrikeGexRows(strikeRows.length ? strikeRows : []);
-  const polygonGexNet = gexAnalysis.net_gex;
-  const polygonGexKing = gexAnalysis.gex_king_strike;
-
-  if (gexAnalysis.ranked_levels.length) {
-    lastGoodStrikeLevels = gexAnalysis.ranked_levels;
-    lastGoodGexComputedAt = Date.now(); // fresh chain — stamp GEX freshness (gap #7a)
-  }
-  const levelsForWalls = gexAnalysis.ranked_levels.length
-    ? gexAnalysis.ranked_levels
-    : lastGoodStrikeLevels;
-  const flipLevels = levelsForWalls.map((l) => ({
-    strike: l.strike,
-    net_gex: l.net_gex,
-  }));
-  const spot = price || spxSnap?.price || 0;
-  const gammaFlip = computeGammaFlip(flipLevels, spot) ?? lastGoodGammaFlip;
-  const walls = topGexWalls(levelsForWalls, spot, GEX_WALL_LADDER_LIMIT);
-  const finalWalls = walls.length ? walls : lastGoodGexWalls;
-  if (finalWalls.length) lastGoodGexWalls = finalWalls;
-  if (gammaFlip != null) lastGoodGammaFlip = gammaFlip;
-  const gRegime = gammaRegime(spot, gammaFlip);
-  const gammaRegimeLabel = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
-  if (gRegime !== "unknown") lastGoodGammaRegime = gRegime;
-
-  // Gap #7a: fresh iff a chain produced ranked levels this cycle; else sticky last-good walls.
-  const gexFreshThisCycle = gexAnalysis.ranked_levels.length > 0;
-  const gexAgeMs = gexDataAgeMs();
-  const gexStale = !gexFreshThisCycle && (gexAgeMs == null || gexAgeMs > GEX_STALE_MS);
+  const canonicalGex = price > 0 ? await resolveCanonicalDeskGex(price) : stickyDeskGexFallback(0);
 
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
@@ -1475,6 +1513,8 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
   }
   const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
+
+  const spot = price || spxSnap?.price || 0;
 
   publishDeskStickyToRedis();
 
@@ -1491,19 +1531,18 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
     strike_stacks,
-    gex_walls: finalWalls,
-    // Polygon is the sole GEX source — no UW GEX fallback.
-    gex_net: polygonGexNet ?? null,
-    gex_king: polygonGexKing ?? null,
-    gamma_flip: gammaFlip,
-    above_gamma_flip: gammaFlip != null ? spot > gammaFlip : false,
-    gamma_regime: gammaRegimeLabel,
+    gex_walls: canonicalGex.gex_walls,
+    gex_net: canonicalGex.gex_net,
+    gex_king: canonicalGex.gex_king,
+    gamma_flip: canonicalGex.gamma_flip,
+    above_gamma_flip: canonicalGex.above_gamma_flip,
+    gamma_regime: canonicalGex.gamma_regime,
     flow_0dte_call_premium: uwFlow?.call_premium ?? null,
     flow_0dte_put_premium: uwFlow?.put_premium ?? null,
     flow_0dte_net: uwFlow?.net ?? null,
     flow_data_age_ms: flowDataAgeMs(),
-    gex_age_ms: gexAgeMs,
-    gex_stale: gexStale,
+    gex_age_ms: canonicalGex.gex_age_ms,
+    gex_stale: canonicalGex.gex_stale,
     net_prem_ticks: netPremTicks,
     flow_by_expiry: flowByExpiry,
     net_flow_by_expiry: netFlowByExpiry,
