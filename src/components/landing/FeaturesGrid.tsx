@@ -21,7 +21,7 @@ type Weapon = {
   size?: "flagship" | "wide";
 };
 
-const ARSENAL: Weapon[] = [
+const INSTRUMENTS: Weapon[] = [
   {
     mark: "spx",
     accentKey: "green",
@@ -31,13 +31,13 @@ const ARSENAL: Weapon[] = [
     meta: "Instrument · 01",
     href: "/dashboard",
     size: "flagship",
-    desc: "The 0DTE command desk — live SPX with VWAP, gamma and internals, plus a graded play card that tells you the setup and the one thing that kills it.",
+    desc: "The primary 0DTE desk — live SPX with VWAP, gamma and internals, plus a graded play card that states the setup and the invalidation level.",
   },
   {
     mark: "helix",
     accentKey: "purple",
     accent: MARK_ACCENT.helix,
-    name: "HELIX",
+    name: "Helix",
     spec: "Whale · Dark Pool",
     meta: "Instrument · 02",
     href: "/flows",
@@ -78,7 +78,7 @@ const ARSENAL: Weapon[] = [
     accentKey: "gold",
     accent: MARK_ACCENT.grid,
     name: "BlackOut Grid",
-    spec: "Market-Intelligence Command Center",
+    spec: "News · Flow · Analysts",
     meta: "Instrument · 06",
     href: "/grid",
     desc: "The whole tape on one board — a live masonry of market-wide news, notable flow, analyst actions and the market pulse, so you read the entire session at a glance.",
@@ -118,36 +118,21 @@ export function FeaturesGrid() {
           viewport={{ once: true }}
           className="mb-14 md:mb-20 text-center"
         >
-          <p className="font-mono text-[10px] tracking-[0.5em] text-bull uppercase mb-3 flex items-center justify-center gap-2">
-            <span
-              aria-hidden
-              className="inline-block h-[6px] w-[6px] rounded-full bg-bull animate-pulse motion-reduce:animate-none"
-              style={{ boxShadow: "0 0 10px #00e676" }}
-            />
-            The Desk · 6 Instruments
+          <p className="font-mono text-[10px] tracking-[0.35em] text-secondary uppercase mb-3">
+            Platform · 6 instruments
           </p>
-          <h2 className="font-anton text-5xl md:text-[4.5rem] leading-[0.92] tracking-tight text-white">
-            THE{" "}
-            <span
-              style={{
-                background: "linear-gradient(90deg,#00e676,#34d399 55%,#7dd3fc)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
-            >
-              ARSENAL.
-            </span>
+          <h2 className="font-syne text-4xl md:text-5xl font-bold tracking-tight text-white">
+            The full desk
           </h2>
           <p className="mt-5 text-[15px] leading-relaxed text-secondary max-w-2xl mx-auto">
-            One membership. The whole desk — every instrument the floor runs on, in one screen.
+            One membership. Every instrument on a single screen — structure, flow, positioning, and AI.
           </p>
         </motion.div>
 
         {/* EDITORIAL BENTO — asymmetric: SPX is a 2x2 flagship, Pre-Market a full-width
             band, the rest standard tiles. Breaks the uniform-grid sameness. */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:auto-rows-fr items-stretch">
-          {ARSENAL.map((w, i) => {
+          {INSTRUMENTS.map((w, i) => {
             const isFlagship = w.size === "flagship";
             const isWide = w.size === "wide";
             const spanClass = isFlagship

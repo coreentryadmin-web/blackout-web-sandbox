@@ -94,14 +94,7 @@ export function VelocityRadar({
                     </span>
                   </div>
                   <div className="text-right">
-                    <span
-                      className="font-mono font-black tabular-nums"
-                      style={{
-                        fontSize: "16px",
-                        color: "#fb923c",
-                        textShadow: "0 0 10px rgba(251,146,60,0.6)",
-                      }}
-                    >
+                    <span className="font-mono text-base font-black tabular-nums text-orange-300">
                       {e.ratio.toFixed(1)}×
                     </span>
                   </div>
@@ -122,14 +115,7 @@ export function VelocityRadar({
                   <span className="font-mono text-[11px] text-sky-300">
                     {e.recent} prints last 15m · {e.prior} prior
                   </span>
-                  <span
-                    className="font-mono font-bold tabular-nums"
-                    style={{
-                      fontSize: "12px",
-                      color: "#fb923c",
-                      textShadow: "0 0 8px rgba(251,146,60,0.5)",
-                    }}
-                  >
+                  <span className="font-mono text-xs font-bold tabular-nums text-orange-300">
                     {fmtPremium(e.recentPremium)}
                   </span>
                 </div>

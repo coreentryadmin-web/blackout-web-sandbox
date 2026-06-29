@@ -48,7 +48,7 @@ const TERMS: { key: Term; label: string; tag?: string }[] = [
 
 const PREMIUM_FEATURES = [
   "HELIX live options-flow feed",
-  "SPX Slayer · 0DTE command desk",
+  "SPX Slayer · 0DTE desk",
   "Largo AI desk analyst",
   "Dealer gamma / GEX positioning",
   "Dark-pool prints",

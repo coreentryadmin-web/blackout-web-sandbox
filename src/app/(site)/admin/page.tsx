@@ -16,8 +16,8 @@ export default async function AdminPage() {
         <PageHeader
           className="mb-6"
           kicker="Operations"
-          title="ADMIN"
-          subtitle="Live engine, incidents, API command & desk telemetry — the BlackOut control room."
+          title="Admin"
+          subtitle="Engine health, incidents, API telemetry, and desk analytics."
           badge={<ProductMark product="spx" size={44} />}
         />
         <Suspense fallback={<p className="admin-api-muted p-6">Loading admin…</p>}>
@@ -25,7 +25,7 @@ export default async function AdminPage() {
         </Suspense>
 
         <div className="mt-10 mb-2 px-1">
-          <h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">◈ Signal Intelligence</h2>
+          <h2 className="text-xs font-mono text-white/40 uppercase tracking-widest">Signal analytics</h2>
           <p className="text-xs text-white/20 font-mono mt-0.5">Per-signal accuracy vs baseline — which factors have real predictive alpha</p>
         </div>
         <Suspense fallback={<p className="admin-api-muted p-6">Loading signal analytics…</p>}>

@@ -49,8 +49,8 @@ export function MarqueeStrip({
             }`}
           >
             {item}
-            <span className="landing-marquee-dot opacity-80" style={{ textShadow: "0 0 8px #00e676" }}>
-              ◆
+            <span className="landing-marquee-dot text-mute/60" aria-hidden>
+              ·
             </span>
           </span>
         ))}

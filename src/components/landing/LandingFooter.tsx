@@ -8,7 +8,7 @@ const SUPPORT_EMAIL = "support@blackouttrades.com";
 const BILLING_EMAIL = "billing@blackouttrades.com";
 const YEAR = 2026;
 
-const ARSENAL = [
+const INSTRUMENTS = [
   { label: "SPX Slayer", href: "/dashboard" },
   { label: "HELIX Flow", href: "/flows" },
   { label: "Heatmaps", href: "/heatmap" },
@@ -179,7 +179,7 @@ export function LandingFooter() {
             </div>
           </motion.div>
 
-          <FooterCol title="Instruments" items={ARSENAL} index={1} />
+          <FooterCol title="Instruments" items={INSTRUMENTS} index={1} />
           <FooterCol title="Platform" items={PLATFORM} index={2} />
 
           {/* disclaimer column */}

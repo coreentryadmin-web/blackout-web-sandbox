@@ -105,24 +105,15 @@ export function StrikeStackDetector({
 
                     <div className="flex items-center justify-between mt-1.5 gap-2">
                       <p className="font-mono flex items-center gap-1.5">
-                        <span
-                          className="font-bold tabular-nums"
-                          style={{
-                            fontSize: "13px",
-                            color: "#ffd23f",
-                            textShadow: "0 0 10px rgba(255,210,63,0.6)",
-                          }}
-                        >
+                    <span className="font-bold tabular-nums text-[13px] text-gold">
                           {stack.strike}{isCall ? "C" : "P"}
                         </span>
                         <span className="text-cyan-400 text-[10px]">·</span>
                         <span
-                          className="font-semibold"
-                          style={{
-                            fontSize: "12px",
-                            color: isCall ? "#6ee7b7" : "#fda4af",
-                            textShadow: isCall ? "0 0 8px rgba(110,231,183,0.5)" : "0 0 8px rgba(253,164,175,0.5)",
-                          }}
+                          className={clsx(
+                            "font-semibold text-[12px]",
+                            isCall ? "text-bull" : "text-bear-text"
+                          )}
                         >
                           {fmtExpiry(stack.expiry)}
                         </span>

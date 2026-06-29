@@ -9,8 +9,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
   const label = meta?.label ?? "This tool";
 
   return (
-    <div className="relative flex min-h-[calc(100svh-var(--nav-offset,4rem))] flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="platform-dot-grid" aria-hidden />
+    <div className="relative flex min-h-[calc(100svh-var(--nav-offset,4rem))] flex-col items-center justify-center px-6 py-16 text-center bg-[#040407]">
       <div className="relative z-10 flex max-w-lg flex-col items-center gap-6">
         <div className="relative">
           {meta ? <ProductMark product={meta.product} size={76} /> : null}
@@ -37,7 +36,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
 
         <p className="text-sm text-mute">
           Available now: <strong className="font-semibold text-white">SPX Slayer</strong> and{" "}
-          <strong className="font-semibold text-white">HELIX</strong>.
+          <strong className="font-semibold text-white">Helix</strong>.
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
@@ -51,7 +50,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
             href="/flows"
             className="rounded-md border border-white/10 px-5 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-secondary transition-colors hover:border-white/20 hover:text-white"
           >
-            HELIX flow tape
+            Helix flow tape
           </Link>
         </div>
       </div>

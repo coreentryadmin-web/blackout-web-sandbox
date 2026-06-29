@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { clsx } from "clsx";
 import { Skeleton } from "@/components/ui";
 
 // One shared brief per 15-min window — generated server-side for all users
@@ -168,24 +169,24 @@ export function FlowBrief() {
             {showAfterHours ? (
               <>
                 <div className="relative">
-                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#bf5fff", boxShadow: "0 0 8px #bf5fff" }} />
-                  <span className="absolute inset-0 rounded-full animate-ping opacity-30 motion-reduce:animate-none" style={{ background: "#bf5fff" }} />
+                  <span className="badge-live-dot w-2 h-2 block relative z-10 bg-purple-light/80" />
+                  <span className="absolute inset-0 rounded-full animate-ping opacity-30 motion-reduce:animate-none bg-purple-light/40" />
                 </div>
-                <span className="font-mono text-[10px] tracking-[0.35em] uppercase font-bold" style={{ color: "#d580ff", textShadow: "0 0 10px rgba(191,95,255,0.8)" }}>
-                  AFTER-HOURS
+                <span className="font-mono text-[10px] tracking-[0.35em] uppercase font-bold text-purple-light">
+                  After hours
                 </span>
               </>
             ) : (
               <>
                 <div className="relative">
-                  <span className="w-2 h-2 rounded-full block relative z-10" style={{ background: "#bf5fff", boxShadow: "0 0 8px #bf5fff" }} />
-                  <span className="absolute inset-0 rounded-full animate-ping opacity-50 motion-reduce:animate-none" style={{ background: "#bf5fff" }} />
+                  <span className="badge-live-dot w-2 h-2 block relative z-10 bg-purple-light/80" />
+                  <span className="absolute inset-0 rounded-full animate-ping opacity-50 motion-reduce:animate-none bg-purple-light/40" />
                 </div>
-                <span className="font-mono text-[10px] tracking-[0.35em] uppercase font-bold" style={{ color: "#d580ff", textShadow: "0 0 8px rgba(191,95,255,0.7)" }}>
-                  AI BRIEF
+                <span className="font-mono text-[10px] tracking-[0.35em] uppercase font-bold text-purple-light">
+                  AI brief
                 </span>
-                <span className="font-mono text-[10px] tracking-[0.2em] uppercase" style={{ color: "#00e676", textShadow: "0 0 6px rgba(0,230,118,0.6)" }}>
-                  · LIVE
+                <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-bull">
+                  · Live
                 </span>
                 {brief && fmtAsOf(generatedAt) && (
                   <span className="font-mono text-[10px] tracking-[0.15em] text-sky-300 normal-case">
@@ -210,17 +211,10 @@ export function FlowBrief() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.4 }}
-                className="flex-1 font-mono leading-relaxed font-medium"
-                style={showAfterHours ? {
-                  color: "#d580ff",
-                  fontSize: "11px",
-                  fontStyle: "italic",
-                  textShadow: "0 0 12px rgba(191,95,255,0.4)",
-                } : {
-                  color: "#f0f0f0",
-                  fontSize: "12px",
-                  textShadow: "0 0 1px rgba(255,255,255,0.3)",
-                }}
+                className={clsx(
+                  "flex-1 font-mono leading-relaxed font-medium",
+                  showAfterHours ? "text-[11px] italic text-purple-light/90" : "text-xs text-white/90"
+                )}
               >
                 {displayText}
               </motion.p>

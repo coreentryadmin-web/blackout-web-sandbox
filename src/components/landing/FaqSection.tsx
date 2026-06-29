@@ -48,7 +48,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
   arsenal: [
     {
       q: "What is the SPX Slayer desk?",
-      a: "The 0DTE command desk. Live SPX with VWAP, gamma exposure and market internals, plus a graded PLAY CARD: a letter grade (A-F), a numeric score and a confidence read, an 11-point confirmation checklist (MTF, trend, structure, VWAP, flow, dark pool, tide, internals, catalyst, dealer GEX, vol regime), a suggested strike with entry / target / stop — and, critically, the invalidation: the one thing that kills the trade. It answers 'what's the setup, and what's the risk' in a single glance.",
+      a: "The primary 0DTE desk. Live SPX with VWAP, gamma exposure and market internals, plus a graded play card: letter grade (A–F), numeric score, confidence read, an 11-point confirmation checklist (MTF, trend, structure, VWAP, flow, dark pool, tide, internals, catalyst, dealer GEX, vol regime), a suggested strike with entry / target / stop — and the invalidation level. It answers what's the setup and what's the risk in a single glance.",
     },
     {
       q: "What is Largo, the AI desk analyst?",

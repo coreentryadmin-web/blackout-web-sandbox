@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { clsx } from "clsx";
 import { fmtPremium } from "@/lib/api";
 import { SECTOR_ORDER } from "@/lib/sector-map";
 import { Panel } from "@/components/ui";
@@ -67,16 +68,10 @@ export function SectorFlowPanel({
                       {e.callPct}% C
                     </span>
                     <span
-                      className="font-mono font-bold tabular-nums"
-                      style={{
-                        fontSize: "13px",
-                        color: isBull ? "#00e676" : isBear ? "#ff2d55" : "#ffffff",
-                        textShadow: isBull
-                          ? "0 0 8px rgba(0,230,118,0.5)"
-                          : isBear
-                            ? "0 0 8px rgba(255,45,85,0.5)"
-                            : "none",
-                      }}
+                      className={clsx(
+                        "font-mono text-[13px] font-bold tabular-nums",
+                        isBull ? "num-bull" : isBear ? "num-bear" : "text-white"
+                      )}
                     >
                       {fmtPremium(e.total)}
                     </span>

@@ -548,7 +548,7 @@ export function FlowFeed() {
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Premium presets */}
-        <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold hidden sm:block" style={{color:"#00e676",textShadow:"0 0 8px rgba(0,230,118,0.6)"}}>MIN</span>
+        <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-bull hidden sm:block">MIN</span>
         <div className="flow-seg-group">
           {PREMIUM_PRESETS.map((v) => (
             <button
@@ -602,7 +602,6 @@ export function FlowFeed() {
               "border-[rgba(0,230,118,0.35)] text-[#00e676] placeholder:text-[rgba(0,230,118,0.35)]",
               "focus:border-[rgba(0,230,118,0.8)] focus:ring-2 focus:ring-[rgba(0,230,118,0.15)] transition-all"
             )}
-            style={{ textShadow: tickerFilter ? "0 0 10px rgba(0,230,118,0.6)" : "none" }}
           />
           <AnimatePresence>
             {tickerFilter && (

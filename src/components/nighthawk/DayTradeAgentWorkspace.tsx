@@ -142,16 +142,14 @@ export function DayTradeAgentWorkspace({ open, onClose }: DayTradeAgentWorkspace
           aria-modal="true"
           aria-labelledby="dayhawk-workspace-title"
         >
-          <div className="dayhawk-workspace-scanlines" aria-hidden />
-
           <header className="dayhawk-workspace-header">
             <div>
               <p className="dayhawk-workspace-kicker">{config.tagline}</p>
               <h1 id="dayhawk-workspace-title" className="dayhawk-workspace-title">
-                Day Hawk Command
+                Day Hawk
               </h1>
               <p className="dayhawk-workspace-sub">
-                Agentic intraday recon · flow dossiers · live 0DTE chains
+                Intraday analysis · flow dossiers · live 0DTE chains
               </p>
             </div>
             <div className="dayhawk-workspace-header-actions">

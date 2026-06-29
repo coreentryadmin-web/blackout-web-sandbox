@@ -141,26 +141,13 @@ export function NightHawkFlowPanel({
                         {flowData.printCount} prints · top {fmtPremium(flowData.topPrint)}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span
-                          className="font-mono text-[12px] font-bold"
-                          style={{ color: "#34d399", textShadow: "0 0 6px rgba(52,211,153,0.5)" }}
-                        >
+                        <span className="font-mono text-[12px] font-bold text-bull">
                           {callPct}% C
                         </span>
-                        <span
-                          className="font-mono text-[12px] font-bold"
-                          style={{ color: "#fb7185", textShadow: "0 0 6px rgba(251,113,133,0.5)" }}
-                        >
+                        <span className="font-mono text-[12px] font-bold text-bear-text">
                           {100 - callPct}% P
                         </span>
-                        <span
-                          className="font-mono font-bold tabular-nums"
-                          style={{
-                            fontSize: "13px",
-                            color: "#a5b4fc",
-                            textShadow: "0 0 8px rgba(165,180,252,0.5)",
-                          }}
-                        >
+                        <span className="font-mono text-[13px] font-bold tabular-nums text-sky-300">
                           {fmtPremium(flowData.totalPremium)}
                         </span>
                       </div>

@@ -41,14 +41,7 @@ export const PageShell = forwardRef<HTMLElement, PageShellProps>(function PageSh
         (backdropSlot ?? (
           <div
             aria-hidden
-            className="pointer-events-none fixed inset-0 -z-10"
-            style={{
-              backgroundColor: "#040407",
-              backgroundImage:
-                "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(0,230,118,0.13), transparent 55%)," +
-                "radial-gradient(ellipse 50% 40% at 0% 50%, rgba(191,95,255,0.08), transparent 55%)," +
-                "radial-gradient(ellipse 50% 40% at 100% 60%, rgba(255,45,85,0.06), transparent 55%)",
-            }}
+            className="pointer-events-none fixed inset-0 -z-10 bg-[#040407]"
           />
         ))}
       <div

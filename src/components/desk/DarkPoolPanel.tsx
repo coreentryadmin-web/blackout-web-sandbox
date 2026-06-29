@@ -89,13 +89,10 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
     >
       {/* Side arrow */}
       <span
-        className="font-mono text-[14px] font-black w-4 flex-shrink-0"
-        style={{
-          color: isBuy ? "#00e676" : isSell ? "#ff2d55" : "#7dd3fc",
-          textShadow: isBuy  ? "0 0 6px rgba(0,230,118,0.7)"
-                    : isSell ? "0 0 6px rgba(255,45,85,0.7)"
-                    : "none",
-        }}
+        className={clsx(
+          "font-mono text-[14px] font-black w-4 flex-shrink-0",
+          isBuy ? "text-bull" : isSell ? "text-bear-text" : "text-sky-300"
+        )}
       >
         {isBuy ? "↑" : isSell ? "↓" : "—"}
       </span>
@@ -120,14 +117,10 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
 
       {/* Block value */}
       <span
-        className="font-mono font-bold tabular-nums ml-auto flex-shrink-0"
-        style={{
-          fontSize: "15px",
-          color: isBuy ? "#00e676" : isSell ? "#ff2d55" : "#f4f6fb",
-          textShadow: isBuy  ? "0 0 10px rgba(0,230,118,0.55)"
-                    : isSell ? "0 0 10px rgba(255,45,85,0.55)"
-                    : "none",
-        }}
+        className={clsx(
+          "font-mono text-[15px] font-bold tabular-nums ml-auto flex-shrink-0",
+          isBuy ? "num-bull" : isSell ? "num-bear" : "text-white"
+        )}
       >
         {fmtPremium(p.premium)}
       </span>
@@ -201,11 +194,7 @@ export function DarkPoolPanel() {
       header={
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/10 px-5 py-4 md:px-6">
           <div className="flex items-center gap-2 flex-shrink-0">
-            <motion.span
-              {...pulse}
-              className="text-[11px]"
-              style={{ color: "#bf5fff", textShadow: "0 0 8px rgba(191,95,255,0.6)" }}
-            >
+            <motion.span {...pulse} className="text-[11px] text-purple-light">
               ⬡
             </motion.span>
             <h3 className="t-label text-[15px] uppercase leading-tight text-white">Dark Pool</h3>
@@ -273,23 +262,15 @@ export function DarkPoolPanel() {
                   </div>
                   {visible.length > 0 && (
                     <div className="flex items-center gap-3">
-                      <span
-                        className="font-mono font-bold tabular-nums"
-                        style={{
-                          fontSize: "15px",
-                          color: "#d580ff",
-                          textShadow: "0 0 10px rgba(191,95,255,0.5)",
-                        }}
-                      >
+                      <span className="font-mono text-[15px] font-bold tabular-nums text-purple-light">
                         {fmtPremium(tickerTotal)}
                       </span>
                       <span
-                        className="font-mono text-[11px] font-bold px-2 py-0.5 rounded"
+                        className="font-mono text-[11px] font-bold px-2 py-0.5 rounded border"
                         style={{
                           color: bias.color,
                           background: "rgba(0,0,0,0.5)",
-                          border: `1px solid ${bias.color}44`,
-                          boxShadow: `0 0 8px ${bias.glow}`,
+                          borderColor: `${bias.color}44`,
                         }}
                       >
                         {bias.label}
@@ -304,12 +285,11 @@ export function DarkPoolPanel() {
             {!activeTicker && !loading && allPrints.length > 0 && (
               <div className="flex items-center gap-3 px-1 mb-2">
                 <span
-                  className="font-mono text-[11px] font-bold px-2 py-0.5 rounded"
+                  className="font-mono text-[11px] font-bold px-2 py-0.5 rounded border"
                   style={{
                     color: bias.color,
                     background: "rgba(0,0,0,0.5)",
-                    border: `1px solid ${bias.color}44`,
-                    boxShadow: `0 0 8px ${bias.glow}`,
+                    borderColor: `${bias.color}44`,
                   }}
                 >
                   {bias.label}
@@ -320,8 +300,8 @@ export function DarkPoolPanel() {
                   </div>
                 )}
                 <span
-                  className="font-mono text-[12px] font-bold tabular-nums"
-                  style={{ color: sparkColor, textShadow: `0 0 8px ${sparkColor}66` }}
+                  className="font-mono text-xs font-bold tabular-nums"
+                  style={{ color: sparkColor }}
                 >
                   {isBull ? "+" : ""}{fmtPremium(latestNet)}
                 </span>

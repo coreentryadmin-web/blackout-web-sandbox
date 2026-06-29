@@ -14,6 +14,7 @@ import {
   TabPanels,
   TabPanel,
 } from "@/components/ui";
+import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitives";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
@@ -645,38 +646,6 @@ function cellTextStyle(value: number, peak: number): React.CSSProperties {
 const PRESET_TICKERS = [
   "SPY", "SPX", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "AMD", "META", "AMZN", "GOOGL",
 ];
-
-/**
- * ANCHOR marker — a clean inline ◆ diamond glyph marking the dominant dealer-gamma node
- * (the strongest pin/anchor; renamed from "Magnet"). Pure SVG so it's pixel-stable
- * everywhere, inherits `currentColor` (we drive it BRIGHT WHITE via the wrapping span's
- * text color — the neutral anchor hue, with gold freed for the +GEX peak), and carries no
- * motion (static — reduced-motion safe). `size` scales it inline with adjacent text.
- * aria-hidden: the meaning is always carried by an adjacent text label.
- */
-function AnchorGlyph({ size = 11, className }: { size?: number; className?: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden
-      className={className}
-      style={{ display: "inline-block", verticalAlign: "-0.12em" }}
-    >
-      {/* ◆ diamond — a hollow ring/outline (no fill) so it reads as a neutral white anchor
-          marker. Stroke uses currentColor so the parent's white text color tints it. */}
-      <path
-        d="M12 2.5L21.5 12L12 21.5L2.5 12Z"
-        stroke="currentColor"
-        strokeWidth={2.4}
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Exposure profile (the hero) — vertical strike ladder of net exposure bars
@@ -2514,16 +2483,6 @@ function KeyLevelBox({ cells, kicker }: { cells: LevelCell[]; kicker: string }) 
   );
 }
 
-/** Small panel header label — sits above each paired view (Step 3). Module-level so it
- *  isn't redefined per render (no nested-component remount churn). */
-function PanelLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300">
-      {children}
-    </div>
-  );
-}
-
 export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
@@ -3561,7 +3520,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             dealer walls park. Only shown once the axis actually carries a monthly column. */}
         {monthlyExpiries.length > 0 && (
           <span className="flex items-center gap-1.5 text-gold/80" title="Standard monthly / quarterly OpEx expiry">
-            <span aria-hidden className="text-gold">◆</span>
+            <span aria-hidden className="text-gold text-[9px] font-bold">M</span>
             <span aria-hidden>monthly OpEx</span>
           </span>
         )}
@@ -3609,7 +3568,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                       )}
                     >
                       {fmtExpiry(e)}
-                      {isMonthly && <span aria-hidden className="ml-0.5 text-gold/70">◆</span>}
+                      {isMonthly && <span aria-hidden className="ml-0.5 text-[9px] font-bold text-gold/80">M</span>}
                     </th>
                   );
                 })}

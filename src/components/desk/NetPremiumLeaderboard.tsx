@@ -74,21 +74,15 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
                     <span className={clsx(
                       "font-mono text-[10px] font-bold tracking-wider",
                       isBull ? "text-bull" : "text-bear-text"
-                    )}
-                    style={isBull
-                      ? { textShadow: "0 0 8px rgba(0,230,118,0.7)" }
-                      : { textShadow: "0 0 8px rgba(255,45,85,0.7)" }
-                    }>
+                    )}>
                       {isBull ? "▲" : "▼"} {row.callPct}%
                     </span>
                   </div>
                   <span
-                    className="font-mono font-bold tabular-nums"
-                    style={{
-                      fontSize: "13px",
-                      color: isBull ? "#00e676" : "#ff2d55",
-                      textShadow: isBull ? "0 0 10px rgba(0,230,118,0.6)" : "0 0 10px rgba(255,45,85,0.6)",
-                    }}
+                    className={clsx(
+                      "font-mono text-[13px] font-bold tabular-nums",
+                      isBull ? "num-bull" : "num-bear"
+                    )}
                   >
                     {isBull ? "+" : ""}{fmtPremium(row.net)}
                   </span>
