@@ -500,7 +500,7 @@ export async function queryLargoStream(
   question: string,
   sessionId: string,
   onToken: (text: string) => void
-): Promise<{ answer: string; session_id: string; source?: string; tools_used?: string[] }> {
+): Promise<{ answer: string; session_id: string; source?: string; tools_used?: string[]; followups?: string[] }> {
   const res = await fetch(`${MARKET_BASE}/largo/query?stream=1`, {
     method: "POST",
     cache: "no-store",
@@ -521,8 +521,9 @@ export async function queryLargoStream(
 
   const decoder = new TextDecoder();
   let buffer = "";
-  let result: { answer: string; session_id: string; source?: string; tools_used?: string[] } | null =
-    null;
+  let result:
+    | { answer: string; session_id: string; source?: string; tools_used?: string[]; followups?: string[] }
+    | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -546,6 +547,7 @@ export async function queryLargoStream(
         session_id?: string;
         source?: string;
         tools_used?: string[];
+        followups?: string[];
       };
 
       if (event.type === "token" && event.text) onToken(event.text);
@@ -555,6 +557,7 @@ export async function queryLargoStream(
           session_id: event.session_id,
           source: event.source,
           tools_used: event.tools_used,
+          followups: event.followups,
         };
       }
       if (event.type === "error") {

@@ -35,6 +35,9 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  // Dynamic, conversation-aware follow-up prompts returned with each answer (replaces the
+  // fixed starter chips once the conversation is underway).
+  const [followups, setFollowups] = useState<string[]>([]);
   const sessionId = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgId = useRef(1);
@@ -74,6 +77,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     if (!q || loading || !hydrated) return;
 
     setInput("");
+    setFollowups([]); // clear stale follow-ups while the new turn runs
     const userId = `u-${++msgId.current}`;
     setMessages((m) => [...m.filter((x) => x.id !== "welcome"), { id: userId, role: "user", content: q }]);
     setLoading(true);
@@ -100,6 +104,7 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
             : msg
         )
       );
+      setFollowups(Array.isArray(res.followups) ? res.followups.slice(0, 3) : []);
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
       let content =
@@ -219,6 +224,32 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
               <p className="largo-suggestions-label">Try asking</p>
               <div className="largo-suggestions-grid">
                 {LARGO_SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="largo-suggestion-chip"
+                    onClick={() => void runQuery(s)}
+                  >
+                    <span aria-hidden className="largo-suggestion-arrow">▸</span>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Dynamic, conversation-aware follow-ups — generated from the last exchange,
+              shown after each answer. One tap continues the thread. */}
+          {!isFresh && !loading && followups.length > 0 && (
+            <motion.div
+              className="largo-suggestions largo-followups"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <p className="largo-suggestions-label">Ask next</p>
+              <div className="largo-suggestions-grid">
+                {followups.map((s) => (
                   <button
                     key={s}
                     type="button"

@@ -1,6 +1,8 @@
 import {
   anthropicConfigured,
+  anthropicText,
   anthropicToolLoop,
+  COMMENTARY_MODEL,
   LARGO_MODEL,
   type AnthropicMessage,
   type AnthropicSystemBlock,
@@ -48,8 +50,51 @@ export type LargoStreamEvent =
       session_id: string;
       source: string;
       tools_used: string[];
+      followups: string[];
     }
   | { type: "error"; message: string };
+
+/**
+ * Dynamic follow-up prompts — 3 short questions that continue THIS exact exchange
+ * (same ticker/topic, drilling deeper or pivoting logically), generated from the
+ * user's question + Largo's answer on a cheap fast model. Replaces the old fixed
+ * suggestion chips. Fail-open: returns [] on any error / no key / spend-ceiling, so
+ * follow-ups are a pure enhancement that never blocks or breaks the answer.
+ */
+export async function generateLargoFollowups(
+  question: string,
+  answer: string,
+  tickerHint?: string | null
+): Promise<string[]> {
+  if (!anthropicConfigured() || !answer.trim()) return [];
+  const focus = tickerHint ? ` The current focus is ${tickerHint}.` : "";
+  const prompt = `You generate follow-up questions for Largo, an institutional options/markets AI desk.${focus}
+
+The member asked: "${question}"
+
+Largo answered:
+"""
+${answer.slice(0, 1800)}
+"""
+
+Write exactly 3 follow-up questions the member would most naturally ask NEXT — each a direct continuation of THIS exchange (reference the same ticker/setup/topic; drill deeper, stress-test, or pivot to the logical next angle). Specific and trader-relevant, not generic. Each ≤ 9 words, plain text, no numbering, no quotes. Return ONLY the 3 questions, one per line.`;
+  try {
+    const out = await anthropicText(prompt, 160, undefined, {
+      model: COMMENTARY_MODEL,
+      temperature: 0.7,
+      timeoutMs: 12_000,
+      maxRetries: 1,
+    });
+    if (!out) return [];
+    return out
+      .split("\n")
+      .map((l) => l.replace(/^[\s\-*•\d.)]+/, "").replace(/^["']|["']$/g, "").trim())
+      .filter((l) => l.length > 0 && l.length <= 90)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
 
 function trimHistory(history: AnthropicMessage[]) {
   if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
@@ -121,6 +166,7 @@ async function prepareLargoTurn(
   system: AnthropicSystemBlock[];
   filteredTools: typeof LARGO_TOOL_DEFS;
   toolsUsed: string[];
+  tickerHint: string | null;
 }> {
   const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
   await ensureLargoSession(sid, userId);
@@ -145,19 +191,19 @@ async function prepareLargoTurn(
   const allowedToolNames = new Set(getToolsForIntent(question));
   const filteredTools = LARGO_TOOL_DEFS.filter((t) => allowedToolNames.has(t.name));
 
-  return { sid, history, system, filteredTools, toolsUsed };
+  return { sid, history, system, filteredTools, toolsUsed, tickerHint: intent.tickerHint ?? null };
 }
 
 export async function runLargoQuery(
   question: string,
   sessionId: string,
   userId: string
-): Promise<{ answer: string; session_id: string; source: string; tools_used: string[] }> {
+): Promise<{ answer: string; session_id: string; source: string; tools_used: string[]; followups: string[] }> {
   if (!anthropicConfigured()) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  const { sid, history, system, filteredTools, toolsUsed } = await prepareLargoTurn(
+  const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
     question,
     sessionId,
     userId
@@ -191,11 +237,14 @@ export async function runLargoQuery(
     await appendLargoMessage(sid, userId, "user", question);
     await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)));
 
+    const followups = await generateLargoFollowups(question, text, tickerHint);
+
     return {
       answer: text,
       session_id: sid,
       source: dbConfigured() ? "blackout-web+postgres" : "blackout-web",
       tools_used: Array.from(new Set(toolsUsed)),
+      followups,
     };
   } finally {
     resetLargoSpxDeskCache(userId);
@@ -213,7 +262,7 @@ export async function runLargoQueryStream(
     return;
   }
 
-  const { sid, history, system, filteredTools, toolsUsed } = await prepareLargoTurn(
+  const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
     question,
     sessionId,
     userId
@@ -257,12 +306,17 @@ export async function runLargoQueryStream(
     await appendLargoMessage(sid, userId, "user", question);
     await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)));
 
+    // Dynamic, conversation-aware follow-up prompts (fail-open → []). Generated after the
+    // answer is persisted so a follow-up hiccup can never lose the turn.
+    const followups = await generateLargoFollowups(question, text, tickerHint);
+
     emit({
       type: "done",
       answer: text,
       session_id: sid,
       source: dbConfigured() ? "blackout-web+postgres" : "blackout-web",
       tools_used: Array.from(new Set(toolsUsed)),
+      followups,
     });
   } catch (error) {
     if (isSseClientDisconnect(error)) return;
