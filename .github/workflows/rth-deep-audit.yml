@@ -4,6 +4,7 @@
 #   CRON_SECRET          — same as Railway blackout-web
 #   POLYGON_API_KEY      — optional but recommended (SPX oracle)
 #   DATABASE_PUBLIC_URL  — optional (Postgres writer/cron freshness)
+#   SENTRY_AUTH_TOKEN    — optional (Sentry token smoke)
 #
 # Schedule: 10:00 + 14:00 + 16:30 ET (dual cron covers EDT/EST).
 
@@ -26,6 +27,10 @@ on:
         description: "Public HTTP smoke only (skip deep audit)"
         type: boolean
         default: false
+      force:
+        description: "Run Postgres writer checks even off RTH"
+        type: boolean
+        default: false
 
 jobs:
   audit:
@@ -46,6 +51,7 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           CRON_TARGET_BASE_URL: https://blackouttrades.com
           GITHUB_ACTIONS: "true"
         run: |
@@ -57,5 +63,8 @@ jobs:
           ARGS=()
           if [ "${{ inputs.smoke_only }}" = "true" ]; then
             ARGS+=(--smoke-only)
+          fi
+          if [ "${{ inputs.force }}" = "true" ]; then
+            ARGS+=(--force)
           fi
           node scripts/gha-rth-audit.mjs "${ARGS[@]}"

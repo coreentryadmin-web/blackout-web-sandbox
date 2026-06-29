@@ -1,0 +1,39 @@
+# Post-push deploy smoke — runs after every merge to main.
+# Waits for Railway to settle, then hits public prod endpoints (+ optional CRON desk probe).
+
+name: Deploy smoke
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Wait for Railway deploy
+        env:
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+          DEPLOY_WAIT_MS: "90000"
+          DEPLOY_WAIT_ATTEMPTS: "12"
+          DEPLOY_WAIT_INTERVAL_MS: "20000"
+        run: node scripts/gha-wait-deploy.mjs
+
+      - name: HTTP smoke (prod)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+        run: node scripts/gha-http-smoke.mjs
+
+      - name: Summary
+        run: echo "Deploy smoke passed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"

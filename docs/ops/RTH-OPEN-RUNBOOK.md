@@ -11,7 +11,7 @@ commit, push, re-validate until GREEN.
 | Weekday, ET ≥ 09:00 | Run `npm run validate:rth-open` first thing |
 | User message is empty / "continue" / "keep going" on a weekday | Same — treat as RTH resume |
 | Weekend or ET < 09:00 | Skip RTH checks unless `--force`; routine work only |
-| After every push to `main` | `npm run validate:deploy` (any time) |
+| After every push to `main` | `deploy-smoke.yml` auto-runs; locally: `npm run validate:deploy-wait && npm run validate:gha-smoke` |
 
 ## Command
 
@@ -43,11 +43,14 @@ node scripts/rth-open-check.mjs --force
 
 | Method | Schedule (ET, weekdays) | Secrets required |
 |---|---|---|
-| **`rth-prod-smoke.yml`** | **09:35** | `CRON_SECRET` optional (enables SPX desk probe) |
+| **`deploy-smoke.yml`** | **on every `main` push** | `CRON_SECRET` optional (SPX desk probe) |
+| **`rth-preopen-smoke.yml`** | **09:30** | `CRON_SECRET` optional |
 | **`rth-cloud-agent.yml`** | **09:32** | `CURSOR_API_KEY` |
-| **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL` |
+| **`rth-prod-smoke.yml`** | **09:35** | `CRON_SECRET` optional (enables SPX desk probe) |
+| **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL`, `SENTRY_AUTH_TOKEN` optional |
+| **`rth-post-close-smoke.yml`** | **17:15** | `CRON_SECRET`, `SENTRY_AUTH_TOKEN` optional |
 
-All three also support **Run workflow** (manual) from GitHub → Actions.
+All scheduled workflows also support **Run workflow** (manual) from GitHub → Actions.
 
 ### GitHub secrets — add before first scheduled run
 
@@ -59,6 +62,7 @@ Repo → **Settings → Secrets and variables → Actions**:
 | `POLYGON_API_KEY` | SPX oracle in deep audit | Railway `blackout-web` |
 | `DATABASE_PUBLIC_URL` | Postgres writer/cron freshness | Railway **Postgres** service |
 | `CURSOR_API_KEY` | Cloud Agent auto-launch | Cursor → Integrations → API key |
+| `SENTRY_AUTH_TOKEN` | Sentry token smoke (deep audit + post-close) | Sentry → Settings → Auth Tokens |
 
 ### One-time: enable API-triggered agents
 

@@ -1,0 +1,40 @@
+# RTH post-close smoke — weekdays ~17:15 ET.
+# Confirms prod stayed healthy through close; track-record ledger still consistent.
+
+name: RTH post-close smoke
+
+on:
+  schedule:
+    # 5:15 PM ET during EDT (UTC-4)
+    - cron: "15 21 * * 1-5"
+    # 5:15 PM ET during EST (UTC-5)
+    - cron: "15 22 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Post-close HTTP smoke
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+        run: node scripts/gha-http-smoke.mjs
+
+      - name: Sentry token smoke
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: node scripts/gha-sentry-smoke.mjs
+
+      - name: Summary
+        run: echo "RTH post-close smoke passed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"

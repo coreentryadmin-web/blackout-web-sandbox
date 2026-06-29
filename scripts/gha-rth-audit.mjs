@@ -6,6 +6,7 @@
  *   CRON_SECRET          — required (premium API + cron routes)
  *   POLYGON_API_KEY      — optional (SPX oracle in full-site audit)
  *   DATABASE_PUBLIC_URL  — optional (Postgres writer/cron freshness checks)
+ *   SENTRY_AUTH_TOKEN    — optional (Sentry token smoke)
  *   CRON_TARGET_BASE_URL — optional (default https://blackouttrades.com)
  *
  * Usage:
@@ -14,36 +15,10 @@
  *   node scripts/gha-rth-audit.mjs --force   # Postgres RTH checks even off-hours
  */
 import { spawnSync } from "node:child_process";
-
-const ET = "America/New_York";
-const force = process.argv.includes("--force");
-
-function etParts(now = new Date()) {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: ET,
-    weekday: "short",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
-  const hour = Number(parts.hour);
-  const minute = Number(parts.minute);
-  return {
-    weekday: parts.weekday,
-    mins: hour * 60 + minute,
-    label: `${parts.weekday} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ET`,
-  };
-}
-
-/** Weekday 09:00–16:15 ET — mirrors rth-open-check.mjs / market-hours cron gates. */
-function inRthOpenWindow(now = new Date()) {
-  const { weekday, mins } = etParts(now);
-  if (weekday === "Sat" || weekday === "Sun") return false;
-  return mins >= 9 * 60 && mins <= 16 * 60 + 15;
-}
+import { etParts, inRthOpenWindow } from "./gha-et-window.mjs";
 
 const smokeOnly = process.argv.includes("--smoke-only");
+const force = process.argv.includes("--force");
 const BASE = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
 const CRON = process.env.CRON_SECRET?.trim() ?? "";
 
@@ -53,6 +28,8 @@ if (!CRON) {
 }
 
 const failures = [];
+const { label: etLabel } = etParts();
+const rthOpen = inRthOpenWindow();
 
 function run(label, cmd, args, extraEnv = {}) {
   console.log(`\n── ${label} ──`);
@@ -72,12 +49,12 @@ async function postgresRthChecks() {
     return;
   }
 
-  const et = etParts();
-  console.log(`\n── Postgres RTH checks (${et.label}) ──`);
+  console.log(`\n── Postgres RTH checks (${etLabel}) ──`);
   if (!force && !inRthOpenWindow()) {
     console.log("  ⚠ Off-hours / weekend — skipping market-hours Postgres checks (use --force to override)");
     return;
   }
+
   try {
     const pg = await import("pg");
     const c = new pg.default.Client({
@@ -169,10 +146,14 @@ async function cronHttpChecks() {
 
 console.log(`\n=== GitHub Actions RTH audit ===`);
 console.log(`Target: ${BASE}`);
-console.log(`Time:   ${new Date().toISOString()}\n`);
+console.log(`Time:   ${new Date().toISOString()} (${etLabel})`);
+console.log(`RTH:    ${rthOpen ? "open" : "closed/off-hours"}${force ? " (--force)" : ""}\n`);
 
 // Public HTTP smoke (always)
 run("Public HTTP smoke", "node", ["scripts/gha-http-smoke.mjs"]);
+
+// Optional Sentry token smoke (never fails the run when token absent)
+run("Sentry smoke", "node", ["scripts/gha-sentry-smoke.mjs"]);
 
 if (!smokeOnly) {
   run("Full-site deep audit", "node", ["scripts/full-site-deep-audit.mjs"]);
