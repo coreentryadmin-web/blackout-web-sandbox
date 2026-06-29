@@ -130,6 +130,13 @@ console.log(`Time:   ${new Date().toISOString()}\n`);
 
 // ── 1. Railway deploy ───────────────────────────────────────────────────────
 console.log("1. Railway (blackout-web)");
+const skipRailway =
+  process.env.SKIP_RAILWAY === "1" ||
+  (process.env.GITHUB_ACTIONS === "true" && !process.env.RAILWAY_TOKEN?.trim());
+
+if (skipRailway) {
+  warn("Railway CLI checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
+} else {
 try {
   const latest = sh("railway deployment list --service blackout-web 2>/dev/null | sed -n '2p'");
   console.log(`     ${latest}`);
@@ -143,6 +150,7 @@ try {
   else warn(status.trim() || "Could not read service status");
 } catch (e) {
   fail(`Railway CLI: ${e.message}`);
+}
 }
 
 // ── 2. Live HTTP smoke ──────────────────────────────────────────────────────
@@ -302,20 +310,24 @@ if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningRepl
 
 // ── 5. Railway logs — options-socket / uw-socket churn ───────────────────────
 console.log("\n5. Railway logs (socket churn)");
-try {
-  const logs = sh("railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -30");
-  const opt1006 = (logs.match(/options-socket.*1006.*failures=(\d+)/g) || []);
-  const lastFail = opt1006.length ? Number(opt1006[opt1006.length - 1].match(/failures=(\d+)/)?.[1] ?? 0) : 0;
-  const optAuth = /options-socket.*authenticated/.test(logs);
-  if (lastFail >= 10) fail(`options-socket 1006 loop — failures=${lastFail} (Night's Watch marks may degrade)`);
-  else if (lastFail > 0) warn(`options-socket recent 1006 failures=${lastFail}`);
-  else if (optAuth) ok("options-socket authenticated in recent logs");
-  else warn("options-socket: no recent authenticated line (may be off-hours or disabled)");
+if (skipRailway) {
+  warn("Railway log checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
+} else {
+  try {
+    const logs = sh("railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -30");
+    const opt1006 = (logs.match(/options-socket.*1006.*failures=(\d+)/g) || []);
+    const lastFail = opt1006.length ? Number(opt1006[opt1006.length - 1].match(/failures=(\d+)/)?.[1] ?? 0) : 0;
+    const optAuth = /options-socket.*authenticated/.test(logs);
+    if (lastFail >= 10) fail(`options-socket 1006 loop — failures=${lastFail} (Night's Watch marks may degrade)`);
+    else if (lastFail > 0) warn(`options-socket recent 1006 failures=${lastFail}`);
+    else if (optAuth) ok("options-socket authenticated in recent logs");
+    else warn("options-socket: no recent authenticated line (may be off-hours or disabled)");
 
-  if (/uw-socket.*stall watchdog/i.test(logs)) warn("uw-socket stall reconnects in recent logs");
-  else ok("No uw-socket stall storms in recent logs");
-} catch {
-  warn("Could not read Railway logs");
+    if (/uw-socket.*stall watchdog/i.test(logs)) warn("uw-socket stall reconnects in recent logs");
+    else ok("No uw-socket stall storms in recent logs");
+  } catch {
+    warn("Could not read Railway logs");
+  }
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────

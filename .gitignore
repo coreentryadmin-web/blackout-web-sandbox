@@ -10,3 +10,6 @@ build/
 *.log
 _logs_*.txt
 tsconfig.tsbuildinfo
+
+# clerk configuration (can include secrets)
+/.clerk/

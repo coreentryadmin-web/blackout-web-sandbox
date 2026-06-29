@@ -147,7 +147,11 @@ async function main() {
       if (/uw-socket.*stall watchdog/i.test(logs)) fail("uw-socket stall reconnects in recent logs");
       else ok("No uw-socket stall storms");
     } catch {
-      console.log("  ⚠ Could not read Railway logs");
+      if (process.env.GITHUB_ACTIONS === "true") {
+        console.log("  ⚠ Railway logs skipped in GitHub Actions");
+      } else {
+        console.log("  ⚠ Could not read Railway logs");
+      }
     }
 
     if (failures.length) {

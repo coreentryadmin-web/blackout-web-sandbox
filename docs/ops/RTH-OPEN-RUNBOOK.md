@@ -41,11 +41,24 @@ node scripts/rth-open-check.mjs --force
 
 ## Scheduled automations
 
-| Method | Who sets it up | What it does |
+| Method | Schedule (ET, weekdays) | Secrets required |
 |---|---|---|
-| **Cursor Automations** | [cursor.com/automations](https://cursor.com/automations) (dashboard only — agents cannot create this from code) | Native cron + tools; attach repo `blackout-web` |
-| **GitHub `rth-prod-smoke.yml`** | In repo (done) | Mon–Fri 09:35 ET public HTTP smoke; fails workflow if prod unhealthy |
-| **GitHub `rth-cloud-agent.yml`** | In repo (done) | Mon–Fri 09:32 ET launches Cloud Agent via API if `CURSOR_API_KEY` repo secret is set |
+| **`rth-prod-smoke.yml`** | **09:35** | `CRON_SECRET` optional (enables SPX desk probe) |
+| **`rth-cloud-agent.yml`** | **09:32** | `CURSOR_API_KEY` |
+| **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL` |
+
+All three also support **Run workflow** (manual) from GitHub → Actions.
+
+### GitHub secrets — add before first scheduled run
+
+Repo → **Settings → Secrets and variables → Actions**:
+
+| Secret | Required for | Source |
+|---|---|---|
+| `CRON_SECRET` | deep audit + smoke desk probe | Railway `blackout-web` |
+| `POLYGON_API_KEY` | SPX oracle in deep audit | Railway `blackout-web` |
+| `DATABASE_PUBLIC_URL` | Postgres writer/cron freshness | Railway **Postgres** service |
+| `CURSOR_API_KEY` | Cloud Agent auto-launch | Cursor → Integrations → API key |
 
 ### One-time: enable API-triggered agents
 

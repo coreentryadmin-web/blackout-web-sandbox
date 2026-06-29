@@ -29,7 +29,7 @@ jobs:
             exit 0
           fi
 
-          PROMPT='Autonomous RTH-open session. Read and execute docs/ops/RTH-OPEN-RUNBOOK.md. Run npm run validate:rth-open. Fix any failures, commit, push, re-validate until GREEN. Do NOT ask the user for permission.'
+          PROMPT='Autonomous RTH-open session. Read and execute docs/ops/RTH-OPEN-RUNBOOK.md. Run npm run validate:rth-open when Railway CLI is available; otherwise node scripts/gha-rth-audit.mjs (needs CRON_SECRET). Fix any failures, commit, push, re-validate until GREEN. Do NOT ask the user for permission.'
           export PROMPT
 
           payload=$(node -e "

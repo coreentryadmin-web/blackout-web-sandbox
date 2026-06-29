@@ -1,0 +1,61 @@
+# RTH deep numeric audit — weekdays during market hours (GitHub-hosted, no Railway CLI).
+#
+# Secrets required (repo → Settings → Secrets → Actions):
+#   CRON_SECRET          — same as Railway blackout-web
+#   POLYGON_API_KEY      — optional but recommended (SPX oracle)
+#   DATABASE_PUBLIC_URL  — optional (Postgres writer/cron freshness)
+#
+# Schedule: 10:00 + 14:00 + 16:30 ET (dual cron covers EDT/EST).
+
+name: RTH deep audit
+
+on:
+  schedule:
+    # 10:00 AM ET
+    - cron: "0 14 * * 1-5"
+    - cron: "0 15 * * 1-5"
+    # 2:00 PM ET
+    - cron: "0 18 * * 1-5"
+    - cron: "0 19 * * 1-5"
+    # 4:30 PM ET (near close + post-close cron grace)
+    - cron: "30 20 * * 1-5"
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      smoke_only:
+        description: "Public HTTP smoke only (skip deep audit)"
+        type: boolean
+        default: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: RTH deep audit (prod)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+          GITHUB_ACTIONS: "true"
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "CRON_SECRET secret is not set — add it in repo Settings → Secrets → Actions"
+            exit 1
+          fi
+          ARGS=()
+          if [ "${{ inputs.smoke_only }}" = "true" ]; then
+            ARGS+=(--smoke-only)
+          fi
+          node scripts/gha-rth-audit.mjs "${ARGS[@]}"
