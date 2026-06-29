@@ -1,0 +1,34 @@
+# Apply pending Railway ops: CRON_WATCHDOG_SELF_HEAL + provider-health-reconcile cron.
+#
+# Requires GitHub secret: RAILWAY_TOKEN (account token with project write access)
+# Create at https://railway.com/account/tokens
+
+name: Railway ops provision
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.23.1
+
+      - name: Railway ops provision
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: 9282f541-a288-4c8b-a174-ee22016f4b1a
+          RAILWAY_ENVIRONMENT: production
+        run: node scripts/railway-ops-provision.mjs
+
+      - name: Summary
+        run: echo "Railway ops provision finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"

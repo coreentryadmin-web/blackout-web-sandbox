@@ -20,6 +20,7 @@
     "validate:gha-rth": "node scripts/gha-rth-audit.mjs",
     "validate:gha-smoke": "node scripts/gha-http-smoke.mjs",
     "validate:cron": "node scripts/cron-audit-query.mjs",
+    "railway:provision": "node scripts/railway-ops-provision.mjs",
     "ops:collect": "node scripts/ops-collect-action-items.mjs",
     "ops:dispatch": "node scripts/ops-dispatch-agent.mjs",
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
