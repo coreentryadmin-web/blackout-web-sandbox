@@ -6,7 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  // Fail closed: if CRON_SECRET is unset this must reject, not become a public writer.
+  if (!cronSecret || auth !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {

@@ -35,7 +35,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && auth !== `Bearer ${cronSecret}`) {
+  // Fail closed: if CRON_SECRET is unset this must reject, not become a public writer.
+  if (!cronSecret || auth !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
