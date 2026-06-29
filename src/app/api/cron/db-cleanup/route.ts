@@ -58,19 +58,31 @@ async function deleteOlderThan(table: string, column: string, days: number): Pro
   const guard = STATUS_GUARDS[table] ? ` AND ${STATUS_GUARDS[table]}` : "";
   // Batched delete by ctid; window parameterized; rowCount on a plain DELETE is the affected count.
   let total = 0;
-  for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
-    const res = await dbQuery(
-      `DELETE FROM ${table}
-         WHERE ctid IN (
-           SELECT ctid FROM ${table}
-           WHERE ${column} < NOW() - ($1::int || ' days')::interval${guard}
-           LIMIT $2
-         )`,
-      [days, CLEANUP_BATCH_SIZE]
-    );
-    const deleted = res.rowCount ?? 0;
-    total += deleted;
-    if (deleted < CLEANUP_BATCH_SIZE) break;
+  try {
+    for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
+      const res = await dbQuery(
+        `DELETE FROM ${table}
+           WHERE ctid IN (
+             SELECT ctid FROM ${table}
+             WHERE ${column} < NOW() - ($1::int || ' days')::interval${guard}
+             LIMIT $2
+           )`,
+        [days, CLEANUP_BATCH_SIZE]
+      );
+      const deleted = res.rowCount ?? 0;
+      total += deleted;
+      if (deleted < CLEANUP_BATCH_SIZE) break;
+    }
+  } catch (err) {
+    // A table whose writer hasn't run yet doesn't exist (Postgres 42P01 undefined_table). There's
+    // nothing to prune, and one not-yet-created table must NOT fail the whole nightly cleanup
+    // (this was failing the run: 'relation "spx_signal_weight_reports" does not exist'). Skip it;
+    // it self-heals once the writer creates the table. Re-throw anything else.
+    if ((err as { code?: string } | null)?.code === "42P01") {
+      console.warn(`[db-cleanup] skipping ${table}: table does not exist yet (no rows to prune)`);
+      return 0;
+    }
+    throw err;
   }
   return total;
 }
