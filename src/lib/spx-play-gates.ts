@@ -43,7 +43,29 @@ export const GATE_BLOCK = {
   QUALITY_COOLDOWN: "Quality cooldown",
   GRADE_BELOW_MIN: "below minimum",
   REENTRY_LOCK: "Re-entry lock",
+  MIXED_TAPE: "Tape's mixed",
 } as const;
+
+/** Grade-scaled mixed-tape hard block — A setups tolerate one extra soft counter-trend signal. */
+function mixedTapeBlockThreshold(grade: string): number {
+  const base = playWeightedConflictBlockMin();
+  const rank = gradeRank(grade);
+  if (rank >= gradeRank("A")) return base + 1;
+  if (rank >= gradeRank("B")) return base;
+  return Math.max(3, base - 1);
+}
+
+function maxWeightedForEntryMode(grade: string, mode: "full" | "starter"): number {
+  const rank = gradeRank(grade);
+  if (mode === "full") {
+    if (rank >= gradeRank("A")) return 4;
+    if (rank >= gradeRank("B")) return 3;
+    return 2;
+  }
+  if (rank >= gradeRank("A")) return 5;
+  if (rank >= gradeRank("B")) return 4;
+  return 3;
+}
 
 function macroHardBlock(desk: SpxDeskPayload): string | null {
   const events = desk.macro_events ?? [];
@@ -150,8 +172,8 @@ export function evaluatePlayGates(
     blocks.push(`Desk data stale (${Math.round(deskStaleSec)}s)`);
   }
 
-  const mixedTapeMsg = "Tape's mixed — too many conflicting signals for clean entry";
-  if (confluence.weighted_conflicts >= playWeightedConflictBlockMin()) {
+  const mixedTapeMsg = `${GATE_BLOCK.MIXED_TAPE} — too many conflicting signals for clean entry`;
+  if (confluence.weighted_conflicts >= mixedTapeBlockThreshold(confluence.grade)) {
     if (buyIntent) {
       blocks.push(mixedTapeMsg);
     } else {
@@ -201,9 +223,11 @@ export function evaluatePlayGates(
   }
 
   let entry_mode: PlayGateResult["entry_mode"] = "none";
-  if (abs >= fullMin && confluence.weighted_conflicts <= 2) {
+  const fullConflictMax = maxWeightedForEntryMode(confluence.grade, "full");
+  const starterConflictMax = maxWeightedForEntryMode(confluence.grade, "starter");
+  if (abs >= fullMin && confluence.weighted_conflicts <= fullConflictMax) {
     entry_mode = "full";
-  } else if (!playOnlyFullEntry() && abs >= playStarterMinScore() && confluence.weighted_conflicts <= 3) {
+  } else if (!playOnlyFullEntry() && abs >= playStarterMinScore() && confluence.weighted_conflicts <= starterConflictMax) {
     entry_mode = "starter";
   }
 

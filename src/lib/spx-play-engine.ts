@@ -688,6 +688,11 @@ async function evaluateFlatPlay(
           !b.includes(GATE_BLOCK.BUY_COOLDOWN) &&
           !b.includes(GATE_BLOCK.QUALITY_COOLDOWN) &&
           !b.includes(GATE_BLOCK.GRADE_BELOW_MIN) &&
+          !(
+            b.includes(GATE_BLOCK.MIXED_TAPE) &&
+            confirmations.passed &&
+            gradeRank(confluence.grade) >= gradeRank("B")
+          ) &&
           // Post-loss same-direction re-entry lock must survive WATCH->ENTRY promotion.
           // Only strip REENTRY_LOCK when the prior exit was NOT a loss (in which case
           // the gate never emits it anyway, so this is a no-op outside the loss case).

@@ -67,6 +67,14 @@ function vixExtremeAgainst(desk: SpxDeskPayload, direction: "long" | "short"): b
   return false;
 }
 
+function newsAlreadyScored(factors: SpxSignalFactor[]): boolean {
+  return factors.some((f) => f.label === "News risk" || f.label.startsWith("News"));
+}
+
+function vixAlreadyScored(factors: SpxSignalFactor[]): boolean {
+  return factors.some((f) => f.label.includes("VIX") || f.label === "IV rank");
+}
+
 export function computeWeightedConflicts(
   desk: SpxDeskPayload,
   score: number,
@@ -85,7 +93,7 @@ export function computeWeightedConflicts(
     weighted += isHardOpposingFactor(f) ? 2 : 1;
   }
 
-  if (newsOpposed(desk, direction)) {
+  if (newsOpposed(desk, direction) && !newsAlreadyScored(factors)) {
     weighted += 2;
   }
   if (tideOpposed(desk, direction) && !factors.some((f) => f.label === "Market tide")) {
@@ -94,9 +102,12 @@ export function computeWeightedConflicts(
   if (gexOpposed(desk, direction) && !factors.some((f) => f.label.includes("GEX") || f.label.includes("γ"))) {
     weighted += 2;
   }
-  if (vixExtremeAgainst(desk, direction)) {
+  if (vixExtremeAgainst(desk, direction) && !vixAlreadyScored(factors)) {
     weighted += 2;
   }
 
-  return { conflicts, weighted_conflicts: Math.max(weighted, conflicts) };
+  // weighted_conflicts is the desk-adjusted opposition score only — do NOT max() with the
+  // raw opposing-factor count. That double-penalized A-grade setups (conflicts ≤ 2 for grade A)
+  // whenever soft counter-trend factors stacked, blocking entry with "Tape's mixed" at threshold 4.
+  return { conflicts, weighted_conflicts: weighted };
 }
