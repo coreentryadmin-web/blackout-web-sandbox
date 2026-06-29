@@ -19,8 +19,40 @@ export function markFlowDataFromBriefs(flows: Array<{ alerted_at?: string }>): v
   }
 }
 
+/** Age (ms) of the newest `alerted_at` in the supplied tape rows — payload-grounded. */
+export function newestFlowAgeMsFromBriefs(
+  flows: Array<{ alerted_at?: string }>,
+  now = Date.now()
+): number | null {
+  let newest: number | null = null;
+  for (const flow of flows) {
+    if (!flow.alerted_at) continue;
+    const t = Date.parse(flow.alerted_at);
+    if (!Number.isFinite(t)) continue;
+    if (newest == null || t > newest) newest = t;
+  }
+  return newest != null ? Math.max(0, now - newest) : null;
+}
+
 export function flowDataAgeMs(now = Date.now()): number | null {
   return lastFlowDataAt != null ? Math.max(0, now - lastFlowDataAt) : null;
+}
+
+/**
+ * Honest flow age for desk/play payloads: min(newest tape row, in-memory stamp).
+ * Prefer this over raw `flowDataAgeMs()` so a replica that missed WS frames but
+ * just fetched fresh DB rows doesn't report 23m stale and block entries.
+ */
+export function resolveFlowDataAgeMs(
+  flows: Array<{ alerted_at?: string }>,
+  now = Date.now()
+): number | null {
+  markFlowDataFromBriefs(flows);
+  const fromTape = newestFlowAgeMsFromBriefs(flows, now);
+  const fromMem = flowDataAgeMs(now);
+  if (fromTape == null) return fromMem;
+  if (fromMem == null) return fromTape;
+  return Math.min(fromTape, fromMem);
 }
 
 export function lastFlowDataTimestamp(): number | null {

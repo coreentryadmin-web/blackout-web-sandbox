@@ -240,12 +240,13 @@ export function evaluatePlayGates(
   }
 
   // Flow staleness: if the UW flow feed has been silent > 5 min, entries are blocked —
-  // the tape signal and 0DTE flow score are based on data that may no longer reflect
-  // current market structure. Warning at 2 min so the trader sees degraded data early.
+  // unless the cluster heartbeat confirms another replica is delivering live WS frames
+  // (this replica's in-memory stamp can lag even when the tape rows are current).
   const flowAgeMs = desk.flow_data_age_ms;
-  if (buyIntent && flowAgeMs != null && flowAgeMs > 300_000) {
+  const clusterLive = desk.flow_cluster_live === true;
+  if (buyIntent && flowAgeMs != null && flowAgeMs > 300_000 && !clusterLive) {
     blocks.push(`Flow data stale (${Math.round(flowAgeMs / 60_000)}m) — tape and 0DTE signals unreliable`);
-  } else if (flowAgeMs != null && flowAgeMs > 120_000) {
+  } else if (flowAgeMs != null && flowAgeMs > 120_000 && !clusterLive) {
     warnings.push(`Flow data ${Math.round(flowAgeMs / 60_000)}m old — tape signal may lag`);
   }
 

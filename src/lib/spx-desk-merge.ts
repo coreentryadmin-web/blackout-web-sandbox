@@ -287,6 +287,7 @@ export function mergeFlowIntoDesk(base: SpxDeskPayload, flow: SpxDeskFlow): SpxD
     flow_0dte_put_premium: flow.flow_0dte_put_premium ?? base.flow_0dte_put_premium,
     flow_0dte_net: flow.flow_0dte_net ?? base.flow_0dte_net,
     flow_data_age_ms: flow.flow_data_age_ms ?? base.flow_data_age_ms ?? null,
+    flow_cluster_live: flow.flow_cluster_live ?? base.flow_cluster_live ?? false,
     // Reflect the ~4s flow lane's GEX freshness on the merged desk (not the 10s full-desk base) so
     // the 'last-good GEX · not live' staleness badge (#7a) fires promptly instead of lagging a cycle.
     gex_age_ms: flow.gex_age_ms ?? base.gex_age_ms ?? null,

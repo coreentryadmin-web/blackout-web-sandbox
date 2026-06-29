@@ -5,7 +5,8 @@ import { tapeDedupKey } from "@/lib/tape-dedup-key";
 import { fetchGexHeatmap } from "./polygon-options-gex";
 import { gexPositioningFromHeatmap } from "./gex-positioning";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
-import { flowDataAgeMs, markFlowDataFromBriefs } from "@/lib/flow-data-freshness";
+import { markFlowDataFromBriefs, resolveFlowDataAgeMs } from "@/lib/flow-data-freshness";
+import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import {
   computeFlowStrikeStacks,
   type FlowStrikeStack,
@@ -549,6 +550,8 @@ export type SpxDeskPayload = {
   data_quality?: DeskDataQuality;
   /** Milliseconds since last UW flow alert (WS or REST). Null if unknown. */
   flow_data_age_ms?: number | null;
+  /** True when ANY replica delivered a UW flow WS frame within ~2m (cluster heartbeat). */
+  flow_cluster_live?: boolean;
   /**
    * Age (ms) of the live SPX index tick backing `price` (gap #11). Null when no tick has
    * landed. When `feed_stalled` is true the index feed is FROZEN (TCP half-open / gateway
@@ -657,6 +660,7 @@ export type SpxDeskFlow = {
   flow_0dte_net: number | null;
   strike_stacks: FlowStrikeStack[];
   flow_data_age_ms?: number | null;
+  flow_cluster_live?: boolean;
   /** Age (ms) of the GEX ladder backing gex_walls; stale = sticky last-good (gap #7a). */
   gex_age_ms?: number | null;
   gex_stale?: boolean;
@@ -818,15 +822,25 @@ async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]>
 }
 
 async function _fetchSpxDeskFlowAlertsWithDbInner(limit = 32): Promise<SpxFlowBrief[]> {
-  const fromUw = await fetchSpxDeskFlowAlerts(limit);
+  // DB (local, fast) and UW REST run in parallel — never serialize a slow UW round-trip
+  // ahead of Postgres. The tape must be RECENCY-ordered (not premium-ordered): premium sort
+  // was returning ancient whale prints and making flow_data_age_ms read 20m+ stale during RTH.
+  const [fromUw, fromDbRows] = await Promise.all([
+    fetchSpxDeskFlowAlerts(limit).catch(() => [] as SpxFlowBrief[]),
+    dbConfigured()
+      ? fetchRecentFlows({
+          limit,
+          min_premium: spxTapeMinPremium(),
+          order: "recent",
+          since_hours: 4,
+        }).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
   if (!dbConfigured()) return fromUw;
 
   try {
-    const fromDb = await fetchRecentFlows({
-      limit,
-      min_premium: spxTapeMinPremium(),
-    });
-    const spxDb = fromDb
+    const spxDb = fromDbRows
       .filter((f) => {
         const t = f.ticker.toUpperCase();
         return t === "SPX" || t === "SPXW";
@@ -1047,11 +1061,12 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const freshFlowsRaw = uwConfigured()
     ? await Promise.race([
         fetchSpxDeskFlowAlertsWithDb(32),
-        new Promise<SpxFlowBrief[]>((resolve) => setTimeout(() => resolve([]), 2000)),
+        new Promise<SpxFlowBrief[]>((resolve) => setTimeout(() => resolve([]), 6000)),
       ]).catch(() => [])
     : [];
   const spxFlows: SpxFlowBrief[] = freshFlowsRaw.length ? freshFlowsRaw : lastGoodSpxFlowBriefs;
   if (freshFlowsRaw.length) lastGoodSpxFlowBriefs = freshFlowsRaw;
+  const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
   markFlowDataFromBriefs(spxFlows);
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
@@ -1200,7 +1215,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
       detail: vixTerm.detail,
     },
     data_quality: dataQuality,
-    flow_data_age_ms: flowDataAgeMs(),
+    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_cluster_live: flowClusterLive,
     price_age_ms: spxFeed.ageMs,
     feed_stalled: spxFeed.stalled === true,
     gex_age_ms: gexAgeMs,
@@ -1505,6 +1521,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
 
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
+  const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
   markFlowDataFromBriefs(spxFlows);
   const strike_stacks = computeFlowStrikeStacks(spxFlows);
 
@@ -1540,7 +1557,8 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     flow_0dte_call_premium: uwFlow?.call_premium ?? null,
     flow_0dte_put_premium: uwFlow?.put_premium ?? null,
     flow_0dte_net: uwFlow?.net ?? null,
-    flow_data_age_ms: flowDataAgeMs(),
+    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_cluster_live: flowClusterLive,
     gex_age_ms: canonicalGex.gex_age_ms,
     gex_stale: canonicalGex.gex_stale,
     net_prem_ticks: netPremTicks,
