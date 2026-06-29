@@ -22,6 +22,11 @@ alwaysApply: true
 
 - Skip RTH-specific checks (script exits 0 off-hours).
 - Still run `validate:deploy` after any push to `main`.
+- Run `npm run ops:collect` — if action items exist, execute `docs/ops/OPS-AUTO-FIX.md` immediately.
+
+## Ops auto-fix (errors → agent)
+
+GitHub Actions **`ops-auto-fix.yml`** runs every 20 min: collects cron/error failures, opens a GitHub issue (`ops-auto-fix` label), launches a Cloud Agent. On any session, if `ops:collect` finds items, fix them before other work. See `docs/ops/OPS-AUTO-FIX.md`.
 
 ## Scheduled Cursor task (operator)
 

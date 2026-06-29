@@ -15,6 +15,11 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   and `npm run lint:css` (stylelint) are **non-blocking** in CI (they emit warnings, `continue-on-error`).
 - Tests: `npm test` (`node --test` via `tsx`, files `src/**/*.test.ts`). No DB/env needed for tests.
 
+### Ops auto-fix (cron/errors → agent)
+- **`npm run ops:collect`** — scan prod Postgres + live watchdog; JSON action items (exit 1 if any).
+- **`.github/workflows/ops-auto-fix.yml`** — every 20 min + on audit failures → GitHub issue (`ops-auto-fix` label) + Cursor Cloud Agent.
+- Runbook: `docs/ops/OPS-AUTO-FIX.md`. Cloud agents: fix action items before other work; do not ask the user.
+
 ### Local environment / secrets
 - The app **degrades gracefully** with no env vars: the landing page, `/sign-in`, `/sign-up`,
   `/track-record`, and `/api/health` all work, and every external integration (Postgres, Redis,

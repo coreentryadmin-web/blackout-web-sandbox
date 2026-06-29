@@ -1,0 +1,87 @@
+# Ops auto-fix — collect prod errors → GitHub action items → Cloud Agent
+
+name: Ops auto-fix
+
+on:
+  schedule:
+    # Every 20 min — aligned with cron-staleness-watchdog cadence
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - RTH deep audit
+      - Cron audit query
+    types:
+      - completed
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  collect-and-dispatch:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ensure ops-auto-fix label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ops-auto-fix \
+            --repo "${{ github.repository }}" \
+            --color d73a4a \
+            --description "Autonomous agent action items (cron/errors)" \
+            2>/dev/null || true
+
+      - name: Collect action items (prod)
+        id: collect
+        env:
+          DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+        run: |
+          set +e
+          json=$(node scripts/ops-collect-action-items.mjs 2>/dev/null)
+          code=$?
+          set -e
+          echo "$json" > action-items.json
+          count=$(node -e "const j=JSON.parse(require('fs').readFileSync('action-items.json','utf8')); console.log(j.count||0)")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then
+            echo "=== Action items ($count) ==="
+            node -e "JSON.parse(require('fs').readFileSync('action-items.json','utf8')).items.forEach(i=>console.log(i.priority, i.title))"
+          else
+            echo "GREEN — no ops action items"
+          fi
+
+      - name: Dispatch GitHub issue + Cloud Agent
+        if: steps.collect.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/ops-dispatch-agent.mjs --file action-items.json
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f action-items.json ]; then
+            node -e "
+              const j=JSON.parse(require('fs').readFileSync('action-items.json','utf8'));
+              console.log('Fingerprint:', j.fingerprint, '| Items:', j.count);
+            "
+          fi
