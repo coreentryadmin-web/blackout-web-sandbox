@@ -1,0 +1,46 @@
+---
+description: BlackOut platform architecture, data flow, and hard guardrails — read before any change
+globs: blackout-web/src/**/*.{ts,tsx}
+alwaysApply: true
+---
+
+# BlackOut — orient before you change anything
+
+**Full map:** read `blackout-web/docs/ONBOARDING.md` (product, code geography, data pipeline, APIs,
+infra, "where to look"). **Current known bugs:** `blackout-web/docs/api-audit/OPEN-ISSUES.md`.
+Canonical repo is `blackout-platform/blackout-web` — `BO-AAI/` and any root `blackout-web/` are
+**stale, never edit them**.
+
+## Five hard rules (override everything)
+1. **No tech-stack disclosure on public surfaces** — marketing, in-app copy, API responses, metadata,
+   errors must never name providers, DB, host, AI/auth/billing vendors. Say *what*, not *how*.
+2. **Every user-visible value is live, correct, and grounded** — no hardcoded/mock/fabricated/
+   hallucinated numbers. Can't ground it → show an honest empty/stale state.
+3. **No grey text** — `text-grey-*`/`text-zinc-*`/`text-neutral-*` banned on `#040407`; use
+   `text-cyan-400`/`text-sky-300`/`text-white`.
+4. **Institutional UI bar** — Bloomberg/TradingView/Stripe/Linear, not Discord. See
+   `DESIGN_BENCHMARK.md` + `institutional-design.mdc`. Use `FreshnessChip` for live state.
+5. **Default commit+push to `main`** (Railway auto-deploys); branch only for deploy-risky work.
+
+## The data pipeline (internalize this)
+Providers (rate-limited; ONE WebSocket per key via Redis leader election) → **writers**
+(`ws/*-socket.ts` + `api/cron/*`) → **store** (Redis hot snapshots + Postgres durable rows) →
+**cache-reader APIs** (`api/market/*`, `api/grid/*`) → **UI** (`components/*`).
+
+- **Cache-reader rule:** per-user/per-request endpoints MUST read the shared Redis/cron cache, never
+  call the upstream provider per request (the flow provider is ~2 req/s cluster-wide). Wire new
+  live features to the existing reader; don't add provider calls.
+- **GEX is single-sourced** via `getGexPositioning()` / `api/market/gex-positioning` — no parallel
+  path. Walls come 100% from the options-chain provider.
+
+## Don't-break list
+- `src/lib/db.ts` idle-pool error handler (~:113) and `src/lib/make-redis.ts` `family:0`+reconnect
+  — removing either crashes/ETIMEDOUTs prod.
+- `SPX_OPTION_CHAIN_REQUIRED` defaults false (plays open with fallback ticket) — don't set it true
+  in prod or SPX plays stop opening.
+- Real shell is `src/app/(site)/layout.tsx` — `PlatformShell.tsx` is DEAD.
+- Real route paths are nested: `/api/market/spx/pulse`, `/api/market/flows`,
+  `/api/market/nighthawk/edition`. UW key env is `UW_API_KEY` (not `UNUSUAL_WHALES_API_KEY`).
+- A cron `.toml` + route does NOT mean the cron runs — the Railway service must be provisioned.
+- Lockfile desync red-lines every Railway service; fix with `npm install`, not a revert.
+- New data routes must be tier-gated via the `require*Api` helpers (`tool-access.ts`).
