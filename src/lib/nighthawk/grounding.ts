@@ -34,6 +34,7 @@ import { parseOptionsContract } from "./option-chain-prompt";
 import { parseEntryPremiumPerShare } from "./play-constraints";
 import type { TickerDossier } from "./dossier";
 import type { PlaybookPlay } from "./types";
+import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
 
 /** Minimum open interest for a contract to count as a real, tradeable strike. */
 export const GROUNDING_MIN_OI = 500;
@@ -131,6 +132,14 @@ function sideAsk(row: ChainStrikeRow, side: "call" | "put" | null): number | nul
     return mids.length ? Math.min(...mids) : null;
   }
   return null;
+}
+
+function replaceEntryPremiumText(optionsPlay: string, premium: number): string {
+  const replacement = `entry prem ~$${premium.toFixed(2)}`;
+  if (/entry\s+prem\s*~?\$?\d+(?:\.\d+)?/i.test(optionsPlay)) {
+    return optionsPlay.replace(/entry\s+prem\s*~?\$?\d+(?:\.\d+)?/i, replacement);
+  }
+  return `${optionsPlay.replace(/\s+$/, "")}, ${replacement}`;
 }
 
 function sideOi(row: ChainStrikeRow, side: "call" | "put" | null): number {
@@ -251,8 +260,8 @@ export function groundPlay(
         detail: `${play.ticker} strike ${parsed.strike}${parsed.side ? ` ${parsed.side}` : ""}${parsed.expiryYmd ? ` ${parsed.expiryYmd}` : ""} present on-chain but OI ${bestOi} < ${GROUNDING_MIN_OI} (illiquid/off-chain).`,
       });
     } else {
-      // Contract is real & liquid → premium MUST reconcile. Reject null-as-PASS here: a confirmed
-      // contract has a known ask, so a null premium is now a real failure (unlike an unverifiable one).
+      // Contract is real & liquid → the displayed premium MUST come from the live contract mark.
+      // Claude's estimate is advisory only; overwrite it with the live mark when affordable.
       const premium = parseEntryPremiumPerShare(play);
       // Best (cheapest) ask/mid across matched rows that quote the chosen side.
       const asks = matched
@@ -260,24 +269,34 @@ export function groundPlay(
         .filter((a): a is number => a != null && a > 0);
       const chainAsk = asks.length ? Math.min(...asks) : null;
 
-      if (premium == null) {
-        issues.push({
-          check: "premium",
-          severity: "drop",
-          detail: `${play.ticker} contract confirmed on-chain (OI ${bestOi}) but entry_premium is null/unparseable — null-premium-as-PASS rejected.`,
-        });
-      } else if (chainAsk == null) {
+      if (chainAsk == null) {
         issues.push({
           check: "premium",
           severity: "drop",
           detail: `${play.ticker} contract confirmed on-chain (OI ${bestOi}) but has no usable bid/ask quote — entry_premium cannot be grounded.`,
         });
-      } else if (chainAsk != null && !approxEq(premium, chainAsk, PREMIUM_TOLERANCE_PCT)) {
+      } else if (chainAsk > MAX_OPTION_PREMIUM_PER_SHARE) {
         issues.push({
           check: "premium",
           severity: "drop",
-          detail: `${play.ticker} entry_premium $${premium.toFixed(2)} out of ±${Math.round(PREMIUM_TOLERANCE_PCT * 100)}% tolerance vs chain ask/mid $${chainAsk.toFixed(2)}.`,
+          detail: `${play.ticker} live premium $${chainAsk.toFixed(2)} exceeds the $${MAX_OPTION_PREMIUM_PER_SHARE}/share cap — not publishing an unaffordable option card.`,
         });
+      } else {
+        const livePremium = Number(chainAsk.toFixed(2));
+        if (premium == null || Math.abs(premium - livePremium) > 0.005) {
+          issues.push({
+            check: "premium",
+            severity: "flag",
+            detail: `${play.ticker} entry_premium ${premium == null ? "missing" : `$${premium.toFixed(2)}`} replaced with live contract mark $${livePremium.toFixed(2)}.`,
+          });
+        }
+        mutated = {
+          ...mutated,
+          entry_premium: livePremium,
+          entry_cost_per_contract: Math.round(livePremium * 100),
+          premium_cap_ok: livePremium <= MAX_OPTION_PREMIUM_PER_SHARE,
+          options_play: replaceEntryPremiumText(mutated.options_play, livePremium),
+        };
       }
     }
   }

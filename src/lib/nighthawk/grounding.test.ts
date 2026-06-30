@@ -68,7 +68,7 @@ test("groundPlay drops a parsed option contract absent from exact/prefetched cha
   assert.match(result.issues.map((i) => i.detail).join(" "), /premium cannot be grounded/);
 });
 
-test("groundPlay drops a confirmed contract when entry premium is outside live bid/ask tolerance", () => {
+test("groundPlay drops a confirmed contract when live premium exceeds cap", () => {
   const result = groundPlay(
     play(8.5),
     { spot: 296, rows: [frontExpiryRow, nbisSep300Call] },
@@ -76,17 +76,39 @@ test("groundPlay drops a confirmed contract when entry premium is outside live b
   );
 
   assert.equal(result.severity, "drop");
-  assert.match(result.issues.map((i) => i.detail).join(" "), /\$8\.50.*\$44\.95/);
+  assert.match(result.issues.map((i) => i.detail).join(" "), /\$44\.95 exceeds the \$20\/share cap/);
 });
 
-test("groundPlay accepts a confirmed contract when entry premium reconciles to live bid/ask", () => {
+test("groundPlay rewrites a confirmed affordable contract to the live mark", () => {
+  const affordableRow: ChainStrikeRow = {
+    ...nbisSep300Call,
+    call_bid: 6.1,
+    call_ask: 6.55,
+    call_oi: 10_647,
+  };
   const result = groundPlay(
-    play(45.1),
-    { spot: 296, rows: [frontExpiryRow, nbisSep300Call] },
+    play(8.5),
+    { spot: 296, rows: [frontExpiryRow, affordableRow] },
     dossier
   );
 
+  assert.equal(result.severity, "flag");
+  assert.equal(result.play.entry_premium, 6.32);
+  assert.equal(result.play.entry_cost_per_contract, 632);
+  assert.match(result.play.options_play, /entry prem ~\$6\.32/);
+});
+
+test("groundPlay accepts a confirmed contract when generated premium already matches live mark", () => {
+  const affordableRow: ChainStrikeRow = {
+    ...nbisSep300Call,
+    call_bid: 6.1,
+    call_ask: 6.55,
+    call_oi: 10_647,
+  };
+  const result = groundPlay(play(6.32), { spot: 296, rows: [frontExpiryRow, affordableRow] }, dossier);
+
   assert.equal(result.severity, "ok");
+  assert.equal(result.play.entry_premium, 6.32);
   assert.equal(result.issues.length, 0);
 });
 
