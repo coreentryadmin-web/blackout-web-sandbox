@@ -18,17 +18,17 @@
 | Documented UW REST endpoints (OpenAPI scrape) | **172** GET ops across 32 categories | `scripts/uw-docs-index.md` (counted) |
 | Documented UW WebSocket channels | **13** (incl. `/api/socket` listing meta) → **12 real channels** | `uw-docs-index.md:382-399` |
 | REST path-templates wired in `unusual-whales.ts` | **~90–97 distinct** (116 exported fetchers; some share a path / have v1+v2 fallbacks) | `unusual-whales.ts` (grep) |
-| WS channels actually joined | **7 of 12** | `live-api-integrations.ts:7-15` |
+| WS channels actually joined | **10 of 12** | `live-api-integrations.ts:7-18` |
 | **% of documented REST capability wired** | **≈ 52–56%** (90–97 / 172) | derived |
 | **% of REST capability that is LIVE-reachable at runtime** (not just defined) | **much lower — see §3**; the majority of wired fetchers are reachable ONLY through Largo tool-calls, not any always-on surface | `tool-defs.ts`, reachability grep §3 |
-| **% of WS capability used** | **58%** (7/12) — and the 5 unused are the highest-value real-time feeds (`option_trades`, `lit_trades`, `price`, `news`) | §4 |
+| **% of WS capability used** | **83%** (10/12) — remaining unused: `news` (Benzinga primary), `contract_screener`, `custom_alerts` | §4 |
 | UW REST calls per *user request* (steady state) | **~0** — cache-reader rule: users read Redis/in-proc, crons + WS populate | `09-SCALABILITY.md:19`; `uw-cache-refresh/route.ts` |
 | UW base load (market hours) | **23 UW REST tasks / 2 min** from `uw-cache-refresh` + 1 WS multiplex/replica + per-desk-refresh fan-out | `uw-cache-refresh/route.ts:42-100`; `railway.uw-cache-refresh.toml:10` |
 
 **Headline conclusions:**
 
 1. **Capability utilization is breadth-wide but depth-shallow.** ~53% of REST endpoints are *wired*, but the cache-reader architecture means only a tiny hot set (tide, dark pool, NOPE, net-prem-ticks, flow-per-strike, GEX, flow-alerts) is actually exercised continuously. The other ~80 wired fetchers fire only when a Largo user asks a question that routes to them — many are effectively dormant.
-2. **The biggest competitive miss is real-time WebSocket coverage.** 5 of the highest-signal channels — `option_trades` (full options tape), `lit_trades` (lit equity prints), `price`, `news` — are documented and the multiplex manager could join them with one line each, but they are not joined. Today the platform *polls* REST equivalents (flow-per-strike, net-prem-ticks every 2 min) for data UW will stream for free over the already-open socket. This is the single highest-leverage change: it both improves freshness AND removes REST calls from the scarce 2-RPS budget.
+2. **Real-time WebSocket coverage is now strong (10/12).** `option_trades`, `lit_trades`, `gex_strike_expiry`, `price`, and `net_flow` are joined on the multiplex socket; desk pulse/flow expose lit/dark ratio from the lit + dark stores. Remaining unused channels are intentionally deprioritized (`news` → Benzinga) or niche (`contract_screener`, `custom_alerts`).
 3. **Entire UW product surfaces are completely unwired** and represent net-new product opportunities: `politician_portfolios` (8 endpoints), `private_markets` (9), `crypto` (4), `forex` (3), `commodities`, `volatility/anomaly` + `vix-term-structure`, `analytics/sliding|window`, `option-trades/full-tape`, `option-trades/exchange-breakdown`, earnings-call transcripts, `stock-volume-price-levels`. See §5.
 4. **The `/api/socket/news` channel + `news/headlines` REST are wired-but-deprecated-away** in favor of Benzinga (Polygon plan). The `darkpool/recent` WS (`off_lit_trades`) is the one place real-time is fully exploited well.
 
@@ -112,16 +112,16 @@ Roughly **70 fetchers** sit behind Largo tools and never run unless a user quest
 
 | Channel | Joined? | Handler / store | Used for | `unusual-whales.ts` normalizer |
 |---|---|---|---|---|
-| `flow_alerts` | ✅ | `persistAndPublishFlowAlert` → Postgres `flow_events` + SSE | HELIX flow tape (primary writer) | `parseUwFlowAlert` (`:165`) |
-| `market_tide` | ✅ | `tideStore` (`uw-socket.ts:457`) | desk flow lane | inline (`:595`) |
-| `off_lit_trades` | ✅ | `darkPoolStore` (`:465`) | desk dark pool | `normalizeDarkPoolWsPayload` (`:747`) |
-| `gex` | ✅ | `gexStore` (`:470`) | desk GEX strikes | `normalizeGexWsPayload` (`:799`) |
-| `net_flow` | ✅ | `netFlowStore` (`:475`) | 0DTE net flow | `normalizeNetFlowWsPayload` (`:821`) |
-| `interval_flow` | ✅ | `intervalFlowStore` (`:483`) | strike-level intraday flow | `normalizeIntervalFlowWsPayload` (`:849`) |
-| `trading_halts` | ✅ | `tradingHaltsStore` + **play gates** (`:488`, `shouldBlockForTradingHalt:522`) | halt-gating live entries | `normalizeTradingHaltsWsPayload` (`:876`) |
-| `option_trades` | ❌ | — | **UNUSED** | — |
-| `lit_trades` | ❌ | — | **UNUSED** | — |
-| `price` | ❌ | — | **UNUSED** | — |
+| `flow_alerts` | ✅ | `persistAndPublishFlowAlert` → Postgres + SSE | HELIX flow tape | `parseUwFlowAlert` |
+| `market_tide` | ✅ | `tideStore` | desk flow lane | inline handler |
+| `off_lit_trades` | ✅ | `darkPoolStore` | desk dark pool | `normalizeDarkPoolWsPayload` |
+| `net_flow` | ✅ | `netFlowByTicker` / `netFlowStore` | 0DTE net flow | inline handler |
+| `interval_flow` | ✅ | `intervalFlowByTicker` | strike-level intraday flow | `normalizeIntervalFlowWsPayload` |
+| `trading_halts` | ✅ | `tradingHaltsStore` + play gates | halt-gating | `normalizeTradingHaltsWsPayload` |
+| `option_trades` | ✅ | `optionTradesStore` → HELIX persist | raw option tape | `normalizeOptionTradesWsPayload` |
+| `lit_trades` | ✅ | `litTradesStore` + lit/dark ratio | lit equity prints | `normalizeLitTradesWsPayload` |
+| `gex_strike_expiry` | ✅ | `gexStrikeExpiryStore` | GEX cross-validation | `normalizeGexStrikeExpiryWsPayload` |
+| `price` | ✅ | `priceByTicker` | UW-native underlying ticks | `normalizePriceWsPayload` |
 | `news` | ❌ | — | **UNUSED** | — |
 | `contract_screener` | ❌ | — | **UNUSED** | — |
 | `custom_alerts` | ❌ | — | **UNUSED** | — |
@@ -134,7 +134,7 @@ WS resilience is **excellent** and worth noting as a strength: half-open stall w
 
 **REST:** ~90–97 / 172 path-templates wired = **52–56% of documented REST surface wired.** But wired ≠ exercised. Continuously-exercised hot set (§2.1) is **~11 endpoints (~6%)**. Everything else fires only on a Largo question or desk refresh.
 
-**WS:** 7 / 12 channels = **58%**, and the 5 unused are disproportionately valuable real-time feeds.
+**WS:** 10 / 12 channels = **83%**. Unused: `news` (Benzinga owns news), `contract_screener`, `custom_alerts`.
 
 **Capability-weighted estimate (qualitative):** if you weight by trading-intelligence value rather than endpoint count, the platform extracts **maybe 35–45% of what an Advanced UW plan can deliver.** The flow/GEX/dark-pool/tide core is well-exploited; the entire alternative-data, real-time-tape, volatility-anomaly, and prediction-market surfaces are barely touched. This is a flat-rate plan (§7) — **every unused endpoint is paid-for capability left on the table.**
 

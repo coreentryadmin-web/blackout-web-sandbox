@@ -1066,6 +1066,36 @@ export function normalizeLitTradesWsPayload(raw: unknown): UwLitTradePrint[] {
   return out;
 }
 
+export type UwPriceTick = {
+  ticker: string;
+  price: number;
+  volume: number | null;
+  updatedAt: number;
+};
+
+/** Normalize UW `price:TICKER` WS payloads. */
+export function normalizePriceWsPayload(raw: unknown): UwPriceTick[] {
+  const rows = Array.isArray(raw) ? raw : (raw as Record<string, unknown>)?.data;
+  const list = Array.isArray(rows) ? rows : typeof raw === "object" && raw !== null ? [raw] : [];
+  const out: UwPriceTick[] = [];
+  const now = Date.now();
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const ticker = String(r.ticker ?? r.symbol ?? r.underlying ?? "").toUpperCase();
+    const price = Number(r.close ?? r.price ?? r.last ?? 0);
+    if (!ticker || !Number.isFinite(price) || price <= 0) continue;
+    const volRaw = Number(r.vol ?? r.volume ?? NaN);
+    out.push({
+      ticker,
+      price,
+      volume: Number.isFinite(volRaw) ? volRaw : null,
+      updatedAt: now,
+    });
+  }
+  return out;
+}
+
 export type UwGexStrikeExpiryRow = {
   ticker: string;
   strike: number;

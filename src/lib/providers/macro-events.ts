@@ -291,8 +291,26 @@ export function parseUwEconomicCalendar(rows: Record<string, unknown>[]): MacroE
       let event: string;
       let impact: "high" | "medium";
       if (type === "fomc") {
-        event = "FOMC Decision";
-        impact = "high";
+        const upper = rawEvent.toUpperCase();
+        if (upper.includes("MINUTE")) {
+          event = "FOMC Minutes";
+          impact = "medium";
+        } else if (upper.includes("PRESS CONFERENCE")) {
+          event = "FOMC Press Conference";
+          impact = "high";
+        } else if (
+          !rawEvent ||
+          upper.includes("DECISION") ||
+          upper.includes("STATEMENT") ||
+          upper.includes("RATE DECISION") ||
+          upper.includes("FOMC MEETING")
+        ) {
+          event = "FOMC Decision";
+          impact = "high";
+        } else {
+          event = rawEvent;
+          impact = "medium";
+        }
       } else if (type === "fed-speaker") {
         event = rawEvent || "Fed Speaker";
         impact = "medium";

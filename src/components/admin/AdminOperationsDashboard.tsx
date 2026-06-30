@@ -305,6 +305,7 @@ type UwStores = {
   lit_trades_buffered?: number;
   gex_strike_expiry_updated_at?: number | null;
   gex_strike_expiry_strikes?: number;
+  price_spx_updated_at?: number | null;
   active_halts: string[];
 };
 
@@ -379,6 +380,7 @@ function DataPipelineHealthTile({ health }: { health: AdminHealthPayload | null 
     { key: "option_trades_updated_at", label: "Option Tape",   channel: "option_trades"  },
     { key: "lit_trades_updated_at",   label: "Lit Trades",     channel: "lit_trades"     },
     { key: "gex_strike_expiry_updated_at", label: "GEX Strike Expiry", channel: "gex_strike_expiry" },
+    { key: "price_spx_updated_at", label: "UW Price (SPX)", channel: "price" },
   ];
 
   return (

@@ -12,6 +12,7 @@ import {
   type FlowStrikeStack,
 } from "@/lib/largo/flow-strike-stacks";
 import { mergeMacroEventsToday, type MacroEvent } from "./macro-events";
+import { computeLitDarkRatio } from "@/lib/uw-lit-dark-ratio";
 import { resolveDeskGap } from "./gap-proxy";
 import {
   gammaRegime,
@@ -590,6 +591,13 @@ export type SpxDeskPayload = {
   active_halts?: Array<{ symbol: string; halt_type: string; reason: string | null }>;
   /** True when the UW trading_halts WS channel is stale (auth failure or disconnected). */
   halt_channel_stale?: boolean;
+  /** Lit vs dark premium share from UW lit_trades + off_lit_trades WS (SPY proxy). */
+  lit_dark_ratio?: {
+    lit_premium: number;
+    dark_premium: number;
+    lit_share: number | null;
+    updated_at: number;
+  } | null;
   /** Dealer gamma concentration by expiry (UW greek-exposure/expiry). */
   greek_exposure: GreekExposureSummary | null;
   /** SPX premium flow by expiry bucket. */
@@ -644,6 +652,7 @@ export type SpxDeskPulse = Pick<
   | "market_label"
   | "price_age_ms"
   | "feed_stalled"
+  | "lit_dark_ratio"
 > & {
   polled_at: string;
   /** UW market tide — optionally pushed via SSE overlay when fresh. */
@@ -683,6 +692,8 @@ export type SpxDeskFlow = {
   flow_by_expiry: Record<string, unknown>[];
   net_flow_by_expiry: Record<string, unknown>[];
   greek_exposure: GreekExposureSummary | null;
+  /** Lit vs dark premium share from UW lit_trades + off_lit_trades WS (SPY proxy). */
+  lit_dark_ratio?: SpxDeskPayload["lit_dark_ratio"];
 };
 
 function level(
@@ -1219,6 +1230,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     regime: String(regime),
     levels,
     dark_pool: darkPool,
+    lit_dark_ratio: computeLitDarkRatio(),
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
     strike_stacks: computeFlowStrikeStacks(spxFlows),
@@ -1469,6 +1481,7 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
       reason: h.reason,
     })),
     halt_channel_stale: isTradingHaltChannelStale(),
+    lit_dark_ratio: computeLitDarkRatio(),
   };
   lastPulseForSignals = result;
   return result;
@@ -1561,6 +1574,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     polled_at: polledAt,
     price: spot,
     dark_pool: darkPool,
+    lit_dark_ratio: computeLitDarkRatio(),
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
     strike_stacks,

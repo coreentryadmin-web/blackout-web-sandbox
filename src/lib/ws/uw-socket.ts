@@ -21,6 +21,7 @@ import {
   normalizeIntervalFlowWsPayload,
   normalizeLitTradesWsPayload,
   normalizeOptionTradesWsPayload,
+  normalizePriceWsPayload,
   normalizeTradingHaltsWsPayload,
   optionTradePrintToFlowRaw,
   parseUwFlowAlert,
@@ -30,6 +31,7 @@ import {
   type UwGexStrikeExpiryRow,
   type UwLitTradePrint,
   type UwOptionTradePrint,
+  type UwPriceTick,
 } from "@/lib/providers/unusual-whales";
 import {
   type StoredTradingHalt,
@@ -122,6 +124,13 @@ function joinWiresForChannel(channel: UwWsChannel): string[] {
     return parseWsTickerCsv(process.env.UW_WS_GEX_STRIKE_EXPIRY_TICKERS, "SPX").map(
       (t) => `gex_strike_expiry:${t}`
     );
+  }
+  if (channel === "price") {
+    return parseWsTickerCsv(process.env.UW_WS_PRICE_TICKERS, "SPX,SPY").map((t) => `price:${t}`);
+  }
+  if (channel === "flow_alerts") {
+    // UW docs use `flow-alerts`; internal id is `flow_alerts`. Join both aliases for compat.
+    return ["flow-alerts", "flow_alerts"];
   }
   return [CHANNEL_JOIN_NAME[channel]];
 }
@@ -741,6 +750,20 @@ export const litTradesStore: {
   total_received: number;
 } = { rows: [], updatedAt: 0, total_received: 0 };
 
+const priceByTicker = new Map<string, UwPriceTick>();
+
+/** Latest UW `price:TICKER` tick (same socket as flow — time-aligned with tape). */
+export function getUwPriceForTicker(ticker: string): UwPriceTick | null {
+  return priceByTicker.get(ticker.toUpperCase()) ?? null;
+}
+
+function upsertPriceTicks(ticks: UwPriceTick[]) {
+  if (!ticks.length) return;
+  for (const tick of ticks) {
+    priceByTicker.set(tick.ticker.toUpperCase(), tick);
+  }
+}
+
 const GEX_STRIKE_EXPIRY_CELL_MAX = 2500;
 
 type GexStrikeExpiryTickerState = {
@@ -1097,6 +1120,16 @@ export function initUwSocket() {
     pushLitTradeRows(prints);
   });
 
+  uwSocket.subscribe("price", (payload) => {
+    if (payload && typeof payload === "object" && "status" in (payload as Record<string, unknown>)) {
+      return;
+    }
+    const ticks = normalizePriceWsPayload(payload);
+    if (!ticks.length) return;
+    recordUwDelivery("price");
+    upsertPriceTicks(ticks);
+  });
+
   uwSocket.subscribe("gex_strike_expiry", (payload) => {
     if (payload && typeof payload === "object" && "status" in (payload as Record<string, unknown>)) {
       return;
@@ -1209,6 +1242,8 @@ export function getUwSocketHealth() {
       gex_strike_expiry_updated_at: gexStrikeExpiryByTicker.get("SPX")?.updatedAt || null,
       gex_strike_expiry_cells: gexStrikeExpiryByTicker.get("SPX")?.cells.size ?? 0,
       gex_strike_expiry_strikes: getGexStrikeExpiryLadder("SPX")?.ladder.size ?? 0,
+      price_spx_updated_at: priceByTicker.get("SPX")?.updatedAt || null,
+      price_spy_updated_at: priceByTicker.get("SPY")?.updatedAt || null,
       active_halts: Array.from(tradingHaltsStore.halts.values())
         .filter((h) => h.active)
         .map((h) => h.symbol),
