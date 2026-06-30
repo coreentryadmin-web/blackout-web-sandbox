@@ -217,6 +217,21 @@ export function parseUwFlowAlert(row: Record<string, unknown>): MarketFlowAlert 
 
   const ruleRaw = String(row.alert_rule ?? row.rule_name ?? "").trim();
   const tradeRaw = Number(row.trade_count ?? 0);
+  const hasSweep = Boolean(row.has_sweep);
+
+  // UW's flow-alerts API does not return a score field. Compute a derived
+  // significance score (0–100) so the HELIX tape has a meaningful sort/filter signal:
+  // premium drives ~60% of the score; sweep prints and 0DTE add urgency weight.
+  const rawScore = Number(row.score ?? 0);
+  const score =
+    rawScore > 0
+      ? Math.min(100, rawScore)
+      : (() => {
+          const premPts = premium > 0 ? Math.min(60, Math.round((premium / 1_000_000) * 60)) : 0;
+          const sweepPts = hasSweep ? 25 : 0;
+          const dtePts = route === "0dte" ? 15 : 0;
+          return Math.min(100, premPts + sweepPts + dtePts);
+        })();
 
   return {
     ticker: String(row.ticker ?? "").toUpperCase(),
@@ -225,14 +240,14 @@ export function parseUwFlowAlert(row: Record<string, unknown>): MarketFlowAlert 
     expiry,
     strike,
     direction,
-    score: Number(row.score ?? 0),
+    score,
     route,
     // "" when UW gave no real timestamp — never a fabricated now(). An unknown-side
     // row still carries its real time when UW sent one (side and time are independent).
     alerted_at: alertedAt,
     alert_rule: ruleRaw || null,
     trade_count: Number.isFinite(tradeRaw) && tradeRaw > 0 ? tradeRaw : null,
-    has_sweep: Boolean(row.has_sweep),
+    has_sweep: hasSweep,
   };
 }
 
@@ -993,6 +1008,8 @@ export type UwOptionTradePrint = {
   premium: number;
   executed_at: string;
   tags: string[];
+  /** IV from UW WS payload (present on option_trades channel, absent on flow_alerts channel) */
+  iv?: number;
 };
 
 /** Normalize UW `option_trades` / `option_trades:TICKER` WS payloads into tape rows. */
@@ -1017,6 +1034,7 @@ export function normalizeOptionTradesWsPayload(raw: unknown): UwOptionTradePrint
       : tagsRaw
         ? [String(tagsRaw)]
         : [];
+    const ivRaw = Number(r.iv ?? r.implied_volatility ?? r.volatility ?? NaN);
     out.push({
       id: String(r.id ?? `${underlying}-${executedAt}-${price}-${size}`),
       underlying,
@@ -1026,6 +1044,7 @@ export function normalizeOptionTradesWsPayload(raw: unknown): UwOptionTradePrint
       premium,
       executed_at: executedAt.slice(0, 19),
       tags,
+      ...(Number.isFinite(ivRaw) && ivRaw > 0 ? { iv: ivRaw } : {}),
     });
   }
   return out;
@@ -1162,6 +1181,8 @@ export function optionTradePrintToFlowRaw(print: UwOptionTradePrint): Record<str
     created_at: print.executed_at,
     executed_at: print.executed_at,
     tags: print.tags,
+    // Forward IV when present so fetchRecentFlows can extract it via raw_payload->'iv'.
+    ...(print.iv != null ? { iv: print.iv } : {}),
   };
 }
 
