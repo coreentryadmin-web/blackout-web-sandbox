@@ -78,8 +78,10 @@ export function PlaybookBoard({
   const editionLabel = formatEditionDate(edition?.edition_for);
   const isStale = Boolean(edition?.stale);
   const isDegraded = Boolean(edition?.degraded);
+  const carryUntilClose = Boolean(edition?.carry_until_close);
   const servedForLabel = formatEditionDate(edition?.served_for ?? edition?.edition_for);
   const showFreshBadge = hasPlays && !isStale && !isDegraded;
+  const showBuildSlots = !hasPlays;
 
   const morningSummary = playStatusAvailable
     ? Array.from(confirmByTicker?.values() ?? []).reduce(
@@ -174,6 +176,12 @@ export function PlaybookBoard({
           published yet. Levels may no longer be current.
         </p>
       )}
+      {carryUntilClose && (
+        <p className="nighthawk-playbook-notice" role="status">
+          Today&apos;s generated plays stay live until the session close. Tomorrow&apos;s board takes over after
+          the cash close.
+        </p>
+      )}
       {isDegraded && (
         <p className="nighthawk-playbook-notice" role="status">
           Served from a degraded fallback — treat as provisional until tonight&apos;s edition publishes.
@@ -216,27 +224,24 @@ export function PlaybookBoard({
             );
           })}
         </div>
-      ) : showRecapState ? (
-        <div className="nighthawk-playbook-pending" role="status">
-          <div className="nighthawk-playbook-pending-inner">
-            <p className="nighthawk-playbook-pending-kicker">Overnight playbook</p>
-            <h3 className="nighthawk-playbook-pending-title">Recap published</h3>
-            <p className="nighthawk-playbook-pending-sub">
-              No ranked plays cleared tonight&apos;s screen. The market read above is your overnight brief.
-            </p>
-          </div>
+      ) : showBuildSlots ? (
+        <div className="nighthawk-playbook-rows nighthawk-playbook-rows-building" role="status">
+          {Array.from({ length: SLOT_COUNT }, (_, i) => (
+            <PlaybookPlayRow
+              key={`building-slot-${i + 1}`}
+              rank={i + 1}
+              empty
+              emptyTitle="The Hawk is circling"
+              emptyCopy={
+                showRecapState
+                  ? "No grounded plays cleared yet · tomorrow's tape is still under the lens"
+                  : "Tomorrow's playbook is being forged from live tape"
+              }
+            />
+          ))}
         </div>
       ) : (
-        <div className="nighthawk-playbook-pending" role="status">
-          <div className="nighthawk-playbook-pending-inner">
-            <p className="nighthawk-playbook-pending-kicker">Overnight playbook</p>
-            <h3 className="nighthawk-playbook-pending-title">Awaiting close</h3>
-            <p className="nighthawk-playbook-pending-sub">
-              Ranked setups publish after the cash close —{" "}
-              <span className="nighthawk-playbook-pending-time">~5:30 PM ET</span>.
-            </p>
-          </div>
-        </div>
+        null
       )}
     </section>
   );

@@ -1,10 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
+import {
+  requireDatabaseInProduction,
+  fetchLatestNighthawkEdition,
+  fetchLatestPlayableNighthawkEdition,
+  fetchNighthawkEditionByDate,
+} from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
 import { convictionFromScore } from "@/lib/nighthawk/scorer";
-import { nextTradingDayEt, priorEt, todayEt } from "@/lib/nighthawk/session";
+import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/lib/nighthawk/session";
 import { requireToolApi } from "@/lib/tool-access-server";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
 
@@ -114,8 +119,22 @@ export async function GET(req: NextRequest) {
   if (dbDenied) return dbDenied;
 
   const editionFor = req.nextUrl.searchParams.get("date") ?? nextTradingDayEt(todayEt());
+  const activePlayable = await fetchLatestPlayableNighthawkEdition();
 
-  // Exact requested edition — always fresh, render as-is.
+  // A generated playbook remains actionable until its target session closes. If the next evening
+  // build has already written a recap-only/pending row, do NOT hide today's live plays before 4PM ET.
+  if (
+    activePlayable &&
+    activePlayable.edition_for !== editionFor &&
+    isBeforeOrAtMarketCloseEt(activePlayable.edition_for)
+  ) {
+    const edition = rowToNightHawkEdition(activePlayable);
+    edition.carry_until_close = true;
+    edition.served_for = activePlayable.edition_for;
+    return NextResponse.json(edition, { headers: NO_STORE_HEADERS });
+  }
+
+  // Exact requested edition — fresh for the requested session when it has published.
   const exact = await fetchNighthawkEditionByDate(editionFor);
   if (exact) {
     return NextResponse.json(rowToNightHawkEdition(exact), { headers: NO_STORE_HEADERS });

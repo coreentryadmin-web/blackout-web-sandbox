@@ -9,6 +9,8 @@ type PlaybookPlayRowProps = {
   rank: number;
   play?: PlaybookPlay;
   empty?: boolean;
+  emptyTitle?: string;
+  emptyCopy?: string;
   morningConfirm?: PlayMorningStatus;
   onSelect?: () => void;
 };
@@ -25,7 +27,15 @@ function morningBadgeClass(status: PlayMorningStatus["status"]): string {
   return "nighthawk-play-morning-invalidated";
 }
 
-export function PlaybookPlayRow({ rank, play, empty, morningConfirm, onSelect }: PlaybookPlayRowProps) {
+export function PlaybookPlayRow({
+  rank,
+  play,
+  empty,
+  emptyTitle,
+  emptyCopy,
+  morningConfirm,
+  onSelect,
+}: PlaybookPlayRowProps) {
   const dir = play?.direction?.toUpperCase() ?? "";
   const isBull = dir.includes("BULL") || dir === "LONG" || dir.includes("CALL");
   const isBear = dir.includes("BEAR") || dir === "SHORT" || dir.includes("PUT");
@@ -61,8 +71,10 @@ export function PlaybookPlayRow({ rank, play, empty, morningConfirm, onSelect }:
 
       {empty || !play ? (
         <div className="nighthawk-play-body nighthawk-play-body-empty">
-          <p className="nighthawk-play-empty-title">Open slot</p>
-          <p className="nighthawk-play-empty-copy">Fills after the evening scan · ~5:30 PM ET</p>
+          <p className="nighthawk-play-empty-title">{emptyTitle ?? "Open slot"}</p>
+          <p className="nighthawk-play-empty-copy">
+            {emptyCopy ?? "Fills after the evening scan · ~5:30 PM ET"}
+          </p>
         </div>
       ) : (
         <div className="nighthawk-play-body">

@@ -60,6 +60,8 @@ export type NightHawkEdition = {
   stale?: boolean;
   /** The edition_for date that was actually served when `stale` is true (the older edition's date). */
   served_for?: string | null;
+  /** True when prior generated plays are intentionally kept visible until their session closes. */
+  carry_until_close?: boolean;
 };
 
 export type PlayConfirmStatus = "CONFIRMED" | "DEGRADED" | "INVALIDATED";

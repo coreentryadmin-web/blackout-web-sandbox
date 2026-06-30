@@ -82,3 +82,21 @@ export function isWeekdayEt(): boolean {
   const { weekday } = etNowParts();
   return weekday !== "Sat" && weekday !== "Sun";
 }
+
+export function isBeforeOrAtMarketCloseEt(
+  sessionYmd: string | null | undefined,
+  now = new Date()
+): boolean {
+  if (!sessionYmd || !/^\d{4}-\d{2}-\d{2}$/.test(sessionYmd)) return false;
+  if (!isTradingDayEt(sessionYmd)) return false;
+  if (formatEtDate(now) !== sessionYmd) return false;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const mins = Number(get("hour")) * 60 + Number(get("minute"));
+  return mins <= 16 * 60;
+}

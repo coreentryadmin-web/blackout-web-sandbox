@@ -2283,6 +2283,33 @@ export async function fetchLatestNighthawkEdition(): Promise<NighthawkEditionRow
   };
 }
 
+export async function fetchLatestPlayableNighthawkEdition(): Promise<NighthawkEditionRow | null> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `
+    SELECT edition_for, session_date, published_at,
+           recap_headline, recap_summary, market_recap, plays, meta
+    FROM nighthawk_editions
+    WHERE jsonb_typeof(COALESCE(plays, '[]'::jsonb)) = 'array'
+      AND jsonb_array_length(COALESCE(plays, '[]'::jsonb)) > 0
+    ORDER BY edition_for DESC
+    LIMIT 1
+    `
+  );
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    edition_for: isoDateString(r.edition_for),
+    session_date: isoDateString(r.session_date),
+    published_at: new Date(String(r.published_at)).toISOString(),
+    recap_headline: r.recap_headline != null ? String(r.recap_headline) : null,
+    recap_summary: r.recap_summary != null ? String(r.recap_summary) : null,
+    market_recap: (r.market_recap as Record<string, unknown>) ?? {},
+    plays: Array.isArray(r.plays) ? r.plays : [],
+    meta: (r.meta as Record<string, unknown>) ?? {},
+  };
+}
+
 export async function cacheNighthawkPlayExplanation(
   editionFor: string,
   ticker: string,
