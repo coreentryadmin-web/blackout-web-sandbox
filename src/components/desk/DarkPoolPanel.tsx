@@ -57,7 +57,13 @@ function biasFromSide(prints: DarkPoolRow[]) {
   const buy   = prints.filter((p) => p.side === "buy").reduce((s, p) => s + p.premium, 0);
   const sell  = prints.filter((p) => p.side === "sell").reduce((s, p) => s + p.premium, 0);
   const total = buy + sell;
-  if (total <= 0) return { label: "MIXED",   color: "#7dd3fc", glow: "rgba(125,211,252,0.3)" };
+  // When no print has a buy/sell side (UW market-wide endpoint omits direction),
+  // show "—" rather than "MIXED" to avoid implying the data is split.
+  if (total <= 0) {
+    const hasSideData = prints.some((p) => p.side === "buy" || p.side === "sell");
+    if (!hasSideData) return { label: "—", color: "#9fb4d4", glow: "rgba(159,180,212,0.2)" };
+    return { label: "MIXED", color: "#7dd3fc", glow: "rgba(125,211,252,0.3)" };
+  }
   const r = buy / total;
   if (r >= 0.65) return { label: "BULLISH",  color: "#00e676", glow: "rgba(0,230,118,0.35)" };
   if (r <= 0.35) return { label: "BEARISH",  color: "#ff2d55", glow: "rgba(255,45,85,0.35)" };
@@ -147,7 +153,7 @@ export function DarkPoolPanel() {
   // Fetch a larger pool so client-side ticker filtering actually finds prints
   const load = useCallback(async () => {
     try {
-      const res  = await fetchDarkPoolPrints({ limit: 200 });
+      const res  = await fetchDarkPoolPrints({ limit: 100 }); // API hard-caps at 100
       const rows = res.prints ?? [];
       setAllPrints(rows);
       setErrored(false);

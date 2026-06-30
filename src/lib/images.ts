@@ -3,7 +3,7 @@ export const IMAGES = {
   heroCommand: "/images/hero-command-desk.jpg",
   nighthawkOperator: "/images/nighthawk-operator.jpg",
   dashboardBg: "/images/dashboard-bg.png",
-  ogImage: "/images/og-image.png",
+  ogImage: "/opengraph-image",
   authBg: "/images/hero-banner.png",
 } as const;
 

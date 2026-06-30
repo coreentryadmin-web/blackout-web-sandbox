@@ -6,7 +6,7 @@ import { SITE } from "@/lib/site";
 
 const SUPPORT_EMAIL = "support@blackouttrades.com";
 const BILLING_EMAIL = "billing@blackouttrades.com";
-const YEAR = 2026;
+const YEAR = new Date().getFullYear();
 
 const INSTRUMENTS = [
   { label: "SPX Slayer", href: "/dashboard" },

@@ -11,6 +11,9 @@ import { GET as uwCacheRefreshGet } from "@/app/api/cron/uw-cache-refresh/route"
 import { GET as nightsWatchWarmGet } from "@/app/api/cron/nights-watch-warm/route";
 import { GET as heatmapWarmGet } from "@/app/api/cron/heatmap-warm/route";
 import { GET as gridWarmGet } from "@/app/api/cron/grid-warm/route";
+import { GET as spxEvaluateGet } from "@/app/api/cron/spx-evaluate/route";
+import { GET as marketRegimeGet } from "@/app/api/cron/market-regime-detector/route";
+import { GET as spxSignalGet } from "@/app/api/cron/spx-signal-observe/route";
 
 export type CronHandler = (req: NextRequest) => Promise<Response>;
 
@@ -31,6 +34,10 @@ export const CRON_DISPATCH: Record<string, { handler: CronHandler; force: boolea
   "nights-watch-warm": { handler: nightsWatchWarmGet, force: true },
   "heatmap-warm": { handler: heatmapWarmGet, force: true },
   "grid-warm": { handler: gridWarmGet, force: true },
+  // RTH-critical crons — safe to re-trigger during an incident (idempotent read+evaluate)
+  "spx-evaluate": { handler: spxEvaluateGet, force: false },
+  "market-regime-detector": { handler: marketRegimeGet, force: false },
+  "spx-signal-observe": { handler: spxSignalGet, force: false },
 };
 
 export const DISPATCHABLE_CRONS = Object.keys(CRON_DISPATCH);

@@ -27,6 +27,8 @@ export type TrackRecordPagePayload = {
 const METHODOLOGY =
   "SPX Slayer results are graded from the closed play ledger (every opened play, no cherry-picking). " +
   "Night Hawk results are resolved target/stop outcomes from published editions. " +
+  "Night Hawk returns reflect next-day underlying stock price movement from the published entry range midpoint — " +
+  "not option-premium returns. Actual option P&L will differ based on strike selection, expiry, and implied volatility at entry. " +
   "Scratch/breakeven counts appear in the embed and desk panels where applicable.";
 
 const NH_WINDOW_DAYS = 90;

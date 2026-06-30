@@ -1044,7 +1044,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const uwExclusive = uwConfigured()
     ? await runUwSequential([
         () => resolveMarketTide(),
-        () => fetchUwNope("SPX").catch(() => null),
+        // SPX NOPE: try SPX first, fall back to SPY (SPX endpoint sometimes 404s).
+        () => fetchUwNope("SPX").catch(() => null).then(r => r ?? fetchUwNope("SPY").catch(() => null)),
         () => resolveFlow0dte("SPX"),
         () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
         () =>

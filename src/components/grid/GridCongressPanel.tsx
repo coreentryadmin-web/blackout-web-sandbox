@@ -21,8 +21,10 @@ function tradeColor(type: string): string {
 
 function partyDot(party: string): string {
   const p = party.toUpperCase();
-  if (p.startsWith("R")) return "text-[#ff5c78]";
-  if (p.startsWith("D")) return "text-sky-400";
+  // UW congress endpoint may return "Republican"/"Democrat", "R"/"D", or chamber
+  // labels "house"/"senate" (which carry no party info — fall through to neutral).
+  if (p === "R" || p.startsWith("REP") || p === "REPUBLICAN") return "text-[#ff5c78]";
+  if (p === "D" || p.startsWith("DEM") || p === "DEMOCRAT") return "text-sky-400";
   return "text-sky-300/50";
 }
 

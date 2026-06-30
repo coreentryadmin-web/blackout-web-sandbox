@@ -16,20 +16,27 @@ export async function GET(req: NextRequest) {
       "SELECT * FROM coaching_alerts ORDER BY generated_at DESC LIMIT 10",
       []
     );
+    const now = Date.now();
     return NextResponse.json({
-      alerts: result.rows.map(r => ({
-        id: r.id,
-        generatedAt: r.generated_at,
-        trigger: r.trigger_type,
-        alert: r.alert_text,
-        urgency: r.urgency,
-        spxPrice: r.spx_price,
-        callWall: r.call_wall,
-        putWall: r.put_wall,
-        vwap: r.vwap,
-        forLongs: r.for_longs,
-        forShorts: r.for_shorts,
-      }))
+      alerts: result.rows.map(r => {
+        const generatedAt = r.generated_at;
+        const ageMs = generatedAt ? now - new Date(generatedAt).getTime() : null;
+        return {
+          id: r.id,
+          generatedAt,
+          age_minutes: ageMs != null ? Math.floor(ageMs / 60_000) : null,
+          stale: ageMs != null ? ageMs > 60 * 60 * 1000 : false,
+          trigger: r.trigger_type,
+          alert: r.alert_text,
+          urgency: r.urgency,
+          spxPrice: r.spx_price,
+          callWall: r.call_wall,
+          putWall: r.put_wall,
+          vwap: r.vwap,
+          forLongs: r.for_longs,
+          forShorts: r.for_shorts,
+        };
+      })
     }, { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json({ alerts: [] }, { status: 200, headers: NO_STORE });
