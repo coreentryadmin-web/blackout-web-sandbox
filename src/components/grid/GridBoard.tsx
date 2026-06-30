@@ -20,6 +20,8 @@ import {
   useGridLayout,
 } from "@/lib/grid/grid-layout-context";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
+import { GridBootstrapPrefetch } from "./GridBootstrapPrefetch";
+import { SWRConfig } from "swr";
 
 /**
  * Panel registry — single source of truth for the board. `id` drives
@@ -100,10 +102,13 @@ function GridDeck() {
  */
 export function GridBoard() {
   return (
-    <GridLayoutProvider>
-      <GridBanner />
-      <GridToolbar />
-      <GridDeck />
-    </GridLayoutProvider>
+    <SWRConfig value={{ revalidateOnFocus: true }}>
+      <GridLayoutProvider>
+        <GridBootstrapPrefetch />
+        <GridBanner />
+        <GridToolbar />
+        <GridDeck />
+      </GridLayoutProvider>
+    </SWRConfig>
   );
 }

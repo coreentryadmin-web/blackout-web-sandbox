@@ -7,6 +7,36 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" };
 
+type FlowAnomalyRow = {
+  anomaly_type: string;
+  ticker: string | null;
+  detail: string | null;
+  severity: string | null;
+  detected_at: string;
+  premium: number | null;
+};
+
+type CoachingAlertRow = {
+  trigger_type: string;
+  alert_text: string;
+  urgency: string | null;
+  generated_at: string;
+};
+
+type SignalAccuracyRow = {
+  signal_source: string;
+  total: string | number;
+  wins: string | number;
+  win_rate: string | number | null;
+};
+
+type RegimeAccuracyRow = {
+  regime: string;
+  total: string | number;
+  wins: string | number;
+  win_rate: string | number | null;
+};
+
 /**
  * /api/platform/intel — unified platform intelligence snapshot
  *
@@ -77,16 +107,16 @@ export async function GET(req: NextRequest) {
     const regimeRow = regime.status === "fulfilled" && regime.value.rows.length > 0
       ? regime.value.rows[0] : null;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anomalyRows: any[] = anomalies.status === "fulfilled" ? anomalies.value.rows : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const coachingRows: any[] = coaching.status === "fulfilled" ? coaching.value.rows : [];
+    const anomalyRows: FlowAnomalyRow[] =
+      anomalies.status === "fulfilled" ? (anomalies.value.rows as FlowAnomalyRow[]) : [];
+    const coachingRows: CoachingAlertRow[] =
+      coaching.status === "fulfilled" ? (coaching.value.rows as CoachingAlertRow[]) : [];
     const briefRow = brief.status === "fulfilled" && brief.value.rows.length > 0
       ? brief.value.rows[0] : null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const signalRows: any[] = signalStats.status === "fulfilled" ? signalStats.value.rows : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const regimeAccRows: any[] = regimeAccuracy.status === "fulfilled" ? regimeAccuracy.value.rows : [];
+    const signalRows: SignalAccuracyRow[] =
+      signalStats.status === "fulfilled" ? (signalStats.value.rows as SignalAccuracyRow[]) : [];
+    const regimeAccRows: RegimeAccuracyRow[] =
+      regimeAccuracy.status === "fulfilled" ? (regimeAccuracy.value.rows as RegimeAccuracyRow[]) : [];
 
     // Derive platform-wide intelligence summary
     const criticalAnomalies = anomalyRows.filter((a) => a.severity === "CRITICAL");

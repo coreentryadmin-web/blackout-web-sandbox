@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshestMessageAt, isUwSocketStalled } from "./uw-socket-stall";
+import { freshestMessageAt, isUwSocketStalled, mergeFreshestTimestamps } from "./uw-socket-stall";
 
 const CHANNELS = ["flow_alerts", "market_tide", "gex"] as const;
 
@@ -31,4 +31,11 @@ test("isUwSocketStalled: beyond window -> true", () => {
 
 test("isUwSocketStalled: boundary now-freshest === stallMs -> false (strict >)", () => {
   assert.equal(isUwSocketStalled(1_000_000 - 75_000, 75_000, 1_000_000), false);
+});
+
+test("mergeFreshestTimestamps: null handling + max", () => {
+  assert.equal(mergeFreshestTimestamps(null, null), null);
+  assert.equal(mergeFreshestTimestamps(10, null), 10);
+  assert.equal(mergeFreshestTimestamps(null, 20), 20);
+  assert.equal(mergeFreshestTimestamps(10, 20), 20);
 });

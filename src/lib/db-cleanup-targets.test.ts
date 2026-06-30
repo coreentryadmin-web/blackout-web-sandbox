@@ -12,6 +12,15 @@ test("accepts all real (table,column) pairs incl. outcome tables", () => {
   assert.ok(isAllowedCleanupTarget("admin_audit_log", "created_at"));
   assert.ok(isAllowedCleanupTarget("spx_play_outcomes", "closed_at"));
   assert.ok(isAllowedCleanupTarget("nighthawk_play_outcomes", "created_at"));
+  assert.ok(isAllowedCleanupTarget("market_regime", "captured_at"));
+  assert.ok(isAllowedCleanupTarget("flow_anomalies", "detected_at"));
+  assert.ok(isAllowedCleanupTarget("coaching_alerts", "generated_at"));
+});
+
+test("rejects wrong age column for the new operational tables", () => {
+  assert.equal(isAllowedCleanupTarget("market_regime", "created_at"), false);
+  assert.equal(isAllowedCleanupTarget("flow_anomalies", "created_at"), false);
+  assert.equal(isAllowedCleanupTarget("coaching_alerts", "created_at"), false);
 });
 
 test("rejects wrong age column for outcome tables", () => {

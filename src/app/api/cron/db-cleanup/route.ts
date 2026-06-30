@@ -108,6 +108,9 @@ async function runCleanup(): Promise<Record<string, number>> {
     nighthawkPlayOutcomes,
     spxSignalObservations,
     spxSignalWeightReports,
+    marketRegime,
+    flowAnomalies,
+    coachingAlerts,
   ] = await Promise.all([
     // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
     // NOTE: this table's timestamp column is "at", not "created_at"
@@ -146,6 +149,18 @@ async function runCleanup(): Promise<Record<string, number>> {
 
     // spx_signal_weight_reports: one row per nightly run — keep 365 days
     deleteOlderThan("spx_signal_weight_reports", "computed_at", 365),
+
+    // market_regime: every-few-min RTH snapshots; only the latest row is read for "current
+    // regime". Previously unbounded — keep 90 days for trend analytics.
+    deleteOlderThan("market_regime", "captured_at", 90),
+
+    // flow_anomalies: every-5-min RTH detections (recent ones surfaced in UI). Previously
+    // unbounded — keep 90 days.
+    deleteOlderThan("flow_anomalies", "detected_at", 90),
+
+    // coaching_alerts: every-10-min RTH rows (UI reads only the last ~30 min). Previously
+    // unbounded — keep 90 days.
+    deleteOlderThan("coaching_alerts", "generated_at", 90),
   ]);
 
   return {
@@ -160,5 +175,8 @@ async function runCleanup(): Promise<Record<string, number>> {
     nighthawk_play_outcomes: nighthawkPlayOutcomes,
     spx_signal_observations: spxSignalObservations,
     spx_signal_weight_reports: spxSignalWeightReports,
+    market_regime: marketRegime,
+    flow_anomalies: flowAnomalies,
+    coaching_alerts: coachingAlerts,
   };
 }
