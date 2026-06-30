@@ -40,6 +40,17 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   gating via Whop). Premium tools (`/flows`, `/terminal`, `/heatmap`, `/nighthawk`) require both a
   paid tier and market-data API keys (`UW_API_KEY`, `POLYGON_API_KEY`/`MASSIVE_API_KEY`), so they
   cannot be fully exercised locally without those third-party keys.
+- **Gotcha — keyless mode only applies when NO Clerk keys are set.** If this cloud environment has
+  **production** Clerk keys injected as secrets (`CLERK_SECRET_KEY` / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+  present in env), `@clerk/nextjs` uses them and they are **domain-locked to `blackouttrades.com`** —
+  localhost sign-in then fails hard (`"Production Keys are only allowed for domain on the requesting
+  URL"`, and protected pages 404/redirect to `accounts.blackouttrades.com`). There are no dev keys, so
+  **you cannot render an authed/premium page on localhost in that case.** To test authed/premium/
+  launch-gated UI (e.g. `/nighthawk`), test **against production**: mint a one-time Clerk `sign_in_token`
+  via the Backend API for a user whose `public_metadata` is `{ "role": "admin", "tier": "premium" }`
+  (`role:"admin"` bypasses per-tool launch gates; `tier` drives `requireTierApi`), open
+  `https://blackouttrades.com/sign-in?__clerk_ticket=<token>`, then **DELETE the test user afterward**
+  (`DELETE /v1/users/{id}`) — it is a real user on the prod Clerk instance.
 
 ### Production edge (Cloudflare) — security headers / CSP are NOT served from `next.config.mjs`
 - Production is fronted by **Cloudflare**, and the security **response headers are delivered by a

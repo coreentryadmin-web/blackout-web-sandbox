@@ -22,6 +22,7 @@ import { NightsWatchDetailModal } from "@/components/nights-watch/NightsWatchDet
 import { CollapsibleTile } from "@/components/nighthawk/CollapsibleTile";
 import type { EnrichedPosition, ValuationStatus } from "@/lib/nights-watch/valuation";
 import type { Verdict, VerdictAction } from "@/lib/nights-watch/verdict";
+import { holdsSpxFamily, resolveCoachView } from "@/lib/nights-watch/coach-view";
 
 // The shape the GET route returns per position: the enriched row + a verdict.
 type ApiPosition = EnrichedPosition & { verdict: Verdict };
@@ -1418,6 +1419,13 @@ export function NightsWatchPanel() {
   const hasPositions = positions.length > 0;
   const hasOpen = openPositions.length > 0;
   const hasClosed = closedPositions.length > 0;
+  // The Position coach is the global SPX wall/VWAP coaching feed (coaching_alerts) — it is
+  // SPX-specific market guidance, NOT a per-position read. So it is only meaningful when the
+  // user is actually holding an SPX-family contract; otherwise it would surface market data
+  // unrelated to their book (which reads as "random"). resolveCoachView is the single source
+  // of truth for the gating (unit-tested in coach-view.test.ts).
+  const holdsSpx = holdsSpxFamily(openPositions.map((p) => p.ticker));
+  const coachView = resolveCoachView(hasOpen, holdsSpx);
   // Summary is OPEN-only by construction: passing just the open set means its count, its
   // unrealized P&L sum, its return %, and its verdict tallies all exclude settled legs.
   const summary = ready ? summarize(openPositions) : null;
@@ -1519,8 +1527,8 @@ export function NightsWatchPanel() {
           />
         ) : state.kind === "ready" && !hasPositions ? (
           <EmptyState
-            title="No open positions"
-            description="No open positions — add your first above."
+            title="Nothing on the watch — yet"
+            description="Night's Watch stays dark until you're holding something. Add a position above and the coach wakes up: live P&L, Greeks, and a hold / trim / sell call on every contract."
           />
         ) : state.kind === "ready" ? (
           <>
@@ -1571,16 +1579,33 @@ export function NightsWatchPanel() {
           </>
         ) : null}
 
-        <CollapsibleTile
-          kicker="Alerts"
-          title="Position coach"
-          badge={
-            coachAlertCount != null && coachAlertCount > 0 ? String(coachAlertCount) : undefined
-          }
-          defaultOpen={coachAlertCount == null || coachAlertCount > 0}
-        >
-          <CoachingAlertsPanel embedded onCount={setCoachAlertCount} />
-        </CollapsibleTile>
+        {/* Position coach — strictly tied to the user's OPEN book. With no open positions
+            there is nothing to coach, so the tile is hidden and the catchy empty state above
+            stands alone (no global market data leaking in). With open positions, the SPX
+            wall/VWAP coaching feed only applies to SPX holders; everyone else gets a clear,
+            position-grounded note instead of unrelated market alerts. */}
+        {coachView !== "hidden" && (
+          <CollapsibleTile
+            kicker="Alerts"
+            title="Position coach"
+            badge={
+              coachView === "spx-alerts" && coachAlertCount != null && coachAlertCount > 0
+                ? String(coachAlertCount)
+                : undefined
+            }
+            defaultOpen={coachView === "spx-alerts" && (coachAlertCount == null || coachAlertCount > 0)}
+          >
+            {coachView === "spx-alerts" ? (
+              <CoachingAlertsPanel embedded onCount={setCoachAlertCount} />
+            ) : (
+              <p className="font-mono text-[11px] leading-relaxed text-sky-300/80">
+                Every contract above carries its own live hold / trim / sell read — that&apos;s
+                your coaching. SPX wall &amp; VWAP coaching lights up here the moment you&apos;re
+                holding an SPX position.
+              </p>
+            )}
+          </CollapsibleTile>
+        )}
       </div>
 
       {/* Persistent disclaimer */}
