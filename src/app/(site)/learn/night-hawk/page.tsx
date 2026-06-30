@@ -188,7 +188,7 @@ export default function Page() {
                   { name: "Thermal", href: "/learn/heat-maps", role: "GEX Wall Confirmation", description: "Confirm in Thermal that the call wall and put wall identified in the edition are still structurally intact." },
                   { name: "HELIX Options Flow", href: "/learn/helix-flows", role: "Flow Direction Confirmation", description: "Verify that the direction of large-order flow aligns with Night Hawk's directional bias at the open." },
                   { name: "BlackOut Grid", href: "/learn/blackout-grid", role: "Overnight Catalyst Monitoring", description: "Check the Grid in the pre-market window to identify any overnight developments Night Hawk's catalyst scan could not have captured." },
-                  { name: "Largo AI Terminal", href: "/learn/largo-ai", role: "Thesis Stress-Testing", description: "Largo can stress-test the thesis before committing capital, particularly when the edition flags elevated uncertainty." },
+                  { name: "Largo Terminal", href: "/learn/largo-ai", role: "Thesis Stress-Testing", description: "Largo can stress-test the thesis before committing capital, particularly when the edition flags elevated uncertainty." },
                   { name: "Night's Watch", href: "/learn/nights-watch", role: "Position Tracking", description: "Once you execute a Night Hawk play, Night's Watch is where you manage it." },
                 ].map((tool, i) => (
                   <Link key={i} href={tool.href} className="flex gap-5 p-5 bg-white/3 border border-white/10 rounded-xl hover:border-cyan-400/30 hover:bg-cyan-400/3 transition-all group">

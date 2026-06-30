@@ -12,7 +12,7 @@ const INSTRUMENTS = [
   { label: "SPX Slayer", href: "/dashboard" },
   { label: "HELIX Flow", href: "/flows" },
   { label: "Thermal", href: "/heatmap" },
-  { label: "Largo AI", href: "/terminal" },
+  { label: "Largo", href: "/terminal" },
   { label: "Night Hawk", href: "/nighthawk" },
 ];
 
@@ -139,7 +139,7 @@ export function LandingFooter() {
               STOP TRADING <span className="auth-grad">BLIND.</span>
             </h2>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-white/65">
-              The whole desk in one command surface — flow, dealer positioning, dark-pool prints and an AI analyst, live.
+              The whole desk in one command surface — flow, dealer positioning, dark-pool prints and BlackOut Intelligence, live.
             </p>
           </div>
           <div className="flex items-center gap-4">

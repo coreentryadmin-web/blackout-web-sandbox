@@ -13,7 +13,7 @@ export const MARK_ACCENT: Record<MarkProduct, string> = {
   spx: "#00e676", // emerald — system / primary
   helix: "#bf5fff", // violet  — AI flow tape
   heatmap: "#ff6b2b", // orange  — heat
-  largo: "#22d3ee", // cyan    — Largo AI (canonical cyan #22d3ee)
+  largo: "#22d3ee", // cyan    — Largo (canonical cyan #22d3ee)
   nighthawk: "#ff2d55", // red     — the hunt
   grid: "#ffcc4d", // gold    — the market-intelligence command center
 };
@@ -35,7 +35,7 @@ const DEFAULT_TITLE: Record<MarkProduct, string> = {
   spx: "SPX Slayer",
   helix: "HELIX",
   heatmap: "BlackOut Thermal",
-  largo: "Largo AI",
+  largo: "Largo",
   nighthawk: "Night Hawk",
   grid: "BlackOut Grid",
 };

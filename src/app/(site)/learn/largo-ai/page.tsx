@@ -5,9 +5,9 @@ import type { Metadata } from "next";
 import { LearnDoc } from "@/components/learn/LearnDoc";
 
 export const metadata: Metadata = {
-  title: "Largo AI Terminal | BlackOut Trading",
+  title: "Largo Terminal | BlackOut Trading",
   description:
-    "Largo is BlackOut'\''s AI-powered market analysis terminal. Ask structured market questions, get grounded answers using live GEX, flow, and positioning data.",
+    "Largo is BlackOut'\''s market-analysis terminal, powered by BlackOut Intelligence. Ask structured market questions, get grounded answers using live GEX, flow, and positioning data.",
 };
 
 const sections = [
@@ -24,8 +24,8 @@ const sections = [
 export default function Page() {
   return (
     <LearnDoc
-      title="Largo AI Terminal"
-      description="Our AI engine wired to live BlackOut data. Ask hard questions about current dealer positioning, flow context, and structural market mechanics."
+      title="Largo Terminal"
+      description="Our BlackOut Intelligence wired to live BlackOut data. Ask hard questions about current dealer positioning, flow context, and structural market mechanics."
       sections={sections}
     >
 
@@ -34,7 +34,7 @@ export default function Page() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-white/10">Overview</h2>
               <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
-                  Largo is BlackOut&apos;s AI analysis terminal, powered by our AI engine. It is not a chatbot. It is a market analyst with live read access to the platform&apos;s core data — GEX structure, flow tape, dealer positioning, and open positions.
+                  Largo is BlackOut&apos;s market-analysis terminal, powered by BlackOut Intelligence. It is not a chatbot. It is a market analyst with live read access to the platform&apos;s core data — GEX structure, flow tape, dealer positioning, and open positions.
                 </p>
                 <p>
                   The key distinction from a general AI assistant: Largo does not rely on training data to answer market questions. When you ask about current SPX dealer positioning, Largo calls the live GEX API. When you ask about recent flow, it queries the flow database.

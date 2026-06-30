@@ -102,7 +102,7 @@ export default function HelixFlowsPage() {
                   { step: "4", title: "Cross-reference strikes with SPX Slayer", body: "For any print that appears significant, open SPX Slayer and locate the strike on the GEX wall chart. Prints at or beyond key GEX levels carry structural weight." },
                   { step: "5", title: "Review the strike stack panel", body: "Check the strike stack panel periodically for developing concentrations. A strike stack that builds over 30-60 minutes indicates sustained institutional positioning." },
                   { step: "6", title: "Read net flow bias directionally", body: "Use the net flow bias as a session-level directional lean. Bias above 60% calls suggests institutions are positioning for upside." },
-                  { step: "7", title: "Escalate to Largo for complex prints", body: "If you observe a pattern of prints you cannot classify, bring the context to Largo AI Terminal for structured analysis." },
+                  { step: "7", title: "Escalate to Largo for complex prints", body: "If you observe a pattern of prints you cannot classify, bring the context to Largo Terminal for structured analysis." },
                   { step: "8", title: "Log positions in Night's Watch", body: "If you act on a flow print, immediately open the corresponding position in Night's Watch to track P&L against the thesis." },
                 ].map(({ step, title, body }) => (
                   <div key={step} className="flex gap-5">
@@ -164,7 +164,7 @@ export default function HelixFlowsPage() {
                 {[
                   { href: "/learn/spx-slayer", title: "SPX Slayer", desc: "Overlay HELIX strike activity against live GEX walls to determine whether a large print sits at a dealer support or resistance level." },
                   { href: "/learn/heat-maps", title: "Thermal", desc: "Visualize where cumulative premium is concentrating across strikes. Strike stacks in HELIX align directly with GEX, VEX, and DEX concentration bands." },
-                  { href: "/learn/largo-ai", title: "Largo AI Terminal", desc: "Paste a specific print or a sequence of sweeps into Largo for on-demand institutional intent analysis." },
+                  { href: "/learn/largo-ai", title: "Largo Terminal", desc: "Paste a specific print or a sequence of sweeps into Largo for on-demand institutional intent analysis." },
                   { href: "/learn/nights-watch", title: "Night's Watch", desc: "After acting on a flow print, open a position in Night's Watch to track live P&L and manage the trade to expiry." },
                   { href: "/learn/night-hawk", title: "Night Hawk", desc: "Evening sweep clusters in HELIX often precede the setups Night Hawk surfaces the following session." },
                   { href: "/learn/blackout-grid", title: "BlackOut Grid", desc: "Cross-reference flow prints against the Grid's earnings calendar, analyst upgrades, and dark pool summary for catalyst-driven context." },

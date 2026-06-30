@@ -49,7 +49,7 @@ const TERMS: { key: Term; label: string; tag?: string }[] = [
 const PREMIUM_FEATURES = [
   "HELIX live options-flow feed",
   "SPX Slayer · 0DTE desk",
-  "Largo AI desk analyst",
+  "Largo desk analyst",
   "Dealer gamma / GEX positioning",
   "Dark-pool prints",
   "Night Hawk evening playbook",
@@ -63,7 +63,7 @@ const FREE_FEATURES: { text: string; on: boolean }[] = [
   { text: "Ticker search", on: true },
   { text: "HELIX live flow feed", on: false },
   { text: "SPX Slayer desk", on: false },
-  { text: "Largo AI & Night Hawk", on: false },
+  { text: "Largo & Night Hawk", on: false },
 ];
 
 export function PricingSection() {

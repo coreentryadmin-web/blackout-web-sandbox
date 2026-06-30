@@ -57,11 +57,11 @@ const INSTRUMENTS: Weapon[] = [
     mark: "largo",
     accentKey: "cyan",
     accent: MARK_ACCENT.largo,
-    name: "Largo AI",
+    name: "Largo",
     spec: "Desk Terminal",
     meta: "Instrument · 04",
     href: "/terminal",
-    desc: "Your AI desk analyst with full access to every tool's live data. Ask anything in plain English — it answers grounded in live data and shows its work.",
+    desc: "Your BlackOut Intelligence desk analyst with full access to every tool's live data. Ask anything in plain English — it answers grounded in live data and shows its work.",
   },
   {
     mark: "nighthawk",
@@ -71,7 +71,7 @@ const INSTRUMENTS: Weapon[] = [
     spec: "Playbook · Evening Edition",
     meta: "Instrument · 05",
     href: "/nighthawk",
-    desc: "Your AI evening playbook — after the close it builds ranked swing and leap setups with a per-ticker dossier, so you walk in tomorrow with a plan.",
+    desc: "Your BlackOut Intelligence evening playbook — after the close it builds ranked swing and leap setups with a per-ticker dossier, so you walk in tomorrow with a plan.",
   },
   {
     mark: "grid",
@@ -92,7 +92,7 @@ const INSTRUMENTS: Weapon[] = [
     meta: "Feature",
     href: "/dashboard",
     size: "wide",
-    desc: "Before the open, your AI desk reads the overnight session and maps a precise SPX plan — your levels, set before price moves.",
+    desc: "Before the open, your BlackOut Intelligence desk reads the overnight session and maps a precise SPX plan — your levels, set before price moves.",
   },
 ];
 
@@ -125,7 +125,7 @@ export function FeaturesGrid() {
             The full desk
           </h2>
           <p className="mt-5 text-[15px] leading-relaxed text-secondary max-w-2xl mx-auto">
-            One membership. Every instrument on a single screen — structure, flow, positioning, and AI.
+            One membership. Every instrument on a single screen — structure, flow, positioning, and BlackOut Intelligence.
           </p>
         </motion.div>
 

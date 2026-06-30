@@ -7,7 +7,7 @@ import { LearnDoc } from "@/components/learn/LearnDoc";
 export const metadata: Metadata = {
   title: "SPX Slayer — Real-Time SPX Options Desk | BlackOut Trading",
   description:
-    "SPX Slayer is BlackOut's flagship real-time SPX options desk. Live GEX walls, gamma flip, VWAP, IV percentile, AI play engine, and dark pool activity — all in one institutional-grade terminal.",
+    "SPX Slayer is BlackOut's flagship real-time SPX options desk. Live GEX walls, gamma flip, VWAP, IV percentile, BlackOut Intelligence play engine, and dark pool activity — all in one institutional-grade terminal.",
 };
 
 const TOC = [
@@ -25,7 +25,7 @@ export default function Page() {
   return (
     <LearnDoc
       title="SPX Slayer"
-      description="The flagship real-time SPX options desk. Dealer positioning, AI play verdicts, live flow, and 0DTE execution — integrated into a single institutional terminal."
+      description="The flagship real-time SPX options desk. Dealer positioning, BlackOut Intelligence play verdicts, live flow, and 0DTE execution — integrated into a single institutional terminal."
       sections={TOC}
     >
 
@@ -92,8 +92,8 @@ export default function Page() {
                 ratio.
               </li>
               <li>
-                <span className="text-white font-medium">AI Verdict</span> — The
-                full live context is submitted to our AI engine, which returns APPROVE_BUY,
+                <span className="text-white font-medium">BlackOut Intelligence Verdict</span> — The
+                full live context is submitted to BlackOut Intelligence, which returns APPROVE_BUY,
                 APPROVE_SELL, or SCANNING. A veto at this stage overrides all passing entry
                 gates; the desk stays in SCANNING until the next cycle.
               </li>
@@ -294,7 +294,7 @@ export default function Page() {
                 { href: "/learn/heat-maps", name: "Thermal", desc: "SPX Slayer surfaces scalar GEX wall values. Thermal renders the full gamma exposure surface across all strikes and expirations." },
                 { href: "/learn/helix-flows", name: "HELIX Options Flow", desc: "The flow bias fed into SPX Slayer's engine is a compressed signal. HELIX exposes the full institutional tape." },
                 { href: "/learn/night-hawk", name: "Night Hawk", desc: "Night Hawk identifies next-day SPX setups based on end-of-day GEX. Those levels are the pre-market context that SPX Slayer operates within." },
-                { href: "/learn/largo-ai", name: "Largo AI Terminal", desc: "Largo has full read access to SPX Slayer's live data — GEX levels, verdict state, active play, IV percentile." },
+                { href: "/learn/largo-ai", name: "Largo Terminal", desc: "Largo has full read access to SPX Slayer's live data — GEX levels, verdict state, active play, IV percentile." },
                 { href: "/learn/nights-watch", name: "Night's Watch", desc: "Once you enter a play surfaced by SPX Slayer, log it in Night's Watch for live P&L tracking and exit management." },
                 { href: "/learn/blackout-grid", name: "BlackOut Grid", desc: "Monitor macro catalysts in the BlackOut Grid. High-impact catalysts increase volatility risk for 0DTE positions." },
               ].map((ref) => (
@@ -318,7 +318,7 @@ export default function Page() {
               {[
                 {
                   q: "Why does the engine stay in SCANNING even when price is trending strongly?",
-                  a: "A strong directional move is necessary but not sufficient. The engine requires all gates to pass concurrently: GEX regime, VWAP position, EMA stack alignment, flow confirmation, and AI approval. A trending move that is already well extended from VWAP, or that has poor R:R given current GEX walls, will fail one or more gates.",
+                  a: "A strong directional move is necessary but not sufficient. The engine requires all gates to pass concurrently: GEX regime, VWAP position, EMA stack alignment, flow confirmation, and BlackOut Intelligence approval. A trending move that is already well extended from VWAP, or that has poor R:R given current GEX walls, will fail one or more gates.",
                 },
                 {
                   q: "How are GEX wall levels different from traditional support and resistance?",

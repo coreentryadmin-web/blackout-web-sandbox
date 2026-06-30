@@ -205,7 +205,7 @@ export default function HeatMapsPage() {
                 {[
                   { href: "/learn/spx-slayer", name: "SPX Slayer", rel: "The flagship desk displays the same Call Wall, Put Wall, and King Node derived from Thermal. When both surfaces agree on a level, treat it as high-conviction structure." },
                   { href: "/learn/night-hawk", name: "Night Hawk", rel: "The evening SPX play scanner uses GEX walls from Thermal to calibrate overnight position targets. The GEX levels in every Night Hawk edition are sourced live from this tool." },
-                  { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Largo's get_spx_structure tool call draws directly from Thermal data when assessing structural support and resistance." },
+                  { href: "/learn/largo-ai", name: "Largo Terminal", rel: "Largo's get_spx_structure tool call draws directly from Thermal data when assessing structural support and resistance." },
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", rel: "Combine HELIX institutional flow prints with GEX structure: a large call sweep at the Call Wall in positive GEX signals a breakout attempt." },
                   { href: "/learn/nights-watch", name: "Night's Watch", rel: "Use GEX walls from Thermal to set alert levels and monitor when price approaches structurally significant strikes in your position range." },
                   { href: "/learn/blackout-grid", name: "BlackOut Grid", rel: "The market intelligence dashboard surfaces GEX regime context alongside news, analyst updates, and macro catalysts." },
@@ -262,7 +262,7 @@ export default function HeatMapsPage() {
                 {[
                   { q: "How often does the GEX data update?", a: "GEX positioning updates continuously during regular trading hours as the options chain refreshes. Pre-market and post-market, the data reflects the prior session's close. The GEX Shift view is computed fresh each morning." },
                   { q: "The Call Wall and Put Wall sometimes appear very close together — what does that mean?", a: "A compressed range indicates high gamma density in a narrow strike band. This is the most forceful pinning environment — the market has strong mechanical incentive to remain in a tight range." },
-                  { q: "How does Thermal relate to what Largo AI returns about market structure?", a: "Largo's get_spx_structure function queries the same underlying GEX data powering Thermal. You can use Thermal to visually verify what Largo reports numerically." },
+                  { q: "How does Thermal relate to what Largo returns about market structure?", a: "Largo's get_spx_structure function queries the same underlying GEX data powering Thermal. You can use Thermal to visually verify what Largo reports numerically." },
                 ].map((item, i) => (
                   <div key={i} className="border border-cyan-900/25 rounded-xl bg-white/[0.015] p-6">
                     <p className="text-white font-semibold mb-3 leading-snug">{item.q}</p>

@@ -42,8 +42,8 @@ export const LEARN_NAV: LearnNavItem[] = [
   {
     slug: "largo-ai",
     product: "largo",
-    label: "Largo AI",
-    description: "AI desk analyst grounded in live GEX, flow, and positioning.",
+    label: "Largo",
+    description: "BlackOut Intelligence desk analyst grounded in live GEX, flow, and positioning.",
   },
   {
     slug: "night-hawk",

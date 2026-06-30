@@ -22,7 +22,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
   platform: [
     {
       q: "What exactly is BlackOut?",
-      a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It combines live options flow, the SPX Slayer desk, dealer gamma positioning, dark-pool activity, Largo AI analysis, and the Night Hawk overnight playbook into one surface — what a professional desk sees, built for individual traders.",
+      a: "BlackOut is an institutional-grade trading intelligence platform built for options and 0DTE traders. It combines live options flow, the SPX Slayer desk, dealer gamma positioning, dark-pool activity, Largo analysis, and the Night Hawk overnight playbook into one surface — what a professional desk sees, built for individual traders.",
     },
     {
       q: "Who is BlackOut built for?",
@@ -51,8 +51,8 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
       a: "The primary 0DTE desk. Live SPX with VWAP, gamma exposure and market internals, plus a graded play card: letter grade (A–F), numeric score, confidence read, an 11-point confirmation checklist (MTF, trend, structure, VWAP, flow, dark pool, tide, internals, catalyst, dealer GEX, vol regime), a suggested strike with entry / target / stop — and the invalidation level. It answers what's the setup and what's the risk in a single glance.",
     },
     {
-      q: "What is Largo, the AI desk analyst?",
-      a: "Largo is your AI desk analyst with full access to every tool's live data — flow, gamma, dark pool, the desk, news. Ask it anything in plain English: 'what's the SPX setup right now,' 'is this flow real or noise,' 'where are dealers trapped.' It answers grounded in live data and shows its work — never a guess pulled from thin air.",
+      q: "What is Largo, the BlackOut Intelligence desk analyst?",
+      a: "Largo is your BlackOut Intelligence desk analyst with full access to every tool's live data — flow, gamma, dark pool, the desk, news. Ask it anything in plain English: 'what's the SPX setup right now,' 'is this flow real or noise,' 'where are dealers trapped.' It answers grounded in live data and shows its work — never a guess pulled from thin air.",
     },
     {
       q: "What is the HELIX options-flow feed?",
@@ -68,7 +68,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
     },
     {
       q: "What is Night Hawk?",
-      a: "Your AI-generated evening playbook. After the close, Night Hawk builds ranked swing and leap setups with a per-ticker dossier behind each one — so instead of starting tomorrow from a blank chart, you walk in with a plan.",
+      a: "Your BlackOut Intelligence evening playbook. After the close, Night Hawk builds ranked swing and leap setups with a per-ticker dossier behind each one — so instead of starting tomorrow from a blank chart, you walk in with a plan.",
     },
     {
       q: "Is there a market overview / heatmap?",
@@ -96,7 +96,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
     },
     {
       q: "What's included in Premium?",
-      a: "The entire arsenal, one membership: the SPX Slayer desk, the HELIX live flow feed, Largo AI, GEX / dealer positioning, dark-pool activity, Night Hawk, the market heatmap, and the public play log. One tier, full clearance — nothing held back.",
+      a: "The entire arsenal, one membership: the SPX Slayer desk, the HELIX live flow feed, Largo, GEX / dealer positioning, dark-pool activity, Night Hawk, the market heatmap, and the public play log. One tier, full clearance — nothing held back.",
     },
     {
       q: "Can I cancel anytime?",

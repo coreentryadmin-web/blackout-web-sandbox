@@ -209,7 +209,7 @@ export default function Page() {
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", rel: "Cross-reference Grid Options Flow (broad market) with HELIX (SPX-focused) for maximum institutional conviction." },
                   { href: "/learn/night-hawk", name: "Night Hawk", rel: "Night Hawk's catalyst scan uses the same data sources as Grid's Earnings and Catalyst panels." },
                   { href: "/learn/nights-watch", name: "Night's Watch", rel: "Check Grid's Earnings panel before entering positions you plan to hold into an earnings event." },
-                  { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Ask Largo for macro context synthesis: 'What economic events are scheduled this week and what is the expected SPX impact?'" },
+                  { href: "/learn/largo-ai", name: "Largo Terminal", rel: "Ask Largo for macro context synthesis: 'What economic events are scheduled this week and what is the expected SPX impact?'" },
                 ].map((ref) => (
                   <Link key={ref.href} href={ref.href} className="block border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5 hover:border-cyan-700/50 hover:bg-cyan-950/20 transition-all group">
                     <p className="text-cyan-400 font-semibold group-hover:text-cyan-300 mb-2">{ref.name} &rarr;</p>

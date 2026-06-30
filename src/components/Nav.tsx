@@ -17,7 +17,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/dashboard", label: "SPX Slayer", sub: "SPX structure & 0DTE desk", accent: "green" },
   { href: "/flows", label: "HELIX", sub: "Institutional options flow", accent: "purple" },
   { href: "/heatmap", label: "BlackOut Thermal", sub: "Dealer gamma & vanna map", accent: "orange" },
-  { href: "/terminal", label: "Largo AI", sub: "AI desk analyst", accent: "blue" },
+  { href: "/terminal", label: "Largo", sub: "BlackOut Intelligence desk analyst", accent: "blue" },
   { href: "/nighthawk", label: "Night Hawk", sub: "Overnight playbook", accent: "red" },
   { href: "/grid", label: "BlackOut Grid", sub: "Cross-market intelligence", accent: "gold" },
 ];

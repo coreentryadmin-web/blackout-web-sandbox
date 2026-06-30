@@ -33,7 +33,7 @@ const tools = [
     name: "SPX Slayer",
     href: "/learn/spx-slayer",
     timing: "Market open through close",
-    role: "The flagship real-time desk. Live GEX walls, dealer positioning, technicals, and AI-scored setups converge here. Your primary desk for the trading day.",
+    role: "The flagship real-time desk. Live GEX walls, dealer positioning, technicals, and BlackOut Intelligence-scored setups converge here. Your primary desk for the trading day.",
   },
   {
     name: "HELIX Options Flow",
@@ -42,10 +42,10 @@ const tools = [
     role: "Live tape of institutional options flow sourced from our flow intelligence engine. Filters for size, premium, and unusual positioning. Confirms or challenges your thesis in real time.",
   },
   {
-    name: "Largo AI Terminal",
+    name: "Largo Terminal",
     href: "/learn/largo-ai",
     timing: "On demand",
-    role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data — not generic commentary.",
+    role: "BlackOut Intelligence-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data — not generic commentary.",
   },
   {
     name: "Thermal",
@@ -113,7 +113,7 @@ export default function GettingStartedPage() {
                   {
                     label: "Data Sources",
                     value: "3 institutional feeds",
-                    sub: "Options chain, flow intelligence, AI engine",
+                    sub: "Options chain, flow intelligence, BlackOut Intelligence",
                   },
                   {
                     label: "Update Cadence",
@@ -162,9 +162,9 @@ export default function GettingStartedPage() {
                   the SPX Slayer signal engine.
                 </p>
                 <p>
-                  AI analysis is powered by{" "}
+                  BlackOut Intelligence analysis is powered by{" "}
                   <span className="text-cyan-400 font-medium">
-                    our AI engine
+                    BlackOut Intelligence
                   </span>{" "}
                   through the Largo terminal, which is wired directly to live
                   GEX and flow data rather than operating on static training
@@ -196,7 +196,7 @@ export default function GettingStartedPage() {
                       items: [
                         "Live Options Chain",
                         "Institutional Flow Feed",
-                        "AI Engine",
+                        "BlackOut Intelligence",
                       ],
                     },
                     {
@@ -216,7 +216,7 @@ export default function GettingStartedPage() {
                         "HELIX tape",
                         "Thermal",
                         "Night Hawk edition",
-                        "Largo AI",
+                        "Largo",
                         "Night's Watch",
                         "BlackOut Grid",
                       ],
@@ -348,7 +348,7 @@ export default function GettingStartedPage() {
                   {
                     phase: "Analysis",
                     time: "On demand",
-                    tool: "Largo AI",
+                    tool: "Largo",
                     href: "/learn/largo-ai",
                     action:
                       "When context is ambiguous or you want a structured read on current positioning, query Largo. It interprets live data — not generic market commentary.",
@@ -485,7 +485,7 @@ export default function GettingStartedPage() {
                 {[
                   { name: "SPX Slayer", href: "/learn/spx-slayer", desc: "Real-time SPX options desk" },
                   { name: "HELIX Options Flow", href: "/learn/helix-flows", desc: "Live institutional flow tape" },
-                  { name: "Largo AI Terminal", href: "/learn/largo-ai", desc: "AI-powered market analysis" },
+                  { name: "Largo Terminal", href: "/learn/largo-ai", desc: "BlackOut Intelligence-powered market analysis" },
                   { name: "Night Hawk", href: "/learn/night-hawk", desc: "Evening SPX play scanner" },
                   { name: "Thermal", href: "/learn/heat-maps", desc: "GEX / VEX / DEX / CHARM surfaces" },
                   { name: "Night's Watch", href: "/learn/nights-watch", desc: "Position manager with live P&L" },
@@ -530,7 +530,7 @@ export default function GettingStartedPage() {
                     a: "Night Hawk is an asynchronous evening publication — it processes the prior session and publishes a curated playbook for the next one. SPX Slayer is a live, real-time desk intended for active use during market hours. Night Hawk provides context and bias; SPX Slayer provides execution intelligence.",
                   },
                   {
-                    q: "Can Largo AI access live market data?",
+                    q: "Can Largo access live market data?",
                     a: "Yes. Largo is wired directly to the platform's live GEX, flow, and positioning data. When you query it during market hours, its responses are grounded in current data, not static training knowledge. It explicitly cites its sources and will tell you when data is stale.",
                   },
                   {
@@ -608,7 +608,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "Largo",
-                        def: "BlackOut's AI analysis terminal, powered by our AI engine. Largo is connected to live GEX and flow data and is designed for structured market reasoning, not general conversation.",
+                        def: "BlackOut's market-analysis terminal, powered by BlackOut Intelligence. Largo is connected to live GEX and flow data and is designed for structured market reasoning, not general conversation.",
                       },
                       {
                         term: "Night's Watch",
@@ -620,7 +620,7 @@ export default function GettingStartedPage() {
                       },
                       {
                         term: "Setup Score",
-                        def: "SPX Slayer's AI-generated rating for a given trade setup. Incorporates GEX context, flow confirmation, technical structure, and volatility environment. Scores range from F through A+.",
+                        def: "SPX Slayer's BlackOut Intelligence rating for a given trade setup. Incorporates GEX context, flow confirmation, technical structure, and volatility environment. Scores range from F through A+.",
                       },
                     ],
                   },

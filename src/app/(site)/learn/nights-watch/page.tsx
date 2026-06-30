@@ -81,7 +81,7 @@ export default function NightsWatchPage() {
                   Night&apos;s Watch is your options position manager — the place where trades go after they are placed. While SPX Slayer and HELIX focus on entry decisions, Night&apos;s Watch focuses entirely on what to do after you are in a position.
                 </p>
                 <p>
-                  The tool tracks every open position across your portfolio with live mark-to-market pricing sourced from the live options chain. For each position, it surfaces real-time P&amp;L, live Greeks (Delta, Gamma, Theta, Vega), valuation status, and a continuous AI verdict recommending whether to HOLD, TRIM, or SELL.
+                  The tool tracks every open position across your portfolio with live mark-to-market pricing sourced from the live options chain. For each position, it surfaces real-time P&amp;L, live Greeks (Delta, Gamma, Theta, Vega), valuation status, and a continuous BlackOut Intelligence verdict recommending whether to HOLD, TRIM, or SELL.
                 </p>
                 <p>
                   Night&apos;s Watch is designed for SPX and single-name short-dated options. 0DTE positions receive continuous monitoring given their accelerating time decay. Multi-day positions receive verdict updates on each valuation cycle.
@@ -185,7 +185,7 @@ export default function NightsWatchPage() {
                   { title: "Live P&L", description: "Continuous mark-to-market against live bid/ask mid price. Unrealized P&L updates with each valuation cycle." },
                   { title: "Live Greeks Panel", description: "Delta, Gamma, Theta, and Vega for each position sourced from the live options chain — not Black-Scholes estimates." },
                   { title: "Valuation Status Indicator", description: "Clear live/stale/unavailable status so you always know whether the P&L figure is trustworthy." },
-                  { title: "Natural Language Entry", description: "Add positions via Largo AI terminal with plain-English commands: 'Add 5 SPX 5800 calls expiring today at $3.20'" },
+                  { title: "Natural Language Entry", description: "Add positions via Largo terminal with plain-English commands: 'Add 5 SPX 5800 calls expiring today at $3.20'" },
                   { title: "Closed Position History", description: "All closed positions move to the history view with realized P&L, entry and exit prices, and trade duration." },
                   { title: "GEX Level Annotations", description: "Each open position displays the current Call Wall, Put Wall, and Gamma Flip relative to the contract's strike, providing structural context at a glance." },
                 ].map((f) => (
@@ -248,7 +248,7 @@ export default function NightsWatchPage() {
               <div className="grid sm:grid-cols-2 gap-4">
                 {[
                   { href: "/learn/spx-slayer", name: "SPX Slayer", rel: "The primary source of trade ideas that Night's Watch then monitors." },
-                  { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Add positions and ask structured questions about your portfolio via natural language." },
+                  { href: "/learn/largo-ai", name: "Largo Terminal", rel: "Add positions and ask structured questions about your portfolio via natural language." },
                   { href: "/learn/heat-maps", name: "Thermal", rel: "The GEX level annotations in Night's Watch are sourced from Thermal." },
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", rel: "Flow bias from HELIX feeds into Night's Watch verdict computation." },
                   { href: "/learn/night-hawk", name: "Night Hawk", rel: "Night Hawk play ideas are a primary source of positions tracked in Night's Watch." },
