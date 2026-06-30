@@ -35,6 +35,12 @@ import {
   type StoredTradingHalt,
   pruneExpiredHalts,
 } from "./trading-halts-expiry";
+import {
+  getActiveLuldHalts,
+  hasActiveLuldHalt,
+  isLuldHaltSourceStale,
+  luldWsEnabled,
+} from "@/lib/ws/stocks-socket";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { inOptionsMarketHours } from "./options-socket";
 
@@ -813,19 +819,25 @@ const TRADING_HALT_MAX_AGE_MS = 30 * 60_000;
  * flow_alerts / market_tide stream constantly during RTH. A recent halt OR a live socket
  * with an accepted subscription ⇒ fresh.
  */
-export function isTradingHaltChannelStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AGE_MS): boolean {
+function isUwHaltSourceStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AGE_MS): boolean {
   if (!UW_API_KEY) return true;
-  // A real halt event refreshes the channel directly → definitively live.
   if (isUwChannelFresh("trading_halts", maxAgeMs)) return false;
-  // Subscription rejected → we are blind to halts even on a live socket → fail closed.
   if (uwSocket.getChannelHealth()?.trading_halts?.auth_failed) return true;
-  // Otherwise the channel is just QUIET (no halts). Trust it as long as the socket is alive.
   const freshest = effectiveFreshestUwMessageAt();
   return freshest == null || Date.now() - freshest > maxAgeMs;
 }
 
+export function isTradingHaltChannelStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AGE_MS): boolean {
+  const uwStale = isUwHaltSourceStale(maxAgeMs);
+  if (!luldWsEnabled()) return uwStale;
+  const luldStale = isLuldHaltSourceStale(maxAgeMs);
+  // Stale only when BOTH halt sources are unavailable (LULD de-risks UW SPOF).
+  return uwStale && luldStale;
+}
+
 /** Check if any watched symbol has an active trading halt. */
 export function hasActiveTradingHalt(symbols: readonly string[] = PLAY_HALT_WATCH_SYMBOLS): boolean {
+  if (hasActiveLuldHalt(symbols)) return true;
   pruneExpiredHalts(tradingHaltsStore.halts, Date.now(), TRADING_HALT_MAX_AGE_MS);
   const watch = new Set(symbols.map((s) => s.toUpperCase()));
   for (const sym of Array.from(tradingHaltsStore.halts.keys())) {
@@ -857,9 +869,11 @@ export function shouldBlockForTradingHalt(
 
 /** List active halts for watched symbols. */
 export function getActiveTradingHalts(symbols: readonly string[] = PLAY_HALT_WATCH_SYMBOLS): TradingHaltEvent[] {
+  const luld = getActiveLuldHalts(symbols);
   pruneExpiredHalts(tradingHaltsStore.halts, Date.now(), TRADING_HALT_MAX_AGE_MS);
   const watch = new Set(symbols.map((s) => s.toUpperCase()));
-  return Array.from(tradingHaltsStore.halts.values()).filter((h) => watch.has(h.symbol) && h.active);
+  const uw = Array.from(tradingHaltsStore.halts.values()).filter((h) => watch.has(h.symbol) && h.active);
+  return [...luld, ...uw];
 }
 
 const flowAlertDedup = makeFlowDedup();

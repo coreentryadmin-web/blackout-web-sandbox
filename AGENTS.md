@@ -67,7 +67,14 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 - `uw-ws-cache-bridge.ts` seeds Redis from WS stores; `uw-cache-refresh` cron skips REST tasks when the
   matching channel is fresh (`market_tide`, `net_flow`, `option_trades`).
 
-### Production edge (Cloudflare) — security headers / CSP are NOT served from `next.config.mjs`
+### Massive LULD halt feed (second source vs UW `trading_halts`)
+- Opt-in: set `STOCKS_WS_ENABLED=1` (or `LULD_WS_ENABLED=1`) on Railway. Uses the same
+  `POLYGON_API_KEY` / `MASSIVE_API_KEY` as indices/options.
+- Subscribes to `LULD.SPY` by default (`LULD_WS_TICKERS` override). SPY LULD halts proxy to SPX/SPXW
+  play gates via `LULD_INDEX_PROXIES` in `live-api-integrations.ts`.
+- Halt feed considered stale only when **both** UW and LULD are down (when LULD is enabled). Admin:
+  Operations → **Massive LULD** tile; cron `GET /api/cron/socket-health` includes `stocks_luld`.
+
 - Production is fronted by **Cloudflare**, and the security **response headers are delivered by a
   Cloudflare Transform Rule** ("Add security headers to all responses") in the
   `http_response_headers_transform` ruleset — **not** by the `headers()` block in `next.config.mjs`.

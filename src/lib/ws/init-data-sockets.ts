@@ -1,6 +1,7 @@
 import { initPolygonSocket, shutdownPolygonSocket } from "@/lib/ws/polygon-socket";
 import { initUwSocket, shutdownUwSocket } from "@/lib/ws/uw-socket";
 import { initOptionsSocket, shutdownOptionsSocket } from "@/lib/ws/options-socket";
+import { initStocksSocket, shutdownStocksSocket } from "@/lib/ws/stocks-socket";
 import { initFlowEventBridge } from "@/lib/flow-events";
 
 let initialized = false;
@@ -70,6 +71,11 @@ export function ensureDataSockets() {
   } catch (err) {
     console.warn("[init-data-sockets] options socket init failed (non-fatal):", err);
   }
+  try {
+    initStocksSocket();
+  } catch (err) {
+    console.warn("[init-data-sockets] stocks/LULD socket init failed (non-fatal):", err);
+  }
 }
 
 /**
@@ -97,5 +103,10 @@ export function closeAllDataSockets(): void {
     shutdownOptionsSocket();
   } catch (err) {
     console.warn("[init-data-sockets] options socket shutdown failed (non-fatal):", err);
+  }
+  try {
+    shutdownStocksSocket();
+  } catch (err) {
+    console.warn("[init-data-sockets] stocks socket shutdown failed (non-fatal):", err);
   }
 }

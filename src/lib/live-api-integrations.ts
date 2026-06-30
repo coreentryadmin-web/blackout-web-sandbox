@@ -55,6 +55,11 @@ export const UW_FETCH_FUNCTION_PATHS: Record<string, string> = {
 /** Symbols monitored for trading-halt play gates. */
 export const PLAY_HALT_WATCH_SYMBOLS = ["SPX", "SPXW", "SPY", "VIX"] as const;
 
+/** Massive LULD equity tickers that proxy halt state for index play symbols. */
+export const LULD_INDEX_PROXIES: Record<string, readonly string[]> = {
+  SPY: ["SPX", "SPXW"],
+};
+
 /** All UW paths considered "in use" for dashboard / probe scans. */
 export function getUwLiveIntegrationPaths(): string[] {
   const ws = UW_WS_CHANNELS.map(uwWsChannelPath);

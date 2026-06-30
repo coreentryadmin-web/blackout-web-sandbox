@@ -6,6 +6,7 @@ import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
 import { getOptionsSocketStatus } from "@/lib/ws/options-socket";
+import { getStocksSocketStatus } from "@/lib/ws/stocks-socket";
 import { uwRateLimiterStats } from "@/lib/providers/uw-rate-limiter";
 import { polygonRateLimiterStats } from "@/lib/providers/polygon-rate-limiter";
 import { getLaunchStatusSnapshot, type LaunchStatusSnapshot } from "@/lib/tool-access";
@@ -28,6 +29,8 @@ export type AdminHealthPayload = {
     // confirms OPTIONS_WS_ENABLED + the key are live; enabled-but-no-shards = the "enabled != working"
     // trap (gap #5) where valuation silently falls back to the 60-120s snapshot path.
     options: ReturnType<typeof getOptionsSocketStatus>;
+    /** Massive stocks LULD halt feed (second source vs UW trading_halts). */
+    stocks_luld: ReturnType<typeof getStocksSocketStatus>;
   };
   // Cluster rate-limiter posture — `degraded:true` means the Redis ceiling is down AND we are
   // multi-replica, so each limiter is on the per-replica DEGRADED_LOCAL_RPS budget (gap #1). If
@@ -96,6 +99,7 @@ export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
       polygon_indices: getIndexStoreStatus(),
       unusual_whales: getUwSocketHealth(),
       options: getOptionsSocketStatus(),
+      stocks_luld: getStocksSocketStatus(),
     },
     rate_limiters: {
       uw: uwStats,

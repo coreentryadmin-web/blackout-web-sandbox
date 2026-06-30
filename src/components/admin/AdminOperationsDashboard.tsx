@@ -363,11 +363,13 @@ function PipelineRow({
 
 function DataPipelineHealthTile({ health }: { health: AdminHealthPayload | null }) {
   const uw = health?.websockets.unusual_whales;
+  const luld = health?.websockets.stocks_luld;
   const stores = uw?.stores as UwStores | undefined;
   const channels = uw?.channels as Record<string, { ws_state: string; handlers: number; authenticated: boolean }> | undefined;
 
   // UW GEX cross-check uses gex_strike_expiry WS when fresh (REST fallback in gex-cross-validation).
   const uwAuthOk = uw != null && uw.initialized && !uw.auth_failed;
+  const luldLive = luld?.enabled === true && luld.authenticated && luld.ws_state === "open";
 
   const STORE_DEFS: Array<{ key: keyof UwStores & `${string}_updated_at`; label: string; channel: string }> = [
     { key: "tide_updated_at",         label: "Market Tide",    channel: "market_tide"   },
@@ -432,7 +434,7 @@ function DataPipelineHealthTile({ health }: { health: AdminHealthPayload | null 
             <div className="flex items-center justify-between py-2 border-b border-white/10">
               <div>
                 <p className="font-mono text-[11px] text-sky-200 font-semibold">Active Halts</p>
-                <p className="font-mono text-[10px] text-cyan">trading_halts channel</p>
+                <p className="font-mono text-[10px] text-cyan">UW + Massive LULD</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] font-bold text-sky-200">
@@ -444,6 +446,30 @@ function DataPipelineHealthTile({ health }: { health: AdminHealthPayload | null 
                     (stores?.active_halts?.length ?? 0) === 0
                       ? "bg-bull shadow-[0_0_6px_rgba(0,230,118,0.7)]"
                       : "bg-bear shadow-[0_0_6px_rgba(255,45,85,0.7)] animate-pulse"
+                  )}
+                />
+              </div>
+            </div>
+            {/* Massive LULD halt feed (second source) */}
+            <div className="flex items-center justify-between py-2 border-b border-white/10">
+              <div>
+                <p className="font-mono text-[11px] text-sky-200 font-semibold">Massive LULD</p>
+                <p className="font-mono text-[10px] text-cyan">
+                  {luld?.enabled ? (luld.tickers?.join(", ") ?? "SPY") : "STOCKS_WS_ENABLED=off"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] font-bold text-sky-200">
+                  {luld == null ? "—" : !luld.enabled ? "Disabled" : luldLive ? "Live" : "Degraded"}
+                </span>
+                <span
+                  className={clsx(
+                    "w-2 h-2 rounded-full flex-shrink-0",
+                    luld == null || !luld.enabled
+                      ? "bg-white/20"
+                      : luldLive
+                        ? "bg-bull shadow-[0_0_6px_rgba(0,230,118,0.7)]"
+                        : "bg-bear shadow-[0_0_6px_rgba(255,45,85,0.7)] animate-pulse"
                   )}
                 />
               </div>
