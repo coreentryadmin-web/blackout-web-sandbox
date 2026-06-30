@@ -395,9 +395,9 @@ export function groundPlay(
       }
     }
     // Strike echoed in prose ("calls at 185") that doesn't match the structured/parsed strike.
-    // Flag a prose number that: sits in a plausible strike range near spot, appears alongside a
+    // Drop a prose number that: sits in a plausible strike range near spot, appears alongside a
     // call/put/strike word, is NOT the grounded structured strike, and is NOT any real chain strike.
-    // (We don't flag a prose number that merely echoes a different but real chain strike — that's
+    // (We don't drop a prose number that merely echoes a different but real chain strike — that's
     // legitimate context, not a fabrication.)
     const hasStrikeWord = /\b(call|put|strike)s?\b/i.test(`${mutated.thesis} ${mutated.key_signal}`);
     if (groundedStrike != null && contractOnChain && hasStrikeWord) {
@@ -409,8 +409,8 @@ export function groundPlay(
         if (!isGroundedStrike && !isRealChainStrike) {
           issues.push({
             check: "prose",
-            severity: "flag",
-            detail: `${play.ticker} prose references ${n.raw} near a strike claim but the grounded contract strike is ${groundedStrike} and ${n.raw} is not in the chain.`,
+            severity: "drop",
+            detail: `${play.ticker} prose references ${n.raw} near a strike claim but the grounded contract strike is ${groundedStrike} and ${n.raw} is not in the chain — dropping user-visible contradictory setup text.`,
           });
           break;
         }

@@ -124,3 +124,22 @@ test("parseOptionsContract handles CALL $strike wording from generated plays", (
     expiryYmd: "2026-08-21",
   });
 });
+
+test("groundPlay drops contradictory user-visible prose strike claims", () => {
+  const affordableRow: ChainStrikeRow = {
+    ...nbisSep300Call,
+    call_bid: 6.1,
+    call_ask: 6.55,
+    call_oi: 10_647,
+  };
+  const contradictory = {
+    ...play(6.32),
+    thesis: "Calls at 410 are the trigger",
+    key_signal: "Strike stack supports calls at 410",
+  };
+
+  const result = groundPlay(contradictory, { spot: 296, rows: [frontExpiryRow, affordableRow] }, dossier);
+
+  assert.equal(result.severity, "drop");
+  assert.match(result.issues.map((i) => i.detail).join(" "), /contradictory setup text/);
+});
