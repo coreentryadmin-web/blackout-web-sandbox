@@ -18,6 +18,13 @@ permissions:
   contents: read
   issues: write
 
+# Prevent overlapping collectors (20-min ticks + workflow_run triggers) from
+# double-dispatching. Don't cancel a run mid issue-creation/agent-dispatch —
+# let it finish; the next tick covers anything it missed.
+concurrency:
+  group: ops-auto-fix
+  cancel-in-progress: false
+
 jobs:
   collect-and-dispatch:
     if: >-

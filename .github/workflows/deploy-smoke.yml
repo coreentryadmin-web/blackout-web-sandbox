@@ -7,6 +7,12 @@ on:
   push:
     branches: [main]
 
+# Rapid merges deploy the latest commit on Railway, so an in-flight smoke for an
+# older commit is stale — cancel it and smoke the newest deploy.
+concurrency:
+  group: deploy-smoke
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
