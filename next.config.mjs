@@ -88,6 +88,8 @@ const nextConfig = {
   async redirects() {
     return [
       { source: "/pricing", destination: "/#pricing", permanent: false },
+      { source: "/learn/helix", destination: "/learn/helix-flows", permanent: true },
+      { source: "/helix", destination: "/flows", permanent: true },
     ];
   },
   async headers() {

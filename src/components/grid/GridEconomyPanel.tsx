@@ -13,15 +13,40 @@ const fetcher = (url: string) =>
   fetch(url, { cache: "no-store", credentials: "same-origin" })
     .then((r) => r.json()) as Promise<Res>;
 
+const LABEL_MAP: Record<string, string> = {
+  "retail-sales": "Retail Sales",
+  "retail_sales": "Retail Sales",
+  "fed-funds": "Fed Funds Rate",
+  "fed_funds": "Fed Funds Rate",
+  "treasury-yield": "Treasury Yield",
+  "treasury_yield": "Treasury Yield",
+  "payrolls": "Payrolls",
+  "unemployment": "Unemployment",
+  "inflation": "Inflation",
+  "cpi": "CPI",
+  "gdp": "GDP",
+};
+
+function humanLabel(ind: UwMacroIndicatorSnapshot): string {
+  const key = (ind.label ?? ind.indicator).toLowerCase();
+  return LABEL_MAP[key] ?? ind.label ?? ind.indicator;
+}
+
 function fmtIndicatorValue(ind: UwMacroIndicatorSnapshot, v: number | null | undefined): string {
   if (v == null) return "—";
-  const id = ind.indicator.toUpperCase();
-  if (id === "FED-FUNDS" || id === "FED_FUNDS" || id.includes("YIELD") || id.includes("RATE"))
+  const id = ind.indicator.toUpperCase().replace(/-/g, "_");
+  if (id === "FED_FUNDS" || id.includes("YIELD") || id.includes("RATE"))
     return `${v.toFixed(2)}%`;
-  if (id === "CPI" || id === "INFLATION" || id === "UNEMPLOYMENT" || id.includes("PAYROLLS"))
+  if (id === "CPI" || id === "INFLATION" || id === "UNEMPLOYMENT")
     return v < 100 ? `${v.toFixed(1)}%` : v.toLocaleString();
-  // UW latest_value for GDP is the nominal level in billions — show as $xT
-  if (id === "GDP" || id.includes("GDP")) return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `${v.toFixed(1)}B`;
+  // RETAIL-SALES: UW returns value in millions (e.g. 684300 = $684.3B)
+  if (id === "RETAIL_SALES" || id === "RETAIL-SALES")
+    return `$${(v / 1000).toFixed(1)}B`;
+  // PAYROLLS: UW returns thousands of jobs (e.g. 159467 ≈ 159.5M jobs)
+  if (id.includes("PAYROLL"))
+    return `${(v / 1000).toFixed(1)}M jobs`;
+  // GDP: nominal level in billions
+  if (id === "GDP" || id.includes("GDP")) return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`;
   return v.toLocaleString();
 }
 
@@ -61,7 +86,7 @@ export function GridEconomyPanel() {
         <div className="grid-econ-tiles">
           {indicators.map((ind) => (
             <div key={ind.indicator} className="grid-econ-tile">
-              <span className="grid-econ-label">{ind.label}</span>
+              <span className="grid-econ-label">{humanLabel(ind)}</span>
               <span className="grid-econ-value">{fmtIndicatorValue(ind, ind.latest_value)}</span>
               <div className="grid-econ-sub">
                 {ind.prior_value != null && (

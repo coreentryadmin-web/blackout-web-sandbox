@@ -7,6 +7,7 @@ const isProtectedRoute = createRouteMatcher([
   "/heatmap(.*)",
   "/nighthawk(.*)",
   "/admin(.*)",
+  "/grid(.*)",
 ]);
 
 export default clerkMiddleware(
@@ -33,7 +34,7 @@ export default clerkMiddleware(
 //
 //   PROTECTED by this middleware (Clerk redirect/401):
 //     • only the page routes in `isProtectedRoute` above
-//       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /admin, /docs)
+//       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /grid, /admin)
 //
 //   NOT protected by this middleware (callback is a no-op for them):
 //     • EVERY /api/* and /trpc/* route — they pass through unguarded here

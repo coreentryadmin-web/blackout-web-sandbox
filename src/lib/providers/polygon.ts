@@ -317,9 +317,17 @@ export async function fetchMarketMovers(limit = 20) {
     volume: t.day?.v,
   });
 
+  // Filter out warrants (W suffix), reverse-split artifacts (<$1), and
+  // micro-cap shells with negligible volume (<100K shares) that pollute the list.
+  const isClean = (m: ReturnType<typeof mapMover>) =>
+    m.price >= 1.0 &&
+    !m.ticker.endsWith("W") &&
+    !m.ticker.endsWith("R") &&
+    (m.volume == null || m.volume >= 100_000);
+
   const combined = [
-    ...(gainers.tickers ?? []).slice(0, limit).map(mapMover),
-    ...(losers.tickers ?? []).slice(0, limit).map(mapMover),
+    ...(gainers.tickers ?? []).slice(0, limit).map(mapMover).filter(isClean),
+    ...(losers.tickers ?? []).slice(0, limit).map(mapMover).filter(isClean),
   ];
 
   return combined.sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));

@@ -9,8 +9,8 @@ const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-ag
 
 export async function GET(req: NextRequest) {
   // Paid SPX coaching (live walls/VWAP + long/short calls) — premium session or cron only.
-  const auth = await authorizeMarketDeskApi(req);
-  if (auth instanceof Response) return auth;
+  const authResult = await authorizeMarketDeskApi(req);
+  if (authResult instanceof Response) return authResult;
   try {
     const result = await dbQuery(
       "SELECT * FROM coaching_alerts ORDER BY generated_at DESC LIMIT 10",

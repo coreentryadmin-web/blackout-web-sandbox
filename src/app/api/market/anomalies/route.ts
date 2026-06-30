@@ -1,11 +1,6 @@
-// GET: intentionally public — anomaly data is market-wide, not user-specific.
-// No paid data leaks today (table populated only during RTH by market-regime-detector
-// cron from already-public HELIX flow aggregates). Review if ticker-specific
-// paid content is added to this endpoint in the future.
-
 import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
-import { isCronAuthorized } from "@/lib/market-api-auth";
+import { isCronAuthorized, requireTierApi } from "@/lib/market-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +8,8 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" };
 
 export async function GET() {
+  const authResult = await requireTierApi("premium");
+  if (authResult instanceof Response) return authResult;
   try {
     const result = await dbQuery(
       "SELECT * FROM flow_anomalies ORDER BY detected_at DESC LIMIT 20",
