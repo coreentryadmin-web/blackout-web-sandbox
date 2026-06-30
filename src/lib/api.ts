@@ -131,6 +131,20 @@ function emptySpxState(): SpxState {
 }
 
 function deskPayloadToSpxState(desk: SpxDeskPayload): SpxState {
+  // Canonical breadth: derive real advancing/declining COUNTS from the desk's
+  // market_breadth (Polygon grouped-daily close-vs-prior-close — the same breadth
+  // Night Hawk / commentary / correctness use). sample_size = advancing + declining
+  // (no "unchanged" in the sample), so the counts are exact. Previously adv was
+  // mis-mapped to desk.add (the $ADD index line) and dec to closed_near_low (a
+  // prior-session "closed weak" count) — two unrelated quantities shown as adv/dec.
+  const mb = desk.market_breadth;
+  const breadthSample = mb?.sample_size ?? 0;
+  const advCount =
+    mb && mb.pct_advancing != null && breadthSample > 0
+      ? Math.round((mb.pct_advancing / 100) * breadthSample)
+      : null;
+  const decCount = advCount != null && breadthSample > 0 ? breadthSample - advCount : null;
+
   return {
     available: desk.available && desk.price > 0,
     source: desk.source?.includes("engine") ? "blackout_intel" : "merged",
@@ -151,8 +165,8 @@ function deskPayloadToSpxState(desk: SpxDeskPayload): SpxState {
     flow_0dte_call_premium: desk.flow_0dte_call_premium,
     flow_0dte_put_premium: desk.flow_0dte_put_premium,
     flow_0dte_net: desk.flow_0dte_net,
-    adv: desk.add,
-    dec: desk.market_breadth?.closed_near_low ?? null,
+    adv: advCount,
+    dec: decCount,
     trin: desk.trin,
     tick: desk.tick,
     sector_bias: null,

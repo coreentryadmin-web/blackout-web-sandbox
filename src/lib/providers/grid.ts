@@ -131,7 +131,10 @@ async function fetchDarkPoolPrints(): Promise<GridDarkPoolSnapshot> {
   for (const r of rows) {
     const ticker = String(r.ticker ?? r.symbol ?? "").toUpperCase();
     if (!ticker) continue;
-    const premium = Number(r.premium ?? r.size ?? r.notional ?? 0);
+    // Premium = dollar notional. Match the canonical /api/market/dark-pool
+    // normalization (premium ?? notional ?? size_premium) — never fall back to
+    // raw `size` (a SHARE COUNT), which would render share quantity as a $ premium.
+    const premium = Number(r.premium ?? r.notional ?? r.size_premium ?? 0);
     if (premium <= 0) continue;
     prints.push({
       ticker,
