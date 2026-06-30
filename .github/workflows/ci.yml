@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel superseded runs on the same ref (rapid pushes / PR syncs) to save minutes.
+# main pushes use a unique group so deploy-gating runs are never cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -17,6 +23,18 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npx tsc --noEmit
+      - name: Unit tests
+        # `npm test` uses `tsx --test "src/**/*.test.ts"`, whose ** glob relies on
+        # Node's test-runner glob support (Node 21+). CI pins Node 20 (prod parity),
+        # so expand the glob in bash and pass explicit files — version-agnostic.
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          files=(src/**/*.test.ts)
+          echo "Running ${#files[@]} test files"
+          npx tsx --test "${files[@]}"
+      - name: Build (next build — catches deploy-breakers before merge)
+        run: npm run build
       - name: Brand guard (no grey)
         run: npm run lint:brand
       - name: Vendor surface guard (no provider names in UI)
