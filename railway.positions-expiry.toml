@@ -3,6 +3,18 @@
 [build]
 builder = "nixpacks"
 buildCommand = "echo 'cron trigger service: no app build needed'"
+# Only redeploy this trigger service when its OWN driver/config changes — NOT on docs/src/
+# log commits. Without this, EVERY repo commit (incl. the frequent autonomous-SDLC docs/auto
+# log pushes) redeployed all cron trigger services, stalling the every-minute warm writers
+# ~15-21 min mid-RTH and tripping the cron-staleness watchdog. This service only runs
+# scripts/hit-cron.mjs — ALL business logic lives in the main blackout-web app it pings —
+# so it only needs to redeploy when hit-cron.mjs or this TOML changes. Mirrors railway.toml's
+# proven repo-relative-glob watchPatterns (a leading-slash "/**" matches NOTHING on Railway).
+watchPatterns = [
+  "scripts/hit-cron.mjs",
+  "railway.positions-expiry.toml",
+  "nixpacks.toml",
+]
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/positions-expiry"

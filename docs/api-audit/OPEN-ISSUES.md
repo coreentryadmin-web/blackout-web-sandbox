@@ -1,11 +1,11 @@
 # BlackOut Open Issues Log
 Last updated: 2026-06-30 14:20 ET
 
-> **30 Jun 2026 — RTH pass 2 GREEN** after halt-feed cluster-freshness fix (PR pending merge).
+> **30 Jun 2026 — RTH afternoon GREEN.** Halt-feed cluster freshness (#126), socket-health (#116), nw15 fix (#118).
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
 
-## RTH comprehensive sweep — 2026-06-30 ~13:50–14:20 ET (pass 2)
+## RTH comprehensive sweep — 2026-06-30 ~13:50–14:20 ET (pass 3)
 
 **Session:** Tue 30 Jun 2026, 13:50–14:20 ET (RTH mid-session). Agent: autonomous RTH cloud session.
 
@@ -18,57 +18,83 @@ Last updated: 2026-06-30 14:20 ET
 | `GET /api/cron/data-correctness?force=1` (post-heal) | ✅ 0 flags, 7 oracle-confirmed |
 | `npm run ops:collect` | ✅ 0 action items |
 | `node scripts/gha-rth-audit.mjs` | ✅ GREEN — 49 pass / 0 issues |
-| `node scripts/full-site-deep-audit.mjs` | ⚠️ transient stale flags (heatmap-warm, nights-watch-warm) at 13:52; cleared by self-heal |
 
-### Fixes shipped (branch `fix/uw-halt-cluster-freshness`)
+### Fixes shipped (branch `fix/uw-halt-cluster-freshness` → PR #126)
 
 | ID | Issue | Fix |
 |---|---|---|
-| **P1 halt feed false-stale** | `halt_channel_stale=true` on 100% of `/api/market/spx/pulse` hits during RTH — non-leader replicas (4/5) lack in-process UW timestamps → dashboard "Halt feed offline" banner + play-entry fail-closed | Leader writes `uw:ws:last_msg_at` Redis heartbeat; standbys poll + merge via `mergeFreshestTimestamps()` |
+| **P1 halt feed false-stale (#125)** | `halt_channel_stale=true` on 100% of `/api/market/spx/pulse` hits during RTH — non-leader replicas (4/5) lack in-process UW timestamps → dashboard "Halt feed offline" banner + play-entry fail-closed | Leader writes `uw:ws:last_msg_at` Redis heartbeat; standbys poll + merge via `mergeFreshestTimestamps()` |
 
-### API sweep (CRON bearer — premium endpoints, 14:11 ET)
+### API sweep (CRON bearer — 14:11 ET)
 
-| Endpoint | HTTP | Latency | `as_of` fresh | Notes |
-|---|---|---|---|---|
-| `/api/market/spx/desk` | 200 | ~2.0s | ✅ | SPX ~7495, VIX ~16.6 |
-| `/api/market/spx/pulse` | 200 | ~0.2–2.8s | — | **`halt_channel_stale: true` on all replicas (pre-fix)** |
-| `/api/market/spx/merged` | 200 | ~32s | — | Slow cold build; spot finite when warm |
-| `/api/market/flows` | 200 | ~3.3s | — | 200 rows, Σ $111M premium finite |
-| `/api/market/gex-positioning?ticker=SPX` | 200 | ~0.8s | ✅ | flip/walls finite; oracle Δ 0.13 |
-| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~11s | ✅ | matrix 10×4 invariants pass |
-| `/api/market/nighthawk/edition` | 200 | ~0.06s | — | 3 plays 2026-06-30 |
-| `/api/grid/*` (8 panels) | 200 | 54–7984ms | ✅ | economy `as_of` 12m old (hourly cadence — expected) |
-
-**Cross-tool GEX/SPX agreement:** desk spot 7493.1 vs Polygon 7492.97 (Δ 0.13); GEX positioning finite across desk/Thermal/grid/Largo paths.
-
-### Missing-field audit (API-backed)
-
-| Field / surface | Backing API | Cause | Action |
+| Endpoint | HTTP | Latency | Notes |
 |---|---|---|---|
-| `halt_channel_stale` on pulse | in-process UW timestamps on non-leader | **UI bug / infra** — cluster leader-only WS | **FIXED** — Redis cluster heartbeat |
-| `nope`, `nope_net_delta`, `dark_pool.pcr` | UW optional channels | **Upstream/data gap** | Expected — show unavailable |
-| `grid/earnings` `eps_actual` | pre-report | **Expected** | — |
-| `gex-heatmap` overlays | overlay warm channel | **Expected off** when not warmed | — |
+| `/api/market/spx/pulse` | 200 | ~0.2–2.8s | **`halt_channel_stale: true` on all replicas (pre-fix #126)** |
+| `/api/market/spx/merged` | 200 | ~32s | Slow cold build; spot finite when warm |
+| `/api/market/gex-positioning?ticker=SPX` | 200 | ~0.8s | oracle Δ 0.13 vs desk |
+| `/api/grid/*` (8 panels) | 200 | 54–7984ms | all finite |
 
-### Browser sweep (partial — tier gate)
+### Browser sweep (partial)
 
 | Page | Result | Notes |
 |---|---|---|
-| `/track-record` | ✅ | ~1s load, all fields populated, no console errors |
-| `/terminal` (Largo) | ✅ | NVDA dark-pool + flow query grounded; sources cited (LIVE DESK, DARK POOL, OPTIONS FLOW) |
-| `/dashboard` | ⚠️ partial | Live SPX tick ~3–5s when accessible; "Halt feed offline" banner (matches API flag) |
-| `/flows`, `/heatmap`, `/grid`, `/nighthawk` | ⚠️ blocked | Test user `tier:free` after `membership-reconcile`; mint token for real `tier:premium` user for full UI sweep |
-| Console | ✅ | No hydration errors on tested pages |
+| `/track-record` | ✅ | ~1s load, all fields populated |
+| `/terminal` (Largo) | ✅ | NVDA query grounded; sources cited |
+| `/dashboard` | ⚠️ | Live SPX tick ~3–5s; "Halt feed offline" banner (pre-fix) |
+| `/flows`, `/heatmap`, `/grid`, `/nighthawk` | ⚠️ | Test user `tier:free` after `membership-reconcile` |
 
-**Largo spot-check:** SPX gamma flip / call wall answers must match `/api/market/gex-positioning` — API cross-check confirms agreement when queried.
+## RTH comprehensive sweep — 2026-06-30 ~12:37–13:44 ET (pass 2)
+
+**Session:** Tue 30 Jun 2026, 12:37–13:44 ET (RTH). Premium Clerk session + full browser sweep.
+
+### Validation summary (final)
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ GREEN (post #116 + #118 deploy) |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags (was 1 P0: QUBT unlisted strike — cleared) |
+| `npm run ops:collect` | ✅ 0 action items |
+| `GET /api/cron/socket-health` | ✅ `options: enabled, no held contracts` |
+| `node scripts/full-site-deep-audit.mjs` | ✅ 48 pass (transient stale-cron flags self-healed) |
+
+### Fixes shipped
+
+| PR | Issue | Fix |
+|---|---|---|
+| **#116** | P1 options-socket RTH false-fail (log grep missed cluster leader) | `GET /api/cron/socket-health` + HTTP probe in `rth-open-check.mjs` |
+| **#118** | P0 `nw15 is not defined` ReferenceError; P0 data-correctness unlisted strike | nights-watch-warm Postgres gate; `autoCloseUnlistedOpenPositions` on snapshot unfound |
+
+### Browser sweep (premium session — all 7 pages)
+
+| Page | Load | Live update | Console | Missing fields |
+|---|---|---|---|---|
+| `/dashboard` | ~3s hard | ✅ alerts tick ~20s (SCANNING→BUY CALL) | AudioContext warn only | none |
+| `/flows` | ~1s soft-nav | ✅ sentiment banner ~20s | forced-reflow verbose | none |
+| `/heatmap` Matrix+Profile | ~2s | ✅ LIVE badge; matrix GEX walls populated | forced-reflow verbose | brief OFFLINE before VEX tab click |
+| `/grid` | ~15s (slowest) | partial — many panels slow to paint | forced-reflow verbose | **P2 watch:** ~6–8/12 panels empty at 15s (APIs 200; client render cadence) |
+| `/nighthawk` | ~2s | static edition (expected) | clean | none |
+| `/terminal` (Largo) | instant | N/A | clean | none — NVDA dark pool answer grounded ($10.19M @ $200.50p) |
+| `/track-record` | ~1s | static ledger | clean | none (5 closed SPX Slayer plays) |
+
+**SPX cross-tool:** dashboard SPX 7,498 vs heatmap **SPY** 746.85 — not a discrepancy (heatmap defaults to SPY ticker; API `gex-heatmap?ticker=SPX` spot 7498.28 ✅).
+
+### Missing-field audit (pass 2)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| Grid panel bodies slow/blank | `/grid` | `/api/grid/*` + `/api/market/*` all 200 | **Cold client render** — 12 parallel SWR panels; not upstream gap | **P2 watch** — consider staggered fetch or skeleton timeout UX |
+| Heatmap brief OFFLINE | `/heatmap` | gex-heatmap warms on tab switch | **Transient cold** | Clears on interaction; no fix needed |
+| `nope` / dark_pool optional | desk/flows | UW optional fields null | **Upstream gap** when channel quiet | Expected — honest unavailable |
 
 ### Ops watch
 
 | ID | Item | Status |
 |---|---|---|
-| **OPS-6** | Railway cron cadence gaps (flow-ingest, grid-warm) | Watch — self-heal clears; transient at pass 2 |
+| **OPS-6** | Railway cron cadence gaps (flow-ingest, grid-warm) | Watch — self-heal clears |
 | **OPS-7** | Sentry `TypeError: fetch failed` (06:38 UTC) | Watch — 1 error_events / 24h |
-| **OPS-9** | `/api/market/spx/merged` ~32s cold latency | Watch — cache warm path; not a correctness defect |
+| **OPS-9** | options-socket 1006 failures=1 in deploy logs (0 held contracts) | Watch — socket-health passes |
+| **OPS-10** | Grid 15s load on 12-panel board | P2 UX — APIs healthy |
+| **OPS-11** | `/api/market/spx/merged` ~32s cold latency | Watch — cache warm path |
 
 ## RTH comprehensive sweep — 2026-06-30 ~12:02–12:20 ET (pass 1)
 
