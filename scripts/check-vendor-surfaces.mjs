@@ -12,7 +12,6 @@ const ROOTS = [
   "src/components/auth",
   "src/components/upgrade",
   "src/components/desk/EngineStatusBar.tsx",
-  "src/components/desk/SectorThermal.tsx",
   "src/components/desk/LargoThinkingState.tsx",
   "src/app/(site)",
 ];

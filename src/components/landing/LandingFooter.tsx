@@ -21,6 +21,7 @@ const PLATFORM = [
   // pricing / purchase entry points).
   { label: "Pricing", href: "/#pricing", iosHide: true },
   { label: "FAQ", href: "/#faq" },
+  { label: "Track Record", href: "/track-record" },
   { label: "Upgrade", href: "/upgrade", iosHide: true },
   { label: "Sign in", href: "/sign-in" },
   { label: "Start Trading", href: "/sign-up" },

@@ -19,6 +19,11 @@ export const CLEANUP_TARGETS: Readonly<Record<string, readonly string[]>> = {
   spx_play_outcomes: ["closed_at"],
   // Age column for nighthawk is created_at; pending/open rows excluded via status guard.
   nighthawk_play_outcomes: ["created_at"],
+  // Operational snapshot tables — written frequently during RTH with no prior retention
+  // (unbounded growth). Only the most recent row(s) are ever read, so old rows are dead weight.
+  market_regime: ["captured_at"],
+  flow_anomalies: ["detected_at"],
+  coaching_alerts: ["generated_at"],
 };
 
 /**

@@ -612,3 +612,67 @@ export async function readGridCatalysts(): Promise<GridCatalystsSnapshot | null>
   const s = snapshot as GridCatalystsSnapshot;
   return s.items?.length ? s : null;
 }
+
+// ── Bootstrap (single round-trip for all cache-reader panels) ─────────────────
+
+type GridPanelEnvelope<T extends object> =
+  | { available: false }
+  | ({ available: true } & T);
+
+function gridPanelEnvelope<T extends object>(snapshot: T | null): GridPanelEnvelope<T> {
+  if (!snapshot) return { available: false };
+  return { available: true, ...snapshot };
+}
+
+export type GridBootstrapPanels = {
+  analysts: GridPanelEnvelope<GridAnalystsSnapshot>;
+  darkPool: GridPanelEnvelope<GridDarkPoolSnapshot>;
+  earnings: GridPanelEnvelope<GridEarningsSnapshot>;
+  congress: GridPanelEnvelope<GridCongressSnapshot>;
+  economy: GridPanelEnvelope<GridEconomySnapshot>;
+  sectors: GridPanelEnvelope<GridSectorsSnapshot>;
+  movers: GridPanelEnvelope<GridMoversSnapshot>;
+  catalysts: GridPanelEnvelope<GridCatalystsSnapshot>;
+};
+
+export type GridBootstrapPayload = {
+  as_of: string;
+  panels: GridBootstrapPanels;
+};
+
+/** Read every Redis-backed Grid panel in one parallel pass (no per-panel HTTP fan-out). */
+export async function readGridBootstrapPanels(): Promise<GridBootstrapPayload> {
+  const [
+    analysts,
+    darkPool,
+    earnings,
+    congress,
+    economy,
+    sectors,
+    movers,
+    catalysts,
+  ] = await Promise.all([
+    readGridAnalysts(),
+    readGridDarkPool(),
+    readGridEarnings(),
+    readGridCongress(),
+    readGridEconomy(),
+    readGridSectors(),
+    readGridMovers(),
+    readGridCatalysts(),
+  ]);
+
+  return {
+    as_of: new Date().toISOString(),
+    panels: {
+      analysts: gridPanelEnvelope(analysts),
+      darkPool: gridPanelEnvelope(darkPool),
+      earnings: gridPanelEnvelope(earnings?.items?.length ? earnings : null),
+      congress: gridPanelEnvelope(congress),
+      economy: gridPanelEnvelope(economy),
+      sectors: gridPanelEnvelope(sectors),
+      movers: gridPanelEnvelope(movers),
+      catalysts: gridPanelEnvelope(catalysts),
+    },
+  };
+}
