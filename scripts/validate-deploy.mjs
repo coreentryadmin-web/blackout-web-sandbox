@@ -36,6 +36,16 @@ function sh(cmd) {
   return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 
+function actionableRailwayDeployment(output) {
+  const rows = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[0-9a-f-]+\s+\|/i.test(line));
+  const ignored = rows.filter((line) => /\|\s*(SKIPPED|REMOVED)\s*\|/i.test(line));
+  const actionable = rows.find((line) => !/\|\s*(SKIPPED|REMOVED)\s*\|/i.test(line));
+  return { actionable, ignored };
+}
+
 function loadRailwayVars() {
   try {
     return JSON.parse(sh("railway variables --service blackout-web --json 2>/dev/null"));
@@ -138,11 +148,14 @@ if (skipRailway) {
   warn("Railway CLI checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
 } else {
 try {
-  const latest = sh("railway deployment list --service blackout-web 2>/dev/null | sed -n '2p'");
-  console.log(`     ${latest}`);
+  const deployments = sh("railway deployment list --service blackout-web 2>/dev/null");
+  const { actionable: latest, ignored } = actionableRailwayDeployment(deployments);
+  if (ignored.length) warn(`Ignored ${ignored.length} skipped/removed Railway deployment row(s)`);
+  if (latest) console.log(`     ${latest}`);
+  else warn("No actionable Railway deployment row found");
   if (/SUCCESS/i.test(latest)) ok("Latest deployment SUCCESS");
   else if (/BUILDING|DEPLOYING|QUEUED/i.test(latest)) fail(`Deploy not finished: ${latest}`);
-  else fail(`Deploy unhealthy: ${latest}`);
+  else if (latest) fail(`Deploy unhealthy: ${latest}`);
 
   const status = sh("railway status 2>/dev/null | rg 'blackout-web' || true");
   if (/Online/i.test(status) && !/Building|Queued|Failed/i.test(status)) ok("Service Online");

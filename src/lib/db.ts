@@ -2799,12 +2799,18 @@ export async function failStaleNighthawkJobs(
   const hours = Number.isFinite(staleAfterHours) && staleAfterHours > 0 ? staleAfterHours : 4;
   const res = await (await getPool()).query<{ edition_for: string }>(
     `
-    UPDATE nighthawk_jobs
+    UPDATE nighthawk_jobs j
     SET status = 'failed',
         error = COALESCE(error, 'Stale running job cleared for resume'),
         updated_at = NOW()
-    WHERE status NOT IN ('published', 'failed')
-      AND updated_at < NOW() - ($1::text || ' hours')::interval
+    WHERE j.status NOT IN ('published', 'failed')
+      AND j.updated_at < NOW() - ($1::text || ' hours')::interval
+      AND NOT EXISTS (
+        SELECT 1
+        FROM nighthawk_jobs newer
+        WHERE newer.edition_for > j.edition_for
+          AND newer.status = 'published'
+      )
     RETURNING edition_for::text AS edition_for
     `,
     [String(hours)]
@@ -2822,7 +2828,7 @@ export async function fetchLatestNighthawkJob(): Promise<NighthawkJobRow | null>
     SELECT id, edition_for, status, current_stage, context_json, candidates_json, scored_json,
            synthesis_json, error, started_at, updated_at, published_at
     FROM nighthawk_jobs
-    ORDER BY updated_at DESC
+    ORDER BY edition_for DESC, updated_at DESC, id DESC
     LIMIT 1
     `
   );

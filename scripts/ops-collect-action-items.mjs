@@ -63,10 +63,18 @@ async function postgresItems() {
   }
 
   const failedRecent = await q(
-    `SELECT DISTINCT ON (job_key) job_key, status, message, started_at
-     FROM cron_job_runs
-     WHERE status = 'failed' AND started_at > NOW() - INTERVAL '4 hours'
-     ORDER BY job_key, started_at DESC`
+    `SELECT DISTINCT ON (f.job_key) f.job_key, f.status, f.message, f.started_at
+     FROM cron_job_runs f
+     WHERE f.status = 'failed'
+       AND f.started_at > NOW() - INTERVAL '4 hours'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM cron_job_runs newer
+         WHERE newer.job_key = f.job_key
+           AND newer.started_at > f.started_at
+           AND newer.status IN ('ok', 'skipped')
+       )
+     ORDER BY f.job_key, f.started_at DESC`
   );
   for (const r of failedRecent) {
     add("P0", "cron", `cron:${r.job_key}:failed`, `Cron failed: ${r.job_key}`, `${r.message ?? "failed"} @ ${String(r.started_at).slice(0, 19)}Z`);
