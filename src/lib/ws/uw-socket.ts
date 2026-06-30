@@ -9,7 +9,11 @@ import {
   type UwWsChannel,
   PLAY_HALT_WATCH_SYMBOLS,
 } from "@/lib/live-api-integrations";
-import { UW_SOCKET_STALL_MS, freshestMessageAt as freshestFromMap } from "./uw-socket-stall";
+import {
+  UW_SOCKET_STALL_MS,
+  freshestMessageAt as freshestFromMap,
+  mergeFreshestTimestamps,
+} from "./uw-socket-stall";
 import { isUwErrorFrame } from "@/lib/ws/uw-frame";
 import {
   normalizeDarkPoolWsPayload,
@@ -89,8 +93,14 @@ function channelFromWireName(name: string): UwWsChannel | null {
 // lapses), the next reconcile tick on a standby wins the lock and takes over.
 const UW_LEADER_KEY = "uw:ws:leader";
 const UW_LEADER_TTL_SEC = 25;
+/** Cross-replica UW delivery heartbeat — written by the cluster leader, read by standbys. */
+const UW_CLUSTER_LAST_MSG_KEY = "uw:ws:last_msg_at";
+const UW_CLUSTER_LAST_MSG_TTL_SEC = 180;
 let uwIsLeader = false;
 let uwLeaderRefreshTimer: ReturnType<typeof setInterval> | null = null;
+/** Last UW delivery timestamp observed cluster-wide (local or Redis). */
+let clusterFreshestAt: number | null = null;
+let clusterFreshnessPollerStarted = false;
 
 type IoredisLockExtra = {
   set(k: string, v: string, ex: string, ttl: number, nx: string): Promise<string | null>;
@@ -648,7 +658,7 @@ export function isTradingHaltChannelStale(maxAgeMs = TRADING_HALT_CHANNEL_MAX_AG
   // Subscription rejected → we are blind to halts even on a live socket → fail closed.
   if (uwSocket.getChannelHealth()?.trading_halts?.auth_failed) return true;
   // Otherwise the channel is just QUIET (no halts). Trust it as long as the socket is alive.
-  const freshest = freshestUwMessageAt();
+  const freshest = effectiveFreshestUwMessageAt();
   return freshest == null || Date.now() - freshest > maxAgeMs;
 }
 
@@ -707,6 +717,46 @@ function freshestUwMessageAt(): number | null {
   return freshestFromMap(lastMessageAt, ALL_CHANNELS);
 }
 
+/** Local + cluster (Redis) freshest delivery — standbys lack in-process WS timestamps. */
+function effectiveFreshestUwMessageAt(): number | null {
+  return mergeFreshestTimestamps(freshestUwMessageAt(), clusterFreshestAt);
+}
+
+function touchClusterFreshness(at: number): void {
+  clusterFreshestAt = mergeFreshestTimestamps(clusterFreshestAt, at);
+  if (!uwIsLeader) return;
+  void getUwCacheRedis()
+    .then((redis) =>
+      redis?.setex(UW_CLUSTER_LAST_MSG_KEY, UW_CLUSTER_LAST_MSG_TTL_SEC, String(at))
+    )
+    .catch(() => undefined);
+}
+
+function recordUwDelivery(channel: UwWsChannel): void {
+  const at = Date.now();
+  lastMessageAt[channel] = at;
+  touchClusterFreshness(at);
+}
+
+function startClusterFreshnessPoller(): void {
+  if (clusterFreshnessPollerStarted) return;
+  clusterFreshnessPollerStarted = true;
+  const poll = () => {
+    void getUwCacheRedis()
+      .then(async (redis) => {
+        if (!redis) return;
+        const val = await redis.get(UW_CLUSTER_LAST_MSG_KEY);
+        if (!val) return;
+        const at = Number(val);
+        if (Number.isFinite(at)) clusterFreshestAt = at;
+      })
+      .catch(() => undefined);
+  };
+  poll();
+  const timer = setInterval(poll, 3_000);
+  (timer as unknown as { unref?: () => void }).unref?.();
+}
+
 export function initUwSocket() {
   if (uwSocketInitialized) return;
   if (!UW_API_KEY) {
@@ -714,11 +764,12 @@ export function initUwSocket() {
     return;
   }
   uwSocketInitialized = true;
+  startClusterFreshnessPoller();
 
   uwSocket.subscribe("flow_alerts", (payload) => {
     try {
       const block = Array.isArray(payload) ? payload : [payload];
-      lastMessageAt.flow_alerts = Date.now();
+      recordUwDelivery("flow_alerts");
       const now = Date.now();
       for (const raw of block) {
         if (!raw || typeof raw !== "object") continue;
@@ -745,7 +796,7 @@ export function initUwSocket() {
       const row = Array.isArray(payload) ? payload[payload.length - 1] : payload;
       if (!row || typeof row !== "object") return;
       if ("status" in (row as Record<string, unknown>)) return;
-      lastMessageAt.market_tide = Date.now();
+      recordUwDelivery("market_tide");
       const r = row as Record<string, unknown>;
       const call = Number(r.net_call_premium ?? r.call_premium ?? 0);
       const put = Number(r.net_put_premium ?? r.put_premium ?? 0);
@@ -767,7 +818,7 @@ export function initUwSocket() {
     }
     const normalized = normalizeDarkPoolWsPayload(payload);
     if (normalized) {
-      lastMessageAt.off_lit_trades = Date.now();
+      recordUwDelivery("off_lit_trades");
       darkPoolStore.data = normalized;
       darkPoolStore.updatedAt = Date.now();
     }
@@ -779,7 +830,7 @@ export function initUwSocket() {
     }
     const rows = normalizeIntervalFlowWsPayload(payload);
     if (rows.length) {
-      lastMessageAt.interval_flow = Date.now();
+      recordUwDelivery("interval_flow");
       intervalFlowStore.rows = rows;
       intervalFlowStore.updatedAt = Date.now();
     }
@@ -792,7 +843,7 @@ export function initUwSocket() {
     const events = normalizeTradingHaltsWsPayload(payload);
     if (!events.length) return;
     const now = Date.now();
-    lastMessageAt.trading_halts = now;
+    recordUwDelivery("trading_halts");
     for (const ev of events) {
       if (ev.active) {
         tradingHaltsStore.halts.set(ev.symbol, { ...ev, receivedAt: now });
@@ -816,7 +867,7 @@ export function initUwSocket() {
       // Accept rows that explicitly reference SPX, or rows without a ticker field (single-ticker stream).
       const ticker = String(r.ticker ?? r.symbol ?? "SPX").toUpperCase();
       if (ticker !== "SPX" && r.ticker != null) continue;
-      lastMessageAt.net_flow = Date.now();
+      recordUwDelivery("net_flow");
       const call = Number(r.call_premium ?? r.calls ?? 0);
       const put = Number(r.put_premium ?? r.puts ?? 0);
       Object.assign(netFlowStore, {
