@@ -1,31 +1,36 @@
 const NOISE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
-// Static (deterministic) ember field — no Math.random so SSR/CSR markup matches.
+// Static (deterministic) ember field — `l` left%, `b` bottom%, `s` size px. Scattered
+// up the lower half so they read as a frozen ember field (no per-frame motion).
 const EMBERS = [
-  { l: 6, d: 0, t: 9, s: 3 },
-  { l: 14, d: 2.1, t: 11, s: 2 },
-  { l: 22, d: 4.5, t: 8, s: 4 },
-  { l: 31, d: 1.2, t: 12, s: 2 },
-  { l: 39, d: 6.0, t: 10, s: 3 },
-  { l: 47, d: 3.3, t: 9.5, s: 2 },
-  { l: 55, d: 5.5, t: 11, s: 3 },
-  { l: 63, d: 0.8, t: 8.5, s: 2 },
-  { l: 71, d: 4.0, t: 12, s: 4 },
-  { l: 79, d: 2.6, t: 10, s: 2 },
-  { l: 86, d: 6.5, t: 9, s: 3 },
-  { l: 92, d: 1.6, t: 11.5, s: 2 },
-  { l: 50, d: 7.2, t: 13, s: 3 },
-  { l: 35, d: 8.0, t: 10.5, s: 2 },
+  { l: 6, b: 14, s: 3 },
+  { l: 14, b: 30, s: 2 },
+  { l: 22, b: 20, s: 4 },
+  { l: 31, b: 42, s: 2 },
+  { l: 39, b: 26, s: 3 },
+  { l: 47, b: 36, s: 2 },
+  { l: 55, b: 16, s: 3 },
+  { l: 63, b: 32, s: 2 },
+  { l: 71, b: 24, s: 4 },
+  { l: 79, b: 40, s: 2 },
+  { l: 86, b: 18, s: 3 },
+  { l: 92, b: 28, s: 2 },
+  { l: 50, b: 46, s: 3 },
+  { l: 35, b: 12, s: 2 },
 ];
 
 /**
  * Signature cinematic backdrop for the Pricing section — deliberately different
- * from the calm <LandingBackdrop/>: a rotating aurora "vortex" behind the cards,
- * an infinite perspective "trading-floor" grid receding to a glowing horizon,
- * floating embers, a center scrim for card contrast, film grain and a top hairline.
- * Animations use CSS keyframes (see globals.css) and self-disable under
- * prefers-reduced-motion via the `.pricing-anim` class.
+ * from the calm <LandingBackdrop/>: an aurora "vortex" glow behind the cards, a
+ * perspective "trading-floor" grid receding to a glowing horizon, a scattered ember
+ * field, a center scrim for card contrast, film grain and a top hairline.
+ *
+ * FULLY STATIC: every layer is painted once. The vortex no longer spins, the floor
+ * grid no longer scrolls, the embers no longer float, and the scan beam is gone — so
+ * the section carries zero per-frame GPU/paint cost (it previously ran four infinite
+ * animations, the blur(120px) vortex spin being the heaviest). The composed look is
+ * preserved. Decorative only.
  */
 export function PricingBackdrop() {
   return (
@@ -39,9 +44,9 @@ export function PricingBackdrop() {
         }}
       />
 
-      {/* rotating aurora vortex behind the cards */}
+      {/* aurora vortex glow behind the cards (static) */}
       <div
-        className="pricing-anim absolute rounded-full"
+        className="absolute rounded-full"
         style={{
           top: "-34%",
           left: "50%",
@@ -50,7 +55,6 @@ export function PricingBackdrop() {
           marginLeft: -600,
           filter: "blur(120px)",
           opacity: 0.16,
-          animation: "pricing-vortex-spin 56s linear infinite",
           background:
             "conic-gradient(from 0deg, rgba(0,230,118,0.9), transparent 24%, rgba(34,211,238,0.7) 44%, transparent 60%, rgba(124,92,255,0.6) 78%, transparent 92%, rgba(0,230,118,0.9))",
         }}
@@ -67,7 +71,7 @@ export function PricingBackdrop() {
         }}
       >
         <div
-          className="pricing-anim absolute"
+          className="absolute"
           style={{
             left: "-60%",
             right: "-60%",
@@ -79,7 +83,6 @@ export function PricingBackdrop() {
               "linear-gradient(rgba(0,230,118,0.55) 1px, transparent 1px), linear-gradient(90deg, rgba(0,230,118,0.55) 1px, transparent 1px)",
             backgroundSize: "56px 56px",
             opacity: 0.18,
-            animation: "pricing-grid-scroll 2.6s linear infinite",
           }}
         />
       </div>
@@ -108,20 +111,19 @@ export function PricingBackdrop() {
         }}
       />
 
-      {/* floating embers */}
+      {/* scattered ember field (static) */}
       {EMBERS.map((e, i) => (
         <span
           key={i}
-          className="pricing-anim absolute rounded-full"
+          className="absolute rounded-full"
           style={{
             left: `${e.l}%`,
-            bottom: "8%",
+            bottom: `${e.b}%`,
             width: e.s,
             height: e.s,
             background: "#34d399",
             boxShadow: "0 0 8px #00e676",
-            opacity: 0,
-            animation: `pricing-ember-float ${e.t}s ease-in-out ${e.d}s infinite`,
+            opacity: 0.55,
           }}
         />
       ))}
@@ -130,16 +132,6 @@ export function PricingBackdrop() {
       <div
         className="absolute inset-0"
         style={{ background: "radial-gradient(58% 48% at 50% 52%, rgba(5,6,8,0.6), transparent 72%)" }}
-      />
-
-      {/* sweeping scan beam — continuous terminal motion */}
-      <div
-        className="pricing-anim absolute left-0 right-0 h-28"
-        style={{
-          top: 0,
-          background: "linear-gradient(to bottom, transparent, rgba(0,230,118,0.07), transparent)",
-          animation: "pricing-beam 7s linear infinite",
-        }}
       />
 
       {/* film grain */}

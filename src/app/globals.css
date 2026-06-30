@@ -988,20 +988,6 @@ body::before {
   50% { opacity: 0.65; transform: scale(1.06); }
 }
 
-/* ── Pricing cinematic backdrop animations ── */
-@keyframes pricing-grid-scroll { from { background-position: 0 0; } to { background-position: 0 56px; } }
-@keyframes pricing-beam { 0% { transform: translateY(-30%); } 100% { transform: translateY(960%); } }
-@keyframes pricing-vortex-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes pricing-ember-float {
-  0% { transform: translateY(10px); opacity: 0; }
-  14% { opacity: 0.7; }
-  86% { opacity: 0.7; }
-  100% { transform: translateY(-240px); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pricing-anim { animation: none !important; }
-}
-
 /* ── FAQ "Briefing Board" — no-scroll bento (desktop) ── */
 .faq-tile {
   border-radius: 1rem;
@@ -7480,21 +7466,13 @@ body::before {
     /* Additive neon glow + punchier colour so the lattice reads as crazy multicolour. */
     mix-blend-mode: screen;
     filter: saturate(1.7) brightness(1.35);
-    animation: grid-flow 12s ease-in-out infinite, grid-drift 9s linear infinite;
-    will-change: background-position, transform;
+    /* STATIC: the lattice is painted once (no per-frame colour-flow repaint or transform
+       drift). The full multicolour spectrum already spans the viewport at rest, so the look
+       is preserved while the continuous GPU/paint cost is eliminated for a faster page. */
   }
-  /* Far layer drifts via transform only (GPU-composited) — no per-frame colour-flow repaint. */
-  .grid-live-lattice--far { --cell: 132px; opacity: 0.34; filter: blur(0.6px) saturate(1.7) brightness(1.3); animation: grid-drift 22s linear infinite; }
+  /* Two parallax depths, both static — the smaller cell on top reads as a denser lattice. */
+  .grid-live-lattice--far { --cell: 132px; opacity: 0.34; filter: blur(0.6px) saturate(1.7) brightness(1.3); }
   .grid-live-lattice--near { --cell: 66px; opacity: 0.6; }
-  @keyframes grid-flow {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-  @keyframes grid-drift {
-    from { transform: translate3d(0, 0, 0); }
-    to { transform: translate3d(-66px, -66px, 0); }
-  }
   /* Static colour blooms — painted once (no per-frame background-position pan). The drifting
      lattice above keeps the scene alive; a full-screen animated blur was the heaviest GPU cost. */
   .grid-live-blooms {
@@ -7510,9 +7488,6 @@ body::before {
   .grid-live-vignette {
     position: absolute; inset: 0;
     background: radial-gradient(130% 95% at 50% 0%, transparent 62%, rgba(4, 4, 7, 0.72) 100%);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .grid-live-lattice, .grid-live-blooms, .grid-live-scan { animation: none; }
   }
 
   .grid-empty {

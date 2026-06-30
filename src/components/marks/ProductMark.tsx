@@ -56,9 +56,26 @@ export interface ProductMarkProps {
   as?: "span" | "div";
 }
 
+// The draw-on intro settles by ~1.5s (longest entrance: the focal/core boPop at a 1s
+// delay + a follow-on breath). Freeze just after so the sigil animates ONCE.
+const SETTLE_MS = 1700;
+// Fallback freeze for sigils that NEVER scroll into view (e.g. closed nav-dropdown
+// marks, far-below-the-fold marks). Without this they'd loop their ambient animations
+// forever while off-screen/hidden — pure wasted GPU. Generous enough that on-screen
+// sigils still play their draw-on (which resets to the shorter SETTLE_MS) first.
+const SETTLE_FALLBACK_MS = 4000;
+
 /**
- * IntersectionObserver hook — adds `.is-live` once when the mark scrolls into view,
- * firing the draw-on. Never branches motion in JS; reduced-motion is handled in CSS.
+ * IntersectionObserver hook — adds `.is-live` once when the mark scrolls into view to
+ * fire the draw-on, then settles the sigil to its static composed frame so the ambient
+ * loops (breath / shimmer / ring-spin / scan) stop running forever. This is a runtime-GPU
+ * win: sigils appear all over the site (nav, features, headers), and the infinite loops
+ * otherwise repaint/composite for as long as each sigil is on screen.
+ *
+ * Settling = remove `.is-live` (revert the draw-on start-state overrides, e.g. the helix /
+ * largo stroke-dashoffset, back to their drawn base) + add `.bo-static` (the same clean,
+ * fully-composed frame used by `animated={false}`, which kills all sigil animation). Never
+ * branches motion in JS otherwise; reduced-motion is handled in CSS.
  */
 function useDrawOn(animated: boolean) {
   const ref = useRef<SVGSVGElement>(null);
@@ -66,17 +83,33 @@ function useDrawOn(animated: boolean) {
     if (!animated) return;
     const el = ref.current;
     if (!el) return;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      el.classList.remove("is-live"); // revert draw-on start-state overrides to the drawn base
+      el.classList.add("bo-static"); // kill every sigil animation (clean composed frame)
+    };
     const io = new IntersectionObserver(
       ([e]) => {
         if (e.isIntersecting) {
           el.classList.add("is-live");
           io.disconnect();
+          clearTimeout(settleTimer);
+          settleTimer = setTimeout(settle, SETTLE_MS);
         }
       },
       { threshold: 0.35 }
     );
     io.observe(el);
-    return () => io.disconnect();
+    // Fallback: settle even if the sigil is never seen, so off-screen/hidden marks
+    // don't loop forever. The IO path above clears + reschedules this to SETTLE_MS.
+    settleTimer = setTimeout(() => {
+      io.disconnect();
+      settle();
+    }, SETTLE_FALLBACK_MS);
+    return () => {
+      io.disconnect();
+      clearTimeout(settleTimer);
+    };
   }, [animated]);
   return ref;
 }
