@@ -2543,6 +2543,25 @@ export async function upsertNighthawkPlayOutcomes(
   );
 }
 
+export async function pruneNighthawkPlayOutcomesForEdition(
+  editionFor: string,
+  tickers: string[]
+): Promise<number> {
+  await ensureSchema();
+  const normalized = Array.from(
+    new Set(tickers.map((ticker) => ticker.trim().toUpperCase()).filter(Boolean))
+  );
+  const res = await (await getPool()).query(
+    `
+    DELETE FROM nighthawk_play_outcomes
+    WHERE edition_for = $1::date
+      AND NOT (ticker = ANY($2::varchar[]))
+    `,
+    [editionFor, normalized]
+  );
+  return res.rowCount ?? 0;
+}
+
 export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<NighthawkPlayOutcomeRow[]> {
   await ensureSchema();
   // Backstop: the $1::int cast below throws "invalid input syntax for type integer" for any

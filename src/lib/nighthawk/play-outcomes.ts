@@ -1,7 +1,7 @@
 import type { PlaybookPlay } from "./types";
-import { nextTradingDayEt } from "./session";
 import {
   fetchPendingNighthawkOutcomes,
+  pruneNighthawkPlayOutcomesForEdition,
   upsertNighthawkPlayOutcomes,
   updateNighthawkPlayOutcome,
   type NighthawkPlayOutcomeRow,
@@ -90,6 +90,7 @@ export async function syncNighthawkPlayOutcomes(
     // upsertNighthawkPlayOutcomes must use INSERT … ON CONFLICT DO UPDATE SET
     // so that each row is merged atomically in the DB rather than blindly overwritten.
     await upsertNighthawkPlayOutcomes(rows);
+    await pruneNighthawkPlayOutcomesForEdition(editionFor, rows.map((row) => row.ticker));
   } finally {
     release();
     // Clean up the lock entry once all chains for this edition have resolved.
@@ -97,6 +98,10 @@ export async function syncNighthawkPlayOutcomes(
       _syncLocks.delete(editionFor);
     }
   }
+}
+
+export function outcomeSessionDate(row: Pick<NighthawkPlayOutcomeRow, "edition_for">): string {
+  return row.edition_for;
 }
 
 export function resolveOutcome(row: NighthawkPlayOutcomeRow): {
@@ -175,7 +180,7 @@ export async function resolvePendingNighthawkOutcomes(opts?: {
 
   for (const row of pending) {
     try {
-      const sessionDate = nextTradingDayEt(row.edition_for);
+      const sessionDate = outcomeSessionDate(row);
       const bars = await fetchStockDailyBars(row.ticker, sessionDate, sessionDate, "1");
       const bar = bars[0];
       if (!bar) {
