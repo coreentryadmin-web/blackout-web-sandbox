@@ -1,10 +1,9 @@
 /**
- * GridLiveBackground — the BlackOut Grid's ambient, living backdrop. A moving
- * multi-colored neon grid (the colour flows through the lattice, the lattice drifts),
- * with two parallax layers (the colour flows through the near lattice; both layers drift via
- * GPU transforms), a static colour-bloom wash, and a vignette. Tuned for low GPU cost — only the
- * near lattice repaints (colour flow); everything else is transform-only or static. Honours
- * prefers-reduced-motion (animations pause). Decorative only.
+ * GridLiveBackground — the BlackOut Grid's ambient backdrop: a multi-colored neon
+ * lattice over two parallax depths, a colour-bloom wash, and a vignette. Fully STATIC
+ * (painted once) — no colour-flow repaint or transform drift — so it carries zero
+ * per-frame GPU/paint cost and keeps the Grid fast. The full spectrum spans the
+ * viewport at rest, so the look is preserved without motion. Decorative only.
  */
 export function GridLiveBackground() {
   return (
