@@ -8,6 +8,7 @@ import {
   fetchEditionChains,
   formatEditionChainTables,
   evaluatePlayAgainstChain,
+  augmentChainsWithExactContracts,
 } from "./option-chain-prompt";
 import {
   applyPremiumCapToPlay,
@@ -127,9 +128,8 @@ export async function generateEditionPlays(params: {
   }
 
   const chainTickers = params.ranked.slice(0, EDITION_CHAIN_PREFETCH).map((s) => s.ticker);
-  const chainData = await fetchEditionChains({ stockTickers: chainTickers, dossiers: params.dossiers });
+  let chainData = await fetchEditionChains({ stockTickers: chainTickers, dossiers: params.dossiers });
   const chainTables = formatEditionChainTables(chainData);
-  const chainRows = Object.fromEntries(Object.entries(chainData).map(([ticker, data]) => [ticker, data.rows]));
 
   const prompt = buildClaudePrompt({
     ctx: params.ctx,
@@ -176,15 +176,16 @@ export async function generateEditionPlays(params: {
     .map((p, i) => mapClaudePlayToEdition(p, i + 1, dossierMap))
     .filter((p) => p.play_type === "stock");
   const { plays, rejected } = filterPlaysWithinPremiumCap(mapped);
+  chainData = await augmentChainsWithExactContracts({ plays, chains: chainData });
+  const chainRows = Object.fromEntries(Object.entries(chainData).map(([ticker, data]) => [ticker, data.rows]));
   const strikeOk: PlaybookPlay[] = [];
   const strikeRejected: PlaybookPlay[] = [];
   for (const play of plays) {
     const rows = chainRows[play.ticker];
-    // SOFT strike gate (#77). Only drop a play when the prefetched chain POSITIVELY contradicts it
-    // (strike+expiry present in the ATM±5% front-two-expiry window but below the OI floor). A play
-    // whose contract simply isn't in that narrow window — a longer-dated swing/leap, a slightly-OTM
-    // strike, or a "weekly"/"0DTE" with no ISO date — is unverifiable, NOT contradicted, so it passes.
-    // The old hard gate dropped every unverifiable play and zeroed whole editions (17 cands → 0 plays).
+    // SOFT early strike gate (#77). Only drop here when the prompt's narrow ATM/front-expiry chain
+    // POSITIVELY contradicts the play (present but below the OI floor). Missing rows pass only to the
+    // exact-contract grounding step below; they are NOT allowed to publish unless the exact snapshot
+    // confirms the contract and reconciles the premium.
     if (!rows?.length || evaluatePlayAgainstChain(play.options_play, rows).ok) {
       strikeOk.push(play);
     } else {
@@ -198,12 +199,11 @@ export async function generateEditionPlays(params: {
     );
   }
   // NUMERIC-GROUNDING ENFORCEMENT (audit P0). Deterministic arithmetic grounding of each play
-  // against the SAME prefetched chain (chainData: spot + ATM±5% front-two-expiry rows) + dossier
-  // that was put in front of Claude — NO new live fan-out (chainData is the cache-reader prefetch
-  // from fetchEditionChains above; groundPlays only READS it). HARD failures (off-chain/illiquid
-  // strike, null/way-off premium vs a confirmed contract) DROP the play; SOFT issues (flow/level/
-  // prose/PT divergence) keep the play but strip/flag the number. Run on the FULL strikeOk list
-  // BEFORE the top-5 slice so a dropped play lets a lower-ranked grounded play fill its slot.
+  // against the SAME prefetched chain plus the exact per-contract snapshots added above. HARD
+  // failures (unmatched exact contract, illiquid strike, null/way-off premium vs live snapshot) DROP
+  // the play; SOFT issues (flow/level/prose/PT divergence) keep the play but strip/flag the number.
+  // Run on the FULL strikeOk list BEFORE the top-5 slice so a dropped play lets a lower-ranked
+  // grounded play fill its slot.
   const { plays: groundedPlays, summary: grounding } = groundPlays(strikeOk, chainData, dossierMap);
 
   // The flag only controls whether HARD drops take effect — the checks + summary always run/log.

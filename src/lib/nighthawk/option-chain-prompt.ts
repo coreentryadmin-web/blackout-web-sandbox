@@ -6,6 +6,8 @@ import {
 } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
 import { fetchUwOptionChains } from "@/lib/providers/unusual-whales";
+import { fetchOptionsUnifiedSnapshot, type OptionSnapshot } from "@/lib/providers/options-snapshot";
+import type { PlaybookPlay } from "./types";
 
 const ATM_BAND_PCT = 0.05;
 const FRONT_EXPIRIES = 2;
@@ -24,6 +26,49 @@ export type ChainStrikeRow = {
   put_oi: number;
   put_iv: number | null;
 };
+
+function buildOcc(ticker: string, expiryYmd: string, side: "call" | "put", strike: number): string | null {
+  const root = ticker.trim().toUpperCase() === "SPX" ? "SPXW" : ticker.trim().toUpperCase();
+  if (!/^[A-Z]{1,6}$/.test(root)) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(expiryYmd.slice(0, 10));
+  if (!m) return null;
+  if (!Number.isFinite(strike) || strike <= 0) return null;
+  const strikeInt = Math.round(strike * 1000);
+  if (strikeInt <= 0 || strikeInt > 99_999_999) return null;
+  return `O:${root}${m[1].slice(2)}${m[2]}${m[3]}${side === "call" ? "C" : "P"}${String(strikeInt).padStart(8, "0")}`;
+}
+
+function rowFromOptionSnapshot(snap: OptionSnapshot): ChainStrikeRow | null {
+  if (!snap.expiry || snap.strike == null || snap.optionType == null) return null;
+  const base: ChainStrikeRow = {
+    expiry: snap.expiry,
+    strike: snap.strike,
+    call_bid: null,
+    call_ask: null,
+    call_delta: null,
+    call_oi: 0,
+    call_iv: null,
+    put_bid: null,
+    put_ask: null,
+    put_delta: null,
+    put_oi: 0,
+    put_iv: null,
+  };
+  if (snap.optionType === "call") {
+    base.call_bid = snap.bid;
+    base.call_ask = snap.ask;
+    base.call_delta = snap.delta;
+    base.call_oi = Math.max(0, Math.round(snap.openInterest ?? 0));
+    base.call_iv = snap.iv;
+  } else {
+    base.put_bid = snap.bid;
+    base.put_ask = snap.ask;
+    base.put_delta = snap.delta;
+    base.put_oi = Math.max(0, Math.round(snap.openInterest ?? 0));
+    base.put_iv = snap.iv;
+  }
+  return base;
+}
 
 function num(v: unknown): number {
   const n = Number(v);
@@ -392,6 +437,70 @@ export async function fetchEditionChainRows(params: {
 }
 
 export type EditionChainData = { spot: number; rows: ChainStrikeRow[] };
+
+function hasMatchingRow(rows: ChainStrikeRow[], parsed: ParsedOptionsContract): boolean {
+  return rows.some((row) => {
+    if (Math.abs(row.strike - parsed.strike) > 0.05) return false;
+    if (parsed.expiryYmd && row.expiry !== parsed.expiryYmd) return false;
+    if (parsed.side === "call") {
+      return row.call_bid != null || row.call_ask != null || row.call_oi > 0 || row.call_iv != null;
+    }
+    if (parsed.side === "put") {
+      return row.put_bid != null || row.put_ask != null || row.put_oi > 0 || row.put_iv != null;
+    }
+    return true;
+  });
+}
+
+/**
+ * Add exact per-contract snapshots for the contracts Claude selected.
+ *
+ * The prompt table intentionally stays narrow (ATM +/-5%, front expiries) to control prompt size.
+ * After synthesis, however, user-visible option premiums must be grounded against the exact contract
+ * that will be shown. This batches those exact OCC lookups so longer-dated/OTM plays are validated
+ * without broadening every ticker's chain fetch.
+ */
+export async function augmentChainsWithExactContracts(params: {
+  plays: PlaybookPlay[];
+  chains: Record<string, EditionChainData>;
+}): Promise<Record<string, EditionChainData>> {
+  const requests: Array<{ ticker: string; occ: string }> = [];
+  const seen = new Set<string>();
+
+  for (const play of params.plays) {
+    const ticker = play.ticker.toUpperCase();
+    const parsed = parseOptionsContract(play.options_play);
+    if (!parsed?.expiryYmd || !parsed.side) continue;
+    if (hasMatchingRow(params.chains[ticker]?.rows ?? [], parsed)) continue;
+    const occ = buildOcc(ticker, parsed.expiryYmd, parsed.side, parsed.strike);
+    if (!occ || seen.has(occ)) continue;
+    seen.add(occ);
+    requests.push({ ticker, occ });
+  }
+
+  if (!requests.length) return params.chains;
+
+  const snapshots = await fetchOptionsUnifiedSnapshot(requests.map((r) => r.occ));
+  if (!snapshots.size) return params.chains;
+
+  const next: Record<string, EditionChainData> = Object.fromEntries(
+    Object.entries(params.chains).map(([ticker, data]) => [ticker, { spot: data.spot, rows: [...data.rows] }])
+  );
+
+  for (const req of requests) {
+    const snap = snapshots.get(req.occ);
+    if (!snap) continue;
+    const row = rowFromOptionSnapshot(snap);
+    if (!row) continue;
+    const existing = next[req.ticker];
+    const spot = existing?.spot && existing.spot > 0 ? existing.spot : snap.underlyingPrice ?? 0;
+    const rows = existing?.rows ?? [];
+    if (hasMatchingRow(rows, { strike: row.strike, expiryYmd: row.expiry, side: snap.optionType })) continue;
+    next[req.ticker] = { spot, rows: [...rows, row] };
+  }
+
+  return next;
+}
 
 /** Pre-fetch ATM ±5% chains (spot + rows) for ranked stocks — single fetch per ticker. */
 export async function fetchEditionChains(params: {

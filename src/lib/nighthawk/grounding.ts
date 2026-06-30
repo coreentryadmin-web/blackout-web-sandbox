@@ -24,9 +24,9 @@
  *     - prose number (in thesis/key_signal) that diverges from the grounded structured field,
  *     - any PT-like ("price target $X") claim in prose — always stripped (no real PT source).
  *
- * UNVERIFIABLE ≠ CONTRADICTED. The prefetched chain only covers ATM ±5% on the front two expiries.
- * A legitimately longer-dated / slightly-OTM contract is simply absent — that is NOT a contradiction
- * and must NOT drop the play (the #77 over-filter lesson). Only a POSITIVE contradiction is hard.
+ * EXACT CONTRACT RULE. The prompt's chain table stays narrow (ATM ±5%, front expiries), but the
+ * final published option card is augmented with an exact per-contract snapshot. A parseable contract
+ * that still cannot be matched is NOT grounded and must not publish with a fabricated premium.
  */
 
 import type { ChainStrikeRow, EditionChainData } from "./option-chain-prompt";
@@ -222,9 +222,27 @@ export function groundPlay(
   const contractOnChain = matched.length > 0;
 
   // ── CHECK 1 + 2: STRIKE confirmed on-chain (OI floor) + PREMIUM reconciles ────────────────────
-  // We can only HARD-check a contract that is actually present in the prefetched window. An absent
-  // contract is unverifiable (longer-dated/OTM swing) — NOT a contradiction; it stays a soft pass.
-  if (contractOnChain && parsed) {
+  // The chain rows are augmented with exact per-contract snapshots for parseable Claude contracts.
+  // If a user-visible option card still cannot be parsed/matched here, the premium is not grounded.
+  if (!parsed) {
+    issues.push({
+      check: "strike",
+      severity: "drop",
+      detail: `${play.ticker} option contract is unparseable — cannot ground strike/expiry/premium.`,
+    });
+  } else if (!parsed.expiryYmd || !parsed.side) {
+    issues.push({
+      check: "strike",
+      severity: "drop",
+      detail: `${play.ticker} option contract missing ${!parsed.expiryYmd ? "expiry" : "side"} — cannot ground premium.`,
+    });
+  } else if (!contractOnChain) {
+    issues.push({
+      check: "strike",
+      severity: "drop",
+      detail: `${play.ticker} ${parsed.expiryYmd} ${parsed.strike} ${parsed.side} was not found in exact/prefetched chain data — premium cannot be grounded.`,
+    });
+  } else {
     const bestOi = Math.max(...matched.map((r) => sideOi(r, parsed.side)));
     if (bestOi < GROUNDING_MIN_OI) {
       issues.push({
@@ -247,6 +265,12 @@ export function groundPlay(
           check: "premium",
           severity: "drop",
           detail: `${play.ticker} contract confirmed on-chain (OI ${bestOi}) but entry_premium is null/unparseable — null-premium-as-PASS rejected.`,
+        });
+      } else if (chainAsk == null) {
+        issues.push({
+          check: "premium",
+          severity: "drop",
+          detail: `${play.ticker} contract confirmed on-chain (OI ${bestOi}) but has no usable bid/ask quote — entry_premium cannot be grounded.`,
         });
       } else if (chainAsk != null && !approxEq(premium, chainAsk, PREMIUM_TOLERANCE_PCT)) {
         issues.push({

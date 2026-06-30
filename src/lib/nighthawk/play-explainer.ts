@@ -2,6 +2,7 @@ import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
 import { fetchTickerDossier } from "./dossier";
 import { formatTickerDossierText } from "./format";
 import type { PlaybookPlay } from "./types";
+import { buildGroundedPlayExplanationFallback } from "./play-explainer-fallback";
 
 const SYSTEM = `You are Night Hawk — the evening playbook analyst for BlackOut Trading. A member clicked a ranked play and wants a thorough institutional-grade briefing on WHY it made tonight's top 5.
 
@@ -112,21 +113,7 @@ export async function generatePlayExplanation(params: {
   dossierContext: string;
 }): Promise<string | null> {
   if (!anthropicConfigured()) {
-    return [
-      `**Why ranked #${params.play.rank}**`,
-      params.play.thesis || params.play.key_signal || "No thesis on file.",
-      "",
-      "**The contract**",
-      params.play.options_play,
-      "",
-      "**Levels**",
-      `Entry: ${params.play.entry_range}`,
-      `Target: ${params.play.target}`,
-      `Stop: ${params.play.stop}`,
-      "",
-      "**Bottom line:**",
-      "Claude is not configured — this is the playbook card only. Set ANTHROPIC_API_KEY for full Hawk Intel briefings.",
-    ].join("\n");
+    return buildGroundedPlayExplanationFallback({ play: params.play });
   }
 
   const prompt = `Edition for session: ${params.editionFor}
@@ -144,5 +131,9 @@ ${params.dossierContext}
 
 Write the full detailed briefing for ${params.play.ticker} ranked #${params.play.rank}.`;
 
-  return anthropicText(prompt, 3200, SYSTEM, { timeoutMs: 60_000, maxRetries: 1 });
+  const generated = await anthropicText(prompt, 3200, SYSTEM, { timeoutMs: 45_000, maxRetries: 1 });
+  return generated?.trim() || buildGroundedPlayExplanationFallback({
+    play: params.play,
+    reason: "Full Hawk Intel generation did not complete in time; this fallback uses only the grounded published play card.",
+  });
 }
