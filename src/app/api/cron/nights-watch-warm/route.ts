@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { listDistinctOpenPositionChains, listDistinctOpenPositionContracts } from "@/lib/db";
+import { autoCloseUnlistedOpenPositions } from "@/lib/nights-watch/unlisted-reconcile";
 import { getNwChain } from "@/lib/nights-watch/chain-cache";
 import { getNwTickerGex } from "@/lib/nights-watch/position-context";
 import { buildOcc } from "@/lib/ws/options-socket";
@@ -180,6 +181,12 @@ export async function GET(req: NextRequest) {
             (diag.noQuote.length ? ` | no_quote: ${diag.noQuote.slice(0, 20).join(", ")}` : "") +
             (diag.missing.length ? ` | missing: ${diag.missing.slice(0, 20).join(", ")}` : "")
         );
+      }
+      if (diag.unfound.length > 0) {
+        const closedUnlisted = await autoCloseUnlistedOpenPositions(diag.unfound);
+        if (closedUnlisted > 0) {
+          console.log(`[cron/nights-watch-warm] auto-closed ${closedUnlisted} unlisted open position(s)`);
+        }
       }
     }
   } catch (error) {
