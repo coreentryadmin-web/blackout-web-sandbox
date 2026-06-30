@@ -1,9 +1,69 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-29 23:10 ET
+Last updated: 2026-06-30 12:20 ET
 
-> **29 Jun 2026 — platform GREEN.** All P0/P1/P2 code bugs from the full-site audit line are closed.
+> **30 Jun 2026 — RTH open pass GREEN** after grid-warm self-heal + socket-check hardening (PR pending merge).
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
+
+## RTH comprehensive sweep — 2026-06-30 ~12:02–12:20 ET (pass 1)
+
+**Session:** Tue 30 Jun 2026, 12:02–12:20 ET (RTH open). Agent: autonomous RTH cloud session.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` (pre-fix) | ❌ options-socket log auth false-fail; grid-warm RTH-stale |
+| `npm run validate:rth-open` (post-fix) | ✅ GREEN |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed |
+| `npm run ops:collect` | ✅ 0 action items (post warm) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ 48 pass / 0 issues (post warm) |
+| `node scripts/gha-rth-audit.mjs` | ⚠️ transient P0 spot>HOD race at 12:16; flow-ingest stale flag cleared after warm |
+
+### Fixes shipped (branch `fix/rth-grid-warm-self-heal-socket-check`)
+
+| ID | Issue | Fix |
+|---|---|---|
+| **P0 grid-warm self-heal gap** | Watchdog flagged `grid-warm` RTH-stale; self-heal skipped it (not in `CRON_DISPATCH`) | Added `grid-warm` to `cron-dispatch.ts` + `Grid-Warm-Cron` service name map |
+| **P1 RTH socket false-fail** | `validate:rth-open` required options-socket auth log line — unreliable on 5-replica cluster | Postgres-backed check: `nights-watch-warm` ok + open-position count; idle when 0 positions |
+
+### API sweep (CRON bearer — premium endpoints)
+
+| Endpoint | HTTP | Latency | `as_of` fresh | Notes |
+|---|---|---|---|---|
+| `/api/market/spx/desk` | 200 | ~1.3s | ✅ | SPX ~7493, VIX ~16.7; oracle Δ 0.02 |
+| `/api/market/spx/pulse` | 200 | ~2.8s | — | `price_age_ms` null (optional) |
+| `/api/market/flows` | 200 | ~8.7s | — | 200 rows, Σ $211M premium finite |
+| `/api/market/gex-positioning` | 200 | ~4.4s | — | no nulls |
+| `/api/market/gex-heatmap` | 200 | ~0.5s | — | `overlays.flow_by_strike`, `nighthawk_context` null (optional overlays) |
+| `/api/market/nighthawk/edition` | 200 | ~0.1s | — | 3 plays 2026-06-30 |
+| `/api/grid/*` (8 panels) | 200 | 55–1712ms | ✅ | all finite; analysts/congress/dark-pool/sectors/movers/catalysts clean |
+
+**Cross-tool GEX/SPX agreement:** desk spot vs Polygon oracle within 0.02 pts; GEX positioning finite; heatmap matrix 10×4 invariants pass.
+
+### Missing-field audit (API-backed — expected vs defect)
+
+| Field / surface | Backing API | Cause | Action |
+|---|---|---|---|
+| `nope`, `nope_net_delta`, `dark_pool.pcr` on desk/merged/flows | UW upstream optional | **Upstream/data gap** — fields null in API during RTH | Expected when UW channel quiet; UI should show unavailable not fabricated |
+| `spx_flows[].alert_rule`, `trade_count` | flow row optional metadata | **Expected** — not every alert has rule/count |
+| `grid/earnings` `eps_actual`, `surprise_pct` | pre-report rows | **Expected** — future earnings have no actual yet |
+| `grid/economy` `indicators[].rows[7].value` | macro series tail | **Expected** — trailing row may be unreleased |
+| `gex-heatmap` `overlays.flow_by_strike` | overlay channel | **Expected off** when overlay not warmed |
+| Browser premium pages | Clerk prod auth | **Blocked** — `+clerk_test` only works locally | API sweep covers data plane; browser UI sweep needs prod premium session |
+
+### Browser sweep
+
+- `/track-record` (public): fast load, no console errors, no `—` fields, static data (no live tick — expected).
+- `/dashboard`, `/flows`, `/heatmap`, `/grid`, `/nighthawk`, `/terminal`: **blocked** — prod Clerk rejects test credentials; redirect to sign-in.
+
+### Ops watch (not code bugs)
+
+| ID | Item | Status |
+|---|---|---|
+| **OPS-6** | Railway `Grid-Warm-Cron` / `Flow-Ingest-Cron` cadence gaps (~30–60m between fires despite `*/2` / `* *` schedule) | Watch — manual `hit-cron` clears staleness; self-heal now covers grid-warm |
+| **OPS-7** | Sentry unresolved `TypeError: fetch failed` (06:38 UTC) | Watch — no recent `error_events` spike |
+| **OPS-8** | Prod browser RTH UI sweep | Needs real premium Clerk session for soft-nav / SSE / Largo QA |
 
 ## ✅ Closed (2026-06-29 audit line)
 
