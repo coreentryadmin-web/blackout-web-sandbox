@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { engineConfigured, fetchEngine } from "@/lib/engine";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const denied = await requireAdminApi();
   if (denied) return denied;
