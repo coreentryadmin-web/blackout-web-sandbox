@@ -853,49 +853,48 @@ export async function fetchUwDarkPool(
  * Market-wide dark pool snapshot — uses /api/darkpool/recent instead of the ticker-specific
  * endpoint, so it returns data even when the ticker is a cash index (e.g. SPX) that has no
  * equity dark pool entries. Used as the desk fallback when ticker-specific returns empty.
+ *
+ * Reuses fetchUwDarkPoolRecent (same Redis key + UW pull) and shapes rows into DarkPoolSnapshot —
+ * do NOT cache a DarkPoolSnapshot under darkPoolRecent (that key stores raw API rows for Largo/tools).
  */
 export async function fetchUwDarkPoolMarketWide(
   opts?: { limit?: number; min_premium?: number }
 ): Promise<DarkPoolSnapshot | null> {
-  const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.darkPoolRecent(), UW_CACHE_TTL.darkPoolRecent, async () => {
-    const limit = Math.min(opts?.limit ?? 20, 100);
-    const data = await uwGetSafe<unknown>("/api/darkpool/recent", { limit });
-    const rows = extractRows(data);
-    const minPremium = opts?.min_premium ?? 0;
-    const today = todayIso();
-    const prints: DarkPoolPrint[] = [];
-    let callPrem = 0;
-    let putPrem = 0;
-    let total = 0;
+  const limit = Math.min(opts?.limit ?? 20, 100);
+  const rows = await fetchUwDarkPoolRecent(limit);
+  const minPremium = opts?.min_premium ?? 0;
+  const today = todayIso();
+  const prints: DarkPoolPrint[] = [];
+  let callPrem = 0;
+  let putPrem = 0;
+  let total = 0;
 
-    for (const row of rows) {
-      const execAt = String(row.executed_at ?? row.date ?? "");
-      if (!execAt || !execAt.startsWith(today)) continue;
-      const premium = Number(row.premium ?? row.size ?? row.notional ?? 0);
-      if (premium <= 0 || (minPremium > 0 && premium < minPremium)) continue;
-      const strikeRaw = Number(row.strike ?? row.price ?? row.ref_price ?? 0);
-      const strike = Number.isFinite(strikeRaw) ? bucketPrice(strikeRaw) : 0;
-      const side = String(row.side ?? row.direction ?? "unknown").toLowerCase();
-      const optType = String(row.type ?? row.option_type ?? "").toLowerCase();
-      const ticker = row.ticker ? String(row.ticker) : undefined;
-      prints.push({ strike, premium, side, executed_at: execAt.slice(0, 19), ticker });
-      total += premium;
-      if (optType.includes("call")) callPrem += premium;
-      else if (optType.includes("put")) putPrem += premium;
-    }
+  for (const row of rows) {
+    const execAt = String(row.executed_at ?? row.date ?? "");
+    if (!execAt || !execAt.startsWith(today)) continue;
+    const premium = Number(row.premium ?? row.size ?? row.notional ?? 0);
+    if (premium <= 0 || (minPremium > 0 && premium < minPremium)) continue;
+    const strikeRaw = Number(row.strike ?? row.price ?? row.ref_price ?? 0);
+    const strike = Number.isFinite(strikeRaw) ? bucketPrice(strikeRaw) : 0;
+    const side = String(row.side ?? row.direction ?? "unknown").toLowerCase();
+    const optType = String(row.type ?? row.option_type ?? "").toLowerCase();
+    const ticker = row.ticker ? String(row.ticker) : undefined;
+    prints.push({ strike, premium, side, executed_at: execAt.slice(0, 19), ticker });
+    total += premium;
+    if (optType.includes("call")) callPrem += premium;
+    else if (optType.includes("put")) putPrem += premium;
+  }
 
-    const bias = darkPoolBias(callPrem, putPrem, total);
-    return {
-      prints: prints.slice(0, 20),
-      total_premium: total,
-      call_premium: callPrem,
-      put_premium: putPrem,
-      bias,
-      pcr: callPrem > 0 ? Math.round((putPrem / callPrem) * 100) / 100 : null,
-      detail: prints.length ? `${prints.length} print(s) | $${(total / 1_000_000).toFixed(2)}M` : "No prints today",
-    };
-  });
+  const bias = darkPoolBias(callPrem, putPrem, total);
+  return {
+    prints: prints.slice(0, 20),
+    total_premium: total,
+    call_premium: callPrem,
+    put_premium: putPrem,
+    bias,
+    pcr: callPrem > 0 ? Math.round((putPrem / callPrem) * 100) / 100 : null,
+    detail: prints.length ? `${prints.length} print(s) | $${(total / 1_000_000).toFixed(2)}M` : "No prints today",
+  };
 }
 
 /**

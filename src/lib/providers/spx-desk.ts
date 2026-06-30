@@ -321,9 +321,13 @@ function mergeWsIndexSnapshots(
   const out = { ...snaps };
   for (const sym of [SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]) {
     const ws = indexStore[sym];
-    // Drop ws.price > 0 guard — I:TICK and I:ADD are breadth indices that can be negative.
-    // ws?.updatedAt (truthy only when a real WS message has arrived) is the correct freshness gate.
-    if (ws?.updatedAt && now - ws.updatedAt < INDEX_STORE_STALE_MS) {
+    const breadthIndex = sym === TICK || sym === ADD;
+    // Breadth indices (TICK/ADD) can be negative; price indices must stay > 0.
+    if (
+      ws?.updatedAt &&
+      now - ws.updatedAt < INDEX_STORE_STALE_MS &&
+      (breadthIndex || ws.price > 0)
+    ) {
       // FIX-A: the live WS PRICE is always preferred (sub-second fresh). For the day CHANGE%,
       // trust the WS value ONLY when its session_open is authoritative — i.e. REST-seeded
       // (open_source === "rest"). When the anchor is still a raw first-seen bar open ("ws-bar")

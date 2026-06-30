@@ -371,9 +371,15 @@ async function connectIndices() {
             // ~1s cross-replica snapshot, so V can't hammer Redis at tick rate.
             const sym = typeof msg.T === "string" ? (msg.T as string) : "";
             const val = Number(msg.val);
-            // Allow negative values — I:TICK and I:ADD can be negative (net upticks/downticks).
-            // The original val > 0 guard silently dropped all negative breadth readings.
-            if (sym && indexStore[sym] && Number.isFinite(val)) {
+            // I:TICK and I:ADD are breadth indices — values can be negative. Other V-channel
+            // symbols (SPX, VIX, …) must stay strictly positive price updates.
+            const breadthIndex = sym === "I:TICK" || sym === "I:ADD";
+            if (
+              sym &&
+              indexStore[sym] &&
+              Number.isFinite(val) &&
+              (breadthIndex ? true : val > 0)
+            ) {
               const prev = indexStore[sym];
               indexStore[sym] = {
                 ...prev,
