@@ -7384,22 +7384,25 @@ body::before {
   .grid-foot-note { @apply font-mono text-[10px] text-sky-300/60; }
 
   /* ── Per-card controls (collapse / hide) ─────────────────────────────── */
-  .grid-card-ctrls { @apply flex items-center gap-0.5 ml-1.5; }
+  .grid-card-ctrls { @apply flex items-center gap-1 ml-2; }
   .grid-card-ctrl {
-    @apply inline-flex items-center justify-center h-6 w-6 rounded-md text-sky-300/55 text-[15px] leading-none transition-colors;
+    @apply inline-flex items-center justify-center h-7 w-7 rounded-md text-sky-200/75 text-[16px] leading-none border transition-colors;
+    border-color: rgba(125, 211, 252, 0.14);
+    background: rgba(255, 255, 255, 0.03);
   }
   .grid-card-ctrl:hover {
     color: var(--grid-accent);
-    background: color-mix(in srgb, var(--grid-accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--grid-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--grid-accent) 18%, transparent);
   }
-  .grid-card-ctrl--close:hover { color: #ff5c78; background: rgba(255, 92, 120, 0.16); }
+  .grid-card-ctrl--close:hover { color: #ff5c78; border-color: rgba(255, 92, 120, 0.5); background: rgba(255, 92, 120, 0.18); }
   .grid-card-chevron {
-    width: 7px; height: 7px;
+    width: 9px; height: 9px; margin-top: -3px;
     border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
-    transform: rotate(45deg) translateY(-2px);
+    transform: rotate(45deg);
     transition: transform 0.22s ease;
   }
-  .grid-card-chevron--up { transform: rotate(225deg) translateY(2px); }
+  .grid-card-chevron--up { margin-top: 3px; transform: rotate(225deg); }
 
   /* ── Board toolbar ───────────────────────────────────────────────────── */
   .grid-toolbar { @apply flex items-center gap-3 mb-3 px-1; }
@@ -7484,8 +7487,10 @@ body::before {
   .grid-live-lattice {
     position: absolute; inset: -12%;
     background: linear-gradient(115deg, #00e676, #22d3ee, #7dd3fc, #bf5fff, #ffcc4d, #ff5c78, #00e676);
-    background-size: 280% 280%;
-    --line: 1.5px;
+    /* Smaller tile so the full spectrum spans the viewport — visibly MULTI-colored
+       even at rest (and when prefers-reduced-motion freezes the flow). */
+    background-size: 130% 130%;
+    --line: 2px;
     -webkit-mask-image:
       repeating-linear-gradient(to right, #000 0, #000 var(--line), transparent var(--line), transparent var(--cell)),
       repeating-linear-gradient(to bottom, #000 0, #000 var(--line), transparent var(--line), transparent var(--cell));
@@ -7497,8 +7502,8 @@ body::before {
     animation: grid-flow 20s ease-in-out infinite, grid-drift 18s linear infinite;
     will-change: background-position, transform;
   }
-  .grid-live-lattice--far { --cell: 132px; opacity: 0.1; filter: blur(0.6px); animation-duration: 28s, 36s; }
-  .grid-live-lattice--near { --cell: 66px; opacity: 0.24; }
+  .grid-live-lattice--far { --cell: 132px; opacity: 0.16; filter: blur(0.6px); animation-duration: 28s, 36s; }
+  .grid-live-lattice--near { --cell: 66px; opacity: 0.38; }
   @keyframes grid-flow {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
@@ -7516,6 +7521,7 @@ body::before {
       radial-gradient(46% 46% at 66% 82%, rgba(34, 211, 238, 0.32), transparent 70%),
       radial-gradient(30% 30% at 30% 78%, rgba(255, 204, 77, 0.24), transparent 70%);
     background-size: 200% 200%;
+    opacity: 0.62;
     animation: grid-blooms 30s ease-in-out infinite;
     will-change: background-position;
   }
