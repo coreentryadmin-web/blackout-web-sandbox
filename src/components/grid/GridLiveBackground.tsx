@@ -6,7 +6,7 @@
  */
 export function GridLiveBackground() {
   return (
-    <div aria-hidden className="grid-live-bg pointer-events-none fixed inset-0 -z-10">
+    <div aria-hidden className="grid-live-bg pointer-events-none fixed inset-0 z-0">
       <div className="grid-live-blooms" />
       <div className="grid-live-lattice grid-live-lattice--far" />
       <div className="grid-live-lattice grid-live-lattice--near" />
