@@ -10,7 +10,9 @@ import {
 } from "@/lib/correctness/types";
 import { listDistinctOpenPositionContracts, type UserPositionRow } from "@/lib/db";
 import { getNwChain, matchContract } from "@/lib/nights-watch/chain-cache";
-import { valuationFromContract, enrichPosition } from "@/lib/nights-watch/valuation";
+import { valuationFromContract, valuationFromSnapshot, enrichPosition } from "@/lib/nights-watch/valuation";
+import { getOptionSnapshot } from "@/lib/providers/options-snapshot";
+import { buildOcc } from "@/lib/ws/options-socket";
 
 // ---------------------------------------------------------------------------
 // NIGHT'S WATCH (per-user options position manager) data-correctness verifier — priority surface #3.
@@ -258,23 +260,49 @@ export async function verifyNightsWatch(marketOpen: boolean): Promise<TickerScor
       for (const key of chainKeys) {
         const group = byChain.get(key)!;
         const [tkr, exp] = key.split("|");
+        const strikeHints = group.map((c) => c.strike);
         let chain: Awaited<ReturnType<typeof getNwChain>> = null;
         try {
-          chain = await getNwChain(tkr, exp);
+          chain = await getNwChain(tkr, exp, strikeHints);
         } catch {
           chain = null;
         }
-        if (!chain) continue; // unconfigured/empty band → not a flag (the product also degrades to 'unavailable')
         for (const c of group) {
-          const match = matchContract(chain.contracts, c.strike, c.option_type);
           contractsChecked++;
-          if (!match) {
+          // Primary valuation path: per-OCC unified snapshot (same source enrichment uses first).
+          let located = false;
+          let val: ReturnType<typeof valuationFromContract> | null = null;
+          try {
+            const occ = buildOcc(c.ticker, c.expiry, c.option_type, c.strike);
+            if (occ) {
+              const snap = await getOptionSnapshot(occ);
+              const snapMatches =
+                snap != null &&
+                snap.optionType === c.option_type &&
+                snap.strike != null &&
+                Math.abs(snap.strike - c.strike) <= 0.005 &&
+                snap.expiry === c.expiry.slice(0, 10);
+              if (snap && snapMatches) {
+                val = valuationFromSnapshot(snap);
+                if (val) located = true;
+              }
+            }
+          } catch {
+            /* snapshot optional — chain fallback below */
+          }
+          // Chain fallback (band widened to held strikes via strikeHints above).
+          if (!located && chain) {
+            const match = matchContract(chain.contracts, c.strike, c.option_type);
+            if (match) {
+              located = true;
+              val = valuationFromContract(match, chain.spot);
+            }
+          }
+          if (!located) {
             notFound++;
             if (notFoundDetail.length < 5) notFoundDetail.push(`${tkr} ${exp} ${c.strike}${c.option_type[0].toUpperCase()}`);
             continue;
           }
-          // Mark present (the valuation source). Greeks/IV sane.
-          const val = valuationFromContract(match, chain.spot);
           if (!val || !(val.mark > 0)) {
             noMark++;
             continue;
@@ -306,8 +334,8 @@ export async function verifyNightsWatch(marketOpen: boolean): Promise<TickerScor
             "mark",
             notFound === 0 ? "consistency-only" : "flag",
             notFound === 0
-              ? `All ${contractsChecked} sampled held contracts are present in the shared chain cache (strikes chain-confirmed; marks/greeks trace to real chain data).`
-              : `${notFound}/${contractsChecked} held contracts NOT found in the chain (e.g. ${notFoundDetail.join(", ")}) — valuation would show 'unavailable' / an unlisted strike was saved.`,
+              ? `All ${contractsChecked} sampled held contracts are priced via the shared per-OCC snapshot or widened chain cache (marks/greeks trace to real provider data).`
+              : `${notFound}/${contractsChecked} held contracts NOT found in snapshot or chain (e.g. ${notFoundDetail.join(", ")}) — valuation would show 'unavailable' / an unlisted strike was saved.`,
             { id: "nw-chain-confirm", expected: 0, actual: notFound }
           )
         );

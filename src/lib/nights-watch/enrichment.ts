@@ -125,12 +125,19 @@ async function enrichPositionRows(
   // Batch by (underlying, expiry): each distinct chain is fetched ONCE via the shared
   // single-flight cache, then every strike is matched in-memory. Upstream cost is
   // O(distinct chains) regardless of user/position count — never a per-position call.
+  const strikesByKey = new Map<string, number[]>();
+  for (const p of positions) {
+    const key = nwChainKey(p.ticker, p.expiry);
+    const arr = strikesByKey.get(key) ?? [];
+    arr.push(p.strike);
+    strikesByKey.set(key, arr);
+  }
   const groupKeys = Array.from(new Set(positions.map((p) => nwChainKey(p.ticker, p.expiry))));
   const chains = new Map<string, NwChain | null>();
   await Promise.all(
     groupKeys.map(async (key) => {
       const [root, exp] = key.split("|");
-      chains.set(key, await getNwChain(root, exp).catch(() => null));
+      chains.set(key, await getNwChain(root, exp, strikesByKey.get(key) ?? []).catch(() => null));
     })
   );
   // Build each position's OCC ONCE and reuse it for both the live WS mark and the

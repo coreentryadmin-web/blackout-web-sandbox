@@ -27,12 +27,22 @@ export function nwChainKey(ticker: string, expiry: string): string {
  * never a fabricated price). Caching null for the TTL also shields a failing
  * underlying from being re-hammered by every user.
  */
-export async function getNwChain(ticker: string, expiry: string): Promise<NwChain | null> {
+export async function getNwChain(
+  ticker: string,
+  expiry: string,
+  /** Held strikes for this chain — widens the banded fetch so legs outside the spot window still match. */
+  strikeHints: number[] = []
+): Promise<NwChain | null> {
   const root = normalizeUnderlying(ticker);
   const exp = expiry.slice(0, 10);
-  const cacheKey = `nw:chain:${root}:${exp}:${todayEt()}`;
+  const finiteHints = strikeHints.filter((s) => Number.isFinite(s) && s > 0);
+  const hintSuffix =
+    finiteHints.length > 0
+      ? `:s${Math.floor(Math.min(...finiteHints))}-${Math.ceil(Math.max(...finiteHints))}`
+      : "";
+  const cacheKey = `nw:chain:${root}:${exp}:${todayEt()}${hintSuffix}`;
   return withServerCache<NwChain | null>(cacheKey, TTL.OPTIONS_CHAIN, () =>
-    fetchNwOptionChain(root, exp)
+    fetchNwOptionChain(root, exp, 0.35, finiteHints)
   );
 }
 

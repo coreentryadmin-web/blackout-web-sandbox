@@ -76,12 +76,28 @@ export async function GET(req: NextRequest) {
 
   const capped = chains.slice(0, MAX_CHAINS);
 
+  // Strike hints per (ticker, expiry) so getNwChain widens the band to include deep OTM/ITM legs.
+  const strikesByChain = new Map<string, number[]>();
+  try {
+    for (const c of await listDistinctOpenPositionContracts()) {
+      const key = `${c.ticker.trim().toUpperCase()}|${c.expiry.slice(0, 10)}`;
+      const arr = strikesByChain.get(key) ?? [];
+      arr.push(c.strike);
+      strikesByChain.set(key, arr);
+    }
+  } catch {
+    /* best-effort — default band still warms ATM */
+  }
+
   // getNwChain dedups per (ticker, expiry) via withServerCache, so warming each once is
   // enough. Settle-all so one failing underlying can't abort the rest. A null result
   // (unconfigured / no spot) is still a successful warm — the empty result is cached and
   // shields that underlying from per-user re-hammering for the TTL window.
   const results = await Promise.allSettled(
-    capped.map(({ ticker, expiry }) => getNwChain(ticker, expiry))
+    capped.map(({ ticker, expiry }) => {
+      const key = `${ticker.trim().toUpperCase()}|${expiry.slice(0, 10)}`;
+      return getNwChain(ticker, expiry, strikesByChain.get(key) ?? []);
+    })
   );
 
   let warmed = 0;

@@ -55,7 +55,9 @@ export type ChainContract = {
 export async function fetchNwOptionChain(
   underlying: string,
   expiry: string, // YYYY-MM-DD
-  bandPct = 0.35
+  bandPct = 0.35,
+  /** Held strikes for this (underlying, expiry) — expands the fetch band so deep OTM/ITM legs are in-cache for chain fallback. */
+  strikeHints: number[] = []
 ): Promise<{ contracts: ChainContract[]; spot: number } | null> {
   if (!polygonConfigured()) return null;
   const root = underlying.toUpperCase();
@@ -67,7 +69,7 @@ export async function fetchNwOptionChain(
   const spot = snap?.price ?? 0;
   if (!(spot > 0)) return null; // no spot → can't center a band; report unavailable
 
-  const contracts = await fetchChainBand(underlyingRoot, spot, expiry, bandPct);
+  const contracts = await fetchChainBand(underlyingRoot, spot, expiry, bandPct, strikeHints);
   if (!contracts.length) return null;
   return { contracts, spot };
 }
@@ -2444,11 +2446,17 @@ async function fetchChainBand(
   underlying: string,
   spot: number,
   expiry: string,
-  bandPct = 0.015
+  bandPct = 0.015,
+  strikeHints: number[] = []
 ): Promise<ChainContract[]> {
   const band = Math.max(spot * bandPct, bandPct >= 0.04 ? spot * 0.02 : 80);
-  const lo = Math.floor(spot - band);
-  const hi = Math.ceil(spot + band);
+  let lo = Math.floor(spot - band);
+  let hi = Math.ceil(spot + band);
+  const finiteHints = strikeHints.filter((s) => Number.isFinite(s) && s > 0);
+  if (finiteHints.length) {
+    lo = Math.min(lo, Math.floor(Math.min(...finiteHints)));
+    hi = Math.max(hi, Math.ceil(Math.max(...finiteHints)));
+  }
 
   const params = new URLSearchParams({
     expiration_date: expiry,
