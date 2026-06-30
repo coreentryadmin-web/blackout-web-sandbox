@@ -1,0 +1,48 @@
+# Hands-off merging for SAFE Dependabot PRs.
+#
+# Enables GitHub native auto-merge (squash) so a Dependabot PR merges itself the
+# moment the required `verify` check (ci.yml) is green — no human click. The CI
+# gate (tsc + 410 unit tests + next build) is the real safety net: if a bump
+# breaks the build/types/tests, `verify` goes red and the PR never merges.
+#
+# Auto-merged: patch + minor bumps (any ecosystem) and ALL github-actions bumps
+# (low runtime blast radius, fully CI-gated). LEFT FOR HUMAN REVIEW: npm semver-
+# major bumps (e.g. eslint 8->10, lucide-react 0->1) — they can carry breaking
+# API/visual changes that a green build won't always catch (lint is non-blocking
+# in CI), so a person should eyeball those.
+#
+# Prereqs (already satisfied for the cursor automerge flow): repo Settings →
+# General → "Allow auto-merge" ON, and the main ruleset requires the `verify`
+# check. The declared permissions below let GITHUB_TOKEN act on Dependabot PRs.
+
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for safe updates
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor' ||
+          steps.meta.outputs.package-ecosystem == 'github_actions'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge --auto --squash \
+            "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}"
