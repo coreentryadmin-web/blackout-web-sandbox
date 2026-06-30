@@ -33,7 +33,7 @@ function etParts(now = new Date()) {
   };
 }
 
-/** Weekday 09:00–16:15 ET (open window + 15m grace after close for crons). */
+/** Weekday 09:00–16:15 ET — agent validation window (pre-open warm-up + 15m post-close cron grace). NOT the same as US equity RTH (9:30 AM–4:00 PM ET). */
 function inRthOpenWindow(now = new Date()) {
   const { weekday, mins } = etParts(now);
   if (weekday === "Sat" || weekday === "Sun") return false;

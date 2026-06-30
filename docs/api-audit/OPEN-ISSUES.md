@@ -6,9 +6,9 @@ Last updated: 2026-06-30 16:15 ET
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
 
-## RTH comprehensive sweep — 2026-06-30 ~16:04–16:15 ET (pass 5 — close)
+## RTH comprehensive sweep — 2026-06-30 ~16:04–16:15 ET (pass 5 — after-hours)
 
-**Session:** Tue 30 Jun 2026, 16:04–16:15 ET (RTH final 15m + close). Agent: autonomous RTH cloud session. Premium Clerk admin session (`claude-audit-temp@blackouttrades.com`, `role:admin` + `tier:premium`).
+**Session:** Tue 30 Jun 2026, 16:04–16:15 ET (**after-hours** — RTH is 9:30 AM–4:00 PM ET; market had closed at 16:00). Agent: autonomous cloud session. Premium Clerk admin session (`claude-audit-temp@blackouttrades.com`, `role:admin` + `tier:premium`). Live-update and missing-field findings below reflect post-close state, not in-session RTH behavior.
 
 ### Validation summary
 
