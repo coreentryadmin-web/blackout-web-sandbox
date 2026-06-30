@@ -41,3 +41,10 @@ export function isUwSocketStalled(
   if (freshest == null) return false;
   return now - freshest > stallMs;
 }
+
+/** Merge local (this replica) and cluster (Redis leader heartbeat) delivery times. */
+export function mergeFreshestTimestamps(local: number | null, cluster: number | null): number | null {
+  if (local == null) return cluster;
+  if (cluster == null) return local;
+  return Math.max(local, cluster);
+}

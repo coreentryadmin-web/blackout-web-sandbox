@@ -1,9 +1,47 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-30 13:45 ET
+Last updated: 2026-06-30 14:20 ET
 
-> **30 Jun 2026 — RTH afternoon pass GREEN.** Socket-health cron probe (#116), nw15 fix + unlisted-position reconcile (#118).
+> **30 Jun 2026 — RTH afternoon GREEN.** Halt-feed cluster freshness (#126), socket-health (#116), nw15 fix (#118).
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
+
+## RTH comprehensive sweep — 2026-06-30 ~13:50–14:20 ET (pass 3)
+
+**Session:** Tue 30 Jun 2026, 13:50–14:20 ET (RTH mid-session). Agent: autonomous RTH cloud session.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ GREEN (deploy + RTH session checks) |
+| `GET /api/cron/data-correctness?force=1` (initial) | ⚠️ 1 flag: `writer_uw_cache_refresh` stale — watchdog self-healed |
+| `GET /api/cron/data-correctness?force=1` (post-heal) | ✅ 0 flags, 7 oracle-confirmed |
+| `npm run ops:collect` | ✅ 0 action items |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN — 49 pass / 0 issues |
+
+### Fixes shipped (branch `fix/uw-halt-cluster-freshness` → PR #126)
+
+| ID | Issue | Fix |
+|---|---|---|
+| **P1 halt feed false-stale (#125)** | `halt_channel_stale=true` on 100% of `/api/market/spx/pulse` hits during RTH — non-leader replicas (4/5) lack in-process UW timestamps → dashboard "Halt feed offline" banner + play-entry fail-closed | Leader writes `uw:ws:last_msg_at` Redis heartbeat; standbys poll + merge via `mergeFreshestTimestamps()` |
+
+### API sweep (CRON bearer — 14:11 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/spx/pulse` | 200 | ~0.2–2.8s | **`halt_channel_stale: true` on all replicas (pre-fix #126)** |
+| `/api/market/spx/merged` | 200 | ~32s | Slow cold build; spot finite when warm |
+| `/api/market/gex-positioning?ticker=SPX` | 200 | ~0.8s | oracle Δ 0.13 vs desk |
+| `/api/grid/*` (8 panels) | 200 | 54–7984ms | all finite |
+
+### Browser sweep (partial)
+
+| Page | Result | Notes |
+|---|---|---|
+| `/track-record` | ✅ | ~1s load, all fields populated |
+| `/terminal` (Largo) | ✅ | NVDA query grounded; sources cited |
+| `/dashboard` | ⚠️ | Live SPX tick ~3–5s; "Halt feed offline" banner (pre-fix) |
+| `/flows`, `/heatmap`, `/grid`, `/nighthawk` | ⚠️ | Test user `tier:free` after `membership-reconcile` |
 
 ## RTH comprehensive sweep — 2026-06-30 ~12:37–13:44 ET (pass 2)
 
@@ -52,8 +90,11 @@ Last updated: 2026-06-30 13:45 ET
 
 | ID | Item | Status |
 |---|---|---|
-| **OPS-9** | options-socket 1006 failures=1 in deploy logs (0 held contracts) | Watch — entitlement noise; socket-health passes |
+| **OPS-6** | Railway cron cadence gaps (flow-ingest, grid-warm) | Watch — self-heal clears |
+| **OPS-7** | Sentry `TypeError: fetch failed` (06:38 UTC) | Watch — 1 error_events / 24h |
+| **OPS-9** | options-socket 1006 failures=1 in deploy logs (0 held contracts) | Watch — socket-health passes |
 | **OPS-10** | Grid 15s load on 12-panel board | P2 UX — APIs healthy |
+| **OPS-11** | `/api/market/spx/merged` ~32s cold latency | Watch — cache warm path |
 
 ## RTH comprehensive sweep — 2026-06-30 ~12:02–12:20 ET (pass 1)
 
