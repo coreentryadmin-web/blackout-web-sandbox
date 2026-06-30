@@ -187,8 +187,17 @@ function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
  * (`getGexPositioning` / `gex-heatmap:SPX` cache). Replaces the old 0DTE-only
  * `fetchPolygonOdteDeskBundle` dual path (audit F-1).
  */
+// Hard ceiling on the Massive chain fetch — prevent a cold cache from blocking the
+// desk endpoint for 20+ seconds. If the fetch doesn't resolve in time we fall back
+// to the sticky in-process snapshot so the desk still responds with live tape data.
+const GEX_FETCH_TIMEOUT_MS = 8_000;
+
 async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSnapshot> {
-  const hm = await fetchGexHeatmap("SPX").catch(() => null);
+  const fetchOrTimeout = Promise.race([
+    fetchGexHeatmap("SPX").catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), GEX_FETCH_TIMEOUT_MS)),
+  ]);
+  const hm = await fetchOrTimeout;
   const pos = gexPositioningFromHeatmap("SPX", hm);
   if (!pos || !hm) return stickyDeskGexFallback(spot);
 

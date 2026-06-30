@@ -186,15 +186,22 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_flow_alerts_ticker_created
     ON flow_alerts(ticker, created_at DESC NULLS LAST);
   `);
-  // Supports fetchRecentFlows: WHERE COALESCE(created_at, inserted_at) >= cutoff
-  // ORDER BY COALESCE(total_premium, 0) DESC NULLS LAST LIMIT 5000.
-  // Expression index matches the actual predicate + sort (perf-only; no result change).
+  // Supports fetchRecentFlows ORDER BY COALESCE(total_premium, 0) DESC NULLS LAST.
+  // Recreate when NULLS LAST was missing on an older deploy (IF NOT EXISTS is a no-op otherwise).
+  await p.query(`DROP INDEX IF EXISTS idx_flow_alerts_recency_premium`);
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_flow_alerts_recency_premium
     ON flow_alerts(
-      (COALESCE(created_at, inserted_at)) DESC,
-      (COALESCE(total_premium, 0)) DESC
+      (COALESCE(created_at, inserted_at)) DESC NULLS LAST,
+      (COALESCE(total_premium, 0)) DESC NULLS LAST
     );
+  `);
+  // Supports fetchRecentFlows ORDER BY COALESCE(created_at, inserted_at) DESC NULLS LAST
+  // (the "recent" tape sort). Separate from recency_premium so PG can pick the cheapest
+  // single-column scan for this path (avoid multi-column sort that ignores premium col).
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_flow_alerts_event_at_recency
+    ON flow_alerts((COALESCE(created_at, inserted_at)) DESC NULLS LAST);
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS platform_meta (
