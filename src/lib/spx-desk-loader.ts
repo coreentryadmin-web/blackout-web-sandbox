@@ -21,16 +21,12 @@ export async function loadMergedSpxDesk(): Promise<MergedSpxDeskBundle> {
   // ISSUE-25: Include session date in cache keys so a process running across midnight
   // serves fresh data on the new session rather than stale prior-day data.
   const date = todayEtYmd();
+  // SWR: return last good snapshot immediately while the background refresh runs.
+  // Prevents a cold Massive chain fetch (20s+) from blocking play/desk polling.
   const [desk, flow, pulse] = await Promise.all([
-    withServerCache(`spx-desk:${date}`, deskCacheTtlMs(), buildSpxDesk, {
-      staleWhileRevalidate: false,
-    }),
-    withServerCache(`spx-desk-flow:${date}`, deskFlowCacheTtlMs(), buildSpxDeskFlow, {
-      staleWhileRevalidate: false,
-    }),
-    withServerCache(`spx-desk-pulse:${date}`, deskPulseCacheTtlMs(), buildSpxDeskPulse, {
-      staleWhileRevalidate: false,
-    }),
+    withServerCache(`spx-desk:${date}`, deskCacheTtlMs(), buildSpxDesk),
+    withServerCache(`spx-desk-flow:${date}`, deskFlowCacheTtlMs(), buildSpxDeskFlow),
+    withServerCache(`spx-desk-pulse:${date}`, deskPulseCacheTtlMs(), buildSpxDeskPulse),
   ]);
 
   const merged = mergeDeskLayers(desk, flow, pulse);

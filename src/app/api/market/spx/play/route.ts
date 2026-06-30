@@ -34,9 +34,13 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error("[market/spx/play]", error);
+    // Return 200+degraded so a transient Massive blip (R-16) gives the client a "scanning"
+    // state instead of a 502 network error that clears the play panel entirely.
     return NextResponse.json(
-      { available: false, action: "SCANNING", error: "Play engine failed" },
-      { status: 502 }
+      { available: false, action: "SCANNING", degraded: true },
+      {
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
+      }
     );
   }
 }

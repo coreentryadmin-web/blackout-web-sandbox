@@ -272,15 +272,26 @@ export function recordApiCall(input: {
   }
 
   emit(event);
-  // Relative (not "@/lib") + .catch: this fires on every recorded API call. The
-  // "@/" alias does not resolve in a dynamic import inside the production server
-  // chunk, so it threw ERR_MODULE_NOT_FOUND on every call — and being uncaught,
-  // each one became an unhandled rejection that spammed the logs.
-  void import("./api-telemetry-persist")
-    .then(({ persistApiTelemetryEvent }) => persistApiTelemetryEvent(event))
-    .catch(() => {
-      /* telemetry persistence is best-effort — never throw into the hot path */
-    });
+
+  // Sampling gate (audit R-4): with 5 replicas polling at 1-5s intervals we were writing
+  // ~200K rows/day — 5-8× the PG connection budget. Always persist signal events (errors,
+  // SLA breaches, rate limits) where exact records matter for debugging; sample the routine
+  // successful calls at 1-in-N. TELEMETRY_PERSIST_SAMPLE_RATE=1 (env) disables sampling.
+  const isSignal = !event.ok || event.sla_breach || event.rate_limited;
+  const sampleRate = parseInt(process.env.TELEMETRY_PERSIST_SAMPLE_RATE ?? "20", 10) || 20;
+  const shouldPersist = isSignal || Math.random() < 1 / sampleRate;
+
+  if (shouldPersist) {
+    // Relative (not "@/lib") + .catch: this fires on every recorded API call. The
+    // "@/" alias does not resolve in a dynamic import inside the production server
+    // chunk, so it threw ERR_MODULE_NOT_FOUND on every call — and being uncaught,
+    // each one became an unhandled rejection that spammed the logs.
+    void import("./api-telemetry-persist")
+      .then(({ persistApiTelemetryEvent }) => persistApiTelemetryEvent(event))
+      .catch(() => {
+        /* telemetry persistence is best-effort — never throw into the hot path */
+      });
+  }
   return event;
 }
 
