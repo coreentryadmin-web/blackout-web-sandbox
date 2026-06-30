@@ -90,6 +90,64 @@ Repo → **Settings → Secrets and variables → Actions**:
 - **Repo:** `coreentryadmin-web/blackout-web` on `main`
 - **Prompt:** same as `rth-cloud-agent.yml` (run RTH-OPEN-RUNBOOK autonomously)
 
+## RTH COMPREHENSIVE TEST SWEEP (browser + API + correctness)
+
+> Run this FULL sweep on every RTH agent launch this week, **multiple passes per session**
+> (at minimum: ~09:35 open, ~11:00, ~13:00, ~15:00, ~15:55 close). Each pass: sign in with a
+> premium session, then exercise EVERY page. Capture evidence (screenshots/numbers/timings).
+> Append findings to `docs/api-audit/OPEN-ISSUES.md` and open a GitHub issue (label
+> `ops-auto-fix`) for any **P0/P1**; then run the Fix loop until GREEN.
+
+**Pages to cover every pass:** `/dashboard` (SPX Slayer), `/flows` (HELIX), `/heatmap`
+(BlackOut Thermal — test BOTH Matrix and Profile), `/grid` (and each of the 12 panels),
+`/nighthawk`, `/terminal` (Largo), `/track-record`.
+
+### 1. Speed (per page)
+- Measure **TTFB** and **time-to-interactive** on hard load, and **soft-nav** time (click the
+  nav link → first meaningful paint). Prefetch is enabled, so soft-nav should feel near-instant.
+- Flag any page where soft-nav > ~1.5s to usable, or a long blank/frozen gap before the skeleton.
+- Record numbers; compare across passes to catch RTH-load degradation.
+
+### 2. Live auto-update (per page) — NO manual refresh
+- Sit on each page WITHOUT refreshing and confirm numbers/tiles **tick on their own**.
+- Measure **how soon** each surface updates (note the observed interval) and that it matches the
+  intended cadence (e.g. dashboard pulse ~1–10s, Thermal matrix ~20s + quote ~15s, grid panels
+  20–90s, flows tape via SSE near-real-time). Flag anything that does NOT move during RTH.
+- Confirm SSE/stream liveness (flows tape, dashboard pulse, Thermal index spot) is pushing.
+- Alt-tab away ~30s, return: data should re-sync immediately (focus revalidation is on).
+
+### 3. Data correctness (NO fabricated / faulty numbers)
+- For key numbers, **verify against the canonical source via direct API call** (instant
+  verification): hit the relevant `/api/market/*` or `/api/grid/*` with the session and compare
+  the rendered value to the API payload. Examples:
+  - SPX spot/VIX/breadth on the dashboard + grid Pulse vs `/api/market/spx/merged`.
+  - GEX flip / call wall / put wall: Thermal vs grid GEX panel vs Largo vs
+    `/api/market/gex-positioning` — they must agree (same canonical cache).
+  - Grid Pulse breadth must be REAL adv/dec (not the ADD line); dark-pool premium must be $ not share size.
+- Run the in-app verifier: `GET /api/cron/data-correctness?force=1` (Bearer `CRON_SECRET`) and
+  treat any `flags[]` as a correctness defect to fix.
+- **Freshness honesty:** every "live"/"updated" indicator and `as_of` timestamp must reflect reality —
+  flag anything labeled live that is actually stale.
+- **No fabrication:** flag any placeholder/zero/"—"/made-up value shown as real; values must be
+  grounded in a live source or shown as unavailable.
+
+### 4. API verification (every market endpoint)
+- For each `/api/market/*` and `/api/grid/*`: assert HTTP 200, `as_of` fresh (within its cadence),
+  numbers in sane bounds, and no unexpected nulls where data is expected. Log any 4xx/5xx, 404s,
+  or empty payloads during RTH.
+
+### 5. Console / render health
+- Check the browser console on each page for errors, React hydration warnings, and CSP violations.
+
+### 6. Largo (Terminal)
+- Ask multi-tool questions (e.g. "dark pool + options flow on NVDA"); confirm the working status
+  names the live sources, the answer is grounded (numbers match the tools), and follow-ups are dynamic.
+
+### Report each pass
+- Append a dated entry to `docs/api-audit/OPEN-ISSUES.md`: per-page speed numbers, observed update
+  intervals, and any correctness/freshness/API defects (with the API evidence).
+- Open/My update a GitHub issue (label `ops-auto-fix`) for P0/P1; fix → branch → PR → merge → re-verify.
+
 ## References
 
 - Probe paths for audits: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` · in-repo SKILL: `.cursor/skills/platform-audit/SKILL.md`

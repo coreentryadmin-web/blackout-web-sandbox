@@ -10,8 +10,18 @@ name: RTH Cloud Agent launch
 
 on:
   schedule:
-    - cron: "32 13 * * 1-5" # 09:32 ET EDT
-    - cron: "32 14 * * 1-5" # 09:32 ET EST
+    # Multiple passes through RTH so the comprehensive sweep (speed + live-update latency +
+    # data correctness + API verification, per page) runs repeatedly — not just at the open.
+    # Dual cron per slot covers EDT (UTC-4) + EST (UTC-5). GitHub may delay scheduled runs a
+    # few minutes under load; that's fine for these passes.
+    - cron: "32 13 * * 1-5" # 09:32 ET (open) EDT
+    - cron: "32 14 * * 1-5" # 09:32 ET (open) EST
+    - cron: "0 15 * * 1-5"  # 11:00 ET EDT
+    - cron: "0 16 * * 1-5"  # 11:00 ET EST
+    - cron: "0 17 * * 1-5"  # 13:00 ET EDT
+    - cron: "0 18 * * 1-5"  # 13:00 ET EST
+    - cron: "0 19 * * 1-5"  # 15:00 ET EDT
+    - cron: "0 20 * * 1-5"  # 15:00 ET EST
   workflow_dispatch:
 
 jobs:
@@ -29,7 +39,7 @@ jobs:
             exit 0
           fi
 
-          PROMPT='Autonomous RTH-open session. Read and execute docs/ops/RTH-OPEN-RUNBOOK.md. Run npm run validate:rth-open when Railway CLI is available; otherwise node scripts/gha-rth-audit.mjs (needs CRON_SECRET). Fix any failures, commit, push, re-validate until GREEN. Do NOT ask the user for permission.'
+          PROMPT='Autonomous RTH session. Read and execute docs/ops/RTH-OPEN-RUNBOOK.md, INCLUDING the "RTH COMPREHENSIVE TEST SWEEP" section: sign in with a premium session and test EVERY page (dashboard, flows, BlackOut Thermal matrix+profile, grid + its 12 panels, nighthawk, terminal/Largo, track-record) for (1) load + soft-nav SPEED, (2) LIVE auto-update without refresh and how soon each updates, (3) DATA CORRECTNESS verified against the canonical source via direct API call (no fabricated/stale/false numbers; cross-tool agreement), (4) API verification (200 + fresh as_of + in-band), (5) console/render health, (6) Largo dynamic status + grounded answers. Also run npm run validate:rth-open and GET /api/cron/data-correctness?force=1. Append findings to docs/api-audit/OPEN-ISSUES.md, open a GitHub issue (label ops-auto-fix) for any P0/P1, and fix → branch → PR → merge → re-verify until GREEN. Do NOT ask the user for permission.'
           export PROMPT
 
           payload=$(node -e "
