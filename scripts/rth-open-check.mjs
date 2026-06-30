@@ -93,9 +93,6 @@ async function main() {
       failures.push(m);
       console.log(`  ✗ ${m}`);
     };
-    let openPos = 0;
-    let nw15 = 0;
-
     if (dbUrl) {
       try {
         const pg = await import("pg");
@@ -145,9 +142,6 @@ async function main() {
           )
         ).rows[0].n;
         nw15 = nw15Row;
-        openPos = (
-          await c.query(`SELECT COUNT(*)::int AS n FROM user_positions WHERE status = 'open'`)
-        ).rows[0].n;
 
         await c.end();
       } catch (e) {
@@ -157,38 +151,42 @@ async function main() {
       console.log("  ⚠ DATABASE_URL not set — skipping Postgres RTH checks");
     }
 
+    // Options socket — HTTP probe (reliable across multi-replica clusters; log grep misses the leader).
+    const cron = process.env.CRON_SECRET?.trim() ?? "";
+    if (cron) {
+      try {
+        const base = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
+        const res = await fetch(`${base}/api/cron/socket-health`, {
+          headers: { Authorization: `Bearer ${cron}` },
+        });
+        const body = await res.json();
+        const opt = body.websockets?.options;
+        if (res.status === 200 && opt) {
+          if (opt.ok) ok(`options-socket: ${opt.detail}`);
+          else if (et.mins >= 9 * 60 + 30) fail(`options-socket: ${opt.detail}`);
+          else console.log(`  ⚠ options-socket: pre-09:30 — ${opt.detail}`);
+        } else {
+          fail(`options-socket probe HTTP ${res.status}`);
+        }
+      } catch (e) {
+        fail(`options-socket probe failed: ${e.message}`);
+      }
+    } else {
+      console.log("  ⚠ CRON_SECRET unset — skipping options-socket HTTP probe");
+    }
+
     try {
       const logs = execSync(
-        "railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -20",
+        "railway logs --service blackout-web 2>/dev/null | rg 'uw-socket' | tail -20",
         { encoding: "utf8" }
       );
-      const optAuth = /options-socket.*authenticated/.test(logs);
-      if (optAuth) ok("options-socket authenticated in recent logs");
-      else if (et.mins < 9 * 60 + 30) {
-        console.log("  ⚠ options-socket: pre-09:30 — auth line not required yet");
-      } else if (openPos === 0) {
-        ok("options-socket idle (no open positions — WS auth not required)");
-      } else if (nw15 > 0) {
-        ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; log auth line optional on multi-replica)`);
-      } else if (et.mins >= 9 * 60 + 30) {
-        fail("options-socket: no auth logs and nights-watch-warm stale during RTH with open positions");
-      }
       if (/uw-socket.*stall watchdog/i.test(logs)) fail("uw-socket stall reconnects in recent logs");
       else ok("No uw-socket stall storms");
     } catch {
       if (process.env.GITHUB_ACTIONS === "true") {
-        console.log("  ⚠ Railway logs skipped in GitHub Actions");
-        if (et.mins >= 9 * 60 + 30 && openPos > 0 && nw15 > 0) {
-          ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; logs skipped in GHA)`);
-        } else if (et.mins >= 9 * 60 + 30 && openPos === 0) {
-          ok("options-socket idle (no open positions)");
-        }
-      } else if (et.mins >= 9 * 60 + 30 && openPos > 0 && nw15 > 0) {
-        ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; Railway logs unavailable)`);
-      } else if (et.mins >= 9 * 60 + 30 && openPos === 0) {
-        ok("options-socket idle (no open positions)");
+        console.log("  ⚠ Railway uw-socket log check skipped in GitHub Actions");
       } else {
-        console.log("  ⚠ Could not read Railway logs");
+        console.log("  ⚠ Could not read Railway logs for uw-socket");
       }
     }
 
