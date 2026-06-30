@@ -22,6 +22,7 @@ import {
   inflightStaleCutoff,
 } from "@/lib/largo-global-gate";
 import { randomUUID } from "node:crypto";
+import { shouldRejectLargoWithoutRedis } from "@/lib/largo-redis-policy";
 
 // ---------------------------------------------------------------------------
 // Largo concurrency gate — max 2 simultaneous queries per user, Redis-backed.
@@ -228,6 +229,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "AI assistant unavailable" },
       { status: 503 }
+    );
+  }
+
+  // Fail-closed when Redis is down (audit F-1): without Redis there is no per-user budget
+  // gate and the org spend ledger is blind. Opt out via LARGO_REDIS_FAILOPEN=1 (local dev).
+  const gateRedis = (await getUwCacheRedis()) as GateRedis;
+  if (shouldRejectLargoWithoutRedis(gateRedis != null)) {
+    return NextResponse.json(
+      { error: "Largo is temporarily unavailable. Please retry in a moment." },
+      { status: 503 },
     );
   }
 

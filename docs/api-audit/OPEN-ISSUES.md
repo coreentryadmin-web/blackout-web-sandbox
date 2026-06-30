@@ -1,7 +1,8 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-30 15:00 ET
+Last updated: 2026-06-30 19:30 ET
 
-> **30 Jun 2026 — RTH afternoon pass 4.** Public track-record ISR split-brain fix (PR pending).
+> **Shipping log:** Audit backlog batch 1 → **PR #132** (merged): cron timing-safe auth, dead code,
+> Track Record nav, db-cleanup, Grid bootstrap. Closed duplicate PRs **#127–#130** — ignore those.
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
 
