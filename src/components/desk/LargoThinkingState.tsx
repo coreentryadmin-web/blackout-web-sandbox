@@ -54,7 +54,15 @@ export function LargoThinkingState({ active = true, tools = [] }: LargoThinkingS
     };
   }, [active]);
 
-  const phrase = LARGO_THINKING_PHRASES[phraseIdx];
+  // Dynamic status: once Largo starts pulling real data sources for THIS request, the
+  // headline names what it's actually fetching ("Reading dark pool…", "Pulling options
+  // flow…") instead of a generic rotation. Falls back to the rotation only in the brief
+  // window before the first tool fires.
+  const STATUS_VERBS = ["Reading", "Pulling", "Fetching", "Scanning", "Cross-referencing"] as const;
+  const latestTool = tools.length > 0 ? tools[tools.length - 1] : null;
+  const phrase = latestTool
+    ? `${STATUS_VERBS[(tools.length - 1) % STATUS_VERBS.length]} ${latestTool}…`
+    : LARGO_THINKING_PHRASES[phraseIdx];
   const activeNode = tick % PIPELINE_NODES.length;
 
   return (
