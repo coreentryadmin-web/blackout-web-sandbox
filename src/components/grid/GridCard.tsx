@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
+import { useGridLayout, useGridPanelScope } from "@/lib/grid/grid-layout-context";
 
 /** Per-panel accent (Living Terminal palette). No grey anywhere. */
 export type GridAccent = "emerald" | "gold" | "sky" | "violet" | "bear";
@@ -48,9 +49,17 @@ export function GridCard({
   children,
 }: GridCardProps) {
   const hex = ACCENT_HEX[accent];
+
+  // Optional board integration — present only when rendered inside GridBoard's
+  // GridLayoutProvider + GridPanelScope. Outside the board these are no-ops.
+  const scope = useGridPanelScope();
+  const layout = useGridLayout();
+  const collapsed = !!(scope && layout?.isCollapsed(scope.id));
+  const controllable = !!(scope && layout);
+
   return (
     <section
-      className={clsx("grid-card", className)}
+      className={clsx("grid-card", collapsed && "grid-card--collapsed", className)}
       style={{
         ["--grid-accent" as string]: hex,
         gridColumn: span === 4 ? "1 / -1" : span === 2 ? "span 2" : undefined,
@@ -61,14 +70,36 @@ export function GridCard({
         {kicker && <span className="grid-card-kicker">{kicker}</span>}
         <h3 className="grid-card-title">{title}</h3>
         <span className="grid-card-head-spacer" />
-        {actions}
+        {!collapsed && actions}
         <span
           className={clsx("grid-card-dot", live ? "grid-card-dot-live" : "grid-card-dot-idle")}
           aria-label={live ? "Live" : "Idle"}
         />
+        {controllable && (
+          <div className="grid-card-ctrls">
+            <button
+              type="button"
+              className="grid-card-ctrl"
+              onClick={() => layout!.toggleCollapsed(scope!.id)}
+              aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              <span className={clsx("grid-card-chevron", collapsed && "grid-card-chevron--up")} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="grid-card-ctrl grid-card-ctrl--close"
+              onClick={() => layout!.toggleHidden(scope!.id)}
+              aria-label={`Hide ${title}`}
+              title="Hide panel"
+            >
+              ×
+            </button>
+          </div>
+        )}
       </header>
-      <div className="grid-card-body">{children}</div>
-      {footer && <footer className="grid-card-foot">{footer}</footer>}
+      {!collapsed && <div className="grid-card-body">{children}</div>}
+      {!collapsed && footer && <footer className="grid-card-foot">{footer}</footer>}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { PageShell, PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { GridBoard } from "@/components/grid/GridBoard";
 import { GridSearchBar } from "@/components/grid/GridSearchBar";
+import { GridLiveBackground } from "@/components/grid/GridLiveBackground";
 import { GridTickerProvider } from "@/lib/grid/grid-ticker-context";
 
 export const metadata: Metadata = {
@@ -26,8 +27,8 @@ export default async function GridPage() {
   if (!(await canAccessTool("grid"))) return <ComingSoon toolKey="grid" />;
 
   return (
-    <PageShell fullBleed>
-      <div className="px-3 md:px-5">
+    <PageShell fullBleed backdropSlot={<GridLiveBackground />}>
+      <div className="px-2 sm:px-4 xl:px-6">
         <GridTickerProvider>
           <PageHeader
             kicker="Market intelligence"
