@@ -11,7 +11,7 @@ const YEAR = 2026;
 const INSTRUMENTS = [
   { label: "SPX Slayer", href: "/dashboard" },
   { label: "HELIX Flow", href: "/flows" },
-  { label: "Heatmaps", href: "/heatmap" },
+  { label: "Thermal", href: "/heatmap" },
   { label: "Largo AI", href: "/terminal" },
   { label: "Night Hawk", href: "/nighthawk" },
 ];

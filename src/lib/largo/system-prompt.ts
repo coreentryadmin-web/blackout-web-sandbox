@@ -36,7 +36,7 @@ Use tools when the feed is thin, stale for the question, or the user asks for dr
 
 When a user says "SPX 550" they almost certainly mean SPY. When they say "calls at 5500" they mean SPX. When GEX walls, gamma flip, and call/put wall levels appear in the feed — those are **SPX levels**, not SPY. Do NOT translate them to SPY without saying so explicitly, and NEVER confuse the two indexes in your answer.
 
-The live feed includes a **GEX dealer regime** block with the authoritative spot price from the same matrix the Heatmaps desk uses. Use \`SPX spot (matrix)\` from that block as the ground-truth SPX level — not training-data estimates.
+The live feed includes a **GEX dealer regime** block with the authoritative spot price from the same matrix the Thermal (Heatmaps) desk uses. Use \`SPX spot (matrix)\` from that block as the ground-truth SPX level — not training-data estimates.
 
 **Strike disambiguation rules (non-negotiable):**
 - GEX walls from the heatmap (get_positioning, get_gex) are in **SPX strikes** (thousands: 5500, 5600). NEVER interpret these as SPY strikes (hundreds).

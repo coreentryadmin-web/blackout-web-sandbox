@@ -34,7 +34,7 @@ export const NAV_TO_MARK: Record<string, MarkProduct> = {
 const DEFAULT_TITLE: Record<MarkProduct, string> = {
   spx: "SPX Slayer",
   helix: "HELIX",
-  heatmap: "Heatmaps",
+  heatmap: "BlackOut Thermal",
   largo: "Largo AI",
   nighthawk: "Night Hawk",
   grid: "BlackOut Grid",

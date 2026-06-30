@@ -29,7 +29,7 @@ export type ToolMeta = {
 export const TOOLS: readonly ToolMeta[] = [
   { key: "spx", label: "SPX Slayer", href: "/dashboard", product: "spx", defaultLaunched: true },
   { key: "flows", label: "HELIX", href: "/flows", product: "helix", defaultLaunched: true },
-  { key: "heatmap", label: "Heatmaps", href: "/heatmap", product: "heatmap", defaultLaunched: false },
+  { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: false },
   { key: "largo", label: "Largo AI", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: false },
   // BlackOut Grid — market-intelligence command center. Ships LOCKED ("Launching Soon"); flip live via

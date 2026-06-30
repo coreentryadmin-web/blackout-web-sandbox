@@ -255,7 +255,7 @@ export default function Page() {
                   {[
                     "Wait for all engine gates to pass before treating a setup as valid.",
                     "Use the gamma flip level as your primary regime indicator — it changes how you interpret all other signals.",
-                    "Combine GEX walls with Heat Maps for deeper dealer positioning context.",
+                    "Combine GEX walls with Thermal for deeper dealer positioning context.",
                     "Check Night Hawk's playbook pre-market for overnight context.",
                     "Honor published stop levels. The engine's R:R calculation is invalidated when stops are moved.",
                     "Reduce sizing in high IVP environments — options are expensive.",
@@ -291,7 +291,7 @@ export default function Page() {
 
             <div className="space-y-4">
               {[
-                { href: "/learn/heat-maps", name: "Heat Maps", desc: "SPX Slayer surfaces scalar GEX wall values. Heat Maps renders the full gamma exposure surface across all strikes and expirations." },
+                { href: "/learn/heat-maps", name: "Thermal", desc: "SPX Slayer surfaces scalar GEX wall values. Thermal renders the full gamma exposure surface across all strikes and expirations." },
                 { href: "/learn/helix-flows", name: "HELIX Options Flow", desc: "The flow bias fed into SPX Slayer's engine is a compressed signal. HELIX exposes the full institutional tape." },
                 { href: "/learn/night-hawk", name: "Night Hawk", desc: "Night Hawk identifies next-day SPX setups based on end-of-day GEX. Those levels are the pre-market context that SPX Slayer operates within." },
                 { href: "/learn/largo-ai", name: "Largo AI Terminal", desc: "Largo has full read access to SPX Slayer's live data — GEX levels, verdict state, active play, IV percentile." },

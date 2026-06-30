@@ -90,14 +90,14 @@ export const CRON_JOBS: CronJobDefinition[] = [
   },
   {
     key: "heatmap-warm",
-    name: "Heat Maps Warm",
+    name: "Thermal Warm",
     kind: "http",
     path: "/api/cron/heatmap-warm",
     schedule_label: "~Every 30s (market hours)",
     stale_after_min: 10,
     weekdays_only: true,
     market_hours_only: true,
-    description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Heat Maps presets so user GETs are pure cache hits (no cold-build bursts)",
+    description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Thermal presets so user GETs are pure cache hits (no cold-build bursts)",
   },
   {
     key: "grid-warm",
@@ -118,7 +118,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     schedule_label: "~4:10 PM ET weekdays (post-close)",
     stale_after_min: 36 * 60,
     weekdays_only: true,
-    description: "Persist end-of-day GEX close levels to the rolling gex-eod:{ticker} list so Heat Maps can anchor day-over-day history",
+    description: "Persist end-of-day GEX close levels to the rolling gex-eod:{ticker} list so Thermal can anchor day-over-day history",
   },
   {
     key: "gex-alerts",
@@ -129,7 +129,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     stale_after_min: 20,
     weekdays_only: true,
     market_hours_only: true,
-    description: "Evaluate Heat Maps for major market-regime gamma events and broadcast web-push alerts (inert until GEX_ALERTS_PUSH + VAPID are set)",
+    description: "Evaluate Thermal for major market-regime gamma events and broadcast web-push alerts (inert until GEX_ALERTS_PUSH + VAPID are set)",
   },
   {
     key: "db-cleanup",
@@ -183,7 +183,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     weekdays_only: true,
     market_hours_only: true,
     description:
-      "Data-correctness auditor — independently re-derives Heat Maps GEX/VEX numbers (net/King/flip/walls) from the raw chain, asserts invariants/sanity/freshness, confirms SPX King + net-GEX sign against the UW oracle, and cross-checks getGexPositioning vs the SPX desk; FLAGs any wrong number to Discord",
+      "Data-correctness auditor — independently re-derives Thermal GEX/VEX numbers (net/King/flip/walls) from the raw chain, asserts invariants/sanity/freshness, confirms SPX King + net-GEX sign against the UW oracle, and cross-checks getGexPositioning vs the SPX desk; FLAGs any wrong number to Discord",
   },
   {
     key: "cron-staleness-watchdog",

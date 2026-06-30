@@ -7,7 +7,7 @@ import { ProductMark } from "@/components/marks/ProductMark";
 import { Heatmap } from "@/components/Heatmap";
 
 export const metadata: Metadata = {
-  title: "Heatmaps · BlackOut",
+  title: "BlackOut Thermal · BlackOut",
   description: "Dealer gamma & vanna exposure mapped across the full options chain.",
 };
 
@@ -26,7 +26,7 @@ export default async function HeatmapPage() {
               dealer-gamma/vanna read in-panel. */}
           <PageHeader
             kicker="Dealer positioning"
-            title="Heatmaps"
+            title="BlackOut Thermal"
             subtitle="Dealer gamma & vanna exposure"
             badge={<ProductMark product="heatmap" size={44} />}
           />

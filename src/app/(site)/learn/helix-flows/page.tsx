@@ -163,7 +163,7 @@ export default function HelixFlowsPage() {
               <div className="space-y-4">
                 {[
                   { href: "/learn/spx-slayer", title: "SPX Slayer", desc: "Overlay HELIX strike activity against live GEX walls to determine whether a large print sits at a dealer support or resistance level." },
-                  { href: "/learn/heat-maps", title: "Heat Maps", desc: "Visualize where cumulative premium is concentrating across strikes. Strike stacks in HELIX align directly with GEX, VEX, and DEX concentration bands." },
+                  { href: "/learn/heat-maps", title: "Thermal", desc: "Visualize where cumulative premium is concentrating across strikes. Strike stacks in HELIX align directly with GEX, VEX, and DEX concentration bands." },
                   { href: "/learn/largo-ai", title: "Largo AI Terminal", desc: "Paste a specific print or a sequence of sweeps into Largo for on-demand institutional intent analysis." },
                   { href: "/learn/nights-watch", title: "Night's Watch", desc: "After acting on a flow print, open a position in Night's Watch to track live P&L and manage the trade to expiry." },
                   { href: "/learn/night-hawk", title: "Night Hawk", desc: "Evening sweep clusters in HELIX often precede the setups Night Hawk surfaces the following session." },

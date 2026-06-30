@@ -57,7 +57,7 @@ export default function Page() {
                   { step: "4:30 PM ET", title: "Backup Scan Window", description: "An early pass runs against options chain data immediately after regular-hours close. This backup ensures an edition is available even if the primary run encounters data latency." },
                   { step: "5:30 PM ET", title: "Primary Scan & Edition Publish", description: "The primary scan runs after options market close, when dealer positioning data is most complete. Night Hawk pulls the full GEX surface across SPX strikes, cross-references the next-day catalyst calendar, and evaluates historical overnight patterns." },
                   { step: "9:15 AM ET", title: "Morning Confirmation Update", description: "Before the open, Night Hawk appends a morning confirmation block incorporating pre-market price action and any overnight news catalysts." },
-                  { step: "9:30 AM ET", title: "Your Responsibility: Live Validation", description: "Night Hawk editions do not auto-execute. At the open, validate the overnight thesis against live data: SPX Slayer for real-time desk context, HELIX for institutional flow direction, and Heat Maps to confirm GEX walls are holding." },
+                  { step: "9:30 AM ET", title: "Your Responsibility: Live Validation", description: "Night Hawk editions do not auto-execute. At the open, validate the overnight thesis against live data: SPX Slayer for real-time desk context, HELIX for institutional flow direction, and Thermal to confirm GEX walls are holding." },
                 ].map((item, i) => (
                   <div key={i} className="flex gap-5 p-5 bg-white/3 border border-white/10 rounded-xl hover:border-cyan-400/30 transition-colors">
                     <div className="flex-shrink-0">
@@ -162,7 +162,7 @@ export default function Page() {
                 <div className="p-6 bg-cyan-400/5 border border-cyan-400/20 rounded-xl">
                   <p className="font-semibold text-cyan-400 mb-4 text-sm uppercase tracking-wider font-mono">Do</p>
                   <ul className="space-y-3">
-                    {["Read the entire edition, including context and catalyst scan, before jumping to play ideas.", "Mark all three GEX levels on your chart before the open.", "Wait for the morning confirmation update before finalizing your plan.", "Validate the Night Hawk thesis with SPX Slayer, HELIX, and Heat Maps at open.", "Respect invalidation levels as hard stops on the thesis.", "Treat Night Hawk plays as directional frameworks and re-price strikes at open."].map((item, i) => (
+                    {["Read the entire edition, including context and catalyst scan, before jumping to play ideas.", "Mark all three GEX levels on your chart before the open.", "Wait for the morning confirmation update before finalizing your plan.", "Validate the Night Hawk thesis with SPX Slayer, HELIX, and Thermal at open.", "Respect invalidation levels as hard stops on the thesis.", "Treat Night Hawk plays as directional frameworks and re-price strikes at open."].map((item, i) => (
                       <li key={i} className="flex gap-3 text-sm"><span className="text-cyan-400 flex-shrink-0 mt-0.5">+</span><span className="text-secondary leading-relaxed">{item}</span></li>
                     ))}
                   </ul>
@@ -185,7 +185,7 @@ export default function Page() {
               <div className="space-y-4">
                 {[
                   { name: "SPX Slayer", href: "/learn/spx-slayer", role: "Live Open Validation", description: "The primary tool for validating Night Hawk levels at the open." },
-                  { name: "Heat Maps", href: "/learn/heat-maps", role: "GEX Wall Confirmation", description: "Confirm in Heat Maps that the call wall and put wall identified in the edition are still structurally intact." },
+                  { name: "Thermal", href: "/learn/heat-maps", role: "GEX Wall Confirmation", description: "Confirm in Thermal that the call wall and put wall identified in the edition are still structurally intact." },
                   { name: "HELIX Options Flow", href: "/learn/helix-flows", role: "Flow Direction Confirmation", description: "Verify that the direction of large-order flow aligns with Night Hawk's directional bias at the open." },
                   { name: "BlackOut Grid", href: "/learn/blackout-grid", role: "Overnight Catalyst Monitoring", description: "Check the Grid in the pre-market window to identify any overnight developments Night Hawk's catalyst scan could not have captured." },
                   { name: "Largo AI Terminal", href: "/learn/largo-ai", role: "Thesis Stress-Testing", description: "Largo can stress-test the thesis before committing capital, particularly when the edition flags elevated uncertainty." },

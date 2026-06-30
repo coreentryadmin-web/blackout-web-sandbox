@@ -249,7 +249,7 @@ export default function NightsWatchPage() {
                 {[
                   { href: "/learn/spx-slayer", name: "SPX Slayer", rel: "The primary source of trade ideas that Night's Watch then monitors." },
                   { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Add positions and ask structured questions about your portfolio via natural language." },
-                  { href: "/learn/heat-maps", name: "Heat Maps", rel: "The GEX level annotations in Night's Watch are sourced from Heat Maps." },
+                  { href: "/learn/heat-maps", name: "Thermal", rel: "The GEX level annotations in Night's Watch are sourced from Thermal." },
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", rel: "Flow bias from HELIX feeds into Night's Watch verdict computation." },
                   { href: "/learn/night-hawk", name: "Night Hawk", rel: "Night Hawk play ideas are a primary source of positions tracked in Night's Watch." },
                   { href: "/learn/blackout-grid", name: "BlackOut Grid", rel: "For any position tracking an underlying with a scheduled catalyst, the Grid provides earnings, analyst, and news context." },

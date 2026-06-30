@@ -121,7 +121,7 @@ export default function Page() {
                 <div className="bg-emerald-900/10 border border-emerald-500/20 rounded-lg p-5">
                   <p className="text-emerald-400 font-semibold mb-4 uppercase text-xs tracking-widest">Do</p>
                   <ul className="space-y-3">
-                    {["Ask Largo to challenge your thesis, not confirm it.", "Use natural language for position logging.", "Ask about data freshness when making time-sensitive decisions.", "Use Largo'\''s GEX analysis alongside Heat Maps for visual context.", "Bring unusual flow patterns from HELIX to Largo for interpretation."].map((t, i) => (
+                    {["Ask Largo to challenge your thesis, not confirm it.", "Use natural language for position logging.", "Ask about data freshness when making time-sensitive decisions.", "Use Largo'\''s GEX analysis alongside Thermal for visual context.", "Bring unusual flow patterns from HELIX to Largo for interpretation."].map((t, i) => (
                       <li key={i} className="flex gap-2 text-secondary text-sm"><span className="text-emerald-400 shrink-0">+</span>{t}</li>
                     ))}
                   </ul>
@@ -141,7 +141,7 @@ export default function Page() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-white/10">Cross-References</h2>
               <div className="space-y-4">
                 {[
-                  { href: "/learn/heat-maps", name: "Heat Maps", desc: "Largo'\''s get_spx_structure tool queries the same GEX data that powers Heat Maps. Use Heat Maps for the visual surface; use Largo for the analytical interpretation." },
+                  { href: "/learn/heat-maps", name: "Thermal", desc: "Largo'\''s get_spx_structure tool queries the same GEX data that powers Thermal. Use Thermal for the visual surface; use Largo for the analytical interpretation." },
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", desc: "Largo'\''s get_flow_context tool reads from the HELIX flow database. Bring unusual print patterns to Largo for structured synthesis." },
                   { href: "/learn/nights-watch", name: "Night'\''s Watch", desc: "Largo reads Night'\''s Watch positions and can add positions via natural language. Largo is the natural-language interface to position management." },
                   { href: "/learn/spx-slayer", name: "SPX Slayer", desc: "Largo reads SPX Slayer'\''s live desk data via get_market_context. Use SPX Slayer for live streaming; use Largo for analytical context." },

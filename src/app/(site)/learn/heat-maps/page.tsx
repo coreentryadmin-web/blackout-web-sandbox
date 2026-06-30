@@ -48,7 +48,7 @@ export default function HeatMapsPage() {
   const selected = VIEWS.find((v) => v.id === activeView)!;
   return (
     <LearnDoc
-      title="Heat Maps"
+      title="Thermal"
       description="Dealer gamma, vanna, delta, and charm exposure mapped across every SPX strike and expiry — the structural skeleton behind price action."
       sections={TOC}
     >
@@ -57,7 +57,7 @@ export default function HeatMapsPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Overview</h2>
               <div className="space-y-4 text-secondary leading-relaxed">
                 <p>
-                  Heat Maps renders the complete dealer options positioning picture for SPX — every strike, every expiry, four analytical lenses. Rather than charting price or volume, it surfaces the <span className="text-cyan-400 font-medium">mechanical obligations</span> dealers carry as market makers.
+                  Thermal renders the complete dealer options positioning picture for SPX — every strike, every expiry, four analytical lenses. Rather than charting price or volume, it surfaces the <span className="text-cyan-400 font-medium">mechanical obligations</span> dealers carry as market makers.
                 </p>
                 <p>
                   Dealer positioning is a structural constraint — it shapes how price moves because hedging activity is non-discretionary. Understanding where those constraints concentrate gives you a measurable, repeatable edge in identifying support, resistance, and regime character before price touches those levels.
@@ -157,7 +157,7 @@ export default function HeatMapsPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Step-by-Step Usage</h2>
               <div className="space-y-6">
                 {[
-                  { step: "01", title: "Pre-Market: Establish the Structural Range", body: "Open Heat Maps 30 minutes before the open. Load the GEX Profile. Identify the Call Wall, Put Wall, King Node, and Gamma Flip level. If SPX futures are trading above the Gamma Flip, assume a pinning, range-bound character unless a catalyst forces a breach." },
+                  { step: "01", title: "Pre-Market: Establish the Structural Range", body: "Open Thermal 30 minutes before the open. Load the GEX Profile. Identify the Call Wall, Put Wall, King Node, and Gamma Flip level. If SPX futures are trading above the Gamma Flip, assume a pinning, range-bound character unless a catalyst forces a breach." },
                   { step: "02", title: "Check the GEX Shift for Overnight Repositioning", body: "Toggle to the GEX Shift view. Look for large green or red differentials. If a previously strong Call Wall has absorbed more gamma overnight, dealers are more committed to defending that level." },
                   { step: "03", title: "Use the Matrix to Qualify Wall Durability", body: "For any level you plan to trade against, open the GEX Matrix and examine which expiries are driving the gamma. Walls anchored in weekly and monthly contracts are more durable than those driven primarily by 0DTE contracts." },
                   { step: "04", title: "Monitor the Gamma Flip in Real Time", body: "During the session, note whether SPX is holding above or below the Gamma Flip. A clean reclaim of the Gamma Flip after an early dip is a mechanical setup. A sustained break below the Gamma Flip on volume triggers a momentum thesis." },
@@ -183,7 +183,7 @@ export default function HeatMapsPage() {
                 <div className="border border-cyan-800/40 rounded-xl bg-cyan-950/10 p-6">
                   <p className="text-cyan-400 font-bold font-mono text-sm uppercase tracking-wider mb-4">Do</p>
                   <ul className="space-y-3 text-secondary text-sm leading-relaxed">
-                    {["Check Heat Maps pre-market every session — structural levels are recalculated overnight.", "Use the Gamma Flip as your primary regime indicator before selecting a directional bias.", "Cross-reference GEX walls with the SPX Slayer desk — when a wall appears in both surfaces simultaneously, it carries higher conviction.", "Apply CHARM analysis specifically in the 48 hours before major expiries.", "Scale position sizing with regime: smaller positions in negative GEX."].map((item, i) => (
+                    {["Check Thermal pre-market every session — structural levels are recalculated overnight.", "Use the Gamma Flip as your primary regime indicator before selecting a directional bias.", "Cross-reference GEX walls with the SPX Slayer desk — when a wall appears in both surfaces simultaneously, it carries higher conviction.", "Apply CHARM analysis specifically in the 48 hours before major expiries.", "Scale position sizing with regime: smaller positions in negative GEX."].map((item, i) => (
                       <li key={i} className="flex gap-2"><span className="text-cyan-400 mt-0.5 shrink-0">+</span><span>{item}</span></li>
                     ))}
                   </ul>
@@ -191,7 +191,7 @@ export default function HeatMapsPage() {
                 <div className="border border-sky-900/40 rounded-xl bg-sky-950/10 p-6">
                   <p className="text-sky-300 font-bold font-mono text-sm uppercase tracking-wider mb-4">Don&apos;t</p>
                   <ul className="space-y-3 text-secondary text-sm leading-relaxed">
-                    {["Don't treat GEX walls as absolute price targets — they are zones of mechanical behavior.", "Don't use Heat Maps in isolation. Combine with HELIX flow tape and SPX Slayer.", "Don't ignore the GEX Shift on days following large events.", "Don't fade momentum when price is trending through negative GEX territory.", "Don't confuse SPX and SPY levels. SPX GEX strikes are approximately 10x SPY equivalents."].map((item, i) => (
+                    {["Don't treat GEX walls as absolute price targets — they are zones of mechanical behavior.", "Don't use Thermal in isolation. Combine with HELIX flow tape and SPX Slayer.", "Don't ignore the GEX Shift on days following large events.", "Don't fade momentum when price is trending through negative GEX territory.", "Don't confuse SPX and SPY levels. SPX GEX strikes are approximately 10x SPY equivalents."].map((item, i) => (
                       <li key={i} className="flex gap-2"><span className="text-sky-300 mt-0.5 shrink-0">–</span><span>{item}</span></li>
                     ))}
                   </ul>
@@ -203,11 +203,11 @@ export default function HeatMapsPage() {
               <h2 className="text-2xl font-bold text-white mb-6 pb-2 border-b border-cyan-900/30">Cross-References</h2>
               <div className="grid sm:grid-cols-2 gap-4">
                 {[
-                  { href: "/learn/spx-slayer", name: "SPX Slayer", rel: "The flagship desk displays the same Call Wall, Put Wall, and King Node derived from Heat Maps. When both surfaces agree on a level, treat it as high-conviction structure." },
-                  { href: "/learn/night-hawk", name: "Night Hawk", rel: "The evening SPX play scanner uses GEX walls from Heat Maps to calibrate overnight position targets. The GEX levels in every Night Hawk edition are sourced live from this tool." },
-                  { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Largo's get_spx_structure tool call draws directly from Heat Maps data when assessing structural support and resistance." },
+                  { href: "/learn/spx-slayer", name: "SPX Slayer", rel: "The flagship desk displays the same Call Wall, Put Wall, and King Node derived from Thermal. When both surfaces agree on a level, treat it as high-conviction structure." },
+                  { href: "/learn/night-hawk", name: "Night Hawk", rel: "The evening SPX play scanner uses GEX walls from Thermal to calibrate overnight position targets. The GEX levels in every Night Hawk edition are sourced live from this tool." },
+                  { href: "/learn/largo-ai", name: "Largo AI Terminal", rel: "Largo's get_spx_structure tool call draws directly from Thermal data when assessing structural support and resistance." },
                   { href: "/learn/helix-flows", name: "HELIX Options Flow", rel: "Combine HELIX institutional flow prints with GEX structure: a large call sweep at the Call Wall in positive GEX signals a breakout attempt." },
-                  { href: "/learn/nights-watch", name: "Night's Watch", rel: "Use GEX walls from Heat Maps to set alert levels and monitor when price approaches structurally significant strikes in your position range." },
+                  { href: "/learn/nights-watch", name: "Night's Watch", rel: "Use GEX walls from Thermal to set alert levels and monitor when price approaches structurally significant strikes in your position range." },
                   { href: "/learn/blackout-grid", name: "BlackOut Grid", rel: "The market intelligence dashboard surfaces GEX regime context alongside news, analyst updates, and macro catalysts." },
                 ].map((ref) => (
                   <Link key={ref.href} href={ref.href} className="block border border-cyan-900/30 rounded-xl bg-white/[0.02] p-5 hover:border-cyan-700/50 hover:bg-cyan-950/20 transition-all group">
@@ -262,7 +262,7 @@ export default function HeatMapsPage() {
                 {[
                   { q: "How often does the GEX data update?", a: "GEX positioning updates continuously during regular trading hours as the options chain refreshes. Pre-market and post-market, the data reflects the prior session's close. The GEX Shift view is computed fresh each morning." },
                   { q: "The Call Wall and Put Wall sometimes appear very close together — what does that mean?", a: "A compressed range indicates high gamma density in a narrow strike band. This is the most forceful pinning environment — the market has strong mechanical incentive to remain in a tight range." },
-                  { q: "How does Heat Maps relate to what Largo AI returns about market structure?", a: "Largo's get_spx_structure function queries the same underlying GEX data powering Heat Maps. You can use Heat Maps to visually verify what Largo reports numerically." },
+                  { q: "How does Thermal relate to what Largo AI returns about market structure?", a: "Largo's get_spx_structure function queries the same underlying GEX data powering Thermal. You can use Thermal to visually verify what Largo reports numerically." },
                 ].map((item, i) => (
                   <div key={i} className="border border-cyan-900/25 rounded-xl bg-white/[0.015] p-6">
                     <p className="text-white font-semibold mb-3 leading-snug">{item.q}</p>

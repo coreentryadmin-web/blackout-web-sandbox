@@ -7,7 +7,7 @@ import { LearnDoc } from "@/components/learn/LearnDoc";
 export const metadata: Metadata = {
   title: "Getting Started | BlackOut Trading",
   description:
-    "Platform overview for BlackOut Trading — how SPX Slayer, HELIX, Largo, Night Hawk, Heat Maps, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
+    "Platform overview for BlackOut Trading — how SPX Slayer, HELIX, Largo, Night Hawk, Thermal, Night's Watch, and BlackOut Grid connect into a single institutional-grade workflow.",
 };
 
 const sections = [
@@ -48,7 +48,7 @@ const tools = [
     role: "AI-powered analysis desk. Ask structured market questions, get grounded answers that pull from live GEX, flow, and positioning data — not generic commentary.",
   },
   {
-    name: "Heat Maps",
+    name: "Thermal",
     href: "/learn/heat-maps",
     timing: "Real-time (RTH)",
     role: "Visual GEX, VEX, DEX, and CHARM surfaces. Shows exactly where dealer hedging pressure concentrates across strikes and expiries.",
@@ -175,10 +175,10 @@ export default function GettingStartedPage() {
                 <p>
                   The platform routes all of this into specialized surfaces: a
                   real-time trading desk (SPX Slayer), a visual positioning map
-                  (Heat Maps), an evening scanner (Night Hawk), a position
+                  (Thermal), an evening scanner (Night Hawk), a position
                   tracker (Night&apos;s Watch), and a macro intelligence feed
                   (BlackOut Grid). These are not siloed. A GEX wall identified
-                  in Heat Maps is the same wall displayed in SPX Slayer and
+                  in Thermal is the same wall displayed in SPX Slayer and
                   referenced in Largo analysis.
                 </p>
               </div>
@@ -214,7 +214,7 @@ export default function GettingStartedPage() {
                       items: [
                         "SPX Slayer desk",
                         "HELIX tape",
-                        "Heat Maps",
+                        "Thermal",
                         "Night Hawk edition",
                         "Largo AI",
                         "Night's Watch",
@@ -340,10 +340,10 @@ export default function GettingStartedPage() {
                   {
                     phase: "Intraday",
                     time: "Continuous",
-                    tool: "HELIX + Heat Maps",
+                    tool: "HELIX + Thermal",
                     href: "/learn/helix-flows",
                     action:
-                      "Run HELIX alongside SPX Slayer. Large, unusual flow prints often precede or confirm directional moves. Cross-reference with Heat Maps to see where dealer hedging is concentrated.",
+                      "Run HELIX alongside SPX Slayer. Large, unusual flow prints often precede or confirm directional moves. Cross-reference with Thermal to see where dealer hedging is concentrated.",
                   },
                   {
                     phase: "Analysis",
@@ -440,7 +440,7 @@ export default function GettingStartedPage() {
                   <ul className="space-y-3">
                     {[
                       "Use Night Hawk as pre-session preparation, not as a live trade signal. Context built the evening before is context — validate it at open.",
-                      "Cross-reference GEX walls in Heat Maps before entering a position at a level SPX Slayer flags. Visual confirmation reduces false edges.",
+                      "Cross-reference GEX walls in Thermal before entering a position at a level SPX Slayer flags. Visual confirmation reduces false edges.",
                       "Use Largo when you want structured analysis, not when you want reassurance. Ask it hard questions about current data.",
                       "Log every position in Night's Watch immediately. Real-time Greeks and P&L tracking requires position data to be current.",
                       "Check HELIX for flow confirmation when price approaches a key GEX level. Large prints at a wall are structurally meaningful.",
@@ -487,7 +487,7 @@ export default function GettingStartedPage() {
                   { name: "HELIX Options Flow", href: "/learn/helix-flows", desc: "Live institutional flow tape" },
                   { name: "Largo AI Terminal", href: "/learn/largo-ai", desc: "AI-powered market analysis" },
                   { name: "Night Hawk", href: "/learn/night-hawk", desc: "Evening SPX play scanner" },
-                  { name: "Heat Maps", href: "/learn/heat-maps", desc: "GEX / VEX / DEX / CHARM surfaces" },
+                  { name: "Thermal", href: "/learn/heat-maps", desc: "GEX / VEX / DEX / CHARM surfaces" },
                   { name: "Night's Watch", href: "/learn/nights-watch", desc: "Position manager with live P&L" },
                   { name: "BlackOut Grid", href: "/learn/blackout-grid", desc: "Market intelligence dashboard" },
                 ].map((tool) => (
@@ -519,7 +519,7 @@ export default function GettingStartedPage() {
                 {[
                   {
                     q: "How current is the GEX data?",
-                    a: "GEX surfaces are recomputed from the live options chain during regular trading hours on a continuous cycle. A timestamp is displayed on SPX Slayer and Heat Maps indicating the last computation. Outside RTH, data reflects the most recent available chain snapshot.",
+                    a: "GEX surfaces are recomputed from the live options chain during regular trading hours on a continuous cycle. A timestamp is displayed on SPX Slayer and Thermal indicating the last computation. Outside RTH, data reflects the most recent available chain snapshot.",
                   },
                   {
                     q: "Does BlackOut support underlyings other than SPX?",

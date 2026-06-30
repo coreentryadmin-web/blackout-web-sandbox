@@ -58,10 +58,10 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: "heatmap",
     kicker: "Dealer positioning",
-    title: "GEX / VEX Heatmaps",
+    title: "BlackOut Thermal",
     body: "Dealer positioning by strike — GEX, VEX, DEX and charm. See the gamma walls, the flip level, and where dealer flow is forced to pin or repel price, so you read the regime before you trade it.",
     href: "/heatmap",
-    cta: "Open Heatmaps",
+    cta: "Open Thermal",
   },
   {
     id: "largo",

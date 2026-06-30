@@ -194,11 +194,11 @@ export default function GlossaryPage() {
                   </thead>
                   <tbody className="divide-y divide-cyan-900/20">
                     {[
-                      { term: "GEX / Gamma Exposure", primary: "Heat Maps", also: "SPX Slayer, Night Hawk, Largo" },
-                      { term: "Gamma Flip", primary: "Heat Maps", also: "SPX Slayer, Night Hawk, Night's Watch" },
-                      { term: "King Node", primary: "Heat Maps", also: "SPX Slayer" },
-                      { term: "Call Wall / Put Wall", primary: "Heat Maps", also: "SPX Slayer, Night Hawk, Night's Watch" },
-                      { term: "VEX / CHARM / DEX", primary: "Heat Maps", also: "Largo AI" },
+                      { term: "GEX / Gamma Exposure", primary: "Thermal", also: "SPX Slayer, Night Hawk, Largo" },
+                      { term: "Gamma Flip", primary: "Thermal", also: "SPX Slayer, Night Hawk, Night's Watch" },
+                      { term: "King Node", primary: "Thermal", also: "SPX Slayer" },
+                      { term: "Call Wall / Put Wall", primary: "Thermal", also: "SPX Slayer, Night Hawk, Night's Watch" },
+                      { term: "VEX / CHARM / DEX", primary: "Thermal", also: "Largo AI" },
                       { term: "Active Play Card", primary: "SPX Slayer", also: "—" },
                       { term: "SCANNING / APPROVE states", primary: "SPX Slayer", also: "—" },
                       { term: "Sweep / Unusual Flow", primary: "HELIX", also: "BlackOut Grid" },

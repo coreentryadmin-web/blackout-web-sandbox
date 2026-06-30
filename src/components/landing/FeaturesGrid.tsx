@@ -47,7 +47,7 @@ const INSTRUMENTS: Weapon[] = [
     mark: "heatmap",
     accentKey: "orange",
     accent: MARK_ACCENT.heatmap,
-    name: "Heatmaps",
+    name: "BlackOut Thermal",
     spec: "Dealer GEX · VEX",
     meta: "Instrument · 03",
     href: "/heatmap",

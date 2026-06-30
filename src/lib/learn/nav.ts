@@ -54,7 +54,7 @@ export const LEARN_NAV: LearnNavItem[] = [
   {
     slug: "heat-maps",
     product: "heatmap",
-    label: "Heat Maps",
+    label: "Thermal",
     description: "GEX, VEX, DEX, and CHARM dealer positioning surfaces.",
   },
   {
