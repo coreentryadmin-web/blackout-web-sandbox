@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import useSWR, { useSWRConfig } from "swr";
+import type { FlowAlert } from "@/lib/api";
+import { setGridFlowSeed } from "@/lib/grid/grid-flow-seed";
 import type { GridBootstrapPayload } from "@/lib/providers/grid";
 
 const BOOTSTRAP_URL = "/api/grid/bootstrap";
@@ -25,8 +27,8 @@ async function fetchBootstrap(url: string): Promise<GridBootstrapPayload> {
 }
 
 /**
- * Fetches all Redis-backed Grid snapshots once, then seeds each panel's SWR cache so
- * the masonry paints on the first frame instead of waiting on 8 staggered HTTP calls.
+ * Fetches all Grid snapshots once, then seeds each panel's SWR cache (Redis panels + Pulse/GEX/flow)
+ * so the masonry paints on the first frame instead of waiting on staggered HTTP calls.
  */
 export function GridBootstrapPrefetch() {
   const { mutate } = useSWRConfig();
@@ -41,6 +43,22 @@ export function GridBootstrapPrefetch() {
       const swrKey = PANEL_SWR_KEYS[key];
       const panel = data.panels[key];
       if (panel) void mutate(swrKey, panel, { revalidate: false });
+    }
+  }, [data, mutate]);
+
+  useEffect(() => {
+    const market = data?.market;
+    if (!market) return;
+    if (market.pulse) void mutate("grid-pulse", market.pulse, { revalidate: false });
+    const gex = market.gexSpx;
+    if (gex && !("available" in gex && gex.available === false)) {
+      void mutate("grid-pulse-gex-SPX", gex, { revalidate: false });
+    }
+    if (market.flows?.flows?.length) {
+      setGridFlowSeed({
+        flows: market.flows.flows as unknown as FlowAlert[],
+        count: market.flows.count,
+      });
     }
   }, [data, mutate]);
 

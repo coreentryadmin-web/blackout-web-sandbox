@@ -635,9 +635,17 @@ export type GridBootstrapPanels = {
   catalysts: GridPanelEnvelope<GridCatalystsSnapshot>;
 };
 
+/** Market-route seeds (Pulse / GEX / whale flow) — not Redis grid:* snapshots. */
+export type GridBootstrapMarketPayload = {
+  pulse: import("@/lib/spx-desk-state").SpxState;
+  gexSpx: Record<string, unknown> | { available: false };
+  flows: { flows: Record<string, unknown>[]; count: number };
+};
+
 export type GridBootstrapPayload = {
   as_of: string;
   panels: GridBootstrapPanels;
+  market?: GridBootstrapMarketPayload;
 };
 
 /** Read every Redis-backed Grid panel in one parallel pass (no per-panel HTTP fan-out). */

@@ -465,11 +465,19 @@ export async function anthropicToolLoop(params: {
     content: m.content as MessageParam["content"],
   }));
 
-  const tools: Tool[] = params.tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.input_schema as Tool["input_schema"],
-  }));
+  const tools: Tool[] = params.tools.map((t, i, arr) => {
+    const tool: Tool = {
+      name: t.name,
+      description: t.description,
+      input_schema: t.input_schema as Tool["input_schema"],
+    };
+    // When caching the system block, also mark the last tool so the tools+system prefix
+    // is eligible for Anthropic prompt caching (standard breakpoint placement).
+    if (params.cacheSystem === true && i === arr.length - 1) {
+      (tool as Tool & { cache_control?: { type: "ephemeral" } }).cache_control = { type: "ephemeral" };
+    }
+    return tool;
+  });
 
   const systemParam = applySystemCache(
     typeof params.system === "string" ? params.system : params.system,

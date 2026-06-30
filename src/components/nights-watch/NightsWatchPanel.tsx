@@ -18,6 +18,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PersonalAlertsSettings } from "@/components/nights-watch/PersonalAlertsSettings";
 import { NightsWatchDetailModal } from "@/components/nights-watch/NightsWatchDetailModal";
 import { CollapsibleTile } from "@/components/nighthawk/CollapsibleTile";
 import type { EnrichedPosition, ValuationStatus } from "@/lib/nights-watch/valuation";
@@ -1604,6 +1605,12 @@ export function NightsWatchPanel() {
                 holding an SPX position.
               </p>
             )}
+          </CollapsibleTile>
+        )}
+
+        {state.kind === "ready" && (
+          <CollapsibleTile kicker="Discord" title="Personal play alerts" defaultOpen={false}>
+            <PersonalAlertsSettings />
           </CollapsibleTile>
         )}
       </div>

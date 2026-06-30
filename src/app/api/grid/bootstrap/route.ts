@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
+import { readGridBootstrapMarket } from "@/lib/grid/grid-market-bootstrap";
 import { readGridBootstrapPanels } from "@/lib/providers/grid";
 
 export const runtime = "nodejs";
@@ -12,8 +13,9 @@ const NO_STORE = {
 };
 
 /**
- * GET /api/grid/bootstrap — single response with all Redis-backed Grid panel snapshots.
- * Collapses 8 parallel client fetches into one round-trip so the board paints immediately.
+ * GET /api/grid/bootstrap — single response with Redis-backed Grid panel snapshots plus
+ * market-route seeds (Pulse, GEX SPX, whale flow). Collapses staggered client fetches into
+ * one round-trip so the board paints immediately.
  */
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
@@ -22,8 +24,8 @@ export async function GET(req: NextRequest) {
   if (locked) return locked;
 
   try {
-    const payload = await readGridBootstrapPanels();
-    return NextResponse.json(payload, { status: 200, headers: NO_STORE });
+    const [panels, market] = await Promise.all([readGridBootstrapPanels(), readGridBootstrapMarket()]);
+    return NextResponse.json({ ...panels, market }, { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json(
       { as_of: new Date().toISOString(), panels: {} },

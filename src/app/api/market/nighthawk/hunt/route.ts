@@ -13,6 +13,14 @@ import {
   HUNT_ACQUIRE_LUA,
   shouldRejectHunt,
 } from "@/lib/nighthawk/hunt-concurrency";
+import {
+  HUNT_INFLIGHT_KEY,
+  HUNT_INFLIGHT_ACQUIRE_LUA,
+  huntGlobalMaxConcurrent,
+  huntInflightTtlMs,
+  huntInflightStaleCutoff,
+} from "@/lib/nighthawk/hunt-global-gate";
+import { randomUUID } from "node:crypto";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { runWithUwHuntBudget } from "@/lib/providers/uw-hunt-budget";
 
@@ -31,6 +39,7 @@ type GateRedis = {
   expire(key: string, seconds: number): Promise<number>;
   set(key: string, value: string | number): Promise<"OK">;
   eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
+  zrem(key: string, ...members: string[]): Promise<number>;
 } | null;
 
 async function acquireHuntSlot(userId: string): Promise<{ acquired: boolean; redis: GateRedis }> {
@@ -57,6 +66,43 @@ async function releaseHuntSlot(userId: string, redis: GateRedis): Promise<void> 
     if (val < 0) await redis.set(key, 0); // clamp to 0 if it goes negative
   } catch {
     /* non-fatal — TTL cleans up the key within HUNT_SLOT_TTL_S seconds */
+  }
+}
+
+// Cross-replica GLOBAL hunt ceiling — acquired after per-user gate (mirrors largo/query).
+type HuntGlobalSlot = { acquired: boolean; reqId: string | null; redis: GateRedis };
+
+async function acquireHuntGlobalSlot(redis: GateRedis): Promise<HuntGlobalSlot> {
+  if (!redis) return { acquired: true, reqId: null, redis };
+  const reqId = randomUUID();
+  const now = Date.now();
+  const ttlMs = huntInflightTtlMs();
+  try {
+    const ok = Number(
+      await redis.eval(
+        HUNT_INFLIGHT_ACQUIRE_LUA,
+        1,
+        HUNT_INFLIGHT_KEY,
+        huntInflightStaleCutoff(now, ttlMs),
+        huntGlobalMaxConcurrent(),
+        now,
+        reqId,
+        ttlMs
+      )
+    );
+    if (ok === 1) return { acquired: true, reqId, redis };
+    return { acquired: false, reqId: null, redis };
+  } catch {
+    return { acquired: true, reqId: null, redis };
+  }
+}
+
+async function releaseHuntGlobalSlot(slot: HuntGlobalSlot): Promise<void> {
+  if (!slot.redis || !slot.reqId) return;
+  try {
+    await slot.redis.zrem(HUNT_INFLIGHT_KEY, slot.reqId);
+  } catch {
+    /* non-fatal — stale reservations are pruned on the next acquire */
   }
 }
 
@@ -99,6 +145,15 @@ export async function POST(req: NextRequest) {
   if (!slot.acquired) {
     return NextResponse.json(
       { error: "Too many active hunts. Please wait for a previous hunt to complete." },
+      { status: 429, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  const globalSlot = userId ? await acquireHuntGlobalSlot(slot.redis) : { acquired: true, reqId: null, redis: slot.redis };
+  if (!globalSlot.acquired) {
+    if (userId) await releaseHuntSlot(userId, slot.redis);
+    return NextResponse.json(
+      { error: "Hunt capacity is full cluster-wide. Please try again shortly." },
       { status: 429, headers: { "Cache-Control": "no-store" } }
     );
   }
@@ -146,7 +201,10 @@ export async function POST(req: NextRequest) {
       { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   } finally {
-    if (userId) await releaseHuntSlot(userId, slot.redis);
+    if (userId) {
+      await releaseHuntGlobalSlot(globalSlot);
+      await releaseHuntSlot(userId, slot.redis);
+    }
   }
 
   const response: HuntResponse = {

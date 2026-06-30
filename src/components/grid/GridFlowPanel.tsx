@@ -9,6 +9,7 @@ import {
   fmtPremium,
   type FlowAlert,
 } from "@/lib/api";
+import { consumeGridFlowSeed } from "@/lib/grid/grid-flow-seed";
 import { GridCard } from "./GridCard";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 
@@ -67,6 +68,15 @@ export function GridFlowPanel() {
 
   const loadFlows = useCallback(async () => {
     try {
+      const seed = consumeGridFlowSeed();
+      if (seed && !ticker) {
+        const seeded = new Set<string>();
+        for (const a of seed.flows as Array<FlowAlert & { alert_id?: string }>) seeded.add(rowKey(a));
+        seenRef.current = seeded;
+        setAlerts(seed.flows);
+        setLive(true);
+        return;
+      }
       const d = await fetchFlows({
         min_premium: FLOOR_PREMIUM,
         limit: 60,
