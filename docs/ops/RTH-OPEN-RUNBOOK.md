@@ -143,6 +143,25 @@ Repo → **Settings → Secrets and variables → Actions**:
 - Ask multi-tool questions (e.g. "dark pool + options flow on NVDA"); confirm the working status
   names the live sources, the answer is grounded (numbers match the tools), and follow-ups are dynamic.
 
+### 7. Missing-field audit (EVERY page + sub-page)
+Goal: find every user-visible field that has **no value** and determine **why**, then fix the real ones.
+
+- **Scan** each page/panel for empty/placeholder values: `—`, `–`, blank, `N/A`, `null`/`undefined`
+  text, `$—`, `—%`, `0`/`0.00` where zero is implausible, empty tables/lists, "No data" where data
+  should exist. Cover the deep views too (Thermal matrix + profile cells, grid's 12 panels, the SPX
+  desk panels, Night Hawk play tickets, position rows, earnings/flow/congress rows).
+- **Root-cause each empty field** by checking the backing API (call it directly with the session):
+  | Cause | How to tell | Action |
+  |---|---|---|
+  | **UI bug** — API HAS the value but the field renders empty | API payload contains the field; UI shows `—` | **FIX** (wrong field mapping/path, bad formatter, render guard) — like the breadth/SPX-premium classes |
+  | **Upstream/data gap** — API itself returns null/empty | endpoint returns null/missing for that field during RTH | **FIX or escalate**: wrong upstream endpoint, missing provider call, cache not warmed, or a writer cron not running (check `cron_job_runs`) |
+  | **Off-hours / market-closed** | desk/session gated; value resumes at open | **Expected** — note, do not "fix" |
+  | **Tier/launch gate** | `coming_soon`/empty for locked tool | **Expected** |
+  | **Cold cache** — first read before warm | populates on next poll/warm | Transient — re-check; flag only if persistent during RTH |
+- **No fabrication:** the fix is to surface the REAL value or honestly show unavailable — never invent
+  a placeholder number to fill a blank.
+- Record every empty field found, its page, its backing endpoint, and the cause classification.
+
 ### Report each pass
 - Append a dated entry to `docs/api-audit/OPEN-ISSUES.md`: per-page speed numbers, observed update
   intervals, and any correctness/freshness/API defects (with the API evidence).
