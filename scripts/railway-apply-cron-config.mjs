@@ -25,6 +25,7 @@ const ENV = process.env.RAILWAY_ENVIRONMENT ?? "production";
 const SERVICE_NAMES = {
   "gex-alerts": "GEX-Alerts",
   "gex-eod-snapshot": "GEX-EOD-Snapshot",
+  "grid-warm": "Grid-Warm-Cron",
   "spx-signal-weight-optimize": "SPX-Signal-Weight-Optimize",
 };
 

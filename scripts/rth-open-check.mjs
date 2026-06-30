@@ -93,6 +93,8 @@ async function main() {
       failures.push(m);
       console.log(`  ✗ ${m}`);
     };
+    let openPos = 0;
+    let nw15 = 0;
 
     if (dbUrl) {
       try {
@@ -127,6 +129,26 @@ async function main() {
         if (latest?.status === "ok") ok("data-correctness latest run ok");
         else fail(`data-correctness latest: ${latest?.status ?? "?"} — ${latest?.message ?? ""}`);
 
+        const grid15 = (
+          await c.query(
+            `SELECT COUNT(*)::int AS n FROM cron_job_runs
+             WHERE job_key = 'grid-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+          )
+        ).rows[0].n;
+        if (grid15 > 0) ok(`grid-warm ran in last 20m (${grid15} ok run(s))`);
+        else fail("grid-warm: no ok run in last 20m during RTH");
+
+        const nw15Row = (
+          await c.query(
+            `SELECT COUNT(*)::int AS n FROM cron_job_runs
+             WHERE job_key = 'nights-watch-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+          )
+        ).rows[0].n;
+        nw15 = nw15Row;
+        openPos = (
+          await c.query(`SELECT COUNT(*)::int AS n FROM user_positions WHERE status = 'open'`)
+        ).rows[0].n;
+
         await c.end();
       } catch (e) {
         fail(`Postgres RTH checks: ${e.message}`);
@@ -140,15 +162,31 @@ async function main() {
         "railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -20",
         { encoding: "utf8" }
       );
-      if (/options-socket.*authenticated/.test(logs)) ok("options-socket authenticated (RTH)");
-      else if (et.mins >= 9 * 60 + 30)
-        fail("options-socket: no authenticated line in recent logs during RTH");
-      else console.log("  ⚠ options-socket: pre-09:30 — auth line not required yet");
+      const optAuth = /options-socket.*authenticated/.test(logs);
+      if (optAuth) ok("options-socket authenticated in recent logs");
+      else if (et.mins < 9 * 60 + 30) {
+        console.log("  ⚠ options-socket: pre-09:30 — auth line not required yet");
+      } else if (openPos === 0) {
+        ok("options-socket idle (no open positions — WS auth not required)");
+      } else if (nw15 > 0) {
+        ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; log auth line optional on multi-replica)`);
+      } else if (et.mins >= 9 * 60 + 30) {
+        fail("options-socket: no auth logs and nights-watch-warm stale during RTH with open positions");
+      }
       if (/uw-socket.*stall watchdog/i.test(logs)) fail("uw-socket stall reconnects in recent logs");
       else ok("No uw-socket stall storms");
     } catch {
       if (process.env.GITHUB_ACTIONS === "true") {
         console.log("  ⚠ Railway logs skipped in GitHub Actions");
+        if (et.mins >= 9 * 60 + 30 && openPos > 0 && nw15 > 0) {
+          ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; logs skipped in GHA)`);
+        } else if (et.mins >= 9 * 60 + 30 && openPos === 0) {
+          ok("options-socket idle (no open positions)");
+        }
+      } else if (et.mins >= 9 * 60 + 30 && openPos > 0 && nw15 > 0) {
+        ok(`options path live (nights-watch-warm ok ×${nw15} in last 20m; Railway logs unavailable)`);
+      } else if (et.mins >= 9 * 60 + 30 && openPos === 0) {
+        ok("options-socket idle (no open positions)");
       } else {
         console.log("  ⚠ Could not read Railway logs");
       }
