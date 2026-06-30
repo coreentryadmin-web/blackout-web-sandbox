@@ -1,10 +1,84 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-30 16:15 ET
+Last updated: 2026-06-30 17:10 ET
 
 > **Shipping log:** Audit backlog batch 1 → **PR #132** (merged): cron timing-safe auth, dead code,
 > Track Record nav, db-cleanup, Grid bootstrap. Closed duplicate PRs **#127–#130** — ignore those.
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
+
+## RTH comprehensive sweep — 2026-06-30 ~17:01–17:10 ET (pass 6 — after-hours)
+
+**Session:** Tue 30 Jun 2026, 17:01–17:10 ET (**after-hours** — RTH is 9:30 AM–4:00 PM ET; market closed at 16:00). Agent: autonomous RTH cloud session. Premium Clerk admin session (`claude-audit-temp@blackouttrades.com`, `role:admin` + `tier:premium`). Clerk tier mint note: use `PATCH /v1/users/{id}/metadata` (not `updateUser`) so `tier:premium` persists.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` (initial) | ❌ `pg` missing locally |
+| `npm install` | ✅ deps restored |
+| `npm run validate:rth-open` (final) | ✅ GREEN — deploy validation passed |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed (`market_open: false`) |
+| `npm run ops:collect` | ✅ 0 action items |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (49 pass) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (49 pass) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 matrix flags |
+
+### API sweep (CRON bearer — ~17:03 ET)
+
+| Endpoint | HTTP | Notes |
+|---|---|---|
+| `/api/market/spx/desk` | 200 | SPX 7499.36, VIX 16.45, `available=true` |
+| `/api/market/spx/pulse` | 200 | `available=false` — **expected** post-16:00 |
+| `/api/market/gex-positioning?ticker=SPX` | 200 | flip 7495.02, call 7500, put 7400 |
+| `/api/market/gex-positioning?ticker=SPY` | 200 | flip 745.12, call 750, put 735, spot 746.01 |
+| `/api/grid/*` (8 panels) | 200 | sectors 11, dark-pool 20 prints, all `available=true` |
+| `/api/market/nighthawk/edition` | 200 | 3 plays for 2026-06-30 |
+| `/api/public/track-record` | 200 | **9 closed** (0W/9L) — live sync ✅ |
+
+**SPX oracle:** desk 7499.36 vs Polygon 7499.36 (Δ 0.00).
+
+### Browser sweep (premium admin — all 7 pages)
+
+| Page | Hard load | Soft-nav | Live update | Console | Notes |
+|---|---|---|---|---|---|
+| `/dashboard` | ~4s | <1s | static 27s | CSS preload ×3 | EXTENDED+OFFLINE; VIX/VWAP/GEX/HOD `—` **expected** at close |
+| `/flows` | ~3s | <1s | static (after-hours) | reflow 42ms | STALE 57m banner; 3 stale SPX flow rows |
+| `/heatmap` Matrix | ~2s | instant tab | LIVE badge, spot +0.07% | reflow 52ms | SPY ~745.97; flip 746, call 750, put 745; matrix grid offline post-close |
+| `/heatmap` Profile | ~10s | tab switch | gamma profile loaded | same | Positioning alert + expiration charts |
+| `/grid` | ~3s | <1s | N/A | 2 issues | **P2 watch:** skeleton lattice; APIs 200 with data — backdrop/SWR paint (pass 2/4/5 same) |
+| `/nighthawk` | ~2s | <1s | EDITION static | React #418 | 3 plays 2026-06-30; track record 62.5% target hit |
+| `/terminal` (Largo) | ~2s | <1s | ~20s AI response | 2 issues | NVDA flow $16.37M+$10.10M stacks; sources LIVE DESK FEED / DARK POOL / OPTIONS FLOW |
+| `/track-record` | ~2s | <1s | LIVE counter ticks ~60s | clean | ODTE 0W/9L; Night Hawk 62.5% (5W/3L) |
+
+### Missing-field audit (pass 6)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| VIX, VWAP, GEX, HOD/POD/LvD/PDL, REGIME, breadth | `/dashboard` | `spx/pulse` `available=false` | **Expected off-hours** | none |
+| Flow tape new rows | `/flows` | after-hours gate | **Expected off-hours** | none |
+| Thermal matrix cells | `/heatmap` | chain offline post-close | **Expected off-hours** | none |
+| Grid panel bodies slow/blank | `/grid` | `/api/grid/*` all 200 | **Cold client render** / backdrop lattice | **P2 watch** |
+| TSLA/AMD flip `—` | heatmap matrix audit | far-dated chain sparse | **Upstream gap** | Expected |
+
+### Cross-tool agreement (verified)
+
+| Metric | Dashboard/Grid | Thermal | Largo | API canonical |
+|---|---|---|---|---|
+| SPX spot | desk | — | — | 7499.36 (`spx/desk`) |
+| SPY spot | — | ~745.97 | — | 746.01 (`gex-positioning`) |
+| SPX GEX flip/walls | — | — | — | 7495 / 7500 / 7400 (`gex-positioning`) |
+| Track record closed | 9 | — | — | 9 (`public/track-record`) |
+
+### Ops watch
+
+| ID | Item | Status |
+|---|---|---|
+| **OPS-7** | Sentry 4× `Not Found` + `fetch failed` | Watch — unchanged |
+| **OPS-13** | React #418 on `/nighthawk` | **P2** — known hydration class |
+| **OPS-14** | CSS preload warnings (all pages) | **P2** — non-blocking perf |
+| **OPS-15** | Grid panel skeleton paint lag | **P2 watch** — APIs healthy; client render |
+
+**No new P0/P1** — all validation GREEN. No code fix required this pass. No GitHub issue opened.
 
 ## RTH comprehensive sweep — 2026-06-30 ~16:04–16:15 ET (pass 5 — after-hours)
 
