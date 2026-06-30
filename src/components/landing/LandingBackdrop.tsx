@@ -1,7 +1,3 @@
-"use client";
-
-import { motion } from "framer-motion";
-
 const NOISE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
@@ -24,24 +20,20 @@ export function LandingBackdrop({ showChart = true }: { showChart?: boolean }) {
             "radial-gradient(125% 90% at 50% -10%, rgba(8,20,17,0.85), transparent 55%), radial-gradient(100% 80% at 50% 115%, rgba(6,10,20,0.9), transparent 60%)",
         }}
       />
-      {/* aurora orbs */}
-      <motion.div
+      {/* aurora orbs — STATIC (was 3 infinite framer-motion loops, each re-compositing a
+          blur(150px) layer every frame; the ±30px/34–50s drift was imperceptible, so we
+          paint them once for a big GPU saving on the landing). */}
+      <div
         className="absolute rounded-full"
         style={{ top: "-16%", right: "-8%", height: 640, width: 640, filter: "blur(150px)", background: "radial-gradient(closest-side, #00e676, transparent)", opacity: 0.15 }}
-        animate={{ x: [0, 34, -12, 0], y: [0, 22, -14, 0] }}
-        transition={{ duration: 34, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.div
+      <div
         className="absolute rounded-full"
         style={{ bottom: "-20%", left: "-10%", height: 560, width: 560, filter: "blur(150px)", background: "radial-gradient(closest-side, #22d3ee, transparent)", opacity: 0.1 }}
-        animate={{ x: [0, -26, 16, 0], y: [0, -18, 12, 0] }}
-        transition={{ duration: 42, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.div
+      <div
         className="absolute rounded-full"
         style={{ bottom: "-26%", left: "42%", height: 520, width: 520, filter: "blur(160px)", background: "radial-gradient(closest-side, #7c5cff, transparent)", opacity: 0.08 }}
-        animate={{ x: [0, 18, -20, 0], y: [0, -10, 8, 0] }}
-        transition={{ duration: 50, repeat: Infinity, ease: "easeInOut" }}
       />
       {/* institutional grid */}
       <div
