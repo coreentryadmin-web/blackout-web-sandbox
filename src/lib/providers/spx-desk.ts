@@ -54,6 +54,7 @@ import {
 } from "./spx-session";
 import {
   fetchUwDarkPool,
+  fetchUwDarkPoolMarketWide,
   fetchUwFlow0dte,
   fetchUwFlowPerExpiry,
   fetchUwGroupGreekFlow,
@@ -299,7 +300,13 @@ async function resolveDarkPool(
   if (cachedDarkPool.key === key && now - cachedDarkPool.fetchedAt < DARK_POOL_CACHE_MS) {
     return cachedDarkPool.data;
   }
-  const fresh = await fetchUwDarkPool(ticker, opts).catch(() => null);
+  const tickerFresh = await fetchUwDarkPool(ticker, opts).catch(() => null);
+  // Ticker-specific dark pool returns no prints for cash indices (e.g. SPX has no equity DP entries).
+  // Fall back to market-wide recent dark pool which always has data during RTH.
+  const fresh =
+    (tickerFresh?.prints.length ?? 0) > 0
+      ? tickerFresh
+      : await fetchUwDarkPoolMarketWide({ limit: opts?.limit ?? 20, min_premium: opts?.min_premium }).catch(() => null) ?? tickerFresh;
   if (fresh !== null) {
     cachedDarkPool = { data: fresh, fetchedAt: now, key };
     return fresh;
@@ -314,7 +321,13 @@ function mergeWsIndexSnapshots(
   const out = { ...snaps };
   for (const sym of [SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]) {
     const ws = indexStore[sym];
-    if (ws?.updatedAt && now - ws.updatedAt < INDEX_STORE_STALE_MS && ws.price > 0) {
+    const breadthIndex = sym === TICK || sym === ADD;
+    // Breadth indices (TICK/ADD) can be negative; price indices must stay > 0.
+    if (
+      ws?.updatedAt &&
+      now - ws.updatedAt < INDEX_STORE_STALE_MS &&
+      (breadthIndex || ws.price > 0)
+    ) {
       // FIX-A: the live WS PRICE is always preferred (sub-second fresh). For the day CHANGE%,
       // trust the WS value ONLY when its session_open is authoritative — i.e. REST-seeded
       // (open_source === "rest"). When the anchor is still a raw first-seen bar open ("ws-bar")
@@ -736,7 +749,7 @@ function buildUnifiedTape(
       // ISSUE-35: null premium from DB propagates as null typed as number. In
       // spx-signals.ts tapeSkew, `bull += t.premium` then produces NaN. Guard here.
       premium: f.premium ?? 0,
-      detail: `${f.ticker} · ${f.direction}`,
+      detail: `${f.ticker} | ${f.direction}`,
     });
   }
 
@@ -745,7 +758,7 @@ function buildUnifiedTape(
       kind: "darkpool",
       side: "neutral",
       time: p.executed_at,
-      label: p.strike > 0 ? `@ ${p.strike.toFixed(0)}` : "DP",
+      label: p.strike > 0 ? `@ ${p.strike.toFixed(0)}` : (p.ticker ?? "DP"),
       premium: p.premium,
       detail: p.side,
     });

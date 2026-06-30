@@ -59,7 +59,7 @@ export function flowAlertToTapeItem(alert: {
     time: alert.alerted_at,
     label: `${isPut ? "PUT" : "CALL"} ${alert.strike}`,
     premium: alert.premium,
-    detail: `${alert.ticker} · ${alert.direction}`,
+    detail: `${alert.ticker} | ${alert.direction}`,
   };
 }
 
