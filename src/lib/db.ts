@@ -1727,6 +1727,29 @@ export async function listDistinctOpenPositionContracts(): Promise<
   }));
 }
 
+/** All open positions cluster-wide (cron reconciliation — not user-scoped). */
+export async function listAllOpenUserPositions(): Promise<UserPositionRow[]> {
+  await ensureSchema();
+  const res = await (await getPool()).query(`SELECT * FROM user_positions WHERE status = 'open'`);
+  return res.rows.map(mapUserPositionRow);
+}
+
+/** Close one open position by id (cron reconciliation — not user-scoped). */
+export async function closeOpenPositionById(id: number, note: string): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `UPDATE user_positions
+       SET status = 'closed',
+           exit_premium = 0,
+           closed_at = NOW(),
+           updated_at = NOW(),
+           notes = COALESCE(notes || E'\\n', '') || $2
+     WHERE id = $1 AND status = 'open'`,
+    [id, note]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 /** Create a new open position for a user. */
 export async function createUserPosition(
   userId: string,
