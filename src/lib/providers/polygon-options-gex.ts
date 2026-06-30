@@ -2571,12 +2571,14 @@ function aggregateGexRows(contracts: ChainContract[], spot: number): Record<stri
     const gamma = Number(c.greeks?.gamma ?? 0);
     const oi = Number(c.open_interest ?? 0);
     const type = String(c.details?.contract_type ?? "").toLowerCase();
+    const sharesPerContract =
+      Number.isFinite(c.details?.shares_per_contract) && (c.details?.shares_per_contract ?? 0) > 0
+        ? Number(c.details?.shares_per_contract)
+        : 100;
     if (!Number.isFinite(strike) || strike <= 0 || !oi || !gamma) continue;
 
-    // gamma × oi × 100 × spot² × 0.01 — SpotGamma per-1%-move dealer $-gamma (matches competitor
-    // scale). The extra `× spot × 0.01` over raw dollar-gamma is the per-1%-move normalization;
-    // mirrors the heatmap GEX cell convention above. (VEX/CHARM use a distinct × 100 × spot scale.)
-    const contrib = gamma * oi * 100 * spot * spot * 0.01;
+    // gamma × oi × shares_per_contract × spot² × 0.01 — SpotGamma per-1%-move dealer $-gamma.
+    const contrib = gamma * oi * sharesPerContract * spot * spot * 0.01;
     const row = byStrike.get(strike) ?? { call: 0, put: 0 };
     if (type === "call") row.call += contrib;
     else if (type === "put") row.put -= contrib;

@@ -964,8 +964,10 @@ export function normalizeIntervalFlowWsPayload(raw: unknown): Record<string, unk
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
     const strike = Number(r.strike ?? 0);
+    const ticker = String(r.ticker ?? r.symbol ?? "SPX").toUpperCase();
     if (!Number.isFinite(strike)) continue;
     out.push({
+      ticker,
       strike,
       call_premium: Number(r.call_premium ?? r.call_volume ?? 0),
       put_premium: Number(r.put_premium ?? r.put_volume ?? 0),
@@ -1269,14 +1271,20 @@ export async function fetchUwIvTermStructure(ticker = "SPX"): Promise<IvTermPoin
  * the read, so the 250-row heatmap caller and the 30-row Largo/cron callers share one cached fetch
  * without one starving the other's window.
  */
+/** Max rows requested from UW for flow-per-strike (cron + heatmap share one cached fetch). */
+export const UW_FLOW_PER_STRIKE_FETCH_CAP = 500;
+
 export async function fetchUwFlowPerStrikeRows(ticker = "SPX", limit = 30) {
   const sym = ticker.toUpperCase();
+  const cap = Math.min(Math.max(1, limit), UW_FLOW_PER_STRIKE_FETCH_CAP);
   const redis = await getUwCacheRedis();
   const rows = await uwCacheGet(redis, `flow_per_strike_rows:${sym}`, UW_CACHE_TTL.flowPerStrike, async () => {
-    const data = await uwGetSafe<unknown>(`/api/stock/${sym}/flow-per-strike-intraday`, {});
+    const data = await uwGetSafe<unknown>(`/api/stock/${sym}/flow-per-strike-intraday`, {
+      limit: UW_FLOW_PER_STRIKE_FETCH_CAP,
+    });
     return extractRows(data);
   });
-  return rows.slice(0, limit);
+  return rows.slice(0, cap);
 }
 
 export async function fetchUwOiPerStrike(ticker = "SPX", limit = 40) {

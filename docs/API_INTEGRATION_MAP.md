@@ -72,26 +72,22 @@ transient close is misclassified, and the 60s backoff already bounds the retry r
 ## Unusual Whales (UW)
 2-RPS cluster-wide (Redis Lua sliding-window limiter + cross-replica breaker). HELIX flow + SPX desk.
 
-**✅ USED — 5 WS channels, ALL names correct (no bare-channel bug):** `flow_alerts`, `market_tide`,
-`off_lit_trades`, `interval_flow`, `trading_halts` (verified vs OpenAPI operation IDs). ~90 REST
-fetchers (flow, GEX/greeks, max-pain, nope, tide, dark pool, movers, oi-change, …) all via the 2-RPS
-limiter. 🛡️ dedup/sort + `alerted_at`/`event_at` truth-handling, 429 single-count accounting, socket
-stall watchdog + superseded-socket guards + graceful SIGTERM — all verified strong.
+**✅ USED — 9 WS channels:** `flow_alerts`, `market_tide`, `off_lit_trades`, `interval_flow`,
+`trading_halts`, `net_flow` (ticker-scoped), `option_trades`, `lit_trades`, `gex_strike_expiry` (SPX).
+Massive **stocks LULD** (`STOCKS_WS_ENABLED`) is a second halt source vs UW `trading_halts`. ~90 REST
+fetchers via the 2-RPS limiter. WS-first cache bridge skips cron when channels are fresh (Task #6 partial).
 
-**🟡 UNUSED-valuable:** WS `option_trades` (raw tape, 0 incremental RPS), `gex`/`gex_strike`/
-`gex_strike_expiry` (native dealer gamma), `net_flow:TICKER`, `price:SPX/SPY`, `news` (is_trump_ts),
-`lit_trades`, `contract_screener`; REST `/option-trades/full-tape/{date}`, the volatility-anomaly
-surface (`/vix-term-structure`, `/variance-risk-premium`), `greek-exposure/strike-expiry`. **→ Task #6.**
+**🟡 UNUSED-valuable:** WS `gex_strike` (non-expiry), `price:SPX/SPY`, `news`, `contract_screener`;
+REST full-tape / volatility-anomaly surface. Massive options **Trades WS `T`** now dual-subscribed with Q
+(NW marks + stall liveness).
 
-**🔴 GAPS:**
-- `uw-cache-refresh` polls net-prem-ticks + flow-per-strike-intraday every 2min — spends the scarce
-  2-RPS budget on data the WS channels would push for free. **→ Task #6.**
-- `trading_halts` is a single fail-closed SPOF for desk entries. **→ Task #7.**
-- `interval_flow` stored as a single overwrite keyed only on strike (no ticker dim) — latent if reused
-  multi-ticker. `flow-per-strike-intraday` cron passes `limit=Number.MAX_SAFE_INTEGER` (no upstream
-  clamp). Heartbeat `ws.ping()` may be a no-op depending on the `ws` impl (stall watchdog covers it).
-- **Stale docs:** `docs/audit/API-DOCS/websockets.md:128,131` + `docs/audit/11-UW-DEEP.md:118-119`
-  falsely claim `gex`/`net_flow` channels + `gexStore`/`netFlowStore` are in-use — removed from code. **→ Task #6.**
+**🔴 GAPS (remaining):**
+- `price:SPX/SPY`, `news`, `contract_screener` still unused on UW WS.
+- Massive FMV / unified snapshot batch opportunities (see Polygon section).
+
+**✅ Fixed (2026-06-30):** Task #7 partial — LULD + dual-source halt staleness. Task #6 partial — WS-first
+`uw-cache-refresh`, `option_trades` tape. `interval_flow` keyed by ticker. Flow-per-strike cron capped at 500.
+`aggregateGexRows` uses `shares_per_contract`. SPX play RSI uses Massive `/v1/indicators/rsi`.
 
 ---
 

@@ -17,6 +17,7 @@ import {
   fetchUwNope,
   fetchUwDarkPool,
   fetchUwFlowPerStrikeRows,
+  UW_FLOW_PER_STRIKE_FETCH_CAP,
   aggregateFlowPerStrikeRows,
 } from "@/lib/providers/unusual-whales";
 import { fetchMarketMovers } from "@/lib/providers/polygon";
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest) {
 
     ...FLOW_STRIKE_TICKERS.map((ticker) => async () => {
       if (shouldSkipUwCacheRefreshTask("flow_per_strike", ticker)) return;
-      const rows = await fetchUwFlowPerStrikeRows(ticker, Number.MAX_SAFE_INTEGER);
+      const rows = await fetchUwFlowPerStrikeRows(ticker, UW_FLOW_PER_STRIKE_FETCH_CAP);
       await uwCacheSet(
         redis,
         UW_KEYS.flowPerStrike(ticker),

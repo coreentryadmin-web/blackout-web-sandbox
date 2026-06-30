@@ -653,6 +653,14 @@ export const intervalFlowStore: {
   updatedAt: number;
 } = { rows: [], updatedAt: 0 };
 
+const intervalFlowByTicker = new Map<string, { rows: Record<string, unknown>[]; updatedAt: number }>();
+
+/** Per-ticker interval-flow rows from the UW WS (defaults to SPX aggregate store). */
+export function getIntervalFlowForTicker(ticker = "SPX"): { rows: Record<string, unknown>[]; updatedAt: number } {
+  const sym = ticker.toUpperCase();
+  return intervalFlowByTicker.get(sym) ?? (sym === "SPX" ? intervalFlowStore : { rows: [], updatedAt: 0 });
+}
+
 export const tradingHaltsStore: {
   halts: Map<string, StoredTradingHalt>;
   updatedAt: number;
@@ -1008,8 +1016,20 @@ export function initUwSocket() {
     const rows = normalizeIntervalFlowWsPayload(payload);
     if (rows.length) {
       recordUwDelivery("interval_flow");
-      intervalFlowStore.rows = rows;
-      intervalFlowStore.updatedAt = Date.now();
+      const now = Date.now();
+      const byTicker = new Map<string, Record<string, unknown>[]>();
+      for (const row of rows) {
+        const sym = String(row.ticker ?? "SPX").toUpperCase();
+        const bucket = byTicker.get(sym) ?? [];
+        bucket.push(row);
+        byTicker.set(sym, bucket);
+      }
+      for (const [sym, tickerRows] of byTicker) {
+        intervalFlowByTicker.set(sym, { rows: tickerRows, updatedAt: now });
+      }
+      const spx = byTicker.get("SPX");
+      intervalFlowStore.rows = spx ?? rows;
+      intervalFlowStore.updatedAt = now;
     }
   });
 

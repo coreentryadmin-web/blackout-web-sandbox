@@ -266,11 +266,12 @@ async function resolveFlow0dte(ticker = "SPX"): Promise<{
   net: number;
 } | null> {
   try {
-    const { intervalFlowStore } = await import("../ws/uw-socket");
-    if (Date.now() - intervalFlowStore.updatedAt < INTERVAL_FLOW_WS_STALE_MS && intervalFlowStore.rows.length) {
+    const { getIntervalFlowForTicker } = await import("../ws/uw-socket");
+    const snap = getIntervalFlowForTicker(ticker);
+    if (Date.now() - snap.updatedAt < INTERVAL_FLOW_WS_STALE_MS && snap.rows.length) {
       let calls = 0;
       let puts = 0;
-      for (const row of intervalFlowStore.rows) {
+      for (const row of snap.rows) {
         calls += Number(row.call_premium ?? 0);
         puts += Number(row.put_premium ?? 0);
       }

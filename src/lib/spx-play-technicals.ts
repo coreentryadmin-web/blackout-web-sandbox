@@ -1,5 +1,5 @@
 import { polygonConfigured } from "@/lib/providers/config";
-import { fetchIndexEma, fetchIndexMinuteBars } from "@/lib/providers/polygon";
+import { fetchIndexEma, fetchIndexMinuteBars, fetchIndexRsi } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { playMtfBufferPts, playTechnicalsCacheSec } from "@/lib/spx-play-config";
 
@@ -144,9 +144,10 @@ export async function buildPlayTechnicals(
   }
 
   const today = todayEtYmd();
-  const [bars, ema5m] = await Promise.all([
+  const [bars, ema5m, indexRsi] = await Promise.all([
     fetchIndexMinuteBars(SPX, today, today),
     fetchIndexEma(SPX, 20, "minute"),
+    fetchIndexRsi(SPX, 14, "minute"),
   ]);
 
   if (!bars.length) return empty;
@@ -161,7 +162,7 @@ export async function buildPlayTechnicals(
   const m5Close = m5.length ? m5[m5.length - 1].c : null;
   const m5Closes = m5.map((b) => b.c);
   const m5Ema20 = ema5m ?? emaFromCloses(m5Closes, 20);
-  const m5Rsi = rsi(m5, 14);
+  const m5Rsi = indexRsi ?? rsi(m5, 14);
 
   const buf = playMtfBufferPts();
   const vwap = ctx.vwap;

@@ -170,7 +170,11 @@ function rawRecomputeNetGexAndKing(
     if (!oi || !gamma) continue;
     const sign = type === "call" ? 1 : type === "put" ? -1 : 0;
     if (sign === 0) continue;
-    const signed = sign * gamma * oi * 100 * spot * spot * 0.01;
+    const sharesPerContract =
+      Number.isFinite(c.details?.shares_per_contract) && (c.details?.shares_per_contract ?? 0) > 0
+        ? Number(c.details?.shares_per_contract)
+        : 100;
+    const signed = sign * gamma * oi * sharesPerContract * spot * spot * 0.01;
     if (!Number.isFinite(signed) || signed === 0) continue;
     byStrike.set(strike, (byStrike.get(strike) ?? 0) + signed);
     net += signed;

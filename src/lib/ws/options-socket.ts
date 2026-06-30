@@ -421,15 +421,17 @@ class OptionsShard {
 
   private sendSubscribe(symbols: string[]) {
     if (!symbols.length || this.ws?.readyState !== WebSocket.OPEN) return;
-    const params = symbols.map((s) => `Q.${s}`).join(",");
-    this.ws.send(JSON.stringify({ action: "subscribe", params }));
+    const qParams = symbols.map((s) => `Q.${s}`).join(",");
+    const tParams = symbols.map((s) => `T.${s}`).join(",");
+    this.ws.send(JSON.stringify({ action: "subscribe", params: `${qParams},${tParams}` }));
     for (const s of symbols) this.subscribed.add(s);
   }
 
   private sendUnsubscribe(symbols: string[]) {
     if (!symbols.length || this.ws?.readyState !== WebSocket.OPEN) return;
-    const params = symbols.map((s) => `Q.${s}`).join(",");
-    this.ws.send(JSON.stringify({ action: "unsubscribe", params }));
+    const qParams = symbols.map((s) => `Q.${s}`).join(",");
+    const tParams = symbols.map((s) => `T.${s}`).join(",");
+    this.ws.send(JSON.stringify({ action: "unsubscribe", params: `${qParams},${tParams}` }));
   }
 
   private connect() {
@@ -530,6 +532,8 @@ class OptionsShard {
         console.error(`[options-socket] shard ${this.id} auth_failed — check POLYGON_API_KEY`);
       } else if (ev === "Q") {
         this.handleQuote(msg);
+      } else if (ev === "T") {
+        this.handleTrade(msg);
       }
       // status:success acks for subscribe/unsubscribe are ignored (no-op).
     }
@@ -552,6 +556,25 @@ class OptionsShard {
     const now = Date.now();
     // (liveness is tracked in handleMessage on ANY frame; here we only need `now` for the ts)
     const entry: OptionMark = { bid, ask, mark, last, ts: now };
+    optionMarks.set(occ, entry);
+    void writeMarkThrough(occ, entry);
+  }
+
+  /** Trade print — refreshes last/mark when quotes are quiet (RT-1 liveness + mark fallback). */
+  private handleTrade(msg: Record<string, unknown>) {
+    const occ = String(msg.sym ?? msg.T ?? msg.ticker ?? "");
+    if (!occ) return;
+    const last = finiteOrNull(msg.p ?? msg.price);
+    if (last == null) return;
+    const now = Date.now();
+    const prev = optionMarks.get(occ);
+    const entry: OptionMark = {
+      bid: prev?.bid ?? null,
+      ask: prev?.ask ?? null,
+      mark: prev?.mark ?? last,
+      last,
+      ts: now,
+    };
     optionMarks.set(occ, entry);
     void writeMarkThrough(occ, entry);
   }
