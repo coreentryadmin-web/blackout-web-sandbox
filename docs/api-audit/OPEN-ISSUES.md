@@ -1,10 +1,49 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-30 17:10 ET
+Last updated: 2026-06-30 17:45 ET
 
 > **Shipping log:** Audit backlog batch 1 → **PR #132** (merged): cron timing-safe auth, dead code,
 > Track Record nav, db-cleanup, Grid bootstrap. Closed duplicate PRs **#127–#130** — ignore those.
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
+
+## RTH comprehensive sweep — 2026-06-30 ~17:21–17:45 ET (pass 7 — after-hours)
+
+**Session:** Tue 30 Jun 2026, 17:21–17:45 ET (**after-hours**). Agent: autonomous cloud session. Premium Clerk admin via Playwright `sign_in_token` (audit user deleted post-pass). Confirms pass 6 with Playwright automation + Largo API session test.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ GREEN (off-hours deploy-only mode) |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed |
+| `npm run ops:collect` | ✅ 0 action items |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (49 pass) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (49 pass) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 flags |
+
+### Pass 7 deltas vs pass 6
+
+| Finding | Detail |
+|---|---|
+| **Grid 12/12 panels** | Playwright full-page screenshot confirms all panels populated (Pulse, News, Flow, Analysts, GEX Regime, Movers, Earnings, Dark Pool, Congress, Macro, Catalysts, Sector Heat) — **downgrades OPS-15 skeleton watch** for this pass |
+| **Largo API** | NVDA query HTTP 200 ~40s — DP $31.37M (20 prints), 0DTE net $74.3M bullish, largest stack $14.37M Dec 2027 $220C |
+| **Cross-tool GEX** | desk gamma_flip 7495.02 = gex-positioning SPX; Grid GEX Regime 7495/7500/7400; Thermal SPY flip 745 ≈ API 745.98 |
+| **nighthawk/play-status 404** | `/api/nighthawk/play-status?date=2026-07-01` — **expected** (morning-confirm cron 09:15 ET; UI handles `available:false`) |
+| **Track record** | UI 0W/9L matches `/api/public/track-record` — no split-brain |
+
+### Browser sweep (Playwright — all 7 pages)
+
+| Page | Load | Live update | Console | Notes |
+|---|---|---|---|---|
+| `/dashboard` | ~3s | static | clean | OFFLINE; spot 7499.36 + GEX walls live |
+| `/flows` | ~3s | static | clean | after-hours |
+| `/heatmap` Matrix+Profile | ~3s | LIVE badge, static 15s | clean | SPY 745.95; flip 745 / call 750 / put 745 |
+| `/grid` | ~3s | static | clean | **12/12 panels populated** |
+| `/nighthawk` | ~3s | EDITION LIVE | 404 play-status | 2 plays for 2026-07-01 |
+| `/terminal` | ~3s | Largo ~40s | React #418 | grounded NVDA answer |
+| `/track-record` | ~3s | LIVE ~23s | clean | 0W/9L ODTE; Night Hawk 62.5% |
+
+**No new P0/P1** — all validation GREEN. No code fix or GitHub issue required.
 
 ## RTH comprehensive sweep — 2026-06-30 ~17:01–17:10 ET (pass 6 — after-hours)
 
