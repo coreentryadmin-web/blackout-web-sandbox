@@ -8,7 +8,12 @@ import {
   type CronJobRunRow,
 } from "@/lib/db";
 import { loadPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
-import { isWeekdayEt } from "@/lib/nighthawk/session";
+import {
+  formatEtDate,
+  isTradingDayEt,
+  isWeekdayEt,
+  nextTradingDayEt,
+} from "@/lib/nighthawk/session";
 import { etMinutes, etClock } from "@/lib/spx-play-session-time";
 
 /**
@@ -21,6 +26,65 @@ function inMarketHoursEt(now = new Date()): boolean {
   if (!isWeekdayEt()) return false;
   const mins = etMinutes(now);
   return mins >= etClock(9, 30) && mins <= etClock(16, 0);
+}
+
+function positiveEnvInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function etMinuteOfDay(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(now);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24;
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+export type NighthawkEditionExpectation = {
+  et_date: string;
+  expected_edition_for: string;
+  after_deadline: boolean;
+  deadline_label: string;
+};
+
+/**
+ * Night Hawk publishes a dossier for the next trading session during the prior evening window.
+ * A published edition for today's session is therefore healthy all day; only after the evening
+ * catch-up deadline should health require the next session's edition.
+ */
+export function expectedNighthawkEdition(now = new Date()): NighthawkEditionExpectation {
+  const etDate = formatEtDate(now);
+  const targetHour = positiveEnvInt("NIGHTHAWK_EDITION_HOUR_ET", 17);
+  const targetMinute = positiveEnvInt("NIGHTHAWK_EDITION_MINUTE_ET", 30);
+  const catchupMin = positiveEnvInt("NIGHTHAWK_EDITION_CATCHUP_MIN", 120);
+  const deadlineMin = targetHour * 60 + targetMinute + catchupMin;
+  const afterDeadline = isTradingDayEt(etDate) && etMinuteOfDay(now) > deadlineMin;
+  const expectedEditionFor = afterDeadline
+    ? nextTradingDayEt(etDate)
+    : isTradingDayEt(etDate)
+      ? etDate
+      : nextTradingDayEt(etDate);
+  const deadlineHour = Math.floor(deadlineMin / 60);
+  const deadlineMinute = deadlineMin % 60;
+
+  return {
+    et_date: etDate,
+    expected_edition_for: expectedEditionFor,
+    after_deadline: afterDeadline,
+    deadline_label: `${String(deadlineHour).padStart(2, "0")}:${String(deadlineMinute).padStart(2, "0")} ET`,
+  };
+}
+
+export function nighthawkEditionCoversExpected(
+  editionFor: string,
+  expectation = expectedNighthawkEdition()
+): boolean {
+  return editionFor >= expectation.expected_edition_for;
 }
 
 export type CronJobHealthStatus = "healthy" | "warning" | "stale" | "failed" | "unknown";
@@ -252,29 +316,26 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
       const nonTerminal = latestNhJob.status !== "published" && latestNhJob.status !== "failed";
       const stuck = nonTerminal && ageMin != null && ageMin > STUCK_JOB_MIN;
 
-      // Is the published edition RECENT? Heal a stale handshake only when the writer's real target was
-      // refreshed within the registry staleness window — a published edition from days ago with no
-      // fresh attempt is itself stale and must NOT be painted healthy.
-      const { effective: nhStaleMin } = effectiveStaleMinutes(job);
-      const publishFresh = ageMin != null && ageMin <= nhStaleMin;
+      // Night Hawk is a scheduled evening writer, not a periodic 4h warmer. A published edition for
+      // today's trading session remains valid all day; after the evening catch-up deadline, health
+      // requires the next trading session's edition. This keeps overnight watchdog runs honest without
+      // hiding a truly dark evening build.
+      const expectedEdition = expectedNighthawkEdition();
+      const publishedCoversExpected = nighthawkEditionCoversExpected(
+        latestNhJob.edition_for,
+        expectedEdition
+      );
 
       if (latestNhJob.status === "failed") {
         status = "failed";
         statusLabel = `Job failed: ${latestNhJob.error ?? latestNhJob.current_stage ?? "unknown"}`;
       } else if (latestNhJob.status === "published") {
-        // The edition PUBLISHED — when its row is fresh, the writer's actual target (nighthawk_editions)
-        // is current, so the run is HEALTHY regardless of what the last cron_job_runs handshake row says.
-        // Before the fire-and-forget cron (#77 hardening D) the route AWAITED the multi-minute build and
-        // lost the hit-cron 60s handshake / logged timeout-budget checkpoints as ok:false, leaving STALE
-        // `failed` rows in cron_job_runs. Healing only `unknown`/`stale` (not `failed`) let such a stale
-        // `failed` row keep the run painted "failed" while the label read "Published <date>" — a
-        // contradictory state the data-integrity writer check then surfaced as a false flag. The
-        // published nighthawk_job is the authoritative outcome of THIS job: a FRESH published edition
-        // heals to healthy; a STALE one (no fresh build) stays stale so the watchdog still alerts.
-        status = publishFresh ? "healthy" : "stale";
-        statusLabel = publishFresh
-          ? `Published ${latestNhJob.edition_for}`
-          : `Last published ${latestNhJob.edition_for} (${ageMin}m ago > ${Math.round(nhStaleMin)}m) — no fresh build`;
+        // The edition PUBLISHED — if it covers the currently expected session, the writer's actual
+        // target (nighthawk_editions) is current regardless of the cron_job_runs handshake age.
+        status = publishedCoversExpected ? "healthy" : "stale";
+        statusLabel = publishedCoversExpected
+          ? `Published ${latestNhJob.edition_for} (expected ${expectedEdition.expected_edition_for})`
+          : `Expected ${expectedEdition.expected_edition_for} after ${expectedEdition.deadline_label}; last published ${latestNhJob.edition_for}`;
       } else if (stuck) {
         status = "stale";
         statusLabel = `Stuck ${ageMin}m at ${latestNhJob.current_stage ?? latestNhJob.status} (no publish, no progress)`;
@@ -287,8 +348,8 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
         ...health,
         status,
         status_label: statusLabel,
-        last_run_at: health.last_run_at ?? updatedAt,
-        age_min: health.age_min ?? ageMin,
+        last_run_at: updatedAt ?? health.last_run_at,
+        age_min: ageMin ?? health.age_min,
         meta: {
           ...(health.meta ?? {}),
           nighthawk_job: {
@@ -299,6 +360,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
             updated_at: latestNhJob.updated_at,
             published_at: latestNhJob.published_at,
           },
+          expected_edition: expectedEdition,
           source: health.last_run_at ? "cron_log+nighthawk_job" : "nighthawk_job_only",
         },
       };
