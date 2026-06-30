@@ -1,9 +1,72 @@
 # BlackOut Open Issues Log
-Last updated: 2026-06-30 14:20 ET
+Last updated: 2026-06-30 15:00 ET
 
-> **30 Jun 2026 — RTH afternoon GREEN.** Halt-feed cluster freshness (#126), socket-health (#116), nw15 fix (#118).
+> **30 Jun 2026 — RTH afternoon pass 4.** Public track-record ISR split-brain fix (PR pending).
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
+
+## RTH comprehensive sweep — 2026-06-30 ~14:27–15:00 ET (pass 4)
+
+**Session:** Tue 30 Jun 2026, 14:27–15:00 ET (RTH mid-afternoon). Agent: autonomous RTH cloud session. Premium Clerk admin session (browser).
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` (initial, stale main) | ❌ pg missing locally; then ❌ data-correctness 2 flags + socket log false-fail |
+| `git pull origin main` | ✅ #116 socket-health, #126 halt cluster, nw15 fixes |
+| `npm run validate:rth-open` (post-pull + cron warm) | ✅ GREEN — options-socket authenticated (1 shard, 6 contracts) |
+| `GET /api/cron/data-correctness?force=1` | ⚠️ transient 2–5 writer-stale flags → watchdog self-heal + manual `?force=1` → ✅ 0 flags |
+| `npm run ops:collect` | ✅ 0 action items |
+| `node scripts/full-site-deep-audit.mjs` | ⚠️ **P0** `OUTCOMES-VS-PUBLIC`: spx/outcomes closed=8 vs public=7 |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (49 pass) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 matrix flags |
+
+### Fix shipped (branch `fix/public-track-record-live-sync`)
+
+| ID | Issue | Fix |
+|---|---|---|
+| **P1 track-record split-brain** | `/api/public/track-record` ISR `revalidate=300` served stale `total_closed=7` while `/api/market/spx/outcomes` + `/api/track-record` showed 8 after play #8 closed | `dynamic = "force-dynamic"` + `no-store` — public ledger now reads live `fetchPlayOutcomeStats()` like outcomes |
+
+### API sweep (CRON bearer — ~14:50 ET)
+
+| Endpoint | HTTP | Notes |
+|---|---|---|
+| `/api/market/spx/desk` | 200 | SPX ~7495, VIX ~16.6; oracle Δ ≤0.04 |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | 68 strikes × 14 expiries; gex.cells populated |
+| `/api/market/flows` | 200 | 200 rows, Σ ~$100M premium finite |
+| `/api/market/spx/outcomes` | 200 | 8 closed (5 today + 3 prior); 0 wins today |
+| `/api/public/track-record` | 200 | **stale 7** (pre-fix cache) |
+| `/api/grid/*` (8 panels) | 200 | all finite |
+
+### Browser sweep (premium admin session — all 7 pages)
+
+| Page | Hard load | Soft-nav | Live update | Console | Notes |
+|---|---|---|---|---|---|
+| `/dashboard` | ~8s | <1s | ✅ SPX/GEX/alerts tick ~30–60s | AudioContext warn | AVG WIN `—` — **expected** (0W/4L today) |
+| `/flows` | — | <1s | ⚠️ static in 15s obs (flow-ingest was stale pre-heal) | forced-reflow | ~15 anomaly rows populated |
+| `/heatmap` Matrix | — | <1s | Profile ✅ LIVE; Matrix reported OFFLINE in agent pass | forced-reflow | **API has full matrix** — likely transient cold tab / badge misread; matrix audit GREEN |
+| `/grid` | — | <1s | partial (~5s panel paint) | clean | Unified News + GEX Regime populated |
+| `/nighthawk` | — | <1s | static edition | clean | 3 plays 2026-06-30; 60% resolved win rate |
+| `/terminal` (Largo) | — | <1s | on-demand | clean | NVDA dark pool + flow answer grounded ($18.1M @200c, $4.4M DP, $198.49 spot) |
+| `/track-record` | ~1s | <1s | static ledger | clean | ODTE 0% (7 closed public pre-fix); Night Hawk 60% |
+
+### Missing-field audit (pass 4)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| AVG WIN `—` | `/dashboard` Today | `spx/outcomes` — 0 wins today | **Expected** — avg only when wins exist | none |
+| `nope`, `dark_pool.pcr` | desk/flows | UW optional null | **Upstream gap** | Expected |
+| `gex-heatmap` overlays | heatmap | overlay channel off | **Expected** | none |
+| Public `total_closed` lag | `/track-record` embed | ISR cache on public route | **UI/cache bug** | **FIX** PR `fix/public-track-record-live-sync` |
+
+### Ops watch
+
+| ID | Item | Status |
+|---|---|---|
+| **OPS-6** | Railway writer cadence gaps (flow-ingest, heatmap-warm, grid-warm ~12–26m) | Watch — self-heal clears; triggered 5 writers at 14:53 ET |
+| **OPS-7** | Sentry `TypeError: fetch failed` + 4× `Not Found` (18:28 UTC) | Watch — 14 error_events / 1h during audit session |
+| **OPS-12** | `error_events` spike during forced cron self-heal | Transient — cleared post-warm |
 
 ## RTH comprehensive sweep — 2026-06-30 ~13:50–14:20 ET (pass 3)
 

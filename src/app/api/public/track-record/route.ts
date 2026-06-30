@@ -6,14 +6,13 @@ import { buildPublicTrackRecord } from "@/lib/track-record-public";
 // contract in src/middleware.ts — public-ness is an explicit per-handler choice.
 // Output is the sanitized, PII-free aggregate from buildPublicTrackRecord().
 export const runtime = "nodejs";
-// Cache at the edge: this is aggregate social proof, not live data.
-export const revalidate = 300;
+// Must stay live with /api/market/spx/outcomes + /api/track-record — a 5m ISR cache
+// caused split-brain when a play closed mid-RTH (public=7 vs outcomes=8).
+export const dynamic = "force-dynamic";
+
+const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" };
 
 export async function GET() {
   const record = await buildPublicTrackRecord();
-  return NextResponse.json(record, {
-    headers: {
-      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
-    },
-  });
+  return NextResponse.json(record, { headers: NO_STORE });
 }
