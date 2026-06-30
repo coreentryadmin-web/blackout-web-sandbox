@@ -9,6 +9,7 @@ import { clsx } from "clsx";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
+import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
@@ -337,7 +338,12 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
               </Link>
             </>
           )}
-          {isLoaded && isSignedIn && <UserButton appearance={CLERK_APPEARANCE} />}
+          {isLoaded && isSignedIn && (
+            <div className="flex items-center gap-2">
+              <PushNotificationToggle compact />
+              <UserButton appearance={CLERK_APPEARANCE} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -421,7 +427,12 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                     </Link>
                   </>
                 )}
-                {isLoaded && isSignedIn && <UserButton appearance={CLERK_APPEARANCE} />}
+                {isLoaded && isSignedIn && (
+                  <div className="flex items-center gap-2">
+                    <PushNotificationToggle compact />
+                    <UserButton appearance={CLERK_APPEARANCE} />
+                  </div>
+                )}
               </div>
             </motion.div>
           </>
