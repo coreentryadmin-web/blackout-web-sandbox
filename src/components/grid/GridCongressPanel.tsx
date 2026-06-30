@@ -32,6 +32,28 @@ function shortName(name: string): string {
   return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
 }
 
+/** Clean transaction label — no more truncating "Purchase" -> "Purchas". */
+function tradeLabel(type: string): string {
+  const t = type.toLowerCase();
+  if (t.includes("purchase") || t.includes("buy")) return "BUY";
+  if (t.includes("sale") || t.includes("sell")) {
+    if (t.includes("partial")) return "SELL·P";
+    if (t.includes("full")) return "SELL·F";
+    return "SELL";
+  }
+  if (t.includes("exchange")) return "EXCH";
+  if (t.includes("receive")) return "RECV";
+  return type ? type.toUpperCase() : "?";
+}
+
+/** "2026-06-29" -> "Jun 29". */
+function fmtFiled(d: string): string {
+  if (!d) return "";
+  const dt = new Date(`${d}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function GridCongressPanel() {
   const { ticker, isFiltered } = useGridTicker();
   const url = `/api/grid/congress${ticker ? `?ticker=${ticker}` : ""}`;
@@ -68,9 +90,10 @@ export function GridCongressPanel() {
               <span className="grid-congress-name">{shortName(t.politician)}</span>
               <span className="grid-congress-ticker">{t.ticker}</span>
               <span className={clsx("grid-tag text-[9px]", tradeColor(t.type))}>
-                {t.type.length > 8 ? t.type.slice(0, 8) : t.type || "?"}
+                {tradeLabel(t.type)}
               </span>
               {t.amount && <span className="grid-congress-amt">{t.amount}</span>}
+              {t.filed_at && <span className="grid-congress-date">{fmtFiled(t.filed_at)}</span>}
             </li>
           ))}
         </ul>

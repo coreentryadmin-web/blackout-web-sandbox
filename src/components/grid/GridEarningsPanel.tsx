@@ -27,6 +27,17 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Abbreviated revenue ($1.23B / $456M). Data is fetched by the provider but was never shown. */
+function fmtRevenue(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const a = Math.abs(v);
+  if (a >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
+  if (a >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
+  if (a >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
+
 function SurpriseTag({ pct }: { pct: number | null }) {
   if (pct == null) return null;
   const pos = pct > 0;
@@ -92,6 +103,7 @@ function TickerEarningsView({ data }: { data: TickerRes }) {
                 <th className="text-left pb-1">Quarter</th>
                 <th className="text-right pb-1">EPS Act</th>
                 <th className="text-right pb-1">EPS Est</th>
+                <th className="text-right pb-1">Revenue</th>
                 <th className="text-right pb-1">Surprise</th>
               </tr>
             </thead>
@@ -104,6 +116,7 @@ function TickerEarningsView({ data }: { data: TickerRes }) {
                   </td>
                   <td className="text-right text-white">{item.eps_actual != null ? item.eps_actual.toFixed(2) : "—"}</td>
                   <td className="text-right text-white/60">{item.eps_estimate != null ? item.eps_estimate.toFixed(2) : "—"}</td>
+                  <td className="text-right text-white/70 tabular-nums">{fmtRevenue(item.revenue)}</td>
                   <td className="text-right">
                     {item.surprise_pct != null ? (
                       <span className={item.surprise_pct >= 0 ? "text-emerald-400" : "text-red-400"}>

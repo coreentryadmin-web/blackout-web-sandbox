@@ -7637,6 +7637,7 @@ body::before {
   .grid-congress-name { @apply text-sky-300/90 truncate flex-1 min-w-0; }
   .grid-congress-ticker { @apply font-syne font-bold text-white shrink-0 w-14; }
   .grid-congress-amt { @apply font-mono text-[10px] text-sky-300/60 shrink-0; }
+  .grid-congress-date { @apply font-mono text-[9px] text-sky-300/40 shrink-0 tabular-nums; }
 
   /* Economic Calendar (macro tiles grid) */
   .grid-econ-tiles {
