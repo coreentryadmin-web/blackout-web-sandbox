@@ -24,7 +24,7 @@ node scripts/rth-open-check.mjs --force
 ## What it checks
 
 1. **`validate:deploy`** — Railway SUCCESS, live HTTP, Postgres, Sentry, sockets, crons
-2. **RTH-only** (09:00–16:15 ET weekdays):
+2. **RTH session checks** (weekdays; agent may run from 09:00 ET pre-open through ~16:15 ET post-close grace for crons — **US equity RTH is 9:30 AM–4:00 PM ET**):
    - `spx-evaluate` ok run in last 20m
    - `market_regime` writes in last 20m
    - `data-correctness` latest run ok
