@@ -12,7 +12,10 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/socket-health"
-# Every 15 min during RTH UTC band (in-app ET gate on route for options/LULD auth).
+# Every 15 min during UTC hours 11–21 Mon–Fri (= ~7AM–6PM EDT / ~6AM–5PM EST).
+# Railway UI shows "11:00 am–9:59 pm" WITHOUT saying UTC — that is NOT Eastern Time.
+# Actual socket auth checks run only in RTH (9:30 AM–4:00 PM ET) via inOptionsMarketHours().
+# See docs/ops/RAILWAY-CRON-SCHEDULES.md
 cronSchedule = "*/15 11-21 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1
