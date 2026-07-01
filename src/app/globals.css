@@ -6274,9 +6274,9 @@ body::before {
 
   .spx-sniper-triple {
     @apply grid grid-cols-1 gap-3 items-stretch w-full max-w-none;
-    @apply lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.6fr)];
-    @apply xl:grid-cols-[minmax(240px,14vw)_minmax(0,1fr)_minmax(400px,27vw)];
-    @apply 2xl:grid-cols-[minmax(260px,13vw)_minmax(0,1fr)_minmax(440px,28vw)];
+    @apply lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.6fr)];
+    @apply xl:grid-cols-[minmax(300px,22vw)_minmax(0,1fr)_minmax(380px,26vw)];
+    @apply 2xl:grid-cols-[minmax(320px,20vw)_minmax(0,1fr)_minmax(420px,27vw)];
     min-height: calc(100vh - 240px);
   }
 
@@ -7820,6 +7820,32 @@ body::before {
 
   .spx-left-stack {
     @apply flex flex-col gap-3 min-h-0 overflow-y-auto xl:max-h-[calc(100vh-200px)] xl:overflow-y-auto;
+  }
+
+  .spx-left-matrix {
+    @apply flex flex-col min-h-0 h-full xl:max-h-[calc(100vh-200px)];
+  }
+
+  .spx-odte-matrix-panel {
+    @apply min-h-[420px] xl:min-h-0;
+  }
+
+  .spx-odte-matrix-body {
+    @apply min-h-0;
+  }
+
+  .spx-odte-matrix-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 211, 252, 0.35) transparent;
+  }
+
+  .spx-odte-matrix-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .spx-odte-matrix-scroll::-webkit-scrollbar-thumb {
+    background: rgba(125, 211, 252, 0.35);
+    border-radius: 3px;
   }
 
   .spx-left-stack .spx-left-tape-panel {
