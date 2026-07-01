@@ -48,7 +48,16 @@ export function SpxSniperHeader({ desk, live }: Props) {
 
   return (
     <header className="spx-sniper-command border-b border-white/[0.06] pb-6">
-      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
+      {/* Ambient background layers — fully authored/animated in globals.css (grid pattern,
+          scan-line sweep, pulsing glow) but were never mounted anywhere in the component
+          tree until now. All three are `position: absolute` with z-0/z-[1]; per CSS stacking
+          rules, positioned descendants (even at z-index 0) paint AFTER non-positioned in-flow
+          content within the same stacking context — so without `relative z-10` below, these
+          would render OVER the header's actual content instead of behind it. */}
+      <div className="spx-sniper-command-grid" aria-hidden />
+      <div className="spx-sniper-command-scan" aria-hidden />
+      <div className="spx-sniper-command-glow" aria-hidden />
+      <div className="relative z-10 flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
         <div className="flex flex-col lg:flex-row lg:items-end gap-6 min-w-0 flex-1">
           <div className="shrink-0 flex items-start gap-3">
             <ProductMark product="spx" size={44} title="SPX Slayer" className="mt-0.5 shrink-0" />
