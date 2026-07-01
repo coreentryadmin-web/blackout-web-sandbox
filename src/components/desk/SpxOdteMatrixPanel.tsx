@@ -31,13 +31,12 @@ type GexHeatmapResponse = {
   gex?: GexBlock;
 };
 
+type RowHighlight = "anchor" | "max-pos" | "max-neg" | null;
+
 type MatrixRow = {
   strike: number;
   value: number;
-  isSpot: boolean;
-  isPosWall: boolean;
-  isNegWall: boolean;
-  isFlip: boolean;
+  highlight: RowHighlight;
   isAnchor: boolean;
 };
 
@@ -128,32 +127,38 @@ function recomputeLevels(
 function anchorStrike(totals: Record<string, number>): number | null {
   let anchor: number | null = null;
   let best = 0;
-  const entries = Object.entries(totals)
-    .map(([s, v]) => ({ strike: Number(s), value: v }))
-    .filter((e) => Number.isFinite(e.strike))
-    .sort((a, b) => a.strike - b.strike);
-  for (const e of entries) {
-    const mag = Math.abs(e.value);
+  for (const [s, v] of Object.entries(totals)) {
+    const strike = Number(s);
+    if (!Number.isFinite(strike)) continue;
+    const mag = Math.abs(v);
     if (mag > best) {
       best = mag;
-      anchor = e.strike;
+      anchor = strike;
     }
   }
   return anchor;
 }
 
-function fmtMoney(n: number): string {
+/** Compact signed dollar: +$4,770.5K / -$6,601.3K */
+function fmtMoneySigned(n: number): string {
+  if (n === 0) return "·";
   const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
+  const sign = n < 0 ? "-" : "+";
   if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
   if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  if (abs < 1) return "·";
   return `${sign}$${abs.toFixed(0)}`;
 }
 
 function fmtStrike(n: number): string {
-  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+}
+
+function fmtExpiryHeader(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[m - 1]} ${d}, ${y}`;
 }
 
 function fmtAsofSeconds(iso: string | undefined): string | null {
@@ -174,15 +179,11 @@ function zeroDteExpiryFrom(expiries: string[]): string | null {
   return expiries.includes(today) ? today : expiries[0];
 }
 
-function barStyle(value: number, peak: number): React.CSSProperties {
-  if (!value || peak <= 0) return {};
-  const mag = Math.min(1, Math.abs(value) / peak);
-  const alpha = 0.04 + Math.pow(mag, 1.35) * 0.88;
-  const rgb = value > 0 ? "0,230,118" : "255,45,85";
-  return {
-    backgroundColor: `rgba(${rgb},${alpha.toFixed(3)})`,
-    boxShadow: mag > 0.45 ? `inset 0 0 18px rgba(${rgb},${(mag * 0.4).toFixed(2)})` : undefined,
-  };
+function rowHighlightClass(highlight: RowHighlight, isAnchor: boolean): string {
+  if (highlight === "max-pos") return "spx-odte-matrix-row--max-pos";
+  if (highlight === "max-neg") return "spx-odte-matrix-row--max-neg";
+  if (isAnchor) return "spx-odte-matrix-row--anchor";
+  return "";
 }
 
 type DeskProps = { live?: boolean };
@@ -224,15 +225,6 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
   const levels = useMemo(() => recomputeLevels(filteredTotals, spot), [filteredTotals, spot]);
   const anchor = useMemo(() => anchorStrike(filteredTotals), [filteredTotals]);
 
-  const peak = useMemo(() => {
-    let p = 0;
-    for (const v of Object.values(filteredTotals)) {
-      const a = Math.abs(v);
-      if (a > p) p = a;
-    }
-    return p;
-  }, [filteredTotals]);
-
   const spotStrike = useMemo(() => {
     const strikes = Object.keys(filteredTotals)
       .map(Number)
@@ -240,17 +232,6 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
     if (!(spot > 0) || strikes.length === 0) return null;
     return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best));
   }, [filteredTotals, spot]);
-
-  const flipStrike = useMemo(() => {
-    if (levels.flip == null) return null;
-    const strikes = Object.keys(filteredTotals)
-      .map(Number)
-      .filter(Number.isFinite);
-    if (strikes.length === 0) return null;
-    return strikes.reduce((best, s) =>
-      Math.abs(s - levels.flip!) < Math.abs(best - levels.flip!) ? s : best
-    );
-  }, [filteredTotals, levels.flip]);
 
   const rows = useMemo<MatrixRow[]>(() => {
     const strikes = Object.keys(filteredTotals)
@@ -263,19 +244,26 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         ? strikes.filter((s) => Math.abs(s - spotStrike) <= 30)
         : strikes.slice(0, 40);
 
-    return band.map((strike) => ({
-      strike,
-      value: filteredTotals[String(strike)] ?? 0,
-      isSpot: spotStrike != null && strike === spotStrike,
-      isPosWall: levels.posWall != null && strike === levels.posWall,
-      isNegWall: levels.negWall != null && strike === levels.negWall,
-      isFlip: flipStrike != null && strike === flipStrike,
-      isAnchor: anchor != null && strike === anchor,
-    }));
-  }, [filteredTotals, spotStrike, levels.posWall, levels.negWall, flipStrike, anchor]);
+    return band.map((strike) => {
+      const isAnchor = anchor != null && strike === anchor;
+      const isMaxPos = levels.posWall != null && strike === levels.posWall;
+      const isMaxNeg = levels.negWall != null && strike === levels.negWall;
+
+      let highlight: RowHighlight = null;
+      if (isMaxPos) highlight = "max-pos";
+      else if (isMaxNeg) highlight = "max-neg";
+
+      return {
+        strike,
+        value: filteredTotals[String(strike)] ?? 0,
+        highlight,
+        isAnchor,
+      };
+    });
+  }, [filteredTotals, spotStrike, levels.posWall, levels.negWall, anchor]);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
-  const spotRowRef = useRef<HTMLDivElement | null>(null);
+  const spotRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
     if (spotStrike == null) return;
     let raf2 = 0;
@@ -296,10 +284,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
   const hasData = Boolean(data?.available) && rows.length > 0;
   const feedLive = Boolean(deskLive) && hasData && !error;
   const asofLabel = fmtAsofSeconds(data?.asof);
-  const netTotal = useMemo(
-    () => Object.values(filteredTotals).reduce((s, v) => s + v, 0),
-    [filteredTotals]
-  );
+  const expiryHeader = zeroDte ? fmtExpiryHeader(zeroDte) : "0DTE";
 
   return (
     <Panel
@@ -307,9 +292,9 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
       kicker={zeroDte ? `0DTE · ${zeroDte}` : "0DTE gamma matrix"}
       title="SPX structure"
       actions={
-        <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-sky-300/80">
+        <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-white/70">
           {isValidating && !isLoading && (
-            <span className="text-cyan-400/70" aria-live="polite">
+            <span className="text-white/50" aria-live="polite">
               ↻
             </span>
           )}
@@ -321,122 +306,93 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         </span>
       }
       className="spx-odte-matrix-panel flex flex-1 min-h-0 flex-col"
-      bodyClassName="spx-odte-matrix-body !px-3 !py-3 flex flex-1 min-h-0 flex-col"
+      bodyClassName="spx-odte-matrix-body !px-2 !py-3 flex flex-1 min-h-0 flex-col"
     >
       <div className="spx-odte-matrix-levels mb-3 shrink-0 grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-[10px]">
         <div>
-          <span className="text-cyan-400/80 uppercase tracking-wider">Spot</span>
+          <span className="text-white/50 uppercase tracking-wider">Spot</span>
           <div className="text-sm font-semibold tabular-nums text-white">
             {spot > 0 ? fmtPrice(spot) : "—"}
           </div>
         </div>
         <div>
-          <span className="text-gold/80 uppercase tracking-wider">Net GEX</span>
-          <div
-            className={clsx(
-              "text-sm font-semibold tabular-nums",
-              netTotal >= 0 ? "num-bull" : "num-bear"
-            )}
-          >
-            {hasData ? fmtMoney(netTotal) : "—"}
-          </div>
-        </div>
-        <div>
-          <span className="text-gold/80 uppercase tracking-wider">γ flip</span>
-          <div className="text-sm tabular-nums text-gold">
+          <span className="text-white/50 uppercase tracking-wider">γ flip</span>
+          <div className="text-sm tabular-nums text-white">
             {levels.flip != null ? fmtStrike(levels.flip) : "—"}
-          </div>
-        </div>
-        <div>
-          <span className="text-cyan-400/80 uppercase tracking-wider">Walls</span>
-          <div className="text-[11px] tabular-nums">
-            <span className="num-bull">{levels.posWall != null ? fmtStrike(levels.posWall) : "—"}</span>
-            <span className="text-cyan-400/50 mx-1">/</span>
-            <span className="num-bear">{levels.negWall != null ? fmtStrike(levels.negWall) : "—"}</span>
           </div>
         </div>
       </div>
 
       {isLoading && !data ? (
-        <p className="font-mono text-[11px] text-cyan-400 py-4">Loading 0DTE matrix…</p>
+        <p className="font-mono text-[11px] text-white/60 py-4">Loading 0DTE matrix…</p>
       ) : error && !hasData ? (
-        <p className="font-mono text-[11px] text-bear py-4">Matrix unavailable — retrying…</p>
+        <p className="font-mono text-[11px] text-white/60 py-4">Matrix unavailable — retrying…</p>
       ) : !hasData ? (
-        <p className="font-mono text-[11px] text-cyan-400 py-4">Mapping 0DTE gamma nodes…</p>
+        <p className="font-mono text-[11px] text-white/60 py-4">Mapping 0DTE gamma nodes…</p>
       ) : (
         <div
           ref={scrollBoxRef}
-          className="spx-odte-matrix-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-px pr-1"
+          className="spx-odte-matrix-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain"
           aria-label="SPX 0DTE net dealer gamma by strike"
         >
-          {rows.map((r) => {
-            const mag = peak > 0 ? Math.min(1, Math.abs(r.value) / peak) : 0;
-            const widthPct = (r.value !== 0 ? Math.max(3, Math.pow(mag, 0.82) * 50) : 0).toFixed(2);
-            const positive = r.value > 0;
-            const barColor = positive ? "#00e676" : "#ff2d55";
+          <table className="spx-odte-matrix-table w-full border-collapse font-mono text-[11px] tabular-nums">
+            <thead className="sticky top-0 z-10 bg-[#08080e]">
+              <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/55">
+                <th className="py-2 pl-1 pr-2 text-left font-semibold">Strike</th>
+                <th className="py-2 px-2 text-right font-semibold">{expiryHeader}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const isSpot = spotStrike != null && r.strike === spotStrike;
+                const hlClass = rowHighlightClass(r.highlight, r.isAnchor);
 
-            return (
-              <div
-                key={r.strike}
-                ref={r.isSpot ? spotRowRef : undefined}
-                className={clsx(
-                  "spx-odte-matrix-row grid grid-cols-[3.5rem_1fr_4.5rem] items-center gap-2 rounded px-1 py-0.5",
-                  r.isSpot && "outline outline-1 outline-cyan-400/60 bg-cyan-400/[0.06]",
-                  r.isFlip && !r.isSpot && "bg-gold/[0.06]"
-                )}
-                style={barStyle(r.value, peak)}
-              >
-                <span
-                  className={clsx(
-                    "font-mono text-[11px] tabular-nums",
-                    r.isSpot ? "font-bold text-white" : "text-sky-200"
-                  )}
-                >
-                  {fmtStrike(r.strike)}
-                  {r.isAnchor && (
-                    <AnchorGlyph size={9} className="ml-0.5 inline text-white/90" />
-                  )}
-                </span>
-
-                <div className="relative h-4 rounded-sm bg-black/40 overflow-hidden">
-                  <div
-                    className="absolute top-0 bottom-0 left-1/2 w-px bg-white/15"
-                    aria-hidden
-                  />
-                  {r.value !== 0 && (
-                    <div
-                      className="absolute top-0.5 bottom-0.5 rounded-sm"
-                      style={{
-                        width: `${widthPct}%`,
-                        backgroundColor: barColor,
-                        opacity: 0.85,
-                        ...(positive
-                          ? { left: "50%" }
-                          : { right: "50%" }),
-                      }}
-                    />
-                  )}
-                </div>
-
-                <span
-                  className={clsx(
-                    "font-mono text-[10px] tabular-nums text-right",
-                    positive ? "num-bull" : r.value < 0 ? "num-bear" : "text-cyan-400"
-                  )}
-                >
-                  {r.value !== 0 ? fmtMoney(r.value) : "·"}
-                  {r.isPosWall && <span className="ml-1 text-[8px] text-bull">CW</span>}
-                  {r.isNegWall && <span className="ml-1 text-[8px] text-bear">PW</span>}
-                </span>
-              </div>
-            );
-          })}
+                return (
+                  <tr
+                    key={r.strike}
+                    ref={isSpot ? spotRowRef : undefined}
+                    className={clsx(
+                      "spx-odte-matrix-row border-b border-white/[0.04]",
+                      hlClass,
+                      r.isAnchor && r.highlight != null && "spx-odte-matrix-row--anchor-on-peak"
+                    )}
+                  >
+                    <td className="py-1.5 pl-1 pr-2 text-left text-white/90">
+                      {fmtStrike(r.strike)}
+                      {isSpot && (
+                        <span className="ml-1 text-[8px] text-white/45" title="Nearest spot">
+                          ●
+                        </span>
+                      )}
+                    </td>
+                    <td className="relative py-1.5 px-2 text-right font-semibold text-white">
+                      {r.value !== 0 ? fmtMoneySigned(r.value) : "·"}
+                      {r.isAnchor && (
+                        <span className="ml-1 inline-flex align-middle" title="Anchor — max |GEX|">
+                          <AnchorGlyph size={10} className="text-white" />
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <p className="mt-2 shrink-0 font-mono text-[9px] tracking-wide text-cyan-400/60">
-        Auto-refresh every {Math.round(pollMs / 1000)}s · 0DTE net dealer $-gamma
-      </p>
+      <div className="mt-2 shrink-0 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] tracking-wide text-white/45">
+        <span className="inline-flex items-center gap-1">
+          <AnchorGlyph size={8} className="text-white" /> Anchor
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-3 rounded-sm bg-[#ffd23f]/80" aria-hidden /> Max +GEX
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-3 rounded-sm bg-[#6d28d9]/80" aria-hidden /> Max −GEX
+        </span>
+        <span className="text-white/35">· refresh {Math.round(pollMs / 1000)}s</span>
+      </div>
     </Panel>
   );
 }
