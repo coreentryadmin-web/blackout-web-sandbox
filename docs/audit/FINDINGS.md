@@ -7,18 +7,24 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
-## 🔴 HIGH — SPX GEX heatmap chain still truncating at the (already-raised) 40-page guard — walls/OI/IV understated, likely driving oversized cross-validation divergence
-**Status:** CONFIRMED live, currently recurring. **Not fixed by me — `polygon-options-gex.ts` is Cursor's file per this session's coordination boundary; flagging for Cursor.**
+## 🟢 FIXED — SPX GEX heatmap chain still truncating at the (already-raised) 40-page guard — walls/OI/IV understated, likely driving oversized cross-validation divergence
+**Status:** FIXED (`fix/gex-heatmap-chain-truncation`). Previously flagged as Cursor's file per this session's coordination boundary; the user explicitly asked for it to be fixed directly on 2026-07-01, superseding that boundary.
 
-**Where:** `fetchHeatmapBand()` in `src/lib/providers/polygon-options-gex.ts:1168-1200`. `HEATMAP_PAGE_GUARD` (line 1154) was already raised **16 → 40** in an earlier fix this session specifically because SPX's full ±6%-band chain across ~8 expiries was overflowing the old 16-page cap (250 contracts/page). Live production logs (captured 2026-07-01 ~17:11-17:14 UTC, post-#217 deploy) show it now overflowing 40 pages too:
+**Where:** `fetchHeatmapBand()` in `src/lib/providers/polygon-options-gex.ts:1168-1200`. `HEATMAP_PAGE_GUARD` (line 1154) was already raised **16 → 40** in an earlier fix this session specifically because SPX's full ±6%-band chain across ~8 expiries was overflowing the old 16-page cap (250 contracts/page). Live production logs (captured 2026-07-01 ~17:11-17:14 UTC, post-#217 deploy, and again ~18:38-18:41 UTC post a later deploy) show it now overflowing 40 pages too:
 ```
 [polygon-gex] fetchHeatmapBand(I:SPX) truncated: hit 40-page guard with next_url still set — chain incomplete, walls/OI/IV understated. Raise the page guard or paginate fully if this recurs.
 ```
-Firing repeatedly (multiple times per minute) — not a one-off. `fetchPolygonOiByExpiry` hit its 12-page guard too, for at least AMD.
+Firing repeatedly (multiple times per minute) — not a one-off. `fetchPolygonOiByExpiry` hit its 12-page guard too, for at least AMD (out of scope for this fix — different call site, `NEAR_TERM_EXPIRY_COUNT`-scoped, not implicated in the pasted logs).
 
-**Why it matters:** the function's own comment says the build is a cached warm path (heatmap-warm cron, paced by the cluster rate-limiter) — extra pages don't pressure the per-user read budget, so there's no cost reason to keep the cap low. An incomplete chain directly understates the computed walls/OI/IV, and is ONE contributor to the oversized `gex_cross_validation` divergences observed in the same log window (400-600pt for SPX) — but see the follow-up finding directly below: a deeper multi-agent investigation found this truncation is NOT the dominant cause, and fixing it alone will not clear the divergence warning.
+**Root cause:** every previous fix to this line picked a static page count sized to fit the chain "as measured that day" (16 → 40). SPX's banded options chain grows as more weekly/monthly expiries populate and OI builds, so a static cap is a moving target — the 16→40 bump bought less than a day before truncating again. Fixing the *number* again would just recur on the same slower clock.
 
-**Suggested fix (for Cursor, not applied here):** raise `HEATMAP_PAGE_GUARD` again (env-tunable via `OPTIONS_HEATMAP_PAGE_GUARD`, currently defaults to 40) or drop the cap entirely and fully follow `next_url` on this specific warm-cache path, per the function's own comment.
+**Evidence:** paginated the live Polygon chain directly (same params as `fetchHeatmapBand`: `±6%` band around spot 7497.17, `strike_price.gte/lte`, `limit=250`) outside the app's rate limiter and measured the true chain size: **46 pages / 11,254 contracts** to exhaust `next_url` — 6 pages past the 40-page guard that was truncating it.
+
+**Fix:** stopped chasing the live size with another static number. `HEATMAP_PAGE_GUARD` is now a generous **safety backstop** (200 pages, ~4x today's measured need) rather than a tuned-to-fit cap — the pagination loop already followed `next_url` correctly and was never the bug; only the stop condition was too tight. Floored at 40 (the old cap already proven insufficient) so a misconfigured/blank `OPTIONS_HEATMAP_PAGE_GUARD` env value can't reintroduce the original truncation. Extracted the floor/default math into an exported pure function `resolveHeatmapPageGuard()` so it's unit-testable without mocking network calls (`polygon-options-gex.test.ts`, 5 cases: default-200, blank/non-numeric env, larger override, floor-at-40, and the falsy-`"0"`-env edge case which is pre-existing `||` behavior, not new).
+
+**What was deliberately left unchanged:** the pagination loop mechanism itself (`while (page && guard < HEATMAP_PAGE_GUARD)`), `warnChainTruncated()`'s observability logging (kept as a backstop-hit alarm — should now be rare/anomalous rather than routine), and `fetchChainBand`/`fetchPolygonOiByExpiry`'s own separate, smaller guards (different call sites, single-expiry scoped, not implicated by the pasted logs — raising those without matching live evidence would be an unverified guess).
+
+**Verification:** `npx tsc --noEmit` clean; full suite `574/574` passing; `next build` clean; live Polygon pagination re-confirmed the 46-page chain size that motivated the new 200-page backstop.
 
 ## 🟢 FIXED — `gex_cross_validation`'s UW oracle compares ALL-expiries-combined walls against Polygon's deliberately NEAR-TERM-ONLY walls — a structural scope mismatch, not (only) a data-completeness bug
 **Status:** CONFIRMED via independent multi-agent code trace (2026-07-01) → **FIXED in PR #223** (`fix/gex-cross-validation-expiry-scope`, draft, 5 new regression tests, 567/567 suite pass). Root-caused in response to a member-visible "UW oracle diverges 550pt from Polygon walls — treat levels as provisional until channels agree" banner on the live SPX Slayer matrix.

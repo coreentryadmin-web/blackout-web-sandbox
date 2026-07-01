@@ -1149,9 +1149,22 @@ function warnChainTruncated(label: string, underlying: string, pages: number): v
  * (NO expiration_date filter — the snapshot returns every expiry inside the strike
  * window). Reuses polygonFetchUrl + the next_url pagination exactly like fetchChainBand.
  */
-// Page cap for the banded heatmap chain pull. Raised from 16 → 40 so SPX's full banded chain
-// isn't truncated (truncation understated walls/OI/IV). Env-tunable; floored at 16.
-const HEATMAP_PAGE_GUARD = Math.max(16, Number(process.env.OPTIONS_HEATMAP_PAGE_GUARD) || 40);
+/**
+ * Safety BACKSTOP for the banded heatmap chain pull, not a tuned-to-fit page count. This was
+ * previously raised 16 → 40 to fit SPX's chain "for now," and 40 truncated again within the same
+ * day as more strikes/expiries populated (measured live: SPX's ±6% band needs 46 pages / 11,254
+ * contracts to fully paginate — see FINDINGS.md). Chasing the live chain size with another static
+ * number is the same bug recurring on a slower clock, so this is set with generous headroom
+ * (~4x today's measured need) and the loop below follows next_url until Polygon says the chain is
+ * done, rather than stopping at an arbitrary count. The build is a cached warm path (heatmap-warm
+ * cron) paced by the cluster rate-limiter (polygonTrackedFetch), so extra pages cost latency on
+ * that warm path, not per-user request budget. Floored at 40 (the OLD cap) so a misconfigured/blank
+ * env value can never sink below the level that was already proven insufficient.
+ */
+export function resolveHeatmapPageGuard(envValue: string | undefined): number {
+  return Math.max(40, Number(envValue) || 200);
+}
+const HEATMAP_PAGE_GUARD = resolveHeatmapPageGuard(process.env.OPTIONS_HEATMAP_PAGE_GUARD);
 
 /** Strike band around spot for the shared heatmap chain pull. Default ±6% for all presets. */
 function heatmapBandPct(root: string): number {
@@ -1183,11 +1196,10 @@ async function fetchHeatmapBand(
 
   const out: ChainContract[] = [];
   let page = await polygonFetchUrl(`/v3/snapshot/options/${underlying}?${params}`);
-  // ~8 expiries × banded strikes × calls+puts can exceed one page; allow generous paging.
-  // SPX's full banded chain exceeded the old 16-page cap → truncated, understating walls/OI/IV
-  // (live: "fetchHeatmapBand(I:SPX) truncated"). Raise the cap so the chain is complete; the build
-  // is a cached warm path (heatmap-warm cron) paced by the cluster rate-limiter, so the extra
-  // pages don't pressure per-user reads. Env-tunable in case a venue ever needs more/less.
+  // ~15 stored expiries × banded strikes × calls+puts routinely exceeds even a generous static
+  // page cap (see HEATMAP_PAGE_GUARD above) — this loop follows next_url until Polygon reports
+  // the chain is exhausted; HEATMAP_PAGE_GUARD is a runaway-loop backstop, not the expected stop
+  // condition.
   let guard = 0;
   while (page && guard < HEATMAP_PAGE_GUARD) {
     out.push(...(page.results ?? []));
