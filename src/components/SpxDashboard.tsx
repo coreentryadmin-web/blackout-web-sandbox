@@ -6,15 +6,7 @@ import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
-import {
-  SpxGexLadder,
-  SpxIntelStrip,
-  SpxUnifiedTape,
-  SpxDarkPoolCard,
-  SpxIntervalFlowPanel,
-} from "@/components/desk/SpxDeskPanels";
-import { SpxDayPerformancePanel } from "@/components/desk/SpxDayPerformancePanel";
-import { SpxTrackRecordPanel } from "@/components/desk/SpxTrackRecordPanel";
+import { SpxOdteMatrixPanel } from "@/components/desk/SpxOdteMatrixPanel";
 import { EmptyState, Button } from "@/components/ui";
 
 class SpxPanelErrorBoundary extends React.Component<
@@ -39,7 +31,7 @@ class SpxPanelErrorBoundary extends React.Component<
 export function SpxDashboard() {
   const { isLoaded, user } = useUser();
   const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
-  const { desk, live, refreshing, deskLoading, sessionActive, intervalFlow } = useMergedDesk();
+  const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
 
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
     return (
@@ -90,19 +82,10 @@ export function SpxDashboard() {
         <SpxSniperHeader desk={desk} live={live} />
       </SpxPanelErrorBoundary>
 
-      <SpxPanelErrorBoundary>
-        <SpxIntelStrip desk={desk} live={live} />
-      </SpxPanelErrorBoundary>
-
       <div className="spx-sniper-triple">
         <SpxPanelErrorBoundary>
-          <aside className="spx-sniper-left-rail spx-left-stack">
-            <SpxDayPerformancePanel />
-            <SpxTrackRecordPanel />
-            <SpxGexLadder desk={desk} live={live} refreshing={refreshing} />
-            <SpxUnifiedTape desk={desk} live={live} refreshing={refreshing} />
-            <SpxDarkPoolCard desk={desk} live={live} />
-            <SpxIntervalFlowPanel intervalFlow={intervalFlow} live={live} />
+          <aside className="spx-sniper-left-rail spx-left-matrix">
+            <SpxOdteMatrixPanel live={live} />
           </aside>
         </SpxPanelErrorBoundary>
 
