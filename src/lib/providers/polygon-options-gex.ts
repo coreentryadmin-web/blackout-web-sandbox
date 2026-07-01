@@ -1033,6 +1033,15 @@ function gexHeatmapCacheMs(): number {
   return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 20_000;
 }
 
+/** SPX Slayer / desk hot path — shorter TTL without warming the whole preset grid. */
+function gexHeatmapCacheMsFor(root: string): number {
+  if (root === "SPX") {
+    const sec = Number(process.env.SPX_GEX_HEATMAP_CACHE_SEC ?? 8);
+    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 8_000;
+  }
+  return gexHeatmapCacheMs();
+}
+
 /**
  * Max age of a matrix entry we'll still SERVE while refreshing in the background.
  * Covers the heatmap-warm cron gap (Railway fires once/min; matrix fresh TTL ~20s) so a
@@ -1795,7 +1804,7 @@ export async function fetchGexHeatmap(
   // ONE cache key per ticker → GEX + VEX share a single cached chain fetch.
   const cacheKey = `${GEX_HEATMAP_CACHE_PREFIX}:${root}`;
   const now = Date.now();
-  const baseTtlMs = gexHeatmapCacheMs();
+  const baseTtlMs = gexHeatmapCacheMsFor(root);
 
   // ── Fast-move freshness bypass (WARM PRESETS ONLY) ───────────────────────────
   // Dealer GEX is otherwise served on a flat ~20s TTL even while price runs. For the ~11 warm

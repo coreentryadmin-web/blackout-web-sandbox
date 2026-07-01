@@ -7848,6 +7848,24 @@ body::before {
     border-radius: 3px;
   }
 
+  .spx-odte-lens-toggle--idle {
+    @apply border-white/10 bg-black/40 text-white/55 hover:border-white/20 hover:text-white/80;
+  }
+
+  .spx-odte-lens-toggle--gex-active {
+    border-color: rgba(0, 230, 118, 0.45);
+    background: rgba(0, 230, 118, 0.12);
+    color: #fff;
+    box-shadow: inset 0 0 12px rgba(0, 230, 118, 0.12);
+  }
+
+  .spx-odte-lens-toggle--vex-active {
+    border-color: rgba(125, 211, 252, 0.45);
+    background: rgba(125, 211, 252, 0.12);
+    color: #fff;
+    box-shadow: inset 0 0 12px rgba(125, 211, 252, 0.12);
+  }
+
   .spx-odte-matrix-table tbody tr {
     @apply transition-colors duration-150;
   }

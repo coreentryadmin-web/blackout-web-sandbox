@@ -9,7 +9,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
-- **SPX Slayer left rail:** `SpxOdteMatrixPanel` — SPX **0DTE net GEX matrix** from `/api/market/gex-heatmap?ticker=SPX`, auto-refresh **12s RTH / 30s off-hours** (SWR). No mega-cap strip, P&L, tape, or ladder stack on the desk.
+- **SPX Slayer left rail:** `SpxOdteMatrixPanel` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**).
 - The WebSocket market-data managers are **not** a separate process — they boot lazily inside the Node
   server on the first `/api/market/*` request (`src/lib/ws/init-data-sockets.ts`).
 - Blocking CI checks are `npx tsc --noEmit` and `npm run lint:brand`. `npm run lint` (ESLint/jsx-a11y)

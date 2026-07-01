@@ -9,15 +9,19 @@ import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { fmtPrice } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 
-/** Client poll cadence for the left-rail 0DTE matrix (RTH vs off-hours). */
-const MATRIX_POLL_RTH_MS = 12_000;
-const MATRIX_POLL_OFF_MS = 30_000;
+/** Client poll cadence — tuned to SPX_GEX_HEATMAP_CACHE_SEC default (8s RTH). */
+const MATRIX_POLL_RTH_MS = 8_000;
+const MATRIX_POLL_OFF_MS = 20_000;
 
-type GexBlock = {
+type Lens = "gex" | "vex";
+
+type MetricBlock = {
   cells: Record<string, Record<string, number>>;
   strike_totals: Record<string, number>;
   call_wall: number | null;
   put_wall: number | null;
+  pos_wall?: number | null;
+  neg_wall?: number | null;
   total: number;
   flip: number | null;
 };
@@ -29,7 +33,8 @@ type GexHeatmapResponse = {
   asof?: string;
   expiries?: string[];
   strikes?: number[];
-  gex?: GexBlock;
+  gex?: MetricBlock;
+  vex?: MetricBlock;
 };
 
 type RowHighlight = "anchor" | "max-pos" | "max-neg" | null;
@@ -260,6 +265,7 @@ function rowHighlightClass(highlight: RowHighlight, isAnchor: boolean): string {
 type DeskProps = { live?: boolean };
 
 export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
+  const [lens, setLens] = useState<Lens>("gex");
   const pollMs = usePollIntervalMs(MATRIX_POLL_RTH_MS, MATRIX_POLL_OFF_MS);
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
 
@@ -282,7 +288,14 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
 
   const expiries = data?.expiries ?? [];
   const zeroDte = useMemo(() => zeroDteExpiryFrom(expiries), [expiries]);
-  const cells = data?.gex?.cells ?? {};
+  const block = lens === "gex" ? data?.gex : data?.vex;
+  const hasVex = Boolean(data?.vex && Object.keys(data.vex.cells ?? {}).length > 0);
+
+  useEffect(() => {
+    if (lens === "vex" && data != null && !hasVex) setLens("gex");
+  }, [lens, data, hasVex]);
+
+  const cells = block?.cells ?? {};
   const strikesAxis = useMemo(() => {
     const fromApi = (data?.strikes ?? []).filter(Number.isFinite);
     if (fromApi.length > 0) return [...fromApi].sort((a, b) => b - a);
@@ -372,10 +385,19 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
   const asofLabel = fmtAsofSeconds(data?.asof);
   const expiryHeader = zeroDte ? fmtExpiryHeader(zeroDte) : "0DTE";
 
+  const netTotal = useMemo(
+    () => Object.values(filteredTotals).reduce((s, v) => s + v, 0),
+    [filteredTotals]
+  );
+
+  const pivotLabel = lens === "gex" ? "γ flip" : "vanna flip";
+  const lensLabel = lens === "gex" ? "GEX" : "VEX";
+  const panelAccent = lens === "gex" ? "bull" : "sky";
+
   return (
     <Panel
-      accent="bull"
-      kicker={zeroDte ? `0DTE · ${zeroDte}` : "0DTE gamma matrix"}
+      accent={panelAccent}
+      kicker={zeroDte ? `0DTE · ${zeroDte} · ${lensLabel}` : `0DTE · ${lensLabel}`}
       title="SPX structure"
       actions={
         <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-white/70">
@@ -394,22 +416,44 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
       className="spx-odte-matrix-panel flex flex-1 min-h-0 flex-col"
       bodyClassName="spx-odte-matrix-body !px-2 !py-3 flex flex-1 min-h-0 flex-col"
     >
-      <div className="spx-odte-matrix-levels mb-3 shrink-0 grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-[10px]">
-        <div>
-          <span className="text-white/50 uppercase tracking-wider">Spot</span>
-          <div
-            className={clsx(
-              "text-sm font-bold tabular-nums text-white spx-odte-matrix-live-spot",
-              spot > 0 && feedLive && "spx-odte-matrix-spot-blink"
-            )}
-          >
-            {spot > 0 ? fmtPrice(spot) : "—"}
-          </div>
+      <div className="spx-odte-matrix-controls mb-3 shrink-0 space-y-2">
+        <div className="flex gap-1.5" role="tablist" aria-label="Exposure lens">
+          {(["gex", "vex"] as const).map((key) => {
+            const active = lens === key;
+            const disabled = key === "vex" && !hasVex && !isLoading;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                disabled={disabled}
+                onClick={() => setLens(key)}
+                className={clsx(
+                  "spx-odte-lens-toggle flex-1 rounded border px-2 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition-colors",
+                  active && key === "gex" && "spx-odte-lens-toggle--gex-active",
+                  active && key === "vex" && "spx-odte-lens-toggle--vex-active",
+                  !active && "spx-odte-lens-toggle--idle",
+                  disabled && "opacity-40 cursor-not-allowed"
+                )}
+              >
+                {key === "gex" ? "GEX" : "VEX"}
+              </button>
+            );
+          })}
         </div>
-        <div>
-          <span className="text-white/50 uppercase tracking-wider">γ flip</span>
-          <div className="text-sm tabular-nums text-white">
-            {levels.flip != null ? fmtStrike(levels.flip) : "—"}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px]">
+          <div>
+            <span className="text-white/50 uppercase tracking-wider">{pivotLabel}</span>
+            <div className="text-sm font-bold tabular-nums text-white">
+              {levels.flip != null ? fmtStrike(levels.flip) : "—"}
+            </div>
+          </div>
+          <div>
+            <span className="text-white/50 uppercase tracking-wider">Net {lensLabel}</span>
+            <div className="text-sm font-bold tabular-nums text-white">
+              {hasData ? fmtMoneySigned(netTotal) : "—"}
+            </div>
           </div>
         </div>
       </div>
@@ -424,13 +468,18 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         <div
           ref={scrollBoxRef}
           className="spx-odte-matrix-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain"
-          aria-label="SPX 0DTE net dealer gamma by strike"
+          aria-label={`SPX 0DTE net dealer ${lensLabel} by strike`}
         >
           <table className="spx-odte-matrix-table w-full border-collapse font-mono text-[12px] tabular-nums">
             <thead className="sticky top-0 z-10 bg-[#08080e]">
               <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/55">
                 <th className="py-2 pl-1 pr-2 text-left font-semibold">Strike</th>
-                <th className="py-2 px-2 text-right font-semibold">{expiryHeader}</th>
+                <th className="py-2 px-2 text-right font-semibold">
+                  {expiryHeader}
+                  <span className="ml-1 text-[9px] normal-case tracking-normal text-white/40">
+                    {lensLabel}
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -499,10 +548,12 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
           <AnchorGlyph size={8} className="text-white" /> Anchor
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-3 rounded-sm bg-[#00e676]/90" aria-hidden /> Max +GEX
+          <span className="inline-block h-2 w-3 rounded-sm bg-[#00e676]/90" aria-hidden /> Max +
+          {lensLabel}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-3 rounded-sm bg-[#6d28d9]/80" aria-hidden /> Max −GEX
+          <span className="inline-block h-2 w-3 rounded-sm bg-[#6d28d9]/80" aria-hidden /> Max −
+          {lensLabel}
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-cyan-400/90 spx-odte-matrix-spot-blink" aria-hidden /> Live spot
