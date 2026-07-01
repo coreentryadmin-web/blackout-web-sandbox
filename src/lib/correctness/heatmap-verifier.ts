@@ -16,6 +16,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
+import { odteGexScopeFromHeatmap } from "@/lib/correctness/gex-odte-scope";
 
 // ---------------------------------------------------------------------------
 // HEAT MAPS data-correctness verifier — the first (primary) target of the auditor.
@@ -816,8 +817,11 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
     }
   }
 
-  // Served SPX King = argmax|net_gex| on the matrix strike_totals.
-  const servedKing = deriveWalls(hm.gex.strike_totals).king;
+  // Served SPX King + net for the SAME 0DTE scope as the UW oracle (not the near-term aggregate
+  // in strike_totals, which sums up to NEAR_TERM_EXPIRY_COUNT expiries and would false-flag).
+  const odteScope = odteGexScopeFromHeatmap(hm, ctx.today);
+  const servedKing = deriveWalls(odteScope.strikeTotals).king;
+  const servedNet = odteScope.total;
 
   // King agreement (independently confirmed when within ~1.5% of spot — different strike grids).
   if (uwKing != null && servedKing != null && hm.spot > 0) {
@@ -830,8 +834,8 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
         "king",
         ok ? "pass" : "flag",
         ok
-          ? `SPX King ${fmt(servedKing)} INDEPENDENTLY CONFIRMED by UW (${uw.source}) King ${fmt(uwKing)} (Δ ${(fd * 100).toFixed(2)}% of spot).`
-          : `SPX King ${fmt(servedKing)} DISAGREES with UW (${uw.source}) King ${fmt(uwKing)} — Δ ${(fd * 100).toFixed(2)}% of spot > tol.`,
+          ? `SPX 0DTE King ${fmt(servedKing)} INDEPENDENTLY CONFIRMED by UW (${uw.source}) King ${fmt(uwKing)} (Δ ${(fd * 100).toFixed(2)}% of spot).`
+          : `SPX 0DTE King ${fmt(servedKing)} DISAGREES with UW (${uw.source}) King ${fmt(uwKing)} — Δ ${(fd * 100).toFixed(2)}% of spot > tol.`,
         {
           id: "oracle-king",
           expected: uwKing,
@@ -843,15 +847,15 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
     );
   } else {
     out.push(
-      mk(ctx, "cross-provider", "king", "consistency-only", "UW or served King indeterminate this run — King consistency-only.", {
+      mk(ctx, "cross-provider", "king", "consistency-only", "UW or served 0DTE King indeterminate this run — King consistency-only.", {
         id: "oracle-king",
       })
     );
   }
 
-  // Net-GEX sign agreement (cross-scale-invariant).
-  if (uwNet !== 0 && Number.isFinite(hm.gex.total) && hm.gex.total !== 0) {
-    const agree = Math.sign(uwNet) === Math.sign(hm.gex.total);
+  // Net-GEX sign agreement (cross-scale-invariant) on the 0DTE column.
+  if (uwNet !== 0 && Number.isFinite(servedNet) && servedNet !== 0) {
+    const agree = Math.sign(uwNet) === Math.sign(servedNet);
     out.push(
       mk(
         ctx,
@@ -859,14 +863,14 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
         "net_gex",
         agree ? "pass" : "flag",
         agree
-          ? `SPX net-GEX sign (${hm.gex.total > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
-          : `SPX net-GEX sign (${hm.gex.total > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
-        { id: "oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(hm.gex.total), independentlyConfirmed: agree }
+          ? `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
+          : `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
+        { id: "oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(servedNet), independentlyConfirmed: agree }
       )
     );
   } else {
     out.push(
-      mk(ctx, "cross-provider", "net_gex", "consistency-only", "UW or served net GEX ~flat this run — net-sign consistency-only.", {
+      mk(ctx, "cross-provider", "net_gex", "consistency-only", "UW or served 0DTE net GEX ~flat this run — net-sign consistency-only.", {
         id: "oracle-net-sign",
       })
     );

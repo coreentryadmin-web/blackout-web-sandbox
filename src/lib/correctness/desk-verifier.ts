@@ -8,6 +8,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
+import { kingFromStrikeTotals, odteGexScopeFromHeatmap } from "@/lib/correctness/gex-odte-scope";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 
 // ---------------------------------------------------------------------------
@@ -429,9 +430,23 @@ async function crossProviderChecks(
     }
   }
 
-  // Desk King.
-  if (uwKing != null && d.gex_king != null && Number.isFinite(d.gex_king) && spot > 0) {
-    const fd = Math.abs(uwKing - d.gex_king) / spot;
+  // Compare the 0DTE matrix column (same scope as UW) — NOT the desk's near-term aggregate
+  // gex_king/gex_net, which sums multiple expiries and would false-flag against a 0DTE oracle.
+  let odteKing: number | null = null;
+  let odteNet = 0;
+  try {
+    const { fetchGexHeatmap } = await import("@/lib/providers/polygon-options-gex");
+    const hm = await fetchGexHeatmap("SPX").catch(() => null);
+    const odte = odteGexScopeFromHeatmap(hm, ctx.today);
+    odteKing = kingFromStrikeTotals(odte.strikeTotals);
+    odteNet = odte.total;
+  } catch {
+    odteKing = null;
+    odteNet = 0;
+  }
+
+  if (uwKing != null && odteKing != null && spot > 0) {
+    const fd = Math.abs(uwKing - odteKing) / spot;
     const ok = fd <= TOL.kingFractionalOfSpot;
     out.push(
       mk(
@@ -440,22 +455,21 @@ async function crossProviderChecks(
         "king",
         ok ? "pass" : "flag",
         ok
-          ? `Desk GEX King ${fmt(d.gex_king)} INDEPENDENTLY CONFIRMED by UW (${uw.source}) King ${fmt(uwKing)} (Δ ${(fd * 100).toFixed(2)}% of spot).`
-          : `Desk GEX King ${fmt(d.gex_king)} DISAGREES with UW (${uw.source}) King ${fmt(uwKing)} — Δ ${(fd * 100).toFixed(2)}% of spot > tol.`,
-        { id: "desk-oracle-king", expected: uwKing, actual: d.gex_king, tolerance: TOL.kingFractionalOfSpot, independentlyConfirmed: ok }
+          ? `0DTE GEX King ${fmt(odteKing)} INDEPENDENTLY CONFIRMED by UW (${uw.source}) King ${fmt(uwKing)} (Δ ${(fd * 100).toFixed(2)}% of spot).`
+          : `0DTE GEX King ${fmt(odteKing)} DISAGREES with UW (${uw.source}) King ${fmt(uwKing)} — Δ ${(fd * 100).toFixed(2)}% of spot > tol.`,
+        { id: "desk-oracle-king", expected: uwKing, actual: odteKing, tolerance: TOL.kingFractionalOfSpot, independentlyConfirmed: ok }
       )
     );
   } else {
     out.push(
-      mk(ctx, "cross-provider", "king", "consistency-only", "Desk or UW King indeterminate this run — King consistency-only.", {
+      mk(ctx, "cross-provider", "king", "consistency-only", "0DTE matrix or UW King indeterminate this run — King consistency-only.", {
         id: "desk-oracle-king",
       })
     );
   }
 
-  // Desk net-GEX sign.
-  if (uwNet !== 0 && d.gex_net != null && Number.isFinite(d.gex_net) && d.gex_net !== 0) {
-    const agree = Math.sign(uwNet) === Math.sign(d.gex_net);
+  if (uwNet !== 0 && Number.isFinite(odteNet) && odteNet !== 0) {
+    const agree = Math.sign(uwNet) === Math.sign(odteNet);
     out.push(
       mk(
         ctx,
@@ -463,16 +477,30 @@ async function crossProviderChecks(
         "gex_net",
         agree ? "pass" : "flag",
         agree
-          ? `Desk net-GEX sign (${d.gex_net > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
-          : `Desk net-GEX sign (${d.gex_net > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
-        { id: "desk-oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(d.gex_net), independentlyConfirmed: agree }
+          ? `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
+          : `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
+        { id: "desk-oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(odteNet), independentlyConfirmed: agree }
       )
     );
   } else {
     out.push(
-      mk(ctx, "cross-provider", "gex_net", "consistency-only", "Desk or UW net GEX ~flat this run — net-sign consistency-only.", {
+      mk(ctx, "cross-provider", "gex_net", "consistency-only", "0DTE matrix or UW net GEX ~flat this run — net-sign consistency-only.", {
         id: "desk-oracle-net-sign",
       })
+    );
+  }
+
+  // Desk headline gex_king/gex_net are near-term aggregates — scope differs from the 0DTE oracle.
+  if (d.gex_king != null && odteKing != null && d.gex_king !== odteKing) {
+    out.push(
+      mk(
+        ctx,
+        "cross-provider",
+        "gex_king",
+        "consistency-only",
+        `Desk near-term GEX King ${fmt(d.gex_king)} differs from 0DTE King ${fmt(odteKing)} — expected multi-expiry vs 0DTE scope; not a hard flag.`,
+        { id: "desk-nearterm-king-scope" }
+      )
     );
   }
 
