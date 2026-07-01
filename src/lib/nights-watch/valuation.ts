@@ -254,7 +254,7 @@ export function valuationFromSnapshot(
   };
 }
 
-export type ValuationStatus = "live" | "unavailable" | "pending";
+export type ValuationStatus = "live" | "stale" | "unavailable" | "pending";
 
 /**
  * WHY a valuation is unavailable, so the surface can say something true instead of a bare
@@ -428,7 +428,13 @@ export function enrichPosition(
       : null;
   const mark_is_day_close = valuation?.mark_is_day_close ?? false;
 
-  const valuation_status: ValuationStatus = valuation ? "live" : pending ? "pending" : "unavailable";
+  const valuation_status: ValuationStatus = valuation
+    ? mark_is_day_close
+      ? "stale"
+      : "live"
+    : pending
+      ? "pending"
+      : "unavailable";
   // Reason is only carried off-live: 'pending' for a just-created leg, the caller's hint for an
   // 'unavailable' one, and null when the valuation IS live (nothing to explain).
   const valuation_unavailable_reason: ValuationUnavailableReason | null =

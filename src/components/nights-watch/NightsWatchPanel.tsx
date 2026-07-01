@@ -112,11 +112,11 @@ function VerdictChip({ verdict }: { verdict: Verdict }) {
 // Valuation-status tag (honesty signal next to the P&L).
 // ---------------------------------------------------------------------------
 function StatusTag({ status }: { status: ValuationStatus }) {
-  const tone: "bull" | "sky" | "bear" =
-    status === "live" ? "bull" : status === "pending" ? "sky" : "bear";
+  const tone: "bull" | "sky" | "bear" | "neutral" =
+    status === "live" ? "bull" : status === "pending" ? "sky" : status === "stale" ? "neutral" : "bear";
   return (
     <Badge tone={tone} size="sm" dot={status === "live"}>
-      {status}
+      {status === "stale" ? "prior close" : status}
     </Badge>
   );
 }

@@ -210,9 +210,11 @@ export function useMergedDesk() {
 
   const live = Boolean(
     sessionActive &&
-      merged?.market_open !== false &&
       merged?.available &&
-      (merged?.price ?? 0) > 0
+      (merged?.price ?? 0) > 0 &&
+      (merged?.market_open === true ||
+        merged?.market_label === "PRE-MARKET" ||
+        merged?.market_status === "premarket")
   );
 
   const refreshing =

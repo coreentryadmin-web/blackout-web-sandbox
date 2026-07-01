@@ -11,7 +11,7 @@ import { useState } from "react";
 export function NightHawkFeed() {
   const [selectedPlay, setSelectedPlay] = useState<PlaybookPlay | null>(null);
 
-  const { data: edition, isLoading: editionLoading } = useSWR("nighthawk-edition", fetchNightHawkEdition, {
+  const { data: edition, error: editionError, isLoading: editionLoading } = useSWR("nighthawk-edition", fetchNightHawkEdition, {
     refreshInterval: 120_000,
   });
 
@@ -39,6 +39,11 @@ export function NightHawkFeed() {
         <PlaybookBoard
           edition={edition}
           loading={editionLoading}
+          editionError={
+            editionError
+              ? "Edition failed to load — auto-retrying every 2 minutes. Check connection or refresh."
+              : undefined
+          }
           onPlaySelect={setSelectedPlay}
           confirmByTicker={confirmByTicker}
           playStatusAvailable={Boolean(playStatus?.available)}

@@ -202,6 +202,16 @@ test("valuation null + pending=false → 'unavailable' (still has DTE + breakeve
   assert.equal(pos.breakeven, 95);
 });
 
+test("prior session close mark → valuation_status stale (not live)", () => {
+  const pos = enrichPosition(
+    makeRow({ side: "long", option_type: "call", entry_premium: 5 }),
+    makeValuation({ mark: 8, mark_is_day_close: true }),
+    NOW
+  );
+  assert.equal(pos.valuation_status, "stale");
+  assert.equal(pos.mark_is_day_close, true);
+});
+
 // ----------------------------- DTE -----------------------------
 
 test("DTE: expiry == today (ET) → 0", () => {

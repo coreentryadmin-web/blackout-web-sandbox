@@ -250,12 +250,12 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     prevActionRef.current = action ?? null;
 
     if (!action || !prev) return; // No alert on first load
-    if (action === "BUY" && prev !== "BUY") {
+    if (action === "BUY" && prev !== "BUY" && play?.signal_committed) {
       playDeskAlert("buy");
     } else if (action === "WATCHING" && prev === "SCANNING") {
       playDeskAlert("watch");
     }
-  }, [play?.action]);
+  }, [play?.action, play?.signal_committed]);
 
   useEffect(() => {
     if (!play || play.action === "SCANNING") return;
@@ -317,6 +317,11 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
+                {play.action === "BUY" && !play.signal_committed && !play.open_play && (
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-300">
+                    Signal only — awaiting engine commit
+                  </p>
+                )}
                 <p className="spx-trade-alert-headline">{play.headline}</p>
                 {play.option_ticket && play.action === "BUY" && (
                   <p className="spx-trade-option-ticket">

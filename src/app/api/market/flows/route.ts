@@ -7,46 +7,10 @@ import { maybeRunFlowIngest } from "@/lib/providers/flow-ingest";
 import { marketPlatform } from "@/lib/platform";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
-import { getGexPositioning } from "@/lib/providers/gex-positioning";
+import { enrichFlowsWithGex } from "@/lib/flow-gex-enrichment";
 
 export const dynamic = "force-dynamic";
 
-// ---------------------------------------------------------------------------
-// GEX proximity helpers
-// ---------------------------------------------------------------------------
-
-/** Within 0.5% of a level — covers roughly ±2 strikes for SPX/SPY/single-names. */
-function isNear(strike: number, level: number | null): boolean {
-  if (level == null || !Number.isFinite(level) || level === 0) return false;
-  return Math.abs(strike - level) / level < 0.005;
-}
-
-/** Within 0.15% — "at" rather than merely "near". */
-function isAt(strike: number, level: number | null): boolean {
-  if (level == null || !Number.isFinite(level) || level === 0) return false;
-  return Math.abs(strike - level) / level < 0.0015;
-}
-
-type GexProximityLabel =
-  | "at_gamma_flip"
-  | "at_call_wall"
-  | "at_put_wall"
-  | "near_call_wall"
-  | "near_put_wall";
-
-function computeGexProximity(
-  strike: number,
-  flip: number | null,
-  callWall: number | null,
-  putWall: number | null,
-): GexProximityLabel | null {
-  if (isAt(strike, flip))       return "at_gamma_flip";
-  if (isAt(strike, callWall))   return "at_call_wall";
-  if (isAt(strike, putWall))    return "at_put_wall";
-  if (isNear(strike, callWall)) return "near_call_wall";
-  if (isNear(strike, putWall))  return "near_put_wall";
-  return null;
-}
 // nodejs runtime is required: ensureDataSockets (and the pg/UW providers used below)
 // pull node-only modules (ioredis / ws / node:crypto) that the edge runtime rejects.
 export const runtime = "nodejs";
@@ -87,34 +51,7 @@ export async function GET(req: NextRequest) {
         ]);
 
         // GEX proximity enrichment — best-effort annotation, MUST NOT block the tape.
-        // `getGexPositioning` is a cache-reader, but on a COLD matrix cache it builds the
-        // options chain through the rate-limited Polygon funnel (~1.8s each). Enriching up to 30
-        // tickers on a cold cache serialized ~17s of cold builds and blocked the whole HELIX tape
-        // (measured prod cold TTFB 17.8s). Bound it: cap to a few tickers and race each read against
-        // a short timeout so a cold ticker is simply left unannotated (the tape is never delayed).
-        // A timed-out build still warms the shared matrix cache in the background for next time.
-        const GEX_ENRICH_MAX = 8;
-        const GEX_ENRICH_TIMEOUT_MS = 300;
-        const uniqueTickers = [...new Set(flows.map((f: { ticker: string }) => f.ticker))].slice(0, GEX_ENRICH_MAX) as string[];
-        const gexMap = new Map<string, { flip: number | null; call_wall: number | null; put_wall: number | null }>();
-        await Promise.all(
-          uniqueTickers.map(async (t) => {
-            try {
-              const pos = await Promise.race([
-                getGexPositioning(t),
-                new Promise<null>((resolve) => setTimeout(() => resolve(null), GEX_ENRICH_TIMEOUT_MS)),
-              ]);
-              if (pos) gexMap.set(t, { flip: pos.flip, call_wall: pos.call_wall, put_wall: pos.put_wall });
-            } catch { /* best-effort */ }
-          })
-        );
-        const enrichedFlows = flows.map((f: { ticker: string; strike: number }) => {
-          const gex = gexMap.get(f.ticker);
-          if (!gex) return f;
-          const proximity = computeGexProximity(f.strike, gex.flip, gex.call_wall, gex.put_wall);
-          if (!proximity) return f;
-          return { ...f, gex_proximity: proximity };
-        });
+        const enrichedFlows = await enrichFlowsWithGex(flows, 8);
 
         console.log(`[market/flows] postgres ok — ${flows.length} rows (min_premium=${min_premium}, since_hours=${since_hours})`);
         return { source: "cache" as const, flows: enrichedFlows, count: enrichedFlows.length, platform_refs: platform };

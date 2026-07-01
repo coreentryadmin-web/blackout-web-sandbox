@@ -166,10 +166,11 @@ export function SpxCommentaryRail({
         // reconciliation and let duplicates render).
         id: commentary.as_of || `c-${Date.now()}`,
       };
-      setEntries((e) => [entry, ...e].slice(0, 24));
-      hydratedRef.current = true;
-      // Write to sessionStorage only when a new entry arrives, not on every render
-      if (live) writeSessionCache(COMMENTARY_CACHE_KEY, [entry]);
+      setEntries((e) => {
+        const next = [entry, ...e].slice(0, 24);
+        if (live) writeSessionCache(COMMENTARY_CACHE_KEY, next);
+        return next;
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Commentary unavailable";
       nextRefreshMsRef.current = null;

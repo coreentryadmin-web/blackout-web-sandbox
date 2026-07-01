@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { initFlowEventBridge, subscribeFlowEvents } from "@/lib/flow-events";
+import { enrichFlowWithGex, getGexLevelsForTicker } from "@/lib/flow-gex-enrichment";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
@@ -75,7 +76,11 @@ export async function GET(req: NextRequest) {
 
       unsubscribe = subscribeFlowEvents((flow) => {
         if (tickerFilter && flow.ticker?.toUpperCase() !== tickerFilter) return;
-        send({ type: "flow", ...flow });
+        void (async () => {
+          const gex = await getGexLevelsForTicker(flow.ticker);
+          const enriched = gex ? enrichFlowWithGex(flow, gex) : flow;
+          send({ type: "flow", ...enriched });
+        })();
       });
 
       heartbeat = setInterval(() => {

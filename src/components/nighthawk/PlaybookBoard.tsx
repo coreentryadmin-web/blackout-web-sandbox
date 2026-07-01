@@ -14,6 +14,7 @@ import type {
 type PlaybookBoardProps = {
   edition: NightHawkEdition | undefined;
   loading?: boolean;
+  editionError?: string;
   onPlaySelect?: (play: PlaybookPlay) => void;
   confirmByTicker?: Map<string, PlayMorningStatus>;
   playStatusAvailable?: boolean;
@@ -64,6 +65,7 @@ function MarketContextBar({ recap }: { recap: Record<string, unknown> }) {
 export function PlaybookBoard({
   edition,
   loading,
+  editionError,
   onPlaySelect,
   confirmByTicker,
   playStatusAvailable,
@@ -152,6 +154,15 @@ export function PlaybookBoard({
           )}
         </div>
       </header>
+
+      {editionError && !edition && !loading && (
+        <div
+          className="mb-4 rounded border border-rose-400/35 bg-rose-400/10 px-4 py-3 font-mono text-xs text-rose-200"
+          role="alert"
+        >
+          {editionError}
+        </div>
+      )}
 
       <HawkRecordStrip record={record} loading={recordLoading} />
 

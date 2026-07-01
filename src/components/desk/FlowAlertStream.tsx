@@ -114,8 +114,14 @@ export function FlowAlertStream({
 }) {
   const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT); // Bug 8
   const [newCount, setNewCount]       = useState(0);            // Bug 11
+  const [, setAgeTick] = useState(0);
   const scrollRef  = useRef<HTMLDivElement>(null);
   const prevLenRef = useRef(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setAgeTick((t) => t + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Parser-truth (gap #6): typeless UW prints carry option_type='UNKNOWN'. They must NOT
   // render as red PUT cards (the else-branch in cardCls / premium color), so DROP them from
