@@ -297,9 +297,9 @@ export function SpxGexMatrixHeatmap({
           ref={scrollBoxRef}
           className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-auto overscroll-contain"
         >
-          <table className="spx-gex-matrix-table w-max min-w-full border-collapse font-mono text-[10px] tabular-nums">
+          <table className="spx-gex-matrix-table w-max min-w-full border-collapse font-mono text-[12px] tabular-nums">
             <thead className="sticky top-0 z-20 bg-[#08080e]">
-              <tr className="border-b border-white/10 text-[9px] uppercase tracking-wider text-white/55">
+              <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/55">
                 <th className="sticky left-0 z-30 bg-[#08080e] py-1.5 pl-1 pr-2 text-left font-semibold">
                   Strike
                 </th>
@@ -339,7 +339,7 @@ export function SpxGexMatrixHeatmap({
                   >
                     <td
                       className={clsx(
-                        "sticky left-0 z-10 bg-[#08080e] py-1 pl-1 pr-2 text-left font-semibold",
+                        "sticky left-0 z-10 bg-[#08080e] py-1 pl-1 pr-2 text-left font-bold",
                         isSpotRow && "text-cyan-300"
                       )}
                     >
@@ -358,7 +358,7 @@ export function SpxGexMatrixHeatmap({
                         <td
                           key={e}
                           className={clsx(
-                            "whitespace-nowrap px-1 py-1 text-center font-semibold",
+                            "whitespace-nowrap px-1 py-1 text-center font-bold",
                             has && val > 0 && "text-emerald-300",
                             has && val < 0 && "text-rose-300",
                             !has && "text-sky-300/25"
@@ -374,7 +374,7 @@ export function SpxGexMatrixHeatmap({
                     })}
                     <td
                       className={clsx(
-                        "whitespace-nowrap py-1 pl-1 pr-2 text-right font-semibold",
+                        "whitespace-nowrap py-1 pl-1 pr-2 text-right font-bold",
                         rowTotal > 0 && "text-emerald-300",
                         rowTotal < 0 && "text-rose-300",
                         rowTotal === 0 && "text-sky-300/25"

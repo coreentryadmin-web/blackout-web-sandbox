@@ -6600,8 +6600,12 @@ body::before {
   .spx-sniper-triple {
     @apply grid grid-cols-1 gap-3 items-stretch w-full max-w-none;
     @apply lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.6fr)];
-    @apply xl:grid-cols-[minmax(300px,22vw)_minmax(0,1fr)_minmax(380px,26vw)];
-    @apply 2xl:grid-cols-[minmax(320px,20vw)_minmax(0,1fr)_minmax(420px,27vw)];
+    /* Matrix (left rail) widened from 22vw/20vw and Play Engine (center, 1fr)
+       shrinks by the same amount, since 1fr absorbs whatever the fixed rails
+       don't take — this is the lever for "bigger matrix, smaller play engine"
+       rather than adding a third size to the center column. */
+    @apply xl:grid-cols-[minmax(340px,30vw)_minmax(0,1fr)_minmax(380px,26vw)];
+    @apply 2xl:grid-cols-[minmax(380px,28vw)_minmax(0,1fr)_minmax(420px,27vw)];
     min-height: calc(100vh - 240px);
   }
 
