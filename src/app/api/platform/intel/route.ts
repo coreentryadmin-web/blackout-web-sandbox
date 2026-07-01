@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { isPremarketBriefFresh, todayEtYmd } from "@/lib/providers/spx-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
         "SELECT * FROM coaching_alerts WHERE generated_at > NOW() - INTERVAL '30 minutes' ORDER BY generated_at DESC LIMIT 5",
         []
       ),
-      // 4. Latest pre-market brief
+      // 4. Latest pre-market brief (brief_date needed to gate staleness below)
       dbQuery(
         "SELECT brief_date, brief_type, published_at, spx_price, call_wall, put_wall, king_strike, net_gex, gex_bias FROM platform_briefs WHERE brief_type = 'premarket' ORDER BY brief_date DESC LIMIT 1",
         []
@@ -111,8 +112,19 @@ export async function GET(req: NextRequest) {
       anomalies.status === "fulfilled" ? (anomalies.value.rows as FlowAnomalyRow[]) : [];
     const coachingRows: CoachingAlertRow[] =
       coaching.status === "fulfilled" ? (coaching.value.rows as CoachingAlertRow[]) : [];
-    const briefRow = brief.status === "fulfilled" && brief.value.rows.length > 0
+    const briefRowRaw = brief.status === "fulfilled" && brief.value.rows.length > 0
       ? brief.value.rows[0] : null;
+    // Same staleness gate as /api/brief/premarket: a premarket brief 2+ sessions
+    // old must not be served as current — this snapshot feeds cron decisioning
+    // and AI prompt context, not just a UI panel.
+    const briefDateYmd = briefRowRaw
+      ? (briefRowRaw.brief_date instanceof Date
+          ? briefRowRaw.brief_date.toISOString().slice(0, 10)
+          : String(briefRowRaw.brief_date).slice(0, 10))
+      : null;
+    const briefRow = briefRowRaw && briefDateYmd && isPremarketBriefFresh(briefDateYmd, todayEtYmd())
+      ? briefRowRaw
+      : null;
     const signalRows: SignalAccuracyRow[] =
       signalStats.status === "fulfilled" ? (signalStats.value.rows as SignalAccuracyRow[]) : [];
     const regimeAccRows: RegimeAccuracyRow[] =

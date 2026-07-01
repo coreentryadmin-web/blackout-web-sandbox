@@ -1,4 +1,5 @@
 import { dbConfigured, dbQuery } from "@/lib/db";
+import { isPremarketBriefFresh, todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Cross-service intel pulled from the same Postgres tables as /api/platform/intel. */
 export type PlatformIntelSnapshot = {
@@ -50,7 +51,7 @@ export async function fetchPlatformIntelSnapshot(): Promise<PlatformIntelSnapsho
         []
       ),
       dbQuery(
-        `SELECT call_wall, put_wall, net_gex, gex_bias FROM platform_briefs
+        `SELECT brief_date, call_wall, put_wall, net_gex, gex_bias FROM platform_briefs
          WHERE brief_type = 'premarket' ORDER BY brief_date DESC LIMIT 1`,
         []
       ),
@@ -70,8 +71,20 @@ export async function fetchPlatformIntelSnapshot(): Promise<PlatformIntelSnapsho
 
     const regimeRow = regimeRes.rows[0] as Record<string, unknown> | undefined;
     const anomalies = anomalyRes.rows as Array<{ ticker?: string; severity?: string }>;
-    const briefRow = briefRes.rows[0] as Record<string, unknown> | undefined;
+    const briefRowRaw = briefRes.rows[0] as Record<string, unknown> | undefined;
     const regimeAcc = regimeAccRes.rows as Array<{ regime?: string; win_rate?: string | number }>;
+
+    // Same staleness gate as /api/brief/premarket — this snapshot feeds cron
+    // decisioning and AI prompt context (formatPlatformIntelForPrompt below),
+    // so a 2+ session-old brief must not be treated as current here either.
+    const briefDateYmd = briefRowRaw?.brief_date
+      ? (briefRowRaw.brief_date instanceof Date
+          ? briefRowRaw.brief_date.toISOString().slice(0, 10)
+          : String(briefRowRaw.brief_date).slice(0, 10))
+      : null;
+    const briefRow = briefRowRaw && briefDateYmd && isPremarketBriefFresh(briefDateYmd, todayEtYmd())
+      ? briefRowRaw
+      : undefined;
 
     const composite = regimeRow?.composite != null ? String(regimeRow.composite) : null;
     const critical = anomalies.filter((a) => a.severity === "CRITICAL");
