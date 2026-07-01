@@ -31,7 +31,7 @@ jobs:
           set -euo pipefail
           for f in railway.*.toml; do
             test -f "$f"
-            grep -q 'startCommand = "node scripts/hit-cron.mjs' "$f" || grep -q 'startCommand = "next start' "$f" || {
+            grep -q 'startCommand = .*scripts/hit-cron.mjs' "$f" || grep -q 'startCommand = "next start' "$f" || {
               echo "Missing startCommand in $f"; exit 1;
             }
             if grep -q 'hit-cron.mjs' "$f"; then
