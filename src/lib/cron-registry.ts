@@ -65,6 +65,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     // catches a missed/stuck build the same night.
     stale_after_min: 240,
     weekdays_only: true,
+    path: "/api/cron/nighthawk-edition",
     description: "Full dossier pipeline → Claude plays → publish",
   },
   {

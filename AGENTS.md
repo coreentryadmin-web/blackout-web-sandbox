@@ -69,6 +69,8 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   before project-scoped ops, or fix the account token in Cursor secrets.
 - **One-shot audit setup:** `npm run railway:audit-apply` (`scripts/railway-audit-apply.mjs`) — regions,
   all cron TOMLs, internal `CRON_TARGET_BASE_URL`, `CRON_WATCHDOG_SELF_HEAL`, CRON_SECRET sync.
+- **Manifest check:** `npm run validate:railway-crons` — registry ↔ TOML ↔ Railway service map (23 jobs).
+- **GHA:** `railway-audit-apply.yml` (Sun 06:00 UTC + TOML push), `cron-audit-query.yml` (hourly RTH).
 - Production: `blackout-web` **iad=3, us-west2=2**; **PgBouncer iad=2, us-west2=1** (colocated with Postgres/web);
   healthcheck **`/api/ready`** (90s); crons → `CRON_TARGET_BASE_URL=http://blackout-web.railway.internal:8080`.
 - **Postgres PITR:** bucket `Postgres-PITR`; restore drill runbook `docs/ops/PITR-RESTORE-DRILL.md`.

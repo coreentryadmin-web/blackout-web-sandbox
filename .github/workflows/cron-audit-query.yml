@@ -1,7 +1,12 @@
-# One-off prod cron_job_runs audit (workflow_dispatch only).
+# Prod cron_job_runs audit — scheduled + manual.
 name: Cron audit query
 
 on:
+  schedule:
+    # Hourly during RTH UTC band (11–21 UTC ≈ 7AM–5PM ET)
+    - cron: "5 11-21 * * 1-5"
+    # Off-hours spot check (aligned with off-hours-health)
+    - cron: "5 */6 * * *"
   workflow_dispatch:
   pull_request:
     paths:
@@ -25,4 +30,9 @@ jobs:
       - name: Query prod cron_job_runs
         env:
           DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
-        run: node scripts/cron-audit-query.mjs
+        run: |
+          if [ -z "${DATABASE_PUBLIC_URL:-}" ]; then
+            echo "DATABASE_PUBLIC_URL not set — skip scheduled audit"
+            exit 0
+          fi
+          node scripts/cron-audit-query.mjs
