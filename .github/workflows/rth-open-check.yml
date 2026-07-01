@@ -1,0 +1,35 @@
+# RTH open validation — Postgres writer freshness + socket-health probe.
+# Complements gha-http-smoke (pre-open) with validate:rth-open checks.
+
+name: RTH open check
+
+on:
+  schedule:
+    # 09:40 AM ET (after 09:30 pre-open smoke)
+    - cron: "40 13 * * 1-5"
+    - cron: "40 14 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  open-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: RTH open validation
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+          CRON_TARGET_BASE_URL: https://blackouttrades.com
+        run: node scripts/rth-open-check.mjs
+
+      - name: Summary
+        run: echo "RTH open check passed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"

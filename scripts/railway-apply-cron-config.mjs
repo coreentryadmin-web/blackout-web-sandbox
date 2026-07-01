@@ -27,6 +27,7 @@ const SERVICE_NAMES = {
   "gex-eod-snapshot": "GEX-EOD-Snapshot",
   "grid-warm": "Grid-Warm-Cron",
   "spx-signal-weight-optimize": "SPX-Signal-Weight-Optimize",
+  "socket-health": "Socket-Health-Cron",
 };
 
 const keys = process.argv.slice(2);

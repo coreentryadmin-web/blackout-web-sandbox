@@ -1,0 +1,25 @@
+# Off-hours liveness — catches weekend/overnight deploy or DB regressions.
+
+name: Off-hours health
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prod readiness
+        run: |
+          set -euo pipefail
+          for path in /api/health /api/ready; do
+            code=$(curl -sS -o /tmp/body.json -w "%{http_code}" "https://blackouttrades.com${path}")
+            echo "${path} → HTTP ${code}"
+            cat /tmp/body.json
+            echo
+            test "$code" = "200"
+            node -e "const b=require('/tmp/body.json'); if(!b.ok) process.exit(1)"
+          done

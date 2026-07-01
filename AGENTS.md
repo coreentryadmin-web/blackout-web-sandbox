@@ -63,15 +63,15 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   PgBouncer remain manual Railway steps — the dashboard only reports posture.
 
 ### Railway (Cursor Cloud agents)
-- **`RAILWAY_TOKEN` is a project token** — `railway whoami` returns Unauthorized (expected). Pass
-  `--project 9282f541-a288-4c8b-a174-ee22016f4b1a` on mutating CLI calls, or export
-  `RAILWAY_PROJECT_ID=9282f541-a288-4c8b-a174-ee22016f4b1a` before `railway environment config` /
-  `railway environment edit` (those subcommands do not accept `--project`).
-- Production: `blackout-web` uses **5 replicas** (`iad=3`, `us-west2=2`), healthcheck **`/api/ready`**
-  (90s), PgBouncer refs on `DATABASE_*`. Cron triggers use
-  `CRON_TARGET_BASE_URL=http://blackout-web.railway.internal:8080` (private VPC).
-- `railway scale` may return Unauthorized on project tokens — patch replicas via `environment edit`
-  `deploy.multiRegionConfig` instead.
+- **Tokens:** Account-wide token → `RAILWAY_API_TOKEN` (buckets, `environment edit`, multi-region).
+  Project token → `RAILWAY_TOKEN` + `RAILWAY_PROJECT_ID` for variables/redeploy/logs.
+- Production: `blackout-web` **iad=3, us-west2=2**; **PgBouncer iad=2, us-west2=1** (colocated with Postgres/web);
+  healthcheck **`/api/ready`** (90s); crons → `CRON_TARGET_BASE_URL=http://blackout-web.railway.internal:8080`.
+- **Postgres PITR:** bucket `Postgres-PITR`; restore drill runbook `docs/ops/PITR-RESTORE-DRILL.md`.
+- **23 crons** incl. `Socket-Health-Cron` → `/api/cron/socket-health` (`railway.socket-health.toml`).
+- PgBouncer: **session mode** (not transaction) — see `docs/PGBOUNCER-SETUP.md`.
+- **Still manual:** set `DISCORD_OPS_WEBHOOK_URL` / `DISCORD_PLAY_WEBHOOK_URL` on `blackout-web` for ops alerts.
+- `railway scale` may return Unauthorized on project tokens — patch via `environment edit` `deploy.multiRegionConfig`.
 
 ### UW WebSocket → cache / HELIX (2 RPS budget)
 - Multiplex channels in `src/lib/live-api-integrations.ts` (`UW_WS_CHANNELS`). Ticker-scoped joins:

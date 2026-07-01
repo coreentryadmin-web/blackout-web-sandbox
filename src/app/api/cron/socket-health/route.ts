@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
+import { logCronRun } from "@/lib/cron-run";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
@@ -14,6 +15,7 @@ export const dynamic = "force-dynamic";
  * cluster-local status. Used by RTH validation instead of brittle Railway log grep.
  */
 export async function GET(req: NextRequest) {
+  const started = Date.now();
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -58,28 +60,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(
-    {
-      ok: options_ok && luld_ok,
-      as_of: new Date().toISOString(),
-      market_hours: rth,
-      websockets: {
-        polygon_indices: getIndexStoreStatus(),
-        unusual_whales: getUwSocketHealth(),
-        options: {
-          ...options,
-          authenticated_shards: authenticatedShards,
-          auth_failed_shards: authFailedShards,
-          ok: options_ok,
-          detail: options_detail,
-        },
-        stocks_luld: {
-          ...luld,
-          ok: luld_ok,
-          detail: luld_detail,
-        },
+  const payload = {
+    ok: options_ok && luld_ok,
+    as_of: new Date().toISOString(),
+    market_hours: rth,
+    websockets: {
+      polygon_indices: getIndexStoreStatus(),
+      unusual_whales: getUwSocketHealth(),
+      options: {
+        ...options,
+        authenticated_shards: authenticatedShards,
+        auth_failed_shards: authFailedShards,
+        ok: options_ok,
+        detail: options_detail,
+      },
+      stocks_luld: {
+        ...luld,
+        ok: luld_ok,
+        detail: luld_detail,
       },
     },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  };
+
+  await logCronRun("socket-health", started, {
+    ok: payload.ok,
+    market_hours: rth,
+    options_ok,
+    luld_ok,
+  });
+
+  return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
 }

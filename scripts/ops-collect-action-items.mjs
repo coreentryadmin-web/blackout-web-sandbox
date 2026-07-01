@@ -47,6 +47,7 @@ async function postgresItems() {
     "gex-alerts", "db-cleanup", "membership-reconcile", "data-integrity", "data-correctness",
     "cron-staleness-watchdog", "spx-signal-observe", "spx-signal-weight-optimize",
     "nighthawk-morning-confirm", "market-regime-detector", "positions-expiry",
+    "provider-health-reconcile", "socket-health",
   ];
 
   const valuesClause = JOB_KEYS.map((_, i) => `($${i + 1})`).join(", ");

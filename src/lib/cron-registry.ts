@@ -195,6 +195,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Alerts Discord when any cron goes stale/failed (catches silent never-fired crons)",
   },
   {
+    key: "socket-health",
+    name: "Socket Health",
+    kind: "http",
+    path: "/api/cron/socket-health",
+    schedule_label: "~Every 15 min (market hours)",
+    stale_after_min: 25,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Boot lazy WS managers and report polygon/UW/options/LULD cluster status — used by RTH validation instead of log grep",
+  },
+  {
     key: "spx-signal-observe",
     name: "SPX Signal Observer",
     kind: "http",

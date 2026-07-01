@@ -114,6 +114,7 @@ async function cronHttpChecks() {
     { path: "/api/cron/data-integrity?force=1", label: "data-integrity" },
     { path: "/api/cron/provider-health-reconcile?force=1", label: "provider-health" },
     { path: "/api/cron/cron-staleness-watchdog", label: "cron-watchdog" },
+    { path: "/api/cron/socket-health", label: "socket-health" },
   ];
 
   for (const { path, label } of routes) {
@@ -135,6 +136,11 @@ async function cronHttpChecks() {
       } else if (label === "cron-watchdog" && (json.problems ?? 0) > 0) {
         failures.push(`${label}: ${(json.problem_keys ?? []).join(", ")}`);
         console.log(`  ✗ ${label} → stale: ${(json.problem_keys ?? []).join(", ")}`);
+      } else if (label === "socket-health" && json.ok === false) {
+        const opt = json.websockets?.options?.detail ?? "options unhealthy";
+        const luld = json.websockets?.stocks_luld?.detail ?? "";
+        failures.push(`${label}: ${opt}${luld ? `; LULD: ${luld}` : ""}`);
+        console.log(`  ✗ ${label} → ${opt}`);
       } else {
         console.log(`  ✓ ${label} → ok`);
       }

@@ -1,27 +1,39 @@
-# PgBouncer Setup on Railway
+# PgBouncer on Railway (production)
 
 ## Why
-At 150+ concurrent users, Next.js serverless functions exhaust the default Postgres connection limit.
-PgBouncer sits in front of Postgres and multiplexes connections in transaction mode.
+`blackout-web` runs long-lived Node (`next start`) with **5 replicas** and a small app-side pool
+(`PG_POOL_MAX`, default 15). PgBouncer multiplexes client connections to a bounded set of Postgres
+backends (`default_pool_size = 20`).
 
-## Railway Steps
-1. In your Railway project, click your Postgres service → Plugins → Add PgBouncer
-2. Railway auto-generates PGBOUNCER_URL — copy it
-3. In your Next.js service env vars:
-   - Change DATABASE_URL to the value of PGBOUNCER_URL
-   - Add PG_POOL_MAX=5 (our pool size — PgBouncer handles the rest)
+## Enable (Railway UI)
+1. Open the **Postgres** service → **Database** tab → **Config** → **Connection Pooling** (PgBouncer).
+2. Railway provisions a **PgBouncer** service and `${{PgBouncer.DATABASE_*}}` references.
+3. On **blackout-web**, set `DATABASE_URL` (and related `DATABASE_*`) to **`${{PgBouncer.DATABASE_URL}}`** refs.
 
-## PgBouncer settings to configure in Railway
-- pool_mode = transaction  (required — session mode doesn't work with serverless)
-- max_client_conn = 1000   (total clients PgBouncer accepts)
-- default_pool_size = 20   (actual Postgres connections PgBouncer maintains)
-- server_idle_timeout = 30
+Legacy docs mentioned “Plugins”; the current path is **Database → Config → Connection Pooling**.
+
+## Production settings (verified)
+| Setting | Value | Notes |
+|---------|-------|-------|
+| `POOL_MODE` | **session** | Required for advisory locks + session-scoped Postgres behavior in SPX/migration paths |
+| `DEFAULT_POOL_SIZE` | 20 | Backend connections to Postgres |
+| `MAX_CLIENT_CONN` | 1000 | Client ceiling from all web replicas |
+| `PG_POOL_MAX` (web) | 15 | App pool per replica × 5 replicas → pooler multiplexes |
+
+**Session vs transaction:** Older runbooks assumed “serverless → transaction mode.” This app is **not**
+serverless on Railway; session mode is intentional. `src/lib/db.ts` omits `statement_timeout` startup
+params when the host is a pooler.
+
+## Region layout (2026-07 audit)
+- **Postgres + Redis:** `iad`
+- **PgBouncer:** `iad` ×2 + `us-west2` ×1 (colocated with web + Postgres; west pooler for `us-west2` replicas)
+- **blackout-web:** `iad` ×3 + `us-west2` ×2
 
 ## Verify
-After enabling, check Railway logs for "PgBouncer connected" and run:
-  SELECT count(*) FROM pg_stat_activity;
-Should stay under 25 even with 100 concurrent users.
+- Admin → Operations → System Vitals: `database_via_pooler: true`
+- `GET /api/ready` → `db: connected`
+- Under load: `SELECT count(*) FROM pg_stat_activity;` stays bounded vs `max_connections`
 
-## Code change already made
-src/lib/db.ts pool max is now controlled by PG_POOL_MAX env var (default 5).
-Previously the production pool was hardcoded to max: 8.
+## Code
+- Pool size: `src/lib/db.ts` (`PG_POOL_MAX`, pooler detection)
+- Ops posture: `src/lib/ops-config-status.ts`

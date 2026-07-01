@@ -126,6 +126,18 @@ async function main() {
         if (latest?.status === "ok") ok("data-correctness latest run ok");
         else fail(`data-correctness latest: ${latest?.status ?? "?"} — ${latest?.message ?? ""}`);
 
+        const ph = await c.query(
+          `SELECT status, started_at FROM cron_job_runs
+           WHERE job_key = 'provider-health-reconcile'
+           ORDER BY started_at DESC LIMIT 1`
+        );
+        const phRow = ph.rows[0];
+        if (phRow?.status === "ok" || phRow?.status === "skipped") {
+          ok(`provider-health-reconcile latest ${phRow.status}`);
+        } else {
+          fail(`provider-health-reconcile latest: ${phRow?.status ?? "never"}`);
+        }
+
         const grid15 = (
           await c.query(
             `SELECT COUNT(*)::int AS n FROM cron_job_runs

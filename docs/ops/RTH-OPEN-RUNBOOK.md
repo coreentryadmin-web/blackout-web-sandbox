@@ -46,11 +46,12 @@ node scripts/rth-open-check.mjs --force
 |---|---|---|
 | **`deploy-smoke.yml`** | **on every `main` push** | `CRON_SECRET` optional (SPX desk probe) |
 | **`rth-preopen-smoke.yml`** | **09:30** | `CRON_SECRET` optional |
+| **`rth-open-check.yml`** | **09:40** | `CRON_SECRET`, `DATABASE_PUBLIC_URL` |
 | **`rth-cloud-agent.yml`** | **09:32** | `CURSOR_API_KEY` |
-| **`rth-prod-smoke.yml`** | **09:35** | `CRON_SECRET` optional (enables SPX desk probe) |
 | **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL`, `SENTRY_AUTH_TOKEN` optional |
 | **`rth-post-close-smoke.yml`** | **17:15** | `CRON_SECRET`, `SENTRY_AUTH_TOKEN` optional |
-| **`ops-auto-fix.yml`** | **every 20 min** | `CURSOR_API_KEY`, `GITHUB_TOKEN` (repo) |
+| **`off-hours-health.yml`** | **every 6h** | none (public `/api/ready`) |
+| **`ops-auto-fix.yml`** | **every 20 min** | `CURSOR_API_KEY`, `DATABASE_PUBLIC_URL`, `CRON_SECRET`, `GITHUB_TOKEN` (repo) |
 
 ### Railway env (blackout-web service)
 

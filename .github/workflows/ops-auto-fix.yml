@@ -11,6 +11,11 @@ on:
     workflows:
       - RTH deep audit
       - Cron audit query
+      - Deploy smoke
+      - RTH pre-open smoke
+      - RTH open check
+      - RTH post-close smoke
+      - Off-hours health
     types:
       - completed
 
