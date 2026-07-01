@@ -61,11 +61,14 @@ export async function GET(req: NextRequest) {
     if (luld.enabled) {
       if (!rth) {
         luld_detail = "enabled, off-hours — auth not required";
+      } else if (!luld.is_leader) {
+        // Mirror options-socket: only the cluster leader opens the LULD feed; followers are healthy.
+        luld_detail = "enabled, follower — cluster leader maintains LULD feed";
       } else if (luld.authenticated && luld.ws_state === "open") {
         luld_detail = `live (${luld.tickers.join(", ")})`;
       } else {
         luld_ok = false;
-        luld_detail = `enabled but not authenticated (${luld.ws_state})`;
+        luld_detail = `leader but not authenticated (${luld.ws_state})`;
       }
     }
 
