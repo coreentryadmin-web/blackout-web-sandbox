@@ -2284,153 +2284,6 @@ function AlertsStrip({ events }: { events: GexEvent[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Recent-range strip — a compact horizontal track showing where the LIVE spot
-// sits within the last-N-session spot range (and, optionally, where the current
-// flip sits within the recent flip range). Pure HISTORY context: rendered only
-// when the server ships `recent_spot_range` over ≥1 prior session. Brand colors,
-// reduced-motion safe, tabular-nums. Renders nothing when the range is absent or
-// degenerate (min == max) — never fabricated.
-// ---------------------------------------------------------------------------
-
-/** One range track: a value's position within [min, max], with labeled ends + a marker. */
-function RangeTrack({
-  label,
-  min,
-  max,
-  value,
-  markerHex,
-  valueLabel,
-}: {
-  label: string;
-  min: number;
-  max: number;
-  value: number;
-  /** Brand hex for the marker dot + its glow (cyan for spot, gold for flip). */
-  markerHex: string;
-  /** Pre-formatted current value shown above the marker (e.g. fmtSpot / fmtStrike). */
-  valueLabel: string;
-}) {
-  // Clamp the marker into [0,100] — a live spot can briefly poke just outside the
-  // recent EOD range; we pin it to the rail end rather than overflow the track.
-  const span = max - min;
-  const pctRaw = span > 0 ? ((value - min) / span) * 100 : 50;
-  const pct = Math.max(0, Math.min(100, pctRaw));
-  const outside = pctRaw < 0 || pctRaw > 100;
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="w-24 shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/70">
-        {label}
-      </span>
-      <span className="shrink-0 font-mono text-[10px] tabular-nums text-sky-300/70">
-        {fmtStrike(min)}
-      </span>
-      <span className="relative h-1.5 flex-1 rounded-full bg-white/10">
-        {/* the filled rail up to the marker, tinted by the marker identity */}
-        <span
-          aria-hidden
-          className="absolute inset-y-0 left-0 rounded-full motion-safe:transition-all motion-safe:duration-300"
-          style={{
-            width: `${pct.toFixed(1)}%`,
-            backgroundColor: `${markerHex}55`,
-          }}
-        />
-        {/* marker dot at the current value */}
-        <span
-          aria-hidden
-          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:transition-all motion-safe:duration-300"
-          style={{
-            left: `${pct.toFixed(1)}%`,
-            backgroundColor: markerHex,
-            boxShadow: `0 0 8px ${markerHex}`,
-            outline: outside ? `1px solid ${markerHex}` : undefined,
-          }}
-        />
-        {/* the current value label floating above the marker */}
-        <span
-          className="absolute -top-4 -translate-x-1/2 font-mono text-[10px] font-bold tabular-nums"
-          style={{ left: `${pct.toFixed(1)}%`, color: markerHex }}
-        >
-          {valueLabel}
-        </span>
-      </span>
-      <span className="shrink-0 font-mono text-[10px] tabular-nums text-sky-300/70">
-        {fmtStrike(max)}
-      </span>
-    </div>
-  );
-}
-
-function RecentRangeStrip({
-  history,
-  spot,
-  flip,
-  showFlipTrack,
-}: {
-  history: HistoryContext;
-  /** Live spot (header/matrix spot) to locate within the recent spot range. */
-  spot: number;
-  /** Current gamma flip to locate within the recent flip range (GEX-only, optional). */
-  flip: number | null;
-  /**
-   * Whether to render the flip track. The flip is a GAMMA concept, so callers pass false
-   * under VEX/DEX/CHARM (the spot track is lens-agnostic and still shows). When false the
-   * strip degrades to the spot track alone — never a stale gamma flip under a vanna header.
-   */
-  showFlipTrack: boolean;
-}) {
-  const spotRange = history.recent_spot_range;
-  const flipRange = history.recent_flip_range;
-
-  // Show the spot track only when we have a real, non-degenerate range AND a live spot.
-  const showSpot = spotRange != null && spotRange.max > spotRange.min && spot > 0;
-  // Flip track is additive — only under the GEX lens, and only when a recent flip range +
-  // a current flip both exist (never a fabricated or cross-lens-stale gamma flip).
-  const showFlip =
-    showFlipTrack && flipRange != null && flipRange.max > flipRange.min && flip != null;
-
-  if (!showSpot && !showFlip) return null;
-
-  const sessions = history.sessions;
-  const sessionLabel = `${sessions}-session range`;
-
-  return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-[rgba(8,9,14,0.5)] px-4 py-3">
-      <div className="mb-2.5 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-mute">
-          Recent range
-        </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/75">
-          {sessionLabel}
-        </span>
-      </div>
-      <div className="space-y-4 pt-2">
-        {showSpot && spotRange && (
-          <RangeTrack
-            label={`Spot in ${sessions}s`}
-            min={spotRange.min}
-            max={spotRange.max}
-            value={spot}
-            markerHex="#22d3ee"
-            valueLabel={fmtSpot(spot)}
-          />
-        )}
-        {showFlip && flipRange && flip != null && (
-          <RangeTrack
-            label={`Flip in ${sessions}s`}
-            min={flipRange.min}
-            max={flipRange.max}
-            value={flip}
-            markerHex="#ffd23f"
-            valueLabel={fmtStrike(flip)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Key-level box (consolidated) — ONE compact bordered panel of small label-over-
 // value cells, replacing the old ~6 big RegimeTile cards that ate vertical space.
 // Mirrors the SpxSniperHeader metric-block pattern: a tight grid of tiny cells in
@@ -2512,9 +2365,22 @@ function CompactLevel({ cell }: { cell: LevelCell }) {
   );
 }
 
-function KeyLevelBox({ cells, kicker }: { cells: LevelCell[]; kicker: string }) {
+function KeyLevelBox({
+  cells,
+  kicker,
+  className,
+}: {
+  cells: LevelCell[];
+  kicker: string;
+  className?: string;
+}) {
   return (
-    <div className="rounded-xl border border-white/12 bg-[rgba(8,9,14,0.55)] px-3 py-2.5 backdrop-blur">
+    <div
+      className={clsx(
+        "rounded-xl border border-white/12 bg-[rgba(8,9,14,0.55)] px-3 py-2 backdrop-blur",
+        className
+      )}
+    >
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-mute">
           Key levels
@@ -3504,8 +3370,10 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
 
   const matrixPanel = (
     <div className="min-w-0">
-      <PanelLabel>Strike × Expiry Matrix</PanelLabel>
-      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
+      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
+        <span className="mr-1 shrink-0 font-bold tracking-[0.2em] text-sky-300">
+          Strike × Expiry Matrix
+        </span>
         {/* Always-visible matrix freshness anchor — the gamma matrix / walls / KING NODE /
             gamma-flip are the numbers traders act on, so the sample time belongs here on the
             grid header, not only inside the collapsible Largo panel (#8). */}
@@ -3612,16 +3480,16 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             vertically for strikes (the spot row is centered inside this box via
             matrixScrollRef — the page never moves). overscroll-contain stops the
             scroll chaining back to the page at the band edges; the sticky header
-            row + sticky Strike column stay visible while the rows scroll. Retuned
-            to ~clamp(360px,56vh,600px) since two panels share the viewport now. */}
+            row + sticky Strike column stay visible while the rows scroll. Taller now that
+            Recent Ranges was removed — matrix is the primary surface on this tab. */}
         <div
           ref={matrixScrollRef}
-          className="max-h-[clamp(360px,56vh,600px)] overflow-auto overscroll-contain"
+          className="max-h-[clamp(480px,74vh,880px)] min-h-[clamp(360px,58vh,640px)] overflow-auto overscroll-contain"
           role="region"
           tabIndex={0}
           aria-label={`${data?.underlying ?? ticker} dealer ${vocab.noun.toLowerCase()} exposure matrix, strikes by expiration`}
         >
-          <table className="w-full min-w-[34rem] border-separate border-spacing-0 font-mono text-[11px]">
+          <table className="w-full min-w-[36rem] border-separate border-spacing-0 font-mono text-[13px]">
             <thead>
               <tr>
                 {/* Top-left corner: sticky on BOTH axes (z-20 so it sits above the
@@ -3690,7 +3558,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                     <th
                       scope="row"
                       className={clsx(
-                        "sticky left-0 z-10 whitespace-nowrap py-1.5 pr-2 text-left font-semibold tabular-nums backdrop-blur",
+                        "sticky left-0 z-10 whitespace-nowrap py-2 pr-2 text-left text-[13px] font-bold tabular-nums backdrop-blur",
                         // The spot row keeps its cyan border (primary anchor). The ANCHOR
                         // row gets a 2px WHITE left-border + white wash so the dominant node
                         // is unmistakable; it outranks the flip row's lighter gold band.
@@ -3797,7 +3665,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                             // outer white anchor frame isn't clipped — but stays BELOW the sticky
                             // header row + sticky strike column (both z-10) so it never bleeds over
                             // them when scrolled underneath.
-                            "relative whitespace-nowrap px-2 py-1.5 text-center text-[11px] font-semibold tabular-nums",
+                            "relative whitespace-nowrap px-2.5 py-2 text-center text-[13px] font-bold tabular-nums",
                             (isAnchorCell || isPosPeakCell || isNegPeakCell) && "z-[5]",
                             has
                               ? v > 0
@@ -3846,7 +3714,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                     })}
                     <td
                       className={clsx(
-                        "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
+                        "whitespace-nowrap px-2.5 py-2 text-right text-[13px] font-bold tabular-nums",
                         rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-bear-text" : "text-sky-300/40"
                       )}
                       style={{
@@ -3895,7 +3763,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           page. The freshness indicator that lived on that header's actions slot is
           preserved as the minimal Live/Quote-only dot at the far right of this row.
           Wraps gracefully on narrow widths (flex-wrap). */}
-      <div className="relative z-[40] mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 overflow-visible rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
+      <div className="relative z-[40] mb-3 flex flex-wrap items-center gap-x-4 gap-y-3 overflow-visible rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
         {/* Compact searchable ticker + the ONE kept clean spot reference. */}
         <TickerSwitcher
           ticker={ticker}
@@ -3989,6 +3857,11 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           </TabList>
         </Tabs>
       </div>
+
+      {/* Key levels sit tight under the control row — matrix is the hero below. */}
+      {showViewTabs && (
+        <KeyLevelBox cells={levelCells} kicker={`${lensUpper} structure`} className="mb-3" />
+      )}
 
       {/* Night Hawk active-play badge — renders only when a NH edition from the last 24h
           has a play for this ticker. Compact inline badge with a tooltip showing the play
@@ -4089,25 +3962,6 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               renders nothing when empty/absent. Sits above the regime header. ── */}
           <AlertsStrip events={events} />
 
-          {/* ── Key levels (consolidated, Step 2) — ONE compact box of small label-over-
-              value cells replacing the old ~6 big cards. Per-lens cell sets (built in
-              levelCells) carry the same values/tones/help/deltas; GEX adds a white-distinct
-              ANCHOR cell so the dominant node still pops. Frees the chart space below. ── */}
-          <KeyLevelBox cells={levelCells} kicker={`${lensUpper} structure`} />
-
-          {/* ── Recent-range strip (HISTORY context) — where the live spot sits within the
-              last-N-session range (+ the flip within its range under GEX). Renders nothing
-              when EOD history is cold (the norm until the cron runs a few sessions). The
-              spot track is lens-agnostic; the flip track shows under GEX only. ── */}
-          {historyContext != null && (
-            <RecentRangeStrip
-              history={historyContext}
-              spot={headerSpot > 0 ? headerSpot : spot}
-              flip={flip}
-              showFlipTrack={lens === "gex"}
-            />
-          )}
-
           {/* ── Main area — 2 views (Step 3), restructured:
                 • "Matrix" (DEFAULT) — the Strike × Expiry Matrix ALONE at FULL content width,
                   so the far-dated monthly OpEx columns breathe (no longer sharing the row with
@@ -4122,7 +3976,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               keeping its bounded scroller, spot/flip anchoring, anchor markers, colors + legends.
               The GEX/VEX/DEX/CHARM lens switch drives every panel (all read the active `lens`).
               ──────────────── */}
-          <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-5">
+          <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-3">
             <TabPanels>
               {/* Tab A — Matrix ALONE, full content width. */}
               <TabPanel value="pair-a">{matrixPanel}</TabPanel>
