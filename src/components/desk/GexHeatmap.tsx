@@ -18,6 +18,12 @@ import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitive
 import { shiftPercentForStrike } from "@/components/desk/gex-heatmap/shift-math";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import {
+  fmtHeatmapMoneySigned,
+  heatmapCellStyle,
+  heatmapCellTextStyle,
+  type GexHeatmapLens,
+} from "@/lib/gex-heatmap-display";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
@@ -206,6 +212,14 @@ type GexHeatmapResponse = {
     target_strike: string | number | null;
     grade: string;
     summary: string;
+  } | null;
+  /** UW oracle cross-check (preset tickers) — same block SPX Slayer matrix surfaces. */
+  cross_validation?: {
+    callWallMatch: boolean;
+    putWallMatch: boolean;
+    flipMatch: boolean;
+    divergence: number | null;
+    uw_asof: string | null;
   } | null;
   error?: string;
 };
@@ -604,50 +618,6 @@ const METRIC_HELP = {
   charmPosture:
     "Net dealer charm sign. Positive → decay pins price UP toward heavy strikes; negative → it drags price DOWN. Both intensify as expiration approaches.",
 } as const;
-
-/**
- * Matrix cell background: a STRONG diverging magnitude gradient normalized to the
- * matrix peak |net|. Large positive → deep emerald (lens-positive); near-zero →
- * near-black/transparent; large negative → deep bear-red. The point is glanceability:
- * color alone encodes magnitude so positioning reads WITHOUT parsing the numbers.
- *
- * The prior shading topped out at α 0.60 with a pow(mag,0.7) curve that LIFTED low
- * magnitudes — so a near-uniform faint wash where structure was invisible. We now use a
- * steeper response (pow(mag,1.35)) that keeps small cells genuinely dim and lets big
- * cells saturate hard (α up to ~0.92), plus an inset glow on the heaviest cells. Numbers
- * stay legible: deep cells get white text downstream (resolved by cellTextStyle).
- */
-function cellStyle(value: number, peak: number, lens: Lens): React.CSSProperties {
-  if (!value || peak <= 0) return {};
-  const mag = Math.min(1, Math.abs(value) / peak);
-  // Steep, saturating ramp: tiny cells ≈ transparent (structure recedes), heavy cells
-  // ≈ opaque deep emerald / bear-red (structure pops). 0.04 floor keeps a hint of sign.
-  const alpha = 0.04 + Math.pow(mag, 1.35) * 0.88;
-  const c = LENS_COLORS[lens];
-  const rgb = value > 0 ? c.posRgb : c.negRgb;
-  return {
-    backgroundColor: `rgba(${rgb},${alpha.toFixed(3)})`,
-    boxShadow: mag > 0.45 ? `inset 0 0 18px rgba(${rgb},${(mag * 0.4).toFixed(2)})` : undefined,
-  };
-}
-
-/**
- * Text color for a matrix cell given its magnitude vs peak — readability companion to
- * cellStyle. On the heaviest cells (deep saturated bg) the lens-tinted number drops below
- * AA, so we switch to white there; lighter cells keep their directional tint. Returns a
- * style object so the caller can spread it over the existing tint class.
- */
-function cellTextStyle(value: number, peak: number): React.CSSProperties {
-  if (!value || peak <= 0) return {};
-  const mag = Math.min(1, Math.abs(value) / peak);
-  // Legibility: in the mid-magnitude band (~0.3–0.5) the colored wash competed with the
-  // directional tint (tint-on-tint dropped below AA — the "red number on dark-red" issue).
-  // A subtle dark halo keeps the meaningful directional color readable across that band, and
-  // past ~0.45 the bg is saturated enough that white reads cleanest. Halo is opacity/shadow
-  // only (no layout cost) and reduced-motion-irrelevant.
-  if (mag > 0.45) return { color: "#ffffff", textShadow: "0 1px 2px rgba(0,0,0,0.55)" };
-  return { textShadow: "0 1px 2px rgba(0,0,0,0.72)" };
-}
 
 const PRESET_TICKERS = [
   "SPY", "SPX", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "AMD", "META", "AMZN", "GOOGL",
@@ -2865,6 +2835,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     return p;
   }, [strikeTotals]);
 
+  const matrixLens = lens as GexHeatmapLens;
+  const uwCross = data?.cross_validation;
+  const uwDiverged =
+    lens === "gex" &&
+    uwCross?.divergence != null &&
+    uwCross.divergence > 5 &&
+    !(uwCross.callWallMatch && uwCross.putWallMatch && uwCross.flipMatch);
+
   // Peak of the FILTERED totals — scales the profile bars under the active expiry scope
   // so a 0DTE-only view doesn't render as a few faint bars against the all-expiry peak.
   const filteredPeak = useMemo(() => {
@@ -3565,6 +3543,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         )}
       </div>
 
+      {uwDiverged && (
+        <p className="mb-2 font-mono text-[9px] leading-snug text-amber-300/90">
+          UW oracle diverges {uwCross?.divergence?.toFixed(0)}pt from Polygon walls — treat levels
+          as provisional until channels agree.
+        </p>
+      )}
+      {monthlyExpiries.length > 0 && (
+        <p className="mb-2 font-mono text-[9px] leading-snug text-white/45">
+          Net column sums near-term expiries only; monthly OpEx columns (M) are additive context.
+        </p>
+      )}
+
       {/* Horizontal-scroll container with a subtle right-edge fade so on
           phones the mono values scroll instead of colliding. The table gets
           a min-width so columns keep their breathing room below the fold. */}
@@ -3611,7 +3601,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                     </th>
                   );
                 })}
-                <th className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-right text-[10px] uppercase tracking-wide text-cyan-400 backdrop-blur">
+                <th
+                  className="sticky top-0 z-10 whitespace-nowrap bg-[rgba(8,9,14,0.92)] px-2 py-2 text-right text-[10px] uppercase tracking-wide text-cyan-400 backdrop-blur"
+                  title={
+                    monthlyExpiries.length > 0
+                      ? "Near-term aggregate per strike (excludes monthly OpEx columns)"
+                      : undefined
+                  }
+                >
                   Net
                 </th>
               </tr>
@@ -3685,7 +3682,8 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                     </th>
                     {expiries.map((e) => {
                       const v = row[e];
-                      const has = typeof v === "number";
+                      const has = typeof v === "number" && Number.isFinite(v);
+                      const val = has ? v : 0;
                       // The single OVERALL-ANCHOR PEAK CELL — the dominant expiry at the
                       // overall anchor strike. Keeps its diverging magnitude color; a white ◆
                       // pin + white ring sit ON TOP so it pops as the prominent anchor cell.
@@ -3746,8 +3744,8 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                             // Cell color carries the magnitude (the heatmap reads at a
                             // glance), but the numerals now carry more weight + a notch
                             // larger so the dollar values are easy to read in the dense
-                            // grid; white kicks in on deep cells (cellTextStyle). Values
-                            // are compacted ($1.2B / -$45.2M / $22.1K) so the bump can't
+                            // grid; white kicks in on deep cells (heatmapCellTextStyle). Values
+                            // are compacted ($1.2B / -$45.2M / $22.1K / $0.0K) so the bump can't
                             // overflow — whitespace-nowrap + the scroll container hold.
                             // z-[5] lifts a highlighted cell above neighboring body cells so its
                             // outer white anchor frame isn't clipped — but stays BELOW the sticky
@@ -3762,20 +3760,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                               : "text-sky-300/25"
                           )}
                           style={{
-                            ...(has ? { ...cellStyle(v, peak, lens), ...cellTextStyle(v, peak) } : {}),
+                            ...(has ? { ...heatmapCellStyle(val, peak, matrixLens), ...heatmapCellTextStyle(val, peak) } : {}),
                             ...highlightStyle,
                           }}
                           title={
                             isAnchorCell
-                              ? `ANCHOR · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant dealer gamma node (overall)${isPosPeakCell ? " · also +GEX peak (call wall)" : isNegPeakCell ? " · also −GEX peak (put wall)" : ""}`
+                              ? `ANCHOR · ${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — dominant dealer gamma node (overall)${isPosPeakCell ? " · also +GEX peak (call wall)" : isNegPeakCell ? " · also −GEX peak (put wall)" : ""}`
                               : isPosPeakCell
-                                ? `+${lensUpper} PEAK · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant call wall`
+                                ? `+${lensUpper} PEAK · ${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — dominant call wall`
                                 : isNegPeakCell
-                                  ? `−${lensUpper} PEAK · ${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v as number)} — dominant put wall`
+                                  ? `−${lensUpper} PEAK · ${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — dominant put wall`
                                   : isDayAnchorCell
-                                    ? `${fmtExpiry(e)} anchor · ${strike} · ${fmtMoneySigned(v as number)} — this expiry's dominant strike`
+                                    ? `${fmtExpiry(e)} anchor · ${strike} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — this expiry's dominant strike`
                                     : has
-                                      ? `${strike} · ${fmtExpiry(e)} · ${fmtMoneySigned(v)}`
+                                      ? `${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })}`
                                       : undefined
                           }
                         >
@@ -3796,7 +3794,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                               style={{ backgroundColor: "rgba(255,255,255,0.8)" }}
                             />
                           )}
-                          {has ? fmtMoneySigned(v) : "·"}
+                          {fmtHeatmapMoneySigned(val, { showZero: true })}
                         </td>
                       );
                     })}
@@ -3805,9 +3803,16 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                         "whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums",
                         rowTotal > 0 ? posColorClass : rowTotal < 0 ? "text-bear-text" : "text-sky-300/40"
                       )}
-                      style={rowTotal ? { ...cellStyle(rowTotal, totalPeak, lens), ...cellTextStyle(rowTotal, totalPeak) } : undefined}
+                      style={{
+                        ...(rowTotal
+                          ? {
+                              ...heatmapCellStyle(rowTotal, totalPeak, matrixLens),
+                              ...heatmapCellTextStyle(rowTotal, totalPeak),
+                            }
+                          : {}),
+                      }}
                     >
-                      {rowTotal ? fmtMoneySigned(rowTotal) : "·"}
+                      {fmtHeatmapMoneySigned(rowTotal, { showZero: true })}
                     </td>
                   </tr>
                 );

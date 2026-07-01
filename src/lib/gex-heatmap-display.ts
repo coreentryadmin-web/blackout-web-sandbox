@@ -2,11 +2,14 @@
 
 import type { CSSProperties } from "react";
 
-export type GexHeatmapLens = "gex" | "vex";
+/** SPX Slayer matrix uses gex/vex; Thermal adds dex/charm on the same cell scale. */
+export type GexHeatmapLens = "gex" | "vex" | "dex" | "charm";
 
 const LENS_COLORS: Record<GexHeatmapLens, { posRgb: string; negRgb: string }> = {
   gex: { posRgb: "0, 230, 118", negRgb: "255, 45, 85" },
   vex: { posRgb: "125, 211, 252", negRgb: "255, 45, 85" },
+  dex: { posRgb: "34, 211, 238", negRgb: "255, 45, 85" },
+  charm: { posRgb: "255, 210, 63", negRgb: "255, 45, 85" },
 };
 
 /** Compact unsigned dollar: $22.1K / -$45.2M */
