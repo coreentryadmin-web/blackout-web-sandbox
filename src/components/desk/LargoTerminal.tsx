@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import { queryLargoStream, fetchLargoSession } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
+import { isIosAppShell } from "@/lib/ios-app-shell";
 import { Panel, PanelHeader, FreshnessChip, Button } from "@/components/ui";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
@@ -178,7 +179,14 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
       let content =
         "Connection interrupted — couldn't reach live data. Send your question again.";
       if (raw.includes("401")) content = "Sign in with Premium to reach Largo.";
-      else if (raw.includes("403")) content = "Largo is a Premium instrument. Unlock Premium to deploy it.";
+      else if (raw.includes("403")) {
+        // App Store guideline 3.1.1 — no purchase-flow language inside the iOS app.
+        // Runs from a user-triggered handler (never during initial render), so a
+        // direct client-side check is safe here — no hydration mismatch risk.
+        content = isIosAppShell()
+          ? "Largo is a Premium instrument. Membership is managed on the web."
+          : "Largo is a Premium instrument. Unlock Premium to deploy it.";
+      }
       else if (raw.includes("503")) content = "Largo offline — the desk will reconnect shortly.";
       setMessages((m) =>
         m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))

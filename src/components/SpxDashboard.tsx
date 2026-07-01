@@ -38,11 +38,30 @@ export function SpxDashboard() {
       <div className="flex min-h-[60vh] items-center justify-center px-4">
         <EmptyState
           title="Premium membership required"
-          description="This account does not have an active Premium membership. Upgrade to access the live desk."
+          description={
+            <>
+              {/* App Store guideline 3.1.1 — no purchase-flow language inside the iOS app.
+                  Both spans render on the server (no hydration mismatch); CSS picks one based
+                  on the `ios-app` <html> class set by layout.tsx's user-agent check. */}
+              <span className="hide-in-ios-app">
+                This account does not have an active Premium membership. Upgrade to access the
+                live desk.
+              </span>
+              <span className="show-in-ios-app">
+                This account does not have an active Premium membership. Membership is managed
+                on the web.
+              </span>
+            </>
+          }
           action={
-            <Button href="/upgrade" variant="primary" size="sm">
-              Unlock Premium
-            </Button>
+            <>
+              <Button href="/upgrade" variant="primary" size="sm" className="hide-in-ios-app">
+                Unlock Premium
+              </Button>
+              <Button href="/upgrade" variant="primary" size="sm" className="show-in-ios-app">
+                Check membership
+              </Button>
+            </>
           }
           className="max-w-md"
         />
