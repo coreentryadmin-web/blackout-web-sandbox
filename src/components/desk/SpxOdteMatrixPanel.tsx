@@ -28,6 +28,7 @@ type GexHeatmapResponse = {
   spot?: number;
   asof?: string;
   expiries?: string[];
+  strikes?: number[];
   gex?: GexBlock;
 };
 
@@ -50,20 +51,27 @@ async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
   return res.json();
 }
 
-function filterStrikeTotals(
+
+/** Full 0DTE column: every strike on the matrix axis, including zeros. */
+function odteTotalsForAxis(
   cells: Record<string, Record<string, number>>,
-  strikeTotals: Record<string, number>,
-  selected: string[] | null
+  strikesAxis: number[],
+  expiry: string | null
 ): Record<string, number> {
-  if (selected == null) return strikeTotals;
+  if (!expiry || strikesAxis.length === 0) return {};
   const out: Record<string, number> = {};
-  for (const [strike, byExpiry] of Object.entries(cells)) {
-    let sum = 0;
-    for (const exp of selected) {
-      const v = byExpiry[exp];
-      if (typeof v === "number") sum += v;
-    }
-    if (sum !== 0) out[strike] = sum;
+  for (const strike of strikesAxis) {
+    const v = cells[String(strike)]?.[expiry];
+    out[String(strike)] = typeof v === "number" ? v : 0;
+  }
+  return out;
+}
+
+/** Non-zero totals only — used for anchor / wall level math. */
+function nonzeroTotals(totals: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [s, v] of Object.entries(totals)) {
+    if (v !== 0) out[s] = v;
   }
   return out;
 }
@@ -212,18 +220,28 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
   const expiries = data?.expiries ?? [];
   const zeroDte = useMemo(() => zeroDteExpiryFrom(expiries), [expiries]);
   const cells = data?.gex?.cells ?? {};
-  const strikeTotals = data?.gex?.strike_totals ?? {};
+  const strikesAxis = useMemo(() => {
+    const fromApi = (data?.strikes ?? []).filter(Number.isFinite);
+    if (fromApi.length > 0) return [...fromApi].sort((a, b) => b - a);
+    const fromCells = Object.keys(cells)
+      .map(Number)
+      .filter(Number.isFinite);
+    return fromCells.sort((a, b) => b - a);
+  }, [data?.strikes, cells]);
+
   const matrixSpot = data?.spot ?? 0;
   const pulseSpot = pulseSnap?.spx?.price ?? null;
   const spot = pulseSpot != null && pulseSpot > 0 ? pulseSpot : matrixSpot;
 
   const filteredTotals = useMemo(
-    () => filterStrikeTotals(cells, strikeTotals, zeroDte ? [zeroDte] : null),
-    [cells, strikeTotals, zeroDte]
+    () => odteTotalsForAxis(cells, strikesAxis, zeroDte),
+    [cells, strikesAxis, zeroDte]
   );
 
-  const levels = useMemo(() => recomputeLevels(filteredTotals, spot), [filteredTotals, spot]);
-  const anchor = useMemo(() => anchorStrike(filteredTotals), [filteredTotals]);
+  const levelTotals = useMemo(() => nonzeroTotals(filteredTotals), [filteredTotals]);
+
+  const levels = useMemo(() => recomputeLevels(levelTotals, spot), [levelTotals, spot]);
+  const anchor = useMemo(() => anchorStrike(levelTotals), [levelTotals]);
 
   const spotStrike = useMemo(() => {
     const strikes = Object.keys(filteredTotals)
@@ -234,17 +252,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
   }, [filteredTotals, spot]);
 
   const rows = useMemo<MatrixRow[]>(() => {
-    const strikes = Object.keys(filteredTotals)
-      .map(Number)
-      .filter(Number.isFinite)
-      .sort((a, b) => b - a);
-
-    const band =
-      spotStrike != null
-        ? strikes.filter((s) => Math.abs(s - spotStrike) <= 30)
-        : strikes.slice(0, 40);
-
-    return band.map((strike) => {
+    return strikesAxis.map((strike) => {
       const isAnchor = anchor != null && strike === anchor;
       const isMaxPos = levels.posWall != null && strike === levels.posWall;
       const isMaxNeg = levels.negWall != null && strike === levels.negWall;
@@ -260,7 +268,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         isAnchor,
       };
     });
-  }, [filteredTotals, spotStrike, levels.posWall, levels.negWall, anchor]);
+  }, [strikesAxis, filteredTotals, levels.posWall, levels.negWall, anchor]);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   const spotRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -281,7 +289,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
     };
   }, [spotStrike]);
 
-  const hasData = Boolean(data?.available) && rows.length > 0;
+  const hasData = Boolean(data?.available) && strikesAxis.length > 0;
   const feedLive = Boolean(deskLive) && hasData && !error;
   const asofLabel = fmtAsofSeconds(data?.asof);
   const expiryHeader = zeroDte ? fmtExpiryHeader(zeroDte) : "0DTE";
@@ -357,7 +365,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
                       r.isAnchor && r.highlight != null && "spx-odte-matrix-row--anchor-on-peak"
                     )}
                   >
-                    <td className="py-1.5 pl-1 pr-2 text-left text-white/90">
+                    <td className="py-1 pl-1 pr-2 text-left text-white/90">
                       {fmtStrike(r.strike)}
                       {isSpot && (
                         <span className="ml-1 text-[8px] text-white/45" title="Nearest spot">
@@ -365,7 +373,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
                         </span>
                       )}
                     </td>
-                    <td className="relative py-1.5 px-2 text-right font-semibold text-white">
+                    <td className="relative py-1 px-2 text-right font-semibold text-white">
                       {r.value !== 0 ? fmtMoneySigned(r.value) : "·"}
                       {r.isAnchor && (
                         <span className="ml-1 inline-flex align-middle" title="Anchor — max |GEX|">
@@ -391,7 +399,9 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-[#6d28d9]/80" aria-hidden /> Max −GEX
         </span>
-        <span className="text-white/35">· refresh {Math.round(pollMs / 1000)}s</span>
+        <span className="text-white/35">
+          · {rows.length} strikes · refresh {Math.round(pollMs / 1000)}s
+        </span>
       </div>
     </Panel>
   );
