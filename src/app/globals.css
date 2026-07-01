@@ -267,7 +267,7 @@ body {
     @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3;
   }
 
-  /* Learn documentation body — shared by LearnDoc wrapper */
+  /* Learn documentation — BlackOut Academy */
   .learn-prose {
     @apply text-secondary leading-relaxed;
   }
@@ -282,6 +282,285 @@ body {
   }
   .learn-prose a:not([class]) {
     @apply text-cyan-400 transition-colors hover:text-cyan-300;
+  }
+
+  .learn-shell {
+    @apply content-rail;
+  }
+  .learn-shell-grid {
+    @apply grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-12;
+  }
+
+  .learn-hero-glow {
+    background:
+      radial-gradient(60% 50% at 50% -20%, rgba(0, 229, 255, 0.12), transparent 70%),
+      radial-gradient(40% 30% at 90% 10%, rgba(125, 211, 252, 0.08), transparent 60%);
+  }
+
+  .learn-hub-kicker {
+    @apply mb-4 inline-flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300;
+  }
+  .learn-hub-title {
+    @apply font-syne text-4xl font-bold tracking-tight text-white md:text-5xl;
+  }
+  .learn-hub-subtitle {
+    @apply mt-4 max-w-3xl text-base leading-relaxed text-secondary md:text-lg;
+  }
+  .learn-hub-meta {
+    @apply mt-6 flex flex-wrap items-center gap-2 font-mono text-[11px] text-mute;
+  }
+  .learn-hub-featured {
+    @apply relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-white/[0.03] p-6 transition-colors hover:border-cyan-400/35;
+  }
+  .learn-hub-featured-glow {
+    @apply pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/10 via-transparent to-transparent opacity-60;
+  }
+  .learn-hub-card {
+    @apply flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition-all hover:border-cyan-400/25 hover:bg-white/[0.04];
+  }
+  .learn-hub-chapter-num {
+    @apply font-mono text-[10px] font-semibold text-mute;
+  }
+
+  .learn-sidebar {
+    @apply sticky top-[calc(var(--nav-offset)+1rem)] rounded-2xl border border-white/10 bg-[rgba(8,9,14,0.72)] p-4 backdrop-blur-md;
+  }
+  .learn-sidebar-header {
+    @apply mb-4 border-b border-white/10 pb-4;
+  }
+  .learn-sidebar-progress {
+    @apply mt-3 h-1 overflow-hidden rounded-full bg-white/10;
+  }
+  .learn-sidebar-progress-fill {
+    @apply h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-400 transition-all duration-500;
+  }
+  .learn-sidebar-list {
+    @apply flex flex-col gap-0.5;
+  }
+  .learn-sidebar-link {
+    @apply flex items-center gap-2.5 rounded-lg px-2 py-2 text-secondary transition-colors hover:bg-white/[0.04] hover:text-white;
+  }
+  .learn-sidebar-link--active {
+    @apply bg-cyan-400/10 text-cyan-100;
+  }
+  .learn-sidebar-chapter {
+    @apply grid size-5 shrink-0 place-items-center rounded font-mono text-[9px] text-mute;
+  }
+
+  .learn-doc-header {
+    @apply border-b border-white/10 pb-8;
+  }
+  .learn-doc-title {
+    @apply font-syne text-3xl font-bold tracking-tight text-white md:text-4xl;
+  }
+  .learn-doc-description {
+    @apply mt-3 max-w-3xl text-base leading-relaxed text-secondary md:text-lg;
+  }
+  .learn-toc-pill {
+    @apply shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-[11px] text-secondary transition-colors hover:border-white/20 hover:text-white;
+  }
+
+  .learn-chapter-heading {
+    @apply mb-6 border-b border-white/10 pb-3 font-syne text-xl font-bold text-white md:text-2xl;
+  }
+  .learn-prose-body {
+    @apply text-secondary leading-relaxed;
+  }
+
+  .learn-stat-card {
+    @apply rounded-xl border border-white/10 bg-white/[0.03] p-5 transition-colors hover:border-cyan-400/20;
+  }
+  .learn-stat-label {
+    @apply font-mono text-[10px] uppercase tracking-wider text-cyan-400;
+  }
+  .learn-stat-value {
+    @apply mt-1 text-lg font-semibold text-white;
+  }
+  .learn-stat-sub {
+    @apply mt-1 text-sm text-mute;
+  }
+
+  .learn-pipeline-card {
+    @apply rounded-xl border border-white/10 bg-white/[0.02] p-6;
+  }
+  .learn-pipeline-row {
+    @apply flex flex-col gap-3 border-b border-white/10 py-4 last:border-0 sm:flex-row sm:items-start;
+  }
+  .learn-pipeline-layer {
+    @apply w-28 shrink-0 border-l-2 py-1 pl-3 font-mono text-xs text-mute;
+  }
+  .learn-pipeline-chip {
+    @apply rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-secondary;
+  }
+
+  .learn-steps {
+    @apply space-y-4;
+  }
+  .learn-step-item {
+    @apply flex gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-5;
+  }
+  .learn-step-num {
+    @apply flex size-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 font-mono text-sm font-semibold text-cyan-300;
+  }
+  .learn-step-title {
+    @apply font-medium text-white;
+  }
+  .learn-step-body {
+    @apply mt-1 text-sm leading-relaxed text-secondary;
+  }
+
+  .learn-timeline {
+    @apply space-y-0;
+  }
+  .learn-timeline-row {
+    @apply flex flex-col gap-3 overflow-hidden rounded-xl border border-white/10 sm:flex-row;
+  }
+  .learn-timeline-meta {
+    @apply shrink-0 border-b border-white/10 bg-white/[0.02] p-5 sm:w-44 sm:border-b-0 sm:border-r;
+  }
+  .learn-timeline-phase {
+    @apply font-semibold text-cyan-300;
+  }
+  .learn-timeline-time {
+    @apply mt-1 font-mono text-[10px] text-mute;
+  }
+  .learn-timeline-body {
+    @apply flex-1 p-5;
+  }
+  .learn-timeline-action {
+    @apply mt-2 text-sm leading-relaxed text-secondary;
+  }
+  .learn-inline-tool-link {
+    @apply inline-flex items-center gap-1 font-medium text-sky-300 transition-colors hover:text-cyan-300;
+  }
+
+  .learn-tool-map-card {
+    @apply rounded-xl border border-white/10 bg-white/[0.02] p-5;
+  }
+  .learn-tool-map-title {
+    @apply flex items-center gap-3 font-semibold text-white transition-colors hover:text-cyan-200;
+  }
+  .learn-tool-map-desc {
+    @apply mt-3 text-sm leading-relaxed text-secondary;
+  }
+  .learn-open-desk-link {
+    @apply mt-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-cyan-300 hover:text-cyan-200;
+  }
+  .learn-badge {
+    @apply rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-cyan-300;
+  }
+
+  .learn-dos-card {
+    @apply rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-6;
+  }
+  .learn-donts-card {
+    @apply rounded-xl border border-red-500/25 bg-red-500/5 p-6;
+  }
+  .learn-dos-label {
+    @apply mb-4 font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-400;
+  }
+  .learn-donts-label {
+    @apply mb-4 font-mono text-[10px] font-semibold uppercase tracking-wider text-red-400;
+  }
+  .learn-dos-list,
+  .learn-donts-list {
+    @apply space-y-3 text-sm leading-relaxed text-secondary;
+  }
+
+  .learn-cross-link-card {
+    @apply block rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all hover:border-cyan-400/25 hover:bg-white/[0.04];
+  }
+
+  .learn-faq-list {
+    @apply space-y-3;
+  }
+  .learn-faq-item {
+    @apply rounded-xl border border-white/10 bg-white/[0.02] px-5 py-4;
+  }
+  .learn-faq-q {
+    @apply cursor-pointer list-none font-medium text-white marker:content-none;
+  }
+  .learn-faq-q::-webkit-details-marker {
+    display: none;
+  }
+  .learn-faq-a {
+    @apply mt-3 text-sm leading-relaxed text-secondary;
+  }
+
+  .learn-glossary-cat {
+    @apply mb-4 font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400;
+  }
+  .learn-glossary-row {
+    @apply grid gap-2 border-b border-white/10 py-4 last:border-0 sm:grid-cols-[10rem_1fr];
+  }
+  .learn-glossary-row dt {
+    @apply font-medium text-sky-300;
+  }
+  .learn-glossary-row dd {
+    @apply text-sm leading-relaxed text-secondary;
+  }
+
+  .learn-site-nav-card {
+    @apply block rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all hover:border-cyan-400/20 hover:bg-white/[0.04];
+  }
+
+  .learn-callout {
+    @apply rounded-xl border border-white/15 bg-white/[0.03] p-5;
+  }
+  .learn-callout--tip {
+    @apply border-cyan-400/25 bg-cyan-400/5;
+  }
+  .learn-callout--warning {
+    @apply border-amber-400/25 bg-amber-400/5;
+  }
+  .learn-callout-title {
+    @apply font-semibold text-white;
+  }
+  .learn-callout-body {
+    @apply mt-2 text-sm leading-relaxed text-secondary;
+  }
+
+  .learn-cta-card {
+    @apply flex flex-col gap-6 rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/10 to-transparent p-6 sm:flex-row sm:items-center sm:justify-between;
+  }
+  .learn-cta-title {
+    @apply font-syne text-xl font-bold text-white;
+  }
+  .learn-cta-body {
+    @apply mt-2 max-w-xl text-sm text-secondary;
+  }
+  .learn-cta-btn {
+    @apply inline-flex items-center justify-center rounded-full border border-white/15 px-5 py-2.5 font-mono text-xs uppercase tracking-wider text-white transition hover:border-white/30;
+  }
+  .learn-cta-btn--primary {
+    @apply border-cyan-400/40 bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/25;
+  }
+
+  .learn-chapter-nav-link {
+    @apply block rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all hover:border-cyan-400/25;
+  }
+  .learn-chapter-nav-link--next {
+    @apply text-right;
+  }
+  .learn-chapter-nav-label {
+    @apply inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-mute;
+  }
+  .learn-chapter-nav-title {
+    @apply mt-2 block font-semibold text-white;
+  }
+
+  .learn-glossary-search {
+    @apply flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 focus-within:border-cyan-400/30;
+  }
+  .learn-glossary-input {
+    @apply min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-mute;
+  }
+
+  .learn-feature-title {
+    @apply text-base font-semibold text-cyan-300;
+  }
+  .learn-feature-body {
+    @apply mt-1 text-sm leading-relaxed text-secondary;
   }
 }
 

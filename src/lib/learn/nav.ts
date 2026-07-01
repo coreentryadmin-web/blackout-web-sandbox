@@ -24,8 +24,8 @@ export const LEARN_NAV: LearnNavItem[] = [
     slug: "getting-started",
     product: "docs",
     label: "Getting Started",
-    description: "Platform overview and how every desk connects.",
-    tag: "Start here",
+    description: "Membership, navigation, daily workflow, and the shared data pipeline.",
+    tag: "Chapter 1",
   },
   {
     slug: "spx-slayer",
