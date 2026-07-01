@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { Panel } from "@/components/ui";
-import { AnchorGlyph } from "@/components/desk/gex-heatmap/primitives";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { fmtPrice } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
@@ -39,48 +38,139 @@ type GexHeatmapResponse = {
 
 type RowHighlight = "anchor" | "max-pos" | "max-neg" | null;
 
+/** Readable tags in the label column between strike and GEX/VEX value. */
+type RowLabel = "Anchor" | "Max +" | "Max −" | "Spot" | "R1" | "R2" | "S1" | "S2";
+
 type MatrixRow = {
   strike: number;
   value: number;
   highlight: RowHighlight;
-  isAnchor: boolean;
+  labels: RowLabel[];
+  spotOnStrike: boolean;
+};
+
+type OverlayLevel = {
+  price: number;
+  label: RowLabel;
+  tone: "spot" | "resistance" | "support";
 };
 
 type DisplayItem =
-  | { kind: "strike"; row: MatrixRow; spotOnStrike: boolean }
-  | { kind: "spot"; price: number };
+  | { kind: "strike"; row: MatrixRow }
+  | { kind: "level"; price: number; labels: RowLabel[]; tone: OverlayLevel["tone"] };
 
-/** Insert a live SPOT row between bracketing strikes (desc axis), or mark on-strike. */
-function buildDisplayRows(rows: MatrixRow[], spot: number, spotStrike: number | null): DisplayItem[] {
-  if (!(spot > 0) || rows.length === 0) {
-    return rows.map((row) => ({ kind: "strike", row, spotOnStrike: false }));
+const LEVEL_ON_STRIKE_EPS = 0.05;
+
+/** Classic floor pivots from prior session H / L / C. */
+function floorPivots(
+  high: number | null | undefined,
+  low: number | null | undefined,
+  close: number | null | undefined
+): { r1: number; r2: number; s1: number; s2: number } | null {
+  if (high == null || low == null || close == null) return null;
+  if (!(high > 0 && low > 0 && close > 0 && high >= low)) return null;
+  const pivot = (high + low + close) / 3;
+  return {
+    r1: 2 * pivot - low,
+    r2: pivot + (high - low),
+    s1: 2 * pivot - high,
+    s2: pivot - (high - low),
+  };
+}
+
+function overlaysFromPivots(
+  spot: number,
+  pivots: ReturnType<typeof floorPivots>
+): OverlayLevel[] {
+  const out: OverlayLevel[] = [];
+  if (spot > 0) out.push({ price: spot, label: "Spot", tone: "spot" });
+  if (pivots == null) return out;
+  out.push(
+    { price: pivots.r2, label: "R2", tone: "resistance" },
+    { price: pivots.r1, label: "R1", tone: "resistance" },
+    { price: pivots.s1, label: "S1", tone: "support" },
+    { price: pivots.s2, label: "S2", tone: "support" }
+  );
+  return out;
+}
+
+/** Merge overlay levels into strike rows or insert between strikes (desc axis). */
+function buildDisplayRows(rows: MatrixRow[], overlays: OverlayLevel[]): DisplayItem[] {
+  if (rows.length === 0) return [];
+
+  const unmatched: OverlayLevel[] = [];
+  const labelsByStrike = new Map<number, RowLabel[]>();
+  const spotOnStrike = new Set<number>();
+
+  for (const overlay of overlays) {
+    if (!(overlay.price > 0)) continue;
+    let matched = false;
+    for (const row of rows) {
+      if (Math.abs(overlay.price - row.strike) < LEVEL_ON_STRIKE_EPS) {
+        const existing = labelsByStrike.get(row.strike) ?? [];
+        if (!existing.includes(overlay.label)) existing.push(overlay.label);
+        labelsByStrike.set(row.strike, existing);
+        if (overlay.label === "Spot") spotOnStrike.add(row.strike);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) unmatched.push(overlay);
   }
 
-  const onStrike =
-    spotStrike != null && Math.abs(spot - spotStrike) < 0.05;
+  const enrichedRows = rows.map((row) => {
+    const extra = labelsByStrike.get(row.strike) ?? [];
+    const labels = [...row.labels];
+    for (const label of extra) {
+      if (!labels.includes(label)) labels.push(label);
+    }
+    return {
+      ...row,
+      labels,
+      spotOnStrike: row.spotOnStrike || spotOnStrike.has(row.strike),
+    };
+  });
 
-  if (onStrike) {
-    return rows.map((row) => ({
-      kind: "strike" as const,
-      row,
-      spotOnStrike: row.strike === spotStrike,
-    }));
-  }
+  unmatched.sort((a, b) => b.price - a.price);
 
   const out: DisplayItem[] = [];
-  let spotInserted = false;
-  for (const row of rows) {
-    if (!spotInserted && spot > row.strike) {
-      out.push({ kind: "spot", price: spot });
-      spotInserted = true;
+  let overlayIdx = 0;
+  for (const row of enrichedRows) {
+    while (overlayIdx < unmatched.length && unmatched[overlayIdx]!.price > row.strike) {
+      const o = unmatched[overlayIdx]!;
+      out.push({ kind: "level", price: o.price, labels: [o.label], tone: o.tone });
+      overlayIdx++;
     }
-    out.push({ kind: "strike", row, spotOnStrike: false });
+    out.push({ kind: "strike", row });
   }
-  if (!spotInserted) {
-    if (spot > rows[0]!.strike) out.unshift({ kind: "spot", price: spot });
-    else out.push({ kind: "spot", price: spot });
+  while (overlayIdx < unmatched.length) {
+    const o = unmatched[overlayIdx]!;
+    out.push({ kind: "level", price: o.price, labels: [o.label], tone: o.tone });
+    overlayIdx++;
   }
   return out;
+}
+
+function labelCellClass(label: RowLabel): string {
+  if (label === "Spot") return "spx-odte-matrix-label--spot";
+  if (label === "R1" || label === "R2") return "spx-odte-matrix-label--resistance";
+  if (label === "S1" || label === "S2") return "spx-odte-matrix-label--support";
+  if (label === "Max +") return "spx-odte-matrix-label--max-pos";
+  if (label === "Max −") return "spx-odte-matrix-label--max-neg";
+  return "spx-odte-matrix-label--anchor";
+}
+
+function MatrixLabels({ labels }: { labels: RowLabel[] }) {
+  if (labels.length === 0) return null;
+  return (
+    <span className="spx-odte-matrix-labels inline-flex flex-wrap justify-center gap-x-1 gap-y-0.5">
+      {labels.map((label) => (
+        <span key={label} className={clsx("spx-odte-matrix-label", labelCellClass(label))}>
+          {label}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
@@ -254,17 +344,22 @@ function peakStrikes(totals: Record<string, number>): {
   return { maxPos, maxNeg };
 }
 
-function rowHighlightClass(highlight: RowHighlight, isAnchor: boolean): string {
+function rowHighlightClass(highlight: RowHighlight, labels: RowLabel[]): string {
   const parts: string[] = [];
   if (highlight === "max-pos") parts.push("spx-odte-matrix-row--max-pos");
   if (highlight === "max-neg") parts.push("spx-odte-matrix-row--max-neg");
-  if (isAnchor) parts.push("spx-odte-matrix-row--anchor");
+  if (labels.includes("Anchor")) parts.push("spx-odte-matrix-row--anchor");
   return parts.join(" ");
 }
 
-type DeskProps = { live?: boolean };
+type DeskProps = {
+  live?: boolean;
+  pdh?: number | null;
+  pdl?: number | null;
+  priorClose?: number | null;
+};
 
-export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
+export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: DeskProps) {
   const [lens, setLens] = useState<Lens>("gex");
   const pollMs = usePollIntervalMs(MATRIX_POLL_RTH_MS, MATRIX_POLL_OFF_MS);
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
@@ -333,9 +428,13 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
 
   const rows = useMemo<MatrixRow[]>(() => {
     return strikesAxis.map((strike) => {
-      const isAnchor = anchor != null && strike === anchor;
-      const isMaxPos = maxPosStrike != null && strike === maxPosStrike;
-      const isMaxNeg = maxNegStrike != null && strike === maxNegStrike;
+      const labels: RowLabel[] = [];
+      if (anchor != null && strike === anchor) labels.push("Anchor");
+      if (maxPosStrike != null && strike === maxPosStrike) labels.push("Max +");
+      if (maxNegStrike != null && strike === maxNegStrike) labels.push("Max −");
+
+      const isMaxPos = labels.includes("Max +");
+      const isMaxNeg = labels.includes("Max −");
 
       let highlight: RowHighlight = null;
       if (isMaxPos) highlight = "max-pos";
@@ -345,20 +444,28 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
         strike,
         value: filteredTotals[String(strike)] ?? 0,
         highlight,
-        isAnchor,
+        labels,
+        spotOnStrike: false,
       };
     });
   }, [strikesAxis, filteredTotals, maxPosStrike, maxNegStrike, anchor]);
 
-  const displayRows = useMemo(
-    () => buildDisplayRows(rows, spot, spotStrike),
-    [rows, spot, spotStrike]
+  const floorLevels = useMemo(
+    () => floorPivots(pdh, pdl, priorClose),
+    [pdh, pdl, priorClose]
   );
+
+  const displayRows = useMemo(() => {
+    const overlays = overlaysFromPivots(spot, floorLevels);
+    return buildDisplayRows(rows, overlays);
+  }, [rows, spot, floorLevels]);
 
   const scrollSpotKey = useMemo(() => {
     if (!(spot > 0)) return null;
-    if (spotStrike != null && Math.abs(spot - spotStrike) < 0.05) return `strike-${spotStrike}`;
-    return `spot-${spot.toFixed(2)}`;
+    const onStrike =
+      spotStrike != null && Math.abs(spot - spotStrike) < LEVEL_ON_STRIKE_EPS;
+    if (onStrike) return `strike-${spotStrike}`;
+    return `level-spot-${spot.toFixed(2)}`;
   }, [spot, spotStrike]);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
@@ -473,8 +580,9 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
           <table className="spx-odte-matrix-table w-full border-collapse font-mono text-[12px] tabular-nums">
             <thead className="sticky top-0 z-10 bg-[#08080e]">
               <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/55">
-                <th className="py-2 pl-1 pr-2 text-left font-semibold">Strike</th>
-                <th className="py-2 px-2 text-right font-semibold">
+                <th className="py-2 pl-1 pr-1 text-left font-semibold">Strike</th>
+                <th className="py-2 px-1 text-center font-semibold w-[4.5rem]">Label</th>
+                <th className="py-2 pl-1 pr-2 text-right font-semibold">
                   {expiryHeader}
                   <span className="ml-1 text-[9px] normal-case tracking-normal text-white/40">
                     {lensLabel}
@@ -484,56 +592,60 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
             </thead>
             <tbody>
               {displayRows.map((item) => {
-                if (item.kind === "spot") {
+                if (item.kind === "level") {
+                  const isSpot = item.tone === "spot";
                   return (
                     <tr
-                      key={`spot-${item.price.toFixed(2)}`}
-                      ref={spotRowRef}
-                      className="spx-odte-matrix-spot-row spx-odte-matrix-spot-blink"
-                      aria-label={`Live spot ${fmtPrice(item.price)}`}
+                      key={`level-${item.labels.join("-")}-${item.price.toFixed(2)}`}
+                      ref={isSpot ? spotRowRef : undefined}
+                      className={clsx(
+                        "spx-odte-matrix-level-row border-b border-white/[0.06]",
+                        isSpot && "spx-odte-matrix-spot-row spx-odte-matrix-spot-blink",
+                        item.tone === "resistance" && "spx-odte-matrix-level-row--resistance",
+                        item.tone === "support" && "spx-odte-matrix-level-row--support"
+                      )}
+                      aria-label={`${item.labels.join(" ")} ${fmtPrice(item.price)}`}
                     >
-                      <td colSpan={2} className="spx-odte-matrix-spot-cell py-1.5 px-2">
-                        <span className="flex items-center justify-between gap-2 font-bold text-cyan-300">
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-cyan-400/90">
-                            ◂ spot ▸
-                          </span>
-                          <span className="text-[13px] tabular-nums text-white spx-odte-matrix-live-spot">
+                      <td className="spx-odte-matrix-strike py-1 pl-1 pr-1 text-left tabular-nums">
+                        {fmtStrike(item.price)}
+                      </td>
+                      <td className="spx-odte-matrix-label-cell py-1 px-1 text-center">
+                        <MatrixLabels labels={item.labels} />
+                      </td>
+                      <td className="spx-odte-matrix-value py-1 pl-1 pr-2 text-right text-white/35">
+                        {isSpot ? (
+                          <span className="spx-odte-matrix-live-spot font-bold text-white">
                             {fmtPrice(item.price)}
                           </span>
-                        </span>
+                        ) : (
+                          "·"
+                        )}
                       </td>
                     </tr>
                   );
                 }
 
                 const r = item.row;
-                const hlClass = rowHighlightClass(r.highlight, r.isAnchor);
+                const hlClass = rowHighlightClass(r.highlight, r.labels);
 
                 return (
                   <tr
                     key={r.strike}
-                    ref={item.spotOnStrike ? spotRowRef : undefined}
+                    ref={r.spotOnStrike ? spotRowRef : undefined}
                     className={clsx(
                       "spx-odte-matrix-row border-b border-white/[0.04]",
                       hlClass,
-                      item.spotOnStrike && "spx-odte-matrix-row--spot-on-strike spx-odte-matrix-spot-blink"
+                      r.spotOnStrike && "spx-odte-matrix-row--spot-on-strike spx-odte-matrix-spot-blink"
                     )}
                   >
-                    <td className="spx-odte-matrix-strike py-1 pl-1 pr-2 text-left">
+                    <td className="spx-odte-matrix-strike py-1 pl-1 pr-1 text-left">
                       {fmtStrike(r.strike)}
-                      {item.spotOnStrike && (
-                        <span className="ml-1 text-[9px] uppercase tracking-wider text-cyan-400">
-                          spot
-                        </span>
-                      )}
                     </td>
-                    <td className="spx-odte-matrix-value relative py-1 px-2 text-right">
+                    <td className="spx-odte-matrix-label-cell py-1 px-1 text-center">
+                      <MatrixLabels labels={r.labels} />
+                    </td>
+                    <td className="spx-odte-matrix-value py-1 pl-1 pr-2 text-right">
                       {r.value !== 0 ? fmtMoneySigned(r.value) : "·"}
-                      {r.isAnchor && (
-                        <span className="ml-1 inline-flex align-middle" title="Anchor — max |GEX|">
-                          <AnchorGlyph size={10} className="text-white" />
-                        </span>
-                      )}
                     </td>
                   </tr>
                 );
@@ -544,9 +656,7 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
       )}
 
       <div className="mt-2 shrink-0 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] tracking-wide text-white/45">
-        <span className="inline-flex items-center gap-1">
-          <AnchorGlyph size={8} className="text-white" /> Anchor
-        </span>
+        <span>Anchor</span>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-[#00e676]/90" aria-hidden /> Max +
           {lensLabel}
@@ -556,8 +666,11 @@ export function SpxOdteMatrixPanel({ live: deskLive }: DeskProps) {
           {lensLabel}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-3 rounded-sm bg-cyan-400/90 spx-odte-matrix-spot-blink" aria-hidden /> Live spot
+          <span className="inline-block h-2 w-3 rounded-sm bg-cyan-400/90 spx-odte-matrix-spot-blink" aria-hidden /> Spot
         </span>
+        {floorLevels ? (
+          <span className="text-white/35">· R1/R2/S1/S2 from PDH/PDL/prior close</span>
+        ) : null}
         <span className="text-white/35">
           · {rows.length} strikes · refresh {Math.round(pollMs / 1000)}s
         </span>

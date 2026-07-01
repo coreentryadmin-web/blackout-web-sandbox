@@ -85,7 +85,12 @@ export function SpxDashboard() {
       <div className="spx-sniper-triple">
         <SpxPanelErrorBoundary>
           <aside className="spx-sniper-left-rail spx-left-matrix">
-            <SpxOdteMatrixPanel live={live} />
+            <SpxOdteMatrixPanel
+              live={live}
+              pdh={desk?.pdh ?? null}
+              pdl={desk?.pdl ?? null}
+              priorClose={desk?.prior_close ?? null}
+            />
           </aside>
         </SpxPanelErrorBoundary>
 
