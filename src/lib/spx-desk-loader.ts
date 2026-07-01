@@ -16,15 +16,36 @@ export type MergedSpxDeskBundle = {
   merged: SpxDeskPayload;
 };
 
-/** Single server path: cache lanes → merge pulse + flow into desk. */
-export async function loadMergedSpxDesk(): Promise<MergedSpxDeskBundle> {
-  // ISSUE-25: Include session date in cache keys so a process running across midnight
+/**
+ * THE single cache lane for buildSpxDesk() — every consumer (this loader, the standalone
+ * /api/market/spx/desk route) must call this function rather than invoking
+ * withServerCache/buildSpxDesk directly, so there is exactly ONE cached desk snapshot per
+ * session date across the whole app.
+ *
+ * Previously the standalone route cached buildSpxDesk() under a bare "spx-desk" key while
+ * this loader used "spx-desk:${date}" — two independently-expiring 10s-TTL lanes racing a
+ * live WS tide store. That let the member dashboard and the trade-alert panel disagree on
+ * trade direction within the same refresh cycle: confirmed live (2026-07-01 14:19 UTC) as
+ * identical VWAP/gamma-flip inputs but a different tide read 28 seconds apart — a member
+ * could see a bullish header next to a short trade call on the same page. Never re-introduce
+ * a second cache key for this builder; route every consumer through this function instead.
+ */
+export async function loadSpxDesk(): Promise<SpxDeskPayload> {
+  // ISSUE-25: Include session date in the cache key so a process running across midnight
   // serves fresh data on the new session rather than stale prior-day data.
   const date = todayEtYmd();
   // SWR: return last good snapshot immediately while the background refresh runs.
   // Prevents a cold Massive chain fetch (20s+) from blocking play/desk polling.
+  return withServerCache(`spx-desk:${date}`, deskCacheTtlMs(), buildSpxDesk, {
+    staleWhileRevalidate: true,
+  });
+}
+
+/** Single server path: cache lanes → merge pulse + flow into desk. */
+export async function loadMergedSpxDesk(): Promise<MergedSpxDeskBundle> {
+  const date = todayEtYmd();
   const [desk, flow, pulse] = await Promise.all([
-    withServerCache(`spx-desk:${date}`, deskCacheTtlMs(), buildSpxDesk),
+    loadSpxDesk(),
     withServerCache(`spx-desk-flow:${date}`, deskFlowCacheTtlMs(), buildSpxDeskFlow),
     withServerCache(`spx-desk-pulse:${date}`, deskPulseCacheTtlMs(), buildSpxDeskPulse),
   ]);
