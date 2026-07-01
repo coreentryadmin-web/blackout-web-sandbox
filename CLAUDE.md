@@ -11,6 +11,19 @@ As soon as an issue is spotted during any audit/validation:
 4. **Open a draft PR** to `main`. Keep the PR small (one issue per branch/PR).
 Documentation/policy changes (this file, FINDINGS, runbook) go on the audit branch, not a fix branch.
 
+## PR write-up policy (standing instruction)
+Every PR — fix or docs — gets a deep, clean write-up so Cursor (a parallel agent working the
+same repo) can read the diff cold and understand it without asking follow-up questions:
+- **Root cause**, not just symptom: the exact broken logic/line, why it was wrong, and why it
+  wasn't caught earlier.
+- **Evidence**: live numbers, header captures, or a before/after test run — whatever actually
+  proved the bug, not just an assertion that it exists.
+- **Blast radius**: every other call site/consumer touched by the same root cause (duplicated
+  logic in a second file counts — fix and note all of them, not just the one you tripped over).
+- **Fix rationale**: why this fix and not an alternative; what was deliberately left unchanged.
+- In-code comments on the non-obvious parts (the WHY, per the repo's normal comment policy) so
+  the reasoning survives even if the PR description is skimmed.
+
 ## Audit toolkit (committed)
 - `scripts/audit/data-validator.mjs` — cross-provider validator (Polygon+UW ground truth vs the numbers members see: prices/indices, GEX/greeks, track-record math, malformed-number scan). Secrets from env only; one temp Clerk user per run, always deleted. Exits non-zero on any FAIL.
 - `docs/audit/MARKET-OPEN-VALIDATION.md` — runbook + the daily market-open **Claude scheduled-trigger** prompt + secrets checklist (13:32 UTC weekdays).

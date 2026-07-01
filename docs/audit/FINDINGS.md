@@ -7,6 +7,14 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED — Two follow-up gaps found after PR #205 and #207 merged (spotted by Cursor's post-merge review)
+**Status:** FIXED in PR `fix/platform-intel-brief-staleness` and PR `fix/nighthawk-entry-range-dedup`.
+
+1. **#205 gap:** `isPremarketBriefFresh()` was only wired into `/api/brief/premarket`. Two sibling readers of the same `platform_briefs` table — `/api/platform/intel`'s `lastBrief` (read by every cron at startup) and `src/lib/nighthawk/platform-intel-snapshot.ts`'s `fetchPlatformIntelSnapshot()` (feeds AI prompt context via `formatPlatformIntelForPrompt()`) — never selected `brief_date` and never gated on it, so a 2+ session-stale brief could still reach cron decisioning and AI prompts even after #205 fixed the member-facing route.
+2. **#207 gap:** the corrupt-entry-range guard (`nhEntryMid()`, reject a published range when either bound ≤0 or width >20% of average) only lived in `track-record-page.ts`, used by the `/track-record` aggregate. Two more call sites independently re-implemented the same unguarded `(low+high)/2` midpoint: `src/lib/nighthawk/analytics.ts` (`getNighthawkMetrics()` → member-facing `avg_return_pct` via `/api/market/nighthawk/record`, and admin-facing `by_conviction`/`by_direction`/`by_sector`/`by_edition`/`avg_loser_return_pct` via `/api/admin/nighthawk/analytics`) and `PlayHistoryTable.tsx`'s client-side admin audit table. `analytics.ts` also never had #156's `Math.min(0, ...)` clamp on the loser-only average, so a corrupt row or a badly-graded stop could show a **"stop row +5.25%"**-style positive average loss. Deduped the guard into `src/lib/nighthawk/entry-range.ts` (`entryRangeMid()`) and pointed all three call sites at it; added the missing clamp to `analytics.ts`.
+
+---
+
 ## ✅ VERIFIED CORRECT — SPX Slayer live GEX/DEX/VEX + anchor (2026-07-01 RTH, ~14:00 UTC)
 Live-vs-live cross-check of `/api/market/gex-positioning?ticker=SPX` against UW's raw SPX per-strike option greeks (793 strikes), independently re-derived in this session:
 
