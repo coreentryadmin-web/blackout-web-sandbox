@@ -145,8 +145,8 @@ export const CRON_JOBS: CronJobDefinition[] = [
     name: "Membership Reconcile",
     kind: "http",
     path: "/api/cron/membership-reconcile",
-    schedule_label: "Hourly",
-    stale_after_min: 3 * 60,
+    schedule_label: "Every 6h",
+    stale_after_min: 13 * 60,
     description: "Resync Whop membership → Clerk tier; self-heals dropped webhooks (lockouts + revenue leaks)",
   },
   {

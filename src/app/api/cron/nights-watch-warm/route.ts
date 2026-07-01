@@ -23,6 +23,7 @@ import {
 } from "@/lib/providers/options-snapshot";
 import { isSpxTicker } from "@/lib/spx-desk-live";
 import { etMinutes, etClock } from "@/lib/spx-play-session-time";
+import { tickerShard } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ function inMarketHours(now = new Date()): boolean {
   const mins = etMinutes(now);
   return mins >= etClock(9, 30) && mins <= etClock(16, 0);
 }
+
+/** Spread chain/GEX warms across N minute-rotating shards (audit R-20). */
+const WARM_SHARDS = Math.max(1, Number(process.env.NIGHTS_WATCH_WARM_SHARDS ?? "6"));
 
 export async function GET(req: NextRequest) {
   const started = Date.now();
@@ -74,13 +78,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Chain lookup failed", detail }, { status: 500 });
   }
 
-  const capped = chains.slice(0, MAX_CHAINS);
+  const shard = Math.floor(Date.now() / 60_000) % WARM_SHARDS;
+  const sharded = chains.filter((c) => tickerShard(c.ticker, WARM_SHARDS) === shard);
+
+  const capped = sharded.slice(0, MAX_CHAINS);
 
   // Strike hints per (ticker, expiry) so getNwChain widens the band to include deep OTM/ITM legs.
   const strikesByChain = new Map<string, number[]>();
   let contracts: Awaited<ReturnType<typeof listDistinctOpenPositionContracts>> = [];
   try {
     contracts = await listDistinctOpenPositionContracts();
+    const shardTickers = new Set(sharded.map((c) => c.ticker.trim().toUpperCase()));
+    contracts = contracts.filter((c) => shardTickers.has(c.ticker.trim().toUpperCase()));
     for (const c of contracts) {
       const key = `${c.ticker.trim().toUpperCase()}|${c.expiry.slice(0, 10)}`;
       const arr = strikesByChain.get(key) ?? [];
@@ -214,11 +223,14 @@ export async function GET(req: NextRequest) {
   const allFailed = chainsToWarm.length > 0 && failed === chainsToWarm.length;
   await logCronRun("nights-watch-warm", started, {
     ok: !allFailed,
+    warm_shard: shard,
+    warm_shards: WARM_SHARDS,
     warmed,
     failed,
     total: chainsToWarm.length,
     chain_fallback_total: capped.length,
     distinct_chains: chains.length,
+    distinct_chains_shard: sharded.length,
     gex_warmed: gexWarmed,
     gex_total: gexTickers.length,
     snapshot_warmed: snapWarmed,
@@ -233,6 +245,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    warm_shard: shard,
+    warm_shards: WARM_SHARDS,
     warmed,
     total: chainsToWarm.length,
     chain_fallback_total: capped.length,

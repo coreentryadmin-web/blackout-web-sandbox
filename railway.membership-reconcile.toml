@@ -19,6 +19,6 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/membership-reconcile"
-cronSchedule = "0 * * * *"
+cronSchedule = "0 */6 * * *"
 restartPolicyType = "never"
 numReplicas = 1

@@ -5,6 +5,7 @@ import { fetchSpxState, fmtPct, fmtPremium, fmtPrice, type SpxState } from "@/li
 import { clsx } from "clsx";
 import { EmbedFrame } from "./EmbedFrame";
 import { Skeleton } from "@/components/ui";
+import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 
 type LiveMarketPulseProps = {
   compact?: boolean;
@@ -42,7 +43,11 @@ function PulseBar({
 }
 
 export function LiveMarketPulse({ compact, className }: LiveMarketPulseProps) {
-  const { data } = useSWR<SpxState>("spx-merged-pulse", fetchSpxState, { refreshInterval: 3_000 });
+  const pollMs = usePollIntervalMs(3_000, 60_000);
+  const { data } = useSWR<SpxState>("spx-merged-pulse", fetchSpxState, {
+    refreshInterval: pollMs,
+    refreshWhenHidden: false,
+  });
 
   const live = data?.available;
   // No data yet on first paint → render neutral skeletons instead of flashing

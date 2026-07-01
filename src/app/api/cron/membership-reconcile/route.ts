@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { reconcileAllMemberships } from "@/lib/membership";
 import { logCronRun } from "@/lib/cron-run";
+import { tryAdvisoryLock, releaseAdvisoryLock } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const MEMBERSHIP_RECONCILE_LOCK = "membership-reconcile";
 
 /**
  * Periodic Whop → Clerk entitlement reconcile.
@@ -20,6 +23,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const acquired = await tryAdvisoryLock(MEMBERSHIP_RECONCILE_LOCK);
+  if (!acquired) {
+    const payload = { ok: true, skipped: true, reason: "locked" };
+    await logCronRun("membership-reconcile", started, payload);
+    return NextResponse.json(payload);
+  }
+
   try {
     const result = await reconcileAllMemberships();
     await logCronRun("membership-reconcile", started, { ok: true, ...result });
@@ -29,5 +39,7 @@ export async function GET(req: NextRequest) {
     console.error("[cron/membership-reconcile]", error);
     await logCronRun("membership-reconcile", started, { ok: false, error: detail });
     return NextResponse.json({ ok: false, error: detail }, { status: 500 });
+  } finally {
+    await releaseAdvisoryLock(MEMBERSHIP_RECONCILE_LOCK);
   }
 }

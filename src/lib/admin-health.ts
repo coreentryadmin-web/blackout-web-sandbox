@@ -10,6 +10,7 @@ import { getStocksSocketStatus } from "@/lib/ws/stocks-socket";
 import { uwRateLimiterStats } from "@/lib/providers/uw-rate-limiter";
 import { polygonRateLimiterStats } from "@/lib/providers/polygon-rate-limiter";
 import { getLaunchStatusSnapshot, type LaunchStatusSnapshot } from "@/lib/tool-access";
+import { buildOpsConfigStatus, type OpsConfigStatus } from "@/lib/ops-config-status";
 
 export type AdminHealthPayload = {
   generated_at: string;
@@ -48,6 +49,8 @@ export type AdminHealthPayload = {
   redis_degraded: boolean;
   /** Premium launch gate — derived from LAUNCHED_TOOLS on this replica. */
   launch_status: LaunchStatusSnapshot;
+  /** Env guardrails (no secret values) — audit R-2/R-6/R-18. */
+  ops_config: OpsConfigStatus;
 };
 
 export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
@@ -109,5 +112,6 @@ export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
     market_health_ok: marketHealth.ok,
     redis_degraded: redisDegraded,
     launch_status: getLaunchStatusSnapshot(),
+    ops_config: buildOpsConfigStatus(),
   };
 }

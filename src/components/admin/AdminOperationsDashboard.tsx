@@ -765,7 +765,31 @@ export function AdminOperationsDashboard() {
                   label="Database"
                   value={h?.market_health_ok ? "Connected" : "Degraded"}
                   ok={h?.market_health_ok ?? null}
-                  sub="Postgres pool"
+                  sub={h?.ops_config?.pg_pooler_hint ?? "Postgres pool"}
+                />
+                <VitalRow
+                  label="PgBouncer"
+                  value={h?.ops_config?.database_via_pooler ? "Via pooler" : "Direct"}
+                  ok={h?.ops_config?.database_via_pooler ?? null}
+                  sub={`PG_POOL_MAX=${h?.ops_config?.pg_pool_max ?? "—"}`}
+                />
+                <VitalRow
+                  label="AI kill-switch"
+                  value={
+                    h?.ops_config?.ai_spend_kill_switch_armed
+                      ? `$${h.ops_config.ai_spend_kill_usd}/day`
+                      : "Unarmed"
+                  }
+                  ok={h?.ops_config?.ai_spend_kill_switch_armed ?? null}
+                  sub={`alert @ $${h?.ops_config?.ai_spend_alert_usd ?? "—"}/day`}
+                />
+                <VitalRow
+                  label="Discord ops"
+                  value={h?.ops_config?.discord_ops_webhook ? "Configured" : "Missing"}
+                  ok={h?.ops_config?.discord_ops_webhook ?? null}
+                  sub={
+                    h?.ops_config?.discord_play_webhook ? "play webhook set" : "play webhook unset"
+                  }
                 />
                 <VitalRow
                   label="Polygon WS"

@@ -24,6 +24,7 @@ import { CollapsibleTile } from "@/components/nighthawk/CollapsibleTile";
 import type { EnrichedPosition, ValuationStatus } from "@/lib/nights-watch/valuation";
 import type { Verdict, VerdictAction } from "@/lib/nights-watch/verdict";
 import { holdsSpxFamily, resolveCoachView } from "@/lib/nights-watch/coach-view";
+import { isEtMarketHours } from "@/lib/et-market-hours";
 
 // The shape the GET route returns per position: the enriched row + a verdict.
 type ApiPosition = EnrichedPosition & { verdict: Verdict };
@@ -45,21 +46,6 @@ type PortfolioGreeks = {
 // cluster-wide. Never drop below 5s (app/DB concurrency, not a provider limit, is the floor).
 const POLL_FAST_MS = 5_000;
 const POLL_SLOW_MS = 30_000;
-
-function isEtMarketHours(now = new Date()): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const wd = get("weekday");
-  if (wd === "Sat" || wd === "Sun") return false;
-  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
-  return mins >= 9 * 60 + 30 && mins <= 16 * 60; // 9:30–16:00 ET
-}
 
 /** Re-evaluated each poll cycle so the cadence flips automatically at the open/close boundary. */
 function getPollMs(now = new Date()): number {

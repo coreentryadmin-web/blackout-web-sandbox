@@ -57,6 +57,10 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   others need `LAUNCHED_TOOLS=heatmap,nighthawk,largo,grid` on Railway `blackout-web`).
 - **Check without Railway:** `/admin` → **Tool launch status** panel, or `GET /api/admin/launch-status`
   (admin-gated). Same snapshot is on `GET /api/admin/health` as `launch_status`.
+- **Ops guardrails (no secret values):** `/admin` → Operations → **System Vitals** shows
+  `ops_config` from `GET /api/admin/health`: AI kill-switch armed?, Discord webhooks set?,
+  PgBouncer/pooler hint from `DATABASE_URL` host. Arming `DAILY_AI_SPEND_KILL_USD` and enabling
+  PgBouncer remain manual Railway steps — the dashboard only reports posture.
 
 ### UW WebSocket → cache / HELIX (2 RPS budget)
 - Multiplex channels in `src/lib/live-api-integrations.ts` (`UW_WS_CHANNELS`). Ticker-scoped joins:

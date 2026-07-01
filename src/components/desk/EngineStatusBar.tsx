@@ -3,9 +3,14 @@
 import useSWR from "swr";
 import { fetchPlatformHealth } from "@/lib/api";
 import { clsx } from "clsx";
+import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 
 export function EngineStatusBar() {
-  const { data } = useSWR("platform-health", fetchPlatformHealth, { refreshInterval: 25_000 });
+  const pollMs = usePollIntervalMs(25_000, 120_000);
+  const { data } = useSWR("platform-health", fetchPlatformHealth, {
+    refreshInterval: pollMs,
+    refreshWhenHidden: false,
+  });
 
   const marketOn = data?.market?.ok === true;
   const intelOn = data?.intel?.ok === true;

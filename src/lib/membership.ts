@@ -7,6 +7,7 @@ import {
   resolveTierFromMemberships,
 } from "@/lib/whop";
 import { isMembershipRevoked } from "@/lib/whop-revocation";
+import { publishTierChanged } from "@/lib/tier-cache";
 
 type MembershipMetadata = {
   tier?: Tier;
@@ -207,7 +208,10 @@ export async function syncWhopMembershipForEmail(email: string): Promise<{
  * Work is bounded to (active subscribers ∪ current premium users), not the full user base.
  * Each email is re-resolved via syncWhopMembershipForEmail, which writes the correct tier.
  */
-export async function reconcileAllMemberships(opts?: { maxEmails?: number }): Promise<{
+export async function reconcileAllMemberships(opts?: {
+  maxEmails?: number;
+  concurrency?: number;
+}): Promise<{
   checked: number;
   premium: number;
   free: number;
@@ -263,6 +267,7 @@ export async function reconcileAllMemberships(opts?: { maxEmails?: number }): Pr
 
   // 3) Re-resolve the truth for each email (in both directions).
   const maxEmails = opts?.maxEmails ?? 5000;
+  const concurrency = Math.max(1, Math.min(10, opts?.concurrency ?? Number(process.env.MEMBERSHIP_RECONCILE_CONCURRENCY ?? "5")));
   const targets = Array.from(emails);
   const capped = targets.length > maxEmails;
   const slice = capped ? targets.slice(0, maxEmails) : targets;
@@ -270,28 +275,44 @@ export async function reconcileAllMemberships(opts?: { maxEmails?: number }): Pr
   let premium = 0;
   let free = 0;
   let errors = 0;
-  for (const email of slice) {
-    let synced = false;
+
+  async function syncOne(email: string): Promise<"premium" | "free" | "error"> {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const { tier } = await syncWhopMembershipForEmail(email);
-        if (tier === "premium") premium++;
-        else free++;
-        synced = true;
-        break;
+        const { tier, updatedUserIds } = await syncWhopMembershipForEmail(email);
+        for (const uid of updatedUserIds) publishTierChanged(uid);
+        return tier === "premium" ? "premium" : "free";
       } catch (err) {
         const status = (err as { status?: number })?.status ?? (err as { statusCode?: number })?.statusCode;
         if (status === 429 && attempt < 3) {
-          // Back off on rate-limit: 2s, 6s
           await new Promise((r) => setTimeout(r, attempt * 2000));
           continue;
         }
-        errors++;
         console.warn(`[membership-reconcile] ${email} attempt ${attempt}:`, err);
-        break;
+        return "error";
       }
     }
-    void synced; // suppress unused-var lint
+    return "error";
+  }
+
+  let nextIdx = 0;
+  async function worker(): Promise<Array<"premium" | "free" | "error">> {
+    const out: Array<"premium" | "free" | "error"> = [];
+    for (;;) {
+      const i = nextIdx++;
+      if (i >= slice.length) return out;
+      out.push(await syncOne(slice[i]!));
+    }
+  }
+  const batches = await Promise.all(
+    Array.from({ length: Math.min(concurrency, slice.length) }, () => worker())
+  );
+  for (const batch of batches) {
+    for (const o of batch) {
+      if (o === "premium") premium++;
+      else if (o === "free") free++;
+      else errors++;
+    }
   }
 
   if (capped) {

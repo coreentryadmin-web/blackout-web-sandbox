@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitives";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
+import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
@@ -2505,6 +2506,8 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // string. The subset re-sums cells[strike] over the chosen expiry/expiries entirely
   // client-side (no refetch) and re-derives walls/flip from those filtered totals.
   const [expiryScope, setExpiryScope] = useState<string>("all");
+  const matrixPollMs = usePollIntervalMs(20_000, 60_000);
+  const quotePollMs = usePollIntervalMs(15_000, 60_000);
 
   // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
   // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
@@ -2537,8 +2540,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     matrixKey,
     fetchGexHeatmap,
     {
-      refreshInterval: 20_000,
-      // Refresh the moment the user returns to the tab. SWR pauses refreshInterval while
+      refreshInterval: matrixPollMs,
+      refreshWhenHidden: false,
+      // Refresh the moment the user returns to the tab.
       // the tab is hidden, so WITHOUT this the matrix reads up to 20s stale on return —
       // which feels like "it only updates when I refresh". Server-cached (20s) + SWR
       // deduping keep focus-triggered refetches cheap (they hit the warm cache).
@@ -2556,7 +2560,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   const { data: quote } = useSWR<QuoteResponse>(
     `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,
     fetchQuote,
-    { refreshInterval: 15_000, revalidateOnFocus: true, keepPreviousData: true }
+    { refreshInterval: quotePollMs, refreshWhenHidden: false, revalidateOnFocus: true, keepPreviousData: true }
   );
 
   // ── Sub-second INDEX spot via the pulse SSE (zero new REST cost) ───────────────
