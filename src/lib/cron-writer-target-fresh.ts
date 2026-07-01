@@ -92,6 +92,35 @@ export async function probeWriterTargetFresh(jobKey: string): Promise<WriterTarg
         detail: fresh ? `uw_cache:${key} ttl ${ttl}s remaining` : `uw_cache:${key} expired/missing`,
       };
     }
+    case "nights-watch-warm": {
+      const { listDistinctOpenPositionContracts } = await import("@/lib/db");
+      let contracts: Awaited<ReturnType<typeof listDistinctOpenPositionContracts>> = [];
+      try {
+        contracts = await listDistinctOpenPositionContracts();
+      } catch {
+        return null;
+      }
+      if (contracts.length === 0) {
+        return { fresh: true, detail: "no open positions — warm cron idle is expected" };
+      }
+      const { buildOcc } = await import("@/lib/ws/options-socket");
+      const { getOptionSnapshot } = await import("@/lib/providers/options-snapshot");
+      const sample = contracts.slice(0, 3);
+      let freshCount = 0;
+      for (const c of sample) {
+        const occ = buildOcc(c.ticker, c.expiry, c.option_type, c.strike);
+        if (!occ) continue;
+        const snap = await getOptionSnapshot(occ);
+        if (snap) freshCount += 1;
+      }
+      const fresh = freshCount > 0;
+      return {
+        fresh,
+        detail: fresh
+          ? `${freshCount}/${sample.length} sample snapshot(s) fresh`
+          : "open positions but snapshot cache cold",
+      };
+    }
   }
   return null;
 }
