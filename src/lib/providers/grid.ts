@@ -497,8 +497,20 @@ export type GridMoversSnapshot = {
   losers: GridMover[];
 };
 
+// Sanity filter for the raw Polygon mover rows before they're sorted/selected as
+// top movers. A >100% single-session move (or a sub-$1 "price") on a name surfaced
+// as a headline mover is virtually always a data artifact (thinly-traded/delisted-
+// adjacent ticker with a near-zero prior price), not a genuine market move — e.g.
+// "DISK +22,245.62%". Reject those before they ever reach the Grid panel.
+export function isPlausibleMover(m: { price: number; change_pct: number; volume?: number }): boolean {
+  if (m.price <= 1) return false;
+  if (Math.abs(m.change_pct) > 100) return false;
+  if (m.volume != null && m.volume < 100_000) return false;
+  return true;
+}
+
 async function fetchMovers(): Promise<GridMoversSnapshot> {
-  const all = await fetchMarketMovers(12);
+  const all = await fetchMarketMovers(12).then((rows) => rows.filter(isPlausibleMover));
   const gainers = all.filter((m) => m.change_pct > 0).map((m) => ({
     ticker: m.ticker,
     change_pct: m.change_pct,
