@@ -46,6 +46,21 @@ function poolSsl(connectionString: string): false | { rejectUnauthorized: boolea
   return { rejectUnauthorized: strict };
 }
 
+/** True when the connection string targets PgBouncer (not direct Postgres). */
+function connectionViaPooler(connectionString: string): boolean {
+  try {
+    const host = new URL(connectionString).hostname.toLowerCase();
+    return (
+      host.includes("pgbouncer") ||
+      host.includes("pooler") ||
+      host.includes("proxy.rlwy") ||
+      host.includes("-pool.")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function connectionCandidates(): Array<{ url: string; mode: "private" | "public" }> {
   const privateUrl = process.env.DATABASE_URL?.trim();
   const publicUrl = process.env.DATABASE_PUBLIC_URL?.trim();
@@ -97,14 +112,19 @@ async function createPool(): Promise<Pool> {
       // five unbounded queries would exhaust the pool and stall the replica. Override via
       // PG_STATEMENT_TIMEOUT_MS — keep it above the slowest legit query (heavy flow_alerts JSONB scans).
       const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS ?? "30000", 10);
+      const viaPooler = connectionViaPooler(candidate.url);
       const livePool = new Pool({
         connectionString: candidate.url,
         max: parseInt(process.env.PG_POOL_MAX ?? "5", 10),
         idleTimeoutMillis: 30_000,
         ssl: poolSsl(candidate.url),
         connectionTimeoutMillis: 15_000,
-        statement_timeout: statementTimeoutMs,
-        query_timeout: statementTimeoutMs + 5_000,
+        // PgBouncer rejects statement_timeout as a startup parameter — use driver query_timeout only.
+        ...(viaPooler || statementTimeoutMs <= 0
+          ? {}
+          : { statement_timeout: statementTimeoutMs }),
+        query_timeout:
+          statementTimeoutMs > 0 ? statementTimeoutMs + 5_000 : undefined,
       });
       // CRITICAL: Railway drops idle private-network connections; node-postgres surfaces that
       // as an 'error' event on the pool's idle clients. With NO listener, Node escalates it to
