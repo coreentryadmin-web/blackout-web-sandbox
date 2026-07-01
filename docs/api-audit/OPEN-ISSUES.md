@@ -1,5 +1,73 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-01 16:55 ET
+Last updated: 2026-07-01 17:17 ET
+
+## RTH comprehensive sweep — 2026-07-01 ~17:14–17:17 ET (pass 4 — post-close)
+
+**Session:** Wed 1 Jul 2026, 17:14–17:17 ET (**post-close**; market closed 16:00 ET). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` | ✅ GREEN — deploy validation passed (post-close window; RTH session checks skipped after 16:15 ET) |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 3 oracle-confirmed, 71 consistency-only (`market_open: false`) |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 37 PASS, 9 WARN (expected missing fields) |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (47 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (47 pass, 0 issues) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 flags |
+| `node scripts/audit/data-validator.mjs` | ✅ 14 PASS, 8 WARN (unrounded floats — P2) |
+| `npm run ops:collect` | ✅ 0 action items |
+
+### API sweep (premium session — ~17:16 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~262ms | 176 strikes, spot 7483.23 |
+| `/api/market/spx/merged` | 200 | ~508ms | warm (not cold) |
+| `/api/market/flows` | 200 | ~471ms | 500 rows |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~138ms | 168 strikes |
+| `/api/grid/bootstrap` + 8 panel routes | 200 | 71–92ms | all panels finite |
+| `/api/market/nighthawk/edition` | 200 | ~116ms | 2 plays Jul 1 |
+| `/api/public/track-record` | 200 | ~185ms | 12 closed (admin session) |
+| Largo `/api/market/largo/query` | 200 | ~37s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow] |
+| SPX oracle | — | — | desk 7483.23 vs Polygon 7483.23 (Δ 0.00) |
+
+**Cross-tool GEX:** SPX spot aligned across desk/heatmap/grid; data-correctness 0 flags.
+
+### Page sweep (premium admin — API proxy, post-close)
+
+| Page | Load | Live update | Notes |
+|---|---|---|---|
+| `/dashboard` | ~262ms heatmap / ~508ms merged | ✅ 15s poll changed | 176 strikes; spot live |
+| `/flows` | ~471ms | ⚠ 15s poll unchanged | expected post-close tape freeze |
+| `/heatmap` Matrix | ~138ms SPY | post-close cache | optional overlays empty |
+| `/heatmap` Profile | (same endpoint) | — | gamma profile via heatmap API |
+| `/grid` | bootstrap + 8 routes 200 | 90s cadence | 12 panels via bootstrap + individual routes |
+| `/nighthawk` | ~116ms | static edition | 2 plays Jul 1 |
+| `/terminal` (Largo) | ~37s | — | grounded NVDA multi-tool answer |
+| `/track-record` | ~185ms | LIVE | 12 closed; admin session |
+
+### Missing-field audit (pass 4 — all expected/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `dark_pool.pcr`, `lit_dark_ratio` | desk/merged/nighthawk | `spx/merged` | **Upstream gap** — prints lack call/put split | Expected; do not fabricate |
+| `flows[].alerted_at` / `event_at` | HELIX | `option_trades` WS path | **Upstream shape** — WS prints lack alert timestamps | Expected |
+| `earnings.items[empty]` | grid | `/api/grid/earnings` | **Expected** — post-close / no near-term items | none |
+| `economy indicators rows[7].value` | grid | `/api/grid/economy` | **Upstream gap** — sparse FRED row | Expected |
+| `events[empty]`, `cross_validation`, `nighthawk_context` | heatmap/dashboard | gex-heatmap overlays | **Optional overlays** — none active post-close | Expected |
+| META/TSLA flip `—` | heatmap matrix | sparse far-dated chain | **Upstream gap** | Expected |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (all GREEN).
+
+### Open watches (P2)
+
+- Unrounded floats across desk/gex/platform payloads — data-validator WARN
+- HELIX tape no-change on 15s poll post-close — expected off-hours behavior
+- Sentry unresolved sample (8) — includes deploy DB timeout noise from earlier today
+
+---
 
 ## RTH comprehensive sweep — 2026-07-01 ~16:51–16:55 ET (pass 3 — post-close)
 
