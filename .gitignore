@@ -13,3 +13,6 @@ tsconfig.tsbuildinfo
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# data-validator runtime output (may contain live production data)
+audit-output/
