@@ -1,7 +1,82 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-01 15:15 ET
+Last updated: 2026-07-01 16:55 ET
 
-## RTH comprehensive sweep — 2026-07-01 ~14:52–15:15 ET (pass 2 — mid-RTH close approach)
+## RTH comprehensive sweep — 2026-07-01 ~16:51–16:55 ET (pass 3 — post-close)
+
+**Session:** Wed 1 Jul 2026, 16:51–16:55 ET (**post-close**; market closed 16:00 ET). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` (initial) | ❌ false RED — `validate-deploy` log grep saw stale options-socket 1006 failures=35 |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 69 consistency-only (`market_open: false`) |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 38 PASS, 8 WARN (expected missing fields) |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (47 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 flags |
+| `node scripts/audit/data-validator.mjs` | ✅ 13 PASS, 1 FAIL (gamma posture sign — P2), 9 WARN (unrounded floats) |
+| `npm run ops:collect` | ✅ 0 action items |
+| `npm run validate:rth-open` (after fix) | ✅ GREEN — socket-health primary probe |
+
+### Infra fix (this pass)
+
+| Issue | Root cause | Fix |
+|---|---|---|
+| `validate:rth-open` false RED post-close | `validate-deploy.mjs` §5 failed on stale Railway log tail (`failures=35`) while `GET /api/cron/socket-health` reported `options.ok=true`, `off-hours — auth not required` | **FIX** branch `fix/validate-deploy-socket-health-offhours` — socket-health HTTP probe primary; log 1006 downgraded to warn when health ok |
+
+### API sweep (premium session — ~16:53 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~3091ms | 176 strikes, spot 7483.23 |
+| `/api/market/spx/merged` | 200 | ~7922ms | cold tail |
+| `/api/market/flows` | 200 | ~751ms | 500 rows |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~141ms | 168 strikes |
+| `/api/grid/bootstrap` + 8 panel routes | 200 | 69–4978ms | all panels finite |
+| `/api/market/nighthawk/edition` | 200 | ~125ms | 2 plays Jul 1 |
+| `/api/public/track-record` | 200 | ~183ms | 12 closed (admin session) |
+| Largo `/api/terminal/query` | 200 | ~41s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow] |
+| SPX oracle | — | — | desk 7483.23 vs Polygon 7483.23 (Δ 0.00) |
+
+**Cross-tool GEX:** SPX spot aligned across desk/heatmap/grid; data-correctness 0 flags.
+
+### Page sweep (premium admin — API proxy, post-close)
+
+| Page | Load | Live update | Notes |
+|---|---|---|---|
+| `/dashboard` | ~3.1s heatmap / ~7.9s merged | ✅ 15s poll changed | 176 strikes; spot live |
+| `/flows` | ~751ms | ✅ 15s poll changed | 500 flow rows |
+| `/heatmap` Matrix | ~141ms SPY | post-close cache | optional overlays empty |
+| `/heatmap` Profile | (same endpoint) | — | gamma profile via heatmap API |
+| `/grid` | bootstrap + 8 routes 200 | 90s cadence | 12 panels via bootstrap + individual routes |
+| `/nighthawk` | ~125ms | static edition | 2 plays Jul 1 |
+| `/terminal` (Largo) | ~41s | — | grounded NVDA multi-tool answer |
+| `/track-record` | ~183ms | LIVE | 12 closed; admin session |
+
+### Missing-field audit (pass 3 — all expected/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `dark_pool.pcr`, `lit_dark_ratio` | desk/merged/nighthawk | `spx/merged` | **Upstream gap** — prints lack call/put split | Expected; do not fabricate |
+| `flows[].alerted_at` / `event_at` | HELIX | `option_trades` WS path | **Upstream shape** — WS prints lack alert timestamps | Expected |
+| `earnings.items[].eps_actual` / `surprise_pct` | grid | `/api/grid/earnings` | **Expected** — pre-report / future dates | none |
+| `economy indicators rows[7].value` | grid | `/api/grid/economy` | **Upstream gap** — sparse FRED row | Expected |
+| `events[empty]`, `cross_validation`, `nighthawk_context` | heatmap/dashboard | gex-heatmap overlays | **Optional overlays** — none active post-close | Expected |
+| META flip `—` | heatmap matrix | sparse far-dated chain | **Upstream gap** | Expected |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (infra false-positive only).
+
+### Open watches (P2)
+
+- Unrounded floats across desk/gex/platform payloads — data-validator WARN
+- Gamma posture vs net_gex sign mismatch — data-validator FAIL (consistency heuristic; data-correctness cron 0 flags)
+- `spx/merged` cold-start ~8s post-close
+- Sentry unresolved sample (8) — includes deploy DB timeout noise from earlier today
+
+---
+
 
 **Session:** Wed 1 Jul 2026, 14:52–15:15 ET (**RTH open**). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp users created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
 
