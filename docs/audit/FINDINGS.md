@@ -3,6 +3,26 @@
 Verified issues from the production data-correctness audit. Newest/most-severe first.
 Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
+**Merge policy for this doc's PRs:** left OPEN for end-of-day review — do not merge without explicit go-ahead, even when CI is green.
+
+---
+
+## ✅ VERIFIED CORRECT — SPX Slayer live GEX/DEX/VEX + anchor (2026-07-01 RTH, ~14:00 UTC)
+Live-vs-live cross-check of `/api/market/gex-positioning?ticker=SPX` against UW's raw SPX per-strike option greeks (793 strikes), independently re-derived in this session:
+
+| Value | App (live) | Ground truth (UW/Polygon, live) | Verdict |
+|---|---|---|---|
+| Spot | 7485.08 | Polygon I:SPX 7487.27 | ✅ Δ 0.03% |
+| Anchor / King strike | 7500 | UW argmax\|net_gex\| = 7500 | ✅ exact |
+| Call wall | 7500 | UW near-spot argmax = 7500 | ✅ exact |
+| Net GEX | +22.1B (long γ) | UW dealer-GEX sign: + | ✅ sign correct |
+| Net VEX | +514B (positive vanna) | UW raw vanna is customer-side (−728M); app correctly flips to dealer convention | ✅ correct (dealer convention, applied consistently) |
+| Net DEX | −27B (short) | UW raw delta is customer-side (+237M); app correctly flips to dealer convention | ✅ correct (dealer convention) |
+
+`gexPositioningFromHeatmap()` never fabricates (returns null on a cold/empty matrix). **Conclusion: the core SPX GEX/DEX/VEX math and the anchor/wall selection are real, correctly-signed dealer-greek derivations — not made up.**
+
+**However**, the app's own `gex_cross_validation` self-check returned a **false mismatch** in the same live payload (`callWallMatch:false, flipMatch:false, divergence:51.1pt`) despite the call wall being independently confirmed correct above — see the sign-blind self-check finding below (P1).
+
 ---
 
 ## 🔴 HIGH — SPX support/resistance R1/R2/S1/S2 computed from a STALE (off-by-one) session
@@ -49,8 +69,8 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 ## 🟠 MEDIUM — VIX source/freshness inconsistency
 App `indices.vix.price = 17.18` vs Polygon prior-close `16.45` (4.4%), while SPX/SPY match prior-close exactly — the app's VIX uses a different source/timestamp than SPX/SPY. Confirm with same-timestamp live compare at open.
 
-## 🟡 TO VERIFY — Track record 0 wins / 9 losses (0% public win-rate)
-Arithmetic is correct; determine whether it's a genuine 2-day sample or an outcomes/settlement scoring bug (winners mislabeled). Under investigation by the deep-validation workflow.
+## 🔴 CRITICAL — Track record mislabels profitable trades as losses (0% win-rate is a bug)
+**Status:** CONFIRMED by both audit workflows. `classifyOutcome` (`src/lib/spx-play-outcomes.ts:170`) forces every `THESIS` exit to "loss" regardless of P&L (and the engine sets `was_loss=true` for thesis breaks — `spx-play-engine.ts:394-397`). Two of the 9 closed plays exited GREEN — #3 `+2.84` and #7 `+7.30` pts — yet are shown as losses, so the public win rate reads **0%** when it should be **~22% (2W/7L)**. Inconsistent with the app's own rules (THETA/SESSION grade by P&L sign; `pnl_pts>=2 → win`). **Fix:** grade THESIS by realized P&L like THETA/SESSION (leave the engine `was_loss` re-entry lock untouched). Existing stored rows need a DB backfill (re-grade) — no DB access from this sandbox. **Fix PR in progress.**
 
 ## 🟡 Provider/config gaps
 - **Benzinga:** used by `src/components/desk/BenzingaNewsTicker.tsx` / `BenzingaNewsRail.tsx` but **no `BENZINGA_API_KEY` in env** — news won't fetch live in this environment.
@@ -64,6 +84,32 @@ Exceptions that fetch once via `useEffect`/`fetch` and stay static until an acti
 - `src/components/nights-watch/NightsWatchPanel.tsx` — positions/alerts fetched once (no timer/stream). **Night's Watch data does not auto-update.**
 - `src/components/spx/SignalAnalyticsPanel.tsx`, `src/components/track-record/PlayHistoryTable.tsx` — one-shot loads.
 - (Modals/editors/nav one-shots — `PlayDetailModal`, `JournalEditor`, `Nav`, settings — one-shot is appropriate, no action needed.)
+
+---
+
+## Workflow triage — full multi-agent audit (2026-07-01)
+Two multi-agent workflows completed (12-unit data-validation + 25-unit CTO audit; ~123 findings). Full reports: `docs/audit/DEEP-VALIDATION-REPORT-2026-07-01.md` and `docs/audit/CTO-AUDIT-REPORT-2026-07-01.md`. **Bottom line: the math is sound and no data is fabricated** — every cross-checkable price / EMA / GEX wall-flip-greek / flow premium / grid % re-derives from Polygon/UW ground truth within tolerance. The problems are grading/labeling and ops blind spots. No confirmed critical security hole (authZ fails closed).
+
+**P0 (fix now):**
+- Track-record THESIS grading (CRITICAL) — see above; fix PR in progress.
+
+**P1 (HIGH):**
+- `gex_cross_validation` (member-visible) is sign-blind: tests call/put wall + flip against one top-10 |gamma| pool, so a wrong wall passes; "divergence" mislabeled, warn threshold (>5) dead, deep-OTM REST fallback false-alarms off-hours (`gex-cross-validation.ts:113-144`).
+- VIX `change_pct` wrong-signed (served −2.66% vs actual +4.44%; price/change from desyncing snapshot fields); VIX term structure mislabeled "backwardation" on a contango curve (`vix-term-utils.ts:44-62`).
+- Composite market regime permanently "NEUTRAL" — consumer matches values the producer never emits (`market-regime-detector/route.ts:51-73`).
+- Top Movers headline artifact "DISK +22,245.62%" — no upper bound (`polygon.ts:315`, `GridMoversPanel.tsx:21`).
+- Corrupt Night Hawk entry ranges (low=17) inflate avg winner 44.3% / profit factor 738.87; missing `Math.min(0,…)` clamp also lets a "stop" loss show +5.25% (`track-record-page.ts:57-99`).
+- Billing "I paid — refresh access" shows green success even on FREE tier (`SyncMembershipButton.tsx:19-27`).
+- Whop idempotency key set pre-processing, never cleared on 500 → retry dropped as duplicate (bounded by 6h reconcile) (`webhook/whop/route.ts:156`).
+- Discord ops alerting is a silent no-op (both webhooks unset in prod) → cron-death / AI-spend / billing alerts never fire (`spx-play-notify.ts:59-70`).
+- `nighthawk-morning-confirm` single-UTC cron self-skips every winter (EST); needs dual-band `15 13,14` (`railway.nighthawk-morning-confirm.toml`).
+- FAQ advertises a "lifetime" plan the pricing UI/checkout don't offer (`FaqSection.tsx:95`).
+- `/embed/*` ships `X-Frame-Options: SAMEORIGIN` (CF edge), breaking the cross-origin embed the config intends (`next.config.mjs:50-56`).
+- HELIX flow `underlying_price`/`otm_pct` NULL on REST rows (UW sends string, SQL gates on jsonb 'number').
+
+**P2 (MEDIUM):** systemic float-noise (~19 endpoints, one shared rounding helper fixes it); Largo passes raw unrounded EMA to model context; 56-year `ageMs`; APIs-dashboard 0-vs-61 contradiction; CSP relaxations / CF header drift; state-mutating GET; cache-key fragmentation; GDPR `user.deleted` gap; fail-open revocation; unguarded NaN formatters; embed/SEO/nav polish.
+
+**Still needs a live RTH + real-browser pass:** intraday flow ingest, VWAP/SPX RTH signals, VIX intraday sign, the WS GEX ladder, and all rendered-UI/visual/console checks (browser was blocked).
 
 ---
 
