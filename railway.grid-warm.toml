@@ -28,5 +28,5 @@ startCommand = "node scripts/hit-cron.mjs /api/cron/grid-warm"
 # NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard value
 # overrides this TOML, so update it there too.
 cronSchedule = "*/2 11-21 * * 1-5"
-restartPolicyType = "never"
+restartPolicyType = "ON_FAILURE"
 numReplicas = 1

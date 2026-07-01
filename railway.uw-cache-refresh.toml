@@ -20,5 +20,5 @@ watchPatterns = [
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/uw-cache-refresh"
 cronSchedule = "*/2 11-21 * * 1-5"
-restartPolicyType = "never"
+restartPolicyType = "ON_FAILURE"
 numReplicas = 1

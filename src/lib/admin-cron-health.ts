@@ -15,6 +15,9 @@ import {
   nextTradingDayEt,
 } from "@/lib/nighthawk/session";
 import { isEtCashRth } from "@/lib/et-market-hours";
+import {
+  isFlowIngestAlternateWriterSkip,
+} from "@/lib/cron-writer-target-fresh";
 
 /** RTH gate for market_hours_only cron health — canonical ET helper (early-close aware). */
 function inMarketHoursEt(now = new Date()): boolean {
@@ -204,6 +207,14 @@ function evaluateJob(
   } else if (suppressStaleOffWindow) {
     status = "healthy";
     statusLabel = last.status === "skipped" ? "Idle (market closed)" : "OK (market closed)";
+  } else if (
+    job.key === "flow-ingest" &&
+    last.status === "skipped" &&
+    isFlowIngestAlternateWriterSkip(last.message)
+  ) {
+    // REST cron intentionally idle while the UW WS (local or cluster) is the live writer.
+    status = "healthy";
+    statusLabel = `REST skipped (${last.message}) — alternate writer path active`;
   } else if (ageMin > staleThreshold) {
     status = "stale";
     statusLabel = `No run in ${Math.round(ageMin)}m (limit ${Math.round(staleThreshold)}m${staleMultiplier > 1 ? ` · ${staleMultiplier}× weekend` : ""})`;
@@ -361,6 +372,31 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
 
     return health;
   });
+
+  // Handshake lag during Railway redeploy gaps can mark warmers/flow-ingest stale even when
+  // their PG/Redis targets are still fresh (organic traffic + TTL + WS paths keep data live).
+  const TARGET_FRESH_OVERRIDE_KEYS = new Set([
+    "flow-ingest",
+    "heatmap-warm",
+    "grid-warm",
+    "uw-cache-refresh",
+  ]);
+  await Promise.all(
+    jobs.map(async (health, index) => {
+      if (!health.market_hours_stale && health.status !== "stale") return;
+      if (!TARGET_FRESH_OVERRIDE_KEYS.has(health.key)) return;
+      const { probeWriterTargetFresh } = await import("@/lib/cron-writer-target-fresh");
+      const probe = await probeWriterTargetFresh(health.key);
+      if (!probe?.fresh) return;
+      jobs[index] = {
+        ...health,
+        status: "healthy",
+        status_label: `Target fresh (${probe.detail}) — cron handshake lag is benign`,
+        market_hours_stale: false,
+        meta: { ...(health.meta ?? {}), writer_target_probe: probe },
+      };
+    })
+  );
 
   const summary = {
     total: jobs.length,
