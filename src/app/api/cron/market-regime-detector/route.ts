@@ -14,6 +14,7 @@ import { logCronRun } from "@/lib/cron-run";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { fetchRecentFlows, dbQuery } from "@/lib/db";
+import { deriveComposite } from "./derive-composite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,31 +47,6 @@ function deriveFlowRegime(
   if (ratio >= 1.5) return { regime: "bullish", ratio };
   if (ratio <= 1 / 1.5) return { regime: "bearish", ratio };
   return { regime: "mixed", ratio };
-}
-
-function deriveComposite(
-  gexRegime: string,
-  trendRegime: string,
-  flowRegime: string
-): { composite: string; playbook: string } {
-  const g = (gexRegime ?? "").toLowerCase();
-  const t = trendRegime;
-  const f = flowRegime;
-
-  // GEX regime drives the primary label
-  if (g === "long" && t === "up")
-    return { composite: "MEAN_REVERT_TRENDING_UP", playbook: "Dealers long gamma — expect mean reversion. Trend is up; longs favored but expect snap-backs to VWAP/walls." };
-  if (g === "long" && t === "down")
-    return { composite: "MEAN_REVERT_TRENDING_DOWN", playbook: "Dealers long gamma — mean reversion expected. Trend is down; puts favored near resistance; fade extreme moves." };
-  if (g === "short" && t === "up")
-    return { composite: "AMPLIFY_BREAKOUT", playbook: "Dealers short gamma — moves amplify. Trend up with breakout risk; calls favored; ride momentum, avoid fades." };
-  if (g === "short" && t === "down")
-    return { composite: "AMPLIFY_BREAKDOWN", playbook: "Dealers short gamma — breakdown risk. Trend down; puts favored; momentum plays over mean-reversion." };
-  if (g === "short")
-    return { composite: "AMPLIFY_MIXED", playbook: "Dealers short gamma — volatile, choppy. Flow is " + f + "; size down, tight stops." };
-  if (g === "long")
-    return { composite: "MEAN_REVERT_MIXED", playbook: "Dealers long gamma — mean reversion dominant. Flow is " + f + "; scalp ranges, avoid trend plays." };
-  return { composite: "NEUTRAL", playbook: "No strong GEX regime signal. Trade cautiously with reduced size." };
 }
 
 // ── Anomaly detection ──────────────────────────────────────────────────────────
