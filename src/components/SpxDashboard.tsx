@@ -6,7 +6,7 @@ import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
 import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
-import { SpxOdteMatrixPanel } from "@/components/desk/SpxOdteMatrixPanel";
+import { SpxGexMatrixHeatmap } from "@/components/desk/SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
 
 class SpxPanelErrorBoundary extends React.Component<
@@ -85,11 +85,12 @@ export function SpxDashboard() {
       <div className="spx-sniper-triple">
         <SpxPanelErrorBoundary>
           <aside className="spx-sniper-left-rail spx-left-matrix">
-            <SpxOdteMatrixPanel
+            <SpxGexMatrixHeatmap
               live={live}
-              pdh={desk?.pdh ?? null}
-              pdl={desk?.pdl ?? null}
-              priorClose={desk?.prior_close ?? null}
+              liveSpot={desk?.price ?? null}
+              deskGammaFlip={desk?.gamma_flip ?? null}
+              deskGexKing={desk?.gex_king ?? null}
+              gexStale={desk?.gex_stale}
             />
           </aside>
         </SpxPanelErrorBoundary>

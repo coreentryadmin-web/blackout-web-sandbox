@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  computeZeroGammaFlip,
   odteGexScopeFromHeatmap,
   odteStrikeTotalsFromCells,
+  recomputeScopedGexLevels,
   resolveOdteExpiry,
+  resolveZeroDteExpiry,
 } from "./gex-odte-scope";
 
 test("resolveOdteExpiry prefers today when on the axis", () => {
   assert.equal(resolveOdteExpiry(["2026-07-02", "2026-07-01", "2026-07-08"], "2026-07-01"), "2026-07-01");
   assert.equal(resolveOdteExpiry(["2026-07-02", "2026-07-08"], "2026-07-01"), "2026-07-02");
+});
+
+test("resolveZeroDteExpiry is strict — no front fallback", () => {
+  assert.equal(resolveZeroDteExpiry(["2026-07-01", "2026-07-08"], "2026-07-01"), "2026-07-01");
+  assert.equal(resolveZeroDteExpiry(["2026-07-02", "2026-07-08"], "2026-07-01"), null);
 });
 
 test("odteStrikeTotalsFromCells sums one expiry column", () => {
@@ -42,4 +50,18 @@ test("odteGexScopeFromHeatmap builds 0DTE net from heatmap cells", () => {
   assert.equal(scope.expiry, "2026-07-01");
   assert.equal(scope.total, -1);
   assert.deepEqual(scope.strikeTotals, { "7400": -2, "7550": 1 });
+});
+
+test("computeZeroGammaFlip picks neg→pos crossing nearest spot (2-decimal)", () => {
+  const totals = { "5990": -10, "6010": 10 };
+  assert.equal(computeZeroGammaFlip(totals, 6000), 6000);
+});
+
+test("recomputeScopedGexLevels matches server wall semantics", () => {
+  const totals = { "5900": -5, "6000": 8, "6100": 3 };
+  const levels = recomputeScopedGexLevels(totals, 6050);
+  assert.equal(levels.callWall, 6000);
+  assert.equal(levels.putWall, 5900);
+  assert.equal(levels.king, 6000);
+  assert.equal(levels.netTotal, 6);
 });

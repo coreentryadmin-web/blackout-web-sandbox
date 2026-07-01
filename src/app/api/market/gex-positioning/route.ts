@@ -3,7 +3,7 @@ import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
-import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime } from "@/lib/providers/gamma-desk";
+import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, topGexWalls } from "@/lib/providers/gamma-desk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +74,29 @@ export async function GET(req: NextRequest) {
           const gexAnalysis = analyzeStrikeGexRows(bundle.rows);
           const flip = bundle.spot > 0 ? computeGammaFlip(gexAnalysis.ranked_levels, bundle.spot) : null;
           const regime = gammaRegime(bundle.spot, flip);
+          const walls = topGexWalls(gexAnalysis.ranked_levels, bundle.spot, 6);
+          let call_wall: number | null = null;
+          let put_wall: number | null = null;
+          let posMax = -Infinity;
+          let negMin = Infinity;
+          for (const lv of gexAnalysis.ranked_levels) {
+            if (lv.net_gex > posMax) {
+              posMax = lv.net_gex;
+              call_wall = lv.strike;
+            }
+            if (lv.net_gex < negMin) {
+              negMin = lv.net_gex;
+              put_wall = lv.strike;
+            }
+          }
+          if (posMax <= 0) call_wall = null;
+          if (negMin >= 0) put_wall = null;
+          const nearest =
+            walls.length > 0
+              ? walls.reduce((best, w) =>
+                  Math.abs(w.strike - bundle.spot) < Math.abs(best.strike - bundle.spot) ? w : best
+                )
+              : null;
           // Build a minimal positioning-compatible response so callers get useful data.
           return NextResponse.json(
             {
@@ -84,22 +107,28 @@ export async function GET(req: NextRequest) {
               change_pct: 0,
               asof: new Date().toISOString(),
               flip,
-              call_wall: null,
-              put_wall: null,
+              call_wall,
+              put_wall,
               max_pain: bundle.maxPain,
               net_gex: gexAnalysis.net_gex,
-              gamma_posture: gexAnalysis.net_gex >= 0 ? "long" : "short",
+              gamma_posture: flip != null && bundle.spot > 0 ? (bundle.spot >= flip ? "long" : "short") : null,
               gamma_regime_read: regime,
               net_vex: 0,
               vanna_posture: null,
-              vanna_regime_read: "partial — walls unavailable (fallback path)",
+              vanna_regime_read: "partial — single-expiry fallback (walls from chain band)",
               net_dex: null,
               dex_posture: null,
               dex_regime_read: null,
               net_charm: null,
               charm_posture: null,
               charm_regime_read: null,
-              nearest_wall: null,
+              nearest_wall: nearest
+                ? {
+                    strike: nearest.strike,
+                    kind: nearest.kind,
+                    distance_pts: nearest.distance_pts,
+                  }
+                : null,
               distance_to_flip_pct: flip != null && bundle.spot > 0
                 ? Number((((bundle.spot - flip) / bundle.spot) * 100).toFixed(2))
                 : null,

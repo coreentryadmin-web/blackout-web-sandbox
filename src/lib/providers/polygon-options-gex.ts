@@ -697,6 +697,26 @@ function farDatedTargetExpiries(todayYmd: string, afterYmd: string): string[] {
 }
 
 /**
+ * Far-dated monthlies always get a dedicated per-expiry band fetch. The near-term paginated
+ * snapshot may have *partially* populated an expiry (a handful of strikes that fell inside the
+ * main band), which must NOT suppress the guaranteed fetch — otherwise QQQ/SPY far columns
+ * stick at ~12 strikes instead of the full ±2% band.
+ */
+export function farDatedExpiriesToFetch(farTargets: readonly string[]): string[] {
+  return [...farTargets];
+}
+
+/** Stable dedupe key for heatmap contract accumulation (one row per listed contract). */
+export function gexContractDedupeKey(c: ChainContract, minExpiryYmd: string): string | null {
+  const strike = Number(c.details?.strike_price);
+  const expiry = String(c.details?.expiration_date ?? "").slice(0, 10);
+  const type = String(c.details?.contract_type ?? "").toLowerCase();
+  if (!Number.isFinite(strike) || strike <= 0 || !expiry || expiry < minExpiryYmd) return null;
+  if (type !== "call" && type !== "put") return null;
+  return `${expiry}|${strike}|${type}`;
+}
+
+/**
  * Closed-form Black-Scholes VANNA per share: ∂²V/∂S∂σ = −φ(d1)·d2/σ.
  * Returns 0 (skip) when inputs are non-finite, T<=0, or σ<=0 — never fabricated.
  * Sign is the SAME for calls and puts (vanna is type-independent); the call/put
@@ -1132,6 +1152,18 @@ function warnChainTruncated(label: string, underlying: string, pages: number): v
 // Page cap for the banded heatmap chain pull. Raised from 16 → 40 so SPX's full banded chain
 // isn't truncated (truncation understated walls/OI/IV). Env-tunable; floored at 16.
 const HEATMAP_PAGE_GUARD = Math.max(16, Number(process.env.OPTIONS_HEATMAP_PAGE_GUARD) || 40);
+
+/** Strike band around spot for the shared heatmap chain pull. Default ±6% for all presets. */
+function heatmapBandPct(root: string): number {
+  const clamp = (n: number) => (Number.isFinite(n) && n > 0 && n <= 0.25 ? n : null);
+  if (root === "SPX") {
+    const spx = clamp(Number(process.env.SPX_GEX_HEATMAP_BAND_PCT));
+    if (spx != null) return spx;
+  }
+  const global = clamp(Number(process.env.GEX_HEATMAP_BAND_PCT));
+  if (global != null) return global;
+  return 0.06;
+}
 
 async function fetchHeatmapBand(
   underlying: string,
@@ -1908,7 +1940,7 @@ async function buildGexHeatmapUncached(
   if (isHeatmapPreset(root)) recordHeatmapPriceObservation(root, spot);
 
   // Band sizing stays RELATIVE (% of spot) so it works for $5 and $900 names.
-  const contracts = await fetchHeatmapBand(optionsRoot, spot, 0.04);
+  const contracts = await fetchHeatmapBand(optionsRoot, spot, heatmapBandPct(root));
   if (!contracts.length) {
     console.warn(
       `[gex-heatmap] 0 contracts for ${optionsRoot} @ ${spot} via ${hostOf(BASE)} — heatmap empty (no/thin options chain).`
@@ -1925,6 +1957,7 @@ async function buildGexHeatmapUncached(
   const deltaCellMap = new Map<number, Map<string, number>>();
   const charmCellMap = new Map<number, Map<string, number>>();
   const expirySet = new Set<string>();
+  const seenContracts = new Set<string>();
   let totalGamma = 0;
   let totalVanna = 0;
   let totalDelta = 0;
@@ -1938,6 +1971,11 @@ async function buildGexHeatmapUncached(
    * two paths drifting). Returns nothing; mutates the cell-maps + running totals captured above.
    */
   function accumulateContract(c: ChainContract): void {
+    const dedupeKey = gexContractDedupeKey(c, today);
+    if (!dedupeKey) return;
+    if (seenContracts.has(dedupeKey)) return;
+    seenContracts.add(dedupeKey);
+
     const strike = Number(c.details?.strike_price);
     const expiry = String(c.details?.expiration_date ?? "").slice(0, 10);
     const gamma = Number(c.greeks?.gamma ?? 0);
@@ -2038,7 +2076,7 @@ async function buildGexHeatmapUncached(
     }
   }
 
-  // Main banded snapshot — every expiry inside the ±4% strike window (the near-term dailies /
+  // Main banded snapshot — every expiry inside the heatmap strike band (near-term dailies /
   // weeklies dominate this single paginated pass).
   for (const c of contracts) accumulateContract(c);
 
@@ -2046,18 +2084,16 @@ async function buildGexHeatmapUncached(
   // The near-term pass above is dominated by dailies/weeklies; the dominant dealer-gamma walls
   // park at the standard monthly / quarterly OpEx OI (e.g. a huge wall on the Sept monthly), which
   // a near-only view never shows. We add a BOUNDED set of standard 3rd-Friday monthlies (quarterly
-  // OpEx is a subset) out ~6 months as extra columns. Some of these MAY already be in the banded
-  // snapshot, but the paginated band can truncate before reaching them, so we GUARANTEE them with
-  // small targeted per-expiry band fetches — and ONLY for the dates the banded pass didn't already
-  // populate (no redundant fetch). Bounded to FAR_DATED_MAX_TARGETS so the warm cost stays tiny and
-  // inside the rate budget; each is a cheap ±2% single-expiry band. Best-effort: a failed far-dated
-  // fetch is skipped (the near-term matrix is never blocked).
+  // OpEx is a subset) out ~6 months as extra columns. The paginated main-band fetch may have
+  // *partially* touched one of these expiries (a few strikes inside the band) — that must NOT
+  // skip the dedicated per-expiry fetch or far columns stay sparse (QQQ: ~12/67 strikes). Contract-
+  // level dedupe in accumulateContract prevents double-counting overlap between the two passes.
+  // Bounded to FAR_DATED_MAX_TARGETS; each is a cheap ±2% single-expiry band. Best-effort.
   const nearestSorted = Array.from(expirySet).sort();
   const nearTermAxis = nearestSorted.slice(0, NEAR_TERM_EXPIRY_COUNT);
   const lastNearTerm = nearTermAxis[nearTermAxis.length - 1] ?? today;
   const farTargets = farDatedTargetExpiries(today, lastNearTerm);
-  // Only fetch targets the banded snapshot didn't already bring in (it sometimes reaches a monthly).
-  const farToFetch = farTargets.filter((e) => !expirySet.has(e));
+  const farToFetch = farDatedExpiriesToFetch(farTargets);
   if (farToFetch.length > 0) {
     // Bounded fan-out (≤ FAR_DATED_MAX_TARGETS per ticker) through the SHARED rate-limited funnel
     // (every fetchChainBand call goes via polygonTrackedFetch), so even with the warm cron firing

@@ -6,6 +6,8 @@ import type {
   GexDarkPoolLevel,
   GexHeatmapOverlays,
 } from "@/lib/providers/polygon-options-gex";
+import { validateGexAgainstUW } from "@/lib/providers/gex-cross-validation";
+import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
@@ -284,10 +286,25 @@ export async function GET(req: NextRequest) {
     // Night Hawk active-play context — best-effort Postgres read, never throws.
     const nighthawkContext = await getNightHawkContext(ticker);
 
+    // UW cross-validation (WS-first, REST cached) — preset tickers only; never blocks response.
+    let cross_validation = null;
+    if (isHeatmapPreset(ticker) && heatmap.gex) {
+      cross_validation = await validateGexAgainstUW(
+        ticker,
+        {
+          callWall: heatmap.gex.call_wall,
+          putWall: heatmap.gex.put_wall,
+          gammaFlip: heatmap.gex.flip,
+        },
+        { spot: heatmap.spot }
+      ).catch(() => null);
+    }
+
     return NextResponse.json(
       {
         available: true,
         ...heatmap,
+        cross_validation,
         overlays,
         // The overlay sample time (#9) — a painted dark-pool / flow-by-strike level can be
         // ~30s–2min stale on the same matrix; surface its real fetch time so the legend can

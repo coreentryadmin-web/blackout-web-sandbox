@@ -9,9 +9,16 @@ import "server-only";
  *
  * Usage: call `validateGexAgainstUW(ticker, primaryGexWalls)` after getGexPositioning()
  * returns — it does NOT block the primary data path and only logs divergences.
+ *
+ * Matching is sign-aware: call wall ↔ max positive UW net GEX, put wall ↔ max negative,
+ * flip ↔ zero-crossing on the UW ladder (same semantics as Polygon computeGexRegime).
  */
 
 import { fetchUwSpotExposuresByStrike } from "@/lib/providers/unusual-whales";
+import {
+  crossValidateGexLevels,
+  type GexCrossValidationCoreResult,
+} from "@/lib/providers/gex-cross-validation-core";
 import { getGexStrikeExpiryLadder, isUwChannelFresh } from "@/lib/ws/uw-socket";
 
 // ---------------------------------------------------------------------------
@@ -25,14 +32,6 @@ type CacheEntry = {
 
 const CACHE_TTL_MS = 60_000;
 const cache = new Map<string, CacheEntry>();
-
-/** Top-N strikes by |net_gex| magnitude from the ladder. */
-function topNStrikes(ladder: Map<number, number>, n: number): number[] {
-  return Array.from(ladder.entries())
-    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-    .slice(0, n)
-    .map(([strike]) => strike);
-}
 
 /**
  * Build (or return cached) per-strike GEX map from UW WS (preferred) or REST fallback.
@@ -82,18 +81,7 @@ async function getUwStrikeLadder(ticker: string): Promise<Map<number, number> | 
 // Public API
 // ---------------------------------------------------------------------------
 
-export type GexCrossValidationResult = {
-  /** True when the primary call wall is within ±2 strikes of the UW top-GEX strike. */
-  callWallMatch: boolean;
-  /** True when the primary put wall is within ±2 strikes of the UW top-GEX strike. */
-  putWallMatch: boolean;
-  /** True when the primary gamma flip is within ±2 strikes of the UW top-GEX strike. */
-  flipMatch: boolean;
-  /**
-   * Max point-distance between a primary key level and the nearest UW strike.
-   * Null when UW data is unavailable or all primary levels are null.
-   */
-  divergence: number | null;
+export type GexCrossValidationResult = Omit<GexCrossValidationCoreResult, "uw"> & {
   /** ISO timestamp of when the UW ladder was fetched (cached). */
   uw_asof: string | null;
 };
@@ -105,41 +93,18 @@ export type GexCrossValidationResult = {
  */
 export async function validateGexAgainstUW(
   ticker: string,
-  primary: { callWall: number | null; putWall: number | null; gammaFlip: number | null }
+  primary: { callWall: number | null; putWall: number | null; gammaFlip: number | null },
+  opts?: { spot?: number }
 ): Promise<GexCrossValidationResult | null> {
   const ladder = await getUwStrikeLadder(ticker).catch(() => null);
   if (!ladder || ladder.size === 0) return null;
 
-  // Top-10 UW strikes by |net_gex| magnitude — the key-level candidates.
-  const topStrikes = topNStrikes(ladder, 10);
-  if (topStrikes.length === 0) return null;
-
-  const STRIKE_TOLERANCE = 2; // ±2 strikes (each strike is typically 5pt for SPX)
-
-  function isMatch(level: number | null): { match: boolean; minDist: number | null } {
-    if (level == null || !Number.isFinite(level)) return { match: false, minDist: null };
-    const minDist = Math.min(...topStrikes.map((s) => Math.abs(s - level)));
-    return { match: minDist <= STRIKE_TOLERANCE, minDist };
-  }
-
-  const callResult = isMatch(primary.callWall);
-  const putResult = isMatch(primary.putWall);
-  const flipResult = isMatch(primary.gammaFlip);
-
-  // Max divergence across all available primary levels.
-  const dists = [callResult.minDist, putResult.minDist, flipResult.minDist].filter(
-    (d): d is number => d != null
-  );
-  const divergence = dists.length > 0 ? Math.max(...dists) : null;
+  const core = crossValidateGexLevels(primary, ladder, { spot: opts?.spot });
+  if (!core) return null;
 
   const entry = cache.get(ticker.toUpperCase());
   const uw_asof = entry ? new Date(entry.cachedAt).toISOString() : null;
 
-  return {
-    callWallMatch: callResult.match,
-    putWallMatch: putResult.match,
-    flipMatch: flipResult.match,
-    divergence,
-    uw_asof,
-  };
+  const { uw: _uw, ...rest } = core;
+  return { ...rest, uw_asof };
 }

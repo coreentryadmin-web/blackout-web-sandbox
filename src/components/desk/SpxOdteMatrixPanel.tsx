@@ -4,9 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { Panel } from "@/components/ui";
-import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { fmtPrice } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import {
+  columnTotalsForAxis,
+  computeZeroGammaFlip,
+  kingFromStrikeTotals,
+  odteStrikeTotalsFromCells,
+  recomputeScopedGexLevels,
+  resolveOdteExpiry,
+  resolveZeroDteExpiry,
+} from "@/lib/correctness/gex-odte-scope";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Client poll cadence — tuned to SPX_GEX_HEATMAP_CACHE_SEC default (8s RTH). */
 const MATRIX_POLL_RTH_MS = 8_000;
@@ -204,101 +213,6 @@ async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
 }
 
 
-/** Full 0DTE column: every strike on the matrix axis, including zeros. */
-function odteTotalsForAxis(
-  cells: Record<string, Record<string, number>>,
-  strikesAxis: number[],
-  expiry: string | null
-): Record<string, number> {
-  if (!expiry || strikesAxis.length === 0) return {};
-  const out: Record<string, number> = {};
-  for (const strike of strikesAxis) {
-    const v = cells[String(strike)]?.[expiry];
-    out[String(strike)] = typeof v === "number" ? v : 0;
-  }
-  return out;
-}
-
-/** Non-zero totals only — used for anchor / wall level math. */
-function nonzeroTotals(totals: Record<string, number>): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [s, v] of Object.entries(totals)) {
-    if (v !== 0) out[s] = v;
-  }
-  return out;
-}
-
-function recomputeLevels(
-  totals: Record<string, number>,
-  spot: number
-): { posWall: number | null; negWall: number | null; flip: number | null } {
-  const entries = Object.entries(totals)
-    .map(([s, v]) => ({ strike: Number(s), value: v }))
-    .filter((e) => Number.isFinite(e.strike))
-    .sort((a, b) => a.strike - b.strike);
-  if (entries.length === 0) return { posWall: null, negWall: null, flip: null };
-
-  let posWall: number | null = null;
-  let negWall: number | null = null;
-  let posMax = -Infinity;
-  let negMin = Infinity;
-  for (const e of entries) {
-    if (e.value > posMax) {
-      posMax = e.value;
-      posWall = e.strike;
-    }
-    if (e.value < negMin) {
-      negMin = e.value;
-      negWall = e.strike;
-    }
-  }
-  if (posMax <= 0) posWall = null;
-  if (negMin >= 0) negWall = null;
-
-  let flip: number | null = null;
-  let bestDist = Infinity;
-  for (let i = 1; i < entries.length; i++) {
-    const a = entries[i - 1];
-    const b = entries[i];
-    if (a.value === 0 || b.value === 0) continue;
-    if (a.value < 0 && b.value > 0) {
-      const t = Math.abs(a.value) / (Math.abs(a.value) + Math.abs(b.value));
-      const cross = a.strike + t * (b.strike - a.strike);
-      const dist = spot > 0 ? Math.abs(cross - spot) : 0;
-      if (dist < bestDist) {
-        bestDist = dist;
-        flip = Math.round(cross);
-      }
-    }
-  }
-  if (flip == null) {
-    let best = Infinity;
-    for (const e of entries) {
-      const a = Math.abs(e.value);
-      if (a < best) {
-        best = a;
-        flip = e.strike;
-      }
-    }
-  }
-  return { posWall, negWall, flip };
-}
-
-function anchorStrike(totals: Record<string, number>): number | null {
-  let anchor: number | null = null;
-  let best = 0;
-  for (const [s, v] of Object.entries(totals)) {
-    const strike = Number(s);
-    if (!Number.isFinite(strike)) continue;
-    const mag = Math.abs(v);
-    if (mag > best) {
-      best = mag;
-      anchor = strike;
-    }
-  }
-  return anchor;
-}
-
 /** Compact signed dollar: +$4,770.5K / -$6,601.3K */
 function fmtMoneySigned(n: number): string {
   if (n === 0) return "·";
@@ -333,37 +247,6 @@ function fmtAsofSeconds(iso: string | undefined): string | null {
   });
 }
 
-function zeroDteExpiryFrom(expiries: string[]): string | null {
-  if (expiries.length === 0) return null;
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-  return expiries.includes(today) ? today : expiries[0];
-}
-
-function peakStrikes(totals: Record<string, number>): {
-  maxPos: number | null;
-  maxNeg: number | null;
-} {
-  let maxPos: number | null = null;
-  let maxNeg: number | null = null;
-  let bestPos = -Infinity;
-  let bestNeg = Infinity;
-  for (const [s, v] of Object.entries(totals)) {
-    const strike = Number(s);
-    if (!Number.isFinite(strike)) continue;
-    if (v > bestPos) {
-      bestPos = v;
-      maxPos = strike;
-    }
-    if (v < bestNeg) {
-      bestNeg = v;
-      maxNeg = strike;
-    }
-  }
-  if (bestPos <= 0) maxPos = null;
-  if (bestNeg >= 0) maxNeg = null;
-  return { maxPos, maxNeg };
-}
-
 function rowHighlightClass(highlight: RowHighlight, labels: RowLabel[]): string {
   const parts: string[] = [];
   if (highlight === "max-pos") parts.push("spx-odte-matrix-row--max-pos");
@@ -377,9 +260,24 @@ type DeskProps = {
   pdh?: number | null;
   pdl?: number | null;
   priorClose?: number | null;
+  /** Live index from merged desk — overlay only; structure levels use matrix spot. */
+  liveSpot?: number | null;
+  /** Near-term aggregate from desk header (8 nearest expiries) — parity reference. */
+  deskGammaFlip?: number | null;
+  deskGexKing?: number | null;
+  gexStale?: boolean;
 };
 
-export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: DeskProps) {
+export function SpxOdteMatrixPanel({
+  live: deskLive,
+  pdh,
+  pdl,
+  priorClose,
+  liveSpot,
+  deskGammaFlip,
+  deskGexKing,
+  gexStale,
+}: DeskProps) {
   const [lens, setLens] = useState<Lens>("gex");
   const pollMs = usePollIntervalMs(MATRIX_POLL_RTH_MS, MATRIX_POLL_OFF_MS);
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
@@ -395,14 +293,17 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
     }
   );
 
-  const [pulseSnap, setPulseSnap] = useState<PulseStreamSnapshot | null>(null);
-  useEffect(() => {
-    const conn = createPulseEventSource((snap) => setPulseSnap(snap));
-    return () => conn?.close();
-  }, []);
-
+  const todayEt = useMemo(() => todayEtYmd(), []);
   const expiries = data?.expiries ?? [];
-  const zeroDte = useMemo(() => zeroDteExpiryFrom(expiries), [expiries]);
+  const strictZeroDte = useMemo(
+    () => resolveZeroDteExpiry(expiries, todayEt),
+    [expiries, todayEt]
+  );
+  const columnExpiry = useMemo(
+    () => strictZeroDte ?? resolveOdteExpiry(expiries, todayEt),
+    [strictZeroDte, expiries, todayEt]
+  );
+  const isTrueZeroDte = strictZeroDte != null && columnExpiry === strictZeroDte;
   const block = lens === "gex" ? data?.gex : data?.vex;
   const hasVex = Boolean(data?.vex && Object.keys(data.vex.cells ?? {}).length > 0);
 
@@ -429,30 +330,67 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
   }, [data?.strikes, cells, floorLevels]);
 
   const matrixSpot = data?.spot ?? 0;
-  const pulseSpot = pulseSnap?.spx?.price ?? null;
-  const spot = pulseSpot != null && pulseSpot > 0 ? pulseSpot : matrixSpot;
+  const overlaySpot =
+    liveSpot != null && liveSpot > 0 ? liveSpot : matrixSpot > 0 ? matrixSpot : 0;
 
-  const filteredTotals = useMemo(
-    () => odteTotalsForAxis(cells, strikesAxis, zeroDte),
-    [cells, strikesAxis, zeroDte]
+  const columnTotals = useMemo(
+    () => columnTotalsForAxis(cells, strikesAxis, columnExpiry),
+    [cells, strikesAxis, columnExpiry]
   );
 
-  const levelTotals = useMemo(() => nonzeroTotals(filteredTotals), [filteredTotals]);
+  const levelTotals = useMemo(
+    () => odteStrikeTotalsFromCells(cells, strikesAxis, columnExpiry),
+    [cells, strikesAxis, columnExpiry]
+  );
 
-  const levels = useMemo(() => recomputeLevels(levelTotals, spot), [levelTotals, spot]);
-  const peaks = useMemo(() => peakStrikes(levelTotals), [levelTotals]);
-  const anchor = useMemo(() => anchorStrike(levelTotals), [levelTotals]);
+  const scopedLevels = useMemo(() => {
+    if (lens === "gex") {
+      return recomputeScopedGexLevels(levelTotals, matrixSpot);
+    }
+    const posWall =
+      Object.entries(levelTotals).reduce<{ strike: number | null; v: number }>(
+        (best, [s, v]) => {
+          const strike = Number(s);
+          if (!Number.isFinite(strike) || v <= 0) return best;
+          return v > best.v ? { strike, v } : best;
+        },
+        { strike: null, v: -Infinity }
+      ).strike;
+    const negWall =
+      Object.entries(levelTotals).reduce<{ strike: number | null; v: number }>(
+        (best, [s, v]) => {
+          const strike = Number(s);
+          if (!Number.isFinite(strike) || v >= 0) return best;
+          return v < best.v ? { strike, v } : best;
+        },
+        { strike: null, v: Infinity }
+      ).strike;
+    let netTotal = 0;
+    for (const v of Object.values(levelTotals)) {
+      if (Number.isFinite(v)) netTotal += v;
+    }
+    return {
+      flip: computeZeroGammaFlip(levelTotals, matrixSpot),
+      callWall: posWall,
+      putWall: negWall,
+      king: kingFromStrikeTotals(levelTotals),
+      netTotal,
+    };
+  }, [levelTotals, matrixSpot, lens]);
 
-  const maxPosStrike = peaks.maxPos ?? levels.posWall;
-  const maxNegStrike = peaks.maxNeg ?? levels.negWall;
+  const anchor = scopedLevels.king;
+  const maxPosStrike = scopedLevels.callWall;
+  const maxNegStrike = scopedLevels.putWall;
 
   const spotStrike = useMemo(() => {
-    const strikes = Object.keys(filteredTotals)
+    const strikes = Object.keys(columnTotals)
       .map(Number)
       .filter(Number.isFinite);
-    if (!(spot > 0) || strikes.length === 0) return null;
-    return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best));
-  }, [filteredTotals, spot]);
+    if (!(overlaySpot > 0) || strikes.length === 0) return null;
+    return strikes.reduce((best, s) =>
+      Math.abs(s - overlaySpot) < Math.abs(best - overlaySpot) ? s : best
+    );
+  }, [columnTotals, overlaySpot]);
 
   const rows = useMemo<MatrixRow[]>(() => {
     return strikesAxis.map((strike) => {
@@ -470,26 +408,26 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
 
       return {
         strike,
-        value: filteredTotals[String(strike)] ?? 0,
+        value: columnTotals[String(strike)] ?? 0,
         highlight,
         labels,
         spotOnStrike: false,
       };
     });
-  }, [strikesAxis, filteredTotals, maxPosStrike, maxNegStrike, anchor]);
+  }, [strikesAxis, columnTotals, maxPosStrike, maxNegStrike, anchor]);
 
   const displayRows = useMemo(() => {
-    const overlays = overlaysFromPivots(spot, floorLevels);
+    const overlays = overlaysFromPivots(overlaySpot, floorLevels);
     return buildDisplayRows(rows, overlays);
-  }, [rows, spot, floorLevels]);
+  }, [rows, overlaySpot, floorLevels]);
 
   const scrollSpotKey = useMemo(() => {
-    if (!(spot > 0)) return null;
+    if (!(overlaySpot > 0)) return null;
     const onStrike =
-      spotStrike != null && Math.abs(spot - spotStrike) < LEVEL_ON_STRIKE_EPS;
+      spotStrike != null && Math.abs(overlaySpot - spotStrike) < LEVEL_ON_STRIKE_EPS;
     if (onStrike) return `strike-${spotStrike}`;
-    return `level-spot-${spot.toFixed(2)}`;
-  }, [spot, spotStrike]);
+    return `level-spot-${overlaySpot.toFixed(2)}`;
+  }, [overlaySpot, spotStrike]);
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   const spotRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -510,15 +448,22 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
     };
   }, [scrollSpotKey]);
 
-  const hasData = Boolean(data?.available) && strikesAxis.length > 0;
-  const feedLive = Boolean(deskLive) && hasData && !error;
+  const hasData = Boolean(data?.available) && strikesAxis.length > 0 && columnExpiry != null;
+  const feedLive = Boolean(deskLive) && hasData && !error && !gexStale;
   const asofLabel = fmtAsofSeconds(data?.asof);
-  const expiryHeader = zeroDte ? fmtExpiryHeader(zeroDte) : "0DTE";
+  const expiryHeader = columnExpiry ? fmtExpiryHeader(columnExpiry) : "—";
+  const scopeKicker = isTrueZeroDte ? "0DTE" : columnExpiry ? "Front expiry" : "—";
 
-  const netTotal = useMemo(
-    () => Object.values(filteredTotals).reduce((s, v) => s + v, 0),
-    [filteredTotals]
-  );
+  const flipDiffersFromDesk =
+    lens === "gex" &&
+    scopedLevels.flip != null &&
+    deskGammaFlip != null &&
+    Math.abs(scopedLevels.flip - deskGammaFlip) > 1;
+  const kingDiffersFromDesk =
+    lens === "gex" &&
+    anchor != null &&
+    deskGexKing != null &&
+    Math.abs(anchor - deskGexKing) > 0;
 
   const pivotLabel = lens === "gex" ? "γ flip" : "vanna flip";
   const lensLabel = lens === "gex" ? "GEX" : "VEX";
@@ -527,7 +472,11 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
   return (
     <Panel
       accent={panelAccent}
-      kicker={zeroDte ? `0DTE · ${zeroDte} · ${lensLabel}` : `0DTE · ${lensLabel}`}
+      kicker={
+        columnExpiry
+          ? `${scopeKicker} · ${columnExpiry} · ${lensLabel}`
+          : `${scopeKicker} · ${lensLabel}`
+      }
       title="SPX structure"
       actions={
         <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-white/70">
@@ -540,7 +489,10 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
             className={clsx("badge-live-dot", feedLive ? "animate-pulse" : "opacity-40")}
             aria-hidden
           />
-          {asofLabel ? <span>as of {asofLabel} ET</span> : null}
+          {gexStale ? (
+            <span className="text-amber-300/90 uppercase tracking-wider">GEX stale</span>
+          ) : null}
+          {asofLabel ? <span>structure {asofLabel} ET</span> : null}
         </span>
       }
       className="spx-odte-matrix-panel flex flex-1 min-h-0 flex-col"
@@ -576,16 +528,32 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
           <div>
             <span className="text-white/50 uppercase tracking-wider">{pivotLabel}</span>
             <div className="text-sm font-bold tabular-nums text-white">
-              {levels.flip != null ? fmtStrike(levels.flip) : "—"}
+              {scopedLevels.flip != null ? fmtStrike(scopedLevels.flip) : "—"}
             </div>
           </div>
           <div>
             <span className="text-white/50 uppercase tracking-wider">Net {lensLabel}</span>
             <div className="text-sm font-bold tabular-nums text-white">
-              {hasData ? fmtMoneySigned(netTotal) : "—"}
+              {hasData ? fmtMoneySigned(scopedLevels.netTotal) : "—"}
             </div>
           </div>
         </div>
+        {(flipDiffersFromDesk || kingDiffersFromDesk) && (
+          <p className="font-mono text-[9px] leading-snug text-white/45">
+            Header uses near-term aggregate (8 expiries).
+            {flipDiffersFromDesk && deskGammaFlip != null
+              ? ` Desk γ flip ${fmtStrike(deskGammaFlip)}.`
+              : ""}
+            {kingDiffersFromDesk && deskGexKing != null
+              ? ` Desk anchor ${fmtStrike(deskGexKing)}.`
+              : ""}
+          </p>
+        )}
+        {!isTrueZeroDte && columnExpiry ? (
+          <p className="font-mono text-[9px] text-amber-200/80">
+            No SPX 0DTE column on chain today — showing front expiry {columnExpiry}.
+          </p>
+        ) : null}
         {floorLevels ? (
           <div
             className="spx-odte-floor-pivots grid grid-cols-4 gap-1 font-mono text-[9px]"
@@ -615,7 +583,9 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
       ) : error && !hasData ? (
         <p className="font-mono text-[11px] text-white/60 py-4">Matrix unavailable — retrying…</p>
       ) : !hasData ? (
-        <p className="font-mono text-[11px] text-white/60 py-4">Mapping 0DTE gamma nodes…</p>
+        <p className="font-mono text-[11px] text-white/60 py-4">
+          {columnExpiry == null ? "No expiry column on chain — retrying…" : "Mapping gamma nodes…"}
+        </p>
       ) : (
         <div
           ref={scrollBoxRef}
@@ -701,7 +671,7 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
       )}
 
       <div className="mt-2 shrink-0 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] tracking-wide text-white/45">
-        <span>Anchor</span>
+        <span>King (|GEX|)</span>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-[#00e676]/90" aria-hidden /> Max +
           {lensLabel}

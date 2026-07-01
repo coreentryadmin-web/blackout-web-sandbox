@@ -8112,6 +8112,20 @@ body::before {
     @apply min-h-0;
   }
 
+  .spx-gex-matrix-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 211, 252, 0.35) transparent;
+  }
+
+  .spx-gex-matrix-spot-row td {
+    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.55);
+  }
+
+  .spx-gex-matrix-table td.sticky,
+  .spx-gex-matrix-table th.sticky {
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);
+  }
+
   .spx-odte-matrix-scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(125, 211, 252, 0.35) transparent;

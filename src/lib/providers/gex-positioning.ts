@@ -163,11 +163,15 @@ export async function getGexPositioning(
   // affected. The pure mapper has no flow input, so matrix-vs-positioning checks stay like-for-like.
   // Cross-validate primary key levels against UW REST strike ladder (best-effort, non-blocking).
   // Cached 60s — safe on every call without touching the 2 RPS UW REST budget.
-  const crossValidation = await validateGexAgainstUW(root, {
-    callWall: base.call_wall,
-    putWall: base.put_wall,
-    gammaFlip: base.flip,
-  }).catch(() => null);
+  const crossValidation = await validateGexAgainstUW(
+    root,
+    {
+      callWall: base.call_wall,
+      putWall: base.put_wall,
+      gammaFlip: base.flip,
+    },
+    { spot: base.spot }
+  ).catch(() => null);
 
   if (crossValidation) {
     const div = crossValidation.divergence;

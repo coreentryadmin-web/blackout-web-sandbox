@@ -146,6 +146,12 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
     as_of: desk.as_of,
     source: desk.source,
 
+    data_freshness: {
+      feed_stalled: desk.feed_stalled ?? false,
+      gex_stale: desk.gex_stale ?? false,
+      gex_age_ms: desk.gex_age_ms ?? null,
+    },
+
     confluence: computeSpxConfluence(desk),
 
     price_action: {
@@ -541,7 +547,7 @@ SESSION PHASE: ${sessionPhase} (ET). Tailor the call to the phase:
 
 ACCURACY: every number/strike/premium comes from the JSON below or WHAT CHANGED. Never invent. Skip anything null/empty. SPX prices to .00; premiums like ${fmtPrem(1_500_000)}.
 
-DATA AVAILABLE (use only what is populated): confluence (grade A+/A/B/C/D, action, factors); price_action (price, change_pct, above_vwap, vwap, hod/lod, pdh/pdl); moving_averages; support_resistance_levels (nearest_support/resistance); dealer_gex (gex_net, gamma_flip, above_gamma_flip, gex_king, max_pain, gamma_regime); gex_walls_0dte (strikes + net_gex); flow_0dte (call/put/net premium); spx_option_flows (sweeps/blocks); live_tape; strike_stacks; dark_pool (bias, pcr, prints); market_tide; nope; volatility (VIX, IV rank, term); internals (TICK/TRIN/ADD); market_breadth; macro_calendar_today; news_headlines; mega_cap_stocks; net_premium_velocity.
+DATA AVAILABLE (use only what is populated): data_freshness (feed_stalled, gex_stale, gex_age_ms); confluence (grade A+/A/B/C/D, action, factors); price_action (price, change_pct, above_vwap, vwap, hod/lod, pdh/pdl); moving_averages; support_resistance_levels (nearest_support/resistance); dealer_gex (gex_net, gamma_flip, above_gamma_flip, gex_king, max_pain, gamma_regime); gex_walls_0dte (strikes + net_gex); flow_0dte (call/put/net premium); spx_option_flows (sweeps/blocks); live_tape; strike_stacks; dark_pool (bias, pcr, prints); market_tide; nope; volatility (VIX, IV rank, term); internals (TICK/TRIN/ADD); market_breadth; macro_calendar_today; news_headlines; mega_cap_stocks; net_premium_velocity.
 
 CURRENT DESK SNAPSHOT (JSON):
 ${JSON.stringify(ctx)}
@@ -573,6 +579,7 @@ Hard rules:
 - Every number + every verbatim headline wrapped in {{...}}; teaching words/labels stay outside. No prose paragraphs, one line per label.
 - live_spx_play / lotto_play / power_hour_play (if present) are the platform's OWN live positions — your READ + SETUP MUST ALIGN with them, or explicitly flag the conflict (e.g. "engine still long X — countertrend"). NEVER hand the trader the opposite side of an open desk position without calling out that it contradicts the live engine.
 - recent_play_outcomes (if present) is the desk's own realized win-rate — you MAY use it to calibrate conviction ("desk's been hot/cold lately"), but never fabricate numbers or over-promise.
+- When data_freshness.gex_stale or data_freshness.feed_stalled is true, dealer GEX levels are STALE or the index feed is FROZEN — say so plainly in RISK (do not cite walls/flip as live); prefer NO-EDGE or lighter size until structure refreshes.
 - ALWAYS show WHY, LEVELS, SETUP, RISK, NEXT 5M, FLIPS IT. Δ/FLOW/NEWS only when they carry signal. Still ~a 20-second read.`;
 
   const raw = await anthropicText(prompt, 1550, undefined, {
