@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { priorDayFromDailyBars, widenSessionExtremesWithSpot } from "./spx-session";
+import {
+  isPremarketBriefFresh,
+  priorDayFromDailyBars,
+  widenSessionExtremesWithSpot,
+} from "./spx-session";
 
 describe("widenSessionExtremesWithSpot", () => {
   it("widens HOD/LOD to include live spot during RTH", () => {
@@ -96,5 +100,27 @@ describe("priorDayFromDailyBars", () => {
       pdl: 5,
       pdc: 8,
     });
+  });
+});
+
+describe("isPremarketBriefFresh", () => {
+  it("is fresh when the brief date is today", () => {
+    assert.equal(isPremarketBriefFresh("2026-07-01", "2026-07-01"), true);
+  });
+
+  it("is fresh when the brief is exactly 1 calendar day old (premarket brief published using yesterday's close)", () => {
+    assert.equal(isPremarketBriefFresh("2026-06-30", "2026-07-01"), true);
+  });
+
+  it("is stale when the brief is 2+ days old", () => {
+    assert.equal(isPremarketBriefFresh("2026-06-28", "2026-07-01"), false);
+  });
+
+  it("reports the exact reported bug case as stale (2026-06-29 brief served during 2026-07-01 RTH)", () => {
+    assert.equal(isPremarketBriefFresh("2026-06-29", "2026-07-01"), false);
+  });
+
+  it("is stale for a brief dated in the future relative to today (clock skew / bad row)", () => {
+    assert.equal(isPremarketBriefFresh("2026-07-02", "2026-07-01"), false);
   });
 });

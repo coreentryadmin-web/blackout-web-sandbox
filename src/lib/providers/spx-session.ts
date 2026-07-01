@@ -9,6 +9,29 @@ export function todayEtYmd(): string {
   }).format(new Date());
 }
 
+/**
+ * Is a `platform_briefs` "premarket" row still safe to serve as the current brief?
+ *
+ * A premarket brief for today is legitimately published before the open using
+ * yesterday's close, so "today" AND "the single calendar day before today" both
+ * count as fresh. Anything older than that (2+ days stale) must NOT be served as
+ * current — confirmed live bug: a 2026-06-29 brief (SPX ~7408) was served with
+ * `available: true` during live 2026-07-01 RTH trading (SPX ~7494), an 86-point
+ * gap, with no indication the data was 2 sessions old. Deliberately a
+ * plain 1-calendar-day allowance (not a trading-calendar lookup): simple, and
+ * catches the actual reported failure mode without overfitting to weekend/holiday
+ * edge cases.
+ */
+export function isPremarketBriefFresh(briefDateYmd: string, todayYmd: string): boolean {
+  if (briefDateYmd === todayYmd) return true;
+  const brief = new Date(`${briefDateYmd}T00:00:00Z`);
+  const today = new Date(`${todayYmd}T00:00:00Z`);
+  if (Number.isNaN(brief.getTime()) || Number.isNaN(today.getTime())) return false;
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((today.getTime() - brief.getTime()) / oneDayMs);
+  return diffDays === 1;
+}
+
 export function priorEtYmd(daysBack = 5): string {
   const d = new Date();
   d.setDate(d.getDate() - daysBack);

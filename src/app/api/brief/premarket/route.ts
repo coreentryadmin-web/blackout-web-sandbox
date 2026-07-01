@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { isPremarketBriefFresh, todayEtYmd } from "@/lib/providers/spx-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,18 @@ export async function GET(req: NextRequest) {
     );
     if (result.rows.length === 0) return NextResponse.json({ available: false }, { headers: NO_STORE });
     const b = result.rows[0];
+    // pg returns DATE columns as a Date object (midnight UTC) or, depending on driver config,
+    // an already-ISO string — normalize both to a plain YYYY-MM-DD before comparing.
+    const briefDateYmd =
+      b.brief_date instanceof Date
+        ? b.brief_date.toISOString().slice(0, 10)
+        : String(b.brief_date).slice(0, 10);
+    if (!isPremarketBriefFresh(briefDateYmd, todayEtYmd())) {
+      return NextResponse.json(
+        { available: false, stale: true, staleDate: briefDateYmd },
+        { headers: NO_STORE }
+      );
+    }
     return NextResponse.json({
       available: true,
       date: b.brief_date,
