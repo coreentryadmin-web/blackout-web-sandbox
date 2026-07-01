@@ -61,7 +61,12 @@ async function main() {
   }
 
   if (!force && !inRthOpenWindow(now)) {
-    console.log("Pre-open warm-up window — running deploy validation only (full RTH checks after 09:30 ET).\n");
+    const { mins } = etParts(now);
+    const msg =
+      mins < 9 * 60 + 30
+        ? "Pre-open warm-up — deploy validation only (full RTH checks after 09:30 ET)."
+        : "Post-close window — deploy validation only (RTH session checks ended 16:15 ET).";
+    console.log(`${msg}\n`);
   }
 
   console.log("1. Post-deploy validation");

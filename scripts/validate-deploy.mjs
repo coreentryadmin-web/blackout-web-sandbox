@@ -324,20 +324,59 @@ if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningRepl
   ok("REPLICA_COUNT check skipped (single replica or unknown)");
 }
 
-// ── 5. Railway logs — options-socket / uw-socket churn ───────────────────────
-console.log("\n5. Railway logs (socket churn)");
+// ── 5. Options / UW socket churn (socket-health primary; logs secondary) ─────
+console.log("\n5. Socket churn (socket-health + Railway logs)");
 if (skipRailway) {
   warn("Railway log checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
 } else {
+  // Live probe beats log tail: multi-replica clusters + off-hours standdown leave stale
+  // 1006 lines in the last 30 log rows even when options.ok is true.
+  let socketHealthOk = false;
+  const cron = process.env.CRON_SECRET?.trim() ?? "";
+  if (cron) {
+    try {
+      const { status, body } = await fetchJson("/api/cron/socket-health", {
+        headers: { Authorization: `Bearer ${cron}` },
+      });
+      const opt = body?.websockets?.options;
+      if (status === 200 && opt?.ok) {
+        socketHealthOk = true;
+        ok(`options-socket (socket-health): ${opt.detail ?? "ok"}`);
+      } else if (status === 200 && opt) {
+        fail(`options-socket (socket-health): ${opt.detail ?? "not ok"}`);
+      } else {
+        warn(`socket-health probe HTTP ${status}`);
+      }
+    } catch (e) {
+      warn(`socket-health probe failed: ${e.message}`);
+    }
+  } else {
+    warn("CRON_SECRET unset — socket-health probe skipped (log grep only)");
+  }
+
   try {
     const logs = sh("railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -30");
-    const opt1006 = (logs.match(/options-socket.*1006.*failures=(\d+)/g) || []);
-    const lastFail = opt1006.length ? Number(opt1006[opt1006.length - 1].match(/failures=(\d+)/)?.[1] ?? 0) : 0;
+    const opt1006 = logs.match(/options-socket.*1006.*failures=(\d+)/g) || [];
+    const lastFail = opt1006.length
+      ? Number(opt1006[opt1006.length - 1].match(/failures=(\d+)/)?.[1] ?? 0)
+      : 0;
     const optAuth = /options-socket.*authenticated/.test(logs);
-    if (lastFail >= 10) fail(`options-socket 1006 loop — failures=${lastFail} (Night's Watch marks may degrade)`);
-    else if (lastFail > 0) warn(`options-socket recent 1006 failures=${lastFail}`);
-    else if (optAuth) ok("options-socket authenticated in recent logs");
-    else warn("options-socket: no recent authenticated line (may be off-hours or disabled)");
+
+    if (socketHealthOk) {
+      if (lastFail >= 10) {
+        warn(`options-socket log tail failures=${lastFail} (socket-health ok — stale pre-standdown)`);
+      } else if (lastFail > 0) {
+        warn(`options-socket recent 1006 failures=${lastFail} in logs (socket-health ok)`);
+      }
+    } else if (lastFail >= 10) {
+      fail(`options-socket 1006 loop — failures=${lastFail} (Night's Watch marks may degrade)`);
+    } else if (lastFail > 0) {
+      warn(`options-socket recent 1006 failures=${lastFail}`);
+    } else if (optAuth) {
+      ok("options-socket authenticated in recent logs");
+    } else {
+      warn("options-socket: no recent authenticated line (may be off-hours or disabled)");
+    }
 
     if (/uw-socket.*stall watchdog/i.test(logs)) warn("uw-socket stall reconnects in recent logs");
     else ok("No uw-socket stall storms in recent logs");
