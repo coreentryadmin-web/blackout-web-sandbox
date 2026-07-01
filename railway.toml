@@ -23,5 +23,5 @@ watchPatterns = [
 [deploy]
 startCommand = "next start -H 0.0.0.0 -p $PORT"
 healthcheckPath = "/api/ready"
-healthcheckTimeout = 90
+healthcheckTimeout = 120
 restartPolicyType = "on_failure"

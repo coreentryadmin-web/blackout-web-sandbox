@@ -793,15 +793,31 @@ export async function dbClient() {
   return (await getPool()).connect();
 }
 
-export async function pingDatabase(): Promise<{
+export async function pingDatabaseConnectivity(): Promise<{
   ok: boolean;
   error?: string;
   mode?: string;
 }> {
   if (!dbConfigured()) return { ok: false, error: "DATABASE_URL not set" };
   try {
-    await ensureSchema();
     await (await getPool()).query("SELECT 1");
+    return { ok: true, mode: activeMode };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message, mode: activeMode };
+  }
+}
+
+/** Full ping — connectivity + schema migrations (admin dashboards, validators). */
+export async function pingDatabase(): Promise<{
+  ok: boolean;
+  error?: string;
+  mode?: string;
+}> {
+  const conn = await pingDatabaseConnectivity();
+  if (!conn.ok) return conn;
+  try {
+    await ensureSchema();
     return { ok: true, mode: activeMode };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
