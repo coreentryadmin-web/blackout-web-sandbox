@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -11,10 +12,62 @@ const isProtectedRoute = createRouteMatcher([
   "/account(.*)",
 ]);
 
+// Webhook routes use their own HMAC/signature verification (Whop Standard Webhooks
+// scheme, Clerk webhook signature). They must bypass the mutation backstop below —
+// their security comes from the signature check inside the handler, not from
+// session/bearer auth at the middleware level.
+const isWebhookRoute = createRouteMatcher([
+  "/api/webhook/(.*)",
+  "/api/webhooks/(.*)",
+]);
+
+// Methods that mutate server state (i.e., not safe reads).
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 export default clerkMiddleware(
   async (auth, req) => {
     if (isProtectedRoute(req)) {
       await auth.protect();
+    }
+
+    // ---------------------------------------------------------------------------
+    // R-14: MUTATION BACKSTOP — defense-in-depth for /api/* state changes.
+    // ---------------------------------------------------------------------------
+    // Every API handler is responsible for its own auth (see SECURITY MODEL below).
+    // This backstop is a second line of defense: block any POST/PUT/PATCH/DELETE
+    // to /api/* that arrives with NO auth signal at all (no Clerk session cookie
+    // and no Authorization header). A legitimate caller is always one of:
+    //   a) A signed-in user   → has Clerk session cookies (__session / __client_uat)
+    //   b) A cron/service job → has Authorization: Bearer <CRON_SECRET>
+    //   c) A webhook (Whop, Clerk) → whitelisted above (own HMAC verification)
+    // Anything else is anonymous mutation traffic that no correct client sends.
+    //
+    // Implementation note: we only check for the PRESENCE of auth signals here —
+    // full validation (JWT verification / HMAC check) happens per-handler.
+    // This keeps middleware lightweight (no Redis, no network calls) and avoids
+    // false-positives on valid requests that carry an auth signal we didn't recognize.
+    // ---------------------------------------------------------------------------
+    if (
+      MUTATION_METHODS.has(req.method) &&
+      req.nextUrl.pathname.startsWith("/api/") &&
+      !isWebhookRoute(req)
+    ) {
+      const bearer = req.headers.get("authorization") ?? "";
+      // A bearer token is present if the header starts with "Bearer " and has a
+      // non-trivial payload (≥ 20 chars covers any real secret; < 20 is noise).
+      const hasBearerToken = bearer.startsWith("Bearer ") && bearer.length > 27;
+
+      // Clerk sets at least one of these cookies for any active session. We only
+      // check presence (not signature) — full JWT validation is the handler's job.
+      const hasClerkCookie =
+        req.cookies.has("__session") || req.cookies.has("__client_uat");
+
+      if (!hasBearerToken && !hasClerkCookie) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
     }
   },
   {
@@ -37,8 +90,12 @@ export default clerkMiddleware(
 //     • only the page routes in `isProtectedRoute` above
 //       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /grid, /admin)
 //
+//   BACKSTOP (mutation 401 if no auth signal):
+//     • POST/PUT/PATCH/DELETE on /api/* without a Clerk cookie or Bearer header
+//     • Excludes /api/webhook/* and /api/webhooks/* (own HMAC verification)
+//
 //   NOT protected by this middleware (callback is a no-op for them):
-//     • EVERY /api/* and /trpc/* route — they pass through unguarded here
+//     • GET/HEAD/OPTIONS on /api/* — they pass through unguarded here
 //     • all other pages (landing, sign-in, etc.)
 //     • static assets + /_next/* — excluded by the matcher regex below
 //     • WebSocket upgrades — excluded via the `missing` upgrade-header filter

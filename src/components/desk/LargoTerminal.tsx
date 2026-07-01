@@ -83,6 +83,11 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
   const sessionId = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgId = useRef(1);
+  // R-47: batch streaming token updates. Without this, every streamed token called
+  // setMessages → full messages.map() re-render + Framer Motion reconciliation.
+  // We accumulate tokens in a ref and flush to state at most every 50ms.
+  const streamBufRef = useRef("");
+  const streamFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const stored =
@@ -129,17 +134,29 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
     const assistantId = `a-${++msgId.current}`;
     setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
 
+    // Reset streaming buffer for this turn.
+    streamBufRef.current = "";
+    if (streamFlushRef.current) { clearTimeout(streamFlushRef.current); streamFlushRef.current = null; }
+
     try {
       const res = await queryLargoStream(
         q,
         sessionId.current,
         (token) => {
+          // Accumulate in a ref (no re-render). Schedule a 50ms flush that batches
+          // all tokens received in that window into one setMessages call. At 20 flushes/
+          // second the message list re-renders at most 20× instead of once per token.
+          streamBufRef.current += token;
           setStreaming(true);
-          setMessages((m) =>
-            m.map((msg) =>
-              msg.id === assistantId ? { ...msg, content: msg.content + token } : msg
-            )
-          );
+          if (!streamFlushRef.current) {
+            streamFlushRef.current = setTimeout(() => {
+              streamFlushRef.current = null;
+              const content = streamBufRef.current;
+              setMessages((m) =>
+                m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))
+              );
+            }, 50);
+          }
         },
         (toolName) => {
           const label = toolLabel(toolName);
@@ -167,6 +184,9 @@ export function LargoTerminal({ fullPage = false }: { fullPage?: boolean }) {
         m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))
       );
     } finally {
+      // Cancel any pending 50ms flush — the final answer will be written immediately
+      // below (success path) or content is already set (error path).
+      if (streamFlushRef.current) { clearTimeout(streamFlushRef.current); streamFlushRef.current = null; }
       setLoading(false);
       setStreaming(false);
     }

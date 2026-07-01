@@ -340,19 +340,30 @@ export function FlowFeed() {
       .slice(0, 10);
   }, [alerts]);
 
-  // Feature 12: Night Hawk plays enriched with flow conviction from the 7d tape
+  // Feature 12: Night Hawk plays enriched with flow conviction from the 7d tape.
+  // R-46: pre-group alerts by ticker in one O(n) pass so each play lookup below is
+  // O(1) — eliminates the original O(n·m) where n=alerts.length, m=plays.length.
   const { nighthawkPlaysWithFlow, hawkTickers } = useMemo(() => {
     if (!nighthawkEdition?.plays?.length) {
       return { nighthawkPlaysWithFlow: [] as NightHawkPlayWithFlow[], hawkTickers: new Set<string>() };
     }
 
+    // Build a ticker → alerts Map in one pass so each play does an O(1) Map.get()
+    // instead of scanning the full alerts array with filter() × 3.
+    const alertsByTicker = new Map<string, { callPremium: number; putPremium: number; topPrint: number; count: number }>();
+    for (const a of alerts) {
+      const e = alertsByTicker.get(a.ticker) ?? { callPremium: 0, putPremium: 0, topPrint: 0, count: 0 };
+      if (a.option_type === "CALL") e.callPremium += a.premium;
+      else if (a.option_type === "PUT") e.putPremium += a.premium;
+      if (a.premium > e.topPrint) e.topPrint = a.premium;
+      e.count += 1;
+      alertsByTicker.set(a.ticker, e);
+    }
+
     const playsWithFlow: NightHawkPlayWithFlow[] = nighthawkEdition.plays.map((play) => {
-      const tickerAlerts = alerts.filter((a) => a.ticker === play.ticker);
-      const callPremium  = tickerAlerts.filter((a) => a.option_type === "CALL").reduce((s, a) => s + a.premium, 0);
-      const putPremium   = tickerAlerts.filter((a) => a.option_type === "PUT").reduce((s, a) => s + a.premium, 0);
+      const agg = alertsByTicker.get(play.ticker) ?? { callPremium: 0, putPremium: 0, topPrint: 0, count: 0 };
+      const { callPremium, putPremium, topPrint, count: printCount } = agg;
       const totalPremium = callPremium + putPremium;
-      const topPrint     = tickerAlerts.reduce((m, a) => Math.max(m, a.premium), 0);
-      const printCount   = tickerAlerts.length;
 
       const isLong = play.direction?.toLowerCase().includes("long") ||
                      play.direction?.toLowerCase().includes("bull");
