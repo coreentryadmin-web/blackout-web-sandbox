@@ -124,26 +124,42 @@ async function main() {
     spx_desk: app('/api/market/spx/desk'), spx_merged: app('/api/market/spx/merged'),
     spx_signals: app('/api/market/spx/signals'), platform: app('/api/market/platform/snapshot'),
   };
-  // --- ground truth ---
+  // --- ground truth: LIVE snapshot during RTH, prior-close off-hours ---
+  // (Intraday, the numbers members see must match the LIVE feed, not yesterday's close;
+  //  comparing live-vs-prev-close would false-fail every RTH run.)
   const pStatus = poly('/v1/marketstatus/now');
-  const pSPY = poly('/v2/aggs/ticker/SPY/prev')?.results?.[0];
-  const pSPX = poly('/v2/aggs/ticker/I:SPX/prev')?.results?.[0];
-  const pVIX = poly('/v2/aggs/ticker/I:VIX/prev')?.results?.[0];
+  const rth = pStatus?.market === 'open';
+  const pSPYprev = poly('/v2/aggs/ticker/SPY/prev')?.results?.[0];
+  const pSPXprev = poly('/v2/aggs/ticker/I:SPX/prev')?.results?.[0];
+  const pVIXprev = poly('/v2/aggs/ticker/I:VIX/prev')?.results?.[0];
+  const idxSnap = rth ? poly('/v3/snapshot/indices?ticker.any_of=I:SPX,I:VIX') : null;
+  const gSPX = (idxSnap?.results || []).find((r) => r.ticker === 'I:SPX');
+  const gVIX = (idxSnap?.results || []).find((r) => r.ticker === 'I:VIX');
+  const spySnap = rth ? poly('/v2/snapshot/locale/us/markets/stocks/tickers/SPY')?.ticker : null;
+  const gtLabel = rth ? 'live' : 'prev-close';
+  const gtSPY = rth ? num(spySnap?.lastTrade?.p ?? spySnap?.day?.c) : num(pSPYprev?.c);
+  const gtSPX = rth ? num(gSPX?.value) : num(pSPXprev?.c);
+  const gtVIX = rth ? num(gVIX?.value) : num(pVIXprev?.c);
+  const gtVIXchg = rth ? num(gVIX?.session?.change_percent) : null;
+  const gtSPXchg = rth ? num(gSPX?.session?.change_percent) : null;
   const uTide = uw('/api/market/market-tide'); const uTideRow = Array.isArray(uTide?.data) ? uTide.data.at(-1) : null;
   const uGreekRow = (() => { const g = uw('/api/stock/SPY/greek-exposure'); return Array.isArray(g?.data) ? g.data.at(-1) : null; })();
-  const rth = pStatus?.market === 'open';
-  rec('market status', 'INFO', `Polygon market=${pStatus?.market} (RTH=${rth})`);
+  rec('market status', 'INFO', `Polygon market=${pStatus?.market} (RTH=${rth}); ground truth=${gtLabel}`);
 
-  // --- price / index cross-validation (Polygon = ground truth) ---
+  // --- price / index cross-validation (live-vs-live during RTH) ---
   const aSPY = num(P.quote?.price ?? P.quote?.spot), aGexSpot = num(P.gex?.spot);
-  const priceTol = rth ? 0.6 : 1.5; // tighter during RTH (live vs live)
-  if (aSPY != null && pSPY?.c != null) { const d = Math.abs(aSPY - pSPY.c) / pSPY.c * 100; rec('SPY: app quote vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aSPY} polygon=${pSPY.c} Δ=${d.toFixed(3)}%`); }
-  if (aGexSpot != null && pSPY?.c != null) { const d = Math.abs(aGexSpot - pSPY.c) / pSPY.c * 100; rec('SPY: app gex.spot vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aGexSpot} polygon=${pSPY.c} Δ=${d.toFixed(3)}%`); }
+  const priceTol = rth ? 0.3 : 1.5;
+  if (aSPY != null && gtSPY != null) { const d = Math.abs(aSPY - gtSPY) / gtSPY * 100; rec('SPY: app quote vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aSPY} polygon(${gtLabel})=${gtSPY} Δ=${d.toFixed(3)}%`); }
+  if (aGexSpot != null && gtSPY != null) { const d = Math.abs(aGexSpot - gtSPY) / gtSPY * 100; rec('SPY: app gex.spot vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aGexSpot} polygon(${gtLabel})=${gtSPY} Δ=${d.toFixed(3)}%`); }
   if (aSPY != null && aGexSpot != null) rec('cross-endpoint: quote vs gex spot', Math.abs(aSPY - aGexSpot) <= Math.max(0.5, aSPY * 0.005) ? 'PASS' : 'WARN', `quote=${aSPY} gex=${aGexSpot}`);
   const aSPX = num(P.indices?.spx?.price);
-  if (aSPX != null && pSPX?.c != null) { const d = Math.abs(aSPX - pSPX.c) / pSPX.c * 100; rec('SPX: app indices vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aSPX} polygon=${pSPX.c} Δ=${d.toFixed(3)}%`); }
+  if (aSPX != null && gtSPX != null) { const d = Math.abs(aSPX - gtSPX) / gtSPX * 100; rec('SPX: app indices vs Polygon', d <= priceTol ? 'PASS' : 'FAIL', `app=${aSPX} polygon(${gtLabel})=${gtSPX} Δ=${d.toFixed(3)}%`); }
   const aVIX = num(P.indices?.vix?.price);
-  if (aVIX != null && pVIX?.c != null) { const d = Math.abs(aVIX - pVIX.c) / pVIX.c * 100; rec('VIX: app indices vs Polygon', d <= (rth ? 2 : 5) ? 'PASS' : 'WARN', `app=${aVIX} polygon(prev)=${pVIX.c} Δ=${d.toFixed(3)}% (prev-close vs live differs off-hours)`); }
+  if (aVIX != null && gtVIX != null) { const d = Math.abs(aVIX - gtVIX) / gtVIX * 100; rec('VIX: app indices vs Polygon', d <= (rth ? 1.5 : 5) ? 'PASS' : 'WARN', `app=${aVIX} polygon(${gtLabel})=${gtVIX} Δ=${d.toFixed(3)}%`); }
+  // change-sign checks (RTH only — off-hours the app's change base desyncs, a known bug)
+  const aVIXchg = num(P.indices?.vix?.change_pct), aSPXchg = num(P.indices?.spx?.change_pct);
+  if (rth && aVIXchg != null && gtVIXchg != null) rec('VIX change_pct sign matches Polygon', (aVIXchg >= 0) === (gtVIXchg >= 0) ? 'PASS' : 'FAIL', `app=${aVIXchg}% polygon=${gtVIXchg.toFixed(3)}%`);
+  if (rth && aSPXchg != null && gtSPXchg != null) rec('SPX change_pct sign matches Polygon', (aSPXchg >= 0) === (gtSPXchg >= 0) ? 'PASS' : 'FAIL', `app=${aSPXchg}% polygon=${gtSPXchg.toFixed(3)}%`);
   if (aSPX != null && aSPY != null) { const r = aSPX / aSPY; rec('SPX/SPY ratio ~10', r > 9.5 && r < 10.5 ? 'PASS' : 'WARN', `ratio=${r.toFixed(3)}`); }
 
   // --- GEX / greeks consistency ---
