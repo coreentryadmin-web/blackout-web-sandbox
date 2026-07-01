@@ -7866,6 +7866,29 @@ body::before {
     box-shadow: inset 0 0 12px rgba(125, 211, 252, 0.12);
   }
 
+  .spx-odte-floor-pivot {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .spx-odte-floor-pivot--resistance {
+    border-color: rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.1);
+  }
+
+  .spx-odte-floor-pivot--support {
+    border-color: rgba(74, 222, 128, 0.4);
+    background: rgba(74, 222, 128, 0.12);
+  }
+
+  .spx-odte-floor-pivot--support .font-bold.uppercase {
+    color: #bbf7d0;
+  }
+
+  .spx-odte-floor-pivot--resistance .font-bold.uppercase {
+    color: #fecaca;
+  }
+
   .spx-odte-matrix-table tbody tr {
     @apply transition-colors duration-150;
   }
@@ -7912,8 +7935,9 @@ body::before {
   }
 
   .spx-odte-matrix-label--support {
-    color: #bbf7d0;
-    background: rgba(74, 222, 128, 0.14);
+    color: #ecfdf5;
+    background: rgba(16, 185, 129, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.45);
   }
 
   .spx-odte-matrix-level-row td {
@@ -7925,7 +7949,8 @@ body::before {
   }
 
   .spx-odte-matrix-level-row--support td {
-    background: rgba(74, 222, 128, 0.05);
+    background: rgba(16, 185, 129, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.25);
   }
 
   /* Default rows: neutral dark — no sign-based coloring */
