@@ -67,11 +67,11 @@ export function SpxSniperHeader({ desk, live }: Props) {
             <AnimatePresence mode="popLayout">
               <motion.p
                 key={`${desk?.price ?? 0}-${asOfRaw ?? ""}`}
-                initial={{ opacity: 0.85 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2 }}
+                initial={{ opacity: 0.35, scale: 1.1 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
                 className={clsx(
-                  "t-num text-5xl font-semibold leading-none sm:text-6xl md:text-7xl",
+                  "t-num text-6xl font-semibold leading-none drop-shadow-[0_0_18px_currentColor] sm:text-7xl md:text-8xl",
                   bull ? "text-bull" : "text-bear-text"
                 )}
               >

@@ -8125,6 +8125,19 @@ body::before {
     box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.55);
   }
 
+  /* Continuous pop/flash on each column's own highest-positive (call wall) /
+     highest-negative (put wall) gamma cell — a per-day extreme, distinct from
+     the King (*) marker. Brightness+scale pulse rather than opacity so the
+     cell never fully dims and stays readable while flashing. */
+  @keyframes spx-gex-matrix-pop {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.16); filter: brightness(1.55); }
+  }
+  .spx-gex-matrix-extreme-pop {
+    display: inline-block;
+    animation: spx-gex-matrix-pop 1.8s ease-in-out infinite;
+  }
+
   .spx-gex-matrix-table td.sticky,
   .spx-gex-matrix-table th.sticky {
     box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);

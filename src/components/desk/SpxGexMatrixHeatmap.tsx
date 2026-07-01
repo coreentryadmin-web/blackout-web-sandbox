@@ -130,12 +130,27 @@ export function SpxGexMatrixHeatmap({
   // expiry) — distinct from odteLevels.king below (front-expiry only) and the
   // desk header's 8-expiry-aggregate King shown in the disclaimer text. SPX
   // daily expiries settle independently, so a column's King can legitimately
-  // differ day to day.
+  // differ day to day. Same per-column scoping gives the day's own highest-
+  // positive (call wall) and highest-negative (put wall) gamma strikes —
+  // recomputeScopedGexLevels's callWall/putWall selection doesn't depend on
+  // spot, only its flip field does, so 0 is a safe placeholder here.
   const columnKings = useMemo(() => {
     const map = new Map<string, number>();
     for (const expiry of displayExpiries) {
       const king = kingFromStrikeTotals(columnTotalsForAxis(cells, strikesAxis, expiry));
       if (king != null) map.set(expiry, king);
+    }
+    return map;
+  }, [displayExpiries, cells, strikesAxis]);
+
+  const columnExtremeWalls = useMemo(() => {
+    const map = new Map<string, { callWall: number | null; putWall: number | null }>();
+    for (const expiry of displayExpiries) {
+      const { callWall, putWall } = recomputeScopedGexLevels(
+        columnTotalsForAxis(cells, strikesAxis, expiry),
+        0
+      );
+      map.set(expiry, { callWall, putWall });
     }
     return map;
   }, [displayExpiries, cells, strikesAxis]);
@@ -371,6 +386,14 @@ export function SpxGexMatrixHeatmap({
                       const has = typeof v === "number" && Number.isFinite(v);
                       const val = has ? v : 0;
                       const isColumnKing = columnKings.get(e) === strike;
+                      const columnExtremes = columnExtremeWalls.get(e);
+                      const isColumnCallWall = has && columnExtremes?.callWall === strike;
+                      const isColumnPutWall = has && columnExtremes?.putWall === strike;
+                      const extremeTitle = isColumnCallWall
+                        ? `Highest positive gamma for ${fmtHeatmapExpiry(e)}`
+                        : isColumnPutWall
+                          ? `Highest negative gamma for ${fmtHeatmapExpiry(e)}`
+                          : undefined;
                       return (
                         <td
                           key={e}
@@ -384,9 +407,19 @@ export function SpxGexMatrixHeatmap({
                             ...(has ? heatmapCellStyle(val, peak, lens) : {}),
                             ...(has ? heatmapCellTextStyle(val, peak) : {}),
                           }}
-                          title={isColumnKing ? `King node for ${fmtHeatmapExpiry(e)}` : undefined}
+                          title={
+                            isColumnKing
+                              ? `King node for ${fmtHeatmapExpiry(e)}`
+                              : extremeTitle
+                          }
                         >
-                          {fmtHeatmapMoneySigned(val, { showZero: true })}
+                          <span
+                            className={clsx(
+                              (isColumnCallWall || isColumnPutWall) && "spx-gex-matrix-extreme-pop"
+                            )}
+                          >
+                            {fmtHeatmapMoneySigned(val, { showZero: true })}
+                          </span>
                           {isColumnKing && (
                             <span
                               aria-hidden
@@ -430,6 +463,9 @@ export function SpxGexMatrixHeatmap({
           <span>
             · <span className="text-amber-400">★</span> = that day&apos;s King node
           </span>
+        )}
+        {columnExtremeWalls.size > 0 && (
+          <span>· pulsing cell = that day&apos;s highest +/- gamma</span>
         )}
         <span>· refresh {Math.round(pollMs / 1000)}s</span>
         <Link href="/heatmap" className="text-sky-400/90 hover:text-sky-300 underline-offset-2 hover:underline">
