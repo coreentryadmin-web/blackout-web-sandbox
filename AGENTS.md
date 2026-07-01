@@ -62,6 +62,17 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   PgBouncer/pooler hint from `DATABASE_URL` host. Arming `DAILY_AI_SPEND_KILL_USD` and enabling
   PgBouncer remain manual Railway steps — the dashboard only reports posture.
 
+### Railway (Cursor Cloud agents)
+- **`RAILWAY_TOKEN` is a project token** — `railway whoami` returns Unauthorized (expected). Pass
+  `--project 9282f541-a288-4c8b-a174-ee22016f4b1a` on mutating CLI calls, or export
+  `RAILWAY_PROJECT_ID=9282f541-a288-4c8b-a174-ee22016f4b1a` before `railway environment config` /
+  `railway environment edit` (those subcommands do not accept `--project`).
+- Production: `blackout-web` uses **5 replicas** (`iad=3`, `us-west2=2`), healthcheck **`/api/ready`**
+  (90s), PgBouncer refs on `DATABASE_*`. Cron triggers use
+  `CRON_TARGET_BASE_URL=http://blackout-web.railway.internal:8080` (private VPC).
+- `railway scale` may return Unauthorized on project tokens — patch replicas via `environment edit`
+  `deploy.multiRegionConfig` instead.
+
 ### UW WebSocket → cache / HELIX (2 RPS budget)
 - Multiplex channels in `src/lib/live-api-integrations.ts` (`UW_WS_CHANNELS`). Ticker-scoped joins:
   `option_trades:SPX,SPY`, `lit_trades:SPY`, `net_flow:SPX,SPY,QQQ,IWM` (override via
