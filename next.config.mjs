@@ -81,10 +81,10 @@ const nextConfig = {
   },
   // instrumentation.ts register() runs at server startup automatically in Next 15
   // (the former experimental.instrumentationHook is now the default — flag removed).
-  // Lint is enforced in CI via `npm run lint` (jsx-a11y) and `npm run lint:brand`
-  // (no-grey brand guard), NOT during the production build — so a lint finding never
-  // blocks a deploy. Build correctness is covered by tsc + next build itself.
-  eslint: { ignoreDuringBuilds: true },
+  // ESLint runs during builds (ignoreDuringBuilds: false). All current findings are
+  // Warning-level so they do not block deploys. An Error-level finding will fail the
+  // Railway build — the desired gate: catch regressions at build time, not in prod.
+  eslint: { ignoreDuringBuilds: false },
   async redirects() {
     return [
       { source: "/pricing", destination: "/#pricing", permanent: false },

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   dbConfigured,
   fetchClosedPlayOutcomes,
@@ -6,6 +6,7 @@ import {
 } from "@/lib/db";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { isNighthawkOutcomeScoreable } from "@/lib/track-record-page";
+import { getClientIp, checkIpRateLimit, rateLimitHeaders } from "@/lib/ip-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,10 +16,21 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" };
 const SPX_LIMIT = 200;
 const NH_WINDOW_DAYS = 90;
+// 10 req/min: loaded once on expand (lazy), not polled — generous enough for re-opens.
+const RATE_LIMIT = 10;
+const RATE_WINDOW_SECS = 60;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const ip = getClientIp(req);
+  const rl = await checkIpRateLimit(ip, "track-record:plays", RATE_LIMIT, RATE_WINDOW_SECS);
+  const rlHeaders = rateLimitHeaders(rl);
+
+  if (!rl.ok) {
+    return NextResponse.json({ available: false }, { status: 429, headers: { ...NO_STORE, ...rlHeaders } });
+  }
+
   if (!dbConfigured()) {
-    return NextResponse.json({ available: false }, { headers: NO_STORE });
+    return NextResponse.json({ available: false }, { headers: { ...NO_STORE, ...rlHeaders } });
   }
   try {
     const payload = await serverCache("track-record:plays", TTL.REFERENCE, async () => {
@@ -55,8 +67,8 @@ export async function GET() {
         })),
       };
     });
-    return NextResponse.json(payload, { headers: NO_STORE });
+    return NextResponse.json(payload, { headers: { ...NO_STORE, ...rlHeaders } });
   } catch {
-    return NextResponse.json({ available: false }, { status: 503, headers: NO_STORE });
+    return NextResponse.json({ available: false }, { status: 503, headers: { ...NO_STORE, ...rlHeaders } });
   }
 }

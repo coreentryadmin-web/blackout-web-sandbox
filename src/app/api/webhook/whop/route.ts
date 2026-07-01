@@ -5,6 +5,7 @@ import { markMembershipRevoked } from "@/lib/whop-revocation";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { recordApiCall } from "@/lib/api-telemetry";
 import { makeRedis } from "@/lib/make-redis";
+import { publishTierChanged } from "@/lib/tier-cache";
 
 /** Idempotency: mark a Whop event as processed. Returns true if this is the FIRST time.
  * Uses a Redis SET NX with a 24-hour TTL so duplicate deliveries are silently ack'd. */
@@ -168,7 +169,10 @@ export async function POST(req: NextRequest) {
     ) {
       const email = event.data.user?.email;
       if (email) {
-        await syncWhopMembershipForEmail(email);
+        const { updatedUserIds } = await syncWhopMembershipForEmail(email);
+        // Evict tier cache on all replicas immediately so premium/downgrade is visible
+        // within the next request rather than waiting up to 60s for TTL expiry.
+        for (const uid of updatedUserIds) publishTierChanged(uid);
       } else {
         // Whop returns user.email === null when this app lacks the `member:email:read`
         // permission (or the user was deleted). syncWhopMembershipForEmail AND the
@@ -214,7 +218,10 @@ export async function POST(req: NextRequest) {
       const membershipId = typeof mRaw === "string" ? mRaw : mRaw?.id;
       const email = data?.user?.email ?? data?.member?.email ?? data?.payment?.member?.email ?? null;
       if (membershipId) await markMembershipRevoked(membershipId);
-      if (email) await syncWhopMembershipForEmail(email);
+      if (email) {
+        const { updatedUserIds } = await syncWhopMembershipForEmail(email);
+        for (const uid of updatedUserIds) publishTierChanged(uid);
+      }
       void notifyOpsDiscord({
         title: "Whop refund/dispute — entitlement revoked",
         body:
