@@ -1,6 +1,7 @@
 import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
 import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/lib/spx-play-outcomes";
 import { buildPublicTrackRecord } from "@/lib/track-record-public";
+import { entryRangeMid } from "@/lib/nighthawk/entry-range";
 
 /** Shape returned by GET /api/track-record — shared with TrackRecordView. */
 export type TrackRecordPagePayload = {
@@ -54,21 +55,10 @@ export function isNighthawkOutcomeScoreable(r: NighthawkPlayOutcomeRow): boolean
   return r.outcome !== "pending" && !nhStopDataUnavailable(r);
 }
 
-// A legitimate published entry range is a tight intraday band. If either side is
-// non-positive, or the range width exceeds 20% of the average, one side is almost
-// certainly corrupt (e.g. a stray "17" against a stock trading near $450) — treat
-// the entry as unusable rather than let a garbage value skew the midpoint.
-const MAX_ENTRY_RANGE_WIDTH_PCT = 0.2;
-
 function nhEntryMid(row: NighthawkPlayOutcomeRow): number | null {
-  if (row.entry_range_low != null && row.entry_range_high != null) {
-    const { entry_range_low: low, entry_range_high: high } = row;
-    if (low <= 0 || high <= 0) return null;
-    const avg = (low + high) / 2;
-    const width = Math.abs(high - low);
-    if (width > avg * MAX_ENTRY_RANGE_WIDTH_PCT) return null;
-    return avg;
-  }
+  const mid = entryRangeMid(row.entry_range_low, row.entry_range_high);
+  if (mid != null) return mid;
+  if (row.entry_range_low != null && row.entry_range_high != null) return null; // corrupt range, no fallback
   return row.next_day_open;
 }
 

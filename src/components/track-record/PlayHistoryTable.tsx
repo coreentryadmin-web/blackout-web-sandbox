@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { entryRangeMid } from "@/lib/nighthawk/entry-range";
 
 type SpxPlayRow = {
   id: number;
@@ -127,10 +128,8 @@ function NHTable({ rows }: { rows: NHPlayRow[] }) {
         <tbody className="divide-y divide-white/[0.04]">
           {rows.map((r) => {
             const { text, cls } = outcomeLabel(r.outcome);
-            const entryMid =
-              r.entry_range_low != null && r.entry_range_high != null
-                ? ((r.entry_range_low + r.entry_range_high) / 2).toFixed(2)
-                : "—";
+            const mid = entryRangeMid(r.entry_range_low, r.entry_range_high);
+            const entryMid = mid != null ? mid.toFixed(2) : "—";
             return (
               <tr key={r.id}>
                 <td className="py-1.5 pr-4 text-sky-300/70">{fmtDate(r.edition_for)}</td>

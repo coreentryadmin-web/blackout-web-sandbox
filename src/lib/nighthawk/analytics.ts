@@ -1,4 +1,5 @@
 import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
+import { entryRangeMid } from "@/lib/nighthawk/entry-range";
 
 export type NighthawkMetrics = {
   window_days: number;
@@ -29,14 +30,14 @@ export type NighthawkMetrics = {
 const SCORE_BUCKETS = ["40-54", "55-69", "70-84", "85-100"] as const;
 const CONVICTION_ORDER = ["A+", "A", "B", "C"];
 
-function entryMid(row: NighthawkPlayOutcomeRow): number | null {
-  if (row.entry_range_low != null && row.entry_range_high != null) {
-    return (row.entry_range_low + row.entry_range_high) / 2;
-  }
+export function entryMid(row: NighthawkPlayOutcomeRow): number | null {
+  const mid = entryRangeMid(row.entry_range_low, row.entry_range_high);
+  if (mid != null) return mid;
+  if (row.entry_range_low != null && row.entry_range_high != null) return null; // corrupt range, no fallback
   return row.next_day_open;
 }
 
-function realizedReturnPct(row: NighthawkPlayOutcomeRow): number | null {
+export function realizedReturnPct(row: NighthawkPlayOutcomeRow): number | null {
   const entry = entryMid(row);
   const close = row.next_day_close;
   if (entry == null || close == null || entry === 0) return null;
@@ -49,6 +50,15 @@ function avgReturn(rows: NighthawkPlayOutcomeRow[]): number {
   const values = rows.map(realizedReturnPct).filter((v): v is number => v != null);
   if (values.length === 0) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+// Stop-hit plays should always produce a non-positive realized return. A positive
+// average here signals bad outcome grading (next_day_close ended up above entry
+// mid on a "stop" row) — surface the magnitude as a loss rather than a positive
+// number that reads as a gain to whoever consumes this (member route, admin
+// dashboard). Mirrors the same clamp on track-record-page.ts's avgLoserPct.
+export function avgLoserReturn(losers: NighthawkPlayOutcomeRow[]): number {
+  return Math.min(0, avgReturn(losers));
 }
 
 function winRate(rows: NighthawkPlayOutcomeRow[]): number {
@@ -193,7 +203,7 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     ambiguous_rate: scoreableTotal > 0 ? ambiguous.length / scoreableTotal : 0,
     avg_return_pct: avgReturn(scoreable),
     avg_winner_return_pct: avgReturn(winners),
-    avg_loser_return_pct: avgReturn(losers),
+    avg_loser_return_pct: avgLoserReturn(losers),
     by_conviction,
     by_direction,
     by_sector,
