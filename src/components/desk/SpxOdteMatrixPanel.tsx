@@ -173,6 +173,26 @@ function MatrixLabels({ labels }: { labels: RowLabel[] }) {
   );
 }
 
+const FLOOR_PIVOT_REFS: Array<{
+  key: keyof NonNullable<ReturnType<typeof floorPivots>>;
+  label: RowLabel;
+  tone: "resistance" | "support";
+}> = [
+  { key: "r2", label: "R2", tone: "resistance" },
+  { key: "r1", label: "R1", tone: "resistance" },
+  { key: "s1", label: "S1", tone: "support" },
+  { key: "s2", label: "S2", tone: "support" },
+];
+
+function mergeAxisWithPivots(
+  strikes: number[],
+  pivots: ReturnType<typeof floorPivots>
+): number[] {
+  if (pivots == null) return strikes;
+  const extras = FLOOR_PIVOT_REFS.map(({ key }) => pivots[key]).filter((n) => n > 0);
+  return [...new Set([...strikes, ...extras])].sort((a, b) => b - a);
+}
+
 async function fetchGexHeatmap(url: string): Promise<GexHeatmapResponse> {
   const res = await fetch(url, {
     cache: "no-store",
@@ -391,14 +411,22 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
   }, [lens, data, hasVex]);
 
   const cells = block?.cells ?? {};
+
+  const floorLevels = useMemo(
+    () => floorPivots(pdh, pdl, priorClose),
+    [pdh, pdl, priorClose]
+  );
+
   const strikesAxis = useMemo(() => {
     const fromApi = (data?.strikes ?? []).filter(Number.isFinite);
-    if (fromApi.length > 0) return [...fromApi].sort((a, b) => b - a);
-    const fromCells = Object.keys(cells)
-      .map(Number)
-      .filter(Number.isFinite);
-    return fromCells.sort((a, b) => b - a);
-  }, [data?.strikes, cells]);
+    const base =
+      fromApi.length > 0
+        ? fromApi
+        : Object.keys(cells)
+            .map(Number)
+            .filter(Number.isFinite);
+    return mergeAxisWithPivots(base, floorLevels);
+  }, [data?.strikes, cells, floorLevels]);
 
   const matrixSpot = data?.spot ?? 0;
   const pulseSpot = pulseSnap?.spx?.price ?? null;
@@ -449,11 +477,6 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
       };
     });
   }, [strikesAxis, filteredTotals, maxPosStrike, maxNegStrike, anchor]);
-
-  const floorLevels = useMemo(
-    () => floorPivots(pdh, pdl, priorClose),
-    [pdh, pdl, priorClose]
-  );
 
   const displayRows = useMemo(() => {
     const overlays = overlaysFromPivots(spot, floorLevels);
@@ -563,6 +586,28 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
             </div>
           </div>
         </div>
+        {floorLevels ? (
+          <div
+            className="spx-odte-floor-pivots grid grid-cols-4 gap-1 font-mono text-[9px]"
+            aria-label="Classic floor pivots from prior day high, low, and close"
+          >
+            {FLOOR_PIVOT_REFS.map(({ key, label, tone }) => (
+              <div
+                key={key}
+                className={clsx(
+                  "spx-odte-floor-pivot rounded border px-1 py-1 text-center",
+                  tone === "resistance" && "spx-odte-floor-pivot--resistance",
+                  tone === "support" && "spx-odte-floor-pivot--support"
+                )}
+              >
+                <div className="font-bold uppercase tracking-wider opacity-80">{label}</div>
+                <div className="text-[11px] font-bold tabular-nums text-white">
+                  {fmtStrike(floorLevels[key])}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {isLoading && !data ? (
@@ -668,9 +713,7 @@ export function SpxOdteMatrixPanel({ live: deskLive, pdh, pdl, priorClose }: Des
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-3 rounded-sm bg-cyan-400/90 spx-odte-matrix-spot-blink" aria-hidden /> Spot
         </span>
-        {floorLevels ? (
-          <span className="text-white/35">· R1/R2/S1/S2 from PDH/PDL/prior close</span>
-        ) : null}
+        {floorLevels ? <span className="text-white/35">· classic floor pivots</span> : null}
         <span className="text-white/35">
           · {rows.length} strikes · refresh {Math.round(pollMs / 1000)}s
         </span>
