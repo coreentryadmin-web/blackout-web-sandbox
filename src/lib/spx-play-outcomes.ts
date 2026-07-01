@@ -159,15 +159,25 @@ export async function readPlayWriteFailures(): Promise<PlayWriteFailureState> {
   return memoryWriteFailures;
 }
 
-function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven" {
-  if (close.exit_action === "THETA" || close.exit_action === "SESSION") {
+export function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven" {
+  // Time/thesis/session exits are graded by REALIZED P&L, not by the reason for exiting.
+  // A green close is a win even when the trigger was a thesis break or the cash session
+  // ending. (Bug fix: THESIS was previously hard-coded to "loss" alongside was_loss, which
+  // mislabeled profitable exits — e.g. +2.84 / +7.30 pt closes — as losses and zeroed the
+  // public win rate. THETA/SESSION already graded by P&L sign; THESIS now matches them.)
+  if (
+    close.exit_action === "THETA" ||
+    close.exit_action === "SESSION" ||
+    close.exit_action === "THESIS"
+  ) {
     // Any negative PnL is a loss — the old -1 floor was classifying -0.5 pt exits
     // (−$50/contract) as "breakeven," inflating win-rate statistics.
     if (close.pnl_pts < 0) return "loss";
     if (close.pnl_pts > 0) return "win";
     return "breakeven";
   }
-  if (close.was_loss || close.exit_action === "STOP" || close.exit_action === "THESIS") {
+  // A STOP is by construction below entry (long) / above (short) → always a realized loss.
+  if (close.exit_action === "STOP") {
     return "loss";
   }
   // TRAIL = protected exit (breakeven lock or price-trail). A scratch or better is a
@@ -178,8 +188,11 @@ function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven"
     if (close.pnl_pts <= -1) return "loss";
     return "breakeven";
   }
+  // TARGET, or an UNKNOWN exit: grade by P&L. was_loss stays as the catch-all loss signal
+  // for an UNKNOWN action whose small negative PnL wouldn't trip the -1 floor (it is NOT
+  // consulted for THESIS/THETA/SESSION above, so a green thesis break is no longer a loss).
   if (close.exit_action === "TARGET" || close.pnl_pts >= 2) return "win";
-  if (close.pnl_pts <= -1) return "loss";
+  if (close.was_loss || close.pnl_pts <= -1) return "loss";
   return "breakeven";
 }
 
