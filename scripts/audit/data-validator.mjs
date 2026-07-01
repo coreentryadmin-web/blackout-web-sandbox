@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isAuthFailureStatus } from './lib/auth-status.mjs';
 
 const SECRET = req('CLERK_SECRET_KEY');
 const PUB = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
@@ -111,9 +112,26 @@ async function main() {
   const sid = J(si)?.response?.created_session_id;
   if (!sid) { rec('auth: FAPI ticket exchange', 'FAIL', si.b.slice(0, 160)); return; }
   let tok = null;
+  // Clerk's middleware signs a request out if the session token's `iat` predates
+  // the `__client_uat` cookie ("session-token-iat-before-client-uat"). Pinning
+  // this to a moment BEFORE the first mint (rather than recomputing Date.now()
+  // on every request) guarantees it never overtakes any token minted afterward
+  // — recomputing per-request made every app() call after the first one in a
+  // run silently receive a 401 body once a wall-clock second ticked over.
+  const clientUat = Math.floor(Date.now() / 1000);
   const mint = () => { tok = J(curl({ method: 'POST', url: `${FAPI}/v1/client/sessions/${sid}/tokens?_clerk_js_version=${CJS}`, headers: { Origin: APP, Referer: `${APP}/`, 'Content-Type': 'application/x-www-form-urlencoded' }, jar: true, saveJar: true }))?.jwt; return tok; };
   mint();
-  const app = (path) => { for (let i = 0; i < 2; i++) { if (!tok) mint(); const j = J(curl({ url: `${APP}${path}`, headers: { Cookie: `__session=${tok}; __client_uat=${Math.floor(Date.now() / 1000)}`, Accept: 'application/json' } })); if (j) return j; tok = null; } return null; };
+  const app = (path) => {
+    for (let i = 0; i < 2; i++) {
+      if (!tok) mint();
+      const r = curl({ url: `${APP}${path}`, headers: { Cookie: `__session=${tok}; __client_uat=${clientUat}`, Accept: 'application/json' } });
+      if (isAuthFailureStatus(r.s)) { tok = null; continue; }
+      const j = J(r);
+      if (j) return j;
+      tok = null;
+    }
+    return null;
+  };
   rec('auth: admin session established', 'PASS', `session ${sid}`);
 
   // --- app payloads ---
