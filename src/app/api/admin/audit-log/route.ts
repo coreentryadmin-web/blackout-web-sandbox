@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAdminApi } from "@/lib/admin-access";
-import { dbConfigured, dbQuery, ensureSchema } from "@/lib/db";
+import { dbConfigured, dbQuery } from "@/lib/db";
 import { logAdminAction } from "@/lib/admin-audit";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 
@@ -45,8 +45,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         generated_at: new Date().toISOString(),
       });
     }
-
-    await ensureSchema();
 
     const url = new URL(req.url);
     const limit = Math.min(100, parseInt(url.searchParams.get("limit") ?? "50", 10));

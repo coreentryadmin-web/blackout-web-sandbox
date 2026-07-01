@@ -1,4 +1,4 @@
-import { dbClient, dbConfigured, dbQuery, ensureSchema } from "@/lib/db";
+import { dbClient, dbConfigured, dbQuery } from "@/lib/db";
 import type { AnthropicMessage } from "@/lib/providers/anthropic";
 
 export type LargoStoredMessage = {
@@ -28,7 +28,6 @@ function touchMemorySession(sessionId: string, hist: AnthropicMessage[]): void {
 
 export async function ensureLargoSession(sessionId: string, userId: string): Promise<void> {
   if (!dbConfigured()) return;
-  await ensureSchema();
   // Atomic upsert: collapses check+insert+touch into one statement so two concurrent
   // requests for a brand-new session id can't both pass an existence check and race the
   // INSERT (the loser previously hit a 23505 primary-key violation surfaced as a 500).
@@ -50,7 +49,6 @@ export async function ensureLargoSession(sessionId: string, userId: string): Pro
 
 export async function sessionOwnedByUser(sessionId: string, userId: string): Promise<boolean> {
   if (!dbConfigured()) return true;
-  await ensureSchema();
   const res = await dbQuery<{ ok: boolean }>(
     `SELECT EXISTS(SELECT 1 FROM largo_sessions WHERE id = $1 AND user_id = $2) AS ok`,
     [sessionId, userId]
@@ -219,8 +217,6 @@ export async function purgeStaleLargoSessions(retentionDays = largoSessionRetent
   if (!dbConfigured()) {
     return { ok: true, retention_days: retentionDays, sessions_deleted: 0, skipped: true, reason: "no_database" };
   }
-
-  await ensureSchema();
 
   const res = await dbQuery<{ id: string }>(
     `DELETE FROM largo_sessions

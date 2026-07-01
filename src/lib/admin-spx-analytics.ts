@@ -1,4 +1,4 @@
-import { dbConfigured, ensureSchema } from "@/lib/db";
+import { dbConfigured } from "@/lib/db";
 import { outcomeAdaptiveMinDays, outcomeAdaptiveMinTrades } from "@/lib/spx-play-config";
 import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
 import { computeAdaptiveGates } from "@/lib/spx-play-telemetry";
@@ -121,7 +121,6 @@ export async function fetchSpxAdminAnalytics(): Promise<SpxAdminAnalytics> {
   let recent_signals: SpxAdminAnalytics["recent_signals"] = [];
 
   if (configured) {
-    await ensureSchema();
     const { fetchSpxAdminRollups } = await import("@/lib/db");
     const rollups = await fetchSpxAdminRollups();
     grade_breakdown = rollups.grade_breakdown;

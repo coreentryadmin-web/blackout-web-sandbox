@@ -1,4 +1,4 @@
-import { dbConfigured, ensureSchema, getMeta, insertSpxSignalLog, setMeta } from "@/lib/db";
+import { dbConfigured, getMeta, insertSpxSignalLog, setMeta } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import type { SpxSignalFactor } from "@/lib/spx-signals";
 
@@ -59,7 +59,6 @@ export async function maybeLogSpxPlay(
   const prev = await getMeta(CURSOR_KEY);
   if (prev === key) return;
 
-  await ensureSchema();
   await insertSpxSignalLog({
     signal_key: key,
     action: play.action,

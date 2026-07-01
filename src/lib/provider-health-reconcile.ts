@@ -1,5 +1,5 @@
 import "server-only";
-import { dbConfigured, ensureSchema, dbQuery } from "@/lib/db";
+import { dbConfigured, dbQuery } from "@/lib/db";
 import {
   buildProviderHealthIssues,
   type ProviderTelemetryRollup,
@@ -18,7 +18,6 @@ export async function fetchProviderTelemetryRollups(
   if (!dbConfigured()) return [];
   const mins = Math.min(Math.max(1, Math.round(windowMinutes)), 60);
   try {
-    await ensureSchema();
     const { rows } = await dbQuery<{
       provider: string;
       calls: string;

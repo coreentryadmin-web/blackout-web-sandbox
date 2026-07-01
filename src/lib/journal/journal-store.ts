@@ -2,7 +2,7 @@
 // spx-play-outcomes.ts: localStorage is the client default; when dbConfigured()
 // the API routes use this module. Annotation-only — isolated user_journal table,
 // no FK into and no mutation of any money-path table.
-import { dbConfigured, ensureSchema } from "@/lib/db";
+import { dbConfigured } from "@/lib/db";
 import {
   sanitizeNote,
   parseTags,
@@ -13,7 +13,6 @@ import {
 /** Fetch all journal entries for a user, keyed by open_play_id (string). */
 export async function fetchUserJournal(userId: string): Promise<Record<string, JournalEntry>> {
   if (!dbConfigured()) return {};
-  await ensureSchema();
   const { fetchUserJournalRows } = await import("@/lib/db");
   const rows = await fetchUserJournalRows(userId);
   const out: Record<string, JournalEntry> = {};
@@ -46,7 +45,6 @@ export async function saveUserJournalEntry(
     if (isEmptyEntry(note, tags)) return null;
     return { open_play_id: openPlayId, note, tags, updated_at: new Date().toISOString() };
   }
-  await ensureSchema();
   if (isEmptyEntry(note, tags)) {
     const { deleteUserJournalEntry } = await import("@/lib/db");
     await deleteUserJournalEntry(userId, openPlayId);

@@ -112,10 +112,9 @@ async function persistErrorEvent(
   ctx: ErrorContext
 ): Promise<void> {
   // Lazy import keeps node-only `pg` out of this module's static (edge-traced) graph.
-  const { dbConfigured, ensureSchema, dbQuery } = await import("@/lib/db");
+  const { dbConfigured, dbQuery } = await import("@/lib/db");
   if (!dbConfigured()) return;
   try {
-    await ensureSchema();
     const safeMessage = (sanitizeTelemetrySnippet(e.message) ?? "").slice(0, 2000);
     const safeStack = sanitizeTelemetrySnippet(e.stack)?.slice(0, 8000) ?? null;
     let metaJson: string | null = null;
@@ -221,11 +220,10 @@ export function classifyErrorSpike(
 export async function countRecentErrorEvents(
   sinceMinutes = 15
 ): Promise<{ total: number; groups: Array<{ source: string; scope: string | null; count: number }> }> {
-  const { dbConfigured, ensureSchema, dbQuery } = await import("@/lib/db");
+  const { dbConfigured, dbQuery } = await import("@/lib/db");
   if (!dbConfigured()) return { total: 0, groups: [] };
   const mins = Math.min(Math.max(1, Math.round(sinceMinutes)), 1440);
   try {
-    await ensureSchema();
     const { rows } = await dbQuery<{ source: string; scope: string | null; count: string }>(
       `SELECT source, scope, COUNT(*)::text AS count
          FROM error_events
@@ -245,10 +243,9 @@ export async function countRecentErrorEvents(
 
 export async function fetchRecentErrorEvents(limit = 100): Promise<ErrorEventRow[]> {
   // Lazy import keeps node-only `pg` out of this module's static (edge-traced) graph.
-  const { dbConfigured, ensureSchema, dbQuery } = await import("@/lib/db");
+  const { dbConfigured, dbQuery } = await import("@/lib/db");
   if (!dbConfigured()) return [];
   try {
-    await ensureSchema();
     const { rows } = await dbQuery<{
       id: string;
       source: string;

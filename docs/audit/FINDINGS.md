@@ -7,6 +7,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED — Redundant `ensureSchema()` calls duplicated across 11 files (20 call sites) ahead of `db.ts` helpers that already self-guard
+**Status:** FIXED (`fix/api-telemetry-redundant-schema-check`).
+
+**Where:** Started from a specific report — `[api-telemetry-persist] Error: Query read timeout` firing 4x right after a fresh deploy's replicas booted (Railway logs, 2026-07-01 ~18:38-18:41 UTC). `persistApiTelemetryEvent()`/`fetchPersistedApiEvent()` in `src/lib/api-telemetry-persist.ts` called `await ensureSchema();` immediately before `await dbQuery(...)` — but `dbQuery()` (`src/lib/db.ts`) already calls `ensureSchema()` as its own first line. Checking the rest of the codebase for the same pattern (blast-radius sweep per this doc's PR policy) found it duplicated in **10 more files, 18 more call sites**: `spx-play-outcomes.ts` (4x), `largo-store.ts` (3x), `error-sink.ts` (3x), `journal-store.ts` (2x), `spx-play-store.ts`, `spx-signal-log.ts`, `provider-health-reconcile.ts`, `admin-audit.ts`, `admin-spx-analytics.ts`, `app/api/admin/audit-log/route.ts` (1x each) — every one immediately preceding either `dbQuery()` or an exported `db.ts` function (`insertPlayOutcomeEntry`, `fetchOpenSpxPlay`, `upsertUserJournalEntry`, etc.) that already starts with its own `await ensureSchema();`.
+
+**Root cause of the timeout, and why this fix does NOT claim to resolve it:** `ensureSchema()` is memoized via a shared `schemaReady` promise, so calling it twice back-to-back costs nothing once resolved — the redundant calls are dead weight, not a multiplier on lock-contention risk. Removing them is a correct, safe cleanup, but it is **not** the root cause of the timeout bursts. Attempted to find the real cause with a user-approved, read-only production DB probe (row counts, `pg_stat_activity`, advisory locks) — the probe itself failed at the network layer: this sandbox blocks raw Postgres TCP the same way it blocks WebSockets (confirmed via a direct `/dev/tcp` connect test and via the `pg` client hard-timing-out on the public endpoint; documented in `CLAUDE.md`'s Environment realities). The likely real cause — multiple replicas racing Postgres's migration advisory lock (`MIGRATION_LOCK_ID`) during a multi-replica cold boot, with `pg`'s client-side `query_timeout` (35s) as the backstop that ultimately fires — remains **open**, and needs either a Railway-side shell/exec or a temporary HTTP debug endpoint to properly root-cause with live lock/query state.
+
+**Fix:** deleted all 20 redundant `await ensureSchema();` calls and their now-unused `ensureSchema` imports (10 files touched beyond the telemetry one). No behavior change — every code path still gets exactly one `ensureSchema()` call, just from the `db.ts` helper it was always going to call, not duplicated by the caller.
+
+**What was deliberately left unchanged:** `ensureSchema()`/`runMigrations()`'s own internals (the advisory-lock acquire/release, the unconditional `spx_signal_log` dedup DELETE that runs on every cold boot) — changing lock/retry semantics without live lock-state evidence would be guessing, not fixing.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `574/574`; `next build` clean.
+
 ## 🟢 FIXED — SPX GEX heatmap chain still truncating at the (already-raised) 40-page guard — walls/OI/IV understated, likely driving oversized cross-validation divergence
 **Status:** FIXED (`fix/gex-heatmap-chain-truncation`). Previously flagged as Cursor's file per this session's coordination boundary; the user explicitly asked for it to be fixed directly on 2026-07-01, superseding that boundary.
 

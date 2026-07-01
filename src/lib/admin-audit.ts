@@ -1,4 +1,4 @@
-import { dbConfigured, ensureSchema, dbQuery } from "@/lib/db";
+import { dbConfigured, dbQuery } from "@/lib/db";
 
 export async function logAdminAction(input: {
   actorUserId?: string | null;
@@ -11,7 +11,6 @@ export async function logAdminAction(input: {
     return;
   }
   try {
-    await ensureSchema();
     await dbQuery(
       `INSERT INTO admin_audit_log (actor_user_id, actor_email, action, detail)
        VALUES ($1, $2, $3, $4)`,

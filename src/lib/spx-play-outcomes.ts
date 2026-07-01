@@ -1,4 +1,4 @@
-import { dbConfigured, ensureSchema } from "@/lib/db";
+import { dbConfigured } from "@/lib/db";
 import { nextMemoryPlayId } from "@/lib/spx-play-memory-id";
 import type { ClaudePlayVerdict } from "@/lib/spx-play-claude";
 import type { PlayConfirmationResult } from "@/lib/spx-play-confirmations";
@@ -225,7 +225,6 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
     return id;
   }
 
-  await ensureSchema();
   const { insertPlayOutcomeEntry } = await import("@/lib/db");
   try {
     const id = await insertPlayOutcomeEntry({
@@ -282,7 +281,6 @@ export async function recordPlayClose(
     return;
   }
 
-  await ensureSchema();
   const { closePlayOutcomeRow } = await import("@/lib/db");
   try {
     const updated = await closePlayOutcomeRow(openPlayId, {
@@ -321,7 +319,6 @@ export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {
   if (!dbConfigured()) {
     return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open"));
   }
-  await ensureSchema();
   const { fetchClosedPlayOutcomes } = await import("@/lib/db");
   const rows = await fetchClosedPlayOutcomes(500);
   return computePlayOutcomeStats(rows);
@@ -378,7 +375,6 @@ export async function fetchRecentPlayOutcomes(limit = 50): Promise<PlayOutcomeRo
   if (!dbConfigured()) {
     return memoryOutcomes.slice(0, limit);
   }
-  await ensureSchema();
   const { fetchRecentPlayOutcomeRows } = await import("@/lib/db");
   return fetchRecentPlayOutcomeRows(limit);
 }

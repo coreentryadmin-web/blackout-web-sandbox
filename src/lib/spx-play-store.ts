@@ -1,6 +1,5 @@
 import {
   dbConfigured,
-  ensureSchema,
   getMeta,
   setMeta,
 } from "@/lib/db";
@@ -245,7 +244,6 @@ export async function savePlaySessionMeta(meta: PlaySessionMeta): Promise<void> 
 export async function loadOpenPlay(): Promise<OpenPlayRow | null> {
   if (!dbConfigured()) return MEMORY_OPEN.row;
 
-  await ensureSchema();
   const { fetchOpenSpxPlay } = await import("@/lib/db");
   const row = await fetchOpenSpxPlay(todayEt());
   MEMORY_OPEN.row = row;

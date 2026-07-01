@@ -1,14 +1,14 @@
 import "server-only";
 import type { ApiCallEvent } from "@/lib/api-telemetry-types";
 import { sanitizeTelemetryBody, sanitizeTelemetryUrl } from "@/lib/api-telemetry-sanitize";
-import { dbConfigured, ensureSchema, dbQuery } from "@/lib/db";
+import { dbConfigured, dbQuery } from "@/lib/db";
 
 export async function persistApiTelemetryEvent(event: ApiCallEvent): Promise<void> {
   if (!dbConfigured()) return;
   const safeUrl = sanitizeTelemetryUrl(event.request_url);
   const safeBody = sanitizeTelemetryBody(event.request_body);
   try {
-    await ensureSchema();
+    // dbQuery() already calls ensureSchema() internally (see db.ts) — no need to call it here too.
     await dbQuery(
       `INSERT INTO api_telemetry_events (
         event_id, correlation_id, provider, endpoint, method, status, ok,
@@ -48,7 +48,7 @@ export async function persistApiTelemetryEvent(event: ApiCallEvent): Promise<voi
 export async function fetchPersistedApiEvent(eventId: string): Promise<ApiCallEvent | null> {
   if (!dbConfigured()) return null;
   try {
-    await ensureSchema();
+    // dbQuery() already calls ensureSchema() internally (see db.ts) — no need to call it here too.
     const { rows } = await dbQuery<{
       seq_id: string;
       event_id: string;
