@@ -409,7 +409,11 @@ export function SpxGexMatrixHeatmap({
                           }}
                           title={
                             isColumnKing
-                              ? `King node for ${fmtHeatmapExpiry(e)}`
+                              ? `King node for ${fmtHeatmapExpiry(e)}${
+                                  overlaySpot > 0
+                                    ? ` — ${Math.round(Math.abs(strike - overlaySpot))}pt from spot`
+                                    : ""
+                                }`
                               : extremeTitle
                           }
                         >
@@ -421,11 +425,18 @@ export function SpxGexMatrixHeatmap({
                             {fmtHeatmapMoneySigned(val, { showZero: true })}
                           </span>
                           {isColumnKing && (
-                            <span
-                              aria-hidden
-                              className="ml-0.5 text-[13px] leading-none text-amber-400 [text-shadow:0_0_6px_rgba(251,191,36,0.9)]"
-                            >
-                              ★
+                            <span className="ml-0.5 inline-flex items-baseline gap-0.5">
+                              <span
+                                aria-hidden
+                                className="text-[13px] leading-none text-amber-400 [text-shadow:0_0_6px_rgba(251,191,36,0.9)]"
+                              >
+                                ★
+                              </span>
+                              {overlaySpot > 0 && (
+                                <span className="text-[7px] font-normal leading-none text-amber-300/70">
+                                  {Math.round(Math.abs(strike - overlaySpot))}pt
+                                </span>
+                              )}
                             </span>
                           )}
                         </td>
@@ -461,7 +472,8 @@ export function SpxGexMatrixHeatmap({
         <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>
         {columnKings.size > 0 && (
           <span>
-            · <span className="text-amber-400">★</span> = that day&apos;s King node
+            · <span className="text-amber-400">★Npt</span> = that day&apos;s King node, N points
+            from spot (close = live pin candidate; far = structural OI wall, not a live anchor)
           </span>
         )}
         {columnExtremeWalls.size > 0 && (
