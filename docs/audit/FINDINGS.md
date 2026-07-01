@@ -3,6 +3,26 @@
 Verified issues from the production data-correctness audit. Newest/most-severe first.
 Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
+**Merge policy for this doc's PRs:** left OPEN for end-of-day review — do not merge without explicit go-ahead, even when CI is green.
+
+---
+
+## ✅ VERIFIED CORRECT — SPX Slayer live GEX/DEX/VEX + anchor (2026-07-01 RTH, ~14:00 UTC)
+Live-vs-live cross-check of `/api/market/gex-positioning?ticker=SPX` against UW's raw SPX per-strike option greeks (793 strikes), independently re-derived in this session:
+
+| Value | App (live) | Ground truth (UW/Polygon, live) | Verdict |
+|---|---|---|---|
+| Spot | 7485.08 | Polygon I:SPX 7487.27 | ✅ Δ 0.03% |
+| Anchor / King strike | 7500 | UW argmax\|net_gex\| = 7500 | ✅ exact |
+| Call wall | 7500 | UW near-spot argmax = 7500 | ✅ exact |
+| Net GEX | +22.1B (long γ) | UW dealer-GEX sign: + | ✅ sign correct |
+| Net VEX | +514B (positive vanna) | UW raw vanna is customer-side (−728M); app correctly flips to dealer convention | ✅ correct (dealer convention, applied consistently) |
+| Net DEX | −27B (short) | UW raw delta is customer-side (+237M); app correctly flips to dealer convention | ✅ correct (dealer convention) |
+
+`gexPositioningFromHeatmap()` never fabricates (returns null on a cold/empty matrix). **Conclusion: the core SPX GEX/DEX/VEX math and the anchor/wall selection are real, correctly-signed dealer-greek derivations — not made up.**
+
+**However**, the app's own `gex_cross_validation` self-check returned a **false mismatch** in the same live payload (`callWallMatch:false, flipMatch:false, divergence:51.1pt`) despite the call wall being independently confirmed correct above — see the sign-blind self-check finding below (P1).
+
 ---
 
 ## 🔴 HIGH — SPX support/resistance R1/R2/S1/S2 computed from a STALE (off-by-one) session
