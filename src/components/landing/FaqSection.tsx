@@ -92,7 +92,7 @@ const RAW: Record<CatKey, { q: string; a: string }[]> = {
   member: [
     {
       q: "How do I get access?",
-      a: "Create your free BlackOut account, then choose monthly, yearly, or lifetime access using the same email. One click unlocks the full platform — same login, full clearance.",
+      a: "Create your free BlackOut account, then choose monthly or yearly access using the same email. One click unlocks the full platform — same login, full clearance.",
     },
     {
       q: "What's included in Premium?",

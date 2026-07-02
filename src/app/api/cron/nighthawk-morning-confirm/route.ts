@@ -1,6 +1,7 @@
 // Cron: NIGHT HAWK MORNING CONFIRMATION — validates overnight plays before market open.
 //
-// FIRES: 9:15am ET Mon-Fri (cron 15 13 * * 1-5 UTC)
+// FIRES: 13:15 + 14:15 UTC Mon-Fri (railway.nighthawk-morning-confirm.toml) — dual
+// band so one firing always lands in the 9:10-9:45 ET window across both DST regimes.
 //
 // WHAT IT DOES:
 //   1. Reads /api/platform/intel for current regime, anomalies, GEX brief.

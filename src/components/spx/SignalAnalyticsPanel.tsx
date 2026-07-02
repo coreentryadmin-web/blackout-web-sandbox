@@ -229,7 +229,20 @@ export function SignalAnalyticsPanel() {
     }
   }, [days]);
 
-  useEffect(() => { load(); }, [load]);
+  // Auto-refresh: new signal observations log continuously during RTH, so a one-shot
+  // load went stale until someone hit the manual "↻ Refresh" button. Poll every 60s
+  // (this is a rolling N-day aggregate, not tick-level data — no need for a faster
+  // cadence) and refetch on window focus, same pattern as the other live panels.
+  useEffect(() => {
+    void load();
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
 
   const isEmpty = !loading && !error && data != null && data.summary.total_observations < 10;
 

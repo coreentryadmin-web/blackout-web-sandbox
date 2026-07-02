@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildPublicTrackRecord } from "@/lib/track-record-public";
 import { requireAdminApi } from "@/lib/admin-access";
 import { getClientIp, checkIpRateLimit, rateLimitHeaders } from "@/lib/ip-rate-limit";
+import { roundFloats } from "@/lib/round-floats";
 
 // Admin-only aggregate ledger (formerly public embed API).
 export const runtime = "nodejs";
@@ -32,5 +33,5 @@ export async function GET(req: NextRequest) {
   }
 
   const record = await buildPublicTrackRecord();
-  return NextResponse.json(record, { headers: { ...NO_STORE, ...rlHeaders } });
+  return NextResponse.json(roundFloats(record), { headers: { ...NO_STORE, ...rlHeaders } });
 }

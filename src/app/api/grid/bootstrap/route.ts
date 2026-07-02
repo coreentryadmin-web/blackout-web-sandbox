@@ -3,6 +3,7 @@ import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { readGridBootstrapMarket } from "@/lib/grid/grid-market-bootstrap";
 import { readGridBootstrapPanels } from "@/lib/providers/grid";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const [panels, market] = await Promise.all([readGridBootstrapPanels(), readGridBootstrapMarket()]);
-    return NextResponse.json({ ...panels, market }, { status: 200, headers: NO_STORE });
+    return NextResponse.json(roundFloats({ ...panels, market }), { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json(
       { as_of: new Date().toISOString(), panels: {} },

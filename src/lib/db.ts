@@ -1068,18 +1068,39 @@ export async function fetchRecentFlows(params: {
              raw_payload->>'rule_name'
            ), '') AS alert_rule,
            (raw_payload->>'ask_side_pct')::numeric AS ask_pct,
+           -- UW's WS flow_alerts feed sends these fields as JSON *strings* (e.g. "590.24")
+           -- rather than JSON numbers on a large share of rows (live-verified: ~48% of
+           -- HELIX rows), which the old jsonb_typeof = 'number' gate silently dropped to
+           -- NULL. Accept a numeric-looking string too, but only cast when the text
+           -- actually matches a number -- an unconditional numeric cast on a stray
+           -- non-numeric string (e.g. "N/A") would throw and fail the entire query, not
+           -- just null out that one row.
            COALESCE(
-             CASE WHEN jsonb_typeof(raw_payload->'underlying_last')  = 'number' THEN (raw_payload->>'underlying_last')::numeric  END,
-             CASE WHEN jsonb_typeof(raw_payload->'underlying_price') = 'number' THEN (raw_payload->>'underlying_price')::numeric END,
-             CASE WHEN jsonb_typeof(raw_payload->'stock_price')      = 'number' THEN (raw_payload->>'stock_price')::numeric      END
+             CASE WHEN jsonb_typeof(raw_payload->'underlying_last') = 'number'
+                    OR (raw_payload->>'underlying_last') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'underlying_last')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'underlying_price') = 'number'
+                    OR (raw_payload->>'underlying_price') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'underlying_price')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'stock_price') = 'number'
+                    OR (raw_payload->>'stock_price') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'stock_price')::numeric END
            ) AS underlying_price,
            COALESCE(
-             CASE WHEN jsonb_typeof(raw_payload->'open_interest') = 'number' THEN (raw_payload->>'open_interest')::numeric END,
-             CASE WHEN jsonb_typeof(raw_payload->'oi')            = 'number' THEN (raw_payload->>'oi')::numeric            END
+             CASE WHEN jsonb_typeof(raw_payload->'open_interest') = 'number'
+                    OR (raw_payload->>'open_interest') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'open_interest')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'oi') = 'number'
+                    OR (raw_payload->>'oi') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'oi')::numeric END
            ) AS open_interest,
            COALESCE(
-             CASE WHEN jsonb_typeof(raw_payload->'iv')                 = 'number' THEN (raw_payload->>'iv')::numeric                 END,
-             CASE WHEN jsonb_typeof(raw_payload->'implied_volatility') = 'number' THEN (raw_payload->>'implied_volatility')::numeric END
+             CASE WHEN jsonb_typeof(raw_payload->'iv') = 'number'
+                    OR (raw_payload->>'iv') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'iv')::numeric END,
+             CASE WHEN jsonb_typeof(raw_payload->'implied_volatility') = 'number'
+                    OR (raw_payload->>'implied_volatility') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                  THEN (raw_payload->>'implied_volatility')::numeric END
            ) AS implied_volatility
     FROM flow_alerts
     ${where}

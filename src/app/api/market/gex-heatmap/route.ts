@@ -14,6 +14,7 @@ import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -313,7 +314,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(
-      {
+      roundFloats({
         available: true,
         ...heatmap,
         cross_validation,
@@ -324,7 +325,7 @@ export async function GET(req: NextRequest) {
         overlays_at: overlaysAt != null ? new Date(overlaysAt).toISOString() : null,
         // Night Hawk context — null when no current play exists for this ticker.
         nighthawk_context: nighthawkContext,
-      },
+      }),
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

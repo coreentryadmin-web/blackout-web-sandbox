@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/admin-access";
 import { dbQuery } from "@/lib/db";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 import { initSpxSignalTables } from "@/lib/spx-signal-db";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -295,15 +296,17 @@ export async function GET(req: NextRequest) {
       direction_correct: r.direction_correct ?? null,
     }));
 
-    return NextResponse.json({
-      summary,
-      signal_correlations:       signalCorrelations,
-      score_band_performance:    scoreBandPerformance,
-      session_window_performance: sessionWindowPerformance,
-      gate_block_frequency:      gateBlockFrequency,
-      hourly_accuracy:           hourlyAccuracy,
-      recent_observations:       recentObservations,
-    });
+    return NextResponse.json(
+      roundFloats({
+        summary,
+        signal_correlations:       signalCorrelations,
+        score_band_performance:    scoreBandPerformance,
+        session_window_performance: sessionWindowPerformance,
+        gate_block_frequency:      gateBlockFrequency,
+        hourly_accuracy:           hourlyAccuracy,
+        recent_observations:       recentObservations,
+      })
+    );
   } catch (error) {
     recordAdminRouteError("admin/signal-analytics", error);
     return NextResponse.json({ error: "Failed to load signal analytics" }, { status: 502 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { marketPlatform } from "@/lib/platform";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +17,14 @@ export async function GET(req: NextRequest) {
       marketPlatform.nighthawk.getLatestNightHawkSummary().catch(() => null),
     ]);
     return NextResponse.json(
-      {
+      roundFloats({
         merged,
         pulse_available: pulse?.available ?? false,
         flow_available: flow?.available ?? false,
         platform_refs: {
           nighthawk: platform,
         },
-      },
+      }),
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

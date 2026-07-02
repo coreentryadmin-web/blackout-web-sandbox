@@ -12,6 +12,7 @@ import { convictionFromScore } from "@/lib/nighthawk/scorer";
 import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/lib/nighthawk/session";
 import { requireToolApi } from "@/lib/tool-access-server";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -131,13 +132,13 @@ export async function GET(req: NextRequest) {
     const edition = rowToNightHawkEdition(activePlayable);
     edition.carry_until_close = true;
     edition.served_for = activePlayable.edition_for;
-    return NextResponse.json(edition, { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(edition), { headers: NO_STORE_HEADERS });
   }
 
   // Exact requested edition — fresh for the requested session when it has published.
   const exact = await fetchNighthawkEditionByDate(editionFor);
   if (exact) {
-    return NextResponse.json(rowToNightHawkEdition(exact), { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(rowToNightHawkEdition(exact)), { headers: NO_STORE_HEADERS });
   }
 
   // Requested edition isn't published yet. Fall back to the latest stored edition ONLY if it is
@@ -153,12 +154,12 @@ export async function GET(req: NextRequest) {
       edition.stale = true;
       edition.served_for = edition.edition_for;
     }
-    return NextResponse.json(edition, { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(edition), { headers: NO_STORE_HEADERS });
   }
 
   const legacy = await fetchLegacyPlays();
   if (legacy) {
-    return NextResponse.json(legacy, { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(legacy), { headers: NO_STORE_HEADERS });
   }
 
   return NextResponse.json(emptyEdition(editionFor), { headers: NO_STORE_HEADERS });

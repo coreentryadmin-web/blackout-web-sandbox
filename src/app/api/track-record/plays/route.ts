@@ -8,6 +8,7 @@ import { serverCache, TTL } from "@/lib/server-cache";
 import { isNighthawkOutcomeScoreable } from "@/lib/track-record-page";
 import { requireAdminApi } from "@/lib/admin-access";
 import { getClientIp, checkIpRateLimit, rateLimitHeaders } from "@/lib/ip-rate-limit";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
         })),
       };
     });
-    return NextResponse.json(payload, { headers: { ...NO_STORE, ...rlHeaders } });
+    return NextResponse.json(roundFloats(payload), { headers: { ...NO_STORE, ...rlHeaders } });
   } catch {
     return NextResponse.json({ available: false }, { status: 503, headers: { ...NO_STORE, ...rlHeaders } });
   }

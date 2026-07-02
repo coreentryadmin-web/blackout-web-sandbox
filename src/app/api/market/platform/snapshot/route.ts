@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { getPlatformSnapshot, type PlatformServiceId } from "@/lib/platform";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshot = await getPlatformSnapshot({ include, flowLimit, fullEdition });
-    return NextResponse.json(snapshot, {
+    return NextResponse.json(roundFloats(snapshot), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { loadSpxDesk } from "@/lib/spx-desk-loader";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     // ISSUE-29: Do NOT overwrite polled_at with the HTTP response time — that hides
     // how stale the cached data is. Pass desk.polled_at if set, otherwise desk.as_of.
     return NextResponse.json(
-      { ...desk, polled_at: desk.polled_at ?? desk.as_of },
+      roundFloats({ ...desk, polled_at: desk.polled_at ?? desk.as_of }),
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

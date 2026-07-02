@@ -4,6 +4,7 @@ import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
 import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, topGexWalls } from "@/lib/providers/gamma-desk";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,7 +100,7 @@ export async function GET(req: NextRequest) {
               : null;
           // Build a minimal positioning-compatible response so callers get useful data.
           return NextResponse.json(
-            {
+            roundFloats({
               available: true,
               degraded: true,
               ticker,
@@ -135,7 +136,7 @@ export async function GET(req: NextRequest) {
               shift_summary: null,
               source: "polygon-fallback" as const,
               _fallback: true,
-            },
+            }),
             { status: 200, headers: noStore }
           );
         }
@@ -148,7 +149,7 @@ export async function GET(req: NextRequest) {
       );
     }
     return NextResponse.json(
-      { available: true, ...positioning },
+      roundFloats({ available: true, ...positioning }),
       { status: 200, headers: cdnCache }
     );
   } catch (error) {

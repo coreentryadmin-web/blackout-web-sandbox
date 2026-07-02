@@ -8,6 +8,7 @@ import { marketPlatform } from "@/lib/platform";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { enrichFlowsWithGex } from "@/lib/flow-gex-enrichment";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
         console.log(`[market/flows] postgres ok — ${flows.length} rows (min_premium=${min_premium}, since_hours=${since_hours})`);
         return { source: "cache" as const, flows: enrichedFlows, count: enrichedFlows.length, platform_refs: platform };
       });
-      return NextResponse.json(payload);
+      return NextResponse.json(roundFloats(payload));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error("[market/flows] postgres ERROR:", detail);
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
     const flows = await serverCache(cacheKey, TTL.DARK_POOL, () =>
       fetchMarketFlowAlerts({ limit, ticker, min_premium })
     );
-    return NextResponse.json({ source: "live", flows, count: flows.length });
+    return NextResponse.json(roundFloats({ source: "live", flows, count: flows.length }));
   } catch (error) {
     console.error("[market/flows]", error);
     return NextResponse.json({ error: "Flow fetch failed" }, { status: 503 });

@@ -5,6 +5,7 @@ import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     });
     const play = await readSpxPlaySnapshot(merged, technicals);
 
-    return NextResponse.json(play, {
+    return NextResponse.json(roundFloats(play), {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         Pragma: "no-cache",

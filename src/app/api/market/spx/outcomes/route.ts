@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
 import { computeAdaptiveGates } from "@/lib/spx-play-telemetry";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
       fetchRecentPlayOutcomes(limit),
     ]);
     const adaptive = computeAdaptiveGates(stats);
-    return NextResponse.json({ stats, adaptive, rows });
+    return NextResponse.json(roundFloats({ stats, adaptive, rows }));
   } catch (error) {
     console.error("[market/spx/outcomes]", error);
     return NextResponse.json(

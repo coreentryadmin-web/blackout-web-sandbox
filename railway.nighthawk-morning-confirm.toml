@@ -1,6 +1,12 @@
 # Railway config for the NightHawk Morning Confirmation cron service.
-# Fires at 9:15 AM ET (13:15 UTC) Mon-Fri — validates overnight Night Hawk plays
-# against pre-market SPX, writes CONFIRMED/DEGRADED/INVALIDATED to Redis for UI badges.
+# Fires at 13:15 AND 14:15 UTC Mon-Fri — one of the two always lands inside the
+# route's 9:10-9:45 ET confirmation window (inEtWindow in et-window.ts) regardless
+# of DST: 13:15 UTC = 9:15 ET during EDT (in-window) but only 8:15 ET during EST
+# (before the window, so that firing silently no-ops); 14:15 UTC is the mirror —
+# 10:15 ET during EDT (after the window, no-ops) but 9:15 ET during EST (in-window).
+# A single fixed-UTC schedule can only ever match one DST regime; dual-firing is the
+# minimal fix so the job actually runs across the whole year, not just the half that
+# happens to line up with the hardcoded UTC hour.
 [build]
 builder = "nixpacks"
 buildCommand = "echo 'cron trigger service: no app build needed'"
@@ -19,7 +25,8 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/nighthawk-morning-confirm"
-# 9:15 AM ET = 13:15 UTC (works for both EDT and EST since pre-market opens at 9 AM ET)
-cronSchedule = "15 13 * * 1-5"
+# Dual UTC band so one firing always lands in the 9:10-9:45 ET window across both
+# EDT (13:15 UTC = 9:15 ET) and EST (14:15 UTC = 9:15 ET) — see comment above.
+cronSchedule = "15 13,14 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1

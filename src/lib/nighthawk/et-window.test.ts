@@ -46,3 +46,26 @@ test("edition cron: 21:30 UTC = 17:30 ET (EDT) is IN window", () => {
 test("edition cron step 30/15: 21:45 UTC = 17:45 ET (EDT) is IN window", () => {
   assert.equal(inEtWindow({ targetHour: 17, targetMinute: 30, catchupMin: 120 }, new Date("2026-06-29T21:45:00Z")), true);
 });
+
+// Morning-confirm cron target: 9:10-9:45 ET. Same DST bug class as the outcomes
+// cron above — the OLD single 13:15 UTC fire only lands in-window during EDT;
+// the fix adds a mirrored 14:15 UTC fire that lands in-window during EST.
+const MORNING_CONFIRM = { targetHour: 9, targetMinute: 10, catchupMin: 35 };
+
+test("morning-confirm EST root-cause: 13:15 UTC = 8:15 ET (winter) is OUT of window", () => {
+  // Proves the OLD single 13:15 UTC fire missed every winter weekday.
+  assert.equal(inEtWindow(MORNING_CONFIRM, new Date("2026-01-15T13:15:00Z")), false);
+});
+
+test("morning-confirm EST fix: 14:15 UTC = 9:15 ET (winter) is IN window", () => {
+  // Proves the ADDED 14:15 UTC fire lands inside the window under EST.
+  assert.equal(inEtWindow(MORNING_CONFIRM, new Date("2026-01-15T14:15:00Z")), true);
+});
+
+test("morning-confirm EDT: 13:15 UTC = 9:15 ET (summer) is IN window", () => {
+  assert.equal(inEtWindow(MORNING_CONFIRM, new Date("2026-07-15T13:15:00Z")), true);
+});
+
+test("morning-confirm EDT second fire: 14:15 UTC = 10:15 ET (summer) is OUT (after 9:45 cutoff, harmless no-op)", () => {
+  assert.equal(inEtWindow(MORNING_CONFIRM, new Date("2026-07-15T14:15:00Z")), false);
+});
