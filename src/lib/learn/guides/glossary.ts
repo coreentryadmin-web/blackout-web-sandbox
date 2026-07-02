@@ -17,7 +17,7 @@ const CATEGORIES = [
       { term: "Call Wall", def: "Largest positive gamma concentration above spot — mechanical resistance zone." },
       { term: "Put Wall", def: "Largest negative gamma concentration below spot — fragile support." },
       { term: "Gamma Flip", def: "Price where aggregate dealer gamma changes sign — regime boundary." },
-      { term: "King Node", def: "Highest absolute GEX strike of the session." },
+      { term: "King node", def: "Highest absolute GEX strike of the session." },
     ],
   },
   {

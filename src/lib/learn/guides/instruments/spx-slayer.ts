@@ -61,7 +61,7 @@ export const spxSlayerGuide = defineToolGuide({
         "γ/vanna flip level and net exposure total",
         "Floor pivot grid (R1/R2/S1/S2 from prior day range)",
         "Sticky table: Strike | Label | 0DTE expiry column with signed dollar values",
-        "Row labels: Anchor, Max +/−, Spot, R1/R2/S1/S2",
+        "Row labels: King, Max +/−, Spot, R1/R2/S1/S2",
         "Legend, strike count, matrix as-of timestamp",
       ],
       actions: [
@@ -131,7 +131,7 @@ export const spxSlayerGuide = defineToolGuide({
       },
       {
         title: "Key levels",
-        body: "Call wall, put wall, gamma flip, King Node, and VWAP define the structural session. IV Rank flags expensive vs cheap premium environments.",
+        body: "Call wall, put wall, gamma flip, King node, and VWAP define the structural session. IV Rank flags expensive vs cheap premium environments.",
       },
       {
         title: "Data merge cache",
@@ -213,7 +213,7 @@ export const spxSlayerGuide = defineToolGuide({
       name: "Engine",
       terms: [
         { term: "SCANNING", def: "Default state — one or more gates failed; no play is open." },
-        { term: "King Node", def: "Strike with highest absolute session GEX — intraday gravitational center." },
+        { term: "King node", def: "Strike with highest absolute session GEX — intraday gravitational center." },
         { term: "FreshnessChip", def: "Live/stale/offline indicator for merged desk polling health." },
       ],
     },

@@ -6,7 +6,7 @@ export const heatMapsGuide = defineToolGuide({
   title: "BlackOut Thermal",
   description: "Visual GEX, VEX, DEX, and CHARM surfaces — where dealer hedging pressure concentrates across strikes and expiries.",
   overview: [
-    "Thermal renders the full dealer exposure grid that SPX Slayer summarizes as walls, flip, and King Node. Route: `/heatmap`. Default ticker is SPY; switch to SPX or index names via TickerSwitcher.",
+    "Thermal renders the full dealer exposure grid that SPX Slayer summarizes as walls, flip, and King node. Route: `/heatmap`. Default ticker is SPY; switch to SPX or index names via TickerSwitcher.",
     "Two primary views: Matrix (strike × expiry heat table) and Profile + Curve + Shift (ladder bars, cumulative curve, intraday migration). Four lenses: GEX, VEX, DEX, CHARM — each reframes dealer risk.",
     "Overlays tie HELIX flow and dark pool levels onto the profile view. LargoRead provides on-demand AI explanation of the current surface.",
   ],
@@ -39,7 +39,7 @@ export const heatMapsGuide = defineToolGuide({
       location: "Control row — right of view tabs",
       purpose: "Switch dealer exposure type without refetching — all blocks ship in one payload.",
       shows: [
-        "GEX: gamma flip, call/put walls, max pain, anchor",
+        "GEX: gamma flip, call/put walls, max pain, King node",
         "VEX: vanna walls and flip",
         "DEX: delta-zero pivot and posture (hidden if absent)",
         "CHARM: charm-zero pivot and pinning (hidden if absent)",
@@ -68,10 +68,10 @@ export const heatMapsGuide = defineToolGuide({
     {
       name: "ExposureProfile + ExpiryScopeBar",
       location: "Profile view — left column",
-      purpose: "Strike ladder bars with spot/flip/anchor markers and optional flow/dark pool overlays.",
+      purpose: "Strike ladder bars with spot/flip/King-node markers and optional flow/dark pool overlays.",
       shows: [
         "Per-strike exposure bars",
-        "Spot, flip, anchor markers",
+        "Spot, flip, King node markers",
         "ExpiryScope chips: All · 0DTE · Near · Monthly · per-expiry",
         "HELIX Flow overlay markers (net premium by strike)",
         "Dark Pool horizontal level lines",
@@ -101,7 +101,7 @@ export const heatMapsGuide = defineToolGuide({
     {
       name: "KeyLevelBox",
       location: "Below main views — rail",
-      purpose: "Consolidated structure tiles: flip, walls, max pain, anchor, net total, day-over-day deltas.",
+      purpose: "Consolidated structure tiles: flip, walls, max pain, King node, net total, day-over-day deltas.",
       shows: ["Lens-specific level tiles with info tooltips", "DoD deltas where available"],
       cadence: "From matrix payload each poll",
       consume:

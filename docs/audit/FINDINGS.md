@@ -246,7 +246,7 @@ Full proofread of every surface NOT covered by the Learn sweep: SPX desk (all pa
 - Footer instrument "Thermal" → "BlackOut Thermal" (its own page, nav, and FeaturesGrid all use the full name; sibling "BlackOut Grid" was already full).
 - `account/page.tsx` browser title "Account — BlackOut Trades" → "Account · BlackOut" (every other page uses the "· BlackOut" pattern).
 - Largo input placeholders used spaced ASCII " ..." → Unicode "…" (app-wide convention: "Syncing…", "Acquiring the tape…").
-- NOTED, not changed: `GexDealerPanel` labels `gex_king` "GEX Anchor" while `SpxGexMatrixHeatmap` calls the same value "King node" (★) and Thermal uses "ANCHOR" (◆) — plausibly intentional per-surface vocabulary; flagged for a product decision rather than unilaterally renamed.
+- `gex_king` naming — **RESOLVED 2026-07-02, product decision: "King node"** (user-confirmed). All user-visible labels aligned: `GexDealerPanel` "GEX Anchor" → "King node"; Thermal (`GexHeatmap`) "ANCHOR" row tag/legend/tooltips/KeyLevel tile → "King node" (row tag short form "King"); `SpxOdteMatrixPanel` "Anchor" row label → "King" and "Desk anchor" → "Desk King node"; Learn guides (heat-maps, spx-slayer, glossary) updated, including normalizing the glossary's "King Node" casing to "King node". Code identifiers (`isAnchor`, `matrixAnchorStrike`, `AnchorGlyph`, CSS classes) deliberately unchanged — display-only rename.
 
 ---
 

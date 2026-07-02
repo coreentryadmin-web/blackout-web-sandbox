@@ -48,7 +48,7 @@ type GexHeatmapResponse = {
 type RowHighlight = "anchor" | "max-pos" | "max-neg" | null;
 
 /** Readable tags in the label column between strike and GEX/VEX value. */
-type RowLabel = "Anchor" | "Max +" | "Max −" | "Spot" | "R1" | "R2" | "S1" | "S2";
+type RowLabel = "King" | "Max +" | "Max −" | "Spot" | "R1" | "R2" | "S1" | "S2";
 
 type MatrixRow = {
   strike: number;
@@ -251,7 +251,7 @@ function rowHighlightClass(highlight: RowHighlight, labels: RowLabel[]): string 
   const parts: string[] = [];
   if (highlight === "max-pos") parts.push("spx-odte-matrix-row--max-pos");
   if (highlight === "max-neg") parts.push("spx-odte-matrix-row--max-neg");
-  if (labels.includes("Anchor")) parts.push("spx-odte-matrix-row--anchor");
+  if (labels.includes("King")) parts.push("spx-odte-matrix-row--anchor");
   return parts.join(" ");
 }
 
@@ -395,7 +395,7 @@ export function SpxOdteMatrixPanel({
   const rows = useMemo<MatrixRow[]>(() => {
     return strikesAxis.map((strike) => {
       const labels: RowLabel[] = [];
-      if (anchor != null && strike === anchor) labels.push("Anchor");
+      if (anchor != null && strike === anchor) labels.push("King");
       if (maxPosStrike != null && strike === maxPosStrike) labels.push("Max +");
       if (maxNegStrike != null && strike === maxNegStrike) labels.push("Max −");
 
@@ -545,7 +545,7 @@ export function SpxOdteMatrixPanel({
               ? ` Desk γ flip ${fmtStrike(deskGammaFlip)}.`
               : ""}
             {kingDiffersFromDesk && deskGexKing != null
-              ? ` Desk anchor ${fmtStrike(deskGexKing)}.`
+              ? ` Desk King node ${fmtStrike(deskGexKing)}.`
               : ""}
           </p>
         )}

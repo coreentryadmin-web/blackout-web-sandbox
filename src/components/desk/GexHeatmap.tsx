@@ -874,7 +874,7 @@ function ExposureProfile({
               style={isAnchor ? { boxShadow: "inset 0 0 18px rgba(255,255,255,0.12)" } : undefined}
               title={
                 isAnchor
-                  ? `ANCHOR · ${fmtStrike(r.strike)} · ${fmtMoney(r.value)} — dominant dealer gamma node`
+                  ? `KING NODE · ${fmtStrike(r.strike)} · ${fmtMoney(r.value)} — dominant dealer gamma node`
                   : `${fmtStrike(r.strike)} · ${fmtMoney(r.value)}`
               }
             >
@@ -895,7 +895,7 @@ function ExposureProfile({
                 <span className="inline-flex items-center justify-end gap-1">
                   {/* ANCHOR pin — bright-white ◆ diamond glyph, the unmistakable dominant-node marker. */}
                   {isAnchor && (
-                    <span className="text-white" title="ANCHOR — dominant dealer gamma node">
+                    <span className="text-white" title="King node — dominant dealer gamma node">
                       <AnchorGlyph size={11} />
                     </span>
                   )}
@@ -996,7 +996,7 @@ function ExposureProfile({
                 {/* ANCHOR tag — leads the row's tag slot when this is the dominant node. */}
                 {isAnchor && (
                   <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-white">
-                    <AnchorGlyph size={9} /> Anchor
+                    <AnchorGlyph size={9} /> King
                   </span>
                 )}
                 {/* Wall tags only exist on GEX/VEX (DEX/CHARM have no walls → these never fire). */}
@@ -1047,7 +1047,7 @@ function ExposureProfile({
       {anchor != null && (
         <div className="mt-2 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-white">
           <AnchorGlyph size={10} />
-          ANCHOR · {fmtStrike(anchor)} — dominant dealer {v.noun.toLowerCase()} node (strongest pin/anchor)
+          KING NODE · {fmtStrike(anchor)} — dominant dealer {v.noun.toLowerCase()} node (strongest pin/anchor)
         </div>
       )}
 
@@ -3086,7 +3086,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       if (matrixAnchorStrike != null) {
         cellsOut.push({
           key: "anchor",
-          label: "Anchor",
+          label: "King node",
           value: fmtStrike(matrixAnchorStrike),
           tone: "wall",
           anchor: true,
@@ -3410,7 +3410,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         {matrixAnchorStrike != null && (
           <span className="flex items-center gap-1.5 text-white">
             <AnchorGlyph size={11} />
-            <span aria-hidden>anchor</span>
+            <span aria-hidden>king node</span>
             <span className="text-white">{fmtStrike(matrixAnchorStrike)}</span>
           </span>
         )}
@@ -3447,7 +3447,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               className="h-2 w-2 rounded-sm"
               style={{ outline: "1px solid rgba(255,255,255,0.7)", outlineOffset: "-1px" }}
             />
-            <span aria-hidden>per-day anchor</span>
+            <span aria-hidden>per-day King</span>
           </span>
         )}
         {/* Far-dated monthly/quarterly OpEx columns are gold-marked (◆) — where the dominant

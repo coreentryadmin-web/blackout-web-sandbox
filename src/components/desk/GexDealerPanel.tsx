@@ -54,7 +54,7 @@ export function GexDealerPanel({ data, live }: { data?: SpxState; live?: boolean
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Metric label="GEX Anchor" value={live ? fmtPrice(data?.gex_king ?? null) : "—"} />
+          <Metric label="King node" value={live ? fmtPrice(data?.gex_king ?? null) : "—"} />
           <Metric label="Max Pain" value={live ? fmtPrice(data?.max_pain ?? null) : "—"} />
           <Metric label="Gamma Flip" value={live ? fmtPrice(data?.gamma_flip ?? null) : "—"} />
           <Metric label="Tide" value={live ? (data?.tide_bias ?? "—") : "—"} accent />
