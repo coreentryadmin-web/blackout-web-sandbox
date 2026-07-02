@@ -20,6 +20,8 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/cron-staleness-watchdog"
-cronSchedule = "*/20 * * * *"
+# Tightened from */20 — Railway cron triggers can stall mid-RTH; faster self-heal limits
+# the window where live-data warmers go dark before the in-app rth-warm-leader backs up.
+cronSchedule = "*/5 * * * *"
 restartPolicyType = "never"
 numReplicas = 1

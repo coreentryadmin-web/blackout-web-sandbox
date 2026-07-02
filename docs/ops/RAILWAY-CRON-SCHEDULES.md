@@ -45,7 +45,7 @@ are cheap no-ops — the wide UTC band avoids maintaining separate EDT/EST cron 
 | membership-reconcile | Membership-Reconcile | `0 */6 * * *` | Every 6h, 24/7 |
 | db-cleanup | DB_CLEANUP | `0 7 * * *` | Daily 07:00 UTC |
 | largo-cleanup | Largo-Chat-CleanUp | `0 8 * * 0` | Sunday 08:00 UTC |
-| cron-staleness-watchdog | Cron-Staleness-Watchdog | `*/20 * * * *` | 24/7 staleness monitor |
+| cron-staleness-watchdog | Cron-Staleness-Watchdog | `*/5 * * * *` | 24/7 staleness monitor |
 
 ## Socket-Health-Cron specifically
 

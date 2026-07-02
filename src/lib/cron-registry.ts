@@ -191,7 +191,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     name: "Cron Watchdog",
     kind: "http",
     path: "/api/cron/cron-staleness-watchdog",
-    schedule_label: "Every 20 min",
+    schedule_label: "Every 5 min",
     stale_after_min: 60,
     description: "Alerts Discord when any cron goes stale/failed (catches silent never-fired crons)",
   },
