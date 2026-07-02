@@ -223,6 +223,33 @@ async function publishRecapOnlyEdition(params: {
   // so a non-checkpointing run still yields a usable recap edition instead of throwing. When the DB IS
   // configured, wrap the write so a transient DB error here can't take down the whole rescue path.
   if (checkpointing) {
+    // CLOBBER GUARD: never overwrite an already-published edition that HAS plays with a
+    // plays:[] recap. The exception rescue runs on ANY post-context throw — including one
+    // AFTER the full edition row was already written (e.g. a transient DB error in the
+    // post-publish outcome sync) — and a force rebuild that collapses at a later stage
+    // (one-off Claude timeout) lands here too. In both cases the members' good playbook
+    // must win over the rescue; only a genuinely play-less date gets the recap row.
+    const existing = await fetchNighthawkEditionByDate(editionFor).catch(() => null);
+    const existingPlays = Array.isArray(existing?.plays) ? existing.plays.length : 0;
+    if (existingPlays > 0) {
+      console.warn(
+        `[nighthawk/edition] recap-only SKIPPED — existing ${editionFor} edition has ${existingPlays} plays; keeping it (${reason})`
+      );
+      await upsertNighthawkJob(editionFor, {
+        status: "published",
+        current_stage: "published",
+        published_at: new Date().toISOString(),
+        error: null,
+      });
+      await clearNighthawkStaging(editionFor);
+      logNighthawkJob(
+        editionFor,
+        "warn",
+        "published",
+        `Recap-only skipped — kept existing ${existingPlays}-play edition (${reason})`
+      );
+      return recapEdition;
+    }
     await upsertNighthawkEdition(recapEdition);
   } else {
     console.warn(
@@ -732,18 +759,35 @@ export async function buildEveningEdition(opts?: {
       },
     });
 
-    const sectorByTicker = Object.fromEntries(topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null]));
-    await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker);
+    // POST-PUBLISH steps are isolated from the outer catch: the edition row is already
+    // written (members are served), so a transient DB error here must NOT propagate —
+    // the exception rescue would then "rescue" a successful publish by overwriting it
+    // with a plays:[] recap (belt to the clobber guard's suspenders). On job-flip
+    // failure the job stays non-published and the next cron fire resumes from the
+    // synthesis checkpoint and re-publishes idempotently — strictly better than the
+    // rescue. Outcome-sync failure self-heals the same way (sync is idempotent).
+    try {
+      const sectorByTicker = Object.fromEntries(topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null]));
+      await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker);
 
-    if (checkpointing) {
-      await upsertNighthawkJob(editionFor, {
-        status: "published",
-        current_stage: "published",
-        published_at: new Date().toISOString(),
-        error: null,
-      });
-      await clearNighthawkStaging(editionFor);
-      logNighthawkJob(editionFor, "info", "published", `Edition published with ${finalPlays.length} plays`);
+      if (checkpointing) {
+        await upsertNighthawkJob(editionFor, {
+          status: "published",
+          current_stage: "published",
+          published_at: new Date().toISOString(),
+          error: null,
+        });
+        await clearNighthawkStaging(editionFor);
+        logNighthawkJob(editionFor, "info", "published", `Edition published with ${finalPlays.length} plays`);
+      }
+    } catch (postPublishError) {
+      const msg = serializeBuildError(postPublishError);
+      console.error(`[nighthawk/edition] post-publish step failed (edition IS live): ${msg}`);
+      await notifyOpsDiscord({
+        severity: "warning",
+        title: `Night Hawk post-publish step failed — ${editionFor}`,
+        body: `Edition with ${finalPlays.length} plays IS published; outcome-sync/job-flip failed and will retry on the next cron fire.\nerror: ${msg}`,
+      }).catch(() => undefined);
     }
 
     const finalJob = checkpointing ? await fetchNighthawkJob(editionFor) : null;

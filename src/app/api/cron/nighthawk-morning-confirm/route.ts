@@ -28,7 +28,7 @@ import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { makeRedis } from "@/lib/make-redis";
 import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
 import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
-import { todayEt, nextTradingDayEt } from "@/lib/nighthawk/session";
+import { todayEt, isTradingDayEt } from "@/lib/nighthawk/session";
 import { inEtWindow } from "@/lib/nighthawk/et-window";
 import type { PlaybookPlay } from "@/lib/nighthawk/types";
 
@@ -325,6 +325,16 @@ export async function GET(req: NextRequest) {
   }
 
   const today = todayEt();
+  // Holiday guard: the Railway schedule is weekday-based and inEtWindow only knows
+  // Sat/Sun, so without this the cron fires on NYSE holidays (e.g. Fri 2026-07-03),
+  // falls back to the NEXT session's edition (Monday's, published the prior evening),
+  // computes an "overnight gap" from a closed market, and can spuriously INVALIDATE
+  // Monday's plays + page ops — with the bogus verdicts sitting in Redis all weekend.
+  if (!force && !isTradingDayEt(today)) {
+    const payload = { ok: false, skipped: true, reason: `Market holiday (${today}) — no session to confirm` };
+    await logCronRun(CRON_KEY, started, payload);
+    return NextResponse.json(payload);
+  }
   // Night Hawk edition_for is typically the NEXT trading day from yesterday's run, but
   // for morning confirm we want the edition that covers today's plays.
   // Attempt: fetch exact edition for today, fallback to latest.
@@ -347,6 +357,23 @@ export async function GET(req: NextRequest) {
     const edition = rowToNightHawkEdition(editionRow);
     const plays: PlaybookPlay[] = edition.plays ?? [];
     const editionFor = edition.edition_for ?? editionDateParam;
+
+    // Session-match guard: verdicts are written under nh:play-status:${editionFor},
+    // so confirming an edition for a DIFFERENT session than today pollutes that
+    // session's key with today's (irrelevant) pre-market read. The fetchLatest
+    // fallback above can legitimately return a FUTURE edition (e.g. Monday's,
+    // published Thursday evening when Friday is a holiday) — skip it; Monday's own
+    // 9:15 run is the one that should judge Monday's plays. ?force (admin/manual,
+    // optionally with an explicit ?date=) still overrides for testing.
+    if (!force && editionFor !== today) {
+      const payload = {
+        ok: false,
+        skipped: true,
+        reason: `Edition targets ${editionFor}, not today (${today}) — nothing to confirm this session`,
+      };
+      await logCronRun(CRON_KEY, started, payload);
+      return NextResponse.json(payload);
+    }
 
     if (!plays.length) {
       const payload = { ok: false, skipped: true, reason: `Edition ${editionFor} has no plays to validate` };
