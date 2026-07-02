@@ -206,13 +206,25 @@ async function httpItems() {
           "Edition row exists but plays=[] without recap_only — investigate funnel collapse."
         );
       } else if (inWindow && nj.job_status === "published" && playCount > 0 && playCount < 3) {
-        add(
-          "P2",
-          "nighthawk",
-          `nighthawk:thin-edition:${nj.edition_for}`,
-          `Night Hawk thin edition (${playCount} plays): ${nj.edition_for}`,
-          "Critic/grounding may be over-pruning — review funnel logs."
-        );
+        const funnel = ej.meta?.funnel ?? {};
+        const synthesized = Number(funnel.synthesized ?? 0);
+        const candidates = Number(ej.meta?.candidates ?? 0);
+        // Only page when the pipeline had depth but over-pruned — not when Claude genuinely
+        // returned few plays (synthesized < 3) or backfill already topped up to the ops floor.
+        const overPruned =
+          candidates >= 20 &&
+          (synthesized === 0
+            ? true // legacy rows without funnel meta but a deep candidate pool
+            : synthesized >= 5 || (synthesized >= 3 && synthesized - playCount >= 2));
+        if (overPruned) {
+          add(
+            "P2",
+            "nighthawk",
+            `nighthawk:thin-edition:${nj.edition_for}`,
+            `Night Hawk thin edition (${playCount} plays): ${nj.edition_for}`,
+            `Critic/grounding may be over-pruning — funnel synthesized=${synthesized || "?"} candidates=${candidates || "?"}.`
+          );
+        }
       }
     }
   } catch (e) {
