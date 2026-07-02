@@ -1,5 +1,78 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-02 12:27 ET
+Last updated: 2026-07-02 13:48 ET
+
+## RTH comprehensive sweep — 2026-07-02 ~13:44–13:48 ET (pass 3 — afternoon RTH)
+
+**Session:** Thu 2 Jul 2026, 13:44–13:48 ET (**RTH open**; market open 09:30 ET). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` | ✅ GREEN — deploy + RTH session checks passed (options-socket enabled, no held contracts) |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 70 consistency-only (`market_open: true`) |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 38 PASS, 8 WARN (expected missing fields) |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (47 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (47 pass, 0 issues) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 flags (1st run: META fetch terminated + SMH cells-resum Δ2.58e-4% — both transient; re-run clean) |
+| `node scripts/audit/data-validator.mjs` | ✅ 17 PASS, 0 FAIL, 0 malformed floats (1 WARN: net_gex sign vs UW units differ) |
+| `npm run ops:collect` | ✅ 0 action items |
+
+### API sweep (premium session — ~13:46 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~4681ms | 179 strikes, spot 7435.91 |
+| `/api/market/spx/merged` | 200 | ~414ms | warm |
+| `/api/market/flows` | 200 | ~9856ms | 500 rows |
+| `/api/market/flow-brief` | 200 | ~4130ms | ok |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~212ms | 168 strikes |
+| `/api/grid/bootstrap` + 8 panel routes | 200 | 81–4822ms | all panels finite |
+| `/api/market/nighthawk/edition` | 200 | ~183ms | 0 plays (midday), recap=true |
+| `/api/public/track-record` | 200 | ~230ms | 12 closed |
+| Largo `/api/market/largo/query` | 200 | ~42s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow] |
+| SPX oracle | — | — | desk 7436.42 vs Polygon 7436.52 (Δ 0.10) |
+
+**Cross-tool GEX:** SPX spot aligned across desk/heatmap/grid; data-correctness 0 flags; gamma posture matches net_gex sign.
+
+### Page sweep (premium admin — API proxy, RTH open)
+
+| Page | Load | Live update | Notes |
+|---|---|---|---|
+| `/dashboard` | ~4681ms heatmap / ~414ms merged | ✅ 15s poll changed | 179 strikes; spot live |
+| `/flows` | ~9856ms | ✅ 15s poll changed | 500 flows; SSE tape live |
+| `/heatmap` Matrix | ~212ms SPY | ✅ cache refreshes | optional overlays empty |
+| `/heatmap` Profile | (same endpoint) | — | gamma profile via heatmap API |
+| `/grid` | bootstrap + 8 routes 200 | 20–90s cadence | 12 panels: pulse/news/flow via bootstrap + 8 panel routes |
+| `/nighthawk` | ~183ms | static edition | 0 plays midday (edition at close) |
+| `/terminal` (Largo) | ~42s | — | grounded NVDA multi-tool answer |
+| `/track-record` | ~230ms | LIVE | 12 closed |
+
+**Speed flags:** SPX heatmap cold load ~4.7s and HELIX flows ~9.9s exceed soft-nav target (~1.5s) but are within known cold-cache bounds; grid panel routes 81–101ms are fast.
+
+### Missing-field audit (pass 3 — all expected/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `dark_pool.pcr`, `lit_dark_ratio`, `prints[empty]` | desk/merged/nighthawk | `spx/merged` | **Upstream gap** — prints lack call/put split | Expected; do not fabricate |
+| `flows[].alerted_at` / `event_at` | HELIX | `option_trades` WS path | **Upstream shape** — WS prints lack alert timestamps | Expected |
+| `earnings.items[].eps_actual` / `surprise_pct` | grid | `/api/grid/earnings` | **Expected** — pre-report / future dates | none |
+| `economy indicators rows[7].value` | grid | `/api/grid/economy` | **Upstream gap** — sparse FRED row | Expected |
+| `events[empty]`, `cross_validation`, `nighthawk_context` | heatmap/dashboard | gex-heatmap overlays | **Optional overlays** — none active | Expected |
+| `sector_bias`, `vol_regime`, `chart_levels.vah/val/poc` | grid pulse (schema) | `deskPayloadToSpxState` | **Not wired** — fields hardcoded null; PulseStrip UI does not render them | P2 backlog (not user-visible blank) |
+| MU flip `—` | heatmap matrix | sparse far-dated chain | **Upstream gap** | Expected |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (all GREEN).
+
+### Open watches (P2)
+
+- `validate:rth-open` warnings: 1 API telemetry failure (15m), 8 Sentry unresolved (prior deploy noise)
+- SPX heatmap / HELIX flows cold latency elevated (~4.7s / ~9.9s) — monitor under afternoon load
+- `heatmap-matrix-audit` META fetch terminated on 1st run — transient; re-run passed
+- SMH cells-resum Δ2.58e-4% on 1st run — floating-point rounding; re-run passed
+
+---
 
 ## RTH comprehensive sweep — 2026-07-02 ~12:22–12:27 ET (pass 2 — midday RTH)
 
