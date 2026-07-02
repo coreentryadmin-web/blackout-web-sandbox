@@ -703,6 +703,16 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
   `);
+  // Refund/chargeback revocation denylist — Postgres is the durable source of truth
+  // (a security denylist must survive a Redis outage/flush); whop-revocation.ts keeps
+  // Redis in front as the hot cache. Rows are permanent: a refunded one-time purchase
+  // stays revoked forever, so no TTL/cleanup.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS whop_revoked_memberships (
+      membership_id TEXT PRIMARY KEY,
+      revoked_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
     try { await lockClient.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]); } catch { /* ignore */ }
