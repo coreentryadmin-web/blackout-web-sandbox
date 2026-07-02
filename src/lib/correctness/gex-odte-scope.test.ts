@@ -5,6 +5,7 @@ import {
   grossAbsFromStrikeTotals,
   grossAbsFromUwGexRows,
   isHairlineNetGammaSign,
+  isNearGammaFlip,
   odteGexScopeFromHeatmap,
   odteStrikeTotalsFromCells,
   recomputeScopedGexLevels,
@@ -74,6 +75,13 @@ test("isHairlineNetGammaSign: balanced book is hairline", () => {
   const net = -700_000_000;
   const gross = grossAbsFromStrikeTotals(totals);
   assert.equal(isHairlineNetGammaSign(net, gross), true);
+});
+
+test("isNearGammaFlip: spot within 0.5% of flip is near-flip", () => {
+  assert.equal(isNearGammaFlip(7483.24, 7481.13), true);
+  assert.equal(isNearGammaFlip(7500, 7400), false);
+  assert.equal(isNearGammaFlip(0, 7481), false);
+  assert.equal(isNearGammaFlip(7500, null), false);
 });
 
 test("grossAbsFromUwGexRows sums |call+put| per row", () => {

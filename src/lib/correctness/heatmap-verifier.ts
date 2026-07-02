@@ -16,7 +16,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign } from "@/lib/correctness/gex-odte-scope";
+import { odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign, isNearGammaFlip, recomputeScopedGexLevels } from "@/lib/correctness/gex-odte-scope";
 
 // ---------------------------------------------------------------------------
 // HEAT MAPS data-correctness verifier — the first (primary) target of the auditor.
@@ -858,20 +858,25 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
     const agree = Math.sign(uwNet) === Math.sign(servedNet);
     const grossServed = grossAbsFromStrikeTotals(odteScope.strikeTotals);
     const grossUw = grossAbsFromUwGexRows(uw.rows);
+    const odteFlip = recomputeScopedGexLevels(odteScope.strikeTotals, hm.spot).flip;
     const hairline =
       !agree &&
       (isHairlineNetGammaSign(servedNet, grossServed) || isHairlineNetGammaSign(uwNet, grossUw));
+    const nearFlip = !agree && isNearGammaFlip(hm.spot, odteFlip);
+    const unstable = hairline || nearFlip;
     out.push(
       mk(
         ctx,
         "cross-provider",
         "net_gex",
-        agree ? "pass" : hairline ? "consistency-only" : "flag",
+        agree ? "pass" : unstable ? "consistency-only" : "flag",
         agree
           ? `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
           : hairline
             ? `SPX 0DTE net-GEX sign disagrees with UW but both nets are hairline (|net|/gross ≤8% — balanced dealer gamma; sign not diagnostically meaningful this run).`
-            : `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
+            : nearFlip
+              ? `SPX 0DTE net-GEX sign disagrees with UW but spot is within 0.5% of the 0DTE gamma flip (${fmt(odteFlip)}) — sign not diagnostically meaningful near the zero-gamma crossing.`
+              : `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
         { id: "oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(servedNet), independentlyConfirmed: agree }
       )
     );

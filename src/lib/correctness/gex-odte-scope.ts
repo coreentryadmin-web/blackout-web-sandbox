@@ -78,6 +78,22 @@ export function isHairlineNetGammaSign(net: number, grossAbs: number, maxRatio =
   return Math.abs(net) / grossAbs <= maxRatio;
 }
 
+/**
+ * Spot is "near the gamma flip" when |spot − flip| is a small fraction of spot.
+ * In this zone summed net GEX sign is structurally unstable — tiny strike-grid /
+ * methodology differences between Polygon ($-gamma per 1% move) and UW (gamma·OI)
+ * flip the sign even when King/walls agree. Cross-provider sign checks downgrade
+ * to consistency-only here (same rationale as data-validator posture/net_gex INFO).
+ */
+export function isNearGammaFlip(
+  spot: number,
+  flip: number | null | undefined,
+  maxFractionalOfSpot = 0.005
+): boolean {
+  if (!(spot > 0) || flip == null || !Number.isFinite(flip)) return false;
+  return Math.abs(spot - flip) / spot <= maxFractionalOfSpot;
+}
+
 export function grossAbsFromStrikeTotals(strikeTotals: Record<string, number>): number {
   let gross = 0;
   for (const v of Object.values(strikeTotals)) {

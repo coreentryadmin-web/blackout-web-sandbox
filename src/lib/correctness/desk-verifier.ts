@@ -8,7 +8,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { kingFromStrikeTotals, odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign } from "@/lib/correctness/gex-odte-scope";
+import { kingFromStrikeTotals, odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign, isNearGammaFlip, recomputeScopedGexLevels } from "@/lib/correctness/gex-odte-scope";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 
 // ---------------------------------------------------------------------------
@@ -474,20 +474,25 @@ async function crossProviderChecks(
     const agree = Math.sign(uwNet) === Math.sign(odteNet);
     const grossServed = grossAbsFromStrikeTotals(odteStrikeTotals);
     const grossUw = grossAbsFromUwGexRows(uw.rows);
+    const odteFlip = recomputeScopedGexLevels(odteStrikeTotals, spot).flip;
     const hairline =
       !agree &&
       (isHairlineNetGammaSign(odteNet, grossServed) || isHairlineNetGammaSign(uwNet, grossUw));
+    const nearFlip = !agree && isNearGammaFlip(spot, odteFlip);
+    const unstable = hairline || nearFlip;
     out.push(
       mk(
         ctx,
         "cross-provider",
         "gex_net",
-        agree ? "pass" : hairline ? "consistency-only" : "flag",
+        agree ? "pass" : unstable ? "consistency-only" : "flag",
         agree
           ? `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
           : hairline
             ? `0DTE net-GEX sign disagrees with UW but both nets are hairline (|net|/gross ≤8% — balanced dealer gamma; sign not diagnostically meaningful this run).`
-            : `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
+            : nearFlip
+              ? `0DTE net-GEX sign disagrees with UW but spot is within 0.5% of the 0DTE gamma flip (${fmt(odteFlip)}) — sign not diagnostically meaningful near the zero-gamma crossing.`
+              : `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
         { id: "desk-oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(odteNet), independentlyConfirmed: agree }
       )
     );
