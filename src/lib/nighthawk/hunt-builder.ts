@@ -144,7 +144,7 @@ function earningsDateForTicker(
   return hit ? tomorrow : null;
 }
 
-function rescoreDossier(
+export function rescoreDossier(
   dossier: TickerDossier,
   regime: ReturnType<typeof regimeContextFromMarket>,
   streakWeight: number,
@@ -174,6 +174,9 @@ function rescoreDossier(
       earnings_date: earningsDate,
       today_ymd: ctx.today,
       tomorrow_ymd: ctx.tomorrow,
+      // Dead-input fix (audit): the PT nudge was implemented in scoreCandidate but no
+      // caller passed the field.
+      benzinga_price_target: dossier.benzinga_price_target,
     },
     dossier.flow_streak,
     regime,

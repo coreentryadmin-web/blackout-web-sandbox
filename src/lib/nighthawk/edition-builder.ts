@@ -25,6 +25,7 @@ import { fetchIndexDossiers } from "./index-dossier";
 import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
 import { critiquePlays } from "./play-critic";
 import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
+import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
@@ -441,6 +442,23 @@ export async function buildEveningEdition(opts?: {
     } else {
       console.info(`[nighthawk/edition] dossiers for ${candidates.length} tickers (no checkpointing)`);
       dossiers = await fetchAllDossiers(candidates, DOSSIER_BATCH_SIZE, regime);
+    }
+
+    // Session-aware re-score (audit fix): buildTickerDossier scores WITHOUT the session
+    // context, so the earnings-proximity −6 penalty ("expiry into earnings") and the
+    // analyst-PT nudge were dead code on the edition path — only the hunt path passed
+    // earnings_date/today/tomorrow. Re-score every dossier with the same helper the
+    // hunt uses (deterministic + idempotent, safe on checkpoint-resumed dossiers too).
+    for (const d of Object.values(dossiers)) {
+      try {
+        rescoreDossier(d, regime, 1, {
+          today: ctx.today,
+          tomorrow: ctx.tomorrow,
+          tomorrow_earnings: ctx.tomorrow_earnings ?? [],
+        });
+      } catch (err) {
+        console.warn(`[nighthawk/edition] session rescore failed for ${d.ticker} — keeping base score:`, err);
+      }
     }
 
     const scoredList = Object.values(dossiers)

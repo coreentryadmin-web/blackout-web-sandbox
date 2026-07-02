@@ -427,8 +427,19 @@ export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long
     if (tags.includes("bearish") || tags.includes("overbought")) score -= 6;
   } else {
     if (tech.trend === "bearish") score += 8;
-    if (tags.includes("gap down") || tags.includes("below")) score += 5;
+    // "gap down" only — the old `tags.includes("below")` matched the GAP-UP tag
+    // "gap-fill risk below" (technicals.ts emits it for gap>0), handing +5 to a
+    // short on a name that gapped UP. Substring matching on a single common word
+    // against free-form tags is exactly how that slipped in.
+    if (tags.includes("gap down")) score += 5;
+    // Mirror of the long branch's MA-stack reward — shorts previously had no
+    // structure reward at all beyond the trend read.
+    if (tags.includes("bearish ma")) score += 4;
     if (tech.rsi14 != null && tech.rsi14 >= 55) score += 3;
+    // Mirror of the long branch's breakout reward: a name printing fresh highs
+    // (20d breakout / HOD break) is structurally AGAINST a short — penalize it
+    // the same way bullish structure was never penalized before.
+    if (tags.includes("breakout") || tags.includes("hod")) score -= 6;
     if (tags.includes("bullish ma") || tags.includes("oversold")) score -= 6;
   }
 
@@ -444,6 +455,13 @@ function darkPoolBiasMatchesDirection(
   if (!b || b === "neutral" || b === "mixed") return null;
   if (direction === "long") return b === "bullish";
   return b === "bearish";
+}
+
+/** Does a strike stack's option side support the play direction? Calls back longs, puts back shorts. */
+function stackAlignsWithDirection(stack: FlowStrikeStack, direction: "long" | "short"): boolean {
+  const t = (stack.option_type ?? "").toLowerCase();
+  if (!t) return false;
+  return direction === "long" ? t.startsWith("c") : t.startsWith("p");
 }
 
 export function scoreOptionsPositioning(
@@ -462,23 +480,42 @@ export function scoreOptionsPositioning(
   else if (dp >= 20_000_000) dpPoints = 4;
   else if (dp >= 5_000_000) dpPoints = 2;
 
+  // Alignment-weighted, not magnitude-for-free: full points only when the dark-pool
+  // bias CONFIRMS the direction; half when the bias is unknown/neutral (size alone is
+  // weak evidence); zero when it CONTRADICTS. The old weighting was inverted at both
+  // ends — unknown bias got full points and a contradicting bias still got half.
   const biasMatch = darkPoolBiasMatchesDirection(dossier.dark_pool?.bias, direction);
   if (dpPoints > 0) {
-    if (biasMatch === false) score += dpPoints * 0.5;
-    else score += dpPoints;
+    if (biasMatch === true) score += dpPoints;
+    else if (biasMatch === null) score += dpPoints * 0.5;
+    // contradicting bias: 0
   }
 
-  const stacks = dossier.strike_stacks ?? [];
+  // Strike stacks carry their option side — a stack of PUTS is not evidence for a
+  // LONG. Only direction-aligned stacks score (the old check was side-blind).
+  const stacks = (dossier.strike_stacks ?? []).filter((s) => stackAlignsWithDirection(s, direction));
   if (stacks.some((s) => s.repeated_hits)) score += 4;
   if (stacks.some((s) => s.same_strike_accumulation)) score += 3;
 
   const pos = dossier.positioning;
+  // Negative gamma = dealers amplify moves — momentum tailwind for EITHER direction,
+  // deliberately unsigned.
   if (pos?.negative_gamma) score += 2;
-  if (pos?.net_vex != null && Math.abs(pos.net_vex) > 0) score += 1;
-  if (pos?.max_pain != null) score += 1;
+  // (Removed: +1 for net_vex merely being present and +1 for max_pain being present —
+  // those rewarded data AVAILABILITY, not signal, granting free points to tickers
+  // with richer coverage.)
 
+  // OI change only counts when it agrees with the thesis: rising call OI backs a
+  // long, rising put OI backs a short. Row count alone (the old `length >= 3`) was
+  // another presence-as-signal freebie.
   const oi = dossier.oi_change ?? [];
-  if (oi.length >= 3) score += 2;
+  const alignedOi = oi.filter((r) => {
+    const grew = (r.oi_change ?? 0) > 0;
+    if (!grew) return false;
+    const t = (r.option_type ?? "").toLowerCase();
+    return direction === "long" ? t.startsWith("c") : t.startsWith("p");
+  });
+  if (alignedOi.length >= 2) score += 2;
 
   return Math.min(18, score);
 }
@@ -491,8 +528,9 @@ function predictionAlignsWithDirection(
   return direction === "long" ? signal.direction === "bullish" : signal.direction === "bearish";
 }
 
-function institutionalShowsNetBuying(rows: Record<string, unknown>[]): boolean {
-  if (!rows.length) return false;
+/** Net institutional direction: +1 net buying, -1 net selling, 0 unknown/flat. */
+function institutionalNetSignal(rows: Record<string, unknown>[]): -1 | 0 | 1 {
+  if (!rows.length) return 0;
   let net = 0;
   for (const row of rows) {
     const change = Number(
@@ -506,7 +544,27 @@ function institutionalShowsNetBuying(rows: Record<string, unknown>[]): boolean {
     if (/buy|added|increase|new|accumul/.test(action)) net += 1;
     else if (/sell|reduced|decrease|trim|liquidat/.test(action)) net -= 1;
   }
-  return net > 0;
+  if (net > 0) return 1;
+  if (net < 0) return -1;
+  return 0;
+}
+
+/**
+ * Direction weight for a congressional trade row: 1 when the disclosed side backs the
+ * play (buys back longs, sells back shorts), 0 when it contradicts, 0.5 when the side
+ * is missing/unparseable (presence is weak evidence either way). The old code summed
+ * pure recency with no side check — a congressperson SELLING scored a LONG.
+ */
+function congressSideWeight(row: Record<string, unknown>, direction: "long" | "short"): number {
+  const side = String(
+    row.txn_type ?? row.transaction_type ?? row.transaction ?? row.type ?? row.trade_type ?? ""
+  ).toLowerCase();
+  if (!side) return 0.5;
+  const isBuy = /buy|purchase/.test(side);
+  const isSell = /sell|sale/.test(side);
+  if (!isBuy && !isSell) return 0.5;
+  if (direction === "long") return isBuy ? 1 : 0;
+  return isSell ? 1 : 0;
 }
 
 /**
@@ -542,24 +600,32 @@ export function scoreSmartMoney(
 ): number {
   let score = 0;
   if (predictionAlignsWithDirection(dossier.predictions_signal, direction)) score += 4;
-  // congress_unusual: sum recency-weighted contributions (max 3 pts for fresh trades, less for stale)
+  // congress_unusual: recency-weighted AND side-aligned (max 3 pts). A disclosed sale
+  // no longer scores a long.
   if ((dossier.congress_unusual?.length ?? 0) > 0) {
     const unusualScore = (dossier.congress_unusual ?? []).reduce(
-      (sum, row) => sum + congressTradeDecayMultiplier(row),
+      (sum, row) => sum + congressTradeDecayMultiplier(row) * congressSideWeight(row, direction),
       0
     );
     score += Math.min(3, unusualScore);
   }
-  // congress_trades: sum recency-weighted contributions (max 2 pts)
+  // congress_trades: same recency × side weighting (max 2 pts).
   if ((dossier.congress_trades?.length ?? 0) > 0) {
     const tradeScore = (dossier.congress_trades ?? []).reduce(
-      (sum, row) => sum + congressTradeDecayMultiplier(row),
+      (sum, row) => sum + congressTradeDecayMultiplier(row) * congressSideWeight(row, direction),
       0
     );
     score += Math.min(2, tradeScore);
   }
-  if (institutionalShowsNetBuying(dossier.institutional_activity ?? [])) score += 3;
-  return Math.min(8, score);
+  // Institutional flow is mirrored: net buying backs a LONG (+3) and actively
+  // contradicts a SHORT (-2), and vice versa — the old unconditional
+  // `netBuying → +3` handed institutional ACCUMULATION as a bonus to shorts.
+  const inst = institutionalNetSignal(dossier.institutional_activity ?? []);
+  if (inst !== 0) {
+    const aligns = direction === "long" ? inst > 0 : inst < 0;
+    score += aligns ? 3 : -2;
+  }
+  return Math.max(-2, Math.min(8, score));
 }
 
 /**
@@ -579,22 +645,39 @@ export function scoreShortInterest(
   return 0;
 }
 
-export function scoreNewsCatalyst(dossier: {
-  news_headlines?: string[];
-  insider_buys?: number;
-}): number {
-  let score = 0;
+export function scoreNewsCatalyst(
+  dossier: {
+    news_headlines?: string[];
+    insider_buys?: number;
+  },
+  direction: "long" | "short"
+): number {
   const headlines = dossier.news_headlines ?? [];
-  if (headlines.length >= 3) score += 2;
+  // Coverage bonus is direction-neutral: a name in the news is more liquid/tradable
+  // either way.
+  let score = headlines.length >= 3 ? 2 : 0;
+
+  // Sentiment is computed on a BULLISH axis, then signed by direction — the old code
+  // added bullish sentiment unconditionally, so a SHORT on a stock with upgrades and
+  // positive headlines got up to +8 added to its short score. Bearish news is what
+  // supports a short.
+  let bullish = 0;
   const positiveCount = headlines.filter((h) => h.toLowerCase().startsWith("positive:")).length;
   const negativeCount = headlines.filter((h) => h.toLowerCase().startsWith("negative:")).length;
-  if (positiveCount > negativeCount) score += 2;
-  else if (negativeCount > positiveCount) score -= 2;
+  if (positiveCount > negativeCount) bullish += 2;
+  else if (negativeCount > positiveCount) bullish -= 2;
   const text = headlines.join(" ").toLowerCase();
-  if (/upgrade|beat|approval|partnership|buyback/.test(text)) score += 3;
-  if (/downgrade|miss|investigation|lawsuit/.test(text)) score -= 2;
-  if ((dossier.insider_buys ?? 0) > 0) score += 2;
-  return Math.max(-3, Math.min(8, score));
+  // NOTE: "buyback" deliberately absent — announced buybacks already score in
+  // scoreCatalystAwareness (event, direction-aware) and realized buybacks in
+  // scoreFundamentalTailwind (share-count trend). Keeping it here triple-counted
+  // one corporate action for up to +7.
+  if (/upgrade|beat|approval|partnership/.test(text)) bullish += 3;
+  if (/downgrade|miss|investigation|lawsuit/.test(text)) bullish -= 2;
+  // Insider buying is a bullish datapoint — it supports a long and contradicts a short.
+  if ((dossier.insider_buys ?? 0) > 0) bullish += 2;
+
+  score += direction === "long" ? bullish : -bullish;
+  return Math.max(-6, Math.min(8, score));
 }
 
 export function convictionFromScore(score: number): string {
@@ -672,7 +755,7 @@ export function scoreCandidate(
   });
   const techScore = scoreTechnicalSetup(tech, flow.direction);
   const posScore = scoreOptionsPositioning(dossierExtras, flow.direction);
-  const newsScore = scoreNewsCatalyst(dossierExtras);
+  const newsScore = scoreNewsCatalyst(dossierExtras, flow.direction);
   const smartMoneyScore = scoreSmartMoney(dossierExtras, flow.direction);
   const skewAdj = flow.directionFlippedBySkew
     ? 0

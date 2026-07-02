@@ -482,6 +482,9 @@ export async function fetchTickerDossier(
       trading_halt: tradingHalt,
       risk_reversal_skew: riskReversalSkew,
       short_days_to_cover: shortSi?.days_to_cover ?? null,
+      // Wire the analyst-PT nudge input — scoreCandidate has implemented it since day
+      // one but no caller ever passed the field, leaving it dead code (audit finding).
+      benzinga_price_target: benzingaPriceTarget,
     },
     flowStreak,
     regime
