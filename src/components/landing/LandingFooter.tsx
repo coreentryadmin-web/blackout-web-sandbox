@@ -11,7 +11,7 @@ const YEAR = new Date().getFullYear();
 const INSTRUMENTS = [
   { label: "SPX Slayer", href: "/dashboard" },
   { label: "HELIX Flow", href: "/flows" },
-  { label: "Thermal", href: "/heatmap" },
+  { label: "BlackOut Thermal", href: "/heatmap" },
   { label: "Largo", href: "/terminal" },
   { label: "Night Hawk", href: "/nighthawk" },
   { label: "BlackOut Grid", href: "/grid" },

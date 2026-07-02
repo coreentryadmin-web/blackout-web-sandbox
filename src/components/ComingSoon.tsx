@@ -36,7 +36,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
 
         <p className="text-sm text-mute">
           Available now: <strong className="font-semibold text-white">SPX Slayer</strong> and{" "}
-          <strong className="font-semibold text-white">Helix</strong>.
+          <strong className="font-semibold text-white">HELIX</strong>.
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
@@ -50,7 +50,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
             href="/flows"
             className="rounded-md border border-white/10 px-5 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-secondary transition-colors hover:border-white/20 hover:text-white"
           >
-            Helix flow tape
+            HELIX flow tape
           </Link>
         </div>
       </div>

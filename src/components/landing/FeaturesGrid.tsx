@@ -37,7 +37,7 @@ const INSTRUMENTS: Weapon[] = [
     mark: "helix",
     accentKey: "purple",
     accent: MARK_ACCENT.helix,
-    name: "Helix",
+    name: "HELIX",
     spec: "Whale · Dark Pool",
     meta: "Instrument · 02",
     href: "/flows",

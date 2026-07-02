@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { UserProfile } from "@clerk/nextjs";
 
 export const metadata: Metadata = {
-  title: "Account — BlackOut Trades",
+  title: "Account · BlackOut",
   description: "Manage your BlackOut Trades account settings, security, and connected devices.",
   robots: { index: false },
 };

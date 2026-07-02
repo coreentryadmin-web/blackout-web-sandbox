@@ -850,7 +850,10 @@ function ExposureProfile({
               <div className="flex items-center gap-2 py-1" aria-hidden>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
                 <span className="whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.2em] text-gold">
-                  γ {flipLabel} {fmtStrike(flip)}
+                  {/* flipLabel is the lens's full pivot noun ("γ flip" / "vanna flip" / "δ-zero" /
+                      "charm-zero") — no hardcoded γ prefix: it doubled on GEX ("γ γ flip") and was
+                      flat wrong on every other lens ("γ vanna flip"). */}
+                  {flipLabel} {fmtStrike(flip)}
                 </span>
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gold to-transparent shadow-[0_0_10px_#ffd23f]" />
               </div>

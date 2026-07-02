@@ -5749,12 +5749,16 @@ body::before {
     align-items: flex-end;
     justify-content: space-between;
     gap: 1rem;
-    padding: 4.75rem 0.25rem 0.85rem;
+    /* Small gap only: .largo-page-main already pads the full var(--nav-offset) (88px)
+       under the fixed nav at every width. The old 4.75rem/5rem top padding here was a
+       leftover from when the header cleared the nav itself — stacked on main's offset it
+       consumed ~164px before any content and cramped the chat area on short viewports. */
+    padding: 0.5rem 0.25rem 0.85rem;
   }
 
   @media (min-width: 768px) {
     .largo-page-header {
-      padding-top: 5rem;
+      padding-top: 0.75rem;
       padding-bottom: 1rem;
     }
   }

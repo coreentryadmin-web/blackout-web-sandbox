@@ -238,6 +238,15 @@ Full proofread of all 10 Learn pages (via their content sources in `src/lib/lear
 - `FaqSection.tsx:75` "GEX, VEX, DEX and charm" — charm lowercased while its three sibling lenses were capitalized; now CHARM (matching every other reference).
 - `nav.ts:64` "live P&L and greeks" — lowercase; now Greeks (matching the 6+ other references).
 
+## Copy/content audit — all remaining member-facing surfaces (2026-07-02, second sweep)
+Full proofread of every surface NOT covered by the Learn sweep: SPX desk (all panels), HELIX/flows (all panels), Night Hawk + Night's Watch, Thermal/heatmap, Grid (all panels), Largo terminal, track record, upgrade/account/auth, landing (Hero/Features/Edge/Footer), shared UI/empty states. Factual cadence claims verified against code (NightHawk 2-min retry ↔ `refreshInterval: 120_000`; VelocityRadar "≥3× / min 2 prints" ↔ `recent >= 2 && ratio >= 3`; SplitFlowRadar "$500K/30min" ↔ `MIN_LEG`; desk re-arm 6:30 AM PT ≡ NightsWatch 9:30 AM ET). No spelling/grammar errors, placeholders, or aria-label mismatches found. **6 issues found, 5 FIXED + 1 noted:**
+- Heatmap flip divider hardcoded "γ " ahead of the per-lens pivot label → "γ γ flip" on GEX and a wrong Greek on VEX/DEX/CHARM ("γ vanna flip") — prefix dropped (matches the matrix legend's correct render).
+- HELIX capitalized as "Helix" on its own page H1 (`flows/page.tsx` — while the same file's metadata says HELIX), `FeaturesGrid.tsx`, and `ComingSoon.tsx` (2×) — standardized to HELIX (nav/footer/metadata/panels all use caps).
+- Footer instrument "Thermal" → "BlackOut Thermal" (its own page, nav, and FeaturesGrid all use the full name; sibling "BlackOut Grid" was already full).
+- `account/page.tsx` browser title "Account — BlackOut Trades" → "Account · BlackOut" (every other page uses the "· BlackOut" pattern).
+- Largo input placeholders used spaced ASCII " ..." → Unicode "…" (app-wide convention: "Syncing…", "Acquiring the tape…").
+- NOTED, not changed: `GexDealerPanel` labels `gex_king` "GEX Anchor" while `SpxGexMatrixHeatmap` calls the same value "King node" (★) and Thermal uses "ANCHOR" (◆) — plausibly intentional per-surface vocabulary; flagged for a product decision rather than unilaterally renamed.
+
 ---
 
 ## Scope tracker (what the audit must cover — per user)

@@ -12,8 +12,8 @@ import { LargoMessageBody } from "./LargoMessageBody";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; tools?: string[] };
 
-const INPUT_PLACEHOLDER = "Ask the desk — SPX levels, a ticker, flow, news ...";
-const INPUT_PLACEHOLDER_BUSY = "Pulling live data ...";
+const INPUT_PLACEHOLDER = "Ask the desk — SPX levels, a ticker, flow, news…";
+const INPUT_PLACEHOLDER_BUSY = "Pulling live data…";
 
 // Friendly labels for the live tool-trace — what data Largo is pulling, in real time.
 // Falls back to a humanized name (get_flow_tape → "flow tape") for anything unmapped.
