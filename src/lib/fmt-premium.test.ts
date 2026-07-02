@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fmtPremium } from "./api";
+import { fmtPremium, fmtPrice, fmtPct, pctClass } from "./api";
 
 // fmtPremium feeds GEX Net, 0DTE Net, wall net_gex, the HELIX tape and tide
 // premiums — all routinely negative — so the sign MUST sit outside the $ glyph
@@ -41,4 +41,24 @@ test("sub-$1K renders whole dollars with sign outside", () => {
   assert.equal(fmtPremium(900), "$900");
   assert.equal(fmtPremium(-900), "-$900");
   assert.equal(fmtPremium(0), "$0");
+});
+
+// NaN/Infinity guard: a failed Number() upstream must render the honest em-dash,
+// never a literal "$NaN" / "NaN%" on the member UI (CTO audit MEDIUM finding).
+test("NaN/Infinity render the em-dash, not $NaN / NaN%", () => {
+  assert.equal(fmtPremium(NaN), "—");
+  assert.equal(fmtPremium(Infinity), "—");
+  assert.equal(fmtPrice(NaN), "—");
+  assert.equal(fmtPrice(-Infinity), "—");
+  assert.equal(fmtPct(NaN), "—");
+  assert.equal(fmtPct(Infinity), "—");
+  assert.equal(pctClass(NaN), "num-neutral");
+});
+
+test("finite values still format normally after the guard", () => {
+  assert.equal(fmtPrice(7529.65), "7,529.65");
+  assert.equal(fmtPct(0.16), "+0.16%");
+  assert.equal(fmtPct(-4.22), "-4.22%");
+  assert.equal(pctClass(1), "num-bull");
+  assert.equal(pctClass(-1), "num-bear");
 });

@@ -7,6 +7,7 @@ import {
   type FlowStrikeStack,
 } from "@/lib/largo/flow-strike-stacks";
 import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
+import { roundFloats } from "@/lib/round-floats";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { getActiveTradingHalts, isTradingHaltChannelStale, tideStore } from "@/lib/ws/uw-socket";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
@@ -261,7 +262,13 @@ function poolLine(item: unknown): string {
 }
 
 /** Compact, human-readable block for the system prompt — Claude rephrases, never dumps verbatim. */
-export function formatLargoLiveFeed(feed: LargoLiveFeed, ticker: string): string {
+export function formatLargoLiveFeed(rawFeed: LargoLiveFeed, ticker: string): string {
+  // Round once up front: this builder interpolates dozens of numeric fields verbatim
+  // (price, ATR, EMAs, weekly/monthly levels, RSI, premiums), and money-math float
+  // noise like ema20=7428.676040091288 was being injected into the model context
+  // character-for-character — wasted tokens and a nonsense precision signal to the
+  // model. Same shared helper the API responses use; integers/strings untouched.
+  const feed = roundFloats(rawFeed);
   const lines: string[] = [
     "## Live feed (auto-captured — authoritative source for this turn)",
     "Use ONLY figures from this block or tools you call now. Do not invent stacks, premiums, levels, or trader intent. Strike stacks below are UW-verified.",

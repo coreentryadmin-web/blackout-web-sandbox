@@ -624,7 +624,11 @@ export function createPositionEventSource(
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 export function fmtPremium(n: number | null): string {
-  if (n == null) return "—";
+  // NaN/Infinity guard (not just null): these formatters are used pervasively by desk
+  // components, and one NaN input (a failed Number() upstream) rendered a literal
+  // "$NaN" on the member UI. An unrepresentable number displays as the same honest
+  // em-dash a missing one does.
+  if (n == null || !Number.isFinite(n)) return "—";
   // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M".
   const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
@@ -643,17 +647,17 @@ export function fmtPremium(n: number | null): string {
 }
 
 export function fmtPrice(n: number | null, decimals = 2): string {
-  if (n == null) return "—";
+  if (n == null || !Number.isFinite(n)) return "—";
   return n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 export function fmtPct(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null || !Number.isFinite(n)) return "—";
   const sign = n >= 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
 }
 
 export function pctClass(n: number | null): string {
-  if (n == null) return "num-neutral";
+  if (n == null || !Number.isFinite(n)) return "num-neutral";
   return n >= 0 ? "num-bull" : "num-bear";
 }
