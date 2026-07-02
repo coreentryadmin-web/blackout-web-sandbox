@@ -11,9 +11,20 @@ import { recordApiCall } from "@/lib/api-telemetry";
 import { makeRedis } from "@/lib/make-redis";
 import { publishTierChanged } from "@/lib/tier-cache";
 
-/** Idempotency: mark a Whop event as processed. Returns true if this is the FIRST time.
- * Uses a Redis SET NX with a 24-hour TTL so duplicate deliveries are silently ack'd. */
-async function markWhopEventProcessed(eventId: string): Promise<boolean> {
+/**
+ * Idempotency CLAIM: atomically mark a Whop event as "being processed" (Redis SET NX,
+ * 24h TTL). Returns true if this delivery is the first to claim it — the caller MUST then
+ * either leave the key in place on success, or call `releaseWhopEventClaim` on failure.
+ *
+ * The claim happens BEFORE processing (not after) so two genuinely-concurrent duplicate
+ * deliveries of the same event can't both pass the check and double-process. The tradeoff
+ * this used to create — a failed (500) attempt left the key claimed forever, so Whop's
+ * retry of the SAME event silently ack'd as "duplicate" and the side effect (tier sync,
+ * revocation, dunning grace) never actually ran — is fixed by releasing the claim in the
+ * route's catch block on failure, so a genuine retry after an error gets reprocessed
+ * instead of permanently swallowed. See docs/audit/FINDINGS.md for the live-traced bug.
+ */
+async function claimWhopEvent(eventId: string): Promise<boolean> {
   const url = process.env.REDIS_URL?.trim();
   if (!url) return true; // no Redis → can't deduplicate, always proceed
   try {
@@ -21,10 +32,27 @@ async function markWhopEventProcessed(eventId: string): Promise<boolean> {
     const key = `whop:event:${eventId}`;
     const result = await redis.set(key, "1", "EX", 86_400, "NX");
     await redis.quit().catch(() => undefined);
-    return result === "OK"; // OK → first time; null → already processed
+    return result === "OK"; // OK → first (unclaimed) delivery; null → already claimed
   } catch (err) {
-    console.warn("[whop webhook] idempotency check failed (Redis unavailable) — proceeding:", err);
+    console.warn("[whop webhook] idempotency claim failed (Redis unavailable) — proceeding:", err);
     return true; // fail-open: if Redis is down, process anyway
+  }
+}
+
+/**
+ * Release a Whop event's idempotency claim after its processing FAILED, so the next retry
+ * (Whop retries on 5xx) can reclaim and actually reprocess it instead of being silently
+ * ack'd as a duplicate of an attempt that never succeeded.
+ */
+async function releaseWhopEventClaim(eventId: string): Promise<void> {
+  const url = process.env.REDIS_URL?.trim();
+  if (!url) return;
+  try {
+    const redis = await makeRedis("whop-idempotency", url, { maxRetriesPerRequest: 1, connectTimeoutMs: 1_500 });
+    await redis.del(`whop:event:${eventId}`);
+    await redis.quit().catch(() => undefined);
+  } catch (err) {
+    console.warn("[whop webhook] failed to release idempotency claim (Redis unavailable) — a retry of this event may be dropped as a false duplicate until the 24h TTL expires:", err);
   }
 }
 
@@ -149,11 +177,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
   }
 
-  // Idempotency: if this event was already processed (Whop retries on 5xx), ack and skip.
-  // The Redis key `whop:event:{id}` is SET NX with 24h TTL; a null result means already seen.
+  // Idempotency: if this event is already claimed by another delivery, ack and skip.
+  // The Redis key `whop:event:{id}` is SET NX with 24h TTL; a null result means already claimed.
+  // On failure below, the claim is released so a genuine Whop retry (on 5xx) is reprocessed
+  // rather than permanently swallowed as a duplicate of an attempt that never succeeded.
   const eventId = (event as unknown as { id?: string }).id;
   if (eventId) {
-    const isFirst = await markWhopEventProcessed(eventId);
+    const isFirst = await claimWhopEvent(eventId);
     if (!isFirst) {
       console.log("[whop webhook] duplicate event", eventId, event.type, "— already processed, acking");
       recordApiCall({
@@ -308,6 +338,10 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     console.error("[whop webhook]", event.type, error);
+    // Release the idempotency claim BEFORE returning the 500 — otherwise Whop's retry of
+    // this exact event finds the key still claimed, silently acks as "duplicate", and the
+    // side effect that actually failed (tier sync / revocation / dunning grace) never runs.
+    if (eventId) await releaseWhopEventClaim(eventId);
     recordApiCall({
       provider: "blackout_engine",
       endpoint: WHOP_WEBHOOK_ENDPOINT,
