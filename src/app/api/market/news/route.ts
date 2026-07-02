@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
       // stock: earnings, analyst calls, news mentions, sector commentary that names the ticker.
       // This is far broader than a post-fetch client-side filter on the tickers[] array.
       const cacheKey = `news:benzinga:ticker:${ticker}`;
-      const articles = await serverCache(cacheKey, 60, () => fetchBenzingaNews(50, { ticker }));
+      // TTL is in MILLISECONDS. This previously passed `60` (60ms — intended as 60s),
+      // so ticker-mode news was effectively uncached and every member poll hit
+      // Benzinga upstream directly.
+      const articles = await serverCache(cacheKey, TTL.TICKER_NEWS, () => fetchBenzingaNews(50, { ticker }));
       return NextResponse.json({ source: "news", ticker, articles }, { headers: CDN_CACHE });
     }
     const articles = await serverCache("news:benzinga:15", TTL.NEWS, () => fetchBenzingaNews(15));

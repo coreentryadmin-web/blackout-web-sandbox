@@ -190,6 +190,7 @@ export const TTL = {
   EARNINGS:        300_000,     // 5 minutes
   REFERENCE:       3_600_000,   // 1 hour
   TICKER_SEARCH:   300_000,     // 5 minutes
+  TICKER_NEWS:     60_000,      // 1 minute — per-ticker news (higher cardinality than market-wide)
   IPO_CALENDAR:    3_600_000,   // 1 hour
   DARK_POOL:       30_000,      // 30 seconds
   MARKET_TIDE:     60_000,      // 1 minute
