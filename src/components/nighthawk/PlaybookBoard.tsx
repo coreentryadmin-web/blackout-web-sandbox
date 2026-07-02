@@ -91,9 +91,10 @@ export function PlaybookBoard({
           if (p.status === "CONFIRMED") acc.confirmed += 1;
           else if (p.status === "DEGRADED") acc.degraded += 1;
           else if (p.status === "INVALIDATED") acc.invalidated += 1;
+          else if (p.status === "UNVERIFIED") acc.unverified += 1;
           return acc;
         },
-        { confirmed: 0, degraded: 0, invalidated: 0 }
+        { confirmed: 0, degraded: 0, invalidated: 0, unverified: 0 }
       )
     : null;
 
@@ -177,6 +178,7 @@ export function PlaybookBoard({
             {morningSummary.confirmed} confirmed
             {morningSummary.degraded ? ` · ${morningSummary.degraded} degraded` : ""}
             {morningSummary.invalidated ? ` · ${morningSummary.invalidated} invalidated` : ""}
+            {morningSummary.unverified ? ` · ${morningSummary.unverified} unverified` : ""}
           </span>
         </div>
       )}

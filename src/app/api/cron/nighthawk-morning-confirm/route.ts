@@ -23,7 +23,12 @@ import { promises as fs } from "fs";
 import path from "path";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { fetchIndexSnapshots } from "@/lib/providers/polygon";
+import { fetchIndexSnapshots, fetchStockSnapshots } from "@/lib/providers/polygon";
+import {
+  computePlayVerdict,
+  type PlayConfirmStatus,
+  type PlayStatus,
+} from "@/lib/nighthawk/morning-confirm-verdict";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { makeRedis } from "@/lib/make-redis";
 import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
@@ -36,25 +41,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Overnight gap threshold: > this many SPX points (absolute) = significant gap.
-const GAP_PTS_THRESHOLD = 20;
-// GEX wall shift that degrades a play relying on that wall.
-const WALL_SHIFT_SOFT_PTS = 10;
-const WALL_SHIFT_HARD_PTS = 30;
 
 const CRON_KEY = "nighthawk-morning-confirm";
 const REDIS_KEY = (date: string) => `nh:play-status:${date}`;
 const REDIS_TTL_S = 60 * 60 * 24; // 24h
 
-export type PlayConfirmStatus = "CONFIRMED" | "DEGRADED" | "INVALIDATED";
-
-export type PlayStatus = {
-  rank: number;
-  ticker: string;
-  direction: string;
-  status: PlayConfirmStatus;
-  reason: string;
-};
 
 export type MorningConfirmResult = {
   edition_for: string;
@@ -67,7 +58,7 @@ export type MorningConfirmResult = {
   call_wall: number | null;
   put_wall: number | null;
   plays: PlayStatus[];
-  summary: { confirmed: number; degraded: number; invalidated: number };
+  summary: { confirmed: number; degraded: number; invalidated: number; unverified: number };
 };
 
 function inMorningWindow(force: boolean): boolean {
@@ -141,138 +132,23 @@ async function fetchSpxPriorClose(): Promise<number | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await res.json() as any;
     const bars = data?.results ?? [];
-    if (bars.length < 2) return null;
-    return bars.at(-2)?.c ?? null;
+    // PRIOR close = the last bar dated strictly BEFORE today in ET. The old `at(-2)`
+    // assumed the final bar was "today's partial" — but this runs at ~9:15 ET, BEFORE
+    // the open, when no bar for today exists yet, so at(-2) was the day-BEFORE-
+    // yesterday and the "overnight gap" absorbed a whole extra session's move
+    // (enough to false-trip the 20-pt INVALIDATE on a benign morning). Mirrors the
+    // etYmdFromMs fix in spx-session.ts.
+    const etDate = (ms: number) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(ms));
+    const prior = [...bars].reverse().find(
+      (b: { t?: number; c?: number }) => b?.t != null && etDate(b.t) < today
+    );
+    return prior?.c ?? null;
   } catch {
     return null;
   }
 }
 
-function computePlayVerdict(
-  play: PlaybookPlay,
-  context: {
-    gapPts: number | null;
-    regime: string | null;
-    anomalies: Array<{ direction?: string; [key: string]: unknown }>;
-    callWall: number | null;
-    putWall: number | null;
-    editionCallWall: number | null;
-    editionPutWall: number | null;
-  }
-): PlayStatus {
-  const { gapPts, regime, anomalies, callWall, putWall, editionCallWall, editionPutWall } = context;
-  const direction = play.direction?.toUpperCase() ?? "LONG";
-  const isLong = direction === "LONG" || direction === "BUY" || direction === "BULL";
-
-  const reasons: string[] = [];
-  let status: PlayConfirmStatus = "CONFIRMED";
-
-  // ── Hard invalidation checks ──────────────────────────────────────────────
-
-  // 1. Gap against the play's direction
-  if (gapPts !== null && Math.abs(gapPts) > GAP_PTS_THRESHOLD) {
-    const gapAgainst = isLong ? gapPts < -GAP_PTS_THRESHOLD : gapPts > GAP_PTS_THRESHOLD;
-    if (gapAgainst) {
-      status = "INVALIDATED";
-      reasons.push(`SPX gapped ${gapPts > 0 ? "+" : ""}${gapPts.toFixed(1)} pts against ${direction} direction`);
-    }
-  }
-
-  // 2. Contrary anomalies
-  const contraryAnomalies = anomalies.filter((a) => {
-    const aDir = (a.direction ?? "").toUpperCase();
-    if (!aDir) return false;
-    const aBear = aDir.includes("BEAR") || aDir.includes("PUT") || aDir.includes("SHORT");
-    const aBull = aDir.includes("BULL") || aDir.includes("CALL") || aDir.includes("LONG");
-    return isLong ? aBear : aBull;
-  });
-  if (contraryAnomalies.length > 0 && status !== "INVALIDATED") {
-    // A single strong contrary anomaly degrades; multiple hard-invalidate
-    if (contraryAnomalies.length >= 2) {
-      status = "INVALIDATED";
-      reasons.push(`${contraryAnomalies.length} contrary flow anomalies detected`);
-    } else {
-      if (status === "CONFIRMED") status = "DEGRADED";
-      reasons.push(`Contrary flow anomaly detected — reduce size`);
-    }
-  }
-
-  // 3. GEX wall shifted hard (> WALL_SHIFT_HARD_PTS) vs edition levels
-  if (editionCallWall !== null && callWall !== null) {
-    const callShift = Math.abs(callWall - editionCallWall);
-    if (callShift > WALL_SHIFT_HARD_PTS && !isLong) {
-      // Call wall that shifted hard affects SHORT plays (call wall is SHORT's target / resistance)
-      if (status === "CONFIRMED") status = "DEGRADED";
-      reasons.push(`Call wall shifted ${callShift.toFixed(0)} pts from edition (${editionCallWall} → ${callWall})`);
-    }
-  }
-  if (editionPutWall !== null && putWall !== null) {
-    const putShift = Math.abs(putWall - editionPutWall);
-    if (putShift > WALL_SHIFT_HARD_PTS && isLong) {
-      // Put wall shifted hard affects LONG plays (put wall is LONG's stop / support)
-      if (status === "CONFIRMED") status = "DEGRADED";
-      reasons.push(`Put wall shifted ${putShift.toFixed(0)} pts from edition (${editionPutWall} → ${putWall})`);
-    }
-  }
-
-  // ── Degraded checks (only if not already invalidated) ────────────────────
-
-  if (status !== "INVALIDATED") {
-    // 4. Gap in same direction — may run stops / change R:R
-    if (gapPts !== null && Math.abs(gapPts) > GAP_PTS_THRESHOLD) {
-      if (status === "CONFIRMED") status = "DEGRADED";
-      reasons.push(`SPX gapped ${gapPts > 0 ? "+" : ""}${gapPts.toFixed(1)} pts — verify entry levels, stop may be unsafe`);
-    }
-
-    // 5. Regime mismatch (non-null regime check)
-    if (regime !== null) {
-      const regimeLower = regime.toLowerCase();
-      const isChoppy = regimeLower.includes("chop") || regimeLower.includes("neutral");
-      const isBearRegime = regimeLower.includes("bear") || regimeLower.includes("down");
-      const isBullRegime = regimeLower.includes("bull") || regimeLower.includes("up");
-      if (isChoppy) {
-        if (status === "CONFIRMED") status = "DEGRADED";
-        reasons.push(`Regime is ${regime} — choppy/neutral reduces conviction for directional plays`);
-      } else if (isLong && isBearRegime) {
-        status = "INVALIDATED";
-        reasons.push(`Regime flipped to ${regime} — contradicts LONG direction`);
-      } else if (!isLong && isBullRegime) {
-        status = "INVALIDATED";
-        reasons.push(`Regime is ${regime} — contradicts SHORT direction`);
-      }
-    }
-
-    // 6. Soft GEX wall drift (WALL_SHIFT_SOFT_PTS < shift ≤ WALL_SHIFT_HARD_PTS)
-    if (editionCallWall !== null && callWall !== null) {
-      const callShift = Math.abs(callWall - editionCallWall);
-      if (callShift > WALL_SHIFT_SOFT_PTS && callShift <= WALL_SHIFT_HARD_PTS) {
-        if (status === "CONFIRMED") status = "DEGRADED";
-        reasons.push(`Call wall drifted ${callShift.toFixed(0)} pts (${editionCallWall} → ${callWall}) — tighten target`);
-      }
-    }
-    if (editionPutWall !== null && putWall !== null) {
-      const putShift = Math.abs(putWall - editionPutWall);
-      if (putShift > WALL_SHIFT_SOFT_PTS && putShift <= WALL_SHIFT_HARD_PTS) {
-        if (status === "CONFIRMED") status = "DEGRADED";
-        reasons.push(`Put wall drifted ${putShift.toFixed(0)} pts (${editionPutWall} → ${putWall}) — tighten stop`);
-      }
-    }
-
-    // 7. Any anomaly (even same-direction) — flag as degraded if none caught above
-    if (anomalies.length > 0 && status === "CONFIRMED") {
-      status = "DEGRADED";
-      reasons.push(`${anomalies.length} active flow anomaly(ies) — elevated uncertainty, reduce size`);
-    }
-  }
-
-  return {
-    rank: play.rank,
-    ticker: play.ticker,
-    direction: play.direction,
-    status,
-    reason: reasons.length > 0 ? reasons.join("; ") : "All checks passed",
-  };
-}
 
 function renderMarkdown(result: MorningConfirmResult): string {
   const { edition_for, checked_at, spx_premarket, prior_close, overnight_gap_pts, regime, plays, summary } = result;
@@ -300,7 +176,8 @@ function renderMarkdown(result: MorningConfirmResult): string {
     ``,
   ];
   for (const p of plays) {
-    const badge = p.status === "CONFIRMED" ? "✓" : p.status === "DEGRADED" ? "~" : "✗";
+    const badge =
+      p.status === "CONFIRMED" ? "✓" : p.status === "DEGRADED" ? "~" : p.status === "UNVERIFIED" ? "?" : "✗";
     lines.push(`### ${badge} #${p.rank} ${p.ticker} (${p.direction}) — ${p.status}`);
     lines.push(`${p.reason}`);
     lines.push(``);
@@ -387,10 +264,16 @@ export async function GET(req: NextRequest) {
     const proto = host.startsWith("localhost") ? "http" : "https";
     const baseUrl = `${proto}://${host}`;
 
-    const [intel, spxPremarket, priorClose] = await Promise.all([
+    const [intel, spxPremarket, priorClose, stockSnaps] = await Promise.all([
       fetchPlatformIntel(baseUrl),
       fetchSpxPremarket(),
       fetchSpxPriorClose(),
+      // The plays' OWN pre-market prices — one batched Polygon snapshot call. The
+      // audit's core confirm gap: only the SPX index was checked, so a stock that
+      // gapped through its own stop still confirmed.
+      fetchStockSnapshots(plays.map((p) => p.ticker)).catch(
+        () => ({}) as Record<string, { price: number } | null>
+      ),
     ]);
 
     // Extract edition's stored GEX walls from the market_recap block if present.
@@ -404,6 +287,28 @@ export async function GET(req: NextRequest) {
         ? spxPremarket - priorClose
         : null;
 
+    // GLOBAL ABSTAIN (audit HIGH): when EVERY data source is unreachable — no gap, no
+    // intel, no walls, no anomalies, no per-stock snapshot — writing verdicts would
+    // manufacture a full slate of green badges from nothing. Withhold instead: no
+    // Redis write, and the cron log carries the reason (cron-health shows warning).
+    const anySnapshot = plays.some((p) => (stockSnaps[p.ticker.toUpperCase()]?.price ?? 0) > 0);
+    const anyContext =
+      gapPts !== null ||
+      intel.regime !== null ||
+      intel.anomalies.length > 0 ||
+      intel.call_wall !== null ||
+      intel.put_wall !== null ||
+      anySnapshot;
+    if (!anyContext) {
+      const payload = {
+        ok: false,
+        skipped: true,
+        reason: "Insufficient pre-market data (intel + Polygon unreachable) — verdicts withheld rather than fabricated",
+      };
+      await logCronRun(CRON_KEY, started, payload);
+      return NextResponse.json(payload);
+    }
+
     // ── Phase 3: per-play verdicts ──────────────────────────────────────────
     const playStatuses: PlayStatus[] = plays.map((play) =>
       computePlayVerdict(play, {
@@ -414,6 +319,7 @@ export async function GET(req: NextRequest) {
         putWall: intel.put_wall,
         editionCallWall,
         editionPutWall,
+        stockPremarket: stockSnaps[play.ticker.toUpperCase()]?.price ?? null,
       })
     );
 
@@ -421,6 +327,7 @@ export async function GET(req: NextRequest) {
       confirmed: playStatuses.filter((p) => p.status === "CONFIRMED").length,
       degraded: playStatuses.filter((p) => p.status === "DEGRADED").length,
       invalidated: playStatuses.filter((p) => p.status === "INVALIDATED").length,
+      unverified: playStatuses.filter((p) => p.status === "UNVERIFIED").length,
     };
 
     const result: MorningConfirmResult = {

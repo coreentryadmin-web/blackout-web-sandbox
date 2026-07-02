@@ -3239,6 +3239,14 @@ body::before {
     border: 1px solid rgba(248, 113, 113, 0.35);
   }
 
+  /* Data-unreachable state — neutral grey, deliberately NOT green or red: it is a
+     statement about the check, not the play. */
+  .nighthawk-play-morning-unverified {
+    color: rgb(148 163 184);
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+  }
+
   .nighthawk-playbook-kicker {
     @apply font-mono uppercase;
     font-size: 0.625rem;

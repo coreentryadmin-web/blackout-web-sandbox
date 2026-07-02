@@ -64,7 +64,7 @@ export type NightHawkEdition = {
   carry_until_close?: boolean;
 };
 
-export type PlayConfirmStatus = "CONFIRMED" | "DEGRADED" | "INVALIDATED";
+export type PlayConfirmStatus = "CONFIRMED" | "DEGRADED" | "INVALIDATED" | "UNVERIFIED";
 
 export type PlayMorningStatus = {
   rank: number;

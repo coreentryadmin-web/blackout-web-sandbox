@@ -18,12 +18,16 @@ type PlaybookPlayRowProps = {
 function morningBadgeLabel(status: PlayMorningStatus["status"]): string {
   if (status === "CONFIRMED") return "Confirmed";
   if (status === "DEGRADED") return "Degraded";
+  // UNVERIFIED = the desk could not run its pre-market checks (data unreachable) —
+  // must not fall through to "Invalidated" (which would read as an adverse verdict).
+  if (status === "UNVERIFIED") return "Unverified";
   return "Invalidated";
 }
 
 function morningBadgeClass(status: PlayMorningStatus["status"]): string {
   if (status === "CONFIRMED") return "nighthawk-play-morning-confirmed";
   if (status === "DEGRADED") return "nighthawk-play-morning-degraded";
+  if (status === "UNVERIFIED") return "nighthawk-play-morning-unverified";
   return "nighthawk-play-morning-invalidated";
 }
 
