@@ -246,11 +246,22 @@ export function groundPlay(
       detail: `${play.ticker} option contract missing ${!parsed.expiryYmd ? "expiry" : "side"} — cannot ground premium.`,
     });
   } else if (!contractOnChain) {
+    // SOFT unverifiable (#77 / thin-edition fix): the soft strike gate already passed this play
+    // because absence from the narrow ATM window is NOT a contradiction. Dropping here re-introduced
+    // the over-filter that zeroed editions. Strip the ungrounded premium and keep the levels-only
+    // trade card — never publish a fabricated option quote.
     issues.push({
       check: "strike",
-      severity: "drop",
-      detail: `${play.ticker} ${parsed.expiryYmd} ${parsed.strike} ${parsed.side} was not found in exact/prefetched chain data — premium cannot be grounded.`,
+      severity: "flag",
+      detail: `${play.ticker} ${parsed.expiryYmd} ${parsed.strike} ${parsed.side} was not found in exact/prefetched chain data — entry premium stripped; verify contract before entry.`,
     });
+    mutated = {
+      ...mutated,
+      entry_premium: undefined,
+      entry_cost_per_contract: undefined,
+      premium_cap_ok: undefined,
+      options_play: `${play.ticker} — option contract not confirmed on chain; verify strike/expiry/premium before entry`,
+    };
   } else {
     const bestOi = Math.max(...matched.map((r) => sideOi(r, parsed.side)));
     if (bestOi < GROUNDING_MIN_OI) {

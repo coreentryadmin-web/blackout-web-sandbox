@@ -61,11 +61,13 @@ const dossier = {
   iv_rank: 118.89,
 } as any;
 
-test("groundPlay drops a parsed option contract absent from exact/prefetched chain data", () => {
+test("groundPlay flags (not drops) a parsed option contract absent from exact/prefetched chain data", () => {
   const result = groundPlay(play(8.5), { spot: 296, rows: [frontExpiryRow] }, dossier);
 
-  assert.equal(result.severity, "drop");
-  assert.match(result.issues.map((i) => i.detail).join(" "), /premium cannot be grounded/);
+  assert.equal(result.severity, "flag");
+  assert.equal(result.play.entry_premium, undefined);
+  assert.match(result.play.options_play, /not confirmed on chain/i);
+  assert.match(result.issues.map((i) => i.detail).join(" "), /premium stripped/);
 });
 
 test("groundPlay drops a confirmed contract when live premium exceeds cap", () => {

@@ -27,6 +27,7 @@ import { critiquePlays } from "./play-critic";
 import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
 import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
+import { backfillThinEditionPlays } from "./play-backfill";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -706,6 +707,24 @@ export async function buildEveningEdition(opts?: {
       }
     }
 
+    // STAGE 5b — Thin-edition backfill. When grounding/critic over-prune below the ops floor,
+    // top up from the ranked pool with chain-grounded affordable contracts (never fabricated quotes).
+    {
+      const { plays: toppedUp, notes: backfillNotes } = await backfillThinEditionPlays({
+        finalPlays,
+        ranked: synthesisRanked,
+        dossiers,
+      });
+      if (backfillNotes.length) {
+        finalPlays = toppedUp.slice(0, EDITION_TARGET_PLAYS).map((p, i) => ({ ...p, rank: i + 1 }));
+        finalCriticNotes = [...finalCriticNotes, ...backfillNotes];
+        funnel.critic_passed = finalPlays.length;
+        console.info(
+          `[nighthawk/edition] thin-edition backfill — ${finalPlays.length} play(s) after ranked-pool top-up`
+        );
+      }
+    }
+
     // STAGE 6 — Publish
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
     // exits above already route an empty funnel to publishRecapOnlyEdition (recap_only:true in meta).
@@ -775,6 +794,17 @@ export async function buildEveningEdition(opts?: {
         play_explanations: {},
         critic_notes: finalCriticNotes,
         critic_applied: Boolean(finalCriticNotes.length),
+        funnel: {
+          candidates: funnel.candidates ?? candidates.length,
+          ranked: funnel.ranked ?? ranked.length,
+          dossiers: funnel.dossiers ?? synthesisDossiers.length,
+          synthesized: funnel.synthesized ?? 0,
+          critic_passed: funnel.critic_passed ?? finalPlays.length,
+          published: finalPlays.length,
+          grounded: funnel.grounded ?? 0,
+          dropped_ungrounded: funnel.dropped_ungrounded ?? 0,
+          flagged: funnel.flagged ?? 0,
+        },
         platform: {
           spx_price: spxDesk?.price ?? null,
           spx_regime: spxDesk?.gamma_regime ?? null,

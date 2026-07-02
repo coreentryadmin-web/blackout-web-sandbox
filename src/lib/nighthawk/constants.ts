@@ -53,6 +53,8 @@ export const MAX_DOSSIER_STOCKS = 40;
 export const EDITION_SYNTHESIS_POOL = 12;
 /** Final play count shown in the UI (PlaybookBoard renders 5 slots). */
 export const EDITION_TARGET_PLAYS = 5;
+/** Minimum plays before ops pages on a thin edition — backfill from ranked pool when below. */
+export const EDITION_MIN_PUBLISH_PLAYS = 3;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 7;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays). */
