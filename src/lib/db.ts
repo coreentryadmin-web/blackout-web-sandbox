@@ -528,6 +528,34 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_nh_job_log_edition
     ON nighthawk_job_log(edition_for, created_at DESC);
   `);
+  // 0DTE Command scanner ledger — every qualifying setup the always-on scan flags,
+  // one row per ticker per session (upserted as the tape evolves), graded against
+  // the session close so the board's discovery hit-rate is measurable, not vibes.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS zerodte_setup_log (
+      session_date DATE NOT NULL,
+      ticker TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      top_strike NUMERIC,
+      expiry DATE,
+      score INT NOT NULL,
+      score_max INT NOT NULL,
+      dossier_score INT,
+      conviction TEXT,
+      gross_premium NUMERIC,
+      spike BOOLEAN NOT NULL DEFAULT FALSE,
+      underlying_at_flag NUMERIC,
+      underlying_latest NUMERIC,
+      flags_json JSONB,
+      first_flagged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      close_price NUMERIC,
+      move_pct NUMERIC,
+      direction_hit BOOLEAN,
+      graded_at TIMESTAMPTZ,
+      PRIMARY KEY (session_date, ticker)
+    );
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS cron_job_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -2529,6 +2557,158 @@ export async function fetchLatestNighthawkEdition(): Promise<NighthawkEditionRow
     plays: Array.isArray(r.plays) ? r.plays : [],
     meta: (r.meta as Record<string, unknown>) ?? {},
   };
+}
+
+// ── 0DTE Command scanner ledger ────────────────────────────────────────────────
+
+export type ZeroDteSetupLogRow = {
+  session_date: string;
+  ticker: string;
+  direction: "long" | "short";
+  top_strike: number | null;
+  expiry: string | null;
+  score: number;
+  score_max: number;
+  dossier_score: number | null;
+  conviction: string | null;
+  gross_premium: number | null;
+  spike: boolean;
+  underlying_at_flag: number | null;
+  underlying_latest: number | null;
+  flags_json: Record<string, unknown> | null;
+  first_flagged_at: string;
+  last_seen_at: string;
+  close_price: number | null;
+  move_pct: number | null;
+  direction_hit: boolean | null;
+  graded_at: string | null;
+};
+
+export type ZeroDteSetupLogUpsert = {
+  session_date: string;
+  ticker: string;
+  direction: "long" | "short";
+  top_strike: number | null;
+  expiry: string | null;
+  score: number;
+  dossier_score: number | null;
+  conviction: string | null;
+  gross_premium: number | null;
+  spike: boolean;
+  underlying: number | null;
+  flags_json: Record<string, unknown> | null;
+};
+
+/** Upsert scanner finds — one row per (session, ticker). First sighting pins
+ *  underlying_at_flag/first_flagged_at forever (that's what gets graded); later
+ *  scans refresh the live fields and ratchet score_max. */
+export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Promise<void> {
+  if (!rows.length) return;
+  await ensureSchema();
+  const p = await getPool();
+  for (const r of rows) {
+    await p.query(
+      `
+      INSERT INTO zerodte_setup_log (
+        session_date, ticker, direction, top_strike, expiry, score, score_max,
+        dossier_score, conviction, gross_premium, spike, underlying_at_flag,
+        underlying_latest, flags_json, first_flagged_at, last_seen_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,NOW(),NOW())
+      ON CONFLICT (session_date, ticker) DO UPDATE SET
+        direction = EXCLUDED.direction,
+        top_strike = EXCLUDED.top_strike,
+        expiry = EXCLUDED.expiry,
+        score = EXCLUDED.score,
+        score_max = GREATEST(zerodte_setup_log.score_max, EXCLUDED.score),
+        dossier_score = COALESCE(EXCLUDED.dossier_score, zerodte_setup_log.dossier_score),
+        conviction = COALESCE(EXCLUDED.conviction, zerodte_setup_log.conviction),
+        gross_premium = EXCLUDED.gross_premium,
+        spike = zerodte_setup_log.spike OR EXCLUDED.spike,
+        underlying_latest = COALESCE(EXCLUDED.underlying_latest, zerodte_setup_log.underlying_latest),
+        flags_json = COALESCE(EXCLUDED.flags_json, zerodte_setup_log.flags_json),
+        last_seen_at = NOW()
+      `,
+      [
+        r.session_date,
+        r.ticker.toUpperCase(),
+        r.direction,
+        r.top_strike,
+        r.expiry,
+        Math.round(r.score),
+        r.dossier_score != null ? Math.round(r.dossier_score) : null,
+        r.conviction,
+        r.gross_premium,
+        r.spike,
+        r.underlying,
+        r.flags_json,
+      ]
+    );
+  }
+}
+
+function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
+  return {
+    session_date: isoDateString(r.session_date),
+    ticker: String(r.ticker),
+    direction: r.direction === "short" ? "short" : "long",
+    top_strike: r.top_strike != null ? Number(r.top_strike) : null,
+    expiry: r.expiry != null ? isoDateString(r.expiry) : null,
+    score: Number(r.score) || 0,
+    score_max: Number(r.score_max) || 0,
+    dossier_score: r.dossier_score != null ? Number(r.dossier_score) : null,
+    conviction: r.conviction != null ? String(r.conviction) : null,
+    gross_premium: r.gross_premium != null ? Number(r.gross_premium) : null,
+    spike: r.spike === true,
+    underlying_at_flag: r.underlying_at_flag != null ? Number(r.underlying_at_flag) : null,
+    underlying_latest: r.underlying_latest != null ? Number(r.underlying_latest) : null,
+    flags_json: (r.flags_json as Record<string, unknown>) ?? null,
+    first_flagged_at: new Date(String(r.first_flagged_at)).toISOString(),
+    last_seen_at: new Date(String(r.last_seen_at)).toISOString(),
+    close_price: r.close_price != null ? Number(r.close_price) : null,
+    move_pct: r.move_pct != null ? Number(r.move_pct) : null,
+    direction_hit: r.direction_hit == null ? null : r.direction_hit === true,
+    graded_at: r.graded_at != null ? new Date(String(r.graded_at)).toISOString() : null,
+  };
+}
+
+export async function fetchZeroDteSetupLog(sessionDate: string): Promise<ZeroDteSetupLogRow[]> {
+  await ensureSchema();
+  const normalized = normalizeIsoDateInput(sessionDate);
+  if (!normalized) return [];
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT * FROM zerodte_setup_log WHERE session_date = $1::date ORDER BY score_max DESC, first_flagged_at ASC LIMIT 30`,
+    [normalized]
+  );
+  return res.rows.map(mapZeroDteLogRow);
+}
+
+/** Ungraded ledger rows from sessions strictly before `beforeDate` (grading needs a
+ *  finished session's close). Capped — grading is lazy/incremental. */
+export async function fetchUngradedZeroDteRows(beforeDate: string, limit = 12): Promise<ZeroDteSetupLogRow[]> {
+  await ensureSchema();
+  const normalized = normalizeIsoDateInput(beforeDate);
+  if (!normalized) return [];
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT * FROM zerodte_setup_log
+     WHERE graded_at IS NULL AND session_date < $1::date
+     ORDER BY session_date DESC LIMIT $2`,
+    [normalized, limit]
+  );
+  return res.rows.map(mapZeroDteLogRow);
+}
+
+export async function gradeZeroDteSetupRow(
+  sessionDate: string,
+  ticker: string,
+  grade: { close_price: number | null; move_pct: number | null; direction_hit: boolean | null }
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE zerodte_setup_log
+     SET close_price = $3, move_pct = $4, direction_hit = $5, graded_at = NOW()
+     WHERE session_date = $1::date AND ticker = $2`,
+    [sessionDate, ticker.toUpperCase(), grade.close_price, grade.move_pct, grade.direction_hit]
+  );
 }
 
 export async function fetchLatestPlayableNighthawkEdition(): Promise<NighthawkEditionRow | null> {

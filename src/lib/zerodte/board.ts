@@ -140,7 +140,7 @@ const SETUP_MAX_DTE = 1; // 0DTE board: today + tomorrow expiries only
  */
 export function deriveZeroDteSetups(
   rows: FlowSetupInput[],
-  opts?: { maxSetups?: number; excludeTickers?: Set<string>; nowMs?: number }
+  opts?: { maxSetups?: number; excludeTickers?: Set<string>; nowMs?: number; todayYmd?: string }
 ): ZeroDteSetup[] {
   const maxSetups = opts?.maxSetups ?? 8;
   type Agg = {
@@ -151,6 +151,8 @@ export function deriveZeroDteSetups(
     prints: number;
     strikes: Map<string, { prem: number; strike: number; expiry: number; isCall: boolean }>;
     underlying: number | null;
+    /** alerted_at of the print that supplied `underlying` — keep only the freshest. */
+    underlyingSeen: string | null;
     firstSeen: string | null;
     lastSeen: string | null;
     minDte: number;
@@ -164,6 +166,10 @@ export function deriveZeroDteSetups(
     if (!ticker || opts?.excludeTickers?.has(ticker)) continue;
     const dte = r.dte ?? null;
     if (dte == null || dte > SETUP_MAX_DTE || dte < 0) continue;
+    // dte was stamped at ALERT time — a 0DTE print from a prior session (the tape
+    // window can straddle sessions) is an EXPIRED contract today, not a setup.
+    // Both sides are YYYY-MM-DD, so lexicographic compare is date compare.
+    if (opts?.todayYmd && r.expiry && r.expiry.slice(0, 10) < opts.todayYmd) continue;
     const prem = r.premium;
     if (!(prem > 0)) continue;
 
@@ -177,6 +183,7 @@ export function deriveZeroDteSetups(
         prints: 0,
         strikes: new Map(),
         underlying: null,
+        underlyingSeen: null,
         firstSeen: null,
         lastSeen: null,
         minDte: SETUP_MAX_DTE,
@@ -189,7 +196,15 @@ export function deriveZeroDteSetups(
     agg.gross += prem;
     agg.prints += 1;
     if ((r.alert_rule ?? "").toLowerCase().includes("sweep")) agg.sweep += prem;
-    if (r.underlying_price && r.underlying_price > 0) agg.underlying = r.underlying_price;
+    // Rows arrive premium-ordered, not time-ordered — last-write-wins here used to
+    // pin `underlying` to whatever print happened to be processed last (often hours
+    // stale), skewing the fib/level annotations. Keep the freshest print's mark.
+    if (r.underlying_price && r.underlying_price > 0) {
+      if (!agg.underlyingSeen || (r.alerted_at && r.alerted_at > agg.underlyingSeen)) {
+        agg.underlying = r.underlying_price;
+        agg.underlyingSeen = r.alerted_at ?? agg.underlyingSeen;
+      }
+    }
     agg.minDte = Math.min(agg.minDte, dte);
     const key = `${r.strike}|${r.expiry}|${isCall ? "c" : "p"}`;
     const cur = agg.strikes.get(key);
@@ -523,5 +538,35 @@ export function enrichSetup(
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,
+  };
+}
+
+// ── Ledger grading (pure) ─────────────────────────────────────────────────────────
+// The scanner logs every flagged setup with the underlying price AT FIRST FLAG; after
+// the session, each row is graded against the official close. Pure math here so the
+// hit-rate arithmetic is unit-tested — the honesty of the ledger depends on it.
+
+export type LedgerGrade = {
+  close_price: number | null;
+  /** Signed % move from flag → close, positive = moved WITH the setup's direction. */
+  move_pct: number | null;
+  direction_hit: boolean | null;
+};
+
+export function computeLedgerGrade(
+  direction: "long" | "short",
+  underlyingAtFlag: number | null,
+  closePrice: number | null
+): LedgerGrade {
+  if (!(underlyingAtFlag != null && underlyingAtFlag > 0) || !(closePrice != null && closePrice > 0)) {
+    // No flag price or no close — ungradeable, stamped as such rather than guessed.
+    return { close_price: closePrice ?? null, move_pct: null, direction_hit: null };
+  }
+  const raw = ((closePrice - underlyingAtFlag) / underlyingAtFlag) * 100;
+  const signed = direction === "long" ? raw : -raw;
+  return {
+    close_price: closePrice,
+    move_pct: Math.round(signed * 100) / 100,
+    direction_hit: signed > 0,
   };
 }

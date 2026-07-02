@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  computeLedgerGrade,
   sessionHeat,
   deriveZeroDteSetups,
   rankEngineCards,
@@ -114,6 +115,44 @@ test("setups: sudden flow spike flagged when ≥half the tape lands in the last 
   // Same premium spread across the morning — no spike.
   const drip = spiky.map((r, i) => ({ ...r, alerted_at: `2026-07-06T1${i}:00:00Z` }));
   assert.equal(deriveZeroDteSetups(drip, { nowMs: now })[0]!.spike, false);
+});
+
+test("setups: prints for contracts that expired a prior session are dropped", () => {
+  const rows = [
+    row({ premium: 2_000_000, expiry: "2026-07-02", dte: 0 }), // expired yesterday
+    row({ premium: 500_000, expiry: "2026-07-06", dte: 0 }), // today — below gross floor alone
+  ];
+  assert.equal(deriveZeroDteSetups(rows, { todayYmd: "2026-07-06" }).length, 0);
+  // Without the session guard the expired tape would have qualified.
+  assert.equal(deriveZeroDteSetups(rows).length, 1);
+});
+
+test("setups: underlying price comes from the FRESHEST print, not the last row processed", () => {
+  const rows = [
+    row({ premium: 900_000, underlying_price: 188.0, alerted_at: "2026-07-06T14:55:00Z" }),
+    // Lower-premium (later in a premium-ordered feed) but STALE print — must not win.
+    row({ premium: 300_000, underlying_price: 181.0, alerted_at: "2026-07-06T09:35:00Z" }),
+  ];
+  assert.equal(deriveZeroDteSetups(rows)[0]!.underlying_price, 188.0);
+});
+
+// ── ledger grading ───────────────────────────────────────────────────────────────
+
+test("ledger grade: signed by direction, hit = moved with the setup", () => {
+  const long = computeLedgerGrade("long", 100, 103);
+  assert.equal(long.move_pct, 3);
+  assert.equal(long.direction_hit, true);
+  const short = computeLedgerGrade("short", 100, 103);
+  assert.equal(short.move_pct, -3);
+  assert.equal(short.direction_hit, false);
+  const shortWin = computeLedgerGrade("short", 100, 96.5);
+  assert.equal(shortWin.move_pct, 3.5);
+  assert.equal(shortWin.direction_hit, true);
+});
+
+test("ledger grade: missing flag price or close is ungradeable, never guessed", () => {
+  assert.equal(computeLedgerGrade("long", null, 103).direction_hit, null);
+  assert.equal(computeLedgerGrade("long", 100, null).move_pct, null);
 });
 
 // ── earnings + hot-news flags ────────────────────────────────────────────────────

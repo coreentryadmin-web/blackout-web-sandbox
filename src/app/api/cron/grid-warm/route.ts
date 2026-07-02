@@ -25,6 +25,7 @@ import {
   warmGridMovers,
   warmGridCatalysts,
 } from "@/lib/providers/grid";
+import { warmZeroDteBoard } from "@/lib/zerodte/scan";
 import { etMinutes, etClock } from "@/lib/spx-play-session-time";
 
 export const runtime = "nodejs";
@@ -73,6 +74,11 @@ export async function GET(req: NextRequest) {
     warmGridSectors(),
     warmGridMovers(),
     warmGridCatalysts(),
+    // 0DTE Command scanner — the always-on hunt. Every ~2-min tick scans the HELIX
+    // tape for fresh single-name 0DTE concentration, enriches the top finds through
+    // the Night Hawk dossier, and upserts the session ledger (zerodte_setup_log) so
+    // the board's "flagged today" record accumulates whether or not anyone is looking.
+    warmZeroDteBoard(),
   ]);
 
   let warmed = 0;

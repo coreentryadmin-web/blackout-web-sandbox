@@ -10,7 +10,7 @@ import { GridTickerProvider } from "@/lib/grid/grid-ticker-context";
 export const metadata: Metadata = {
   title: "0DTE Command · BlackOut",
   description:
-    "The intraday command board — SPX engines, dossier-enriched 0DTE setups from the live tape, news, earnings and dealer positioning on one surface.",
+    "The always-on 0DTE hunter — scans the tape all session for new single-name plays, cross-checks every find against the full evidence stack, and keeps a graded ledger.",
 };
 
 /**
@@ -18,6 +18,10 @@ export const metadata: Metadata = {
  * Server Component: tier gate + launch gate + metadata; the client tabs own
  * layout/polling. Gated to `grid` (admins bypass), so non-admins see the
  * ComingSoon padlock until it ships.
+ *
+ * Product rule: this surface finds NEW plays only — it never reprints the SPX
+ * engines' plays or Night Hawk's picks. The server-side scanner (grid-warm cron)
+ * hunts every ~2 min through RTH whether or not anyone has the page open.
  *
  * The GridTickerProvider still wraps everything so the classic tab's search bar
  * and panels share ticker state exactly as before.
@@ -31,9 +35,9 @@ export default async function GridPage() {
       <div className="px-2 sm:px-4 xl:px-6">
         <GridTickerProvider>
           <PageHeader
-            kicker="Intraday command"
+            kicker="Always-on 0DTE hunter"
             title="0DTE Command"
-            subtitle="The system heats up with the session — engines, tape-derived setups, news, earnings and dealer positioning on one board."
+            subtitle="Runs all session finding new 0DTE plays — fresh names only, every find logged and graded."
             badge={<ProductMark product="grid" size={44} />}
           />
           <div className="mt-5">

@@ -32,9 +32,10 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: false },
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: false },
-  // BlackOut Grid — market-intelligence command center. Ships LOCKED ("Launching Soon"); flip live via
-  // LAUNCHED_TOOLS=grid (additive env, no redeploy). Admin bypass is automatic (tool-access-server.ts).
-  { key: "grid", label: "BlackOut Grid", href: "/grid", product: "grid", defaultLaunched: false },
+  // 0DTE Command — the always-on 0DTE hunter (formerly "BlackOut Grid"; the classic market grid
+  // lives on as a tab). Ships LOCKED ("Launching Soon"); flip live via LAUNCHED_TOOLS=grid
+  // (additive env, no redeploy). Admin bypass is automatic (tool-access-server.ts).
+  { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: false },
 ] as const;
 
 const TOOL_BY_KEY = new Map<ToolKey, ToolMeta>(TOOLS.map((t) => [t.key, t]));

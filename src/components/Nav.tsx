@@ -20,7 +20,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/heatmap", label: "BlackOut Thermal", sub: "Dealer gamma & vanna map", accent: "orange" },
   { href: "/terminal", label: "Largo", sub: "BlackOut Intelligence desk analyst", accent: "blue" },
   { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + Night's Watch positions", accent: "red" },
-  { href: "/grid", label: "BlackOut Grid", sub: "Cross-market intelligence", accent: "gold" },
+  { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
 ];
 
 const TOP_LINKS = [
