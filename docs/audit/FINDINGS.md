@@ -173,6 +173,17 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 - **Redesign (product):** setups lane is the hero and excludes the latest Night Hawk edition's tickers (surfaced as `nighthawk_covered` so the UI says why a hot name is withheld); SPX engine cards reduced to a link strip (their plays live on their own pages); always-on scanner piggybacked on the grid-warm cron (~2 min through RTH) persisting every find to a new `zerodte_setup_log` ledger (price-at-flag pinned on first sighting, `score_max` ratcheted) with lazy post-session grading against the official close (`computeLedgerGrade`, pure + tested) — the board's discovery hit-rate is measured, not asserted. Tool/nav label renamed to "0DTE Command".
 - **Known-open (by design / follow-ups, documented in PR):** premium counted without aggressor-side weighting (`ask_pct` ingested but unused — bid-side sold prints count as directional); per-setup technicals are daily-frame (intraday hourly breakouts/VWAP not yet in the tech card); hot-news flag recall limited to the 15 market-wide headlines; no member alerting on new flags yet; `/learn/blackout-grid` copy still describes the classic grid.
 
+## 🔴 FIXED 2026-07-02 — 0DTE scanner blind on heavy tape days: premium-ranked tape window spans ALL expiries
+**Status:** FIXED (`fix/zerodte-tape-dte-scope`). Found by live end-to-end verification of the just-merged #276 deploy — the exact class of failure the graded ledger exists to catch, caught before its first session.
+
+**Root cause:** the scanner's tape query (`fetchRecentFlows({order:"premium", limit:400, min_premium:150k, since_hours:7})`) ranks by premium across **every expiry**, then LIMITs to 400. On a heavy day the 7h window holds 1000+ qualifying prints and the 400th-largest was >$504k — so the (naturally smaller) 0-1DTE prints the product exists to find were squeezed out of the scan's own input BEFORE aggregation. Quiet tape → works; busy tape → the board silently shows zero setups all day.
+
+**Evidence (live, 2026-07-02 ~21:40 UTC):** member flows endpoint showed a six-print **$3.1M AAPL 0DTE call stack** (RepeatedHits, 19:31–19:49 UTC); feeding the exact production rows through `deriveZeroDteSetups` locally emitted `AAPL long 302.5 gross=$1.54M dom=100% score=43` — while the deployed board (three separate scans: two member polls + one forced grid-warm tick) returned zero setups and `covered_elsewhere: []` (not a Night Hawk exclusion). Premium distribution of the window confirmed the cutoff.
+
+**Fix:** new `max_dte` param on `fetchRecentFlows` — `(expiry - ET_today) BETWEEN 0 AND N` in SQL — so the premium ranking happens **among 0-1DTE prints only**; the scanner passes `max_dte: 1`. Bonus: the BETWEEN-0 floor also drops already-expired rows at the source (belt to the derive-side `todayYmd` guard). Verified live post-deploy (see PR).
+
+**Blast radius:** the param is opt-in; all existing `fetchRecentFlows` callers (leaderboard, flow-brief, strike stacks, regime detector, hunt) are byte-identical without it.
+
 ## 🟠 MEDIUM — VIX source/freshness inconsistency
 App `indices.vix.price = 17.18` vs Polygon prior-close `16.45` (4.4%), while SPX/SPY match prior-close exactly — the app's VIX uses a different source/timestamp than SPX/SPY. Confirm with same-timestamp live compare at open.
 

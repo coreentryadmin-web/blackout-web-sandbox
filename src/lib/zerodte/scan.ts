@@ -84,7 +84,10 @@ export async function scanZeroDteBoard(flags?: {
 }): Promise<ZeroDteScanResult> {
   const today = todayEt();
   const [flows, nhEdition] = await Promise.all([
-    fetchRecentFlows({ since_hours: 7, min_premium: 150_000, order: "premium", limit: 400 }).catch(
+    // max_dte: 1 is LOAD-BEARING — it scopes the premium ranking to 0-1DTE prints in
+    // SQL. Without it the top-400 spans ALL expiries and heavy-day whale prints crowd
+    // every 0DTE print out of the scan's input (live-reproduced: $3.1M AAPL stack → 0 setups).
+    fetchRecentFlows({ since_hours: 7, min_premium: 150_000, order: "premium", limit: 400, max_dte: 1 }).catch(
       () => []
     ),
     fetchLatestNighthawkEdition().catch(() => null),

@@ -1054,6 +1054,15 @@ export async function fetchRecentFlows(params: {
    *    not the top-N-by-premium reshuffled by the client (HELIX tape audit P0).
    */
   order?: "premium" | "recent";
+  /**
+   * Scope the tape to expiries within N days (ET calendar), 0-N inclusive. The 0DTE
+   * board MUST pass this: without it, "premium"-ordered rows are ranked across ALL
+   * expiries, and on a heavy tape day the top-LIMIT fills with far-dated whale prints
+   * — squeezing every (naturally smaller) 0-1DTE print out of the result entirely.
+   * Live-reproduced 2026-07-02: a $3.1M six-print AAPL 0DTE stack produced zero
+   * setups because the window's 400th-largest print was >$500k across all expiries.
+   */
+  max_dte?: number;
 }): Promise<FlowRow[]> {
   await ensureSchema();
   const clauses: string[] = [];
@@ -1072,6 +1081,14 @@ export async function fetchRecentFlows(params: {
   if (params.min_premium && params.min_premium > 0) {
     clauses.push(`COALESCE(total_premium, 0) >= $${i++}`);
     values.push(params.min_premium);
+  }
+  if (params.max_dte != null && params.max_dte >= 0) {
+    // ET calendar date to match the SELECT's dte expression; BETWEEN 0 AND N also
+    // drops already-expired rows at the source (belt to the derive-side guard).
+    clauses.push(
+      `(expiry - (NOW() AT TIME ZONE 'America/New_York')::date) BETWEEN 0 AND $${i++}`
+    );
+    values.push(Math.floor(params.max_dte));
   }
 
   const where = `WHERE ${clauses.join(" AND ")}`;
