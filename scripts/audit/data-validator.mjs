@@ -184,7 +184,21 @@ async function main() {
   if (P.gex) {
     const pw = num(P.gex.put_wall), cw = num(P.gex.call_wall), g = num(P.gex.net_gex), dx = num(P.gex.net_dex), vx = num(P.gex.net_vex);
     rec('wall ordering put_wall < call_wall', (pw != null && cw != null && pw < cw) ? 'PASS' : 'FAIL', `put_wall=${pw} flip=${P.gex.flip} max_pain=${P.gex.max_pain} call_wall=${cw} spot=${aGexSpot}`);
-    if (g != null) rec('gamma posture matches net_gex sign', ((g >= 0 && /long/i.test(P.gex.gamma_posture)) || (g < 0 && /short/i.test(P.gex.gamma_posture))) ? 'PASS' : 'FAIL', `net_gex=${g} posture=${P.gex.gamma_posture}`);
+    // gamma_posture is documented as spot-vs-flip ('long' at/above flip, 'short' below —
+    // gex-positioning.ts:55), NOT sign(net_gex). The two are related but distinct measures
+    // and legitimately diverge near the flip (spot barely above flip while the summed book
+    // is net-negative — observed live 2026-07-02: spot 744.12, flip 742.5, net_gex -3.03B).
+    // Assert posture against its own definition; surface a posture/net_gex sign divergence
+    // as INFO (interesting market state, not a data bug).
+    const flipN = num(P.gex.flip);
+    if (flipN != null && aGexSpot != null && P.gex.gamma_posture) {
+      const expected = aGexSpot >= flipN ? 'long' : 'short';
+      rec('gamma posture matches spot-vs-flip', new RegExp(expected, 'i').test(P.gex.gamma_posture) ? 'PASS' : 'FAIL', `spot=${aGexSpot} flip=${flipN} posture=${P.gex.gamma_posture} (expected ${expected})`);
+    }
+    if (g != null && P.gex.gamma_posture) {
+      const signAgrees = (g >= 0 && /long/i.test(P.gex.gamma_posture)) || (g < 0 && /short/i.test(P.gex.gamma_posture));
+      if (!signAgrees) rec('posture/net_gex sign divergence (near-flip state)', 'INFO', `net_gex=${g} posture=${P.gex.gamma_posture} — legitimate when spot straddles the flip`);
+    }
     if (dx != null) rec('dex posture matches net_dex sign', ((dx >= 0 && /long|pos/i.test(P.gex.dex_posture)) || (dx < 0 && /short|neg/i.test(P.gex.dex_posture))) ? 'PASS' : 'WARN', `net_dex=${dx} posture=${P.gex.dex_posture}`);
     if (vx != null) rec('vanna posture matches net_vex sign', ((vx >= 0 && /pos/i.test(P.gex.vanna_posture)) || (vx < 0 && /neg/i.test(P.gex.vanna_posture))) ? 'PASS' : 'WARN', `net_vex=${vx} posture=${P.gex.vanna_posture}`);
     if (P.gex.gex_cross_validation) rec('app self-reported gex_cross_validation', 'INFO', JSON.stringify(P.gex.gex_cross_validation).slice(0, 160));
