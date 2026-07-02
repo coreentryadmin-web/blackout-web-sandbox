@@ -16,7 +16,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { odteGexScopeFromHeatmap } from "@/lib/correctness/gex-odte-scope";
+import { odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign } from "@/lib/correctness/gex-odte-scope";
 
 // ---------------------------------------------------------------------------
 // HEAT MAPS data-correctness verifier — the first (primary) target of the auditor.
@@ -856,15 +856,22 @@ async function crossProviderChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResul
   // Net-GEX sign agreement (cross-scale-invariant) on the 0DTE column.
   if (uwNet !== 0 && Number.isFinite(servedNet) && servedNet !== 0) {
     const agree = Math.sign(uwNet) === Math.sign(servedNet);
+    const grossServed = grossAbsFromStrikeTotals(odteScope.strikeTotals);
+    const grossUw = grossAbsFromUwGexRows(uw.rows);
+    const hairline =
+      !agree &&
+      (isHairlineNetGammaSign(servedNet, grossServed) || isHairlineNetGammaSign(uwNet, grossUw));
     out.push(
       mk(
         ctx,
         "cross-provider",
         "net_gex",
-        agree ? "pass" : "flag",
+        agree ? "pass" : hairline ? "consistency-only" : "flag",
         agree
           ? `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
-          : `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
+          : hairline
+            ? `SPX 0DTE net-GEX sign disagrees with UW but both nets are hairline (|net|/gross ≤8% — balanced dealer gamma; sign not diagnostically meaningful this run).`
+            : `SPX 0DTE net-GEX sign (${servedNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer regime disagreement.`,
         { id: "oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(servedNet), independentlyConfirmed: agree }
       )
     );

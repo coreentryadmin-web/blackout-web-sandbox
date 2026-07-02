@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   computeZeroGammaFlip,
+  grossAbsFromStrikeTotals,
+  grossAbsFromUwGexRows,
+  isHairlineNetGammaSign,
   odteGexScopeFromHeatmap,
   odteStrikeTotalsFromCells,
   recomputeScopedGexLevels,
@@ -64,4 +67,19 @@ test("recomputeScopedGexLevels matches server wall semantics", () => {
   assert.equal(levels.putWall, 5900);
   assert.equal(levels.king, 6000);
   assert.equal(levels.netTotal, 6);
+});
+
+test("isHairlineNetGammaSign: balanced book is hairline", () => {
+  const totals = { "7400": -9_000_000_000, "7550": 8_300_000_000 };
+  const net = -700_000_000;
+  const gross = grossAbsFromStrikeTotals(totals);
+  assert.equal(isHairlineNetGammaSign(net, gross), true);
+});
+
+test("grossAbsFromUwGexRows sums |call+put| per row", () => {
+  const gross = grossAbsFromUwGexRows([
+    { call_gamma_oi: 5, put_gamma_oi: -2 },
+    { call_gamma_oi: -1, put_gamma_oi: -4 },
+  ]);
+  assert.equal(gross, 8);
 });

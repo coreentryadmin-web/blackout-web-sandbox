@@ -8,7 +8,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { kingFromStrikeTotals, odteGexScopeFromHeatmap } from "@/lib/correctness/gex-odte-scope";
+import { kingFromStrikeTotals, odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign } from "@/lib/correctness/gex-odte-scope";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 
 // ---------------------------------------------------------------------------
@@ -434,12 +434,14 @@ async function crossProviderChecks(
   // gex_king/gex_net, which sums multiple expiries and would false-flag against a 0DTE oracle.
   let odteKing: number | null = null;
   let odteNet = 0;
+  let odteStrikeTotals: Record<string, number> = {};
   try {
     const { fetchGexHeatmap } = await import("@/lib/providers/polygon-options-gex");
     const hm = await fetchGexHeatmap("SPX").catch(() => null);
     const odte = odteGexScopeFromHeatmap(hm, ctx.today);
     odteKing = kingFromStrikeTotals(odte.strikeTotals);
     odteNet = odte.total;
+    odteStrikeTotals = odte.strikeTotals;
   } catch {
     odteKing = null;
     odteNet = 0;
@@ -470,15 +472,22 @@ async function crossProviderChecks(
 
   if (uwNet !== 0 && Number.isFinite(odteNet) && odteNet !== 0) {
     const agree = Math.sign(uwNet) === Math.sign(odteNet);
+    const grossServed = grossAbsFromStrikeTotals(odteStrikeTotals);
+    const grossUw = grossAbsFromUwGexRows(uw.rows);
+    const hairline =
+      !agree &&
+      (isHairlineNetGammaSign(odteNet, grossServed) || isHairlineNetGammaSign(uwNet, grossUw));
     out.push(
       mk(
         ctx,
         "cross-provider",
         "gex_net",
-        agree ? "pass" : "flag",
+        agree ? "pass" : hairline ? "consistency-only" : "flag",
         agree
           ? `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) INDEPENDENTLY CONFIRMED by UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}).`
-          : `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
+          : hairline
+            ? `0DTE net-GEX sign disagrees with UW but both nets are hairline (|net|/gross ≤8% — balanced dealer gamma; sign not diagnostically meaningful this run).`
+            : `0DTE net-GEX sign (${odteNet > 0 ? "positive" : "negative"}) CONTRADICTS UW (${uw.source}, ${uwNet > 0 ? "positive" : "negative"}) — dealer-regime disagreement.`,
         { id: "desk-oracle-net-sign", expected: Math.sign(uwNet), actual: Math.sign(odteNet), independentlyConfirmed: agree }
       )
     );

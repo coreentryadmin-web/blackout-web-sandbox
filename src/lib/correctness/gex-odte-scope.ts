@@ -68,6 +68,33 @@ export function odteGexScopeFromHeatmap(
   return { expiry, strikeTotals, total };
 }
 
+/**
+ * Net gamma is "hairline" when |net| is small relative to gross (Σ|per-strike|).
+ * In balanced-dealer regimes (~5% net vs ~95% offsetting gamma), cross-provider SIGN
+ * disagreements are methodology noise, not a user-visible wrong number.
+ */
+export function isHairlineNetGammaSign(net: number, grossAbs: number, maxRatio = 0.08): boolean {
+  if (!Number.isFinite(net) || !Number.isFinite(grossAbs) || grossAbs <= 0) return false;
+  return Math.abs(net) / grossAbs <= maxRatio;
+}
+
+export function grossAbsFromStrikeTotals(strikeTotals: Record<string, number>): number {
+  let gross = 0;
+  for (const v of Object.values(strikeTotals)) {
+    if (Number.isFinite(v)) gross += Math.abs(v);
+  }
+  return gross;
+}
+
+export function grossAbsFromUwGexRows(rows: Array<Record<string, unknown>>): number {
+  let gross = 0;
+  for (const r of rows) {
+    const net = Number(r.call_gamma_oi ?? 0) + Number(r.put_gamma_oi ?? 0);
+    if (Number.isFinite(net)) gross += Math.abs(net);
+  }
+  return gross;
+}
+
 /** Argmax |net| strike — the GEX King node. */
 export function kingFromStrikeTotals(strikeTotals: Record<string, number>): number | null {
   let king: number | null = null;
