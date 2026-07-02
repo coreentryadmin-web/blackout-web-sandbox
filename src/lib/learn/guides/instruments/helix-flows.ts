@@ -39,7 +39,7 @@ export const helixFlowsGuide = defineToolGuide({
       location: "Full-width strip above FlowFeed",
       purpose: "Surfaces recent flow anomalies from market-regime detection — unusual clustering or severity events.",
       shows: [
-        "Up to N anomalies from last 15 minutes",
+        "Every anomaly detected in the last 15 minutes (no display cap)",
         "Severity badge, ticker, direction, detail text",
         "Critical items pulse visually",
       ],

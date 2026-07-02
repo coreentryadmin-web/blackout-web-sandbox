@@ -61,7 +61,7 @@ export const LEARN_NAV: LearnNavItem[] = [
     slug: "nights-watch",
     product: "nighthawk",
     label: "Night's Watch",
-    description: "Personal position manager with live P&L and greeks.",
+    description: "Personal position manager with live P&L and Greeks.",
   },
   {
     slug: "blackout-grid",

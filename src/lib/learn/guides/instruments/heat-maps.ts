@@ -15,7 +15,7 @@ export const heatMapsGuide = defineToolGuide({
     paragraphs: [
       "Control row at top: ticker search, view tabs (Matrix vs Profile bundle), freshness badge, lens tabs (GEX/VEX/DEX/CHARM).",
       "Matrix view is full-width heat table. Profile view splits 7/5: left exposure ladder + expiry scope; right cumulative curve + shift ladder (GEX/VEX only).",
-      "Rail cards below main views: DarkPoolRail, FlowSummary, KeyLevelBox, RecentRangeStrip, AlertsStrip, LargoRead — not all visible in every lens.",
+      "Rail cards below main views: DarkPoolRail, FlowSummary, KeyLevelBox, AlertsStrip, LargoRead — not all visible in every lens.",
     ],
   },
   panels: [
@@ -108,17 +108,14 @@ export const heatMapsGuide = defineToolGuide({
         "Copy these levels to your journal — they should match Slayer header scalars for SPX. Mismatch suggests ticker difference or stale poll — check freshness.",
     },
     {
-      name: "RecentRangeStrip & AlertsStrip",
+      name: "AlertsStrip",
       location: "Rail — below key levels",
-      purpose: "Historical spot/flip context and positioning event alerts (wall breaks, flip crosses).",
-      shows: [
-        "Spot vs N-session range; flip range (GEX only)",
-        "Dismissible alert chips for structural events",
-      ],
+      purpose: "Positioning event alerts (wall breaks, flip crosses).",
+      shows: ["Dismissible alert chips for structural events"],
       actions: ["Dismiss individual alerts"],
-      cadence: "history_context on matrix; alerts on 20s payload",
+      cadence: "Alerts on 20s payload",
       consume:
-        "Range strip answers whether flip is unusually high or low vs recent sessions. Alerts are event markers — read once, then focus back on matrix.",
+        "Alerts are event markers — read once, then focus back on matrix. For historical flip/spot context, KeyLevelBox's day-over-day deltas cover whether structure moved vs prior sessions.",
     },
     {
       name: "FlowSummary & DarkPoolRail",

@@ -208,6 +208,14 @@ Two multi-agent workflows completed (12-unit data-validation + 25-unit CTO audit
 
 **Still needs a live RTH + real-browser pass:** intraday flow ingest, VWAP/SPX RTH signals, VIX intraday sign, the WS GEX ladder, and all rendered-UI/visual/console checks (browser was blocked).
 
+## Copy/content audit — Learn pages + FAQ/Pricing (2026-07-02)
+Full proofread of all 10 Learn pages (via their content sources in `src/lib/learn/guides/**`, `nav.ts`, `site-map.ts`) plus `FaqSection.tsx`/`PricingSection.tsx`, cross-checked against the component code each page describes. Pricing math ($199/mo vs $1,999/yr = $389 saved ≈16%), internal links/routes, chapter numbering, component-name references, and the FAQ's "11-point checklist" count all verified correct. **5 genuine issues found, all FIXED:**
+- `heat-maps.ts` documented `RecentRangeStrip`, a heatmap rail panel that no longer exists (dropped in favor of `KeyLevelBox`'s DoD deltas; confirmed absent from the component tree) — layout list + panel entry rewritten around the real `AlertsStrip`.
+- `helix-flows.ts:42` shipped a literal unfilled placeholder: "Up to N anomalies from last 15 minutes" — `FlowAnomalyBanner.tsx` has no display cap (renders every anomaly in the 15-min window), copy now says so.
+- `glossary.ts` "Verdict" definition listed only HOLD/TRIM/SELL, omitting the WATCH state the Night's Watch verdict engine actually emits (and which the nights-watch chapter documents everywhere).
+- `FaqSection.tsx:75` "GEX, VEX, DEX and charm" — charm lowercased while its three sibling lenses were capitalized; now CHARM (matching every other reference).
+- `nav.ts:64` "live P&L and greeks" — lowercase; now Greeks (matching the 6+ other references).
+
 ---
 
 ## Scope tracker (what the audit must cover — per user)
