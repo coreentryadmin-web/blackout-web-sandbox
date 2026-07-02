@@ -381,6 +381,27 @@ export async function runUwSequential<R extends readonly unknown[]>(
   return results as unknown as R;
 }
 
+/**
+ * Tuple-typed variant of runUwPool — same heterogeneous-results signature as
+ * runUwSequential, but overlaps the HTTP round-trips through a small pool.
+ * Every task still paces through throttleUw/acquireSlot (2-RPS + concurrency
+ * caps), so this changes WAITING, not RATE: sequential execution adds each
+ * call's full latency between limiter slots (the audit measured ≥3.6s of pure
+ * dead time on buildSpxDesk's 12-call cold path); a pool keeps the limiter's
+ * schedule saturated instead. Use for latency-critical lanes (live SPX desk);
+ * batch jobs (nighthawk dossiers) can stay on runUwSequential.
+ */
+export async function runUwPooled<R extends readonly unknown[]>(
+  tasks: { [K in keyof R]: () => Promise<R[K]> },
+  concurrency = MAX_CONCURRENCY
+): Promise<R> {
+  const out = await runUwPool(
+    tasks as unknown as Array<() => Promise<unknown>>,
+    concurrency
+  );
+  return out as unknown as R;
+}
+
 /** Run UW tasks with a small concurrency pool. */
 export async function runUwPool<T>(
   tasks: Array<() => Promise<T>>,

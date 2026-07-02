@@ -74,7 +74,7 @@ import {
   type OiChangeItem,
   type UwMacroIndicatorSnapshot,
 } from "./unusual-whales";
-import { runUwSequential } from "./uw-rate-limiter";
+import { runUwPooled } from "./uw-rate-limiter";
 import { fetchEngine } from "@/lib/engine";
 import { indexStore, getIndexFeedFreshness } from "@/lib/ws/polygon-socket";
 import { getActiveTradingHalts, isTradingHaltChannelStale } from "@/lib/ws/uw-socket";
@@ -1042,7 +1042,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
 
   // Polygon is the sole GEX source — uwGex slot removed (UW spot-exposures are 503).
   const uwExclusive = uwConfigured()
-    ? await runUwSequential([
+    ? await runUwPooled([
         () => resolveMarketTide(),
         // SPX NOPE: try SPX first, fall back to SPY (SPX endpoint sometimes 404s).
         () => fetchUwNope("SPX").catch(() => null).then(r => r ?? fetchUwNope("SPY").catch(() => null)),
@@ -1153,7 +1153,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   ]);
 
   const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, mag7Rows, macroIndicators] = uwConfigured()
-    ? await runUwSequential([
+    ? await runUwPooled([
         () => fetchUwGreekExposureExpiry("SPX").catch(() => []),
         () => fetchUwFlowPerExpiry("SPX", 12).catch(() => []),
         () => fetchUwNetFlowExpiry(20).catch(() => []),
@@ -1542,7 +1542,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   ]);
 
   const [darkPool, uwFlow, greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks] = uwConfigured()
-    ? await runUwSequential([
+    ? await runUwPooled([
         () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
         () => resolveFlow0dte("SPX"),
         () => fetchUwGreekExposureExpiry("SPX").catch(() => []),
