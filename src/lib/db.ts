@@ -1,4 +1,5 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { isTransientPgError } from "@/lib/db-transient";
 
 let pool: Pool | null = null;
 let poolInit: Promise<Pool> | null = null;
@@ -722,12 +723,45 @@ export async function ensureSchema(): Promise<void> {
   }
 }
 
+async function resetPoolForRetry(): Promise<void> {
+  if (pool) {
+    try {
+      await pool.end();
+    } catch {
+      /* ignore */
+    }
+  }
+  pool = null;
+  poolInit = null;
+}
+
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,
   values?: unknown[]
 ) {
   await ensureSchema();
-  return (await getPool()).query<T>(text, values);
+  const maxAttempts = Math.max(1, parseInt(process.env.PG_QUERY_RETRIES ?? "3", 10));
+  const baseDelayMs = Math.max(50, parseInt(process.env.PG_QUERY_RETRY_DELAY_MS ?? "250", 10));
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await (await getPool()).query<T>(text, values);
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1 && isTransientPgError(err)) {
+        console.warn(
+          `[db] transient query error (attempt ${attempt + 1}/${maxAttempts}):`,
+          err instanceof Error ? err.message : err
+        );
+        await resetPoolForRetry();
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 /** GDPR cleanup when Clerk sends user.deleted — removes all rows keyed by clerk_user_id. */

@@ -7,6 +7,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED — `provider-health-reconcile` cron intermittent PgBouncer `server_login_retry` failures (ops #242)
+**Status:** FIXED (`cursor/provider-health-reconcile-0fcb`).
+
+**Where:** `dbQuery()` in `src/lib/db.ts` — no retry on transient PgBouncer login blips. `provider-health-reconcile` (and other crons) logged `failed` rows when PgBouncer briefly returned `server login has been failing, cached error: connect failed (server_login_retry)`. `hit-cron.mjs` HTTP retries amplified this into 3–4 failed `cron_job_runs` rows per scheduled tick before one `ok`.
+
+**Evidence:** Postgres `cron_job_runs` 2026-07-02 — 9/90 provider-health-reconcile runs in 24h failed, all with the same PgBouncer message; latest run `ok` at 13:10:35Z after transient blip at 13:10:16–25Z. Ops collect fingerprint `7dcb62ad3be6` cleared once latest run recovered.
+
+**Fix:** `isTransientPgError()` in `src/lib/db-transient.ts`; `dbQuery()` retries up to 3× with pool reset + backoff on transient errors (configurable via `PG_QUERY_RETRIES` / `PG_QUERY_RETRY_DELAY_MS`).
+
+**Verification:** 5 unit tests in `db-transient.test.ts`; `npx tsc --noEmit` clean.
+
+---
+
 ## 🔴 CRITICAL — FIXED — `/api/market/gex-heatmap`'s cross-validation call site never got the near-term expiry scope fix from PR #223 — the SPX matrix's "UW oracle diverges Npt" banner has been showing scope-mismatch-inflated divergence this whole time
 **Status:** FIXED (`fix/gex-heatmap-cross-validation-scope`). Found while investigating a live user report of the banner reading "diverges 600pt" on the SPX matrix.
 
