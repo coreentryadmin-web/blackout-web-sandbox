@@ -16,8 +16,12 @@ type LedgerRow = {
   underlying_at_flag: number | null;
   top_strike: number | null;
   conviction: string | null;
+  entry_premium: number | null;
+  flow_avg_fill: number | null;
   move_pct: number | null;
   direction_hit: boolean | null;
+  plan_outcome: string | null;
+  plan_pnl_pct: number | null;
   graded: boolean;
 };
 
@@ -199,6 +203,60 @@ function SetupCard({ s }: { s: EnrichedZeroDteSetup }) {
         {s.dark_pool_bias ? ` · DP ${s.dark_pool_bias}` : ""}
       </p>
 
+      {/* THE PLAN — premiums first: what flow paid, what it costs now, when to exit.
+          entry_status MOVED = the move already happened → the card says skip. */}
+      {s.plan && (
+        <div
+          className={clsx(
+            "mt-2 rounded-lg border px-3 py-2",
+            s.plan.entry_status === "MOVED"
+              ? "border-bear/30 bg-bear/[0.06]"
+              : s.plan.entry_status === "CHEAPER"
+                ? "border-cyan-400/30 bg-cyan-400/[0.06]"
+                : "border-bull/25 bg-bull/[0.05]"
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] tabular-nums">
+            {s.plan.entry_status === "MOVED" ? (
+              <Badge tone="bear" size="sm" dot>
+                Already ran +{s.plan.vs_flow_pct}% — don&apos;t chase
+              </Badge>
+            ) : s.plan.entry_status === "CHEAPER" ? (
+              <Badge tone="accent" size="sm">
+                Cheaper than flow paid ({s.plan.vs_flow_pct}%)
+              </Badge>
+            ) : s.plan.entry_status === "IN_RANGE" ? (
+              <Badge tone="bull" size="sm">
+                In entry range
+              </Badge>
+            ) : (
+              <Badge tone="neutral" size="sm">
+                No live quote
+              </Badge>
+            )}
+            {s.plan.flow_avg_fill != null && (
+              <span className="text-sky-200/85">Flow paid ~${s.plan.flow_avg_fill.toFixed(2)}</span>
+            )}
+            {s.plan.bid != null && s.plan.ask != null && (
+              <span className="text-sky-200/85">
+                now ${s.plan.bid.toFixed(2)}×${s.plan.ask.toFixed(2)}
+              </span>
+            )}
+            {s.plan.entry_max != null && s.plan.entry_status !== "MOVED" && (
+              <span className="font-bold text-white">Enter ≤ ${s.plan.entry_max.toFixed(2)}</span>
+            )}
+          </div>
+          {s.plan.entry_max != null && (
+            <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-300/80">
+              Exit: stop −50% (${s.plan.stop_premium?.toFixed(2)}) · target +100% ($
+              {s.plan.target_premium?.toFixed(2)}) · out by {s.plan.time_stop_et} ET
+              {s.plan.underlying_target != null ? ` · stock target ${fmtNum(s.plan.underlying_target)}` : ""}
+              {s.plan.underlying_invalid != null ? ` · wrong below ${fmtNum(s.plan.underlying_invalid)}` : ""}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* chart read */}
       {(s.trend || s.fib_note || s.key_supports.length > 0 || s.key_resistances.length > 0) && (
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-sky-300/75">
@@ -278,8 +336,13 @@ function SetupCard({ s }: { s: EnrichedZeroDteSetup }) {
 
 function LedgerLane({ rows }: { rows: LedgerRow[] }) {
   if (rows.length === 0) return null;
-  const graded = rows.filter((r) => r.graded && r.direction_hit != null);
-  const hits = graded.filter((r) => r.direction_hit === true).length;
+  const planGraded = rows.filter((r) => r.plan_outcome && r.plan_outcome !== "ungradeable");
+  const graded = planGraded.length
+    ? planGraded
+    : rows.filter((r) => r.graded && r.direction_hit != null);
+  const hits = planGraded.length
+    ? planGraded.filter((r) => (r.plan_pnl_pct ?? 0) > 0).length
+    : graded.filter((r) => r.direction_hit === true).length;
   return (
     <Panel
       accent="accent"
@@ -318,7 +381,28 @@ function LedgerLane({ rows }: { rows: LedgerRow[] }) {
               peak {r.score_max}
               {r.underlying_at_flag != null ? ` · @ ${fmtNum(r.underlying_at_flag)}` : ""}
             </span>
-            {r.graded && r.move_pct != null && (
+            {r.entry_premium != null && (
+              <span className="font-mono text-[10px] tabular-nums text-sky-300/60">
+                entry ${r.entry_premium.toFixed(2)}
+              </span>
+            )}
+            {r.plan_outcome && r.plan_outcome !== "ungradeable" ? (
+              <span
+                className={clsx(
+                  "ml-auto font-mono text-[11px] font-bold tabular-nums",
+                  r.plan_outcome === "doubled"
+                    ? "text-bull"
+                    : r.plan_outcome === "stopped"
+                      ? "text-bear"
+                      : (r.plan_pnl_pct ?? 0) >= 0
+                        ? "text-bull"
+                        : "text-bear"
+                )}
+              >
+                {r.plan_outcome === "doubled" ? "2x hit" : r.plan_outcome === "stopped" ? "stopped" : "time stop"}
+                {r.plan_pnl_pct != null ? ` ${r.plan_pnl_pct >= 0 ? "+" : ""}${r.plan_pnl_pct.toFixed(0)}%` : ""}
+              </span>
+            ) : r.graded && r.move_pct != null ? (
               <span
                 className={clsx(
                   "ml-auto font-mono text-[11px] font-bold tabular-nums",
@@ -328,7 +412,7 @@ function LedgerLane({ rows }: { rows: LedgerRow[] }) {
                 {r.move_pct >= 0 ? "+" : ""}
                 {r.move_pct.toFixed(2)}% {r.direction_hit ? "✓" : "✗"}
               </span>
-            )}
+            ) : null}
           </li>
         ))}
       </ul>

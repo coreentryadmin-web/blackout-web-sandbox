@@ -556,6 +556,23 @@ async function runMigrations(): Promise<void> {
       PRIMARY KEY (session_date, ticker)
     );
   `);
+  // Contract-plan columns (added after first ship) — idempotent ALTERs so existing
+  // prod tables pick them up on the next schema pass.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS entry_premium NUMERIC;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS flow_avg_fill NUMERIC;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS plan_json JSONB;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS plan_outcome TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS plan_pnl_pct NUMERIC;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS cron_job_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -1031,6 +1048,8 @@ export type FlowRow = {
   /** Real created_at from UW; null when unknown (do NOT fall back to inserted_at). */
   event_at?: string | null;
   dte?: number;
+  /** Per-contract fill price from the UW alert payload (what the print paid). */
+  fill_price?: number;
   alert_rule?: string;
   ask_pct?: number;
   underlying_price?: number;
@@ -1150,6 +1169,10 @@ export async function fetchRecentFlows(params: {
                     OR (raw_payload->>'stock_price') ~ '^-?[0-9]+(\.[0-9]+)?$'
                   THEN (raw_payload->>'stock_price')::numeric END
            ) AS underlying_price,
+           -- Per-contract fill from the alert ('price'); same string-tolerant cast as above.
+           CASE WHEN jsonb_typeof(raw_payload->'price') = 'number'
+                  OR (raw_payload->>'price') ~ '^-?[0-9]+(\.[0-9]+)?$'
+                THEN (raw_payload->>'price')::numeric END AS fill_price,
            COALESCE(
              CASE WHEN jsonb_typeof(raw_payload->'open_interest') = 'number'
                     OR (raw_payload->>'open_interest') ~ '^-?[0-9]+(\.[0-9]+)?$'
@@ -1191,6 +1214,7 @@ export async function fetchRecentFlows(params: {
     dte: row.dte != null ? Number(row.dte) : undefined,
     alert_rule: row.alert_rule ? String(row.alert_rule) : undefined,
     ask_pct: row.ask_pct != null ? Number(row.ask_pct) : undefined,
+    fill_price: row.fill_price != null ? Number(row.fill_price) : undefined,
     underlying_price: row.underlying_price != null ? Number(row.underlying_price) : undefined,
     open_interest: row.open_interest != null ? Number(row.open_interest) : undefined,
     implied_volatility: row.implied_volatility != null ? Number(row.implied_volatility) : undefined,
@@ -2599,6 +2623,15 @@ export type ZeroDteSetupLogRow = {
   move_pct: number | null;
   direction_hit: boolean | null;
   graded_at: string | null;
+  /** Premium reference the plan was printed at (mark at first flag ?? flow fill). */
+  entry_premium: number | null;
+  /** Premium-weighted per-contract fill the flow actually paid on the top strike. */
+  flow_avg_fill: number | null;
+  /** The plan as printed at first flag (entry band, exits, occ) — what gets graded. */
+  plan_json: Record<string, unknown> | null;
+  /** Plan grade vs the contract's own minute bars: doubled | stopped | time_stop | ungradeable. */
+  plan_outcome: string | null;
+  plan_pnl_pct: number | null;
 };
 
 export type ZeroDteSetupLogUpsert = {
@@ -2614,6 +2647,9 @@ export type ZeroDteSetupLogUpsert = {
   spike: boolean;
   underlying: number | null;
   flags_json: Record<string, unknown> | null;
+  entry_premium: number | null;
+  flow_avg_fill: number | null;
+  plan_json: Record<string, unknown> | null;
 };
 
 /** Upsert scanner finds — one row per (session, ticker). First sighting pins
@@ -2629,8 +2665,9 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
       INSERT INTO zerodte_setup_log (
         session_date, ticker, direction, top_strike, expiry, score, score_max,
         dossier_score, conviction, gross_premium, spike, underlying_at_flag,
-        underlying_latest, flags_json, first_flagged_at, last_seen_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,NOW(),NOW())
+        underlying_latest, flags_json, entry_premium, flow_avg_fill, plan_json,
+        first_flagged_at, last_seen_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,NOW(),NOW())
       ON CONFLICT (session_date, ticker) DO UPDATE SET
         direction = EXCLUDED.direction,
         top_strike = EXCLUDED.top_strike,
@@ -2643,6 +2680,11 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         spike = zerodte_setup_log.spike OR EXCLUDED.spike,
         underlying_latest = COALESCE(EXCLUDED.underlying_latest, zerodte_setup_log.underlying_latest),
         flags_json = COALESCE(EXCLUDED.flags_json, zerodte_setup_log.flags_json),
+        -- Plan fields are PINNED at first flag: the graded plan must be the plan as
+        -- first printed, never re-priced by a later scan (no hindsight).
+        entry_premium = COALESCE(zerodte_setup_log.entry_premium, EXCLUDED.entry_premium),
+        flow_avg_fill = COALESCE(zerodte_setup_log.flow_avg_fill, EXCLUDED.flow_avg_fill),
+        plan_json = COALESCE(zerodte_setup_log.plan_json, EXCLUDED.plan_json),
         last_seen_at = NOW()
       `,
       [
@@ -2658,6 +2700,9 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         r.spike,
         r.underlying,
         r.flags_json,
+        r.entry_premium,
+        r.flow_avg_fill,
+        r.plan_json,
       ]
     );
   }
@@ -2685,6 +2730,11 @@ function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
     move_pct: r.move_pct != null ? Number(r.move_pct) : null,
     direction_hit: r.direction_hit == null ? null : r.direction_hit === true,
     graded_at: r.graded_at != null ? new Date(String(r.graded_at)).toISOString() : null,
+    entry_premium: r.entry_premium != null ? Number(r.entry_premium) : null,
+    flow_avg_fill: r.flow_avg_fill != null ? Number(r.flow_avg_fill) : null,
+    plan_json: (r.plan_json as Record<string, unknown>) ?? null,
+    plan_outcome: r.plan_outcome != null ? String(r.plan_outcome) : null,
+    plan_pnl_pct: r.plan_pnl_pct != null ? Number(r.plan_pnl_pct) : null,
   };
 }
 
@@ -2725,6 +2775,19 @@ export async function gradeZeroDteSetupRow(
      SET close_price = $3, move_pct = $4, direction_hit = $5, graded_at = NOW()
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), grade.close_price, grade.move_pct, grade.direction_hit]
+  );
+}
+
+export async function updateZeroDtePlanOutcome(
+  sessionDate: string,
+  ticker: string,
+  grade: { plan_outcome: string; plan_pnl_pct: number | null }
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE zerodte_setup_log SET plan_outcome = $3, plan_pnl_pct = $4
+     WHERE session_date = $1::date AND ticker = $2`,
+    [sessionDate, ticker.toUpperCase(), grade.plan_outcome, grade.plan_pnl_pct]
   );
 }
 

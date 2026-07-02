@@ -103,8 +103,12 @@ async function buildBoardPayload() {
       underlying_at_flag: r.underlying_at_flag,
       top_strike: r.top_strike,
       conviction: r.conviction,
+      entry_premium: r.entry_premium,
+      flow_avg_fill: r.flow_avg_fill,
       move_pct: r.move_pct,
       direction_hit: r.direction_hit,
+      plan_outcome: r.plan_outcome,
+      plan_pnl_pct: r.plan_pnl_pct,
       graded: r.graded_at != null,
     })),
     // Names withheld because they're already published elsewhere on the desk —

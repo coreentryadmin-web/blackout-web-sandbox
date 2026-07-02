@@ -233,6 +233,7 @@ function baseSetup(overrides?: Partial<ZeroDteSetup>): ZeroDteSetup {
     side_dominance: 0.85,
     underlying_price: 188.2,
     score: 72,
+    top_strike_avg_fill: 4.2,
     recent_premium_30m: 0,
     spike: false,
     first_seen: "2026-07-06T13:45:00Z",
@@ -358,4 +359,104 @@ test("ranking: ACTIVE play leads; power hour outranks lotto only inside its wind
   assert.deepEqual(normal.map((c) => c.kind), ["spx_play", "lotto", "power_hour"]);
   const ph = rankEngineCards(cards, true);
   assert.deepEqual(ph.map((c) => c.kind), ["spx_play", "power_hour", "lotto"]);
+});
+
+// ── contract plans ───────────────────────────────────────────────────────────────
+
+import { buildContractPlan, gradePlanFromBars } from "./plan";
+
+test("setups: top-strike avg fill is premium-weighted from real prints", () => {
+  const rows = [
+    row({ premium: 900_000, strike: 190, fill_price: 4.0 }),
+    row({ premium: 300_000, strike: 190, fill_price: 6.0 }),
+  ];
+  const out = deriveZeroDteSetups(rows);
+  // (4.0*900k + 6.0*300k) / 1.2M = 4.5
+  assert.equal(out[0]!.top_strike_avg_fill, 4.5);
+});
+
+test("plan: MOVED when the premium already ran past the flow's fill — the skip rule", () => {
+  const base = {
+    occ: "O:NVDA260702C00190000",
+    direction: "long" as const,
+    price: 188.2,
+    flowAvgFill: 4.2,
+    keySupports: [186.5, 184.1],
+    keyResistances: [190.2, 193.5],
+    vwap: 187.9,
+  };
+  const moved = buildContractPlan({ ...base, bid: 8.2, ask: 8.6, mark: 8.4 });
+  assert.equal(moved.entry_status, "MOVED");
+  assert.equal(moved.vs_flow_pct, 100);
+  const inRange = buildContractPlan({ ...base, bid: 4.0, ask: 4.4, mark: 4.2 });
+  assert.equal(inRange.entry_status, "IN_RANGE");
+  assert.equal(inRange.entry_max, 4.2);
+  assert.equal(inRange.stop_premium, 2.1);
+  assert.equal(inRange.target_premium, 8.4);
+  const cheaper = buildContractPlan({ ...base, bid: 3.3, ask: 3.5, mark: 3.4 });
+  assert.equal(cheaper.entry_status, "CHEAPER");
+});
+
+test("plan: underlying anchors come from real structure, mirrored by direction", () => {
+  const long = buildContractPlan({
+    occ: "O:X", direction: "long", price: 188.2, flowAvgFill: 4.2,
+    bid: 4, ask: 4.4, mark: 4.2,
+    keySupports: [186.5, 184.1], keyResistances: [190.2, 193.5], vwap: 187.9,
+  });
+  assert.equal(long.underlying_target, 190.2);
+  assert.equal(long.underlying_invalid, 186.5);
+  const short = buildContractPlan({
+    occ: "O:X", direction: "short", price: 188.2, flowAvgFill: 4.2,
+    bid: 4, ask: 4.4, mark: 4.2,
+    keySupports: [186.5, 184.1], keyResistances: [190.2, 193.5], vwap: 187.9,
+  });
+  assert.equal(short.underlying_target, 186.5);
+  assert.equal(short.underlying_invalid, 190.2);
+});
+
+test("plan: no quote and no fill → NO plan is built by the scan (guard is upstream); no quote WITH fill → NO_QUOTE status", () => {
+  const p = buildContractPlan({
+    occ: "O:X", direction: "long", price: 100, flowAvgFill: 2.0,
+    bid: null, ask: null, mark: null,
+    keySupports: [], keyResistances: [], vwap: null,
+  });
+  assert.equal(p.entry_status, "NO_QUOTE");
+  assert.equal(p.entry_max, 2.0); // falls back to the flow's real fill
+});
+
+// 14:30 UTC = 10:30 ET on 2026-07-06 (EDT) — helper for bar timestamps.
+const T0 = Date.parse("2026-07-06T14:30:00Z");
+const MIN = 60_000;
+const bar = (i: number, h: number, l: number, c: number) => ({ t: T0 + i * MIN, h, l, c });
+
+test("plan grade: target touch before stop → doubled at +100%", () => {
+  const g = gradePlanFromBars([bar(0, 4.4, 4.0, 4.2), bar(1, 8.6, 4.1, 8.5)], 4.2, T0 - MIN);
+  assert.equal(g.outcome, "doubled");
+  assert.equal(g.pnl_pct, 100);
+});
+
+test("plan grade: stop touch → stopped at −50%; same-bar both-touch counts the stop", () => {
+  const stopped = gradePlanFromBars([bar(0, 4.3, 2.0, 2.2)], 4.2, T0 - MIN);
+  assert.equal(stopped.outcome, "stopped");
+  assert.equal(stopped.pnl_pct, -50);
+  // one bar touches BOTH 8.4 and 2.1 → conservative: stopped.
+  const both = gradePlanFromBars([bar(0, 9.0, 2.0, 5.0)], 4.2, T0 - MIN);
+  assert.equal(both.outcome, "stopped");
+});
+
+test("plan grade: neither level by 15:30 ET → time stop at last close in window", () => {
+  // bars: 10:30 ET onward, closing at 4.62 (+10%); a late bar past 15:30 ET is ignored.
+  const late = Date.parse("2026-07-06T19:45:00Z"); // 15:45 ET
+  const g = gradePlanFromBars(
+    [bar(0, 4.4, 4.0, 4.3), bar(1, 4.7, 4.2, 4.62), { t: late, h: 12, l: 1, c: 1 }],
+    4.2,
+    T0 - MIN
+  );
+  assert.equal(g.outcome, "time_stop");
+  assert.equal(g.pnl_pct, 10);
+});
+
+test("plan grade: bars only BEFORE the flag → ungradeable, never graded on hindsight", () => {
+  const g = gradePlanFromBars([bar(0, 9, 2, 5)], 4.2, T0 + 10 * MIN);
+  assert.equal(g.outcome, "ungradeable");
 });

@@ -17,6 +17,7 @@ import {
   fetchUngradedZeroDteRows,
   fetchZeroDteSetupLog,
   gradeZeroDteSetupRow,
+  updateZeroDtePlanOutcome,
   upsertZeroDteSetupLog,
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
@@ -25,6 +26,8 @@ import { INDEX_SET, LEVERAGED_ETP_SET } from "@/lib/nighthawk/constants";
 import { createDossierBuildCache, fetchTickerDossier } from "@/lib/nighthawk/dossier";
 import { todayEt } from "@/lib/nighthawk/session";
 import { fetchAggBars } from "@/lib/providers/polygon-largo";
+import { fetchOptionsUnifiedSnapshot } from "@/lib/providers/options-snapshot";
+import { buildOcc } from "@/lib/ws/options-socket";
 import { withServerCache } from "@/lib/server-cache";
 import {
   computeLedgerGrade,
@@ -35,6 +38,7 @@ import {
   type NewsHeat,
   type SetupDossierView,
 } from "./board";
+import { buildContractPlan, gradePlanFromBars, type PlanBar } from "./plan";
 
 /** SPX/SPY/index products are covered by the SPX engines; leveraged wrappers are
  *  not single-name plays. Night Hawk's tickers are added per-scan. */
@@ -113,6 +117,7 @@ export async function scanZeroDteBoard(flags?: {
       alert_rule: f.alert_rule,
       ask_pct: f.ask_pct,
       underlying_price: f.underlying_price,
+      fill_price: f.fill_price,
       alerted_at: f.alerted_at,
     })),
     { maxSetups: 10, excludeTickers: excludes, nowMs: Date.now(), todayYmd: today }
@@ -140,7 +145,47 @@ export async function scanZeroDteBoard(flags?: {
     })
   );
 
+  await attachContractPlans(setups);
+
   return { setups, nighthawk_covered: nighthawkCovered };
+}
+
+/** One batched quote snapshot for every find's top-strike contract, then a pure
+ *  plan per find. Soft-deadlined: a slow quote provider degrades to evidence-only
+ *  cards (plan stays null), never a stalled scan. */
+async function attachContractPlans(setups: EnrichedZeroDteSetup[]): Promise<void> {
+  const occOf = new Map<string, string>();
+  for (const s of setups) {
+    const occ = buildOcc(s.ticker, s.expiry, s.direction === "long" ? "call" : "put", s.top_strike);
+    if (occ) occOf.set(s.ticker, occ);
+  }
+  if (occOf.size === 0) return;
+  const snaps = await within(
+    fetchOptionsUnifiedSnapshot(Array.from(occOf.values())).catch(
+      () => new Map<string, import("@/lib/providers/options-snapshot").OptionSnapshot>()
+    ),
+    2_500
+  );
+  if (!snaps) return;
+  for (const s of setups) {
+    const occ = occOf.get(s.ticker);
+    if (!occ) continue;
+    const snap = snaps.get(occ) ?? null;
+    // No live quote AND no real fill → no plan (evidence only) — never a guess.
+    if (!snap?.mark && s.top_strike_avg_fill == null) continue;
+    s.plan = buildContractPlan({
+      occ,
+      direction: s.direction,
+      price: s.underlying_price ?? snap?.underlyingPrice ?? null,
+      flowAvgFill: s.top_strike_avg_fill,
+      bid: snap?.bid ?? null,
+      ask: snap?.ask ?? null,
+      mark: snap?.mark ?? null,
+      keySupports: s.key_supports,
+      keyResistances: s.key_resistances,
+      vwap: s.vwap,
+    });
+  }
 }
 
 /** Persist a scan's finds into the session ledger (no-op without a database). */
@@ -159,6 +204,11 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     gross_premium: s.gross_premium,
     spike: s.spike,
     underlying: s.underlying_price,
+    // Premium reference the plan grades against: live mark at flag, else the
+    // flow's own average fill.
+    entry_premium: s.plan?.mark ?? s.top_strike_avg_fill ?? null,
+    flow_avg_fill: s.top_strike_avg_fill,
+    plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),
@@ -192,6 +242,21 @@ export async function gradeZeroDteLedger(force = false): Promise<number> {
   let graded = 0;
   for (const row of ungraded) {
     try {
+      // Plan grade FIRST (against the contract's own minute bars), then the
+      // direction grade — gradeZeroDteSetupRow stamps graded_at, which removes the
+      // row from future passes, so everything must land in this one try.
+      const occ = typeof row.plan_json?.occ === "string" ? row.plan_json.occ : null;
+      if (row.plan_outcome == null && occ && row.entry_premium != null && row.entry_premium > 0) {
+        const optBars = await fetchAggBars(occ, 1, "minute", row.session_date, row.session_date, "50000");
+        const planBars: PlanBar[] = optBars
+          .filter((b) => b.t != null && Number.isFinite(b.t))
+          .map((b) => ({ t: b.t as number, h: b.h, l: b.l, c: b.c }));
+        const planGrade = gradePlanFromBars(planBars, row.entry_premium, Date.parse(row.first_flagged_at));
+        await updateZeroDtePlanOutcome(row.session_date, row.ticker, {
+          plan_outcome: planGrade.outcome,
+          plan_pnl_pct: planGrade.pnl_pct,
+        });
+      }
       const bars = await fetchAggBars(row.ticker, 1, "day", row.session_date, row.session_date);
       const close = bars.length ? bars[bars.length - 1]!.c : null;
       const grade = computeLedgerGrade(row.direction, row.underlying_at_flag, close ?? null);

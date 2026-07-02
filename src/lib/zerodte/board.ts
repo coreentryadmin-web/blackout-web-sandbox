@@ -103,6 +103,8 @@ export type FlowSetupInput = {
   alert_rule?: string;
   ask_pct?: number;
   underlying_price?: number;
+  /** Per-contract fill price the print actually paid (UW alert `price`). */
+  fill_price?: number;
   alerted_at: string;
 };
 
@@ -122,6 +124,8 @@ export type ZeroDteSetup = {
   underlying_price: number | null;
   /** 0-100 deterministic evidence score (premium tiers + sweeps + dominance + breadth). */
   score: number;
+  /** Premium-weighted avg per-contract fill on the top strike — what flow PAID. */
+  top_strike_avg_fill: number | null;
   /** Premium that landed in the last 30 minutes of the observed tape. */
   recent_premium_30m: number;
   /** Sudden-flow-spike flag: ≥half the ticker's whole tape arrived in the last 30m. */
@@ -149,7 +153,7 @@ export function deriveZeroDteSetups(
     sweep: number;
     gross: number;
     prints: number;
-    strikes: Map<string, { prem: number; strike: number; expiry: number; isCall: boolean }>;
+    strikes: Map<string, { prem: number; strike: number; expiry: number; isCall: boolean; fillPrem: number; fillW: number }>;
     underlying: number | null;
     /** alerted_at of the print that supplied `underlying` — keep only the freshest. */
     underlyingSeen: string | null;
@@ -207,9 +211,14 @@ export function deriveZeroDteSetups(
     }
     agg.minDte = Math.min(agg.minDte, dte);
     const key = `${r.strike}|${r.expiry}|${isCall ? "c" : "p"}`;
-    const cur = agg.strikes.get(key);
-    if (cur) cur.prem += prem;
-    else agg.strikes.set(key, { prem, strike: r.strike, expiry: Date.parse(r.expiry) || 0, isCall });
+    const cur = agg.strikes.get(key) ?? { prem: 0, strike: r.strike, expiry: Date.parse(r.expiry) || 0, isCall, fillPrem: 0, fillW: 0 };
+    cur.prem += prem;
+    // Premium-weighted per-contract fill — "what did the flow actually pay here".
+    if (r.fill_price && r.fill_price > 0) {
+      cur.fillPrem += r.fill_price * prem;
+      cur.fillW += prem;
+    }
+    agg.strikes.set(key, cur);
     if (r.alerted_at) {
       if (!agg.firstSeen || r.alerted_at < agg.firstSeen) agg.firstSeen = r.alerted_at;
       if (!agg.lastSeen || r.alerted_at > agg.lastSeen) agg.lastSeen = r.alerted_at;
@@ -236,7 +245,7 @@ export function deriveZeroDteSetups(
     if (dominance < SETUP_MIN_DOMINANCE) continue;
 
     // Dominant strike on the winning side.
-    let top: { prem: number; strike: number; expiry: number } | null = null;
+    let top: { prem: number; strike: number; expiry: number; fillPrem: number; fillW: number } | null = null;
     let topExpiry = "";
     for (const [key, s] of Array.from(agg.strikes.entries())) {
       if (s.isCall !== dominantCall) continue;
@@ -246,6 +255,7 @@ export function deriveZeroDteSetups(
       }
     }
     if (!top) continue;
+    const avgFill = top.fillW > 0 ? Math.round((top.fillPrem / top.fillW) * 100) / 100 : null;
 
     const sweepPct = agg.gross > 0 ? agg.sweep / agg.gross : 0;
     // Sudden flow spike: at least half the ticker's tape (and 4+ prints total)
@@ -273,6 +283,7 @@ export function deriveZeroDteSetups(
       ticker,
       direction: dominantCall ? "long" : "short",
       top_strike: top.strike,
+      top_strike_avg_fill: avgFill,
       expiry: topExpiry,
       dte: agg.minDte,
       net_premium: agg.call - agg.put,
@@ -336,6 +347,7 @@ export function rankEngineCards(
 // unit-testable with a fake dossier; the route does the (cached) fetching.
 
 import { computeFibLevels, nearestFibNote, type FibNote } from "./fib";
+import type { ContractPlan } from "./plan";
 
 /** Structural subset of TickerDossier the enrichment reads (keeps this module
  *  provider-import-free and the merge testable with plain objects). */
@@ -414,6 +426,9 @@ export type EnrichedZeroDteSetup = ZeroDteSetup & {
   analyst_note: string | null;
   /** Fib annotation vs the weekly swing, when price sits at a level. */
   fib_note: FibNote | null;
+  /** Entry/exit contract plan (premium band + exits) — attached by the scan when a
+   *  live quote or real fill exists; null = evidence only, never a guessed plan. */
+  plan: ContractPlan | null;
   halted: boolean;
   /** Reports today/next session — a 0DTE into an earnings print is a different trade. */
   earnings: EarningsFlag | null;
@@ -535,6 +550,7 @@ export function enrichSetup(
     catalyst_flags: scored?.catalyst_flags ?? [],
     analyst_note: dossier?.price_target ?? null,
     fib_note: fibNote,
+    plan: null,
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,
