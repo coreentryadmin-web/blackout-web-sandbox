@@ -153,6 +153,24 @@ seeing real data.
    That's real design work on a ~800-line function with retry/backfill/Slack
    side effects — not a same-night addition. Still **NOT YET**. See
    `docs/audit/FINDINGS.md` for the full write-up.
+
+   **Re-evaluated same night, concretely scoped (still deferred, not vague):**
+   confirmed the duplicate-row risk is real, not hypothetical —
+   `edition-builder.ts:314` shows a `force`-rebuild of an already-published
+   edition explicitly resets `synthesis_json: null`, which re-triggers
+   `generateEditionPlays()` (bypassing the checkpoint-restore branch that
+   normally skips it) and would recompute the same tickers' rejections
+   again. Unlike the published-play case, there's no existing upsert table
+   whose own `WHERE outcome = 'pending'`/`xmax = 0` state can answer "have I
+   seen this rejection before" — rejected plays are never written anywhere
+   else. The correct fix is a dedup mechanism on `alert_audit_log` itself:
+   a partial unique index —
+   `CREATE UNIQUE INDEX ... ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected'`
+   — with the insert using `ON CONFLICT (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected' DO NOTHING`.
+   That's a schema change to a table that's already carrying real 0DTE and
+   Night Hawk published-play rows, so it gets its own reviewed PR rather than
+   being folded into the write-path change — same standard the original
+   `alert_audit_log` `CREATE TABLE` was held to.
 5. **Query surface PR:** extend `/api/admin/bie-report` with an
    `audit_trail` block (recent rows, source-API attribution coverage %) —
    only after there's real data to show.

@@ -7,6 +7,12 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ Post-deploy verification 2026-07-03 13:16 UTC — Railway status probe (PR #327) live, no regression
+**Status:** VERIFIED clean. `feat/bie-railway-status-probe` squash-merged as `dbf591b`, Railway deploy confirmed **SUCCESS** via the API before touching any other `src/**` work.
+
+- `/api/ready`: HTTP 200.
+- First `full-site-deep-audit.mjs` run post-deploy showed a NEW flag — `[crons] STALE-cron-staleness-watchdog: Cron watchdog flagged stale/missing: cron-staleness-watchdog` (44 pass / 10 issues, down from the usual 45/9) — investigated rather than assumed either way. Queried `/api/cron/cron-staleness-watchdog` directly with `CRON_SECRET`: returned `problems: 0, problem_keys: []`, completely clean. Re-ran the full audit script immediately after: back to the normal 45 pass / 9 known off-hours heatmap P1s, no watchdog flag. **Conclusion: a one-off transient self-referential timing blip** (the watchdog's own `cron_job_runs` row for its own prior invocation apparently hadn't landed at the exact instant the audit script's `Promise.all` fired three concurrent cron probes) — not caused by this PR (the diff touches only a new opt-in Railway probe wired as a sibling field in `/api/admin/bie-report`, nothing in the cron/watchdog code path) and not reproducible on a second run. Logged here rather than silently dismissed, per the "investigate before declaring non-actionable" standard.
+
 ## ✅ Post-deploy verification 2026-07-03 12:57 UTC — Night Hawk write-path (PR #326) live, no regression
 **Status:** VERIFIED clean. `feat/bie-stage4-nighthawk-writepath` squash-merged as `706b85f`, Railway deploy confirmed **SUCCESS** via the API before touching any other `src/**` work.
 
