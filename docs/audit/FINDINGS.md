@@ -7,6 +7,21 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 Stage 3 SHIPPED 2026-07-03 — Clerk auth-failure monitoring, without touching the sign-in flow
+**Status:** SHIPPED (`feat/bie-clerk-auth-failure-observer`). Reverses the earlier documented decision (`docs/bie/FULL-SYSTEM-AWARENESS.md`, `docs/audit/FINDINGS.md` — user chose "leave it as a permanent gap" after being warned the only known path was a full custom sign-in rewrite) — user explicitly asked to fix it after that. Re-investigated before writing any code and found a materially safer path than the one originally presented.
+
+**What changed vs. the original assessment:** the original research confirmed Clerk has no webhook or Backend API for a failed sign-in attempt, and concluded the only way to capture the signal was replacing the prebuilt `<SignIn>`/`<SignUp>` components with a custom `useSignIn()`-based form — a large rewrite of a revenue-critical page, unverifiable in this sandbox (no browser). Before starting that rewrite, re-examined the problem and found a much lower-risk option: Clerk's prebuilt component already renders a visible error message on a failed attempt (styled via the `formFieldErrorText`/`alert` keys in `clerk-theme.ts` — already live in production, so these element hooks are proven stable), and that error is regular DOM the app can observe without touching the component at all.
+
+**Implementation:** `AuthFailureObserver.tsx` mounts as a sibling wrapper around the untouched `<SignIn>`/`<SignUp>` — zero changes to either component, their props, or their behavior. A `MutationObserver` watches for Clerk's own error elements (matched by their stable `cl-formFieldErrorText`/`cl-alert` class markers) appearing in the DOM, reads the visible error text (never a form value, never a credential — the observer only ever touches Clerk's own rendered error UI), and beacons it to a new public `/api/telemetry/auth-failure` endpoint (same shape as the existing `client-error` beacon: per-IP rate limited, hard body cap). Reuses the existing `error_events` sink (`captureError`, new `source: "auth_failure"`) rather than a new table. A new `countAuthFailures()` surfaces a 24h summary in `/api/admin/bie-report`, shown as a header chip in `AdminBieDashboard.tsx`.
+
+**Risk profile, explicitly:** if Clerk ever changes its internal class naming, the observer silently stops reporting — the auth flow itself is completely unaffected either way, since the observer never touches sign-in mechanics, only watches rendered output. This is the key property that makes it safe to ship without a live browser to test in: a bug in the observer can produce a false negative (miss a failure), never a false positive that could break login for a real member.
+
+**Not fully live-verified:** confirming the DOM observer actually fires on a real failed attempt needs a real browser, which this sandbox doesn't have. Flagged as a follow-up — will confirm by checking `auth_failures.total_24h` moves off zero after a genuine mistyped-password attempt occurs (or after intentionally triggering one from a browser once available).
+
+**Verification:** 862/862 tests (9 new: `isClerkErrorClassName`/`shouldReportAuthFailure` pure-logic coverage), `tsc --noEmit` + build clean.
+
+---
+
 ## 🔴 P0 FIXED 2026-07-03 — alert_audit_log's entire write-path has been silently no-op'ing since Stage 4 shipped; every prior "SHIPPED" claim in this doc and AUDIT-TRAIL-SCHEMA.md was wrong
 **Status:** SHIPPED (`fix/alert-audit-log-jsonb-encoding`). Found while wiring the Stage 4 `source_apis` attribution follow-up (see the entry below) — the most severe correctness bug found this session, and it directly contradicts prior "SHIPPED" claims about Stage 4's three write-paths made across multiple earlier PRs in this doc and `docs/bie/AUDIT-TRAIL-SCHEMA.md`. Logging it prominently here per this repo's own standing policy: **never leave a false "done" claim standing once it's known to be false.**
 

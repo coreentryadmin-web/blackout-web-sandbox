@@ -19,24 +19,50 @@ const EXTS = new Set([".tsx", ".ts", ".jsx", ".js", ".mdx"]);
 const VENDORS =
   /\b(?:Polygon|Massive|Unusual Whales|Anthropic|Claude|Clerk|Whop|Redis|Postgres|Sentry)\b/;
 
-function stripComments(line) {
-  return line
-    .replace(/\/\/.*$/, "")
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\*.*$/g, "");
-}
-
 const hits = [];
+
+/**
+ * Strips comments from a file's source, tracking `/* ... *\/` block-comment
+ * state ACROSS lines. The previous per-line-only stripper missed a block
+ * comment whose opening line (`/** some text` with no closing `*\/` on that
+ * same line — the common JSDoc style) had real content after `/**`, letting a
+ * vendor name in a doc-comment's first line slip through as a false positive.
+ * Returns one "stripped" string per input line, same indexing as the input.
+ */
+function stripCommentsAcrossLines(lines) {
+  let inBlockComment = false;
+  return lines.map((line) => {
+    let working = line;
+    if (inBlockComment) {
+      const end = working.indexOf("*/");
+      if (end === -1) return ""; // whole line still inside the block comment
+      working = working.slice(end + 2);
+      inBlockComment = false;
+    }
+    // Strip any block comments that both open and close on this line (may be more than one).
+    working = working.replace(/\/\*[\s\S]*?\*\//g, "");
+    // A block comment that OPENS here but doesn't close on this line — keep only
+    // what precedes it, and carry the open state into the next line.
+    const openIdx = working.indexOf("/*");
+    if (openIdx !== -1) {
+      working = working.slice(0, openIdx);
+      inBlockComment = true;
+    }
+    return working.replace(/\/\/.*$/, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  });
+}
 
 function scanFile(p) {
   if (!EXTS.has(extname(p))) return;
+  // Test descriptions/comments are developer-facing (test-runner output only),
+  // never rendered to a real user — exempt from the user-facing-copy guard.
+  if (p.endsWith(".test.ts") || p.endsWith(".test.tsx")) return;
   const lines = readFileSync(p, "utf8").split(/\r?\n/);
+  const stripped = stripCommentsAcrossLines(lines);
   lines.forEach((line, i) => {
     if (line.includes("import ") || line.includes("from @") || line.includes("ClerkProvider")) return;
-    const stripped = stripComments(line);
-    if (!stripped.trim()) return;
-    const m = stripped.match(VENDORS);
+    if (!stripped[i].trim()) return;
+    const m = stripped[i].match(VENDORS);
     if (m) hits.push(`${p}:${i + 1}  ${m[0]}`);
   });
 }

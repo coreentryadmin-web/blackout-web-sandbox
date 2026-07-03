@@ -22,6 +22,7 @@ import { runBieDiscovery, fetchDiscoveryIncidents, fetchDataCorrectnessSummary }
 import { bieEmbeddingsConfigured, embedTexts } from "@/lib/bie/embeddings";
 import { searchKnowledge } from "@/lib/bie/knowledge";
 import { detectMissedAlertWindows } from "@/lib/bie/missed-alerts";
+import { countAuthFailures } from "@/lib/error-sink";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { probePgStatStatements } from "@/lib/pg-stat-statements-health";
 import { findStage5Proposals } from "@/lib/bie/stage5-proposals";
@@ -78,6 +79,7 @@ export async function GET() {
     pgStatStatements,
     duplicateAlerts,
     stage5Proposals,
+    authFailures,
   ] =
     await Promise.all([
       runBieDailySelfEval().catch(() => null),
@@ -123,6 +125,11 @@ export async function GET() {
       // Stage 5, step 1: DRY-RUN ONLY. Read-only fs scan, never writes/git — see
       // stage5-proposals.ts's module comment for exactly what this does and does not do.
       findStage5Proposals().catch(() => []),
+      // Stage 3: "security warnings / auth failure monitoring" — Clerk has no
+      // webhook/Backend API for this (confirmed against their docs), so this reads
+      // what AuthFailureObserver.tsx's DOM-observed beacon already wrote, never a
+      // credential. See error-sink.ts's countAuthFailures for the full context.
+      countAuthFailures(24).catch(() => ({ total_24h: 0, by_mode: {}, recent_messages: [] })),
     ]);
 
   // Retrieval probe: only meaningful once the key works. Multiple representative
@@ -192,6 +199,10 @@ export async function GET() {
       // Stage 5, step 1: dry-run text proposals only — see stage5-proposals.ts.
       // Never a diff, never a git action; just "here's an ambiguity for a human."
       stage5_proposals: stage5Proposals,
+      // Stage 3: DOM-observed Clerk sign-in/sign-up failures, last 24h. Closes the
+      // last open Stage 3 item without touching the live auth flow — see
+      // AuthFailureObserver.tsx and countAuthFailures()'s doc comments.
+      auth_failures: authFailures,
       // Every previously persisted report — the improvement trail, newest first.
       report_trail: trail.map((r) => ({ source: r.source, at: r.created_at, preview: r.chunk.slice(0, 200) })),
     },

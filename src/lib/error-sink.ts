@@ -32,7 +32,8 @@ export type ErrorSource =
   | "request_error"
   | "manual"
   | "frontend"
-  | "db_query";
+  | "db_query"
+  | "auth_failure";
 
 export type ErrorContext = {
   source: ErrorSource;
@@ -263,6 +264,48 @@ export async function countRecentErrorEvents(
     return { total, groups };
   } catch {
     return { total: 0, groups: [] };
+  }
+}
+
+export type AuthFailureSummary = {
+  total_24h: number;
+  by_mode: Record<string, number>;
+  recent_messages: string[];
+};
+
+/**
+ * BIE Stage 3: "security warnings / auth failure monitoring." Dedicated (not the
+ * generic top-8 `countRecentErrorEvents` grouping, which could drop a real but
+ * low-volume auth-failure signal if other error sources dominate the window).
+ * Reads only what AuthFailureObserver.tsx's beacon has already written under
+ * source: "auth_failure" — zero new access, same fail-open-to-zero pattern as
+ * every other probe on this report.
+ */
+export async function countAuthFailures(sinceHours = 24): Promise<AuthFailureSummary> {
+  const { dbConfigured, dbQuery } = await import("@/lib/db");
+  if (!dbConfigured()) return { total_24h: 0, by_mode: {}, recent_messages: [] };
+  const hours = Math.min(Math.max(1, Math.round(sinceHours)), 168);
+  try {
+    const { rows } = await dbQuery<{ scope: string | null; message: string; created_at: Date }>(
+      `SELECT scope, message, created_at
+         FROM error_events
+        WHERE source = 'auth_failure' AND created_at > NOW() - ($1 || ' hours')::interval
+        ORDER BY id DESC
+        LIMIT 200`,
+      [String(hours)]
+    );
+    const by_mode: Record<string, number> = {};
+    for (const r of rows) {
+      const mode = r.scope ?? "unknown";
+      by_mode[mode] = (by_mode[mode] ?? 0) + 1;
+    }
+    return {
+      total_24h: rows.length,
+      by_mode,
+      recent_messages: [...new Set(rows.map((r) => r.message))].slice(0, 5),
+    };
+  } catch {
+    return { total_24h: 0, by_mode: {}, recent_messages: [] };
   }
 }
 

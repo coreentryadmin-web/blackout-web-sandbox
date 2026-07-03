@@ -24,6 +24,9 @@ const PUBLIC_ROUTE_ALLOWLIST = new Set([
   // Secured by per-IP rate limit + hard body-size cap, not a guard helper —
   // see src/middleware.ts's isPublicTelemetryRoute exemption + the route file.
   "src/app/api/telemetry/client-error/route.ts",
+  // Same reasoning: a visitor on /sign-in isn't authenticated yet by definition,
+  // so this can't require a guard helper. Same protections as the route above.
+  "src/app/api/telemetry/auth-failure/route.ts",
 ]);
 
 const GUARD_PATTERNS = [

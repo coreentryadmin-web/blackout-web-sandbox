@@ -144,21 +144,13 @@ inventing a number would:
 | Postgres slow-query log (`pg_stat_statements`) | **CHECKED 2026-07-03, not enabled — per explicit user instruction, checked only, never attempted to enable** | `src/lib/pg-stat-statements-health.ts`'s `probePgStatStatements()` — queries `pg_extension` for the extension; reports `enabled: true` + tracked-statement count if present, `enabled: false` if not. Enabling it is a server-level Postgres config change (the extension must already be in `shared_preload_libraries`, which this app cannot set from SQL alone and may need a restart) — left to the user's explicit go-ahead, never decided here. |
 | Redis internals (memory, key count, connected clients, uptime) | **SHIPPED** (live snapshot, `/api/admin/bie-report` `redis`) | `src/lib/redis-health.ts` — a dedicated diagnostic-only client (mirrors `uw-shared-cache.ts`'s isolation pattern, never touches the general-purpose cache path), one-shot `INFO`+`DBSIZE` then disconnect |
 | Clerk/UW/Polygon spend dashboards | Those are billing dashboards on the vendor's side, not an API we call | Would need each vendor's usage/billing API if they expose one — separate research per vendor, not assumed to exist |
-| Security warnings / auth failure monitoring | **CONFIRMED BLOCKED 2026-07-03, not just inconclusive anymore** | Researched Clerk's actual API surface (webhook event catalog, Backend API reference, changelog) rather than the dashboard. Confirmed: Clerk's webhooks only fire on resource state changes (`user.*`, `session.created/ended/removed/revoked`, `organization.*`, etc.) — no `sign_in.failed` or equivalent, because a rejected auth attempt never creates/changes a resource. The Backend API has no "sign-in attempts"/security-events/audit-log endpoint either (only `POST /users/{id}/lock` and `/unlock` — you can act on lockout state, not read failure history). The data DOES exist and IS named exactly `sign_in.failed` / `sign_in.password.failed` / `sign_in.attempt_first_factor.failed` etc. — but only inside Clerk's Dashboard-only "Application Logs" feature (shipped 2026-05-06), which has no documented webhook or Backend API delivery. **This is now a confirmed platform limitation, not an open question** — Clerk simply doesn't expose this event programmatically today. The only way to get this signal at all would be catching failures client-side on our OWN sign-in page — but that requires replacing the prebuilt `<SignIn>` component with a custom flow built on `useSignIn()`, a real rewrite of a critical, revenue-facing auth surface. That's a scope/risk decision for the user, not something to build unilaterally. |
+| Security warnings / auth failure monitoring | **SHIPPED 2026-07-03 — without a sign-in rewrite** | Confirmed Clerk has no webhook/Backend API for a failed sign-in (their webhooks only fire on resource state changes; the data exists only in a Dashboard-only "Application Logs" UI with no programmatic access). Initially concluded the only path was replacing the prebuilt `<SignIn>` with a custom `useSignIn()` flow — a large rewrite of a revenue-critical page. Found a safer alternative before building that: Clerk's prebuilt component already renders a visible error on a failed attempt; `AuthFailureObserver.tsx` mounts as a sibling wrapper and watches for that error via `MutationObserver`, reporting only the visible error text (never a credential) via a new `/api/telemetry/auth-failure` beacon into the existing `error_events` sink. Zero changes to the actual sign-in component or its behavior — see `docs/audit/FINDINGS.md` for the full write-up. |
 
 **The honest line, updated 2026-07-03:** Redis internals, Postgres pool
 stats, Railway deploy status, Railway resource usage, Railway env-var
-presence, Railway runtime error counts, and a pg_stat_statements presence
-check are ALL now live in the BIE report — every item in this table is
-either SHIPPED or explicitly, verifiably blocked. Nothing in this stage is
-"not tried yet" anymore. Clerk auth-failure mirroring is confirmed
-impossible via any Clerk API today (see above) — the only remaining path is
-a client-side sign-in-flow rewrite, which is a real product-risk decision,
-not a research gap. **User decision, 2026-07-03: don't build it** — offered
-the choice explicitly (rewrite the sign-in flow vs. leave the gap
-documented vs. scope it first) and the user chose to leave Clerk
-auth-failure monitoring as a **permanent, accepted gap** rather than touch
-the live sign-in flow for it. Stage 3 is now fully closed — every item is
+presence, Railway runtime error counts, a pg_stat_statements presence
+check, and Clerk auth-failure monitoring are ALL now live in the BIE
+report. Stage 3 is now fully closed — every item is
 either shipped or a deliberate, user-confirmed non-goal, not an open
 question.
 
