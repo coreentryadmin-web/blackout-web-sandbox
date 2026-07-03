@@ -160,7 +160,7 @@ Logs, resource-usage metrics, and env-var presence/staleness auditing
 remain manual-only — genuinely separate, larger pieces of work, not
 rolled into this change.
 
-## Stage 4 — Unified audit trail per alert (IN PROGRESS — schema + all three write-paths shipped, query surface next)
+## Stage 4 — Unified audit trail per alert (SHIPPED — schema, all three write-paths, and the query surface)
 
 The ask specifies a full audit trail per alert: input data, calculation
 logic, decision logic, confidence score, timestamp, source API, rate-limit
@@ -185,9 +185,11 @@ writes to. Full design in `docs/bie/AUDIT-TRAIL-SCHEMA.md`; rollout status:
    rejection data by construction (it resumes from an already-vetted
    checkpoint, skipping synthesis entirely) — a known, documented limitation,
    not a regression.
-5. Query-surface PR (`/api/admin/bie-report` audit_trail block) — next up,
-   now that all three write-paths (0DTE, Night Hawk published, Night Hawk
-   rejected) are live and there's real data to show.
+5. Query-surface PR (`/api/admin/bie-report` `audit_trail` block) —
+   **shipped 2026-07-03.** `fetchAlertAuditTrail()` reads recent rows +
+   per-type counts + an honest (currently 0%, unpopulated) source-API
+   attribution figure; rendered as a new "Audit trail" panel in
+   `AdminBieDashboard.tsx`. Stage 4 is now fully shipped end to end.
 
 ## Stage 5 — BIE opens PRs autonomously
 

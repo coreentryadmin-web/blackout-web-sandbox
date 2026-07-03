@@ -77,6 +77,21 @@ type BieReportPayload = {
   } | null;
   open_incidents?: DiscoveryIncident[];
   correctness?: CorrectnessSummary | null;
+  audit_trail?: {
+    recent: Array<{
+      id: number;
+      alert_type: string;
+      ticker: string;
+      direction: string | null;
+      fired_at: string;
+      confidence_score: number | null;
+      confidence_label: string | null;
+      trigger_reason: string | null;
+      outcome: string | null;
+    }>;
+    counts_by_type: Record<string, number>;
+    source_api_attribution_pct: number;
+  } | null;
   report_trail?: Array<{ source: string; at: string; preview: string }>;
 };
 
@@ -94,7 +109,7 @@ const ROADMAP: Stage[] = [
   { n: 1, name: "Repo, docs, API usage, schemas", status: "SHIPPED", blurb: "Knowledge corpus ingested + embedded (Voyage); platform telemetry monitoring is real, not aspirational." },
   { n: 2, name: "Logs, errors, cron/worker health", status: "SHIPPED", blurb: "Backend + frontend error capture, cron health, Postgres pool, Redis internals, data-integrity/data-correctness validators all wired into discovery." },
   { n: 3, name: "Infra access (Railway)", status: "IN PROGRESS", blurb: "Deploy status now wired into this report live (see the Railway chip above) — first automated use, not just manual queries. Deploy/build logs, resource usage, and env-var auditing are still manual-only." },
-  { n: 4, name: "Unified per-alert audit trail", status: "IN PROGRESS", blurb: "alert_audit_log schema + all three write-paths shipped (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested). Only the query-surface PR (/api/admin/bie-report audit_trail block) remains." },
+  { n: 4, name: "Unified per-alert audit trail", status: "SHIPPED", blurb: "alert_audit_log schema, all three write-paths (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested), and the query surface (Audit trail panel below) are all live. Source-API attribution (source_apis column) is still unpopulated by any write-path — reported honestly as 0% until a future PR threads it through." },
   { n: 5, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. Explicitly secondary to data integrity per the charter." },
 ];
 
@@ -172,6 +187,7 @@ export function AdminBieDashboard() {
   const incidents = data?.open_incidents ?? [];
   const correctness = data?.correctness ?? null;
   const openIssueCount = incidents.length + (correctness?.flags.length ?? 0);
+  const auditTrail = data?.audit_trail ?? null;
 
   return (
     <div className="admin-bie-dashboard">
@@ -312,6 +328,54 @@ export function AdminBieDashboard() {
             Last data-correctness run: {correctness.independently_confirmed} independently confirmed,{" "}
             {correctness.consistency_only} consistency-only (honest coverage gap, not a guarantee).
           </p>
+        )}
+      </GlassPanel>
+
+      {/* Stage 4 query surface — the unified alert_audit_log view across all three
+          write-paths (0DTE, Night Hawk published, Night Hawk rejected). Reads only
+          what those write-paths already recorded; no new decision logic here. */}
+      <GlassPanel kicker="Every alert, one schema" title="Audit trail" accent="cyan">
+        {!auditTrail || auditTrail.recent.length === 0 ? (
+          <p className="admin-bie-empty-text">No audit-trail rows yet.</p>
+        ) : (
+          <>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Ticker</th>
+                  <th>Dir</th>
+                  <th>Confidence</th>
+                  <th>Trigger</th>
+                  <th>Outcome</th>
+                  <th>Fired</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditTrail.recent.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.alert_type}</td>
+                    <td>{r.ticker}</td>
+                    <td>{r.direction ?? "—"}</td>
+                    <td>
+                      {r.confidence_score != null ? Math.round(r.confidence_score) : "—"}
+                      {r.confidence_label ? ` (${r.confidence_label})` : ""}
+                    </td>
+                    <td className="admin-bie-issue-detail">{r.trigger_reason ?? "—"}</td>
+                    <td>{r.outcome ?? "pending"}</td>
+                    <td className="admin-bie-issue-meta">{fmtEt(r.fired_at)} ET</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+            <p className="admin-bie-coverage-note">
+              {Object.entries(auditTrail.counts_by_type)
+                .map(([type, n]) => `${n} ${type}`)
+                .join(" · ")}{" "}
+              total · source-API attribution: {auditTrail.source_api_attribution_pct}%{" "}
+              (unpopulated by any write-path yet — honest 0, not a guess).
+            </p>
+          </>
         )}
       </GlassPanel>
 

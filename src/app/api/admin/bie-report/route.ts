@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import {
   dbConfigured,
+  fetchAlertAuditTrail,
   fetchBieInteractionStats,
   fetchBieKnowledge,
   fetchBieKnowledgeStats,
@@ -46,7 +47,7 @@ export async function GET() {
     return NextResponse.json({ available: false, reason: "database not configured" });
   }
 
-  const [selfEval, calibration, discovery, stats, knowledge, probe, trail, dbPool, redis, railway, incidents, correctness] =
+  const [selfEval, calibration, discovery, stats, knowledge, probe, trail, dbPool, redis, railway, incidents, correctness, auditTrail] =
     await Promise.all([
       runBieDailySelfEval().catch(() => null),
       runBieCalibration(14).catch(() => null),
@@ -67,6 +68,10 @@ export async function GET() {
       // real ack/resolve buttons and colored status badges, not just prose.
       fetchDiscoveryIncidents().catch(() => []),
       fetchDataCorrectnessSummary().catch(() => null),
+      // Stage 4 query surface — the unified alert_audit_log view (0DTE, Night Hawk
+      // published, Night Hawk rejected). Read-only, same fail-open pattern as every
+      // other probe here: a query failure shows as null, never breaks the report.
+      fetchAlertAuditTrail(20).catch(() => null),
     ]);
 
   // Retrieval probe: only meaningful once the key works. Multiple representative
@@ -118,6 +123,8 @@ export async function GET() {
       // as real fields so the admin UI can render status badges + clickable actions.
       open_incidents: incidents,
       correctness,
+      // Stage 4: unified per-alert audit trail across all three write-paths.
+      audit_trail: auditTrail,
       // Every previously persisted report — the improvement trail, newest first.
       report_trail: trail.map((r) => ({ source: r.source, at: r.created_at, preview: r.chunk.slice(0, 200) })),
     },

@@ -7,6 +7,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE Stage 4 complete: query surface shipped — `alert_audit_log` now readable end to end
+**Status:** SHIPPED (`feat/bie-stage4-query-surface`). This was the last remaining piece of Stage 4 (`docs/bie/AUDIT-TRAIL-SCHEMA.md`): schema and all three write-paths (0DTE, Night Hawk published, Night Hawk rejected) were already live, but nothing read `alert_audit_log` back out — it was write-only.
+
+**Fix:** new `fetchAlertAuditTrail()` (`db.ts`) runs three read-only queries in parallel — last 20 rows, `GROUP BY alert_type` counts, and a `source_apis IS NOT NULL` coverage ratio — and returns them as one summary. Wired into `/api/admin/bie-report`'s new `audit_trail` field (same fail-open `.catch(() => null)` pattern as every other probe on that route) and rendered as a new "Audit trail" panel in `AdminBieDashboard.tsx` (recent-rows table + per-type counts + attribution note).
+
+**Honesty note, not a bug:** `source_api_attribution_pct` reports a real 0% today, not a placeholder — no write-path populates the `source_apis` column yet (the 4a/4b options in the design doc are still unbuilt). Surfaced as a real computed field rather than baked into static prose, so the day a write-path starts populating it, the panel reflects that with zero code changes here — and BIE never claims a coverage number it can't back, per the platform's Stage-4-adjacent "never invent a correctness verdict" charter.
+
+**Verification:** 803/803 tests (unchanged — this function needs a live Postgres to test meaningfully, same precedent as `getDatabasePoolStats`/`fetchDiscoveryIncidents`, neither of which has a unit test either), `tsc --noEmit` + build clean. Not exercised against a live Postgres from this sandbox; will confirm live via the admin panel once deployed.
+
+**Stage 4 status:** fully shipped — schema, all three write-paths, and the query surface.
+
+---
+
 ## 🧠 BIE Stage 4: Night Hawk rejected-play write-path shipped — all three audit-trail write-paths now live
 **Status:** SHIPPED (`feat/bie-nighthawk-rejected-writepath`). `generateEditionPlays()` (`claude-edition.ts`) now returns `geometryRejected: Array<{ticker, drops, play}>` instead of only `console.warn`ing it. `edition-builder.ts` calls the new `recordNighthawkRejectedAuditTrail()` immediately after destructuring the result — before any of the function's existing early-return branches — so a rejection is recorded regardless of whether the run ultimately publishes anything (a rejected play is never written anywhere else, so this is its only record).
 

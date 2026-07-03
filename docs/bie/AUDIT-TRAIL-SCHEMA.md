@@ -190,9 +190,16 @@ seeing real data.
    no rejection data by construction (unchanged, documented limitation, not
    a regression). Stage 4 write-paths (0DTE + Night Hawk published + Night
    Hawk rejected) are now all shipped; only the query-surface PR remains.
-5. **Query surface PR:** extend `/api/admin/bie-report` with an
-   `audit_trail` block (recent rows, source-API attribution coverage %) —
-   only after there's real data to show.
+5. **Query surface PR — SHIPPED 2026-07-03.** `fetchAlertAuditTrail()`
+   (`db.ts`) reads the last 20 rows plus a `GROUP BY alert_type` count and an
+   honest `source_api_attribution_pct` (always 0 today — no write-path
+   populates `source_apis` yet, reported as a real number rather than baked
+   into prose so it updates itself the day that changes). Wired into
+   `/api/admin/bie-report`'s `audit_trail` block and rendered as a new
+   "Audit trail" panel in `AdminBieDashboard.tsx`, same fail-open pattern as
+   every other probe on that page (a query failure shows as `null`, never
+   breaks the report). This closes Stage 4 — schema, all three write-paths,
+   and the query surface are now all shipped.
 
 Explicitly out of scope for Stage 4: **missed-alert detection** (needs a
 ground-truth "should have fired" definition first — logging more about

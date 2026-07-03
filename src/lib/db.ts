@@ -2979,6 +2979,72 @@ export async function insertNighthawkRejectedAuditLog(row: {
   );
 }
 
+export type AlertAuditTrailRow = {
+  id: number;
+  alert_type: string;
+  ticker: string;
+  direction: string | null;
+  fired_at: string;
+  confidence_score: number | null;
+  confidence_label: string | null;
+  trigger_reason: string | null;
+  outcome: string | null;
+};
+
+export type AlertAuditTrailSummary = {
+  recent: AlertAuditTrailRow[];
+  counts_by_type: Record<string, number>;
+  // Honest, not aspirational: no write-path populates source_apis yet (see the
+  // 4a/4b attribution options in docs/bie/AUDIT-TRAIL-SCHEMA.md) — this is always
+  // 0 today. Exposed as a real field (not baked into a paragraph) so the day a
+  // write-path starts populating it, the admin panel reflects that with zero
+  // code changes here, and BIE never has to claim a coverage number it can't back.
+  source_api_attribution_pct: number;
+};
+
+/** Stage 4 query surface — the unified cross-product view over `alert_audit_log`
+ *  (0DTE, Night Hawk published, Night Hawk rejected). Reads only what the three
+ *  write-paths already wrote; this function itself has zero decision logic. */
+export async function fetchAlertAuditTrail(limit = 20): Promise<AlertAuditTrailSummary> {
+  await ensureSchema();
+  const cappedLimit = Math.min(Math.max(limit, 1), 100);
+  const [recentRes, countsRes, attributionRes] = await Promise.all([
+    dbQuery<QueryResultRow>(
+      `SELECT id, alert_type, ticker, direction, fired_at, confidence_score,
+              confidence_label, trigger_reason, outcome
+       FROM alert_audit_log ORDER BY fired_at DESC LIMIT $1`,
+      [cappedLimit]
+    ),
+    dbQuery<QueryResultRow>(`SELECT alert_type, COUNT(*)::int AS n FROM alert_audit_log GROUP BY alert_type`),
+    dbQuery<QueryResultRow>(
+      `SELECT COUNT(*)::int AS total, COUNT(source_apis)::int AS with_apis FROM alert_audit_log`
+    ),
+  ]);
+
+  const counts_by_type: Record<string, number> = {};
+  for (const r of countsRes.rows) counts_by_type[String(r.alert_type)] = Number(r.n) || 0;
+
+  const attrRow = attributionRes.rows[0];
+  const total = attrRow ? Number(attrRow.total) || 0 : 0;
+  const withApis = attrRow ? Number(attrRow.with_apis) || 0 : 0;
+
+  return {
+    recent: recentRes.rows.map((r) => ({
+      id: Number(r.id),
+      alert_type: String(r.alert_type),
+      ticker: String(r.ticker),
+      direction: r.direction != null ? String(r.direction) : null,
+      fired_at: new Date(String(r.fired_at)).toISOString(),
+      confidence_score: r.confidence_score != null ? Number(r.confidence_score) : null,
+      confidence_label: r.confidence_label != null ? String(r.confidence_label) : null,
+      trigger_reason: r.trigger_reason != null ? String(r.trigger_reason) : null,
+      outcome: r.outcome != null ? String(r.outcome) : null,
+    })),
+    counts_by_type,
+    source_api_attribution_pct: total > 0 ? Math.round((withApis / total) * 1000) / 10 : 0,
+  };
+}
+
 function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
   return {
     session_date: isoDateString(r.session_date),
