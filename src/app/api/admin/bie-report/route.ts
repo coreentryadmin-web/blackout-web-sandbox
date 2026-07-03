@@ -50,8 +50,11 @@ export async function GET() {
 
   // Retrieval probe: only meaningful once the key works — asks the corpus a
   // question the platform docs answer, returns what surfaced and how similar.
+  // Floor 0 ON PURPOSE (diagnostic): production retrieval keeps searchKnowledge's
+  // default floor; this probe shows the RAW top-3 so the floor can be tuned on
+  // evidence — first live run returned empty at 0.55, so we need the distribution.
   const retrieval = probe.ok
-    ? await searchKnowledge("How are 0DTE Command plays graded and when do they exit?", 3).catch(() => [])
+    ? await searchKnowledge("How are 0DTE Command plays graded and when do they exit?", 3, 0).catch(() => [])
     : [];
 
   return NextResponse.json(
