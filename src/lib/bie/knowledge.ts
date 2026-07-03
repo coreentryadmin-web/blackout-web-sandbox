@@ -101,7 +101,20 @@ export type RetrievedChunk = { source: string; kind: string; chunk: string; simi
 /** Top-k knowledge for a question — embeds the query, ranks stored chunks by
  *  cosine in Node (corpus is thousands of chunks, not millions). Returns [] when
  *  embeddings aren't configured or nothing clears the similarity floor. */
-export async function searchKnowledge(query: string, k = 3, minSimilarity = 0.55): Promise<RetrievedChunk[]> {
+// Evidence-calibrated 2026-07-03 (docs/audit/FINDINGS.md — BIE retrieval-floor
+// entry): 4 representative questions against the live voyage-3 corpus returned
+// correct top-1 matches at 0.348-0.562 similarity and correct top-3 matches
+// down to 0.256 — the prior 0.55 floor (an untested guess predating any real
+// embeddings) passed only 1 of 12 genuinely relevant hits. 0.30 keeps every
+// top-1 match and 10 of 12 total hits from that evidence set while still
+// excluding pure noise. Re-derive from a fresh probe set before moving it again.
+const DEFAULT_MIN_SIMILARITY = 0.3;
+
+export async function searchKnowledge(
+  query: string,
+  k = 3,
+  minSimilarity = DEFAULT_MIN_SIMILARITY
+): Promise<RetrievedChunk[]> {
   if (!dbConfigured() || !bieEmbeddingsConfigured()) return [];
   try {
     const [qEmb] = await embedTexts([query], "query");

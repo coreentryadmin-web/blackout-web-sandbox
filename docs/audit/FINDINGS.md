@@ -214,6 +214,24 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 
 **Blast radius:** consumers — Largo `get_congress_unusual` + `get_unusual_trades` tools, NH dossier congress lane, grid congress panel — all pass rows through generically; no shape change. Plan probes: `recent-trades`/`congress-trader`/`late-reports`/`politicians` all 200 on our key; only `unusual-trades` is gated. If the true "unusual" curation matters, it is a UW plan upgrade (contact dev@unusualwhales.com) — buy decision, documented, not assumed.
 
+## 🔴 FIXED 2026-07-03 — BIE retrieval floor unreachable in practice (0.55 guess vs real voyage-3 distribution)
+**Status:** FIXED (`fix/bie-retrieval-floor-evidence`). Second BIE bug found on the Voyage key's first night — `searchKnowledge`'s 0.55 minimum-cosine floor was set before any real embeddings existed (untested guess in the original Phase 2 PR). The moment the key went live, retrieval was silently returning empty for almost every real question — corpus healthy, key working, floor unreachable.
+
+**Evidence (live production probe, 4 representative questions × top-3 hits, 12 data points):**
+
+| Question | Correct top hit | Similarity |
+|---|---|---|
+| 0DTE Command grading/exits | `docs/audit-log-2026-06-25.md` | 0.384 |
+| BIE's own five layers | `docs/bie/ARCHITECTURE.md` | 0.562 |
+| Night Hawk scoring | `docs/audit/10-PRODUCT-UX.md` | 0.465 |
+| 0DTE scanner gates | `docs/audit-log-2026-06-25.md` | 0.348 |
+
+Every top-1 hit across all 4 questions was the genuinely correct document. Only 1 of 12 total hits cleared the old 0.55 floor — the other 11, including 3 of 4 top-1 matches, were being silently discarded as "not similar enough."
+
+**Fix:** `DEFAULT_MIN_SIMILARITY` lowered to 0.30 in `src/lib/bie/knowledge.ts` — keeps every top-1 match and 10/12 hits from the evidence set while still excluding the two weakest (noise-adjacent) hits. Comment documents the evidence and instructs re-deriving from a fresh probe before moving it again (same standard `calibration.ts` holds itself to).
+
+**Process note:** deliberately did NOT retune off the first single-question probe that returned empty — built a 4-question evidence probe first (`retrieval_probes[]` in `/api/admin/bie-report`, kept as a permanent corpus-health diagnostic), confirmed the pattern held across topics, then fixed. Report-first, not noise-reactive.
+
 ## 🟠 MEDIUM — VIX source/freshness inconsistency
 App `indices.vix.price = 17.18` vs Polygon prior-close `16.45` (4.4%), while SPX/SPY match prior-close exactly — the app's VIX uses a different source/timestamp than SPX/SPY. Confirm with same-timestamp live compare at open.
 
