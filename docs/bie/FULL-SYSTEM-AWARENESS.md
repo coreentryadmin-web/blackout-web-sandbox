@@ -1,12 +1,72 @@
 # BIE Full System Awareness — roadmap and honest status
 
-**The ask (verbatim intent, 2026-07-03):** BIE should have complete operational
-awareness of BLACKOUT — logs, infra, APIs, database, alerts, business logic —
-and become the platform's operating brain: it should not just answer questions,
-it should actively find what's wrong, why, how serious, and what to fix first.
-Every number traceable, every calculation reproducible, every rule versioned,
-every alert carrying a full audit trail. The model should never invent a fact;
-when it lacks validated access to something, it must say so.
+## Primary objective (formal charter, 2026-07-03 — supersedes the earlier informal ask below)
+
+The primary goal of BIE is to make the entire platform **trustworthy**. Every
+number, value, flow, heatmap, matrix, SPX Slayer signal, alert, dashboard
+metric, chart, ranking, and generated play shown to users must be accurate,
+validated, traceable, and explainable.
+
+**Explicit priority order, stated by the user directly: data integrity is
+BIE's first responsibility, ahead of improving trade recommendations.**
+Everything in this doc's rollout should be sequenced accordingly — the
+validation/traceability work below outranks scoring/calibration work.
+
+No user-facing value should appear on the site unless it can be traced back
+to its source, validated against expected logic, and checked for freshness.
+BIE must continuously compare source API data → backend-transformed data →
+database-stored data → cached data → frontend-displayed data, and flag any
+mismatch, stale value, missing field, calculation error, duplicate, bad
+timestamp, bad transformation, or suspicious output immediately.
+
+Every important value needs an audit trail: source, timestamp, raw input,
+transformation logic, calculation version, validation result, confidence
+level, display location, final user-facing value. Every generated play
+needs: why it was generated, what data was used, what market context
+existed, what confidence score was assigned, how it performed, whether the
+thesis was correct, what failed, what should improve next time. The system
+must learn from both data errors and trade-outcome errors — bad data, wrong
+calculations, stale data, weak signals, false positives, missed
+opportunities, bad rankings, bad confidence scoring, broken UI logic, API
+issues, rate limits, infra failures, backend/frontend bugs, logic gaps.
+
+**The one architectural constraint that governs everything above: BIE (the
+LLM layer) must never be the source of truth for correctness.** Accuracy
+comes from validation systems, audit trails, deterministic calculations,
+and source-of-truth checks — all plain code, independently verifiable, none
+of it "trust the model." BIE's job is to detect, explain, rank, and help fix
+issues that a validation layer already found — never to decide on its own
+that something is correct. This is not a new principle — it's the same rule
+L1 Deterministic already holds (no LLM computes a trading number) — this
+charter extends it to say BIE can't "invent" a correctness verdict either.
+
+**Where this already exists, not just aspirational:** `data-correctness`
+(every 30min RTH) and `data-integrity` (every 5min RTH) crons already run
+exactly this validation layer in production — shadow-recompute/invariant/
+sanity/cross-provider/cross-tool/freshness checks across heat maps, SPX
+desk, HELIX flows, Night's Watch, Night Hawk, track record — and already
+distinguish "independently confirmed" from "consistency-only" (never a
+false green when there's no real second source). `data-integrity` auto-opens
+real incidents (`admin_incidents`) on any discrepancy. **The gap is that BIE
+doesn't read either system's output yet** — discovery only sees generic cron
+pass/fail today, not the substance of what these validators already found.
+Closing that gap is the immediate next step (see Stage 2 addendum below).
+
+The Stage 4 audit-trail design (`docs/bie/AUDIT-TRAIL-SCHEMA.md`) already
+maps closely onto the per-value audit-trail requirement above (source,
+timestamp, decision logic, confidence, output) — written before this formal
+charter existed, but scoped consistently with it.
+
+---
+
+**The informal ask (verbatim intent, 2026-07-03, kept for history):** BIE
+should have complete operational awareness of BLACKOUT — logs, infra, APIs,
+database, alerts, business logic — and become the platform's operating
+brain: it should not just answer questions, it should actively find what's
+wrong, why, how serious, and what to fix first. Every number traceable,
+every calculation reproducible, every rule versioned, every alert carrying
+a full audit trail. The model should never invent a fact; when it lacks
+validated access to something, it must say so.
 
 This doc is the honest map: what's true today, what ships next with zero new
 access, and what genuinely needs a decision or credential from the user. It
@@ -76,10 +136,10 @@ inventing a number would:
 
 | Item | Blocker | What it would take |
 |---|---|---|
-| Railway logs (raw container stdout/stderr) | No Railway API token configured | A Railway API token (project-scoped, read-only for logs is enough) — user decision, like the Voyage key was |
-| Railway deployment status/errors | Same | Same token; Railway's GraphQL API exposes deploy status |
-| Railway resource usage (CPU/memory) | Same | Same token; Railway exposes per-service metrics via GraphQL |
-| Railway environment variables (listing/auditing) | Same, PLUS this is sensitive — should be read-only and never surfaced verbatim (secrets) | Same token; BIE would report *presence/absence* and *staleness*, never values |
+| Railway logs (raw container stdout/stderr) | **ACCESS CONFIRMED LIVE 2026-07-03** (see below) — not yet wired into BIE's automated discovery, that's the remaining work | Manually queried `deploymentLogs`/`buildLogs` this session via a project-scoped Railway API token (`Project-Access-Token` header, `backboard.railway.com/graphql/v2`) — used it to root-cause a real deploy failure and, in the process, found and fixed a live P0 secret leak (`docs/audit/FINDINGS.md`) |
+| Railway deployment status/errors | Same — access confirmed, automation pending | Same token; `deployments(input:{projectId,environmentId,serviceId})` returns status/commit/timestamps per deploy — exactly what was needed to determine which of two back-to-back merges was actually live |
+| Railway resource usage (CPU/memory) | Access confirmed (token works), specific metrics query not yet tried | Same token; Railway exposes per-service metrics via GraphQL — untested this session, next to try |
+| Railway environment variables (listing/auditing) | Access confirmed (token works), not yet queried — still must stay read-only and never surface values verbatim | Same token; BIE would report *presence/absence* and *staleness*, never values |
 | Redis usage / connection pool internals | No Redis `INFO`/`CLIENT LIST` introspection wired | Buildable with zero new access (Redis is already connected) — genuinely just not built yet, unlike the Railway items |
 | Postgres connection pool saturation | **SHIPPED** (live snapshot, `/api/admin/bie-report` `db_pool`) | `getDatabasePoolStats()` (already existed in `db.ts`, used by `admin-api-dashboard.ts`/`market-health.ts`) — now surfaced in the BIE panel too, with a visual flag when `waiting > 0` (queueing pressure) |
 | Postgres slow-query log (`pg_stat_statements`) | NOT YET | Not confirmed enabled on the Railway instance; a genuinely separate piece from pool stats |
@@ -87,10 +147,23 @@ inventing a number would:
 | Clerk/UW/Polygon spend dashboards | Those are billing dashboards on the vendor's side, not an API we call | Would need each vendor's usage/billing API if they expose one — separate research per vendor, not assumed to exist |
 | Security warnings / auth failure monitoring | Clerk logs auth events on Clerk's side; we don't currently mirror failures into our own telemetry | Buildable: hook Clerk webhook events (already have webhook infra) into `error_events` or a new table |
 
-**The honest line:** Redis internals, Postgres pool stats, and Clerk
-auth-failure mirroring are Stage 2-equivalent (buildable now, just not done).
-Railway logs/deploys/resources/env vars are Stage 3-blocked on a credential
-only the user can provide — same pattern as the Voyage key.
+**The honest line, updated 2026-07-03:** Redis internals, Postgres pool
+stats, and Clerk auth-failure mirroring are Stage 2-equivalent (buildable
+now, just not done). Railway logs/deploys/resources/env vars **are no
+longer credential-blocked** — a project-scoped token was provided and
+confirmed working this session (the earlier account-level token attempts
+failed because `me`/`projects` are account-scoped queries a *project*
+token can't answer; `projectToken { projectId environmentId }` is the
+correct project-token query and returned real IDs immediately). What
+remains is **integration, not access**: the token currently lives only in
+this Claude Code session's own scratchpad (used manually, ad hoc, this
+session) — it is not yet wired into `runBieDiscovery()` or any scheduled
+job the deployed app itself runs, so BIE's automated daily reports do not
+yet include Railway signal. Turning "I can query this by hand" into
+"BIE's discovery report includes this automatically" is real follow-up
+work: decide where the token should live for automated use (a Railway
+service env var the app reads, vs. a separate ops-only process), then add
+a `railway-status.ts` provider analogous to `redis-health.ts`.
 
 ## Stage 4 — Unified audit trail per alert (design work, not yet started)
 
