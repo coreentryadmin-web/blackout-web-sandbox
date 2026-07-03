@@ -209,14 +209,14 @@ async function main() {
   if (uTideRow) rec('flow: UW market-tide latest (ground truth)', 'INFO', `date=${uTideRow.date} netCallPrem=${uTideRow.net_call_premium} netPutPrem=${uTideRow.net_put_premium} netVol=${uTideRow.net_volume}`);
 
   // --- track record arithmetic ---
-  if (P.track) {
+  if (P.track?.error) {
+    rec('track: admin-gated API', 'INFO', `skipped — ${P.track.error} (requireAdminApi; verify via data-correctness cron)`);
+  } else if (P.track) {
     const tc = num(P.track.total_closed), w = num(P.track.wins), l = num(P.track.losses), be = num(P.track.breakeven), wr = num(P.track.win_rate_pct);
     rec('track: wins+losses+breakeven == total_closed', (w + l + be === tc) ? 'PASS' : 'FAIL', `${w}+${l}+${be}=${w + l + be} vs ${tc}`);
     const exp = tc > 0 ? Math.round(w / tc * 100) : 0; rec('track: win_rate_pct correct', Math.abs(wr - exp) <= 1 ? 'PASS' : 'FAIL', `reported=${wr} computed≈${exp}`);
     if (w === 0 && tc > 0) rec('track: 0 wins across all closed trades', 'WARN', `wins=0 losses=${l}/${tc} — verify settlement vs genuine losing streak`);
   }
-
-  // --- malformed number scan (all fetched payloads) ---
   let flagged = 0;
   for (const [name, p] of Object.entries(P)) { if (!p) continue; const out = []; scan(p, '', out); if (out.length) { flagged++; rec(`malformed: ${name}`, 'WARN', out.slice(0, 3).join(' | '), { suspects: out.slice(0, 20) }); } }
   rec('malformed scan complete', flagged ? 'WARN' : 'PASS', `${Object.values(P).filter(Boolean).length} payloads, ${flagged} with suspect numeric formatting (unrounded floats)`);

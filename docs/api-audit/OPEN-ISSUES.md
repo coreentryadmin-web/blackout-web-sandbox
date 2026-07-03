@@ -827,6 +827,80 @@ Last updated: 2026-06-30 17:45 ET
 > Canonical audit probe list: `docs/api-audit/AUDIT-SKILL-REFERENCE.md` (in-repo SKILL:
 > `.cursor/skills/platform-audit/SKILL.md`).
 
+## RTH comprehensive sweep — 2026-07-01 ~12:05–12:30 ET (pass 1 — RTH open)
+
+**Session:** Wed 1 Jul 2026, 12:05–12:30 ET (**RTH open** — US equity session 9:30 AM–4:00 PM ET). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp users deleted post-pass).
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` (initial) | ❌ `pg` missing locally → `npm install` |
+| `npm run validate:rth-open` (final) | ✅ GREEN — after SSL fix + socket-health probe + manual cron warm |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 73 consistency-only |
+| `npm run ops:collect` | ✅ 0 action items |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (46 pass) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (47 pass after admin-gated track-record fix) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers × 32 checks, 0 matrix flags |
+| `node scripts/audit/data-validator.mjs` | ✅ GREEN (14 pass, 0 fail after admin-gated track skip) |
+
+### Fix shipped this session
+
+| Issue | Root cause | Fix | PR |
+|---|---|---|---|
+| RTH-open Postgres SSL false RED | `rth-open-check.mjs` used inline `ssl:{rejectUnauthorized:false}` — breaks Railway `proxy.rlwy.net` (plain TCP) | Use shared `createAuditClient` / `auditPgSsl` from `pg-audit.mjs` | `fix/rth-open-pg-ssl` |
+| Audit false P1 on track-record 401 | `/api/public/track-record` admin-gated (`requireAdminApi`) since Jun 2026 | `full-site-deep-audit` + `data-validator` treat 401/error as expected | same PR |
+
+### API sweep (CRON bearer — ~12:08 ET)
+
+| Endpoint | HTTP | Notes |
+|---|---|---|
+| `/api/market/spx/desk` | 200 | price 7517.31, VIX 16, γ-flip 7479.36, regime bullish |
+| `/api/market/gex-positioning?ticker=SPX` | 200 | flip 7479.43, call 7550, put 7400 |
+| `/api/market/gex-positioning?ticker=SPY` | 200 | flip 746.01, call 750, put 745, spot 748.95 |
+| `/api/grid/*` (8 panels) | 200 | all finite numbers |
+| `/api/market/nighthawk/edition` | 200 | 2 plays for 2026-07-01; market_recap SPX 7499.36 |
+| `/api/market/flows` | 200 | 200 rows, Σ $145M premium |
+| **SPX oracle** | ✅ | desk 7516.88 vs Polygon 7517.53 (Δ 0.65) |
+
+### Browser sweep (premium admin — all 7 pages)
+
+| Page | Hard load | Live update | Console | Notes |
+|---|---|---|---|---|
+| `/dashboard` | ~14.5s | ✅ ~8–10s | CSP report-only + transient 503s (resolved) | SPX 7517+, GEX walls live, flow alerts cycling |
+| `/flows` | ~3s | ✅ SSE ~8–20s | CSP only | 7+ tape alerts (PDD, ANET, CAT, etc.) |
+| `/heatmap` Matrix | ~3s | ✅ LIVE badge | CSP + preload | SPY 749.86; flip 746, call 758, put 745 |
+| `/heatmap` Profile | tab | ✅ gamma profile | same | Monthly expiry breakdown loaded |
+| `/grid` | ~3s | ⚠️ partial | CSP | 10/12 panels populated; Congress spinner (cold load) |
+| `/nighthawk` | ~3s | ✅ EDITION LIVE | CSP | 2 plays 2026-07-01; recap SPX 7499.36 (API-grounded) |
+| `/terminal` (Largo) | ~3s | ✅ ~40s AI | CSP | NVDA query grounded — LIVE DESK / DARK POOL / OPTIONS FLOW |
+| `/track-record` | ~3s | ✅ LIVE counter | CSP | SPX Slayer 11 signals (3W/8L); Night Hawk EOD block |
+
+### Cross-tool GEX agreement
+
+| Surface | SPX/SPY spot | γ-flip | Call wall | Put wall |
+|---|---|---|---|---|
+| desk API | 7517.31 | 7479.36 | 7550 (gex_king) | 7400 |
+| gex-positioning SPX | — | 7479.43 | 7550 | 7400 |
+| heatmap SPY | 749.86 | 746 | 758 | 745 |
+| grid GEX Regime | visible | aligns desk | aligns | aligns |
+
+### Missing-field audit
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| Congress panel body | `/grid` | `/api/grid/congress` 200 | **Cold client render** — spinner on first paint | **P2 watch** — re-check; API has data |
+| TSLA/META flip `—` | heatmap matrix | far-dated chain sparse | **Upstream gap** | Expected |
+| Track-record HTTP via cookie | data-validator | `/api/public/track-record` 401 | **Admin-gated** — page uses SSR `buildPublicTrackRecord()` | Audit script fix only |
+
+### Largo (Terminal)
+
+NVDA query ~40s — working status: TAPE • WEEK • FLOW • ENGINE. Answer grounded with $208–$218 bull zone, $195–$200 battleground, $185 bear hedge. Sources tagged LIVE DESK FEED / DARK POOL / OPTIONS FLOW.
+
+**Transient mid-session (resolved):** `nights-watch-warm` stale 18m (deploy stall) — manual `GET /api/cron/nights-watch-warm` + `grid-warm` restored GREEN. `options-socket` log 1006×12 during leader churn — socket-health HTTP OK; `validate-deploy` aligned with #116 HTTP probe.
+
+**No GitHub issue opened** — no persistent P0/P1 after fixes.
+
 ## RTH comprehensive sweep — 2026-06-30 ~17:21–17:45 ET (pass 7 — after-hours)
 
 **Session:** Tue 30 Jun 2026, 17:21–17:45 ET (**after-hours**). Agent: autonomous cloud session. Premium Clerk admin via Playwright `sign_in_token` (audit user deleted post-pass). Confirms pass 6 with Playwright automation + Largo API session test.
