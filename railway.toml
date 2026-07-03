@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "DATABASE_URL=$DATABASE_PUBLIC_URL npm run build"
+buildCommand = "bash scripts/railway-build.sh"
 # Only redeploy prod when build-affecting files change — NOT on docs/log-only commits.
 # The autonomous SDLC crons commit docs/auto/* + audit/log .md frequently; without this every
 # such commit auto-redeployed prod, restarting the live server (WS churn) and killing long Night
@@ -18,6 +18,7 @@ watchPatterns = [
   "postcss.config.*",
   "nixpacks.toml",
   "railway.toml",
+  "scripts/railway-build.sh",
 ]
 
 [deploy]

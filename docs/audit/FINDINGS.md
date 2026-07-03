@@ -3,9 +3,29 @@
 Verified issues from the production data-correctness audit. Newest/most-severe first.
 Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
-**Merge policy for this doc's PRs:** left OPEN for end-of-day review — do not merge without explicit go-ahead, even when CI is green.
+**Merge policy for this doc's PRs:** left OPEN for end-of-day review — do not merge without explicit go-ahead, even when CI is green. **Superseded 2026-07-03 by explicit user standing instruction to run fully autonomously (branch→fix→test→PR→CI→merge→live-verify, repeat) through Monday 2026-07-06 market open — this doc's entries merge immediately alongside their fix PRs for the remainder of that window.**
 
 ---
+
+## 🔴 P0 SECURITY — Postgres credential printed into Railway build logs since 2026-06-30; ACTION NEEDED: rotate the password
+**Status:** OPEN — code fix shipped this PR (`fix/railway-build-command-secret-leak`), **but the exposed credential itself still needs to be rotated by the user; that is not something this PR can do.**
+
+**Found while diagnosing a #308/#309 deploy-healthcheck incident, using Railway API access granted this session (project-scoped token).** Pulling the failed deployment's build log to find its root cause surfaced `railway.toml`'s build command:
+
+```
+buildCommand = "DATABASE_URL=$DATABASE_PUBLIC_URL npm run build"
+```
+
+Buildkit echoes the literal RUN command it executes into the build log, with inline shell-variable assignments already expanded — so every build since this line was added (`railway.toml`'s introduction, commit `1c0bca7`, 2026-06-30) printed the **real Postgres connection string, including its plaintext password,** into that build's log output. Confirmed directly: the build log for the failed deployment contains the fully-expanded `DATABASE_URL=postgres://postgres:<password>@...` string, twice. Docker/Buildkit's own linter has been flagging this exact class of problem on every build (`SecretsUsedInArgOrEnv` warnings) — the same pattern affects essentially every other secret passed as an `ARG`/`ENV` at build time (`ANTHROPIC_API_KEY`, `CLERK_SECRET_KEY`, `CRON_SECRET`, `POLYGON_API_KEY`, `RAILWAY_TOKEN`, `SENTRY_AUTH_TOKEN`, `UW_API_KEY`, `VOYAGE_API_KEY`, `WHOP_API_KEY`, and others) — those are set as Docker build args/env (not printed in a RUN command's literal text the way `DATABASE_URL` was here), so they don't have the same *log-echo* exposure, but the linter warning on all of them is worth a follow-up read.
+
+**Blast radius:** every Railway build log since 2026-06-30 (multiple days, many builds/deploys) contains the plaintext DB password. Anyone with read access to this project's Railway build-log history — not just deploy/dashboard access — has been able to read it.
+
+**Fix (this PR):** `scripts/railway-build.sh` — a wrapper script that does the `DATABASE_URL=$DATABASE_PUBLIC_URL` assignment via `export` *inside* the script rather than inline in the command string Buildkit echoes. `railway.toml`'s `buildCommand` now reads `bash scripts/railway-build.sh` — the printed build step is just that literal text, never the secret value. `DATABASE_PUBLIC_URL` (not `DATABASE_URL`) is still required at build time for the same reason as before: the build phase can't reach Railway's private network (`postgres.railway.internal`), only the public host.
+
+**Action needed (user, cannot be done from a PR):**
+1. **Rotate the Postgres password** (Railway dashboard → Postgres plugin → regenerate credentials) — the exposed one must be treated as compromised regardless of how unlikely actual unauthorized access is, since the exposure window is multi-day.
+2. After rotating, this service's `DATABASE_URL`/`DATABASE_PUBLIC_URL` env vars update automatically (Railway re-injects the new value) — a fresh deploy after rotation will pick it up cleanly with this PR's fix already in place, so it won't get re-leaked.
+3. Worth a follow-up: audit the other `SecretsUsedInArgOrEnv`-flagged vars (build-time `ARG`/`ENV`, not the log-echo pattern above) for the same class of risk — out of scope for this PR, which only fixes the confirmed active leak.
 
 ## 🟡 FIXED 2026-07-03 — AAPL options chain truncated: static 12-page guard understating walls/OI/IV
 **Status:** FIXED (`fix/polygon-oi-by-expiry-pagination`). User-reported (live Railway log screenshots) recurring `[polygon-gex] fetchPolygonOiByExpiry(AAPL) truncated: hit 12-page guard with next_url still set — chain incomplete, walls/OI/IV understated`, firing repeatedly over several minutes.
