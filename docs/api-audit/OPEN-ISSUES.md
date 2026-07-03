@@ -1,5 +1,79 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-03 13:26 ET
+Last updated: 2026-07-03 15:38 ET
+
+## RTH comprehensive sweep — 2026-07-03 ~15:35–15:38 ET (pass 3 — Independence Day observed)
+
+**Session:** Fri 3 Jul 2026, 15:35–15:38 ET (**market holiday** — Independence Day observed; NYSE/CBOE fully closed). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` | ✅ GREEN — deploy SUCCESS (`6c5efba4`); holiday skips writer/regime checks |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 42 consistency-only (`market_open: false`) |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 36 PASS, 9 WARN (expected holiday/off-hours fields), 0 FAIL |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers — SPX 159 strikes; non-SPX empty expected on holiday |
+| `node scripts/audit/data-validator.mjs` | ✅ 7 PASS, 3 INFO (wall ordering skipped on holiday) |
+| `npm run ops:collect` | ✅ 0 action items |
+
+### API sweep (premium session — ~15:35–15:37 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~471ms | 176 strikes, spot 7483.24 (cached prior session) |
+| `/api/market/spx/merged` | 200 | ~210ms | warm |
+| `/api/market/flows` | 200 | ~9422ms | 500 rows (cold cache on first read) |
+| `/api/market/flow-brief` | 200 | ~4399ms | ok |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~352ms | empty matrix (holiday — no equity chain refresh) |
+| `/api/grid/bootstrap` + 8 panel routes | 200 | 69–143ms | all panels finite; bootstrap warm ~126ms |
+| `/api/market/nighthawk/edition` | 200 | ~103ms | 3 plays, recap=true |
+| `/api/public/track-record` | 200 | ~182ms | 12 closed |
+| Largo `/api/market/largo/query` | 200 | ~43s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow] |
+| SPX oracle | — | — | desk 7483.24 vs Polygon 7483.24 (Δ 0.00) |
+
+**Cross-tool GEX:** SPX spot aligned desk/heatmap/oracle; data-correctness 0 flags.
+
+### Page sweep (premium admin — API proxy, market holiday)
+
+| Page | Load | Live update | Notes |
+|---|---|---|---|
+| `/dashboard` | ~471ms heatmap / ~210ms merged | ✅ 15s poll changed | 176 strikes; SPX cached matrix |
+| `/flows` (HELIX) | ~9422ms (cold) | ⚠️ 15s poll unchanged | expected on holiday — no new option prints |
+| `/heatmap` Matrix | ~352ms SPY | — | empty on holiday (expected) |
+| `/heatmap` Profile | (same endpoint) | — | gamma profile via heatmap API |
+| `/grid` | bootstrap + 8 routes 200 | warm | 12 panels all 200; movers empty (holiday) |
+| `/nighthawk` | ~103ms | static edition | 3 plays, recap |
+| `/terminal` (Largo) | ~43s | — | grounded NVDA multi-tool answer |
+| `/track-record` | ~182ms | LIVE | 12 closed |
+
+**Speed flags:** `/api/market/flows` cold read ~9.4s on first hit (subsequent passes ~300ms). Grid bootstrap warm ~126ms; panel routes 69–143ms. Largo ~43s acceptable for multi-tool AI path.
+
+### Missing-field audit (pass 3 — all expected/holiday/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `expiries[empty]`, `strikes[empty]`, GEX walls | heatmap (non-SPX) | gex-heatmap | **Market holiday** — equity chains don't refresh; SPX serves cached matrix | Expected |
+| `merged.lod/hod/vwap`, dark_pool fields | desk/merged | `spx/merged` | **Market holiday** — no intraday session stats | Expected |
+| `gainers[empty]`, `losers[empty]` | grid movers | `/api/grid/movers` | **Market holiday** — no live movers | Expected |
+| `market.pulse.adv/dec` | grid bootstrap | `/api/grid/bootstrap` | **Market holiday** — breadth not computed off-hours | Expected |
+| `earnings.eps_actual/surprise_pct` | grid | `/api/grid/earnings` | **Expected** — pre-report dates | none |
+| `economy indicators sparse rows` | grid | `/api/grid/economy` | **Upstream gap** — sparse FRED row | Expected |
+| `events[empty]`, `cross_validation`, overlays | dashboard heatmap | gex-heatmap | **Optional overlays** — none active | Expected |
+| `dark_pool.pcr`, flow alert fields | nighthawk/flows | upstream shape | **Upstream gap** — WS prints lack fields | Expected; do not fabricate |
+| HELIX 15s poll unchanged | flows | `/api/market/flows` | **Market holiday** — tape static when no new prints | Expected |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (all GREEN).
+
+### Open watches (P2)
+
+- `validate:rth-open` warnings: 8 API telemetry failures (15m), 22 Sentry unresolved (Query read timeout cluster ~15:32–18:31 ET)
+- `/api/market/flows` cold-cache latency ~9.4s on first read — warm subsequent reads ~300ms
+- HELIX live-update WARN on holiday — static tape is correct behavior, not a bug
+
+---
 
 ## RTH comprehensive sweep — 2026-07-03 ~13:22–13:26 ET (pass 2 — Independence Day observed)
 
