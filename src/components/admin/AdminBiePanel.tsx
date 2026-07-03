@@ -18,6 +18,7 @@ type BieReportPayload = {
     by_kind: Array<{ kind: string; total: number; embedded: number }>;
     newest_at: string | null;
   } | null;
+  db_pool?: { configured: boolean; total: number; idle: number; waiting: number } | null;
   self_eval?: { text: string } | null;
   calibration?: { text: string } | null;
   discovery?: { text: string } | null;
@@ -86,6 +87,7 @@ export function AdminBiePanel() {
   const emb = data?.embeddings;
   const know = data?.knowledge;
   const inter = data?.interactions_24h;
+  const pool = data?.db_pool;
   const coverage =
     inter && inter.total > 0 ? Math.round((inter.routed / inter.total) * 1000) / 10 : null;
 
@@ -138,7 +140,7 @@ export function AdminBiePanel() {
         ) : null}
 
         {/* Status chips: memory + retrieval health at a glance. */}
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <div
             className={clsx(
               "rounded-lg border px-3 py-2 font-mono text-[11px]",
@@ -191,6 +193,30 @@ export function AdminBiePanel() {
               {inter?.avg_latency_router_ms != null ? `${Math.round(inter.avg_latency_router_ms)}ms` : "—"} vs{" "}
               {inter?.avg_latency_claude_ms != null ? `${Math.round(inter.avg_latency_claude_ms)}ms` : "—"}
               <span className="ml-1 text-white/40">Claude</span>
+            </p>
+          </div>
+          <div
+            className={clsx(
+              "rounded-lg border px-3 py-2 font-mono text-[11px]",
+              pool && pool.waiting > 0 ? "border-gold/25 bg-gold/5" : "border-white/10 bg-black/20"
+            )}
+          >
+            <p className="text-[10px] uppercase tracking-widest text-white/40">DB pool (live)</p>
+            <p className={clsx(pool && pool.waiting > 0 ? "text-gold" : "text-sky-200")}>
+              {pool ? (
+                <>
+                  <span className="font-semibold">{pool.total}</span> total ·{" "}
+                  <span className="font-semibold">{pool.idle}</span> idle
+                  {pool.waiting > 0 ? (
+                    <>
+                      {" "}
+                      · <span className="font-semibold text-gold">{pool.waiting} waiting</span>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                "—"
+              )}
             </p>
           </div>
         </div>

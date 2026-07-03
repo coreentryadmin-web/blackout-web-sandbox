@@ -81,7 +81,9 @@ inventing a number would:
 | Railway resource usage (CPU/memory) | Same | Same token; Railway exposes per-service metrics via GraphQL |
 | Railway environment variables (listing/auditing) | Same, PLUS this is sensitive — should be read-only and never surfaced verbatim (secrets) | Same token; BIE would report *presence/absence* and *staleness*, never values |
 | Redis usage / connection pool internals | No Redis `INFO`/`CLIENT LIST` introspection wired | Buildable with zero new access (Redis is already connected) — genuinely just not built yet, unlike the Railway items |
-| Postgres performance (slow query log, connection pool saturation) | Partial — `pg_stat_statements` not confirmed enabled; pool size/usage not exported | Buildable: `pool.totalCount`/`idleCount`/`waitingCount` are already available in-process from `pg.Pool`; exposing them is a small addition, not a new dependency |
+| Postgres connection pool saturation | **SHIPPED** (live snapshot, `/api/admin/bie-report` `db_pool`) | `getDatabasePoolStats()` (already existed in `db.ts`, used by `admin-api-dashboard.ts`/`market-health.ts`) — now surfaced in the BIE panel too, with a visual flag when `waiting > 0` (queueing pressure) |
+| Postgres slow-query log (`pg_stat_statements`) | NOT YET | Not confirmed enabled on the Railway instance; a genuinely separate piece from pool stats |
+| Redis internals (`INFO`/`CLIENT LIST`) | NOT YET | Buildable with zero new access (Redis is already connected) — separate from the Postgres pool work above, still queued |
 | Clerk/UW/Polygon spend dashboards | Those are billing dashboards on the vendor's side, not an API we call | Would need each vendor's usage/billing API if they expose one — separate research per vendor, not assumed to exist |
 | Security warnings / auth failure monitoring | Clerk logs auth events on Clerk's side; we don't currently mirror failures into our own telemetry | Buildable: hook Clerk webhook events (already have webhook infra) into `error_events` or a new table |
 

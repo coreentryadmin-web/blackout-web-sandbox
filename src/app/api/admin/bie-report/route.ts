@@ -7,7 +7,13 @@
 // now?" is one authenticated request, not a wait for the daily cron.
 import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
-import { dbConfigured, fetchBieInteractionStats, fetchBieKnowledge, fetchBieKnowledgeStats } from "@/lib/db";
+import {
+  dbConfigured,
+  fetchBieInteractionStats,
+  fetchBieKnowledge,
+  fetchBieKnowledgeStats,
+  getDatabasePoolStats,
+} from "@/lib/db";
 import { runBieCalibration, formatCalibration } from "@/lib/bie/calibration";
 import { runBieDailySelfEval, formatBieReport } from "@/lib/bie/report";
 import { runBieDiscovery } from "@/lib/bie/discovery";
@@ -38,7 +44,7 @@ export async function GET() {
     return NextResponse.json({ available: false, reason: "database not configured" });
   }
 
-  const [selfEval, calibration, discovery, stats, knowledge, probe, trail] = await Promise.all([
+  const [selfEval, calibration, discovery, stats, knowledge, probe, trail, dbPool] = await Promise.all([
     runBieDailySelfEval().catch(() => null),
     runBieCalibration(14).catch(() => null),
     runBieDiscovery().catch(() => null),
@@ -46,6 +52,10 @@ export async function GET() {
     fetchBieKnowledgeStats().catch(() => null),
     probeEmbeddings(),
     fetchBieKnowledge({ kind: "self_eval", limit: 30 }).catch(() => []),
+    // Live point-in-time snapshot — pool pressure right now, not a 24h
+    // aggregate, so it belongs here alongside the embeddings probe rather
+    // than in the historical discovery report text.
+    getDatabasePoolStats().catch(() => null),
   ]);
 
   // Retrieval probe: only meaningful once the key works. Multiple representative
@@ -85,6 +95,7 @@ export async function GET() {
         retrieval_probes: retrievalProbes,
       },
       knowledge,
+      db_pool: dbPool,
       // The three live reports, both structured and human-readable.
       self_eval: selfEval ? { data: selfEval, text: formatBieReport(selfEval) } : null,
       calibration: calibration ? { data: calibration, text: formatCalibration(calibration) } : null,
