@@ -130,3 +130,50 @@ was never really the right frame — the goal is router coverage growing
 over time (tracked, queryable, not vibes: see `ARCHITECTURE.md`'s success
 metrics), not eliminating the fallback. Nothing found this session changes
 that assessment.
+
+## Admin dashboard remodel — requirement captured 2026-07-03, not yet built
+
+User ask, verbatim intent: the admin panel needs real UX work, not just more
+data bolted onto the existing `AdminBiePanel.tsx` chip strip. Specifically:
+
+- **A dedicated BIE tab** in the admin nav — not embedded inline in a larger
+  page. Should show: current open findings (what's broken right now), what's
+  been fixed (a real changelog, not just `FINDINGS.md` as a wall of text),
+  green/red status indicators, collapsible/drill-down sections, live data,
+  clickable actions (not read-only).
+- **A BIE roadmap view**: where we are today, what's in progress, what's
+  next, and the end goal — stated with real metrics, not just prose status.
+  This should visually distinguish SHIPPED / IN PROGRESS / NOT YET / BLOCKED
+  (the same categories `FULL-SYSTEM-AWARENESS.md` already uses in text) —
+  the ask is to make that doc's content legible as a dashboard, not just a
+  markdown file admin has to read top to bottom.
+- **Admin-wide problem, not BIE-specific**: the user's own read is that a lot
+  of admin data is duplicated across different pages/panels today, inconsistent
+  in how it's presented, and generally hard to read/understand at a glance —
+  this needs its own inventory before a redesign can be scoped honestly (see
+  "research task" below — do not assume the shape of the duplication, verify
+  it against the actual admin route tree).
+- **Explicit ask for creative range**: "think of some crazy ideas" — the user
+  wants real design options, not the single safest/most obvious layout.
+- **Explicit ask to research before building**: "please research think more"
+  — investigate the current admin structure first, then propose direction(s),
+  rather than jumping straight to a full rebuild.
+- **Known environment constraint, must stay honest about it**: this sandbox's
+  browser (Playwright/Chromium) is blocked — any new dashboard UI can be
+  verified at the code/build level (tsc, component tests if applicable,
+  `npm run build`) but NOT visually rendered/interacted with here. Anything
+  claimed "looks good" must be caveated as unverified-in-browser until a real
+  browser pass happens, consistent with how every other UI change this
+  session has been handled.
+
+**Status of this ask: requirement captured, research in progress, not yet
+scoped into a build plan.** The right sequencing, given the scope (an admin
+route inventory hasn't been done yet, and "remodel the entire admin" is a
+much bigger, more subjective, taste-driven undertaking than any single-issue
+fix this session has shipped) is: inventory current admin structure →
+propose concrete design direction(s) → get explicit direction on which one →
+build incrementally, starting with the most clearly-scoped piece (the BIE
+tab specifically, since that has a clear, already-charter-backed content
+model — findings/roadmap/metrics — versus the open-ended "remodel
+everything" ask, which needs its own scoping pass across every existing
+admin page before a rebuild is responsible to start).
