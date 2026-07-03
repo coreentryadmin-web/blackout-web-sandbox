@@ -367,6 +367,13 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     limit: { type: "integer", default: 15 },
   }),
 
+  t(
+    "get_ecosystem_context",
+    "BIE cross-instrument snapshot for ONE ticker: today's 0DTE Command take (if any), the most recent Night Hawk take (published or rejected), and the last 10 alert_audit_log entries. Use when a question needs 'what does the rest of the desk already think about this name' rather than a single tool's isolated view — e.g. confirming whether today's 0DTE flag and last night's Night Hawk pick agree or conflict.",
+    T,
+    ["ticker"]
+  ),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -474,6 +481,8 @@ export const TOOL_GROUPS = {
     // cross-tool Night Hawk objects newly surfaced to Largo
     "get_nighthawk_outcomes",
     "get_nighthawk_dossier",
+    // BIE ecosystem-context query layer — one ticker's cross-instrument snapshot
+    "get_ecosystem_context",
   ],
   my_book: [
     // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).

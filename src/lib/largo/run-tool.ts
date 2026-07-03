@@ -921,6 +921,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
         fullEdition: Boolean(input.full_edition),
       });
 
+    case "get_ecosystem_context": {
+      const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
+      return fetchEcosystemContext(ticker);
+    }
+
     case "get_gex": {
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());

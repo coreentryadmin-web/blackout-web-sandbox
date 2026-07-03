@@ -7,6 +7,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE ecosystem-context query layer, v1 SHIPPED 2026-07-03 — "what does the rest of BlackOut already know about this ticker"
+**Status:** SHIPPED (`feat/bie-ecosystem-context`). User's framing: BIE should work like a shared hub every instrument can query, not just a monitoring layer that reads everything after the fact. Closest real analogy is a shared-state/feature-store pattern, not network routing — the design goal was additive, never a hard dependency: every consumer must work exactly as before if this is unreachable.
+
+**What it does:** `fetchEcosystemContext(ticker)` (`src/lib/bie/ecosystem-context.ts`) assembles one ticker's cross-instrument snapshot from tables that already exist and are already populated by independent write-paths — zero new data plumbing: today's 0DTE Command take (`zerodte_setup_log`), the most recent Night Hawk take (`nighthawk_play_outcomes`, published or rejected), and the last 10 `alert_audit_log` entries (the unified Stage 4 trail spanning all three write-paths). Fails open to an all-null/empty context on any error — a lookup failure here must never block the caller's own logic, same fail-open pattern as every other BIE probe.
+
+**First real consumer:** wired into Largo (the member-facing desk analyst) as a new tool, `get_ecosystem_context`, in the `platform` tool group alongside `get_platform_snapshot`. Deliberately the lowest-risk possible integration point — it only affects what Largo can *cite* when answering a question, never touches scoring or alert-firing logic, so a member can now ask "what's going on with NVDA" and get an answer that spans 0DTE + Night Hawk + audit history instead of one isolated data source.
+
+**Deliberately NOT done in this pass:** wiring this into live SCORING (e.g., Night Hawk's discovery layer treating a same-day 0DTE flag as a confirmation signal) — that's a materially higher-risk change to logic that's been tuned carefully all session, and the "HELIX Postgres bonus" precedent showed exactly why blending cross-signals into scoring needs its own careful, direction-gated, capped design, not a quick addition. This ships the query layer and proves it with one safe consumer; scoring integration is a clearly separate future step if wanted.
+
+**Verification:** 862/862 tests unchanged (thin DB-read wrapper, same no-unit-test precedent as `fetchAlertAuditTrail`/`getDatabasePoolStats`), `tsc --noEmit` + build + lint:brand + lint:vendor + API auth-guard scan all clean.
+
+---
+
 ## 🧠 Stage 3 SHIPPED 2026-07-03 — Clerk auth-failure monitoring, without touching the sign-in flow
 **Status:** SHIPPED (`feat/bie-clerk-auth-failure-observer`). Reverses the earlier documented decision (`docs/bie/FULL-SYSTEM-AWARENESS.md`, `docs/audit/FINDINGS.md` — user chose "leave it as a permanent gap" after being warned the only known path was a full custom sign-in rewrite) — user explicitly asked to fix it after that. Re-investigated before writing any code and found a materially safer path than the one originally presented.
 
