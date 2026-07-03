@@ -205,6 +205,11 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_lotto_state", "Today's lotto state from Postgres."),
 
+  t(
+    "get_zerodte_plays",
+    "0DTE Command board — today's live 0DTE plays from the always-on scanner: lifecycle status (OPEN/HOLD/TRIM/CLOSED), entry premium and -50%/+100% plan, live P/L, graded results, plus fresh finds with BlackOut Intelligence action lines. Same data as /grid.",
+    {}
+  ),
   t("get_nighthawk_edition", "Night Hawk evening playbook — top plays, recap, market context. Same data as /nighthawk.", {
     date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
   }),
@@ -464,6 +469,7 @@ export const TOOL_GROUPS = {
   ],
   platform: [
     "get_platform_snapshot",
+    "get_zerodte_plays",
     "get_nighthawk_edition",
     // cross-tool Night Hawk objects newly surfaced to Largo
     "get_nighthawk_outcomes",
@@ -502,6 +508,12 @@ function mentionsTicker(question: string): boolean {
 export function getToolsForIntent(question: string): string[] {
   const lower = question.toLowerCase();
   const names = new Set<string>(["get_market_context"]);
+
+  // 0DTE Command — "today's plays", the board, or anything zero-DTE flavored.
+  if (/\b(0\s*dte|zero\s*dte|zerodte|command board|today'?s plays|the plays|scanner plays)\b/i.test(lower)) {
+    names.add("get_zerodte_plays");
+    for (const n of TOOL_GROUPS.spx_desk) names.add(n);
+  }
 
   if (matchesIntent(lower, FLOW_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.flow_analysis]) names.add(n);

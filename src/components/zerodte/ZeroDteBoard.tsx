@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { Badge, EmptyState, FreshnessChip, Panel, Skeleton, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
 import type { EnrichedZeroDteSetup, SessionHeat } from "@/lib/zerodte/board";
 import { buildIntelNote, type IntelAction } from "@/lib/zerodte/intel";
+import { etMinutesOf } from "@/lib/zerodte/plan";
 
 // ── Response shape (structural mirror of /api/market/zerodte/board) ──────────────
 
@@ -275,6 +276,9 @@ function intelFor(row: PlayRow) {
     livePnlPct: row.live_pnl_pct,
     planOutcome: row.plan_outcome,
     planPnlPct: row.plan_pnl_pct,
+    // Live inputs — the line recomputes with every 10s refresh.
+    nowEtMinutes: etMinutesOf(Date.now()),
+    lastMark: row.last_mark,
   });
 }
 
@@ -358,6 +362,25 @@ function PlayDetail({ row }: { row: PlayRow }) {
           </p>
         )}
       </div>
+
+      {/* live premium math — updates with every refresh */}
+      {row.last_mark != null && row.entry_premium != null && row.status !== "CLOSED" && (
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">Live</p>
+          <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-200/85">
+            Mark ${row.last_mark.toFixed(2)}
+            {row.live_pnl_pct != null ? (
+              <span className={row.live_pnl_pct >= 0 ? " text-bull" : " text-bear"}>
+                {" "}
+                ({row.live_pnl_pct >= 0 ? "+" : ""}
+                {row.live_pnl_pct.toFixed(1)}%)
+              </span>
+            ) : null}
+            {" · "}${Math.max(0, row.entry_premium * 2 - row.last_mark).toFixed(2)} to the trim · $
+            {Math.max(0, row.last_mark - row.entry_premium * 0.5).toFixed(2)} above the stop
+          </p>
+        </div>
+      )}
 
       {/* what to watch — entry to exit */}
       <div>

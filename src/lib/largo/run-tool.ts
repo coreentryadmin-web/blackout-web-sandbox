@@ -893,6 +893,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     case "get_lotto_state":
       return marketPlatform.spx.getSpxLottoState();
 
+    case "get_zerodte_plays": {
+      const { zeroDtePlaysForLargo } = await import("@/lib/zerodte/scan");
+      return zeroDtePlaysForLargo();
+    }
+
     case "get_nighthawk_edition": {
       const date = input.date ? String(input.date) : undefined;
       const edition = date

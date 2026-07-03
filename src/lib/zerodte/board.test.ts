@@ -666,3 +666,26 @@ test("time of day: prime windows reward, lunch chop penalizes", () => {
   assert.match(timeOfDayFactor(12 * 60).label ?? "", /lunch chop/);
   assert.ok(timeOfDayFactor(14 * 60 + 30).delta > 0); // afternoon trend window
 });
+
+// ── BlackOut Intelligence: live dynamics ─────────────────────────────────────────
+
+test("intel: HOLD carries live trigger distances and the exit countdown", () => {
+  const note = buildIntelNote({
+    status: "HOLD", setup: null, plan: null,
+    entryPremium: 4.0, livePnlPct: 30, planOutcome: null, planPnlPct: null,
+    nowEtMinutes: 14 * 60, lastMark: 5.2,
+  });
+  assert.equal(note.action, "HOLD");
+  assert.match(note.reason, /\$2\.80 below the trim/); // 8.00 target − 5.20 mark
+  assert.match(note.reason, /\$3\.20 above the stop/); // 5.20 mark − 2.00 stop
+  assert.match(note.reason, /90m to the 3:30 hard exit/);
+});
+
+test("intel: ADD shows the entry-window countdown when inside 90 minutes", () => {
+  const note = buildIntelNote({
+    status: "OPEN", setup: null, plan: null,
+    entryPremium: 4.0, livePnlPct: null, planOutcome: null, planPnlPct: null,
+    nowEtMinutes: 14 * 60 + 20, lastMark: 4.0,
+  });
+  assert.match(note.reason, /40m left in the entry window/);
+});

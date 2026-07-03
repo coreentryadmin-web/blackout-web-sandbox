@@ -38,7 +38,8 @@ type FeedKey =
   | "my_positions"
   | "spx_confluence"
   | "lotto_live"
-  | "power_hour";
+  | "power_hour"
+  | "zerodte_plays";
 
 export type LargoLiveFeed = Partial<Record<FeedKey, unknown>>;
 
@@ -68,6 +69,15 @@ export async function captureLargoLiveFeed(
 
   const jobs: Array<{ key: FeedKey; promise: Promise<unknown> }> = [
     { key: "market", promise: tool("get_market_context") },
+    // Ambient desk awareness: the 0DTE Command board's own plays, on EVERY turn —
+    // Largo should never be surprised by a play the platform itself published.
+    // Cheap (single ledger read; statuses pre-latched by the cron).
+    {
+      key: "zerodte_plays",
+      promise: import("@/lib/zerodte/scan")
+        .then((m) => m.zeroDtePlaysFeed())
+        .catch((e) => ({ error: e instanceof Error ? e.message : "failed" })),
+    },
   ];
 
   if (intent.needsNews) {
@@ -293,6 +303,27 @@ export function formatLargoLiveFeed(rawFeed: LargoLiveFeed, ticker: string): str
     } else if (halts.channel_stale) {
       lines.push("### Halt feed status");
       lines.push("WARNING: The trading-halt monitoring channel is offline. Entry signals are blocked fail-closed until reconnection. Inform the user if they ask about entering a position.");
+      lines.push("");
+    }
+  }
+
+  // 0DTE Command plays — the desk's OWN live plays; cite them as ours, not as market data.
+  const zd = asObj(feed.zerodte_plays);
+  if (zd && zd.available === true) {
+    const plays = asArr(zd.plays);
+    if (plays.length > 0) {
+      lines.push("### 0DTE Command plays (OUR live board — /grid)");
+      for (const pRaw of plays.slice(0, 8)) {
+        const o = asObj(pRaw);
+        if (!o) continue;
+        lines.push(
+          `- ${o.ticker} ${o.contract} — ${o.status}` +
+            (o.entry_premium != null ? ` @ ${o.entry_premium}` : "") +
+            (o.last_mark != null ? ` (mark ${o.last_mark})` : "") +
+            (o.result ? ` — result: ${o.result}` : "")
+        );
+      }
+      lines.push("If the user asks about any of these names, anchor on OUR play state first (get_zerodte_plays for full detail).");
       lines.push("");
     }
   }

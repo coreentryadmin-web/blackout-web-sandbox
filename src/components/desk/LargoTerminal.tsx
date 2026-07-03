@@ -37,6 +37,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_news: "news",
   get_web_search: "web search",
   get_nighthawk_edition: "Night Hawk",
+  get_zerodte_plays: "0DTE Command plays",
   get_my_positions: "your positions",
   get_greeks: "greeks",
   get_max_pain: "max pain",

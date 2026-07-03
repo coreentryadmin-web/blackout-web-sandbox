@@ -1,8 +1,10 @@
-// BlackOut Intel — the action + reason line for each play. One verb a trader can
-// act on (ADD / HOLD / TRIM / SELL / PASS) plus a 1-2 sentence reason composed
-// ONLY from observed numbers already on the play: tape evidence, aggressor share,
-// dealer positioning, chart structure, premium state vs the fixed rules. Pure and
-// deterministic (unit-testable); no model, no adjectives without a number.
+// BlackOut Intelligence — the desk's shared brain for 0DTE plays. One verb a
+// trader can act on (ADD / HOLD / TRIM / SELL / PASS) plus a 1-2 sentence reason
+// composed ONLY from observed numbers: tape evidence, aggressor share, dealer
+// positioning, live intraday read, premium state vs the fixed rules — with LIVE
+// distances and countdowns, recomputed on every refresh. Pure and deterministic
+// (no LLM, no latency, unit-testable); the board renders it, Largo consumes the
+// exact same lines via get_zerodte_plays — one brain, many mouths.
 
 import type { EnrichedZeroDteSetup } from "./board";
 import type { ContractPlan } from "./plan";
@@ -76,11 +78,19 @@ export function buildIntelNote(input: {
   livePnlPct: number | null;
   planOutcome: string | null;
   planPnlPct: number | null;
+  /** Live clock (ET minutes) — enables countdowns to the 15:00 cutoff / 15:30 exit. */
+  nowEtMinutes?: number | null;
+  /** Live contract mark — enables $-distances to the trim/stop triggers. */
+  lastMark?: number | null;
 }): IntelNote {
-  const { status, setup, plan, entryPremium, livePnlPct, planOutcome, planPnlPct } = input;
+  const { status, setup, plan, entryPremium, livePnlPct, planOutcome, planPnlPct, nowEtMinutes, lastMark } = input;
   const stop = entryPremium != null ? entryPremium * 0.5 : null;
   const target = entryPremium != null ? entryPremium * 2 : null;
   const confirm = confirmClause(setup);
+  const minsTo = (deadline: number): number | null =>
+    nowEtMinutes != null && nowEtMinutes < deadline ? deadline - nowEtMinutes : null;
+  const toCutoff = minsTo(15 * 60);
+  const toExit = minsTo(15 * 60 + 30);
 
   if (status === "SKIP") {
     if (plan?.illiquid) {
@@ -113,24 +123,32 @@ export function buildIntelNote(input: {
       action: "ADD",
       reason:
         `${evidenceClause(setup)}${confirm ? `; ${confirm}` : ""}. ` +
-        `${reload ? "Flow is reloading now — " : ""}Enter ≤ ${prem(plan?.entry_max ?? entryPremium)}, stop ${prem(stop)}, out by 3:30 ET.${caution}`,
+        `${reload ? "Flow is reloading now — " : ""}Enter ≤ ${prem(plan?.entry_max ?? entryPremium)}, stop ${prem(stop)}, out by 3:30 ET` +
+        `${toCutoff != null && toCutoff <= 90 ? ` (${toCutoff}m left in the entry window)` : ""}.${caution}`,
     };
   }
 
   if (status === "TRIM") {
     return {
       action: "TRIM",
-      reason: `Premium tagged +100% (target ${prem(target)}) — bank at least half here. The rest is house money: trail it to ${plan?.underlying_target != null ? `the ${plan.underlying_target} level` : "the 3:30 ET exit"}, never let a double go red.`,
+      reason: `Premium tagged +100% (target ${prem(target)}) — bank at least half here. The rest is house money: trail it to ${plan?.underlying_target != null ? `the ${plan.underlying_target} level` : "the 3:30 ET exit"}${toExit != null ? ` (${toExit}m left)` : ""}, never let a double go red.`,
     };
   }
 
   if (status === "HOLD") {
     const pnlBit = livePnlPct != null ? `${livePnlPct >= 0 ? "+" : ""}${livePnlPct.toFixed(0)}% on the premium` : "position working";
+    // Live trigger distances — these move with every refresh.
+    const mark = lastMark ?? (entryPremium != null && livePnlPct != null ? entryPremium * (1 + livePnlPct / 100) : null);
+    const dist =
+      mark != null && target != null && stop != null
+        ? ` — ${prem(Math.max(0, target - mark))} below the trim, ${prem(Math.max(0, mark - stop))} above the stop`
+        : "";
     return {
       action: "HOLD",
       reason:
-        `Thesis intact — ${pnlBit}${confirm ? `; ${confirm}` : ""}. ` +
-        `Nothing to do until ${prem(target)} (+100% trim) or ${prem(stop)} (−50% cut); hard exit 3:30 ET.`,
+        `Thesis intact — ${pnlBit}${dist}${confirm ? `; ${confirm}` : ""}. ` +
+        `Triggers: ${prem(target)} (+100% trim) / ${prem(stop)} (−50% cut)` +
+        `${toExit != null ? `; ${toExit}m to the 3:30 hard exit` : "; hard exit 3:30 ET"}.`,
     };
   }
 
