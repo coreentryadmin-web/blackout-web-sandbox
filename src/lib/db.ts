@@ -926,6 +926,37 @@ async function resetPoolForRetry(): Promise<void> {
   poolInit = null;
 }
 
+// Re-entrancy guard: captureError() -> persistErrorEvent() -> dbQuery(INSERT INTO
+// error_events...) runs back through this exact function. If the DB is fully down (not
+// just the original query failing), that INSERT fails too, which would call
+// reportQueryFailure again, which would call captureError again — unbounded recursion.
+// Set for the duration of any capture attempt; a dbQuery failure while it's set just logs,
+// it never re-enters capture.
+let capturingQueryFailure = false;
+
+/** Fire-and-forget capture for a final (non-retryable or retries-exhausted) query failure —
+ *  never awaited by the caller, so a fully-down DB can't compound latency on the failing
+ *  path. Covers EVERY dbQuery call site in one place instead of auditing each one; checked
+ *  2026-07-03 that none of the 19 direct call sites already wrap failures in their own
+ *  captureError, so this can't double-count error_events. Lazy import mirrors error-sink.ts's
+ *  own lazy import of db.ts (reverse direction) — avoids a static circular module graph. */
+function reportQueryFailure(text: string, err: unknown): void {
+  if (capturingQueryFailure) {
+    console.warn("[db] query failed while already reporting a failure — DB likely fully down:", err);
+    return;
+  }
+  capturingQueryFailure = true;
+  void import("@/lib/error-sink")
+    .then(({ captureError }) => {
+      const scope = text.replace(/\s+/g, " ").trim().slice(0, 80);
+      return captureError(err, { source: "db_query", scope });
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      capturingQueryFailure = false;
+    });
+}
+
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,
   values?: unknown[]
@@ -949,9 +980,11 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
         await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (attempt + 1)));
         continue;
       }
+      reportQueryFailure(text, err);
       throw err;
     }
   }
+  reportQueryFailure(text, lastError);
   throw lastError;
 }
 

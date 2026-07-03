@@ -31,7 +31,8 @@ export type ErrorSource =
   | "uncaught_exception"
   | "request_error"
   | "manual"
-  | "frontend";
+  | "frontend"
+  | "db_query";
 
 export type ErrorContext = {
   source: ErrorSource;

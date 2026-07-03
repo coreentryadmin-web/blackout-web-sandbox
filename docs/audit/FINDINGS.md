@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 Database query failures now captured at the source — every dbQuery() call site, not N audits
+**Status:** SHIPPED. Follow-through on the item flagged earlier tonight as "needs a proper audit before implementing" — did the audit, it came back clean, shipped the fix.
+
+**The audit:** grepped every direct `dbQuery(` call site (20 files total — far fewer than assumed) and checked each for existing `captureError` usage. **Zero of the 19 non-`error-sink.ts` call sites already capture query failures.** No double-counting risk, so the better fix (capture once inside the shared function, not audit/patch N call sites) is safe to ship.
+
+**Fix:** `dbQuery()` (`db.ts`) now fire-and-forgets a `captureError(err, {source:"db_query", scope: <truncated query text>})` on any final (non-retryable, or retries-exhausted) failure — never awaited, so a fully-down DB can't compound latency onto the already-failing caller. Added `"db_query"` to `ErrorSource`.
+
+**The real bug caught before shipping, not after:** `captureError` → `persistErrorEvent` → `dbQuery(INSERT INTO error_events...)` runs back through this exact function. If the DB is genuinely fully down (not just the original query), that INSERT fails too — which would call the same capture path again, unboundedly. Added a module-level re-entrancy guard (`capturingQueryFailure`): a query failure while a capture attempt is already in flight just logs to console instead of re-entering `captureError`. Traced the full recursion scenario by hand before shipping rather than trusting it "probably" wouldn't happen. Side effect, judged acceptable: during a genuine full outage, concurrent unrelated query failures also get suppressed while one capture attempt is in flight — a natural throttle against amplifying load on an already-struggling DB, not just an artifact of the guard; nothing is silently lost since the console.warn fallback still hits Railway's own logs.
+
+**Verification:** `tsc --noEmit`, 776/776 tests, `npm run build` clean. No new unit test — same established boundary as every other piece of `dbQuery`/connection-retry internals in this file (untested by design, verified live); will confirm via `error_events` rows tagged `source='db_query'` after deploy if any real failures occur.
+
 ## ✅ Post-deploy verification 2026-07-03 09:03 UTC — full admin-refactor arc (#316/#318/#319) live, no regression
 **Status:** VERIFIED clean. Confirms tonight's schema + BIE tab + dedup work shipped without breaking anything, and separates a real pre-existing gap from a new one.
 
