@@ -16,6 +16,7 @@ import {
   worstStatus,
 } from "@/lib/correctness/types";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { isEtCashRth } from "@/lib/et-market-hours";
 
 // ---------------------------------------------------------------------------
 // DATA-CORRECTNESS AUDITOR — orchestrator.
@@ -62,8 +63,9 @@ export function correctnessTickers(): string[] {
   return deduped.length ? deduped.slice(0, 10) : [...DEFAULT_TICKERS];
 }
 
-/** Was the market open at run time? Cache-reader over the shared SPX desk bundle. */
+/** Was the market open at run time? Calendar gate first, then cache-reader over the SPX desk bundle. */
 async function isMarketOpen(): Promise<boolean> {
+  if (!isEtCashRth()) return false;
   try {
     const { merged } = await loadMergedSpxDesk();
     return merged?.market_open === true;

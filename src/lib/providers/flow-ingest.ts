@@ -4,6 +4,7 @@ import { fetchMarketFlowAlertRows } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import { uwSocket, isUwChannelFresh } from "@/lib/ws/uw-socket";
 import { isFlowFrameFreshFromCluster } from "@/lib/flow-liveness";
+import { probePgFlowAlertsFresh } from "@/lib/cron-writer-target-fresh";
 
 const CURSOR_KEY = "uw_flow_cursor";
 const CURSOR_ID_KEY = "uw_flow_cursor_max_id";
@@ -34,10 +35,15 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   }
 
   const wsStatus = uwSocket.getStatus();
-  // Skip REST only if the WS is BOTH authenticated AND actually delivering data.
-  // "OPEN" alone means authenticated; a half-open/silent socket would otherwise
-  // stop ingestion entirely. Require a recent message before trusting the WS path.
-  if (wsStatus["flow_alerts"] === "OPEN" && isUwChannelFresh("flow_alerts", 120_000)) {
+  const pgTape = await probePgFlowAlertsFresh(20);
+  // Skip REST only if the WS is BOTH authenticated AND actually delivering data AND Postgres
+  // confirms the downstream tape is fresh. A stale/expired cluster heartbeat must not silence REST
+  // when flow_alerts has stopped landing rows (audit gap: ws_active_cluster false-green).
+  if (
+    pgTape.fresh &&
+    wsStatus["flow_alerts"] === "OPEN" &&
+    isUwChannelFresh("flow_alerts", 120_000)
+  ) {
     // WS path persists via persistAndPublishFlowAlert — skip REST to avoid duplicate UW calls.
     return { ok: true, ingested: 0, polled: 0, skipped: "ws_active" };
   }
@@ -46,10 +52,9 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   // replica's WS. On multi-replica Railway a different replica may serve /flows and
   // be the one delivering frames while this replica runs only the cron — its local
   // socket is CLOSED, so the check above would run REST redundantly. If ANY OTHER
-  // replica delivered a flow frame recently (shared Redis heartbeat), skip REST too.
-  // Fail-open: when Redis is unavailable this returns false and we fall through to
-  // the normal REST path below, so behavior is never worse than the local-only gate.
-  if (await isFlowFrameFreshFromCluster(120_000)) {
+  // replica delivered a flow frame recently (shared Redis heartbeat), skip REST too —
+  // but only when PG confirms the tape is actually being written.
+  if (pgTape.fresh && (await isFlowFrameFreshFromCluster(120_000))) {
     return { ok: true, ingested: 0, polled: 0, skipped: "ws_active_cluster" };
   }
 
