@@ -25,7 +25,7 @@ the foundation. Not a chatbot. An intelligent operating system.
 | Layer | What | Status |
 |---|---|---|
 | **L1 Deterministic** | Every number from verified calculation engines — greeks/GEX (Polygon chains), scorers, plan math, grading. No LLM ever computes a figure. | LIVE (platform law since the audits; 0DTE stack fully deterministic) |
-| **L2 Knowledge** | Structured, searchable domain + platform knowledge (portable JSONB embeddings, cosine in Node; Voyage-gated). Docs, FINDINGS, editions, platform map, self-evals. | **SHIPPED** (key-gated; activates with VOYAGE_API_KEY) |
+| **L2 Knowledge** | Structured, searchable domain + platform knowledge (portable JSONB embeddings, cosine in Node; Voyage `voyage-3`). Docs, FINDINGS, editions, platform map, self-evals. | **LIVE** (VOYAGE_API_KEY provisioned 2026-07-03; cold chunks backfill automatically, #295) |
 | **L3 Reasoning/Router** | Deterministic answer router: questions that map onto platform truth are answered instantly from source-of-truth readers — no LLM, no cost, zero hallucination. Ambiguous/reasoning questions → Claude with retrieved grounding. | **Phase 1 — SHIPPED** (`src/lib/bie/router.ts`, `composers.ts`) |
 | **L4 Self-evaluation** | Numeric-claim verifier: every figure in an LLM answer is matched against the data actually served that turn; unverified-heavy answers carry an explicit caution. Same philosophy as Night Hawk's grounding gates. | **Phase 1 — SHIPPED** (`src/lib/bie/verifier.ts`) |
 | **L5 Learning** | Outcome-graded feedback: daily self-eval report (coverage/verification/cost avoided), 14-day calibration harness (score-band/ToD/spike buckets → evidence-cited gate recommendations, report-first, never tunes on noise), telemetry discovery report (slow/failing/expensive call patterns) — all persisted into the knowledge store on the daily cron tick. | **SHIPPED** |
@@ -59,10 +59,11 @@ the foundation. Not a chatbot. An intelligent operating system.
 
 ## Phase plan
 
-- **Phase 2 — Knowledge: SHIPPED** (key-gated). Ingestion (docs/, FINDINGS,
-  AGENTS/CLAUDE, latest NH edition, generated platform map) runs daily, hash-deduped
-  BEFORE embedding so unchanged content is free; retrieval grounds the Claude
-  fallback. Provision VOYAGE_API_KEY to activate embeddings + retrieval.
+- **Phase 2 — Knowledge: SHIPPED + ACTIVE** (VOYAGE_API_KEY provisioned
+  2026-07-03). Ingestion (docs/, FINDINGS, AGENTS/CLAUDE, latest NH edition,
+  generated platform map) runs daily, hash-deduped BEFORE embedding so unchanged
+  content is free — and chunks stored cold before the key existed are backfilled
+  (#295); retrieval grounds the Claude fallback.
 - **Phase 3 — Learning loops: SHIPPED.** Daily self-eval (router coverage, Claude
   calls avoided, verification rate, session W/L) + 14-day calibration harness
   (evidence-cited gate recommendations at n≥10 per bucket; report-first) + the router
@@ -77,8 +78,8 @@ the foundation. Not a chatbot. An intelligent operating system.
 
 | Item | Needed for | Cost ballpark | When |
 |---|---|---|---|
-| Embeddings API key (Voyage AI `voyage-3` recommended; OpenAI embeddings fine) | Phase 2 retrieval | ~$0.06–0.13 / M tokens — trivial | Before Phase 2 |
-| pgvector extension | Phase 2 store | free (existing Postgres; Railway supports it) | Before Phase 2 |
+| Embeddings API key (Voyage AI `voyage-3`) | Phase 2 retrieval | ~$0.06 / M tokens — trivial (est. <$1/mo at our corpus size) | **PROVISIONED 2026-07-03** (`VOYAGE_API_KEY` on Railway) |
+| ~~pgvector extension~~ | ~~Phase 2 store~~ | not needed — shipped with portable JSONB embeddings + cosine in Node (corpus is thousands of chunks, not millions) | — |
 | Open-weight inference host (Together/Fireworks per-token, or GPU rental) | Phase 4 distillation ONLY | $0 until used | Deferred — decide with data |
 | New market-data APIs | — | none needed: Polygon + UW + Benzinga cover the domain | — |
 
