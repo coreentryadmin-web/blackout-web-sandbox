@@ -2827,7 +2827,20 @@ export async function fetchPolygonPositioningBundle(
   return bundle;
 }
 
-/** OI aggregated by expiry from Polygon reference contracts (unlimited plan). */
+/** OI aggregated by expiry from Polygon reference contracts (unlimited plan).
+ *
+ * Live-caught (2026-07-03, docs/audit/FINDINGS.md): a flat 12-page guard truncated
+ * AAPL's chain every poll ("chain incomplete, walls/OI/IV understated") — the same
+ * "chasing the live chain size with a static number" bug fetchHeatmapBand already
+ * hit once for SPX (see comment on HEATMAP_PAGE_GUARD above). But this function is
+ * called from a LIVE per-request path (Largo tool), unlike the cron-warmed heatmap,
+ * so the fix isn't "raise to an unbounded backstop" — it's "stop on the actual
+ * completion condition": contracts arrive sorted by expiration_date ascending, so
+ * once we've seen `limit + 1` DISTINCT expiries, every one of the target `limit`
+ * nearest expiries is provably closed out (a later expiry has started, so no more
+ * contracts for an earlier one can arrive). A generous page backstop still bounds
+ * worst-case latency on this live path.
+ */
 export async function fetchPolygonOiByExpiry(
   underlying: string,
   limit = 12
@@ -2845,11 +2858,12 @@ export async function fetchPolygonOiByExpiry(
     apiKey: KEY,
   });
 
+  const PAGE_GUARD = 40; // bounded backstop — this is a live per-request path, not a cron warm path
   const byExpiry = new Map<string, { call_oi: number; put_oi: number }>();
   let page: RefContractsResponse | null = await polygonRefFetch(`/v3/reference/options/contracts?${params}`);
   let guard = 0;
 
-  while (page && guard < 12) {
+  while (page && guard < PAGE_GUARD && byExpiry.size <= limit) {
     for (const c of page.results ?? []) {
       const expiry = String(c.expiration_date ?? "").slice(0, 10);
       if (!expiry) continue;
@@ -2862,10 +2876,11 @@ export async function fetchPolygonOiByExpiry(
       byExpiry.set(expiry, row);
     }
     if (!page.next_url) break;
+    if (byExpiry.size > limit) break; // target range provably complete — stop before fetching another page
     page = await polygonRefFetch(page.next_url);
     guard += 1;
   }
-  if (page?.next_url) warnChainTruncated("fetchPolygonOiByExpiry", underlying, guard);
+  if (page?.next_url && byExpiry.size <= limit) warnChainTruncated("fetchPolygonOiByExpiry", underlying, guard);
 
   return Array.from(byExpiry.entries())
     .map(([expiry, oi]) => ({

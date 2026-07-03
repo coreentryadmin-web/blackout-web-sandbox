@@ -7,6 +7,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟡 FIXED 2026-07-03 — AAPL options chain truncated: static 12-page guard understating walls/OI/IV
+**Status:** FIXED (`fix/polygon-oi-by-expiry-pagination`). User-reported (live Railway log screenshots) recurring `[polygon-gex] fetchPolygonOiByExpiry(AAPL) truncated: hit 12-page guard with next_url still set — chain incomplete, walls/OI/IV understated`, firing repeatedly over several minutes.
+
+**Root cause:** `fetchPolygonOiByExpiry` (`polygon-options-gex.ts`) capped pagination at a flat 12 pages (3,000 contracts) regardless of how many contracts AAPL's live chain actually has. This is the exact same anti-pattern the codebase already diagnosed and fixed once before for `fetchHeatmapBand` (see the `HEATMAP_PAGE_GUARD` comment: "previously raised 16→40 for SPX, truncated again the same day... chasing the live chain size with another static number is the same bug recurring on a slower clock" — SPX needed 46 pages / 11,254 contracts). This function had its own unprotected copy of the same bug.
+
+**Fix — not just "raise the number":** this function is called from a LIVE per-request path (`largo/run-tool.ts`'s Largo tool, and `nighthawk/option-chain-prompt.ts`), unlike the heatmap's cron-warmed build — so an unbounded/very-generous page count would add real latency to a member waiting on a Largo answer. Instead, the loop now stops on the function's actual completion condition: Polygon returns contracts sorted by `expiration_date` ascending, so once `limit + 1` distinct expiries have been seen, every one of the target `limit` nearest expiries is provably fully closed out (a later expiry has started, so no more contracts for an earlier one can arrive) — stop there instead of guessing a page count. A 40-page backstop (matching the old proven-sufficient heatmap floor) still bounds worst-case latency. Both call sites use small `limit`s (6 and 12), so 40 pages is comfortable headroom.
+
+**Verification:** 763/763 tests, `tsc --noEmit` + build clean. No unit test added — this function does live Polygon network I/O with no DI seam (same established boundary as this file's one existing test, which only covers the pure `resolveHeatmapPageGuard`).
+
 ## 🟢 FIXED — `provider-health-reconcile` cron intermittent PgBouncer `server_login_retry` failures (ops #242)
 **Status:** FIXED (`cursor/provider-health-reconcile-0fcb`).
 
