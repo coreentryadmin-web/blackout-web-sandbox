@@ -7,6 +7,20 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ Post-deploy live verification 2026-07-03 — BIE Stage 2 + 3 completion (PRs #345, #350, #351) confirmed healthy in production
+**Status:** VERIFIED. One authenticated GET to `/api/admin/bie-report` (temp Clerk admin user, created and deleted per the documented `AGENTS.md` flow, single auth cycle) confirmed all six new fields shipped across today's three PRs are present, correctly shaped, and reporting clean/healthy values:
+
+- `railway_resource_usage`: `ok: true`, ~0.08–0.10 vCPU, ~1.6–2.8 GB memory — light load, healthy.
+- `railway_env_vars`: `total_count: 66`, `missing_critical: []` — nothing missing.
+- `railway_runtime_errors`: `error_count: 0` over the last 30 minutes.
+- `missed_alerts`: `outage_count: 0` — no alert-producing cron down during this check.
+- `pg_stat_statements`: `enabled: false` — confirmed not enabled on this Postgres instance (an honest final answer, not an error; per the standing decision this was checked, not attempted).
+- `duplicate_alerts`: `[]` — **the most meaningful result**: zero duplicate `(alert_type, source_key)` rows in `alert_audit_log`, live confirmation that all three Stage 4 dedup mechanisms (0DTE `xmax = 0`, Night Hawk published `xmax = 0`, Night Hawk rejected partial unique index) are holding correctly in production, not just in fixture tests.
+
+**Verification method:** same authenticated-admin pattern already used by `scripts/audit/data-validator.mjs` — mint a `sign_in_token` via Backend API, exchange via FAPI for a session, one request, then delete the temp user (confirmed gone via a follow-up 404). No secrets or session values were logged anywhere.
+
+---
+
 ## 🧠 BIE Stage 2 fully closed 2026-07-03 — duplicate-alert detection shipped, zero invented ground truth
 **Status:** SHIPPED (`feat/bie-duplicate-alert-detection`). Last open item from Stage 2's original ask ("duplicate/incorrect alerts" — "incorrect" was already covered by outcome grading). User said "keep pushing" after Stage 2/3 completion, so this picked the highest-value next target instead of waiting to be told what to build next.
 
