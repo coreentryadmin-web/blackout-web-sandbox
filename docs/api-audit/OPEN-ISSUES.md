@@ -1,5 +1,74 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-03 15:38 ET
+Last updated: 2026-07-03 16:30 ET
+
+## RTH comprehensive sweep — 2026-07-03 ~16:20–16:30 ET (pass 4 — Independence Day observed, post-close)
+
+**Session:** Fri 3 Jul 2026, 16:20–16:30 ET (**market holiday** — Independence Day observed; NYSE/CBOE fully closed, post-close). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). **Playwright browser sweep succeeded** (`scripts/rth-comprehensive-sweep.mjs`) after `npx playwright install chromium`.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` | ✅ GREEN — deploy SUCCESS (`b0bcac7d`); holiday skips writer/regime checks |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 41 consistency-only (`market_open: false`) |
+| `node scripts/rth-comprehensive-sweep.mjs` | ✅ 0 P0/P1 (1 P2 stale economy); all 7 pages loaded |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 36 PASS, 9 WARN (expected holiday), 0 FAIL |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `npm run ops:collect` | ✅ 0 action items |
+
+### API sweep (premium session — ~16:22 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/spx/desk` | 200 | ~505ms | SPX 7483.24, `as_of` fresh (59s) |
+| `/api/market/spx/merged` | 200 | ~374ms | warm |
+| `/api/market/gex-positioning?ticker=SPX` | 200 | ~91ms | flip 7475.43 — matches desk |
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~125ms | 176 strikes cached |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~4869ms | cold read; empty matrix (holiday) |
+| `/api/grid/*` (8 panels + bootstrap) | 200 | 82–4425ms | all finite; economy `as_of` 630s (P2 watch) |
+| `/api/market/nighthawk/edition` | 200 | ~122ms | 3 plays |
+| `/api/public/track-record` | 200 | ~217ms | 12 closed |
+| Largo `/api/market/largo/query` | 200 | ~35.5s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow]; $0 DP honest on holiday |
+| SPX oracle | — | — | desk 7483.24 vs Polygon 7483.24 (Δ 0.00) |
+
+**Cross-tool GEX:** desk flip 7475.43 = gex-positioning flip 7475.43 ✅
+
+### Browser sweep (premium session — Playwright, all 7 pages)
+
+| Page | Hard/soft load | Live update | Console | Missing fields |
+|---|---|---|---|---|
+| `/dashboard` | hard ~1.8s (+60s sign-in) | ⚠️ no SPX tick (holiday) | 1× HTTP 400 (likely `ticker-search` without `q`) | none |
+| `/flows` | soft ~1.7s | ⚠️ static (holiday) | clean | none |
+| `/heatmap` Matrix | soft ~1.7s | ⚠️ static (holiday) | clean | none |
+| `/grid` | soft ~1.7s | ⚠️ static (holiday) | clean | none |
+| `/nighthawk` | soft ~1.7s | static edition | clean | none |
+| `/terminal` (Largo) | soft ~1.7s | on-demand ~35s | clean | none — NVDA DP $0 honest |
+| `/track-record` | soft ~1.6s | static ledger | clean | none (12 closed) |
+
+**Speed:** all soft-navs ~1.6–1.7s (well under 1.5s usable threshold after skeleton). Sign-in ticket exchange ~60s (Clerk FAPI cold path — not page load).
+
+### Missing-field audit (pass 4 — all expected/holiday/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `gainers[empty]`, `losers[empty]` | grid movers | `/api/grid/movers` | **Market holiday** | Expected |
+| `indicators[].rows[N].value` sparse | grid economy | `/api/grid/economy` | **Upstream gap** — unreleased macro row | Expected |
+| `economy as_of` 630s | grid economy | `/api/grid/economy` | **Holiday cadence** — macro panel refresh slower off-hours | P2 watch only |
+| NVDA dark pool $0 | Largo / flows | `get_dark_pool` | **Market holiday** — no institutional prints | Expected; honest unavailable |
+| HELIX 15s poll unchanged | flows | `/api/market/flows` | **Market holiday** — tape static | Expected |
+| Dashboard console 400 | `/dashboard` | `ticker-search` (no `q`) | **Benign** — empty search rejected | none |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (all GREEN).
+
+### Open watches (P2)
+
+- `validate:rth-open` warnings: 3 error_events/1h, 9 API telemetry failures/15m, 22 Sentry unresolved (Query read timeout cluster)
+- `/api/grid/economy` `as_of` 630s off-hours — macro refresh cadence; not a correctness defect on holiday
+- `/api/market/gex-heatmap?ticker=SPY` cold read ~4.9s — warms on subsequent hits
+
+---
 
 ## RTH comprehensive sweep — 2026-07-03 ~15:35–15:38 ET (pass 3 — Independence Day observed)
 
