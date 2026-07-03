@@ -7,6 +7,23 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🔴 P1 FIXED 2026-07-03 — Halt-feed-degraded banner (and Largo's prompt context) claimed entries are "blocked" when the engine has always failed OPEN, never closed
+**Status:** FIXED (`fix/halt-feed-banner-false-claim`). Prompted by PR #332 (Cursor's audit) flagging "Halt feed offline" as a live observation — investigated whether that reflected a real current block, not just a cosmetic banner.
+
+**Root cause:** `SpxDashboard.tsx`'s banner has said "Halt feed offline — entries blocked until reconnect" since it was introduced (`1c0bca7`, PR #103, 2026-06-30) — the SAME commit that introduced `spx-play-gates.ts`, whose `shouldBlockForTradingHalt(undefined, { failClosedOnStale: false })` call has *always* explicitly failed open on a stale channel (comment in that file: "a transient UW WS gap during RTH would block all entries even when no halt existed... proceeding fail-open with a warning"). The banner copy and the actual gate logic were written in the same PR but never reconciled — the banner has been factually wrong about the system's own behavior since day one, not a regression. Grepped every `shouldBlockForTradingHalt` call site (2 total, `spx-play-gates.ts` and `nighthawk/dossier.ts`) — both pass `failClosedOnStale: false`; the fail-closed branch is dead code in production.
+
+**Worse instance, same root cause:** `largo-live-feed.ts`'s prompt-context builder fed Largo's own model context the line "Entry signals are blocked fail-closed until reconnection. Inform the user if they ask about entering a position" whenever `channel_stale` was true — meaning Largo could actively tell a paying member they can't enter a position when the real system allows it (with just a manual-verify caution). This directly violates the platform's "BIE/AI must never invent a correctness verdict, only report what validation already found" charter, since it invented a block that was never true.
+
+**Compounding issue:** the UW `trading_halts` channel is event-only (silent unless a symbol actually halts) and its staleness proxy (`isUwHaltSourceStale` in `uw-socket.ts`) reads off the freshest message across ALL UW channels — which naturally goes quiet off-hours/holidays. The `SpxDashboard.tsx` banner had no session-active gate, so it would also flash amber during every off-hours/holiday visit for a channel that has nothing to report, not just when genuinely degraded during RTH.
+
+**Fix:** new dependency-free `shouldShowHaltDegradedBanner()` (`src/lib/spx-halt-banner.ts` — deliberately NOT added to `spx-play-gates.ts`, which transitively imports `uw-socket.ts`'s server-only chain into Postgres/telemetry and broke the client bundle on first attempt) gates the banner on `sessionActive && haltChannelStale && activeHaltsCount === 0`. Banner copy corrected to "Halt feed degraded — proceeding fail-open; verify no active halts before entering". `largo-live-feed.ts`'s prompt line corrected to state the engine fails open and ask the user to manually verify. `learn/guides/instruments/spx-slayer.ts`'s member-facing education copy (3 spots) corrected to match — it repeated the same "blocks entries"/"no-new-risk until reconnect" claim.
+
+**What was deliberately left unchanged:** the real `TRADING HALT` banner (a confirmed active halt) is untouched — that one genuinely blocks and the copy for it was already accurate. Did not touch `spx-play-gates.ts`'s actual gate logic (already correct, fail-open, `failClosedOnStale: false`) — this was purely a copy/UI-gating fix, zero behavior change to what already blocks or doesn't.
+
+**Verification:** 807/807 tests (4 new: `shouldShowHaltDegradedBanner` covers off-hours-hides, active-session-shows, fresh-channel-hides, active-halt-takes-precedence), `tsc --noEmit` + build clean (build caught the client-bundle break on the first attempt — moving the function out of `spx-play-gates.ts` fixed it). Not exercised against a live stale-channel scenario from this sandbox (would need to simulate a UW WS gap during RTH); the fix is a pure function + static copy, verified by inspection and fixture tests.
+
+---
+
 ## 🧠 BIE Stage 4 complete: query surface shipped — `alert_audit_log` now readable end to end
 **Status:** SHIPPED (`feat/bie-stage4-query-surface`). This was the last remaining piece of Stage 4 (`docs/bie/AUDIT-TRAIL-SCHEMA.md`): schema and all three write-paths (0DTE, Night Hawk published, Night Hawk rejected) were already live, but nothing read `alert_audit_log` back out — it was write-only.
 

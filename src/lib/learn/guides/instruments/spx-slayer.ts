@@ -15,7 +15,7 @@ export const spxSlayerGuide = defineToolGuide({
     title: "Desk layout",
     paragraphs: [
       "Open `/dashboard` on a wide screen for the intended experience. On mobile, panels stack with Trade Alerts first; on xl breakpoints you get a true command center: left structure rail, center play engine, right Largo commentary.",
-      "Optional halt banners sit above everything. If the exchange halt feed goes stale, entries are blocked until reconnect — read that banner before interpreting any verdict below it.",
+      "Optional halt banners sit above everything. A confirmed active halt blocks entries; a degraded halt feed does not block by itself (the engine fails open with a warning) — read that banner before interpreting any verdict below it, and manually verify no active halt exists.",
       "Scan top-to-bottom, left-to-right during the open: header for regime → left matrix for strike context → center for actionable verdict → right rail for narrative synthesis. Do not start in the commentary rail and work backward.",
     ],
   },
@@ -24,14 +24,14 @@ export const spxSlayerGuide = defineToolGuide({
       name: "Trading halt banners",
       location: "Top of page — above header",
       purpose:
-        "Exchange halt awareness and feed health. When halts are active or the halt channel is stale, the desk blocks new entries regardless of play engine state.",
+        "Exchange halt awareness and feed health. A confirmed active halt on a watched symbol blocks new entries regardless of play engine state. A degraded halt feed does NOT block entries by itself — the engine fails open and warns instead, since blocking every entry on a transient feed gap was too aggressive.",
       shows: [
         "Active halts: symbol, halt type, reason",
-        "Halt feed offline warning when the channel has not updated",
+        "Halt feed degraded warning during an active session when the channel hasn't updated",
       ],
       cadence: "Updates with merged desk (~2s flow lane)",
       consume:
-        "Read this first every time you land on the desk. A green play card means nothing if a halt banner is showing. If the feed is offline, treat the session as no-new-risk until reconnect.",
+        "Read this first every time you land on the desk. A green play card means nothing if the TRADING HALT banner is showing — that one blocks entries for real. The degraded-feed banner is a caution, not a block: manually verify no active halt exists before entering.",
       tip: "Halts on SPX or related indices can freeze the entire 0DTE thesis — do not try to trade through them.",
     },
     {

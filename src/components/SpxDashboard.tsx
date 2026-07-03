@@ -8,6 +8,7 @@ import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
 import { SpxGexMatrixHeatmap } from "@/components/desk/SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
+import { shouldShowHaltDegradedBanner } from "@/lib/spx-halt-banner";
 
 class SpxPanelErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -79,6 +80,15 @@ export function SpxDashboard() {
 
   const activeHalts = desk?.active_halts ?? [];
   const haltChannelStale = desk?.halt_channel_stale ?? false;
+  // The play gate (spx-play-gates.ts) fails OPEN on a stale channel -- it only
+  // warns, never blocks -- so this banner must never claim entries are
+  // blocked. Also gated on sessionActive: the channel is event-only and reads
+  // "stale" off-hours/holidays by design, which is not a real degradation.
+  const showHaltDegradedBanner = shouldShowHaltDegradedBanner({
+    sessionActive,
+    haltChannelStale,
+    activeHaltsCount: activeHalts.length,
+  });
 
   return (
     <div className="spx-sniper-desk">
@@ -92,9 +102,9 @@ export function SpxDashboard() {
           ))}
         </div>
       )}
-      {haltChannelStale && activeHalts.length === 0 && (
+      {showHaltDegradedBanner && (
         <div className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400" role="alert">
-          <span>Halt feed offline — entries blocked until reconnect</span>
+          <span>Halt feed degraded — proceeding fail-open; verify no active halts before entering</span>
         </div>
       )}
       <SpxPanelErrorBoundary>

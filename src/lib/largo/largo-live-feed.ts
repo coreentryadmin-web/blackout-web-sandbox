@@ -302,7 +302,7 @@ export function formatLargoLiveFeed(rawFeed: LargoLiveFeed, ticker: string): str
       lines.push("");
     } else if (halts.channel_stale) {
       lines.push("### Halt feed status");
-      lines.push("WARNING: The trading-halt monitoring channel is offline. Entry signals are blocked fail-closed until reconnection. Inform the user if they ask about entering a position.");
+      lines.push("WARNING: The trading-halt monitoring channel is degraded/offline. This does NOT block entries by itself -- the engine fails open, it does not fail closed. If the user asks about entering a position, tell them the halt feed can't be freshly confirmed right now and to manually verify no active halt exists before entering.");
       lines.push("");
     }
   }
