@@ -123,7 +123,7 @@ credentials, no new vendor, ships today:
 | cron job status / worker failures | **SHIPPED** (this PR) | `cron_job_runs` — last status per job, flags any `failed`, flags any job with no success in 3h+ |
 | API rate limits (UW, Polygon, Claude) | **SHIPPED** (Phase 4) | `api_telemetry_events.rate_limited` — per-provider, per-endpoint, already in discovery |
 | database query failures | **SHIPPED, then a real bug in it FIXED 2026-07-03** | `dbQuery()` (`db.ts`) captures every final failure internally via `reportQueryFailure()` (source: `db_query`) — shipped earlier today. **That PR's own audit was wrong**: it claimed zero pre-existing call sites double-capture, but undercounted `dbQuery` call sites by ~50% (19 claimed vs. ~74 actual across 32 files) and missed indirect/route-level wrapping — several admin routes' catch-all (`recordAdminRouteError`, `admin-route-errors.ts`) independently re-captured the SAME failure under `source: admin_route`, double-counting `error_events` for at least 4 routes. Fixed with a WeakSet-based dedup marker (`error-sink.ts`'s `markDbQueryCaptured`/`wasDbQueryCaptured`) — `recordAdminRouteError` now skips its own capture when `dbQuery()` already recorded the exact same error object, without losing capture of any genuinely non-`dbQuery` admin-route error. |
-| duplicate/incorrect alerts | **SHIPPED 2026-07-03** | "Incorrect" (was this alert later correct) was already measured via 0DTE ledger + Night Hawk outcome grading. "Duplicate" detection now shipped too, with zero invented ground truth: `fetchDuplicateAlertGroups()` (`db.ts`) checks whether `alert_audit_log`'s OWN documented design invariant (`docs/bie/AUDIT-TRAIL-SCHEMA.md` — exactly one row per `(alert_type, source_key)`) actually holds in production, verifying the `xmax = 0` / partial-unique-index dedup all three Stage 4 write-paths were built to enforce. Structured field in `/api/admin/bie-report`'s `duplicate_alerts`, surfaced in the Audit trail panel. |
+| duplicate/incorrect alerts | **SHIPPED 2026-07-03, code correct — but its live "zero duplicates" confirmation was vacuous until the same-night P0 fix (see Stage 4 below)** | "Incorrect" (was this alert later correct) was already measured via 0DTE ledger + Night Hawk outcome grading. "Duplicate" detection: `fetchDuplicateAlertGroups()` (`db.ts`) checks whether `alert_audit_log`'s OWN documented design invariant (`docs/bie/AUDIT-TRAIL-SCHEMA.md` — exactly one row per `(alert_type, source_key)`) actually holds in production. The check's own logic was always correct; its first live read (`duplicate_alerts: []`) was reported as confirmation the dedup mechanisms hold, but the table was empty due to the write-path bug below, so `[]` meant "no rows to compare," not "compared rows, found none duplicated." Structured field in `/api/admin/bie-report`'s `duplicate_alerts`, surfaced in the Audit trail panel — will give a real signal once rows land. |
 | frontend errors | **SHIPPED** | `ClientErrorReporter` (mounted in root layout) captures `window.onerror`/`unhandledrejection`, sends via `navigator.sendBeacon` to the public `POST /api/telemetry/client-error` beacon → `error_events` (`source: "frontend"`), grouped by page path. Deliberately narrow: per-IP rate limit (20/min), hard body-size cap, server-side path-only stripping of the URL field (never trusts the client not to leak a query-string secret), capped at 8 reports per page load with dedup. Required a new middleware exemption — `/api/telemetry/client-error` is the first genuinely public (unauthenticated) mutation route; the existing "mutation backstop" would have 401'd every logged-out visitor's error report |
 | missed alerts | **SHIPPED 2026-07-03 (cron-outage ground truth, by explicit user decision)** | `src/lib/bie/missed-alerts.ts`'s `detectMissedAlertWindows()` — narrower than general cron health: flags only the market-hours crons that themselves PRODUCE a member-visible alert (`flow-ingest`, `spx-evaluate`, `gex-alerts` — not cache warmers like `grid-warm`/`heatmap-warm`/`nights-watch-warm`, not validators like `data-correctness`) being currently failed or stale-during-RTH. Ground truth is deliberately "we know we didn't evaluate," never "we evaluated and missed a real setup" — the latter needs a full historical backtest re-scoring pass, a genuinely separate and much larger build, explicitly deferred. Wired into both `runBieDiscovery()`'s narrative and `/api/admin/bie-report`'s structured `missed_alerts` field. |
 
@@ -140,25 +140,23 @@ inventing a number would:
 | Railway deployment status/errors | **SHIPPED** (live snapshot, `/api/admin/bie-report` `railway`) | `src/lib/railway-status.ts`'s `probeRailwayStatus()` — read-only GraphQL query for the last 5 deployments, gated on `RAILWAY_TOKEN` + the auto-injected `RAILWAY_PROJECT_ID`/`RAILWAY_ENVIRONMENT_ID`/`RAILWAY_SERVICE_ID` all being present. First automated (not sandbox-manual) use of the Railway API — unblocked once the user set `RAILWAY_TOKEN` as a real service env var. |
 | Railway resource usage (CPU/memory) | **SHIPPED 2026-07-03** (live snapshot, `/api/admin/bie-report` `railway_resource_usage`) | `probeRailwayResourceUsage()` — Railway's `metrics(measurements: [CPU_USAGE, MEMORY_USAGE_GB], ...)` GraphQL query, confirmed working live during investigation (returns real vCPU/GB time series). Reports avg + latest over a rolling window; a measurement with zero data points maps to `null`, never a fabricated 0. |
 | Railway environment variables (listing/auditing) | **SHIPPED 2026-07-03, presence-only as planned** (live snapshot, `/api/admin/bie-report` `railway_env_vars`) | `probeRailwayEnvVars()` — Railway's `variables(...)` query returns actual key→value pairs; the probe extracts ONLY `Object.keys(...)` on the very next line and never touches the values again, logs them, or returns them from the function. Reports total count + which of a hand-kept `CRITICAL_ENV_VARS` list (DATABASE_URL, REDIS_URL, ANTHROPIC_API_KEY, etc.) are missing. Staleness (when a var last changed) is NOT buildable — Railway's `variables` scalar has no per-key timestamp, confirmed during investigation, not assumed. |
-| Redis usage / connection pool internals | No Redis `INFO`/`CLIENT LIST` introspection wired | Buildable with zero new access (Redis is already connected) — genuinely just not built yet, unlike the Railway items |
 | Postgres connection pool saturation | **SHIPPED** (live snapshot, `/api/admin/bie-report` `db_pool`) | `getDatabasePoolStats()` (already existed in `db.ts`, used by `admin-api-dashboard.ts`/`market-health.ts`) — now surfaced in the BIE panel too, with a visual flag when `waiting > 0` (queueing pressure) |
 | Postgres slow-query log (`pg_stat_statements`) | **CHECKED 2026-07-03, not enabled — per explicit user instruction, checked only, never attempted to enable** | `src/lib/pg-stat-statements-health.ts`'s `probePgStatStatements()` — queries `pg_extension` for the extension; reports `enabled: true` + tracked-statement count if present, `enabled: false` if not. Enabling it is a server-level Postgres config change (the extension must already be in `shared_preload_libraries`, which this app cannot set from SQL alone and may need a restart) — left to the user's explicit go-ahead, never decided here. |
 | Redis internals (memory, key count, connected clients, uptime) | **SHIPPED** (live snapshot, `/api/admin/bie-report` `redis`) | `src/lib/redis-health.ts` — a dedicated diagnostic-only client (mirrors `uw-shared-cache.ts`'s isolation pattern, never touches the general-purpose cache path), one-shot `INFO`+`DBSIZE` then disconnect |
 | Clerk/UW/Polygon spend dashboards | Those are billing dashboards on the vendor's side, not an API we call | Would need each vendor's usage/billing API if they expose one — separate research per vendor, not assumed to exist |
-| Security warnings / auth failure monitoring | **Assumption checked 2026-07-03, inconclusive — downgrading from "buildable now"** | Our existing Clerk webhook handler (`webhooks/clerk/route.ts`) only handles `user.created`/`updated`/`deleted` — resource lifecycle events. Checked whether Clerk's webhook system emits an event for a FAILED sign-in/auth attempt (as opposed to only successful lifecycle events) — Clerk's own docs don't clearly list this in the parts fetchable here; general auth-provider pattern (webhooks fire on state changes, a failed attempt doesn't change any resource) suggests it likely does NOT exist, but this isn't confirmed either way without checking Clerk's dashboard Event Catalog directly, which needs the user's Clerk account access, not just docs. **Do not build against this assumption until confirmed** — exactly the "never invent" rule this doc holds itself to. |
+| Security warnings / auth failure monitoring | **CONFIRMED BLOCKED 2026-07-03, not just inconclusive anymore** | Researched Clerk's actual API surface (webhook event catalog, Backend API reference, changelog) rather than the dashboard. Confirmed: Clerk's webhooks only fire on resource state changes (`user.*`, `session.created/ended/removed/revoked`, `organization.*`, etc.) — no `sign_in.failed` or equivalent, because a rejected auth attempt never creates/changes a resource. The Backend API has no "sign-in attempts"/security-events/audit-log endpoint either (only `POST /users/{id}/lock` and `/unlock` — you can act on lockout state, not read failure history). The data DOES exist and IS named exactly `sign_in.failed` / `sign_in.password.failed` / `sign_in.attempt_first_factor.failed` etc. — but only inside Clerk's Dashboard-only "Application Logs" feature (shipped 2026-05-06), which has no documented webhook or Backend API delivery. **This is now a confirmed platform limitation, not an open question** — Clerk simply doesn't expose this event programmatically today. The only way to get this signal at all would be catching failures client-side on our OWN sign-in page — but that requires replacing the prebuilt `<SignIn>` component with a custom flow built on `useSignIn()`, a real rewrite of a critical, revenue-facing auth surface. That's a scope/risk decision for the user, not something to build unilaterally. |
 
 **The honest line, updated 2026-07-03:** Redis internals, Postgres pool
 stats, Railway deploy status, Railway resource usage, Railway env-var
 presence, Railway runtime error counts, and a pg_stat_statements presence
 check are ALL now live in the BIE report — every item in this table is
-either SHIPPED or explicitly, verifiably blocked (Clerk auth-failure
-mirroring, pending the user's own Clerk dashboard check; env-var
-*staleness* specifically, confirmed not exposed by Railway's API). Nothing
-in this stage is "not tried yet" anymore. Clerk auth-failure mirroring is
-downgraded off the buildable list pending confirmation Clerk even emits the
-event needed (see above).
+either SHIPPED or explicitly, verifiably blocked. Nothing in this stage is
+"not tried yet" anymore. Clerk auth-failure mirroring is confirmed
+impossible via any Clerk API today (see above) — the only remaining path is
+a client-side sign-in-flow rewrite, which is a real product-risk decision,
+not a research gap.
 
-## Stage 4 — Unified audit trail per alert (SHIPPED — schema, all three write-paths, and the query surface)
+## Stage 4 — Unified audit trail per alert (SHIPPED — schema, all three write-paths, and the query surface; see the P0 correction in step 6 below — the write-paths only started actually writing rows same-night)
 
 The ask specifies a full audit trail per alert: input data, calculation
 logic, decision logic, confidence score, timestamp, source API, rate-limit
@@ -185,9 +183,23 @@ writes to. Full design in `docs/bie/AUDIT-TRAIL-SCHEMA.md`; rollout status:
    not a regression.
 5. Query-surface PR (`/api/admin/bie-report` `audit_trail` block) —
    **shipped 2026-07-03.** `fetchAlertAuditTrail()` reads recent rows +
-   per-type counts + an honest (currently 0%, unpopulated) source-API
-   attribution figure; rendered as a new "Audit trail" panel in
-   `AdminBieDashboard.tsx`. Stage 4 is now fully shipped end to end.
+   per-type counts + a real source-API attribution figure; rendered as a
+   new "Audit trail" panel in `AdminBieDashboard.tsx`.
+6. **CORRECTION, same night — P0 found and fixed.** Steps 3 and 4 above
+   were true of the code, not of production: `decision_trace` is always a
+   non-empty array, and node-postgres's default parameter serialization
+   turns a top-level JS array into a Postgres ARRAY-literal string, not
+   JSON — every INSERT into `alert_audit_log` was throwing "invalid input
+   syntax for type json," silently, because both write-paths
+   fire-and-forget behind a `console.warn`-only catch. Confirmed via a live
+   authenticated check: the table had zero rows despite hours of the 0DTE
+   scanner and Night Hawk both running. Fixed with an explicit
+   `JSON.stringify()` + `::jsonb` cast for every jsonb parameter
+   (`toJsonbParam()` in `db.ts`). Same PR shipped the `source_apis`
+   best-effort attribution (option 4a from `AUDIT-TRAIL-SCHEMA.md`) that was
+   the last open item in this stage. Full write-up: `docs/audit/FINDINGS.md`.
+   **Stage 4 is now actually fully shipped end to end** — the schema and
+   query surface were always real; the write-paths only became real tonight.
 
 ## Stage 5 — BIE opens PRs autonomously
 

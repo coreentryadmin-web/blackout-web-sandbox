@@ -2905,6 +2905,105 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
   return freshlyFlagged;
 }
 
+/**
+ * P0 fix (found 2026-07-03 while wiring source_apis attribution): node-postgres's
+ * parameter serialization (`pg/lib/utils.js`'s prepareValue) converts a top-level JS
+ * ARRAY into a Postgres ARRAY-literal string (`{"...","..."}, `), not a JSON array
+ * (`[...]`) — verified directly against the installed pg version. `decision_trace`
+ * is ALWAYS a non-empty array at both real call sites (buildZeroDteAuditRow,
+ * buildNighthawkRejectedAuditRow), so every INSERT into alert_audit_log's `jsonb`
+ * decision_trace column has been sending invalid JSON syntax and throwing
+ * "invalid input syntax for type json" since Stage 4's write-paths shipped —
+ * silently, because callers fire-and-forget these inserts behind a
+ * `.catch(err => console.warn(...))`, which never reaches error_events/Sentry.
+ * Confirmed empirically: an authenticated GET to /api/admin/bie-report showed
+ * `audit_trail: { recent: [], counts_by_type: {} }` — ZERO rows, despite the
+ * write-paths being marked SHIPPED across three PRs. Plain objects (source_key,
+ * input_snapshot, final_output) are unaffected — prepareValue's object branch
+ * DOES call JSON.stringify — only a value that is a JS array AT THE TOP LEVEL
+ * hits the broken branch. Explicitly JSON.stringify() any array-shaped value
+ * before binding it as a query parameter for a jsonb column; do not rely on the
+ * driver's default object/array handling.
+ */
+export function toJsonbParam(value: unknown): string | null {
+  if (value == null) return null;
+  return JSON.stringify(value);
+}
+
+export type SourceApiAttribution = {
+  provider: string;
+  endpoint: string;
+  rate_limited: boolean;
+  ok: boolean;
+  best_effort: true;
+};
+
+/**
+ * Stage 4, attribution option 4a from docs/bie/AUDIT-TRAIL-SCHEMA.md: best-effort
+ * source-API attribution via a time-window join, not exact per-alert correlation
+ * (4b — threading a shared correlationId through every provider call — is a much
+ * larger diff, left as a named follow-up if this proves too lossy in practice).
+ *
+ * Matches `api_telemetry_events` rows whose `request_url` contains the alert's
+ * ticker. Approximate by construction: misses calls whose URL doesn't embed the
+ * ticker (e.g. a batched market-tide pull covering many tickers at once) — every
+ * returned entry carries `best_effort: true` so nothing downstream can mistake
+ * this for exact attribution. Split from the DB query so the join logic itself is
+ * unit-testable without a live Postgres connection.
+ */
+export function buildSourceApisAttribution(
+  ticker: string,
+  telemetryRows: Array<{ provider: string; endpoint: string; rate_limited: boolean; ok: boolean; request_url: string | null }>
+): SourceApiAttribution[] | null {
+  const upperTicker = ticker.toUpperCase();
+  const matches = telemetryRows.filter((r) => r.request_url?.toUpperCase().includes(upperTicker));
+  if (matches.length === 0) return null;
+  // Dedup by provider+endpoint — retries/refresh polls in the window would otherwise
+  // produce several identical attribution entries for the same real API call site.
+  const seen = new Set<string>();
+  const out: SourceApiAttribution[] = [];
+  for (const m of matches) {
+    const key = `${m.provider}:${m.endpoint}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ provider: m.provider, endpoint: m.endpoint, rate_limited: m.rate_limited, ok: m.ok, best_effort: true });
+  }
+  return out;
+}
+
+// How far back to look for provider calls that plausibly fed a just-fired alert.
+// Generous but not unbounded — approximate by design (see buildSourceApisAttribution),
+// so exact tuning matters less than staying well clear of the next scan cycle's calls.
+const SOURCE_API_ATTRIBUTION_WINDOW_MS = 3 * 60_000;
+
+/** Best-effort: a failed telemetry lookup must never block the audit-log write it's
+ *  attributing, so this fails open to `null` (the row still gets written, just
+ *  without source_apis — exactly like the "no write-path populates this yet" state
+ *  it's replacing). */
+async function attributeSourceApis(ticker: string): Promise<SourceApiAttribution[] | null> {
+  try {
+    const nowIso = new Date().toISOString();
+    const res = await dbQuery<{
+      provider: string;
+      endpoint: string;
+      rate_limited: boolean;
+      ok: boolean;
+      request_url: string | null;
+    }>(
+      `SELECT provider, endpoint, rate_limited, ok, request_url
+       FROM api_telemetry_events
+       WHERE at >= $1::timestamptz - ($2 || ' milliseconds')::interval
+         AND at <= $1::timestamptz
+       ORDER BY at DESC
+       LIMIT 200`,
+      [nowIso, SOURCE_API_ATTRIBUTION_WINDOW_MS]
+    );
+    return buildSourceApisAttribution(ticker, res.rows);
+  } catch {
+    return null;
+  }
+}
+
 /** Stage 4 audit trail — one row per alert, written once at first flag (never on a
  *  refresh tick; see upsertZeroDteSetupLog's freshlyFlagged return). Best-effort:
  *  callers fire-and-forget this so an audit-log failure never breaks a scan. */
@@ -2921,27 +3020,31 @@ export async function insertAlertAuditLog(row: {
   input_snapshot: Record<string, unknown> | null;
   final_output: Record<string, unknown> | null;
 }): Promise<void> {
+  const sourceApis = await attributeSourceApis(row.ticker);
   // dbQuery (not raw pool.query) so transient PgBouncer blips get the same retry/backoff
   // as every other write — a one-shot INSERT failure after a successful upsert would
   // otherwise leave a permanent audit gap (refresh ticks never re-write audit rows).
+  // Every jsonb column goes through toJsonbParam() — see its doc comment for the
+  // array-serialization bug this fixes (decision_trace is always an array here).
   await dbQuery(
     `INSERT INTO alert_audit_log (
       alert_type, source_table, source_key, ticker, direction,
       confidence_score, confidence_label, trigger_reason, decision_trace,
-      input_snapshot, final_output
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      input_snapshot, source_apis, final_output
+    ) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb)`,
     [
       row.alert_type,
       row.source_table,
-      row.source_key,
+      toJsonbParam(row.source_key),
       row.ticker.toUpperCase(),
       row.direction,
       row.confidence_score,
       row.confidence_label,
       row.trigger_reason,
-      row.decision_trace,
-      row.input_snapshot,
-      row.final_output,
+      toJsonbParam(row.decision_trace),
+      toJsonbParam(row.input_snapshot),
+      toJsonbParam(sourceApis),
+      toJsonbParam(row.final_output),
     ]
   );
 }
@@ -2965,24 +3068,26 @@ export async function insertNighthawkRejectedAuditLog(row: {
 }): Promise<void> {
   // dbQuery (not raw pool.query) so transient PgBouncer blips get the same retry/backoff
   // as insertAlertAuditLog — see PR #341 for the same fix on that sibling function.
+  // Every jsonb column goes through toJsonbParam() — see its doc comment for the
+  // array-serialization bug this fixes (decision_trace is always an array here).
   await dbQuery(
     `INSERT INTO alert_audit_log (
       alert_type, source_table, source_key, ticker, direction,
       confidence_score, confidence_label, trigger_reason, decision_trace,
       input_snapshot, final_output
-    ) VALUES ('nighthawk_rejected','claude_edition_synthesis',$1,$2,$3,$4,$5,$6,$7,$8,NULL)
+    ) VALUES ('nighthawk_rejected','claude_edition_synthesis',$1::jsonb,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,NULL)
     ON CONFLICT (alert_type, ticker, (source_key->>'edition_for'))
       WHERE alert_type = 'nighthawk_rejected'
       DO NOTHING`,
     [
-      row.source_key,
+      toJsonbParam(row.source_key),
       row.ticker.toUpperCase(),
       row.direction,
       row.confidence_score,
       row.confidence_label,
       row.trigger_reason,
-      row.decision_trace,
-      row.input_snapshot,
+      toJsonbParam(row.decision_trace),
+      toJsonbParam(row.input_snapshot),
     ]
   );
 }
@@ -3002,11 +3107,11 @@ export type AlertAuditTrailRow = {
 export type AlertAuditTrailSummary = {
   recent: AlertAuditTrailRow[];
   counts_by_type: Record<string, number>;
-  // Honest, not aspirational: no write-path populates source_apis yet (see the
-  // 4a/4b attribution options in docs/bie/AUDIT-TRAIL-SCHEMA.md) — this is always
-  // 0 today. Exposed as a real field (not baked into a paragraph) so the day a
-  // write-path starts populating it, the admin panel reflects that with zero
-  // code changes here, and BIE never has to claim a coverage number it can't back.
+  // Real coverage, computed from the table — not baked into a paragraph. Both
+  // write-paths now call attributeSourceApis() (4a from docs/bie/AUDIT-TRAIL-SCHEMA.md,
+  // a best-effort time-window join, always flagged best_effort:true). This can be
+  // < 100% for two honest reasons: the join genuinely found no matching telemetry
+  // in the window, or the row predates this attribution being wired in.
   source_api_attribution_pct: number;
 };
 

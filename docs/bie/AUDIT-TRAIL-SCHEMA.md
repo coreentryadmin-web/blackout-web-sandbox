@@ -192,14 +192,29 @@ seeing real data.
    Hawk rejected) are now all shipped; only the query-surface PR remains.
 5. **Query surface PR — SHIPPED 2026-07-03.** `fetchAlertAuditTrail()`
    (`db.ts`) reads the last 20 rows plus a `GROUP BY alert_type` count and an
-   honest `source_api_attribution_pct` (always 0 today — no write-path
-   populates `source_apis` yet, reported as a real number rather than baked
-   into prose so it updates itself the day that changes). Wired into
-   `/api/admin/bie-report`'s `audit_trail` block and rendered as a new
-   "Audit trail" panel in `AdminBieDashboard.tsx`, same fail-open pattern as
-   every other probe on that page (a query failure shows as `null`, never
-   breaks the report). This closes Stage 4 — schema, all three write-paths,
-   and the query surface are now all shipped.
+   honest `source_api_attribution_pct`. Wired into `/api/admin/bie-report`'s
+   `audit_trail` block and rendered as a new "Audit trail" panel in
+   `AdminBieDashboard.tsx`, same fail-open pattern as every other probe on
+   that page (a query failure shows as `null`, never breaks the report).
+
+6. **CORRECTION, same night — P0 found and fixed: steps 3+4 above were never
+   actually writing rows.** `decision_trace` is always a non-empty JS array
+   at both write-path call sites; node-postgres's default parameter
+   serialization converts a top-level array into a Postgres ARRAY-literal
+   string, not JSON, so every INSERT into `alert_audit_log` threw "invalid
+   input syntax for type json" — silently, because both call sites
+   fire-and-forget behind `.catch(err => console.warn(...))`. "SHIPPED" in
+   steps 3/4 above was true of the code review, not of production behavior —
+   the table had zero rows despite both write-paths running for hours.
+   Fixed via `toJsonbParam()` in `db.ts` (explicit `JSON.stringify` +
+   `::jsonb` casts for every jsonb-bound parameter in both insert
+   functions). Same PR also shipped the `source_apis` attribution (option 4a
+   from above — a best-effort time-window join against
+   `api_telemetry_events`, always flagged `best_effort: true`). Full
+   write-up: `docs/audit/FINDINGS.md`. **This is the actual point Stage 4's
+   write-paths became real** — steps 3–5 document the design and intent
+   correctly, but treat their "SHIPPED" claims as historical/aspirational
+   until this correction.
 
 Was explicitly out of scope for Stage 4 itself, both now shipped as Stage 2
 items (2026-07-03, see `FULL-SYSTEM-AWARENESS.md`): **missed-alert
