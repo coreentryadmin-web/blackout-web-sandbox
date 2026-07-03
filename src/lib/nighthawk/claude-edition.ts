@@ -132,6 +132,11 @@ export async function generateEditionPlays(params: {
   };
   // Numeric-grounding summary (audit P0) so the build can stamp grounded/dropped/flagged into meta.
   grounding?: GroundingSummary;
+  // BIE Stage 4 audit trail (docs/bie/AUDIT-TRAIL-SCHEMA.md step 4b): plays that failed the
+  // trade-geometry gate, with the full mapped play so the caller can build a real decision
+  // trace — not just a ticker. Empty on the mechanical-fallback path (no geometry check runs
+  // there) and on a zero-parsed-plays exit (nothing was ever mapped to check).
+  geometryRejected?: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }>;
 }> {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
@@ -212,7 +217,7 @@ export async function generateEditionPlays(params: {
   // Validated with the SAME parser the outcome grader uses, so publish-time truth
   // and grading truth cannot diverge.
   const mapped: typeof mappedAll = [];
-  const geometryRejected: Array<{ ticker: string; drops: string[] }> = [];
+  const geometryRejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }> = [];
   for (const play of mappedAll) {
     const verdict = validatePlayGeometry(play);
     if (verdict.ok) {
@@ -221,7 +226,7 @@ export async function generateEditionPlays(params: {
         console.warn(`[nighthawk/geometry] ${play.ticker} flagged: ${verdict.flags.join("; ")}`);
       }
     } else {
-      geometryRejected.push({ ticker: play.ticker, drops: verdict.drops });
+      geometryRejected.push({ ticker: play.ticker, drops: verdict.drops, play });
     }
   }
   if (geometryRejected.length) {
@@ -300,6 +305,7 @@ export async function generateEditionPlays(params: {
     plays: capped,
     recap,
     raw,
+    geometryRejected,
     funnel: {
       parsed: parsed.length,
       stock: mappedAll.length,

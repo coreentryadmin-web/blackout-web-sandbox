@@ -160,7 +160,7 @@ Logs, resource-usage metrics, and env-var presence/staleness auditing
 remain manual-only — genuinely separate, larger pieces of work, not
 rolled into this change.
 
-## Stage 4 — Unified audit trail per alert (IN PROGRESS — schema + both write-paths' published halves shipped)
+## Stage 4 — Unified audit trail per alert (IN PROGRESS — schema + all three write-paths shipped, query surface next)
 
 The ask specifies a full audit trail per alert: input data, calculation
 logic, decision logic, confidence score, timestamp, source API, rate-limit
@@ -174,18 +174,20 @@ writes to. Full design in `docs/bie/AUDIT-TRAIL-SCHEMA.md`; rollout status:
 3. 0DTE write-path (`persistZeroDteScan` writes one row per setup at first
    flag only, via `xmax = 0` insert-detection so refresh ticks never
    duplicate) — **shipped 2026-07-03**.
-4. Night Hawk write-path — **published half shipped 2026-07-03**
-   (`syncNighthawkPlayOutcomes` writes one row per play at first publish,
-   same `xmax = 0` pattern). The **rejected half**'s dedup index
-   (`idx_alert_audit_log_nighthawk_rejected_dedup`, partial unique on
-   `alert_type='nighthawk_rejected'`) is **shipped**; the write-path itself
-   (one row per `validatePlayGeometry()` rejection) is still **NOT YET** —
-   needs `generateEditionPlays()`'s rejection list threaded through
-   `edition-builder.ts`'s two divergent code paths (fresh-generation vs.
-   checkpoint-restore, the latter has no rejection data by construction),
-   deliberately not rushed same-night.
-5. Query-surface PR (`/api/admin/bie-report` audit_trail block) — after #4
-   is fully done (published + rejected), once there's real data to show.
+4. Night Hawk write-path — **fully shipped 2026-07-03** (published half,
+   then the dedup index, then the rejected half). `syncNighthawkPlayOutcomes`
+   writes one row per play at first publish (`xmax = 0` pattern);
+   `generateEditionPlays()` returns its `geometryRejected` list and
+   `edition-builder.ts` records one row per rejection via
+   `recordNighthawkRejectedAuditTrail()`, deduped by
+   `idx_alert_audit_log_nighthawk_rejected_dedup` so a force-rebuild re-run
+   never writes a duplicate. The checkpoint-restore code path still has no
+   rejection data by construction (it resumes from an already-vetted
+   checkpoint, skipping synthesis entirely) — a known, documented limitation,
+   not a regression.
+5. Query-surface PR (`/api/admin/bie-report` audit_trail block) — next up,
+   now that all three write-paths (0DTE, Night Hawk published, Night Hawk
+   rejected) are live and there's real data to show.
 
 ## Stage 5 — BIE opens PRs autonomously
 

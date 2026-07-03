@@ -15,7 +15,7 @@ import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
 import { polygonConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
-import { syncNighthawkPlayOutcomes } from "./play-outcomes";
+import { recordNighthawkRejectedAuditTrail, syncNighthawkPlayOutcomes } from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
@@ -611,7 +611,13 @@ export async function buildEveningEdition(opts?: {
       funnel.synthesized = finalPlays.length;
       funnel.critic_passed = finalPlays.length;
     } else {
-      const { plays: rawPlays, raw: synthRaw, funnel: synthFunnel, grounding: synthGrounding } = await generateEditionPlays({
+      const {
+        plays: rawPlays,
+        raw: synthRaw,
+        funnel: synthFunnel,
+        grounding: synthGrounding,
+        geometryRejected,
+      } = await generateEditionPlays({
         ctx,
         dossiers: synthesisDossiers,
         ranked: synthesisRanked,
@@ -621,6 +627,16 @@ export async function buildEveningEdition(opts?: {
         playOutcomes,
       });
       raw = synthRaw;
+      // BIE Stage 4 audit trail (step 4b): one row per geometry-rejected play, regardless of
+      // whether the run ultimately publishes anything — this is the ONLY record of a
+      // rejection, so it must not depend on the downstream funnel outcome. Fire-and-forget,
+      // dedup'd at the DB layer (see insertNighthawkRejectedAuditLog) so a force-rebuild that
+      // re-derives the same rejection never writes a duplicate row. Called unconditionally,
+      // same as syncNighthawkPlayOutcomes below — a DB-not-configured environment fails the
+      // write silently via the caught rejection, never propagating.
+      if (geometryRejected?.length) {
+        recordNighthawkRejectedAuditTrail(geometryRejected, editionFor);
+      }
       // Stamp grounding counts onto the funnel so EVERY exit (incl. recap-only fallbacks below)
       // reports them. The checks already ran inside generateEditionPlays before any drop took effect.
       groundingSummary = synthGrounding ?? null;

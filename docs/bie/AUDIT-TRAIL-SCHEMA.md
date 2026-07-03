@@ -173,11 +173,23 @@ seeing real data.
    consumers yet, purely additive, cannot regress anything by construction).
    The future write-path insert will use
    `ON CONFLICT (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected' DO NOTHING`.
-   Remaining work is unchanged: `generateEditionPlays()` needs to return its
-   `geometryRejected` list and that list threaded through `edition-builder.ts`'s
-   fresh-generation path (the checkpoint-restore path has no rejection data
-   by construction) — still **NOT YET**, the schema prerequisite is just no
-   longer blocking it.
+
+   **Rejected-play write-path — SHIPPED 2026-07-03.** `generateEditionPlays()`
+   now returns `geometryRejected: Array<{ticker, drops, play}>` (was discarded
+   after only being `console.warn`'d). `edition-builder.ts` calls the new
+   `recordNighthawkRejectedAuditTrail()` immediately after the destructuring —
+   before any of the function's existing early-return branches — so a
+   rejection is recorded regardless of whether the run ultimately publishes
+   anything (a rejected play is never written anywhere else, so this is its
+   only record). Called unconditionally, same as `syncNighthawkPlayOutcomes`
+   just below it. New pure `buildNighthawkRejectedAuditRow()` in
+   `play-outcomes.ts` cites the real `validatePlayGeometry()` drop reasons as
+   individual `decision_trace` entries — never fabricated — and sets
+   `final_output: null` (a rejected play was never member-visible, so there
+   is no real final output to record). The checkpoint-restore path still has
+   no rejection data by construction (unchanged, documented limitation, not
+   a regression). Stage 4 write-paths (0DTE + Night Hawk published + Night
+   Hawk rejected) are now all shipped; only the query-surface PR remains.
 5. **Query surface PR:** extend `/api/admin/bie-report` with an
    `audit_trail` block (recent rows, source-API attribution coverage %) —
    only after there's real data to show.

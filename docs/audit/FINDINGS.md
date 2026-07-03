@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE Stage 4: Night Hawk rejected-play write-path shipped — all three audit-trail write-paths now live
+**Status:** SHIPPED (`feat/bie-nighthawk-rejected-writepath`). `generateEditionPlays()` (`claude-edition.ts`) now returns `geometryRejected: Array<{ticker, drops, play}>` instead of only `console.warn`ing it. `edition-builder.ts` calls the new `recordNighthawkRejectedAuditTrail()` immediately after destructuring the result — before any of the function's existing early-return branches — so a rejection is recorded regardless of whether the run ultimately publishes anything (a rejected play is never written anywhere else, so this is its only record).
+
+**Why now:** re-evaluated fresh (re-read both files, didn't rely on stale context) per explicit instruction to give an honest attemptable-or-defer verdict. The insertion point is purely additive — it doesn't touch any existing branch/condition in either function — and the dedup index (`idx_alert_audit_log_nighthawk_rejected_dedup`) was already shipped and live, so the only remaining risk (duplicate rows on a `force`-rebuild re-deriving the same rejections) was already closed.
+
+**Fix:** new pure `buildNighthawkRejectedAuditRow()` in `play-outcomes.ts` cites the real `validatePlayGeometry()` drop reasons as individual `decision_trace` entries (never fabricated) and sets `final_output: null` (a rejected play was never member-visible, so there is no real final output to record). `insertNighthawkRejectedAuditLog()` (`db.ts`) uses `dbQuery()`, not raw `pool.query()` — matching PR #341's retry-safety fix on the sibling `insertAlertAuditLog()`, so a transient PgBouncer blip after the geometry check doesn't silently drop the rejection record. The checkpoint-restore path still has no rejection data by construction (unchanged, documented limitation, not a regression — it resumes from an already-vetted checkpoint that never ran geometry validation in that run).
+
+**Verification:** 801/801 tests (2 new fixture tests: real multi-reason SHORT rejection, and a corrupt-entry-range LONG rejection), `tsc --noEmit` + build clean. Not exercised against a live Postgres from this sandbox — same limitation as every other write-path in this doc; correctness reviewed by inspection + fixtures, confirmed live post-deploy via the next real Night Hawk edition that rejects a play on geometry.
+
+**Stage 4 status:** all three write-paths (0DTE, Night Hawk published, Night Hawk rejected) are now shipped. Only the query-surface PR (`/api/admin/bie-report` `audit_trail` block) remains — see `docs/bie/AUDIT-TRAIL-SCHEMA.md`.
+
 ---
 
 ## 🟡 P2 FIXED 2026-07-03 — BIE router (`bie-router` answer path) skipped Layer 4 `verifyClaims()` — `claims_total`/`claims_verified` always null in telemetry

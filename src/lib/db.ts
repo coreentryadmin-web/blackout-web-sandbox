@@ -2938,6 +2938,47 @@ export async function insertAlertAuditLog(row: {
   );
 }
 
+/** Stage 4 audit trail for a Night Hawk REJECTED play (`alert_type = 'nighthawk_rejected'`).
+ *  Unlike `insertAlertAuditLog`'s callers (0DTE, Night Hawk published), there is no
+ *  upsert-able system-of-record table to pre-filter "have I seen this before" against —
+ *  a rejected play is never written anywhere else. Relies instead on
+ *  `idx_alert_audit_log_nighthawk_rejected_dedup` (partial unique index on
+ *  `alert_type, ticker, source_key->>'edition_for'`) via `ON CONFLICT ... DO NOTHING`, so a
+ *  force-rebuild that re-derives the same rejection never writes a duplicate row. */
+export async function insertNighthawkRejectedAuditLog(row: {
+  source_key: Record<string, unknown>;
+  ticker: string;
+  direction: string | null;
+  confidence_score: number | null;
+  confidence_label: string | null;
+  trigger_reason: string | null;
+  decision_trace: unknown;
+  input_snapshot: Record<string, unknown> | null;
+}): Promise<void> {
+  // dbQuery (not raw pool.query) so transient PgBouncer blips get the same retry/backoff
+  // as insertAlertAuditLog — see PR #341 for the same fix on that sibling function.
+  await dbQuery(
+    `INSERT INTO alert_audit_log (
+      alert_type, source_table, source_key, ticker, direction,
+      confidence_score, confidence_label, trigger_reason, decision_trace,
+      input_snapshot, final_output
+    ) VALUES ('nighthawk_rejected','claude_edition_synthesis',$1,$2,$3,$4,$5,$6,$7,$8,NULL)
+    ON CONFLICT (alert_type, ticker, (source_key->>'edition_for'))
+      WHERE alert_type = 'nighthawk_rejected'
+      DO NOTHING`,
+    [
+      row.source_key,
+      row.ticker.toUpperCase(),
+      row.direction,
+      row.confidence_score,
+      row.confidence_label,
+      row.trigger_reason,
+      row.decision_trace,
+      row.input_snapshot,
+    ]
+  );
+}
+
 function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
   return {
     session_date: isoDateString(r.session_date),

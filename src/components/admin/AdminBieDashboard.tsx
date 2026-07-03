@@ -94,7 +94,7 @@ const ROADMAP: Stage[] = [
   { n: 1, name: "Repo, docs, API usage, schemas", status: "SHIPPED", blurb: "Knowledge corpus ingested + embedded (Voyage); platform telemetry monitoring is real, not aspirational." },
   { n: 2, name: "Logs, errors, cron/worker health", status: "SHIPPED", blurb: "Backend + frontend error capture, cron health, Postgres pool, Redis internals, data-integrity/data-correctness validators all wired into discovery." },
   { n: 3, name: "Infra access (Railway)", status: "IN PROGRESS", blurb: "Deploy status now wired into this report live (see the Railway chip above) — first automated use, not just manual queries. Deploy/build logs, resource usage, and env-var auditing are still manual-only." },
-  { n: 4, name: "Unified per-alert audit trail", status: "IN PROGRESS", blurb: "alert_audit_log schema + 0DTE write-path + Night Hawk published-play write-path all shipped (fixture-tested). Night Hawk's rejected-play half + query-surface PR are next." },
+  { n: 4, name: "Unified per-alert audit trail", status: "IN PROGRESS", blurb: "alert_audit_log schema + all three write-paths shipped (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested). Only the query-surface PR (/api/admin/bie-report audit_trail block) remains." },
   { n: 5, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. Explicitly secondary to data integrity per the charter." },
 ];
 

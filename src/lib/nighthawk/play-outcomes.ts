@@ -2,6 +2,7 @@ import type { PlaybookPlay } from "./types";
 import {
   fetchPendingNighthawkOutcomes,
   insertAlertAuditLog,
+  insertNighthawkRejectedAuditLog,
   pruneNighthawkPlayOutcomesForEdition,
   upsertNighthawkPlayOutcomes,
   updateNighthawkPlayOutcome,
@@ -28,8 +29,8 @@ import { parsePlayLevels } from "./play-levels";
 // module's parsing/grading logic already is.
 
 export type NighthawkAuditRow = {
-  alert_type: "nighthawk";
-  source_table: "nighthawk_play_outcomes";
+  alert_type: "nighthawk" | "nighthawk_rejected";
+  source_table: "nighthawk_play_outcomes" | "claude_edition_synthesis";
   source_key: { edition_for: string; ticker: string };
   ticker: string;
   direction: "LONG" | "SHORT";
@@ -38,7 +39,7 @@ export type NighthawkAuditRow = {
   trigger_reason: string;
   decision_trace: Array<{ check: string; passed: boolean; value: unknown; threshold: unknown }>;
   input_snapshot: Record<string, unknown>;
-  final_output: Record<string, unknown>;
+  final_output: Record<string, unknown> | null;
 };
 
 /** Build the audit-trail row for a play's FIRST publish in an edition. Every play
@@ -94,6 +95,81 @@ export function buildNighthawkAuditRow(
       entry_premium: play.entry_premium ?? null,
     },
   };
+}
+
+/** Build the audit-trail row for a play REJECTED at the trade-geometry gate
+ *  (`validatePlayGeometry()` in claude-edition.ts) — the Stage 4 rejected-play half
+ *  (docs/bie/AUDIT-TRAIL-SCHEMA.md step 4b). `source_table` is `claude_edition_synthesis`,
+ *  not `nighthawk_play_outcomes` — a rejected play is never written to that table, so
+ *  this audit row is its ONLY record. `decision_trace` cites the real drop reasons from
+ *  `validatePlayGeometry()`'s verdict, one entry per reason — never fabricated. No sector
+ *  attribution (unlike the published-row builder) — sector capping runs on the
+ *  already-geometry-passed list downstream, so a rejected play was never sector-scored.
+ *  `final_output` is null: a rejected play was never shown to a member, so there is no
+ *  real "final output" to record. */
+export function buildNighthawkRejectedAuditRow(
+  rejected: { ticker: string; drops: string[]; play: PlaybookPlay },
+  editionFor: string
+): NighthawkAuditRow {
+  const { play, drops } = rejected;
+  const ticker = String(play.ticker ?? "").toUpperCase();
+  const levels = parsePlayLevels(play);
+  const direction: "LONG" | "SHORT" = String(play.direction ?? "LONG").toUpperCase().includes("SHORT")
+    ? "SHORT"
+    : "LONG";
+  return {
+    alert_type: "nighthawk_rejected",
+    source_table: "claude_edition_synthesis",
+    source_key: { edition_for: editionFor, ticker },
+    ticker,
+    direction,
+    confidence_score: play.score ?? null,
+    confidence_label: String(play.conviction ?? "B").toUpperCase(),
+    trigger_reason: "rejected at synthesis — failed the trade-geometry gate (untradeable risk plan)",
+    decision_trace: drops.map((reason, i) => ({
+      check: `geometry_drop_${i + 1}`,
+      passed: false,
+      value: reason,
+      threshold: null,
+    })),
+    input_snapshot: {
+      entry_range_low: levels.entry_range_low,
+      entry_range_high: levels.entry_range_high,
+      target: levels.target,
+      stop: levels.stop,
+      score: play.score ?? null,
+      raw_entry_range: play.entry_range,
+      raw_target: play.target,
+      raw_stop: play.stop,
+    },
+    final_output: null,
+  };
+}
+
+/** Fire-and-forget: one audit row per geometry-rejected play. Safe to call on every
+ *  synthesis run (fresh or force-rebuilt) — `insertNighthawkRejectedAuditLog`'s
+ *  `ON CONFLICT ... DO NOTHING` (via the partial unique index) absorbs a re-derived
+ *  rejection for the same edition/ticker without writing a duplicate row. Failures are
+ *  logged, never thrown — the audit trail must not be able to break edition publishing. */
+export function recordNighthawkRejectedAuditTrail(
+  rejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }>,
+  editionFor: string
+): void {
+  for (const r of rejected) {
+    const row = buildNighthawkRejectedAuditRow(r, editionFor);
+    void insertNighthawkRejectedAuditLog({
+      source_key: row.source_key,
+      ticker: row.ticker,
+      direction: row.direction,
+      confidence_score: row.confidence_score,
+      confidence_label: row.confidence_label,
+      trigger_reason: row.trigger_reason,
+      decision_trace: row.decision_trace,
+      input_snapshot: row.input_snapshot,
+    }).catch((err) => {
+      console.warn(`[nighthawk-audit] failed to write rejected alert_audit_log for ${row.ticker}:`, err);
+    });
+  }
 }
 
 /** Fire-and-forget: one audit row per FRESHLY published ticker (never on a
