@@ -89,3 +89,61 @@ test("verifier: an answer with no numeric claims has full coverage", () => {
   assert.equal(v.total, 0);
   assert.equal(v.coverage, 1);
 });
+
+// ── Layer 2: chunking + similarity (pure) ────────────────────────────────────────
+
+import { chunkDocument, cosine } from "./embeddings";
+import { assembleBieReport, formatBieReport } from "./report";
+
+test("knowledge: documents chunk on paragraph boundaries under the cap", () => {
+  const doc = Array.from({ length: 10 }, (_, i) => `Paragraph ${i} ${"x".repeat(200)}`).join("\n\n");
+  const chunks = chunkDocument(doc, 1200);
+  assert.ok(chunks.length >= 2);
+  assert.ok(chunks.every((c) => c.length <= 1200));
+  assert.match(chunks[0]!, /Paragraph 0/);
+});
+
+test("knowledge: oversized single paragraphs hard-split with overlap", () => {
+  const chunks = chunkDocument("y".repeat(3000), 1200);
+  assert.ok(chunks.length >= 3);
+  assert.ok(chunks.every((c) => c.length <= 1200));
+});
+
+test("knowledge: cosine similarity behaves (identical=1, orthogonal=0)", () => {
+  assert.equal(Math.round(cosine([1, 2, 3], [1, 2, 3]) * 1000) / 1000, 1);
+  assert.equal(cosine([1, 0], [0, 1]), 0);
+  assert.equal(cosine([], []), 0);
+});
+
+// ── Layer 5: daily self-eval assembly (pure) ─────────────────────────────────────
+
+test("self-eval: coverage, verification and win-rate math", () => {
+  const report = assembleBieReport(
+    "2026-07-06",
+    {
+      total: 40,
+      routed: 26,
+      claude: 14,
+      avg_claims_total: 8,
+      avg_claims_verified: 7,
+      avg_latency_router_ms: 180,
+      avg_latency_claude_ms: 9200,
+    },
+    [
+      { plan_outcome: "doubled", plan_pnl_pct: 100 },
+      { plan_outcome: "stopped", plan_pnl_pct: -50 },
+      { plan_outcome: "time_stop", plan_pnl_pct: 12 },
+      { plan_outcome: null, plan_pnl_pct: null },
+    ]
+  );
+  assert.equal(report.interactions.router_coverage_pct, 65);
+  assert.equal(report.interactions.claude_calls_avoided, 26);
+  assert.equal(report.interactions.verification_rate_pct, 87.5);
+  assert.equal(report.zerodte.graded, 3);
+  assert.equal(report.zerodte.wins, 2);
+  assert.equal(report.zerodte.win_rate_pct, 66.7);
+  const text = formatBieReport(report);
+  assert.match(text, /65% coverage/);
+  assert.match(text, /26/);
+  assert.match(text, /2W\/1L/);
+});

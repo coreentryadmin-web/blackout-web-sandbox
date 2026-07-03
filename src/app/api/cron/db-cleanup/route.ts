@@ -22,6 +22,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const results = await runCleanup();
+    // BIE daily tick (best-effort, never fails the cleanup): ingest fresh platform
+    // knowledge (docs/FINDINGS/latest edition — hash-deduped, embeds only when
+    // VOYAGE_API_KEY is set) and persist the engine's self-evaluation report.
+    const bie = await import("@/lib/bie/knowledge")
+      .then((m) => m.ingestBieKnowledge())
+      .catch(() => ({ stored: -1 }));
+    const selfEval = await import("@/lib/bie/report")
+      .then((m) => m.runBieDailySelfEval())
+      .catch(() => null);
+    (results as Record<string, unknown>).bie_knowledge_stored = bie.stored;
+    (results as Record<string, unknown>).bie_self_eval = selfEval ? "ok" : "skipped";
     const totalDeleted = Object.values(results).reduce((s, n) => s + n, 0);
     const payload = { ok: true, total_deleted: totalDeleted, tables: results };
     await logCronRun("db-cleanup", started, payload);

@@ -199,7 +199,23 @@ async function prepareLargoTurn(
   const intent = analyzeLargoQuestion(question, history.slice(0, -1));
   const liveFeed = await captureLargoLiveFeed(intent, userId);
   const liveFeedBlock = formatLargoLiveFeed(liveFeed, intent.tickerHint ?? "SPX");
-  const system = buildDynamicSystem(question, history.slice(0, -1), liveFeedBlock);
+  // BIE Layer 2 grounding: retrieved desk knowledge (playbooks, findings, past
+  // editions, self-evals) rides into the system prompt when embeddings are
+  // configured. Best-effort and bounded — never delays a turn by more than the
+  // retrieval itself, never blocks on failure.
+  let knowledgeBlock = "";
+  try {
+    const { searchKnowledge } = await import("@/lib/bie/knowledge");
+    const hits = await searchKnowledge(question, 3);
+    if (hits.length > 0) {
+      knowledgeBlock =
+        "\n\n## Retrieved desk knowledge (BLACKOUT Intelligence — cite when relevant)\n" +
+        hits.map((h) => `[${h.kind} · ${h.source}]\n${h.chunk}`).join("\n\n---\n\n");
+    }
+  } catch {
+    // retrieval is optional grounding — never blocks the turn
+  }
+  const system = buildDynamicSystem(question, history.slice(0, -1), liveFeedBlock + knowledgeBlock);
 
   resetLargoSpxDeskCache(userId);
   const allowedToolNames = new Set(getToolsForIntent(question));

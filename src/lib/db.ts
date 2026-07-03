@@ -606,6 +606,23 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_bie_interactions_at ON bie_interactions(created_at DESC);
   `);
+  // BIE Layer 2 — knowledge store. Embeddings live in portable JSONB (corpus is
+  // thousands of chunks; cosine ranking happens in Node) — zero extension
+  // dependency, clean upgrade path to pgvector if the corpus outgrows this.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS bie_knowledge (
+      id BIGSERIAL PRIMARY KEY,
+      kind TEXT NOT NULL,
+      source TEXT NOT NULL,
+      chunk TEXT NOT NULL,
+      chunk_hash TEXT NOT NULL UNIQUE,
+      embedding JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_bie_knowledge_kind ON bie_knowledge(kind, created_at DESC);
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS cron_job_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -2837,6 +2854,95 @@ export async function updateZeroDteLiveState(
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), s.status, s.mark]
   );
+}
+
+export type BieKnowledgeRow = {
+  id: number;
+  kind: string;
+  source: string;
+  chunk: string;
+  embedding: number[] | null;
+  created_at: string;
+};
+
+/** Insert knowledge chunks, skipping ones already stored (hash-deduped). */
+export async function insertBieKnowledge(
+  rows: Array<{ kind: string; source: string; chunk: string; chunk_hash: string; embedding: number[] | null }>
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  await ensureSchema();
+  const pool = await getPool();
+  let inserted = 0;
+  for (const r of rows) {
+    const res = await pool.query(
+      `INSERT INTO bie_knowledge (kind, source, chunk, chunk_hash, embedding)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (chunk_hash) DO NOTHING`,
+      [r.kind, r.source, r.chunk.slice(0, 6000), r.chunk_hash, r.embedding != null ? JSON.stringify(r.embedding) : null]
+    );
+    inserted += res.rowCount ?? 0;
+  }
+  return inserted;
+}
+
+/** Recent knowledge rows (optionally by kind) — ranking happens in the caller. */
+export async function fetchBieKnowledge(opts?: { kind?: string; limit?: number }): Promise<BieKnowledgeRow[]> {
+  await ensureSchema();
+  const limit = Math.min(opts?.limit ?? 400, 1000);
+  const res = opts?.kind
+    ? await (await getPool()).query<QueryResultRow>(
+        `SELECT id, kind, source, chunk, embedding, created_at FROM bie_knowledge WHERE kind = $1 ORDER BY created_at DESC LIMIT $2`,
+        [opts.kind, limit]
+      )
+    : await (await getPool()).query<QueryResultRow>(
+        `SELECT id, kind, source, chunk, embedding, created_at FROM bie_knowledge ORDER BY created_at DESC LIMIT $1`,
+        [limit]
+      );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    kind: String(r.kind),
+    source: String(r.source),
+    chunk: String(r.chunk),
+    embedding: Array.isArray(r.embedding) ? (r.embedding as number[]).map(Number) : null,
+    created_at: new Date(String(r.created_at)).toISOString(),
+  }));
+}
+
+/** Aggregates for the daily BIE self-eval report. */
+export async function fetchBieInteractionStats(sinceHours = 24): Promise<{
+  total: number;
+  routed: number;
+  claude: number;
+  avg_claims_total: number | null;
+  avg_claims_verified: number | null;
+  avg_latency_router_ms: number | null;
+  avg_latency_claude_ms: number | null;
+}> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE answer_source = 'bie-router')::int AS routed,
+       COUNT(*) FILTER (WHERE answer_source = 'claude')::int AS claude,
+       AVG(claims_total) FILTER (WHERE answer_source = 'claude') AS avg_claims_total,
+       AVG(claims_verified) FILTER (WHERE answer_source = 'claude') AS avg_claims_verified,
+       AVG(latency_ms) FILTER (WHERE answer_source = 'bie-router') AS avg_latency_router_ms,
+       AVG(latency_ms) FILTER (WHERE answer_source = 'claude') AS avg_latency_claude_ms
+     FROM bie_interactions
+     WHERE created_at >= NOW() - ($1 || ' hours')::interval`,
+    [sinceHours]
+  );
+  const r = res.rows[0] ?? {};
+  const num = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
+  return {
+    total: Number(r.total) || 0,
+    routed: Number(r.routed) || 0,
+    claude: Number(r.claude) || 0,
+    avg_claims_total: num(r.avg_claims_total),
+    avg_claims_verified: num(r.avg_claims_verified),
+    avg_latency_router_ms: num(r.avg_latency_router_ms),
+    avg_latency_claude_ms: num(r.avg_latency_claude_ms),
+  };
 }
 
 /** BIE learning substrate — best-effort telemetry write, never blocks an answer. */
