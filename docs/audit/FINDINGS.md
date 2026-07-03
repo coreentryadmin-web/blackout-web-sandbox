@@ -214,6 +214,17 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 
 **Blast radius:** consumers — Largo `get_congress_unusual` + `get_unusual_trades` tools, NH dossier congress lane, grid congress panel — all pass rows through generically; no shape change. Plan probes: `recent-trades`/`congress-trader`/`late-reports`/`politicians` all 200 on our key; only `unusual-trades` is gated. If the true "unusual" curation matters, it is a UW plan upgrade (contact dev@unusualwhales.com) — buy decision, documented, not assumed.
 
+## 🧠 BIE Stage 2 — platform discovery expanded to application errors + cron/worker health
+**Status:** SHIPPED (`fix/bie-discovery-errors-cron`). User directive: BIE should have full operational awareness (Railway logs/infra, backend/frontend errors, cron/worker failures, rate limits, DB/Redis health, etc.), actively surfacing what's wrong and how bad, not just answering questions. `docs/bie/FULL-SYSTEM-AWARENESS.md` maps the complete ask against reality — this entry covers the piece shipped tonight.
+
+**What shipped:** `runBieDiscovery` (`src/lib/bie/discovery.ts`) now reads two more tables this app already writes, alongside the existing `api_telemetry_events`:
+- `error_events` (via the existing `countRecentErrorEvents` helper) — unhandled exceptions and request errors, grouped by source/scope, with findings when 24h total ≥25 or a single source/scope accounts for ≥10 of them (a recurring bug, not noise).
+- `cron_job_runs` (via the existing `fetchCronJobLastRuns` helper) — latest status per job; findings fire on any `status === "failed"` job (named + its error message) and any `status === "ok"` job whose last success is >3h old (stalled, not just quiet market hours).
+
+Zero new external access, zero new tables — both sources were already durably logged (`error-sink.ts`'s P1 fix, `cron-run.ts`'s per-tick recording) but never read by BIE. 4 new regression tests (elevated error count, dominant error source, failed cron, stale cron with a fresh-cron negative case). `formatDiscovery`'s signature widened with backward-compatible defaults (`errors`/`cronRuns` optional) — the two existing tests updated for the new "API telemetry: none recorded" phrasing (was "No API telemetry recorded"), everything else additive.
+
+**Explicitly NOT done here (see FULL-SYSTEM-AWARENESS.md for the full map):** Railway's own logs/deploy status/resource metrics/env vars — blocked on a Railway API token, a credential decision only the user can make, same pattern as the Voyage key. Frontend/browser error capture — no client-side reporter wired yet, buildable but not built. Redis internals and Postgres connection-pool stats — buildable with zero new access, genuinely just not built yet (next in this sequence). A unified per-alert audit-trail schema (input → logic → confidence → output → correct?) — real cross-cutting design work, scoped as Stage 4, not a same-night patch.
+
 ## 🔴 FIXED 2026-07-03 — BIE retrieval floor unreachable in practice (0.55 guess vs real voyage-3 distribution)
 **Status:** FIXED (`fix/bie-retrieval-floor-evidence`). Second BIE bug found on the Voyage key's first night — `searchKnowledge`'s 0.55 minimum-cosine floor was set before any real embeddings existed (untested guess in the original Phase 2 PR). The moment the key went live, retrieval was silently returning empty for almost every real question — corpus healthy, key working, floor unreachable.
 

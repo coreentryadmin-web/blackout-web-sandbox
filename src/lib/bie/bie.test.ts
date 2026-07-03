@@ -212,7 +212,42 @@ test("discovery: findings cite numbers and only fire past thresholds", () => {
 });
 
 test("discovery: empty telemetry degrades to an honest no-data report", () => {
-  assert.match(formatDiscovery("2026-07-06", []), /No API telemetry recorded/);
+  assert.match(formatDiscovery("2026-07-06", []), /API telemetry: none recorded/);
+});
+
+test("discovery: application errors — elevated count and a dominant source both surface as findings", () => {
+  const text = formatDiscovery(
+    "2026-07-06",
+    [],
+    { total: 30, groups: [{ source: "request_error", scope: "/api/market/spx/commentary", count: 22 }, { source: "manual", scope: null, count: 8 }] },
+    []
+  );
+  assert.match(text, /Application errors \(last 24h\): 30 total/);
+  assert.match(text, /request_error\/\/api\/market\/spx\/commentary: 22×/);
+  assert.match(text, /elevated; review error_events/);
+  assert.match(text, /top error source \(22× in 24h\)/);
+});
+
+test("discovery: quiet error log produces no findings", () => {
+  const text = formatDiscovery("2026-07-06", [], { total: 3, groups: [{ source: "manual", scope: null, count: 3 }] }, []);
+  assert.match(text, /Application errors \(last 24h\): 3 total/);
+  assert.match(text, /Findings: none crossing thresholds/);
+});
+
+test("discovery: failed and stalled cron jobs are named in findings", () => {
+  // Staleness is computed against the real clock (Date.now()) — fixtures must
+  // be relative to it too, not a fixed calendar date.
+  const nowMs = Date.now();
+  const cronRuns = [
+    { job_key: "grid-warm", status: "failed", started_at: new Date(nowMs).toISOString(), message: "UW timeout" },
+    { job_key: "db-cleanup", status: "ok", started_at: new Date(nowMs - 4 * 3600_000).toISOString(), message: "ok" },
+    { job_key: "flow-ingest", status: "ok", started_at: new Date(nowMs - 5 * 60_000).toISOString(), message: "ok" },
+  ];
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, cronRuns);
+  assert.match(text, /3 jobs tracked, 1 failing, 1 stale/);
+  assert.match(text, /"grid-warm" is FAILING: UW timeout/);
+  assert.match(text, /"db-cleanup" has not succeeded in over 3h/);
+  assert.ok(!text.includes('"flow-ingest" has not succeeded'));
 });
 
 // ── knowledge: embed-vs-backfill partition ───────────────────────────────────────
