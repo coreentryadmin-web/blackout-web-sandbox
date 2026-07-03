@@ -90,6 +90,29 @@ test("verifier: an answer with no numeric claims has full coverage", () => {
   assert.equal(v.coverage, 1);
 });
 
+test("verifier: router play-line numbers trace to board context (Layer 4 on bie-router path)", () => {
+  const context = {
+    ticker: "NVDA",
+    direction: "long",
+    strike: 142.5,
+    status: "LIVE",
+    entry_premium: 4.2,
+    last_mark: 6.3,
+    live_pnl_pct: 50,
+    peak_score: 72,
+    action: "Hold",
+    intel: "Flow concentrated",
+    graded: null,
+  };
+  const answer =
+    "**LIVE** · **NVDA 142.5c** @ $4.20 (+50%)\n  Hold — Flow concentrated";
+  const ctxNumbers = collectContextNumbers(context);
+  const v = verifyClaims(answer, ctxNumbers);
+  assert.equal(v.total, 3);
+  assert.equal(v.verified, 3);
+  assert.equal(v.coverage, 1);
+});
+
 // ── Layer 2: chunking + similarity (pure) ────────────────────────────────────────
 
 import { chunkDocument, cosine } from "./embeddings";

@@ -227,15 +227,17 @@ async function prepareLargoTurn(
 /** BLACKOUT Intelligence router — answers deterministically when the question maps
  *  onto platform truth (0DTE plays, SPX structure, market context). Returns null on
  *  no-match or ANY error: the Claude fallback is never blocked by the router. */
-async function tryBieRoute(question: string): Promise<{ route: BieRoute; answer: string } | null> {
+async function tryBieRoute(
+  question: string
+): Promise<{ route: BieRoute; answer: string; context: unknown } | null> {
   try {
     const { readZeroDteLedger } = await import("@/lib/zerodte/scan");
     const ledger = await readZeroDteLedger().catch(() => []);
     const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
     if (!route) return null;
-    const answer = await composeBieAnswer(route);
-    if (!answer) return null;
-    return { route, answer };
+    const composed = await composeBieAnswer(route);
+    if (!composed) return null;
+    return { route, answer: composed.answer, context: composed.context };
   } catch {
     return null;
   }
@@ -271,6 +273,8 @@ export async function runLargoQuery(
   const routed = await tryBieRoute(question);
   if (routed) {
     const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
+    const ctxNumbers = collectContextNumbers(routed.context);
+    const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(sid, userId, "user", question);
     await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
     logBie({
@@ -278,8 +282,8 @@ export async function runLargoQuery(
       question,
       intent: routed.route.intent,
       answer_source: "bie-router",
-      claims_total: null,
-      claims_verified: null,
+      claims_total: verification.total,
+      claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
     });
     return {
@@ -380,6 +384,8 @@ export async function runLargoQueryStream(
   const routed = await tryBieRoute(question);
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
+    const ctxNumbers = collectContextNumbers(routed.context);
+    const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(rsid, userId, "user", question);
     await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
     logBie({
@@ -387,8 +393,8 @@ export async function runLargoQueryStream(
       question,
       intent: routed.route.intent,
       answer_source: "bie-router",
-      claims_total: null,
-      claims_verified: null,
+      claims_total: verification.total,
+      claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
     });
     try {

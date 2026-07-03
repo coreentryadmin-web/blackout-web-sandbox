@@ -8,6 +8,9 @@ import { runLargoTool } from "@/lib/largo/run-tool";
 import { zeroDtePlaysForLargo } from "@/lib/zerodte/scan";
 import type { BieRoute } from "./router";
 
+/** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
+export type BieComposed = { answer: string; context: unknown };
+
 const fmt = (n: unknown, digits = 2): string =>
   typeof n === "number" && Number.isFinite(n)
     ? n.toLocaleString("en-US", { maximumFractionDigits: digits })
@@ -38,7 +41,7 @@ function playLine(p: LargoPlay): string {
   return `**${p.status}** · **${contract}**${p.entry_premium != null ? ` @ $${fmt(p.entry_premium)}` : ""}${state ? ` (${state})` : ""}\n  ${p.action} — ${p.intel}`;
 }
 
-async function composeZeroDtePlays(): Promise<string | null> {
+async function composeZeroDtePlays(): Promise<BieComposed | null> {
   const board = (await zeroDtePlaysForLargo()) as {
     plays?: LargoPlay[];
     fresh_finds?: Array<{ ticker: string; direction: string; strike: number | null; score: number; intel: string }>;
@@ -47,7 +50,11 @@ async function composeZeroDtePlays(): Promise<string | null> {
   const plays = board.plays ?? [];
   const fresh = board.fresh_finds ?? [];
   if (plays.length === 0 && fresh.length === 0) {
-    return "No 0DTE plays on the board this session — the scanner hunts every 2 minutes through market hours, and plays print the moment the tape concentrates. Nothing clearing the conviction gates is itself information: no forced trades.";
+    return {
+      answer:
+        "No 0DTE plays on the board this session — the scanner hunts every 2 minutes through market hours, and plays print the moment the tape concentrates. Nothing clearing the conviction gates is itself information: no forced trades.",
+      context: board,
+    };
   }
   const lines: string[] = ["**Today's 0DTE Command plays** (live board — /grid):", ""];
   for (const p of plays.slice(0, 10)) lines.push(`- ${playLine(p)}`);
@@ -57,14 +64,17 @@ async function composeZeroDtePlays(): Promise<string | null> {
       lines.push(`- ${f.ticker} ${f.direction === "long" ? "calls" : "puts"} ${fmt(f.strike)} (score ${f.score}) — ${f.intel}`);
   }
   if (board.rules) lines.push("", `_${board.rules}_`);
-  return lines.join("\n");
+  return { answer: lines.join("\n"), context: board };
 }
 
-async function composeTickerPlayState(ticker: string): Promise<string | null> {
+async function composeTickerPlayState(ticker: string): Promise<BieComposed | null> {
   const board = (await zeroDtePlaysForLargo()) as { plays?: LargoPlay[] };
   const play = (board.plays ?? []).find((p) => p.ticker === ticker.toUpperCase());
   if (!play) return null;
-  return `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`;
+  return {
+    answer: `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`,
+    context: play,
+  };
 }
 
 /** Whitelisted scalar dump of a platform tool payload — generic and safe: only
@@ -83,7 +93,7 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
   return [`**${title}**`, ...rows].join("\n");
 }
 
-async function composeSpxStructure(): Promise<string | null> {
+async function composeSpxStructure(): Promise<BieComposed | null> {
   const raw = (await runLargoTool("get_spx_structure", {})) as Record<string, unknown> | null;
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const section = scalarSection("SPX structure (live desk)", raw, [
@@ -103,10 +113,13 @@ async function composeSpxStructure(): Promise<string | null> {
     "pdl",
   ]);
   if (!section) return null;
-  return `${section}\n\n_Direct read of the SPX desk — the same numbers SPX Slayer renders. Ask a follow-up if you want the reasoning behind any level._`;
+  return {
+    answer: `${section}\n\n_Direct read of the SPX desk — the same numbers SPX Slayer renders. Ask a follow-up if you want the reasoning behind any level._`,
+    context: raw,
+  };
 }
 
-async function composeMarketContext(): Promise<string | null> {
+async function composeMarketContext(): Promise<BieComposed | null> {
   const raw = (await runLargoTool("get_market_context", {})) as Record<string, unknown> | null;
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const parts: string[] = [];
@@ -137,11 +150,14 @@ async function composeMarketContext(): Promise<string | null> {
     }
   }
   if (parts.length === 0) return null;
-  return `${parts.join("\n\n")}\n\n_Live platform read. For interpretation or a trade thesis, ask the follow-up — that's where deeper reasoning kicks in._`;
+  return {
+    answer: `${parts.join("\n\n")}\n\n_Live platform read. For interpretation or a trade thesis, ask the follow-up — that's where deeper reasoning kicks in._`,
+    context: raw,
+  };
 }
 
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
-export async function composeBieAnswer(route: BieRoute): Promise<string | null> {
+export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
   try {
     switch (route.intent) {
       case "zerodte_plays":

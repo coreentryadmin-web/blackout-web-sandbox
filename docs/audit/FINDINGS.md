@@ -10,6 +10,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 <<<<<<< HEAD
 ---
 
+## 🟡 P2 FIXED 2026-07-03 — BIE router (`bie-router` answer path) skipped Layer 4 `verifyClaims()` — `claims_total`/`claims_verified` always null in telemetry
+**Status:** FIXED (PR #340). Cursor audit found `runLargoQuery` / `runLargoQueryStream` logged `claims_total: null` for every deterministic router answer while the Claude fallback path ran full Layer 4 verification. Root cause: `tryBieRoute()` returned only the composed markdown string; the source payloads used by `composeBieAnswer()` were discarded before logging.
+
+**Fix:** `composeBieAnswer()` now returns `{ answer, context }` (raw board/tool payload). Both Largo entry points call `collectContextNumbers(context)` + `verifyClaims(answer, ctxNumbers)` before `logBie()`, matching the Claude path. Deterministic answers built from the same readers as the dashboards should verify at ~100% by construction; the telemetry now records that instead of nulls.
+
+**Files:** `src/lib/bie/composers.ts`, `src/lib/largo-terminal.ts`, `src/lib/bie/bie.test.ts` (router play-line verification regression).
+
+**Verification:** 798/798 tests, `tsc --noEmit` clean. Live post-deploy: query BIE with "How are today's plays doing?" and confirm `bie_interactions.claims_total IS NOT NULL` for `answer_source = 'bie-router'`.
+
+---
+
 ## 🧠 BIE Stage 4: Night Hawk rejected-play dedup index shipped — schema prerequisite for the still-pending write-path
 =======
 ## 🟡 P2 FIXED 2026-07-03 — RTH audit scripts false-failed on Independence Day observed (2026-07-03)
@@ -45,14 +56,13 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 - `board.ts:553` — `buildZeroDteAuditRow` omitted `intraday_conflict` from `decision_trace` while UI treats it as A-tier disqualifier. Added fifth gate entry + test.
 - `db.ts:3024` — `updateZeroDteLiveState` pinned `peak_premium=0` when mark was null. Fixed — skip peak/trough latch until mark is non-null.
 
-**Verification:** 798/798 tests, `tsc --noEmit` clean. Post-deploy: confirm `grid-warm`/`heatmap-warm` log `skipped: true` on holidays.
+**Verification:** 798/798 tests, `tsc --noEmit` clean. **Post-deploy verified 2026-07-03 16:40 UTC:** `curl /api/cron/grid-warm` → `{ skipped: true, reason: "Outside cash RTH..." }` (was `{ warmed: 8, total: 9 }` pre-fix).
 
 ## 🟡 OPEN — Cursor Author bug hunt 2026-07-03 (remaining, not yet fixed)
 
 | Sev | Bug | Location | Notes |
 |---|---|---|---|
 | P2 | `insertAlertAuditLog` fire-and-forget, no retry if INSERT fails after upsert | `scan.ts:315`, `db.ts:2904` | Permanent audit gap possible |
-| P2 | BIE router path skips Layer 4 claim verification | `largo-terminal.ts:271` | Composers should run `verifyClaims()` |
 | P2 | Postgres query read timeouts under audit load | `db.ts` pool max=5/replica | Not a logic bug — pool contention |
 | P1 watch | Equity heatmaps empty (14/15 tickers) | Polygon chain | SPX OK; re-check Monday RTH |
 | P2 | Admin cron-health 502 in browser (transient) | `/api/admin/cron-health` | During timeout storm |
