@@ -16,6 +16,7 @@ import {
   TabCommandHero,
   WinRateRing,
 } from "@/components/admin/AdminUi";
+import { useAdminCronHealth } from "@/hooks/use-admin-data";
 
 const JOB_ICONS: Record<string, string> = {
   "flow-ingest": "⬡",
@@ -291,40 +292,30 @@ function RecentRunsFeed({ events }: { events: CronHealthPayload["recent_events"]
 }
 
 export function AdminCronDashboard() {
-  const [data, setData] = useState<CronHealthPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  // Shared (SWR, keyed by URL) with every other admin panel reading /api/admin/cron-health —
+  // this dashboard no longer runs its own independent poll loop.
+  const { data, error: errorObj, isLoading: loading, isValidating: refreshing, mutate: refresh } =
+    useAdminCronHealth();
+  const error = errorObj ? (errorObj instanceof Error ? errorObj.message : String(errorObj)) : null;
+  const load = useCallback((_manual = false) => void refresh(), [refresh]);
+
   const [ageSec, setAgeSec] = useState(0);
   const [pulse, setPulse] = useState(false);
 
-  const load = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    try {
-      const res = await fetch("/api/admin/cron-health", { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status === 403 ? "Not authorized" : `HTTP ${res.status}`);
-      setData(await res.json());
-      setAgeSec(0);
-      setPulse(true);
-      setTimeout(() => setPulse(false), 600);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  // ageSec/pulse are pure presentation state driven off SWR's data identity changing —
+  // fires the same "just refreshed" flash the old manual fetch loop did.
+  useEffect(() => {
+    if (!data) return;
+    setAgeSec(0);
+    setPulse(true);
+    const t = setTimeout(() => setPulse(false), 600);
+    return () => clearTimeout(t);
+  }, [data]);
 
   useEffect(() => {
-    load();
-    const poll = setInterval(() => load(), 10_000);
     const tick = setInterval(() => setAgeSec((s) => s + 1), 1000);
-    return () => {
-      clearInterval(poll);
-      clearInterval(tick);
-    };
-  }, [load]);
+    return () => clearInterval(tick);
+  }, []);
 
   const healthyPct = useMemo(
     () => (data?.summary.total ? data.summary.healthy / data.summary.total : 0),

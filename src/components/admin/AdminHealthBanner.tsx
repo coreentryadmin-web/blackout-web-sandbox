@@ -1,42 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { clsx } from "clsx";
-import type { AdminHealthPayload } from "@/lib/admin-health";
-import type { CronHealthPayload } from "@/lib/admin-cron-health";
+import { useAdminHealth, useAdminCronHealth } from "@/hooks/use-admin-data";
 
 export function AdminHealthBanner() {
-  const [health, setHealth] = useState<AdminHealthPayload | null>(null);
-  // Cron health is fetched alongside the SPX/provider health so a market-hours cron stale during
+  // Cron health is read alongside the SPX/provider health so a market-hours cron stale during
   // RTH (#90) surfaces in the always-visible system banner, not just on the cron dashboard tab.
-  const [cron, setCron] = useState<CronHealthPayload | null>(null);
-  const [error, setError] = useState(false);
+  // Both hooks are shared (SWR, keyed by URL) with every other admin panel that reads the same
+  // data — this banner no longer runs its own independent poll loop.
+  const { data: health, error: healthError } = useAdminHealth();
+  const { data: cron } = useAdminCronHealth();
 
-  const load = useCallback(async () => {
-    try {
-      const [healthRes, cronRes] = await Promise.all([
-        fetch("/api/admin/health", { cache: "no-store" }),
-        fetch("/api/admin/cron-health", { cache: "no-store" }).catch(() => null),
-      ]);
-      if (!healthRes.ok) throw new Error("health failed");
-      setHealth(await healthRes.json());
-      // Cron health is best-effort: a failure here must not blank the whole banner.
-      if (cronRes && cronRes.ok) {
-        setCron(await cronRes.json());
-      }
-      setError(false);
-    } catch {
-      setError(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 15_000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  if (error && !health) {
+  if (healthError && !health) {
     return (
       <div className="admin-health-banner admin-health-banner-warn">
         <span className="admin-health-banner-label">SYSTEM</span>

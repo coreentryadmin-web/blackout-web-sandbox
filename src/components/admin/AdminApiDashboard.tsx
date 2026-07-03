@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { ApiDashboardPayload } from "@/lib/admin-api-dashboard";
-import type { AdminHealthPayload } from "@/lib/admin-health";
 import type { RegistryEndpointRow } from "@/lib/admin-endpoint-registry";
 import {
   ActionButton,
@@ -13,6 +12,7 @@ import {
   TabCommandHero,
   WinRateRing,
 } from "@/components/admin/AdminUi";
+import { useAdminHealth } from "@/hooks/use-admin-data";
 import { AdminApiLiveFeed } from "@/components/admin/AdminApiLiveFeed";
 import { AdminApiEventDetail } from "@/components/admin/AdminApiEventDetail";
 import { AdminApiCallTimeline } from "@/components/admin/AdminApiCallTimeline";
@@ -134,7 +134,10 @@ function RateLimiterCard({
 
 export function AdminApiDashboard() {
   const [data, setData] = useState<ApiDashboardPayload | null>(null);
-  const [health, setHealth] = useState<AdminHealthPayload | null>(null);
+  // Shared (SWR, keyed by URL) with every other admin panel reading /api/admin/health — this
+  // tile keeps its own faster 8s cadence (live rate-limiter posture), which just raises the
+  // effective shared refresh rate rather than adding a second independent poll loop.
+  const { data: health } = useAdminHealth(8_000);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
   const [rescanning, setRescanning] = useState(false);
@@ -173,18 +176,6 @@ export function AdminApiDashboard() {
     }
   }, [data]);
 
-  // Cluster rate-limiter posture lives in /api/admin/health (rate_limiters.uw/polygon), not the
-  // apis/dashboard payload — pull it alongside the telemetry poll so the Rate Limiters tile is live.
-  const loadHealth = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/health", { cache: "no-store" });
-      if (!res.ok) return;
-      setHealth(await res.json());
-    } catch {
-      /* non-fatal — tile renders a placeholder until the next poll succeeds */
-    }
-  }, []);
-
   const rescan = useCallback(async () => {
     setRescanning(true);
     try {
@@ -200,16 +191,13 @@ export function AdminApiDashboard() {
 
   useEffect(() => {
     load(true);
-    loadHealth();
     const telemetryId = setInterval(() => load(false), 8_000);
     const probeId = setInterval(() => load(true), 120_000);
-    const healthId = setInterval(loadHealth, 8_000);
     return () => {
       clearInterval(telemetryId);
       clearInterval(probeId);
-      clearInterval(healthId);
     };
-  }, [load, loadHealth]);
+  }, [load]);
 
   const registry = data?.registry;
   const summary = registry?.summary;

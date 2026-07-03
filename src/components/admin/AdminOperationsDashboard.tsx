@@ -13,6 +13,7 @@ import {
   MetricChip,
   TabCommandHero,
 } from "@/components/admin/AdminUi";
+import { useAdminHealth, useAdminIncidents } from "@/hooks/use-admin-data";
 import type { AdminIncidentRow } from "@/lib/admin-incidents";
 import type { AuditLogEntry } from "@/app/api/admin/audit-log/route";
 import type { AdminHealthPayload } from "@/lib/admin-health";
@@ -567,24 +568,27 @@ type HealthState = { payload: AdminHealthPayload | null; loading: boolean };
 type ErrorsState = { events: ErrorEventRow[]; loading: boolean; error: string | null; lastAt: string | null };
 
 export function AdminOperationsDashboard() {
-  const [incidents, setIncidents] = useState<IncidentsState>({ incidents: [], loading: true, error: null, lastAt: null });
+  // Shared (SWR, keyed by URL) with every other admin panel reading the same data —
+  // this dashboard no longer runs its own independent poll loop for either.
+  const { data: healthData, isLoading: healthLoading } = useAdminHealth();
+  const health: HealthState = { payload: healthData ?? null, loading: healthLoading };
+
+  const { data: incidentsData, error: incidentsErrorObj, isLoading: incidentsLoading, mutate: refreshIncidents } =
+    useAdminIncidents();
+  const incidents: IncidentsState = {
+    incidents: incidentsData?.incidents ?? [],
+    loading: incidentsLoading,
+    error: incidentsErrorObj ? String(incidentsErrorObj) : null,
+    lastAt: incidentsData?.generated_at ?? null,
+  };
+  const loadIncidents = useCallback(() => {
+    void refreshIncidents();
+  }, [refreshIncidents]);
+
   const [audit, setAudit] = useState<AuditState>({ entries: [], total: 0, loading: true, error: null, lastAt: null });
-  const [health, setHealth] = useState<HealthState>({ payload: null, loading: true });
   const [errors, setErrors] = useState<ErrorsState>({ events: [], loading: true, error: null, lastAt: null });
   const [auditAction, setAuditAction] = useState("");
   const [auditActor, setAuditActor] = useState("");
-
-  // Load incidents
-  const loadIncidents = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/incidents");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { incidents: AdminIncidentRow[] };
-      setIncidents({ incidents: data.incidents ?? [], loading: false, error: null, lastAt: new Date().toISOString() });
-    } catch (e) {
-      setIncidents((s) => ({ ...s, loading: false, error: String(e) }));
-    }
-  }, []);
 
   // Load audit trail
   const loadAudit = useCallback(async () => {
@@ -600,18 +604,6 @@ export function AdminOperationsDashboard() {
       setAudit((s) => ({ ...s, loading: false, error: String(e) }));
     }
   }, [auditAction, auditActor]);
-
-  // Load health vitals
-  const loadHealth = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/health");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as AdminHealthPayload;
-      setHealth({ payload: data, loading: false });
-    } catch {
-      setHealth((s) => ({ ...s, loading: false }));
-    }
-  }, []);
 
   const loadErrors = useCallback(async () => {
     try {
@@ -629,16 +621,13 @@ export function AdminOperationsDashboard() {
     }
   }, []);
 
-  // Initial + interval refresh
+  // Initial + interval refresh — health + incidents now come from the shared SWR hooks above
+  // (their own poll loops), only errors still needs its own here.
   useEffect(() => {
-    loadIncidents();
-    loadHealth();
     loadErrors();
-    const id1 = setInterval(loadIncidents, REFRESH_MS);
-    const id2 = setInterval(loadHealth, REFRESH_MS);
-    const id3 = setInterval(loadErrors, REFRESH_MS);
-    return () => { clearInterval(id1); clearInterval(id2); clearInterval(id3); };
-  }, [loadIncidents, loadHealth, loadErrors]);
+    const id = setInterval(loadErrors, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [loadErrors]);
 
   useEffect(() => {
     loadAudit();

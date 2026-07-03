@@ -7,6 +7,20 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧹 Admin dedup pass — shared SWR hooks for health/cron-health, dead endpoint removed
+**Status:** SHIPPED. First slice of the admin-wide duplication cleanup flagged in `docs/bie/DESIGN-NOTES.md`'s research.
+
+**What was actually deduped, stated precisely (not overclaimed):**
+- `/api/admin/health` — 3 independent poll loops (`AdminHealthBanner` 15s, `AdminOperationsDashboard` 20s, `AdminApiDashboard` 8s) now share one SWR cache key (`useAdminHealth()`, `src/hooks/use-admin-data.ts`). Each consumer keeps its own freshness need (the rate-limiter tile still gets 8s) — SWR's dedup means the fastest consumer sets the effective shared rate rather than 3 separate loops running concurrently.
+- `/api/admin/cron-health` — `AdminHealthBanner` and `AdminCronDashboard` now share `useAdminCronHealth()`.
+- Deleted `src/app/api/admin/launch-status/route.ts` — confirmed zero callers (grepped the whole frontend; `AdminLaunchStatusPanel.tsx`'s name collision was coincidental, it never called this route). Verified `scripts/verify-api-auth-guards.mjs` (CI-enforced default-deny scanner) still green after removal.
+
+**Correction to the original research finding:** `/api/admin/incidents` was reported as "fetched 2×" (`AdminOperationsDashboard.tsx` + `AdminSpxTerminal.tsx:155`). Checked again while implementing: `AdminSpxTerminal.tsx:155` is a POST (ack/resolve mutation), not a duplicate GET — its displayed incident list arrives as part of a different, larger payload it already needs (SPX dashboard data), not a second client-side fetch of the same GET. `useAdminIncidents()` was still built (real value for future consumers, used by `AdminOperationsDashboard` now) but this specific "2× duplication" claim doesn't hold up — noted rather than silently dropped.
+
+**Deliberately not touched this pass:** the launch-gate status computed 3× (`AdminLaunchStatusPanel.tsx`, an `AdminOperationsDashboard.tsx` VitalRow, and the now-deleted orphaned route) is a shared-*computation* problem, not a shared-*fetch* problem — a different, larger refactor, left as a follow-up.
+
+**Verification:** `tsc --noEmit`, 776/776 tests, `npm run build`, and `verify-api-auth-guards.mjs` all clean. Same honest limitation as the BIE admin tab entry below: this sandbox's browser is blocked — verified at the code/build level, not visually confirmed the polling actually collapses to fewer network requests in a real browser's devtools. Worth a real-browser spot-check.
+
 ## 🧠 BIE admin tab — findings/roadmap/self-reports as a dedicated dashboard, not an always-on chip strip
 **Status:** SHIPPED. First slice of the admin-dashboard remodel ask (`docs/bie/DESIGN-NOTES.md`) — the most clearly-scoped piece (charter-backed content model) built first, ahead of the open-ended full-admin redesign.
 
