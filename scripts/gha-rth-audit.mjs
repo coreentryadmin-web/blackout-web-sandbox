@@ -16,6 +16,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { etParts, inRthOpenWindow } from "./gha-et-window.mjs";
+import { auditPgSsl, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const smokeOnly = process.argv.includes("--smoke-only");
 const force = process.argv.includes("--force");
@@ -42,7 +43,7 @@ function run(label, cmd, args, extraEnv = {}) {
 }
 
 async function postgresRthChecks() {
-  const dbUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
+  const dbUrl = resolveAuditDbUrl();
   if (!dbUrl) {
     console.log("\n── Postgres RTH checks ──");
     console.log("  ⚠ DATABASE_PUBLIC_URL not set — skipping");
@@ -59,7 +60,7 @@ async function postgresRthChecks() {
     const pg = await import("pg");
     const c = new pg.default.Client({
       connectionString: dbUrl,
-      ssl: dbUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+      ssl: auditPgSsl(dbUrl),
     });
     await c.connect();
 
