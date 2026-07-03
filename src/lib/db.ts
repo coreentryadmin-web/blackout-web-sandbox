@@ -816,6 +816,54 @@ async function runMigrations(): Promise<void> {
       membership_id TEXT PRIMARY KEY,
       revoked_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- spx_signal_observations/spx_signal_weight_reports: moved here from spx-signal-db.ts's
+    -- initSpxSignalTables() (2026-07-03, live deadlock — see docs/audit/FINDINGS.md). That
+    -- function guarded its own CREATE TABLE/INDEX/ALTER block with an in-process boolean,
+    -- which does nothing across REPLICA_COUNT concurrent replicas booting from the same
+    -- deploy — Postgres deadlocked when two fresh replicas ran the same multi-statement DDL
+    -- concurrently. This block now runs under the SAME pg_advisory_lock(42) as every other
+    -- migration, which already correctly serializes concurrent cold starts.
+    CREATE TABLE IF NOT EXISTS spx_signal_observations (
+      id                 BIGSERIAL PRIMARY KEY,
+      observed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      price              NUMERIC NOT NULL,
+      vwap               NUMERIC,
+      price_vs_vwap      NUMERIC,
+      score              INTEGER NOT NULL,
+      grade              TEXT NOT NULL,
+      direction          TEXT,
+      engine_action      TEXT NOT NULL,
+      session_window     TEXT NOT NULL DEFAULT 'other',
+      vix                NUMERIC,
+      market_open        BOOLEAN NOT NULL DEFAULT false,
+      factors_json       JSONB NOT NULL DEFAULT '[]',
+      raw_json           JSONB NOT NULL DEFAULT '{}',
+      gates_blocked_json JSONB NOT NULL DEFAULT '[]',
+      outcome_at         TIMESTAMPTZ,
+      outcome_price      NUMERIC,
+      outcome_move       NUMERIC,
+      direction_correct  BOOLEAN
+    );
+    CREATE INDEX IF NOT EXISTS spx_signal_obs_at
+      ON spx_signal_observations (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS spx_signal_obs_pending_outcome
+      ON spx_signal_observations (observed_at)
+      WHERE outcome_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS spx_signal_weight_reports (
+      id            BIGSERIAL PRIMARY KEY,
+      computed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      lookback_days INTEGER NOT NULL,
+      total_obs     INTEGER NOT NULL,
+      baseline_pct  NUMERIC,
+      report_json   JSONB NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS spx_signal_wt_computed_at
+      ON spx_signal_weight_reports (computed_at DESC);
+
+    ALTER TABLE spx_signal_observations
+      ADD COLUMN IF NOT EXISTS gates_blocked_json JSONB NOT NULL DEFAULT '[]';
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.

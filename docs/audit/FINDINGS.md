@@ -214,6 +214,19 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 
 **Blast radius:** consumers — Largo `get_congress_unusual` + `get_unusual_trades` tools, NH dossier congress lane, grid congress panel — all pass rows through generically; no shape change. Plan probes: `recent-trades`/`congress-trader`/`late-reports`/`politicians` all 200 on our key; only `unusual-trades` is gated. If the true "unusual" curation matters, it is a UW plan upgrade (contact dev@unusualwhales.com) — buy decision, documented, not assumed.
 
+## 🔴 FIXED 2026-07-03 — live Postgres deadlock: concurrent replicas racing an unprotected schema-init path
+**Status:** FIXED (`fix/spx-signal-tables-concurrent-ddl-deadlock`). **Found by BIE's own tooling** — the newly-shipped `validate-deploy.mjs` Sentry check surfaced `error: deadlock detected` as a live production issue; the newly-shipped frontend/backend error capture is exactly what made this visible instead of silently failing one admin page load.
+
+**Evidence:** Sentry issue `error: deadlock detected`, `GET /api/admin/signal-analytics`, `app_start_time: 2026-07-03T02:26:30Z` — 8 minutes before the deadlock, i.e. a freshly booted replica hitting its first request. `REPLICA_COUNT=5`. The exact night this happened had an unusually high number of near-simultaneous replica boots (a long PR-merge stretch, each merge triggering a fresh Railway rolling deploy).
+
+**Root cause:** `src/lib/spx-signal-db.ts`'s `initSpxSignalTables()` guarded its own multi-statement DDL block (`CREATE TABLE`/`CREATE INDEX`/`ALTER TABLE`, called from the admin signal-analytics route and 2 crons) with an **in-process boolean** (`let tableInitialized = false`). That flag dedups calls within one Node process but does nothing across `REPLICA_COUNT` concurrent replicas — every fresh replica's FIRST call runs the full DDL block again. The main schema-migration path (`runMigrations()` in `db.ts`) already solves exactly this with a Postgres advisory lock (`pg_advisory_lock(42)`, held on a dedicated connection for the whole migration run, correctly serializing concurrent cold starts) — but this one file had its own parallel, unprotected copy of the same pattern. When two replicas hit their first `initSpxSignalTables()` call within the same window, Postgres deadlocked on conflicting catalog/table locks from the concurrent `CREATE TABLE IF NOT EXISTS`/`CREATE INDEX IF NOT EXISTS`/`ALTER TABLE` sequence.
+
+**Fix:** moved the DDL into `runMigrations()`'s existing advisory-locked block (`db.ts`) — same lock, same serialization guarantee every other table already gets. `initSpxSignalTables()` is now a one-line `ensureSchema()` call (kept, not removed, so its 3 existing call sites — the admin route + 2 crons — need zero changes; every `dbQuery()` call already runs `ensureSchema()` internally, so this was fully redundant the moment the DDL moved, but kept as a stable no-op rather than touching 3 call sites for no behavioral gain).
+
+**Swept for the same anti-pattern elsewhere:** `grep`'d every `let *[Ii]nitialized = false` guarding `CREATE TABLE`/`CREATE INDEX`/`ALTER TABLE` in `src/lib` — `spx-signal-db.ts` was the only one. No other instances found.
+
+**Verification:** `tsc --noEmit` + full suite (763/763) + build clean. No unit test added — this class of file (raw multi-statement DDL + connection pooling) has no existing test harness in this codebase and is verified live in production, consistent with how `runMigrations()` itself is tested. Will confirm no recurrence across the remaining deploys tonight and Monday's cron activity.
+
 ## 🧠 BIE Stage 2 — frontend/browser error capture (last item on the zero-new-access queue) + a real auth gap found and closed along the way
 **Status:** SHIPPED. Closes the last "buildable now" item from the full-system-awareness ask.
 

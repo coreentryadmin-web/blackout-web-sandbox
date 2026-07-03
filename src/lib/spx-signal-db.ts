@@ -3,55 +3,19 @@
  * One row per cron tick: all factor weights, raw market values, and (after ~30 min)
  * the outcome price so we can measure which signals actually predict direction.
  */
-import { dbQuery } from "@/lib/db";
+import { dbQuery, ensureSchema } from "@/lib/db";
 
-let tableInitialized = false;
-
+/** @deprecated The DDL this used to run here (its own CREATE TABLE/INDEX/ALTER
+ *  block, guarded only by an in-process boolean) is now part of db.ts's main
+ *  migration path under pg_advisory_lock(42) — see the comment there. That
+ *  in-process guard did nothing across REPLICA_COUNT concurrent replicas
+ *  booting from the same deploy, and caused a live Postgres deadlock
+ *  (docs/audit/FINDINGS.md, 2026-07-03) when two fresh replicas ran the same
+ *  multi-statement DDL at once. Kept as a thin ensureSchema() call so the 3
+ *  existing call sites don't need to change; every dbQuery() call already
+ *  runs ensureSchema() internally, so this is now redundant but harmless. */
 export async function initSpxSignalTables(): Promise<void> {
-  if (tableInitialized) return;
-  await dbQuery(`
-    CREATE TABLE IF NOT EXISTS spx_signal_observations (
-      id                 BIGSERIAL PRIMARY KEY,
-      observed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      price              NUMERIC NOT NULL,
-      vwap               NUMERIC,
-      price_vs_vwap      NUMERIC,
-      score              INTEGER NOT NULL,
-      grade              TEXT NOT NULL,
-      direction          TEXT,
-      engine_action      TEXT NOT NULL,
-      session_window     TEXT NOT NULL DEFAULT 'other',
-      vix                NUMERIC,
-      market_open        BOOLEAN NOT NULL DEFAULT false,
-      factors_json       JSONB NOT NULL DEFAULT '[]',
-      raw_json           JSONB NOT NULL DEFAULT '{}',
-      gates_blocked_json JSONB NOT NULL DEFAULT '[]',
-      outcome_at         TIMESTAMPTZ,
-      outcome_price      NUMERIC,
-      outcome_move       NUMERIC,
-      direction_correct  BOOLEAN
-    );
-    CREATE INDEX IF NOT EXISTS spx_signal_obs_at
-      ON spx_signal_observations (observed_at DESC);
-    CREATE INDEX IF NOT EXISTS spx_signal_obs_pending_outcome
-      ON spx_signal_observations (observed_at)
-      WHERE outcome_at IS NULL;
-
-    CREATE TABLE IF NOT EXISTS spx_signal_weight_reports (
-      id            BIGSERIAL PRIMARY KEY,
-      computed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      lookback_days INTEGER NOT NULL,
-      total_obs     INTEGER NOT NULL,
-      baseline_pct  NUMERIC,
-      report_json   JSONB NOT NULL DEFAULT '[]'
-    );
-    CREATE INDEX IF NOT EXISTS spx_signal_wt_computed_at
-      ON spx_signal_weight_reports (computed_at DESC);
-
-    ALTER TABLE spx_signal_observations
-      ADD COLUMN IF NOT EXISTS gates_blocked_json JSONB NOT NULL DEFAULT '[]';
-  `);
-  tableInitialized = true;
+  await ensureSchema();
 }
 
 export type SpxSignalObservationInsert = {
