@@ -234,20 +234,41 @@ test("discovery: quiet error log produces no findings", () => {
   assert.match(text, /Findings: none crossing thresholds/);
 });
 
-test("discovery: failed and stalled cron jobs are named in findings", () => {
-  // Staleness is computed against the real clock (Date.now()) — fixtures must
-  // be relative to it too, not a fixed calendar date.
-  const nowMs = Date.now();
-  const cronRuns = [
-    { job_key: "grid-warm", status: "failed", started_at: new Date(nowMs).toISOString(), message: "UW timeout" },
-    { job_key: "db-cleanup", status: "ok", started_at: new Date(nowMs - 4 * 3600_000).toISOString(), message: "ok" },
-    { job_key: "flow-ingest", status: "ok", started_at: new Date(nowMs - 5 * 60_000).toISOString(), message: "ok" },
+// Minimal CronJobHealth fixture — only the fields formatDiscovery reads.
+function cronJob(overrides: Partial<import("./discovery").DiscoveryCronJob>): import("./discovery").DiscoveryCronJob {
+  return {
+    key: "job",
+    status: "healthy",
+    status_label: "ok",
+    market_hours_stale: false,
+    last_message: null,
+    ...overrides,
+  };
+}
+
+test("discovery: failed and truly-stalled cron jobs are named in findings", () => {
+  const cronJobs = [
+    cronJob({ key: "grid-warm", status: "failed", status_label: "last run errored", last_message: "UW timeout" }),
+    cronJob({ key: "db-cleanup", status: "stale", status_label: "No run in 400m (limit 360m)" }),
+    cronJob({ key: "flow-ingest", status: "healthy", status_label: "ok" }),
   ];
-  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, cronRuns);
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, cronJobs);
   assert.match(text, /3 jobs tracked, 1 failing, 1 stale/);
   assert.match(text, /"grid-warm" is FAILING: UW timeout/);
-  assert.match(text, /"db-cleanup" has not succeeded in over 3h/);
-  assert.ok(!text.includes('"flow-ingest" has not succeeded'));
+  assert.match(text, /"db-cleanup" is stale: No run in 400m/);
+  assert.ok(!text.includes('"flow-ingest"'));
+});
+
+test("discovery: market-hours-only staleness during RTH is flagged high-priority; off-hours quiet is not stale at all", () => {
+  // The engine's own schedule-aware logic (admin-cron-health.ts) decides status —
+  // formatDiscovery just has to surface market_hours_stale correctly when it IS stale.
+  const cronJobs = [
+    cronJob({ key: "grid-warm", status: "stale", status_label: "No run in 5m (limit 4m)", market_hours_stale: true }),
+    cronJob({ key: "nights-watch-warm", status: "healthy", status_label: "off-hours — market closed" }),
+  ];
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, cronJobs);
+  assert.match(text, /"grid-warm" is stale:.*LIVE-DATA WARMER SILENT DURING MARKET HOURS, high priority/);
+  assert.ok(!text.includes('"nights-watch-warm"'));
 });
 
 // ── knowledge: embed-vs-backfill partition ───────────────────────────────────────

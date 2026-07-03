@@ -4,13 +4,15 @@
 // rate-limit pressure, the most expensive call patterns, unhandled application
 // errors, and stalled/failed background jobs. Every discovery is a
 // numbers-cited observation persisted into the knowledge store — the platform
-// learns about itself the same way it learns about markets. Sources are two
-// tables this app ALREADY writes (api_telemetry_events, error_events,
-// cron_job_runs) — no new external access; see docs/bie/FULL-SYSTEM-AWARENESS.md
-// for what's covered here vs what still needs infrastructure-level access
-// (Railway logs/metrics, Redis internals) this codebase does not have today.
+// learns about itself the same way it learns about markets. Sources are
+// tables/engines this app ALREADY has (api_telemetry_events, error_events,
+// and the admin cron-health engine's schedule-aware staleness logic) — no new
+// external access; see docs/bie/FULL-SYSTEM-AWARENESS.md for what's covered
+// here vs what still needs infrastructure-level access (Railway logs/metrics,
+// Redis internals) this codebase does not have today.
 
-import { dbConfigured, dbQuery, fetchCronJobLastRuns } from "@/lib/db";
+import { dbConfigured, dbQuery } from "@/lib/db";
+import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { countRecentErrorEvents } from "@/lib/error-sink";
 import { todayEt } from "@/lib/nighthawk/session";
 import { storeKnowledge } from "./knowledge";
@@ -27,14 +29,24 @@ export type DiscoveryRow = {
 };
 
 export type ErrorGroup = { source: string; scope: string | null; count: number };
-export type CronHealthRow = { job_key: string; status: string; started_at: string; message: string | null };
+
+/** The only fields formatDiscovery reads from admin-cron-health's CronJobHealth —
+ *  narrowed on purpose so this module (and its tests) don't depend on that
+ *  engine's full shape, just the schedule-aware status it computes. */
+export type DiscoveryCronJob = {
+  key: string;
+  status: "healthy" | "warning" | "stale" | "failed" | "unknown";
+  status_label: string;
+  market_hours_stale: boolean;
+  last_message: string | null;
+};
 
 /** Pure formatting + recommendation rules over the aggregates. */
 export function formatDiscovery(
   date: string,
   rows: DiscoveryRow[],
   errors: { total: number; groups: ErrorGroup[] } = { total: 0, groups: [] },
-  cronRuns: CronHealthRow[] = []
+  cronJobs: DiscoveryCronJob[] = []
 ): string {
   const findings: string[] = [];
   const sections: string[] = [`BIE platform discovery — ${date} (last 24h)`];
@@ -86,16 +98,23 @@ export function formatDiscovery(
     sections.push(``, `Application errors (last 24h): none recorded.`);
   }
 
-  // Cron/worker health (cron_job_runs — latest status per job).
-  const failed = cronRuns.filter((c) => c.status === "failed");
-  const stale = cronRuns.filter((c) => {
-    const ageMin = (Date.now() - Date.parse(c.started_at)) / 60_000;
-    return c.status === "ok" && ageMin > 180; // no successful tick in 3h — likely stalled, not just quiet market hours
-  });
-  if (cronRuns.length > 0) {
-    sections.push(``, `Cron/worker health: ${cronRuns.length} jobs tracked, ${failed.length} failing, ${stale.length} stale (>3h since last success).`);
-    for (const c of failed) findings.push(`Cron job "${c.job_key}" is FAILING: ${c.message ?? "no message"}.`);
-    for (const c of stale) findings.push(`Cron job "${c.job_key}" has not succeeded in over 3h — check if it stalled.`);
+  // Cron/worker health — reuses the SAME schedule-aware engine the admin cron
+  // dashboard uses (src/lib/admin-cron-health.ts): market_hours_only jobs get
+  // a weekend/off-hours multiplier on their staleness threshold, so a
+  // 0DTE-only warmer being quiet at midnight is correctly "healthy", not a
+  // false "stale" finding every single night.
+  const failed = cronJobs.filter((c) => c.status === "failed");
+  const stale = cronJobs.filter((c) => c.status === "stale");
+  if (cronJobs.length > 0) {
+    sections.push(
+      ``,
+      `Cron/worker health: ${cronJobs.length} jobs tracked, ${failed.length} failing, ${stale.length} stale (schedule-aware — market-hours-only jobs are not flagged for being quiet off-hours).`
+    );
+    for (const c of failed) findings.push(`Cron job "${c.key}" is FAILING: ${c.last_message ?? "no message"}.`);
+    for (const c of stale)
+      findings.push(
+        `Cron job "${c.key}" is stale: ${c.status_label}${c.market_hours_stale ? " — LIVE-DATA WARMER SILENT DURING MARKET HOURS, high priority" : ""}.`
+      );
   }
 
   sections.push(
@@ -111,7 +130,7 @@ export function formatDiscovery(
 export async function runBieDiscovery(): Promise<{ patterns: number; text: string } | null> {
   if (!dbConfigured()) return null;
   try {
-    const [apiRes, errors, cronRunsRaw] = await Promise.all([
+    const [apiRes, errors, cronHealth] = await Promise.all([
       dbQuery<Record<string, unknown>>(
         `SELECT provider, endpoint,
                 COUNT(*)::int AS calls,
@@ -128,7 +147,9 @@ export async function runBieDiscovery(): Promise<{ patterns: number; text: strin
          LIMIT 40`
       ),
       countRecentErrorEvents(24 * 60).catch(() => ({ total: 0, groups: [] })),
-      fetchCronJobLastRuns().catch(() => []),
+      buildCronHealthSnapshot()
+        .then((s) => s.jobs)
+        .catch(() => []),
     ]);
     const rows: DiscoveryRow[] = (apiRes.rows ?? []).map((r) => ({
       provider: String(r.provider),
@@ -140,14 +161,8 @@ export async function runBieDiscovery(): Promise<{ patterns: number; text: strin
       total_time_s: Number(r.total_time_s) || 0,
       rate_limited: Number(r.rate_limited) || 0,
     }));
-    const cronRuns: CronHealthRow[] = cronRunsRaw.map((c) => ({
-      job_key: c.job_key,
-      status: c.status,
-      started_at: c.started_at,
-      message: c.message,
-    }));
     const date = todayEt();
-    const text = formatDiscovery(date, rows, errors, cronRuns);
+    const text = formatDiscovery(date, rows, errors, cronHealth);
     await storeKnowledge("self_eval", `bie:discovery:${date}`, text).catch(() => 0);
     return { patterns: rows.length, text };
   } catch {

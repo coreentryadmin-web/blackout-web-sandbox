@@ -214,6 +214,15 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 
 **Blast radius:** consumers — Largo `get_congress_unusual` + `get_unusual_trades` tools, NH dossier congress lane, grid congress panel — all pass rows through generically; no shape change. Plan probes: `recent-trades`/`congress-trader`/`late-reports`/`politicians` all 200 on our key; only `unusual-trades` is gated. If the true "unusual" curation matters, it is a UW plan upgrade (contact dev@unusualwhales.com) — buy decision, documented, not assumed.
 
+## 🟡 FIXED 2026-07-03 — BIE cron-staleness check would have false-alarmed every night on market-hours-only jobs
+**Status:** FIXED (`fix/bie-cron-staleness-schedule-aware`), same-night follow-up to the discovery expansion below. Self-caught during the FIRST live run of the just-shipped cron-health section: production reported "23 jobs tracked, 0 failing, **14 stale**" immediately after market close — a naive `no success in 3h` threshold flags every `market_hours_only` warmer (grid-warm, flow-ingest, spx-evaluate, etc.) as "stale" for the entire evening/overnight/weekend, every single day. That would have made the discovery report's cron section pure noise within 24 hours of shipping it.
+
+**Root cause:** the original cron-health addition computed staleness inline (`ageMin > 180`) instead of reusing the platform's existing schedule-aware engine. `src/lib/admin-cron-health.ts` (the engine behind the admin cron dashboard) already solves this exact problem — `market_hours_only` jobs get a weekend/off-hours multiplier on their staleness threshold (`effectiveStaleMinutes`), and `market_hours_stale` is only ever set true when a live-data warmer goes silent **during actual RTH** (the "#90 blind spot" the admin dashboard was built to catch).
+
+**Fix:** discovery's cron section now calls `buildCronHealthSnapshot()` and reads its per-job `status`/`status_label`/`market_hours_stale` instead of reimplementing staleness math. A new narrow `DiscoveryCronJob` type decouples `formatDiscovery` from the full `CronJobHealth` shape (only the 5 fields actually used). Findings now distinguish plain staleness from the high-priority `market_hours_stale` case (silent warmer live during RTH).
+
+**Caught before it shipped to a second night** — found by reading the very first live discovery report this session generated, not by a user report. 2 new regression tests (failed/stale-vs-healthy naming; market-hours-stale flagged high-priority vs. correctly-quiet off-hours job producing no finding). 751/751 pass, build clean.
+
 ## 🧠 BIE Stage 2 — platform discovery expanded to application errors + cron/worker health
 **Status:** SHIPPED (`fix/bie-discovery-errors-cron`). User directive: BIE should have full operational awareness (Railway logs/infra, backend/frontend errors, cron/worker failures, rate limits, DB/Redis health, etc.), actively surfacing what's wrong and how bad, not just answering questions. `docs/bie/FULL-SYSTEM-AWARENESS.md` maps the complete ask against reality — this entry covers the piece shipped tonight.
 
