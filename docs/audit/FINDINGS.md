@@ -7,6 +7,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE Stage 4: Night Hawk rejected-play dedup index shipped — schema prerequisite for the still-pending write-path
+**Status:** SHIPPED (schema only). Unblocks the Night Hawk rejected-play half of Stage 4 write-path work, precisely scoped in an earlier finding tonight: `idx_alert_audit_log_nighthawk_rejected_dedup`, a partial unique index on `alert_audit_log (alert_type, ticker, source_key->>'edition_for') WHERE alert_type = 'nighthawk_rejected'`, added to `db.ts`'s existing advisory-locked migration block.
+
+**Why its own PR:** same standard the original `alert_audit_log` `CREATE TABLE` was held to — a schema change to a table already carrying real 0DTE and Night Hawk published-play rows gets reviewed on its own, not folded into a write-path change that also has application logic to review. Zero consumers today (nothing writes `alert_type = 'nighthawk_rejected'` rows yet) — purely additive, cannot regress anything by construction.
+
+**What's still not shipped:** the actual write-path. `generateEditionPlays()` (`claude-edition.ts`) still only `console.warn`s its `geometryRejected` list instead of returning it, and that list still needs threading through `edition-builder.ts`'s fresh-generation path (the checkpoint-restore path has no rejection data by construction — it resumes from an already-vetted checkpoint). This PR only removes the schema blocker; the write-path itself is unchanged scope from the last write-up.
+
+**Verification:** schema-only change, no new application logic — 797/797 tests (unchanged), `tsc --noEmit` + build clean. Not exercised against a live Postgres from this sandbox (same limitation as the original table — schema correctness reviewed by inspection, confirmed live post-deploy via `\d alert_audit_log`-equivalent once merged).
+
 ## 🟡 INVESTIGATED 2026-07-03 15:4x UTC — "Query read timeout" storm across admin endpoints is real and ongoing, most likely caused by concurrent dual-agent audit load hitting a deliberately small per-replica connection pool, not a code defect
 **Status:** INVESTIGATED, root cause understood, no speculative code change made. Pulled Railway `deploymentLogs` directly for the currently-live deployment (`c69b6c93`, live since 14:36 UTC) at the user's request to check build/deploy logs for issues — found **301 of the last 501 log lines were `error` severity**, dominated by `Query read timeout` across `admin/incidents`, `admin/health`, `admin-audit`, `admin/cron-health`, `admin/audit-log`, `admin/signal-analytics`, `api-telemetry-persist`, `cron/db-cleanup`, and the `[db] query failed while already reporting a failure` recursion-guard message (from PR #321). Timestamps span continuously from 15:24 to 15:43 UTC (essentially "now" at investigation time) — **this supersedes the earlier conclusion that the ~11:29-11:44 UTC burst was a resolved one-off blip: it is not resolved, it is ongoing.**
 

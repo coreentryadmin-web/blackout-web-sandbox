@@ -893,6 +893,19 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_alert_audit_log_fired ON alert_audit_log(fired_at DESC);
     CREATE INDEX IF NOT EXISTS idx_alert_audit_log_ticker ON alert_audit_log(ticker, fired_at DESC);
     CREATE INDEX IF NOT EXISTS idx_alert_audit_log_type ON alert_audit_log(alert_type, fired_at DESC);
+
+    -- Dedup for the Night Hawk REJECTED-play write-path (Stage 4 step 4b, not yet wired —
+    -- docs/bie/AUDIT-TRAIL-SCHEMA.md). Rejected plays have no upsert-able system-of-record table
+    -- to check "have I seen this before" against (unlike zerodte_setup_log / nighthawk_play_
+    -- outcomes, which the published-alert write-paths lean on via xmax = 0). A force-rebuild of
+    -- an already-published edition resets synthesis_json to null (edition-builder.ts), which
+    -- re-triggers generateEditionPlays() and would recompute the same rejections again — this
+    -- index lets that future write-path use INSERT ... ON CONFLICT (...) DO NOTHING instead of a
+    -- separate read-then-write race. Zero consumers yet (nothing writes alert_type =
+    -- 'nighthawk_rejected' rows today) — purely additive, cannot regress anything by construction.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_audit_log_nighthawk_rejected_dedup
+      ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for'))
+      WHERE alert_type = 'nighthawk_rejected';
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.

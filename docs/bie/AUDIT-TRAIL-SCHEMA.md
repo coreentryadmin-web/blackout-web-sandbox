@@ -163,14 +163,21 @@ seeing real data.
    again. Unlike the published-play case, there's no existing upsert table
    whose own `WHERE outcome = 'pending'`/`xmax = 0` state can answer "have I
    seen this rejection before" — rejected plays are never written anywhere
-   else. The correct fix is a dedup mechanism on `alert_audit_log` itself:
-   a partial unique index —
-   `CREATE UNIQUE INDEX ... ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected'`
-   — with the insert using `ON CONFLICT (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected' DO NOTHING`.
-   That's a schema change to a table that's already carrying real 0DTE and
-   Night Hawk published-play rows, so it gets its own reviewed PR rather than
-   being folded into the write-path change — same standard the original
-   `alert_audit_log` `CREATE TABLE` was held to.
+   else. The correct fix is a dedup mechanism on `alert_audit_log` itself.
+
+   **Dedup index — SHIPPED 2026-07-03.** `idx_alert_audit_log_nighthawk_rejected_dedup`,
+   a partial unique index scoped to `alert_type = 'nighthawk_rejected'` on
+   `(alert_type, ticker, source_key->>'edition_for')`, added to `db.ts`'s
+   existing advisory-locked migration block as its own reviewed PR (same
+   standard the original `alert_audit_log` `CREATE TABLE` was held to — zero
+   consumers yet, purely additive, cannot regress anything by construction).
+   The future write-path insert will use
+   `ON CONFLICT (alert_type, ticker, (source_key->>'edition_for')) WHERE alert_type = 'nighthawk_rejected' DO NOTHING`.
+   Remaining work is unchanged: `generateEditionPlays()` needs to return its
+   `geometryRejected` list and that list threaded through `edition-builder.ts`'s
+   fresh-generation path (the checkpoint-restore path has no rejection data
+   by construction) — still **NOT YET**, the schema prerequisite is just no
+   longer blocking it.
 5. **Query surface PR:** extend `/api/admin/bie-report` with an
    `audit_trail` block (recent rows, source-API attribution coverage %) —
    only after there's real data to show.

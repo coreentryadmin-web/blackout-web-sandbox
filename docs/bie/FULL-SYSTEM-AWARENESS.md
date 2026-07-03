@@ -176,9 +176,11 @@ writes to. Full design in `docs/bie/AUDIT-TRAIL-SCHEMA.md`; rollout status:
    duplicate) — **shipped 2026-07-03**.
 4. Night Hawk write-path — **published half shipped 2026-07-03**
    (`syncNighthawkPlayOutcomes` writes one row per play at first publish,
-   same `xmax = 0` pattern). The **rejected half** (one row per
-   `validatePlayGeometry()` rejection) is **NOT YET** — needs
-   `generateEditionPlays()`'s rejection list threaded through
+   same `xmax = 0` pattern). The **rejected half**'s dedup index
+   (`idx_alert_audit_log_nighthawk_rejected_dedup`, partial unique on
+   `alert_type='nighthawk_rejected'`) is **shipped**; the write-path itself
+   (one row per `validatePlayGeometry()` rejection) is still **NOT YET** —
+   needs `generateEditionPlays()`'s rejection list threaded through
    `edition-builder.ts`'s two divergent code paths (fresh-generation vs.
    checkpoint-restore, the latter has no rejection data by construction),
    deliberately not rushed same-night.
