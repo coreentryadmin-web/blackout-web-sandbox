@@ -7,6 +7,13 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ Post-deploy verification 2026-07-03 12:13 UTC — log-severity sweep (#322/#323) live, no regression
+**Status:** VERIFIED clean. Closes out the log-severity sweep triggered by a live Railway screenshot: 2 real fixes shipped (`uw-gex-fallback`, `polygon-gex`), 1 similar-looking case correctly investigated and left alone (Night Hawk recap-only warnings).
+
+- Both deploys (`96218afa`/#322, `b217260a`/#323) confirmed **SUCCESS** via the Railway API, sequenced one at a time.
+- `scripts/full-site-deep-audit.mjs`: 45 pass, same 9 known off-hours heatmap-unavailable P1s as every check tonight — no new issues.
+- `scripts/audit/data-validator.mjs`: 7 PASS, same known off-hours wall-ordering FAIL — no new issues.
+
 ## 🟡 FIXED 2026-07-03 — same log-noise class found in a second place, swept for more before stopping
 **Status:** FIXED. Follow-up sweep after the `uw-gex-fallback` fix (below): grepped every `console.warn`/`console.error` in `providers/`, `nighthawk/`, `zerodte/` for the same "expected condition logged at misleading severity" shape.
 
