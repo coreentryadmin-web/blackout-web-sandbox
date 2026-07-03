@@ -12,6 +12,9 @@ import { dbConfigured } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
+import { bieFollowups, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
+import { composeBieAnswer } from "@/lib/bie/composers";
+import { collectContextNumbers, verifyClaims } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
 import {
   appendLargoMessage,
@@ -205,6 +208,38 @@ async function prepareLargoTurn(
   return { sid, history, system, filteredTools, toolsUsed, tickerHint: intent.tickerHint ?? null };
 }
 
+/** BLACKOUT Intelligence router — answers deterministically when the question maps
+ *  onto platform truth (0DTE plays, SPX structure, market context). Returns null on
+ *  no-match or ANY error: the Claude fallback is never blocked by the router. */
+async function tryBieRoute(question: string): Promise<{ route: BieRoute; answer: string } | null> {
+  try {
+    const { readZeroDteLedger } = await import("@/lib/zerodte/scan");
+    const ledger = await readZeroDteLedger().catch(() => []);
+    const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
+    if (!route) return null;
+    const answer = await composeBieAnswer(route);
+    if (!answer) return null;
+    return { route, answer };
+  } catch {
+    return null;
+  }
+}
+
+function logBie(row: {
+  user_id: string | null;
+  question: string;
+  intent: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+}): void {
+  if (!dbConfigured()) return;
+  void import("@/lib/db")
+    .then((m) => m.insertBieInteraction(row))
+    .catch(() => {});
+}
+
 export async function runLargoQuery(
   question: string,
   sessionId: string,
@@ -214,11 +249,41 @@ export async function runLargoQuery(
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
+  const startedAt = Date.now();
+  // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
+  // maps onto platform truth — instant, free, traceable by construction.
+  const routed = await tryBieRoute(question);
+  if (routed) {
+    const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
+    await appendLargoMessage(sid, userId, "user", question);
+    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    logBie({
+      user_id: userId,
+      question,
+      intent: routed.route.intent,
+      answer_source: "bie-router",
+      claims_total: null,
+      claims_verified: null,
+      latency_ms: Date.now() - startedAt,
+    });
+    return {
+      answer: routed.answer,
+      session_id: sid,
+      source: "blackout-intelligence",
+      tools_used: ["blackout_intelligence"],
+      followups: bieFollowups(routed.route.intent),
+    };
+  }
+
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
     question,
     sessionId,
     userId
   );
+
+  // Layer 4: capture every tool result Claude sees so the answer's numeric claims
+  // can be verified against the turn's actual source data.
+  const capturedResults: unknown[] = [];
 
   try {
     const answer = await anthropicToolLoop({
@@ -235,13 +300,33 @@ export async function runLargoQuery(
       cacheSystem: true,
       runTool: async (name, input) => {
         toolsUsed.push(name);
-        return runLargoTool(name, input, userId);
+        const result = await runLargoTool(name, input, userId);
+        capturedResults.push(result);
+        return result;
       },
     });
 
-    const text =
+    let text =
       answer?.trim() ||
       "I couldn't pull enough live data to answer that — try naming a ticker or asking about SPX structure.";
+
+    // Layer 4 verification: every numeric claim vs the turn's source data (tool
+    // results + the history the model was shown). Heavily-unverified answers get
+    // an explicit caution — uncertainty stated, never fake precision.
+    const ctxNumbers = collectContextNumbers([capturedResults, history.map((h) => h.content)]);
+    const verification = verifyClaims(text, ctxNumbers);
+    if (verification.total >= 4 && verification.coverage < 0.5) {
+      text += `\n\n_BIE verification: ${verification.total - verification.verified} of ${verification.total} figures in this answer could not be traced to data pulled this turn — treat those specific numbers with caution._`;
+    }
+    logBie({
+      user_id: userId,
+      question,
+      intent: null,
+      answer_source: "claude",
+      claims_total: verification.total,
+      claims_verified: verification.verified,
+      latency_ms: Date.now() - startedAt,
+    });
 
     // Persist the completed turn now that the model produced an answer: user
     // first, then assistant, so role alternation is always intact (LARGO-3).
@@ -273,11 +358,45 @@ export async function runLargoQueryStream(
     return;
   }
 
+  const startedAt = Date.now();
+  // Layer 3 first: deterministic BLACKOUT Intelligence answer — streamed as one
+  // token event + done, so the terminal renders it exactly like a model turn.
+  const routed = await tryBieRoute(question);
+  if (routed) {
+    const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
+    await appendLargoMessage(rsid, userId, "user", question);
+    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    logBie({
+      user_id: userId,
+      question,
+      intent: routed.route.intent,
+      answer_source: "bie-router",
+      claims_total: null,
+      claims_verified: null,
+      latency_ms: Date.now() - startedAt,
+    });
+    try {
+      onEvent({ type: "token", text: routed.answer } as LargoStreamEvent);
+      onEvent({
+        type: "done",
+        answer: routed.answer,
+        session_id: rsid,
+        source: "blackout-intelligence",
+        tools_used: ["blackout_intelligence"],
+        followups: bieFollowups(routed.route.intent),
+      } as LargoStreamEvent);
+    } catch {
+      // client disconnected — turn already persisted
+    }
+    return;
+  }
+
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
     question,
     sessionId,
     userId
   );
+  const capturedResults: unknown[] = [];
 
   try {
     const emit = (event: LargoStreamEvent) => {
@@ -304,13 +423,33 @@ export async function runLargoQueryStream(
       onEvent: (event) => emit(event),
       runTool: async (name, input) => {
         toolsUsed.push(name);
-        return runLargoTool(name, input, userId);
+        const result = await runLargoTool(name, input, userId);
+        capturedResults.push(result);
+        return result;
       },
     });
 
-    const text =
+    let text =
       answer?.trim() ||
       "I couldn't pull enough live data to answer that — try naming a ticker or asking about SPX structure.";
+
+    // Layer 4 verification: every numeric claim vs the turn's source data (tool
+    // results + the history the model was shown). Heavily-unverified answers get
+    // an explicit caution — uncertainty stated, never fake precision.
+    const ctxNumbers = collectContextNumbers([capturedResults, history.map((h) => h.content)]);
+    const verification = verifyClaims(text, ctxNumbers);
+    if (verification.total >= 4 && verification.coverage < 0.5) {
+      text += `\n\n_BIE verification: ${verification.total - verification.verified} of ${verification.total} figures in this answer could not be traced to data pulled this turn — treat those specific numbers with caution._`;
+    }
+    logBie({
+      user_id: userId,
+      question,
+      intent: null,
+      answer_source: "claude",
+      claims_total: verification.total,
+      claims_verified: verification.verified,
+      latency_ms: Date.now() - startedAt,
+    });
 
     // Persist the completed turn now that the model produced an answer: user
     // first, then assistant, so role alternation is always intact (LARGO-3).

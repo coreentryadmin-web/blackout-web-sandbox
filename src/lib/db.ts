@@ -587,6 +587,25 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS trough_premium NUMERIC;
   `);
+  // BLACKOUT Intelligence Engine — every answered question logged with its route
+  // (deterministic router vs Claude fallback) and numeric-claim verification, so
+  // router coverage, verification rate, and cost avoided are queryable from day one.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS bie_interactions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT,
+      question TEXT NOT NULL,
+      intent TEXT,
+      answer_source TEXT NOT NULL,
+      claims_total INT,
+      claims_verified INT,
+      latency_ms INT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_bie_interactions_at ON bie_interactions(created_at DESC);
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS cron_job_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -2817,6 +2836,32 @@ export async function updateZeroDteLiveState(
        trough_premium = LEAST(COALESCE(trough_premium, 1e12), COALESCE($4, trough_premium, 1e12))
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), s.status, s.mark]
+  );
+}
+
+/** BIE learning substrate — best-effort telemetry write, never blocks an answer. */
+export async function insertBieInteraction(row: {
+  user_id: string | null;
+  question: string;
+  intent: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `INSERT INTO bie_interactions (user_id, question, intent, answer_source, claims_total, claims_verified, latency_ms)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      row.user_id,
+      row.question.slice(0, 2000),
+      row.intent,
+      row.answer_source,
+      row.claims_total,
+      row.claims_verified,
+      row.latency_ms,
+    ]
   );
 }
 
