@@ -13,7 +13,7 @@ import { etNowParts, isTradingDayEt, nextTradingDayEt, todayEt } from "@/lib/nig
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
 import { readGridEarnings } from "@/lib/providers/grid";
 import { matchEarnings, matchHotNews, sessionHeat } from "@/lib/zerodte/board";
-import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard } from "@/lib/zerodte/scan";
+import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
 import { withServerCache, serverCache, TTL } from "@/lib/server-cache";
 import { roundFloats } from "@/lib/round-floats";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
@@ -62,11 +62,14 @@ async function buildBoardPayload() {
   // the name, reports-tonight risk) — they are never rendered as their own lanes.
   // Both reads are shared caches (market-news key / grid's Redis snapshot): zero
   // extra upstream cost. The ledger is the scanner's session record.
-  const [news, earningsSnap, ledger] = await Promise.all([
+  const [news, earningsSnap, rawLedger] = await Promise.all([
     serverCache("news:benzinga:15", TTL.NEWS, () => fetchBenzingaNews(15)).catch(() => []),
     readGridEarnings().catch(() => null),
     readZeroDteLedger(),
   ]);
+  // Live lifecycle refresh: OPEN/HOLD/TRIM/CLOSED derived from each play's latched
+  // premium extremes + the current mark (one batched quote call, soft-deadlined).
+  const ledger = await syncLedgerLiveState(rawLedger).catch(() => rawLedger);
 
   const nextDay = nextTradingDayEt(today);
   const earningsFlags = matchEarnings(earningsSnap?.items ?? [], { today, nextDay });
@@ -105,6 +108,12 @@ async function buildBoardPayload() {
       conviction: r.conviction,
       entry_premium: r.entry_premium,
       flow_avg_fill: r.flow_avg_fill,
+      status: r.status,
+      last_mark: r.last_mark,
+      live_pnl_pct:
+        r.entry_premium != null && r.entry_premium > 0 && r.last_mark != null
+          ? Math.round(((r.last_mark - r.entry_premium) / r.entry_premium) * 10000) / 100
+          : null,
       move_pct: r.move_pct,
       direction_hit: r.direction_hit,
       plan_outcome: r.plan_outcome,

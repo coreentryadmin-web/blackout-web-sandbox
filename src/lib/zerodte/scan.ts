@@ -6,9 +6,12 @@
 // against the session close afterwards — the board's discovery record is measured,
 // not asserted.
 //
-// Mandate (product rule): this surface finds NEW plays. SPX/index products belong
-// to the SPX engines, and any ticker in the latest Night Hawk edition is excluded —
-// a name members already have is a repeat, not a find.
+// Mandate (product rule): this surface finds NEW plays. Index products (SPY/SPX/
+// NDX/QQQ…) ARE eligible — the dominance gate naturally admits them only when
+// their normally two-sided tape genuinely leans. Any ticker in the latest Night
+// Hawk edition is excluded — a name members already have is a repeat, not a find.
+// 0DTE discipline: no NEW plays after the 15:00 ET cutoff; everything is managed
+// to a close by 15:30 ET — nothing carries overnight.
 
 import {
   dbConfigured,
@@ -17,14 +20,15 @@ import {
   fetchUngradedZeroDteRows,
   fetchZeroDteSetupLog,
   gradeZeroDteSetupRow,
+  updateZeroDteLiveState,
   updateZeroDtePlanOutcome,
   upsertZeroDteSetupLog,
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
 } from "@/lib/db";
-import { INDEX_SET, LEVERAGED_ETP_SET } from "@/lib/nighthawk/constants";
+import { LEVERAGED_ETP_SET } from "@/lib/nighthawk/constants";
 import { createDossierBuildCache, fetchTickerDossier } from "@/lib/nighthawk/dossier";
-import { todayEt } from "@/lib/nighthawk/session";
+import { etNowParts, todayEt } from "@/lib/nighthawk/session";
 import { fetchAggBars } from "@/lib/providers/polygon-largo";
 import { fetchOptionsUnifiedSnapshot } from "@/lib/providers/options-snapshot";
 import { buildOcc } from "@/lib/ws/options-socket";
@@ -38,11 +42,18 @@ import {
   type NewsHeat,
   type SetupDossierView,
 } from "./board";
-import { buildContractPlan, gradePlanFromBars, type PlanBar } from "./plan";
+import {
+  buildContractPlan,
+  derivePlayStatus,
+  gradePlanFromBars,
+  NEW_PLAY_CUTOFF_ET_MINUTES,
+  type PlanBar,
+} from "./plan";
 
-/** SPX/SPY/index products are covered by the SPX engines; leveraged wrappers are
- *  not single-name plays. Night Hawk's tickers are added per-scan. */
-const STATIC_EXCLUDES = new Set<string>([...INDEX_SET, ...LEVERAGED_ETP_SET, "SPX", "SPY", "QQQ", "IWM"]);
+/** Leveraged/inverse wrappers and vol ETPs stay out (not directional single plays);
+ *  index products (SPY/SPX/NDX/QQQ…) are eligible per product direction. Night
+ *  Hawk's tickers are added per-scan. */
+const STATIC_EXCLUDES = new Set<string>([...LEVERAGED_ETP_SET, "VIX", "UVXY"]);
 
 /** Top finds get the full Night Hawk dossier — capped to stay inside UW budgets. */
 const ENRICH_TOP_N = 5;
@@ -188,11 +199,20 @@ async function attachContractPlans(setups: EnrichedZeroDteSetup[]): Promise<void
   }
 }
 
-/** Persist a scan's finds into the session ledger (no-op without a database). */
+/** Persist a scan's finds into the session ledger (no-op without a database).
+ *  After the 15:00 ET cutoff only EXISTING plays are refreshed — a fresh flag in
+ *  power hour never opens a new 0DTE play. */
 export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promise<number> {
   if (!dbConfigured() || setups.length === 0) return 0;
   const today = todayEt();
-  const rows: ZeroDteSetupLogUpsert[] = setups.map((s) => ({
+  const { hour, minute } = etNowParts();
+  let eligible = setups;
+  if (hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES) {
+    const existing = new Set((await fetchZeroDteSetupLog(today).catch(() => [])).map((r) => r.ticker));
+    eligible = setups.filter((s) => existing.has(s.ticker));
+    if (eligible.length === 0) return 0;
+  }
+  const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
     session_date: today,
     ticker: s.ticker,
     direction: s.direction,
@@ -277,6 +297,9 @@ export async function gradeZeroDteLedger(force = false): Promise<number> {
 export async function warmZeroDteBoard(): Promise<{ found: number; logged: number } | null> {
   const { setups } = await scanZeroDteBoard();
   const logged = await persistZeroDteScan(setups).catch(() => 0);
+  // Keep every live play's OPEN/HOLD/TRIM/CLOSED state fresh even when nobody is
+  // watching — the guidance runs on the cron, not on page views.
+  await readZeroDteLedger().then(syncLedgerLiveState).catch(() => {});
   void gradeZeroDteLedger().catch(() => {});
   return { found: setups.length, logged };
 }
@@ -285,4 +308,47 @@ export async function warmZeroDteBoard(): Promise<{ found: number; logged: numbe
 export async function readZeroDteLedger(): Promise<ZeroDteSetupLogRow[]> {
   if (!dbConfigured()) return [];
   return fetchZeroDteSetupLog(todayEt()).catch(() => []);
+}
+
+/**
+ * Refresh every live play's lifecycle state from one batched quote snapshot:
+ * latch peak/trough of the mark, derive OPEN/HOLD/TRIM/CLOSED (sticky stop via
+ * trough), persist, and return the rows with fresh values for the payload.
+ * Already-CLOSED rows are left untouched. Best-effort throughout.
+ */
+export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<ZeroDteSetupLogRow[]> {
+  const live = rows.filter(
+    (r) => r.status !== "CLOSED" && r.entry_premium != null && typeof r.plan_json?.occ === "string"
+  );
+  if (live.length === 0) return rows;
+  const snaps = await within(
+    fetchOptionsUnifiedSnapshot(live.map((r) => r.plan_json!.occ as string)).catch(
+      () => new Map<string, import("@/lib/providers/options-snapshot").OptionSnapshot>()
+    ),
+    2_500
+  );
+  if (!snaps) return rows;
+  const { hour, minute } = etNowParts();
+  const nowEtMinutes = hour * 60 + minute;
+
+  const updated = await Promise.all(
+    rows.map(async (r) => {
+      if (r.status === "CLOSED" || r.entry_premium == null || typeof r.plan_json?.occ !== "string") return r;
+      const mark = snaps.get(r.plan_json.occ as string)?.mark ?? null;
+      const peak = Math.max(r.peak_premium ?? r.entry_premium, mark ?? 0);
+      const trough = Math.min(r.trough_premium ?? r.entry_premium, mark ?? Number.MAX_VALUE);
+      const state = derivePlayStatus({
+        entryPremium: r.entry_premium,
+        mark: mark ?? r.last_mark,
+        peak,
+        trough,
+        nowEtMinutes,
+      });
+      if (dbConfigured()) {
+        await updateZeroDteLiveState(r.session_date, r.ticker, { status: state.status, mark }).catch(() => {});
+      }
+      return { ...r, status: state.status, last_mark: mark ?? r.last_mark, peak_premium: peak, trough_premium: trough };
+    })
+  );
+  return updated;
 }

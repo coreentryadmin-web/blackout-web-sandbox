@@ -173,3 +173,56 @@ export function gradePlanFromBars(
   if (lastCloseInWindow == null) return { outcome: "ungradeable", pnl_pct: null };
   return { outcome: "time_stop", pnl_pct: pnl(lastCloseInWindow) };
 }
+
+// ── Live play lifecycle (pure) ────────────────────────────────────────────────────
+// A play's status is DERIVED, never hand-set: entry premium + fixed rules + the
+// contract's live mark (with latched peak/trough so a stop stays a stop even if
+// the premium bounces). 0DTE discipline: no new plays after the entry cutoff,
+// everything closes by the time stop — nothing is ever carried overnight.
+
+/** No NEW plays once power hour starts; existing plays are managed to exit. */
+export const NEW_PLAY_CUTOFF_ET_MINUTES = 15 * 60;
+
+export type PlayStatus = "OPEN" | "HOLD" | "TRIM" | "CLOSED";
+
+export type LivePlayState = {
+  status: PlayStatus;
+  /** Premium P/L % vs entry at the current mark (null without a mark). */
+  live_pnl_pct: number | null;
+  /** Why a CLOSED play closed. */
+  closed_reason: "stopped" | "time_stop" | null;
+};
+
+/**
+ * Derive the play's lifecycle state. `peak`/`trough` are the latched extremes of
+ * the mark SINCE the flag (persisted by the scanner each tick), so transitions
+ * are sticky: trough ≤ stop → CLOSED forever; peak ≥ target → TRIM until close.
+ * OPEN means "still enterable": mark within 10% of entry and before the cutoff.
+ */
+export function derivePlayStatus(input: {
+  entryPremium: number;
+  mark: number | null;
+  peak: number | null;
+  trough: number | null;
+  nowEtMinutes: number;
+}): LivePlayState {
+  const { entryPremium, mark, peak, trough, nowEtMinutes } = input;
+  if (!(entryPremium > 0)) return { status: "HOLD", live_pnl_pct: null, closed_reason: null };
+  const stop = entryPremium * (1 + PLAN_RULES.stop_pct / 100);
+  const target = entryPremium * (1 + PLAN_RULES.target_pct / 100);
+  const pnl = mark != null && mark > 0 ? Math.round(((mark - entryPremium) / entryPremium) * 10000) / 100 : null;
+
+  if (trough != null && trough <= stop) {
+    return { status: "CLOSED", live_pnl_pct: PLAN_RULES.stop_pct, closed_reason: "stopped" };
+  }
+  if (nowEtMinutes > PLAN_RULES.time_stop_et_minutes) {
+    return { status: "CLOSED", live_pnl_pct: pnl, closed_reason: "time_stop" };
+  }
+  if (peak != null && peak >= target) {
+    return { status: "TRIM", live_pnl_pct: pnl, closed_reason: null };
+  }
+  if (mark != null && mark <= entryPremium * 1.1 && nowEtMinutes < NEW_PLAY_CUTOFF_ET_MINUTES) {
+    return { status: "OPEN", live_pnl_pct: pnl, closed_reason: null };
+  }
+  return { status: "HOLD", live_pnl_pct: pnl, closed_reason: null };
+}

@@ -573,6 +573,20 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS plan_pnl_pct NUMERIC;
   `);
+  // Live play lifecycle (Status column of the plays table) — latched intraday by the
+  // scanner: peak/trough of the contract's mark since flag drive sticky transitions.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS status TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS last_mark NUMERIC;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS peak_premium NUMERIC;
+  `);
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS trough_premium NUMERIC;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS cron_job_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -2632,6 +2646,11 @@ export type ZeroDteSetupLogRow = {
   /** Plan grade vs the contract's own minute bars: doubled | stopped | time_stop | ungradeable. */
   plan_outcome: string | null;
   plan_pnl_pct: number | null;
+  /** Live lifecycle: OPEN | HOLD | TRIM | CLOSED (derived + latched by the scanner). */
+  status: string | null;
+  last_mark: number | null;
+  peak_premium: number | null;
+  trough_premium: number | null;
 };
 
 export type ZeroDteSetupLogUpsert = {
@@ -2735,6 +2754,10 @@ function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
     plan_json: (r.plan_json as Record<string, unknown>) ?? null,
     plan_outcome: r.plan_outcome != null ? String(r.plan_outcome) : null,
     plan_pnl_pct: r.plan_pnl_pct != null ? Number(r.plan_pnl_pct) : null,
+    status: r.status != null ? String(r.status) : null,
+    last_mark: r.last_mark != null ? Number(r.last_mark) : null,
+    peak_premium: r.peak_premium != null ? Number(r.peak_premium) : null,
+    trough_premium: r.trough_premium != null ? Number(r.trough_premium) : null,
   };
 }
 
@@ -2775,6 +2798,25 @@ export async function gradeZeroDteSetupRow(
      SET close_price = $3, move_pct = $4, direction_hit = $5, graded_at = NOW()
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), grade.close_price, grade.move_pct, grade.direction_hit]
+  );
+}
+
+/** Latch a play's live state: peak/trough only ever widen (GREATEST/LEAST), so a
+ *  stop stays a stop even if the premium bounces; status is the derived lifecycle. */
+export async function updateZeroDteLiveState(
+  sessionDate: string,
+  ticker: string,
+  s: { status: string; mark: number | null }
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE zerodte_setup_log SET
+       status = $3,
+       last_mark = COALESCE($4, last_mark),
+       peak_premium = GREATEST(COALESCE(peak_premium, 0), COALESCE($4, peak_premium, 0)),
+       trough_premium = LEAST(COALESCE(trough_premium, 1e12), COALESCE($4, trough_premium, 1e12))
+     WHERE session_date = $1::date AND ticker = $2`,
+    [sessionDate, ticker.toUpperCase(), s.status, s.mark]
   );
 }
 

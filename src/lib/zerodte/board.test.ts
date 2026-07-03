@@ -460,3 +460,38 @@ test("plan grade: bars only BEFORE the flag → ungradeable, never graded on hin
   const g = gradePlanFromBars([bar(0, 9, 2, 5)], 4.2, T0 + 10 * MIN);
   assert.equal(g.outcome, "ungradeable");
 });
+
+// ── live play lifecycle ──────────────────────────────────────────────────────────
+
+import { derivePlayStatus, NEW_PLAY_CUTOFF_ET_MINUTES } from "./plan";
+
+test("lifecycle: OPEN while enterable, HOLD past cutoff or above the band", () => {
+  const base = { entryPremium: 4.2, peak: 4.2, trough: 4.2 };
+  const open = derivePlayStatus({ ...base, mark: 4.1, nowEtMinutes: 11 * 60 });
+  assert.equal(open.status, "OPEN");
+  // Same mark after the 15:00 ET cutoff → no longer enterable.
+  const held = derivePlayStatus({ ...base, mark: 4.1, nowEtMinutes: NEW_PLAY_CUTOFF_ET_MINUTES + 5 });
+  assert.equal(held.status, "HOLD");
+  // Mark well above the entry band intraday → HOLD (manage, don't add).
+  const ran = derivePlayStatus({ ...base, mark: 5.5, peak: 5.5, nowEtMinutes: 11 * 60 });
+  assert.equal(ran.status, "HOLD");
+  assert.equal(ran.live_pnl_pct, 30.95);
+});
+
+test("lifecycle: TRIM latches once the premium has doubled", () => {
+  const s = derivePlayStatus({ entryPremium: 4.2, mark: 6.0, peak: 8.5, trough: 4.0, nowEtMinutes: 13 * 60 });
+  assert.equal(s.status, "TRIM"); // peak tagged 2x even though mark pulled back
+});
+
+test("lifecycle: a touched stop stays CLOSED even if the premium bounces", () => {
+  const s = derivePlayStatus({ entryPremium: 4.2, mark: 4.4, peak: 4.4, trough: 2.0, nowEtMinutes: 13 * 60 });
+  assert.equal(s.status, "CLOSED");
+  assert.equal(s.closed_reason, "stopped");
+  assert.equal(s.live_pnl_pct, -50);
+});
+
+test("lifecycle: everything is CLOSED after the 15:30 ET hard exit", () => {
+  const s = derivePlayStatus({ entryPremium: 4.2, mark: 4.8, peak: 4.8, trough: 4.0, nowEtMinutes: 15 * 60 + 31 });
+  assert.equal(s.status, "CLOSED");
+  assert.equal(s.closed_reason, "time_stop");
+});
