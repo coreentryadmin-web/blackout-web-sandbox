@@ -11,6 +11,7 @@ import { join } from "node:path";
 import {
   dbConfigured,
   fetchBieKnowledge,
+  fetchExistingBieHashes,
   fetchLatestNighthawkEdition,
   insertBieKnowledge,
   type BieKnowledgeRow,
@@ -28,25 +29,32 @@ export async function storeKnowledge(
   text: string
 ): Promise<number> {
   if (!dbConfigured() || !text.trim()) return 0;
-  const chunks = chunkDocument(text);
-  if (chunks.length === 0) return 0;
-  let embeddings: (number[] | null)[] = chunks.map(() => null);
+  const all = chunkDocument(text).map((chunk) => ({
+    chunk,
+    chunk_hash: hashOf(`${kind}|${source}|${chunk}`),
+  }));
+  if (all.length === 0) return 0;
+  // Dedup BEFORE embedding: unchanged content re-ingests for free — the daily
+  // cron never re-pays the embeddings provider for the same chunk twice.
+  const existing = await fetchExistingBieHashes(all.map((c) => c.chunk_hash)).catch(() => new Set<string>());
+  const fresh = all.filter((c) => !existing.has(c.chunk_hash));
+  if (fresh.length === 0) return 0;
+  let embeddings: (number[] | null)[] = fresh.map(() => null);
   if (bieEmbeddingsConfigured()) {
     try {
-      embeddings = await embedTexts(chunks, "document");
+      embeddings = await embedTexts(fresh.map((c) => c.chunk), "document");
     } catch {
-      // Store cold — a re-ingest after the key/API recovers backfills embeddings
-      // because cold rows get re-chunked with identical hashes only if unchanged;
-      // changed content re-inserts. Never lose knowledge over an embed hiccup.
-      embeddings = chunks.map(() => null);
+      // Store cold — a later ingest can backfill; never lose knowledge over an
+      // embed hiccup.
+      embeddings = fresh.map(() => null);
     }
   }
   return insertBieKnowledge(
-    chunks.map((chunk, i) => ({
+    fresh.map((c, i) => ({
       kind,
       source,
-      chunk,
-      chunk_hash: hashOf(`${kind}|${source}|${chunk}`),
+      chunk: c.chunk,
+      chunk_hash: c.chunk_hash,
       embedding: embeddings[i] ?? null,
     }))
   );
@@ -110,6 +118,23 @@ export async function ingestBieKnowledge(): Promise<{ stored: number }> {
     } catch {
       // unreadable file — skip
     }
+  }
+
+  // Platform self-knowledge (Phase 4 groundwork): a generated map of the desk's
+  // own tools and crons, so BIE can answer questions about the platform itself.
+  try {
+    const [{ TOOLS }, { CRON_JOBS }] = await Promise.all([
+      import("@/lib/tool-access"),
+      import("@/lib/cron-registry"),
+    ]);
+    const toolLines = TOOLS.map((t) => `- ${t.label} (${t.key}) at ${t.href}`).join("\n");
+    const cronLines = CRON_JOBS.map(
+      (c) => `- ${c.name} (${c.key}): ${c.schedule_label} — ${c.description}`
+    ).join("\n");
+    const text = `BLACKOUT platform map (generated).\n\nMember tools:\n${toolLines}\n\nScheduled jobs:\n${cronLines}`;
+    stored += await storeKnowledge("doc", "platform:map", text);
+  } catch {
+    // registries unavailable in some contexts — skip
   }
 
   // Latest Night Hawk edition — recap + play theses become searchable history.

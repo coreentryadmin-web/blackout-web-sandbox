@@ -31,8 +31,14 @@ export async function GET(req: NextRequest) {
     const selfEval = await import("@/lib/bie/report")
       .then((m) => m.runBieDailySelfEval())
       .catch(() => null);
+    const calibration = await import("@/lib/bie/calibration")
+      .then((m) => m.runBieCalibration(14))
+      .catch(() => null);
     (results as Record<string, unknown>).bie_knowledge_stored = bie.stored;
     (results as Record<string, unknown>).bie_self_eval = selfEval ? "ok" : "skipped";
+    (results as Record<string, unknown>).bie_calibration = calibration
+      ? `${calibration.graded_plays} graded / ${calibration.recommendations.length} recs`
+      : "skipped";
     const totalDeleted = Object.values(results).reduce((s, n) => s + n, 0);
     const payload = { ok: true, total_deleted: totalDeleted, tables: results };
     await logCronRun("db-cleanup", started, payload);

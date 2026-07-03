@@ -2808,6 +2808,18 @@ export async function fetchZeroDteSetupLog(sessionDate: string): Promise<ZeroDte
   return res.rows.map(mapZeroDteLogRow);
 }
 
+/** Ledger rows across a session-date range — the calibration harness's input. */
+export async function fetchZeroDteSetupLogRange(sinceDate: string, limit = 500): Promise<ZeroDteSetupLogRow[]> {
+  await ensureSchema();
+  const normalized = normalizeIsoDateInput(sinceDate);
+  if (!normalized) return [];
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT * FROM zerodte_setup_log WHERE session_date >= $1::date ORDER BY session_date DESC, score_max DESC LIMIT $2`,
+    [normalized, limit]
+  );
+  return res.rows.map(mapZeroDteLogRow);
+}
+
 /** Ungraded ledger rows from sessions strictly before `beforeDate` (grading needs a
  *  finished session's close). Capped — grading is lazy/incremental. */
 export async function fetchUngradedZeroDteRows(beforeDate: string, limit = 12): Promise<ZeroDteSetupLogRow[]> {
@@ -2883,6 +2895,18 @@ export async function insertBieKnowledge(
     inserted += res.rowCount ?? 0;
   }
   return inserted;
+}
+
+/** Which of these chunk hashes already exist — lets ingestion embed ONLY new
+ *  content (embedding before dedup would re-pay for unchanged docs every day). */
+export async function fetchExistingBieHashes(hashes: string[]): Promise<Set<string>> {
+  if (hashes.length === 0) return new Set();
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT chunk_hash FROM bie_knowledge WHERE chunk_hash = ANY($1)`,
+    [hashes]
+  );
+  return new Set(res.rows.map((r) => String(r.chunk_hash)));
 }
 
 /** Recent knowledge rows (optionally by kind) — ranking happens in the caller. */

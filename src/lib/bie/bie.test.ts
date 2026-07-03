@@ -147,3 +147,49 @@ test("self-eval: coverage, verification and win-rate math", () => {
   assert.match(text, /26/);
   assert.match(text, /2W\/1L/);
 });
+
+// ── Layer 5: calibration harness (pure) ──────────────────────────────────────────
+
+import { computeCalibration, formatCalibration, type CalibrationInputRow } from "./calibration";
+
+const calRow = (over: Partial<CalibrationInputRow>): CalibrationInputRow => ({
+  session_date: "2026-07-06",
+  score_max: 70,
+  spike: false,
+  first_flagged_at: "2026-07-06T14:15:00Z", // 10:15 ET — prime window
+  plan_outcome: "doubled",
+  plan_pnl_pct: 100,
+  flags_json: null,
+  ...over,
+});
+
+test("calibration: buckets by score band and cites evidence in recommendations", () => {
+  const rows: CalibrationInputRow[] = [
+    // score 55-64: 2W/10L over 12 → underperformer (n≥10)
+    ...Array.from({ length: 10 }, () => calRow({ score_max: 58, plan_outcome: "stopped", plan_pnl_pct: -50 })),
+    ...Array.from({ length: 2 }, () => calRow({ score_max: 58 })),
+    // score 75+: 9W/2L over 11 → outperformer
+    ...Array.from({ length: 9 }, () => calRow({ score_max: 80 })),
+    ...Array.from({ length: 2 }, () => calRow({ score_max: 80, plan_outcome: "stopped", plan_pnl_pct: -50 })),
+  ];
+  const r = computeCalibration(rows, { since: "2026-06-22", through: "2026-07-06", sessions: 10 });
+  assert.equal(r.graded_plays, 23);
+  const low = r.by_score_band.find((b) => b.label === "score 55-64")!;
+  assert.equal(low.n, 12);
+  assert.equal(low.win_rate_pct, 16.7);
+  assert.ok(r.recommendations.some((x) => /score 55-64 underperforms/.test(x)));
+  assert.ok(r.recommendations.some((x) => /score 75\+ outperforms/.test(x)));
+});
+
+test("calibration: refuses to recommend on thin evidence — waits for n≥10", () => {
+  const rows = Array.from({ length: 5 }, () => calRow({ score_max: 58, plan_outcome: "stopped", plan_pnl_pct: -50 }));
+  const r = computeCalibration(rows, { since: "2026-07-01", through: "2026-07-06", sessions: 3 });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatCalibration(r), /never tunes on noise/);
+});
+
+test("calibration: ungraded rows are excluded from every bucket", () => {
+  const rows = [calRow({}), calRow({ plan_outcome: null, plan_pnl_pct: null }), calRow({ plan_outcome: "ungradeable" })];
+  const r = computeCalibration(rows, { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(r.graded_plays, 1);
+});
