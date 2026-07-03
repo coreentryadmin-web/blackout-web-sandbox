@@ -7,7 +7,6 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
-<<<<<<< HEAD
 ---
 
 ## 🟡 P2 FIXED 2026-07-03 — BIE router (`bie-router` answer path) skipped Layer 4 `verifyClaims()` — `claims_total`/`claims_verified` always null in telemetry
@@ -21,21 +20,28 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
-## 🧠 BIE Stage 4: Night Hawk rejected-play dedup index shipped — schema prerequisite for the still-pending write-path
-=======
 ## 🟡 P2 FIXED 2026-07-03 — RTH audit scripts false-failed on Independence Day observed (2026-07-03)
 
-**Status:** FIXED (`fix/rth-holiday-audit-skip`). `validate:rth-open` and `gha-rth-audit` flagged `spx-evaluate` / `market_regime` / `nights-watch-warm` as missing during RTH on a weekday, and `heatmap-matrix-audit` / `full-site-deep-audit` flagged 14 empty equity heatmap presets as P1 — all expected on NYSE holiday when crons correctly skip and equity chains don't refresh.
+**Status:** FIXED (PR #339). `validate:rth-open` and `gha-rth-audit` flagged `spx-evaluate` / `market_regime` / `nights-watch-warm` as missing during RTH on a weekday, and `heatmap-matrix-audit` / `full-site-deep-audit` flagged 14 empty equity heatmap presets as P1 — all expected on NYSE holiday when crons correctly skip and equity chains don't refresh.
 
 **Root cause:** Application crons gained `isTradingDayEt` gates earlier today (PR #331) but the standalone audit scripts in `scripts/` still used naive weekday+clock checks only.
 
 **Fix:** Mirrored `US_MARKET_HOLIDAYS` + `isTradingDayEt` into `scripts/gha-et-window.mjs`; `rth-open-check.mjs`, `gha-rth-audit.mjs`, `heatmap-matrix-audit.mjs`, `full-site-deep-audit.mjs`, and `data-validator.mjs` now skip trading-day-only checks and treat non-SPX empty matrices as expected on holidays.
 
-**Evidence:** Post-fix `npm run validate:rth-open` GREEN; `gha-rth-audit` 55 pass / 0 issues; `heatmap-matrix-audit` 0 flags; Largo 200 (~39s) after deploy settled.
+**Evidence:** Post-fix `npm run validate:rth-open` GREEN; `gha-rth-audit` 55 pass / 0 issues; `heatmap-matrix-audit` 0 flags.
 
 ---
 
->>>>>>> d338be2 (fix(ops): skip RTH audit checks on NYSE market holidays)
+## 🟡 P1 FIXED 2026-07-03 — db-cleanup `total_deleted` string concat + `Promise.all` abort on single-table timeout
+**Status:** FIXED (PR pending). `db-cleanup/route.ts` summed `Object.values(results)` after BIE string metadata was merged into `results`, producing malformed `total_deleted` like `"1277ok0 graded / 0 recs40 call patterns analyzed"`. Separately, `Promise.all` over 14 table prunes meant one `Query read timeout` aborted the entire nightly run.
+
+**Fix:** `sumCleanupDeletes()` on numeric prune map only; `Promise.allSettled` with per-table `errors[]`; `maxDuration=300`. `insertAlertAuditLog()` now uses `dbQuery()` (inherits transient retry) instead of raw `pool.query()` — closes audit-gap on PgBouncer blips after a successful upsert.
+
+**Verification:** 800/800 tests, `tsc --noEmit` clean. Post-deploy: `GET /api/cron/db-cleanup` returns numeric `total_deleted`.
+
+---
+
+## 🧠 BIE Stage 4: Night Hawk rejected-play dedup index shipped — schema prerequisite for the still-pending write-path
 **Status:** SHIPPED (schema only). Unblocks the Night Hawk rejected-play half of Stage 4 write-path work, precisely scoped in an earlier finding tonight: `idx_alert_audit_log_nighthawk_rejected_dedup`, a partial unique index on `alert_audit_log (alert_type, ticker, source_key->>'edition_for') WHERE alert_type = 'nighthawk_rejected'`, added to `db.ts`'s existing advisory-locked migration block.
 
 **Why its own PR:** same standard the original `alert_audit_log` `CREATE TABLE` was held to — a schema change to a table already carrying real 0DTE and Night Hawk published-play rows gets reviewed on its own, not folded into a write-path change that also has application logic to review. Zero consumers today (nothing writes `alert_type = 'nighthawk_rejected'` rows yet) — purely additive, cannot regress anything by construction.
@@ -62,7 +68,6 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 | Sev | Bug | Location | Notes |
 |---|---|---|---|
-| P2 | `insertAlertAuditLog` fire-and-forget, no retry if INSERT fails after upsert | `scan.ts:315`, `db.ts:2904` | Permanent audit gap possible |
 | P2 | Postgres query read timeouts under audit load | `db.ts` pool max=5/replica | Not a logic bug — pool contention |
 | P1 watch | Equity heatmaps empty (14/15 tickers) | Polygon chain | SPX OK; re-check Monday RTH |
 | P2 | Admin cron-health 502 in browser (transient) | `/api/admin/cron-health` | During timeout storm |

@@ -2913,8 +2913,10 @@ export async function insertAlertAuditLog(row: {
   input_snapshot: Record<string, unknown> | null;
   final_output: Record<string, unknown> | null;
 }): Promise<void> {
-  await ensureSchema();
-  await (await getPool()).query(
+  // dbQuery (not raw pool.query) so transient PgBouncer blips get the same retry/backoff
+  // as every other write — a one-shot INSERT failure after a successful upsert would
+  // otherwise leave a permanent audit gap (refresh ticks never re-write audit rows).
+  await dbQuery(
     `INSERT INTO alert_audit_log (
       alert_type, source_table, source_key, ticker, direction,
       confidence_score, confidence_label, trigger_reason, decision_trace,

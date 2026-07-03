@@ -3,8 +3,10 @@ import { dbQuery, requireDatabaseInProduction } from "@/lib/db";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { isAllowedCleanupTarget, cleanupRetentionDays } from "@/lib/db-cleanup-targets";
+import { sumCleanupDeletes } from "@/lib/db-cleanup-sum";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 /**
  * Nightly DB cleanup — prunes high-volume tables to prevent unbounded growth.
@@ -21,7 +23,8 @@ export async function GET(req: NextRequest) {
   if (dbDenied) return dbDenied;
 
   try {
-    const results = await runCleanup();
+    const { tables: pruneCounts, errors: pruneErrors } = await runCleanup();
+    const totalDeleted = sumCleanupDeletes(pruneCounts);
     // BIE daily tick (best-effort, never fails the cleanup): ingest fresh platform
     // knowledge (docs/FINDINGS/latest edition — hash-deduped, embeds only when
     // VOYAGE_API_KEY is set) and persist the engine's self-evaluation report.
@@ -34,21 +37,29 @@ export async function GET(req: NextRequest) {
     const calibration = await import("@/lib/bie/calibration")
       .then((m) => m.runBieCalibration(14))
       .catch(() => null);
-    (results as Record<string, unknown>).bie_knowledge_stored = bie.stored;
-    (results as Record<string, unknown>).bie_self_eval = selfEval ? "ok" : "skipped";
-    (results as Record<string, unknown>).bie_calibration = calibration
-      ? `${calibration.graded_plays} graded / ${calibration.recommendations.length} recs`
-      : "skipped";
     const discovery = await import("@/lib/bie/discovery")
       .then((m) => m.runBieDiscovery())
       .catch(() => null);
-    (results as Record<string, unknown>).bie_discovery = discovery
-      ? `${discovery.patterns} call patterns analyzed`
-      : "skipped";
-    const totalDeleted = Object.values(results).reduce((s, n) => s + n, 0);
-    const payload = { ok: true, total_deleted: totalDeleted, tables: results };
+    const tables: Record<string, unknown> = {
+      ...pruneCounts,
+      bie_knowledge_stored: bie.stored,
+      bie_self_eval: selfEval ? "ok" : "skipped",
+      bie_calibration: calibration
+        ? `${calibration.graded_plays} graded / ${calibration.recommendations.length} recs`
+        : "skipped",
+      bie_discovery: discovery
+        ? `${discovery.patterns} call patterns analyzed`
+        : "skipped",
+    };
+    const ok = pruneErrors.length === 0;
+    const payload = {
+      ok,
+      total_deleted: totalDeleted,
+      tables,
+      ...(pruneErrors.length > 0 ? { errors: pruneErrors } : {}),
+    };
     await logCronRun("db-cleanup", started, payload);
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { status: ok ? 200 : 500 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/db-cleanup]", error);
@@ -110,7 +121,12 @@ async function deleteOlderThan(table: string, column: string, days: number): Pro
   return total;
 }
 
-async function runCleanup(): Promise<Record<string, number>> {
+type CleanupRunResult = {
+  tables: Record<string, number>;
+  errors: { table: string; error: string }[];
+};
+
+async function runCleanup(): Promise<CleanupRunResult> {
   // Generous, env-configurable retention for high-write outcome tables. Default 365d keeps a
   // full year of resolved history for admin rollups / Largo analytics; hard floor is 90d.
   const spxOutcomeDays = cleanupRetentionDays(process.env.SPX_OUTCOMES_RETENTION_DAYS, 365);
@@ -119,87 +135,91 @@ async function runCleanup(): Promise<Record<string, number>> {
     365,
   );
 
-  const [
-    apiTelemetry,
-    flowAlerts,
-    cronRuns,
-    spxSignalLog,
-    nighthawkDossiersStaging,
-    nighthawkJobLog,
-    adminAuditLog,
-    spxPlayOutcomes,
-    nighthawkPlayOutcomes,
-    spxSignalObservations,
-    spxSignalWeightReports,
-    marketRegime,
-    flowAnomalies,
-    coachingAlerts,
-  ] = await Promise.all([
+  const tasks: { key: string; run: () => Promise<number> }[] = [
     // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
     // NOTE: this table's timestamp column is "at", not "created_at"
-    deleteOlderThan("api_telemetry_events", "at", 7),
+    { key: "api_telemetry_events", run: () => deleteOlderThan("api_telemetry_events", "at", 7) },
 
     // flow_alerts: keep 60 days
     // Hard floor is 30d (Night Hawk avg-premium scorer uses 30-day rolling window).
     // 60d gives safety margin + covers user lookback and Largo historical queries.
-    deleteOlderThan("flow_alerts", "inserted_at", 60),
+    { key: "flow_alerts", run: () => deleteOlderThan("flow_alerts", "inserted_at", 60) },
 
     // cron_job_runs: keep 30 days of run history
-    deleteOlderThan("cron_job_runs", "started_at", 30),
+    { key: "cron_job_runs", run: () => deleteOlderThan("cron_job_runs", "started_at", 30) },
 
     // spx_signal_log: evaluator fires every 30-60s during RTH — keep 90 days
-    deleteOlderThan("spx_signal_log", "created_at", 90),
+    { key: "spx_signal_log", run: () => deleteOlderThan("spx_signal_log", "created_at", 90) },
 
     // nighthawk_dossiers_staging: temp staging — never queried after nightly build completes
-    deleteOlderThan("nighthawk_dossiers_staging", "created_at", 2),
+    {
+      key: "nighthawk_dossiers_staging",
+      run: () => deleteOlderThan("nighthawk_dossiers_staging", "created_at", 2),
+    },
 
     // nighthawk_job_log: nightly runs — keep 60 days
-    deleteOlderThan("nighthawk_job_log", "created_at", 60),
+    { key: "nighthawk_job_log", run: () => deleteOlderThan("nighthawk_job_log", "created_at", 60) },
 
     // admin_audit_log: compliance — keep 90 days
-    deleteOlderThan("admin_audit_log", "created_at", 90),
+    { key: "admin_audit_log", run: () => deleteOlderThan("admin_audit_log", "created_at", 90) },
 
     // spx_play_outcomes: high-write trade-outcome ledger. Prune CLOSED rows only
     // (open rows have closed_at IS NULL + 'outcome <> open' guard). Default 365d, >=90d floor.
-    deleteOlderThan("spx_play_outcomes", "closed_at", spxOutcomeDays),
+    {
+      key: "spx_play_outcomes",
+      run: () => deleteOlderThan("spx_play_outcomes", "closed_at", spxOutcomeDays),
+    },
 
     // nighthawk_play_outcomes: high-write outcome ledger. Prune RESOLVED rows only
     // (pending/open excluded by status guard). Default 365d, >=90d floor.
-    deleteOlderThan("nighthawk_play_outcomes", "created_at", nighthawkOutcomeDays),
+    {
+      key: "nighthawk_play_outcomes",
+      run: () => deleteOlderThan("nighthawk_play_outcomes", "created_at", nighthawkOutcomeDays),
+    },
 
     // spx_signal_observations: every-5-min RTH snapshots — keep 180 days for analytics
-    deleteOlderThan("spx_signal_observations", "observed_at", 180),
+    {
+      key: "spx_signal_observations",
+      run: () => deleteOlderThan("spx_signal_observations", "observed_at", 180),
+    },
 
     // spx_signal_weight_reports: one row per nightly run — keep 365 days
-    deleteOlderThan("spx_signal_weight_reports", "computed_at", 365),
+    {
+      key: "spx_signal_weight_reports",
+      run: () => deleteOlderThan("spx_signal_weight_reports", "computed_at", 365),
+    },
 
     // market_regime: every-few-min RTH snapshots; only the latest row is read for "current
     // regime". Previously unbounded — keep 90 days for trend analytics.
-    deleteOlderThan("market_regime", "captured_at", 90),
+    { key: "market_regime", run: () => deleteOlderThan("market_regime", "captured_at", 90) },
 
     // flow_anomalies: every-5-min RTH detections (recent ones surfaced in UI). Previously
     // unbounded — keep 90 days.
-    deleteOlderThan("flow_anomalies", "detected_at", 90),
+    { key: "flow_anomalies", run: () => deleteOlderThan("flow_anomalies", "detected_at", 90) },
 
     // coaching_alerts: every-10-min RTH rows (UI reads only the last ~30 min). Previously
     // unbounded — keep 90 days.
-    deleteOlderThan("coaching_alerts", "generated_at", 90),
-  ]);
+    { key: "coaching_alerts", run: () => deleteOlderThan("coaching_alerts", "generated_at", 90) },
+  ];
 
-  return {
-    api_telemetry_events: apiTelemetry,
-    flow_alerts: flowAlerts,
-    cron_job_runs: cronRuns,
-    spx_signal_log: spxSignalLog,
-    nighthawk_dossiers_staging: nighthawkDossiersStaging,
-    nighthawk_job_log: nighthawkJobLog,
-    admin_audit_log: adminAuditLog,
-    spx_play_outcomes: spxPlayOutcomes,
-    nighthawk_play_outcomes: nighthawkPlayOutcomes,
-    spx_signal_observations: spxSignalObservations,
-    spx_signal_weight_reports: spxSignalWeightReports,
-    market_regime: marketRegime,
-    flow_anomalies: flowAnomalies,
-    coaching_alerts: coachingAlerts,
-  };
+  // allSettled: one table's transient timeout must not abort the rest of the nightly prune.
+  const settled = await Promise.allSettled(tasks.map((task) => task.run()));
+  const tables: Record<string, number> = {};
+  const errors: { table: string; error: string }[] = [];
+
+  for (let i = 0; i < tasks.length; i++) {
+    const { key } = tasks[i];
+    const outcome = settled[i];
+    if (outcome.status === "fulfilled") {
+      tables[key] = outcome.value;
+      continue;
+    }
+    tables[key] = 0;
+    const error =
+      outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+    errors.push({ table: key, error });
+    console.error(`[db-cleanup] ${key} prune failed:`, error);
+  }
+
+  return { tables, errors };
 }
