@@ -864,6 +864,35 @@ async function runMigrations(): Promise<void> {
 
     ALTER TABLE spx_signal_observations
       ADD COLUMN IF NOT EXISTS gates_blocked_json JSONB NOT NULL DEFAULT '[]';
+
+    -- BIE Stage 4 — unified per-alert audit trail (docs/bie/AUDIT-TRAIL-SCHEMA.md). Additive
+    -- only: zerodte_setup_log and nighthawk_play_outcomes stay the system of record for their
+    -- own UI/grading logic; this table is BIE's/admin's cross-product query surface, written
+    -- ALONGSIDE those existing writes in a later PR, not a replacement for them. No consumers
+    -- read this table yet — this migration alone cannot regress anything by construction.
+    CREATE TABLE IF NOT EXISTS alert_audit_log (
+      id                BIGSERIAL PRIMARY KEY,
+      alert_type        TEXT NOT NULL,          -- 'zerodte' | 'nighthawk'
+      source_table      TEXT NOT NULL,          -- 'zerodte_setup_log' | 'nighthawk_play_outcomes'
+      source_key        JSONB NOT NULL,         -- source PK, e.g. {"session_date":"...","ticker":"AAPL"}
+      ticker            TEXT NOT NULL,
+      direction         TEXT,
+      fired_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      confidence_score  NUMERIC,                -- the DETERMINISTIC score, never a model self-grade
+      confidence_label  TEXT,
+      trigger_reason    TEXT,
+      decision_trace    JSONB,                  -- ordered [{check, passed, value, threshold}]
+      input_snapshot    JSONB,                  -- specific values read at decision time
+      source_apis       JSONB,                  -- [{provider, endpoint, rate_limited, ok}]
+      final_output      JSONB,                  -- the actual member-visible payload
+      outcome           TEXT,                   -- mirrors plan_outcome / nighthawk outcome
+      outcome_graded_at TIMESTAMPTZ,
+      later_correct     BOOLEAN,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_audit_log_fired ON alert_audit_log(fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_alert_audit_log_ticker ON alert_audit_log(ticker, fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_alert_audit_log_type ON alert_audit_log(alert_type, fired_at DESC);
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
