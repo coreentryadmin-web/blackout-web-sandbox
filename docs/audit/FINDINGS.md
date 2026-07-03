@@ -7,6 +7,24 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-03 — PR #368 (`feat/bie-nighthawk-echo-0dte-board`) deploy confirmed SUCCESS
+Merge commit `7df3adf`. Railway deployment `b3a3bb3c-e1e6-4731-b464-62be7832fdf1` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+---
+
+## 🧠 BIE Stage 6 precursor SHIPPED 2026-07-03 — confluence-outcome measurement (does the ecosystem link mean anything?)
+**Status:** SHIPPED (`feat/bie-confluence-outcome-stats`). The Night Hawk echo on the 0DTE board (previous entry) is a display-only annotation — it tells a member Night Hawk already had a take on this name, but says nothing about whether that overlap is worth anything. This closes that gap with an honest measurement, not an assumption either way.
+
+**What it does:** `computeConfluenceOutcomeStats()` (`src/lib/bie/confluence-outcomes.ts`) joins graded `zerodte_setup_log` history (last 60 days) against each ticker's most recent PRIOR `nighthawk_play_outcomes` row (`edition_for` strictly before the 0DTE `session_date` — same-day overlap can't exist, the scanner excludes today's live Night Hawk names by construction) and buckets every graded 0DTE flag into `agree` / `disagree` / `no_echo` by direction. Reports `n`, `hit_rate_pct`, `avg_move_pct` per bucket, and flags `insufficient_sample` under 10 rows so a small-sample hit rate is never mistaken for signal. Surfaced in `/api/admin/bie-report` (`confluence_outcomes`) and a new "Confluence outcomes" panel in `AdminBieDashboard.tsx`.
+
+**Real bug caught before shipping, not after:** `zerodte_setup_log.direction` stores `"long"`/`"short"` (lowercase); `nighthawk_play_outcomes.direction` stores `"LONG"`/`"SHORT"` (uppercase — see `src/lib/nighthawk/claude-edition.ts`). A literal `===` comparison between the two would have silently put every single row in `disagree`, regardless of actual agreement — the bucketing would have looked like it worked (numbers, not an error) while being completely wrong. Caught by checking both write-paths' actual casing before writing the comparison, not by a failing test after the fact. `bucketConfluenceRows()` normalizes both sides with `.toUpperCase()` before comparing. Also fixed the same casing issue's cosmetic sibling in the Night Hawk echo note from the previous PR (was rendering `"LONG"` uppercase next to the board's otherwise-lowercase direction text).
+
+**Deliberately read-only:** this is a measurement surface, not a feedback loop — nothing here changes `score_max`, `conviction`, or which tickers get flagged. Whatever the numbers say (including "no correlation" or "too little data yet"), Stage 6 (closing the loop by adjusting scoring from outcomes) remains a separate, not-yet-started step per the platform charter's data-integrity-first priority.
+
+**Verification:** `bucketConfluenceRows()` (the pure aggregator) unit tested in isolation — 8 tests including the LONG/long casing case specifically. 874/874 tests pass, `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## 🧠 BIE ecosystem-context, 2nd consumer SHIPPED 2026-07-03 — Night Hawk echo on the 0DTE board
 **Status:** SHIPPED (`feat/bie-nighthawk-echo-0dte-board`). `fetchEcosystemContext`'s first consumer (below) was Largo — chat-only, a member has to think to ask. This wires the same shared-state idea into a surface every 0DTE Command viewer already sees: the board itself.
 

@@ -307,7 +307,9 @@ function NighthawkEchoNote({ echo }: { echo: NighthawkEcho }) {
     <div className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug text-violet-200/75">
       <span aria-hidden="true">🔗</span>
       <span>
-        Night Hawk had this {fmtEditionDate(echo.edition_for)} — {echo.direction} ({outcomeLabel})
+        {/* nighthawk_play_outcomes stores direction as "LONG"/"SHORT" (uppercase) —
+            0DTE's own copy is lowercase everywhere else on this board. */}
+        Night Hawk had this {fmtEditionDate(echo.edition_for)} — {echo.direction.toLowerCase()} ({outcomeLabel})
       </span>
     </div>
   );

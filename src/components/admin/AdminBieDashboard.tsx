@@ -120,6 +120,13 @@ type BieReportPayload = {
   duplicate_alerts?: Array<{ alert_type: string; source_key: Record<string, unknown>; count: number }>;
   stage5_proposals?: Array<{ kind: string; component: string; file: string; detail: string }>;
   auth_failures?: { total_24h: number; by_mode: Record<string, number>; recent_messages: string[] };
+  confluence_outcomes?: Array<{
+    bucket: "agree" | "disagree" | "no_echo";
+    n: number;
+    hit_rate_pct: number | null;
+    avg_move_pct: number | null;
+    insufficient_sample: boolean;
+  }> | null;
   report_trail?: Array<{ source: string; at: string; preview: string }>;
 };
 
@@ -139,7 +146,7 @@ const ROADMAP: Stage[] = [
   { n: 3, name: "Infra access (Railway)", status: "SHIPPED", blurb: "Deploy status, resource usage (CPU/memory), env-var presence audit, and recent runtime error counts are all wired live (see the Railway chips above). Postgres slow-query log (pg_stat_statements) is checked, not enabled, per explicit instruction. Clerk auth-failure monitoring: Clerk has no webhook/Backend API for a failed sign-in (confirmed against their docs) — rather than rewrite the sign-in UI, a DOM observer sits alongside the untouched prebuilt <SignIn>/<SignUp> component and reports the error text Clerk already renders on a failed attempt, never a credential. See the \"Auth failures (24h)\" chip above." },
   { n: 4, name: "Unified per-alert audit trail", status: "SHIPPED", blurb: "alert_audit_log schema, all three write-paths (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested), and the query surface (Audit trail panel below) are all live. Source-API attribution (source_apis column) is still unpopulated by any write-path — reported honestly as 0% until a future PR threads it through." },
   { n: 5, name: "BIE opens PRs autonomously", status: "IN PROGRESS", blurb: "The end-state goal — explicitly NOT started as \"BIE writes code\" yet. Step 1 shipped 2026-07-03, dry-run only: for one narrow, 100% mechanical finding (an exported component with zero references anywhere else in src/), BIE drafts a plain-text proposal in the report below — never a diff, never a git action, never an LLM judgment call. A human decides what (if anything) to do about each one. Going further (real draft PRs, broader/LLM-judged finding types) needs its own explicit go-ahead, not assumed from this." },
-  { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
+  { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. A first measurement step shipped 2026-07-03 (Confluence outcomes panel below) — whether 0DTE Command's graded hit rate differs when it agrees/disagrees with a ticker's prior Night Hawk take — but it is read-only and does not feed back into scoring. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
 ];
 
 function fmtEt(iso: string | null | undefined): string {
@@ -219,6 +226,7 @@ export function AdminBieDashboard() {
   const auditTrail = data?.audit_trail ?? null;
   const duplicateAlerts = data?.duplicate_alerts ?? [];
   const stage5Proposals = data?.stage5_proposals ?? [];
+  const confluenceOutcomes = data?.confluence_outcomes ?? null;
 
   return (
     <div className="admin-bie-dashboard">
@@ -423,6 +431,49 @@ export function AdminBieDashboard() {
                     .slice(0, 3)
                     .map((d) => `${d.alert_type} ×${d.count}`)
                     .join(", ")}.`}
+            </p>
+          </>
+        )}
+      </GlassPanel>
+
+      {/* Stage 6 precursor — does the Night Hawk echo shown on the 0DTE board
+          (ecosystem-context.ts's 2nd consumer) actually correlate with anything?
+          Pure measurement: never feeds back into live scoring. A small/insufficient
+          sample is reported honestly, not hidden. */}
+      <GlassPanel kicker="Does the ecosystem link mean anything" title="Confluence outcomes" accent="violet">
+        {!confluenceOutcomes || confluenceOutcomes.every((s) => s.n === 0) ? (
+          <p className="admin-bie-empty-text">No graded 0DTE history in the lookback window yet.</p>
+        ) : (
+          <>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>vs. Night Hawk</th>
+                  <th>N</th>
+                  <th>Hit rate</th>
+                  <th>Avg move</th>
+                </tr>
+              </thead>
+              <tbody>
+                {confluenceOutcomes.map((s) => (
+                  <tr key={s.bucket}>
+                    <td>
+                      {s.bucket === "agree" ? "Agrees" : s.bucket === "disagree" ? "Disagrees" : "No prior take"}
+                    </td>
+                    <td>
+                      {s.n}
+                      {s.insufficient_sample && s.n > 0 ? " (thin)" : ""}
+                    </td>
+                    <td>{s.hit_rate_pct != null ? `${s.hit_rate_pct}%` : "—"}</td>
+                    <td>{s.avg_move_pct != null ? `${s.avg_move_pct}%` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+            <p className="admin-bie-coverage-note">
+              60-day lookback, graded 0DTE Command flags only. &quot;Agrees&quot;/&quot;Disagrees&quot; compare
+              direction against the ticker&apos;s most recent prior Night Hawk take. &quot;(thin)&quot; means
+              under 10 samples — a hit rate at that size is noise, not signal.
             </p>
           </>
         )}

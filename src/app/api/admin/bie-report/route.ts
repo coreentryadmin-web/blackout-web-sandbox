@@ -26,6 +26,7 @@ import { countAuthFailures } from "@/lib/error-sink";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { probePgStatStatements } from "@/lib/pg-stat-statements-health";
 import { findStage5Proposals } from "@/lib/bie/stage5-proposals";
+import { computeConfluenceOutcomeStats } from "@/lib/bie/confluence-outcomes";
 import { probeRedisHealth } from "@/lib/redis-health";
 import {
   probeRailwayEnvVars,
@@ -80,6 +81,7 @@ export async function GET() {
     duplicateAlerts,
     stage5Proposals,
     authFailures,
+    confluenceOutcomes,
   ] =
     await Promise.all([
       runBieDailySelfEval().catch(() => null),
@@ -130,6 +132,11 @@ export async function GET() {
       // what AuthFailureObserver.tsx's DOM-observed beacon already wrote, never a
       // credential. See error-sink.ts's countAuthFailures for the full context.
       countAuthFailures(24).catch(() => ({ total_24h: 0, by_mode: {}, recent_messages: [] })),
+      // Stage 6 precursor: does the Night Hawk echo on the 0DTE board (the
+      // ecosystem-context 2nd consumer) correlate with anything real? Read-only
+      // measurement, never feeds back into scoring. Null = lookup failed, not
+      // "zero confluence" — see confluence-outcomes.ts's fail-open contract.
+      computeConfluenceOutcomeStats(60).catch(() => null),
     ]);
 
   // Retrieval probe: only meaningful once the key works. Multiple representative
@@ -203,6 +210,10 @@ export async function GET() {
       // last open Stage 3 item without touching the live auth flow — see
       // AuthFailureObserver.tsx and countAuthFailures()'s doc comments.
       auth_failures: authFailures,
+      // Stage 6 precursor: 0DTE Command's graded hit rate split by whether its
+      // direction agreed/disagreed with the ticker's most recent prior Night Hawk
+      // take, vs. tickers with no Night Hawk history at all. null = lookup failed.
+      confluence_outcomes: confluenceOutcomes,
       // Every previously persisted report — the improvement trail, newest first.
       report_trail: trail.map((r) => ({ source: r.source, at: r.created_at, preview: r.chunk.slice(0, 200) })),
     },
