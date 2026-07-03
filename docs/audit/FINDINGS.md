@@ -7,6 +7,14 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ Post-deploy verification 2026-07-03 09:03 UTC — full admin-refactor arc (#316/#318/#319) live, no regression
+**Status:** VERIFIED clean. Confirms tonight's schema + BIE tab + dedup work shipped without breaking anything, and separates a real pre-existing gap from a new one.
+
+- All 3 deploys (`521ca36`/#316 schema, `c423f00`/#318 BIE tab, `1b8007bf`/#319 dedup) confirmed **SUCCESS** via the Railway API, sequenced one at a time (no repeat of the earlier concurrent-build-cache-race incident).
+- `scripts/full-site-deep-audit.mjs`: **44 pass**, correctness scorecard 0 flags / 7 oracle-confirmed / 42 consistency-only, all grid/public/auth/page checks green.
+- `scripts/audit/data-validator.mjs`: 7 PASS, 1 FAIL (wall ordering — see below), cleanup ok.
+- **The FAIL and 9 "heatmap unavailable" P1s are the same pre-existing off-hours gap already documented at 07:44 UTC tonight, not a new regression:** confirmed directly (`/api/market/gex-positioning?ticker=SPY` → `{"available":false}`) — no live options-chain data is cached anywhere right now (deep off-hours, day before the July 4th observed holiday, heatmap-warm cron correctly not running). The endpoint honestly reports unavailable rather than fabricating stale data. None of tonight's admin-focused commits (schema, BIE tab, SWR dedup) touch chain-fetching or heatmap-warm logic at all, so this can't be a regression from them.
+
 ## 🧹 Admin dedup pass — shared SWR hooks for health/cron-health, dead endpoint removed
 **Status:** SHIPPED. First slice of the admin-wide duplication cleanup flagged in `docs/bie/DESIGN-NOTES.md`'s research.
 

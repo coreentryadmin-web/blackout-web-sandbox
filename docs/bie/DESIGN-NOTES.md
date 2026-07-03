@@ -177,3 +177,28 @@ tab specifically, since that has a clear, already-charter-backed content
 model — findings/roadmap/metrics — versus the open-ended "remodel
 everything" ask, which needs its own scoping pass across every existing
 admin page before a rebuild is responsible to start).
+
+**Update 2026-07-03, later the same night:** the BIE tab shipped (findings
+feed with real ack/resolve, roadmap, self-reports — `AdminBieDashboard.tsx`).
+The health/cron-health fetch duplication also shipped (`useAdminHealth()`/
+`useAdminCronHealth()`, `src/hooks/use-admin-data.ts`) — and while
+implementing it, two of the original research's "duplication" findings
+turned out not to hold up on closer inspection, corrected rather than
+silently fixed anyway:
+- `/api/admin/incidents` "fetched 2×" — one of the two call sites was
+  actually a POST (ack/resolve mutation), not a duplicate GET.
+- Launch-gate status "computed 3×" — checked again while scoping this as
+  the next task: `AdminLaunchStatusPanel.tsx` computes it directly
+  server-side (a cheap, pure, synchronous env-var read via
+  `getLaunchStatusSnapshot()` — not a network call, so "3×" was never a
+  real cost the way N redundant HTTP polls was), `AdminOperationsDashboard.tsx`
+  already reads it from `health.payload.launch_status` — the SAME
+  `/api/admin/health` payload just deduped above — and the third call site
+  (the orphaned `launch-status/route.ts`) is already deleted. **Nothing
+  left to fix here** — this item closes as already-resolved, not
+  re-opened as new work.
+
+The broader "remodel the entire admin, dedup everything" ask is now
+partially delivered (BIE tab + the one duplication that was real); the
+open-ended nav/font/color/landing-page piece remains not started, still
+correctly gated on the browser-blocked constraint above.
