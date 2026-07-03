@@ -142,3 +142,58 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
     return emptyContext(ticker);
   }
 }
+
+// --- Batched Night Hawk echo for a ticker list (board-annotation use case) --
+
+export type EcosystemNighthawkEchoRow = {
+  ticker: string;
+  edition_for: string;
+  direction: string;
+  conviction: string;
+  outcome: string;
+  score: number | null;
+};
+
+/** Pure: raw DISTINCT-ON rows -> ticker -> most-recent-take map. Split out from
+ *  the query so the shape logic is unit-testable without a DB connection. */
+export function mapNighthawkEchoRows(rows: EcosystemNighthawkEchoRow[]): Map<string, EcosystemNightHawkTake> {
+  const out = new Map<string, EcosystemNightHawkTake>();
+  for (const r of rows) {
+    out.set(r.ticker.toUpperCase(), {
+      edition_for: String(r.edition_for),
+      direction: r.direction,
+      conviction: r.conviction,
+      outcome: r.outcome,
+      score: r.score != null ? Number(r.score) : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * One batched query for a whole ticker list — the board-annotation use case
+ * (e.g. "does the 0DTE ledger have any names Night Hawk already picked?").
+ * Deliberately a single ANY($1) query instead of one fetchEcosystemContext()
+ * call per ticker: a board can carry a couple dozen ledger rows and this runs
+ * on every poll, so N sequential/parallel per-ticker round trips would scale
+ * query count with ledger size for no benefit — one query returns the same
+ * answer for every ticker at once. Fails open to an empty map: a caller must
+ * render exactly as it did before this existed if the lookup fails.
+ */
+export async function fetchNighthawkEchoForTickers(tickers: string[]): Promise<Map<string, EcosystemNightHawkTake>> {
+  const upperTickers = [...new Set(tickers.map((t) => t.toUpperCase().trim()).filter(Boolean))];
+  if (!dbConfigured() || upperTickers.length === 0) return new Map();
+
+  try {
+    const res = await dbQuery<EcosystemNighthawkEchoRow>(
+      `SELECT DISTINCT ON (ticker) ticker, edition_for, direction, conviction, outcome, score
+       FROM nighthawk_play_outcomes
+       WHERE ticker = ANY($1::text[])
+       ORDER BY ticker, edition_for DESC`,
+      [upperTickers]
+    );
+    return mapNighthawkEchoRows(res.rows);
+  } catch {
+    return new Map();
+  }
+}

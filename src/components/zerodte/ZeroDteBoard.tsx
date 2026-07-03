@@ -10,6 +10,14 @@ import { etMinutesOf } from "@/lib/zerodte/plan";
 
 // ── Response shape (structural mirror of /api/market/zerodte/board) ──────────────
 
+type NighthawkEcho = {
+  edition_for: string;
+  direction: string;
+  conviction: string;
+  outcome: string;
+  score: number | null;
+};
+
 type LedgerRow = {
   ticker: string;
   direction: "long" | "short";
@@ -29,6 +37,10 @@ type LedgerRow = {
   plan_outcome: string | null;
   plan_pnl_pct: number | null;
   graded: boolean;
+  /** BIE ecosystem echo: this ticker's most recent Night Hawk take, if any (a
+   *  prior edition — today's Night Hawk names never reach this scanner). Null
+   *  for the vast majority of rows; purely an annotation, never a gate. */
+  nighthawk_echo: NighthawkEcho | null;
 };
 
 type BoardResponse = {
@@ -100,6 +112,8 @@ type PlayRow = {
   spike: boolean;
   /** Full live find (evidence + plan) when this ticker is still in the top-10. */
   setup: EnrichedZeroDteSetup | null;
+  /** BIE ecosystem echo — see LedgerRow. Null for fresh finds not yet persisted. */
+  nighthawkEcho: NighthawkEcho | null;
 };
 
 function mergePlays(
@@ -132,6 +146,7 @@ function mergePlays(
     score: r.score_max,
     spike: r.spike,
     setup: byTicker.get(r.ticker) ?? null,
+    nighthawkEcho: r.nighthawk_echo,
   }));
   const seen = new Set(ledger.map((r) => r.ticker));
   // Fresh finds the cron hasn't persisted yet (≤2 min window) — or MOVED ones we
@@ -158,6 +173,7 @@ function mergePlays(
       score: s.score,
       spike: s.spike,
       setup: s,
+      nighthawkEcho: null,
     });
   }
   const order: Record<PlayRow["status"], number> = { OPEN: 0, TRIM: 1, HOLD: 2, SKIP: 3, CLOSED: 4 };
@@ -265,6 +281,37 @@ const ACTION_TONE: Record<IntelAction, "bull" | "sky" | "accent" | "bear" | "neu
   SELL: "neutral",
   PASS: "bear",
 };
+
+const NIGHTHAWK_OUTCOME_LABEL: Record<string, string> = {
+  target: "hit target",
+  stop: "stopped out",
+  open: "still open",
+  ambiguous: "ambiguous close",
+  pending: "pending",
+};
+
+function fmtEditionDate(ymd: string): string {
+  try {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
+  } catch {
+    return ymd;
+  }
+}
+
+/** BIE cross-instrument annotation: Night Hawk already has a take on this name
+ *  from a prior edition. Read-only context — never changes score/status. */
+function NighthawkEchoNote({ echo }: { echo: NighthawkEcho }) {
+  const outcomeLabel = NIGHTHAWK_OUTCOME_LABEL[echo.outcome] ?? echo.outcome;
+  return (
+    <div className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug text-violet-200/75">
+      <span aria-hidden="true">🔗</span>
+      <span>
+        Night Hawk had this {fmtEditionDate(echo.edition_for)} — {echo.direction} ({outcomeLabel})
+      </span>
+    </div>
+  );
+}
 
 /** BlackOut Intel: one actionable verb + a reason built only from observed numbers. */
 function intelFor(row: PlayRow) {
@@ -476,11 +523,14 @@ function PlaysTable({ rows }: { rows: PlayRow[] }) {
                     {(() => {
                       const note = intelFor(row);
                       return (
-                        <div className="flex items-start gap-2">
-                          <Badge tone={ACTION_TONE[note.action]} size="sm" className="mt-0.5 shrink-0">
-                            {note.action}
-                          </Badge>
-                          <span className="text-[12px] leading-snug text-sky-200/85">{note.reason}</span>
+                        <div>
+                          <div className="flex items-start gap-2">
+                            <Badge tone={ACTION_TONE[note.action]} size="sm" className="mt-0.5 shrink-0">
+                              {note.action}
+                            </Badge>
+                            <span className="text-[12px] leading-snug text-sky-200/85">{note.reason}</span>
+                          </div>
+                          {row.nighthawkEcho && <NighthawkEchoNote echo={row.nighthawkEcho} />}
                         </div>
                       );
                     })()}

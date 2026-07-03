@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE ecosystem-context, 2nd consumer SHIPPED 2026-07-03 — Night Hawk echo on the 0DTE board
+**Status:** SHIPPED (`feat/bie-nighthawk-echo-0dte-board`). `fetchEcosystemContext`'s first consumer (below) was Largo — chat-only, a member has to think to ask. This wires the same shared-state idea into a surface every 0DTE Command viewer already sees: the board itself.
+
+**Why it's not redundant with the existing same-day dedup:** the 0DTE scanner already excludes any ticker in *today's* live Night Hawk edition (`nighthawk_covered`, `src/lib/zerodte/scan.ts`) and tells the UI why via `covered_elsewhere`. That check only looks at the current edition, though — a name Night Hawk picked two nights ago is fully eligible for a fresh 0DTE flag today, and until this shipped, today's ledger had zero visibility into that history. Real overlap confirmed before building this: 0DTE Command's universe is the full `flow_alerts` tape (stocks + index/ETF names, `src/lib/zerodte/scan.ts`), and Night Hawk's single-name arm explicitly excludes only indices/leveraged ETPs (`src/lib/nighthawk/constants.ts`) — so a large-cap single name can legitimately appear in both, on different nights.
+
+**Implementation:** `fetchNighthawkEchoForTickers()` (`src/lib/bie/ecosystem-context.ts`) — one batched `WHERE ticker = ANY($1)` query over the whole ledger per board build, not one `fetchEcosystemContext()` call per row (the board rebuilds every ~5-10s and a ledger can carry a couple dozen names; per-ticker round trips would scale query count with ledger size for zero benefit). Wired into `buildBoardPayload()` in `/api/market/zerodte/board/route.ts`, rendered in `ZeroDteBoard.tsx` as a small "🔗 Night Hawk had this `<date>` — `<direction>` (`<outcome>`)" line under the existing BlackOut Intel action/reason. Pure annotation — never touches score, status, or row ordering; fails open to nothing rendered.
+
+**Verification:** new `mapNighthawkEchoRows` pure mapper unit-tested in isolation (4 tests, same split-out-for-testability pattern as `mapDeploymentEdges`/`buildSourceApisAttribution`). 866/866 tests pass, `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## ✅ VERIFIED 2026-07-03 — PR #366 (`feat/bie-ecosystem-context`) deploy confirmed SUCCESS
 Merge commit `0247146`. Railway deployment `3993508e-551e-4afc-b232-806d862969eb` confirmed **SUCCESS** via the GraphQL API (`commitHash: 024714631714b2e05f2555003a31e4309b45298a` matches the merge commit exactly) — before touching any other `src/**` work, per standing pipeline discipline. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
 

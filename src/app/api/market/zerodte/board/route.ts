@@ -14,6 +14,7 @@ import { fetchBenzingaNews } from "@/lib/providers/polygon";
 import { readGridEarnings } from "@/lib/providers/grid";
 import { matchEarnings, matchHotNews, sessionHeat } from "@/lib/zerodte/board";
 import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
+import { fetchNighthawkEchoForTickers } from "@/lib/bie/ecosystem-context";
 import { withServerCache, serverCache, TTL } from "@/lib/server-cache";
 import { roundFloats } from "@/lib/round-floats";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
@@ -71,6 +72,13 @@ async function buildBoardPayload() {
   // premium extremes + the current mark (one batched quote call, soft-deadlined).
   const ledger = await syncLedgerLiveState(rawLedger).catch(() => rawLedger);
 
+  // BIE ecosystem echo: does any name on today's ledger already have a Night Hawk
+  // take on record (a prior edition, not today's — today's names are excluded from
+  // this scanner entirely via `covered_elsewhere`)? One batched query for every
+  // ledger ticker at once, not one fetchEcosystemContext() call per row. Annotation
+  // only — never touches score/status, fails open to an empty map.
+  const nighthawkEcho = await fetchNighthawkEchoForTickers(ledger.map((r) => r.ticker));
+
   const nextDay = nextTradingDayEt(today);
   const earningsFlags = matchEarnings(earningsSnap?.items ?? [], { today, nextDay });
   const newsFlags = matchHotNews(news, Date.now());
@@ -119,6 +127,7 @@ async function buildBoardPayload() {
       plan_outcome: r.plan_outcome,
       plan_pnl_pct: r.plan_pnl_pct,
       graded: r.graded_at != null,
+      nighthawk_echo: nighthawkEcho.get(r.ticker.toUpperCase()) ?? null,
     })),
     // Names withheld because they're already published elsewhere on the desk —
     // surfaced so the UI can say WHY a hot ticker isn't listed.
