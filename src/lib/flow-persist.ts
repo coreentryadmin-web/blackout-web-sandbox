@@ -1,4 +1,4 @@
-import { dbConfigured, insertFlowAlert, type FlowRow } from "@/lib/db";
+import { dbConfigured, insertAlertAuditLog, insertFlowAlert, type FlowRow } from "@/lib/db";
 import { markFlowDataFresh } from "@/lib/flow-data-freshness";
 import { publishFlowEvent } from "@/lib/flow-events";
 import type { MarketFlowAlert } from "@/lib/providers/unusual-whales";
@@ -34,6 +34,42 @@ export function alertId(row: Record<string, unknown>, flow: MarketFlowAlert): st
   const id = row.id ?? row.alert_id;
   if (id != null) return `uw:${id}`;
   return flowFallbackAlertId(flow);
+}
+
+// BIE Stage 4 gap closed: alert_audit_log's "unified per-alert audit trail" only
+// ever covered 0DTE Command + Night Hawk (published/rejected) — HELIX, the
+// platform's highest-volume alert source, was entirely invisible to it, and by
+// extension invisible to everything built on top this session (ecosystem-
+// context's recent_audit_entries, Largo's get_ecosystem_context tool, the
+// duplicate-alert detector). Writing every $200k+ MIN_PREMIUM print here would
+// swamp a table sized around a handful of 0DTE/Night Hawk rows per day with
+// dozens-to-hundreds of flow prints — so this only logs the pre-existing
+// "whale" tier (premium >= $1M, see unusual-whales.ts's route classification),
+// the same bar HELIX already uses for its own Discord/emoji distinction.
+
+/** Pure: which flow routes are significant enough for the unified audit trail. */
+export function isHelixAuditWorthy(route: string): boolean {
+  return route === "whale";
+}
+
+/** Pure: shape a whale-tier flow print into an alert_audit_log row. Split out
+ *  from the write call so the shape logic is unit-testable without a DB. */
+export function buildHelixAuditRow(alertIdValue: string, flow: MarketFlowAlert) {
+  return {
+    alert_type: "helix_whale",
+    source_table: "flow_alerts",
+    source_key: { alert_id: alertIdValue },
+    ticker: flow.ticker,
+    direction: flow.direction,
+    confidence_score: flow.score,
+    confidence_label: null,
+    trigger_reason: `$${flow.premium.toLocaleString()} ${flow.option_type} premium print`,
+    decision_trace: [
+      { premium: flow.premium, option_type: flow.option_type, strike: flow.strike, expiry: flow.expiry, route: flow.route },
+    ],
+    input_snapshot: null,
+    final_output: null,
+  };
 }
 
 async function notifyDiscord(flow: FlowRow): Promise<void> {
@@ -129,6 +165,11 @@ export async function persistAndPublishFlowAlert(
     // its own writes), so it can never silence the cron that owns this process.
     markFlowFrameDelivered();
     void notifyDiscord(event);
+    if (usingDb && isHelixAuditWorthy(flow.route)) {
+      void insertAlertAuditLog(buildHelixAuditRow(id, flow)).catch((err) =>
+        console.error("[flow-persist] alert_audit_log insert failed:", id, err)
+      );
+    }
   }
 
   return { inserted, published: shouldPublish };

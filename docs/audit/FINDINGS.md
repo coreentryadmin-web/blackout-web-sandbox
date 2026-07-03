@@ -7,6 +7,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE Stage 4 gap closed SHIPPED 2026-07-03 — HELIX whale prints now write to alert_audit_log
+**Status:** SHIPPED (`feat/bie-helix-whale-audit-writepath`). Found while extending the ecosystem work above: `alert_audit_log`'s "unified per-alert audit trail" (Stage 4, marked SHIPPED) only ever covered 0DTE Command + Night Hawk (published/rejected) — confirmed by grepping every `insertAlertAuditLog` call site, all in `zerodte/scan.ts` and `nighthawk/play-outcomes.ts`. HELIX (`flow-persist.ts`), the platform's highest-volume alert source, never wrote to it at all. That made it invisible to everything built on top of the audit trail this session: `fetchEcosystemContext`'s `recent_audit_entries`, Largo's `get_ecosystem_context` tool, and the duplicate-alert detector.
+
+**Why not log the full flow tape:** HELIX's base materiality floor (`MIN_PREMIUM`, $200k default) fires far more often per day than 0DTE (a handful of flags) or Night Hawk (a handful of picks/night) — writing every qualifying print would swamp a table sized around low-frequency sources with a high-frequency one. Used the tier that already exists for this exact reason: `route === "whale"` (premium ≥ $1M, `unusual-whales.ts`), the same bar HELIX already uses for its own Discord 🐋 distinction — no new threshold invented, reused the one the codebase already treats as "notable."
+
+**Implementation:** `isHelixAuditWorthy()` + `buildHelixAuditRow()` (`src/lib/flow-persist.ts`) are pure, unit-tested in isolation. Wired into the existing `shouldPublish` block in `persistAndPublishFlowAlert()` — same gate that already prevents duplicate Discord posts from a WS+REST double-delivery, so this reuses the existing dedup instead of adding a new one. Fire-and-forget (`void ... .catch()`), matching the existing `notifyDiscord` pattern — an audit-log write failure must never block the live flow tape.
+
+**Free upgrade to existing consumers:** because every consumer of `alert_audit_log` already reads it generically by `alert_type`, whale prints now automatically show up in Largo's ecosystem-context answers and the admin Audit Trail panel with zero further code changes — the actual point of building this on a shared table instead of a bespoke per-consumer join.
+
+**Verification:** `isHelixAuditWorthy`/`buildHelixAuditRow` unit tested in isolation (4 tests). 877/877 tests pass, `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## ✅ VERIFIED 2026-07-03 — PR #368 (`feat/bie-nighthawk-echo-0dte-board`) deploy confirmed SUCCESS
 Merge commit `7df3adf`. Railway deployment `b3a3bb3c-e1e6-4731-b464-62be7832fdf1` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
 
