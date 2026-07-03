@@ -7,6 +7,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE — discovery now reads the already-running data-integrity/data-correctness validators
+**Status:** SHIPPED. First concrete step against the user's formal primary-objective charter (`docs/bie/FULL-SYSTEM-AWARENESS.md`): data integrity outranks trade-recommendation quality, and BIE must never invent a correctness verdict — only surface what a real validation layer already found.
+
+**What was already true, that BIE was blind to:** `data-correctness` (every 30min RTH) and `data-integrity` (every 5min RTH) crons already run a full layered validation sweep (shadow-recompute/invariant/sanity/cross-provider/cross-tool/freshness) across heat maps, SPX desk, HELIX flows, Night's Watch, Night Hawk, track record — and `data-integrity` already auto-opens real incidents (`admin_incidents`) on any discrepancy. Neither system's output reached BIE's discovery report; discovery only knew generic cron pass/fail, not the substance of what these validators found.
+
+**Fix:** `runBieDiscovery()` now reads `listOpenAdminIncidents()` (already existed) and the latest logged `data-correctness` run's payload (`cron_job_runs.meta_json` — reads the already-decided result, never re-runs the sweep). `formatDiscovery()` surfaces every open incident as a finding unconditionally (these are pre-confirmed by the validator, not a BIE guess), every data-correctness FLAG as a finding (a probable wrong displayed number), and flags a coverage-gap warning when a market-hours run had zero independently-confirmed metrics (consistency-only ≠ a guarantee — the same honesty the underlying scorecard already enforces, now propagated to BIE's report instead of silently dropped).
+
+**Verification:** 5 new regression tests (`bie.test.ts`) covering: incidents always become findings with no threshold, no incidents means no section, correctness FLAGs surface as findings, the zero-independently-confirmed coverage-gap case, and a genuinely healthy run producing a summary line with no findings. 773/773 total pass, `tsc --noEmit` + build clean.
+
 ## 🔴 P0 SECURITY — Postgres credential printed into Railway build logs since 2026-06-30; ACTION NEEDED: rotate the password
 **Status:** OPEN — code fix shipped this PR (`fix/railway-build-command-secret-leak`), **but the exposed credential itself still needs to be rotated by the user; that is not something this PR can do.**
 

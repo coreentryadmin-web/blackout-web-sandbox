@@ -271,6 +271,64 @@ test("discovery: market-hours-only staleness during RTH is flagged high-priority
   assert.ok(!text.includes('"nights-watch-warm"'));
 });
 
+// ── discovery: data-integrity incidents + data-correctness scorecard ─────────────
+
+test("discovery: every open admin incident is a finding, no threshold — it's already confirmed by the validator", () => {
+  const incidents: import("./discovery").DiscoveryIncident[] = [
+    { severity: "critical", category: "data-integrity", title: "SPY quote vs GEX spot mismatch", detail: "quote=602.10 gex.spot=601.40", opened_at: "2026-07-06T14:00:00Z" },
+  ];
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, [], incidents);
+  assert.match(text, /Open data-integrity incidents: 1\./);
+  assert.match(text, /\[critical\/data-integrity\] SPY quote vs GEX spot mismatch/);
+  assert.match(text, /Open incident \[critical\].*already confirmed by data-integrity, not a guess/);
+});
+
+test("discovery: no open incidents produces no incidents section and no related finding", () => {
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, [], []);
+  assert.ok(!text.includes("Open data-integrity incidents"));
+});
+
+test("discovery: data-correctness FLAGs surface as findings — a real wrong-number verdict, not invented by BIE", () => {
+  const correctness: import("./discovery").DataCorrectnessSummary = {
+    ran_at: "2026-07-06T14:30:00Z",
+    overall_status: "FLAGGED",
+    market_open: true,
+    flags: [{ layer: "heatmap", metric: "NVDA.gex.sum", detail: "Σ strike_totals -24572.44 != total -24572.45" }],
+    independently_confirmed: 12,
+    consistency_only: 3,
+  };
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, [], [], correctness);
+  assert.match(text, /Data-correctness scorecard \(2026-07-06T14:30:00Z\): FLAGGED, 1 flag\(s\), 12 independently confirmed, 3 consistency-only\./);
+  assert.match(text, /Data-correctness FLAG \[heatmap\/NVDA\.gex\.sum\]: Σ strike_totals.*a displayed number is probably wrong/);
+});
+
+test("discovery: zero independently-confirmed metrics during market hours is a coverage-gap finding, not a silent pass", () => {
+  const correctness: import("./discovery").DataCorrectnessSummary = {
+    ran_at: "2026-07-06T14:30:00Z",
+    overall_status: "OK",
+    market_open: true,
+    flags: [],
+    independently_confirmed: 0,
+    consistency_only: 5,
+  };
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, [], [], correctness);
+  assert.match(text, /0 independently-confirmed metrics this run during market hours — coverage gap, not a guarantee/);
+});
+
+test("discovery: healthy correctness run (confirmed metrics, no flags) produces the summary line but no findings", () => {
+  const correctness: import("./discovery").DataCorrectnessSummary = {
+    ran_at: "2026-07-06T14:30:00Z",
+    overall_status: "OK",
+    market_open: true,
+    flags: [],
+    independently_confirmed: 9,
+    consistency_only: 2,
+  };
+  const text = formatDiscovery("2026-07-06", [], { total: 0, groups: [] }, [], [], correctness);
+  assert.match(text, /9 independently confirmed, 2 consistency-only/);
+  assert.match(text, /Findings: none crossing thresholds/);
+});
+
 // ── knowledge: embed-vs-backfill partition ───────────────────────────────────────
 
 import { partitionForEmbedding } from "./knowledge";

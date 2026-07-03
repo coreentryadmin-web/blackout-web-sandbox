@@ -14,6 +14,7 @@
 import { dbConfigured, dbQuery } from "@/lib/db";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { countRecentErrorEvents } from "@/lib/error-sink";
+import { listOpenAdminIncidents } from "@/lib/admin-incidents";
 import { todayEt } from "@/lib/nighthawk/session";
 import { storeKnowledge } from "./knowledge";
 
@@ -29,6 +30,36 @@ export type DiscoveryRow = {
 };
 
 export type ErrorGroup = { source: string; scope: string | null; count: number };
+
+/** The only fields formatDiscovery reads from admin-incidents' AdminIncidentRow —
+ *  these are already-CONFIRMED problems, auto-opened by the data-integrity cron's
+ *  own cross-tool validation (see data-integrity/route.ts), not something BIE
+ *  decides on its own — BIE only surfaces what the validation layer already found. */
+export type DiscoveryIncident = {
+  severity: string;
+  category: string;
+  title: string;
+  detail: string;
+  opened_at: string;
+};
+
+/** A single independently-decided "this displayed number looks wrong" finding
+ *  from the data-correctness cron's layered checks (shadow-recompute/invariant/
+ *  sanity/cross-provider/cross-tool/freshness) — see run-correctness.ts. */
+export type DataCorrectnessFlag = { layer: string; metric: string; detail: string };
+
+/** The subset of the data-correctness cron's logged payload (cron_job_runs.meta_json)
+ *  formatDiscovery needs. Read from the LATEST logged run, never re-computed here —
+ *  BIE reports what the validator already decided, it never re-derives correctness
+ *  itself (see docs/bie/FULL-SYSTEM-AWARENESS.md's primary-objective charter). */
+export type DataCorrectnessSummary = {
+  ran_at: string;
+  overall_status: string;
+  market_open: boolean;
+  flags: DataCorrectnessFlag[];
+  independently_confirmed: number;
+  consistency_only: number;
+};
 
 /** The only fields formatDiscovery reads from admin-cron-health's CronJobHealth —
  *  narrowed on purpose so this module (and its tests) don't depend on that
@@ -46,7 +77,9 @@ export function formatDiscovery(
   date: string,
   rows: DiscoveryRow[],
   errors: { total: number; groups: ErrorGroup[] } = { total: 0, groups: [] },
-  cronJobs: DiscoveryCronJob[] = []
+  cronJobs: DiscoveryCronJob[] = [],
+  incidents: DiscoveryIncident[] = [],
+  correctness: DataCorrectnessSummary | null = null
 ): string {
   const findings: string[] = [];
   const sections: string[] = [`BIE platform discovery — ${date} (last 24h)`];
@@ -117,6 +150,46 @@ export function formatDiscovery(
       );
   }
 
+  // Open admin incidents — auto-opened by the data-integrity cron's own cross-tool
+  // validation (desk vs heatmap vs quote, SPY/SPX tracking, max-pain, GEX freshness).
+  // These are already-CONFIRMED problems by the time they reach here, not something
+  // BIE is deciding on its own — every open incident is a finding, no threshold.
+  if (incidents.length > 0) {
+    sections.push(
+      ``,
+      `Open data-integrity incidents: ${incidents.length}.`,
+      ...incidents.slice(0, 8).map((i) => `- [${i.severity}/${i.category}] ${i.title}`)
+    );
+    for (const i of incidents)
+      findings.push(`Open incident [${i.severity}] ${i.title}: ${i.detail} — already confirmed by data-integrity, not a guess.`);
+  }
+
+  // Data-correctness scorecard — the layered shadow-recompute/cross-provider sweep
+  // (run-correctness.ts) across heat maps, SPX desk, HELIX flows, Night's Watch, Night
+  // Hawk, track record. BIE reports what this ALREADY decided; it never re-derives
+  // correctness itself. "consistency-only" metrics are an honest coverage gap, not a
+  // false green — surfaced as a finding only when the run had ZERO independent
+  // confirmation during market hours (the oracle answered for nothing that run).
+  if (correctness) {
+    sections.push(
+      ``,
+      `Data-correctness scorecard (${correctness.ran_at}): ${correctness.overall_status}, ` +
+        `${correctness.flags.length} flag(s), ${correctness.independently_confirmed} independently confirmed, ` +
+        `${correctness.consistency_only} consistency-only.`
+    );
+    for (const f of correctness.flags.slice(0, 8))
+      findings.push(`Data-correctness FLAG [${f.layer}/${f.metric}]: ${f.detail} — a displayed number is probably wrong.`);
+    if (
+      correctness.market_open &&
+      correctness.flags.length === 0 &&
+      correctness.consistency_only > 0 &&
+      correctness.independently_confirmed === 0
+    )
+      findings.push(
+        `Data-correctness: 0 independently-confirmed metrics this run during market hours — coverage gap, not a guarantee the numbers are right.`
+      );
+  }
+
   sections.push(
     ``,
     findings.length
@@ -130,7 +203,7 @@ export function formatDiscovery(
 export async function runBieDiscovery(): Promise<{ patterns: number; text: string } | null> {
   if (!dbConfigured()) return null;
   try {
-    const [apiRes, errors, cronHealth] = await Promise.all([
+    const [apiRes, errors, cronHealth, incidentRows, correctnessRes] = await Promise.all([
       dbQuery<Record<string, unknown>>(
         `SELECT provider, endpoint,
                 COUNT(*)::int AS calls,
@@ -150,6 +223,14 @@ export async function runBieDiscovery(): Promise<{ patterns: number; text: strin
       buildCronHealthSnapshot()
         .then((s) => s.jobs)
         .catch(() => []),
+      listOpenAdminIncidents(10).catch(() => []),
+      // Latest logged data-correctness run — READ the already-decided result, never
+      // re-run the sweep here (BIE reports validated findings, it doesn't validate).
+      dbQuery<Record<string, unknown>>(
+        `SELECT started_at, meta_json FROM cron_job_runs
+         WHERE job_key = 'data-correctness' AND status <> 'skipped'
+         ORDER BY started_at DESC LIMIT 1`
+      ).catch(() => ({ rows: [] })),
     ]);
     const rows: DiscoveryRow[] = (apiRes.rows ?? []).map((r) => ({
       provider: String(r.provider),
@@ -161,8 +242,29 @@ export async function runBieDiscovery(): Promise<{ patterns: number; text: strin
       total_time_s: Number(r.total_time_s) || 0,
       rate_limited: Number(r.rate_limited) || 0,
     }));
+    const incidents: DiscoveryIncident[] = incidentRows.map((i) => ({
+      severity: i.severity,
+      category: i.category,
+      title: i.title,
+      detail: i.detail,
+      opened_at: i.opened_at,
+    }));
+    const correctnessRow = correctnessRes.rows?.[0];
+    let correctness: DataCorrectnessSummary | null = null;
+    if (correctnessRow) {
+      const meta = (correctnessRow.meta_json ?? {}) as Record<string, unknown>;
+      const totals = (meta.totals ?? {}) as Record<string, unknown>;
+      correctness = {
+        ran_at: String(correctnessRow.started_at),
+        overall_status: String(meta.overall_status ?? "unknown"),
+        market_open: Boolean(meta.market_open),
+        flags: Array.isArray(meta.flags) ? (meta.flags as DataCorrectnessFlag[]) : [],
+        independently_confirmed: Number(totals.independentlyConfirmed) || 0,
+        consistency_only: Number(totals.consistencyOnly) || 0,
+      };
+    }
     const date = todayEt();
-    const text = formatDiscovery(date, rows, errors, cronHealth);
+    const text = formatDiscovery(date, rows, errors, cronHealth, incidents, correctness);
     await storeKnowledge("self_eval", `bie:discovery:${date}`, text).catch(() => 0);
     return { patterns: rows.length, text };
   } catch {
