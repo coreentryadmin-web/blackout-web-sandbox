@@ -139,7 +139,10 @@ export const UW_KEYS = {
   marketOiChange:      ()                => 'market_oi_change',
   marketMovers:        ()                => 'market_movers',
   topNetImpact:        ()                => 'top_net_impact',
-  congress:            ()                => 'congress_recent_v2',
+  // Keyed by ticker (or 'all'): a per-ticker congress query and the market-wide
+  // grid panel must never share a cache slot — first caller was winning the TTL
+  // and cross-contaminating the other's rows.
+  congress:            (ticker?: string) => `congress_recent_v2:${ticker ?? 'all'}`,
   shortScreener:       ()                => 'short_screener',
   ftds:                (ticker: string)  => `ftds:${ticker}`,
   screenerStocks:      ()                => 'screener_stocks',

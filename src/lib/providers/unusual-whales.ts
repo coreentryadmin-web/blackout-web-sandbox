@@ -1392,7 +1392,7 @@ export async function fetchUwInsiderFlow(ticker: string) {
 
 export async function fetchUwCongressTrades(ticker?: string, limit = 25) {
   const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.congress(), UW_CACHE_TTL.congress, async () => {
+  return uwCacheGet(redis, UW_KEYS.congress(ticker?.toUpperCase()), UW_CACHE_TTL.congress, async () => {
     const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
     if (ticker) params.ticker = ticker.toUpperCase();
     return uwGetSafe<unknown>("/api/congress/recent-trades", params);
@@ -1446,16 +1446,19 @@ export async function fetchUwScreenerStocks(limit = 15) {
 
 export async function fetchUwUnusualTrades(ticker?: string, limit = 20) {
   const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.unusualTrades(), UW_CACHE_TTL.unusualTrades, async () => {
-    const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
-    const data = await uwGetSafe<unknown>("/api/unusual-trades/recent", params);
-    let rows = extractRows(data);
-    if (ticker) {
-      const t = ticker.toUpperCase();
-      rows = rows.filter((r) => String(r.ticker ?? "").toUpperCase() === t);
-    }
-    return rows.slice(0, limit);
+  // Cache the RAW market-wide feed; filter per-ticker AFTER the cache read.
+  // Filtering inside the builder stored one ticker's rows under the shared
+  // market-wide key — the same cross-contamination as the congress cache.
+  const rows = await uwCacheGet(redis, UW_KEYS.unusualTrades(), UW_CACHE_TTL.unusualTrades, async () => {
+    const data = await uwGetSafe<unknown>("/api/unusual-trades/recent", { limit: 100 });
+    return extractRows(data);
   });
+  let out = Array.isArray(rows) ? rows : [];
+  if (ticker) {
+    const t = ticker.toUpperCase();
+    out = out.filter((r) => String((r as Record<string, unknown>).ticker ?? "").toUpperCase() === t);
+  }
+  return out.slice(0, limit);
 }
 
 export async function fetchUwMarketTopNetImpact(limit = 15) {
@@ -2118,7 +2121,12 @@ export async function fetchUwInsiderTicker(ticker: string, limit = 25) {
 export async function fetchUwCongressUnusualTrades(ticker?: string, limit = 25) {
   const params: Record<string, string | number> = { limit: Math.min(limit, 100) };
   if (ticker) params.ticker = sym(ticker);
-  const data = await uwGetSafe<unknown>("/api/congress/unusual-trades", params);
+  // /api/congress/unusual-trades is premium-gated on our UW plan — it 422s
+  // ("Missing access") on EVERY call (100% failure, ~250 wasted calls/day,
+  // caught by the BIE discovery report 2026-07-03). recent-trades is the
+  // plan-included feed with the same row shape (name/ticker/txn_type/amounts/
+  // transaction_date); our scorers do their own significance weighting anyway.
+  const data = await uwGetSafe<unknown>("/api/congress/recent-trades", params);
   return extractRows(data).slice(0, limit);
 }
 

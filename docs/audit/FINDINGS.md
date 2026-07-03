@@ -205,6 +205,15 @@ Also taints anything else keyed off `desk.pdh/pdl/prior_close`: PDH/PDL breakout
 - **Visibility** (`feat/bie-admin-report`) — `/api/admin/bie-report` recomputes all three reports on demand + live embeddings/retrieval probes + corpus census; `AdminBiePanel` on `/admin` renders it (the user's "how do we know what it is fixing?" is now a dashboard, not a question).
 - **Data-gated remainder (documented, deliberate):** knowledge-Q&A router intents (needs corpus + key warm), small-model distillation (needs months of graded interactions + a buy decision).
 
+## 🔴 FIXED 2026-07-03 — Congress "unusual trades" feed 100% dead (plan-gated UW endpoint) + two cache cross-contamination bugs
+**Status:** FIXED (`fix/uw-congress-endpoint-access`). **Found by the BIE discovery report on its first live run** — the self-improvement loop's telemetry sweep flagged `unusual_whales /api/congress/unusual-trades: 100% failures over 252 calls` in 24h; direct probe confirmed `422 "Missing access for unusual trades. This is a premium endpoint."` Our UW plan simply does not include it — every call ever made to it failed silently (uwGetSafe swallows to empty rows), so Largo's congress tool and the Night Hawk dossier's congress-unusual lane have been quietly empty while burning ~250 calls/day.
+
+- **Fix 1 (endpoint):** `fetchUwCongressUnusualTrades` now hits `/api/congress/recent-trades` — plan-included (probe 200), same row shape (`name/ticker/txn_type/amounts/transaction_date`), supports the same `ticker` filter. The NH scorer already does its own significance weighting, and its field reads (`txn_type ?? transaction_type ?? …`) are unchanged.
+- **Fix 2 (cache poisoning):** `fetchUwCongressTrades` cached under a ticker-less key (`congress_recent_v2`) while Largo passes a ticker — the first caller won the TTL and served its rows to everyone (grid panel could get one ticker's list; a ticker query could get the market-wide list). Key now includes the ticker (`:all` for market-wide; the cron warm still fills `:all`, which is the slot the grid panel reads).
+- **Fix 3 (same bug, second site):** `fetchUwUnusualTrades` filtered per-ticker INSIDE the cache builder, storing one ticker's rows under the shared market-wide key. Now caches the raw feed and filters after the cache read.
+
+**Blast radius:** consumers — Largo `get_congress_unusual` + `get_unusual_trades` tools, NH dossier congress lane, grid congress panel — all pass rows through generically; no shape change. Plan probes: `recent-trades`/`congress-trader`/`late-reports`/`politicians` all 200 on our key; only `unusual-trades` is gated. If the true "unusual" curation matters, it is a UW plan upgrade (contact dev@unusualwhales.com) — buy decision, documented, not assumed.
+
 ## 🟠 MEDIUM — VIX source/freshness inconsistency
 App `indices.vix.price = 17.18` vs Polygon prior-close `16.45` (4.4%), while SPX/SPY match prior-close exactly — the app's VIX uses a different source/timestamp than SPX/SPY. Confirm with same-timestamp live compare at open.
 
