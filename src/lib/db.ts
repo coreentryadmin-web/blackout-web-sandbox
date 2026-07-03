@@ -2003,15 +2003,16 @@ export type UserPositionPatch = Partial<{
   notes: string | null;
 }>;
 
-/** YYYY-MM-DD from a pg DATE column (which `pg` returns as a JS Date in local tz). */
+/** YYYY-MM-DD from a pg DATE column (node-postgres returns DATE as a JS Date at midnight UTC). */
 function ymdOf(value: unknown): string {
-  if (value instanceof Date) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, "0");
-    const d = String(value.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // DATE has no timezone — read UTC Y-M-D (same as isoDateString) so OCC/expiry keys never
+    // shift on replicas whose local tz is America/New_York.
+    return value.toISOString().slice(0, 10);
   }
-  return String(value).slice(0, 10);
+  const s = String(value ?? "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s.slice(0, 10);
 }
 
 function mapUserPositionRow(r: QueryResultRow): UserPositionRow {

@@ -84,12 +84,12 @@ export async function GET(req: NextRequest) {
   const capped = sharded.slice(0, MAX_CHAINS);
 
   // Strike hints per (ticker, expiry) so getNwChain widens the band to include deep OTM/ITM legs.
+  // Built from ALL open legs — not shard-filtered — so a chain fallback on this shard still
+  // widens to every held strike on that (underlying, expiry).
   const strikesByChain = new Map<string, number[]>();
   let contracts: Awaited<ReturnType<typeof listDistinctOpenPositionContracts>> = [];
   try {
     contracts = await listDistinctOpenPositionContracts();
-    const shardTickers = new Set(sharded.map((c) => c.ticker.trim().toUpperCase()));
-    contracts = contracts.filter((c) => shardTickers.has(c.ticker.trim().toUpperCase()));
     for (const c of contracts) {
       const key = `${c.ticker.trim().toUpperCase()}|${c.expiry.slice(0, 10)}`;
       const arr = strikesByChain.get(key) ?? [];
@@ -101,6 +101,9 @@ export async function GET(req: NextRequest) {
   }
 
   // PRIMARY: batch-warm DISTINCT held CONTRACTS via Massive unified snapshot (≤250/call).
+  // NEVER shard-filter this pass — with ≤250 distinct OCCs it is one cheap batched call, and
+  // sharding here left 5/6 of held legs cold on every tick (data-correctness false-FLAGged
+  // real contracts as "unlisted"). Sharding below applies only to chain/GEX fallback.
   let snapWarmed = 0;
   let snapContracts = 0;
   let snapUnfound = 0;

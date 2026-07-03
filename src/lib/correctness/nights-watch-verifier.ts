@@ -11,7 +11,8 @@ import {
 import { listDistinctOpenPositionContracts, type UserPositionRow } from "@/lib/db";
 import { getNwChain, matchContract } from "@/lib/nights-watch/chain-cache";
 import { valuationFromContract, valuationFromSnapshot, enrichPosition } from "@/lib/nights-watch/valuation";
-import { getOptionSnapshot } from "@/lib/providers/options-snapshot";
+import { fetchOptionsUnifiedSnapshot, getOptionSnapshot, type OptionSnapshot } from "@/lib/providers/options-snapshot";
+import { snapshotMatchesPosition } from "@/lib/nights-watch/snapshot-coverage";
 import { buildOcc } from "@/lib/ws/options-socket";
 
 // ---------------------------------------------------------------------------
@@ -250,6 +251,24 @@ export async function verifyNightsWatch(marketOpen: boolean): Promise<TickerScor
         byChain.set(key, arr);
       }
       const chainKeys = Array.from(byChain.keys()).slice(0, defaultSample());
+      const sampleContracts = chainKeys.flatMap((key) => byChain.get(key) ?? []);
+      // Bounded upstream audit probe — confirms held legs are REAL at the provider when the
+      // warmed snapshot / chain caches are cold (off-hours, post-deploy, shard gap). This is
+      // the correctness auditor, not a per-user cache reader; one batched ≤250 call per run.
+      const auditOccs = Array.from(
+        new Set(
+          sampleContracts
+            .map((c) => buildOcc(c.ticker, c.expiry, c.option_type, c.strike))
+            .filter((o): o is string => Boolean(o))
+        )
+      );
+      let auditSnaps = new Map<string, OptionSnapshot>();
+      try {
+        auditSnaps = auditOccs.length ? await fetchOptionsUnifiedSnapshot(auditOccs) : new Map();
+      } catch {
+        auditSnaps = new Map();
+      }
+
       let contractsChecked = 0;
       let notFound = 0;
       let badGreeks = 0;
@@ -296,6 +315,15 @@ export async function verifyNightsWatch(marketOpen: boolean): Promise<TickerScor
             if (match) {
               located = true;
               val = valuationFromContract(match, chain.spot);
+            }
+          }
+          // Upstream audit fallback when shared caches are cold — still chain-confirmed data.
+          if (!located) {
+            const occ = buildOcc(c.ticker, c.expiry, c.option_type, c.strike);
+            const auditSnap = occ ? auditSnaps.get(occ) : null;
+            if (auditSnap && snapshotMatchesPosition(c, auditSnap)) {
+              val = valuationFromSnapshot(auditSnap);
+              if (val) located = true;
             }
           }
           if (!located) {
