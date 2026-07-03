@@ -1451,6 +1451,128 @@ body::before {
 }
 .bento-flagship::before { opacity: 0.4; }
 .bento-accent-gold { border-top-color: #ffcc4d; }
+.bento-accent-bie { border-top-color: #22d3ee; }
+
+/* ── BIE Core visual — the "living intelligence" tile ────────────────────
+   BIE isn't another instrument, it's the layer watching all of them, so its
+   card gets a distinct always-on treatment instead of the per-product sigil:
+   a slow shifting multi-hue wash (spans every product's accent color) behind
+   a pulsing core with expanding radar rings and a cycling terminal readout. */
+.bento-bie .bento-card-inner {
+  background:
+    radial-gradient(70% 60% at 15% 0%, rgba(0, 230, 118, 0.10), transparent 60%),
+    radial-gradient(65% 60% at 85% 100%, rgba(191, 95, 255, 0.10), transparent 60%),
+    #08080e;
+  background-size: 200% 200%;
+  animation: bie-wash-drift 14s ease-in-out infinite;
+}
+.bento-bie::before { opacity: 0.35; }
+
+@keyframes bie-wash-drift {
+  0%, 100% { background-position: 0% 0%, 100% 100%; }
+  50% { background-position: 40% 30%, 60% 70%; }
+}
+
+.bie-core-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.bie-core-visual {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.bie-core-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(34, 211, 238, 0.55);
+  opacity: 0;
+  animation: bie-ring-ping 3.3s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes bie-ring-ping {
+  0% { transform: scale(0.35); opacity: 0.85; }
+  75% { opacity: 0; }
+  100% { transform: scale(1.05); opacity: 0; }
+}
+
+.bie-core-orbit {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  border: 1px dashed rgba(191, 95, 255, 0.4);
+  animation: bie-orbit-spin 9s linear infinite;
+}
+
+@keyframes bie-orbit-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.bie-core-nucleus {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #5df7ff, #00e5ff 45%, #0a3b45 100%);
+  box-shadow:
+    0 0 24px 4px rgba(0, 229, 255, 0.55),
+    0 0 60px 12px rgba(191, 95, 255, 0.25);
+}
+
+.bie-core-nucleus-glyph {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #04191c;
+}
+
+.bie-core-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(148, 226, 255, 0.85);
+}
+
+.bie-core-readout-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00e676;
+  box-shadow: 0 0 8px 2px rgba(0, 230, 118, 0.7);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.bie-core-readout-text {
+  min-width: 0;
+}
+
+.bie-core-readout-cursor {
+  color: rgba(34, 211, 238, 0.9);
+  animation: vitals-cursor-blink 1.1s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bento-bie .bento-card-inner { animation: none; }
+  .bie-core-ring { animation: none; opacity: 0; }
+  .bie-core-orbit { animation: none; }
+  .bie-core-readout-dot { animation: none; }
+  .bie-core-readout-cursor { animation: none; opacity: 1; }
+}
 
 .bento-card-watermark {
   position: absolute;

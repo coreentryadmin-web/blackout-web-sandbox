@@ -6,10 +6,11 @@ import { clsx } from "clsx";
 import type { CSSProperties } from "react";
 import { ProductMark, MARK_ACCENT, type MarkProduct } from "@/components/marks/ProductMark";
 import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
+import { BieCoreVisual } from "@/components/landing/BieCoreVisual";
 
 type Weapon = {
-  /** null => Pre-Market (feature, no sigil). */
-  mark: MarkProduct | null;
+  /** null => Pre-Market (feature, no sigil). "bie" => the living-core visual, not a static sigil. */
+  mark: MarkProduct | "bie" | null;
   accentKey: string;
   accent: string;
   name: string;
@@ -32,6 +33,17 @@ const INSTRUMENTS: Weapon[] = [
     href: "/dashboard",
     size: "flagship",
     desc: "The primary 0DTE desk — live SPX with VWAP, gamma and internals, plus a graded play card that states the setup and the invalidation level.",
+  },
+  {
+    mark: "bie",
+    accentKey: "bie",
+    accent: "#22d3ee",
+    name: "BlackOut Intelligence",
+    spec: "The engine watching every instrument",
+    meta: "BIE",
+    href: "/track-record",
+    size: "wide",
+    desc: "Not another instrument — the layer underneath all of them. Every number cross-checked against source data, every alert logged in one audit trail, every cron and system watched continuously. It never invents a fact; when it can't verify something, it says so.",
   },
   {
     mark: "helix",
@@ -141,6 +153,56 @@ export function FeaturesGrid() {
                 ? "md:col-span-2 lg:col-span-3"
                 : "";
             const sigilSize = isFlagship ? 72 : 48;
+
+            if (w.mark === "bie") {
+              return (
+                <motion.div
+                  key={w.name}
+                  custom={i}
+                  initial="hidden"
+                  whileInView="show"
+                  whileHover={{ y: -6 }}
+                  viewport={{ once: true, margin: "-40px" }}
+                  variants={card}
+                  className={clsx("group", spanClass)}
+                >
+                  <Link
+                    href={w.href}
+                    className={clsx("bento-card-wrap block h-full", "bento-accent-bie", "bento-bie")}
+                    style={{ "--card-accent-color": w.accent } as CSSProperties}
+                  >
+                    <div className="bento-card-inner h-full flex flex-col sm:flex-row sm:items-center sm:gap-8">
+                      <BieCoreVisual size={104} />
+                      <div className="mt-5 sm:mt-0 sm:flex-1">
+                        <span
+                          className="font-mono text-[10px] tracking-[0.25em] uppercase"
+                          style={{ color: w.accent }}
+                        >
+                          {w.meta}
+                        </span>
+                        <h3 className="font-syne font-extrabold leading-none tracking-tight text-white text-3xl mt-2">
+                          {w.name}
+                        </h3>
+                        <p
+                          className="font-mono text-[11px] tracking-[0.2em] uppercase mt-2"
+                          style={{ color: w.accent }}
+                        >
+                          {w.spec}
+                        </p>
+                        <p className="text-sky-300 leading-relaxed mt-4 text-[13.5px]">{w.desc}</p>
+                        <span
+                          className="font-mono text-[11px] tracking-[0.2em] uppercase inline-flex items-center gap-1.5 mt-4 transition-transform group-hover:translate-x-1"
+                          style={{ color: w.accent }}
+                        >
+                          See the track record <span aria-hidden>→</span>
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                </motion.div>
+              );
+            }
+
             return (
               <motion.div
                 key={w.name}
