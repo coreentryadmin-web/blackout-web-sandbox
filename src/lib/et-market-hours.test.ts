@@ -19,3 +19,9 @@ test("isEtMarketHours rejects weekend", () => {
   const sun = new Date("2026-06-28T16:00:00.000Z");
   assert.equal(isEtMarketHours(sun), false);
 });
+
+test("isEtMarketHours rejects NYSE full-day holidays during cash hours", () => {
+  // 2026-07-03 is Independence Day observed (NYSE closed) — 10:30 AM ET
+  const holiday = new Date("2026-07-03T14:30:00.000Z");
+  assert.equal(isEtMarketHours(holiday), false);
+});

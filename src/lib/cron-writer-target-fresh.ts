@@ -7,6 +7,26 @@ export function isFlowIngestAlternateWriterSkip(message: string | null | undefin
 
 export type WriterTargetProbe = { fresh: boolean; detail: string };
 
+/** PG downstream target for flow-ingest — true when flow_alerts landed within `maxAgeMin`. */
+export async function probePgFlowAlertsFresh(
+  maxAgeMin = 20
+): Promise<{ fresh: boolean; ageMin: number | null }> {
+  const { dbConfigured, dbQuery } = await import("@/lib/db");
+  if (!dbConfigured()) return { fresh: false, ageMin: null };
+  try {
+    const res = await dbQuery<{ latest_ms: string | null }>(
+      `SELECT (EXTRACT(EPOCH FROM MAX(COALESCE(created_at, inserted_at))) * 1000)::bigint AS latest_ms
+       FROM flow_alerts`
+    );
+    const ms = res.rows[0]?.latest_ms != null ? Number(res.rows[0].latest_ms) : NaN;
+    if (!Number.isFinite(ms)) return { fresh: false, ageMin: null };
+    const ageMin = (Date.now() - ms) / 60_000;
+    return { fresh: ageMin <= maxAgeMin, ageMin };
+  } catch {
+    return { fresh: false, ageMin: null };
+  }
+}
+
 function ageMinFromIso(iso: string | null | undefined, now = Date.now()): number | null {
   if (!iso) return null;
   const ms = new Date(iso).getTime();
@@ -35,13 +55,20 @@ async function uwCacheRemainingTtlSec(logicalKey: string): Promise<number | null
 export async function probeWriterTargetFresh(jobKey: string): Promise<WriterTargetProbe | null> {
   switch (jobKey) {
     case "flow-ingest": {
+      const pg = await probePgFlowAlertsFresh(20);
+      if (pg.fresh) {
+        return {
+          fresh: true,
+          detail: `flow_alerts latest row ${pg.ageMin != null ? `${pg.ageMin.toFixed(1)}m` : "?"} ago`,
+        };
+      }
       const { isFlowFrameFreshAnywhere } = await import("@/lib/flow-liveness");
       const fresh = await isFlowFrameFreshAnywhere(120_000);
       return {
         fresh,
         detail: fresh
           ? "cluster UW flow WS heartbeat fresh (REST cron intentionally idle)"
-          : "no recent cluster UW flow WS heartbeat",
+          : `no recent PG flow_alerts row${pg.ageMin != null ? ` (${pg.ageMin.toFixed(0)}m old)` : ""} or cluster WS heartbeat`,
       };
     }
     case "heatmap-warm": {
