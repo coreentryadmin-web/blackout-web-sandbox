@@ -3,6 +3,7 @@ import { fetchStockSnapshot, fetchIndexSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
 import { isHeatmapPreset } from "../heatmap-allowlist";
+import { isLiveOdteSession } from "./unusual-whales";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -217,7 +218,16 @@ export async function fetchPolygonOdteDeskBundle(
 
   const contracts = await loadOdteContracts(spot, expiry);
   if (!contracts.length) {
-    console.warn(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
+    // Same class of noise already fixed for uw-gex-fallback: `expiry` defaults to TODAY, so on
+    // a non-trading day (holiday/weekend) there is NO listed 0DTE contract at all — 0 results is
+    // completely expected, not a sign the API key is misconfigured. Only warn (and suggest
+    // checking the key) when this happens during a real trading session; otherwise it's routine
+    // and the "verify POLYGON_API_KEY" hint would be actively misleading.
+    if (isLiveOdteSession()) {
+      console.warn(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
+    } else {
+      console.info(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} — off-hours/holiday, expected (no listed 0DTE expiry today).`);
+    }
   }
   const rows = aggregateGexRows(contracts, spot);
   const maxPain = computeMaxPainFromChain(contracts);

@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟡 FIXED 2026-07-03 — same log-noise class found in a second place, swept for more before stopping
+**Status:** FIXED. Follow-up sweep after the `uw-gex-fallback` fix (below): grepped every `console.warn`/`console.error` in `providers/`, `nighthawk/`, `zerodte/` for the same "expected condition logged at misleading severity" shape.
+
+**Found a real second instance:** `polygon-options-gex.ts:220` — `[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot}... Verify POLYGON_API_KEY is a valid key...`. `expiry` defaults to `todayEtYmd()`, so on any non-trading day (today's holiday included) there is genuinely NO listed 0DTE expiry — 0 contracts is expected, and the "verify your API key" hint is actively misleading, not just noisy. Confirmed this is live, reachable code (not dead post the `spx-desk.ts` single-source migration mentioned in a nearby comment) — traced its one remaining call site through `fetchPolygonOdteGexRows` to `largo/run-tool.ts`, so a member's Largo question can trigger this exact path.
+
+**Fix:** reused the same `isLiveOdteSession()` just built for the UW fix (no duplicate logic) — warn with the API-key hint only during a real trading session; log at `info` off-hours/holiday. `unusual-whales.ts` and `polygon-options-gex.ts` have no existing import relationship in either direction — checked before adding one — so this doesn't introduce a circular dependency.
+
+**Checked and correctly NOT touched:** several `console.warn` calls in `nighthawk/edition-builder.ts` ("stage_X zeroed — recap-only fallback") looked superficially similar (a fallback path warning) but are a different class — a recap-only Night Hawk edition is worth knowing about on ANY day, not just an expected off-hours artifact like a 0-contract count. Applying the same off-hours suppression there would hide genuinely worth-surfacing degradations, not just noise. Investigated properly before deciding not to touch, not skipped by assumption.
+
+**Verification:** `tsc --noEmit`, 780/780 tests (no new tests needed — this call site reuses the already-tested `isLiveOdteSession()`, no new pure logic introduced), `npm run build` clean.
+
 ## 🟡 FIXED 2026-07-03 — `[uw-gex-fallback] ... 0 usable strikes` logged as Railway "error" for an expected off-hours/holiday condition
 **Status:** FIXED. User-reported (live Railway log screenshot) the same message already investigated and confirmed non-actionable earlier tonight (market holiday, no fresh 0DTE contracts, fallback chain succeeds via tier 2) — but seeing it tagged `level: "error"` in Railway's UI again meant the underlying noise problem itself was still worth fixing, even though the condition it reports is benign.
 
