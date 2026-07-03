@@ -193,3 +193,24 @@ test("calibration: ungraded rows are excluded from every bucket", () => {
   const r = computeCalibration(rows, { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
   assert.equal(r.graded_plays, 1);
 });
+
+// ── Phase 4: telemetry discovery (pure formatting + thresholds) ──────────────────
+
+import { formatDiscovery, type DiscoveryRow } from "./discovery";
+
+test("discovery: findings cite numbers and only fire past thresholds", () => {
+  const rows: DiscoveryRow[] = [
+    { provider: "uw", endpoint: "/api/darkpool/:t", calls: 120, fail_pct: 12.5, avg_latency_ms: 900, p95_latency_ms: 6200, total_time_s: 108, rate_limited: 14 },
+    { provider: "polygon", endpoint: "/v3/snapshot", calls: 800, fail_pct: 0.2, avg_latency_ms: 140, p95_latency_ms: 420, total_time_s: 112, rate_limited: 0 },
+  ];
+  const text = formatDiscovery("2026-07-06", rows);
+  assert.match(text, /12\.5% failures over 120 calls/);
+  assert.match(text, /p95 6200ms/);
+  assert.match(text, /rate-limited 14×/);
+  // The healthy endpoint appears in the cost table but produces NO finding.
+  assert.ok(!/polygon \/v3\/snapshot:.*investigate/.test(text));
+});
+
+test("discovery: empty telemetry degrades to an honest no-data report", () => {
+  assert.match(formatDiscovery("2026-07-06", []), /No API telemetry recorded/);
+});

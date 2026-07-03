@@ -25,10 +25,10 @@ the foundation. Not a chatbot. An intelligent operating system.
 | Layer | What | Status |
 |---|---|---|
 | **L1 Deterministic** | Every number from verified calculation engines — greeks/GEX (Polygon chains), scorers, plan math, grading. No LLM ever computes a figure. | LIVE (platform law since the audits; 0DTE stack fully deterministic) |
-| **L2 Knowledge** | Structured, searchable domain + platform knowledge (pgvector on existing Postgres; embeddings API). Playbooks, architecture, FINDINGS, editions, outcomes, past analyses. | Phase 2 |
+| **L2 Knowledge** | Structured, searchable domain + platform knowledge (portable JSONB embeddings, cosine in Node; Voyage-gated). Docs, FINDINGS, editions, platform map, self-evals. | **SHIPPED** (key-gated; activates with VOYAGE_API_KEY) |
 | **L3 Reasoning/Router** | Deterministic answer router: questions that map onto platform truth are answered instantly from source-of-truth readers — no LLM, no cost, zero hallucination. Ambiguous/reasoning questions → Claude with retrieved grounding. | **Phase 1 — SHIPPED** (`src/lib/bie/router.ts`, `composers.ts`) |
 | **L4 Self-evaluation** | Numeric-claim verifier: every figure in an LLM answer is matched against the data actually served that turn; unverified-heavy answers carry an explicit caution. Same philosophy as Night Hawk's grounding gates. | **Phase 1 — SHIPPED** (`src/lib/bie/verifier.ts`) |
-| **L5 Learning** | Outcome-graded feedback: `bie_interactions` (route, verification, latency) + the 0DTE ledger + NH outcomes feed nightly calibration (gates tuned by measured hit-rates) and a growing eval set. | Substrate SHIPPED; loops Phase 3 |
+| **L5 Learning** | Outcome-graded feedback: daily self-eval report (coverage/verification/cost avoided), 14-day calibration harness (score-band/ToD/spike buckets → evidence-cited gate recommendations, report-first, never tunes on noise), telemetry discovery report (slow/failing/expensive call patterns) — all persisted into the knowledge store on the daily cron tick. | **SHIPPED** |
 
 ## Phase 1 (shipped in this PR)
 
@@ -59,18 +59,19 @@ the foundation. Not a chatbot. An intelligent operating system.
 
 ## Phase plan
 
-- **Phase 2 — Knowledge:** pgvector + embeddings (needs an embeddings key — see
-  Purchases); ingest docs/, FINDINGS, NH editions + outcomes, ledger recaps, graded
-  Q&A. Retrieval grounds both router context and Claude fallback.
-- **Phase 3 — Learning loops:** nightly calibration report (hit-rate by band →
-  recommended gate changes; report-first, bounded auto-apply later); daily BIE
-  self-eval report (coverage, verification, worst unverified examples) to admin; eval
-  set replayed before any router change ships (regression gate in CI).
-- **Phase 4 — Platform intelligence + distillation (data-gated):** ingest the platform
-  map (APIs, crons, envs, architecture) so BIE answers platform questions; telemetry-
-  driven discovery reports (slow queries, expensive calls, dead code). Optionally
-  fine-tune a small open-weight model on the accumulated corpus once months of graded
-  interactions exist.
+- **Phase 2 — Knowledge: SHIPPED** (key-gated). Ingestion (docs/, FINDINGS,
+  AGENTS/CLAUDE, latest NH edition, generated platform map) runs daily, hash-deduped
+  BEFORE embedding so unchanged content is free; retrieval grounds the Claude
+  fallback. Provision VOYAGE_API_KEY to activate embeddings + retrieval.
+- **Phase 3 — Learning loops: SHIPPED.** Daily self-eval (router coverage, Claude
+  calls avoided, verification rate, session W/L) + 14-day calibration harness
+  (evidence-cited gate recommendations at n≥10 per bucket; report-first) + the router
+  eval set living in CI (`bie.test.ts` — no route change ships without it passing).
+- **Phase 4 — Platform intelligence + distillation:** platform-map ingestion and the
+  daily telemetry discovery report (slowest/most-failing/most-expensive call
+  patterns) are SHIPPED. Remaining Phase-4 items are DATA-GATED by design: knowledge
+  Q&A router intents (needs the embeddings key + corpus), and optional small-model
+  distillation (needs months of graded interactions + a buy decision).
 
 ## Purchases / external dependencies (honest list)
 

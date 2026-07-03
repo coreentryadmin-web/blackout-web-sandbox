@@ -39,6 +39,12 @@ export async function GET(req: NextRequest) {
     (results as Record<string, unknown>).bie_calibration = calibration
       ? `${calibration.graded_plays} graded / ${calibration.recommendations.length} recs`
       : "skipped";
+    const discovery = await import("@/lib/bie/discovery")
+      .then((m) => m.runBieDiscovery())
+      .catch(() => null);
+    (results as Record<string, unknown>).bie_discovery = discovery
+      ? `${discovery.patterns} call patterns analyzed`
+      : "skipped";
     const totalDeleted = Object.values(results).reduce((s, n) => s + n, 0);
     const payload = { ok: true, total_deleted: totalDeleted, tables: results };
     await logCronRun("db-cleanup", started, payload);
