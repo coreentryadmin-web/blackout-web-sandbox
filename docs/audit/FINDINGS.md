@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟡 OBSERVED 2026-07-03 17:44-18:1x UTC — Railway deployment status API stuck reporting BUILDING ~25+ min after the build genuinely finished; no user-facing impact
+**Status:** OBSERVED, no code fix (this is Railway's own control-plane, not our app). Deployment `aecb3c44` (commit `2b4d6ba`, PR #347) built cleanly — `buildLogs` show a successful Next.js build and container image export (`containerimage.digest` emitted) at 17:46:56 UTC — but the deployment's `status` field stayed `BUILDING` with `statusUpdatedAt` frozen at `17:44:25.760Z` for at least 25 minutes afterward, with zero new build-log lines in that window (confirmed via 4 separate polls spaced minutes apart, not a single stale read).
+
+**Why this isn't a P0:** `GET /api/ready` on the live site stayed healthy and fast (200 OK, ~0.5-0.7s) throughout the entire stall. The prior deployment (`928d265f`, commit `601f3e6`, PR #345) shows confirmed `SUCCESS` and was almost certainly still serving live traffic the whole time — Railway's rollout didn't cut over to the stuck deployment, so members saw zero disruption.
+
+**Root cause:** unknown — this is Railway's control-plane, not app code. `canRedeploy`/`canRollback` both read `false` on the stuck deployment, so there's no API-level remediation available from this sandbox; this needs either Railway resolving it server-side or the user checking the Railway dashboard directly if it doesn't clear on its own.
+
+**Action:** none from the app side — build output was correct and the site was never down. Logged per the standing instruction to dig into Railway build/deploy logs for real issues, same as the earlier Query-read-timeout investigation. Will re-check next time a `src/**` PR needs a deploy-confirmed merge; not worth dedicating further polling cycles to this specific stuck deployment record.
+
+---
+
 ## 🔴 P1 FIXED 2026-07-03 — Halt-feed-degraded banner (and Largo's prompt context) claimed entries are "blocked" when the engine has always failed OPEN, never closed
 **Status:** FIXED (`fix/halt-feed-banner-false-claim`). Prompted by PR #332 (Cursor's audit) flagging "Halt feed offline" as a live observation — investigated whether that reflected a real current block, not just a cosmetic banner.
 
