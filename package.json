@@ -18,6 +18,7 @@
     "validate:deploy-wait": "node scripts/gha-wait-deploy.mjs",
     "validate:rth-open": "node scripts/rth-open-check.mjs",
     "validate:rth-sweep": "node scripts/rth-comprehensive-sweep.mjs",
+    "validate:exhaustive": "node scripts/exhaustive-platform-audit.mjs",
     "validate:gha-rth": "node scripts/gha-rth-audit.mjs",
     "validate:gha-smoke": "node scripts/gha-http-smoke.mjs",
     "validate:cron": "node scripts/cron-audit-query.mjs",
