@@ -19,6 +19,10 @@ type BieReportPayload = {
     newest_at: string | null;
   } | null;
   db_pool?: { configured: boolean; total: number; idle: number; waiting: number } | null;
+  redis?:
+    | { configured: false }
+    | { configured: true; connected: false; error: string }
+    | { configured: true; connected: true; used_memory_mb: number; connected_clients: number; uptime_hours: number; keys: number };
   self_eval?: { text: string } | null;
   calibration?: { text: string } | null;
   discovery?: { text: string } | null;
@@ -88,6 +92,7 @@ export function AdminBiePanel() {
   const know = data?.knowledge;
   const inter = data?.interactions_24h;
   const pool = data?.db_pool;
+  const redis = data?.redis;
   const coverage =
     inter && inter.total > 0 ? Math.round((inter.routed / inter.total) * 1000) / 10 : null;
 
@@ -140,7 +145,7 @@ export function AdminBiePanel() {
         ) : null}
 
         {/* Status chips: memory + retrieval health at a glance. */}
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
           <div
             className={clsx(
               "rounded-lg border px-3 py-2 font-mono text-[11px]",
@@ -217,6 +222,21 @@ export function AdminBiePanel() {
               ) : (
                 "—"
               )}
+            </p>
+          </div>
+          <div
+            className={clsx(
+              "rounded-lg border px-3 py-2 font-mono text-[11px]",
+              redis?.configured && !redis.connected ? "border-gold/25 bg-gold/5" : "border-white/10 bg-black/20"
+            )}
+          >
+            <p className="text-[10px] uppercase tracking-widest text-white/40">Redis (live)</p>
+            <p className={clsx(redis?.configured && !redis.connected ? "text-gold" : "text-sky-200")}>
+              {!redis || !redis.configured
+                ? "not configured"
+                : !redis.connected
+                  ? `unreachable — ${redis.error}`
+                  : `${redis.used_memory_mb}MB · ${redis.keys} keys · ${redis.connected_clients} clients`}
             </p>
           </div>
         </div>
