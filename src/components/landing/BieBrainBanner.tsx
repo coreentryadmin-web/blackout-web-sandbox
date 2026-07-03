@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { spokePath, meshPath } from "./bie-brain-geometry";
 
-// The brain behind every instrument — sits above "The full desk" grid as a
-// title-card-style reveal, not another tile in it. A pulsing BIE core with
-// "synapse" wires fanning out to all six instruments, plus a thin mesh
-// between neighbors, so it reads as one connected network rather than a
-// simple hub-and-spoke: BIE watching and connecting every tool, continuously.
+// "Introducing BlackOut Intelligence Engine" — sits above "The full desk" grid
+// as a title-card-style reveal, not another tile in it. A pulsing BIE core with
+// "synapse" wires fanning out to all six instruments, plus a thin mesh between
+// neighbors, so it reads as one connected network rather than a simple
+// hub-and-spoke: BIE watching and connecting every tool, continuously.
 
 const CORE = { x: 600, y: 54 };
 const NODE_Y = 214;
@@ -98,9 +98,9 @@ export function BieBrainBanner() {
       <div className="bie-brain-heading">
         <span className="bie-brain-eyebrow">
           <span className="bie-brain-eyebrow-dot" aria-hidden />
-          BlackOut Intelligence
+          Introducing
         </span>
-        <h2 className="bie-brain-title">The brain behind every instrument</h2>
+        <h2 className="bie-brain-title">BlackOut Intelligence Engine</h2>
         <p className="bie-brain-sub">{READOUT_LINES[lineIndex]}</p>
       </div>
 
@@ -215,6 +215,10 @@ export function BieBrainBanner() {
           </Link>
         ))}
       </div>
+
+      <p className="bie-brain-tagline">
+        It&rsquo;s not a mess. <span className="bie-brain-tagline-accent">It&rsquo;s a Mesh.</span>
+      </p>
     </div>
   );
 }

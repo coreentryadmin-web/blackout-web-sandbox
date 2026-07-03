@@ -1489,8 +1489,8 @@ body::before {
   margin-top: 0.6rem;
   font-family: var(--font-syne, inherit);
   font-weight: 800;
-  letter-spacing: -0.01em;
-  font-size: clamp(1.9rem, 4vw, 2.75rem);
+  letter-spacing: -0.015em;
+  font-size: clamp(2.4rem, 6vw, 4.25rem);
   background: linear-gradient(100deg, #ffffff 20%, #5df7ff 45%, #bf5fff 60%, #ffffff 80%);
   background-size: 250% 100%;
   -webkit-background-clip: text;
@@ -1633,6 +1633,22 @@ body::before {
   border-radius: 50%;
   background: var(--node-accent, #fff);
   box-shadow: 0 0 6px 1px color-mix(in srgb, var(--node-accent, #fff) 70%, transparent);
+}
+
+.bie-brain-tagline {
+  margin-top: 2rem;
+  text-align: center;
+  font-family: var(--font-syne, inherit);
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: -0.005em;
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.bie-brain-tagline-accent {
+  color: #5df7ff;
+  text-shadow: 0 0 18px rgba(93, 247, 255, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
