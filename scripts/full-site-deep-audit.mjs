@@ -5,6 +5,8 @@
  *
  * Usage: node scripts/full-site-deep-audit.mjs [--base=https://blackouttrades.com]
  */
+import { isTradingDayEt, todayEtYmd } from "./gha-et-window.mjs";
+
 const baseArg = process.argv.find((a) => a.startsWith("--base="));
 const BASE = (baseArg ? baseArg.slice("--base=".length) : "https://blackouttrades.com").replace(/\/$/, "");
 const CRON = process.env.CRON_SECRET ?? "";
@@ -276,10 +278,15 @@ function deriveWalls(st) {
 async function auditHeatmapMatrix() {
   if (!CRON) return;
   const tickers = ["SPX", "SPY", "QQQ", "NVDA", "AAPL", "TSLA", "AMD", "MSFT", "META", "IWM"];
+  const tradingDay = isTradingDayEt(todayEtYmd());
   let flags = 0;
   for (const ticker of tickers) {
     const { status, json: hm } = await getJson(`/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`);
     if (status !== 200 || !(hm?.spot > 0)) {
+      if (!tradingDay && ticker !== "SPX") {
+        ok("heatmap", ticker, "empty on market holiday (expected)");
+        continue;
+      }
       fail("heatmap", ticker, "unavailable or empty");
       flags++;
       continue;

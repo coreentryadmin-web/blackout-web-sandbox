@@ -5,6 +5,8 @@
  *
  * Usage: node scripts/heatmap-matrix-audit.mjs [--tickers=SPY,SPX,NVDA,...]
  */
+import { isTradingDayEt, todayEtYmd } from "./gha-et-window.mjs";
+
 const CRON = process.env.CRON_SECRET;
 const baseArg = process.argv.find((a) => a.startsWith("--base="));
 const tickersArg = process.argv.find((a) => a.startsWith("--tickers="));
@@ -194,7 +196,28 @@ function auditMetricBlock(ticker, metricName, block, spot, nearExpiries) {
 
 async function auditTicker(ticker) {
   const hm = await fetchHeatmap(ticker);
+  const tradingDay = isTradingDayEt(todayEtYmd());
   if (!hm?.available && !(hm?.spot > 0)) {
+    if (!tradingDay && ticker !== "SPX") {
+      return {
+        ticker,
+        spot: 0,
+        gexTotal: null,
+        gexFlip: null,
+        callWall: null,
+        putWall: null,
+        vexTotal: null,
+        dexTotal: null,
+        charmTotal: null,
+        strikes: 0,
+        cells: 0,
+        expiries: 0,
+        posNetGex: null,
+        checks: 0,
+        flags: 0,
+        skippedHoliday: true,
+      };
+    }
     fail(ticker, "available", "heatmap unavailable or empty");
     return null;
   }
@@ -249,8 +272,12 @@ async function auditTicker(ticker) {
   const strikeCount = Object.keys(hm.gex?.strike_totals ?? {}).length;
   const cellStrikes = Object.keys(hm.gex?.cells ?? {}).length;
   if (strikeCount === 0) {
-    fail(ticker, "matrix-empty", "zero strike_totals");
-    totalFlags++;
+    if (!tradingDay && ticker !== "SPX") {
+      // Equity presets don't refresh on full market holidays; SPX may still serve cached matrix.
+    } else {
+      fail(ticker, "matrix-empty", "zero strike_totals");
+      totalFlags++;
+    }
   }
 
   return {
@@ -274,7 +301,12 @@ async function auditTicker(ticker) {
 
 console.log(`\n=== Heat Maps MATRIX Deep Audit ===`);
 console.log(`Target: ${BASE}`);
-console.log(`Tickers: ${TICKERS.length}\n`);
+console.log(`Tickers: ${TICKERS.length}`);
+if (!isTradingDayEt(todayEtYmd())) {
+  console.log(`Session: ${todayEtYmd()} is a market holiday — non-SPX empty matrices are expected\n`);
+} else {
+  console.log("");
+}
 console.log(
   "Ticker | Spot     | GEX total        | Flip  | CallW | PutW  | VEX total        | Strikes | Checks | Flags"
 );
@@ -285,6 +317,10 @@ for (const ticker of TICKERS) {
     const r = await auditTicker(ticker);
     if (!r) {
       console.log(`${ticker.padEnd(6)} | UNAVAILABLE`);
+      continue;
+    }
+    if (r.skippedHoliday) {
+      console.log(`${ticker.padEnd(6)} | (holiday — empty expected)`);
       continue;
     }
     const fmt = (n) => (n == null ? "—" : typeof n === "number" ? (Math.abs(n) > 1e9 ? (n / 1e9).toFixed(2) + "B" : n.toFixed(2)) : n);

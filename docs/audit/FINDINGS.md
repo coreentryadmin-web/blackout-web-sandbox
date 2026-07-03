@@ -7,9 +7,24 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+<<<<<<< HEAD
 ---
 
 ## 🧠 BIE Stage 4: Night Hawk rejected-play dedup index shipped — schema prerequisite for the still-pending write-path
+=======
+## 🟡 P2 FIXED 2026-07-03 — RTH audit scripts false-failed on Independence Day observed (2026-07-03)
+
+**Status:** FIXED (`fix/rth-holiday-audit-skip`). `validate:rth-open` and `gha-rth-audit` flagged `spx-evaluate` / `market_regime` / `nights-watch-warm` as missing during RTH on a weekday, and `heatmap-matrix-audit` / `full-site-deep-audit` flagged 14 empty equity heatmap presets as P1 — all expected on NYSE holiday when crons correctly skip and equity chains don't refresh.
+
+**Root cause:** Application crons gained `isTradingDayEt` gates earlier today (PR #331) but the standalone audit scripts in `scripts/` still used naive weekday+clock checks only.
+
+**Fix:** Mirrored `US_MARKET_HOLIDAYS` + `isTradingDayEt` into `scripts/gha-et-window.mjs`; `rth-open-check.mjs`, `gha-rth-audit.mjs`, `heatmap-matrix-audit.mjs`, `full-site-deep-audit.mjs`, and `data-validator.mjs` now skip trading-day-only checks and treat non-SPX empty matrices as expected on holidays.
+
+**Evidence:** Post-fix `npm run validate:rth-open` GREEN; `gha-rth-audit` 55 pass / 0 issues; `heatmap-matrix-audit` 0 flags; Largo 200 (~39s) after deploy settled.
+
+---
+
+>>>>>>> d338be2 (fix(ops): skip RTH audit checks on NYSE market holidays)
 **Status:** SHIPPED (schema only). Unblocks the Night Hawk rejected-play half of Stage 4 write-path work, precisely scoped in an earlier finding tonight: `idx_alert_audit_log_nighthawk_rejected_dedup`, a partial unique index on `alert_audit_log (alert_type, ticker, source_key->>'edition_for') WHERE alert_type = 'nighthawk_rejected'`, added to `db.ts`'s existing advisory-locked migration block.
 
 **Why its own PR:** same standard the original `alert_audit_log` `CREATE TABLE` was held to — a schema change to a table already carrying real 0DTE and Night Hawk published-play rows gets reviewed on its own, not folded into a write-path change that also has application logic to review. Zero consumers today (nothing writes `alert_type = 'nighthawk_rejected'` rows yet) — purely additive, cannot regress anything by construction.

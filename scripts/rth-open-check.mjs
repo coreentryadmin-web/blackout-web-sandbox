@@ -12,6 +12,7 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
+import { isTradingDayEt, todayEtYmd } from "./gha-et-window.mjs";
 
 const ET = "America/New_York";
 const force = process.argv.includes("--force");
@@ -75,7 +76,13 @@ async function main() {
   }
 
   if (force || inRthOpenWindow(now)) {
+    const tradingDay = isTradingDayEt(todayEtYmd(now));
     console.log("\n2. RTH session checks");
+    if (!tradingDay) {
+      console.log(
+        `  ⚠ ${todayEtYmd(now)} is not a US equity trading session (market holiday) — skipping writer/regime freshness checks`
+      );
+    }
     const dbUrl = resolveAuditDbUrl();
 
     const failures = [];
@@ -89,22 +96,24 @@ async function main() {
         const c = createAuditClient(dbUrl);
         await c.connect();
 
-        const eval15 = (
-          await c.query(
-            `SELECT COUNT(*)::int AS n FROM cron_job_runs
-             WHERE job_key = 'spx-evaluate' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
-          )
-        ).rows[0].n;
-        if (eval15 > 0) ok(`spx-evaluate ran in last 20m (${eval15} ok run(s))`);
-        else fail("spx-evaluate: no ok run in last 20m during RTH");
+        if (tradingDay) {
+          const eval15 = (
+            await c.query(
+              `SELECT COUNT(*)::int AS n FROM cron_job_runs
+               WHERE job_key = 'spx-evaluate' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+            )
+          ).rows[0].n;
+          if (eval15 > 0) ok(`spx-evaluate ran in last 20m (${eval15} ok run(s))`);
+          else fail("spx-evaluate: no ok run in last 20m during RTH");
 
-        const regime15 = (
-          await c.query(
-            `SELECT COUNT(*)::int AS n FROM market_regime WHERE captured_at > NOW() - INTERVAL '20 minutes'`
-          )
-        ).rows[0].n;
-        if (regime15 > 0) ok(`market_regime fresh (writes last 20m: ${regime15})`);
-        else fail("market_regime: no writes in last 20m during RTH");
+          const regime15 = (
+            await c.query(
+              `SELECT COUNT(*)::int AS n FROM market_regime WHERE captured_at > NOW() - INTERVAL '20 minutes'`
+            )
+          ).rows[0].n;
+          if (regime15 > 0) ok(`market_regime fresh (writes last 20m: ${regime15})`);
+          else fail("market_regime: no writes in last 20m during RTH");
+        }
 
         const dc = await c.query(
           `SELECT status, message FROM cron_job_runs WHERE job_key = 'data-correctness' ORDER BY started_at DESC LIMIT 1`
@@ -125,23 +134,25 @@ async function main() {
           fail(`provider-health-reconcile latest: ${phRow?.status ?? "never"}`);
         }
 
-        const grid15 = (
-          await c.query(
-            `SELECT COUNT(*)::int AS n FROM cron_job_runs
-             WHERE job_key = 'grid-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
-          )
-        ).rows[0].n;
-        if (grid15 > 0) ok(`grid-warm ran in last 20m (${grid15} ok run(s))`);
-        else fail("grid-warm: no ok run in last 20m during RTH");
+        if (tradingDay) {
+          const grid15 = (
+            await c.query(
+              `SELECT COUNT(*)::int AS n FROM cron_job_runs
+               WHERE job_key = 'grid-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+            )
+          ).rows[0].n;
+          if (grid15 > 0) ok(`grid-warm ran in last 20m (${grid15} ok run(s))`);
+          else fail("grid-warm: no ok run in last 20m during RTH");
 
-        const nw15 = (
-          await c.query(
-            `SELECT COUNT(*)::int AS n FROM cron_job_runs
-             WHERE job_key = 'nights-watch-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
-          )
-        ).rows[0].n;
-        if (nw15 > 0) ok(`nights-watch-warm ran in last 20m (${nw15} ok run(s))`);
-        else fail("nights-watch-warm: no ok run in last 20m during RTH");
+          const nw15 = (
+            await c.query(
+              `SELECT COUNT(*)::int AS n FROM cron_job_runs
+               WHERE job_key = 'nights-watch-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+            )
+          ).rows[0].n;
+          if (nw15 > 0) ok(`nights-watch-warm ran in last 20m (${nw15} ok run(s))`);
+          else fail("nights-watch-warm: no ok run in last 20m during RTH");
+        }
 
         await c.end();
       } catch (e) {

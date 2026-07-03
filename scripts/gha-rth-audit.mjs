@@ -15,7 +15,7 @@
  *   node scripts/gha-rth-audit.mjs --force   # Postgres RTH checks even off-hours
  */
 import { spawnSync } from "node:child_process";
-import { etParts, inRthOpenWindow } from "./gha-et-window.mjs";
+import { etParts, inRthOpenWindow, isTradingDayEt, todayEtYmd } from "./gha-et-window.mjs";
 import { auditPgSsl, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const smokeOnly = process.argv.includes("--smoke-only");
@@ -56,6 +56,13 @@ async function postgresRthChecks() {
     return;
   }
 
+  const tradingDay = isTradingDayEt(todayEtYmd());
+  if (!tradingDay) {
+    console.log(
+      `  ⚠ ${todayEtYmd()} is not a US equity trading session (market holiday) — skipping writer/regime freshness checks`
+    );
+  }
+
   try {
     const pg = await import("pg");
     const c = new pg.default.Client({
@@ -71,18 +78,29 @@ async function postgresRthChecks() {
       console.log(`  ✗ ${m}`);
     };
 
-    const eval20 = (await q(
-      `SELECT COUNT(*)::int AS n FROM cron_job_runs
-       WHERE job_key = 'spx-evaluate' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
-    ))[0].n;
-    if (eval20 > 0) ok(`spx-evaluate ok in last 20m (${eval20})`);
-    else fail("spx-evaluate: no ok run in last 20m");
+    if (tradingDay) {
+      const eval20 = (await q(
+        `SELECT COUNT(*)::int AS n FROM cron_job_runs
+         WHERE job_key = 'spx-evaluate' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+      ))[0].n;
+      if (eval20 > 0) ok(`spx-evaluate ok in last 20m (${eval20})`);
+      else fail("spx-evaluate: no ok run in last 20m");
 
-    const regime20 = (await q(
-      `SELECT COUNT(*)::int AS n FROM market_regime WHERE captured_at > NOW() - INTERVAL '20 minutes'`
-    ))[0].n;
-    if (regime20 > 0) ok(`market_regime writes last 20m: ${regime20}`);
-    else fail("market_regime: no writes in last 20m");
+      const regime20 = (await q(
+        `SELECT COUNT(*)::int AS n FROM market_regime WHERE captured_at > NOW() - INTERVAL '20 minutes'`
+      ))[0].n;
+      if (regime20 > 0) ok(`market_regime writes last 20m: ${regime20}`);
+      else fail("market_regime: no writes in last 20m");
+
+      const stale = await q(
+        `SELECT job_key, status, started_at FROM cron_job_runs
+         WHERE job_key IN ('heatmap-warm','flow-ingest','nights-watch-warm')
+         AND started_at > NOW() - INTERVAL '30 minutes'
+         AND status = 'ok'`
+      );
+      if (stale.length >= 2) ok(`Writer crons active (${stale.map((r) => r.job_key).join(", ")})`);
+      else fail(`Writer crons thin in last 30m — only ${stale.length} ok runs`);
+    }
 
     const dc = await q(
       `SELECT status, message FROM cron_job_runs WHERE job_key = 'data-correctness' ORDER BY started_at DESC LIMIT 1`
@@ -90,15 +108,6 @@ async function postgresRthChecks() {
     const latest = dc[0];
     if (latest?.status === "ok") ok("data-correctness latest run ok");
     else fail(`data-correctness latest: ${latest?.status ?? "?"} — ${latest?.message ?? ""}`);
-
-    const stale = await q(
-      `SELECT job_key, status, started_at FROM cron_job_runs
-       WHERE job_key IN ('heatmap-warm','flow-ingest','nights-watch-warm')
-       AND started_at > NOW() - INTERVAL '30 minutes'
-       AND status = 'ok'`
-    );
-    if (stale.length >= 2) ok(`Writer crons active (${stale.map((r) => r.job_key).join(", ")})`);
-    else fail(`Writer crons thin in last 30m — only ${stale.length} ok runs`);
 
     await c.end();
   } catch (e) {

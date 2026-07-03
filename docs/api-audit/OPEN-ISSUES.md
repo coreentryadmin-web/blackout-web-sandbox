@@ -1,5 +1,83 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-02 16:52 ET
+Last updated: 2026-07-03 12:30 ET
+
+## RTH comprehensive sweep — 2026-07-03 ~12:18–12:30 ET (pass 1 — Independence Day observed)
+
+**Session:** Fri 3 Jul 2026, 12:18–12:30 ET (**market holiday** — Independence Day observed; NYSE/CBOE fully closed; Jul 4 is Saturday). Agent: autonomous cloud session. Premium Clerk admin via `sign_in_token` (temp user created/deleted). Browser GUI blocked in cloud sandbox — full sweep via authenticated API proxy (`scripts/audit/rth-browser-test.mjs`) + production validators.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm install` | ✅ restored deps (`pg` missing on fresh checkout) |
+| `npm run validate:rth-open` | ✅ GREEN after fix — deploy SUCCESS (`86839ed3`); holiday skips writer/regime checks |
+| `GET /api/cron/data-correctness?force=1` | ✅ 0 flags, 7 oracle-confirmed, 41 consistency-only |
+| `node scripts/audit/rth-browser-test.mjs` | ✅ 36 PASS, 9 WARN (expected holiday/off-hours fields), 0 FAIL |
+| `node scripts/gha-rth-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `node scripts/full-site-deep-audit.mjs` | ✅ GREEN (55 pass, 0 issues) |
+| `node scripts/heatmap-matrix-audit.mjs` | ✅ 15 tickers — SPX 159 strikes; non-SPX empty expected on holiday |
+| `node scripts/audit/data-validator.mjs` | ✅ 9 PASS, 3 INFO (wall ordering skipped on holiday) |
+| `npm run ops:collect` | ✅ 0 action items |
+
+### Fix applied this session
+
+**Root cause:** `validate:rth-open`, `gha-rth-audit`, `heatmap-matrix-audit`, `full-site-deep-audit`, and `data-validator` did not honor the NYSE holiday calendar (`2026-07-03` Independence Day observed). Crons correctly skipped (`spx-evaluate`, `market-regime-detector` → "Outside RTH window") but audit scripts false-failed on missing writer runs and empty equity heatmap presets.
+
+**Fix:** Added `isTradingDayEt` / `todayEtYmd` to `scripts/gha-et-window.mjs` (synced with `src/lib/nighthawk/session.ts`). Audit scripts now skip trading-day-only Postgres checks and treat non-SPX empty heatmaps as expected on holidays. Branch: `fix/rth-holiday-audit-skip`.
+
+### API sweep (premium session — ~12:28–12:30 ET)
+
+| Endpoint | HTTP | Latency | Notes |
+|---|---|---|---|
+| `/api/market/gex-heatmap?ticker=SPX` | 200 | ~305ms | 176 strikes, spot 7483.24 (cached prior session) |
+| `/api/market/spx/merged` | 200 | ~117ms | warm |
+| `/api/market/flows` | 200 | ~427ms | 500 rows |
+| `/api/market/flow-brief` | 200 | ~74ms | ok |
+| `/api/market/gex-heatmap?ticker=SPY` | 200 | ~98ms | empty matrix (holiday — no equity chain refresh) |
+| `/api/grid/bootstrap` + 8 panel routes | 200 | 75–247ms | all panels finite; warm |
+| `/api/market/nighthawk/edition` | 200 | ~99ms | 3 plays, recap=true |
+| `/api/public/track-record` | 200 | ~183ms | 12 closed |
+| Largo `/api/market/largo/query` | 200 | ~39s | NVDA grounded; tools=[live_feed_capture, get_dark_pool, get_options_flow] |
+| SPX oracle | — | — | desk 7483.24 vs Polygon 7483.24 (Δ 0.00) |
+
+**Cross-tool GEX:** SPX spot aligned desk/heatmap/oracle; data-correctness 0 flags.
+
+### Page sweep (premium admin — API proxy, market holiday)
+
+| Page | Load | Live update | Notes |
+|---|---|---|---|
+| `/dashboard` | ~305ms heatmap / ~117ms merged | ✅ 15s poll changed | 176 strikes; SPX cached matrix |
+| `/flows` (HELIX) | ~427ms | ✅ 15s poll changed | 500 flows |
+| `/heatmap` Matrix | ~98ms SPY | — | empty on holiday (expected) |
+| `/heatmap` Profile | (same endpoint) | — | gamma profile via heatmap API |
+| `/grid` | bootstrap + 8 routes 200 | warm | 12 panels all 200; movers empty (holiday) |
+| `/nighthawk` | ~99ms | static edition | 3 plays, recap |
+| `/terminal` (Largo) | ~39s | — | grounded NVDA multi-tool answer |
+| `/track-record` | ~183ms | LIVE | 12 closed |
+
+**Transient during deploy:** Largo 502 at 12:21 ET while Railway build `86839ed3` was BUILDING — cleared post-deploy.
+
+### Missing-field audit (pass 1 — all expected/holiday/upstream)
+
+| Field | Page | Backing API | Cause | Action |
+|---|---|---|---|---|
+| `expiries[empty]`, `strikes[empty]`, GEX walls | heatmap (non-SPX) | gex-heatmap | **Market holiday** — equity chains don't refresh; SPX serves cached matrix | Expected; audit scripts updated |
+| `merged.lod/hod/vwap`, dark_pool fields | desk/merged | `spx/merged` | **Market holiday** — no intraday session stats | Expected |
+| `gainers[empty]`, `losers[empty]` | grid movers | `/api/grid/movers` | **Market holiday** — no live movers | Expected |
+| `earnings.eps_actual/surprise_pct` | grid | `/api/grid/earnings` | **Expected** — pre-report dates | none |
+| `economy indicators sparse rows` | grid | `/api/grid/economy` | **Upstream gap** — sparse FRED row | Expected |
+| `events[empty]`, `cross_validation`, overlays | dashboard heatmap | gex-heatmap | **Optional overlays** — none active | Expected |
+| `dark_pool.pcr`, flow alert fields | nighthawk/flows | upstream shape | **Upstream gap** — WS prints lack fields | Expected; do not fabricate |
+
+**No new P0/P1 data correctness defects.** No GitHub issue opened (all GREEN after holiday audit fix).
+
+### Open watches (P2)
+
+- `validate:rth-open` warnings: API telemetry failures (12 in 15m), 22 Sentry unresolved (Query read timeout cluster ~15:32–15:37 ET)
+- Polygon `marketstatus/now` reports `open` on 2026-07-03 holiday — our `isTradingDayEt` gate is authoritative; consider aligning Polygon RTH probe in data-validator
+- Largo query ~39s — within expected AI multi-tool latency
+
+---
 
 ## RTH comprehensive sweep — 2026-07-02 ~16:48–16:52 ET (pass 7 — post-close)
 

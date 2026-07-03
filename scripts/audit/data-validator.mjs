@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isTradingDayEt, todayEtYmd } from '../gha-et-window.mjs';
 import { isAuthFailureStatus } from './lib/auth-status.mjs';
 
 const SECRET = req('CLERK_SECRET_KEY');
@@ -181,9 +182,14 @@ async function main() {
   if (aSPX != null && aSPY != null) { const r = aSPX / aSPY; rec('SPX/SPY ratio ~10', r > 9.5 && r < 10.5 ? 'PASS' : 'WARN', `ratio=${r.toFixed(3)}`); }
 
   // --- GEX / greeks consistency ---
+  const tradingDay = isTradingDayEt(todayEtYmd());
   if (P.gex) {
     const pw = num(P.gex.put_wall), cw = num(P.gex.call_wall), g = num(P.gex.net_gex), dx = num(P.gex.net_dex), vx = num(P.gex.net_vex);
-    rec('wall ordering put_wall < call_wall', (pw != null && cw != null && pw < cw) ? 'PASS' : 'FAIL', `put_wall=${pw} flip=${P.gex.flip} max_pain=${P.gex.max_pain} call_wall=${cw} spot=${aGexSpot}`);
+    if (!tradingDay && pw == null && cw == null) {
+      rec('wall ordering put_wall < call_wall', 'INFO', `skipped — market holiday; gex walls unavailable (spot=${aGexSpot})`);
+    } else {
+      rec('wall ordering put_wall < call_wall', (pw != null && cw != null && pw < cw) ? 'PASS' : 'FAIL', `put_wall=${pw} flip=${P.gex.flip} max_pain=${P.gex.max_pain} call_wall=${cw} spot=${aGexSpot}`);
+    }
     // gamma_posture is documented as spot-vs-flip ('long' at/above flip, 'short' below —
     // gex-positioning.ts:55), NOT sign(net_gex). The two are related but distinct measures
     // and legitimately diverge near the flip (spot barely above flip while the summed book
