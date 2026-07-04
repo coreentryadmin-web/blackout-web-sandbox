@@ -1,3 +1,11 @@
+import { pointOnFieldLine } from "./bie-helix-engine";
+
+/** Advance orbital phase (degrees) for one animation tick. */
+export function advanceOrbitDeg(current: number, dtSec: number, periodSec: number): number {
+  if (periodSec <= 0 || dtSec <= 0) return current;
+  return (current + (360 / periodSec) * dtSec) % 360;
+}
+
 /** Map SVG viewBox coordinates to pixel positions inside a container (matches preserveAspectRatio slice). */
 export function viewBoxPointToContainer(
   vx: number,
@@ -19,4 +27,40 @@ export function viewBoxPointToContainer(
     y: offsetY + vy * scale,
     scale,
   };
+}
+
+/** Position one tool on the outer field ring. */
+export function orbitToolPixelPosition(args: {
+  startAngleDeg: number;
+  orbitDeg: number;
+  coreX: number;
+  coreY: number;
+  maxRx: number;
+  maxRy: number;
+  orbitRing: number;
+  orbitScale: number;
+  viewW: number;
+  viewH: number;
+  containerW: number;
+  containerH: number;
+}): { x: number; y: number } {
+  const angle = args.startAngleDeg + args.orbitDeg;
+  const vb = pointOnFieldLine(
+    args.coreX,
+    args.coreY,
+    args.maxRx,
+    args.maxRy,
+    args.orbitScale,
+    args.orbitRing,
+    angle
+  );
+  return viewBoxPointToContainer(
+    vb.x,
+    vb.y,
+    args.containerW,
+    args.containerH,
+    args.viewW,
+    args.viewH,
+    "slice"
+  );
 }

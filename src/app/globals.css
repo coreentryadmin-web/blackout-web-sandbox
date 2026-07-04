@@ -1724,8 +1724,14 @@ body::before {
   pointer-events: none;
 }
 
-.bie-orbit-tool {
+.bie-orbit-tool-anchor {
   position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.bie-orbit-tool {
+  position: relative;
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -1742,7 +1748,6 @@ body::before {
     0 0 0 1px rgba(255, 255, 255, 0.05) inset,
     0 10px 36px -14px rgba(0, 0, 0, 0.88),
     0 0 28px -10px color-mix(in srgb, var(--tool-accent, #5df7ff) 50%, transparent);
-  transform: translate(-50%, -50%);
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
