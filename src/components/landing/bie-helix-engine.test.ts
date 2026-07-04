@@ -9,6 +9,8 @@ import {
   buildIntelligenceRings,
   buildFlowParticles,
   buildNeuralNodes,
+  buildRingFieldNodes,
+  buildRingSegmentPath,
   buildStarField,
   fieldGlowRadii,
   flowParticlePosition,
@@ -140,5 +142,21 @@ describe("fieldGlowRadii", () => {
     const g = fieldGlowRadii(1280, 720);
     assert.ok(g.rx > 500);
     assert.ok(g.ry > 300);
+  });
+});
+
+describe("buildRingFieldNodes", () => {
+  it("places nodes on each intelligence ring", () => {
+    const nodes = buildRingFieldNodes(CX, CY, MAX_RX, MAX_RY, [1, 2, 3, 4], 5);
+    assert.equal(nodes.length, 20);
+    assert.ok(nodes.every((n) => Number.isFinite(n.x)));
+  });
+});
+
+describe("buildRingSegmentPath", () => {
+  it("connects adjacent nodes with a bowed path", () => {
+    const nodes = buildRingFieldNodes(CX, CY, MAX_RX, MAX_RY, [2], 3);
+    const d = buildRingSegmentPath(nodes[0].x, nodes[0].y, nodes[1].x, nodes[1].y, CX, CY, 12);
+    assert.match(d, /^M[\d.-]/);
   });
 });

@@ -1,6 +1,6 @@
-// Geometry for the BIE institutional reactor — center core + concentric rings.
+// Geometry for the BIE institutional reactor — center core, helix, concentric rings.
 
-import { goldenSpiralPoint, pointOnEllipse } from "./bie-brain-geometry";
+import { chordPath, goldenSpiralPoint, pointOnEllipse } from "./bie-brain-geometry";
 
 export type Capability = {
   id: string;
@@ -294,4 +294,46 @@ export function buildInboundPulsePath(
 /** Field glow radii — cyan illumination covers ~half the hero viewport. */
 export function fieldGlowRadii(viewW: number, viewH: number): { rx: number; ry: number } {
   return { rx: viewW * 0.46, ry: viewH * 0.44 };
+}
+
+/** Glowing nodes placed evenly on intelligence rings. */
+export type RingFieldNode = {
+  id: string;
+  ring: 1 | 2 | 3 | 4;
+  x: number;
+  y: number;
+  index: number;
+};
+
+export function buildRingFieldNodes(
+  cx: number,
+  cy: number,
+  maxRx: number,
+  maxRy: number,
+  rings: readonly (1 | 2 | 3 | 4)[],
+  nodesPerRing: number
+): RingFieldNode[] {
+  const nodes: RingFieldNode[] = [];
+  for (const ring of rings) {
+    for (let i = 0; i < nodesPerRing; i++) {
+      const angleDeg = (360 / nodesPerRing) * i + ring * 13;
+      const { rx, ry } = ringRadii(ring, maxRx, maxRy);
+      const p = pointOnEllipse(cx, cy, rx, ry, angleDeg);
+      nodes.push({ id: `r${ring}-n${i}`, ring, x: p.x, y: p.y, index: i });
+    }
+  }
+  return nodes;
+}
+
+/** Bowed segment between adjacent ring nodes — slow pulse travels along this path. */
+export function buildRingSegmentPath(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  cx: number,
+  cy: number,
+  bow: number
+): string {
+  return chordPath(x0, y0, x1, y1, cx, cy, bow);
 }

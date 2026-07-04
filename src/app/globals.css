@@ -1610,11 +1610,54 @@ body::before {
   font-size: clamp(1.15rem, 2.4vw, 1.65rem);
 }
 
-.bie-field-caption .bie-brain-sub {
-  font-size: 11px;
-  margin-top: 0.35rem;
-  max-width: 34rem;
-  margin-inline: auto;
+.bie-field-ring-stroke {
+  stroke-opacity: 0.42;
+}
+
+.bie-ring-segment-track {
+  fill: none;
+  stroke: rgba(93, 247, 255, 0.07);
+  stroke-width: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-ring-node {
+  fill: rgba(93, 247, 255, 0.5);
+  filter: drop-shadow(0 0 4px rgba(93, 247, 255, 0.45));
+}
+
+.bie-ring-pulse-dot {
+  opacity: 0.8;
+  filter: drop-shadow(0 0 6px rgba(93, 247, 255, 0.8));
+}
+
+/* Original-scale helix — elegant centerpiece, not enlarged */
+.bie-reactor-helix-classic .bie-reactor-helix-strand {
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  animation: none;
+}
+
+.bie-reactor-helix-classic .bie-reactor-helix-strand-b {
+  animation: none;
+}
+
+.bie-reactor-live .bie-reactor-helix-classic {
+  animation: bie-reactor-helix-breathe 4.8s ease-in-out infinite;
+}
+
+.bie-reactor-live .bie-reactor-helix-classic .bie-reactor-helix-rung {
+  animation: none;
+}
+
+.bie-reactor-core-classic .bie-reactor-core-halo {
+  stroke-width: 1.5;
+  opacity: 0.38;
+}
+
+.bie-reactor-core-label-classic {
+  font-size: clamp(11px, 1vw, 13px);
+  letter-spacing: 0.22em;
 }
 
 .bie-brain-heading-caption {
