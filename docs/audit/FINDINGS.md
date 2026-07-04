@@ -9,6 +9,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — Night's Watch per-position AI narrative had no fabrication check (audit finding, medium)
+**Where:** `src/lib/nights-watch/position-narrative.ts`'s `buildPositionNarrative()` caches and returns Claude's per-position desk narrative (Greeks, P&L, levels, dealer positioning) with grounding enforced only by prompt instruction ("NEVER invent or estimate a price, level, Greek, premium, percentage, or date"), never structurally verified.
+
+**Fix:** applied the shared guard. Like `flow-brief` and `play-explainer`, this function's prompt (`buildContext(detail)`) is a single plain-text string built from verified fields (position, Greeks, dealer gamma, flow, technicals, catalysts, confluence — every missing value already forced to `"n/a"`, never a placeholder number), so `extractNumbersFromText(context)` is the "known good" set. After generation, `checkNumbersGrounded(out, extractNumbersFromText(context))` runs before caching; on failure it returns `null` **without caching** — mirroring the function's own pre-existing behavior for empty output (`if (!out) return null; // not cached → next open retries`), so the caller falls back to the deterministic `whatToDo` for this request and the next detail-open gets a fresh attempt, rather than pinning a discarded narrative's absence for the full 5-minute TTL.
+
+**Blast radius:** none to existing behavior — a grounded narrative (the common case) is unaffected; a hallucinated one now falls back to the deterministic `whatToDo` exactly as the file's own header comment already promises for every other failure mode ("Fails OPEN... → null, and the caller falls back to the deterministic whatToDo").
+
+**Verification:** `npx tsc --noEmit` clean; full suite `981/981` passing (2 new in a new `position-narrative.test.ts`, exercising `buildContext` + the shared guard against a grounded vs. hallucinated narrative using a hand-built `PositionDetail` fixture); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green. Exported `buildContext` (previously module-local) for testability — confirmed safe (unlike `nighthawk/play-explainer.ts`, this file has no transitive `"server-only"` import in its dependency chain).
+
+---
+
 ## 🟢 FIXED 2026-07-04 — Shared 15-minute flow-brief memo had no fabrication check (audit finding, medium)
 **Where:** `src/app/api/market/flow-brief/route.ts`'s `GET` handler cached Claude's flow-tape summary for a shared 15-minute window (served to every user) with zero check that cited dollar figures/tickers matched the actual alerts/dark-prints it was given.
 

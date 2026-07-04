@@ -23,6 +23,7 @@ import {
   narrativeDailyBudget,
 } from "@/lib/nights-watch/narrative-budget";
 import type { PositionDetail } from "@/lib/nights-watch/position-detail";
+import { checkNumbersGrounded, extractNumbersFromText } from "@/lib/grounding-guard";
 
 const NARRATIVE_TTL_MS = 5 * 60 * 1000; // one Claude call per position cluster per 5-min window
 const NARRATIVE_MAX_TOKENS = 300;
@@ -41,7 +42,7 @@ function n(v: number | null | undefined, digits = 2): string {
 }
 
 /** Build the grounding context from VERIFIED fields only; every null becomes "n/a". */
-function buildContext(detail: PositionDetail): string {
+export function buildContext(detail: PositionDetail): string {
   const p = detail.position;
   const v = p.valuation;
   const s = detail.sections;
@@ -149,14 +150,29 @@ export async function buildPositionNarrative(detail: PositionDetail): Promise<st
       }
     }
 
+    const context = buildContext(detail);
     const text = await anthropicText(
-      buildContext(detail),
+      context,
       NARRATIVE_MAX_TOKENS,
       NARRATIVE_SYSTEM_PROMPT,
       { model: LARGO_MODEL, temperature: 0.3, maxRetries: 1, timeoutMs: 20_000 }
     );
     const out = text?.trim();
     if (!out) return null; // not cached → next open retries
+
+    // FABRICATION GUARD: grounding was prompt-instruction only ("NEVER invent or estimate a
+    // price, level, Greek..."), never structurally verified. Ground against every number
+    // literally present in the SAME context text Claude was shown. On failure, behave exactly
+    // like the empty-output case above — return null WITHOUT caching, so the caller falls back
+    // to the deterministic whatToDo for this request and the next detail-open retries (rather
+    // than pinning a fabricated-and-discarded narrative's absence for the full 5-min TTL).
+    const grounding = checkNumbersGrounded(out, extractNumbersFromText(context));
+    if (!grounding.grounded) {
+      console.warn(
+        `[nights-watch] ungrounded value ${grounding.ungroundedValue} in position narrative for ${tkr} — falling back to deterministic whatToDo.`
+      );
+      return null;
+    }
 
     // Cache the success + record one generation against the global daily budget (best-effort).
     try {
