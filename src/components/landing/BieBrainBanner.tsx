@@ -7,6 +7,8 @@ import {
   buildHeroSweepPath,
   buildImpulsePath,
   buildIntelligenceRings,
+  buildFlowParticles,
+  flowParticlePosition,
   buildStarField,
   placeCapabilities,
   type PlacedCapability,
@@ -22,6 +24,14 @@ const MAX_RX = 420;
 const MAX_RY = 200;
 const HELIX_H = 600;
 const HELIX_W = 176;
+const HELIX_TRAVELERS = [
+  { path: "a", dur: "3.8s", begin: "0s", r: 2.2 },
+  { path: "a", dur: "5.4s", begin: "-2.1s", r: 1.6 },
+  { path: "b", dur: "4.6s", begin: "-1.2s", r: 2 },
+  { path: "b", dur: "6.2s", begin: "-3.4s", r: 1.4 },
+] as const;
+
+const FLOW_COUNT = 64;
 const STAR_COUNT = 480;
 
 const CAPABILITIES: Capability[] = [
@@ -71,18 +81,18 @@ function useLiveOnView<T extends HTMLElement>() {
 
 function useReactorParticles(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  active: boolean,
   reduceMotion: boolean
 ) {
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !active || reduceMotion) return;
+    if (!canvas || reduceMotion) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = Math.min(window.devicePixelRatio ?? 1, 2);
-    const stars = buildStarField(CORE.x, CORE.y, MAX_RX * 1.08, MAX_RY * 1.08, STAR_COUNT);
+    const stars = buildStarField(CORE.x, CORE.y, MAX_RX, MAX_RY, STAR_COUNT);
+    const flows = buildFlowParticles(FLOW_COUNT);
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -113,6 +123,20 @@ function useReactorParticles(
         ctx.fill();
       }
 
+      for (const p of flows) {
+        p.angle += p.speed * 48;
+        p.dist -= p.speed * 1.05;
+        if (p.dist < 0.06) {
+          p.dist = 0.82 + Math.random() * 0.14;
+          p.angle = Math.random() * 360;
+        }
+        const { x, y } = flowParticlePosition(CORE.x, CORE.y, MAX_RX, MAX_RY, p);
+        ctx.beginPath();
+        ctx.arc(x, y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(93, 247, 255, ${p.opacity})`;
+        ctx.fill();
+      }
+
       frame++;
       raf = requestAnimationFrame(draw);
     };
@@ -122,7 +146,7 @@ function useReactorParticles(
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [active, reduceMotion, canvasRef]);
+  }, [reduceMotion, canvasRef]);
 }
 
 export function BieBrainBanner() {
@@ -152,7 +176,7 @@ export function BieBrainBanner() {
   );
   const activePulsePath = pulseMode === "sweep" ? sweepPath : radialPath;
 
-  useReactorParticles(canvasRef, visible, reduceMotion);
+  useReactorParticles(canvasRef, reduceMotion);
 
   useEffect(() => {
     const id = setInterval(() => setLineIndex((i) => (i + 1) % READOUT_LINES.length), 3200);
@@ -174,13 +198,13 @@ export function BieBrainBanner() {
   }, [visible]);
 
   useEffect(() => {
-    if (!visible || reduceMotion) {
+    if (reduceMotion) {
       setPhase("idle");
       return;
     }
 
     let cancelled = false;
-    let sweep = true;
+    let sweep = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     const fire = () => {
@@ -195,15 +219,15 @@ export function BieBrainBanner() {
       timers.push(setTimeout(() => !cancelled && setPhase("core"), mode === "sweep" ? 1100 : 950));
       timers.push(setTimeout(() => !cancelled && setPhase("outbound"), mode === "sweep" ? 1900 : 1650));
       timers.push(setTimeout(() => !cancelled && setPhase("idle"), mode === "sweep" ? 2800 : 2500));
-      timers.push(setTimeout(fire, 7200 + Math.random() * 3600));
+      timers.push(setTimeout(fire, 4600 + Math.random() * 2400));
     };
 
-    timers.push(setTimeout(fire, 800));
+    fire();
     return () => {
       cancelled = true;
       timers.forEach(clearTimeout);
     };
-  }, [visible, reduceMotion]);
+  }, [reduceMotion]);
 
   const litRing =
     phase === "inbound" ? 4 : phase === "outbound" ? 2 : phase === "core" ? 1 : -1;
@@ -214,7 +238,7 @@ export function BieBrainBanner() {
   const pulseDur = pulseMode === "sweep" ? "2.6s" : "2s";
 
   return (
-    <div className="bie-brain-banner bie-brain-hero">
+    <div className={`bie-brain-banner bie-brain-hero${reduceMotion ? "" : " bie-reactor-live"}`}>
       <div
         ref={diagramRef}
         className="bie-brain-diagram bie-reactor-diagram bie-reactor-stage"
@@ -274,6 +298,8 @@ export function BieBrainBanner() {
             ))}
 
             <g className="bie-reactor-helix" filter="url(#bie-helix-hero-bloom)">
+              <path id="bie-helix-path-a" d={helix.strandA} fill="none" stroke="none" />
+              <path id="bie-helix-path-b" d={helix.strandB} fill="none" stroke="none" />
               <path d={helix.strandA} className="bie-reactor-helix-strand" fill="none" stroke="url(#bie-helix-strand-grad)" />
               <path d={helix.strandB} className="bie-reactor-helix-strand bie-reactor-helix-strand-b" fill="none" stroke="url(#bie-helix-strand-grad)" />
               {helix.rungs.map((r, i) => (
@@ -286,8 +312,17 @@ export function BieBrainBanner() {
                   className="bie-reactor-helix-rung"
                   strokeOpacity={0.14 + 0.58 * r.depth}
                   strokeWidth={0.45 + 1.35 * r.depth}
+                  style={{ animationDelay: `${-(i * 0.14)}s` }}
                 />
               ))}
+              {!reduceMotion &&
+                HELIX_TRAVELERS.map((t, i) => (
+                  <circle key={`ht-${i}`} r={t.r} className="bie-reactor-helix-traveler" fill="#5df7ff">
+                    <animateMotion dur={t.dur} begin={t.begin} repeatCount="indefinite" rotate="auto">
+                      <mpath href={`#bie-helix-path-${t.path}`} />
+                    </animateMotion>
+                  </circle>
+                ))}
             </g>
 
             {!reduceMotion && phase !== "idle" && (
@@ -323,9 +358,15 @@ export function BieBrainBanner() {
               className={`bie-reactor-core${phase === "core" || phase === "outbound" ? " is-active" : ""}`}
               transform={`translate(${CORE.x}, ${CORE.y})`}
             >
+              {!reduceMotion && (
+                <>
+                  <circle cx={0} cy={0} r={92} className="bie-reactor-ambient-pulse bie-reactor-ambient-pulse-a" />
+                  <circle cx={0} cy={0} r={92} className="bie-reactor-ambient-pulse bie-reactor-ambient-pulse-b" />
+                </>
+              )}
               <circle cx={0} cy={0} r={68} className="bie-reactor-core-halo" />
               <circle cx={0} cy={0} r={48} className="bie-reactor-core-ring" />
-              <circle cx={0} cy={0} r={36} className="bie-brain-core" />
+              <circle cx={0} cy={0} r={36} className="bie-brain-core bie-reactor-core-nucleus" />
             </g>
           </svg>
 

@@ -5,7 +5,9 @@ import {
   buildHeroSweepPath,
   buildImpulsePath,
   buildIntelligenceRings,
+  buildFlowParticles,
   buildStarField,
+  flowParticlePosition,
   ellipsePath,
   placeCapability,
   ringRadii,
@@ -86,5 +88,21 @@ describe("buildStarField", () => {
       buildStarField(CX, CY, MAX_RX, MAX_RY, 300),
       buildStarField(CX, CY, MAX_RX, MAX_RY, 300)
     );
+  });
+});
+
+describe("buildFlowParticles", () => {
+  it("returns inward-drifting particles", () => {
+    const flows = buildFlowParticles(32);
+    assert.equal(flows.length, 32);
+    assert.ok(flows.every((p) => p.dist > 0 && p.speed > 0));
+  });
+});
+
+describe("flowParticlePosition", () => {
+  it("maps dist/angle to coordinates", () => {
+    const p = buildFlowParticles(1)[0];
+    const pos = flowParticlePosition(CX, CY, MAX_RX, MAX_RY, p);
+    assert.ok(Number.isFinite(pos.x) && Number.isFinite(pos.y));
   });
 });

@@ -1595,14 +1595,19 @@ body::before {
   z-index: 2;
 }
 
-.bie-reactor-vignette {
-  opacity: 0.9;
-  animation: bie-reactor-vignette-breathe 5.5s ease-in-out infinite;
+.bie-reactor-live .bie-reactor-vignette {
+  animation: bie-reactor-vignette-breathe 4.2s ease-in-out infinite;
 }
 
 @keyframes bie-reactor-vignette-breathe {
-  0%, 100% { opacity: 0.65; }
-  50% { opacity: 0.95; }
+  0%, 100% { opacity: 0.58; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.035); }
+}
+
+.bie-reactor-vignette {
+  opacity: 0.9;
+  transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 50%);
+  transform-box: view-box;
 }
 
 /* Intelligence rings — independent slow rotation */
@@ -1637,16 +1642,33 @@ body::before {
   filter: drop-shadow(0 0 10px rgba(93, 247, 255, 0.4));
 }
 
-/* Helix hero — beating heart */
+/* Helix hero — beating heart, always in motion */
+.bie-reactor-live .bie-reactor-helix {
+  animation: bie-reactor-helix-breathe 4.6s ease-in-out infinite;
+}
+
 .bie-reactor-helix {
-  animation: bie-reactor-helix-breathe 5.2s ease-in-out infinite;
   transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 50%);
   transform-box: view-box;
 }
 
 @keyframes bie-reactor-helix-breathe {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.022); opacity: 0.96; }
+  0%, 100% { transform: scale(1) translateY(0); opacity: 1; }
+  50% { transform: scale(1.024) translateY(-3px); opacity: 0.97; }
+}
+
+.bie-reactor-live .bie-reactor-helix-strand {
+  stroke-dasharray: 14 22;
+  animation: bie-helix-strand-flow 2.6s linear infinite;
+}
+
+.bie-reactor-live .bie-reactor-helix-strand-b {
+  animation-direction: reverse;
+  animation-duration: 3.2s;
+}
+
+@keyframes bie-helix-strand-flow {
+  to { stroke-dashoffset: -72; }
 }
 
 .bie-reactor-helix-strand {
@@ -1657,6 +1679,20 @@ body::before {
 
 .bie-reactor-helix-strand-b {
   opacity: 0.88;
+}
+
+.bie-reactor-live .bie-reactor-helix-rung {
+  animation: bie-helix-rung-shimmer 2.8s ease-in-out infinite;
+}
+
+@keyframes bie-helix-rung-shimmer {
+  0%, 100% { stroke-opacity: 0.18; }
+  50% { stroke-opacity: 0.72; }
+}
+
+.bie-reactor-helix-traveler {
+  opacity: 0.85;
+  filter: drop-shadow(0 0 6px rgba(93, 247, 255, 0.9));
 }
 
 .bie-reactor-helix-rung {
@@ -1676,6 +1712,55 @@ body::before {
 
 .bie-reactor-pulse-sweep .bie-reactor-impulse-dot {
   filter: drop-shadow(0 0 12px rgba(93, 247, 255, 0.75));
+}
+
+.bie-reactor-live .bie-reactor-core-nucleus {
+  animation: bie-reactor-nucleus-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes bie-reactor-nucleus-breathe {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.6)); }
+  50% { transform: scale(1.06); filter: drop-shadow(0 0 28px rgba(191, 95, 255, 0.75)); }
+}
+
+.bie-reactor-ambient-pulse {
+  fill: none;
+  stroke: rgba(93, 247, 255, 0.22);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  transform-origin: 0 0;
+  transform-box: fill-box;
+  opacity: 0;
+}
+
+.bie-reactor-ambient-pulse-a {
+  animation: bie-reactor-ambient-inbound 4.5s ease-out infinite;
+}
+
+.bie-reactor-ambient-pulse-b {
+  animation: bie-reactor-ambient-inbound 4.5s ease-out infinite;
+  animation-delay: -2.25s;
+}
+
+@keyframes bie-reactor-ambient-inbound {
+  0% { transform: scale(1.75); opacity: 0; }
+  12% { opacity: 0.42; }
+  100% { transform: scale(0.82); opacity: 0; }
+}
+
+.bie-reactor-live .bie-reactor-ring-stroke {
+  animation: bie-reactor-ring-glow 6s ease-in-out infinite;
+}
+
+.bie-reactor-ring-0 .bie-reactor-ring-stroke { animation-delay: 0s; }
+.bie-reactor-ring-1 .bie-reactor-ring-stroke { animation-delay: -1.2s; }
+.bie-reactor-ring-2 .bie-reactor-ring-stroke { animation-delay: -2.4s; }
+.bie-reactor-ring-3 .bie-reactor-ring-stroke { animation-delay: -3.6s; }
+.bie-reactor-ring-4 .bie-reactor-ring-stroke { animation-delay: -4.8s; }
+
+@keyframes bie-reactor-ring-glow {
+  0%, 100% { stroke-opacity: 0.55; }
+  50% { stroke-opacity: 1; }
 }
 
 .bie-reactor-core-ring {
@@ -2443,12 +2528,16 @@ body::before {
   .bie-brain-eyebrow-dot { animation: none; }
   .bie-brain-title { animation: none; background-position: 0 0; }
   .bie-brain-ring { animation: none; opacity: 0; }
-  .bie-brain-core, .bie-reactor-core-halo { animation: none; }
+  .bie-brain-core, .bie-reactor-core-halo, .bie-reactor-core-nucleus { animation: none; }
   .bie-reactor-ring { animation: none; }
+  .bie-reactor-ring-stroke { animation: none; }
   .bie-reactor-helix { animation: none; }
+  .bie-reactor-helix-strand, .bie-reactor-helix-rung { animation: none; }
   .bie-reactor-vignette { animation: none; opacity: 0.7; }
   .bie-reactor-particles { display: none; }
   .bie-reactor-anchor-dot { opacity: 0.45; }
+  .bie-reactor-ambient-pulse { display: none; }
+  .bie-reactor-helix-traveler { display: none; }
 }
 
 .bento-card-watermark {

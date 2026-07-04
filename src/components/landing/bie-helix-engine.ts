@@ -164,3 +164,35 @@ export function buildStarField(
     };
   });
 }
+
+/** Particles that continuously drift inward toward the core — OS "always working" feel. */
+export type FlowParticle = {
+  angle: number;
+  dist: number;
+  speed: number;
+  size: number;
+  opacity: number;
+};
+
+export function buildFlowParticles(count: number): FlowParticle[] {
+  return Array.from({ length: count }, (_, i) => ({
+    angle: (i * 137.50776) % 360,
+    dist: 0.52 + (i % 19) / 28,
+    speed: 0.00038 + (i % 6) * 0.00011,
+    size: i % 5 === 0 ? 1.15 : 0.7,
+    opacity: 0.14 + (i % 5) * 0.045,
+  }));
+}
+
+export function flowParticlePosition(
+  cx: number,
+  cy: number,
+  maxRx: number,
+  maxRy: number,
+  p: FlowParticle
+): { x: number; y: number } {
+  const rad = ((p.angle - 90) * Math.PI) / 180;
+  const rx = maxRx * 1.06 * p.dist;
+  const ry = maxRy * 1.06 * p.dist;
+  return { x: cx + rx * Math.cos(rad), y: cy + ry * Math.sin(rad) };
+}
