@@ -1,6 +1,8 @@
 import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
+import { getSpxPlayState } from "@/lib/platform/spx-service";
+import type { SpxPlayPayload } from "@/lib/spx-play-payload";
 
 // BIE ecosystem-context query layer, v1 — "what does the rest of BlackOut
 // currently know about this ticker." Every instrument already writes its own
@@ -108,6 +110,10 @@ export type EcosystemSpxPlay = {
   last_closed: EcosystemSpxClosedPlay | null;
 };
 
+// Re-exported so a consumer of EcosystemContext can name the spx_full_state
+// type without a second import from spx-play-payload.ts.
+export type { SpxPlayPayload };
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
@@ -127,6 +133,47 @@ export type EcosystemContext = {
    * that cares about the difference already knows its own input ticker.
    */
   spx_play: EcosystemSpxPlay | null;
+  /**
+   * SPX Slayer's own FULL play-engine snapshot — the exact same object
+   * Largo's `get_spx_play` tool already returns (phase, every confluence
+   * factor with its weight/detail, full gate pass/fail state including
+   * `gates.blocks`/`gates.warnings`/`entry_mode`, the 10-item confirmation
+   * checklist result, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch
+   * state, the AI arbiter's own verdict object, the option ticket — every
+   * field the member dashboard itself renders). Built by calling
+   * `src/lib/platform/spx-service.ts::getSpxPlayState()` VERBATIM — the same
+   * `loadMergedSpxDesk()` -> `buildPlayTechnicals()` ->
+   * `readSpxPlaySnapshot()` (`evaluateSpxPlay(desk, technicals,
+   * {mutate:false})`) chain Largo's tool already runs — so there is exactly
+   * ONE way this payload is assembled anywhere in the codebase, not a second,
+   * independently-drifting derivation.
+   *
+   * Added alongside `spx_play` (not instead of it) on purpose: `spx_play`'s
+   * slim open/last-closed shape is a tested, deliberately-small precedent
+   * shared with `nighthawk_recent`, and existing callers of it should see no
+   * shape change. This field exists because the user's explicit standing
+   * instruction is that SPX Slayer share its ENTIRE data/values/numericals
+   * with both BIE and Largo, not just a summary — before this field, BIE's
+   * `get_ecosystem_context` tool only ever got the slim mirror while Largo's
+   * OWN `get_spx_play` tool already got everything, an asymmetry between two
+   * consumers of the same underlying engine state.
+   *
+   * Same SPX/SPXW-only ticker gate as `spx_play` (see isSpxSlayerTicker) and
+   * the same fail-open-to-emptyContext discipline as every other field here —
+   * a failure evaluating the live play engine blanks the WHOLE
+   * ecosystem-context response, exactly like a failure in
+   * fetchSpxPlaySummary already does today; it does not partially degrade to
+   * "every other field populated, this one null."
+   *
+   * Deliberately NOT read by precedent-search's embedding path
+   * (`src/lib/bie/precedent-search.ts`): that ingestion embeds
+   * `alert_audit_log` rows only (via `describeAuditRow`) and never touches
+   * `fetchEcosystemContext()` or any of its fields, slim or full — see the
+   * module comment there and its regression test guarding against this
+   * field's ~5-10KB JSON ever being folded into a per-alert embedded chunk on
+   * every nightly ingest cycle.
+   */
+  spx_full_state: SpxPlayPayload | null;
   /**
    * Is the live HELIX flow pipeline actually delivering frames right now,
    * cluster-wide (isFlowFrameFreshAnywhere, src/lib/flow-liveness.ts — a
@@ -161,6 +208,7 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   recent_flow: "Same-day HELIX call/put/unknown-side premium totals (6h window), reported neutrally — never collapsed into a fabricated bullish/bearish label.",
   recent_anomalies: "Pattern-detected flow anomalies (concentration, coordinated sweep, premium spike, put surge) from the last 24h.",
   spx_play: "SPX Slayer's own play-engine state — the current open play (if any) and the most recently closed play. Only populated for ticker SPX/SPXW (spx_open_play/spx_play_outcomes have no ticker column, single-instrument engine); null for every other ticker.",
+  spx_full_state: "SPX Slayer's FULL play-engine snapshot — the exact same object Largo's get_spx_play tool returns (phase, every confluence factor, full gate pass/fail state, the 10-item confirmation checklist, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch state, the AI arbiter's verdict, the option ticket). Only populated for ticker SPX/SPXW; null for every other ticker. Sourced from the SAME getSpxPlayState() Largo's tool calls — one derivation, not two.",
   flow_feed_fresh: "Whether the live HELIX flow pipeline is actually delivering frames right now, cluster-wide — disambiguates a null/empty recent_flow or recent_anomalies as 'unknown' rather than 'genuinely quiet'.",
 };
 
@@ -177,6 +225,7 @@ function emptyContext(ticker: string): EcosystemContext {
     recent_flow: null,
     recent_anomalies: [],
     spx_play: null,
+    spx_full_state: null,
     flow_feed_fresh: false,
   };
 }
@@ -228,6 +277,19 @@ async function fetchSpxPlaySummary(): Promise<EcosystemSpxPlay> {
   };
 }
 
+/** Reuses src/lib/platform/spx-service.ts::getSpxPlayState() VERBATIM — the
+ *  exact function backing Largo's own get_spx_play tool (loadMergedSpxDesk()
+ *  -> buildPlayTechnicals() -> readSpxPlaySnapshot() -> evaluateSpxPlay(desk,
+ *  technicals, {mutate:false})). No second derivation of the play-engine
+ *  snapshot: whatever get_spx_play returns is exactly what spx_full_state
+ *  returns, for the same ticker gate as fetchSpxPlaySummary (see
+ *  isSpxSlayerTicker). mutate:false means this never writes play state, never
+ *  fires Discord, and never advances the play-engine heartbeat — safe to call
+ *  from a read-only context query. */
+async function fetchSpxFullState(): Promise<SpxPlayPayload> {
+  return getSpxPlayState();
+}
+
 /**
  * Assembles a single ticker's cross-instrument snapshot from tables that
  * already exist: today's 0DTE Command take (if any), the most recent
@@ -243,7 +305,10 @@ async function fetchSpxPlaySummary(): Promise<EcosystemSpxPlay> {
  * (flow_anomalies, written by the market-regime-detector cron), SPX Slayer's
  * own open/last-closed play state (spx_play — SPX/SPXW only, via the same
  * fetchOpenSpxPlay/fetchClosedPlayOutcomes db.ts fetchers spx-service.ts
- * already uses, no new query path), and whether
+ * already uses, no new query path), SPX Slayer's own FULL play-engine
+ * snapshot (spx_full_state — SPX/SPXW only, via the SAME getSpxPlayState()
+ * Largo's own get_spx_play tool already calls — see fetchSpxFullState's doc),
+ * and whether
  * the live flow pipeline is actually up right now (flow_feed_fresh), so a
  * caller can tell "genuinely quiet" apart from "we can't see, ingestion is
  * down." Fails open to an all-empty context on any error — a lookup failure
@@ -255,7 +320,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, anomalyRes, flowFeedFresh, spxPlay] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes, anomalyRes, flowFeedFresh, spxPlay, spxFullState] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -317,6 +382,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       ),
       isFlowFrameFreshAnywhere(),
       isSpxSlayerTicker(upper) ? fetchSpxPlaySummary() : Promise.resolve(null),
+      isSpxSlayerTicker(upper) ? fetchSpxFullState() : Promise.resolve(null),
     ]);
 
     const z = zerodteRes.rows[0];
@@ -369,6 +435,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
         direction: a.direction,
       })),
       spx_play: spxPlay,
+      spx_full_state: spxFullState,
       flow_feed_fresh: flowFeedFresh,
     };
   } catch {

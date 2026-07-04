@@ -16,6 +16,16 @@ let mockClosedRows: Record<string, unknown>[] = [];
 let openPlayCalls = 0;
 let closedPlayCalls = 0;
 
+// spx_full_state's source: src/lib/platform/spx-service.ts::getSpxPlayState() —
+// the SAME function backing Largo's own get_spx_play tool. Mocked as its own
+// module (not re-derived from mockOpenPlay/mockClosedRows) because the real
+// getSpxPlayState() calls loadMergedSpxDesk() -> buildPlayTechnicals() ->
+// readSpxPlaySnapshot(), none of which this test file wants to exercise —
+// only that fetchEcosystemContext() reuses it verbatim, ticker-gated exactly
+// like fetchSpxPlaySummary above it.
+let mockFullState: Record<string, unknown> | null = null;
+let fullStateCalls = 0;
+
 mock.module("../db", {
   namedExports: {
     dbConfigured: () => true,
@@ -30,6 +40,15 @@ mock.module("../db", {
     fetchClosedPlayOutcomes: async () => {
       closedPlayCalls++;
       return mockClosedRows;
+    },
+  },
+});
+
+mock.module("../platform/spx-service", {
+  namedExports: {
+    getSpxPlayState: async () => {
+      fullStateCalls++;
+      return mockFullState;
     },
   },
 });
@@ -50,6 +69,7 @@ test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty descrip
     "recent_flow",
     "recent_anomalies",
     "spx_play",
+    "spx_full_state",
     "flow_feed_fresh",
   ];
   assert.deepEqual(
@@ -178,6 +198,84 @@ test("fetchEcosystemContext: spx_play is null for a non-SPX ticker, and the SPX-
   assert.equal(ctx.spx_play, null);
   assert.equal(openPlayCalls, 0, "fetchOpenSpxPlay must not run for a non-SPX ticker");
   assert.equal(closedPlayCalls, 0, "fetchClosedPlayOutcomes must not run for a non-SPX ticker");
+});
+
+// Regression: Largo's own get_spx_play tool (src/lib/largo/run-tool.ts ->
+// src/lib/platform/spx-service.ts::getSpxPlayState()) already returns SPX
+// Slayer's FULL play-engine payload — phase, confluence factors, gates,
+// confirmations, technicals, telemetry, option ticket, everything the member
+// dashboard renders — while BIE's get_ecosystem_context tool only ever got
+// spx_play's slim open/last-closed mirror. spx_full_state closes that gap by
+// reusing getSpxPlayState() verbatim (not a second derivation), so BIE and
+// Largo see the exact same entire numerical picture per the user's explicit
+// "share its entire data...to both BIE and largo" instruction.
+
+const FULL_STATE_FIXTURE = {
+  available: true,
+  phase: "OPEN",
+  action: "HOLD",
+  direction: "long",
+  grade: "A",
+  score: 82,
+  confidence: 91,
+  headline: "SPX cold buy long, holding above VWAP",
+  thesis: "Reclaimed VWAP with EMA20/50 stacked bullish; gamma regime supportive.",
+  idle_message: null,
+  factors: [{ name: "vwap_reclaim", weight: 12, detail: "Price 5502.3 vs VWAP 5498.1", direction: "bullish" }],
+  levels: { entry: 5500, stop: 5480, target: 5550, invalidation: "Close below 5480" },
+  gates: { passed: true, blocks: [], warnings: ["thin_afternoon_liquidity"], entry_mode: "cold_buy", play_idea: "Cold buy long on VWAP reclaim" },
+  claude: { verdict: "CONFIRM", rationale: "Grounded in live confluence factors", confidence: 0.9 },
+  open_play: {
+    id: 1,
+    direction: "long",
+    entry_price: 5500,
+    stop: 5480,
+    target: 5550,
+    grade: "A",
+    opened_at: "2026-07-04T14:35:00.000Z",
+    mfe_pts: 10,
+    trim_done: false,
+  },
+  confirmations: { passed: 8, total: 10, checklist: [{ label: "Above VWAP", passed: true }] },
+  technicals: { m5_trend: "up", m5_rsi: 61.2, m5_rsi_warning: null, m3_close: 5502.3, breakout: null, mtf_summary: "Bullish across 5m/15m/1h" },
+  mtf: { m5: "up", m15: "up", h1: "up", summary: "Bullish across 5m/15m/1h" },
+  option_ticket: { symbol: "SPXW260704C05500000", mid: 4.35 },
+  watch: { active: false, promote_ready: false, reason: "already in a committed play", since: null },
+  telemetry: { adaptive_active: true, summary: "Cold-buy win rate 61% (n=41)", cold_buy_win_rate: 0.61, promote_win_rate: null, global_score_boost: 2, promote_score_boost: 0, total_closed: 41 },
+  lotto_play: null,
+  power_play: null,
+  session_phase: "cash",
+  signal_committed: true,
+  as_of: "2026-07-04T14:40:00.000Z",
+};
+
+test('fetchEcosystemContext("SPX"): spx_full_state reuses getSpxPlayState() verbatim, full fidelity', async () => {
+  fullStateCalls = 0;
+  mockFullState = FULL_STATE_FIXTURE;
+
+  const ctx = await fetchEcosystemContext("SPX");
+  assert.ok(fullStateCalls > 0, "getSpxPlayState should run for ticker SPX");
+  assert.deepEqual(ctx.spx_full_state, FULL_STATE_FIXTURE, "spx_full_state must pass through the entire payload untouched, not a summarized subset");
+});
+
+test('fetchEcosystemContext("SPXW"): spx_full_state also populates (same single-instrument engine as SPX)', async () => {
+  fullStateCalls = 0;
+  mockFullState = { ...FULL_STATE_FIXTURE, headline: "SPXW 0DTE variant" };
+
+  const ctx = await fetchEcosystemContext("SPXW");
+  assert.ok(fullStateCalls > 0, "getSpxPlayState should run for ticker SPXW");
+  assert.deepEqual(ctx.spx_full_state, mockFullState);
+});
+
+test("fetchEcosystemContext: spx_full_state is null for a non-SPX ticker, and getSpxPlayState never runs", async () => {
+  fullStateCalls = 0;
+  // Deliberately leave a full-state fixture mocked to prove the ticker gate —
+  // not the data — is what keeps a non-SPX ticker's spx_full_state null.
+  mockFullState = FULL_STATE_FIXTURE;
+
+  const ctx = await fetchEcosystemContext("AAPL");
+  assert.equal(ctx.spx_full_state, null);
+  assert.equal(fullStateCalls, 0, "getSpxPlayState must not run for a non-SPX ticker");
 });
 
 test("mapNighthawkEchoRows: maps rows keyed by uppercased ticker", () => {

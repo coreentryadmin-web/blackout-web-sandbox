@@ -3,6 +3,15 @@ import assert from "node:assert/strict";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";
 
+// spx-signal-log.ts (the module under test) now also statically imports the
+// ecosystem shadow factor, whose fetchEcosystemContext -> getSpxPlayState chain
+// (bie/ecosystem-context.ts -> platform/spx-service.ts -> spx-play-engine.ts)
+// pulls in a real `import "server-only"` several hops deep. Stub it the same
+// way run-tool.test.ts does, or a plain `node --test` load crashes at import
+// time — this file never exercises that chain directly, so an empty stub is
+// enough.
+mock.module("server-only", { namedExports: {} });
+
 // logSpxMacroPredictionsShadowFactor (this file's module under test) is the
 // fire-and-forget wiring called from evaluateSpxPlay right after the real
 // computeSpxConfluence() (src/lib/spx-play-engine.ts), sibling to
