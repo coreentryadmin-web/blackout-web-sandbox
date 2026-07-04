@@ -938,8 +938,20 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     }
 
     case "get_confluence_outcomes": {
-      const { computeConfluenceOutcomeStats } = await import("@/lib/bie/confluence-outcomes");
-      return computeConfluenceOutcomeStats(60);
+      const { computeConfluenceOutcomeStats, computeSpxSlayerShadowFactorOutcomeStats } = await import(
+        "@/lib/bie/confluence-outcomes"
+      );
+      // Two independent, additive analytics passes over the SAME tool surface —
+      // see confluence-outcomes.ts's module doc above computeSpxSlayerShadowFactorOutcomeStats
+      // for why the SPX Slayer half joins spx_confluence_shadow_observations against
+      // spx_play_outcomes directly rather than through alert_audit_log. Each fails
+      // open to its own null independently, so a problem on one product's side can
+      // never blank out the other's numbers.
+      const [zerodte_nighthawk_echo, spx_slayer_shadow_factors] = await Promise.all([
+        computeConfluenceOutcomeStats(60),
+        computeSpxSlayerShadowFactorOutcomeStats(60),
+      ]);
+      return { zerodte_nighthawk_echo, spx_slayer_shadow_factors };
     }
 
     case "get_similar_precedents": {
