@@ -25,7 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
-import { getNwTickerGex } from "@/lib/nights-watch/position-context";
+import { getNwTickerGex, getNwSpxOpenPlay } from "@/lib/nights-watch/position-context";
 import type { PositionContext } from "@/lib/nights-watch/position-context";
 import { computeVerdict, type Verdict, type VerdictAction } from "@/lib/nights-watch/verdict";
 import type { EnrichedPosition } from "@/lib/nights-watch/valuation";
@@ -62,6 +62,19 @@ export type PositionDetailSections = {
   catalysts: CatalystsSection | null;
   confluence: ConfluenceSection | null;
   dossier: DossierSection | null;
+  /** SPX Slayer's own live play-engine state (SPX/SPXW only). Null for non-SPX tickers
+   *  AND for SPX tickers when the engine has no play open right now — both are honest
+   *  "nothing to report" states; the dataSources ledger's `spx_slayer_play` entry (SPX
+   *  only) distinguishes "checked, none open" from "not applicable" via its own `ok` flag. */
+  spxSlayerPlay: SpxSlayerPlaySection | null;
+};
+
+/** SPX Slayer's live play-engine state, as surfaced to the detail view / narrative prompt. */
+export type SpxSlayerPlaySection = {
+  direction: "long" | "short";
+  grade: string;
+  entry_price: number;
+  opened_at: string;
 };
 
 export type PositioningSection = {
@@ -422,6 +435,7 @@ export async function buildPositionDetail(
     dossierR,
     analystR,
     bzCatalystR,
+    spxOpenPlayR,
   ] = await Promise.allSettled([
     spx ? Promise.resolve(null) : getNwTickerGex(sym), // SPX positioning comes from the desk instead
     fetchRecentFlows({ ticker: sym, since_hours: 48 }),
@@ -433,6 +447,9 @@ export async function buildPositionDetail(
     // Benzinga analyst ratings + catalysts — cached per-ticker, zero UW RPS cost.
     fetchBenzingaAnalystRatings(sym, 5),
     fetchBenzingaCatalysts(sym, 5),
+    // SPX Slayer's own open-play state — SAME shared cache reader as the list path
+    // (position-context.ts's buildPositionContextMap), SPX/SPXW only.
+    spx ? getNwSpxOpenPlay() : Promise.resolve(null),
   ]);
 
   const gex = settledValue(gexR);
@@ -440,6 +457,7 @@ export async function buildPositionDetail(
   const mtf = settledValue(techR);
   const newsRaw = settledValue(newsR);
   const earnings = settledValue(earningsR);
+  const spxSlayerPlay: SpxSlayerPlaySection | null = spx ? settledValue(spxOpenPlayR) ?? null : null;
   const deskBundle = settledValue(deskR);
   const dossier = settledValue(dossierR);
   const analystRatingsRaw = settledValue(analystR) ?? [];
@@ -622,7 +640,18 @@ export async function buildPositionDetail(
   //    Night Hawk dossier enrichment signals are derived from the staged dossier and
   //    folded in here so the verdict engine can reason over analyst/IV/dark-pool/insider/
   //    short-squeeze signals without any new upstream fetches.
-  const ctx = buildVerdictContext({ spx, deskBundle, gex, positioning, flows, technicals, catalysts, techLevels, dossier: dossierSection });
+  const ctx = buildVerdictContext({
+    spx,
+    deskBundle,
+    gex,
+    positioning,
+    flows,
+    technicals,
+    catalysts,
+    techLevels,
+    dossier: dossierSection,
+    spxSlayerPlay,
+  });
 
   // 4) Authoritative verdict — recomputed from the rich context.
   const verdict = computeVerdict(position, ctx);
@@ -644,6 +673,7 @@ export async function buildPositionDetail(
     earnings,
     confluence,
     dossier: dossierSection,
+    spxSlayerPlay,
   });
 
   return {
@@ -657,6 +687,7 @@ export async function buildPositionDetail(
       catalysts,
       confluence,
       dossier: dossierSection,
+      spxSlayerPlay,
     },
     dataSources,
     as_of: new Date().toISOString(),
@@ -795,8 +826,9 @@ function buildVerdictContext(args: {
   catalysts: CatalystsSection | null;
   techLevels: Array<{ kind: "support" | "resistance"; price: number; source: string }>;
   dossier: DossierSection | null;
+  spxSlayerPlay: SpxSlayerPlaySection | null;
 }): PositionContext {
-  const { spx, deskBundle, positioning, flows, technicals, catalysts, techLevels, dossier } = args;
+  const { spx, deskBundle, positioning, flows, technicals, catalysts, techLevels, dossier, spxSlayerPlay } = args;
 
   // Base desk/positioning context.
   let base: PositionContext;
@@ -869,6 +901,13 @@ function buildVerdictContext(args: {
   if (enrichment.insiderNetSell != null) base.insiderNetSell = enrichment.insiderNetSell;
   if (enrichment.shortSqueezeRisk != null) base.shortSqueezeRisk = enrichment.shortSqueezeRisk;
   // highIvCrushRisk (ivRank >= 70) is carried via enrichment.highIvCrushRisk above.
+
+  // SPX Slayer's own play-engine state — SPX/SPXW only. Explicitly set (even when null,
+  // i.e. "engine checked, nothing open") ONLY for SPX; a non-SPX ticker leaves the field
+  // undefined entirely, matching position-context.ts's buildPositionContextMap.
+  if (spx) {
+    base.spxSlayerOpenPlay = spxSlayerPlay;
+  }
 
   return base;
 }
@@ -1003,6 +1042,7 @@ function buildDataSources(args: {
   earnings: EarningsResult | null;
   confluence: ConfluenceSection | null;
   dossier: DossierSection | null;
+  spxSlayerPlay: SpxSlayerPlaySection | null;
 }): DataSource[] {
   const {
     spx,
@@ -1016,6 +1056,7 @@ function buildDataSources(args: {
     earnings,
     confluence,
     dossier,
+    spxSlayerPlay,
   } = args;
 
   const sources: DataSource[] = [];
@@ -1066,6 +1107,15 @@ function buildDataSources(args: {
       provider: "spx-desk + spx-signals",
       ok: confluence != null,
       asOf: confluence != null ? new Date().toISOString() : null,
+    });
+    // ok:false when the engine has no play open right now — an honest "checked, none open"
+    // state, distinct from this entry being absent altogether for a non-SPX ticker.
+    sources.push({
+      key: "spx_slayer_play",
+      label: "SPX Slayer open play",
+      provider: "spx-play-engine (spx_open_play)",
+      ok: spxSlayerPlay != null,
+      asOf: spxSlayerPlay?.opened_at ?? null,
     });
   }
   if (dossier) {

@@ -32,7 +32,7 @@ const NARRATIVE_SYSTEM_PROMPT = `You are BlackOut's options desk analyst writing
 RULES:
 - Ground EVERY statement ONLY in the SIGNALS provided below. NEVER invent or estimate a price, level, Greek, premium, percentage, or date that is not in the data. If a field shows "n/a", do not mention it.
 - Do NOT compute or state the number of days between two dates yourself (you make arithmetic errors). Only cite day-counts that are explicitly provided (e.g. DTE, "in Nd"). State date relationships ONLY as given — e.g. say "before this expiry" / "after this expiry" when told, never your own day-gap like "four days after".
-- Explain WHY the engine's call (hold / trim / sell / watch) is reasonable given the signals — reference the ACTUAL flow lean, dealer-gamma walls, trend, key levels, catalysts, and the position's P&L / DTE / Greeks that are provided.
+- Explain WHY the engine's call (hold / trim / sell / watch) is reasonable given the signals — reference the ACTUAL flow lean, dealer-gamma walls, trend, key levels, catalysts, SPX Slayer's own live play (when present), and the position's P&L / DTE / Greeks that are provided.
 - 3 to 5 tight sentences. Desk tone: direct, professional, no hype, no emoji, no markdown headers, no bullet points.
 - Do NOT give personalized financial advice, position sizing, or guarantees — describe the setup and the engine's reasoning. No disclaimer (the UI adds one).`;
 
@@ -83,6 +83,11 @@ export function buildContext(detail: PositionDetail): string {
   if (s.confluence) {
     lines.push(
       `SPX CONFLUENCE: ${s.confluence.action} grade ${s.confluence.grade} (score ${s.confluence.score}), ${s.confluence.agreeing} agree / ${s.confluence.conflicts} conflict. Entry ${n(s.confluence.entry)}, stop ${n(s.confluence.stop)}, target ${n(s.confluence.target)}.`
+    );
+  }
+  if (s.spxSlayerPlay) {
+    lines.push(
+      `SPX SLAYER PLAY: engine has a live ${s.spxSlayerPlay.direction.toUpperCase()} play open, grade ${s.spxSlayerPlay.grade}, entry ${n(s.spxSlayerPlay.entry_price)}, opened ${s.spxSlayerPlay.opened_at.slice(0, 10)}.`
     );
   }
   if (s.dossier) {

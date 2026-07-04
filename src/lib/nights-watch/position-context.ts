@@ -23,6 +23,10 @@ import { fetchRecentFlows } from "@/lib/db";
 import { fetchPolygonMtfTechnicals } from "@/lib/providers/polygon-largo";
 import { fetchBenzingaEarnings } from "@/lib/providers/polygon";
 import { fetchUwDarkPool, fetchUwEarnings, fetchUwEarningsEstimates } from "@/lib/providers/unusual-whales";
+// getSpxOpenPlay() already wraps the correct, single fetchOpenSpxPlay(todayEtYmd()) DB read
+// (spx-service.ts) that SPX Slayer's own play engine and the admin dashboard read from — we
+// reuse it verbatim here rather than issuing a second, parallel query against spx_open_play.
+import { getSpxOpenPlay } from "@/lib/platform/spx-service";
 
 /**
  * Cheap, already-cached cross-tool context for one underlying.
@@ -144,6 +148,31 @@ export type PositionContext = {
    * Optional — signal skipped when absent (honesty rule).
    */
   entryIv?: number | null;
+
+  // ---------------------------------------------------------------------------
+  // SPX Slayer play-engine cross-reference (optional; SPX/SPXW positions ONLY).
+  // ONE-WAY: Night's Watch reads SPX Slayer's own `spx_open_play` state to narrate
+  // confirmation/caution context for a user's SPX/SPXW position; SPX Slayer's play
+  // engine never reads anything back from Night's Watch. Non-SPX underlyings never
+  // get this field set (stays undefined — SPX Slayer's engine only trades SPX/SPXW).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * SPX Slayer's own live play-engine state (from `spx_open_play`), attached ONLY for
+   * SPX/SPXW positions. `direction` mirrors the play engine's own "long"/"short" label
+   * (bullish/bearish bias — NOT call/put: a long CALL position and a "long" play are the
+   * SAME direction, a long PUT position and a "long" play are OPPOSED). `null` means the
+   * engine genuinely has NO play open right now — a real, meaningful state, deliberately
+   * distinct from `undefined` (field never populated, e.g. a non-SPX ticker), matching the
+   * honesty rule already used by `flows`/`trend`/`darkPoolBias` above: no data → the
+   * dependent verdict signal is simply never evaluated, never fabricated.
+   */
+  spxSlayerOpenPlay?: {
+    direction: "long" | "short";
+    grade: string;
+    entry_price: number;
+    opened_at: string; // ISO timestamp
+  } | null;
 };
 
 const EMPTY_CONTEXT: PositionContext = {
@@ -434,6 +463,42 @@ async function getNwTickerEarnings(
   ).catch(() => ({ earningsDate: null, daysToEarnings: null }));
 }
 
+/** Cache TTL for SPX Slayer's own open-play state (ms). The play only changes when the
+ *  engine itself evaluates the desk (same ~confluence cadence as the desk read), so this
+ *  mirrors the SPX desk's own freshness window rather than inventing a separate one. */
+const NW_SPX_OPEN_PLAY_TTL_MS = 60_000;
+
+/**
+ * Cache READER for SPX Slayer's current open play (`spx_open_play`), shared across ALL
+ * users — exported so BOTH the list path (buildPositionContextMap below) and the detail
+ * view (position-detail.ts) read the SAME cache entry, exactly like getNwTickerGex above.
+ *
+ * Wraps getSpxOpenPlay() (which wraps the existing, correct fetchOpenSpxPlay(todayEtYmd())
+ * DB read in spx-service.ts — no new query) in withServerCache keyed by ET-date, so N users
+ * holding SPX/SPXW contracts collapse to ONE DB read per TTL window. ONE-WAY: this is a READ
+ * of SPX Slayer's own play-engine state for Night's Watch narration only; the play engine
+ * itself never reads Night's Watch. Best-effort: any error → null (never fabricated) — the
+ * caller then treats it exactly like "no open play" (see PositionContext.spxSlayerOpenPlay
+ * doc for why that's still distinct from the field being left undefined altogether).
+ */
+export async function getNwSpxOpenPlay(): Promise<PositionContext["spxSlayerOpenPlay"]> {
+  const cacheKey = `nw:spx-open-play:${todayEt()}`;
+  return withServerCache<PositionContext["spxSlayerOpenPlay"]>(
+    cacheKey,
+    NW_SPX_OPEN_PLAY_TTL_MS,
+    async () => {
+      const { open_play } = await getSpxOpenPlay();
+      if (!open_play) return null;
+      return {
+        direction: open_play.direction,
+        grade: open_play.grade,
+        entry_price: open_play.entry_price,
+        opened_at: open_play.opened_at,
+      };
+    }
+  ).catch(() => null);
+}
+
 /**
  * Build a Map<underlying, PositionContext> for a user's positions, resolved ONCE
  * per request. Upstream cost is O(distinct underlyings) regardless of how many
@@ -482,11 +547,18 @@ export async function buildPositionContextMap(
         .catch(() => EMPTY_CONTEXT)
     : Promise.resolve(EMPTY_CONTEXT);
 
+  // SPX Slayer's own open-play state — fetched ONCE (shared cache reader), only when at
+  // least one SPX/SPXW position is present. Never fetched for non-SPX-only batches.
+  const spxOpenPlayPromise: Promise<PositionContext["spxSlayerOpenPlay"]> = spxUnderlyings.length
+    ? getNwSpxOpenPlay()
+    : Promise.resolve(null);
+
   // Fetch flows + trend for ALL distinct underlyings in parallel alongside the desk/GEX reads.
   // Both are cache READERS (shared, single-flight, keyed only by ticker+date — never per-user).
   // Best-effort: any failure yields null → the flow/trend signal is simply skipped (honesty rule).
-  const [spxContext, gexEntries, flowsEntries, trendEntries, darkPoolEntries, earningsEntries] = await Promise.all([
+  const [spxContext, spxOpenPlay, gexEntries, flowsEntries, trendEntries, darkPoolEntries, earningsEntries] = await Promise.all([
     spxDeskPromise,
+    spxOpenPlayPromise,
     Promise.all(
       nonSpxUnderlyings.map(async (u) => {
         // getNwTickerGex is best-effort (catches internally) → null on any failure.
@@ -528,6 +600,9 @@ export async function buildPositionContextMap(
       trend: trendByTicker.get(u) ?? undefined,
       darkPoolBias: darkPoolByTicker.get(u) ?? undefined,
       // SPX has no earnings; catalysts intentionally omitted.
+      // SPX Slayer's own play state — null (checked, no play open) or the live play.
+      // Non-SPX underlyings (the gexEntries loop below) never set this field at all.
+      spxSlayerOpenPlay: spxOpenPlay,
     });
   }
   for (const [u, ctx] of gexEntries) {

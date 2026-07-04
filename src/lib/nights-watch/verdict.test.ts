@@ -550,6 +550,67 @@ test("earnings does NOT fire when ctx.catalysts is null", () => {
   assert.ok(!v.signals.includes("earnings_before_expiry"));
 });
 
+// --- SPX Slayer play alignment (enhancement: cross-reference the play engine's own state) --
+
+function spxSlayerPlay(
+  overrides: Partial<NonNullable<PositionContext["spxSlayerOpenPlay"]>> = {}
+): NonNullable<PositionContext["spxSlayerOpenPlay"]> {
+  return {
+    direction: "long",
+    grade: "A",
+    entry_price: 6050,
+    opened_at: "2026-07-04T14:35:00.000Z",
+    ...overrides,
+  };
+}
+
+test("spx_slayer_aligned: LONG play + LONG call (wantsUp) → 'hold' + 'spx_slayer_aligned'", () => {
+  const ctx = makeContext({ spxSlayerOpenPlay: spxSlayerPlay({ direction: "long" }) });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("spx_slayer_aligned"));
+  assert.ok(!v.signals.includes("spx_slayer_against"));
+  assert.equal(v.action, "hold");
+});
+
+test("spx_slayer_against: SHORT play + LONG call → 'trim' + 'spx_slayer_against'", () => {
+  const ctx = makeContext({ spxSlayerOpenPlay: spxSlayerPlay({ direction: "short" }) });
+  const v = computeVerdict(quietLong(), ctx);
+  assert.ok(v.signals.includes("spx_slayer_against"));
+  assert.ok(!v.signals.includes("spx_slayer_aligned"));
+  assert.equal(v.action, "trim");
+});
+
+test("spx_slayer side-aware: SHORT play + LONG put (!wantsUp) → aligned 'spx_slayer_aligned'", () => {
+  // A long put is bearish exposure (!wantsUp); a "short" (bearish) play agrees with it.
+  const ctx = makeContext({ spxSlayerOpenPlay: spxSlayerPlay({ direction: "short" }) });
+  const v = computeVerdict(quietLong({ option_type: "put", strike: 110 }), ctx);
+  assert.ok(v.signals.includes("spx_slayer_aligned"));
+  assert.ok(!v.signals.includes("spx_slayer_against"));
+});
+
+test("spx_slayer does NOT fire when ctx.spxSlayerOpenPlay is undefined (field never populated)", () => {
+  const v = computeVerdict(quietLong(), makeContext());
+  assert.ok(!v.signals.includes("spx_slayer_aligned"));
+  assert.ok(!v.signals.includes("spx_slayer_against"));
+});
+
+test("spx_slayer does NOT fire when ctx.spxSlayerOpenPlay is null (engine has no play open)", () => {
+  const v = computeVerdict(quietLong(), makeContext({ spxSlayerOpenPlay: null }));
+  assert.ok(!v.signals.includes("spx_slayer_aligned"));
+  assert.ok(!v.signals.includes("spx_slayer_against"));
+});
+
+test("spx_slayer reason cites grade + entry price (grounded, human-readable)", () => {
+  const ctx = makeContext({
+    spxSlayerOpenPlay: spxSlayerPlay({ direction: "long", grade: "B+", entry_price: 6072.5 }),
+  });
+  const v = computeVerdict(quietLong(), ctx);
+  const reason = v.reasons.find((r) => r.includes("SPX Slayer"));
+  assert.ok(reason, "expected an SPX Slayer reason string");
+  assert.ok(reason!.includes("B+"));
+  assert.ok(reason!.includes("6072.5"));
+});
+
 // --- REGRESSION: no new data → identical verdict -----------------------------
 
 const NEW_SIGNAL_IDS = [
@@ -559,6 +620,8 @@ const NEW_SIGNAL_IDS = [
   "trend_against",
   "approaching_key_level",
   "earnings_before_expiry",
+  "spx_slayer_aligned",
+  "spx_slayer_against",
 ];
 
 test("REGRESSION: context WITHOUT new fields fires NONE of the new signals", () => {
