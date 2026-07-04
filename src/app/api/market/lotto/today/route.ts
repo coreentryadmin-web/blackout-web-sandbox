@@ -6,6 +6,7 @@ import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { readSpxLottoSnapshot } from "@/lib/spx-lotto-engine";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +28,12 @@ export async function GET(req: NextRequest) {
     const history = await fetchLottoPlaysForDate(todayEtYmd());
 
     return NextResponse.json(
-      {
+      roundFloats({
         available: true,
         as_of: merged.polled_at ?? new Date().toISOString(),
         lotto,
         history,
-      },
+      }),
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

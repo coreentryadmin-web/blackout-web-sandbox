@@ -9,6 +9,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — SPX Lotto `spread_pct` unrounded (audit finding, low)
+**Where:** `src/lib/spx-lotto-options.ts:171/201` computes `spread_pct` via raw `((ask - bid) / mid) * 100` division, and `/api/market/lotto/today`'s response was never passed through `roundFloats()`, unlike every sibling SPX/desk route. Currently masked in the live UI by `SpxTradeAlerts.tsx`'s `.toFixed(0)`, but any other consumer reading the raw JSON (Largo, a future widget) would see float noise.
+
+**Fix:** wrapped the route's response body in `roundFloats(...)`, matching the established convention.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `932/932` passing; `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — `ALERT_PRODUCING_CRON_KEYS` hand-maintained list already drifted (audit finding, low)
 **Where:** `src/lib/bie/missed-alerts.ts` — a 3-entry hand-maintained constant (`flow-ingest`, `spx-evaluate`, `gex-alerts`) already omitted `nighthawk-morning-confirm`, which writes a member-visible UI badge status (CONFIRMED/DEGRADED/INVALIDATED) exactly like the three listed crons, with no test cross-checking the list against `src/lib/cron-registry.ts`.
 
