@@ -18,6 +18,7 @@ import {
   clearWsLeaderFailClosedAlert,
   wsLeaderShouldFailOpenWithoutRedis,
 } from "@/lib/ws/leader-lock-shared";
+import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "@/lib/ws/leader-lock-fencing";
 
 const LEADER_KEY = "rth:warm:leader";
 const LEADER_TTL_SEC = 45;
@@ -25,11 +26,13 @@ const TICK_MS = 60_000;
 
 const WATCH_KEYS = Object.keys(RTH_WRITER_HEAL_AFTER_MIN).filter(isDispatchableCron);
 
-type IoredisLockExtra = {
+type IoredisLockExtra = FencedRedis & {
   set(k: string, v: string, ex: string, ttl: number, nx: string): Promise<string | null>;
-  expire(k: string, ttl: number): Promise<number>;
-  del(k: string): Promise<number>;
 };
+
+// Random per-process identity for this lock — see leader-lock-fencing.ts for why a plain SETNX
+// with unconditional EXPIRE/DEL renewal can split-brain across two replicas.
+const RTH_LOCK_TOKEN = newLockToken();
 
 let started = false;
 let isLeader = false;
@@ -60,7 +63,7 @@ async function tryAcquireLead(): Promise<boolean> {
       return true; // single replica — safe to fail open, no contention possible
     }
     clearWsLeaderFailClosedAlert("rth-warm-leader");
-    const result = await redis.set(LEADER_KEY, "1", "EX", LEADER_TTL_SEC, "NX");
+    const result = await redis.set(LEADER_KEY, RTH_LOCK_TOKEN, "EX", LEADER_TTL_SEC, "NX");
     return result === "OK";
   } catch {
     if (!wsLeaderShouldFailOpenWithoutRedis()) {
@@ -76,7 +79,16 @@ function startLeaderRefresh(): void {
   leaderRefreshTimer = setInterval(() => {
     if (!isLeader) return;
     void getLockRedis()
-      .then((redis) => redis?.expire(LEADER_KEY, LEADER_TTL_SEC))
+      .then(async (redis) => {
+        if (!redis) return;
+        const stillMine = await renewFencedLock(redis, LEADER_KEY, RTH_LOCK_TOKEN, LEADER_TTL_SEC);
+        if (!stillMine) {
+          // Another replica already won this lock (we stalled past the TTL) — stand down instead
+          // of re-arming a lease we no longer hold. The next tick() re-attempts acquisition.
+          console.warn("[rth-warm-leader] lost cluster lead to another replica (stalled past TTL) — standing down");
+          isLeader = false;
+        }
+      })
       .catch(() => undefined);
   }, 15_000);
   (leaderRefreshTimer as unknown as { unref?: () => void }).unref?.();
@@ -89,7 +101,7 @@ function releaseLead(): void {
     leaderRefreshTimer = null;
   }
   void getLockRedis()
-    .then((redis) => redis?.del(LEADER_KEY))
+    .then((redis) => redis && releaseFencedLock(redis, LEADER_KEY, RTH_LOCK_TOKEN))
     .catch(() => undefined);
 }
 

@@ -31,6 +31,7 @@ import {
   clearWsLeaderFailClosedAlert,
   wsLeaderShouldFailOpenWithoutRedis,
 } from "./leader-lock-shared";
+import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "./leader-lock-fencing";
 
 /**
  * RTH gate for the OPTIONS feed (live finding #75). Off-hours, no option quotes flow, so the
@@ -73,11 +74,13 @@ const OPTIONS_LEADER_TTL_SEC = 25;
 let optionsIsLeader = false;
 let optionsLeaderRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
-type IoredisLockExtra = {
+type IoredisLockExtra = FencedRedis & {
   set(k: string, v: string, ex: string, ttl: number, nx: string): Promise<string | null>;
-  expire(k: string, ttl: number): Promise<number>;
-  del(k: string): Promise<number>;
 };
+
+// Random per-process identity for this lock — see leader-lock-fencing.ts for why a plain SETNX
+// with unconditional EXPIRE/DEL renewal can split-brain across two replicas.
+const OPTIONS_LOCK_TOKEN = newLockToken();
 
 async function tryAcquireOptionsLead(): Promise<boolean> {
   try {
@@ -91,7 +94,7 @@ async function tryAcquireOptionsLead(): Promise<boolean> {
     }
     clearWsLeaderFailClosedAlert("options-socket");
     const r = redis as unknown as IoredisLockExtra;
-    const result = await r.set(OPTIONS_LEADER_KEY, "1", "EX", OPTIONS_LEADER_TTL_SEC, "NX");
+    const result = await r.set(OPTIONS_LEADER_KEY, OPTIONS_LOCK_TOKEN, "EX", OPTIONS_LEADER_TTL_SEC, "NX");
     return result === "OK";
   } catch {
     if (!wsLeaderShouldFailOpenWithoutRedis()) {
@@ -118,7 +121,16 @@ function startOptionsLeaderRefresh(): void {
   optionsLeaderRefreshTimer = setInterval(() => {
     if (!optionsIsLeader) return;
     getUwCacheRedis()
-      .then((redis) => redis && (redis as unknown as IoredisLockExtra).expire(OPTIONS_LEADER_KEY, OPTIONS_LEADER_TTL_SEC))
+      .then(async (redis) => {
+        if (!redis) return;
+        const stillMine = await renewFencedLock(redis as unknown as IoredisLockExtra, OPTIONS_LEADER_KEY, OPTIONS_LOCK_TOKEN, OPTIONS_LEADER_TTL_SEC);
+        if (!stillMine) {
+          // Another replica already won this lock (we stalled past the TTL) — stand down instead
+          // of re-arming a lease we no longer hold.
+          console.warn("[options-socket] lost cluster lead to another replica (stalled past TTL) — standing down");
+          optionsIsLeader = false;
+        }
+      })
       .catch(() => undefined);
   }, 10_000);
   (optionsLeaderRefreshTimer as unknown as { unref?: () => void }).unref?.();
@@ -130,9 +142,10 @@ function releaseOptionsLead(): void {
     clearInterval(optionsLeaderRefreshTimer);
     optionsLeaderRefreshTimer = null;
   }
-  // Best-effort: drop the lock so a newly-booting replica can take over immediately on SIGTERM.
+  // Best-effort: drop the lock (only if still ours) so a newly-booting replica can take over
+  // immediately on SIGTERM, without ever deleting a lock another replica has since acquired.
   getUwCacheRedis()
-    .then((redis) => redis && (redis as unknown as IoredisLockExtra).del(OPTIONS_LEADER_KEY))
+    .then((redis) => redis && releaseFencedLock(redis as unknown as IoredisLockExtra, OPTIONS_LEADER_KEY, OPTIONS_LOCK_TOKEN))
     .catch(() => undefined);
 }
 

@@ -51,6 +51,7 @@ import {
   clearWsLeaderFailClosedAlert,
   wsLeaderShouldFailOpenWithoutRedis,
 } from "./leader-lock-shared";
+import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "./leader-lock-fencing";
 
 type Handler = (data: unknown) => void;
 
@@ -162,11 +163,14 @@ let uwLeaderRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let clusterFreshestAt: number | null = null;
 let clusterFreshnessPollerStarted = false;
 
-type IoredisLockExtra = {
+type IoredisLockExtra = FencedRedis & {
   set(k: string, v: string, ex: string, ttl: number, nx: string): Promise<string | null>;
-  expire(k: string, ttl: number): Promise<number>;
-  del(k: string): Promise<number>;
 };
+
+// Random per-process identity for this lock. Written instead of a constant "1" so renew/release
+// can atomically verify THIS replica still owns the lock before touching it — see
+// leader-lock-fencing.ts for why a plain SETNX + unconditional EXPIRE/DEL split-brains.
+const UW_LOCK_TOKEN = newLockToken();
 
 async function tryAcquireUwLead(): Promise<boolean> {
   try {
@@ -180,7 +184,7 @@ async function tryAcquireUwLead(): Promise<boolean> {
     }
     clearWsLeaderFailClosedAlert("uw-socket");
     const r = redis as unknown as IoredisLockExtra;
-    const result = await r.set(UW_LEADER_KEY, "1", "EX", UW_LEADER_TTL_SEC, "NX");
+    const result = await r.set(UW_LEADER_KEY, UW_LOCK_TOKEN, "EX", UW_LEADER_TTL_SEC, "NX");
     return result === "OK";
   } catch {
     if (!wsLeaderShouldFailOpenWithoutRedis()) {
@@ -207,7 +211,17 @@ function startUwLeaderRefresh(): void {
   uwLeaderRefreshTimer = setInterval(() => {
     if (!uwIsLeader) return;
     getUwCacheRedis()
-      .then((redis) => redis && (redis as unknown as IoredisLockExtra).expire(UW_LEADER_KEY, UW_LEADER_TTL_SEC))
+      .then(async (redis) => {
+        if (!redis) return;
+        const stillMine = await renewFencedLock(redis as unknown as IoredisLockExtra, UW_LEADER_KEY, UW_LOCK_TOKEN, UW_LEADER_TTL_SEC);
+        if (!stillMine) {
+          // Another replica already won this lock (we stalled past the TTL) — stand down instead
+          // of re-arming a lease we no longer hold, which is exactly the split-brain this fencing
+          // check exists to prevent.
+          console.warn("[uw-socket] lost cluster lead to another replica (stalled past TTL) — standing down");
+          uwIsLeader = false;
+        }
+      })
       .catch(() => undefined);
   }, 10_000);
   (uwLeaderRefreshTimer as unknown as { unref?: () => void }).unref?.();
@@ -219,9 +233,10 @@ function releaseUwLead(): void {
     clearInterval(uwLeaderRefreshTimer);
     uwLeaderRefreshTimer = null;
   }
-  // Best-effort: drop the lock so a newly-booting replica can take over immediately on SIGTERM.
+  // Best-effort: drop the lock (only if still ours) so a newly-booting replica can take over
+  // immediately on SIGTERM, without ever deleting a lock another replica has since acquired.
   getUwCacheRedis()
-    .then((redis) => redis && (redis as unknown as IoredisLockExtra).del(UW_LEADER_KEY))
+    .then((redis) => redis && releaseFencedLock(redis as unknown as IoredisLockExtra, UW_LEADER_KEY, UW_LOCK_TOKEN))
     .catch(() => undefined);
 }
 

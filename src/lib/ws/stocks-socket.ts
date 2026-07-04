@@ -15,6 +15,7 @@ import {
   clearWsLeaderFailClosedAlert,
   wsLeaderShouldFailOpenWithoutRedis,
 } from "@/lib/ws/leader-lock-shared";
+import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "@/lib/ws/leader-lock-fencing";
 
 const STOCKS_WS_URL = process.env.STOCKS_WS_URL ?? MASSIVE_WS_STOCKS;
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_KEY ?? "";
@@ -35,11 +36,13 @@ const STOCKS_LEADER_TTL_SEC = 25;
 let stocksIsLeader = false;
 let stocksLeaderRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
-type IoredisLockExtra = {
+type IoredisLockExtra = FencedRedis & {
   set(k: string, v: string, ex: string, ttl: number, nx: string): Promise<string | null>;
-  expire(k: string, ttl: number): Promise<number>;
-  del(k: string): Promise<number>;
 };
+
+// Random per-process identity for this lock — see leader-lock-fencing.ts for why a plain SETNX
+// with unconditional EXPIRE/DEL renewal can split-brain across two replicas.
+const STOCKS_LOCK_TOKEN = newLockToken();
 
 async function tryAcquireStocksLead(): Promise<boolean> {
   try {
@@ -53,7 +56,7 @@ async function tryAcquireStocksLead(): Promise<boolean> {
     }
     clearWsLeaderFailClosedAlert("stocks-socket");
     const r = redis as unknown as IoredisLockExtra;
-    const result = await r.set(STOCKS_LEADER_KEY, "1", "EX", STOCKS_LEADER_TTL_SEC, "NX");
+    const result = await r.set(STOCKS_LEADER_KEY, STOCKS_LOCK_TOKEN, "EX", STOCKS_LEADER_TTL_SEC, "NX");
     return result === "OK";
   } catch {
     if (!wsLeaderShouldFailOpenWithoutRedis()) {
@@ -69,7 +72,16 @@ function startStocksLeaderRefresh(): void {
   stocksLeaderRefreshTimer = setInterval(() => {
     if (!stocksIsLeader) return;
     getUwCacheRedis()
-      .then((redis) => redis && (redis as unknown as IoredisLockExtra).expire(STOCKS_LEADER_KEY, STOCKS_LEADER_TTL_SEC))
+      .then(async (redis) => {
+        if (!redis) return;
+        const stillMine = await renewFencedLock(redis as unknown as IoredisLockExtra, STOCKS_LEADER_KEY, STOCKS_LOCK_TOKEN, STOCKS_LEADER_TTL_SEC);
+        if (!stillMine) {
+          // Another replica already won this lock (we stalled past the TTL) — stand down instead
+          // of re-arming a lease we no longer hold. The 15s reconcile tick closes our socket next.
+          console.warn("[stocks-socket] lost cluster lead to another replica (stalled past TTL) — standing down");
+          stocksIsLeader = false;
+        }
+      })
       .catch(() => undefined);
   }, 10_000);
   (stocksLeaderRefreshTimer as unknown as { unref?: () => void }).unref?.();
@@ -82,7 +94,7 @@ function releaseStocksLead(): void {
     stocksLeaderRefreshTimer = null;
   }
   getUwCacheRedis()
-    .then((redis) => redis && (redis as unknown as IoredisLockExtra).del(STOCKS_LEADER_KEY))
+    .then((redis) => redis && releaseFencedLock(redis as unknown as IoredisLockExtra, STOCKS_LEADER_KEY, STOCKS_LOCK_TOKEN))
     .catch(() => undefined);
 }
 
