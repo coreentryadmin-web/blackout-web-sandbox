@@ -1,4 +1,4 @@
-import { dbConfigured } from "@/lib/db";
+import { dbConfigured, fetchClosedPlayOutcomes } from "@/lib/db";
 import { nextMemoryPlayId } from "@/lib/spx-play-memory-id";
 import type { ClaudePlayVerdict } from "@/lib/spx-play-claude";
 import type { PlayConfirmationResult } from "@/lib/spx-play-confirmations";
@@ -319,7 +319,6 @@ export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {
   if (!dbConfigured()) {
     return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open"));
   }
-  const { fetchClosedPlayOutcomes } = await import("@/lib/db");
   const rows = await fetchClosedPlayOutcomes(500);
   return computePlayOutcomeStats(rows);
 }
@@ -347,7 +346,6 @@ export async function fetchPlayOutcomeStatsForWindow(days: number): Promise<Play
   if (!dbConfigured()) {
     return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open" && inWindow(r)));
   }
-  const { fetchClosedPlayOutcomes } = await import("@/lib/db");
   const rows = await fetchClosedPlayOutcomes(500);
   return computePlayOutcomeStats(rows.filter(inWindow));
 }
