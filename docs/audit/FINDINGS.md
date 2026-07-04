@@ -7,6 +7,22 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE landing banner redesign SHIPPED 2026-07-04 — flat hub-and-row → orbiting sphere-mesh, on explicit user request
+**Ask:** user reviewed the live home page and asked for a real visual upgrade to the "Introducing BlackOut Intelligence Engine" banner — the connections between BIE and the six instruments "looked not so great," suggested something sphere-like with connected dots and continuous flow, better live animation, and an explicit standing instruction to never name BlackOut's own LLM/model in this copy (consistent with the existing honest-realism stance in `docs/bie/ARCHITECTURE.md`: Claude is the general-reasoning fallback, not a proprietary model BlackOut trained).
+
+**What changed (`src/components/landing/BieBrainBanner.tsx`, `bie-brain-geometry.ts`):**
+- BIE's core moved from "perched above a row of 6 nodes" to dead-center, with the six instruments arranged on an **ellipse** (not a true circle) around it — the rx≠ry asymmetry alone fakes a disc viewed at an angle, a tilted "sphere/globe" look, using plain 2D math. Considered a CSS 3D `rotateX` tilt instead; rejected because it leaves the layout box reserving full untilted space while only the paint gets foreshortened, leaving a blank gap — the ellipse approach has no such mismatch.
+- Connections went from a plain hub-and-spoke + adjacent-only mesh to three wire categories: straight core→node **spokes**, curved **ring** arcs between neighbors, and long **cross** diagonals (node *i* to *i*+2) that for 6 evenly-spaced nodes trace two overlapping triangles — a hexagram, the densest-reading mesh for the least clutter.
+- Added a 26-point **ambient dust field** (golden-angle spiral fill of the disc — deterministic, no RNG) so the diagram reads as a dense sphere of points rather than 6 isolated dots on empty space.
+- The whole node+wire ring and the dust field now **continuously rotate** (opposite directions, different speeds — 70s/100s per revolution) around the fixed core via SVG-native `rotate()` on their own `<g>`, gated to start only once scrolled into view (`.is-drawn`). Traveling pulse dots (existing SMIL `animateMotion`/`mpath` technique, now applied to all 18 wires instead of 11) give the literal "continuous flow" the ask asked for.
+- No new dependencies (no WebGL/three.js) — everything is plain SVG + CSS, consistent with the rest of this codebase's landing-page architecture.
+
+**Verified live**, not just built: ran the actual dev server + Playwright (Chromium is pre-installed in this sandbox at `/opt/pw-browsers/chromium`, reachable via the globally-installed `playwright` package even though it isn't a local `node_modules` dependency here) and screenshotted the rendered banner — confirmed the sphere/mesh layout renders correctly, the ring visibly rotates over a few seconds, a traveling pulse is caught mid-flight, mobile width (390px) stays legible, and `prefers-reduced-motion: reduce` renders a fully-static, fully-drawn network with zero animation, matching the existing accessibility contract.
+
+**Verification:** `npx tsc --noEmit` clean, `npm test` 892/892 passing (4 new geometry tests replacing 4 stale ones for the removed circle/mesh helpers), `npm run build` clean, `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green. Grepped the new copy for "LLM"/"model" — no occurrence, per the standing instruction.
+
+---
+
 ## 🔴 FIXED 2026-07-04 — Public landing page leaked internal infra (Railway, cron, CPU/memory/env-vars) in the BIE banner copy; vendor guard had a gap
 **Root cause:** `src/components/landing/BieBrainBanner.tsx`'s rotating subtitle under the "Introducing BlackOut Intelligence Engine" banner — a public, unauthenticated marketing surface on the home page — included two lines naming internal infrastructure by name: `"cron & worker health — 20+ jobs tracked, schedule-aware"` and `"Railway deploy, CPU, memory, and env-vars — watched live"`. This is a vendor/stack-leak issue the repo already has a dedicated guard for (`npm run lint:vendor` / `scripts/check-vendor-surfaces.mjs`, which explicitly scans `src/components/landing`), but the guard's `VENDORS` regex never included `Railway` — so a real, member-visible leak sat on the home page passing CI the whole time. "cron"/"CPU"/"env-vars" aren't vendor names so the regex-based guard was never going to catch those regardless; those are copy-quality issues, not something a name-matching guard can generically enforce.
 
