@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseRedisInfo } from "./redis-health";
+import { parseRedisInfo, redisStatus } from "./redis-health";
 
 test("parseRedisInfo: extracts key:value fields, skips comments and blank lines", () => {
   const info = [
@@ -27,4 +27,14 @@ test("parseRedisInfo: empty input yields no fields, never throws", () => {
 test("parseRedisInfo: tolerates values containing colons (e.g. a URL-shaped value)", () => {
   const fields = parseRedisInfo("master_replid:abc:def:123");
   assert.equal(fields.master_replid, "abc:def:123");
+});
+
+test("redisStatus: reports 'skipped' when REDIS_URL isn't configured, never throws", async () => {
+  const prev = process.env.REDIS_URL;
+  delete process.env.REDIS_URL;
+  try {
+    assert.equal(await redisStatus(), "skipped");
+  } finally {
+    if (prev !== undefined) process.env.REDIS_URL = prev;
+  }
 });

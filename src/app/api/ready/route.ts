@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pingDatabaseConnectivity, dbConfigured } from "@/lib/db";
+import { redisStatus } from "@/lib/redis-health";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET() {
   for (let attempt = 1; attempt <= READY_ATTEMPTS; attempt++) {
     const { ok, error, mode } = await pingDatabaseConnectivity();
     if (ok) {
-      return NextResponse.json({ ok: true, db: "connected", mode });
+      return NextResponse.json({ ok: true, db: "connected", mode, redis: await redisStatus() });
     }
     lastError = error;
     lastMode = mode;

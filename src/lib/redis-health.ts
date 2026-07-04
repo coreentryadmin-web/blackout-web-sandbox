@@ -53,3 +53,12 @@ export async function probeRedisHealth(): Promise<RedisHealth> {
     client?.disconnect();
   }
 }
+
+/** Collapses the probe into a tri-state summary for health endpoints — non-fatal by design,
+ *  since several code paths (rate limiters, WS leader locks) already deliberately fail open
+ *  when Redis is unavailable, so a dead Redis degrades the app rather than taking it down. */
+export async function redisStatus(): Promise<"connected" | "degraded" | "skipped"> {
+  const health = await probeRedisHealth();
+  if (!health.configured) return "skipped";
+  return health.connected ? "connected" : "degraded";
+}

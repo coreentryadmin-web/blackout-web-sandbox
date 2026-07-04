@@ -7,6 +7,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — `/api/ready` never checked Redis (audit finding, medium)
+**Where:** `src/app/api/ready/route.ts` — the Railway-wired healthcheck only called `pingDatabaseConnectivity()`. `probeRedisHealth()` already existed but its only call site was the admin-only `/api/admin/bie-report` route, so a replica with dead Redis was marked fully healthy while rate limits, WS leader locks, and caches silently failed open with no visible signal.
+
+**Fix:** added `redisStatus()` to `src/lib/redis-health.ts` (a thin tri-state wrapper over the existing `probeRedisHealth()` probe: `"connected" | "degraded" | "skipped"`), called from `/api/ready`'s success path and surfaced as a non-fatal `redis` field alongside the existing `db` field — deliberately not a hard 503, since several code paths already deliberately fail open on Redis loss and this is meant to make that state visible, not turn a soft-degrade into an outage.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `931/931` passing (1 new); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 📋 CEO/CTO Production Readiness Audit COMPLETE 2026-07-04 — full report in `docs/audit/CEO-CTO-AUDIT-20260704.md`
 **Ask:** an explicit CEO/CTO-level production readiness audit across all seven dimensions (data correctness, single source of truth, API/rate-limit safety, infra reliability, security, AI/BIE readiness, product/UX), run as a parallel multi-agent `Workflow` per the CEO's own suggestion — 7 dimension-finder agents piped into per-dimension adversarial verification, barrier-merged, then synthesized by 3 parallel synthesis agents and one assembly pass. 18 agents total, ~38 minutes wall-clock, 0 errors.
 
