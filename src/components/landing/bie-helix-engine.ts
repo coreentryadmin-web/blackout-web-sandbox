@@ -95,6 +95,10 @@ const FIELD_LINE_CONFIG: Record<
   6: { scale: 1, layer: "outer", periodSec: 272, reverse: false },
 };
 
+export function fieldLineScale(ring: 1 | 2 | 3 | 4 | 5 | 6): number {
+  return FIELD_LINE_CONFIG[ring].scale;
+}
+
 export function buildFieldLinePath(
   cx: number,
   cy: number,

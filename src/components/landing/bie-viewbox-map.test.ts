@@ -24,6 +24,11 @@ describe("advanceOrbitDeg", () => {
     assert.equal(next, 45);
   });
 
+  it("supports reverse direction", () => {
+    const next = advanceOrbitDeg(0, 12, 96, -1);
+    assert.equal(next, 315);
+  });
+
   it("wraps at 360 degrees", () => {
     const next = advanceOrbitDeg(350, 4, 96);
     assert.ok(next < 360);

@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
+import { fieldLineScale } from "./bie-helix-engine";
+import {
+  buildRandomOrbitLayout,
+  mulberry32,
+  readSessionOrbitSeed,
+  wanderOrbitDeg,
+  type PlacedOrbitTool,
+} from "./bie-orbit-layout";
 import { advanceOrbitDeg, orbitToolPixelPosition } from "./bie-viewbox-map";
 
 export type OrbitTool = {
@@ -10,8 +18,6 @@ export type OrbitTool = {
   href: string;
   mark: MarkProduct;
   accent: string;
-  /** Fixed phase on the outer ring (degrees). */
-  startAngleDeg: number;
 };
 
 type Props = {
@@ -22,14 +28,22 @@ type Props = {
   coreY: number;
   maxRx: number;
   maxRy: number;
-  orbitRing: number;
-  orbitScale: number;
-  /** Seconds for one full revolution of all six tools. */
-  orbitPeriodSec: number;
   reduceMotion: boolean;
 };
 
-/** Six instruments ride the outermost field line — slow planetary orbit around BIE. */
+type ToolMotion = {
+  orbitDeg: number;
+  wanderDeg: number;
+  nextWanderAtMs: number;
+};
+
+const RING_SCALES = {
+  4: fieldLineScale(4),
+  5: fieldLineScale(5),
+  6: fieldLineScale(6),
+} as const;
+
+/** Six instruments on rings 4/5/6 — two per ellipse, random layout per session. */
 export function BieOrbitTools({
   tools,
   viewW,
@@ -38,41 +52,60 @@ export function BieOrbitTools({
   coreY,
   maxRx,
   maxRy,
-  orbitRing,
-  orbitScale,
-  orbitPeriodSec,
   reduceMotion,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const anchorRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const geoRef = useRef({ viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale });
+  const geoRef = useRef({ viewW, viewH, coreX, coreY, maxRx, maxRy });
+  const wanderRandRef = useRef<(() => number) | null>(null);
+
+  const [layout, setLayout] = useState<PlacedOrbitTool[] | null>(null);
 
   useEffect(() => {
-    geoRef.current = { viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale };
-  }, [viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale]);
+    const seed = readSessionOrbitSeed();
+    wanderRandRef.current = mulberry32(seed ^ 0x9e3779b9);
+    setLayout(buildRandomOrbitLayout(tools, RING_SCALES, seed));
+  }, [tools]);
+
+  useEffect(() => {
+    geoRef.current = { viewW, viewH, coreX, coreY, maxRx, maxRy };
+  }, [viewW, viewH, coreX, coreY, maxRx, maxRy]);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
+    if (!host || !layout?.length) return;
+
+    const motion: ToolMotion[] = layout.map((tool) => ({
+      orbitDeg: 0,
+      wanderDeg: 0,
+      nextWanderAtMs: performance.now() + tool.wanderIntervalSec * 1000,
+    }));
 
     let raf = 0;
-    let orbitDeg = 0;
     let last = performance.now();
 
-    const placeTools = (deg: number) => {
+    const placeTools = () => {
       const rect = host.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
       const g = geoRef.current;
 
-      tools.forEach((tool, i) => {
+      layout.forEach((tool, i) => {
         const anchor = anchorRefs.current[i];
         if (!anchor) return;
+        const m = motion[i];
         const px = orbitToolPixelPosition({
-          startAngleDeg: tool.startAngleDeg,
-          orbitDeg: deg,
+          startAngleDeg: tool.startAngleDeg + m.wanderDeg,
+          orbitDeg: m.orbitDeg,
+          coreX: g.coreX,
+          coreY: g.coreY,
+          maxRx: g.maxRx,
+          maxRy: g.maxRy,
+          orbitRing: tool.orbitRing,
+          orbitScale: tool.orbitScale,
+          viewW: g.viewW,
+          viewH: g.viewH,
           containerW: rect.width,
           containerH: rect.height,
-          ...g,
         });
         anchor.style.left = `${px.x}px`;
         anchor.style.top = `${px.y}px`;
@@ -82,28 +115,38 @@ export function BieOrbitTools({
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
+      const wanderRand = wanderRandRef.current;
+
       if (!reduceMotion) {
-        orbitDeg = advanceOrbitDeg(orbitDeg, dt, orbitPeriodSec);
+        layout.forEach((tool, i) => {
+          const m = motion[i];
+          m.orbitDeg = advanceOrbitDeg(m.orbitDeg, dt, tool.orbitPeriodSec, tool.orbitDirection);
+          if (wanderRand && now >= m.nextWanderAtMs) {
+            m.wanderDeg = wanderOrbitDeg(m.wanderDeg, wanderRand);
+            m.nextWanderAtMs = now + tool.wanderIntervalSec * 1000;
+          }
+        });
       }
-      placeTools(orbitDeg);
+
+      placeTools();
       raf = requestAnimationFrame(tick);
     };
 
-    placeTools(orbitDeg);
+    placeTools();
     raf = requestAnimationFrame(tick);
 
-    const ro = new ResizeObserver(() => placeTools(orbitDeg));
+    const ro = new ResizeObserver(() => placeTools());
     ro.observe(host);
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [tools, orbitPeriodSec, reduceMotion]);
+  }, [layout, reduceMotion]);
 
   return (
     <div ref={hostRef} className="bie-orbit-tools" aria-label="Platform instruments">
-      {tools.map((tool, i) => (
+      {layout?.map((tool, i) => (
         <div
           key={tool.name}
           ref={(el) => {
@@ -126,3 +169,5 @@ export function BieOrbitTools({
     </div>
   );
 }
+
+export type { PlacedOrbitTool };

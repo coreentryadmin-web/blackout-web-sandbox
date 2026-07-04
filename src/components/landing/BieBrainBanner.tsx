@@ -30,9 +30,6 @@ const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.5 };
 /** Half viewBox width — ring 6 at scale 1.0 spans edge-to-edge horizontally. */
 const MAX_RX = VIEW_W / 2;
 const MAX_RY = 310;
-const ORBIT_RING = 6;
-const ORBIT_SCALE = 1;
-const ORBIT_PERIOD_SEC = 96;
 const FIELD_COUNT = 120;
 const INNER_RINGS = [1, 2] as const;
 const INNER_NODES = 6;
@@ -43,14 +40,13 @@ const READOUT_LINES = [
   "the engine never stops learning from every session, every market day",
 ];
 
-/** Evenly spaced on ring 6 — phase offsets so SPX starts top-left. */
 const FIELD_TOOLS: OrbitTool[] = [
-  { startAngleDeg: 218, name: "SPX Slayer", href: "/dashboard", mark: "spx", accent: MARK_ACCENT.spx },
-  { startAngleDeg: 278, name: "HELIX", href: "/flows", mark: "helix", accent: MARK_ACCENT.helix },
-  { startAngleDeg: 338, name: "BlackOut Thermal", href: "/heatmap", mark: "heatmap", accent: MARK_ACCENT.heatmap },
-  { startAngleDeg: 38, name: "BlackOut Grid", href: "/grid", mark: "grid", accent: MARK_ACCENT.grid },
-  { startAngleDeg: 98, name: "Largo", href: "/terminal", mark: "largo", accent: MARK_ACCENT.largo },
-  { startAngleDeg: 158, name: "Night Hawk", href: "/nighthawk", mark: "nighthawk", accent: MARK_ACCENT.nighthawk },
+  { name: "SPX Slayer", href: "/dashboard", mark: "spx", accent: MARK_ACCENT.spx },
+  { name: "HELIX", href: "/flows", mark: "helix", accent: MARK_ACCENT.helix },
+  { name: "BlackOut Thermal", href: "/heatmap", mark: "heatmap", accent: MARK_ACCENT.heatmap },
+  { name: "BlackOut Grid", href: "/grid", mark: "grid", accent: MARK_ACCENT.grid },
+  { name: "Largo", href: "/terminal", mark: "largo", accent: MARK_ACCENT.largo },
+  { name: "Night Hawk", href: "/nighthawk", mark: "nighthawk", accent: MARK_ACCENT.nighthawk },
 ];
 
 type ReactorPhase = "idle" | "inbound" | "absorb" | "ripple";
@@ -448,9 +444,6 @@ export function BieBrainBanner() {
             coreY={CORE.y}
             maxRx={MAX_RX}
             maxRy={MAX_RY}
-            orbitRing={ORBIT_RING}
-            orbitScale={ORBIT_SCALE}
-            orbitPeriodSec={ORBIT_PERIOD_SEC}
             reduceMotion={reduceMotion}
           />
           </div>
