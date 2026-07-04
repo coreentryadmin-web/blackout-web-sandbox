@@ -10,6 +10,7 @@ import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { gexContextBlock, gexContextLine } from "@/lib/providers/gex-positioning";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { checkNumbersGrounded } from "@/lib/grounding-guard";
+import { fmtPremium } from "@/lib/fmt-money";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,16 +40,6 @@ const SYSTEM = [
   "no price targets, no position sizing. Plain desk language, no preamble, no disclaimers,",
   "no bullet lists — just the read.",
 ].join(" ");
-
-/** Compact signed dollar magnitude, e.g. "$38.2M" / "-$4.1K". */
-function fmtMoney(n: number): string {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
 
 function fmtNum(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "n/a";
@@ -99,7 +90,7 @@ async function buildContext(
     if (top.length) {
       lines.push(
         `Top flow strikes (net premium): ${top
-          .map((r) => `${r.strike} ${r.net >= 0 ? "bullish" : "bearish"} ${fmtMoney(r.net)}`)
+          .map((r) => `${r.strike} ${r.net >= 0 ? "bullish" : "bearish"} ${fmtPremium(r.net)}`)
           .join(", ")}`
       );
     }
@@ -111,7 +102,7 @@ async function buildContext(
     lines.push(
       `Top dark-pool levels: ${dp
         .slice(0, 3)
-        .map((l) => `${fmtNum(l.price)} (${fmtMoney(l.notional)})`)
+        .map((l) => `${fmtNum(l.price)} (${fmtPremium(l.notional)})`)
         .join(", ")}`
     );
   }

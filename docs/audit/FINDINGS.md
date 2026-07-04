@@ -54,6 +54,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — 9th `fmtPremium` reimplementation found, in the file that IS the grounding-guard reference implementation (follow-up audit finding, medium)
+**Where:** `src/app/api/market/gex-heatmap/explain/route.ts:44` — a local `fmtMoney(n: number)` reimplementing the "compact signed dollar magnitude" formatter that task #75 (earlier today) already consolidated 8 other copies of into `src/lib/fmt-money.ts`'s `fmtPremium()`. This is the route that builds the Largo "desk read" narrative prompt context and then grounds the model's response against it via `checkNumbersGrounded` — i.e. the numbers this formatter renders are exactly what the model is told is true AND what its output gets checked against. A silently-diverging formatter here doesn't just risk a wrong number on screen; it risks the grounding check itself passing or failing against the wrong reference string.
+
+**A real behavioral divergence, not just a style copy:** the local version always used `.toFixed(1)` in its thousands branch (e.g. `$15.0K`); the canonical `fmtPremium` uses `k < 10 ? k.toFixed(1) : k.toFixed(0)` (whole-K at $10K+, e.g. `$15K`) — confirmed by reading `fmt-money.ts`'s own comments, which explain this exact branch was itself a deliberate fix for an earlier bug (`GexDealerPanel.tsx:39` printing `$5000.0M` instead of `$5.0B` before the billions-first branch ordering was added). The local copy also had no null/NaN guard (`fmtPremium` returns `"—"` for `null`/non-finite input; the local one had no `null` case in its signature at all and would have silently rendered `"$0"` for a NaN via `Math.abs(NaN)` → `0` had one ever reached it).
+
+**Fix:** deleted the local `fmtMoney`; both call sites (top flow strikes by net premium, dark-pool levels by notional) now call `fmtPremium` imported from `@/lib/fmt-money`.
+
+**Blast radius:** 2 call sites, both within this route's own prompt-context builder — no other file imports this route's (now-deleted) local `fmtMoney`.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `1004/1004` passing (no new tests — `fmtPremium` already has direct coverage in `fmt-money.test.ts` from task #75, and this route has no existing test file to extend). `npm run build` clean; `lint:brand`/`lint:vendor` clean.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — WS-fed `change_pct` served unrounded via `/api/market/quote` (follow-up audit finding, medium)
 **Where:** `src/lib/ws/polygon-socket.ts` — both places `indexStore[sym].change_pct` is computed from a live WS message (the `A`/`AM` aggregate-bar handler, and the `V` tick-value handler) did raw floating-point division with no rounding: `((current - sessionOpen) / sessionOpen) * 100`. Every REST sibling in `src/lib/providers/polygon.ts` rounds the same computation via `Number((...).toFixed(2))` — this WS-fed path was the one place that didn't. `src/app/api/market/quote/route.ts` reads `indexStore` straight through into its JSON response with no `roundFloats()` pass, so the raw unrounded float reached the wire. This is the SPX/VIX header tape `GexHeatmap.tsx` polls every ~1.5s — previously masked only by the frontend's own `fmtPct()` display formatting, i.e. correct on screen but wrong in the actual API payload (the same "systemic: several endpoints serve unrounded floats" pattern this doc's CLAUDE.md note calls out).
 
