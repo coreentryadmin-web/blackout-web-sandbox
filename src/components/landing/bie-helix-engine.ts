@@ -29,11 +29,11 @@ export type IntelligenceRing = {
 };
 
 const RING_SCALE: Record<0 | 1 | 2 | 3 | 4, number> = {
-  0: 0.38,
-  1: 0.52,
-  2: 0.66,
-  3: 0.8,
-  4: 0.94,
+  0: 0.42,
+  1: 0.58,
+  2: 0.72,
+  3: 0.86,
+  4: 0.98,
 };
 
 const RING_MOTION: Record<0 | 1 | 2 | 3 | 4, { periodSec: number; reverse: boolean }> = {
@@ -195,4 +195,103 @@ export function flowParticlePosition(
   const rx = maxRx * 1.06 * p.dist;
   const ry = maxRy * 1.06 * p.dist;
   return { x: cx + rx * Math.cos(rad), y: cy + ry * Math.sin(rad) };
+}
+
+/** Tiny ambient particles spread across ~78% of the viewport — the intelligence field. */
+export type FieldParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  opacity: number;
+  size: number;
+};
+
+function fieldSeed(i: number, salt: number): number {
+  const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+export function buildFieldParticles(
+  count: number,
+  viewW: number,
+  viewH: number,
+  cx: number,
+  cy: number,
+  maxRx: number,
+  maxRy: number
+): FieldParticle[] {
+  const padX = viewW * 0.06;
+  const padY = viewH * 0.08;
+  return Array.from({ length: count }, (_, i) => {
+    const t = fieldSeed(i, 1);
+    const u = fieldSeed(i, 2);
+    const v = fieldSeed(i, 3);
+    const w = fieldSeed(i, 4);
+    const x = padX + t * (viewW - padX * 2);
+    const y = padY + u * (viewH - padY * 2);
+    const dx = x - cx;
+    const dy = y - cy;
+    const inField = (dx * dx) / (maxRx * maxRx) + (dy * dy) / (maxRy * maxRy) <= 1.08;
+    const maxLife = 180 + Math.floor(v * 420);
+    return {
+      x: inField ? x : cx + maxRx * 0.92 * Math.cos((i * 137.50776 * Math.PI) / 180),
+      y: inField ? y : cy + maxRy * 0.92 * Math.sin((i * 137.50776 * Math.PI) / 180),
+      vx: (w - 0.5) * 0.08,
+      vy: (fieldSeed(i, 5) - 0.5) * 0.08,
+      life: Math.floor(fieldSeed(i, 6) * maxLife),
+      maxLife,
+      opacity: 0.018 + fieldSeed(i, 7) * 0.042,
+      size: fieldSeed(i, 8) < 0.12 ? 0.85 : 0.45,
+    };
+  });
+}
+
+/** Nodes placed on intelligence rings — occasional neural connections between them. */
+export type NeuralNode = {
+  id: number;
+  x: number;
+  y: number;
+  ring: 0 | 1 | 2 | 3 | 4;
+};
+
+export function buildNeuralNodes(
+  count: number,
+  cx: number,
+  cy: number,
+  maxRx: number,
+  maxRy: number
+): NeuralNode[] {
+  return Array.from({ length: count }, (_, i) => {
+    const ring = (i % 5) as 0 | 1 | 2 | 3 | 4;
+    const angle = (i * 360) / count + ring * 14;
+    const { rx, ry } = ringRadii(ring, maxRx, maxRy);
+    const p = pointOnEllipse(cx, cy, rx, ry, angle);
+    return { id: i, x: p.x, y: p.y, ring };
+  });
+}
+
+/** Inbound signal: outer field particle arcs toward the helix core. */
+export function buildInboundPulsePath(
+  fromX: number,
+  fromY: number,
+  cx: number,
+  cy: number
+): string {
+  const mx = (fromX + cx) / 2;
+  const my = (fromY + cy) / 2;
+  const dx = cx - fromX;
+  const dy = cy - fromY;
+  const len = Math.hypot(dx, dy) || 1;
+  const bow = len * 0.18;
+  const qx = mx - (dy / len) * bow;
+  const qy = my + (dx / len) * bow;
+  return `M ${fromX.toFixed(1)} ${fromY.toFixed(1)} Q ${qx.toFixed(1)} ${qy.toFixed(1)} ${cx} ${cy}`;
+}
+
+/** Field glow radii — cyan illumination covers ~half the hero viewport. */
+export function fieldGlowRadii(viewW: number, viewH: number): { rx: number; ry: number } {
+  return { rx: viewW * 0.46, ry: viewH * 0.44 };
 }

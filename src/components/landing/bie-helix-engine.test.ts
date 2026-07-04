@@ -2,11 +2,15 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCenterHelix,
+  buildFieldParticles,
   buildHeroSweepPath,
   buildImpulsePath,
+  buildInboundPulsePath,
   buildIntelligenceRings,
   buildFlowParticles,
+  buildNeuralNodes,
   buildStarField,
+  fieldGlowRadii,
   flowParticlePosition,
   ellipsePath,
   placeCapability,
@@ -104,5 +108,37 @@ describe("flowParticlePosition", () => {
     const p = buildFlowParticles(1)[0];
     const pos = flowParticlePosition(CX, CY, MAX_RX, MAX_RY, p);
     assert.ok(Number.isFinite(pos.x) && Number.isFinite(pos.y));
+  });
+});
+
+describe("buildFieldParticles", () => {
+  it("fills the viewport intelligence field", () => {
+    const field = buildFieldParticles(240, 1280, 720, CX, CY, MAX_RX, MAX_RY);
+    assert.equal(field.length, 240);
+    assert.ok(field.every((p) => p.life > 0 && p.opacity < 0.08));
+  });
+});
+
+describe("buildNeuralNodes", () => {
+  it("places nodes on rings", () => {
+    const nodes = buildNeuralNodes(22, CX, CY, MAX_RX, MAX_RY);
+    assert.equal(nodes.length, 22);
+    assert.ok(nodes.every((n) => Number.isFinite(n.x) && n.ring >= 0));
+  });
+});
+
+describe("buildInboundPulsePath", () => {
+  it("curves from field point to core", () => {
+    const d = buildInboundPulsePath(100, 120, CX, CY);
+    assert.match(d, new RegExp(`M 100\\.0 120\\.0`));
+    assert.match(d, new RegExp(`${CX} ${CY}`));
+  });
+});
+
+describe("fieldGlowRadii", () => {
+  it("covers roughly half the hero", () => {
+    const g = fieldGlowRadii(1280, 720);
+    assert.ok(g.rx > 500);
+    assert.ok(g.ry > 300);
   });
 });

@@ -1467,13 +1467,153 @@ body::before {
   gap: 0;
 }
 
+.bie-intelligence-field {
+  background: radial-gradient(
+    ellipse 88% 72% at 50% 42%,
+    rgba(0, 229, 255, 0.04) 0%,
+    rgba(4, 4, 7, 0) 68%
+  );
+}
+
 .bie-reactor-stage {
-  min-height: clamp(480px, 58vh, 760px);
+  min-height: clamp(520px, 74vh, 880px);
   flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 0.25rem 0 0;
+  padding: 0;
+}
+
+.bie-field-stage {
+  width: 100%;
+  overflow: hidden;
+}
+
+.bie-field-canvas {
+  min-height: clamp(520px, 74vh, 880px);
+  max-height: min(880px, 78vh);
+  aspect-ratio: auto;
+}
+
+.bie-field-svg {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+}
+
+.bie-field-glow {
+  opacity: 0.92;
+  transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 50%);
+  transform-box: view-box;
+}
+
+.bie-reactor-live .bie-field-glow {
+  animation: bie-field-glow-breathe 5.4s ease-in-out infinite;
+}
+
+@keyframes bie-field-glow-breathe {
+  0%, 100% { opacity: 0.72; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+.bie-reactor-ring-haze {
+  transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 50%);
+  transform-box: view-box;
+  animation: bie-reactor-ring-spin var(--ring-period, 160s) linear infinite;
+  animation-direction: var(--ring-reverse, reverse);
+  opacity: 0.85;
+}
+
+.bie-reactor-ring-haze-0 { opacity: 0.55; }
+.bie-reactor-ring-haze-4 { opacity: 1; }
+
+.bie-reactor-neural-node {
+  fill: rgba(148, 226, 255, 0.12);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.bie-reactor-live .bie-reactor-neural-node {
+  opacity: 0.35;
+}
+
+.bie-reactor-neural-node.is-active {
+  fill: rgba(93, 247, 255, 0.95);
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(93, 247, 255, 0.85));
+}
+
+.bie-reactor-neural-link {
+  stroke: rgba(93, 247, 255, 0.55);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  animation: bie-neural-link-pulse 1.8s ease-out forwards;
+}
+
+@keyframes bie-neural-link-pulse {
+  0% { stroke-opacity: 0; stroke-dasharray: 4 12; stroke-dashoffset: 24; }
+  18% { stroke-opacity: 0.85; }
+  100% { stroke-opacity: 0; stroke-dashoffset: 0; }
+}
+
+.bie-field-ripple {
+  fill: none;
+  stroke: rgba(93, 247, 255, 0.45);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  transform-origin: 0 0;
+  transform-box: fill-box;
+  opacity: 0;
+}
+
+.bie-field-ripple-a {
+  animation: bie-field-ripple-expand 2.4s ease-out forwards;
+}
+
+.bie-field-ripple-b {
+  animation: bie-field-ripple-expand 2.4s ease-out forwards;
+  animation-delay: 0.35s;
+}
+
+@keyframes bie-field-ripple-expand {
+  0% { transform: scale(0.55); opacity: 0.65; }
+  100% { transform: scale(3.8); opacity: 0; }
+}
+
+.bie-field-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  text-align: center;
+  padding: 2.75rem clamp(1rem, 4vw, 2.5rem) 1.25rem;
+  background: linear-gradient(
+    to top,
+    rgba(4, 4, 7, 0.96) 0%,
+    rgba(4, 4, 7, 0.72) 42%,
+    rgba(4, 4, 7, 0) 100%
+  );
+  pointer-events: none;
+}
+
+.bie-field-caption .bie-brain-eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.32em;
+  color: rgba(148, 226, 255, 0.75);
+}
+
+.bie-field-caption .bie-brain-title {
+  margin-top: 0.35rem;
+  font-size: clamp(1.15rem, 2.4vw, 1.65rem);
+}
+
+.bie-field-caption .bie-brain-sub {
+  font-size: 11px;
+  margin-top: 0.35rem;
+  max-width: 34rem;
+  margin-inline: auto;
 }
 
 .bie-brain-heading-caption {
@@ -1552,18 +1692,9 @@ body::before {
   overflow: visible;
 }
 
-.bie-brain-diagram::before {
-  content: "";
-  position: absolute;
-  inset: -2% -8vw;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 72% 68% at 50% 48%,
-    rgba(0, 229, 255, 0.09) 0%,
-    rgba(191, 95, 255, 0.04) 42%,
-    transparent 72%
-  );
-  pointer-events: none;
+.bie-brain-diagram.bie-field-stage::before {
+  inset: 0;
+  background: none;
 }
 
 .bie-brain-canvas {
@@ -1571,6 +1702,9 @@ body::before {
   width: 100%;
   height: 100%;
   min-height: inherit;
+}
+
+.bie-reactor-canvas:not(.bie-field-canvas) {
   aspect-ratio: 1280 / 720;
   max-height: min(760px, 62vh);
 }
@@ -2538,6 +2672,10 @@ body::before {
   .bie-reactor-anchor-dot { opacity: 0.45; }
   .bie-reactor-ambient-pulse { display: none; }
   .bie-reactor-helix-traveler { display: none; }
+  .bie-reactor-neural-link { display: none; }
+  .bie-field-ripple { display: none; }
+  .bie-field-glow { animation: none; opacity: 0.65; }
+  .bie-reactor-ring-haze { animation: none; }
 }
 
 .bento-card-watermark {
