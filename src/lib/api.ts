@@ -1,3 +1,5 @@
+import type { ClaimVerification } from "@/lib/bie/verifier";
+
 const INTEL_BASE = "/api/engine";
 const MARKET_BASE = "/api/market";
 
@@ -368,7 +370,14 @@ export async function queryLargoStream(
   onToken: (text: string) => void,
   /** Fires for each live tool Largo pulls (tool_start), enabling a real-time data-trace UI. */
   onTool?: (name: string) => void
-): Promise<{ answer: string; session_id: string; source?: string; tools_used?: string[]; followups?: string[] }> {
+): Promise<{
+  answer: string;
+  session_id: string;
+  source?: string;
+  tools_used?: string[];
+  followups?: string[];
+  verification?: ClaimVerification;
+}> {
   const res = await fetch(`${MARKET_BASE}/largo/query?stream=1`, {
     method: "POST",
     cache: "no-store",
@@ -390,7 +399,14 @@ export async function queryLargoStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let result:
-    | { answer: string; session_id: string; source?: string; tools_used?: string[]; followups?: string[] }
+    | {
+        answer: string;
+        session_id: string;
+        source?: string;
+        tools_used?: string[];
+        followups?: string[];
+        verification?: ClaimVerification;
+      }
     | null = null;
 
   while (true) {
@@ -417,6 +433,7 @@ export async function queryLargoStream(
         source?: string;
         tools_used?: string[];
         followups?: string[];
+        verification?: ClaimVerification;
       };
 
       if (event.type === "token" && event.text) onToken(event.text);
@@ -428,6 +445,7 @@ export async function queryLargoStream(
           source: event.source,
           tools_used: event.tools_used,
           followups: event.followups,
+          verification: event.verification,
         };
       }
       if (event.type === "error") {

@@ -14,7 +14,7 @@ import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer } from "@/lib/bie/composers";
-import { collectContextNumbers, verifyClaims } from "@/lib/bie/verifier";
+import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
 import {
   appendLargoMessage,
@@ -54,6 +54,12 @@ export type LargoStreamEvent =
       source: string;
       tools_used: string[];
       followups: string[];
+      // Always present (audit finding: previously the specific unverified numbers were never
+      // surfaced even when the in-text caveat fired, and never at all below its total>=4 &&
+      // coverage<0.5 threshold) — the raw ClaimVerification so any caller can inspect exactly
+      // which numeric claims traced to this turn's source data, independent of the in-text
+      // caveat's own display threshold.
+      verification: ClaimVerification;
     }
   | { type: "error"; message: string };
 
@@ -262,7 +268,14 @@ export async function runLargoQuery(
   question: string,
   sessionId: string,
   userId: string
-): Promise<{ answer: string; session_id: string; source: string; tools_used: string[]; followups: string[] }> {
+): Promise<{
+  answer: string;
+  session_id: string;
+  source: string;
+  tools_used: string[];
+  followups: string[];
+  verification: ClaimVerification;
+}> {
   if (!anthropicConfigured()) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
@@ -292,6 +305,7 @@ export async function runLargoQuery(
       source: "blackout-intelligence",
       tools_used: ["blackout_intelligence"],
       followups: bieFollowups(routed.route.intent),
+      verification,
     };
   }
 
@@ -364,6 +378,7 @@ export async function runLargoQuery(
       source: dbConfigured() ? "blackout-web+postgres" : "blackout-web",
       tools_used: Array.from(new Set(toolsUsed)),
       followups,
+      verification,
     };
   } finally {
     resetLargoSpxDeskCache(userId);
@@ -409,6 +424,7 @@ export async function runLargoQueryStream(
         source: "blackout-intelligence",
         tools_used: ["blackout_intelligence"],
         followups: bieFollowups(routed.route.intent),
+        verification,
       } as LargoStreamEvent);
     } catch {
       // client disconnected — turn already persisted
@@ -445,7 +461,15 @@ export async function runLargoQueryStream(
       maxRetries: 1,
       // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
       cacheSystem: true,
-      onEvent: (event) => emit(event),
+      // Forward tool_start live (deterministic tool names, safe to show as soon as Largo starts
+      // pulling data — feeds the "thinking" tool-trace UI). Deliberately DROP raw "token" text
+      // deltas here: audit finding — streaming the model's free text live meant a fabricated
+      // strike/premium could be read and acted on before the Layer-4 verifier below ever ran.
+      // anthropicToolLoop's own resolved return value still carries the full text regardless of
+      // which events are forwarded, so nothing here affects what `answer` receives below.
+      onEvent: (event) => {
+        if (event.type === "tool_start") emit(event);
+      },
       runTool: async (name, input) => {
         toolsUsed.push(name);
         const result = await runLargoTool(name, input, userId);
@@ -488,6 +512,11 @@ export async function runLargoQueryStream(
     // answer is persisted so a follow-up hiccup can never lose the turn.
     const followups = await generateLargoFollowups(question, text, tickerHint);
 
+    // Deliver the fully-verified text in one shot — mirrors the BIE-router fast path a few
+    // lines up (which also emits one token event with its whole answer before "done"), rather
+    // than the raw incremental stream this branch used to forward live. Verification has
+    // already run against the complete answer by this point (audit fix, see onEvent above).
+    emit({ type: "token", text } as LargoStreamEvent);
     emit({
       type: "done",
       answer: text,
@@ -495,6 +524,7 @@ export async function runLargoQueryStream(
       source: dbConfigured() ? "blackout-web+postgres" : "blackout-web",
       tools_used: Array.from(new Set(toolsUsed)),
       followups,
+      verification,
     });
   } catch (error) {
     if (isSseClientDisconnect(error)) return;
