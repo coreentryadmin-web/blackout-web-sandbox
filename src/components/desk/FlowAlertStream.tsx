@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
+import { daysToExpiry } from "@/lib/nights-watch/valuation";
 import { Panel, Skeleton, EmptyState } from "@/components/ui";
 
 const WHALE_PREMIUM = 1_000_000;
@@ -21,19 +22,6 @@ function timeAgo(iso: string): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h`;
-}
-
-// Bug 3: use Intl to derive today's ET date — handles DST (EST -05:00 / EDT -04:00) automatically
-function calcDte(expiry: string): number | null {
-  if (!expiry) return null;
-  const etStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
-  const [m, d, y] = etStr.split("/");
-  const todayMs = new Date(`${y}-${m}-${d}T00:00:00`).getTime();
-  const expMs   = new Date(`${expiry}T00:00:00`).getTime();
-  return Math.max(0, Math.floor((expMs - todayMs) / 86_400_000));
 }
 
 function fmtExpiry(expiry: string): string {
@@ -252,7 +240,7 @@ export function FlowAlertStream({
                 {displayed.map((flow, i) => {
                   const isCall     = flow.option_type?.toUpperCase() === "CALL";
                   const isWhale    = flow.premium >= WHALE_PREMIUM;
-                  const dte        = flow.dte ?? calcDte(flow.expiry);
+                  const dte        = flow.dte ?? daysToExpiry(flow.expiry);
                   const is0dte     = dte === 0;
                   const isCompound   = compoundTickers?.has(flow.ticker) ?? false;
                   // (DIVERGE badge removed: `direction` is DERIVED from option_type in both the

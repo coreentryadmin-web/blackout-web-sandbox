@@ -5,7 +5,16 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 **Merge policy for this doc's PRs:** left OPEN for end-of-day review — do not merge without explicit go-ahead, even when CI is green. **Superseded 2026-07-03 by explicit user standing instruction to run fully autonomously (branch→fix→test→PR→CI→merge→live-verify, repeat) through Monday 2026-07-06 market open — this doc's entries merge immediately alongside their fix PRs for the remainder of that window.**
 
-**Process note, 2026-07-04:** working through the full CEO/CTO audit's remaining ~21 findings back-to-back per explicit "fix everything, don't stop" instruction. Per-fix local verification (tsc/test/build/lint/auth-guards) and a FINDINGS.md entry stay mandatory for every fix; the separate docs-only "deploy confirmed SUCCESS" follow-up PR used earlier tonight is dropped for this batch to avoid serializing ~20 fixes behind ~20 extra PRs — Railway deploy health is spot-checked periodically instead of after every single merge.
+**Process note, 2026-07-04:** working through the full CEO/CTO audit's remaining ~21 findings back-to-back per explicit "fix everything, don't stop" instruction. Per-fix local verification (tsc/test/build/lint/auth-guards) and a FINDINGS.md entry stay mandatory for every fix; the separate docs-only "deploy confirmed SUCCESS" follow-up PR used earlier tonight is dropped for this batch to avoid serializing ~20 fixes behind ~20 extra PRs — Railway deploy health is spot-checked periodically instead of after every single merge. **Scope note:** the earlier standing "UI is Cursor's job" boundary was specifically about the landing-page BIE banner design work; this "fix everything from the audit" instruction is broader and explicit, so a few of the remaining findings do touch `.tsx` files (`FlowAlertStream.tsx`, `NetPremiumLeaderboard.tsx`, `ZeroDteBoard.tsx`) — each one is a surgical logic-only bug fix (a DTE calculation, a loading-state prop, a freshness signal), never a visual/layout change, to stay out of the way of Cursor's active design work on the same components.
+
+---
+
+## 🟢 FIXED 2026-07-04 — `FlowAlertStream`'s DTE fallback undercounted across DST (audit finding, medium)
+**Where:** `src/components/desk/FlowAlertStream.tsx` — `calcDte()` (the fallback used whenever the API omits `flow.dte`) parsed both today and expiry via local-time `new Date(...)` (no `Z` suffix) and returned `Math.floor(...)`, diverging from the canonical UTC-anchored, `Math.round`-based `daysToExpiry()` in `nights-watch/valuation.ts`. A local-midnight span crossing one DST transition is off by exactly 1 hour from a multiple of a day, which `Math.floor` turns into a 1-day undercount.
+
+**Fix:** deleted `calcDte()` entirely, imported and used the canonical `daysToExpiry` from `@/lib/nights-watch/valuation` instead. Confirmed client-safe: both `et-date.ts` (which `daysToExpiry` calls via `todayEt`) and `valuation.ts` itself are explicitly documented as importable from client modules (no `"server-only"`, no Node-only deps — their only non-type imports are other pure functions), and the production build output shows no bundle-size regression or error.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `935/935` passing; `npm run build` clean (client bundle unaffected); `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
 
 ---
 
