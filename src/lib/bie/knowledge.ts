@@ -21,7 +21,7 @@ import { bieEmbeddingsConfigured, chunkDocument, cosine, embedTexts } from "./em
 
 const hashOf = (s: string): string => createHash("sha256").update(s).digest("hex").slice(0, 40);
 
-export type KnowledgeKind = "doc" | "finding" | "edition" | "zerodte_recap" | "self_eval";
+export type KnowledgeKind = "doc" | "finding" | "edition" | "zerodte_recap" | "self_eval" | "precedent";
 
 type ChunkRef = { chunk: string; chunk_hash: string };
 
@@ -108,18 +108,25 @@ export type RetrievedChunk = { source: string; kind: string; chunk: string; simi
 // embeddings) passed only 1 of 12 genuinely relevant hits. 0.30 keeps every
 // top-1 match and 10 of 12 total hits from that evidence set while still
 // excluding pure noise. Re-derive from a fresh probe set before moving it again.
-const DEFAULT_MIN_SIMILARITY = 0.3;
+// (Inherited as the starting default for the "precedent" kind too — that
+// corpus is short templated descriptions, not prose, and hasn't had its own
+// evidence pass yet; re-derive once real precedent queries accumulate.)
+export const DEFAULT_MIN_SIMILARITY = 0.3;
 
+/** `kind` optionally scopes retrieval to one knowledge kind (e.g. "precedent")
+ *  instead of ranking across the whole corpus — same embed-and-cosine-rank
+ *  logic either way, just a narrower candidate set from fetchBieKnowledge. */
 export async function searchKnowledge(
   query: string,
   k = 3,
-  minSimilarity = DEFAULT_MIN_SIMILARITY
+  minSimilarity = DEFAULT_MIN_SIMILARITY,
+  kind?: KnowledgeKind
 ): Promise<RetrievedChunk[]> {
   if (!dbConfigured() || !bieEmbeddingsConfigured()) return [];
   try {
     const [qEmb] = await embedTexts([query], "query");
     if (!qEmb) return [];
-    const rows = await fetchBieKnowledge({ limit: 800 });
+    const rows = await fetchBieKnowledge({ limit: 800, kind });
     const scored = rows
       .filter((r): r is BieKnowledgeRow & { embedding: number[] } => Array.isArray(r.embedding))
       .map((r) => ({ source: r.source, kind: r.kind, chunk: r.chunk, similarity: cosine(qEmb, r.embedding) }))
@@ -227,6 +234,18 @@ export async function ingestBieKnowledge(): Promise<{ stored: number }> {
     stored += await storeKnowledge("doc", "platform:bie-capabilities", text);
   } catch {
     // registries unavailable in some contexts — skip, same fail-open as platform:map
+  }
+
+  // Semantic precedent search: every RESOLVED alert from the last 60 days
+  // becomes one embedded "precedent" chunk (src/lib/bie/precedent-search.ts) —
+  // dynamic import to avoid a knowledge.ts <-> precedent-search.ts import
+  // cycle, same pattern as the tool-defs/ecosystem-context import above.
+  try {
+    const { ingestAlertPrecedents } = await import("./precedent-search");
+    const { stored: precedentsStored } = await ingestAlertPrecedents(60);
+    stored += precedentsStored;
+  } catch {
+    // db/embeddings unavailable in some contexts — skip, same fail-open as everything else here
   }
 
   // Latest Night Hawk edition — recap + play theses become searchable history.

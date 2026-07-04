@@ -3115,6 +3115,24 @@ export type AlertAuditTrailSummary = {
   source_api_attribution_pct: number;
 };
 
+/** Pure: raw `alert_audit_log` row -> typed row. Split out so the exact
+ *  DB-boundary conversion (NUMERIC-as-string, nullable columns) is
+ *  unit-testable without a connection, and so fetchAlertAuditTrail and
+ *  fetchResolvedAlertAuditRows share one mapping instead of two. */
+export function mapAlertAuditTrailRow(r: QueryResultRow): AlertAuditTrailRow {
+  return {
+    id: Number(r.id),
+    alert_type: String(r.alert_type),
+    ticker: String(r.ticker),
+    direction: r.direction != null ? String(r.direction) : null,
+    fired_at: new Date(String(r.fired_at)).toISOString(),
+    confidence_score: r.confidence_score != null ? Number(r.confidence_score) : null,
+    confidence_label: r.confidence_label != null ? String(r.confidence_label) : null,
+    trigger_reason: r.trigger_reason != null ? String(r.trigger_reason) : null,
+    outcome: r.outcome != null ? String(r.outcome) : null,
+  };
+}
+
 /** Stage 4 query surface — the unified cross-product view over `alert_audit_log`
  *  (0DTE, Night Hawk published, Night Hawk rejected). Reads only what the three
  *  write-paths already wrote; this function itself has zero decision logic. */
@@ -3142,20 +3160,38 @@ export async function fetchAlertAuditTrail(limit = 20): Promise<AlertAuditTrailS
   const withApis = attrRow ? Number(attrRow.with_apis) || 0 : 0;
 
   return {
-    recent: recentRes.rows.map((r) => ({
-      id: Number(r.id),
-      alert_type: String(r.alert_type),
-      ticker: String(r.ticker),
-      direction: r.direction != null ? String(r.direction) : null,
-      fired_at: new Date(String(r.fired_at)).toISOString(),
-      confidence_score: r.confidence_score != null ? Number(r.confidence_score) : null,
-      confidence_label: r.confidence_label != null ? String(r.confidence_label) : null,
-      trigger_reason: r.trigger_reason != null ? String(r.trigger_reason) : null,
-      outcome: r.outcome != null ? String(r.outcome) : null,
-    })),
+    recent: recentRes.rows.map(mapAlertAuditTrailRow),
     counts_by_type,
     source_api_attribution_pct: total > 0 ? Math.round((withApis / total) * 1000) / 10 : 0,
   };
+}
+
+// Resolved (terminal) outcomes only — "has this happened before, what
+// happened" is only meaningful once an alert actually has an answer.
+// Excludes 'open'/'pending' (still live, no answer yet) on purpose.
+const TERMINAL_ALERT_OUTCOMES = ["target", "stop", "ambiguous", "unfilled"];
+
+/**
+ * BIE precedent search — every RESOLVED alert from the last `days` days, for
+ * embedding into the knowledge store (src/lib/bie/precedent-search.ts). Not
+ * capped at 100 like fetchAlertAuditTrail's admin-display limit — this is a
+ * bulk read for ingestion, not a UI page. A stable ORDER BY id keeps a
+ * re-running ingest job's reads deterministic even if two rows share a
+ * `fired_at` timestamp.
+ */
+export async function fetchResolvedAlertAuditRows(days = 60): Promise<AlertAuditTrailRow[]> {
+  await ensureSchema();
+  const cappedDays = Math.min(Math.max(days, 1), 365);
+  const res = await dbQuery<QueryResultRow>(
+    `SELECT id, alert_type, ticker, direction, fired_at, confidence_score,
+            confidence_label, trigger_reason, outcome
+     FROM alert_audit_log
+     WHERE outcome = ANY($1::text[]) AND fired_at >= NOW() - ($2 || ' days')::interval
+     ORDER BY fired_at DESC, id DESC
+     LIMIT 5000`,
+    [TERMINAL_ALERT_OUTCOMES, cappedDays]
+  );
+  return res.rows.map(mapAlertAuditTrailRow);
 }
 
 export type DuplicateAlertGroup = {

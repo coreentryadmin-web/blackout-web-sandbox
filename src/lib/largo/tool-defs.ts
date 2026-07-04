@@ -389,13 +389,26 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     "Platform-wide, not ticker-specific: over the last 60 days of GRADED 0DTE Command flags, does agreeing or disagreeing with a ticker's prior Night Hawk take actually correlate with a different hit rate? Buckets: agree / disagree / no_echo (no prior Night Hawk take at all), each with sample size, hit rate %, and average move %. A bucket under 10 samples is flagged insufficient_sample — treat its numbers as noise, not signal, and say so if asked. Use for 'does it help when the instruments agree / is confluence real / how reliable is X' meta-questions about the platform's own track record, not for a single play's own grade (use get_zerodte_plays or get_nighthawk_outcomes for that)."
   ),
 
+  t(
+    "get_similar_precedents",
+    "Semantic search over the platform's own history of RESOLVED alerts (0DTE Command + Night Hawk, published and rejected) — 'has a setup like this happened before, and what happened.' Pass a short natural-language description of the CURRENT situation (e.g. 'NVDA 0DTE long setup, high conviction, aggression spike') as `query`; returns the most similar past alerts with their outcome, ranked by similarity. This is pattern-matching on the platform's own track record, not a live signal — a returned precedent is historical color for a member's question, never a reason to change a live gate or score. Empty results mean either no similar precedent exists yet or the corpus hasn't accumulated enough graded history — say so rather than implying 'never happened before.'",
+    { query: { type: "string", description: "Natural-language description of the current setup to find precedents for." } },
+    ["query"]
+  ),
+
 ];
 
 // The BIE-authored subset of Largo's tool surface — single source of truth so
 // TOOL_GROUPS.platform below and knowledge.ts's generated capabilities doc
 // (ingestBieKnowledge) both read the same list. Add a new BIE tool here once;
 // both consumers pick it up automatically instead of needing a second edit.
-export const BIE_TOOL_NAMES = ["get_ecosystem_context", "get_hot_tickers", "get_market_regime", "get_confluence_outcomes"];
+export const BIE_TOOL_NAMES = [
+  "get_ecosystem_context",
+  "get_hot_tickers",
+  "get_market_regime",
+  "get_confluence_outcomes",
+  "get_similar_precedents",
+];
 
 export const TOOL_GROUPS = {
   spx_desk: [

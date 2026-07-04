@@ -941,6 +941,16 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return computeConfluenceOutcomeStats(60);
     }
 
+    case "get_similar_precedents": {
+      const { findSimilarPrecedents } = await import("@/lib/bie/precedent-search");
+      const query = String(input.query ?? "");
+      const hits = await findSimilarPrecedents(query, 5);
+      return {
+        query,
+        precedents: hits.map((h) => ({ description: h.chunk, similarity: Math.round(h.similarity * 1000) / 1000 })),
+      };
+    }
+
     case "get_gex": {
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());
