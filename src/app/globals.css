@@ -1532,9 +1532,14 @@ body::before {
   vector-effect: non-scaling-stroke;
 }
 
-.bie-mesh-wire {
+.bie-ring-wire {
   stroke: rgba(93, 247, 255, 0.24);
   stroke-width: 1.1;
+}
+
+.bie-cross-wire {
+  stroke: rgba(191, 95, 255, 0.16);
+  stroke-width: 0.9;
 }
 
 .bie-spoke-wire {
@@ -1554,13 +1559,49 @@ body::before {
   filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
 }
 
-.bie-mesh-pulse {
+.bie-ring-pulse {
   opacity: 0.6;
   filter: drop-shadow(0 0 2px rgba(93, 247, 255, 0.8));
 }
 
+.bie-cross-pulse {
+  opacity: 0.5;
+  filter: drop-shadow(0 0 2px rgba(191, 95, 255, 0.7));
+}
+
 .bie-brain-node-dot {
   filter: drop-shadow(0 0 4px currentColor);
+}
+
+.bie-brain-dust-dot {
+  fill: rgba(148, 226, 255, 0.28);
+}
+
+/* CORE below must match the JS `CORE` constant in BieBrainBanner.tsx (viewBox
+   center) — kept as a literal, same pattern the SVG rotate-on-scroll code
+   already relies on for pixel-unit transform-origin. */
+.bie-brain-orbit-main,
+.bie-brain-orbit-dust {
+  transform-origin: 320px 190px;
+  animation-play-state: paused;
+}
+
+.is-drawn .bie-brain-orbit-main {
+  animation: bie-orbit-spin 70s linear infinite;
+  animation-play-state: running;
+}
+
+.is-drawn .bie-brain-orbit-dust {
+  animation: bie-orbit-spin-reverse 100s linear infinite;
+  animation-play-state: running;
+}
+
+@keyframes bie-orbit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bie-orbit-spin-reverse {
+  to { transform: rotate(-360deg); }
 }
 
 .bie-brain-ring {
@@ -1568,7 +1609,7 @@ body::before {
   stroke: rgba(0, 229, 255, 0.55);
   stroke-width: 1.5;
   opacity: 0;
-  transform-origin: 600px 54px;
+  transform-origin: 320px 190px;
   animation: bie-brain-ring-ping 3.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
 }
 
@@ -1580,7 +1621,7 @@ body::before {
 
 .bie-brain-core {
   fill: url(#bie-core-grad);
-  transform-origin: 600px 54px;
+  transform-origin: 320px 190px;
   animation: bie-brain-core-pulse 2.4s ease-in-out infinite;
   filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.65)) drop-shadow(0 0 26px rgba(191, 95, 255, 0.3));
 }
@@ -1593,7 +1634,7 @@ body::before {
 .bie-brain-core-label {
   position: absolute;
   left: 50%;
-  top: 20.8%;
+  top: 50%;
   transform: translate(-50%, -50%);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10px;
@@ -1658,7 +1699,11 @@ body::before {
   .is-drawn .bie-wire { animation: none; }
   .bie-brain-ring { animation: none; opacity: 0; }
   .bie-brain-core { animation: none; }
-  .bie-spoke-pulse, .bie-mesh-pulse { display: none; }
+  .bie-spoke-pulse, .bie-ring-pulse, .bie-cross-pulse { display: none; }
+  .bie-brain-orbit-main, .bie-brain-orbit-dust,
+  .is-drawn .bie-brain-orbit-main, .is-drawn .bie-brain-orbit-dust {
+    animation: none;
+  }
 }
 
 .bento-card-watermark {

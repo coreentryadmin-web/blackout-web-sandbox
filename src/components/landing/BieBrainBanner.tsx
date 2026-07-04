@@ -2,23 +2,38 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { spokePath, meshPath } from "./bie-brain-geometry";
+import { chordPath, goldenSpiralPoint, pointOnEllipse } from "./bie-brain-geometry";
 
 // "Introducing BlackOut Intelligence Engine" — sits above "The full desk" grid
-// as a title-card-style reveal, not another tile in it. A pulsing BIE core with
-// "synapse" wires fanning out to all six instruments, plus a thin mesh between
-// neighbors, so it reads as one connected network rather than a simple
-// hub-and-spoke: BIE watching and connecting every tool, continuously.
+// as a title-card-style reveal, not another tile in it. BIE sits dead-center as
+// a core, the six instruments orbit it on an ELLIPSE (not a true circle) — that
+// asymmetry is what fakes a disc viewed at an angle, a "tilted sphere/globe"
+// look, using plain 2D math instead of a CSS 3D `rotateX` (which would leave
+// the layout box reserving full square space while the paint gets foreshortened
+// — a gap this sidesteps entirely). A hexagram of ring + diagonal "cross"
+// connections weaves the instruments into one mesh (not a plain hub-and-spoke),
+// and a field of ambient dust dots fills the rest of the disc. Two
+// independently-rotating layers (nodes one way, dust the other, different
+// speeds) sell the depth without any WebGL/3D library — plain SVG + CSS.
+//
+// Content note: never name BlackOut's own LLM/model here or in READOUT_LINES —
+// the honest-realism stance (docs/bie/ARCHITECTURE.md) is that Claude is the
+// general-reasoning fallback, not a proprietary model BlackOut trained.
 
-const CORE = { x: 600, y: 54 };
-const NODE_Y = 214;
-const VIEW_W = 1200;
-const VIEW_H = 260;
+const VIEW_W = 640;
+const VIEW_H = 380;
+const CORE = { x: VIEW_W / 2, y: VIEW_H / 2 };
+const RING_RX = 230;
+const RING_RY = 118;
+const DUST_COUNT = 26;
+const DUST_MAX_RX = 305;
+const DUST_MAX_RY = 160;
 
 type BrainNode = { name: string; href: string; accent: string };
 
-// Left-to-right order matches FeaturesGrid's INSTRUMENTS below, so the banner
-// reads as a preview of exactly what's in the grid underneath it.
+// Left-to-right order matches FeaturesGrid's INSTRUMENTS below, so the node
+// list under the diagram reads as a preview of exactly what's in the grid —
+// order also fixes where each node lands going clockwise from the top.
 const NODES: BrainNode[] = [
   { name: "SPX Slayer", href: "/dashboard", accent: "#00e676" },
   { name: "HELIX", href: "/flows", accent: "#bf5fff" },
@@ -28,16 +43,58 @@ const NODES: BrainNode[] = [
   { name: "BlackOut Grid", href: "/grid", accent: "#ffcc4d" },
 ];
 
-const NODE_X_START = 70;
-const NODE_X_SPACING = (VIEW_W - NODE_X_START * 2) / (NODES.length - 1);
-const nodeX = (i: number) => NODE_X_START + i * NODE_X_SPACING;
+const RING_NODES = NODES.map((n, i) => ({
+  ...n,
+  ...pointOnEllipse(CORE.x, CORE.y, RING_RX, RING_RY, (360 / NODES.length) * i),
+}));
 
-// Distinct per-spoke timing so pulses fire asynchronously — "connecting every
-// dot, every second" reads as a living network, not a synchronized metronome.
-const SPOKE_DUR = [2.3, 2.7, 2.1, 2.9, 2.4, 3.1];
-const SPOKE_DELAY = [0, -1.4, -0.6, -2.1, -0.3, -1.8];
-const MESH_DUR = [4.2, 3.8, 4.6, 4.0, 4.4];
-const MESH_DELAY = [-0.5, -2.6, -1.1, -3.3, -1.9];
+const DUST = Array.from({ length: DUST_COUNT }, (_, i) =>
+  goldenSpiralPoint(CORE.x, CORE.y, DUST_MAX_RX, DUST_MAX_RY, i, DUST_COUNT)
+);
+
+type WireCategory = "spoke" | "ring" | "cross";
+type Wire = { id: string; d: string; category: WireCategory; accent: string };
+
+const WIRES: Wire[] = [
+  // spokes — straight lines, BIE's own connection to each instrument, colored
+  // by the destination's accent via a gradient (defined in <defs> below).
+  ...RING_NODES.map((n, i) => ({
+    id: `bie-spoke-${i}`,
+    d: chordPath(CORE.x, CORE.y, n.x, n.y, CORE.x, CORE.y, 0),
+    category: "spoke" as const,
+    accent: n.accent,
+  })),
+  // ring — perimeter arcs between neighboring instruments, bowed outward.
+  ...RING_NODES.map((n, i) => {
+    const next = RING_NODES[(i + 1) % RING_NODES.length];
+    return {
+      id: `bie-ring-${i}`,
+      d: chordPath(n.x, n.y, next.x, next.y, CORE.x, CORE.y, 26),
+      category: "ring" as const,
+      accent: "#5df7ff",
+    };
+  }),
+  // cross — long diagonals (node i to node i+2), which for 6 evenly-spaced
+  // nodes traces two overlapping triangles — a hexagram, the densest-reading
+  // "sphere mesh" pattern for the least visual clutter.
+  ...RING_NODES.map((n, i) => {
+    const opposite = RING_NODES[(i + 2) % RING_NODES.length];
+    return {
+      id: `bie-cross-${i}`,
+      d: chordPath(n.x, n.y, opposite.x, opposite.y, CORE.x, CORE.y, 54),
+      category: "cross" as const,
+      accent: "#bf5fff",
+    };
+  }),
+];
+
+/** Per-category base pace (spokes fastest — energy flowing INTO the core;
+ *  cross-diagonals slowest — the "deep" long-haul connections) with a small
+ *  per-wire offset so pulses on the same category don't move in lockstep. */
+function pulseTiming(category: WireCategory, i: number): { dur: number; delay: number } {
+  const base = category === "spoke" ? 2.0 : category === "ring" ? 3.2 : 4.6;
+  return { dur: base + (i % 5) * 0.22, delay: -((i * 0.61) % base) };
+}
 
 // Deliberately vendor/stack-free — this is a member-facing marketing surface,
 // not a status page. No infra provider names, no ops jargon (cron/CPU/env-vars/
@@ -121,15 +178,15 @@ export function BieBrainBanner() {
               <stop offset="45%" stopColor="#00e5ff" />
               <stop offset="100%" stopColor="#0a3b45" />
             </radialGradient>
-            {NODES.map((n, i) => (
+            {RING_NODES.map((n, i) => (
               <linearGradient
                 key={n.name}
                 id={`bie-spoke-grad-${i}`}
                 gradientUnits="userSpaceOnUse"
                 x1={CORE.x}
                 y1={CORE.y}
-                x2={nodeX(i)}
-                y2={NODE_Y}
+                x2={n.x}
+                y2={n.y}
               >
                 <stop offset="0%" stopColor="#00e5ff" />
                 <stop offset="100%" stopColor={n.accent} />
@@ -137,69 +194,46 @@ export function BieBrainBanner() {
             ))}
           </defs>
 
-          {/* mesh — thin links between neighboring instruments, so the network
-              reads as connected, not just a star radiating from one hub. */}
-          <g className="bie-brain-mesh">
-            {NODES.slice(0, -1).map((n, i) => {
-              const d = meshPath(nodeX(i), nodeX(i + 1), NODE_Y, 26);
+          {/* ambient dust — fills the disc so it reads as a dense sphere of
+              points, not 6 isolated dots on empty space. Counter-rotates
+              slower than the main ring for a layered-depth feel. */}
+          <g className="bie-brain-orbit bie-brain-orbit-dust">
+            {DUST.map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r={1.6} className="bie-brain-dust-dot" />
+            ))}
+          </g>
+
+          {/* the main ring — wires + instrument nodes, rotating together as
+              one rigid network around the fixed core. */}
+          <g className="bie-brain-orbit bie-brain-orbit-main">
+            {WIRES.map((w, i) => {
+              const { dur, delay } = pulseTiming(w.category, i);
               return (
-                <g key={n.name}>
+                <g key={w.id}>
                   <path
-                    id={`bie-mesh-${i}`}
-                    d={d}
+                    id={w.id}
+                    d={w.d}
                     pathLength={1}
-                    className="bie-wire bie-mesh-wire"
-                    style={{ animationDelay: `${i * 0.12}s` }}
+                    className={`bie-wire bie-${w.category}-wire`}
+                    stroke={w.category === "spoke" ? `url(#bie-spoke-grad-${i})` : w.accent}
+                    style={{ animationDelay: `${i * 0.07}s` }}
                   />
                   {!reduceMotion && (
-                    <circle r={2.4} className="bie-mesh-pulse" fill="#5df7ff">
-                      <animateMotion
-                        dur={`${MESH_DUR[i]}s`}
-                        begin={`${MESH_DELAY[i]}s`}
-                        repeatCount="indefinite"
-                      >
-                        <mpath href={`#bie-mesh-${i}`} />
+                    <circle r={w.category === "spoke" ? 3.2 : 2} className={`bie-${w.category}-pulse`} fill={w.accent}>
+                      <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite">
+                        <mpath href={`#${w.id}`} />
                       </animateMotion>
                     </circle>
                   )}
                 </g>
               );
             })}
+            {RING_NODES.map((n) => (
+              <circle key={n.name} cx={n.x} cy={n.y} r={7} className="bie-brain-node-dot" fill={n.accent} />
+            ))}
           </g>
 
-          {/* spokes — BIE's own connection to each instrument, colored by the
-              destination's accent so the "energy" visibly takes on that tool's identity. */}
-          <g className="bie-brain-spokes">
-            {NODES.map((n, i) => {
-              const d = spokePath(CORE.x, CORE.y, nodeX(i), NODE_Y);
-              return (
-                <g key={n.name}>
-                  <path
-                    id={`bie-spoke-${i}`}
-                    d={d}
-                    pathLength={1}
-                    className="bie-wire bie-spoke-wire"
-                    stroke={`url(#bie-spoke-grad-${i})`}
-                    style={{ animationDelay: `${0.15 + i * 0.09}s` }}
-                  />
-                  {!reduceMotion && (
-                    <circle r={3.4} className="bie-spoke-pulse" fill={n.accent}>
-                      <animateMotion
-                        dur={`${SPOKE_DUR[i]}s`}
-                        begin={`${SPOKE_DELAY[i]}s`}
-                        repeatCount="indefinite"
-                      >
-                        <mpath href={`#bie-spoke-${i}`} />
-                      </animateMotion>
-                    </circle>
-                  )}
-                  <circle cx={nodeX(i)} cy={NODE_Y} r={5} className="bie-brain-node-dot" fill={n.accent} />
-                </g>
-              );
-            })}
-          </g>
-
-          {/* the core, brainwave rings */}
+          {/* the core, brainwave rings — fixed at the rotation axis, never orbits */}
           <circle cx={CORE.x} cy={CORE.y} r={38} className="bie-brain-ring" style={{ animationDelay: "0s" }} />
           <circle cx={CORE.x} cy={CORE.y} r={38} className="bie-brain-ring" style={{ animationDelay: "1.1s" }} />
           <circle cx={CORE.x} cy={CORE.y} r={24} className="bie-brain-core" />
