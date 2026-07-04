@@ -374,6 +374,11 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     ["ticker"]
   ),
 
+  t(
+    "get_hot_tickers",
+    "Leaderboard of single-name tickers with the most options-flow premium over the last 6h (print count + total premium each). Index/ETF and leveraged-ETP names are excluded so SPY/QQQ don't just occupy every slot. Use for open-ended 'what's hot / what's moving / any unusual flow today' questions that don't name a specific ticker — for a question ABOUT one ticker, use get_ecosystem_context or get_flow_tape instead."
+  ),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -483,6 +488,8 @@ export const TOOL_GROUPS = {
     "get_nighthawk_dossier",
     // BIE ecosystem-context query layer — one ticker's cross-instrument snapshot
     "get_ecosystem_context",
+    // BIE hot-tickers leaderboard — no ticker input, "what's hot" across the board
+    "get_hot_tickers",
   ],
   my_book: [
     // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).

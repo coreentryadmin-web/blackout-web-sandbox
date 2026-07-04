@@ -7,6 +7,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE ecosystem: hot-tickers reaches Largo SHIPPED 2026-07-04 — `get_hot_tickers` tool
+**Status:** SHIPPED (`feat/bie-largo-hot-tickers-tool`). `fetchHotTickers()` (previous entry) shipped admin-only. This gives it a second consumer with zero new query logic: a Largo tool, `get_hot_tickers`, so members can ask "what's hot / what's moving right now" in chat and get a real answer instead of nothing — the same reuse pattern as every other ecosystem-context tool this session (query layer once, consumers cheaply after).
+
+**Implementation:** one `t(...)` entry in `tool-defs.ts` (no required args — this is the first Largo tool that takes zero ticker input, since it's a leaderboard question, not a per-ticker one), one `case` in `run-tool.ts` calling the existing `fetchHotTickers(8)` unchanged. Confirmed `runLargoTool`'s ticker handling (`ticker` defaults to `"SPX"`, only validated `if (input.ticker != null)`) doesn't block a tool that ignores it entirely.
+
+**Verification:** 882/882 tests pass (no new tests — this is a one-line dispatch to an already-tested function, no new logic), `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## ✅ VERIFIED 2026-07-04 — PR #372 (`feat/bie-hot-tickers`) deploy confirmed SUCCESS
 Merge commit `b45c2d5`. Railway deployment `f85bf691-79bc-449a-8371-e319774c7469` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
 

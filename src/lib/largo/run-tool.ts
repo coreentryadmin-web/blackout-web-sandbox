@@ -926,6 +926,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchEcosystemContext(ticker);
     }
 
+    case "get_hot_tickers": {
+      const { fetchHotTickers } = await import("@/lib/bie/hot-tickers");
+      return fetchHotTickers(8);
+    }
+
     case "get_gex": {
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());
