@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
-import { pointOnFieldLine } from "./bie-helix-engine";
-import { viewBoxPointToContainer } from "./bie-viewbox-map";
+import { advanceOrbitDeg, orbitToolPixelPosition } from "./bie-viewbox-map";
 
 export type OrbitTool = {
   name: string;
@@ -25,6 +24,7 @@ type Props = {
   maxRy: number;
   orbitRing: number;
   orbitScale: number;
+  /** Seconds for one full revolution of all six tools. */
   orbitPeriodSec: number;
   reduceMotion: boolean;
 };
@@ -44,7 +44,12 @@ export function BieOrbitTools({
   reduceMotion,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const nodeRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const anchorRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const geoRef = useRef({ viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale });
+
+  useEffect(() => {
+    geoRef.current = { viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale };
+  }, [viewW, viewH, coreX, coreY, maxRx, maxRy, orbitRing, orbitScale]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -54,70 +59,69 @@ export function BieOrbitTools({
     let orbitDeg = 0;
     let last = performance.now();
 
-    const layout = (now: number) => {
+    const placeTools = (deg: number) => {
       const rect = host.getBoundingClientRect();
-      if (rect.width >= 1 && rect.height >= 1) {
-        if (!reduceMotion) {
-          const dt = (now - last) / 1000;
-          last = now;
-          orbitDeg = (orbitDeg + (360 / orbitPeriodSec) * dt) % 360;
-        }
+      if (rect.width < 1 || rect.height < 1) return;
+      const g = geoRef.current;
 
-        tools.forEach((tool, i) => {
-          const el = nodeRefs.current[i];
-          if (!el) return;
-          const angle = tool.startAngleDeg + orbitDeg;
-          const vb = pointOnFieldLine(coreX, coreY, maxRx, maxRy, orbitScale, orbitRing, angle);
-          const px = viewBoxPointToContainer(vb.x, vb.y, rect.width, rect.height, viewW, viewH, "slice");
-          el.style.left = `${px.x}px`;
-          el.style.top = `${px.y}px`;
+      tools.forEach((tool, i) => {
+        const anchor = anchorRefs.current[i];
+        if (!anchor) return;
+        const px = orbitToolPixelPosition({
+          startAngleDeg: tool.startAngleDeg,
+          orbitDeg: deg,
+          containerW: rect.width,
+          containerH: rect.height,
+          ...g,
         });
-      }
-
-      raf = requestAnimationFrame(layout);
+        anchor.style.left = `${px.x}px`;
+        anchor.style.top = `${px.y}px`;
+      });
     };
 
-    raf = requestAnimationFrame(layout);
-    const ro = new ResizeObserver(() => {
-      last = performance.now();
-    });
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (!reduceMotion) {
+        orbitDeg = advanceOrbitDeg(orbitDeg, dt, orbitPeriodSec);
+      }
+      placeTools(orbitDeg);
+      raf = requestAnimationFrame(tick);
+    };
+
+    placeTools(orbitDeg);
+    raf = requestAnimationFrame(tick);
+
+    const ro = new ResizeObserver(() => placeTools(orbitDeg));
     ro.observe(host);
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [
-    tools,
-    viewW,
-    viewH,
-    coreX,
-    coreY,
-    maxRx,
-    maxRy,
-    orbitRing,
-    orbitScale,
-    orbitPeriodSec,
-    reduceMotion,
-  ]);
+  }, [tools, orbitPeriodSec, reduceMotion]);
 
   return (
     <div ref={hostRef} className="bie-orbit-tools" aria-label="Platform instruments">
       {tools.map((tool, i) => (
-        <Link
+        <div
           key={tool.name}
           ref={(el) => {
-            nodeRefs.current[i] = el;
+            anchorRefs.current[i] = el;
           }}
-          href={tool.href}
-          className="bie-orbit-tool"
-          style={{ ["--tool-accent" as string]: tool.accent }}
+          className="bie-orbit-tool-anchor"
         >
-          <span className="bie-orbit-tool-mark" aria-hidden>
-            <ProductMark product={tool.mark} size={34} />
-          </span>
-          <span className="bie-orbit-tool-name">{tool.name}</span>
-        </Link>
+          <Link
+            href={tool.href}
+            className="bie-orbit-tool"
+            style={{ ["--tool-accent" as string]: tool.accent }}
+          >
+            <span className="bie-orbit-tool-mark" aria-hidden>
+              <ProductMark product={tool.mark} size={34} />
+            </span>
+            <span className="bie-orbit-tool-name">{tool.name}</span>
+          </Link>
+        </div>
       ))}
     </div>
   );
