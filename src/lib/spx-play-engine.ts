@@ -51,7 +51,7 @@ import {
   updateOpenPlay,
   type OpenPlayRow,
 } from "@/lib/spx-play-store";
-import { maybeLogSpxPlay, logSpxShadowFactors } from "@/lib/providers/spx-signal-log";
+import { maybeLogSpxPlay, logSpxShadowFactors, logSpxMacroPredictionsShadowFactor } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
 import {
@@ -1145,6 +1145,15 @@ export async function evaluateSpxPlay(
   // see spx-signals.test.ts's byte-for-byte proof.
   firePlayTelemetry("logSpxShadowFactors", () =>
     logSpxShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE macro-prediction factor logging (src/lib/spx-signals-shadow-predictions.ts)
+  // — sibling of the call above, same fire-and-forget/purely-observational contract, same
+  // pre-Night-Hawk-bonus score/grade snapshot. Observes UW prediction-market consensus
+  // specifically around macroHardBlock's own CPI/FOMC/NFP/PPI/GDP hard-block windows
+  // (spx-play-gates.ts) — zero effect on computeSpxConfluence()'s actual return value.
+  firePlayTelemetry("logSpxMacroPredictionsShadowFactor", () =>
+    logSpxMacroPredictionsShadowFactor(desk, { score: confluence.score, grade: confluence.grade })
   );
 
   // NH morning prior: inject the Night Hawk evening signal as a signed confluence factor.
