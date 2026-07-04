@@ -3,6 +3,7 @@ import { isUwUpstream5xx } from "@/lib/uw-upstream-5xx";
 import { isUwTransientNetwork } from "@/lib/uw-transient-network";
 import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
 import { isTradingDayEt, formatEtDate } from "@/lib/nighthawk/session";
+import { todayEt } from "@/lib/et-date";
 import {
   buildUwRequestKey,
   isUwCircuitOpen,
@@ -343,15 +344,6 @@ async function uwGetSafe<T>(
   return null;
 }
 
-function todayIso(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
 function analyzeStrikeGex(rows: Record<string, unknown>[]) {
   let totalCall = 0;
   let totalPut = 0;
@@ -378,7 +370,7 @@ function analyzeStrikeGex(rows: Record<string, unknown>[]) {
 
 /** 0DTE strike GEX ladder — same expiry-strike feed, strike-level rows for gamma walls. */
 export async function fetchUwOdteSpotExposuresByStrike(ticker = "SPX", limit = 500) {
-  const expiry = todayIso();
+  const expiry = todayEt();
   const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/spot-exposures/expiry-strike`, {
     "expirations[]": expiry,
     limit,
@@ -468,7 +460,7 @@ export async function fetchUwOdteGexLadder(
 export async function fetchUwMaxPain(ticker = "SPX") {
   const data = await uwGetSafe<unknown>(`/api/stock/${ticker}/max-pain`, {});
   const rows = extractRows(data);
-  const today = todayIso();
+  const today = todayEt();
   let chosen: number | null = null;
   for (const row of rows) {
     const exp = String(row.expiry ?? "").slice(0, 10);
@@ -826,7 +818,7 @@ export async function fetchUwDarkPool(
       };
     }
 
-    const today = todayIso();
+    const today = todayEt();
     const prints: DarkPoolPrint[] = [];
     let callPrem = 0;
     let putPrem = 0;
@@ -886,7 +878,7 @@ export async function fetchUwDarkPoolMarketWide(
   const limit = Math.min(opts?.limit ?? 20, 100);
   const rows = await fetchUwDarkPoolRecent(limit);
   const minPremium = opts?.min_premium ?? 0;
-  const today = todayIso();
+  const today = todayEt();
   const prints: DarkPoolPrint[] = [];
   let callPrem = 0;
   let putPrem = 0;
@@ -929,7 +921,7 @@ export function normalizeDarkPoolWsPayload(raw: unknown): DarkPoolSnapshot | nul
   const list = Array.isArray(rows) ? rows : typeof raw === "object" && raw !== null ? [raw] : [];
   if (!list.length) return null;
 
-  const today = todayIso();
+  const today = todayEt();
   const prints: DarkPoolPrint[] = [];
   let callPrem = 0;
   let putPrem = 0;
@@ -1500,7 +1492,7 @@ export async function fetchUwMarketOiChange(limit = 25) {
 export async function fetchUwAtmChains(ticker: string, expirationDate?: string, limit = 30) {
   const params: Record<string, string | number> = {
     limit,
-    expiration_date: expirationDate ?? todayIso(),
+    expiration_date: expirationDate ?? todayEt(),
   };
   const data = await uwGetSafe<unknown>(`/api/stock/${ticker.toUpperCase()}/atm-chains`, params);
   return extractRows(data).slice(0, limit);

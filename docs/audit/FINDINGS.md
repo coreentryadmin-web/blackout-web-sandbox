@@ -54,6 +54,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — `unusual-whales.ts` had its own unenumerated ET-date duplicate, largest blast radius of any date-dup found (follow-up audit finding, high)
+**Where:** `src/lib/providers/unusual-whales.ts:346` — a local `todayIso()` reimplementing the exact `Intl.DateTimeFormat("en-CA", {timeZone:"America/New_York"})` logic that task #74 (earlier today, and originally on 2026-07-01/02) consolidated 6 other copies of into `src/lib/et-date.ts`'s `todayEt()` — but this copy was never found or enumerated, because it lives in the core UW provider file rather than in any of the play-engine/dashboard files the original sweep scanned. It has 6 call sites (`:373`, `:463`, `:821`, `:881`, `:924`, `:1495`) gating 0DTE expiry-date filtering and "today's" max-pain contract selection — the largest blast radius of any date-duplication instance found across either audit pass, since `unusual-whales.ts` is the shared REST client every 0DTE/GEX-by-strike/max-pain consumer platform-wide ultimately calls through.
+
+**Why it's a real risk, not just style:** `et-date.ts`'s own header comment states the exact failure mode this class of duplication causes — a future one-off DST or timezone-boundary fix applied to only one copy silently shifts that copy's day-boundary out of sync with every other copy, corrupting cross-file date comparisons (e.g. "is this contract's expiry today" agreeing in one file but not another) without any error being thrown.
+
+**Fix:** deleted the local `todayIso()` and its 6 call sites now call `todayEt()` imported from `@/lib/et-date`. Confirmed byte-identical output before changing anything: `new Intl.DateTimeFormat("en-CA", {timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit"})` (the local version's explicit options) and `new Intl.DateTimeFormat("en-CA", {timeZone:"America/New_York"})` (`todayEt()`'s, no explicit y/m/d fields) both format to the same `YYYY-MM-DD` string — verified directly in a Node REPL against the current date rather than assumed from reading the two implementations.
+
+**Blast radius:** single file, 6 call sites, all within `unusual-whales.ts` itself — no caller of any of these functions passes or receives a date string differently than before (the return shape/format is identical), so no downstream consumer needed a change.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `1004/1004` passing (no new tests needed — the substitution is a proven byte-identical drop-in, and `todayEt()` itself already has direct coverage from task #74's consolidation). `npm run build` clean; `lint:brand`/`lint:vendor` clean.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — 5th WS-adjacent leader-lock manager (`rth-warm-leader.ts`) missed by the REPLICA_COUNT fail-open sweep (follow-up audit finding, high)
 **Where:** `src/lib/rth-warm-leader.ts:47-56` (`tryAcquireLead`) — `if (!redis) return true; // single-replica / no Redis — run locally`. This is the exact fail-open-on-Redis-loss bug already fixed today in all four WS socket managers (`uw-socket.ts`/`polygon-socket.ts`/`options-socket.ts`/`stocks-socket.ts`, see the "Gate WS leader-lock fail-open" entry below), but `rth-warm-leader.ts` wasn't in that sweep's file list — it lives outside `src/lib/ws/` and isn't itself a WebSocket, so a `grep`-by-directory or by-name pass over "the WS sockets" walks right past it. It's booted from the same `ensureDataSockets()` entry point as the four already-fixed files (`src/lib/ws/init-data-sockets.ts`) and races the same Redis `SET NX EX` leader-election pattern.
 
