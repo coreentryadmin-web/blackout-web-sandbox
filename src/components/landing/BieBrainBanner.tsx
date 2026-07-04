@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildAmbientFieldMesh,
   buildAtmosphereGlows,
-  buildCenterHelix,
   buildFieldLineRings,
   buildFieldParticles,
   buildImpulsePath,
@@ -25,12 +24,10 @@ import {
  */
 
 export const VIEW_W = 1280;
-export const VIEW_H = 720;
-const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.46 };
+export const VIEW_H = 680;
+const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.5 };
 const MAX_RX = 618;
-const MAX_RY = 338;
-const HELIX_H = 320;
-const HELIX_W = 92;
+const MAX_RY = 318;
 const FIELD_COUNT = 120;
 const INNER_RINGS = [1, 2] as const;
 const INNER_NODES = 6;
@@ -141,7 +138,6 @@ export function BieBrainBanner() {
   const [pulsePath, setPulsePath] = useState("");
   const [rippleKey, setRippleKey] = useState(0);
 
-  const helix = useMemo(() => buildCenterHelix(CORE.x, CORE.y, HELIX_H, HELIX_W), []);
   const fieldLines = useMemo(() => buildFieldLineRings(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const atmosphereGlows = useMemo(() => buildAtmosphereGlows(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const ambientMesh = useMemo(() => buildAmbientFieldMesh(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
@@ -280,6 +276,7 @@ export function BieBrainBanner() {
         style={{ ["--reactor-cx" as string]: `${CORE.x}px`, ["--reactor-cy" as string]: `${CORE.y}px` }}
       >
         <div className="bie-brain-canvas bie-reactor-canvas bie-field-canvas">
+          <div className="bie-field-visual">
           <canvas ref={canvasRef} className="bie-reactor-particles bie-field-particles" aria-hidden />
 
           <svg
@@ -288,17 +285,17 @@ export function BieBrainBanner() {
             preserveAspectRatio="xMidYMid slice"
           >
             <defs>
-              <radialGradient id="bie-field-base" cx="50%" cy="46%" r="72%">
+              <radialGradient id="bie-field-base" cx="50%" cy="50%" r="72%">
                 <stop offset="0%" stopColor="rgba(4, 12, 18, 0.95)" />
                 <stop offset="55%" stopColor="rgba(4, 6, 10, 0.98)" />
                 <stop offset="100%" stopColor="rgba(4, 4, 7, 1)" />
               </radialGradient>
-              <radialGradient id="bie-field-glow" cx="50%" cy="46%" r="52%">
+              <radialGradient id="bie-field-glow" cx="50%" cy="50%" r="52%">
                 <stop offset="0%" stopColor="rgba(0,229,255,0.14)" />
                 <stop offset="40%" stopColor="rgba(0,229,255,0.05)" />
                 <stop offset="100%" stopColor="rgba(0,229,255,0)" />
               </radialGradient>
-              <radialGradient id="bie-field-vignette" cx="50%" cy="46%" r="68%">
+              <radialGradient id="bie-field-vignette" cx="50%" cy="50%" r="68%">
                 <stop offset="55%" stopColor="rgba(4,4,7,0)" />
                 <stop offset="100%" stopColor="rgba(4,4,7,0.55)" />
               </radialGradient>
@@ -307,18 +304,6 @@ export function BieBrainBanner() {
                 <stop offset="42%" stopColor="#00e5ff" />
                 <stop offset="100%" stopColor="#0a3b45" />
               </radialGradient>
-              <linearGradient id="bie-helix-strand-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#5df7ff" stopOpacity="0.95" />
-                <stop offset="50%" stopColor="#00e5ff" stopOpacity="1" />
-                <stop offset="100%" stopColor="#bf5fff" stopOpacity="0.85" />
-              </linearGradient>
-              <filter id="bie-helix-classic-bloom" x="-60%" y="-20%" width="220%" height="140%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b" />
-                <feMerge>
-                  <feMergeNode in="b" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
             </defs>
 
             <rect width={VIEW_W} height={VIEW_H} fill="url(#bie-field-base)" className="bie-field-base" />
@@ -376,23 +361,6 @@ export function BieBrainBanner() {
                 );
               })}
 
-            <g className="bie-reactor-helix bie-reactor-helix-classic" filter="url(#bie-helix-classic-bloom)">
-              <path d={helix.strandA} className="bie-reactor-helix-strand" fill="none" stroke="url(#bie-helix-strand-grad)" />
-              <path d={helix.strandB} className="bie-reactor-helix-strand bie-reactor-helix-strand-b" fill="none" stroke="url(#bie-helix-strand-grad)" />
-              {helix.rungs.map((r, i) => (
-                <line
-                  key={`hr-${i}`}
-                  x1={r.x1}
-                  y1={r.y1}
-                  x2={r.x2}
-                  y2={r.y2}
-                  className="bie-reactor-helix-rung"
-                  strokeOpacity={0.12 + 0.55 * r.depth}
-                  strokeWidth={0.35 + 1.1 * r.depth}
-                />
-              ))}
-            </g>
-
             {!reduceMotion && phase !== "idle" && pulsePath && (
               <g key={pulseKey} className="bie-reactor-pulse-wave bie-reactor-pulse-inbound">
                 <path id="bie-reactor-impulse" d={pulsePath} className="bie-reactor-impulse-track" pathLength={1} />
@@ -413,14 +381,14 @@ export function BieBrainBanner() {
               )}
               <circle cx={0} cy={0} r={36} className="bie-reactor-core-halo" />
               <circle cx={0} cy={0} r={20} className="bie-brain-core bie-reactor-core-nucleus" />
+              <text x={0} y={0} className="bie-core-label-svg" textAnchor="middle" dominantBaseline="central">
+                BIE
+              </text>
             </g>
 
             <rect width={VIEW_W} height={VIEW_H} fill="url(#bie-field-vignette)" className="bie-field-vignette" pointerEvents="none" />
           </svg>
-
-          <span className="bie-brain-core-label bie-reactor-core-label bie-reactor-core-label-classic" aria-hidden>
-            BIE
-          </span>
+          </div>
 
           <div className="bie-field-caption">
             <span className="bie-brain-eyebrow">

@@ -1602,6 +1602,23 @@ body::before {
   min-height: clamp(580px, 82vh, 960px);
   max-height: min(960px, 88vh);
   aspect-ratio: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.bie-field-visual {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: clamp(420px, 58vh, 720px);
+  width: 100%;
+}
+
+.bie-field-visual .bie-field-svg,
+.bie-field-visual .bie-field-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .bie-field-svg {
@@ -1691,18 +1708,18 @@ body::before {
 }
 
 .bie-field-caption {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 6;
   text-align: center;
-  padding: 2.5rem clamp(1rem, 4vw, 2.5rem) 1rem;
+  padding: 1.75rem clamp(1rem, 4vw, 2.5rem) 1.35rem;
+  margin-top: 0.25rem;
+  border-top: 1px solid rgba(93, 247, 255, 0.06);
   background: linear-gradient(
-    to top,
-    rgba(4, 4, 7, 0.92) 0%,
-    rgba(4, 4, 7, 0.55) 38%,
-    rgba(4, 4, 7, 0) 100%
+    to bottom,
+    rgba(4, 4, 7, 0.55) 0%,
+    rgba(4, 4, 7, 0.92) 28%,
+    rgba(4, 4, 7, 0.98) 100%
   );
   pointer-events: none;
 }
@@ -1866,6 +1883,23 @@ body::before {
 .bie-reactor-core-classic .bie-reactor-core-halo {
   stroke-width: 1.5;
   opacity: 0.38;
+}
+
+.bie-core-label-svg {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  fill: #04191c;
+  paint-order: stroke fill;
+  stroke: rgba(93, 247, 255, 0.35);
+  stroke-width: 0.4px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.bie-reactor-core.is-active .bie-core-label-svg {
+  fill: #022028;
 }
 
 .bie-reactor-core-label-classic {
