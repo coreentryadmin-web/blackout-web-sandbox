@@ -22,6 +22,27 @@ export type RateQuotaHeadroom = {
   status: "ok" | "warn" | "critical";
 };
 
+/**
+ * Convert the cluster-wide 5-minute rollup into a per-minute-equivalent call count keyed by
+ * provider, for feeding buildRateQuotaHeadroom(). A single replica's own in-memory counter only
+ * sees the calls THAT replica made, so on a multi-replica deploy it reads ~1/REPLICA_COUNT of
+ * true usage and can show "ok" headroom right up to an actual cluster-wide rate-limit event.
+ * Falls back to the caller-supplied local counts when cross-instance telemetry is unavailable
+ * (e.g. Redis down) — degraded but non-null.
+ */
+export function deriveClusterCallsByProvider1m(
+  clusterProviders: Partial<Record<ApiProviderId, { calls_5m: number; errors_5m: number }>> | null | undefined,
+  localCallsByProvider1m: Partial<Record<ApiProviderId, number>>
+): Partial<Record<ApiProviderId, number>> {
+  if (!clusterProviders) return localCallsByProvider1m;
+  return Object.fromEntries(
+    Object.entries(clusterProviders).map(([provider, stats]) => [
+      provider,
+      Math.round((stats?.calls_5m ?? 0) / 5),
+    ])
+  ) as Partial<Record<ApiProviderId, number>>;
+}
+
 export function buildRateQuotaHeadroom(
   callsByProvider1m: Partial<Record<ApiProviderId, number>>
 ): RateQuotaHeadroom[] {

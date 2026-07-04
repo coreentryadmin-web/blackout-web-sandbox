@@ -10,7 +10,11 @@ import {
   type ApiEndpointStats,
   type ApiProviderId,
 } from "@/lib/api-telemetry";
-import { buildRateQuotaHeadroom, type RateQuotaHeadroom } from "@/lib/api-rate-quotas";
+import {
+  buildRateQuotaHeadroom,
+  deriveClusterCallsByProvider1m,
+  type RateQuotaHeadroom,
+} from "@/lib/api-rate-quotas";
 import { trackedFetch } from "@/lib/api-tracked-fetch";
 import { buildEndpointRegistry, type EndpointRegistryPayload } from "@/lib/admin-endpoint-registry";
 import { pingDatabase, dbConfigured } from "@/lib/db";
@@ -367,7 +371,13 @@ export async function fetchApiDashboard(options?: {
         ) as NonNullable<ApiDashboardPayload["cluster"]>["by_provider"],
       }
     : null;
-  const rateHeadroom = buildRateQuotaHeadroom(getCallsByProvider1m());
+  // Feed the headroom panel from the cluster-wide rollup, not this replica's own in-memory
+  // counter (see deriveClusterCallsByProvider1m for why a single replica's count is misleading).
+  const clusterCallsByProvider1m = deriveClusterCallsByProvider1m(
+    crossTelemetry?.providers,
+    getCallsByProvider1m()
+  );
+  const rateHeadroom = buildRateQuotaHeadroom(clusterCallsByProvider1m);
 
   // Headline totals: prefer the cluster-wide 5m rollup over this replica's local
   // snapshot — but ONLY when the requested window IS 5m (the cluster rollup's fixed
