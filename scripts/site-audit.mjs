@@ -11,6 +11,8 @@ const PAGES = [
   "/sign-in",
   "/sign-up",
   "/track-record",
+  "/faq",
+  "/pricing",
   "/learn",
   "/learn/getting-started",
   "/learn/glossary",

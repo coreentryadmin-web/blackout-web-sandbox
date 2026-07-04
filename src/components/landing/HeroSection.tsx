@@ -100,10 +100,8 @@ export function HeroSection() {
           <LandingCta href="/sign-up" className="btn-cta-primary">
             Get access
           </LandingCta>
-          {/* Hidden inside the iOS app shell: the #pricing target section is display:none
-              there (App Store guideline 3.1.1), so this was a dead anchor in-app — and a
-              pricing entry point the same guideline requires removing. Web unchanged. */}
-          <LandingCta href="#pricing" variant="ghost" className="hide-in-ios-app">
+          {/* Hidden inside the iOS app (App Store guideline 3.1.1 — no in-app pricing). */}
+          <LandingCta href="/pricing" variant="ghost" className="hide-in-ios-app">
             See pricing
           </LandingCta>
         </motion.div>

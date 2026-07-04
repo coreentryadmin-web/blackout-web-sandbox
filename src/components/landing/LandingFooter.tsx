@@ -20,8 +20,9 @@ const INSTRUMENTS = [
 const PLATFORM = [
   // iosHide: hidden inside the iOS app (App Store guideline 3.1.1 — no in-app
   // pricing / purchase entry points).
-  { label: "Pricing", href: "/#pricing", iosHide: true },
-  { label: "FAQ", href: "/#faq" },
+  { label: "Learn", href: "/learn" },
+  { label: "Pricing", href: "/pricing", iosHide: true },
+  { label: "FAQ", href: "/faq" },
   { label: "Upgrade", href: "/upgrade", iosHide: true },
   { label: "Sign in", href: "/sign-in" },
   { label: "Start Trading", href: "/sign-up" },
