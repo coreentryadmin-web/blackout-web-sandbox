@@ -35,6 +35,7 @@ import { parseEntryPremiumPerShare } from "./play-constraints";
 import type { TickerDossier } from "./dossier";
 import type { PlaybookPlay } from "./types";
 import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
+import { fmtPremium } from "@/lib/fmt-money";
 
 /** Minimum open interest for a contract to count as a real, tradeable strike. */
 export const GROUNDING_MIN_OI = 500;
@@ -326,7 +327,7 @@ export function groundPlay(
         issues.push({
           check: "flow",
           severity: "flag",
-          detail: `${play.ticker} stated flow ~$${humanDollars(flowClaim)} diverges from dossier flow $${humanDollars(dossierFlow)} (>±${Math.round(FLOW_TOLERANCE_PCT * 100)}%).`,
+          detail: `${play.ticker} stated flow ~${fmtPremium(flowClaim)} diverges from dossier flow ${fmtPremium(dossierFlow)} (>±${Math.round(FLOW_TOLERANCE_PCT * 100)}%).`,
         });
       }
     }
@@ -453,13 +454,6 @@ export function extractStatedFlowDollars(text: string): number | null {
     if (best == null || v > best) best = v;
   }
   return best;
-}
-
-function humanDollars(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return `${Math.round(n)}`;
 }
 
 /**

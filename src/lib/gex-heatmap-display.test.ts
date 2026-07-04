@@ -13,8 +13,9 @@ describe("gex-heatmap-display", () => {
     assert.equal(fmtHeatmapMoneySigned(0), "·");
   });
 
-  it("fmtHeatmapMoney compacts magnitudes", () => {
-    assert.equal(fmtHeatmapMoney(22_100), "$22.1K");
+  it("fmtHeatmapMoney compacts magnitudes (canonical fmtPremium: $10K+ rounds to whole K)", () => {
+    assert.equal(fmtHeatmapMoney(22_100), "$22K");
+    assert.equal(fmtHeatmapMoney(4_200), "$4.2K");
     assert.equal(fmtHeatmapMoney(-45_200_000), "-$45.2M");
   });
 

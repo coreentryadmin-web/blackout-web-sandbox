@@ -4,6 +4,7 @@ import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-option
 import { getGexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust";
 import type { GexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust-core";
 import { validateGexAgainstUW, type GexCrossValidationResult } from "@/lib/providers/gex-cross-validation";
+import { fmtPremium } from "@/lib/fmt-money";
 
 // ---------------------------------------------------------------------------
 // Canonical cross-tool GEX/VEX positioning contract.
@@ -112,20 +113,6 @@ export type GexPositioning = {
   /** Provenance — always the shared Polygon/Massive GEX matrix. */
   source: "polygon";
 };
-
-/**
- * Compact signed dollar magnitude — the SAME formatter the explain route uses,
- * so every surface renders net GEX/VEX identically. e.g. "$16.2M" / "-$688M".
- */
-function fmtMoney(n: number): string {
-  if (!Number.isFinite(n)) return "n/a";
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
 
 /** Clean strike / level number (no trailing zeros, max 2 decimals). */
 function fmtNum(n: number | null | undefined): string {
@@ -304,9 +291,9 @@ export async function gexContextLine(ticker: string): Promise<string | null> {
   if (p.call_wall != null) clauses.push(`call wall ${fmtNum(p.call_wall)} (resistance)`);
   if (p.put_wall != null) clauses.push(`put wall ${fmtNum(p.put_wall)} (support)`);
   if (p.max_pain != null) clauses.push(`max-pain ${fmtNum(p.max_pain)}`);
-  if (Number.isFinite(p.net_gex)) clauses.push(`net GEX ${fmtMoney(p.net_gex)}`);
+  if (Number.isFinite(p.net_gex)) clauses.push(`net GEX ${fmtPremium(p.net_gex)}`);
   if (Number.isFinite(p.net_vex) && p.net_vex !== 0) {
-    clauses.push(`net vanna ${fmtMoney(p.net_vex)}`);
+    clauses.push(`net vanna ${fmtPremium(p.net_vex)}`);
   }
 
   const body = clauses.length ? ` ${clauses.join(", ")}.` : "";
@@ -355,12 +342,12 @@ export async function gexContextBlock(ticker: string): Promise<string | null> {
   }
   if (p.max_pain != null) lines.push(`Max pain: ${fmtNum(p.max_pain)}`);
 
-  if (Number.isFinite(p.net_gex)) lines.push(`Net dealer $-gamma total: ${fmtMoney(p.net_gex)}`);
+  if (Number.isFinite(p.net_gex)) lines.push(`Net dealer $-gamma total: ${fmtPremium(p.net_gex)}`);
 
   // Vanna read is always a string; emit it as one line of context.
   lines.push(`VEX (vanna) read: ${p.vanna_regime_read}`);
   if (Number.isFinite(p.net_vex) && p.net_vex !== 0) {
-    lines.push(`Net dealer $-vanna total: ${fmtMoney(p.net_vex)}`);
+    lines.push(`Net dealer $-vanna total: ${fmtPremium(p.net_vex)}`);
   }
 
   if (p.shift_summary) lines.push(`Intraday gamma shift: ${p.shift_summary}`);
@@ -368,13 +355,13 @@ export async function gexContextBlock(ticker: string): Promise<string | null> {
   // DEX: dealer delta posture (stabilizing vs destabilizing).
   if (p.dex_regime_read) lines.push(`DEX (delta) read: ${p.dex_regime_read}`);
   if (p.net_dex != null && Number.isFinite(p.net_dex) && p.net_dex !== 0) {
-    lines.push(`Net dealer $-delta total: ${fmtMoney(p.net_dex)}`);
+    lines.push(`Net dealer $-delta total: ${fmtPremium(p.net_dex)}`);
   }
 
   // CHARM: delta-decay pinning read (pre-OPEX / end-of-day pin direction).
   if (p.charm_regime_read) lines.push(`CHARM (pinning) read: ${p.charm_regime_read}`);
   if (p.net_charm != null && Number.isFinite(p.net_charm) && p.net_charm !== 0) {
-    lines.push(`Net dealer $-charm total: ${fmtMoney(p.net_charm)}`);
+    lines.push(`Net dealer $-charm total: ${fmtPremium(p.net_charm)}`);
   }
 
   // 0DTE intraday-adjusted lens — ALWAYS labeled as an estimate + that canonical GEX is OI-based, so
@@ -383,9 +370,9 @@ export async function gexContextBlock(ticker: string): Promise<string | null> {
   if (adj && adj.model === "signed-flow" && adj.net_gex_adjustment !== 0) {
     lines.push(
       `Intraday-adjusted (OI + volume model, 0DTE ${adj.front_expiry}, ESTIMATE — canonical GEX above is OI-based): ` +
-        `net $-gamma ${fmtMoney(adj.net_gex_adjusted)} (OI ${fmtMoney(adj.net_gex_oi)} ${
+        `net $-gamma ${fmtPremium(adj.net_gex_adjusted)} (OI ${fmtPremium(adj.net_gex_oi)} ${
           adj.net_gex_adjustment >= 0 ? "+" : "−"
-        }${fmtMoney(Math.abs(adj.net_gex_adjustment))} front-expiry flow), flip ${fmtNum(
+        }${fmtPremium(Math.abs(adj.net_gex_adjustment))} front-expiry flow), flip ${fmtNum(
           adj.flip_adjusted
         )}, call wall ${fmtNum(adj.call_wall_adjusted)}, put wall ${fmtNum(adj.put_wall_adjusted)}` +
         ` [coverage ${(adj.meta.classification_coverage * 100).toFixed(0)}%]`

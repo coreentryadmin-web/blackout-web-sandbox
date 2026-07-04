@@ -8,6 +8,7 @@
 
 import type { EnrichedZeroDteSetup } from "./board";
 import type { ContractPlan } from "./plan";
+import { fmtPremium as money } from "@/lib/fmt-money";
 
 export type IntelAction = "ADD" | "HOLD" | "TRIM" | "SELL" | "PASS";
 
@@ -16,13 +17,6 @@ export type IntelNote = {
   reason: string;
 };
 
-const money = (n: number | null | undefined): string => {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(2)}`;
-};
 const prem = (n: number | null | undefined): string =>
   n != null && Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
 

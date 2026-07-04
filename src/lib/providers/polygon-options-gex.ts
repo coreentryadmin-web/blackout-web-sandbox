@@ -4,6 +4,7 @@ import { todayEtYmd } from "./spx-session";
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
 import { isHeatmapPreset } from "../heatmap-allowlist";
 import { isLiveOdteSession } from "./unusual-whales";
+import { fmtPremium } from "@/lib/fmt-money";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -1468,16 +1469,6 @@ function buildGexHistoryContext(
   };
 }
 
-/** Compact signed dollar magnitude for the shift summary, e.g. "$38.2M" / "-$4.1K". */
-function fmtShiftMoney(n: number): string {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
-
 /** Human elapsed label from ms, e.g. "1h47m" / "12m". */
 function fmtElapsed(ms: number): string {
   const mins = Math.max(0, Math.round(ms / 60_000));
@@ -1651,7 +1642,7 @@ function computeMetricShift(
   const body =
     parts.length > 0
       ? `${parts.join(", ")} (${lengthRead}).`
-      : `${spec.netNoun} moved ${fmtShiftMoney(netDelta)} (${lengthRead}).`;
+      : `${spec.netNoun} moved ${fmtPremium(netDelta)} (${lengthRead}).`;
   const summary = `Over the last ${elapsed}: ${body}`;
 
   return {

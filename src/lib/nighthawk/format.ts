@@ -1,4 +1,5 @@
 import { formatFlowStrikeStackLine } from "@/lib/largo/flow-strike-stacks";
+import { fmtPremium } from "@/lib/fmt-money";
 import {
   EDITION_SYNTHESIS_OVERSHOOT,
   MAX_OPTION_COST_PER_CONTRACT,
@@ -125,7 +126,7 @@ function formatLiveSpxSection(
     lines.push(`${flipTag}${wallStr ? ` · GEX walls: ${wallStr}` : ""}${d.gex_king != null ? ` · GEX king ${d.gex_king.toFixed(0)}` : ""}${d.max_pain != null ? ` · max pain ${d.max_pain.toFixed(0)}` : ""}`);
 
     const flowBits = [
-      d.flow_0dte_net != null ? `0DTE net ${d.flow_0dte_net >= 0 ? "+" : ""}${fmtPrem(Math.abs(d.flow_0dte_net))}${d.flow_0dte_net >= 0 ? " call lean" : " put lean"}` : null,
+      d.flow_0dte_net != null ? `0DTE net ${d.flow_0dte_net >= 0 ? "+" : ""}${fmtPremium(Math.abs(d.flow_0dte_net))}${d.flow_0dte_net >= 0 ? " call lean" : " put lean"}` : null,
       d.nope != null ? `NOPE ${d.nope >= 0 ? "+" : ""}${d.nope.toFixed(1)}` : null,
       d.tide_bias ? `tide ${d.tide_bias}` : null,
       d.uw_iv_rank != null ? `IV rank ${Number(d.uw_iv_rank).toFixed(0)}` : null,
@@ -139,23 +140,12 @@ function formatLiveSpxSection(
   if (flowTape?.recent?.length) {
     const tape = flowTape.recent
       .slice(0, 5)
-      .map((f) => `${f.ticker} ${String(f.option_type).toUpperCase().startsWith("P") ? "PUT" : "CALL"} ${f.strike} ${String(f.expiry).slice(0, 10)} ${fmtPrem(Number(f.premium ?? 0))} ${f.direction}`)
+      .map((f) => `${f.ticker} ${String(f.option_type).toUpperCase().startsWith("P") ? "PUT" : "CALL"} ${f.strike} ${String(f.expiry).slice(0, 10)} ${fmtPremium(Number(f.premium ?? 0))} ${f.direction}`)
       .join("; ");
     lines.push(`HELIX tape (top ${Math.min(5, flowTape.recent.length)} of ${flowTape.count}): ${tape}`);
   }
 
   return lines.join("\n");
-}
-
-function fmtPrem(prem: number): string {
-  if (!Number.isFinite(prem)) return "—";
-  // Sign OUTSIDE the currency glyph so negatives read "-$1.2M", never "$-1.2M"
-  // (matches fmtPremium in @/lib/api). Output feeds the overnight LLM prompt.
-  const sign = prem < 0 ? "-" : "";
-  const abs = Math.abs(prem);
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`;
-  return `${sign}$${Math.round(abs)}`;
 }
 
 export type TideBias = "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -178,7 +168,7 @@ function tideSummary(tide: Record<string, unknown> | null): string {
   if (total <= 0) return "Market tide flat / no premium.";
   const callPct = (call / total) * 100;
   const bias = tideBias(tide);
-  return `${bias} — calls ${callPct.toFixed(0)}% (${fmtPrem(call)}) vs puts ${fmtPrem(put)}`;
+  return `${bias} — calls ${callPct.toFixed(0)}% (${fmtPremium(call)}) vs puts ${fmtPremium(put)}`;
 }
 
 function formatMarketBreadth(ctx: MarketWideContext): string {
@@ -340,11 +330,11 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
   }
 
   const totalPrem = dossier.flows.reduce((s, f) => s + Number(f.total_premium ?? f.premium ?? 0), 0);
-  lines.push(`Flow today: ${fmtPrem(totalPrem)} across ${dossier.flows.length} alerts`);
+  lines.push(`Flow today: ${fmtPremium(totalPrem)} across ${dossier.flows.length} alerts`);
 
   if (dossier.flow_streak.streak_days > 0) {
     lines.push(
-      `Flow streak: ${dossier.flow_streak.streak_days}d · net 3d ${fmtPrem(dossier.flow_streak.net_3d)} · net 5d ${fmtPrem(dossier.flow_streak.net_5d)}`
+      `Flow streak: ${dossier.flow_streak.streak_days}d · net 3d ${fmtPremium(dossier.flow_streak.net_3d)} · net 5d ${fmtPremium(dossier.flow_streak.net_5d)}`
     );
   }
 
@@ -357,7 +347,7 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
 
   if (dossier.dark_pool?.total_premium) {
     lines.push(
-      `Dark pool: ${fmtPrem(dossier.dark_pool.total_premium)} · bias ${dossier.dark_pool.bias ?? "mixed"}`
+      `Dark pool: ${fmtPremium(dossier.dark_pool.total_premium)} · bias ${dossier.dark_pool.bias ?? "mixed"}`
     );
   }
 
@@ -389,7 +379,7 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
     const expLines = dossier.flow_by_expiry.slice(0, 4).map((r) => {
       const exp = String(r.expiry ?? r.expiration ?? "").slice(0, 10);
       const prem = Number(r.premium ?? r.total_premium ?? 0);
-      return `${exp}: ${fmtPrem(prem)}`;
+      return `${exp}: ${fmtPremium(prem)}`;
     });
     if (expLines.length) lines.push(`Flow by expiry: ${expLines.join(" · ")}`);
   }
@@ -428,7 +418,7 @@ export function formatTickerDossierText(dossier: TickerDossier, scored: ScoredCa
     const value = Number(top?.value ?? top?.market_value ?? top?.amount ?? 0);
     lines.push(
       value > 0
-        ? `Institutional: ${name} · ${fmtPrem(value)} position`
+        ? `Institutional: ${name} · ${fmtPremium(value)} position`
         : `Institutional: ${dossier.institutional_activity.length} holder(s) tracked`
     );
   }
@@ -605,7 +595,7 @@ export function buildClaudePrompt(params: {
 
   const hotChains = ctx.hot_chains
     .slice(0, 10)
-    .map((c) => `${c.ticker}: ${fmtPrem(Number(c.total_premium ?? 0))}`)
+    .map((c) => `${c.ticker}: ${fmtPremium(Number(c.total_premium ?? 0))}`)
     .join(", ");
 
   const vixContext = [

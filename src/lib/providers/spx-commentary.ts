@@ -5,6 +5,7 @@ import {
   formatFlowStrikeStackLine,
   flowStackSignature,
 } from "@/lib/largo/flow-strike-stacks";
+import { fmtPremium } from "@/lib/fmt-money";
 
 export type SpxCommentaryResult = {
   headline: string;
@@ -18,30 +19,6 @@ export type SpxCommentaryResult = {
 function fmt(n: number | null | undefined, d = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-}
-
-function fmtPrem(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
-}
-
-/**
- * Signed compact USD for GEX magnitudes — MATCHES the desk GEX-walls panel formatter
- * (sign before $, K/M/B ladder) so Largo's read and the panel show the IDENTICAL string.
- * net_gex is fed to the prompt PRE-FORMATTED (not raw) so the model can only quote it, never
- * guess the scale — the bug where raw millions got mislabeled "B" from a stale prompt example.
- */
-function fmtGexUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "n/a";
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
 }
 
 function computeDelta(
@@ -107,7 +84,7 @@ function computeDelta(
   if (nextTape.length > prevTape.length && nextTape[0]) {
     const latest = nextTape[0];
     lines.push(
-      `New tape: ${latest.kind === "flow" ? "flow" : "dark pool"} ${latest.label} · ${fmtPrem(latest.premium)}`
+      `New tape: ${latest.kind === "flow" ? "flow" : "dark pool"} ${latest.label} · ${fmtPremium(latest.premium)}`
     );
   }
 
@@ -256,15 +233,15 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
     gex_walls_0dte: {
       support_nodes: gexSupport.map((w) => ({
         strike: w.strike,
-        net_gex: fmtGexUsd(w.net_gex),
+        net_gex: fmtPremium(w.net_gex),
         distance_from_price: price != null ? w.strike - price : null,
       })),
       resistance_nodes: gexResistance.map((w) => ({
         strike: w.strike,
-        net_gex: fmtGexUsd(w.net_gex),
+        net_gex: fmtPremium(w.net_gex),
         distance_from_price: price != null ? w.strike - price : null,
       })),
-      all_walls: gexWalls.map((w) => ({ ...w, net_gex: fmtGexUsd(w.net_gex) })),
+      all_walls: gexWalls.map((w) => ({ ...w, net_gex: fmtPremium(w.net_gex) })),
     },
 
     support_resistance_levels: {
@@ -545,7 +522,7 @@ SESSION PHASE: ${sessionPhase} (ET). Tailor the call to the phase:
 - afternoon/power-hour: momentum + squeeze risk at the gamma flip
 - final-30: no new 0DTE unless already in
 
-ACCURACY: every number/strike/premium comes from the JSON below or WHAT CHANGED. Never invent. Skip anything null/empty. SPX prices to .00; premiums like ${fmtPrem(1_500_000)}.
+ACCURACY: every number/strike/premium comes from the JSON below or WHAT CHANGED. Never invent. Skip anything null/empty. SPX prices to .00; premiums like ${fmtPremium(1_500_000)}.
 
 DATA AVAILABLE (use only what is populated): data_freshness (feed_stalled, gex_stale, gex_age_ms); confluence (grade A+/A/B/C/D, action, factors); price_action (price, change_pct, above_vwap, vwap, hod/lod, pdh/pdl); moving_averages; support_resistance_levels (nearest_support/resistance); dealer_gex (gex_net, gamma_flip, above_gamma_flip, gex_king, max_pain, gamma_regime); gex_walls_0dte (strikes + net_gex); flow_0dte (call/put/net premium); spx_option_flows (sweeps/blocks); live_tape; strike_stacks; dark_pool (bias, pcr, prints); market_tide; nope; volatility (VIX, IV rank, term); internals (TICK/TRIN/ADD); market_breadth; macro_calendar_today; news_headlines; mega_cap_stocks; net_premium_velocity.
 

@@ -1,6 +1,9 @@
 /** Shared GEX heatmap cell formatting + color scale (Thermal + SPX Slayer matrix). */
 
 import type { CSSProperties } from "react";
+import { fmtPremium as fmtHeatmapMoney } from "@/lib/fmt-money";
+
+export { fmtHeatmapMoney };
 
 /** SPX Slayer matrix uses gex/vex; Thermal adds dex/charm on the same cell scale. */
 export type GexHeatmapLens = "gex" | "vex" | "dex" | "charm";
@@ -11,17 +14,6 @@ const LENS_COLORS: Record<GexHeatmapLens, { posRgb: string; negRgb: string }> = 
   dex: { posRgb: "34, 211, 238", negRgb: "255, 45, 85" },
   charm: { posRgb: "255, 210, 63", negRgb: "255, 45, 85" },
 };
-
-/** Compact unsigned dollar: $22.1K / -$45.2M */
-export function fmtHeatmapMoney(n: number): string {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  if (abs < 1) return "$0.0K";
-  return `${sign}$${abs.toFixed(0)}`;
-}
 
 /** Signed cell value — competitor-style shows $0.0K at zero when showZero is true. */
 export function fmtHeatmapMoneySigned(n: number, opts?: { showZero?: boolean }): string {
