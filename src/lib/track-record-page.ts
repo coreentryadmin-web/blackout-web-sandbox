@@ -1,6 +1,6 @@
 import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
 import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/lib/spx-play-outcomes";
-import { buildPublicTrackRecord } from "@/lib/track-record-public";
+import { buildPublicTrackRecord, formatPercent } from "@/lib/track-record-public";
 import { entryRangeMid } from "@/lib/nighthawk/entry-range";
 
 /** Shape returned by GET /api/track-record — shared with TrackRecordView. */
@@ -42,7 +42,7 @@ function spxFromStats(stats: PlayOutcomeStats | null): TrackRecordPagePayload["s
     total: stats.total_closed,
     wins: stats.overall.wins,
     losses: stats.overall.losses,
-    winRatePct: Math.round(stats.overall.win_rate * 1000) / 10,
+    winRatePct: formatPercent(stats.overall.win_rate, 1),
   };
 }
 
@@ -80,7 +80,7 @@ export function nhFromRows(rows: NighthawkPlayOutcomeRow[]): TrackRecordPagePayl
   const total = scoreable.length;
   const wins = winners.length;
   const losses = losers.length;
-  const winRatePct = total > 0 ? Math.round((wins / total) * 1000) / 10 : null;
+  const winRatePct = total > 0 ? formatPercent(wins / total, 1) : null;
 
   const winnerReturns = winners.map(nhReturnPct).filter((v): v is number => v != null);
   const loserReturns = losers.map(nhReturnPct).filter((v): v is number => v != null);
@@ -150,15 +150,26 @@ export async function buildTrackRecordPagePayload(): Promise<TrackRecordPagePayl
   }
 }
 
-/** Compare page SPX block to the public ledger rollup (for verifiers + tests). */
+/** Compare page SPX block to the public ledger rollup (for verifiers + tests).
+ *  Includes the win-rate field: both sides derive from the same shared
+ *  `formatPercent()`, so re-rounding the page's 1-decimal value to the public
+ *  side's 0-decimal precision with that same function must always agree —
+ *  this is what actually catches a future re-divergence (e.g. one call site
+ *  reverting to a hand-written rounding formula) rather than just checking
+ *  the two sides happen to look similar. */
 export function pageSpxMatchesPublic(
   page: TrackRecordPagePayload,
   pub: Awaited<ReturnType<typeof buildPublicTrackRecord>>
 ): boolean {
   if (!pub.available) return page.spxSlayer.total === 0;
+  const winRateAgrees =
+    page.spxSlayer.winRatePct == null
+      ? pub.win_rate_pct === 0
+      : formatPercent(page.spxSlayer.winRatePct / 100, 0) === pub.win_rate_pct;
   return (
     page.spxSlayer.total === pub.total_closed &&
     page.spxSlayer.wins === pub.wins &&
-    page.spxSlayer.losses === pub.losses
+    page.spxSlayer.losses === pub.losses &&
+    winRateAgrees
   );
 }

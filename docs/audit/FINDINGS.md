@@ -9,6 +9,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — Internal vs. public win-rate rounding could disagree (audit finding, medium)
+**Where:** `src/lib/track-record-page.ts`'s `spxFromStats()` rounded win-rate to 1 decimal (`Math.round(x*1000)/10`); `src/lib/track-record-public.ts`'s `pct()` independently rounded the same fraction to an integer (`Math.round(x*100)`) — two hand-written formulas over the same input that can double-round-diverge on some fractions (e.g. `0.6245` rounds to `62.5` at 1dp, but a *separately*-computed integer formula landing on `62` instead of the consistent `63` that re-rounding `62.5` itself gives is a real, silent split-brain a member could notice by comparing `/track-record` to the public share card). `pageSpxMatchesPublic()` (the dedicated consistency verifier) only ever compared total/wins/losses, never the win-rate field itself.
+
+**Fix:** extracted `formatPercent(fraction, dp)` in `track-record-public.ts` as the single shared rounding formula, used at both call sites (`dp=1` internal, `dp=0` public) plus Night Hawk's own win-rate calc in the same file (same formula, same cleanup). Extended `pageSpxMatchesPublic()` to assert the two sides agree when re-rounded to the same precision via that same function — this is what actually catches a future re-divergence, not just checking the numbers look similar.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `935/935` passing (4 new); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — Night's Watch position-detail response skipped `roundFloats()` (audit finding, medium)
 **Where:** `src/app/api/account/positions/[id]/detail/route.ts` — `net_gex` values pulled directly from raw GEX `strike_totals` (via `buildPositionDetail`'s `gexWallsFromHeatmapSpot`) could reach the wire with float noise, the one route skipping the `roundFloats()` convention every sibling GEX-consuming route applies. Currently masked by the frontend's `.toFixed()`.
 

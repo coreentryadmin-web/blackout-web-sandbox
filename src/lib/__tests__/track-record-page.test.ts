@@ -98,6 +98,49 @@ describe("track-record-page", () => {
     assert.equal(pageSpxMatchesPublic(page, pub), false);
   });
 
+  it("pageSpxMatchesPublic catches a double-rounding win-rate divergence, not just totals", () => {
+    // Regression: page.winRatePct (1 decimal) and pub.win_rate_pct (integer) used to be
+    // computed by two independently hand-written rounding formulas over the same raw
+    // fraction. A raw win_rate of 0.6245 rounds to page="62.5" (1dp) and, if pub had used
+    // a *different* formula, could independently land on "62" instead of the consistent
+    // "63" that rounding 62.5 itself gives -- a real member-visible split-brain even
+    // though total/wins/losses all agree. This asserts that mismatch is caught.
+    const pub: PublicTrackRecord = {
+      available: true,
+      generated_at: new Date().toISOString(),
+      total_closed: 10,
+      days_of_data: 5,
+      win_rate_pct: 62, // deliberately wrong vs. the page's 62.5 -- should NOT agree
+      wins: 6,
+      losses: 4,
+      breakeven: 0,
+      paths: {
+        cold_buy: { count: 0, win_rate_pct: 0, avg_mfe_pts: 0 },
+        watch_promote: { count: 0, win_rate_pct: 0, avg_mfe_pts: 0 },
+      },
+      adaptive_active: false,
+      summary: "test",
+    };
+    const page = {
+      spxSlayer: { total: 10, wins: 6, losses: 4, winRatePct: 62.5 },
+      nightHawk: {
+        total: 0,
+        wins: 0,
+        losses: 0,
+        winRatePct: null,
+        avgWinnerPct: null,
+        avgLoserPct: null,
+        profitFactor: null,
+      },
+      methodology: "",
+      liveData: true,
+    };
+    assert.equal(pageSpxMatchesPublic(page, pub), false, "62.5 rounds to 63, not 62 -- must be flagged");
+
+    const consistentPub = { ...pub, win_rate_pct: 63 };
+    assert.equal(pageSpxMatchesPublic(page, consistentPub), true, "63 is the correct re-round of 62.5");
+  });
+
   it("nhFromRows excludes a corrupt entry range from winner stats instead of corrupting them", () => {
     // Corrupt row: entry_range_low=17 is a garbage placeholder against a stock
     // trading near $450 — the range width is wildly outside a plausible intraday

@@ -28,9 +28,21 @@ export type PublicTrackRecord = {
   summary: string;
 };
 
-function pct(x: number): number {
+/** Shared canonical formatter for a 0-1 win-rate fraction → a percentage at `dp` decimal
+ *  places. The internal /track-record page (dp=1) and this public projection (dp=0) both
+ *  route through this so the two displayed numbers are always the same fraction rounded by
+ *  the same rule at different precision, never two independently-hand-written formulas that
+ *  can double-round-diverge on the same input (e.g. 0.6245 → "62.5%" vs a separately-computed
+ *  "62%" instead of the consistent "63%" that rounding 62.5 itself would give). */
+export function formatPercent(x: number, dp = 0): number {
   if (!Number.isFinite(x)) return 0;
-  return Math.round(Math.min(1, Math.max(0, x)) * 100);
+  const clamped = Math.min(1, Math.max(0, x)) * 100;
+  const factor = 10 ** dp;
+  return Math.round(clamped * factor) / factor;
+}
+
+function pct(x: number): number {
+  return formatPercent(x, 0);
 }
 
 function pts(x: number): number {
