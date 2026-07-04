@@ -3,39 +3,33 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  buildHelixRungs,
-  buildMeshWires,
+  buildCenterHelix,
+  buildImpulsePath,
+  buildIntelligenceRings,
   buildStarField,
-  captureParticlePath,
-  ellipsePath,
-  placeSatellites,
-  pulseTiming,
-  ringRadii,
-  type PlacedSatellite,
-  type Satellite,
+  placeCapabilities,
+  type PlacedCapability,
+  type Capability,
 } from "./bie-helix-engine";
 
-// Alive helix mesh — BIE is the engine, not a pipeline handoff. Labels hidden
-// until hover; neural pulses travel inward; learning loops back from output.
+// Institutional AI reactor — helix hero, concentric intelligence rings, restrained motion.
 
 const VIEW_W = 960;
-const VIEW_H = 420;
+const VIEW_H = 440;
 const CORE = { x: VIEW_W / 2, y: VIEW_H / 2 };
-const MAX_RX = 248;
-const MAX_RY = 118;
-const RUNG_COUNT = 14;
-const STAR_COUNT = 140;
+const MAX_RX = 280;
+const MAX_RY = 130;
+const HELIX_H = 320;
+const HELIX_W = 92;
+const STAR_COUNT = 320;
 
-const SATELLITES: Satellite[] = [
-  { id: "pattern", label: "Pattern Recognition", detail: "Structure, regime, and repeat setups across sessions", angleDeg: 305, ring: 0, accent: "#bf5fff" },
-  { id: "reasoning", label: "Market Reasoning", detail: "Cross-check signals against live context before they ship", angleDeg: 20, ring: 0, accent: "#bf5fff" },
-  { id: "memory", label: "Memory", detail: "Every alert, outcome, and precedent feeds the next call", angleDeg: 95, ring: 0, accent: "#bf5fff" },
-  { id: "risk", label: "Risk Analysis", detail: "Confidence gates and invalidation before anything reaches you", angleDeg: 170, ring: 0, accent: "#bf5fff" },
-  { id: "learn", label: "Continuous Learning", detail: "Calibration tightens with every market day and session", angleDeg: 245, ring: 0, accent: "#bf5fff" },
-  { id: "market", label: "Market Intelligence", detail: "Live tape, positioning, liquidity, and volatility ingested", angleDeg: 340, ring: 1, accent: "#5df7ff" },
-  { id: "validation", label: "Validation", detail: "Integrity, consistency, and real-time self-audit", angleDeg: 55, ring: 1, accent: "#00e676" },
-  { id: "confidence", label: "Confidence", detail: "Every number grounded or withheld — never fabricated", angleDeg: 145, ring: 1, accent: "#00e676" },
-  { id: "outputs", label: "Trusted Output", detail: "Desk instruments receive only validated intelligence", angleDeg: 235, ring: 2, accent: "#ffcc4d" },
+/** Invisible capability anchors — revealed only on hover. */
+const CAPABILITIES: Capability[] = [
+  { id: "pattern", label: "Pattern Recognition", detail: "Regime structure and repeat setups across sessions", angleDeg: 312, ring: 1, accent: "#bf5fff" },
+  { id: "memory", label: "Memory", detail: "Every alert, outcome, and precedent informs the next call", angleDeg: 48, ring: 1, accent: "#bf5fff" },
+  { id: "validation", label: "Validation", detail: "Integrity, consistency, and real-time self-audit", angleDeg: 128, ring: 2, accent: "#00e676" },
+  { id: "confidence", label: "Confidence", detail: "Every number grounded or withheld — never fabricated", angleDeg: 208, ring: 2, accent: "#00e676" },
+  { id: "risk", label: "Risk Analysis", detail: "Confidence gates and invalidation before anything ships", angleDeg: 288, ring: 3, accent: "#5df7ff" },
 ];
 
 type OutputProduct = { name: string; href: string; accent: string };
@@ -57,7 +51,7 @@ const READOUT_LINES = [
   "trust the output because validation happened first",
 ];
 
-type ImpulsePhase = "idle" | "outer" | "inner" | "core" | "out" | "feedback";
+type ReactorPhase = "idle" | "inbound" | "core" | "outbound";
 
 function useLiveOnView<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -66,7 +60,7 @@ function useLiveOnView<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const io = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.15 });
+    const io = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.12 });
     io.observe(el);
     return () => io.disconnect();
   }, []);
@@ -74,11 +68,10 @@ function useLiveOnView<T extends HTMLElement>() {
   return { ref, visible };
 }
 
-function useParticleCanvas(
+function useReactorParticles(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   active: boolean,
-  reduceMotion: boolean,
-  capturePaths: string[]
+  reduceMotion: boolean
 ) {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -88,12 +81,12 @@ function useParticleCanvas(
     if (!ctx) return;
 
     const dpr = Math.min(window.devicePixelRatio ?? 1, 2);
-    const stars = buildStarField(CORE.x, CORE.y, MAX_RX * 1.05, MAX_RY * 1.05, STAR_COUNT);
+    const stars = buildStarField(CORE.x, CORE.y, MAX_RX, MAX_RY, STAR_COUNT);
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
@@ -101,57 +94,25 @@ function useParticleCanvas(
     ro.observe(canvas);
 
     let frame = 0;
-    let captureT = 0;
-    let nextCapture = 180 + Math.random() * 120;
-    let capturePathIdx = 0;
-    let captureProgress = 0;
     let raf = 0;
 
-    const scaleX = () => canvas.getBoundingClientRect().width / VIEW_W;
-    const scaleY = () => canvas.getBoundingClientRect().height / VIEW_H;
-
     const draw = () => {
-      const w = canvas.getBoundingClientRect().width;
-      const h = canvas.getBoundingClientRect().height;
-      ctx.clearRect(0, 0, w, h);
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / VIEW_W;
+      const sy = rect.height / VIEW_H;
+      ctx.clearRect(0, 0, rect.width, rect.height);
       ctx.save();
-      ctx.scale(scaleX(), scaleY());
+      ctx.scale(sx, sy);
 
       for (const s of stars) {
-        const twinkle = 0.55 + 0.45 * Math.sin(frame * 0.02 + s.x * 0.03);
+        const tw = 0.88 + 0.12 * Math.sin(frame * 0.008 + s.phase);
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(148, 226, 255, ${s.opacity * twinkle})`;
+        ctx.fillStyle = `rgba(148, 226, 255, ${s.opacity * tw})`;
         ctx.fill();
       }
 
       frame++;
-      captureT++;
-      if (captureT > nextCapture && capturePaths.length > 0) {
-        captureProgress += 0.012 + Math.random() * 0.004;
-        if (captureProgress >= 1) {
-          captureProgress = 0;
-          captureT = 0;
-          nextCapture = 200 + Math.random() * 180;
-          capturePathIdx = (capturePathIdx + 1) % capturePaths.length;
-        } else {
-          const path = capturePaths[capturePathIdx];
-          if (path) {
-            const len = 80;
-            const pt = approximatePathPoint(path, captureProgress);
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, 2.8, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(93, 247, 255, 0.95)";
-            ctx.shadowColor = "#5df7ff";
-            ctx.shadowBlur = 8;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            void len;
-          }
-        }
-      }
-
-      ctx.restore();
       raf = requestAnimationFrame(draw);
     };
 
@@ -160,24 +121,7 @@ function useParticleCanvas(
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [active, reduceMotion, capturePaths, canvasRef]);
-}
-
-/** Lightweight path sampler for quadratic segments in captureParticlePath. */
-function approximatePathPoint(d: string, t: number): { x: number; y: number } {
-  const nums = d.match(/-?\d+\.?\d*/g)?.map(Number) ?? [];
-  if (nums.length < 8) return { x: CORE.x, y: CORE.y };
-  const [ox, oy, qx, qy, cx, cy, qx2, qy2, ex, ey] = nums;
-  if (t < 0.5) {
-    const u = t * 2;
-    const x = (1 - u) * (1 - u) * ox + 2 * (1 - u) * u * qx + u * u * cx;
-    const y = (1 - u) * (1 - u) * oy + 2 * (1 - u) * u * qy + u * u * cy;
-    return { x, y };
-  }
-  const u = (t - 0.5) * 2;
-  const x = (1 - u) * (1 - u) * cx + 2 * (1 - u) * u * qx2 + u * u * ex;
-  const y = (1 - u) * (1 - u) * cy + 2 * (1 - u) * u * qy2 + u * u * ey;
-  return { x, y };
+  }, [active, reduceMotion, canvasRef]);
 }
 
 export function BieBrainBanner() {
@@ -187,32 +131,20 @@ export function BieBrainBanner() {
 
   const [lineIndex, setLineIndex] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [hovered, setHovered] = useState<PlacedSatellite | null>(null);
-  const [impulse, setImpulse] = useState<ImpulsePhase>("idle");
-  const [drawn, setDrawn] = useState(false);
+  const [hovered, setHovered] = useState<PlacedCapability | null>(null);
+  const [phase, setPhase] = useState<ReactorPhase>("idle");
+  const [pulseKey, setPulseKey] = useState(0);
+  const [pulseAngle, setPulseAngle] = useState(40);
 
-  const placed = useMemo(() => placeSatellites(CORE.x, CORE.y, SATELLITES, MAX_RX, MAX_RY), []);
-  const wires = useMemo(() => buildMeshWires(CORE.x, CORE.y, placed, "outputs"), [placed]);
-  const rungsA = useMemo(() => buildHelixRungs(CORE.x, CORE.y, MAX_RX * 0.64, MAX_RY * 0.64, RUNG_COUNT, 0), []);
-  const rungsB = useMemo(() => buildHelixRungs(CORE.x, CORE.y, MAX_RX * 0.64, MAX_RY * 0.64, RUNG_COUNT, 180 / RUNG_COUNT), []);
-  const ringGuides = useMemo(
-    () =>
-      ([0, 1, 2] as const).map((ring) => {
-        const { rx, ry } = ringRadii(ring, MAX_RX, MAX_RY);
-        return { ring, d: ellipsePath(CORE.x, CORE.y, rx, ry) };
-      }),
-    []
+  const helix = useMemo(() => buildCenterHelix(CORE.x, CORE.y, HELIX_H, HELIX_W), []);
+  const rings = useMemo(() => buildIntelligenceRings(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
+  const anchors = useMemo(() => placeCapabilities(CORE.x, CORE.y, CAPABILITIES, MAX_RX, MAX_RY), []);
+  const impulsePath = useMemo(
+    () => buildImpulsePath(CORE.x, CORE.y, pulseAngle, MAX_RX, MAX_RY),
+    [pulseAngle]
   );
 
-  const capturePaths = useMemo(
-    () =>
-      placed.slice(0, 5).map((s, i) =>
-        captureParticlePath(CORE.x, CORE.y, s.angleDeg + i * 12, MAX_RX, MAX_RY, placed.find((p) => p.id === "outputs")?.angleDeg ?? 235)
-      ),
-    [placed]
-  );
-
-  useParticleCanvas(canvasRef, visible, reduceMotion, capturePaths);
+  useReactorParticles(canvasRef, visible, reduceMotion);
 
   useEffect(() => {
     const id = setInterval(() => setLineIndex((i) => (i + 1) % READOUT_LINES.length), 3200);
@@ -229,42 +161,43 @@ export function BieBrainBanner() {
 
   useEffect(() => {
     if (!visible) return;
-    setDrawn(true);
     const el = svgRef.current;
     if (el && typeof el.unpauseAnimations === "function") el.unpauseAnimations();
   }, [visible]);
 
+  /** One elegant impulse every ~7s — not a constant fireworks show. */
   useEffect(() => {
     if (!visible || reduceMotion) {
-      setImpulse("idle");
+      setPhase("idle");
       return;
     }
 
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    const schedule = () => {
+    const fire = () => {
       if (cancelled) return;
-      setImpulse("outer");
-      timers.push(setTimeout(() => !cancelled && setImpulse("inner"), 700));
-      timers.push(setTimeout(() => !cancelled && setImpulse("core"), 1300));
-      timers.push(setTimeout(() => !cancelled && setImpulse("out"), 1900));
-      timers.push(setTimeout(() => !cancelled && setImpulse("feedback"), 2500));
-      timers.push(setTimeout(() => !cancelled && setImpulse("idle"), 3200));
-      timers.push(setTimeout(schedule, 4200 + Math.random() * 2800));
+      setPulseAngle(20 + Math.random() * 300);
+      setPulseKey((k) => k + 1);
+      setPhase("inbound");
+      timers.push(setTimeout(() => !cancelled && setPhase("core"), 900));
+      timers.push(setTimeout(() => !cancelled && setPhase("outbound"), 1500));
+      timers.push(setTimeout(() => !cancelled && setPhase("idle"), 2400));
+      timers.push(setTimeout(fire, 6800 + Math.random() * 3200));
     };
 
-    schedule();
+    timers.push(setTimeout(fire, 1200));
     return () => {
       cancelled = true;
       timers.forEach(clearTimeout);
     };
   }, [visible, reduceMotion]);
 
-  const litRing = impulse === "outer" ? 2 : impulse === "inner" ? 1 : impulse === "core" || impulse === "out" || impulse === "feedback" ? 0 : -1;
+  const litRing =
+    phase === "inbound" ? 3 : phase === "outbound" ? 2 : phase === "core" ? 1 : -1;
 
-  const onSatelliteEnter = useCallback((s: PlacedSatellite) => setHovered(s), []);
-  const onSatelliteLeave = useCallback(() => setHovered(null), []);
+  const onAnchorEnter = useCallback((c: PlacedCapability) => setHovered(c), []);
+  const onAnchorLeave = useCallback(() => setHovered(null), []);
 
   return (
     <div className="bie-brain-banner">
@@ -279,15 +212,16 @@ export function BieBrainBanner() {
 
       <div
         ref={diagramRef}
-        className="bie-brain-diagram bie-helix-diagram"
+        className="bie-brain-diagram bie-reactor-diagram"
         role="img"
-        aria-label="BlackOut Intelligence Engine: an interconnected helix mesh where market intelligence is validated, reasoned, and learned inside the engine before trusted output reaches the desk."
+        aria-label="BlackOut Intelligence Engine reactor: a helix core surrounded by intelligence rings. Hover ring nodes to explore capabilities."
       >
-        <div className="bie-brain-canvas bie-helix-canvas">
-          <canvas ref={canvasRef} className="bie-helix-particles" aria-hidden />
+        <div className="bie-brain-canvas bie-reactor-canvas">
+          <canvas ref={canvasRef} className="bie-reactor-particles" aria-hidden />
+
           <svg
             ref={svgRef}
-            className={drawn ? "bie-brain-svg bie-helix-svg is-drawn" : "bie-brain-svg bie-helix-svg"}
+            className="bie-brain-svg bie-reactor-svg"
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             preserveAspectRatio="xMidYMid meet"
           >
@@ -297,139 +231,107 @@ export function BieBrainBanner() {
                 <stop offset="42%" stopColor="#00e5ff" />
                 <stop offset="100%" stopColor="#0a3b45" />
               </radialGradient>
-              <radialGradient id="bie-helix-glow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="rgba(0,229,255,0.28)" />
+              <radialGradient id="bie-reactor-vignette" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="rgba(0,229,255,0.14)" />
                 <stop offset="100%" stopColor="rgba(0,229,255,0)" />
               </radialGradient>
-              <linearGradient id="bie-core-halo" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="rgba(0,229,255,0.65)" />
-                <stop offset="100%" stopColor="rgba(191,95,255,0.45)" />
+              <linearGradient id="bie-helix-strand-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#5df7ff" stopOpacity="0.95" />
+                <stop offset="50%" stopColor="#00e5ff" stopOpacity="1" />
+                <stop offset="100%" stopColor="#bf5fff" stopOpacity="0.85" />
               </linearGradient>
-              <filter id="bie-helix-bloom" x="-80%" y="-80%" width="260%" height="260%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+              <filter id="bie-helix-hero-bloom" x="-60%" y="-20%" width="220%" height="140%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b" />
                 <feMerge>
-                  <feMergeNode in="blur" />
+                  <feMergeNode in="b" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
-              {placed.map((s) => (
-                <linearGradient
-                  key={`grad-${s.id}`}
-                  id={`bie-spoke-grad-${s.id}`}
-                  gradientUnits="userSpaceOnUse"
-                  x1={CORE.x}
-                  y1={CORE.y}
-                  x2={s.x}
-                  y2={s.y}
-                >
-                  <stop offset="0%" stopColor="#00e5ff" />
-                  <stop offset="100%" stopColor={s.accent} />
-                </linearGradient>
-              ))}
             </defs>
 
-            <circle cx={CORE.x} cy={CORE.y} r={MAX_RX * 0.95} className="bie-helix-atmosphere" fill="url(#bie-helix-glow)" />
+            <circle cx={CORE.x} cy={CORE.y} r={MAX_RX * 0.88} fill="url(#bie-reactor-vignette)" className="bie-reactor-vignette" />
 
-            <g className="bie-helix-strand bie-helix-strand-b">
-              {ringGuides.map(({ ring, d }) => (
-                <path key={`guide-b-${ring}`} d={d} className={`bie-helix-ring-guide bie-helix-ring-${ring}`} pathLength={1} />
-              ))}
-              {rungsB.map((r, i) => (
-                <line
-                  key={`rung-b-${i}`}
-                  x1={r.x1}
-                  y1={r.y1}
-                  x2={r.x2}
-                  y2={r.y2}
-                  className="bie-helix-rung"
-                  strokeOpacity={0.18 + 0.5 * r.depth}
-                  strokeWidth={0.4 + 1.2 * r.depth}
-                />
-              ))}
-            </g>
-
-            <g className="bie-helix-strand bie-helix-strand-a">
-              {rungsA.map((r, i) => (
-                <line
-                  key={`rung-a-${i}`}
-                  x1={r.x1}
-                  y1={r.y1}
-                  x2={r.x2}
-                  y2={r.y2}
-                  className="bie-helix-rung"
-                  strokeOpacity={0.22 + 0.55 * r.depth}
-                  strokeWidth={0.5 + 1.4 * r.depth}
-                />
-              ))}
-            </g>
-
-            <g className="bie-helix-mesh">
-              {wires.map((w, i) => {
-                const { dur, delay } = pulseTiming(w.kind, i);
-                const isFeedback = w.kind === "feedback";
-                return (
-                  <g key={w.id}>
-                    <path
-                      id={w.id}
-                      d={w.d}
-                      pathLength={1}
-                      className={`bie-wire bie-${w.kind}-wire${isFeedback && impulse === "feedback" ? " is-feedback-active" : ""}`}
-                      stroke={w.kind === "spoke" ? `url(#bie-spoke-grad-${w.satelliteId})` : w.accent}
-                      style={{ animationDelay: `${i * 0.05}s` }}
-                    />
-                    {!reduceMotion && w.kind !== "feedback" && (
-                      <circle r={w.kind === "spoke" ? 2.6 : 1.8} className={`bie-${w.kind}-pulse`} fill={w.accent}>
-                        <animateMotion dur={`${dur}s`} begin={`${delay}s`} repeatCount="indefinite">
-                          <mpath href={`#${w.id}`} />
-                        </animateMotion>
-                      </circle>
-                    )}
-                    {!reduceMotion && isFeedback && (
-                      <circle r={2.2} className="bie-feedback-pulse" fill="#bf5fff">
-                        <animateMotion dur="5.4s" begin="-2s" repeatCount="indefinite">
-                          <mpath href={`#${w.id}`} />
-                        </animateMotion>
-                      </circle>
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-
-            {placed.map((s) => (
+            {/* Concentric intelligence rings — slow, independent rotation */}
+            {rings.map((ring) => (
               <g
-                key={s.id}
-                className={`bie-helix-satellite bie-helix-satellite-ring-${s.ring}${litRing === s.ring ? " is-impulse-lit" : ""}${hovered?.id === s.id ? " is-hovered" : ""}`}
-                transform={`translate(${s.x}, ${s.y})`}
-                onMouseEnter={() => onSatelliteEnter(s)}
-                onMouseLeave={onSatelliteLeave}
-                onFocus={() => onSatelliteEnter(s)}
-                onBlur={onSatelliteLeave}
-                tabIndex={0}
-                role="button"
-                aria-label={`${s.label}: ${s.detail}`}
+                key={`ring-${ring.ring}`}
+                className={`bie-reactor-ring bie-reactor-ring-${ring.ring}${litRing === ring.ring ? " is-lit" : ""}`}
+                style={
+                  {
+                    ["--ring-period" as string]: `${ring.periodSec}s`,
+                    ["--ring-reverse" as string]: ring.reverse ? "reverse" : "normal",
+                  } as React.CSSProperties
+                }
               >
-                <circle r={s.ring === 2 ? 9 : s.ring === 1 ? 7 : 5.5} className="bie-helix-satellite-glow" fill={s.accent} />
-                <circle r={s.ring === 2 ? 5 : s.ring === 1 ? 4 : 3} className="bie-helix-satellite-core" fill={s.accent} />
+                <ellipse cx={CORE.x} cy={CORE.y} rx={ring.rx} ry={ring.ry} className="bie-reactor-ring-stroke" />
               </g>
             ))}
 
-            <g className={`bie-helix-core${impulse === "core" || impulse === "out" ? " is-impulse-core" : ""}`} transform={`translate(${CORE.x}, ${CORE.y})`}>
-              <circle cx={0} cy={0} r={52} className="bie-brain-ring" style={{ animationDelay: "0s" }} />
-              <circle cx={0} cy={0} r={52} className="bie-brain-ring" style={{ animationDelay: "1.1s" }} />
-              <circle cx={0} cy={0} r={52} className="bie-brain-ring" style={{ animationDelay: "2.2s" }} />
-              <circle cx={0} cy={0} r={34} className="bie-brain-core-shell" />
-              <circle cx={0} cy={0} r={22} className="bie-brain-core" filter="url(#bie-helix-bloom)" />
+            {/* Hero helix — centerpiece */}
+            <g className="bie-reactor-helix" filter="url(#bie-helix-hero-bloom)">
+              <path d={helix.strandA} className="bie-reactor-helix-strand" fill="none" stroke="url(#bie-helix-strand-grad)" />
+              <path d={helix.strandB} className="bie-reactor-helix-strand bie-reactor-helix-strand-b" fill="none" stroke="url(#bie-helix-strand-grad)" />
+              {helix.rungs.map((r, i) => (
+                <line
+                  key={`hr-${i}`}
+                  x1={r.x1}
+                  y1={r.y1}
+                  x2={r.x2}
+                  y2={r.y2}
+                  className="bie-reactor-helix-rung"
+                  strokeOpacity={0.12 + 0.55 * r.depth}
+                  strokeWidth={0.35 + 1.1 * r.depth}
+                />
+              ))}
+            </g>
+
+            {/* Single neural impulse — occasional, not constant */}
+            {!reduceMotion && phase !== "idle" && (
+              <g key={pulseKey}>
+                <path id="bie-reactor-impulse" d={impulsePath} className="bie-reactor-impulse-track" pathLength={1} />
+                <circle r={2.2} className="bie-reactor-impulse-dot" fill="#5df7ff">
+                  <animateMotion dur="1.35s" repeatCount="1" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1">
+                    <mpath href="#bie-reactor-impulse" />
+                  </animateMotion>
+                </circle>
+              </g>
+            )}
+
+            {/* Invisible capability anchors */}
+            {anchors.map((c) => (
+              <g
+                key={c.id}
+                className={`bie-reactor-anchor${hovered?.id === c.id ? " is-active" : ""}${litRing === c.ring ? " is-lit" : ""}`}
+                transform={`translate(${c.x}, ${c.y})`}
+                onMouseEnter={() => onAnchorEnter(c)}
+                onMouseLeave={onAnchorLeave}
+                onFocus={() => onAnchorEnter(c)}
+                onBlur={onAnchorLeave}
+                tabIndex={0}
+                role="button"
+                aria-label={`${c.label}: ${c.detail}`}
+              >
+                <circle r={14} className="bie-reactor-anchor-hit" fill="transparent" />
+                <circle r={2.2} className="bie-reactor-anchor-dot" fill={c.accent} />
+              </g>
+            ))}
+
+            <g
+              className={`bie-reactor-core${phase === "core" || phase === "outbound" ? " is-active" : ""}`}
+              transform={`translate(${CORE.x}, ${CORE.y})`}
+            >
+              <circle cx={0} cy={0} r={36} className="bie-reactor-core-halo" />
+              <circle cx={0} cy={0} r={20} className="bie-brain-core" />
             </g>
           </svg>
 
-          <span className="bie-brain-core-label bie-helix-core-label" aria-hidden>
+          <span className="bie-brain-core-label bie-reactor-core-label" aria-hidden>
             BIE
           </span>
 
           {hovered && (
             <div
-              className="bie-helix-tooltip"
+              className="bie-reactor-tooltip"
               style={{
                 left: `${(hovered.x / VIEW_W) * 100}%`,
                 top: `${(hovered.y / VIEW_H) * 100}%`,
@@ -437,8 +339,8 @@ export function BieBrainBanner() {
               }}
               role="tooltip"
             >
-              <span className="bie-helix-tooltip-title">{hovered.label}</span>
-              <span className="bie-helix-tooltip-detail">{hovered.detail}</span>
+              <span className="bie-reactor-tooltip-title">{hovered.label}</span>
+              <span className="bie-reactor-tooltip-detail">{hovered.detail}</span>
             </div>
           )}
         </div>

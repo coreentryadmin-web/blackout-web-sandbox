@@ -1,146 +1,135 @@
-// Geometry for the alive BIE helix mesh — pure functions, unit-testable.
+// Geometry for the BIE institutional reactor — helix hero + concentric rings.
 
-import { chordPath, goldenSpiralPoint, pointOnEllipse } from "./bie-brain-geometry";
+import { goldenSpiralPoint, pointOnEllipse } from "./bie-brain-geometry";
 
-export type Satellite = {
+export type Capability = {
   id: string;
   label: string;
   detail: string;
   angleDeg: number;
-  /** 0 = inner intelligence ring, 1 = mid, 2 = outer deliver ring */
-  ring: 0 | 1 | 2;
+  /** 0 = innermost intelligence ring … 3 = outer */
+  ring: 0 | 1 | 2 | 3;
   accent: string;
 };
 
-export type PlacedSatellite = Satellite & { x: number; y: number; rx: number; ry: number };
+export type PlacedCapability = Capability & { x: number; y: number };
 
-export type MeshWire = {
-  id: string;
+export type HelixStrand = { d: string; phase: number };
+
+export type HelixRung = { x1: number; y1: number; x2: number; y2: number; depth: number };
+
+export type IntelligenceRing = {
+  ring: 0 | 1 | 2 | 3;
+  rx: number;
+  ry: number;
   d: string;
-  kind: "spoke" | "ring" | "cross" | "rung" | "feedback";
-  accent: string;
-  satelliteId?: string;
+  /** CSS animation duration (seconds) — each ring independent */
+  periodSec: number;
+  reverse: boolean;
 };
 
-const RING_SCALE: Record<0 | 1 | 2, number> = { 0: 0.38, 1: 0.58, 2: 0.78 };
+const RING_SCALE: Record<0 | 1 | 2 | 3, number> = {
+  0: 0.42,
+  1: 0.58,
+  2: 0.74,
+  3: 0.9,
+};
 
-export function ringRadii(ring: 0 | 1 | 2, maxRx: number, maxRy: number): { rx: number; ry: number } {
+const RING_MOTION: Record<0 | 1 | 2 | 3, { periodSec: number; reverse: boolean }> = {
+  0: { periodSec: 140, reverse: false },
+  1: { periodSec: 108, reverse: true },
+  2: { periodSec: 168, reverse: false },
+  3: { periodSec: 192, reverse: true },
+};
+
+export function ringRadii(ring: 0 | 1 | 2 | 3, maxRx: number, maxRy: number): { rx: number; ry: number } {
   const s = RING_SCALE[ring];
   return { rx: maxRx * s, ry: maxRy * s };
 }
 
-export function placeSatellite(
-  cx: number,
-  cy: number,
-  sat: Satellite,
-  maxRx: number,
-  maxRy: number
-): PlacedSatellite {
-  const { rx, ry } = ringRadii(sat.ring, maxRx, maxRy);
-  const { x, y } = pointOnEllipse(cx, cy, rx, ry, sat.angleDeg);
-  return { ...sat, x, y, rx, ry };
-}
-
-export function placeSatellites(
-  cx: number,
-  cy: number,
-  satellites: Satellite[],
-  maxRx: number,
-  maxRy: number
-): PlacedSatellite[] {
-  return satellites.map((s) => placeSatellite(cx, cy, s, maxRx, maxRy));
-}
-
-/** Ellipse path for a visible ring guide (SVG `d`). */
 export function ellipsePath(cx: number, cy: number, rx: number, ry: number): string {
   return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy}`;
 }
 
-/** DNA-style rungs between two ellipses at the same radii, phase-shifted by half a step. */
-export function buildHelixRungs(
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  count: number,
-  phaseOffsetDeg: number
-): { x1: number; y1: number; x2: number; y2: number; depth: number }[] {
-  const rungs: { x1: number; y1: number; x2: number; y2: number; depth: number }[] = [];
-  for (let i = 0; i < count; i++) {
-    const a1 = (360 / count) * i + phaseOffsetDeg;
-    const a2 = a1 + 180;
-    const p1 = pointOnEllipse(cx, cy, rx, ry, a1);
-    const p2 = pointOnEllipse(cx, cy, rx * 0.92, ry * 0.92, a2);
-    const rad = ((a1 - 90) * Math.PI) / 180;
-    const depth = Math.abs(Math.cos(rad));
-    rungs.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, depth });
-  }
-  return rungs;
+export function buildIntelligenceRings(cx: number, cy: number, maxRx: number, maxRy: number): IntelligenceRing[] {
+  return ([0, 1, 2, 3] as const).map((ring) => {
+    const { rx, ry } = ringRadii(ring, maxRx, maxRy);
+    const motion = RING_MOTION[ring];
+    return { ring, rx, ry, d: ellipsePath(cx, cy, rx, ry), ...motion };
+  });
 }
 
-export function buildMeshWires(
+export function placeCapability(
   cx: number,
   cy: number,
-  placed: PlacedSatellite[],
-  outputsId: string
-): MeshWire[] {
-  const wires: MeshWire[] = [];
+  cap: Capability,
+  maxRx: number,
+  maxRy: number
+): PlacedCapability {
+  const { rx, ry } = ringRadii(cap.ring, maxRx, maxRy);
+  const p = pointOnEllipse(cx, cy, rx, ry, cap.angleDeg);
+  return { ...cap, x: p.x, y: p.y };
+}
 
-  for (const s of placed) {
-    wires.push({
-      id: `spoke-${s.id}`,
-      d: chordPath(cx, cy, s.x, s.y, cx, cy, 0),
-      kind: "spoke",
-      accent: s.accent,
-      satelliteId: s.id,
-    });
-  }
+export function placeCapabilities(
+  cx: number,
+  cy: number,
+  caps: Capability[],
+  maxRx: number,
+  maxRy: number
+): PlacedCapability[] {
+  return caps.map((c) => placeCapability(cx, cy, c, maxRx, maxRy));
+}
 
-  const byRing = new Map<number, PlacedSatellite[]>();
-  for (const s of placed) {
-    const list = byRing.get(s.ring) ?? [];
-    list.push(s);
-    byRing.set(s.ring, list);
-  }
+/** Vertical double-helix centered in the reactor — the visual hero. */
+export function buildCenterHelix(
+  cx: number,
+  cy: number,
+  height: number,
+  width: number,
+  steps = 240
+): { strandA: string; strandB: string; rungs: HelixRung[] } {
+  const halfH = height / 2;
+  const top = cy - halfH;
+  const amp = width / 2;
+  const period = height / 3.2;
 
-  for (const [, ringSats] of byRing) {
-    const sorted = [...ringSats].sort((a, b) => a.angleDeg - b.angleDeg);
-    for (let i = 0; i < sorted.length; i++) {
-      const a = sorted[i];
-      const b = sorted[(i + 1) % sorted.length];
-      wires.push({
-        id: `ring-${a.id}-${b.id}`,
-        d: chordPath(a.x, a.y, b.x, b.y, cx, cy, 18 + a.ring * 8),
-        kind: "ring",
-        accent: "#5df7ff",
-      });
+  const strand = (phase: number) => {
+    const parts: string[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const y = top + (i / steps) * height;
+      const x = cx + amp * Math.sin(((y - top) / period) * 2 * Math.PI + phase);
+      parts.push(`${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`);
     }
-    if (sorted.length >= 3) {
-      for (let i = 0; i < sorted.length; i++) {
-        const a = sorted[i];
-        const b = sorted[(i + 2) % sorted.length];
-        wires.push({
-          id: `cross-${a.id}-${b.id}`,
-          d: chordPath(a.x, a.y, b.x, b.y, cx, cy, 36 + a.ring * 12),
-          kind: "cross",
-          accent: "#bf5fff",
-        });
-      }
-    }
+    return parts.join(" ");
+  };
+
+  const rungCount = 18;
+  const rungs: HelixRung[] = [];
+  for (let i = 0; i < rungCount; i++) {
+    const y = top + ((i + 0.5) / rungCount) * height;
+    const t = ((y - top) / period) * 2 * Math.PI;
+    const x1 = cx + amp * Math.sin(t);
+    const x2 = cx + amp * Math.sin(t + Math.PI);
+    const depth = Math.abs(Math.cos(t));
+    rungs.push({ x1, y1: y, x2, y2: y, depth });
   }
 
-  const outputs = placed.find((s) => s.id === outputsId);
-  if (outputs) {
-    wires.push({
-      id: "feedback-loop",
-      d: chordPath(outputs.x, outputs.y, cx, cy, cx, cy, -72),
-      kind: "feedback",
-      accent: "#bf5fff",
-      satelliteId: outputsId,
-    });
-  }
+  return { strandA: strand(0), strandB: strand(Math.PI), rungs };
+}
 
-  return wires;
+/** Single neural impulse: outer ring → core → radiate outward on mid ring. */
+export function buildImpulsePath(
+  cx: number,
+  cy: number,
+  entryAngle: number,
+  maxRx: number,
+  maxRy: number
+): string {
+  const outer = pointOnEllipse(cx, cy, maxRx * RING_SCALE[3], maxRy * RING_SCALE[3], entryAngle);
+  const mid = pointOnEllipse(cx, cy, maxRx * RING_SCALE[1], maxRy * RING_SCALE[1], entryAngle + 28);
+  const exit = pointOnEllipse(cx, cy, maxRx * RING_SCALE[2], maxRy * RING_SCALE[2], entryAngle + 140);
+  return `M ${outer.x.toFixed(1)} ${outer.y.toFixed(1)} Q ${mid.x.toFixed(1)} ${mid.y.toFixed(1)} ${cx} ${cy} Q ${(mid.x + cx) / 2} ${(mid.y + cy) / 2} ${exit.x.toFixed(1)} ${exit.y.toFixed(1)}`;
 }
 
 export function buildStarField(
@@ -149,34 +138,15 @@ export function buildStarField(
   maxRx: number,
   maxRy: number,
   count: number
-): { x: number; y: number; r: number; opacity: number }[] {
+): { x: number; y: number; r: number; opacity: number; phase: number }[] {
   return Array.from({ length: count }, (_, i) => {
-    const p = goldenSpiralPoint(cx, cy, maxRx, maxRy, i, count);
+    const p = goldenSpiralPoint(cx, cy, maxRx * 1.02, maxRy * 1.02, i, count);
     return {
       x: p.x,
       y: p.y,
-      r: i % 7 === 0 ? 1.4 : 0.9,
-      opacity: 0.15 + (i % 5) * 0.08,
+      r: i % 11 === 0 ? 0.75 : 0.45,
+      opacity: 0.035 + (i % 7) * 0.008,
+      phase: (i * 0.71) % (Math.PI * 2),
     };
   });
-}
-
-/** Path for a captured particle: outer edge → core → exit toward outputs. */
-export function captureParticlePath(
-  cx: number,
-  cy: number,
-  entryAngle: number,
-  maxRx: number,
-  maxRy: number,
-  exitAngle: number
-): string {
-  const outer = pointOnEllipse(cx, cy, maxRx * 0.92, maxRy * 0.92, entryAngle);
-  const mid = pointOnEllipse(cx, cy, maxRx * 0.5, maxRy * 0.5, entryAngle + 40);
-  const exit = pointOnEllipse(cx, cy, maxRx * 0.72, maxRy * 0.72, exitAngle);
-  return `M ${outer.x} ${outer.y} Q ${mid.x} ${mid.y} ${cx} ${cy} Q ${mid.x + 12} ${mid.y - 8} ${exit.x} ${exit.y}`;
-}
-
-export function pulseTiming(kind: MeshWire["kind"], i: number): { dur: number; delay: number } {
-  const base = kind === "spoke" ? 2.2 : kind === "ring" ? 3.4 : kind === "feedback" ? 5.2 : 4.8;
-  return { dur: base + (i % 4) * 0.28, delay: -((i * 0.53) % base) };
 }
