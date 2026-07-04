@@ -1920,6 +1920,15 @@ body::before {
   filter: drop-shadow(0 0 8px rgba(255, 200, 60, 0.75));
 }
 
+.bie-galaxy-nodes {
+  pointer-events: none;
+}
+
+.bie-galaxy-node {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 .bie-reactor-live .bie-star-node {
   animation: bie-star-twinkle 3.6s ease-in-out infinite;
 }

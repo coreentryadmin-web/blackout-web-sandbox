@@ -1,4 +1,3 @@
-import { fieldLineScale, pointOnFieldLine, type RingFieldNode } from "./bie-helix-engine";
 import type { OrbitTool } from "./BieOrbitTools";
 
 export const TOOL_ORBIT_RINGS = [4, 5, 6] as const;
@@ -90,30 +89,6 @@ export function buildRandomOrbitLayout(
       orbitDirection,
     }));
   });
-}
-
-/** Twinkling star nodes on the three outer tool ellipses — random angle per session. */
-export function buildRandomFieldNodes(
-  cx: number,
-  cy: number,
-  maxRx: number,
-  maxRy: number,
-  nodesPerRing: number,
-  seed: number
-): RingFieldNode[] {
-  const rand = mulberry32(seed ^ 0xcafebabe);
-  const nodes: RingFieldNode[] = [];
-
-  for (const ring of FIELD_NODE_RINGS) {
-    const scale = fieldLineScale(ring);
-    for (let i = 0; i < nodesPerRing; i++) {
-      const angleDeg = rand() * 360;
-      const p = pointOnFieldLine(cx, cy, maxRx, maxRy, scale, ring, angleDeg);
-      nodes.push({ id: `r${ring}-n${i}`, ring, x: p.x, y: p.y, index: i });
-    }
-  }
-
-  return nodes;
 }
 
 /** Angular distance between two orbit phases (0–180°). */

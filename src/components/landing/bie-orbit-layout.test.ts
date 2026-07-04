@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import type { OrbitTool } from "./BieOrbitTools";
 import {
   ORBIT_PAIR_SEPARATION_DEG,
-  buildRandomFieldNodes,
   buildRandomOrbitLayout,
   orbitAngularSeparationDeg,
 } from "./bie-orbit-layout";
@@ -56,25 +55,6 @@ describe("buildRandomOrbitLayout", () => {
       a.every((t, i) => t.name === b[i].name && t.orbitRing === b[i].orbitRing) &&
       a.every((t, i) => Math.abs(t.startAngleDeg - b[i].startAngleDeg) < 0.01);
     assert.equal(same, false);
-  });
-});
-
-describe("buildRandomFieldNodes", () => {
-  it("places random nodes on outer ellipses 4, 5, and 6", () => {
-    const nodes = buildRandomFieldNodes(640, 360, 640, 310, 4, 7);
-    assert.equal(nodes.length, 12);
-    assert.ok(nodes.every((n) => n.ring === 4 || n.ring === 5 || n.ring === 6));
-    assert.ok(nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y)));
-  });
-
-  it("varies node angles across seeds", () => {
-    const a = buildRandomFieldNodes(640, 360, 640, 310, 3, 1);
-    const b = buildRandomFieldNodes(640, 360, 640, 310, 3, 2);
-    const sameAngles = a.every((n, i) => {
-      const other = b[i];
-      return other && n.ring === other.ring && Math.abs(n.x - other.x) < 0.01 && Math.abs(n.y - other.y) < 0.01;
-    });
-    assert.equal(sameAngles, false);
   });
 });
 

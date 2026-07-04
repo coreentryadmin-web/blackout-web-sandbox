@@ -12,9 +12,8 @@ import {
   pointOnFieldLine,
   type FieldLineRing,
   type FieldParticle,
-  type RingFieldNode,
 } from "./bie-helix-engine";
-import { buildRandomFieldNodes, isToolOrbitRing, readSessionOrbitSeed } from "./bie-orbit-layout";
+import { BieGalaxyNodes } from "./BieGalaxyNodes";
 import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
 
 /**
@@ -30,7 +29,6 @@ const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.5 };
 const MAX_RX = VIEW_W / 2;
 const MAX_RY = 310;
 const FIELD_COUNT = 120;
-const NODES_PER_RING = 6;
 
 const READOUT_LINES = [
   "continuous market intelligence — ingested, verified, never assumed",
@@ -157,10 +155,6 @@ function useFieldParticles(
   }, [reduceMotion, canvasRef]);
 }
 
-function nodesOnRing(all: RingFieldNode[], ring: number): RingFieldNode[] {
-  return all.filter((n) => n.ring === ring);
-}
-
 export function BieBrainBanner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -170,7 +164,6 @@ export function BieBrainBanner() {
   const [pulseKey, setPulseKey] = useState(0);
   const [pulsePath, setPulsePath] = useState("");
   const [rippleKey, setRippleKey] = useState(0);
-  const [fieldNodes, setFieldNodes] = useState<RingFieldNode[]>([]);
 
   const fieldLines = useMemo(() => buildFieldLineRings(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const atmosphereGlows = useMemo(() => buildAtmosphereGlows(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
@@ -182,11 +175,6 @@ export function BieBrainBanner() {
   const innerLines = fieldLines.filter((r) => r.layer === "inner");
 
   useFieldParticles(canvasRef, reduceMotion);
-
-  useEffect(() => {
-    const seed = readSessionOrbitSeed();
-    setFieldNodes(buildRandomFieldNodes(CORE.x, CORE.y, MAX_RX, MAX_RY, NODES_PER_RING, seed));
-  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setLineIndex((i) => (i + 1) % READOUT_LINES.length), 3600);
@@ -243,8 +231,7 @@ export function BieBrainBanner() {
   const coreActive = phase === "absorb" || phase === "ripple";
   const coreAbsorbing = phase === "absorb";
 
-  const renderFieldLine = (ring: FieldLineRing, opts: { showNodes: boolean; loopPulse: boolean }) => {
-    const onRing = opts.showNodes ? nodesOnRing(fieldNodes, ring.ring) : [];
+  const renderFieldLine = (ring: FieldLineRing, opts: { loopPulse: boolean }) => {
     const isLit = litRings.includes(ring.ring);
     return (
       <g
@@ -271,16 +258,6 @@ export function BieBrainBanner() {
           </circle>
         )}
         <path id={`bie-field-loop-${ring.ring}`} d={ring.d} className="bie-reactor-impulse-track" pathLength={1} />
-        {onRing.map((node, i) => (
-          <circle
-            key={node.id}
-            cx={node.x}
-            cy={node.y}
-            r={4.8}
-            className="bie-ring-node bie-star-node"
-            style={{ animationDelay: `${(i * 0.55 + ring.ring * 0.35).toFixed(2)}s` }}
-          />
-        ))}
       </g>
     );
   };
@@ -354,21 +331,19 @@ export function BieBrainBanner() {
 
             <rect width={VIEW_W} height={VIEW_H} fill="url(#bie-field-vignette)" className="bie-field-vignette" pointerEvents="none" />
 
-            {outerLines.map((ring) =>
-              renderFieldLine(ring, {
-                showNodes: isToolOrbitRing(ring.ring),
-                loopPulse: true,
-              })
-            )}
+            {outerLines.map((ring) => renderFieldLine(ring, { loopPulse: true }))}
 
-            {midLines.map((ring) =>
-              renderFieldLine(ring, {
-                showNodes: isToolOrbitRing(ring.ring),
-                loopPulse: ring.ring === 4,
-              })
-            )}
+            {midLines.map((ring) => renderFieldLine(ring, { loopPulse: ring.ring === 4 }))}
 
-            {innerLines.map((ring) => renderFieldLine(ring, { showNodes: false, loopPulse: false }))}
+            {innerLines.map((ring) => renderFieldLine(ring, { loopPulse: false }))}
+
+            <BieGalaxyNodes
+              coreX={CORE.x}
+              coreY={CORE.y}
+              maxRx={MAX_RX}
+              maxRy={MAX_RY}
+              reduceMotion={reduceMotion}
+            />
 
             {!reduceMotion && phase === "inbound" && pulsePath && (
               <g key={pulseKey} className="bie-reactor-pulse-wave bie-reactor-pulse-inbound">
