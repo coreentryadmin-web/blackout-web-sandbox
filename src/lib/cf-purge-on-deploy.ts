@@ -29,6 +29,8 @@ const PURGE_LOCK_TTL_SEC = 3_600; // 1h: comfortably longer than a rolling deplo
 // Keep in sync with the pages carrying `export const dynamic = "force-static"`.
 const MARKETING_PATHS = [
   "/",
+  "/faq",
+  "/pricing",
   "/upgrade",
   "/learn",
   "/learn/night-hawk",

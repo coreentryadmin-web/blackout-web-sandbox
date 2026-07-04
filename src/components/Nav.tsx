@@ -24,8 +24,8 @@ const FEATURE_LINKS: FeatureLink[] = [
 ];
 
 const TOP_LINKS = [
-  { hash: "faq", label: "FAQ" },
-  { hash: "pricing", label: "Pricing" },
+  { href: "/faq", label: "FAQ", iosHide: false as const },
+  { href: "/pricing", label: "Pricing", iosHide: true as const },
 ] as const;
 
 const CLERK_APPEARANCE = {
@@ -110,6 +110,8 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const isFeatureActive = FEATURE_LINKS.some((l) => path.startsWith(l.href));
   const solid = scrolled || !isHome;
   const isLearnActive = path.startsWith("/learn");
+  const isFaqActive = path.startsWith("/faq");
+  const isPricingActive = path.startsWith("/pricing");
   const isAdminTrackActive = path.startsWith("/admin/track-record");
 
   useEffect(() => {
@@ -274,14 +276,12 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
             </AnimatePresence>
           </li>
 
-          {TOP_LINKS.map(({ hash, label }) => {
-            const href = isHome ? `#${hash}` : `/#${hash}`;
-            // Hide the Pricing link inside the iOS app (it scrolls to the hidden
-            // pricing section — App Store guideline 3.1.1).
-            const li = hash === "pricing" ? "nav-pill-li hide-in-ios-app" : "nav-pill-li";
+          {TOP_LINKS.map(({ href, label, iosHide }) => {
+            const active = href === "/faq" ? isFaqActive : isPricingActive;
+            const li = iosHide ? "nav-pill-li hide-in-ios-app" : "nav-pill-li";
             return (
-              <li key={hash} className={li}>
-                <Link href={href} className="nav-pill-item">
+              <li key={href} className={li}>
+                <Link href={href} className={clsx("nav-pill-item", active && "nav-pill-item-active")}>
                   {label}
                 </Link>
               </li>
@@ -384,20 +384,23 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                 <FeatureCards path={path} onNavigate={() => setMobileOpen(false)} />
               </div>
               <div className="nav-sheet-divider" />
-              {TOP_LINKS.map(({ hash, label }) => (
-                <Link
-                  key={hash}
-                  href={isHome ? `#${hash}` : `/#${hash}`}
-                  onClick={() => setMobileOpen(false)}
-                  className={
-                    hash === "pricing"
-                      ? "nav-sheet-link font-syne hide-in-ios-app"
-                      : "nav-sheet-link font-syne"
-                  }
-                >
-                  {label}
-                </Link>
-              ))}
+              {TOP_LINKS.map(({ href, label, iosHide }) => {
+                const active = href === "/faq" ? isFaqActive : isPricingActive;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMobileOpen(false)}
+                    className={clsx(
+                      "nav-sheet-link font-syne",
+                      iosHide && "hide-in-ios-app",
+                      active && "nav-pill-item-active"
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
               <Link
                 href="/learn"
                 onClick={() => setMobileOpen(false)}

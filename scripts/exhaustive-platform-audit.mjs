@@ -73,6 +73,8 @@ const PUBLIC_PAGES = [
   "/sign-in",
   "/sign-up",
   "/track-record",
+  "/faq",
+  "/pricing",
   "/embed/track-record",
   "/learn",
   "/learn/getting-started",
