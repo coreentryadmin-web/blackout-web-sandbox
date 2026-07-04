@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mapNighthawkEchoRows } from "./ecosystem-context";
+import { ECOSYSTEM_CONTEXT_FIELDS, mapNighthawkEchoRows } from "./ecosystem-context";
+
+test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty description", () => {
+  const expected = ["zerodte_today", "nighthawk_recent", "recent_audit_entries", "recent_flow", "recent_anomalies", "flow_feed_fresh"];
+  assert.deepEqual(
+    ECOSYSTEM_CONTEXT_FIELDS.map((f) => f.field).sort(),
+    [...expected].sort()
+  );
+  for (const f of ECOSYSTEM_CONTEXT_FIELDS) {
+    assert.ok(f.description.length > 10, `${f.field} needs a real description, not a stub`);
+  }
+});
 
 test("mapNighthawkEchoRows: maps rows keyed by uppercased ticker", () => {
   const map = mapNighthawkEchoRows([

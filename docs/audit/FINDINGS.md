@@ -21,6 +21,26 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 📘 FIXED 2026-07-04 — Largo's own "what is BIE" answer was stale, describing only Phase-1 Router/Composer (docs/bie/ARCHITECTURE.md); plus get_confluence_outcomes tool + flow_feed_fresh field
+**Root cause:** a member screenshot showed Largo answering "What is the Blackout Intelligence Engine?" with language describing only the very first BIE PR (Router/Composer, Phase 1). Traced via `grep -rln "Router\|Composer" docs/bie/*.md` to `docs/bie/ARCHITECTURE.md` — the doc BIE's own L2 knowledge ingestion (`ingestBieKnowledge()`, nightly `db-cleanup` cron) embeds and Largo's retrieval grounds Claude's answer on. The doc genuinely hadn't been touched since Phase 1 shipped, so it never described Stage 2 (log/error/cron health), Stage 3 (Railway/Postgres/Redis/Clerk-auth infra access), Stage 4 (unified `alert_audit_log`), Stage 5 step 1 (dry-run orphaned-component proposals), or any of the ecosystem-context line built across PRs #366–#380 (`fetchEcosystemContext`'s 6 fields, `get_hot_tickers`, `get_market_regime`, `get_confluence_outcomes`). Not a code bug — a documentation-drift bug with a real user-facing symptom, since this doc IS part of the product surface via retrieval.
+
+**Fix:** rewrote `docs/bie/ARCHITECTURE.md` end to end — added a "BIE is a library, not a server" framing (the question the user separately asked this session), a full "Cross-instrument awareness" section documenting all 6 `fetchEcosystemContext` fields plus the 4 ecosystem-derived Largo tools, and a "Platform self-awareness — Stages 2 through 5" section with accurate status per stage, explicitly flagging that Stage 5's PR-opening end-state is **not** built or authorized (only step-1 dry-run text proposals are). Cross-checked against `docs/bie/FULL-SYSTEM-AWARENESS.md`, `/api/admin/bie-report`'s actual response fields, and `src/lib/largo/tool-defs.ts`'s current tool list so nothing in the rewrite is aspirational.
+
+**Propagation note:** this is a doc change, not a code change to the router/composer — the corrected content reaches Largo's actual retrieved grounding on the next nightly `db-cleanup` cron run (~3 AM ET), not immediately on deploy. Did not manually trigger that cron (it also prunes production tables; no need to risk an ad-hoc run for a docs-only fix).
+
+**Also in this PR (same branch, unrelated but small, shipped together to avoid a 4th same-night rebase-conflict round):**
+- `get_confluence_outcomes` — new Largo tool wrapping the already-tested `computeConfluenceOutcomeStats(60)` (`src/lib/bie/confluence-outcomes.ts`, shipped PR #372) so members can ask "does it help when 0DTE and Night Hawk agree" directly instead of that data only existing in the admin report.
+- `flow_feed_fresh: boolean` — new `EcosystemContext` field (`src/lib/bie/ecosystem-context.ts`), sourced from `isFlowFrameFreshAnywhere()` (`src/lib/flow-liveness.ts`, a Redis heartbeat already used elsewhere — cluster-wide, not one replica's in-memory guess). Exists to disambiguate `recent_flow: null`/empty `recent_anomalies`: "genuinely quiet" vs. "ingestion pipeline is down, we can't see." `get_ecosystem_context`'s tool description updated to instruct Claude to say "unknown" rather than "quiet" when this is false.
+
+**Verification:** `npx tsc --noEmit` clean, `npm test` 888/888 passing, `npm run build` clean, `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
+## ✅ VERIFIED 2026-07-04 — PR #380 (`fix/bie-ecosystem-review-findings`) deploy confirmed SUCCESS
+Merge commit `787c0b6`. Railway deployment `19f3ca1c-cc75-4548-aad8-b2ac4ec538d9` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly). Live `GET /api/ready` → `{"ok":true,"db":"connected"}`. Closes out the review-fix pass — all 3 correctness bugs and 5 quality issues from the prior entry are now live in production.
+
+---
+
 ## 🔴 FIXED 2026-07-04 — 8-agent review of the whole BIE ecosystem line (PRs #366–#378) found 3 real correctness bugs + 5 quality issues, all fixed
 **Status:** FIXED (`fix/bie-ecosystem-review-findings`). After 13 PRs shipped in one thread, paused feature work to run a structured review (10 independent finder angles + verification + gap sweep) over the full cumulative diff (`0247146~1..60e96f9`) before anything else landed on top of it. Findings below, most severe first.
 

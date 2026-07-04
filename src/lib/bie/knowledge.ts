@@ -136,6 +136,19 @@ export async function searchKnowledge(
 const DOC_DIRS = ["docs", "docs/bie", "docs/audit"];
 const ROOT_DOCS = ["AGENTS.md", "CLAUDE.md"];
 
+/** Hand-maintained on purpose — "is this stage done, is autonomy authorized" is
+ *  a judgment call, not a fact grep can extract. Kept small and in one place
+ *  (not buried in ARCHITECTURE.md prose) specifically so it stays cheap to
+ *  audit and update the moment a stage's status actually changes. */
+const BIE_STAGE_STATUS: { stage: string; status: string }[] = [
+  { stage: "Stage 1 — docs/knowledge ingestion, API usage telemetry", status: "SHIPPED" },
+  { stage: "Stage 2 — logs, errors, cron/worker health, duplicate/missed-alert detection", status: "SHIPPED (zero new credentials — reads tables the app already writes)" },
+  { stage: "Stage 3 — Railway/Postgres/Redis/Clerk-auth infra access", status: "SHIPPED" },
+  { stage: "Stage 4 — unified alert_audit_log across 0DTE + Night Hawk (published + rejected)", status: "SHIPPED" },
+  { stage: "Stage 5 step 1 — dry-run orphaned-component text proposals", status: "SHIPPED, deliberately narrow: never writes a file, never runs git, never opens a PR. Stage 5's actual end state (BIE opening its own PRs) is NOT built and NOT authorized." },
+  { stage: "Stage 6 — using outcome data to calibrate live scoring", status: "NOT STARTED, NOT AUTHORIZED. Every precursor measurement (e.g. confluence outcomes) is read-only and reports numbers; none of it acts on them." },
+];
+
 /** Ingest the platform's own knowledge: docs, findings, the latest Night Hawk
  *  edition recap. Hash-dedup makes this idempotent — unchanged content is free. */
 export async function ingestBieKnowledge(): Promise<{ stored: number }> {
@@ -184,6 +197,36 @@ export async function ingestBieKnowledge(): Promise<{ stored: number }> {
     stored += await storeKnowledge("doc", "platform:map", text);
   } catch {
     // registries unavailable in some contexts — skip
+  }
+
+  // BIE self-knowledge (generated, not hand-typed): the tool/field inventory
+  // read straight from the source of truth (tool-defs.ts, ecosystem-context.ts)
+  // instead of prose that has to be remembered and kept in sync by hand. This is
+  // the fix for the 2026-07-04 incident where docs/bie/ARCHITECTURE.md described
+  // only the very first BIE PR and Largo repeated that stale answer to a member
+  // (docs/audit/FINDINGS.md) — the tool/field list can no longer drift out of
+  // date because it is regenerated from real exports on every ingest, not edited
+  // by a human who has to remember to. Stage rollout status is still a judgment
+  // call (is a stage "done," is autonomy authorized) and stays hand-maintained
+  // below, deliberately small so drift here is cheap to notice and fix.
+  try {
+    const [{ LARGO_TOOL_DEFS, BIE_TOOL_NAMES }, { ECOSYSTEM_CONTEXT_FIELDS }] = await Promise.all([
+      import("@/lib/largo/tool-defs"),
+      import("./ecosystem-context"),
+    ]);
+    const bieTools = LARGO_TOOL_DEFS.filter((td) => (BIE_TOOL_NAMES as string[]).includes(td.name));
+    const toolLines = bieTools.map((td) => `- ${td.name}: ${td.description}`).join("\n\n");
+    const fieldLines = ECOSYSTEM_CONTEXT_FIELDS.map((f) => `- ${f.field}: ${f.description}`).join("\n");
+    const stageLines = BIE_STAGE_STATUS.map((s) => `- ${s.stage}: ${s.status}`).join("\n");
+    const text = [
+      "BLACKOUT Intelligence Engine — live capabilities (generated from source, not hand-typed).",
+      `\nLargo tools BIE provides (${bieTools.length} today — count and descriptions read live from src/lib/largo/tool-defs.ts):\n${toolLines}`,
+      `\nfetchEcosystemContext() fields — one ticker's cross-instrument snapshot:\n${fieldLines}`,
+      `\nRollout stage status (hand-maintained — see docs/bie/FULL-SYSTEM-AWARENESS.md for full evidence):\n${stageLines}`,
+    ].join("\n");
+    stored += await storeKnowledge("doc", "platform:bie-capabilities", text);
+  } catch {
+    // registries unavailable in some contexts — skip, same fail-open as platform:map
   }
 
   // Latest Night Hawk edition — recap + play theses become searchable history.

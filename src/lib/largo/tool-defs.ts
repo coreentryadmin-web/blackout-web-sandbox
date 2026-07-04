@@ -369,7 +369,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t(
     "get_ecosystem_context",
-    "BIE cross-instrument snapshot for ONE ticker: today's 0DTE Command take (if any), the most recent PUBLISHED Night Hawk take (a rejected play never appears here — check recent_audit_entries for an 'nighthawk_rejected' alert_type instead), the last 10 alert_audit_log entries, a same-day HELIX flow summary (print count + call/put premium totals over the last 6h — reported neutrally, never as a single bullish/bearish label), and any pattern-detected flow anomalies in the last 24h (coordinated sweeps, premium spikes, put surges, concentration). Use when a question needs 'what does the rest of the desk already think about this name' rather than a single tool's isolated view — e.g. confirming whether today's 0DTE flag and last night's Night Hawk pick agree or conflict, or whether unusual options flow has been building on the name.",
+    "BIE cross-instrument snapshot for ONE ticker: today's 0DTE Command take (if any), the most recent PUBLISHED Night Hawk take (a rejected play never appears here — check recent_audit_entries for an 'nighthawk_rejected' alert_type instead), the last 10 alert_audit_log entries, a same-day HELIX flow summary (print count + call/put premium totals over the last 6h — reported neutrally, never as a single bullish/bearish label), any pattern-detected flow anomalies in the last 24h (coordinated sweeps, premium spikes, put surges, concentration), and flow_feed_fresh (is the live flow pipeline actually up right now). IMPORTANT: if flow_feed_fresh is false, a null/empty recent_flow or recent_anomalies means 'we can't currently see,' NOT 'genuinely quiet' — say so rather than reporting silence as a finding. Use when a question needs 'what does the rest of the desk already think about this name' rather than a single tool's isolated view — e.g. confirming whether today's 0DTE flag and last night's Night Hawk pick agree or conflict, or whether unusual options flow has been building on the name.",
     T,
     ["ticker"]
   ),
@@ -384,7 +384,18 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     "Market-wide backdrop, not ticker-specific: composite regime (BREAKOUT_BULL/BREAKDOWN_BEAR/RANGE_BOUND/MIXED), GEX regime, flow regime, the suggested playbook, net GEX, above/below VWAP, IV percentile, count of critical flow anomalies in the last hour (+ which tickers), and the premarket brief's call/put walls. This is the SAME data Night Hawk's own scoring already reads internally (src/lib/nighthawk/platform-intel-snapshot.ts) — use for 'what's the market regime / what's the backdrop / is this a good environment for X' questions."
   ),
 
+  t(
+    "get_confluence_outcomes",
+    "Platform-wide, not ticker-specific: over the last 60 days of GRADED 0DTE Command flags, does agreeing or disagreeing with a ticker's prior Night Hawk take actually correlate with a different hit rate? Buckets: agree / disagree / no_echo (no prior Night Hawk take at all), each with sample size, hit rate %, and average move %. A bucket under 10 samples is flagged insufficient_sample — treat its numbers as noise, not signal, and say so if asked. Use for 'does it help when the instruments agree / is confluence real / how reliable is X' meta-questions about the platform's own track record, not for a single play's own grade (use get_zerodte_plays or get_nighthawk_outcomes for that)."
+  ),
+
 ];
+
+// The BIE-authored subset of Largo's tool surface — single source of truth so
+// TOOL_GROUPS.platform below and knowledge.ts's generated capabilities doc
+// (ingestBieKnowledge) both read the same list. Add a new BIE tool here once;
+// both consumers pick it up automatically instead of needing a second edit.
+export const BIE_TOOL_NAMES = ["get_ecosystem_context", "get_hot_tickers", "get_market_regime", "get_confluence_outcomes"];
 
 export const TOOL_GROUPS = {
   spx_desk: [
@@ -491,12 +502,9 @@ export const TOOL_GROUPS = {
     // cross-tool Night Hawk objects newly surfaced to Largo
     "get_nighthawk_outcomes",
     "get_nighthawk_dossier",
-    // BIE ecosystem-context query layer — one ticker's cross-instrument snapshot
-    "get_ecosystem_context",
-    // BIE hot-tickers leaderboard — no ticker input, "what's hot" across the board
-    "get_hot_tickers",
-    // Market-wide regime backdrop — same data Night Hawk's scorer already reads internally
-    "get_market_regime",
+    // The BIE-authored tools (ecosystem-context, hot-tickers, market-regime,
+    // confluence-outcomes) — see BIE_TOOL_NAMES above for the canonical list.
+    ...BIE_TOOL_NAMES,
   ],
   my_book: [
     // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).

@@ -936,6 +936,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchPlatformIntelSnapshot();
     }
 
+    case "get_confluence_outcomes": {
+      const { computeConfluenceOutcomeStats } = await import("@/lib/bie/confluence-outcomes");
+      return computeConfluenceOutcomeStats(60);
+    }
+
     case "get_gex": {
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());
