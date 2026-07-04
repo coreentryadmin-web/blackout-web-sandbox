@@ -7,6 +7,13 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #378 (`feat/bie-largo-market-regime-tool`) deploy confirmed SUCCESS
+Merge commit `60e96f9`. Railway deployment `2a029abb-69c7-4d7e-89b0-f5b37e158331` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly). Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+**Next step:** 13 PRs (#366–#378) shipped in this ecosystem line tonight. Rather than ship a 14th incremental feature, pausing to run a review pass over the cumulative diff before more code lands on top of it — see the next entry once that completes.
+
+---
+
 ## ✅ VERIFIED 2026-07-04 — PR #377 (`feat/bie-ecosystem-anomalies`) deploy confirmed SUCCESS
 Merge commit `a89adf7`. Railway deployment `c3c50340-f81b-4954-9ebe-f8f000239fc3` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly). Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
 
