@@ -282,6 +282,16 @@ export const CRON_JOBS: CronJobDefinition[] = [
     weekdays_only: true,
     description: "Auto-closes user_positions where expiry < today and status = open — prevents expired contracts from cluttering Night's Watch",
   },
+  {
+    key: "alert-outcome-sync",
+    name: "Alert Outcome Sync",
+    kind: "http",
+    path: "/api/cron/alert-outcome-sync",
+    schedule_label: "Every 6h",
+    stale_after_min: 13 * 60,
+    description:
+      "Grades historical alert_audit_log rows by copying each row's already-computed outcome from its origin table (zerodte_setup_log/nighthawk_play_outcomes/spx_play_outcomes) — feeds BIE precedent search (get_similar_precedents), which was a complete no-op before this cron existed",
+  },
 ];
 
 export const CRON_JOB_BY_KEY = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j])) as Record<
