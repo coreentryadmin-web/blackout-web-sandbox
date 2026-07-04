@@ -7,6 +7,11 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PRs #381, #382, #383 deploys confirmed SUCCESS; ecosystem-context/banner-redesign line closed out
+Merge commits `9f9c23b` (#381, ARCHITECTURE.md rewrite + get_confluence_outcomes + flow_feed_fresh + dynamic capabilities generator), `1de73e2` (#382, banner vendor-leak fix), `5016fc8` (#383, sphere-mesh banner redesign). All three Railway deployments confirmed **SUCCESS** via the GraphQL API with `commitHash` matching each merge commit exactly (`9f9c23b262b1418dacec54c9a82155bbcc53e995`, `1de73e26280e81f029033521afae6bf61a694c7a`, `5016fc8dbe9b452a17aca45a454f39d910c9166b`). Live `GET /api/ready` on the final deploy → `{"ok":true,"db":"connected","mode":"private"}`. Closes out tonight's ecosystem-context/banner-redesign thread — all three land clean in production.
+
+---
+
 ## 🧠 BIE landing banner redesign SHIPPED 2026-07-04 — flat hub-and-row → orbiting sphere-mesh, on explicit user request
 **Ask:** user reviewed the live home page and asked for a real visual upgrade to the "Introducing BlackOut Intelligence Engine" banner — the connections between BIE and the six instruments "looked not so great," suggested something sphere-like with connected dots and continuous flow, better live animation, and an explicit standing instruction to never name BlackOut's own LLM/model in this copy (consistent with the existing honest-realism stance in `docs/bie/ARCHITECTURE.md`: Claude is the general-reasoning fallback, not a proprietary model BlackOut trained).
 
