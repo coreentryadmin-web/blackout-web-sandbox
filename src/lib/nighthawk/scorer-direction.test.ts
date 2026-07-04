@@ -5,6 +5,8 @@ import {
   scoreSmartMoney,
   scoreOptionsPositioning,
   scoreTechnicalSetup,
+  scoreSkewConfirmation,
+  scoreFlowQuality,
 } from "./scorer";
 import type { TechnicalCard } from "./technicals";
 
@@ -187,4 +189,63 @@ test("tech short: fresh-highs structure now penalizes a short (mirror of long's 
 test("tech short: bearish MA stack now rewards a short (mirror of long's bullish-ma +4)", () => {
   const bearishMa = tech({ setup_tags: ["bearish MA stack"], trend: "bearish" });
   assert.equal(scoreTechnicalSetup(bearishMa, "short"), 12); // trend 8 + ma 4
+});
+
+// ── scoreSkewConfirmation + scoreFlowQuality's skew-based direction flip ─────────
+//
+// fix/nighthawk-skew-sign-flip (2026-07-04 audit, task #125): UW's `risk_reversal` field
+// (dossierExtras.risk_reversal_skew) is (put IV − call IV), NOT (call IV − put IV) —
+// confirmed via a LIVE pull of `GET /api/stock/SPY/historical-risk-reversal-skew` that
+// returned 29 daily rows, EVERY ONE positive (+0.0067 to +0.0663, e.g.
+// `{"date":"2026-07-02","risk_reversal":"0.0663361729210146"}`). A "call IV minus put IV"
+// definition would be predominantly NEGATIVE for an equity index (the persistent put-side
+// "volatility smirk" is one of the most robust stylized facts in index options) — so
+// positive = puts bid over calls = fear = BEARISH, negative = calls bid over puts =
+// BULLISH. Both scoreSkewConfirmation and scoreFlowQuality's direction-flip branch treated
+// positive as bullish — backwards. These tests pin the corrected sign with concrete values.
+
+test("scoreSkewConfirmation: positive skew (puts bid, bearish) confirms SHORT / penalizes LONG — was inverted pre-fix", () => {
+  // Real live SPY value from the 2026-07-04 pull (2026-07-02 row): +0.0663.
+  // Pre-fix this scored short=-2, long=+3 (backwards). Post-fix:
+  assert.equal(scoreSkewConfirmation(0.0663361729210146, "short"), 3);
+  assert.equal(scoreSkewConfirmation(0.0663361729210146, "long"), -2);
+});
+
+test("scoreSkewConfirmation: negative skew (calls bid, bullish) confirms LONG / penalizes SHORT", () => {
+  assert.equal(scoreSkewConfirmation(-0.04, "long"), 3);
+  assert.equal(scoreSkewConfirmation(-0.04, "short"), -2);
+});
+
+test("scoreSkewConfirmation: null/undefined/0/NaN skew is neutral regardless of direction", () => {
+  assert.equal(scoreSkewConfirmation(null, "long"), 0);
+  assert.equal(scoreSkewConfirmation(undefined, "short"), 0);
+  assert.equal(scoreSkewConfirmation(0, "long"), 0);
+  assert.equal(scoreSkewConfirmation(NaN, "short"), 0);
+});
+
+test("scoreFlowQuality: strong positive (bearish) skew flips a tied call/put flow from default LONG to SHORT", () => {
+  const flows = [
+    { type: "call", total_premium: 500_000 },
+    { type: "put", total_premium: 500_000 },
+  ];
+  // Equal call/put weighted premium -> default direction is "long" (tie), flowMargin is 0
+  // (< 0.12), so a |skew| >= 0.3 is enough to flip. Pre-fix, +0.5 skew read as "bullish" and
+  // matched the existing "long" default, so directionFlippedBySkew was FALSE and direction
+  // stayed "long" — the exact inversion this fix corrects.
+  const result = scoreFlowQuality(flows, undefined, { riskReversalSkew: 0.5 });
+  assert.equal(result.direction, "short");
+  assert.equal(result.directionFlippedBySkew, true);
+});
+
+test("scoreFlowQuality: strong negative (bullish) skew flips a put-leaning flow from SHORT to LONG", () => {
+  const flows = [
+    { type: "put", total_premium: 520_000 },
+    { type: "call", total_premium: 500_000 },
+  ];
+  // putWeightedPrem slightly exceeds callWeightedPrem -> default direction "short", margin
+  // thin (~0.02, well under 0.12). Pre-fix, -0.5 skew read as "bearish" and matched the
+  // existing "short" default (no flip); post-fix it correctly reads as bullish and flips.
+  const result = scoreFlowQuality(flows, undefined, { riskReversalSkew: -0.5 });
+  assert.equal(result.direction, "long");
+  assert.equal(result.directionFlippedBySkew, true);
 });
