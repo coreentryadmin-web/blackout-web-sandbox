@@ -6,7 +6,12 @@ import {
   flowStackSignature,
 } from "@/lib/largo/flow-strike-stacks";
 import { fmtPremium } from "@/lib/fmt-money";
-import { checkNumbersGrounded, collectKnownNumbers } from "@/lib/grounding-guard";
+import {
+  checkNumbersGrounded,
+  collectKnownNumbers,
+  type GroundingCheckResult,
+} from "@/lib/grounding-guard";
+import { dbConfigured, insertAlertAuditLog } from "@/lib/db";
 
 export type SpxCommentaryResult = {
   headline: string;
@@ -430,6 +435,49 @@ function validateDeskData(ctx: Record<string, unknown>): { ok: true } | { ok: fa
   return { ok: true };
 }
 
+/** Best-effort audit-log write for a Live Desk AI generation that failed the post-generation
+ *  grounding check — mirrors spx-play-claude.ts's logPlayVerdict(), the sibling AI-narration
+ *  surface that already writes every verdict (pass or fail) to alert_audit_log. Before this,
+ *  a hallucinated read here was discarded with only an ephemeral console.warn — no durable
+ *  trace existed to answer "how often does this happen." Fire-and-forget: an audit-log
+ *  failure must never block or alter the (already-decided) discard-and-502 behavior. */
+function logUngroundedCommentary(
+  desk: SpxDeskPayload,
+  ctx: Record<string, unknown>,
+  parsed: SpxCommentaryResult,
+  grounding: GroundingCheckResult
+): void {
+  if (!dbConfigured()) return;
+  const confluence = ctx.confluence as { score?: number; grade?: string } | null | undefined;
+  insertAlertAuditLog({
+    alert_type: "spx_commentary_ungrounded",
+    source_table: "spx_commentary",
+    source_key: { price: desk.price, as_of: desk.as_of },
+    ticker: "SPX",
+    direction: parsed.bias,
+    confidence_score: confluence?.score ?? null,
+    confidence_label: confluence?.grade ?? null,
+    trigger_reason: `Ungrounded value ${grounding.ungroundedValue} in generated commentary`,
+    decision_trace: [
+      { check: "numbers_grounded", passed: false, value: grounding.ungroundedValue },
+    ],
+    // Enough of the desk snapshot to reconstruct what the model was looking at without
+    // duplicating the whole (deeply-nested) ctx object into every rejected row.
+    input_snapshot: {
+      price: desk.price,
+      vwap: desk.vwap,
+      gamma_flip: desk.gamma_flip,
+      gex_king: desk.gex_king,
+      max_pain: desk.max_pain,
+    },
+    // The raw generated text before discard — never served, so this is the only place it's
+    // preserved at all.
+    final_output: { headline: parsed.headline, body: parsed.body, bias: parsed.bias },
+  }).catch((err) => {
+    console.error("[spx-commentary] audit-log write failed (non-blocking):", err);
+  });
+}
+
 export async function generateSpxCommentary(
   desk: SpxDeskPayload,
   previous?: Partial<SpxDeskPayload> | null,
@@ -598,6 +646,11 @@ Hard rules:
       console.warn(
         `[spx-commentary] ungrounded value ${grounding.ungroundedValue} in generated commentary — discarding (never cached).`
       );
+      // Durable trace of the discard (see logUngroundedCommentary's doc comment) — this used
+      // to be silently thrown away with nothing but the console.warn above, unlike the
+      // sibling spx-play-claude.ts, which has logged every verdict (pass or fail) since
+      // task #78. Fire-and-forget: never awaited, never blocks this return.
+      logUngroundedCommentary(desk, ctx, parsed, grounding);
       return null;
     }
     return parsed;
