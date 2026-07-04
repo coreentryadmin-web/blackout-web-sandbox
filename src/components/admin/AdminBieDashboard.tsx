@@ -139,6 +139,51 @@ type Stage = {
   blurb: string;
 };
 
+// SPX health panel (task #111) — payload shape of /api/admin/spx/health, a
+// small dedicated route separate from this component's main
+// /api/admin/bie-report fetch (that report is BIE-specific: interactions,
+// calibration, discovery — SPX play-engine health doesn't belong there). See
+// src/lib/admin-spx-health.ts for the read-only data source and
+// src/app/api/admin/spx/health/route.ts for the route.
+type SpxHealthPlay = {
+  available: boolean;
+  phase: "SCANNING" | "WATCHING" | "OPEN";
+  action: string;
+  direction: "long" | "short" | null;
+  grade: string;
+  score: number;
+  confidence: number;
+  gates: { passed: boolean; blocks: string[]; warnings: string[]; entry_mode: string };
+  signal_committed: boolean;
+  as_of: string;
+};
+
+type SpxHealthSignal = {
+  id: number;
+  action: string;
+  bias: string;
+  score: number;
+  confidence: number;
+  headline: string;
+  created_at: string;
+};
+
+type SpxHealthPayload = {
+  generated_at: string;
+  play: SpxHealthPlay | null;
+  desk: {
+    available: boolean;
+    price: number | null;
+    market_open: boolean;
+    age_sec: number | null;
+    stale: boolean;
+    stale_threshold_sec: number;
+  };
+  flow_feed_live: boolean;
+  recent_signals: SpxHealthSignal[];
+  errors: string[];
+};
+
 // Static, hand-kept-in-sync summary of docs/bie/FULL-SYSTEM-AWARENESS.md — the
 // roadmap doc is the source of truth; this is a legible dashboard view of it,
 // not a second source. Update alongside that doc when a stage's status changes.
@@ -199,6 +244,33 @@ export function AdminBieDashboard() {
     void load();
   }, [load]);
 
+  // SPX health panel — deliberately a SEPARATE fetch/state/effect from the BIE
+  // report above (own loading/error state, own effect on mount) so a failure
+  // fetching SPX health can never blank or block the rest of this dashboard,
+  // and vice versa. Wired into the SAME "Recompute" button below for a single
+  // refresh affordance, but the two requests are otherwise fully independent.
+  const [spxHealth, setSpxHealth] = useState<SpxHealthPayload | null>(null);
+  const [spxHealthLoading, setSpxHealthLoading] = useState(true);
+  const [spxHealthError, setSpxHealthError] = useState<string | null>(null);
+
+  const loadSpxHealth = useCallback(async () => {
+    setSpxHealthLoading(true);
+    setSpxHealthError(null);
+    try {
+      const res = await fetch("/api/admin/spx/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSpxHealth((await res.json()) as SpxHealthPayload);
+    } catch (e) {
+      setSpxHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setSpxHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSpxHealth();
+  }, [loadSpxHealth]);
+
   const act = useCallback(
     async (id: string, action: "ack" | "resolve") => {
       setActing(id);
@@ -230,6 +302,14 @@ export function AdminBieDashboard() {
   const stage5Proposals = data?.stage5_proposals ?? [];
   const confluenceOutcomes = data?.confluence_outcomes ?? null;
   const hotTickers = data?.hot_tickers ?? [];
+  const spxPlay = spxHealth?.play ?? null;
+  const spxHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = spxHealthError
+    ? "amber"
+    : spxHealth && (spxHealth.desk.stale || !spxHealth.flow_feed_live)
+      ? "amber"
+      : spxPlay?.gates.passed
+        ? "bull"
+        : "cyan";
 
   return (
     <div className="admin-bie-dashboard">
@@ -291,7 +371,14 @@ export function AdminBieDashboard() {
           </>
         }
         actions={
-          <ActionButton variant="primary" onClick={() => void load()} disabled={loading}>
+          <ActionButton
+            variant="primary"
+            onClick={() => {
+              void load();
+              void loadSpxHealth();
+            }}
+            disabled={loading}
+          >
             {loading ? "Computing…" : "Recompute"}
           </ActionButton>
         }
@@ -436,6 +523,108 @@ export function AdminBieDashboard() {
                     .join(", ")}.`}
             </p>
           </>
+        )}
+      </GlassPanel>
+
+      {/* SPX health (task #111) — read-only glance at the live 0DTE Command
+          engine: current phase/action, gate pass/fail with the actual block
+          reasons (not just a boolean), score/grade, desk-feed freshness, the
+          flow-feed heartbeat, and the last few committed signal-log entries.
+          Own fetch/state (see loadSpxHealth above), so a failure here shows
+          "—" in this panel only and never breaks the rest of the dashboard —
+          same resilience contract as every other panel on this page. Reuses
+          the SAME read-only evaluation path /api/market/spx/play (member
+          route) and /api/admin/spx/dashboard's live=1 toggle already call;
+          see src/lib/admin-spx-health.ts's module doc for the read-only
+          proof (mutate:false skips every position/Discord write). Purely
+          observability — this panel never writes to, mutates, or triggers
+          any play-engine action. */}
+      <GlassPanel kicker="0DTE Command · read-only, never mutates the play engine" title="SPX health" accent={spxHealthAccent}>
+        {spxHealthError && (
+          <p className="admin-bie-error-text">SPX health fetch failed: {spxHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip label="Phase" value={spxPlay?.phase ?? "—"} tone={spxPlay ? "cyan" : "neutral"} />
+          <MetricChip
+            label="Action"
+            value={spxPlay?.action ?? "—"}
+            tone={spxPlay?.action === "BUY" || spxPlay?.action === "SELL" ? "bull" : spxPlay ? "cyan" : "neutral"}
+          />
+          <MetricChip
+            label="Grade / Score"
+            value={spxPlay ? `${spxPlay.grade} · ${Math.round(spxPlay.score)}` : "—"}
+            tone="violet"
+          />
+          <MetricChip
+            label="Gates"
+            value={
+              !spxPlay
+                ? "—"
+                : spxPlay.gates.passed
+                  ? "PASS"
+                  : `${spxPlay.gates.blocks.length} block${spxPlay.gates.blocks.length === 1 ? "" : "s"}`
+            }
+            tone={!spxPlay ? "neutral" : spxPlay.gates.passed ? "bull" : "amber"}
+          />
+          <MetricChip
+            label="Desk feed"
+            value={!spxHealth ? "—" : !spxHealth.desk.available ? "DOWN" : spxHealth.desk.stale ? "STALE" : "FRESH"}
+            tone={!spxHealth ? "neutral" : !spxHealth.desk.available || spxHealth.desk.stale ? "amber" : "bull"}
+          />
+          <MetricChip
+            label="Flow feed"
+            value={!spxHealth ? "—" : spxHealth.flow_feed_live ? "LIVE" : "DOWN"}
+            tone={!spxHealth ? "neutral" : spxHealth.flow_feed_live ? "bull" : "amber"}
+          />
+        </div>
+
+        {spxPlay && !spxPlay.gates.passed && spxPlay.gates.blocks.length > 0 && (
+          <>
+            <p className="admin-bie-coverage-note">Blocked by:</p>
+            {spxPlay.gates.blocks.map((b, i) => (
+              <p key={i} className="admin-bie-issue-detail">
+                – {b}
+              </p>
+            ))}
+          </>
+        )}
+
+        <p className="admin-bie-coverage-note">
+          {spxHealth
+            ? `Desk age ${spxHealth.desk.age_sec != null ? `${Math.round(spxHealth.desk.age_sec)}s` : "—"} (stale past ${spxHealth.desk.stale_threshold_sec}s) · as of ${fmtEt(spxPlay?.as_of ?? spxHealth.generated_at)} ET`
+            : spxHealthLoading
+              ? "Loading…"
+              : "—"}
+        </p>
+
+        <p className="admin-bie-coverage-note">Recent signal log</p>
+        {!spxHealth || spxHealth.recent_signals.length === 0 ? (
+          <p className="admin-bie-empty-text">No committed BUY/SELL/TRIM signals logged yet today.</p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Bias</th>
+                <th>Score</th>
+                <th>Headline</th>
+                <th>Fired</th>
+              </tr>
+            </thead>
+            <tbody>
+              {spxHealth.recent_signals.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.action}</td>
+                  <td>{s.bias}</td>
+                  <td>
+                    {Math.round(s.score)} ({Math.round(s.confidence)}%)
+                  </td>
+                  <td className="admin-bie-issue-detail">{s.headline}</td>
+                  <td className="admin-bie-issue-meta">{fmtEt(s.created_at)} ET</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
         )}
       </GlassPanel>
 
