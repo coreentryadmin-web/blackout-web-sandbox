@@ -114,13 +114,15 @@ function useFieldParticles(
 
     let raf = 0;
 
-    const draw = () => {
+    const draw = (now: number) => {
       const sx = viewW / VIEW_W;
       const sy = viewH / VIEW_H;
       ctx.fillStyle = "#040407";
       ctx.fillRect(0, 0, viewW, viewH);
       ctx.save();
       ctx.scale(sx, sy);
+
+      const tSec = now / 1000;
 
       for (const p of particlesRef.current) {
         p.x += p.vx;
@@ -136,11 +138,18 @@ function useFieldParticles(
         if (p.y < padY) p.y = VIEW_H - padY;
         if (p.y > VIEW_H - padY) p.y = padY;
 
-        const fade = Math.min(1, p.life / 40, (p.maxLife - p.life) / 40);
+        const lifeFade = Math.min(1, p.life / 40, (p.maxLife - p.life) / 40);
+        const twinkle = 0.38 + 0.62 * (0.5 + 0.5 * Math.sin(tSec * p.twinkleSpeed + p.twinklePhase));
+        const alpha = p.opacity * lifeFade * twinkle;
+
+        ctx.save();
+        ctx.shadowBlur = p.size * 4.2;
+        ctx.shadowColor = `rgba(255, 210, 80, ${Math.min(0.95, alpha * 1.1)})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(148, 226, 255, ${p.opacity * fade * 0.65})`;
+        ctx.fillStyle = `rgba(255, 236, 160, ${alpha})`;
         ctx.fill();
+        ctx.restore();
       }
 
       raf = requestAnimationFrame(draw);
@@ -266,7 +275,7 @@ export function BieBrainBanner() {
       >
         <path d={ring.d} className="bie-field-line-stroke" pathLength={1} />
         {opts.loopPulse && !reduceMotion && (
-          <circle r={1.2} className="bie-field-loop-pulse" fill="#5df7ff">
+          <circle r={2} className="bie-field-loop-pulse bie-star-pulse-dot" fill="#ffd966">
             <animateMotion
               dur={`${16 + ring.ring * 2.8}s`}
               begin={`-${ring.ring * 2.4}s`}
@@ -285,9 +294,9 @@ export function BieBrainBanner() {
           return (
             <g key={node.id}>
               <path id={segId} d={segPath} className="bie-ring-segment-track" pathLength={1} />
-              <circle cx={node.x} cy={node.y} r={2.4} className="bie-ring-node bie-inner-node" />
+              <circle cx={node.x} cy={node.y} r={4.8} className="bie-ring-node bie-inner-node bie-star-node" style={{ animationDelay: `${(i * 0.55 + ring.ring * 0.35).toFixed(2)}s` }} />
               {!reduceMotion && (
-                <circle r={1.4} className="bie-ring-pulse-dot" fill="#5df7ff">
+                <circle r={2.4} className="bie-ring-pulse-dot bie-star-pulse-dot" fill="#ffe08a">
                   <animateMotion
                     dur={`${6.2 + ring.ring * 0.8 + i * 0.4}s`}
                     begin={`-${i * 1.1}s`}

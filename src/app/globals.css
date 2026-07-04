@@ -1904,8 +1904,37 @@ body::before {
 }
 
 .bie-inner-node {
-  fill: rgba(93, 247, 255, 0.62);
-  filter: drop-shadow(0 0 5px rgba(93, 247, 255, 0.5));
+  fill: rgba(255, 224, 120, 0.88);
+  filter: drop-shadow(0 0 8px rgba(255, 200, 60, 0.75));
+}
+
+.bie-reactor-live .bie-star-node {
+  animation: bie-star-twinkle 3.6s ease-in-out infinite;
+}
+
+@keyframes bie-star-twinkle {
+  0%,
+  100% {
+    opacity: 0.4;
+    fill: rgba(255, 196, 72, 0.55);
+    filter: drop-shadow(0 0 5px rgba(255, 180, 40, 0.4));
+  }
+  50% {
+    opacity: 1;
+    fill: rgba(255, 244, 190, 1);
+    filter: drop-shadow(0 0 16px rgba(255, 220, 100, 0.95));
+  }
+}
+
+.bie-ring-node {
+  fill: rgba(255, 214, 96, 0.72);
+  filter: drop-shadow(0 0 6px rgba(255, 200, 60, 0.55));
+}
+
+.bie-star-pulse-dot,
+.bie-ring-pulse-dot {
+  opacity: 0.85;
+  filter: drop-shadow(0 0 9px rgba(255, 210, 80, 0.88));
 }
 
 .bie-ring-segment-track {
@@ -1913,16 +1942,6 @@ body::before {
   stroke: rgba(93, 247, 255, 0.07);
   stroke-width: 0.85;
   vector-effect: non-scaling-stroke;
-}
-
-.bie-ring-node {
-  fill: rgba(93, 247, 255, 0.5);
-  filter: drop-shadow(0 0 4px rgba(93, 247, 255, 0.45));
-}
-
-.bie-ring-pulse-dot {
-  opacity: 0.8;
-  filter: drop-shadow(0 0 6px rgba(93, 247, 255, 0.8));
 }
 
 /* Original-scale helix — elegant centerpiece, not enlarged */
@@ -3087,6 +3106,7 @@ body::before {
   .bie-reactor-neural-link { display: none; }
   .bie-field-ripple,
   .bie-field-ripple-c { display: none; }
+  .bie-star-node { animation: none; opacity: 0.72; }
   .bie-field-glow { animation: none; opacity: 0.65; }
   .bie-reactor-ring-haze { animation: none; }
   .bie-field-line { animation: none; }

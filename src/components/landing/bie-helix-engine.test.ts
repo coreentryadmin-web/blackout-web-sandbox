@@ -123,7 +123,8 @@ describe("buildFieldParticles", () => {
   it("fills the viewport intelligence field", () => {
     const field = buildFieldParticles(240, 1280, 720, CX, CY, MAX_RX, MAX_RY);
     assert.equal(field.length, 240);
-    assert.ok(field.every((p) => p.life > 0 && p.opacity < 0.08));
+    assert.ok(field.every((p) => p.life > 0 && p.opacity > 0.02 && p.opacity < 0.16));
+    assert.ok(field.every((p) => p.size >= 1.3));
   });
 });
 

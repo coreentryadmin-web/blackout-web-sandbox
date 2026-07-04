@@ -340,6 +340,10 @@ export type FieldParticle = {
   maxLife: number;
   opacity: number;
   size: number;
+  /** Radians — desynchronizes star twinkle. */
+  twinklePhase: number;
+  /** Multiplier for twinkle speed. */
+  twinkleSpeed: number;
 };
 
 function fieldSeed(i: number, salt: number): number {
@@ -377,8 +381,10 @@ export function buildFieldParticles(
       vy: (fieldSeed(i, 5) - 0.5) * 0.06 * bias,
       life: Math.floor(fieldSeed(i, 6) * maxLife),
       maxLife,
-      opacity: (0.012 + fieldSeed(i, 7) * 0.028) * (0.85 + distNorm * 0.15),
-      size: fieldSeed(i, 8) < 0.1 ? 0.75 : 0.4,
+      opacity: (0.028 + fieldSeed(i, 7) * 0.062) * (0.85 + distNorm * 0.15),
+      size: fieldSeed(i, 8) < 0.14 ? 2.1 : 1.35,
+      twinklePhase: fieldSeed(i, 10) * Math.PI * 2,
+      twinkleSpeed: 0.55 + fieldSeed(i, 11) * 1.45,
     };
   });
 }
