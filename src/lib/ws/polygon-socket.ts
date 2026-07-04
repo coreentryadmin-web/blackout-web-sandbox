@@ -120,6 +120,16 @@ function barDateET(): string {
   }).format(new Date());
 }
 
+/**
+ * Session % change vs the anchor open, rounded to 2dp to match the REST sibling
+ * (polygon.ts uses `Number((...).toFixed(2))` throughout). Exported for direct unit
+ * testing — the WS message handlers below call this instead of computing inline, so a
+ * raw-float regression can't slip back in unrounded.
+ */
+export function computeSessionChangePct(current: number, sessionOpen: number): number {
+  return sessionOpen > 0 ? Number((((current - sessionOpen) / sessionOpen) * 100).toFixed(2)) : 0;
+}
+
 // ── Cross-replica leader election ──────────────────────────────────────────────────────────────
 // Massive allows at most 1 live WebSocket per API key. When the cluster scales to N replicas each
 // would otherwise open its own connection; the 2nd–Nth get rejected with code 1008 and churn
@@ -375,7 +385,7 @@ async function connectIndices() {
                 : "ws-bar";
               indexStore[agg.sym] = {
                 price: agg.c,
-                change_pct: sessionOpen > 0 ? ((agg.c - sessionOpen) / sessionOpen) * 100 : 0,
+                change_pct: computeSessionChangePct(agg.c, sessionOpen),
                 session_open: sessionOpen,
                 session_date: todayET,
                 open_source: openSource,
@@ -415,7 +425,7 @@ async function connectIndices() {
                 price: val,
                 change_pct:
                   prev.session_open > 0
-                    ? ((val - prev.session_open) / prev.session_open) * 100
+                    ? computeSessionChangePct(val, prev.session_open)
                     : prev.change_pct,
                 updatedAt: Date.now(),
               };

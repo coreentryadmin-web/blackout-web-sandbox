@@ -54,6 +54,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — WS-fed `change_pct` served unrounded via `/api/market/quote` (follow-up audit finding, medium)
+**Where:** `src/lib/ws/polygon-socket.ts` — both places `indexStore[sym].change_pct` is computed from a live WS message (the `A`/`AM` aggregate-bar handler, and the `V` tick-value handler) did raw floating-point division with no rounding: `((current - sessionOpen) / sessionOpen) * 100`. Every REST sibling in `src/lib/providers/polygon.ts` rounds the same computation via `Number((...).toFixed(2))` — this WS-fed path was the one place that didn't. `src/app/api/market/quote/route.ts` reads `indexStore` straight through into its JSON response with no `roundFloats()` pass, so the raw unrounded float reached the wire. This is the SPX/VIX header tape `GexHeatmap.tsx` polls every ~1.5s — previously masked only by the frontend's own `fmtPct()` display formatting, i.e. correct on screen but wrong in the actual API payload (the same "systemic: several endpoints serve unrounded floats" pattern this doc's CLAUDE.md note calls out).
+
+**Fix:** extracted the shared computation into a new exported `computeSessionChangePct(current, sessionOpen)` in `polygon-socket.ts`, rounding via the same `Number((...).toFixed(2))` pattern as the REST sibling, and pointed both the `A`/`AM` and `V` handlers at it instead of each inlining (and, in the `V` handler's case, never rounding) the arithmetic separately.
+
+**Blast radius:** both `indexStore` write sites in `polygon-socket.ts` — no consumer of `indexStore` or `/api/market/quote` needed a change, since the field's type/shape is unchanged (still a `number`), only its precision.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `1008/1008` passing (4 new in `polygon-socket-change-pct.test.ts` — rounds a representative raw float to 2dp, returns 0 with no anchor, rounds a negative change correctly, and a general "never more than 2 decimal digits" property check). `npm run build` clean; `lint:brand`/`lint:vendor` clean.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — `unusual-whales.ts` had its own unenumerated ET-date duplicate, largest blast radius of any date-dup found (follow-up audit finding, high)
 **Where:** `src/lib/providers/unusual-whales.ts:346` — a local `todayIso()` reimplementing the exact `Intl.DateTimeFormat("en-CA", {timeZone:"America/New_York"})` logic that task #74 (earlier today, and originally on 2026-07-01/02) consolidated 6 other copies of into `src/lib/et-date.ts`'s `todayEt()` — but this copy was never found or enumerated, because it lives in the core UW provider file rather than in any of the play-engine/dashboard files the original sweep scanned. It has 6 call sites (`:373`, `:463`, `:821`, `:881`, `:924`, `:1495`) gating 0DTE expiry-date filtering and "today's" max-pain contract selection — the largest blast radius of any date-duplication instance found across either audit pass, since `unusual-whales.ts` is the shared REST client every 0DTE/GEX-by-strike/max-pain consumer platform-wide ultimately calls through.
 
