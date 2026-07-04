@@ -11,6 +11,20 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — `spx-issues-sync` cron shipped without a `CRON_SERVICE_NAMES` entry — merged with a failing manifest check (BIE/Largo integration sweep, low, CI/ops)
+
+**Where:** PR #463 (immediately below this entry) added the `spx-issues-sync` cron to `src/lib/cron-registry.ts` and its `railway.spx-issues-sync.toml` trigger, but never added a matching entry to `scripts/railway-cron-services.mjs`'s `CRON_SERVICE_NAMES` map — the table `railway-apply-cron-config.mjs`/`railway-audit-apply.mjs` use to reconcile the registry against Railway's actual provisioned services. `scripts/validate-railway-cron-manifest.mjs` (the CI `check` job) caught this correctly (`[FAIL] registry key "spx-issues-sync" missing from CRON_SERVICE_NAMES`) — but that check isn't a required branch-protection gate, so the PR's other required checks (`verify`, CodeQL) passed and auto-merge landed it on `main` anyway with a known, CI-flagged manifest drift.
+
+**Fix:** added `"spx-issues-sync": "SPX-Issues-Sync"` to `CRON_SERVICE_NAMES`, matching the existing `SPX-`-prefixed Title-Case convention used by the other `spx-*` cron keys (`SPX-Engine-Evaluation`, `SPX-Signal-Observe`, `SPX-Signal-Weight-Optimize`). Re-ran `node scripts/validate-railway-cron-manifest.mjs` directly: `registry=24 toml=24 services=24` — GREEN.
+
+**Blast radius:** one line in one config-mapping file. No runtime code changed — the cron itself (`/api/cron/spx-issues-sync`) was already correct and already firing on its Railway schedule; this only fixes the ops-tooling map used by scripts that reconcile against Railway's API, so a future `railway-audit-apply.mjs` run doesn't flag/mis-provision this service.
+
+**Process note:** flagging for awareness, not blame — the `check` job firing correctly and still not blocking merge is itself worth a follow-up: either make `validate-railway-cron-manifest.mjs`'s `check` job a required status check, or have the per-PR sweep agents treat any CI failure (not just the ones GitHub currently gates on) as blocking before calling `enable_pr_auto_merge`.
+
+**Verification:** `node scripts/validate-railway-cron-manifest.mjs` — GREEN. `npx tsc --noEmit` clean (no `.ts` changed). No test added — this is a static config-table fix already covered by the manifest validator script itself, which is what caught the gap in the first place.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — SPX play/engine issue sync only ran when a human loaded the admin dashboard (BIE/Largo integration sweep, high — ops blind spot)
 **Where:** `src/lib/admin-spx-issues.ts`'s `buildSpxAdminIssues()` computes real SPX play-engine health issues from live `SpxPlayPayload` state — `category:"play"` (Claude arbiter vetoes, gate blocks, gate warnings) and `category:"engine"` (play-engine heartbeat silent/stale). `src/lib/admin-spx-dashboard.ts:220-229`'s `fetchSpxAdminDashboard()` calls `buildSpxAdminIssues()` then `syncAdminIncidents(issues.issues, {resolveScope: (cat) => !cat.startsWith("data-integrity")})` to persist them into the shared `admin_incidents` table that BIE's discovery layer (`fetchDiscoveryIncidents()` in `src/lib/bie/discovery.ts`) reads to populate the member/admin "Open issues" panel.
 
