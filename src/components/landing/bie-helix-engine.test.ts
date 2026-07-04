@@ -171,6 +171,15 @@ describe("buildFieldLineRings", () => {
     );
     assert.ok(rings.every((r) => r.d.length > 40));
   });
+
+  it("outermost ring uses full maxRx scale", () => {
+    const rings = buildFieldLineRings(CX, CY, MAX_RX, MAX_RY);
+    const outer = rings.find((r) => r.ring === 6)!;
+    assert.equal(outer.scale, 1);
+    const right = pointOnFieldLine(CX, CY, MAX_RX, MAX_RY, outer.scale, 6, 90);
+    const left = pointOnFieldLine(CX, CY, MAX_RX, MAX_RY, outer.scale, 6, 270);
+    assert.ok(right.x - left.x >= MAX_RX * 1.75, "outer ring should span nearly 2× maxRx");
+  });
 });
 
 describe("buildAtmosphereGlows", () => {

@@ -92,7 +92,7 @@ const FIELD_LINE_CONFIG: Record<
   3: { scale: 0.52, layer: "mid", periodSec: 196, reverse: true },
   4: { scale: 0.72, layer: "mid", periodSec: 220, reverse: false },
   5: { scale: 0.88, layer: "outer", periodSec: 248, reverse: true },
-  6: { scale: 0.98, layer: "outer", periodSec: 272, reverse: false },
+  6: { scale: 1, layer: "outer", periodSec: 272, reverse: false },
 };
 
 export function buildFieldLinePath(
@@ -169,7 +169,7 @@ export function buildAtmosphereGlows(
   maxRy: number
 ): AtmosphereGlow[] {
   return [
-    { id: "deep", tier: "deep", rx: maxRx * 1.02, ry: maxRy * 1.02 },
+    { id: "deep", tier: "deep", rx: maxRx * 1.06, ry: maxRy * 1.04 },
     { id: "mid", tier: "mid", rx: maxRx * 0.78, ry: maxRy * 0.78 },
     { id: "inner", tier: "inner", rx: maxRx * 0.48, ry: maxRy * 0.48 },
   ];
@@ -427,7 +427,7 @@ export function buildInboundPulsePath(
 
 /** Field glow radii — primary volumetric read at viewport scale. */
 export function fieldGlowRadii(viewW: number, viewH: number): { rx: number; ry: number } {
-  return { rx: viewW * 0.5, ry: viewH * 0.48 };
+  return { rx: viewW * 0.52, ry: viewH * 0.48 };
 }
 
 /** Glowing nodes on inner field lines (25% zone). */

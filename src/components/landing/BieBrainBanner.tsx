@@ -25,12 +25,13 @@ import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
  */
 
 export const VIEW_W = 1280;
-export const VIEW_H = 740;
+export const VIEW_H = 720;
 const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.5 };
-const MAX_RX = 628;
-const MAX_RY = 318;
+/** Half viewBox width — ring 6 at scale 1.0 spans edge-to-edge horizontally. */
+const MAX_RX = VIEW_W / 2;
+const MAX_RY = 310;
 const ORBIT_RING = 6;
-const ORBIT_SCALE = 0.98;
+const ORBIT_SCALE = 1;
 const ORBIT_PERIOD_SEC = 320;
 const FIELD_COUNT = 120;
 const INNER_RINGS = [1, 2] as const;
@@ -71,7 +72,7 @@ function litRingsForPhase(phase: ReactorPhase): number[] {
 function pickInboundOrigin(): { x: number; y: number } {
   const useOuter = Math.random() < 0.65;
   const ring = useOuter ? 6 : 5;
-  const scale = useOuter ? 0.98 : 0.88;
+  const scale = useOuter ? 1 : 0.88;
   const angle = 8 + Math.random() * 344;
   return pointOnFieldLine(CORE.x, CORE.y, MAX_RX, MAX_RY, scale, ring, angle);
 }
@@ -332,9 +333,9 @@ export function BieBrainBanner() {
                 <stop offset="40%" stopColor="rgba(0,229,255,0.05)" />
                 <stop offset="100%" stopColor="rgba(0,229,255,0)" />
               </radialGradient>
-              <radialGradient id="bie-field-vignette" cx="50%" cy="50%" r="68%">
-                <stop offset="62%" stopColor="rgba(4,4,7,0)" />
-                <stop offset="100%" stopColor="rgba(4,4,7,0.32)" />
+              <radialGradient id="bie-field-vignette" cx="50%" cy="50%" r="72%">
+                <stop offset="74%" stopColor="rgba(4,4,7,0)" />
+                <stop offset="100%" stopColor="rgba(4,4,7,0.18)" />
               </radialGradient>
               <radialGradient id="bie-core-grad" cx="38%" cy="32%" r="72%">
                 <stop offset="0%" stopColor="#5df7ff" />
