@@ -4,9 +4,23 @@
 // is bucketed by the signals that admitted it, and buckets with enough evidence
 // produce explicit recommendations — report-first (a human ships the change),
 // never silent auto-tuning. Pure math + assembly; unit-tested.
+//
+// Two products, two ledgers: 0DTE Command's setups live in zerodte_setup_log
+// (the pass below) and SPX Slayer's closed plays live in spx_play_outcomes —
+// a completely separate table this harness never looked at until now. SPX
+// Slayer already runs its OWN live adaptive-gate loop (see
+// spx-play-telemetry.ts's loadAdaptivePlayGates, fed by fetchPlayOutcomeStats)
+// that feeds real score-floor/promote-threshold adjustments back into
+// spx-play-engine.ts. That loop is untouched by this file. What's added here
+// is a SECOND, read-only analytics pass — BIE's own calibration REPORT
+// gaining awareness of SPX Slayer's outcome data, evidence-gated the same way
+// (n≥10/bucket), so both self-improving loops are at least visible in one
+// place even though they don't talk to each other.
 
-import { dbConfigured, fetchZeroDteSetupLogRange } from "@/lib/db";
+import { dbConfigured, fetchClosedPlayOutcomes, fetchZeroDteSetupLogRange } from "@/lib/db";
 import { todayEt } from "@/lib/nighthawk/session";
+import { gradeRank } from "@/lib/spx-play-config";
+import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
 import { etMinutesOf } from "@/lib/zerodte/plan";
 import { storeKnowledge } from "./knowledge";
 
@@ -36,6 +50,44 @@ export type CalibrationReport = {
   by_time_of_day: CalibrationBucket[];
   by_spike: CalibrationBucket[];
   /** Deterministic, evidence-cited recommendations — empty until buckets have n≥10. */
+  recommendations: string[];
+  /** SPX Slayer's own closed-play calibration (spx_play_outcomes), computed and
+   *  attached by runBieCalibration alongside the 0DTE pass above. null when the
+   *  DB call fails or hasn't been attached (e.g. computeCalibration alone, in
+   *  isolation, never sets this — it's 0DTE-only and additive analytics is
+   *  wired in by the async orchestrator). Additive field — the 0DTE shape above
+   *  is unchanged. */
+  spx_slayer: SpxCalibrationReport | null;
+};
+
+// ── SPX Slayer's own closed-play calibration (additive, parallel to the 0DTE pass) ──
+
+/** Slim projection of spx-play-outcomes.ts's PlayOutcomeRow — only what bucketing needs. */
+export type SpxCalibrationInputRow = {
+  session_date: string;
+  grade: string;
+  outcome: PlayOutcomeRow["outcome"];
+  pnl_pts: number | null;
+  opened_at: string;
+};
+
+export type SpxCalibrationBucket = {
+  label: string;
+  n: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number | null;
+  /** Points, not percent — spx_play_outcomes grades P&L in SPX points (pnl_pts),
+   *  unlike 0DTE's plan_pnl_pct. Named distinctly so a reader never mixes units. */
+  avg_pnl_pts: number | null;
+};
+
+export type SpxCalibrationReport = {
+  window: { since: string; through: string; sessions: number };
+  closed_plays: number;
+  by_grade_band: SpxCalibrationBucket[];
+  by_time_of_day: SpxCalibrationBucket[];
+  /** Same evidence-gating philosophy as the 0DTE pass — empty until n≥10. */
   recommendations: string[];
 };
 
@@ -126,14 +178,112 @@ export function computeCalibration(
     by_time_of_day: byTod,
     by_spike: bySpike,
     recommendations: recs,
+    // Attached by runBieCalibration once it has computed the SPX pass too — this
+    // pure function only ever sees 0DTE rows, so it never has SPX data to report.
+    spx_slayer: null,
+  };
+}
+
+function bucketizeSpx(
+  rows: SpxCalibrationInputRow[],
+  label: (r: SpxCalibrationInputRow) => string
+): SpxCalibrationBucket[] {
+  const groups = new Map<string, SpxCalibrationInputRow[]>();
+  for (const r of rows) {
+    const key = label(r);
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  return Array.from(groups.entries())
+    .map(([lbl, group]) => {
+      // Use the play's own graded outcome (spx-play-outcomes.ts's classifyOutcome —
+      // handles STOP/TARGET/TRAIL/THESIS/THETA/SESSION exit nuance) rather than a
+      // raw pnl-sign check, so breakevens are counted as neither a win nor a loss
+      // (unlike the 0DTE bucketize() above, which has no breakeven concept).
+      const wins = group.filter((r) => r.outcome === "win").length;
+      const losses = group.filter((r) => r.outcome === "loss").length;
+      const pnls = group.map((r) => r.pnl_pts).filter((p): p is number => p != null);
+      return {
+        label: lbl,
+        n: group.length,
+        wins,
+        losses,
+        win_rate_pct: group.length > 0 ? Math.round((wins / group.length) * 1000) / 10 : null,
+        avg_pnl_pts: pnls.length ? Math.round((pnls.reduce((a, b) => a + b, 0) / pnls.length) * 10) / 10 : null,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** A/A+ vs B vs C/D — reuses spx-play-config.ts's gradeRank so the band edges
+ *  never drift out of sync with the live grade-floor gate (spx-play-gates.ts). */
+const spxGradeBand = (r: SpxCalibrationInputRow): string => {
+  const rank = gradeRank(r.grade);
+  if (rank >= gradeRank("A")) return "A/A+";
+  if (rank >= gradeRank("B")) return "B";
+  return "C/D";
+};
+
+/** Same 4 clock windows as 0DTE's todBand — deliberately identical boundaries so
+ *  the two products' time-of-day sections read side by side without translation.
+ *  Separate function only because the field is opened_at here, first_flagged_at there. */
+function spxTodBand(r: SpxCalibrationInputRow): string {
+  const m = etMinutesOf(Date.parse(r.opened_at));
+  if (m < 9 * 60 + 50) return "open 9:30-9:50";
+  if (m < 11 * 60) return "prime 9:50-11:00";
+  if (m < 13 * 60 + 30) return "lunch 11:00-13:30";
+  return "afternoon 13:30-15:00";
+}
+
+/** Pure assembly for SPX Slayer's own ledger — same evidence-gating philosophy
+ *  (n≥10/bucket) as computeCalibration above, applied to spx_play_outcomes rows
+ *  instead of zerodte_setup_log rows. Never reads or writes the live engine. */
+export function computeSpxCalibration(
+  rows: SpxCalibrationInputRow[],
+  window: { since: string; through: string; sessions: number }
+): SpxCalibrationReport {
+  // fetchClosedPlayOutcomes already excludes outcome='open' at the SQL layer, but
+  // this is a pure function that may be handed anything — stay defensive the same
+  // way computeCalibration defends against ungraded 0DTE rows above.
+  const closed = rows.filter((r) => r.outcome !== "open");
+  const byGrade = bucketizeSpx(closed, spxGradeBand);
+  const byTod = bucketizeSpx(closed, spxTodBand);
+
+  const recs: string[] = [];
+  for (const b of byGrade) {
+    if (b.n < MIN_EVIDENCE || b.win_rate_pct == null) continue;
+    if (b.win_rate_pct < 40)
+      recs.push(
+        `SPX Slayer grade ${b.label} underperforms (${b.wins}W/${b.losses}L, ${b.win_rate_pct}% over ${b.n} closed plays) — consider raising the grade floor above this band.`
+      );
+    if (b.win_rate_pct > 65)
+      recs.push(
+        `SPX Slayer grade ${b.label} outperforms (${b.wins}W/${b.losses}L, ${b.win_rate_pct}% over ${b.n}) — this band is earning its risk.`
+      );
+  }
+  for (const b of byTod) {
+    if (b.n < MIN_EVIDENCE || b.win_rate_pct == null) continue;
+    if (b.win_rate_pct < 40)
+      recs.push(
+        `SPX Slayer ${b.label} window underperforms (${b.win_rate_pct}% over ${b.n}) — consider a stronger time-of-day penalty there.`
+      );
+  }
+
+  return {
+    window,
+    closed_plays: closed.length,
+    by_grade_band: byGrade,
+    by_time_of_day: byTod,
+    recommendations: recs,
   };
 }
 
 export function formatCalibration(r: CalibrationReport): string {
   const bucket = (b: CalibrationBucket) =>
     `- ${b.label}: ${b.n} plays, ${b.wins}W/${b.losses}L${b.win_rate_pct != null ? ` (${b.win_rate_pct}%)` : ""}${b.avg_pnl_pct != null ? `, avg ${b.avg_pnl_pct >= 0 ? "+" : ""}${b.avg_pnl_pct}%` : ""}`;
-  return [
-    `BIE calibration — ${r.window.since} → ${r.window.through} (${r.window.sessions} sessions, ${r.graded_plays} graded plays)`,
+  const zeroDteSection = [
+    // Explicitly labeled "0DTE Command" (not just "BIE") now that this report can
+    // carry a second product's section below — a reader must never conflate the two.
+    `0DTE Command calibration — ${r.window.since} → ${r.window.through} (${r.window.sessions} sessions, ${r.graded_plays} graded plays)`,
     ``,
     `By score band:`,
     ...r.by_score_band.map(bucket),
@@ -148,6 +298,61 @@ export function formatCalibration(r: CalibrationReport): string {
       ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
       : `Recommendations: none yet — no bucket has ${MIN_EVIDENCE}+ graded plays. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
+
+  if (!r.spx_slayer) return zeroDteSection;
+  // Clearly separated, clearly labeled second section — two self-improving loops,
+  // reported together but never merged into one set of buckets/recommendations.
+  return [zeroDteSection, ``, `---`, ``, formatSpxCalibration(r.spx_slayer)].join("\n");
+}
+
+export function formatSpxCalibration(r: SpxCalibrationReport): string {
+  const bucket = (b: SpxCalibrationBucket) =>
+    `- ${b.label}: ${b.n} plays, ${b.wins}W/${b.losses}L${b.win_rate_pct != null ? ` (${b.win_rate_pct}%)` : ""}${b.avg_pnl_pts != null ? `, avg ${b.avg_pnl_pts >= 0 ? "+" : ""}${b.avg_pnl_pts}pts` : ""}`;
+  return [
+    `SPX Slayer calibration — ${r.window.since} → ${r.window.through} (${r.window.sessions} sessions, ${r.closed_plays} closed plays)`,
+    ``,
+    `By grade band:`,
+    ...r.by_grade_band.map(bucket),
+    ``,
+    `By time of day:`,
+    ...r.by_time_of_day.map(bucket),
+    ``,
+    r.recommendations.length
+      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
+      : `Recommendations: none yet — no bucket has ${MIN_EVIDENCE}+ closed plays. The harness waits for evidence; it never tunes on noise.`,
+  ].join("\n");
+}
+
+/** SPX Slayer's own closed-play pass — same rolling window as the 0DTE pass above,
+ *  fed by the SAME fetcher spx-play-telemetry.ts's live gate loop uses
+ *  (fetchClosedPlayOutcomes), but consumed here for reporting only. Failure is
+ *  isolated to this helper (never throws) so a problem on SPX Slayer's side can
+ *  never take down the 0DTE half of the report. */
+async function computeSpxSlayerCalibration(
+  since: string,
+  through: string
+): Promise<SpxCalibrationReport | null> {
+  try {
+    // fetchClosedPlayOutcomes has no date-range parameter (unlike
+    // fetchZeroDteSetupLogRange) — it returns the most recent N closed plays,
+    // which is already exactly what an existing fetcher offers, so this filters
+    // that set down to the same rolling window in JS rather than adding new SQL.
+    const rows = await fetchClosedPlayOutcomes(500);
+    const sinceCutoffMs = Date.parse(`${since}T00:00:00Z`);
+    const windowed: SpxCalibrationInputRow[] = rows
+      .filter((r) => Date.parse(r.opened_at) >= sinceCutoffMs)
+      .map((r) => ({
+        session_date: r.session_date,
+        grade: r.grade,
+        outcome: r.outcome,
+        pnl_pts: r.pnl_pts,
+        opened_at: r.opened_at,
+      }));
+    const sessions = new Set(windowed.map((r) => r.session_date)).size;
+    return computeSpxCalibration(windowed, { since, through, sessions });
+  } catch {
+    return null;
+  }
 }
 
 /** Build the rolling-window calibration report, persist it into the knowledge
@@ -173,6 +378,11 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
       })),
       { since, through, sessions }
     );
+    // Additive: attach SPX Slayer's own calibration pass alongside 0DTE's. This is
+    // BIE's calibration REPORT gaining awareness of the other product's outcome
+    // data — it does NOT feed into spx-play-telemetry.ts's live adaptive gates
+    // (that loop keeps reading fetchPlayOutcomeStats() on its own, unchanged).
+    report.spx_slayer = await computeSpxSlayerCalibration(since, through);
     await storeKnowledge("self_eval", `bie:calibration:${through}`, formatCalibration(report)).catch(() => 0);
     return report;
   } catch {
