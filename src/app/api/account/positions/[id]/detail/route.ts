@@ -14,6 +14,7 @@ import { buildPositionDetail } from "@/lib/nights-watch/position-detail";
 import { buildPositionNarrative } from "@/lib/nights-watch/position-narrative";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { requireTierApi } from "@/lib/market-api-auth";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // Grounded Claude desk narrative — on-demand, cached per-position, globally budgeted.
     // .catch(()=>null) guarantees a narrative failure never breaks the (already-built) detail.
     const narrative = await buildPositionNarrative(detail).catch(() => null);
-    return NextResponse.json({ ...detail, narrative }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(roundFloats({ ...detail, narrative }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[account/positions/[id]/detail GET]", error);
     return NextResponse.json({ error: "Failed to build position detail" }, { status: 502 });

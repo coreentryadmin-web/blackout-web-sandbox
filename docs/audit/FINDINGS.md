@@ -9,6 +9,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — Night's Watch position-detail response skipped `roundFloats()` (audit finding, medium)
+**Where:** `src/app/api/account/positions/[id]/detail/route.ts` — `net_gex` values pulled directly from raw GEX `strike_totals` (via `buildPositionDetail`'s `gexWallsFromHeatmapSpot`) could reach the wire with float noise, the one route skipping the `roundFloats()` convention every sibling GEX-consuming route applies. Currently masked by the frontend's `.toFixed()`.
+
+**Fix:** wrapped the response body in `roundFloats({ ...detail, narrative })`. `roundFloats` only touches numeric leaves in the tree (strings, including the AI `narrative` field, pass through untouched), so this is purely additive.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `932/932` passing; `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — SPX Lotto `spread_pct` unrounded (audit finding, low)
 **Where:** `src/lib/spx-lotto-options.ts:171/201` computes `spread_pct` via raw `((ask - bid) / mid) * 100` division, and `/api/market/lotto/today`'s response was never passed through `roundFloats()`, unlike every sibling SPX/desk route. Currently masked in the live UI by `SpxTradeAlerts.tsx`'s `.toFixed(0)`, but any other consumer reading the raw JSON (Largo, a future widget) would see float noise.
 
