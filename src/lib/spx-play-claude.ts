@@ -12,7 +12,8 @@ import {
   playClaudeDailyMaxCalls,
   playClaudeGateEnabled,
 } from "@/lib/spx-play-config";
-import { dbConfigured, getMeta, setMeta } from "@/lib/db";
+import { dbConfigured, getMeta, setMeta, insertAlertAuditLog } from "@/lib/db";
+import { checkNumbersGrounded } from "@/lib/grounding-guard";
 
 export type ClaudePlayVerdict = {
   verdict: "APPROVE_BUY" | "VETO";
@@ -126,6 +127,65 @@ async function writeCache(key: string, verdict: ClaudePlayVerdict): Promise<void
     for (const staleKey of keys.slice(0, keys.length - 24)) delete slots[staleKey];
   }
   await setMeta(CACHE_KEY, JSON.stringify({ version: 2, slots }));
+}
+
+/** Every price level fed into the Claude prompt (src/lib/spx-play-claude.ts prompt body) —
+ *  the ONLY numbers a grounded thesis should cite as a price/level. Built fresh from the
+ *  same desk/confluence/technicals args the prompt was built from — never fabricated. */
+export function knownPlayLevels(
+  desk: SpxDeskPayload,
+  confluence: SpxConfluence,
+  technicals: PlayTechnicals
+): number[] {
+  const levels = new Set<number>();
+  const add = (n: number | null | undefined) => {
+    if (n != null && Number.isFinite(n) && n > 0) levels.add(Number(n));
+  };
+  add(desk.price);
+  add(desk.vwap);
+  add(desk.hod);
+  add(desk.lod);
+  add(desk.pdh);
+  add(desk.pdl);
+  add(desk.gamma_flip);
+  add(desk.gex_king);
+  add(desk.max_pain);
+  for (const l of desk.levels ?? []) add(l.value);
+  for (const w of desk.gex_walls ?? []) add(w.strike);
+  add(confluence.levels?.entry);
+  add(confluence.levels?.stop);
+  add(confluence.levels?.target);
+  add(technicals.m3_close);
+  add(technicals.m5_close);
+  add(technicals.m5_ema20);
+  return Array.from(levels);
+}
+
+/** Best-effort audit-log write for a fresh (non-cached) Claude-gate verdict — the pipeline
+ *  previously had zero durable record of the verdict that gated a real-money 0DTE entry.
+ *  Fire-and-forget: an audit-log failure must never block or alter the trading decision. */
+function logPlayVerdict(
+  desk: SpxDeskPayload,
+  confluence: SpxConfluence,
+  verdict: ClaudePlayVerdict,
+  note?: string
+): void {
+  if (!dbConfigured()) return;
+  insertAlertAuditLog({
+    alert_type: "spx_claude_play",
+    source_table: "spx_claude_play_verdict",
+    source_key: { price: desk.price, direction: confluence.direction, at: desk.as_of },
+    ticker: "SPX",
+    direction: verdict.direction,
+    confidence_score: confluence.score,
+    confidence_label: confluence.grade,
+    trigger_reason: note ?? verdict.headline,
+    decision_trace: [{ check: "claude_verdict", passed: verdict.approved, value: verdict.verdict }],
+    input_snapshot: null,
+    final_output: { verdict: verdict.verdict, confidence: confluence.score, thesis: verdict.thesis },
+  }).catch((err) => {
+    console.error("[spx-play-claude] audit-log write failed (non-blocking):", err);
+  });
 }
 
 function mechanicalVerdict(
@@ -349,6 +409,31 @@ Respond ONLY valid JSON (verdict must be exactly "APPROVE_BUY" or "VETO"):
       source: "claude",
       ...(direction_mismatch !== undefined && { direction_mismatch }),
     };
+
+    // FABRICATION GUARD: Claude's free-text thesis ships verbatim into real-money 0DTE play
+    // cards with no check that the levels it cites are real — verify against the SAME price
+    // data fed into the prompt (mirrors gex-heatmap/explain's narrativeLevelsAreGrounded).
+    // An ungrounded thesis means Claude's own reasoning can't be trusted, so the whole verdict
+    // (not just the prose) falls back to the deterministic mechanical gate, never a fabricated
+    // AI approval/veto.
+    const known = knownPlayLevels(desk, confluence, technicals);
+    const grounding = checkNumbersGrounded(result.thesis, known);
+    if (!grounding.grounded) {
+      console.warn(
+        `[spx-play-claude] ungrounded level ${grounding.ungroundedValue} in Claude thesis — falling back to mechanical verdict.`
+      );
+      const mech = mechanicalVerdict(
+        confluence,
+        gates,
+        confirmations,
+        `(Claude thesis cited an unverified level — mechanical fallback)`
+      );
+      logPlayVerdict(desk, confluence, mech, "ungrounded_claude_thesis");
+      await writeCache(key, mech);
+      return mech;
+    }
+
+    logPlayVerdict(desk, confluence, result);
     await writeCache(key, result);
     return result;
   } catch {
