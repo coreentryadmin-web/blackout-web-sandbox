@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧭 DECISION 2026-07-04 — evaluated the "unified BIE ticker dossier" idea, built a smaller thing instead
+**Original idea:** extend `fetchEcosystemContext` into a full admin/support "ask about any ticker" dossier by also folding in `error_events` and `admin_incidents`, on top of the existing 0DTE/Night Hawk/audit-log fields.
+
+**Why it didn't ship as scoped:** checked both tables' actual schemas before building anything. `error_events` has no ticker column — only a free-form `meta_json` JSONB, and grepping every `captureError()` call site confirmed **none of them pass a ticker into meta**, so a ticker filter on this table would always return empty. `admin_incidents` has no ticker linkage at all — it's system-component incidents (cron failures, deploy issues), not ticker-scoped by nature. Building the dossier as originally conceived would have shipped a feature that mostly returns nulls for 2 of its 3 new fields — exactly the "invented ground truth" this doc has been correcting all session, just in a new spot.
+
+**What shipped instead:** `fetchEcosystemContext` gained a fourth real field, `recent_flow` — a same-day HELIX flow summary (print count + call/put premium totals, 6h window) read directly from `flow_alerts`, not just the $1M+ whale tier that reaches `alert_audit_log`. This is genuinely non-empty today (unlike a ticker-dossier's error/incident fields) and closes a real gap: until now `fetchEcosystemContext` had zero visibility into ordinary (sub-whale) options flow at all. Reported as `call_premium` / `put_premium` / `unknown_premium` — never collapsed into a single bullish/bearish label, per `flow_alerts`' own "TRUTH MANDATE" precedent (`parseUwFlowAlert`, `unusual-whales.ts`) against fabricating a directional default for an unparseable option side.
+
+**Verification:** 877/877 tests pass (no new tests needed — `recent_flow` is a single aggregate query with no branching logic to unit-test in isolation, same precedent as the rest of `fetchEcosystemContext`), `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## 🧠 BIE Stage 4 gap closed SHIPPED 2026-07-03 — HELIX whale prints now write to alert_audit_log
 **Status:** SHIPPED (`feat/bie-helix-whale-audit-writepath`). Found while extending the ecosystem work above: `alert_audit_log`'s "unified per-alert audit trail" (Stage 4, marked SHIPPED) only ever covered 0DTE Command + Night Hawk (published/rejected) — confirmed by grepping every `insertAlertAuditLog` call site, all in `zerodte/scan.ts` and `nighthawk/play-outcomes.ts`. HELIX (`flow-persist.ts`), the platform's highest-volume alert source, never wrote to it at all. That made it invisible to everything built on top of the audit trail this session: `fetchEcosystemContext`'s `recent_audit_entries`, Largo's `get_ecosystem_context` tool, and the duplicate-alert detector.
 
@@ -17,6 +28,11 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 **Free upgrade to existing consumers:** because every consumer of `alert_audit_log` already reads it generically by `alert_type`, whale prints now automatically show up in Largo's ecosystem-context answers and the admin Audit Trail panel with zero further code changes — the actual point of building this on a shared table instead of a bespoke per-consumer join.
 
 **Verification:** `isHelixAuditWorthy`/`buildHelixAuditRow` unit tested in isolation (4 tests). 877/877 tests pass, `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
+## ✅ VERIFIED 2026-07-04 — PR #370 (`feat/bie-helix-whale-audit-writepath`) deploy confirmed SUCCESS
+Merge commit `9ce4b1a`. Railway deployment `718d929b-cea2-41d5-8e61-bef679a5984b` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`. (Side note on the shipping process: the original push carried a stale pre-squash copy of the already-merged confluence-outcomes commit alongside the new HELIX one, which GitHub reported as `mergeable_state: dirty` — fixed by branching fresh off `origin/main` and cherry-picking only the genuinely new commit before opening/merging.)
 
 ---
 

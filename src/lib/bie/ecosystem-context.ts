@@ -38,23 +38,50 @@ export type EcosystemAuditEntry = {
   outcome: string | null;
 };
 
+/**
+ * Recent HELIX flow on this ticker, reported neutrally as call/put premium
+ * totals rather than a single "bullish/bearish" label. flow_alerts has no
+ * direction column, and this codebase has an explicit prior rule (see the
+ * "TRUTH MANDATE" comment in parseUwFlowAlert, unusual-whales.ts) against
+ * ever defaulting an unparseable option side to a fabricated bias — an
+ * UNKNOWN-side print stays in unknown_premium, never folded into either side.
+ */
+export type EcosystemFlowSummary = {
+  window_hours: number;
+  print_count: number;
+  call_premium: number;
+  put_premium: number;
+  unknown_premium: number;
+};
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
   nighthawk_recent: EcosystemNightHawkTake | null;
   recent_audit_entries: EcosystemAuditEntry[];
+  recent_flow: EcosystemFlowSummary | null;
 };
 
 function emptyContext(ticker: string): EcosystemContext {
-  return { ticker: ticker.toUpperCase(), zerodte_today: null, nighthawk_recent: null, recent_audit_entries: [] };
+  return {
+    ticker: ticker.toUpperCase(),
+    zerodte_today: null,
+    nighthawk_recent: null,
+    recent_audit_entries: [],
+    recent_flow: null,
+  };
 }
+
+const FLOW_SUMMARY_WINDOW_HOURS = 6;
 
 /**
  * Assembles a single ticker's cross-instrument snapshot from tables that
  * already exist: today's 0DTE Command take (if any), the most recent Night
- * Hawk take (published or rejected outcome, whichever is newest), and the
- * last 10 alert_audit_log entries (the unified Stage 4 trail, which already
- * spans all three write-paths). Fails open to an all-empty context on any
+ * Hawk take (published or rejected outcome, whichever is newest), the last 10
+ * alert_audit_log entries (the unified Stage 4 trail, which already spans all
+ * three write-paths), and a same-day HELIX flow summary straight from
+ * flow_alerts — not just the $1M+ whale tier that reaches alert_audit_log, the
+ * full tape for this one ticker. Fails open to an all-empty context on any
  * error — a lookup failure here must never block the caller's own logic.
  */
 export async function fetchEcosystemContext(ticker: string): Promise<EcosystemContext> {
@@ -62,7 +89,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -104,10 +131,21 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
          LIMIT 10`,
         [upper]
       ),
+      dbQuery<{ print_count: number; call_premium: number; put_premium: number; unknown_premium: number }>(
+        `SELECT
+           COUNT(*)::int AS print_count,
+           COALESCE(SUM(total_premium) FILTER (WHERE option_type = 'CALL'), 0)::numeric AS call_premium,
+           COALESCE(SUM(total_premium) FILTER (WHERE option_type = 'PUT'), 0)::numeric AS put_premium,
+           COALESCE(SUM(total_premium) FILTER (WHERE option_type NOT IN ('CALL', 'PUT')), 0)::numeric AS unknown_premium
+         FROM flow_alerts
+         WHERE ticker = $1 AND created_at >= NOW() - ($2 || ' hours')::interval`,
+        [upper, FLOW_SUMMARY_WINDOW_HOURS]
+      ),
     ]);
 
     const z = zerodteRes.rows[0];
     const n = nighthawkRes.rows[0];
+    const f = flowRes.rows[0];
 
     return {
       ticker: upper,
@@ -137,6 +175,16 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
         trigger_reason: r.trigger_reason,
         outcome: r.outcome,
       })),
+      recent_flow:
+        f && f.print_count > 0
+          ? {
+              window_hours: FLOW_SUMMARY_WINDOW_HOURS,
+              print_count: Number(f.print_count),
+              call_premium: Number(f.call_premium),
+              put_premium: Number(f.put_premium),
+              unknown_premium: Number(f.unknown_premium),
+            }
+          : null,
     };
   } catch {
     return emptyContext(ticker);
