@@ -7,6 +7,23 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE semantic precedent search SHIPPED 2026-07-04 — "has this setup happened before, and what happened"
+**The gap:** BIE's L2 knowledge layer (embeddings + cosine search) has existed since Phase 2, but it only ever indexed prose — docs, findings, editions. It never touched the platform's own structured trading history in `alert_audit_log`, so a genuinely new kind of question — "find me past alerts that resemble this one, and what happened" — was unanswerable; a member or Largo could only filter by exact ticker/date, never by resemblance.
+
+**What shipped:**
+- `mapAlertAuditTrailRow()` (`src/lib/db.ts`) — extracted the raw-row→typed-row mapping that `fetchAlertAuditTrail` already did inline, so both it and the new `fetchResolvedAlertAuditRows()` share one tested mapper instead of duplicating the NUMERIC-string-column conversion logic.
+- `fetchResolvedAlertAuditRows(days)` (`src/lib/db.ts`) — every alert with a TERMINAL outcome (`target`/`stop`/`ambiguous`/`unfilled` — deliberately excludes `open`/`pending`, since "what happened" needs an actual answer) from the last N days, uncapped unlike the admin-display `fetchAlertAuditTrail`'s 100-row limit.
+- `describeAuditRow()` (`src/lib/bie/precedent-search.ts`) — pure, deterministic, template-based row→natural-language description (e.g. "0DTE Command alert on NVDA, long, high conviction (score 82) — fired because aggression spike. Outcome: target."). Never LLM-generated, so it can never fabricate a detail the row doesn't actually have.
+- `ingestAlertPrecedents()` — embeds every resolved alert from the last 60 days into `bie_knowledge` under a new `"precedent"` kind, wired into the existing nightly `ingestBieKnowledge()` cron. Idempotent via the existing hash-dedup: re-running over the same graded rows costs nothing.
+- `findSimilarPrecedents(query, k)` — cosine search scoped to `kind="precedent"` only, so results never mix with doc/finding prose. Required generalizing `searchKnowledge()` with an optional `kind` filter (backward-compatible — existing call sites pass nothing and search the whole corpus, unchanged).
+- New Largo tool `get_similar_precedents(query)` — Claude composes a short description of the current setup, gets back the most similar past alerts + outcomes. Tool description is explicit that this is historical color for a member's question, **never** a live signal or a reason to change a gate/score — consistent with the standing Stage 6 boundary (BIE never acts on outcome data, only reports it).
+
+**Explicitly backend-only, per standing instruction:** no `.tsx`/UI files touched — this ships as a Largo tool + knowledge-layer capability; the admin report's existing `knowledge.by_kind` breakdown (`fetchBieKnowledgeStats()`, already grouped by kind) will show the new `"precedent"` bucket automatically once ingestion runs, with no route change needed.
+
+**Verification:** `npx tsc --noEmit` clean, `npm test` 905/905 passing (9 new: 3 for `mapAlertAuditTrailRow`'s DB-boundary conversion, 6 for `describeAuditRow`'s template correctness), `npm run build` clean, `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## ✅ VERIFIED 2026-07-04 — PRs #381, #382, #383 deploys confirmed SUCCESS; ecosystem-context/banner-redesign line closed out
 Merge commits `9f9c23b` (#381, ARCHITECTURE.md rewrite + get_confluence_outcomes + flow_feed_fresh + dynamic capabilities generator), `1de73e2` (#382, banner vendor-leak fix), `5016fc8` (#383, sphere-mesh banner redesign). All three Railway deployments confirmed **SUCCESS** via the GraphQL API with `commitHash` matching each merge commit exactly (`9f9c23b262b1418dacec54c9a82155bbcc53e995`, `1de73e26280e81f029033521afae6bf61a694c7a`, `5016fc8dbe9b452a17aca45a454f39d910c9166b`). Live `GET /api/ready` on the final deploy → `{"ok":true,"db":"connected","mode":"private"}`. Closes out tonight's ecosystem-context/banner-redesign thread — all three land clean in production.
 
