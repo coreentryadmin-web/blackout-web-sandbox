@@ -7,6 +7,11 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #387 (`feat/bie-precedent-search`) deploy confirmed SUCCESS
+Merge commit `78c4d10`. Its own Railway deployment shows `REMOVED` in the GraphQL history — expected supersession, not a failure: three more landing-page commits (`#388`/`#389`/`#391`, all Cursor UI work) deployed in the same few minutes, each superseding the prior build before it finished. Confirmed via `git merge-base --is-ancestor 78c4d10 origin/main` that `78c4d10` is a direct ancestor of the current `main` HEAD, and the latest deployment (commit `2b0abff`, `#396`) is **SUCCESS** — so the precedent-search code has been live in every deploy since. Live `GET /api/ready` → `{"ok":true,"db":"connected","mode":"private"}`. Closes out the precedent-search shipping thread.
+
+---
+
 ## 🧠 BIE semantic precedent search SHIPPED 2026-07-04 — "has this setup happened before, and what happened"
 **The gap:** BIE's L2 knowledge layer (embeddings + cosine search) has existed since Phase 2, but it only ever indexed prose — docs, findings, editions. It never touched the platform's own structured trading history in `alert_audit_log`, so a genuinely new kind of question — "find me past alerts that resemble this one, and what happened" — was unanswerable; a member or Largo could only filter by exact ticker/date, never by resemblance.
 
