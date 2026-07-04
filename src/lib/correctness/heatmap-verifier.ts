@@ -1,5 +1,6 @@
 import "server-only";
 
+import { todayEt } from "@/lib/et-date";
 import {
   fetchGexHeatmap,
   fetchPolygonAtmOptionsChain,
@@ -1067,7 +1068,7 @@ function groupMetrics(ticker: string, checks: CheckResult[]): MetricScore[] {
  */
 export async function verifyHeatmapTicker(ticker: string, marketOpen: boolean): Promise<TickerScore> {
   const root = String(ticker ?? "").trim().toUpperCase();
-  const ctx: Ctx = { ticker: root, now: Date.now(), today: todayEtYmdLocal() };
+  const ctx: Ctx = { ticker: root, now: Date.now(), today: todayEt() };
 
   const hm = await fetchGexHeatmap(root).catch(() => null);
   if (!hm || !(hm.spot > 0) || hm.strikes.length === 0) {
@@ -1109,14 +1110,4 @@ export async function verifyHeatmapTicker(ticker: string, marketOpen: boolean): 
   const metrics = groupMetrics(root, checks);
   const status = worstStatus(metrics.map((m) => m.status));
   return { ticker: root, status, metrics };
-}
-
-/** Local ET YMD (avoids importing the provider's todayEtYmd to keep this self-contained). */
-function todayEtYmdLocal(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
 }

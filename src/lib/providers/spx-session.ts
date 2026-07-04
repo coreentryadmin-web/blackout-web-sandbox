@@ -1,13 +1,8 @@
+import { todayEt } from "@/lib/et-date";
+
 const ET = "America/New_York";
 
-export function todayEtYmd(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: ET,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
+export const todayEtYmd = todayEt;
 
 /**
  * Is a `platform_briefs` "premarket" row still safe to serve as the current brief?

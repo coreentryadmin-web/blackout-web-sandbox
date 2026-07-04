@@ -1,3 +1,5 @@
+import { todayEt as todayEtYmd } from "@/lib/et-date";
+
 export type MacroEvent = {
   time: string;
   event: string;
@@ -120,10 +122,6 @@ const EXPECTED_FOMC: Record<string, readonly string[]> = {
 
 const MACRO_HEADLINE_RE =
   /\b(CPI|FOMC|FED|PCE|NFP|NONFARM|JOBS|PAYROLL|PPI|GDP|RETAIL SALES|ISM|PMI|UNEMPLOYMENT|CLAIMS|RATE DECISION|POWELL)\b/i;
-
-function todayEtYmd(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
-}
 
 /**
  * Return the approximate ET release time for a known macro event label.

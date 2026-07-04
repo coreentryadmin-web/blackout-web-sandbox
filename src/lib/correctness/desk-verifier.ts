@@ -1,5 +1,6 @@
 import "server-only";
 
+import { todayEt } from "@/lib/et-date";
 import {
   type CheckResult,
   type MetricScore,
@@ -579,7 +580,7 @@ function groupMetrics(ticker: string, checks: CheckResult[]): MetricScore[] {
  * a thrown layer degrades to a skipped check so one layer can't abort the run.
  */
 export async function verifyDesk(marketOpen: boolean): Promise<TickerScore> {
-  const ctx: Ctx = { ticker: "SPX", now: Date.now(), today: todayEtYmdLocal() };
+  const ctx: Ctx = { ticker: "SPX", now: Date.now(), today: todayEt() };
 
   const bundle = await loadMergedSpxDesk().catch(() => null);
   const d = bundle?.merged;
@@ -617,13 +618,4 @@ export async function verifyDesk(marketOpen: boolean): Promise<TickerScore> {
 
   const metrics = groupMetrics("SPX", checks);
   return { ticker: "SPX", status: worstStatus(metrics.map((m) => m.status)), metrics };
-}
-
-function todayEtYmdLocal(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
 }

@@ -1,4 +1,6 @@
-﻿const PREFIX = "blackout:";
+﻿import { todayEt as todayEtYmdClient } from "@/lib/et-date";
+
+const PREFIX = "blackout:";
 
 
 
@@ -24,11 +26,7 @@ type CacheEnvelope<T> = {
 
 
 
-export function todayEtYmdClient(): string {
-
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-
-}
+export { todayEt as todayEtYmdClient } from "@/lib/et-date";
 
 
 

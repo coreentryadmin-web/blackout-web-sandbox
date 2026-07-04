@@ -11,6 +11,7 @@ import {
 } from "@/lib/spx-play-config";
 import { etClock, etMinutes, formatEtTime } from "@/lib/spx-play-session-time";
 import { formatEtDate, isTradingDayEt } from "@/lib/nighthawk/session";
+import { todayEt as todayEtYmd } from "@/lib/et-date";
 
 /**
  * NYSE/CBOE standard early-close days (market closes at 1:00 PM ET).
@@ -27,10 +28,6 @@ const EARLY_CLOSE_DATES: Record<string, number> = {
   "2026-12-24": etClock(13, 0),
   "2027-12-24": etClock(13, 0),
 };
-
-function todayEtYmd(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
-}
 
 /** Returns the ET-minutes of the early close for today, or null if it's a normal session.
  *  An SPX_EARLY_CLOSE_ET_MINS env override is honored only when it parses to a finite
