@@ -76,6 +76,31 @@ function extractAllNumbers(text: string): number[] {
  *  for small values) — tolerant of rounding, intolerant of invention. Derived
  *  values the desk itself teaches (percent deltas, x2/x0.5 of a source value)
  *  also count, so "target $8.40" verifies against a $4.20 entry. */
+/** Marker appended by largo-terminal.ts when Layer-4 coverage drops below threshold. */
+export const LARGO_RUNTIME_CAUTION_MARKER = "BIE verification";
+
+/** Same thresholds largo-terminal.ts uses before appending the caution footer. */
+export const LARGO_GROUNDING_MIN_CLAIMS = 4;
+export const LARGO_GROUNDING_COVERAGE_THRESHOLD = 0.5;
+
+/**
+ * Cron-side Largo answer audit — uses the SAME claim extraction + matching as the in-turn Layer-4
+ * verifier (verifyClaims), and flags only when runtime would have appended the caution footer but
+ * did not (undisclosed low coverage). Answers that already carry the footer are not re-flagged.
+ */
+export function auditLargoAnswerGrounding(
+  answerText: string,
+  toolResults: unknown[]
+): { verification: ClaimVerification; shouldFlag: boolean } {
+  const verification = verifyClaims(answerText, collectContextNumbers(toolResults));
+  const alreadyDisclosed = answerText.includes(LARGO_RUNTIME_CAUTION_MARKER);
+  const shouldFlag =
+    !alreadyDisclosed &&
+    verification.total >= LARGO_GROUNDING_MIN_CLAIMS &&
+    verification.coverage < LARGO_GROUNDING_COVERAGE_THRESHOLD;
+  return { verification, shouldFlag };
+}
+
 export function verifyClaims(answerText: string, contextNumbers: number[]): ClaimVerification {
   const claims = extractNumericClaims(answerText);
   if (claims.length === 0) return { total: 0, verified: 0, unverified: [], coverage: 1 };

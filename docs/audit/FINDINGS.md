@@ -11,7 +11,16 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
-## 🟢 FIXED 2026-07-04 — 5th WS-adjacent leader-lock manager (`rth-warm-leader.ts`) missed by the REPLICA_COUNT fail-open sweep (follow-up audit finding, high)
+## 🟢 FIXED 2026-07-04 — Largo answer-grounding cron false-flagged every recent answer (ops-auto-fix #444, P0)
+**Where:** `src/lib/correctness/largo-verifier.ts` shipped a bespoke `extractNumericTokens` regex (separate from the runtime Layer-4 verifier in `src/lib/bie/verifier.ts`) that false-flagged prod Largo answers: list markers (`- 8 alerts` → `-8`), money-suffix bleed (`$80 max pain` → `$80M` = 80,000,000 via trailing `m` in "max"), EMA period refs (`50-EMA` → 50), date fragments (`Jul 10` → 10), and flagged ANY single ungrounded token instead of using the same coverage threshold `largo-terminal.ts` applies before appending the runtime caution footer. Result: `data-correctness` cron failed with `3/3 recent Largo answers cited a number absent from tool-call results`, cascading to cron-staleness-watchdog P1.
+
+**Fix:** new shared `auditLargoAnswerGrounding()` in `src/lib/bie/verifier.ts` — reuses `extractNumericClaims` + `verifyClaims` (identical to in-turn Layer 4) and flags only when `total >= 4 && coverage < 0.5` AND the answer lacks the `_BIE verification:` runtime caution footer (undisclosed low coverage). `largo-verifier.ts` now calls this instead of the bespoke regex path.
+
+**Blast radius:** cron audit path only — runtime Largo behavior unchanged; answers that already disclosed low coverage via the footer are not re-flagged by the cron.
+
+**Verification:** 4 new tests in `src/lib/bie/largo-grounding-fixture.test.ts` (invented-target fixture, footer skip, list-marker non-flag, `$80 max pain` non-flag); replay against prod rows #508/#510/#512 → 0/3 flagged (was 3/3).
+
+---
 **Where:** `src/lib/rth-warm-leader.ts:47-56` (`tryAcquireLead`) — `if (!redis) return true; // single-replica / no Redis — run locally`. This is the exact fail-open-on-Redis-loss bug already fixed today in all four WS socket managers (`uw-socket.ts`/`polygon-socket.ts`/`options-socket.ts`/`stocks-socket.ts`, see the "Gate WS leader-lock fail-open" entry below), but `rth-warm-leader.ts` wasn't in that sweep's file list — it lives outside `src/lib/ws/` and isn't itself a WebSocket, so a `grep`-by-directory or by-name pass over "the WS sockets" walks right past it. It's booted from the same `ensureDataSockets()` entry point as the four already-fixed files (`src/lib/ws/init-data-sockets.ts`) and races the same Redis `SET NX EX` leader-election pattern.
 
 **Impact:** on a Redis outage across the 5-replica production topology, every replica would simultaneously believe it holds the cluster lead and independently poll `cron_job_runs` + dispatch `nights-watch-warm`/`uw-cache-refresh`/`heatmap-warm` warmers every 60s. Bounded (the dispatch targets are curated idempotent-only per `cron-dispatch.ts`) so this isn't data-corrupting, but it's 5x redundant vendor-facing warm calls landing exactly when the WS layer is *also* degrading — the worst possible moment to add uncoordinated load, and the fix for the sibling bug specifically exists to prevent that compounding effect.
