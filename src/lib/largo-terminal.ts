@@ -8,7 +8,7 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { dbConfigured } from "@/lib/db";
+import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
@@ -28,6 +28,8 @@ import { captureLargoLiveFeed, formatLargoLiveFeed } from "@/lib/largo/largo-liv
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { webSearchConfigured } from "@/lib/providers/web-search";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { searchKnowledge } from "@/lib/bie/knowledge";
+import { readZeroDteLedger } from "@/lib/zerodte/scan";
 
 const MAX_HISTORY = 28;
 
@@ -208,10 +210,11 @@ async function prepareLargoTurn(
   // BIE Layer 2 grounding: retrieved desk knowledge (playbooks, findings, past
   // editions, self-evals) rides into the system prompt when embeddings are
   // configured. Best-effort and bounded — never delays a turn by more than the
-  // retrieval itself, never blocks on failure.
+  // retrieval itself, never blocks on failure. searchKnowledge is a static import
+  // (was a dynamic import("@/lib/bie/knowledge")) — see logBie's doc comment below
+  // for why a dynamic "@/" alias import silently breaks under Node 20 test mocking.
   let knowledgeBlock = "";
   try {
-    const { searchKnowledge } = await import("@/lib/bie/knowledge");
     const hits = await searchKnowledge(question, 3);
     if (hits.length > 0) {
       knowledgeBlock =
@@ -232,12 +235,21 @@ async function prepareLargoTurn(
 
 /** BLACKOUT Intelligence router — answers deterministically when the question maps
  *  onto platform truth (0DTE plays, SPX structure, market context). Returns null on
- *  no-match or ANY error: the Claude fallback is never blocked by the router. */
+ *  no-match or ANY error: the Claude fallback is never blocked by the router.
+ *  readZeroDteLedger is a static import (was a dynamic import("@/lib/zerodte/scan"))
+ *  — a real, pre-existing bug found while fixing task #103's own tests: that dynamic
+ *  alias import silently threw under Node 20 + node:test's module mocking (never
+ *  reaching mock.module("./zerodte/scan", ...) in largo-terminal.test.ts), was caught
+ *  by this function's own broad catch, and made tryBieRoute return null unconditionally
+ *  — i.e. the deterministic router path was untestable, not "broken in production."
+ *  Node/webpack-bundled production code has no such ambiguity (the "@/" alias is
+ *  resolved at BUILD time, not by Node's runtime ESM loader), so this was invisible
+ *  until largo-terminal.test.ts (this file's first-ever test) exercised it under CI's
+ *  Node 20. See logBie's doc comment below for the identical root cause on the DB write. */
 async function tryBieRoute(
   question: string
 ): Promise<{ route: BieRoute; answer: string; context: unknown } | null> {
   try {
-    const { readZeroDteLedger } = await import("@/lib/zerodte/scan");
     const ledger = await readZeroDteLedger().catch(() => []);
     const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
     if (!route) return null;
@@ -267,9 +279,15 @@ function logBie(row: {
   intent_bucket: string;
 }): void {
   if (!dbConfigured()) return;
-  void import("@/lib/db")
-    .then((m) => m.insertBieInteraction(row))
-    .catch(() => {});
+  // Static import (not a dynamic import("@/lib/db")): under Node 20 + node:test's
+  // --experimental-test-module-mocks, a dynamic alias import from inside a mocked module
+  // graph fails to resolve to mock.module("./db", ...) — it silently misses the mock
+  // (previously swallowed by a .catch here) and this write never lands, timing out any
+  // caller awaiting it. Node 22 doesn't have this issue, which is why it was invisible
+  // until largo-terminal.test.ts (this file's first-ever test coverage) exercised it
+  // under CI's Node 20. Same fix already applied to spx-play-outcomes.ts's write-path
+  // functions earlier in this sweep — a static top-of-file import instead.
+  void insertBieInteraction(row).catch(() => {});
 }
 
 export async function runLargoQuery(
