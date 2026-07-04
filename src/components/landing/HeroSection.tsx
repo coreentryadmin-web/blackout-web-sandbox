@@ -96,7 +96,7 @@ export function HeroSection() {
           desk. Built for traders who need clarity under speed.
         </motion.p>
 
-        <motion.div variants={fadeUp} className="mt-1 flex flex-col gap-4 sm:flex-row">
+        <motion.div variants={fadeUp} className="mt-1 flex flex-row flex-wrap items-center justify-center gap-4">
           <LandingCta href="/sign-up" className="btn-cta-primary">
             Get access
           </LandingCta>

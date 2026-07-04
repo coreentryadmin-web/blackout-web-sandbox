@@ -79,11 +79,12 @@ export function EdgeSection() {
           </span>
         </h2>
 
-        <div className="relative mt-12 grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="landing-scroll-rail mt-12">
+          <div className="relative grid grid-cols-3 gap-5 min-w-[720px]">
           {/* pipeline connector (draws L→R) */}
           <motion.div
             aria-hidden
-            className="hidden md:block absolute top-7 left-[16%] right-[16%] h-px"
+            className="absolute top-7 left-[16%] right-[16%] h-px"
             style={{ background: "linear-gradient(90deg,#00e676,#22d3ee,#bf5fff)", opacity: 0.4 }}
             initial={{ clipPath: "inset(0 100% 0 0)" }}
             whileInView={{ clipPath: "inset(0 0% 0 0)" }}
@@ -143,6 +144,7 @@ export function EdgeSection() {
               <p className="text-sky-300 text-sm mt-3 leading-relaxed">{s.desc}</p>
             </motion.div>
           ))}
+          </div>
         </div>
 
         {/* ROW B — THE EDGE */}
@@ -153,7 +155,8 @@ export function EdgeSection() {
         <p className="font-mono text-[10px] tracking-[0.5em] uppercase text-cyan-400 mt-10 mb-6">
           Why BlackOut
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="landing-scroll-rail">
+          <div className="grid grid-cols-4 gap-4 min-w-[880px]">
           {PILLARS.map((p, i) => (
             <motion.div
               key={p.claim}
@@ -172,6 +175,7 @@ export function EdgeSection() {
               <p className="text-sky-300/80 text-xs mt-2 leading-relaxed">{p.proof}</p>
             </motion.div>
           ))}
+          </div>
         </div>
       </div>
     </section>

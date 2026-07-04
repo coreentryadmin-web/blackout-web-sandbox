@@ -4,13 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
 import { fieldLineScale } from "./bie-helix-engine";
-import {
-  buildRandomOrbitLayout,
-  mulberry32,
-  readSessionOrbitSeed,
-  wanderOrbitDeg,
-  type PlacedOrbitTool,
-} from "./bie-orbit-layout";
+import { buildRandomOrbitLayout, readSessionOrbitSeed, type PlacedOrbitTool } from "./bie-orbit-layout";
 import { advanceOrbitDeg, orbitToolPixelPosition } from "./bie-viewbox-map";
 
 export type OrbitTool = {
@@ -33,8 +27,6 @@ type Props = {
 
 type ToolMotion = {
   orbitDeg: number;
-  wanderDeg: number;
-  nextWanderAtMs: number;
 };
 
 const RING_SCALES = {
@@ -57,13 +49,11 @@ export function BieOrbitTools({
   const hostRef = useRef<HTMLDivElement>(null);
   const anchorRefs = useRef<(HTMLDivElement | null)[]>([]);
   const geoRef = useRef({ viewW, viewH, coreX, coreY, maxRx, maxRy });
-  const wanderRandRef = useRef<(() => number) | null>(null);
 
   const [layout, setLayout] = useState<PlacedOrbitTool[] | null>(null);
 
   useEffect(() => {
     const seed = readSessionOrbitSeed();
-    wanderRandRef.current = mulberry32(seed ^ 0x9e3779b9);
     setLayout(buildRandomOrbitLayout(tools, RING_SCALES, seed));
   }, [tools]);
 
@@ -75,11 +65,7 @@ export function BieOrbitTools({
     const host = hostRef.current;
     if (!host || !layout?.length) return;
 
-    const motion: ToolMotion[] = layout.map((tool) => ({
-      orbitDeg: 0,
-      wanderDeg: 0,
-      nextWanderAtMs: performance.now() + tool.wanderIntervalSec * 1000,
-    }));
+    const motion: ToolMotion[] = layout.map(() => ({ orbitDeg: 0 }));
 
     let raf = 0;
     let last = performance.now();
@@ -94,7 +80,7 @@ export function BieOrbitTools({
         if (!anchor) return;
         const m = motion[i];
         const px = orbitToolPixelPosition({
-          startAngleDeg: tool.startAngleDeg + m.wanderDeg,
+          startAngleDeg: tool.startAngleDeg,
           orbitDeg: m.orbitDeg,
           coreX: g.coreX,
           coreY: g.coreY,
@@ -115,16 +101,15 @@ export function BieOrbitTools({
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
-      const wanderRand = wanderRandRef.current;
 
       if (!reduceMotion) {
         layout.forEach((tool, i) => {
-          const m = motion[i];
-          m.orbitDeg = advanceOrbitDeg(m.orbitDeg, dt, tool.orbitPeriodSec, tool.orbitDirection);
-          if (wanderRand && now >= m.nextWanderAtMs) {
-            m.wanderDeg = wanderOrbitDeg(m.wanderDeg, wanderRand);
-            m.nextWanderAtMs = now + tool.wanderIntervalSec * 1000;
-          }
+          motion[i].orbitDeg = advanceOrbitDeg(
+            motion[i].orbitDeg,
+            dt,
+            tool.orbitPeriodSec,
+            tool.orbitDirection
+          );
         });
       }
 
@@ -157,6 +142,7 @@ export function BieOrbitTools({
           <Link
             href={tool.href}
             className="bie-orbit-tool"
+            title={tool.name}
             style={{ ["--tool-accent" as string]: tool.accent }}
           >
             <span className="bie-orbit-tool-mark" aria-hidden>

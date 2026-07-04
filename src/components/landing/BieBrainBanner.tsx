@@ -8,14 +8,13 @@ import {
   buildFieldLineRings,
   buildFieldParticles,
   buildInboundPulsePath,
-  buildInnerFieldNodes,
-  buildRingSegmentPath,
   fieldGlowRadii,
   pointOnFieldLine,
   type FieldLineRing,
   type FieldParticle,
   type RingFieldNode,
 } from "./bie-helix-engine";
+import { buildRandomFieldNodes, isToolOrbitRing, readSessionOrbitSeed } from "./bie-orbit-layout";
 import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
 
 /**
@@ -31,8 +30,7 @@ const CORE = { x: VIEW_W / 2, y: VIEW_H * 0.5 };
 const MAX_RX = VIEW_W / 2;
 const MAX_RY = 310;
 const FIELD_COUNT = 120;
-const INNER_RINGS = [1, 2] as const;
-const INNER_NODES = 6;
+const NODES_PER_RING = 6;
 
 const READOUT_LINES = [
   "continuous market intelligence — ingested, verified, never assumed",
@@ -159,19 +157,8 @@ function useFieldParticles(
   }, [reduceMotion, canvasRef]);
 }
 
-function innerNodes(all: RingFieldNode[], ring: 1 | 2): RingFieldNode[] {
+function nodesOnRing(all: RingFieldNode[], ring: number): RingFieldNode[] {
   return all.filter((n) => n.ring === ring);
-}
-
-function pairedInnerLinks(nodes: RingFieldNode[]): { a: RingFieldNode; b: RingFieldNode; key: string }[] {
-  const r1 = innerNodes(nodes, 1);
-  const r2 = innerNodes(nodes, 2);
-  const n = Math.min(r1.length, r2.length);
-  return Array.from({ length: n }, (_, i) => ({
-    a: r1[i],
-    b: r2[i],
-    key: `link-${i}`,
-  }));
 }
 
 export function BieBrainBanner() {
@@ -183,15 +170,11 @@ export function BieBrainBanner() {
   const [pulseKey, setPulseKey] = useState(0);
   const [pulsePath, setPulsePath] = useState("");
   const [rippleKey, setRippleKey] = useState(0);
+  const [fieldNodes, setFieldNodes] = useState<RingFieldNode[]>([]);
 
   const fieldLines = useMemo(() => buildFieldLineRings(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const atmosphereGlows = useMemo(() => buildAtmosphereGlows(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const ambientMesh = useMemo(() => buildAmbientFieldMesh(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
-  const innerFieldNodes = useMemo(
-    () => buildInnerFieldNodes(CORE.x, CORE.y, MAX_RX, MAX_RY, INNER_RINGS, INNER_NODES),
-    []
-  );
-  const innerLinks = useMemo(() => pairedInnerLinks(innerFieldNodes), [innerFieldNodes]);
   const fieldGlow = useMemo(() => fieldGlowRadii(VIEW_W, VIEW_H), []);
 
   const outerLines = fieldLines.filter((r) => r.layer === "outer");
@@ -199,6 +182,11 @@ export function BieBrainBanner() {
   const innerLines = fieldLines.filter((r) => r.layer === "inner");
 
   useFieldParticles(canvasRef, reduceMotion);
+
+  useEffect(() => {
+    const seed = readSessionOrbitSeed();
+    setFieldNodes(buildRandomFieldNodes(CORE.x, CORE.y, MAX_RX, MAX_RY, NODES_PER_RING, seed));
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setLineIndex((i) => (i + 1) % READOUT_LINES.length), 3600);
@@ -256,7 +244,7 @@ export function BieBrainBanner() {
   const coreAbsorbing = phase === "absorb";
 
   const renderFieldLine = (ring: FieldLineRing, opts: { showNodes: boolean; loopPulse: boolean }) => {
-    const onRing = opts.showNodes ? innerNodes(innerFieldNodes, ring.ring as 1 | 2) : [];
+    const onRing = opts.showNodes ? nodesOnRing(fieldNodes, ring.ring) : [];
     const isLit = litRings.includes(ring.ring);
     return (
       <g
@@ -283,29 +271,16 @@ export function BieBrainBanner() {
           </circle>
         )}
         <path id={`bie-field-loop-${ring.ring}`} d={ring.d} className="bie-reactor-impulse-track" pathLength={1} />
-        {onRing.map((node, i) => {
-          const next = onRing[(i + 1) % onRing.length];
-          const segId = `bie-inner-seg-${ring.ring}-${i}`;
-          const segPath = buildRingSegmentPath(node.x, node.y, next.x, next.y, CORE.x, CORE.y, 8 + ring.ring * 3);
-          return (
-            <g key={node.id}>
-              <path id={segId} d={segPath} className="bie-ring-segment-track" pathLength={1} />
-              <circle cx={node.x} cy={node.y} r={4.8} className="bie-ring-node bie-inner-node bie-star-node" style={{ animationDelay: `${(i * 0.55 + ring.ring * 0.35).toFixed(2)}s` }} />
-              {!reduceMotion && (
-                <circle r={2.4} className="bie-ring-pulse-dot bie-star-pulse-dot" fill="#ffe08a">
-                  <animateMotion
-                    dur={`${6.2 + ring.ring * 0.8 + i * 0.4}s`}
-                    begin={`-${i * 1.1}s`}
-                    repeatCount="indefinite"
-                    calcMode="linear"
-                  >
-                    <mpath href={`#${segId}`} />
-                  </animateMotion>
-                </circle>
-              )}
-            </g>
-          );
-        })}
+        {onRing.map((node, i) => (
+          <circle
+            key={node.id}
+            cx={node.x}
+            cy={node.y}
+            r={4.8}
+            className="bie-ring-node bie-star-node"
+            style={{ animationDelay: `${(i * 0.55 + ring.ring * 0.35).toFixed(2)}s` }}
+          />
+        ))}
       </g>
     );
   };
@@ -325,7 +300,7 @@ export function BieBrainBanner() {
           <svg
             className="bie-brain-svg bie-reactor-svg bie-field-svg"
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-            preserveAspectRatio="xMidYMid slice"
+            preserveAspectRatio="xMidYMid meet"
           >
             <defs>
               <radialGradient id="bie-field-base" cx="50%" cy="50%" r="72%">
@@ -379,32 +354,21 @@ export function BieBrainBanner() {
 
             <rect width={VIEW_W} height={VIEW_H} fill="url(#bie-field-vignette)" className="bie-field-vignette" pointerEvents="none" />
 
-            {outerLines.map((ring) => renderFieldLine(ring, { showNodes: false, loopPulse: true }))}
+            {outerLines.map((ring) =>
+              renderFieldLine(ring, {
+                showNodes: isToolOrbitRing(ring.ring),
+                loopPulse: true,
+              })
+            )}
 
-            {midLines.map((ring) => renderFieldLine(ring, { showNodes: false, loopPulse: ring.ring === 4 }))}
+            {midLines.map((ring) =>
+              renderFieldLine(ring, {
+                showNodes: isToolOrbitRing(ring.ring),
+                loopPulse: ring.ring === 4,
+              })
+            )}
 
-            {innerLines.map((ring) => renderFieldLine(ring, { showNodes: true, loopPulse: false }))}
-
-            {!reduceMotion &&
-              innerLinks.map((link, i) => {
-                const pathId = `bie-inner-link-${i}`;
-                const d = buildRingSegmentPath(link.a.x, link.a.y, link.b.x, link.b.y, CORE.x, CORE.y, 6);
-                return (
-                  <g key={link.key} className="bie-inner-connection">
-                    <path id={pathId} d={d} className="bie-inner-link-track" pathLength={1} />
-                    <circle r={1.2} className="bie-inner-link-pulse" fill="#bf5fff">
-                      <animateMotion
-                        dur={`${8.5 + i * 0.6}s`}
-                        begin={`-${i * 1.4}s`}
-                        repeatCount="indefinite"
-                        calcMode="linear"
-                      >
-                        <mpath href={`#${pathId}`} />
-                      </animateMotion>
-                    </circle>
-                  </g>
-                );
-              })}
+            {innerLines.map((ring) => renderFieldLine(ring, { showNodes: false, loopPulse: false }))}
 
             {!reduceMotion && phase === "inbound" && pulsePath && (
               <g key={pulseKey} className="bie-reactor-pulse-wave bie-reactor-pulse-inbound">

@@ -440,10 +440,10 @@ export function fieldGlowRadii(viewW: number, viewH: number): { rx: number; ry: 
   return { rx: viewW * 0.52, ry: viewH * 0.48 };
 }
 
-/** Glowing nodes on inner field lines (25% zone). */
+/** Glowing nodes on field-line ellipses. */
 export type RingFieldNode = {
   id: string;
-  ring: 1 | 2;
+  ring: 1 | 2 | 4 | 5 | 6;
   x: number;
   y: number;
   index: number;

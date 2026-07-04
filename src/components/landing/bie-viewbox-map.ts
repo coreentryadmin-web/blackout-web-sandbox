@@ -12,7 +12,7 @@ export function advanceOrbitDeg(
   return ((next % 360) + 360) % 360;
 }
 
-/** Map SVG viewBox coordinates to pixel positions inside a container (matches preserveAspectRatio slice). */
+/** Map SVG viewBox coordinates to pixel positions inside a container (matches preserveAspectRatio meet/slice). */
 export function viewBoxPointToContainer(
   vx: number,
   vy: number,
@@ -20,7 +20,7 @@ export function viewBoxPointToContainer(
   containerH: number,
   viewW: number,
   viewH: number,
-  mode: "slice" | "meet" = "slice"
+  mode: "slice" | "meet" = "meet"
 ): { x: number; y: number; scale: number } {
   const scale =
     mode === "slice"
@@ -67,6 +67,6 @@ export function orbitToolPixelPosition(args: {
     args.containerH,
     args.viewW,
     args.viewH,
-    "slice"
+    "meet"
   );
 }

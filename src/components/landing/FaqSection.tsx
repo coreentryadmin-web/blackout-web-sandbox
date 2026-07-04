@@ -161,10 +161,11 @@ export function FaqSection() {
   }, [activeId, open]);
 
   return (
-    <section id="faq" className="relative lg:h-[100svh] lg:overflow-hidden">
+    <section id="faq" className="relative min-h-[100svh] overflow-hidden">
       <LandingBackdrop />
 
-      <div className="faq-board relative z-10 mx-auto w-full max-w-[2100px] px-4 lg:px-10 py-14 lg:py-6 lg:h-full">
+      <div className="faq-board-scroll relative z-10 mx-auto w-full max-w-[2100px] px-4 lg:px-10 py-14 lg:py-6 lg:h-full">
+        <div className="faq-board lg:h-full">
         {/* ── BRAND ── */}
         <div className="faq-tile fa-brand justify-center">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -191,7 +192,7 @@ export function FaqSection() {
                 </span>
               </h2>
             </div>
-            <p className="hidden md:block max-w-md text-left sm:text-right text-[14px] leading-relaxed text-secondary">
+            <p className="max-w-md text-left sm:text-right text-[14px] leading-relaxed text-secondary">
               Every tool, every signal, every answer — what BlackOut is and how the
               arsenal works, end to end.
             </p>
@@ -212,7 +213,7 @@ export function FaqSection() {
                 <ul
                   className={
                     c.wide
-                      ? "flex flex-col gap-1 min-h-0 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-1"
+                      ? "grid grid-cols-2 gap-x-6 gap-y-1 min-h-0"
                       : "flex flex-col gap-1 min-h-0"
                   }
                 >
@@ -243,12 +244,6 @@ export function FaqSection() {
                             &rsaquo;
                           </span>
                         </button>
-                        {/* mobile inline answer (desktop uses the reader rail) */}
-                        {on && (
-                          <div className="lg:hidden px-3 pb-3 pt-1">
-                            <p className="text-[14px] leading-relaxed text-white/80 m-0">{f.a}</p>
-                          </div>
-                        )}
                       </li>
                     );
                   })}
@@ -290,7 +285,7 @@ export function FaqSection() {
           role="region"
           aria-live="polite"
           aria-label="Answer"
-          className="faq-tile fa-reader hidden lg:flex"
+          className="faq-tile fa-reader flex"
           style={{
             border: "1px solid rgba(0,230,118,0.4)",
             background: "linear-gradient(180deg, rgba(0,230,118,0.06), rgba(8,9,14,0.85))",
@@ -352,6 +347,7 @@ export function FaqSection() {
             </button>
           </div>
         </section>
+        </div>
       </div>
     </section>
   );
