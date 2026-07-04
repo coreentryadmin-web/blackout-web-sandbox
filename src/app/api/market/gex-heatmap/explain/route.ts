@@ -9,6 +9,7 @@ import { anthropicText, anthropicConfigured } from "@/lib/providers/anthropic";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { gexContextBlock, gexContextLine } from "@/lib/providers/gex-positioning";
 import { requireToolApi } from "@/lib/tool-access-server";
+import { checkNumbersGrounded } from "@/lib/grounding-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -164,48 +165,17 @@ function narrativeLevelsAreGrounded(
   overlays: GexHeatmapOverlays | null
 ): boolean {
   const known = knownPriceLevels(hm, overlays);
-  if (known.length === 0) return true; // nothing to check against → don't block
-
-  // Bracket of plausible levels for THIS chain — a number far outside the strike band can't be a
-  // real level even if it's numerically "close" to nothing. Use spot to anchor the absolute window.
-  const minKnown = Math.min(...known);
-  const maxKnown = Math.max(...known);
-  const tol = (lvl: number) => Math.max(lvl * 0.0015, 0.5); // ~0.15% or half a point
-
-  // Match decimal numbers; the trailing context lets us reject %/money/units in code below.
-  const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(narrative)) !== null) {
-    const raw = m[0];
-    const value = Number(raw.replace(/,/g, ""));
-    if (!Number.isFinite(value)) continue;
-
-    const start = m.index;
-    const end = start + raw.length;
-    const before = narrative.slice(Math.max(0, start - 1), start);
-    const after = narrative.slice(end, end + 2);
-
-    // Skip percentages and explicit money (those aren't price levels).
-    if (after.startsWith("%")) continue;
-    if (before === "$") continue;
-    // Skip a number immediately followed by a money/scale suffix (e.g. "688M", "1.2B", "250K").
-    if (/^[%MBK]/.test(after)) continue;
-    // Skip small integers — sentence counts, "0DTE", "3-5", single-digit references.
-    if (value < 10) continue;
-    // Only judge numbers that fall in (or very near) this chain's level band; anything wildly
-    // outside isn't being used as a price level for THIS ticker (e.g. a year, a count of contracts).
-    if (value < minKnown * 0.9 || value > maxKnown * 1.1) continue;
-
-    // Grounded iff it matches some known level within tolerance.
-    const grounded = known.some((lvl) => Math.abs(lvl - value) <= tol(lvl));
-    if (!grounded) {
-      console.warn(
-        `[market/gex-heatmap/explain] ungrounded level ${value} in narrative for ${hm.underlying} — falling back to deterministic read.`
-      );
-      return false;
-    }
+  const result = checkNumbersGrounded(narrative, known);
+  if (!result.grounded) {
+    // hm.underlying traces back to the user-supplied `ticker` query param (only
+    // .toUpperCase()'d, no character filtering) — strip CR/LF before it reaches a log
+    // line so a crafted ticker can't forge extra log entries (CodeQL log-injection).
+    const safeTicker = hm.underlying.replace(/[\r\n]/g, "");
+    console.warn(
+      `[market/gex-heatmap/explain] ungrounded level ${result.ungroundedValue} in narrative for ${safeTicker} — falling back to deterministic read.`
+    );
   }
-  return true;
+  return result.grounded;
 }
 
 /**

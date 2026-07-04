@@ -20,6 +20,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — Extracted the numeric-grounding fabrication guard into a shared module (audit finding, prerequisite)
+**Where:** `src/app/api/market/gex-heatmap/explain/route.ts`'s `narrativeLevelsAreGrounded()` was the ONLY LLM-narrative surface in the codebase with a post-generation fabrication check (extract every number that reads like a price level from the model's prose, confirm it matches a known-good value, fall back to a deterministic line otherwise). The audit found 6 other LLM call sites shipping prose with zero such guard: `spx-play-claude.ts`, `spx-commentary.ts`, `nighthawk/play-explainer.ts`, `flow-brief/route.ts`, `nights-watch/position-narrative.ts`, `nighthawk/play-critic.ts`. The audit's fix for each of those explicitly calls for reusing "the shared numeric guard" / "that route's `narrativeLevelsAreGrounded` guard" — which didn't exist as a shared, importable primitive before this PR.
+
+**Fix:** extracted the domain-agnostic core of `narrativeLevelsAreGrounded` (the number-extraction regex, the %/money/small-int/out-of-band filters, the tolerance-scaled match against a caller-supplied `known: number[]` array) into a new `checkNumbersGrounded(text, known)` in `src/lib/grounding-guard.ts`, returning `{ grounded, ungroundedValue }` so callers can log the specific offending number. `gex-heatmap/explain/route.ts` keeps its heatmap-specific `knownPriceLevels()` (strikes/spot/max_pain/gex-vex-dex-charm levels/dark-pool overlays) local — that part is genuinely domain-specific — and `narrativeLevelsAreGrounded` is now a 9-line wrapper that calls `knownPriceLevels()` then `checkNumbersGrounded()`, preserving byte-identical behavior (same regex, same tolerance formula, same warn-and-fallback contract).
+
+**Blast radius:** none yet — this PR is purely the extraction (verified behavior-preserving on the one existing consumer). Tasks to apply this guard to the 6 other LLM surfaces follow as separate PRs per the standing one-issue-per-PR policy, since each surface needs its own "known good numbers" source wired up (chain/dossier data, position Greeks, dossier flow figures, etc.) and its own fallback behavior per the audit's per-file fix instructions.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `960/960` passing (10 new for `grounding-guard.ts`, covering percentages/money/small-ints/out-of-band filtering, tolerance-scaled matching, and the ungrounded-value diagnostic); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — 0DTE Command board's freshness badge was a hardcoded `"live"` literal (launch blocker)
 **Where:** `src/components/zerodte/ZeroDteBoard.tsx:198` passed `status="live"` into `FreshnessChip` as a literal, never derived from any success/failure signal, and `data.as_of` (`route.ts:99`) was just response-build time — independent of whether the underlying scan actually produced data. `scanZeroDteBoard()`'s flow fetch (`scan.ts:116`, `fetchRecentFlows({...}).catch(() => [])`) silently degraded to zero setups on any UW/DB failure, and the route still returned `available:true`. Result: a silently-failed upstream scan rendered as a calm, current, green-badged empty board — indistinguishable from a genuinely quiet tape, and the board's own reassuring empty-state copy ("No A-tier play right now — and that's the discipline...") made this worse, not better.
 
