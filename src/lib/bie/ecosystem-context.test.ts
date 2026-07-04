@@ -1,5 +1,15 @@
 import { before, test, mock } from "node:test";
 import assert from "node:assert/strict";
+// SPX_FULL_STATE_FIXTURE lives in a plain (non-".test.ts") sibling file on
+// purpose: tsconfig.json excludes "**/*.test.ts" from `npx tsc --noEmit`, so
+// a fixture typed only inside this file would get zero real type-checking —
+// tsx (esbuild) strips types at run time without validating them, and the
+// project's type-check command never looks at test files. Importing a
+// SpxPlayPayload-typed constant from a real .ts file gives this test an
+// ACTUAL compile-time regression net: see spx-full-state-fixture.ts's module
+// doc for the full rationale.
+import { SPX_FULL_STATE_FIXTURE } from "./spx-full-state-fixture";
+import type { SpxPlayPayload } from "@/lib/spx-play-payload";
 
 // mock.module() must be registered before ecosystem-context.ts (and therefore
 // its "@/lib/db" import) is ever loaded — an ordinary top-level `import` of
@@ -23,7 +33,7 @@ let closedPlayCalls = 0;
 // readSpxPlaySnapshot(), none of which this test file wants to exercise —
 // only that fetchEcosystemContext() reuses it verbatim, ticker-gated exactly
 // like fetchSpxPlaySummary above it.
-let mockFullState: Record<string, unknown> | null = null;
+let mockFullState: SpxPlayPayload | null = null;
 let fullStateCalls = 0;
 
 mock.module("../db", {
@@ -110,7 +120,7 @@ test('fetchEcosystemContext("SPX"): spx_play.open_play is populated when an open
   mockClosedRows = [];
 
   const ctx = await fetchEcosystemContext("SPX");
-  assert.ok(openPlayCalls > 0, "fetchOpenSpxPlay should run for ticker SPX");
+  assert.equal(openPlayCalls, 1, "fetchOpenSpxPlay should run exactly once for ticker SPX");
   assert.deepEqual(ctx.spx_play, {
     open_play: {
       direction: "long",
@@ -210,60 +220,28 @@ test("fetchEcosystemContext: spx_play is null for a non-SPX ticker, and the SPX-
 // Largo see the exact same entire numerical picture per the user's explicit
 // "share its entire data...to both BIE and largo" instruction.
 
-const FULL_STATE_FIXTURE = {
-  available: true,
-  phase: "OPEN",
-  action: "HOLD",
-  direction: "long",
-  grade: "A",
-  score: 82,
-  confidence: 91,
-  headline: "SPX cold buy long, holding above VWAP",
-  thesis: "Reclaimed VWAP with EMA20/50 stacked bullish; gamma regime supportive.",
-  idle_message: null,
-  factors: [{ name: "vwap_reclaim", weight: 12, detail: "Price 5502.3 vs VWAP 5498.1", direction: "bullish" }],
-  levels: { entry: 5500, stop: 5480, target: 5550, invalidation: "Close below 5480" },
-  gates: { passed: true, blocks: [], warnings: ["thin_afternoon_liquidity"], entry_mode: "cold_buy", play_idea: "Cold buy long on VWAP reclaim" },
-  claude: { verdict: "CONFIRM", rationale: "Grounded in live confluence factors", confidence: 0.9 },
-  open_play: {
-    id: 1,
-    direction: "long",
-    entry_price: 5500,
-    stop: 5480,
-    target: 5550,
-    grade: "A",
-    opened_at: "2026-07-04T14:35:00.000Z",
-    mfe_pts: 10,
-    trim_done: false,
-  },
-  confirmations: { passed: 8, total: 10, checklist: [{ label: "Above VWAP", passed: true }] },
-  technicals: { m5_trend: "up", m5_rsi: 61.2, m5_rsi_warning: null, m3_close: 5502.3, breakout: null, mtf_summary: "Bullish across 5m/15m/1h" },
-  mtf: { m5: "up", m15: "up", h1: "up", summary: "Bullish across 5m/15m/1h" },
-  option_ticket: { symbol: "SPXW260704C05500000", mid: 4.35 },
-  watch: { active: false, promote_ready: false, reason: "already in a committed play", since: null },
-  telemetry: { adaptive_active: true, summary: "Cold-buy win rate 61% (n=41)", cold_buy_win_rate: 0.61, promote_win_rate: null, global_score_boost: 2, promote_score_boost: 0, total_closed: 41 },
-  lotto_play: null,
-  power_play: null,
-  session_phase: "cash",
-  signal_committed: true,
-  as_of: "2026-07-04T14:40:00.000Z",
-};
-
 test('fetchEcosystemContext("SPX"): spx_full_state reuses getSpxPlayState() verbatim, full fidelity', async () => {
   fullStateCalls = 0;
-  mockFullState = FULL_STATE_FIXTURE;
+  mockFullState = SPX_FULL_STATE_FIXTURE;
 
   const ctx = await fetchEcosystemContext("SPX");
-  assert.ok(fullStateCalls > 0, "getSpxPlayState should run for ticker SPX");
-  assert.deepEqual(ctx.spx_full_state, FULL_STATE_FIXTURE, "spx_full_state must pass through the entire payload untouched, not a summarized subset");
+  // Exactly once, not just ">0": fetchSpxFullState() (and therefore Largo's own
+  // get_spx_play tool path, which shares this same function) must be invoked a
+  // single time per fetchEcosystemContext() call — a second/duplicate call
+  // would risk two independently-timed live-desk evaluations (loadMergedSpxDesk
+  // is cache-backed but not instantaneous) disagreeing with each other within
+  // the same response, undermining the "one derivation" guarantee this field
+  // exists to provide.
+  assert.equal(fullStateCalls, 1, "getSpxPlayState should run exactly once for ticker SPX");
+  assert.deepEqual(ctx.spx_full_state, SPX_FULL_STATE_FIXTURE, "spx_full_state must pass through the entire payload untouched, not a summarized subset");
 });
 
 test('fetchEcosystemContext("SPXW"): spx_full_state also populates (same single-instrument engine as SPX)', async () => {
   fullStateCalls = 0;
-  mockFullState = { ...FULL_STATE_FIXTURE, headline: "SPXW 0DTE variant" };
+  mockFullState = { ...SPX_FULL_STATE_FIXTURE, headline: "SPXW 0DTE variant" };
 
   const ctx = await fetchEcosystemContext("SPXW");
-  assert.ok(fullStateCalls > 0, "getSpxPlayState should run for ticker SPXW");
+  assert.equal(fullStateCalls, 1, "getSpxPlayState should run exactly once for ticker SPXW");
   assert.deepEqual(ctx.spx_full_state, mockFullState);
 });
 
@@ -271,7 +249,7 @@ test("fetchEcosystemContext: spx_full_state is null for a non-SPX ticker, and ge
   fullStateCalls = 0;
   // Deliberately leave a full-state fixture mocked to prove the ticker gate —
   // not the data — is what keeps a non-SPX ticker's spx_full_state null.
-  mockFullState = FULL_STATE_FIXTURE;
+  mockFullState = SPX_FULL_STATE_FIXTURE;
 
   const ctx = await fetchEcosystemContext("AAPL");
   assert.equal(ctx.spx_full_state, null);
