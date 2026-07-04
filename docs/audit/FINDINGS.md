@@ -7,6 +7,11 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #371 (`docs/pr370-deploy-verify`, recent_flow field) deploy confirmed SUCCESS
+Merge commit `c821e3b`. Railway deployment `fc981fe9-ec87-4103-a6be-68aa79d7dbda` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+---
+
 ## 🧭 DECISION 2026-07-04 — evaluated the "unified BIE ticker dossier" idea, built a smaller thing instead
 **Original idea:** extend `fetchEcosystemContext` into a full admin/support "ask about any ticker" dossier by also folding in `error_events` and `admin_incidents`, on top of the existing 0DTE/Night Hawk/audit-log fields.
 
