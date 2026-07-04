@@ -7,6 +7,11 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #372 (`feat/bie-hot-tickers`) deploy confirmed SUCCESS
+Merge commit `b45c2d5`. Railway deployment `f85bf691-79bc-449a-8371-e319774c7469` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+---
+
 ## 🧠 BIE ecosystem: hot-tickers leaderboard SHIPPED 2026-07-04 — the "what's hot right now" complement to recent_flow
 **Status:** SHIPPED (`feat/bie-hot-tickers`). `recent_flow` (previous entry) answers "how much flow has THIS ticker seen" for a name the caller already picked. This adds the other half: "which tickers are seeing the most flow, period" — a leaderboard, not a per-ticker lookup.
 
