@@ -396,7 +396,14 @@ export function scoreFlowQuality(
 
   const skew = opts?.riskReversalSkew;
   if (skew != null && Number.isFinite(skew) && skew !== 0) {
-    const skewDir: "long" | "short" = skew > 0 ? "long" : "short";
+    // UW's `risk_reversal` field is (put IV − call IV), not (call IV − put IV) — verified
+    // against live data, not just inference (see scoreSkewConfirmation's docstring below for
+    // the full derivation and evidence). Positive = puts bid over calls = bearish; negative =
+    // calls bid over puts = bullish. This branch was inverted until the
+    // fix/nighthawk-skew-sign-flip fix (docs/audit/FINDINGS.md) — it used to treat positive
+    // skew as a bullish signal, which could flip a candidate's flow-implied direction to the
+    // WRONG side when flow margin was thin and skew magnitude was large.
+    const skewDir: "long" | "short" = skew > 0 ? "short" : "long";
     const weightedTotal = callWeightedPrem + putWeightedPrem;
     const flowMargin = weightedTotal > 0 ? Math.abs(callWeightedPrem - putWeightedPrem) / weightedTotal : 1;
 
@@ -697,13 +704,36 @@ export function convictionRank(conviction: string): number {
   return 2;
 }
 
-/** Positive RR skew (calls bid over puts) = bullish; negative = bearish. */
+/**
+ * UW's `risk_reversal` field (the source of `dossierExtras.risk_reversal_skew`, parsed by
+ * vol-metrics.ts's `parseLatestRiskReversalSkew`) is (put IV − call IV), NOT (call IV − put
+ * IV) — verified against LIVE data: `GET /api/stock/SPY/historical-risk-reversal-skew` on
+ * 2026-07-04 returned 29 daily 25-delta rows spanning 2026-05-21..2026-07-02, EVERY ONE
+ * positive (+0.0067 to +0.0663), e.g. `{"date":"2026-07-02","ticker":"SPY","delta":25,
+ * "risk_reversal":"0.0663361729210146"}`. A "call IV minus put IV" definition would be
+ * predominantly NEGATIVE for an equity index — the persistent put-side volatility
+ * smirk/skew is one of the most robust stylized facts in index options, so a multi-week run
+ * of all-positive values under that definition would be the anomaly, not the norm. That
+ * confirms positive = puts bid over calls = fear/hedging demand = BEARISH; negative = calls
+ * bid over puts = complacency/call demand = BULLISH. Matches vol-metrics.ts's
+ * `parseLatestRiskReversalSkew` docstring and src/lib/spx-signals-shadow-skew.ts's
+ * `computeSkewShadowFactor` (SPX Slayer's shadow-mode equivalent, which already had this
+ * sign right).
+ *
+ * PRE-FIX HISTORY: this function previously read "positive RR skew = calls bid over puts =
+ * bullish" — backwards relative to the evidence above. Because this feeds NightHawk's live
+ * `scoreCandidate` path (unlike SPX Slayer's shadow-only skew factor, which never touches a
+ * real score), the inverted sign was actively mis-scoring real ticker candidates: a
+ * bearish-skew (positive) reading was rewarding LONG candidates and penalizing SHORT
+ * candidates, the exact opposite of what the options market was pricing. Fixed in
+ * fix/nighthawk-skew-sign-flip — see docs/audit/FINDINGS.md for the full writeup.
+ */
 export function scoreSkewConfirmation(
   skew: number | null | undefined,
   direction: "long" | "short"
 ): number {
   if (skew == null || !Number.isFinite(skew) || skew === 0) return 0;
-  const skewDir: "long" | "short" = skew > 0 ? "long" : "short";
+  const skewDir: "long" | "short" = skew > 0 ? "short" : "long";
   return skewDir === direction ? 3 : -2;
 }
 
