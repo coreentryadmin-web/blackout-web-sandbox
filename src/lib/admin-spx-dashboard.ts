@@ -19,6 +19,7 @@ import { fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
 import { buildSpxAdminIssues, type SpxAdminIssuesPayload } from "@/lib/admin-spx-issues";
 import { buildSpxTerminalFeed, type SpxTerminalPayload } from "@/lib/admin-spx-terminal";
 import { syncAdminIncidents, listOpenAdminIncidents, type AdminIncidentRow } from "@/lib/admin-incidents";
+import { SPX_ISSUES_RESOLVE_SCOPE } from "@/lib/spx-issues-sync";
 import { getAdminRouteErrors } from "@/lib/admin-route-errors";
 
 export type DeskIntelSection = {
@@ -225,7 +226,9 @@ export async function fetchSpxAdminDashboard(options?: {
 
   // Reconcile everything EXCEPT the data-integrity namespace — that's owned by the
   // data-integrity cron's own reconcile, so the dashboard must not resolve its incidents.
-  await syncAdminIncidents(issues.issues, { resolveScope: (cat) => !cat.startsWith("data-integrity") });
+  // Shared with the spx-issues-sync cron (spx-issues-sync.ts) so both reconcilers of this
+  // same issue set can never drift onto two different namespace splits.
+  await syncAdminIncidents(issues.issues, { resolveScope: SPX_ISSUES_RESOLVE_SCOPE });
   const openIncidents = await listOpenAdminIncidents(12);
   const routeErrors = getAdminRouteErrors();
 
