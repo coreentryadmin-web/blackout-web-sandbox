@@ -324,6 +324,34 @@ export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {
   return computePlayOutcomeStats(rows);
 }
 
+/**
+ * Windowed sibling of fetchPlayOutcomeStats() — same underlying fetcher
+ * (fetchClosedPlayOutcomes) and the same pure aggregation
+ * (computePlayOutcomeStats), but scoped to plays closed within the last
+ * `days` (falling back to opened_at when closed_at is null — the identical
+ * day-cutoff pattern getSpxTradeHistory already uses in
+ * src/lib/platform/spx-service.ts) instead of the last 500 all-time rows.
+ *
+ * fetchPlayOutcomeStats() itself deliberately stays all-time: it backs the
+ * public track record page (track-record-public.ts), the shadow-recompute
+ * cross-check (correctness/track-record-verifier.ts), admin analytics, and
+ * more — all of which want the platform's lifetime number. This sibling
+ * exists so a caller can compute a *rolling* win rate that lines up with
+ * another product's own rolling window (see get_spx_vs_nighthawk_comparison
+ * in largo/run-tool.ts) without repurposing — and risking regressing — the
+ * all-time function everything else already depends on.
+ */
+export async function fetchPlayOutcomeStatsForWindow(days: number): Promise<PlayOutcomeStats> {
+  const cutoff = Date.now() - days * 86_400_000;
+  const inWindow = (r: PlayOutcomeRow) => new Date(r.closed_at ?? r.opened_at).getTime() >= cutoff;
+  if (!dbConfigured()) {
+    return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open" && inWindow(r)));
+  }
+  const { fetchClosedPlayOutcomes } = await import("@/lib/db");
+  const rows = await fetchClosedPlayOutcomes(500);
+  return computePlayOutcomeStats(rows.filter(inWindow));
+}
+
 function bucket(rows: PlayOutcomeRow[], path: PlayEntryPath) {
   const slice = rows.filter((r) => r.entry_path === path);
   const wins = slice.filter((r) => r.outcome === "win").length;
