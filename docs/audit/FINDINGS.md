@@ -7,6 +7,17 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🧠 BIE ecosystem: hot-tickers leaderboard SHIPPED 2026-07-04 — the "what's hot right now" complement to recent_flow
+**Status:** SHIPPED (`feat/bie-hot-tickers`). `recent_flow` (previous entry) answers "how much flow has THIS ticker seen" for a name the caller already picked. This adds the other half: "which tickers are seeing the most flow, period" — a leaderboard, not a per-ticker lookup.
+
+**What it does:** `fetchHotTickers()` (`src/lib/bie/hot-tickers.ts`) aggregates `flow_alerts` by ticker over a 6h window (print count + total premium), same source table as `recent_flow`, different question. Wired into `/api/admin/bie-report` (`hot_tickers`) and a new "Hot tickers" panel in `AdminBieDashboard.tsx`.
+
+**Why index/ETF/leveraged names are excluded:** SPY/QQQ/leveraged ETPs carry enormous baseline volume every single day — an unfiltered leaderboard would show the same 2-3 names permanently and never surface genuinely unusual single-name attention, which is the entire point of a "what's hot" view. Reused `INDEX_SET`/`LEVERAGED_ETP_SET` from `src/lib/nighthawk/constants.ts` rather than inventing a new exclusion list — same classification Night Hawk's own candidate filter already relies on.
+
+**Verification:** `filterHotTickers` (the pure exclusion logic) unit tested in isolation (5 tests). 882/882 tests pass, `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## ✅ VERIFIED 2026-07-04 — PR #371 (`docs/pr370-deploy-verify`, recent_flow field) deploy confirmed SUCCESS
 Merge commit `c821e3b`. Railway deployment `fc981fe9-ec87-4103-a6be-68aa79d7dbda` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly) before touching any other `src/**` work. Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
 

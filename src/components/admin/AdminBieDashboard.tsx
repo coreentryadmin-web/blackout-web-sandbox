@@ -127,6 +127,7 @@ type BieReportPayload = {
     avg_move_pct: number | null;
     insufficient_sample: boolean;
   }> | null;
+  hot_tickers?: Array<{ ticker: string; print_count: number; total_premium: number }>;
   report_trail?: Array<{ source: string; at: string; preview: string }>;
 };
 
@@ -148,6 +149,12 @@ const ROADMAP: Stage[] = [
   { n: 5, name: "BIE opens PRs autonomously", status: "IN PROGRESS", blurb: "The end-state goal — explicitly NOT started as \"BIE writes code\" yet. Step 1 shipped 2026-07-03, dry-run only: for one narrow, 100% mechanical finding (an exported component with zero references anywhere else in src/), BIE drafts a plain-text proposal in the report below — never a diff, never a git action, never an LLM judgment call. A human decides what (if anything) to do about each one. Going further (real draft PRs, broader/LLM-judged finding types) needs its own explicit go-ahead, not assumed from this." },
   { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. A first measurement step shipped 2026-07-03 (Confluence outcomes panel below) — whether 0DTE Command's graded hit rate differs when it agrees/disagrees with a ticker's prior Night Hawk take — but it is read-only and does not feed back into scoring. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
 ];
+
+function fmtPremium(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+  return `$${n.toFixed(0)}`;
+}
 
 function fmtEt(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -227,6 +234,7 @@ export function AdminBieDashboard() {
   const duplicateAlerts = data?.duplicate_alerts ?? [];
   const stage5Proposals = data?.stage5_proposals ?? [];
   const confluenceOutcomes = data?.confluence_outcomes ?? null;
+  const hotTickers = data?.hot_tickers ?? [];
 
   return (
     <div className="admin-bie-dashboard">
@@ -476,6 +484,27 @@ export function AdminBieDashboard() {
               under 10 samples — a hit rate at that size is noise, not signal.
             </p>
           </>
+        )}
+      </GlassPanel>
+
+      {/* Leaderboard complement to ecosystem-context's per-ticker recent_flow:
+          that answers "how hot is this one name," this answers "which names are
+          hot right now." Read-only flow_alerts aggregate, index/ETF/leveraged-ETP
+          names excluded so SPY/QQQ don't just occupy every slot every day. */}
+      <GlassPanel kicker="Live flow_alerts pulse" title="Hot tickers" accent="violet">
+        {hotTickers.length === 0 ? (
+          <p className="admin-bie-empty-text">No single-name flow in the last 6h.</p>
+        ) : (
+          <div className="admin-metric-chip-row">
+            {hotTickers.map((t) => (
+              <MetricChip
+                key={t.ticker}
+                label={t.ticker}
+                value={`${fmtPremium(t.total_premium)} · ${t.print_count}×`}
+                tone="violet"
+              />
+            ))}
+          </div>
         )}
       </GlassPanel>
 

@@ -27,6 +27,7 @@ import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { probePgStatStatements } from "@/lib/pg-stat-statements-health";
 import { findStage5Proposals } from "@/lib/bie/stage5-proposals";
 import { computeConfluenceOutcomeStats } from "@/lib/bie/confluence-outcomes";
+import { fetchHotTickers } from "@/lib/bie/hot-tickers";
 import { probeRedisHealth } from "@/lib/redis-health";
 import {
   probeRailwayEnvVars,
@@ -82,6 +83,7 @@ export async function GET() {
     stage5Proposals,
     authFailures,
     confluenceOutcomes,
+    hotTickers,
   ] =
     await Promise.all([
       runBieDailySelfEval().catch(() => null),
@@ -137,6 +139,10 @@ export async function GET() {
       // measurement, never feeds back into scoring. Null = lookup failed, not
       // "zero confluence" — see confluence-outcomes.ts's fail-open contract.
       computeConfluenceOutcomeStats(60).catch(() => null),
+      // Leaderboard complement to ecosystem-context's per-ticker recent_flow —
+      // "which single names are hot right now" vs. "how hot is this one name."
+      // Read-only flow_alerts aggregate, index/ETF/leveraged-ETP names excluded.
+      fetchHotTickers(8).catch(() => []),
     ]);
 
   // Retrieval probe: only meaningful once the key works. Multiple representative
@@ -214,6 +220,9 @@ export async function GET() {
       // direction agreed/disagreed with the ticker's most recent prior Night Hawk
       // take, vs. tickers with no Night Hawk history at all. null = lookup failed.
       confluence_outcomes: confluenceOutcomes,
+      // "What's hot right now" — top single-name tickers by flow_alerts premium
+      // over the last 6h, index/ETF/leveraged-ETP names excluded.
+      hot_tickers: hotTickers,
       // Every previously persisted report — the improvement trail, newest first.
       report_trail: trail.map((r) => ({ source: r.source, at: r.created_at, preview: r.chunk.slice(0, 200) })),
     },
