@@ -51,7 +51,7 @@ import {
   updateOpenPlay,
   type OpenPlayRow,
 } from "@/lib/spx-play-store";
-import { maybeLogSpxPlay, logSpxShadowFactors } from "@/lib/providers/spx-signal-log";
+import { maybeLogSpxPlay, logSpxShadowFactors, logSpxSkewShadowFactors } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
 import {
@@ -1145,6 +1145,12 @@ export async function evaluateSpxPlay(
   // see spx-signals.test.ts's byte-for-byte proof.
   firePlayTelemetry("logSpxShadowFactors", () =>
     logSpxShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+  // SHADOW-MODE factor logging, part 2 (src/lib/spx-signals-shadow-skew.ts): risk-reversal
+  // skew + realized-vs-implied vol. Same non-blocking idiom, same "read BEFORE the Night Hawk
+  // prior bonus mutates confluence.score" contract as logSpxShadowFactors just above.
+  firePlayTelemetry("logSpxSkewShadowFactors", () =>
+    logSpxSkewShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
   );
 
   // NH morning prior: inject the Night Hawk evening signal as a signed confluence factor.

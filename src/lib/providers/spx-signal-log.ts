@@ -4,6 +4,15 @@ import type { SpxSignalFactor } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { computeShadowFactors, SHADOW_ANOMALY_TICKERS } from "@/lib/spx-signals-shadow";
+import {
+  computeSkewShadowFactor,
+  computeVolDivergenceShadowFactor,
+  type RiskReversalSkewReading,
+  type VolDivergenceReading,
+} from "@/lib/spx-signals-shadow-skew";
+import { fetchUwRealizedVol, fetchUwRiskReversalSkew } from "./unusual-whales";
+import { fetchPolygonIvTermStructure, fetchPolygonRealizedVol } from "./polygon-options-gex";
+import { latestRow, parseLatestImpliedVol, parseLatestRealizedVol, parseLatestRiskReversalSkew } from "@/lib/nighthawk/vol-metrics";
 
 const CURSOR_KEY = "spx_signal_log_cursor";
 
@@ -141,6 +150,127 @@ export async function logSpxShadowFactors(
   }));
 
   const observations = computeShadowFactors(desk, anomalies, flowFeedFresh);
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * Best-effort extraction of a raw UW row's date, trying the same candidate keys
+ * src/lib/nighthawk/vol-metrics.ts's own sortRowsByDateDesc checks — kept in sync
+ * intentionally since both read the SAME UW row shapes.
+ */
+function rowDate(row: Record<string, unknown> | null): string | null {
+  if (!row) return null;
+  const d = String(row.date ?? row.as_of ?? row.timestamp ?? row.trading_date ?? "");
+  return d || null;
+}
+
+/**
+ * Resolves a risk-reversal-skew reading for computeSkewShadowFactor. UW's
+ * historical-risk-reversal-skew endpoint returns EMPTY for the SPX ticker (confirmed live,
+ * 2026-07-04 — `{"data":[]}`) but real data for SPY — the exact same "SPX sometimes 404s/
+ * empties, fall back to SPY as the liquid proxy" situation spx-desk.ts's resolveCanonicalDeskGex
+ * caller already handles for NOPE (`fetchUwNope("SPX").catch(() => null).then(r => r ??
+ * fetchUwNope("SPY")...)`) — mirrored here as a plain sequential try-SPX-then-SPY rather than
+ * hardcoding SPY only, so this keeps working if UW ever backfills SPX.
+ */
+async function resolveSkewReading(): Promise<RiskReversalSkewReading> {
+  for (const ticker of ["SPX", "SPY"] as const) {
+    const rows = await fetchUwRiskReversalSkew(ticker).catch(() => []);
+    const skew = parseLatestRiskReversalSkew(rows);
+    const date = rowDate(latestRow(rows));
+    if (skew != null && date != null) {
+      return { ticker, date, risk_reversal: skew };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves a realized-vs-implied vol reading for computeVolDivergenceShadowFactor. Reuses the
+ * SAME primary/fallback precedent src/lib/largo/run-tool.ts's `get_realized_vol` /
+ * `get_iv_term_structure` tool cases already use — Polygon primary (fetchPolygonRealizedVol /
+ * fetchPolygonIvTermStructure, computed live from real bars / the current chain snapshot),
+ * UW as fallback. Deliberately all-or-nothing per source rather than mixing a Polygon RV with
+ * a UW IV (or vice versa): keeps each observation a single coherent snapshot instead of two
+ * numbers from different moments/providers.
+ *
+ * realized_vol_30d is compared against the IV term-structure point NEAREST 30 DTE (not the
+ * front-month/0DTE point) — an apples-to-apples tenor match, since comparing a 30-day realized
+ * read against a same-day 0DTE IV print would conflate two different horizons.
+ */
+async function resolveVolDivergenceReading(): Promise<VolDivergenceReading> {
+  const [polyVol, polyIvTerm] = await Promise.all([
+    fetchPolygonRealizedVol("SPX").catch(() => null),
+    fetchPolygonIvTermStructure("SPX").catch(() => [] as Awaited<ReturnType<typeof fetchPolygonIvTermStructure>>),
+  ]);
+
+  const rv =
+    polyVol && polyVol.realized_vol_30d > 0
+      ? polyVol.realized_vol_30d
+      : polyVol && polyVol.realized_vol_10d > 0
+        ? polyVol.realized_vol_10d
+        : null;
+  const ivPoint = polyIvTerm.length
+    ? polyIvTerm.reduce((best, p) => (Math.abs(p.dte - 30) < Math.abs(best.dte - 30) ? p : best))
+    : null;
+  const iv = ivPoint && ivPoint.avg_iv > 0 ? ivPoint.avg_iv : null;
+
+  if (rv != null && iv != null) {
+    return { source: "polygon", as_of_date: null, realized_vol: rv, implied_vol: iv };
+  }
+
+  // Polygon came up short on at least one leg — fall back to UW's single combined endpoint,
+  // which (confirmed live, 2026-07-04) carries realized_volatility AND implied_volatility on
+  // the SAME row, e.g. `{"date":"2025-07-03","implied_volatility":"0.131000",
+  // "realized_volatility":"0.087404"}` — one call recovers both legs together.
+  const uwRows = await fetchUwRealizedVol("SPX").catch(() => []);
+  const uwRv = parseLatestRealizedVol(uwRows);
+  const uwIv = parseLatestImpliedVol(uwRows);
+  const date = rowDate(latestRow(uwRows));
+  if (uwRv != null && uwIv != null && date != null) {
+    return { source: "unusual_whales", as_of_date: date, realized_vol: uwRv, implied_vol: uwIv };
+  }
+
+  return null;
+}
+
+/**
+ * SHADOW-MODE factor logging, part 2 — risk-reversal skew + realized-vs-implied vol. Same
+ * fire-and-forget wiring shape as logSpxShadowFactors above (called immediately after it from
+ * evaluateSpxPlay in src/lib/spx-play-engine.ts, wrapped in the SAME firePlayTelemetry helper
+ * there) — see src/lib/spx-signals-shadow-skew.ts's module doc for the full rationale
+ * (including why these two factors fetch UW/Polygon directly here instead of through
+ * SpxDeskPayload).
+ */
+export async function logSpxSkewShadowFactors(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const [skewReading, volReading] = await Promise.all([
+    resolveSkewReading(),
+    resolveVolDivergenceReading(),
+  ]);
+
+  const observations = [
+    computeSkewShadowFactor(desk, skewReading),
+    computeVolDivergenceShadowFactor(desk, volReading),
+  ];
   const sessionDate = todayEtYmd();
 
   for (const obs of observations) {
