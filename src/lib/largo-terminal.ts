@@ -12,7 +12,7 @@ import { dbConfigured } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { bieFollowups, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
+import { bieFollowups, bieIntentBucket, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer } from "@/lib/bie/composers";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -257,6 +257,14 @@ function logBie(row: {
   claims_total: number | null;
   claims_verified: number | null;
   latency_ms: number | null;
+  // Task #103 — groundwork for #112's self-eval loop, which needs to know what
+  // ACTUALLY happened on a turn: the real tool names invoked (empty for the
+  // deterministic router path, which never calls a tool) and the router's
+  // decided bucket (see bieIntentBucket() — the intent name, or
+  // "claude_fallback"). Every call site below passes both; this function is a
+  // pure pass-through so the mapping logic lives in one tested place.
+  tools_used: string[];
+  intent_bucket: string;
 }): void {
   if (!dbConfigured()) return;
   void import("@/lib/db")
@@ -298,6 +306,10 @@ export async function runLargoQuery(
       claims_total: verification.total,
       claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
+      // The router path never invokes a Largo tool — it composes straight from
+      // platform truth, so the only "tool" is the router itself.
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: bieIntentBucket(routed.route.intent),
     });
     return {
       answer: routed.answer,
@@ -360,6 +372,11 @@ export async function runLargoQuery(
       claims_total: verification.total,
       claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
+      // Real tool names dispatched this turn (deduped — same set persisted a few
+      // lines below via appendLargoMessage) — never null/claude_fallback's raw
+      // "no tools" here, since the Claude path can (and usually does) call tools.
+      tools_used: Array.from(new Set(toolsUsed)),
+      intent_bucket: bieIntentBucket(null),
     });
 
     // Persist the completed turn now that the model produced an answer: user
@@ -414,6 +431,9 @@ export async function runLargoQueryStream(
       claims_total: verification.total,
       claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
+      // Same reasoning as the non-streaming runLargoQuery router branch above.
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: bieIntentBucket(routed.route.intent),
     });
     try {
       onEvent({ type: "token", text: routed.answer } as LargoStreamEvent);
@@ -498,6 +518,9 @@ export async function runLargoQueryStream(
       claims_total: verification.total,
       claims_verified: verification.verified,
       latency_ms: Date.now() - startedAt,
+      // Same reasoning as the non-streaming runLargoQuery Claude branch above.
+      tools_used: Array.from(new Set(toolsUsed)),
+      intent_bucket: bieIntentBucket(null),
     });
 
     // Persist the completed turn now that the model produced an answer: user

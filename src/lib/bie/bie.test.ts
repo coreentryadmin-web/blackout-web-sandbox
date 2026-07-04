@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyBieIntent, bieFollowups } from "./router";
+import { classifyBieIntent, bieFollowups, bieIntentBucket } from "./router";
 import { extractNumericClaims, collectContextNumbers, verifyClaims } from "./verifier";
 
 const LEDGER = new Set(["NVDA", "TSLA"]);
@@ -45,6 +45,18 @@ test("router: every intent has follow-up chips (no LLM on the router path)", () 
   for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context"] as const) {
     assert.ok(bieFollowups(intent).length === 3);
   }
+});
+
+// ── task #103: bie_interactions.intent_bucket (groundwork for #112's self-eval loop) ──
+
+test("bieIntentBucket: a matched route's intent name passes through unchanged", () => {
+  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context"] as const) {
+    assert.equal(bieIntentBucket(intent), intent);
+  }
+});
+
+test("bieIntentBucket: null (the router's own no-match convention) becomes the explicit 'claude_fallback' sentinel", () => {
+  assert.equal(bieIntentBucket(null), "claude_fallback");
 });
 
 // ── claim extraction ─────────────────────────────────────────────────────────────

@@ -56,6 +56,16 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   return null;
 }
 
+/** Normalizes the router's decision into a queryable "bucket" for the
+ *  bie_interactions ledger (task #103, groundwork for #112's self-eval loop):
+ *  the real intent name when the router matched deterministically, or the
+ *  explicit "claude_fallback" sentinel when the question fell through to
+ *  Claude. Exported + pure so the null→sentinel mapping is unit-tested
+ *  directly, without spinning up a full Largo turn. */
+export function bieIntentBucket(intent: BieIntent | null): string {
+  return intent ?? "claude_fallback";
+}
+
 /** Static follow-up chips per intent — no Haiku call on the router path. */
 export function bieFollowups(intent: BieIntent): string[] {
   switch (intent) {
