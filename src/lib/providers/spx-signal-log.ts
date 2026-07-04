@@ -1,12 +1,24 @@
 import { dbConfigured, dbQuery, insertShadowFactorObservation, getMeta, insertSpxSignalLog, setMeta } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import type { SpxSignalFactor } from "@/lib/spx-signals";
+import type { SpxPlayDirection, SpxSignalFactor } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { computeShadowFactors, SHADOW_ANOMALY_TICKERS } from "@/lib/spx-signals-shadow";
+import { computeMacroPredictionsShadowFactor, resolveMacroWindowState } from "@/lib/spx-signals-shadow-predictions";
+import { fetchUwPredictionsConsensus, type PredictionConsensusSignal } from "@/lib/providers/unusual-whales";
+import {
+  computeSkewShadowFactor,
+  computeVolDivergenceShadowFactor,
+  type RiskReversalSkewReading,
+  type VolDivergenceReading,
+} from "@/lib/spx-signals-shadow-skew";
+import { fetchUwRealizedVol, fetchUwRiskReversalSkew } from "./unusual-whales";
+import { fetchPolygonIvTermStructure, fetchPolygonRealizedVol } from "./polygon-options-gex";
+import { latestRow, parseLatestImpliedVol, parseLatestRealizedVol, parseLatestRiskReversalSkew } from "@/lib/nighthawk/vol-metrics";
+import { computeEcosystemShadowFactors } from "@/lib/spx-signals-shadow-ecosystem";
 import { computeCatalystShadowFactors, type CatalystInput } from "@/lib/spx-signals-shadow-catalysts";
 import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
-import { polygonConfigured } from "@/lib/providers/config";
+import { uwConfigured, polygonConfigured } from "@/lib/providers/config";
 
 const CURSOR_KEY = "spx_signal_log_cursor";
 
@@ -144,6 +156,269 @@ export async function logSpxShadowFactors(
   }));
 
   const observations = computeShadowFactors(desk, anomalies, flowFeedFresh);
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+// Module-scoped cache for the macro-predictions shadow factor's UW consensus read —
+// same idiom as spx-desk.ts's cachedPriorDay/cachedPulseStructure (module-level value +
+// TTL check, refreshed lazily on next call past TTL). Deliberately generous (90s): this
+// factor is only ever read near a rare macro window (a handful of days per month), never
+// on the hot desk-poll path, so there is no freshness reason to hit UW's 4 prediction
+// endpoints on every single evaluateSpxPlay tick while inside that window.
+const MACRO_PREDICTIONS_CACHE_TTL_MS = 90_000;
+const MACRO_PREDICTIONS_FETCH_LIMIT = 40; // wide enough to likely surface SPY/QQQ even when they're not the single top-confidence name
+let cachedMacroPredictions: {
+  fetchedAt: number;
+  signals: PredictionConsensusSignal[] | null;
+  fresh: boolean;
+} = { fetchedAt: 0, signals: null, fresh: false };
+
+/**
+ * Fetch (or reuse a cached) UW prediction-market consensus read, with the same
+ * "don't fabricate a fresh reading from an empty result" discipline the flow-anomaly
+ * factor applies via isFlowFrameFreshAnywhere(). fetchUwPredictionsConsensus itself
+ * never throws (uwGetSafe swallows failures and returns null — see
+ * src/lib/providers/unusual-whales.ts), so an empty top_signals array alone can't
+ * distinguish "UW is down/not configured" from "no consensus data exists right now."
+ * raw_counts (the per-source row counts BEFORE ticker filtering) is the signal that can:
+ * all four sources returning zero rows is a strong, otherwise-vanishingly-unlikely
+ * indicator of an outage/misconfiguration, not a real empty market.
+ */
+async function fetchMacroPredictionsConsensusCached(): Promise<{
+  signals: PredictionConsensusSignal[] | null;
+  fresh: boolean;
+}> {
+  if (!uwConfigured()) return { signals: null, fresh: false };
+
+  const now = Date.now();
+  if (now - cachedMacroPredictions.fetchedAt < MACRO_PREDICTIONS_CACHE_TTL_MS) {
+    return { signals: cachedMacroPredictions.signals, fresh: cachedMacroPredictions.fresh };
+  }
+
+  const consensus = await fetchUwPredictionsConsensus(MACRO_PREDICTIONS_FETCH_LIMIT).catch(() => null);
+  const rawTotal = consensus
+    ? Object.values(consensus.raw_counts).reduce((sum, n) => sum + n, 0)
+    : 0;
+  const fresh = consensus != null && rawTotal > 0;
+  const signals = consensus?.top_signals ?? null;
+  cachedMacroPredictions = { fetchedAt: now, signals, fresh };
+  return { signals, fresh };
+}
+
+/**
+ * SHADOW-MODE macro-prediction factor logging — sibling of logSpxShadowFactors above,
+ * kept as its own function (rather than folded into logSpxShadowFactors) so this
+ * factor family's UW fetch/cache concerns stay isolated from the flow-anomaly factor's
+ * DB-read concerns. Same fire-and-forget call-site contract: called from
+ * evaluateSpxPlay (src/lib/spx-play-engine.ts) immediately after the real
+ * computeSpxConfluence() call, wrapped in firePlayTelemetry, no internal try/catch —
+ * a failure here must never affect the real signal shown to members. See
+ * src/lib/spx-signals-shadow-predictions.ts's module doc for the full rationale
+ * (observing UW prediction-market consensus specifically around macroHardBlock's own
+ * CPI/FOMC/NFP/PPI/GDP windows, spx-play-gates.ts).
+ *
+ * `now` is captured ONCE here and threaded through both resolveMacroWindowState and
+ * computeMacroPredictionsShadowFactor so the two calls can never disagree about which
+ * side of a window boundary "now" falls on.
+ */
+export async function logSpxMacroPredictionsShadowFactor(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const now = Date.now();
+  const windowState = resolveMacroWindowState(desk, now);
+
+  // Cost guard: skip the UW round trip entirely unless a macro window is active or
+  // imminent — see MACRO_PREDICTIONS_CACHE_TTL_MS's comment. The DB write below still
+  // happens every tick regardless (same as computeShadowFactors' own "no anomaly"
+  // placeholder) — spx_confluence_shadow_observations is designed to log one row per
+  // factor per evaluation tick (see insertShadowFactorObservation's doc in db.ts), and a
+  // cheap single-row insert is not the cost this guard is protecting against.
+  const { signals, fresh } = windowState.near
+    ? await fetchMacroPredictionsConsensusCached()
+    : { signals: null, fresh: false };
+
+  const observations = computeMacroPredictionsShadowFactor(desk, signals, fresh, now);
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * Best-effort extraction of a raw UW row's date, trying the same candidate keys
+ * src/lib/nighthawk/vol-metrics.ts's own sortRowsByDateDesc checks — kept in sync
+ * intentionally since both read the SAME UW row shapes.
+ */
+function rowDate(row: Record<string, unknown> | null): string | null {
+  if (!row) return null;
+  const d = String(row.date ?? row.as_of ?? row.timestamp ?? row.trading_date ?? "");
+  return d || null;
+}
+
+/**
+ * Resolves a risk-reversal-skew reading for computeSkewShadowFactor. UW's
+ * historical-risk-reversal-skew endpoint returns EMPTY for the SPX ticker (confirmed live,
+ * 2026-07-04 — `{"data":[]}`) but real data for SPY — the exact same "SPX sometimes 404s/
+ * empties, fall back to SPY as the liquid proxy" situation spx-desk.ts's resolveCanonicalDeskGex
+ * caller already handles for NOPE (`fetchUwNope("SPX").catch(() => null).then(r => r ??
+ * fetchUwNope("SPY")...)`) — mirrored here as a plain sequential try-SPX-then-SPY rather than
+ * hardcoding SPY only, so this keeps working if UW ever backfills SPX.
+ */
+async function resolveSkewReading(): Promise<RiskReversalSkewReading> {
+  for (const ticker of ["SPX", "SPY"] as const) {
+    const rows = await fetchUwRiskReversalSkew(ticker).catch(() => []);
+    const skew = parseLatestRiskReversalSkew(rows);
+    const date = rowDate(latestRow(rows));
+    if (skew != null && date != null) {
+      return { ticker, date, risk_reversal: skew };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves a realized-vs-implied vol reading for computeVolDivergenceShadowFactor. Reuses the
+ * SAME primary/fallback precedent src/lib/largo/run-tool.ts's `get_realized_vol` /
+ * `get_iv_term_structure` tool cases already use — Polygon primary (fetchPolygonRealizedVol /
+ * fetchPolygonIvTermStructure, computed live from real bars / the current chain snapshot),
+ * UW as fallback. Deliberately all-or-nothing per source rather than mixing a Polygon RV with
+ * a UW IV (or vice versa): keeps each observation a single coherent snapshot instead of two
+ * numbers from different moments/providers.
+ *
+ * realized_vol_30d is compared against the IV term-structure point NEAREST 30 DTE (not the
+ * front-month/0DTE point) — an apples-to-apples tenor match, since comparing a 30-day realized
+ * read against a same-day 0DTE IV print would conflate two different horizons.
+ */
+async function resolveVolDivergenceReading(): Promise<VolDivergenceReading> {
+  const [polyVol, polyIvTerm] = await Promise.all([
+    fetchPolygonRealizedVol("SPX").catch(() => null),
+    fetchPolygonIvTermStructure("SPX").catch(() => [] as Awaited<ReturnType<typeof fetchPolygonIvTermStructure>>),
+  ]);
+
+  const rv =
+    polyVol && polyVol.realized_vol_30d > 0
+      ? polyVol.realized_vol_30d
+      : polyVol && polyVol.realized_vol_10d > 0
+        ? polyVol.realized_vol_10d
+        : null;
+  const ivPoint = polyIvTerm.length
+    ? polyIvTerm.reduce((best, p) => (Math.abs(p.dte - 30) < Math.abs(best.dte - 30) ? p : best))
+    : null;
+  const iv = ivPoint && ivPoint.avg_iv > 0 ? ivPoint.avg_iv : null;
+
+  if (rv != null && iv != null) {
+    return { source: "polygon", as_of_date: null, realized_vol: rv, implied_vol: iv };
+  }
+
+  // Polygon came up short on at least one leg — fall back to UW's single combined endpoint,
+  // which (confirmed live, 2026-07-04) carries realized_volatility AND implied_volatility on
+  // the SAME row, e.g. `{"date":"2025-07-03","implied_volatility":"0.131000",
+  // "realized_volatility":"0.087404"}` — one call recovers both legs together.
+  const uwRows = await fetchUwRealizedVol("SPX").catch(() => []);
+  const uwRv = parseLatestRealizedVol(uwRows);
+  const uwIv = parseLatestImpliedVol(uwRows);
+  const date = rowDate(latestRow(uwRows));
+  if (uwRv != null && uwIv != null && date != null) {
+    return { source: "unusual_whales", as_of_date: date, realized_vol: uwRv, implied_vol: uwIv };
+  }
+
+  return null;
+}
+
+/**
+ * SHADOW-MODE factor logging, part 2 — risk-reversal skew + realized-vs-implied vol. Same
+ * fire-and-forget wiring shape as logSpxShadowFactors above (called immediately after it from
+ * evaluateSpxPlay in src/lib/spx-play-engine.ts, wrapped in the SAME firePlayTelemetry helper
+ * there) — see src/lib/spx-signals-shadow-skew.ts's module doc for the full rationale
+ * (including why these two factors fetch UW/Polygon directly here instead of through
+ * SpxDeskPayload).
+ */
+export async function logSpxSkewShadowFactors(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const [skewReading, volReading] = await Promise.all([
+    resolveSkewReading(),
+    resolveVolDivergenceReading(),
+  ]);
+
+  const observations = [
+    computeSkewShadowFactor(desk, skewReading),
+    computeVolDivergenceShadowFactor(desk, volReading),
+  ];
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * SHADOW-MODE factor logging, ecosystem-context flavor — sibling of
+ * logSpxShadowFactors above, same fire-and-forget call contract from
+ * evaluateSpxPlay (src/lib/spx-play-engine.ts), writing into the SAME
+ * spx_confluence_shadow_observations table (factor_name is the discriminator
+ * column — see db.ts's table comment). See
+ * src/lib/spx-signals-shadow-ecosystem.ts's module doc for the full
+ * rationale: this is the BIE-mediated generalization of the live
+ * getNhConfluenceBonus() pattern to 0DTE Command, plus a second,
+ * differentiated SPX-ticker-scoped flow-anomaly read.
+ *
+ * Takes `confluence.direction` (in addition to score/grade) because — unlike
+ * the flow_anomalies factor above, which doesn't need the engine's own bias —
+ * the 0DTE-agreement factor's whole point is comparing 0DTE Command's
+ * direction against the engine's own. Callers must pass the SAME confluence
+ * object logSpxShadowFactors was given (captured before the Night Hawk prior
+ * mutates it), for the identical "pairs with the pure engine output" reason
+ * documented on logSpxShadowFactors above.
+ */
+export async function logSpxEcosystemShadowFactors(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string; direction: SpxPlayDirection | null }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const observations = await computeEcosystemShadowFactors(desk, confluence.direction);
   const sessionDate = todayEtYmd();
 
   for (const obs of observations) {

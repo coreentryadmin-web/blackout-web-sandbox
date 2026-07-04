@@ -3,6 +3,7 @@
  * Used by railway-apply-cron-config.mjs and railway-audit-apply.mjs.
  */
 export const CRON_SERVICE_NAMES = {
+  "alert-outcome-sync": "Alert-Outcome-Sync",
   "cron-staleness-watchdog": "Cron-Staleness-Watchdog",
   "db-cleanup": "DB_CLEANUP",
   "data-correctness": "Data-Correctness-Cron",

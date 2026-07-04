@@ -3289,7 +3289,12 @@ export async function fetchAlertAuditTrail(limit = 20): Promise<AlertAuditTrailS
 // Resolved (terminal) outcomes only — "has this happened before, what
 // happened" is only meaningful once an alert actually has an answer.
 // Excludes 'open'/'pending' (still live, no answer yet) on purpose.
-const TERMINAL_ALERT_OUTCOMES = ["target", "stop", "ambiguous", "unfilled"];
+// Exported so alert-outcome-sync.ts (the propagation job that actually populates this
+// column — see its doc comment for why it was a total no-op before that job existed) maps
+// every origin table's own outcome vocabulary onto EXACTLY this list, never a value invented
+// ad hoc at the sync call site.
+export const TERMINAL_ALERT_OUTCOMES = ["target", "stop", "ambiguous", "unfilled"] as const;
+export type TerminalAlertOutcome = (typeof TERMINAL_ALERT_OUTCOMES)[number];
 
 /**
  * BIE precedent search — every RESOLVED alert from the last `days` days, for
@@ -3312,6 +3317,164 @@ export async function fetchResolvedAlertAuditRows(days = 60): Promise<AlertAudit
     [TERMINAL_ALERT_OUTCOMES, cappedDays]
   );
   return res.rows.map(mapAlertAuditTrailRow);
+}
+
+// ── Outcome propagation (BIE Stage 4 grading sync) ─────────────────────────────────
+// alert_audit_log.outcome was defined at table-creation time but nothing ever UPDATEs it
+// (grep the repo for "UPDATE alert_audit_log" — zero matches before this PR), so
+// fetchResolvedAlertAuditRows() above has returned 0 rows for every product since Stage 4
+// shipped. src/lib/bie/alert-outcome-sync.ts is the fix: a periodic job that looks up each
+// audit row's already-graded origin row (via source_table/source_key) and copies its
+// existing, already-computed outcome across — never a new "is this correct" computation.
+// The three functions below are its only DB surface, split out here (not raw dbQuery calls
+// in the sync module) to match this file's existing convention of owning all alert_audit_log
+// SQL in one place (fetchAlertAuditTrail, fetchResolvedAlertAuditRows, insertAlertAuditLog).
+
+export type UngradedAlertAuditRow = {
+  id: number;
+  alert_type: string;
+  source_table: string;
+  source_key: Record<string, unknown>;
+  fired_at: string;
+};
+
+/**
+ * Rows with no outcome yet, old enough that their origin row is plausibly settled. The age
+ * filter is just a cheap pre-filter to avoid repeatedly re-querying rows that are obviously
+ * too fresh (a 0DTE flag from 5 minutes ago can't possibly be graded yet) — the REAL
+ * "is this actually resolved" check happens per-product against the origin row itself
+ * (alert-outcome-sync.ts), so an over-eager age threshold here can never cause a wrong grade,
+ * only a wasted lookup. `nighthawk_rejected` rows are excluded: a rejected play is never
+ * opened anywhere, so it has no origin outcome to ever propagate — it would stay NULL forever
+ * regardless, but excluding it here saves a guaranteed-empty lookup every run.
+ */
+export async function fetchUngradedAlertAuditRows(
+  minAgeMinutes: number,
+  limit = 500
+): Promise<UngradedAlertAuditRow[]> {
+  const cappedMinutes = Math.min(Math.max(minAgeMinutes, 1), 60 * 24 * 30);
+  const cappedLimit = Math.min(Math.max(limit, 1), 2000);
+  const res = await dbQuery<QueryResultRow>(
+    `SELECT id, alert_type, source_table, source_key, fired_at
+     FROM alert_audit_log
+     WHERE outcome IS NULL
+       AND alert_type <> 'nighthawk_rejected'
+       AND fired_at <= NOW() - ($1 || ' minutes')::interval
+     ORDER BY fired_at ASC
+     LIMIT $2`,
+    [cappedMinutes, cappedLimit]
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    alert_type: String(r.alert_type),
+    source_table: String(r.source_table),
+    source_key: (r.source_key as Record<string, unknown>) ?? {},
+    fired_at: new Date(String(r.fired_at)).toISOString(),
+  }));
+}
+
+/** Direct copy, never a re-derivation: `outcome` must already be one of
+ *  TERMINAL_ALERT_OUTCOMES (the caller maps the origin table's vocabulary onto it first).
+ *  `WHERE outcome IS NULL` makes this idempotent/race-safe — a row graded by a concurrent
+ *  run (or manually) is never clobbered. Returns whether a row actually changed so the sync
+ *  loop's counters reflect DB reality, not just "we attempted an update". */
+export async function gradeAlertAuditLogOutcome(
+  id: number,
+  outcome: TerminalAlertOutcome,
+  laterCorrect: boolean | null
+): Promise<boolean> {
+  const res = await dbQuery(
+    `UPDATE alert_audit_log
+     SET outcome = $2, outcome_graded_at = NOW(), later_correct = $3
+     WHERE id = $1 AND outcome IS NULL`,
+    [id, outcome, laterCorrect]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** 0DTE origin lookup — `zerodte_setup_log`'s primary key is (session_date, ticker) (see the
+ *  CREATE TABLE above). `graded_at` is the table's own "have I finished grading this row"
+ *  signal (set by gradeZeroDteSetupRow, board.ts's gradeZeroDteLedger); direction_hit can
+ *  still be NULL even once graded_at is set, for a genuinely ungradeable row (no flag price
+ *  or no close price — computeLedgerGrade's documented behavior) rather than an unresolved
+ *  one. Callers distinguish "not graded yet" (graded_at null -> keep waiting) from "graded but
+ *  ungradeable" (graded_at set, direction_hit null -> never gets a real answer). */
+export async function fetchZeroDteGradeForAudit(
+  sessionDate: string,
+  ticker: string
+): Promise<{ direction_hit: boolean | null; graded_at: string | null } | null> {
+  const res = await dbQuery<QueryResultRow>(
+    `SELECT direction_hit, graded_at FROM zerodte_setup_log
+     WHERE session_date = $1::date AND ticker = $2`,
+    [sessionDate, ticker.toUpperCase()]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    direction_hit: row.direction_hit == null ? null : row.direction_hit === true,
+    graded_at: row.graded_at != null ? new Date(String(row.graded_at)).toISOString() : null,
+  };
+}
+
+/** Night Hawk origin lookup — `nighthawk_play_outcomes`'s natural key is
+ *  (edition_for, ticker) (UNIQUE constraint on the CREATE TABLE above). Its own `outcome`
+ *  column already uses the identical vocabulary this table needs (`target|stop|open|
+ *  ambiguous|pending|unfilled` — a strict superset of TERMINAL_ALERT_OUTCOMES), so the
+ *  caller's mapping is a pass-through filter, not a translation. */
+export async function fetchNighthawkOutcomeForAudit(
+  editionFor: string,
+  ticker: string
+): Promise<{ outcome: string } | null> {
+  const res = await dbQuery<QueryResultRow>(
+    `SELECT outcome FROM nighthawk_play_outcomes
+     WHERE edition_for = $1::date AND ticker = $2`,
+    [editionFor, ticker.toUpperCase()]
+  );
+  const row = res.rows[0];
+  return row ? { outcome: String(row.outcome) } : null;
+}
+
+/**
+ * SPX Slayer (Claude play-gate) origin lookup. Unlike the other two products,
+ * `alert_audit_log.source_key` for `alert_type = 'spx_claude_play'` is
+ * `{price, direction, at}` (spx-play-claude.ts's `logPlayVerdict`) — a snapshot of the GATE
+ * VERDICT, not a foreign key into `spx_play_outcomes` (that table's real PK is
+ * `open_play_id`, which the verdict never receives — a verdict is computed and logged
+ * BEFORE the engine decides whether to open a play at all, so there is nothing to key on
+ * yet). Most `spx_claude_play` rows are VETOs and will never match anything here — correctly
+ * so, since a vetoed setup was never traded and has no trade outcome to report.
+ *
+ * For the rows that WERE approved and opened, `spx-play-engine.ts` opens the play from the
+ * exact same in-memory `desk`/`confluence` used for the verdict (`entry_price: desk.price`,
+ * same `direction`), moments after the verdict is logged — so (direction, price) match
+ * exactly and `opened_at` always lands shortly after the audit row's `fired_at`. This looks
+ * up the nearest such play within a generous 30-minute window and only matches CLOSED rows
+ * (`outcome <> 'open'`). A price tolerance (not exact equality) absorbs any NUMERIC
+ * round-trip formatting difference between the JSONB-serialized verdict price and the
+ * column value. If nothing matches, the row simply stays ungraded — a missed match is safe
+ * (leaves a row for next run); this function is written so it can never return the WRONG
+ * play's outcome (tight price+direction+time constraints, always LIMIT 1 ordered by nearest
+ * open time to the verdict).
+ */
+export async function fetchSpxClaudePlayOutcomeForAudit(
+  direction: string,
+  price: number,
+  firedAt: string
+): Promise<{ outcome: string } | null> {
+  if (!Number.isFinite(price)) return null;
+  const res = await dbQuery<QueryResultRow>(
+    `SELECT outcome FROM spx_play_outcomes
+     WHERE direction = $1
+       AND ABS(entry_price - $2::numeric) < 0.01
+       AND outcome <> 'open'
+       AND opened_at >= $3::timestamptz
+       AND opened_at <= $3::timestamptz + interval '30 minutes'
+     ORDER BY opened_at ASC
+     LIMIT 1`,
+    [direction, price, firedAt]
+  );
+  const row = res.rows[0];
+  return row ? { outcome: String(row.outcome) } : null;
 }
 
 export type DuplicateAlertGroup = {

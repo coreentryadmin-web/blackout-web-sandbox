@@ -261,6 +261,32 @@ function trendAlignment(
 }
 
 /**
+ * SPX Slayer play-engine alignment (SPX/SPXW only). Returns null unless
+ * ctx.spxSlayerOpenPlay is a REAL open play (undefined → field never populated for this
+ * underlying/non-SPX; null → engine checked and genuinely has nothing open right now —
+ * both cases mean "nothing to compare," so the signal is never evaluated, per the honesty
+ * rule). `direction` is the play engine's own "long"/"short" bullish/bearish label (NOT
+ * call/put): a long CALL or short PUT position (wantsUp) agrees with a "long" play; a long
+ * PUT or short CALL position agrees with a "short" play. An aligned play is a genuine
+ * confirmation signal (the engine's own live trade agrees with this position); an opposing
+ * play is a genuine caution signal (the engine has gone the other way) — both grounded in
+ * a real row in `spx_open_play`, never inferred or guessed.
+ */
+function spxSlayerAlignment(
+  ctx: PositionContext | undefined,
+  wantsUp: boolean
+): { aligned: boolean; reason: string } | null {
+  const play = ctx?.spxSlayerOpenPlay;
+  if (!play) return null;
+  const playWantsUp = play.direction === "long";
+  const aligned = playWantsUp === wantsUp;
+  const reason = aligned
+    ? `SPX Slayer's own engine has a live ${play.direction.toUpperCase()} play open (grade ${play.grade}, entry ${play.entry_price}) — aligned with this position.`
+    : `SPX Slayer's own engine has a live ${play.direction.toUpperCase()} play open (grade ${play.grade}, entry ${play.entry_price}) — against this position's direction.`;
+  return { aligned, reason };
+}
+
+/**
  * Technical key-level proximity. Mirrors nearestWallSignal but for chart support/
  * resistance levels: returns the nearest level in the THREATENING direction (resistance
  * ABOVE for bullish exposure, support BELOW for bearish) when spot is within
@@ -500,6 +526,17 @@ export function computeVerdict(
     trimSignals.push({ id: "trend_against", reason: trendSignal.reason });
   }
 
+  // -------------------- Cross-tool: SPX Slayer play alignment (SPX/SPXW, side-aware) -----
+  // Fires ONLY when SPX Slayer's own play engine currently has a REAL open play (ctx.spxSlayerOpenPlay
+  // is a non-null object — a non-SPX position or "engine has nothing open right now" both leave this
+  // unevaluated, per the honesty rule). An OPPOSING live play is TRIM-leaning (the engine's own trade
+  // has gone the other way — a genuine caution signal); an ALIGNED live play is a HOLD signal (added
+  // below) — the engine's own trade agrees with this position, a genuine confirmation signal.
+  const spxSlayerSignal = spxSlayerAlignment(ctx, wantsUp);
+  if (spxSlayerSignal && !spxSlayerSignal.aligned) {
+    trimSignals.push({ id: "spx_slayer_against", reason: spxSlayerSignal.reason });
+  }
+
   // -------------------- Cross-tool: technical key-level proximity (side-aware) -----------
   // Mirrors the GEX-wall approaching logic but for chart support/resistance levels: if spot
   // sits within LEVEL_APPROACH_PCT of a level in the THREATENING direction (resistance ABOVE
@@ -519,6 +556,9 @@ export function computeVerdict(
   }
   if (trendSignal && trendSignal.aligned) {
     holdSignals.push({ id: "trend_aligned", reason: trendSignal.reason });
+  }
+  if (spxSlayerSignal && spxSlayerSignal.aligned) {
+    holdSignals.push({ id: "spx_slayer_aligned", reason: spxSlayerSignal.reason });
   }
 
   // Directional exposure reads OPPOSITELY by side. For a LONG, high |delta| = healthy
