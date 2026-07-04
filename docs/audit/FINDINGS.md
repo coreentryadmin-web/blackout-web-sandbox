@@ -7,6 +7,22 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #377 (`feat/bie-ecosystem-anomalies`) deploy confirmed SUCCESS
+Merge commit `a89adf7`. Railway deployment `c3c50340-f81b-4954-9ebe-f8f000239fc3` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly). Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+---
+
+## 🧠 BIE ecosystem: market regime reaches Largo SHIPPED 2026-07-04 — `get_market_regime` tool
+**Status:** SHIPPED (`feat/bie-largo-market-regime-tool`). Found while looking for the next real gap: `market_regime` (composite GEX/vol/trend/flow regime, playbook, net GEX, IV percentile — written every 30min by `market-regime-detector`) already drives Night Hawk's own scoring internally via `fetchPlatformIntelSnapshot()` (`src/lib/nighthawk/platform-intel-snapshot.ts`, already unit-tested, 3 tests) — but was never exposed to Largo. A member could never ask "what's the market regime right now" even though that exact data was already shaping Night Hawk's picks behind the scenes.
+
+**Why this isn't per-ticker like `get_ecosystem_context`:** market regime is a platform-wide backdrop, not a ticker-specific signal — same reasoning as `get_hot_tickers` being a leaderboard tool with no ticker input. Added alongside it in the `platform` tool group rather than folded into `fetchEcosystemContext`'s per-ticker shape.
+
+**Implementation:** reused `fetchPlatformIntelSnapshot()` directly instead of re-querying `market_regime`/`flow_anomalies`/`platform_briefs` a second time — same DB-direct, already-tested function Night Hawk's scorer calls, not a duplicate of the separate (and more elaborate) member-facing `/api/platform/intel` route. One `t(...)` entry (no required args) + one `case` in `run-tool.ts`.
+
+**Verification:** 882/882 tests pass (no new tests — one-line dispatch to an already-tested function, same precedent as `get_hot_tickers`), `tsc --noEmit` + build + `lint:brand` + `lint:vendor` + API auth-guard scan all clean.
+
+---
+
 ## 🧠 BIE ecosystem-context: recent_anomalies SHIPPED 2026-07-04 — a third real consumer of flow_anomalies
 **Status:** SHIPPED (`feat/bie-ecosystem-anomalies`). `flow_anomalies` (written every 30min by the `market-regime-detector` cron, which already dedups by `(anomaly_type, ticker)` within a 15-minute window at write time) already had two consumers before this: Night Hawk's own `platform-intel-snapshot.ts` and the member-facing `/api/market/anomalies` feed. `fetchEcosystemContext` had zero visibility into it — this adds the last 24h of pattern-detected anomalies (`CONCENTRATION`, `COORDINATED_SWEEP`, `PREMIUM_SPIKE`, `PUT_SURGE`) for the ticker as `recent_anomalies`.
 

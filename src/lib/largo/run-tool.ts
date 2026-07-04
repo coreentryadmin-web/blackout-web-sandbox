@@ -931,6 +931,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchHotTickers(8);
     }
 
+    case "get_market_regime": {
+      const { fetchPlatformIntelSnapshot } = await import("@/lib/nighthawk/platform-intel-snapshot");
+      return fetchPlatformIntelSnapshot();
+    }
+
     case "get_gex": {
       const sym = uwTicker(ticker);
       const exp = String(input.expiry ?? todayEtYmd());

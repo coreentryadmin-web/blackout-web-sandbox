@@ -379,6 +379,11 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     "Leaderboard of single-name tickers with the most options-flow premium over the last 6h (print count + total premium each). Index/ETF and leveraged-ETP names are excluded so SPY/QQQ don't just occupy every slot. Use for open-ended 'what's hot / what's moving / any unusual flow today' questions that don't name a specific ticker — for a question ABOUT one ticker, use get_ecosystem_context or get_flow_tape instead."
   ),
 
+  t(
+    "get_market_regime",
+    "Market-wide backdrop, not ticker-specific: composite regime (BREAKOUT_BULL/BREAKDOWN_BEAR/RANGE_BOUND/MIXED), GEX regime, flow regime, the suggested playbook, net GEX, above/below VWAP, IV percentile, count of critical flow anomalies in the last hour (+ which tickers), and the premarket brief's call/put walls. This is the SAME data Night Hawk's own scoring already reads internally (src/lib/nighthawk/platform-intel-snapshot.ts) — use for 'what's the market regime / what's the backdrop / is this a good environment for X' questions."
+  ),
+
 ];
 
 export const TOOL_GROUPS = {
@@ -490,6 +495,8 @@ export const TOOL_GROUPS = {
     "get_ecosystem_context",
     // BIE hot-tickers leaderboard — no ticker input, "what's hot" across the board
     "get_hot_tickers",
+    // Market-wide regime backdrop — same data Night Hawk's scorer already reads internally
+    "get_market_regime",
   ],
   my_book: [
     // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).
