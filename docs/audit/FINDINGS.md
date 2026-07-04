@@ -7,6 +7,13 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## ✅ VERIFIED 2026-07-04 — PR #375 (`feat/bie-largo-hot-tickers-tool`) deploy confirmed SUCCESS
+Merge commit `285c1e4`. Railway deployment `0898075f-f944-4139-b0c1-f4e306da163a` confirmed **SUCCESS** via the GraphQL API (`commitHash` matches the merge commit exactly). Live `GET /api/ready` → `{"ok":true,"db":"connected"}`.
+
+**Session pause point:** this closes out tonight's BIE ecosystem line (PRs #366–#375, all merged and deployed). See each entry above for detail; no more `src/**` work planned in this line until the next explicit ask.
+
+---
+
 ## 🧠 BIE ecosystem: hot-tickers reaches Largo SHIPPED 2026-07-04 — `get_hot_tickers` tool
 **Status:** SHIPPED (`feat/bie-largo-hot-tickers-tool`). `fetchHotTickers()` (previous entry) shipped admin-only. This gives it a second consumer with zero new query logic: a Largo tool, `get_hot_tickers`, so members can ask "what's hot / what's moving right now" in chat and get a real answer instead of nothing — the same reuse pattern as every other ecosystem-context tool this session (query layer once, consumers cheaply after).
 
