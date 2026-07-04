@@ -312,10 +312,13 @@ class UwSocketManager {
     if (!uwIsLeader) return; // only the cluster leader holds the UW socket; standbys stay closed
     if (this.channelsWithHandlers().length === 0) return;
     this.clearReconnect();
+    // Jitter (matches polygon-socket.ts/options-socket.ts) so a shared upstream blip that drops
+    // every replica's socket at once doesn't have them all retry in lockstep.
+    const jitter = Math.floor(Math.random() * 400);
     const delay =
       Date.now() < this.authFailedUntil
         ? Math.max(0, this.authFailedUntil - Date.now())
-        : Math.min(this.reconnectDelay, 30_000);
+        : Math.min(this.reconnectDelay, 30_000) + jitter;
     this.reconnectTimer = setTimeout(() => {
       this.authFailedLogged = false;
       this.connect();

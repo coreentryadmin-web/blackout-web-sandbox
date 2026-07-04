@@ -11,6 +11,19 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — `uw-socket.ts`/`stocks-socket.ts` reconnect backoff had no jitter (follow-up audit finding, low-medium)
+**Where:** `polygon-socket.ts` and `options-socket.ts` both add `Math.floor(Math.random() * 400)` jitter to their reconnect backoff delay; `uw-socket.ts`'s `scheduleReconnect()` and `stocks-socket.ts`'s `scheduleStocksReconnect()` didn't — the delay was a plain exponential backoff with no randomization.
+
+**Why it matters, especially now:** masked in normal single-leader operation (only one replica ever holds each socket, so there's no peer to collide with). But it compounds the split-brain fencing fix immediately above: two replicas that BOTH briefly believed they were leader (during a stall-then-fence-detection window) and got disconnected by the same upstream blip would, without jitter, reconnect at the exact same moment instead of staggered — the opposite of what jitter exists to prevent.
+
+**Fix:** added the identical `Math.floor(Math.random() * 400)` jitter term to both files' reconnect delay computation, matching `polygon-socket.ts`/`options-socket.ts` exactly. `uw-socket.ts`'s auth-failure cooldown branch (a fixed "wait until this deadline" cooldown, not an exponential backoff) was deliberately left unjittered — jitter doesn't apply to a fixed-deadline wait the way it does to a churn-avoidance backoff.
+
+**Blast radius:** the two reconnect-delay computations only — no change to backoff caps, auth-failure cooldown logic, or any other reconnect behavior.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `1013/1013` passing (no new tests — `scheduleReconnect`/`scheduleStocksReconnect` aren't exported for direct testing, matching the precedent that `polygon-socket.ts`'s and `options-socket.ts`'s own jitter isn't unit-tested either). `npm run build` clean; `lint:brand`/`lint:vendor` clean.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — WS/cron leader locks split-brain under a stalled leader — no fencing token (follow-up audit finding, high)
 **Where:** all 5 Redis SETNX cluster-leader locks in the codebase — `src/lib/ws/uw-socket.ts`, `polygon-socket.ts`, `options-socket.ts`, `stocks-socket.ts`, and `src/lib/rth-warm-leader.ts` (the 5th manager fixed immediately above). Each acquires with `SET key "1" EX ttl NX` — a **constant** value, never a per-replica identity — then renews on a timer via an **unconditional** `EXPIRE(key, ttl)` and releases via an unconditional `DEL(key)`, neither of which ever checks that the key still belongs to the replica calling them.
 

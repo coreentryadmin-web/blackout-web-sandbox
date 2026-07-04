@@ -124,7 +124,10 @@ const STOCKS_STALL_MS = (() => {
 
 function scheduleStocksReconnect(reason: string) {
   if (stocksShuttingDown || stocksReconnectTimer) return;
-  const delay = Math.min(stocksReconnectDelay, 60_000);
+  // Jitter (matches polygon-socket.ts/options-socket.ts) so a shared upstream blip that drops
+  // every replica's socket at once doesn't have them all retry in lockstep.
+  const jitter = Math.floor(Math.random() * 400);
+  const delay = Math.min(stocksReconnectDelay, 60_000) + jitter;
   console.warn(`[stocks-socket] reconnect in ${delay}ms (${reason})`);
   stocksReconnectTimer = setTimeout(() => {
     stocksReconnectTimer = null;
