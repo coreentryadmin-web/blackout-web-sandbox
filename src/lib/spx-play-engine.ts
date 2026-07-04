@@ -58,6 +58,7 @@ import {
   logSpxSkewShadowFactors,
   logSpxEcosystemShadowFactors,
   logMegaCapCatalystShadowFactors,
+  logSpxPrecedentsShadowFactor,
 } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
@@ -1194,6 +1195,21 @@ export async function evaluateSpxPlay(
   // wiring is independently reviewable/revertible.
   firePlayTelemetry("logMegaCapCatalystShadowFactors", () =>
     logMegaCapCatalystShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE precedent-search factor logging (src/lib/spx-signals-shadow-
+  // precedents.ts) — same fire-and-forget idiom, same pre-Night-Hawk-bonus
+  // score/grade snapshot as logSpxShadowFactors above. Queries BIE's semantic
+  // precedent search (get_similar_precedents) for historical SPX-relevant
+  // setups similar to right now, and derives a provisional weight from how
+  // they actually resolved — needs confluence.direction (like the ecosystem
+  // call above) to know what "same direction as this precedent" means.
+  firePlayTelemetry("logSpxPrecedentsShadowFactor", () =>
+    logSpxPrecedentsShadowFactor(desk, {
+      score: confluence.score,
+      grade: confluence.grade,
+      direction: confluence.direction,
+    })
   );
 
   // NH morning prior: inject the Night Hawk evening signal as a signed confluence factor.

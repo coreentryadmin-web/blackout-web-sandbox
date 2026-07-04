@@ -19,6 +19,13 @@ import { computeEcosystemShadowFactors } from "@/lib/spx-signals-shadow-ecosyste
 import { computeCatalystShadowFactors, type CatalystInput } from "@/lib/spx-signals-shadow-catalysts";
 import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
 import { uwConfigured, polygonConfigured } from "@/lib/providers/config";
+import {
+  buildPrecedentSearchQuery,
+  computePrecedentShadowFactor,
+  PRECEDENT_SEARCH_K,
+} from "@/lib/spx-signals-shadow-precedents";
+import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
+import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
 
 const CURSOR_KEY = "spx_signal_log_cursor";
 
@@ -490,6 +497,68 @@ export async function logMegaCapCatalystShadowFactors(
   }
 
   const observations = computeCatalystShadowFactors(desk, catalysts, catalystFetchOk);
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * SHADOW-MODE factor logging, precedent-search edition — sibling of
+ * logSpxShadowFactors above (same fire-and-forget call site in
+ * evaluateSpxPlay, src/lib/spx-play-engine.ts), kept as its own function for
+ * the same "independently reviewable/revertible" reason
+ * logMegaCapCatalystShadowFactors documents just above. See
+ * src/lib/spx-signals-shadow-precedents.ts's module doc for the full
+ * rationale: BIE's `get_similar_precedents` (src/lib/bie/precedent-search.ts)
+ * finally has real graded rows to return now that
+ * src/lib/bie/alert-outcome-sync.ts fixed `alert_audit_log.outcome`
+ * propagation, so this is SPX Slayer's own engine asking that same
+ * "has a setup like this happened before, and what happened" question about
+ * its own current setup.
+ *
+ * Reuses Largo's own `get_similar_precedents` call shape verbatim
+ * (src/lib/largo/run-tool.ts: `findSimilarPrecedents(query, 5)` —
+ * PRECEDENT_SEARCH_K mirrors that `5`), just with a deterministically-built
+ * query string (buildPrecedentSearchQuery) instead of one composed by an LLM
+ * tool call, since this call site has no model in the loop.
+ *
+ * AVAILABILITY: `findSimilarPrecedents` -> `searchKnowledge()`
+ * (bie/knowledge.ts) fails open to `[]` on three indistinguishable
+ * conditions — DB/Voyage-embeddings not configured, a real query that found
+ * nothing above the similarity floor, or an internal error — so an empty
+ * result alone can't tell "not configured" apart from "genuinely nothing
+ * found." `bieEmbeddingsConfigured()` (dbConfigured() is already guaranteed
+ * true past the early return above) is passed as the best available "the
+ * search could even have run" proxy, the same class of honest, documented
+ * limitation logMegaCapCatalystShadowFactors already accepts for
+ * `polygonConfigured()`/fetchBenzingaCatalysts above. The pure scorer
+ * (computePrecedentShadowFactor) applies its OWN further "not enough
+ * precedents yet" gate on top of this — see that function's doc for why a
+ * near-empty corpus right now is expected, not broken.
+ */
+export async function logSpxPrecedentsShadowFactor(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string; direction: SpxPlayDirection | null }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const searchConfirmedAvailable = bieEmbeddingsConfigured();
+  const query = buildPrecedentSearchQuery(desk, confluence.direction, confluence.grade, confluence.score);
+  const hits = searchConfirmedAvailable ? await findSimilarPrecedents(query, PRECEDENT_SEARCH_K) : [];
+
+  const observations = computePrecedentShadowFactor(hits, searchConfirmedAvailable, confluence.direction);
   const sessionDate = todayEtYmd();
 
   for (const obs of observations) {
