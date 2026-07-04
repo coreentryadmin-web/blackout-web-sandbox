@@ -393,3 +393,52 @@ test("knowledge: without a key nothing backfills — cold chunks wait, dedup sti
   assert.deepEqual(fresh.map((c) => c.chunk_hash), ["h-a"]);
   assert.deepEqual(cold, []);
 });
+
+// ── knowledge: new SPX Slayer mechanics doc ingests cleanly ──────────────────────
+//
+// This is a content-only addition (docs/bie/spx-slayer-mechanics.md) — no ingestion
+// code changed, since `ingestBieKnowledge()` already directory-scans `docs/bie` (see
+// DOC_DIRS in ./knowledge.ts) rather than reading an explicit file list. What CAN
+// regress silently is the doc itself: a future edit could blow past the per-file size
+// cap, or pile content into one giant paragraph that only hard-splits instead of
+// chunking on natural boundaries. These tests pin both, using the exact same
+// `chunkDocument()` the real ingestion path calls.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const SPX_MECHANICS_DOC_PATH = join("docs", "bie", "spx-slayer-mechanics.md");
+
+test("knowledge: spx-slayer-mechanics.md exists under docs/bie — a DOC_DIRS-scanned directory, so ingestBieKnowledge() picks it up with no code change", () => {
+  const text = readFileSync(join(process.cwd(), SPX_MECHANICS_DOC_PATH), "utf8");
+  assert.ok(text.length > 500, "doc should have real content, not a stub");
+  assert.ok(text.length < 400_000, "must stay under ingestBieKnowledge()'s per-file size cap");
+});
+
+test("knowledge: spx-slayer-mechanics.md chunks on paragraph boundaries — every paragraph fits the 1200-char cap so nothing needs a mid-sentence hard-split", () => {
+  const text = readFileSync(join(process.cwd(), SPX_MECHANICS_DOC_PATH), "utf8");
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  assert.ok(paragraphs.length >= 10, "doc should have multiple distinct sections/paragraphs");
+  for (const p of paragraphs) {
+    assert.ok(p.length <= 1200, `paragraph exceeds chunkDocument's cap and will hard-split: "${p.slice(0, 60)}..."`);
+  }
+  const chunks = chunkDocument(text);
+  assert.ok(chunks.length >= 5, "doc should produce several retrievable chunks, not collapse to one");
+  assert.ok(chunks.every((c) => c.length <= 1200));
+});
+
+test("knowledge: spx-slayer-mechanics.md actually documents the three-stage engine BIE is meant to ground answers in", () => {
+  const text = readFileSync(join(process.cwd(), SPX_MECHANICS_DOC_PATH), "utf8");
+  // Confluence scoring stage.
+  assert.match(text, /computeSpxConfluence/);
+  // Sequential gates stage.
+  assert.match(text, /evaluatePlayGates/);
+  // AI arbiter stage + its fail-closed behavior.
+  assert.match(text, /evaluateClaudePlayApproval/);
+  assert.match(text, /fail-closed/i);
+  // The numeric-grounding guard on the AI step.
+  assert.match(text, /checkNumbersGrounded/);
+  // Largo's live-state query surface.
+  assert.match(text, /get_spx_play/);
+  assert.match(text, /get_spx_confluence/);
+});
