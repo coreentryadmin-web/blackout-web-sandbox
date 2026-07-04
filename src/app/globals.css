@@ -1472,12 +1472,120 @@ body::before {
   background: transparent;
 }
 
+.bie-intelligence-field .bie-field-canvas {
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 42%, rgba(0, 40, 52, 0.22) 0%, transparent 58%),
+    radial-gradient(ellipse 85% 70% at 50% 46%, rgba(0, 229, 255, 0.04) 0%, transparent 72%),
+    #040407;
+}
+
+.bie-field-base {
+  pointer-events: none;
+}
+
+.bie-atmosphere-glow {
+  fill: rgba(0, 229, 255, 0.025);
+  transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 46%);
+  transform-box: view-box;
+  pointer-events: none;
+}
+
+.bie-atmosphere-glow-deep {
+  fill: rgba(0, 180, 220, 0.018);
+}
+
+.bie-atmosphere-glow-mid {
+  fill: rgba(0, 229, 255, 0.032);
+}
+
+.bie-atmosphere-glow-inner {
+  fill: rgba(93, 247, 255, 0.045);
+}
+
+.bie-reactor-live .bie-atmosphere-glow-deep {
+  animation: bie-atmosphere-deep 18s ease-in-out infinite;
+}
+
+.bie-reactor-live .bie-atmosphere-glow-mid {
+  animation: bie-atmosphere-mid 12s ease-in-out infinite;
+  animation-delay: -4s;
+}
+
+.bie-reactor-live .bie-atmosphere-glow-inner {
+  animation: bie-atmosphere-inner 7.5s ease-in-out infinite;
+  animation-delay: -2s;
+}
+
+@keyframes bie-atmosphere-deep {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+@keyframes bie-atmosphere-mid {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.015); }
+}
+
+@keyframes bie-atmosphere-inner {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.01); }
+}
+
+.bie-ambient-mesh-line {
+  fill: none;
+  stroke: rgba(148, 226, 255, 0.022);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.bie-field-vignette {
+  pointer-events: none;
+}
+
+.bie-field-line-mid .bie-field-line-stroke {
+  stroke: rgba(93, 247, 255, 0.055);
+  stroke-width: 0.8;
+}
+
+.bie-field-line-mid.bie-field-line-3 .bie-field-line-stroke {
+  stroke: rgba(148, 226, 255, 0.05);
+}
+
+.bie-field-line-mid.bie-field-line-4 .bie-field-line-stroke {
+  stroke: rgba(93, 247, 255, 0.042);
+}
+
+.bie-field-line-outer.bie-field-line-5 .bie-field-line-stroke {
+  stroke: rgba(148, 226, 255, 0.022);
+  stroke-width: 0.6;
+}
+
+.bie-field-line-outer.bie-field-line-6 .bie-field-line-stroke {
+  stroke: rgba(148, 226, 255, 0.016);
+  stroke-width: 0.55;
+}
+
+.bie-reactor-live .bie-field-line-mid .bie-field-line-stroke {
+  animation: bie-field-line-mid-glow 11s ease-in-out infinite;
+}
+
+.bie-field-line-mid.bie-field-line-3 .bie-field-line-stroke { animation-delay: -3.5s; }
+.bie-field-line-mid.bie-field-line-4 .bie-field-line-stroke { animation-delay: -6.2s; }
+.bie-field-line-outer.bie-field-line-5 .bie-field-line-stroke { animation-delay: -8.4s; }
+.bie-field-line-outer.bie-field-line-6 .bie-field-line-stroke { animation-delay: -11s; }
+
+@keyframes bie-field-line-mid-glow {
+  0%, 100% { stroke-opacity: 0.4; }
+  50% { stroke-opacity: 0.78; }
+}
+
 .bie-reactor-hero .bie-field-stage {
   background: #040407;
 }
 
 .bie-reactor-stage {
-  min-height: clamp(560px, 78vh, 920px);
+  min-height: clamp(580px, 82vh, 960px);
   flex: 1 1 auto;
   display: flex;
   align-items: stretch;
@@ -1491,8 +1599,8 @@ body::before {
 }
 
 .bie-field-canvas {
-  min-height: clamp(560px, 78vh, 920px);
-  max-height: min(920px, 82vh);
+  min-height: clamp(580px, 82vh, 960px);
+  max-height: min(960px, 88vh);
   aspect-ratio: auto;
 }
 
@@ -1612,6 +1720,111 @@ body::before {
 
 .bie-field-ring-stroke {
   stroke-opacity: 0.42;
+}
+
+/* Organic field lines — magnetosphere / atom feel, not perfect circles */
+.bie-field-line {
+  transform-origin: var(--reactor-cx, 50%) var(--reactor-cy, 50%);
+  transform-box: view-box;
+}
+
+.bie-field-line-outer {
+  animation: bie-reactor-ring-spin var(--ring-period, 220s) linear infinite;
+  animation-direction: var(--ring-reverse, normal);
+}
+
+.bie-field-line-inner {
+  animation: bie-reactor-ring-spin var(--ring-period, 168s) linear infinite;
+  animation-direction: var(--ring-reverse, reverse);
+}
+
+.bie-field-line-stroke {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.55s ease, stroke-width 0.55s ease;
+}
+
+.bie-field-line-outer .bie-field-line-stroke {
+  stroke: rgba(148, 226, 255, 0.035);
+  stroke-width: 0.75;
+}
+
+.bie-field-line-outer.bie-field-line-3 .bie-field-line-stroke {
+  stroke: rgba(93, 247, 255, 0.042);
+}
+
+.bie-field-line-outer.bie-field-line-4 .bie-field-line-stroke {
+  stroke: rgba(148, 226, 255, 0.028);
+  stroke-width: 0.65;
+}
+
+.bie-field-line-inner .bie-field-line-stroke {
+  stroke: rgba(93, 247, 255, 0.1);
+  stroke-width: 0.95;
+}
+
+.bie-field-line-inner.bie-field-line-1 .bie-field-line-stroke {
+  stroke: rgba(93, 247, 255, 0.11);
+}
+
+.bie-field-line-inner.bie-field-line-2 .bie-field-line-stroke {
+  stroke: rgba(0, 230, 118, 0.08);
+}
+
+.bie-field-line.is-lit .bie-field-line-stroke {
+  stroke-width: 1.35;
+  filter: drop-shadow(0 0 12px rgba(93, 247, 255, 0.35));
+}
+
+.bie-reactor-live .bie-field-line-outer .bie-field-line-stroke {
+  animation: bie-field-line-outer-glow 14s ease-in-out infinite;
+}
+
+.bie-reactor-live .bie-field-line-inner .bie-field-line-stroke {
+  animation: bie-field-line-inner-glow 9s ease-in-out infinite;
+}
+
+.bie-field-line-outer.bie-field-line-3 .bie-field-line-stroke { animation-delay: -2.8s; }
+.bie-field-line-outer.bie-field-line-4 .bie-field-line-stroke { animation-delay: -5.6s; }
+.bie-field-line-inner.bie-field-line-1 .bie-field-line-stroke { animation-delay: -1.4s; }
+.bie-field-line-inner.bie-field-line-2 .bie-field-line-stroke { animation-delay: -3.2s; }
+
+@keyframes bie-field-line-outer-glow {
+  0%, 100% { stroke-opacity: 0.35; }
+  50% { stroke-opacity: 0.72; }
+}
+
+@keyframes bie-field-line-inner-glow {
+  0%, 100% { stroke-opacity: 0.55; }
+  50% { stroke-opacity: 0.95; }
+}
+
+.bie-field-loop-pulse {
+  opacity: 0.42;
+  filter: drop-shadow(0 0 5px rgba(93, 247, 255, 0.55));
+}
+
+.bie-inner-connection {
+  pointer-events: none;
+}
+
+.bie-inner-link-track {
+  fill: none;
+  stroke: rgba(191, 95, 255, 0.055);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-inner-link-pulse {
+  opacity: 0.55;
+  filter: drop-shadow(0 0 5px rgba(191, 95, 255, 0.65));
+}
+
+.bie-inner-node {
+  fill: rgba(93, 247, 255, 0.62);
+  filter: drop-shadow(0 0 5px rgba(93, 247, 255, 0.5));
 }
 
 .bie-ring-segment-track {
@@ -2720,6 +2933,12 @@ body::before {
   .bie-field-ripple { display: none; }
   .bie-field-glow { animation: none; opacity: 0.65; }
   .bie-reactor-ring-haze { animation: none; }
+  .bie-field-line { animation: none; }
+  .bie-field-line-stroke { animation: none; }
+  .bie-atmosphere-glow { animation: none; }
+  .bie-field-loop-pulse,
+  .bie-inner-link-pulse,
+  .bie-ring-pulse-dot { display: none; }
 }
 
 .bento-card-watermark {
