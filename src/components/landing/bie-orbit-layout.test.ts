@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { OrbitTool } from "./BieOrbitTools";
 import {
-  ORBIT_PAIR_SEPARATION_DEG,
-  buildRandomOrbitLayout,
+  TOOL_RING_ANCHOR_DEG,
+  buildOrbitLayout,
   orbitAngularSeparationDeg,
 } from "./bie-orbit-layout";
 
@@ -16,45 +16,54 @@ const TOOLS: OrbitTool[] = [
   { name: "F", href: "/f", mark: "nighthawk", accent: "#f0f" },
 ];
 
-const SCALES = { 4: 0.72, 5: 0.88, 6: 1 } as const;
+const SCALES = {
+  1: 0.22,
+  2: 0.34,
+  3: 0.52,
+  4: 0.72,
+  5: 0.88,
+  6: 1,
+} as const;
 
-describe("buildRandomOrbitLayout", () => {
-  it("places two tools on each of rings 4, 5, and 6", () => {
-    const layout = buildRandomOrbitLayout(TOOLS, SCALES, 42);
+describe("buildOrbitLayout", () => {
+  it("places one tool on each ring from 1 through 6", () => {
+    const layout = buildOrbitLayout(TOOLS, SCALES, 42);
     assert.equal(layout.length, 6);
-    for (const ring of [4, 5, 6] as const) {
-      assert.equal(layout.filter((t) => t.orbitRing === ring).length, 2);
+    for (const ring of [1, 2, 3, 4, 5, 6] as const) {
+      assert.equal(layout.filter((t) => t.orbitRing === ring).length, 1);
     }
   });
 
-  it("keeps ring pairs 180° apart with shared speed and direction", () => {
-    const layout = buildRandomOrbitLayout(TOOLS, SCALES, 42);
-    for (const ring of [4, 5, 6] as const) {
-      const pair = layout.filter((t) => t.orbitRing === ring);
-      assert.equal(pair.length, 2);
-      const sep = orbitAngularSeparationDeg(pair[0].startAngleDeg, pair[1].startAngleDeg);
-      assert.ok(Math.abs(sep - ORBIT_PAIR_SEPARATION_DEG) < 0.01);
-      assert.equal(pair[0].orbitPeriodSec, pair[1].orbitPeriodSec);
-      assert.equal(pair[0].orbitDirection, pair[1].orbitDirection);
+  it("uses fixed compass anchors per ring", () => {
+    const layout = buildOrbitLayout(TOOLS, SCALES, 42);
+    for (const tool of layout) {
+      assert.equal(tool.startAngleDeg, TOOL_RING_ANCHOR_DEG[tool.orbitRing]);
     }
   });
 
-  it("is deterministic for the same seed", () => {
-    const a = buildRandomOrbitLayout(TOOLS, SCALES, 99);
-    const b = buildRandomOrbitLayout(TOOLS, SCALES, 99);
+  it("maps tools in array order to rings 1–6", () => {
+    const layout = buildOrbitLayout(TOOLS, SCALES, 42);
     assert.deepEqual(
-      a.map((t) => [t.name, t.orbitRing, t.startAngleDeg.toFixed(2)]),
-      b.map((t) => [t.name, t.orbitRing, t.startAngleDeg.toFixed(2)])
+      layout.map((t) => [t.orbitRing, t.name]),
+      [
+        [1, "A"],
+        [2, "B"],
+        [3, "C"],
+        [4, "D"],
+        [5, "E"],
+        [6, "F"],
+      ]
     );
   });
 
-  it("varies layout across seeds", () => {
-    const a = buildRandomOrbitLayout(TOOLS, SCALES, 1);
-    const b = buildRandomOrbitLayout(TOOLS, SCALES, 2);
-    const same =
-      a.every((t, i) => t.name === b[i].name && t.orbitRing === b[i].orbitRing) &&
-      a.every((t, i) => Math.abs(t.startAngleDeg - b[i].startAngleDeg) < 0.01);
-    assert.equal(same, false);
+  it("keeps anchors fixed while orbit period jitters per seed", () => {
+    const a = buildOrbitLayout(TOOLS, SCALES, 99);
+    const b = buildOrbitLayout(TOOLS, SCALES, 100);
+    assert.deepEqual(
+      a.map((t) => t.startAngleDeg),
+      b.map((t) => t.startAngleDeg)
+    );
+    assert.notEqual(a[0].orbitPeriodSec, b[0].orbitPeriodSec);
   });
 });
 

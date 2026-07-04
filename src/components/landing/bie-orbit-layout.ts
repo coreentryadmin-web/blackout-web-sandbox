@@ -1,16 +1,20 @@
 import type { OrbitTool } from "./BieOrbitTools";
 
-export const TOOL_ORBIT_RINGS = [4, 5, 6] as const;
+export const TOOL_ORBIT_RINGS = [1, 2, 3, 4, 5, 6] as const;
 export type ToolOrbitRing = (typeof TOOL_ORBIT_RINGS)[number];
 
-export const FIELD_NODE_RINGS = TOOL_ORBIT_RINGS;
-export type FieldNodeRing = ToolOrbitRing;
-
-/** Opposite-side spacing (degrees) for the two tools sharing one ring. */
-export const ORBIT_PAIR_SEPARATION_DEG = 180;
-
-/** Stagger each ring's base angle so cross-ring tools don't stack on one radial. */
-export const ORBIT_RING_STAGGER_DEG = 120;
+/**
+ * One instrument per ellipse — compass anchors from the product layout sketch.
+ * angleDeg 0 = top of the field line; increases clockwise.
+ */
+export const TOOL_RING_ANCHOR_DEG: Record<ToolOrbitRing, number> = {
+  1: 315, // inner top-left
+  2: 138, // lower-right
+  3: 268, // left
+  4: 42, // top-right
+  5: 328, // outer top-left
+  6: 178, // bottom
+};
 
 export type PlacedOrbitTool = OrbitTool & {
   orbitRing: ToolOrbitRing;
@@ -22,7 +26,7 @@ export type PlacedOrbitTool = OrbitTool & {
 
 const SESSION_KEY = "bie-orbit-seed";
 
-/** Seeded PRNG — deterministic layout per session seed. */
+/** Seeded PRNG — small speed jitter per session while anchors stay fixed. */
 export function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -54,42 +58,53 @@ export function readSessionOrbitSeed(): number {
   }
 }
 
-function shuffleInPlace<T>(arr: T[], rand: () => number): void {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
+/** Base orbit period per ring — prime-ish steps so six solo bodies never sync up. */
+const RING_ORBIT_PERIOD_SEC: Record<ToolOrbitRing, number> = {
+  1: 92,
+  2: 108,
+  3: 124,
+  4: 98,
+  5: 116,
+  6: 132,
+};
+
+const RING_ORBIT_DIRECTION: Record<ToolOrbitRing, 1 | -1> = {
+  1: 1,
+  2: -1,
+  3: 1,
+  4: -1,
+  5: -1,
+  6: 1,
+};
 
 /**
- * Shuffle six tools onto rings 4/5/6 (two per ring). Each pair stays 180° apart
- * on the same period/direction so they never lap or collide; rings are staggered.
+ * Place six tools on rings 1–6 (one each) at fixed compass anchors.
+ * FIELD_TOOLS order maps to ring 1 → ring 6.
  */
-export function buildRandomOrbitLayout(
+export function buildOrbitLayout(
   tools: OrbitTool[],
   ringScales: Record<ToolOrbitRing, number>,
   seed: number
 ): PlacedOrbitTool[] {
   const rand = mulberry32(seed);
-  const shuffled = [...tools];
-  shuffleInPlace(shuffled, rand);
 
-  return TOOL_ORBIT_RINGS.flatMap((ring, ringIdx) => {
-    const pair = shuffled.slice(ringIdx * 2, ringIdx * 2 + 2);
-    const ringBaseDeg = (rand() * 360 + ringIdx * ORBIT_RING_STAGGER_DEG) % 360;
-    const orbitPeriodSec = 84 + rand() * 48;
-    const orbitDirection = rand() < 0.5 ? (-1 as const) : (1 as const);
+  return TOOL_ORBIT_RINGS.map((ring, i) => {
+    const tool = tools[i] ?? tools[i % tools.length];
+    const jitter = (rand() - 0.5) * 8;
 
-    return pair.map((tool, pairIdx) => ({
+    return {
       ...tool,
       orbitRing: ring,
       orbitScale: ringScales[ring],
-      startAngleDeg: (ringBaseDeg + pairIdx * ORBIT_PAIR_SEPARATION_DEG) % 360,
-      orbitPeriodSec,
-      orbitDirection,
-    }));
+      startAngleDeg: TOOL_RING_ANCHOR_DEG[ring],
+      orbitPeriodSec: RING_ORBIT_PERIOD_SEC[ring] + jitter,
+      orbitDirection: RING_ORBIT_DIRECTION[ring],
+    };
   });
 }
+
+/** @deprecated Use buildOrbitLayout */
+export const buildRandomOrbitLayout = buildOrbitLayout;
 
 /** Angular distance between two orbit phases (0–180°). */
 export function orbitAngularSeparationDeg(aDeg: number, bDeg: number): number {

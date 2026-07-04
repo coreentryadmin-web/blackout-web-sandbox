@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
 import { fieldLineScale } from "./bie-helix-engine";
-import { buildRandomOrbitLayout, readSessionOrbitSeed, type PlacedOrbitTool } from "./bie-orbit-layout";
+import { buildOrbitLayout, readSessionOrbitSeed, type PlacedOrbitTool } from "./bie-orbit-layout";
 import { advanceOrbitDeg, orbitToolPixelPosition } from "./bie-viewbox-map";
 
 export type OrbitTool = {
@@ -30,12 +30,15 @@ type ToolMotion = {
 };
 
 const RING_SCALES = {
+  1: fieldLineScale(1),
+  2: fieldLineScale(2),
+  3: fieldLineScale(3),
   4: fieldLineScale(4),
   5: fieldLineScale(5),
   6: fieldLineScale(6),
 } as const;
 
-/** Six instruments on rings 4/5/6 — two per ellipse, random layout per session. */
+/** Six instruments — one per field ellipse (rings 1–6), fixed compass anchors. */
 export function BieOrbitTools({
   tools,
   viewW,
@@ -54,7 +57,7 @@ export function BieOrbitTools({
 
   useEffect(() => {
     const seed = readSessionOrbitSeed();
-    setLayout(buildRandomOrbitLayout(tools, RING_SCALES, seed));
+    setLayout(buildOrbitLayout(tools, RING_SCALES, seed));
   }, [tools]);
 
   useEffect(() => {
