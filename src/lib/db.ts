@@ -953,6 +953,38 @@ async function runMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_audit_log_nighthawk_rejected_dedup
       ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for'))
       WHERE alert_type = 'nighthawk_rejected';
+
+    -- SPX Slayer SHADOW-MODE factor observations (docs/audit/FINDINGS.md, "SPX Slayer
+    -- shadow signal framework"). Logs what a candidate factor WOULD have contributed
+    -- to computeSpxConfluence() (src/lib/spx-signals.ts) WITHOUT it touching the real
+    -- score/action/grade — see src/lib/spx-signals-shadow.ts's module doc for the full
+    -- rationale (mirrors bie/calibration.ts's "prove it with n>=10 evidence before
+    -- acting on it" philosophy). Deliberately GENERIC, not named after its first
+    -- factor: factor_name is the discriminator column, so every future shadow factor
+    -- (risk-reversal skew + realized vol, UW prediction-market consensus, Benzinga
+    -- catalysts, ecosystem cross-instrument agreement) writes into this SAME table
+    -- instead of spawning a new one per factor, and a later evidence query can compare
+    -- factor_names against each other without a UNION across N tables.
+    CREATE TABLE IF NOT EXISTS spx_confluence_shadow_observations (
+      id                   BIGSERIAL PRIMARY KEY,
+      observed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date         DATE NOT NULL,
+      factor_name          TEXT NOT NULL,
+      available            BOOLEAN NOT NULL,
+      implied_weight       NUMERIC NOT NULL,
+      direction            TEXT NOT NULL,
+      detail               TEXT NOT NULL,
+      price_at_observation NUMERIC,
+      -- The REAL computeSpxConfluence() score/grade at the same moment this shadow
+      -- observation was taken, for later correlation against actual outcomes —
+      -- never fed back into the shadow scoring itself.
+      actual_score         INTEGER,
+      actual_grade         TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_confluence_shadow_obs_at
+      ON spx_confluence_shadow_observations (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_confluence_shadow_obs_factor
+      ON spx_confluence_shadow_observations (factor_name, observed_at DESC);
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
@@ -1599,6 +1631,47 @@ export async function insertSpxSignalLog(row: {
       row.target,
       row.headline,
       JSON.stringify(row.factors ?? []),
+    ]
+  );
+}
+
+/**
+ * Persists one SHADOW-MODE factor observation (src/lib/spx-signals-shadow.ts).
+ * Same idiom as insertSpxSignalLog above — no ON CONFLICT dedup, since unlike
+ * spx_signal_log (one row per NEW play) this is expected to write one row per
+ * factor per evaluation tick, and later evidence-gathering wants every tick,
+ * not just changes.
+ */
+export async function insertShadowFactorObservation(row: {
+  session_date: string;
+  factor_name: string;
+  available: boolean;
+  implied_weight: number;
+  direction: string;
+  detail: string;
+  price_at_observation: number | null;
+  actual_score: number | null;
+  actual_grade: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO spx_confluence_shadow_observations (
+      session_date, factor_name, available, implied_weight, direction, detail,
+      price_at_observation, actual_score, actual_grade
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `,
+    [
+      row.session_date,
+      row.factor_name,
+      row.available,
+      row.implied_weight,
+      row.direction,
+      row.detail,
+      row.price_at_observation,
+      row.actual_score,
+      row.actual_grade,
     ]
   );
 }
