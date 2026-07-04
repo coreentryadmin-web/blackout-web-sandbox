@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { isPremarketBriefFresh, todayEtYmd } from "@/lib/providers/spx-session";
+import {
+  fetchSignalAccuracyBySource,
+  blendedAccuracy,
+  MIN_SAMPLE_FOR_RECOMMENDATION,
+  type SignalAccuracyBySource,
+} from "@/lib/signal-accuracy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,18 +30,9 @@ type CoachingAlertRow = {
   generated_at: string;
 };
 
-type SignalAccuracyRow = {
-  signal_source: string;
-  total: string | number;
-  wins: string | number;
-  win_rate: string | number | null;
-};
-
-type RegimeAccuracyRow = {
-  regime: string;
-  total: string | number;
-  wins: string | number;
-  win_rate: string | number | null;
+const EMPTY_SIGNAL_ACCURACY: SignalAccuracyBySource = {
+  SPX_SLAYER: { total: 0, wins: 0, winRate: null },
+  NIGHT_HAWK: { total: 0, wins: 0, winRate: null },
 };
 
 /**
@@ -43,7 +40,7 @@ type RegimeAccuracyRow = {
  *
  * Every cron reads this at startup to understand current state before acting.
  * Returns: regime, recent anomalies, active coaching alerts, latest brief,
- * signal accuracy by regime, and cross-cron health.
+ * signal accuracy, and cross-cron health.
  */
 export async function GET(req: NextRequest) {
   // Premium session OR cron secret — this snapshot aggregates paid SPX content (brief levels,
@@ -51,7 +48,7 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
   try {
-    const [regime, anomalies, coaching, brief, signalStats, regimeAccuracy] = await Promise.allSettled([
+    const [regime, anomalies, coaching, brief, signalAcc] = await Promise.allSettled([
       // 1. Current market regime
       dbQuery(
         "SELECT * FROM market_regime ORDER BY captured_at DESC LIMIT 1",
@@ -72,37 +69,14 @@ export async function GET(req: NextRequest) {
         "SELECT brief_date, brief_type, published_at, spx_price, call_wall, put_wall, king_strike, net_gex, gex_bias FROM platform_briefs WHERE brief_type = 'premarket' ORDER BY brief_date DESC LIMIT 1",
         []
       ),
-      // 5. Signal accuracy — last 30 days overall
-      dbQuery(
-        `SELECT
-           se.signal_source,
-           COUNT(*) FILTER (WHERE so.direction_correct IS NOT NULL) as total,
-           COUNT(*) FILTER (WHERE so.direction_correct = true) as wins,
-           ROUND(COUNT(*) FILTER (WHERE so.direction_correct = true)::numeric /
-             NULLIF(COUNT(*) FILTER (WHERE so.direction_correct IS NOT NULL), 0) * 100, 1) as win_rate
-         FROM signal_events se
-         JOIN signal_outcomes so ON so.signal_event_id = se.id
-         WHERE se.fired_at > NOW() - INTERVAL '30 days' AND so.checkpoint = 'T+30'
-         GROUP BY se.signal_source`,
-        []
-      ),
-      // 6. Signal accuracy broken down by regime (which regime is most profitable)
-      dbQuery(
-        `SELECT
-           se.metadata->>'regime' as regime,
-           COUNT(*) as total,
-           COUNT(*) FILTER (WHERE so.direction_correct = true) as wins,
-           ROUND(COUNT(*) FILTER (WHERE so.direction_correct = true)::numeric /
-             NULLIF(COUNT(*), 0) * 100, 1) as win_rate
-         FROM signal_events se
-         JOIN signal_outcomes so ON so.signal_event_id = se.id
-         WHERE se.fired_at > NOW() - INTERVAL '30 days'
-           AND so.checkpoint = 'T+30'
-           AND se.metadata->>'regime' IS NOT NULL
-         GROUP BY se.metadata->>'regime'
-         ORDER BY win_rate DESC NULLS LAST`,
-        []
-      ),
+      // 5. Signal accuracy — real numbers from the LIVE outcome ledgers (spx_play_outcomes,
+      // nighthawk_play_outcomes), NOT signal_events/signal_outcomes. That bridge table was
+      // designed to unify SPX Slayer + Night Hawk accuracy under one ledger but has never
+      // received a single write in production (nothing calls POST /api/signals/record outside
+      // its own route file) — this JOIN used to always return zero rows, so signalAccuracy and
+      // the regime-conditional recommendation below were permanently stuck on "INSUFFICIENT
+      // DATA". See docs/audit/FINDINGS.md and src/lib/signal-accuracy.ts.
+      fetchSignalAccuracyBySource(),
     ]);
 
     const regimeRow = regime.status === "fulfilled" && regime.value.rows.length > 0
@@ -125,23 +99,27 @@ export async function GET(req: NextRequest) {
     const briefRow = briefRowRaw && briefDateYmd && isPremarketBriefFresh(briefDateYmd, todayEtYmd())
       ? briefRowRaw
       : null;
-    const signalRows: SignalAccuracyRow[] =
-      signalStats.status === "fulfilled" ? (signalStats.value.rows as SignalAccuracyRow[]) : [];
-    const regimeAccRows: RegimeAccuracyRow[] =
-      regimeAccuracy.status === "fulfilled" ? (regimeAccuracy.value.rows as RegimeAccuracyRow[]) : [];
+    const bySource: SignalAccuracyBySource =
+      signalAcc.status === "fulfilled" ? signalAcc.value : EMPTY_SIGNAL_ACCURACY;
+    const blended = blendedAccuracy(bySource);
 
     // Derive platform-wide intelligence summary
     const criticalAnomalies = anomalyRows.filter((a) => a.severity === "CRITICAL");
     const urgentCoaching = coachingRows.filter((c) => c.urgency === "CRITICAL" || c.urgency === "HIGH");
     const currentRegime = regimeRow?.composite ?? "UNKNOWN";
 
-    // Best and worst performing regimes
-    const bestRegime = regimeAccRows[0] ?? null;
-    const worstRegime = regimeAccRows[regimeAccRows.length - 1] ?? null;
-
-    // Is current regime historically profitable?
-    const currentRegimeAcc = regimeAccRows.find((r) => r.regime === currentRegime);
-    const currentRegimeProfitable = currentRegimeAcc ? Number(currentRegimeAcc.win_rate) > 50 : null;
+    // Is the platform's real, blended (SPX Slayer + Night Hawk) accuracy currently good?
+    // NOTE: this used to be conditioned on the CURRENT market regime (bull/bear/chop) via
+    // signal_events.metadata->>'regime' — but that column was never populated by any real
+    // writer even before signal_events went dead, and neither spx_play_outcomes nor
+    // nighthawk_play_outcomes tag a row with "which regime was active when this was opened."
+    // A genuine regime-conditional breakdown isn't derivable from the real ledgers without a
+    // new schema column/join, which is out of scope for this data-source fix — so this is now
+    // conditioned on real accumulated sample size instead of a fabricated regime match.
+    const currentRegimeProfitable =
+      blended.total >= MIN_SAMPLE_FOR_RECOMMENDATION && blended.winRate != null
+        ? blended.winRate > 50
+        : null;
 
     return NextResponse.json({
       // Current state
@@ -188,19 +166,17 @@ export async function GET(req: NextRequest) {
         publishedAt: briefRow.published_at,
       } : null,
 
-      // Signal accuracy
-      signalAccuracy: signalRows.reduce((acc: Record<string, { total: number; wins: number; winRate: number }>, r) => {
-        acc[r.signal_source] = { total: Number(r.total), wins: Number(r.wins), winRate: Number(r.win_rate) };
-        return acc;
-      }, {}),
+      // Signal accuracy — real numbers per source (SPX_SLAYER, NIGHT_HAWK) from the live
+      // outcome ledgers. winRate is null (never a bogus 0%) until that source has a closed
+      // sample.
+      signalAccuracy: bySource,
 
-      // Regime-conditional accuracy
-      regimeAccuracy: regimeAccRows.map((r) => ({
-        regime: r.regime,
-        total: Number(r.total),
-        wins: Number(r.wins),
-        winRate: Number(r.win_rate),
-      })),
+      // Regime-conditional accuracy: intentionally empty. See the currentRegimeProfitable
+      // comment above — neither real ledger tags an outcome with the regime active at entry,
+      // so a genuine per-regime breakdown can't be computed here without new schema/joins.
+      // Kept as an array (not removed) so any existing consumer iterating this field doesn't
+      // need a shape change.
+      regimeAccuracy: [] as Array<{ regime: string; total: number; wins: number; winRate: number | null }>,
 
       // Cross-cron synthesis
       intelligence: {
@@ -208,16 +184,19 @@ export async function GET(req: NextRequest) {
         currentRegimeProfitable,
         criticalAnomalyCount: criticalAnomalies.length,
         urgentCoachingCount: urgentCoaching.length,
-        bestPerformingRegime: bestRegime?.regime ?? null,
-        worstPerformingRegime: worstRegime?.regime ?? null,
-        // Recommendation for signal-taking right now
+        // No longer regime-keyed (see regimeAccuracy above) — signalAccuracy above already
+        // exposes both real sources' numbers directly.
+        bestPerformingRegime: null,
+        worstPerformingRegime: null,
+        // Recommendation for signal-taking right now — real blended (SPX Slayer + Night
+        // Hawk) win rate instead of the always-empty regime-conditional join.
         signalRecommendation: currentRegimeProfitable === false
-          ? `REDUCE SIZE — current regime (${currentRegime}) has historically underperformed. Win rate: ${currentRegimeAcc?.win_rate ?? "unknown"}%.`
+          ? `REDUCE SIZE — blended signal win rate is ${blended.winRate}% across ${blended.total} closed plays (SPX Slayer + Night Hawk, current regime ${currentRegime}).`
           : criticalAnomalies.length > 0
           ? `CAUTION — ${criticalAnomalies.length} critical anomaly(ies) detected. Verify direction before opening.`
           : currentRegimeProfitable === true
-          ? `NORMAL SIZE — ${currentRegime} has a ${currentRegimeAcc?.win_rate}% historical win rate. Proceed with confidence.`
-          : "INSUFFICIENT DATA — not enough signals to assess regime accuracy yet.",
+          ? `NORMAL SIZE — blended signal win rate is ${blended.winRate}% across ${blended.total} closed plays (SPX Slayer + Night Hawk). Proceed with confidence.`
+          : `INSUFFICIENT DATA — only ${blended.total} closed signal(s) so far (need ${MIN_SAMPLE_FOR_RECOMMENDATION}+ to assess accuracy).`,
       },
 
       timestamp: new Date().toISOString(),

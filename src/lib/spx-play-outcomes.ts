@@ -124,7 +124,9 @@ export async function recordPlayWriteFailure(
 
   if (!dbConfigured()) return;
   try {
-    const { getMeta, setMeta } = await import("@/lib/db");
+    // Relative import (not the "@/" alias) — see readPlayWriteFailures()/fetchPlayOutcomeStats()
+    // below for why.
+    const { getMeta, setMeta } = await import("./db");
     // Read-modify-write the durable cross-replica count so the counter survives
     // restarts and is visible on the API replica (not just the cron replica).
     let persisted: PlayWriteFailureState = next;
@@ -150,7 +152,13 @@ export async function recordPlayWriteFailure(
 export async function readPlayWriteFailures(): Promise<PlayWriteFailureState> {
   if (!dbConfigured()) return memoryWriteFailures;
   try {
-    const { getMeta } = await import("@/lib/db");
+    // Relative import: under Node 20 + node:test's --experimental-test-module-mocks, a
+    // dynamic import() of the "@/" tsconfig-path alias from inside a mocked module graph
+    // resolves incorrectly (mis-resolves to a literal "@/lib/db" subpath instead of going
+    // through tsx's alias hook) — confirmed via a direct repro; Node 22 doesn't hit this.
+    // A same-directory relative specifier sidesteps alias resolution entirely and works on
+    // both. All of this file's other dynamic `@/lib/db` imports below use the same fix.
+    const { getMeta } = await import("./db");
     const raw = await getMeta(PLAY_WRITE_FAILURE_META_KEY);
     if (raw) return JSON.parse(raw) as PlayWriteFailureState;
   } catch {
@@ -225,7 +233,7 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
     return id;
   }
 
-  const { insertPlayOutcomeEntry } = await import("@/lib/db");
+  const { insertPlayOutcomeEntry } = await import("./db");
   try {
     const id = await insertPlayOutcomeEntry({
       open_play_id: snapshot.open_play_id,
@@ -281,7 +289,7 @@ export async function recordPlayClose(
     return;
   }
 
-  const { closePlayOutcomeRow } = await import("@/lib/db");
+  const { closePlayOutcomeRow } = await import("./db");
   try {
     const updated = await closePlayOutcomeRow(openPlayId, {
       exit_price: close.exit_price,
@@ -401,6 +409,6 @@ export async function fetchRecentPlayOutcomes(limit = 50): Promise<PlayOutcomeRo
   if (!dbConfigured()) {
     return memoryOutcomes.slice(0, limit);
   }
-  const { fetchRecentPlayOutcomeRows } = await import("@/lib/db");
+  const { fetchRecentPlayOutcomeRows } = await import("./db");
   return fetchRecentPlayOutcomeRows(limit);
 }

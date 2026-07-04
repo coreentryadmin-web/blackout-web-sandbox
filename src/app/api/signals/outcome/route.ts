@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 
+// ORPHANED (2026-07-04, docs/audit/FINDINGS.md): the only INSERT path into signal_outcomes,
+// and — like sibling route /api/signals/record — has zero callers anywhere in the codebase.
+// signal_events/signal_outcomes have never received a single write in production. See
+// src/app/api/signals/record/route.ts and 004_god_tier_features.sql for the full context.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

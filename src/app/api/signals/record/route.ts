@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 
+// ORPHANED (2026-07-04, docs/audit/FINDINGS.md): this is the only INSERT path into
+// signal_events, and nothing in the codebase calls it — grepping the entire src/ tree turns
+// up zero callers outside this route file. signal_events/signal_outcomes have never
+// received a single write in production. The real, live outcome ledgers are
+// spx_play_outcomes (SPX Slayer) and nighthawk_play_outcomes (Night Hawk) in src/lib/db.ts;
+// /api/platform/intel and the Night Hawk platform-intel snapshot read accuracy from those
+// (src/lib/signal-accuracy.ts). Left in place (not deleted) since removing the table/routes
+// isn't unambiguously safe to do alongside that fix — see 004_god_tier_features.sql.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

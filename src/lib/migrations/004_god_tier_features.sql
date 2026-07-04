@@ -67,6 +67,20 @@ CREATE TABLE IF NOT EXISTS platform_briefs (
 CREATE INDEX IF NOT EXISTS platform_briefs_date_type_idx ON platform_briefs(brief_date DESC, brief_type);
 
 -- 5. Signal events (every signal the platform generates)
+--
+-- ORPHANED (2026-07-04, docs/audit/FINDINGS.md): this table + signal_outcomes below were
+-- meant to unify SPX Slayer + Night Hawk signal accuracy under one ledger, but nothing in
+-- the codebase ever writes to it — POST /api/signals/record (the only INSERT path) has zero
+-- callers outside its own route file, confirmed by grepping the entire src/ tree. The two
+-- real, live outcome ledgers are spx_play_outcomes (SPX Slayer, src/lib/db.ts) and
+-- nighthawk_play_outcomes (Night Hawk, src/lib/db.ts) — /api/platform/intel and the Night
+-- Hawk platform-intel snapshot now read accuracy from those instead (src/lib/signal-accuracy.ts).
+-- Left in place (not dropped) because /api/signals/open and its sibling routes
+-- (src/app/api/signals/{record,open,outcome}/route.ts) are still exercised by
+-- scripts/gha-http-smoke.mjs + scripts/validate-deploy.mjs as an auth-gate smoke check;
+-- removing the table would require also touching those scripts for no functional gain, since
+-- nothing depends on the DATA in this table anymore. Do not add new writers here — extend
+-- spx_play_outcomes/nighthawk_play_outcomes instead.
 CREATE TABLE IF NOT EXISTS signal_events (
   id BIGSERIAL PRIMARY KEY,
   fired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -88,6 +102,7 @@ CREATE INDEX IF NOT EXISTS signal_events_fired_at_idx ON signal_events(fired_at 
 CREATE INDEX IF NOT EXISTS signal_events_source_idx ON signal_events(signal_source, fired_at DESC);
 
 -- 6. Signal outcomes (T+15, T+30, T+60, EOD checkpoints for each signal)
+-- ORPHANED alongside signal_events above — see that comment. Never populated in production.
 CREATE TABLE IF NOT EXISTS signal_outcomes (
   id BIGSERIAL PRIMARY KEY,
   signal_event_id BIGINT REFERENCES signal_events(id) ON DELETE CASCADE,
