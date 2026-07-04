@@ -54,6 +54,7 @@ import {
 import {
   maybeLogSpxPlay,
   logSpxShadowFactors,
+  logSpxMacroPredictionsShadowFactor,
   logSpxSkewShadowFactors,
   logSpxEcosystemShadowFactors,
   logMegaCapCatalystShadowFactors,
@@ -1157,6 +1158,15 @@ export async function evaluateSpxPlay(
   // prior bonus mutates confluence.score" contract as logSpxShadowFactors just above.
   firePlayTelemetry("logSpxSkewShadowFactors", () =>
     logSpxSkewShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE macro-prediction factor logging (src/lib/spx-signals-shadow-predictions.ts)
+  // — sibling of the call above, same fire-and-forget/purely-observational contract, same
+  // pre-Night-Hawk-bonus score/grade snapshot. Observes UW prediction-market consensus
+  // specifically around macroHardBlock's own CPI/FOMC/NFP/PPI/GDP hard-block windows
+  // (spx-play-gates.ts) — zero effect on computeSpxConfluence()'s actual return value.
+  firePlayTelemetry("logSpxMacroPredictionsShadowFactor", () =>
+    logSpxMacroPredictionsShadowFactor(desk, { score: confluence.score, grade: confluence.grade })
   );
 
   // SHADOW-MODE ecosystem-context factor logging (src/lib/spx-signals-shadow-ecosystem.ts)
