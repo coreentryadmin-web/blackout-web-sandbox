@@ -1,6 +1,34 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { isTransientPgError } from "@/lib/db-transient";
 
+// Deliberately NOT importing rateLimiterEnvNumber from provider-rate-limiter-shared.ts here: that
+// module's dynamic `import("@/lib/redis-pubsub")` drags `ioredis` (and `node:diagnostics_channel`)
+// into any edge-runtime bundle that transitively imports db.ts, breaking `next build`. This is a
+// trivial one-liner — inlined instead of shared.
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+// PgBouncer sits in front of Postgres on Railway (docs/PGBOUNCER-SETUP.md) and has a fixed
+// DEFAULT_POOL_SIZE (backend budget) shared by every web replica. Each replica's own PG_POOL_MAX
+// must leave headroom under (budget / REPLICA_COUNT) or N replicas' pools can jointly
+// oversubscribe the pooler — confirmed live: production ran PG_POOL_MAX=15 x 5 replicas = 75
+// against a 20-backend budget, a real 3.75x oversubscription that a prior "Query read timeout"
+// investigation missed by modeling the ceiling off the code default (5) instead of the
+// documented production override (15) (docs/audit/FINDINGS.md, 2026-07-03 entry). Both knobs are
+// overridable so this stays correct if the topology or PgBouncer config ever changes.
+/** Exported for unit testing — pure, no env/module-load-order dependence. */
+export function computeSafePgPoolMaxDefault(pgBouncerBackendBudget: number, replicaCount: number): number {
+  return Math.max(1, Math.floor(pgBouncerBackendBudget / Math.max(1, Math.floor(replicaCount))));
+}
+
+const REPLICA_COUNT_FOR_POOL = Math.max(1, Math.floor(envNumber("REPLICA_COUNT", 1)));
+const PGBOUNCER_BACKEND_BUDGET = envNumber("PGBOUNCER_DEFAULT_POOL_SIZE", 20);
+const SAFE_PG_POOL_MAX_DEFAULT = computeSafePgPoolMaxDefault(PGBOUNCER_BACKEND_BUDGET, REPLICA_COUNT_FOR_POOL);
+
 let pool: Pool | null = null;
 let poolInit: Promise<Pool> | null = null;
 let activeMode: "private" | "public" | "unknown" = "unknown";
@@ -106,17 +134,36 @@ async function createPool(): Promise<Pool> {
       }
 
       // PgBouncer sits in front of Postgres on Railway. It handles real connection pooling.
-      // We keep our own pool small (default 5) — PgBouncer multiplexes these to many clients.
-      // Set PG_POOL_MAX env var to override (e.g. PG_POOL_MAX=5 in Railway service env vars).
-      // statement_timeout (server-enforced) + query_timeout (driver-enforced) bound EVERY runtime
-      // query so a single blocked/slow query can't pin a pooled connection forever. With max:5,
-      // five unbounded queries would exhaust the pool and stall the replica. Override via
-      // PG_STATEMENT_TIMEOUT_MS — keep it above the slowest legit query (heavy flow_alerts JSONB scans).
+      // Default is computed from the documented PgBouncer backend budget divided across replicas
+      // (SAFE_PG_POOL_MAX_DEFAULT, see top of file) rather than a flat guess — set PG_POOL_MAX to
+      // override explicitly. statement_timeout (server-enforced) + query_timeout (driver-enforced)
+      // bound EVERY runtime query so a single blocked/slow query can't pin a pooled connection
+      // forever — without that, N unbounded queries would exhaust the pool and stall the replica.
+      // Override via PG_STATEMENT_TIMEOUT_MS — keep it above the slowest legit query (heavy
+      // flow_alerts JSONB scans).
       const statementTimeoutMs = parseInt(process.env.PG_STATEMENT_TIMEOUT_MS ?? "30000", 10);
+      const explicitPoolMax = process.env.PG_POOL_MAX
+        ? parseInt(process.env.PG_POOL_MAX, 10)
+        : null;
+      const poolMax =
+        explicitPoolMax != null && Number.isFinite(explicitPoolMax) && explicitPoolMax > 0
+          ? explicitPoolMax
+          : SAFE_PG_POOL_MAX_DEFAULT;
+      // An explicit override can still oversubscribe the pooler (e.g. production ran
+      // PG_POOL_MAX=15 x 5 replicas = 75 against a 20-backend budget) — we don't silently clobber
+      // an operator's explicit setting, but this makes the risk visible instead of invisible.
+      if (poolMax * REPLICA_COUNT_FOR_POOL > PGBOUNCER_BACKEND_BUDGET) {
+        console.warn(
+          `[db] PG_POOL_MAX=${poolMax} x REPLICA_COUNT=${REPLICA_COUNT_FOR_POOL} = ` +
+            `${poolMax * REPLICA_COUNT_FOR_POOL} exceeds the PgBouncer backend budget ` +
+            `(PGBOUNCER_DEFAULT_POOL_SIZE=${PGBOUNCER_BACKEND_BUDGET}). Cluster-wide Postgres ` +
+            `connection oversubscription risk — lower PG_POOL_MAX or raise PgBouncer's pool size.`
+        );
+      }
       const viaPooler = connectionViaPooler(candidate.url);
       const livePool = new Pool({
         connectionString: candidate.url,
-        max: parseInt(process.env.PG_POOL_MAX ?? "5", 10),
+        max: poolMax,
         idleTimeoutMillis: 30_000,
         ssl: poolSsl(candidate.url),
         connectionTimeoutMillis: 15_000,
@@ -415,13 +462,6 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_largo_messages_session
     ON largo_messages(session_id, created_at ASC);
-  `);
-  // Additive: the actual tool-call RESULTS an assistant answer was grounded in (largo-verifier.ts's
-  // numeric-grounding engine was previously self-test-only — the ground-truth side never existed).
-  // NULL for user-role rows and every pre-existing assistant row; only newly-appended assistant turns
-  // populate it. Nullable by design — no backfill possible for history.
-  await p.query(`
-    ALTER TABLE largo_messages ADD COLUMN IF NOT EXISTS tool_results JSONB;
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS nighthawk_editions (
@@ -3913,7 +3953,7 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
       FROM nighthawk_play_outcomes o
       INNER JOIN nighthawk_editions e ON e.edition_for = o.edition_for
       WHERE o.outcome <> 'pending'
-        AND o.edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+        AND o.edition_for >= (CURRENT_DATE - ($1::int || ' days')::interval)
       ORDER BY o.edition_for DESC, o.ticker ASC
       `,
       [safeWindowDays]

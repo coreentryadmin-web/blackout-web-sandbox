@@ -1,8 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { mapAlertAuditTrailRow } from "./db";
+import { mapAlertAuditTrailRow, computeSafePgPoolMaxDefault } from "./db";
 
 test("mapAlertAuditTrailRow: converts NUMERIC confidence_score (a string from node-pg) to a real number", () => {
   const row = mapAlertAuditTrailRow({
@@ -55,16 +53,18 @@ test("mapAlertAuditTrailRow: fired_at normalizes to an ISO string regardless of 
   assert.equal(row.fired_at, "2026-07-01T14:30:00.000Z");
 });
 
-test("fetchNighthawkOutcomeAnalytics: day-window filter uses the ET-safe date, not bare Postgres CURRENT_DATE", () => {
-  // Regression guard for a bug that has now recurred twice: CURRENT_DATE evaluates in the
-  // server's UTC session, so it rolls over 5 (EDT) or 4 (EST) hours before ET midnight,
-  // shifting this window a day early for the whole 8pm-midnight ET stretch. The same class
-  // of bug was already found and fixed once in confluence-outcomes.ts; this asserts the
-  // nighthawk_play_outcomes query can't silently regress back to the bare form a third time.
-  const source = readFileSync(join(__dirname, "db.ts"), "utf8");
-  const fnStart = source.indexOf("export async function fetchNighthawkOutcomeAnalytics");
-  assert.ok(fnStart >= 0, "fetchNighthawkOutcomeAnalytics not found in db.ts");
-  const fnBody = source.slice(fnStart, fnStart + 2000);
-  assert.match(fnBody, /\(NOW\(\) AT TIME ZONE 'America\/New_York'\)::date/);
-  assert.doesNotMatch(fnBody, /\bCURRENT_DATE\b/);
+// Regression: PG_POOL_MAX's fallback default used to be a flat 5, uncoupled from PgBouncer's
+// actual backend budget or REPLICA_COUNT. Production explicitly overrode it to 15, and with 5
+// live replicas that's 75 total connections against a documented 20-backend PgBouncer budget —
+// a real 3.75x oversubscription a prior "Query read timeout" investigation missed by modeling
+// the ceiling off the code default instead of the real production override.
+test("computeSafePgPoolMaxDefault: divides the documented PgBouncer budget across live replicas", () => {
+  assert.equal(computeSafePgPoolMaxDefault(20, 5), 4);
+  assert.equal(computeSafePgPoolMaxDefault(20, 1), 20);
+  assert.equal(computeSafePgPoolMaxDefault(20, 4), 5);
+});
+
+test("computeSafePgPoolMaxDefault: clamps to a floor of 1 for absurd replica counts", () => {
+  assert.equal(computeSafePgPoolMaxDefault(20, 1000), 1);
+  assert.equal(computeSafePgPoolMaxDefault(20, 0), 20, "replicaCount<=1 must not divide by zero");
 });

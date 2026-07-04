@@ -11,6 +11,7 @@ import { uwRateLimiterStats } from "@/lib/providers/uw-rate-limiter";
 import { polygonRateLimiterStats } from "@/lib/providers/polygon-rate-limiter";
 import { getLaunchStatusSnapshot, type LaunchStatusSnapshot } from "@/lib/tool-access";
 import { buildOpsConfigStatus, type OpsConfigStatus } from "@/lib/ops-config-status";
+import { getDatabasePoolStats } from "@/lib/db";
 
 export type AdminHealthPayload = {
   generated_at: string;
@@ -41,6 +42,14 @@ export type AdminHealthPayload = {
     polygon: ReturnType<typeof polygonRateLimiterStats>;
   };
   route_errors: ReturnType<typeof getAdminRouteErrors>;
+  /**
+   * This replica's Postgres pool stats (`total`/`idle`/`waiting`). `waiting` > 0 means queries are
+   * queued for a connection slot — a leading indicator of PG_POOL_MAX x REPLICA_COUNT approaching
+   * PgBouncer's backend budget (docs/PGBOUNCER-SETUP.md), the exact pattern behind the 2026-07-03
+   * "Query read timeout" investigation. Folded into `issues`/counts below so it's visible without a
+   * direct Postgres connection (unavailable from this sandbox — see CLAUDE.md).
+   */
+  db_pool: Awaited<ReturnType<typeof getDatabasePoolStats>>;
   market_health_ok: boolean;
   // True when the cluster-wide UW Redis ceiling is down AND we are multi-replica (uw.degraded). In
   // that state each limiter is on the per-replica budget and the cluster can overshoot the upstream
@@ -66,33 +75,64 @@ export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
   });
 
   const uwStats = uwRateLimiterStats();
+  const dbPoolStats = await getDatabasePoolStats();
+  // Waiting queries queued for a pool slot are a leading indicator of connection-pool
+  // exhaustion (PG_POOL_MAX x REPLICA_COUNT approaching PgBouncer's backend budget) — the exact
+  // signal missing from the 2026-07-03 "Query read timeout" investigation, which had no way to
+  // see this without a direct Postgres connection. Only escalate to CRITICAL (and gate
+  // health_ok) when waiting queries have caught up to the pool's full size — genuine saturation,
+  // not a single query momentarily queued behind a burst.
+  const dbPoolWaiting = dbPoolStats?.configured ? dbPoolStats.waiting : 0;
+  const dbPoolSaturated = dbPoolWaiting > 0 && dbPoolStats != null && dbPoolWaiting >= dbPoolStats.total;
   // Redis-degraded = UW Redis ceiling down AND multi-replica (uwStats.degraded already encodes both;
   // a single replica on local pacing is NOT degraded). buildSpxAdminIssues lives outside this cluster
   // and does not yet know about the limiter, so we surface the signal HERE: synthesize a critical
   // issue, bump the critical count, and fold it into health_ok so the admin console flags it (#8/#78).
   const redisDegraded = uwStats.degraded === true;
-  const issues = redisDegraded
-    ? [
-        {
-          id: "rate_limit:redis_degraded",
-          severity: "critical" as const,
-          category: "rate_limit",
-          title: "UW rate-limiter degraded — Redis ceiling down",
-          detail:
-            `Cluster-wide UW Redis ceiling unavailable; each replica is on per-replica pacing ` +
-            `${uwStats.degradedLocalRps.toFixed(2)} rps (REPLICA_COUNT=${uwStats.replicaCount}). ` +
-            `If REPLICA_COUNT is stale the cluster can overshoot the upstream UW cap.`,
-        },
-        ...issuesPayload.issues,
-      ]
-    : issuesPayload.issues;
+  const syntheticIssues = [
+    ...(redisDegraded
+      ? [
+          {
+            id: "rate_limit:redis_degraded",
+            severity: "critical" as const,
+            category: "rate_limit",
+            title: "UW rate-limiter degraded — Redis ceiling down",
+            detail:
+              `Cluster-wide UW Redis ceiling unavailable; each replica is on per-replica pacing ` +
+              `${uwStats.degradedLocalRps.toFixed(2)} rps (REPLICA_COUNT=${uwStats.replicaCount}). ` +
+              `If REPLICA_COUNT is stale the cluster can overshoot the upstream UW cap.`,
+          },
+        ]
+      : []),
+    ...(dbPoolWaiting > 0
+      ? [
+          {
+            id: "db_pool:waiting",
+            severity: (dbPoolSaturated ? "critical" : "warning") as "critical" | "warning",
+            category: "database",
+            title: dbPoolSaturated
+              ? "Postgres pool saturated — queries queued for every connection slot"
+              : "Postgres pool contention — queries queued for a connection",
+            detail:
+              `${dbPoolWaiting} quer${dbPoolWaiting === 1 ? "y" : "ies"} on this replica waiting for a ` +
+              `pool slot (total=${dbPoolStats?.total ?? 0}, idle=${dbPoolStats?.idle ?? 0}). Leading ` +
+              `indicator of PG_POOL_MAX x REPLICA_COUNT approaching PgBouncer's backend budget — see ` +
+              `docs/PGBOUNCER-SETUP.md.`,
+          },
+        ]
+      : []),
+  ];
+  const issues = [...syntheticIssues, ...issuesPayload.issues];
 
   return {
     generated_at: new Date().toISOString(),
-    health_ok: issuesPayload.health_ok && marketHealth.ok && !redisDegraded,
+    health_ok: issuesPayload.health_ok && marketHealth.ok && !redisDegraded && !dbPoolSaturated,
     counts: {
-      critical: issuesPayload.counts.critical + (redisDegraded ? 1 : 0),
-      warning: issuesPayload.counts.warning,
+      critical:
+        issuesPayload.counts.critical +
+        (redisDegraded ? 1 : 0) +
+        (dbPoolSaturated ? 1 : 0),
+      warning: issuesPayload.counts.warning + (dbPoolWaiting > 0 && !dbPoolSaturated ? 1 : 0),
       info: issuesPayload.counts.info,
       api_errors: issuesPayload.api_errors.length,
     },
@@ -109,6 +149,7 @@ export async function buildAdminHealthSnapshot(): Promise<AdminHealthPayload> {
       polygon: polygonRateLimiterStats(),
     },
     route_errors: getAdminRouteErrors(),
+    db_pool: dbPoolStats,
     market_health_ok: marketHealth.ok,
     redis_degraded: redisDegraded,
     launch_status: getLaunchStatusSnapshot(),
