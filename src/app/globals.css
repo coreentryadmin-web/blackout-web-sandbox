@@ -1467,16 +1467,17 @@ body::before {
   gap: 0;
 }
 
-.bie-intelligence-field {
-  background: radial-gradient(
-    ellipse 88% 72% at 50% 42%,
-    rgba(0, 229, 255, 0.04) 0%,
-    rgba(4, 4, 7, 0) 68%
-  );
+.bie-intelligence-field,
+.bie-reactor-hero {
+  background: transparent;
+}
+
+.bie-reactor-hero .bie-field-stage {
+  background: #040407;
 }
 
 .bie-reactor-stage {
-  min-height: clamp(520px, 74vh, 880px);
+  min-height: clamp(560px, 78vh, 920px);
   flex: 1 1 auto;
   display: flex;
   align-items: stretch;
@@ -1490,8 +1491,8 @@ body::before {
 }
 
 .bie-field-canvas {
-  min-height: clamp(520px, 74vh, 880px);
-  max-height: min(880px, 78vh);
+  min-height: clamp(560px, 78vh, 920px);
+  max-height: min(920px, 82vh);
   aspect-ratio: auto;
 }
 
@@ -1588,11 +1589,11 @@ body::before {
   bottom: 0;
   z-index: 6;
   text-align: center;
-  padding: 2.75rem clamp(1rem, 4vw, 2.5rem) 1.25rem;
+  padding: 2.5rem clamp(1rem, 4vw, 2.5rem) 1rem;
   background: linear-gradient(
     to top,
-    rgba(4, 4, 7, 0.96) 0%,
-    rgba(4, 4, 7, 0.72) 42%,
+    rgba(4, 4, 7, 0.92) 0%,
+    rgba(4, 4, 7, 0.55) 38%,
     rgba(4, 4, 7, 0) 100%
   );
   pointer-events: none;
@@ -1759,17 +1760,17 @@ body::before {
 
 .bie-reactor-ring-stroke {
   fill: none;
-  stroke: rgba(93, 247, 255, 0.09);
-  stroke-width: 1.15;
+  stroke: rgba(93, 247, 255, 0.06);
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
   transition: stroke 0.55s ease, stroke-width 0.55s ease;
 }
 
-.bie-reactor-ring-0 .bie-reactor-ring-stroke { stroke: rgba(191, 95, 255, 0.1); }
-.bie-reactor-ring-1 .bie-reactor-ring-stroke { stroke: rgba(93, 247, 255, 0.11); }
-.bie-reactor-ring-2 .bie-reactor-ring-stroke { stroke: rgba(0, 230, 118, 0.09); }
-.bie-reactor-ring-3 .bie-reactor-ring-stroke { stroke: rgba(148, 226, 255, 0.08); }
-.bie-reactor-ring-4 .bie-reactor-ring-stroke { stroke: rgba(93, 247, 255, 0.07); }
+.bie-reactor-ring-0 .bie-reactor-ring-stroke { stroke: rgba(191, 95, 255, 0.07); }
+.bie-reactor-ring-1 .bie-reactor-ring-stroke { stroke: rgba(93, 247, 255, 0.08); }
+.bie-reactor-ring-2 .bie-reactor-ring-stroke { stroke: rgba(0, 230, 118, 0.06); }
+.bie-reactor-ring-3 .bie-reactor-ring-stroke { stroke: rgba(148, 226, 255, 0.05); }
+.bie-reactor-ring-4 .bie-reactor-ring-stroke { stroke: rgba(93, 247, 255, 0.05); }
 
 .bie-reactor-ring.is-lit .bie-reactor-ring-stroke {
   stroke-width: 1.65;
@@ -1883,7 +1884,7 @@ body::before {
 }
 
 .bie-reactor-live .bie-reactor-ring-stroke {
-  animation: bie-reactor-ring-glow 6s ease-in-out infinite;
+  animation: bie-reactor-ring-glow 8s ease-in-out infinite;
 }
 
 .bie-reactor-ring-0 .bie-reactor-ring-stroke { animation-delay: 0s; }
@@ -1893,8 +1894,8 @@ body::before {
 .bie-reactor-ring-4 .bie-reactor-ring-stroke { animation-delay: -4.8s; }
 
 @keyframes bie-reactor-ring-glow {
-  0%, 100% { stroke-opacity: 0.55; }
-  50% { stroke-opacity: 1; }
+  0%, 100% { stroke-opacity: 0.45; }
+  50% { stroke-opacity: 0.85; }
 }
 
 .bie-reactor-core-ring {

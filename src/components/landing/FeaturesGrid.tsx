@@ -8,6 +8,15 @@ import { ProductMark, MARK_ACCENT, type MarkProduct } from "@/components/marks/P
 import { LandingBackdrop } from "@/components/landing/LandingBackdrop";
 import { BieBrainBanner } from "@/components/landing/BieBrainBanner";
 
+const PLATFORM_INSTRUMENTS = [
+  { name: "SPX Slayer", href: "/dashboard", accent: "#00e676" },
+  { name: "HELIX", href: "/flows", accent: "#bf5fff" },
+  { name: "BlackOut Thermal", href: "/heatmap", accent: "#ff6b2b" },
+  { name: "Largo", href: "/terminal", accent: "#22d3ee" },
+  { name: "Night Hawk", href: "/nighthawk", accent: "#ff2d55" },
+  { name: "BlackOut Grid", href: "/grid", accent: "#ffcc4d" },
+] as const;
+
 type Weapon = {
   /** null => Pre-Market (feature, no sigil). */
   mark: MarkProduct | null;
@@ -108,32 +117,42 @@ const card = {
 
 export function FeaturesGrid() {
   return (
-    <section id="features" className="relative py-28 md:py-32 overflow-x-hidden">
-      <LandingBackdrop />
-
-      {/* Full-bleed — BIE pipeline uses the entire viewport width, not the bento column. */}
-      <div className="relative z-10 w-full mb-16 md:mb-20">
+    <>
+      {/* BIE reactor — no backdrop, chart, or product rail; the engine is the only hero. */}
+      <div id="bie" className="relative z-10 w-full">
         <BieBrainBanner />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8">
-        {/* header — mirrors Pricing/Faq */}
-        <motion.div
-          initial={{ opacity: 0, y: 26 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="mb-14 md:mb-20 text-center"
-        >
-          <p className="font-mono text-[10px] tracking-[0.35em] text-secondary uppercase mb-3">
-            Platform · 6 instruments
-          </p>
-          <h2 className="font-syne text-4xl md:text-5xl font-bold tracking-tight text-white">
-            The full desk
-          </h2>
-          <p className="mt-5 text-[15px] leading-relaxed text-secondary max-w-2xl mx-auto">
-            One membership. Every instrument on a single screen — structure, flow, positioning, and BlackOut Intelligence.
-          </p>
-        </motion.div>
+      <section id="features" className="relative py-28 md:py-32 overflow-x-hidden">
+        <LandingBackdrop />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 26 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mb-8 md:mb-10 text-center"
+          >
+            <p className="font-mono text-[10px] tracking-[0.35em] text-secondary uppercase mb-3">
+              Platform · 6 instruments
+            </p>
+            <h2 className="font-syne text-4xl md:text-5xl font-bold tracking-tight text-white">
+              The full desk
+            </h2>
+            <p className="mt-5 text-[15px] leading-relaxed text-secondary max-w-2xl mx-auto">
+              One membership. Every instrument on a single screen — structure, flow, positioning, and BlackOut Intelligence.
+            </p>
+          </motion.div>
+
+          <p className="bie-brain-products-eyebrow text-center">Platform instruments · powered by BIE</p>
+          <div className="bie-brain-product-rail mb-14 md:mb-16">
+            {PLATFORM_INSTRUMENTS.map((n) => (
+              <Link key={n.name} href={n.href} className="bie-brain-node" style={{ ["--node-accent" as string]: n.accent }}>
+                <span className="bie-brain-node-swatch" />
+                {n.name}
+              </Link>
+            ))}
+          </div>
 
         {/* EDITORIAL BENTO — asymmetric: SPX is a 2x2 flagship, Pre-Market a full-width
             band, the rest standard tiles. Breaks the uniform-grid sameness. */}
@@ -256,7 +275,8 @@ export function FeaturesGrid() {
             );
           })}
         </div>
-      </div>
-    </section>
+        </div>
+      </section>
+    </>
   );
 }
