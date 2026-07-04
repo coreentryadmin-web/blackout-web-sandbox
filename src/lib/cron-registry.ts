@@ -184,6 +184,18 @@ export const CRON_JOBS: CronJobDefinition[] = [
       "Roll up api_telemetry_events upstream failures and rate limits into admin incidents — catches sustained UW/Polygon/Anthropic outages without watching the dashboard",
   },
   {
+    key: "spx-issues-sync",
+    name: "SPX Issues Sync",
+    kind: "http",
+    path: "/api/cron/spx-issues-sync",
+    schedule_label: "~Every 5 min (7AM–4PM ET)",
+    stale_after_min: 20,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Computes SPX play/engine health issues (Claude arbiter veto, gate blocks/warnings, play-engine heartbeat silent/stale) and syncs them into admin_incidents — previously this only ran as a side effect of a human loading /api/admin/spx/dashboard, so BIE's discovery layer (fetchDiscoveryIncidents) went silently stale on SPX engine health whenever nobody was viewing that page",
+  },
+  {
     key: "data-correctness",
     name: "Data Correctness",
     kind: "http",

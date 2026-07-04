@@ -51,7 +51,7 @@ import {
   updateOpenPlay,
   type OpenPlayRow,
 } from "@/lib/spx-play-store";
-import { maybeLogSpxPlay } from "@/lib/providers/spx-signal-log";
+import { maybeLogSpxPlay, logSpxShadowFactors, logMegaCapCatalystShadowFactors } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
 import {
@@ -1135,6 +1135,26 @@ export async function evaluateSpxPlay(
   if (!confluence) {
     return scanningPayload(desk, null, pickIdleMessage());
   }
+
+  // SHADOW-MODE factor logging (src/lib/spx-signals-shadow.ts) — fire-and-forget,
+  // purely observational. Captures the RAW confluence.score/grade from
+  // computeSpxConfluence() above, BEFORE the Night Hawk prior bonus just below
+  // mutates confluence.score, so the logged "actual_score" pairs each shadow
+  // observation with the pure engine output it should be correlated against.
+  // computeSpxConfluence()'s return value itself is untouched by this call —
+  // see spx-signals.test.ts's byte-for-byte proof.
+  firePlayTelemetry("logSpxShadowFactors", () =>
+    logSpxShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE factor logging, catalyst edition (src/lib/spx-signals-shadow-
+  // catalysts.ts) — same fire-and-forget idiom, same pre-Night-Hawk-bonus
+  // score/grade snapshot as logSpxShadowFactors just above, kept as its own
+  // call (not folded into logSpxShadowFactors) so each shadow factor's
+  // wiring is independently reviewable/revertible.
+  firePlayTelemetry("logMegaCapCatalystShadowFactors", () =>
+    logMegaCapCatalystShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
 
   // NH morning prior: inject the Night Hawk evening signal as a signed confluence factor.
   // Bounded at ±3 — a soft prior, not an override. Only applies when the edition is fresh

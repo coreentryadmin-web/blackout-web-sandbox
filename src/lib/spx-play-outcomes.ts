@@ -1,4 +1,4 @@
-import { dbConfigured } from "@/lib/db";
+import { dbConfigured, fetchClosedPlayOutcomes } from "@/lib/db";
 import { nextMemoryPlayId } from "@/lib/spx-play-memory-id";
 import type { ClaudePlayVerdict } from "@/lib/spx-play-claude";
 import type { PlayConfirmationResult } from "@/lib/spx-play-confirmations";
@@ -124,7 +124,9 @@ export async function recordPlayWriteFailure(
 
   if (!dbConfigured()) return;
   try {
-    const { getMeta, setMeta } = await import("@/lib/db");
+    // Relative import (not the "@/" alias) — see readPlayWriteFailures()/fetchPlayOutcomeStats()
+    // below for why.
+    const { getMeta, setMeta } = await import("./db");
     // Read-modify-write the durable cross-replica count so the counter survives
     // restarts and is visible on the API replica (not just the cron replica).
     let persisted: PlayWriteFailureState = next;
@@ -150,7 +152,13 @@ export async function recordPlayWriteFailure(
 export async function readPlayWriteFailures(): Promise<PlayWriteFailureState> {
   if (!dbConfigured()) return memoryWriteFailures;
   try {
-    const { getMeta } = await import("@/lib/db");
+    // Relative import: under Node 20 + node:test's --experimental-test-module-mocks, a
+    // dynamic import() of the "@/" tsconfig-path alias from inside a mocked module graph
+    // resolves incorrectly (mis-resolves to a literal "@/lib/db" subpath instead of going
+    // through tsx's alias hook) — confirmed via a direct repro; Node 22 doesn't hit this.
+    // A same-directory relative specifier sidesteps alias resolution entirely and works on
+    // both. All of this file's other dynamic `@/lib/db` imports below use the same fix.
+    const { getMeta } = await import("./db");
     const raw = await getMeta(PLAY_WRITE_FAILURE_META_KEY);
     if (raw) return JSON.parse(raw) as PlayWriteFailureState;
   } catch {
@@ -225,7 +233,7 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
     return id;
   }
 
-  const { insertPlayOutcomeEntry } = await import("@/lib/db");
+  const { insertPlayOutcomeEntry } = await import("./db");
   try {
     const id = await insertPlayOutcomeEntry({
       open_play_id: snapshot.open_play_id,
@@ -281,7 +289,7 @@ export async function recordPlayClose(
     return;
   }
 
-  const { closePlayOutcomeRow } = await import("@/lib/db");
+  const { closePlayOutcomeRow } = await import("./db");
   try {
     const updated = await closePlayOutcomeRow(openPlayId, {
       exit_price: close.exit_price,
@@ -319,9 +327,35 @@ export async function fetchPlayOutcomeStats(): Promise<PlayOutcomeStats> {
   if (!dbConfigured()) {
     return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open"));
   }
-  const { fetchClosedPlayOutcomes } = await import("@/lib/db");
   const rows = await fetchClosedPlayOutcomes(500);
   return computePlayOutcomeStats(rows);
+}
+
+/**
+ * Windowed sibling of fetchPlayOutcomeStats() — same underlying fetcher
+ * (fetchClosedPlayOutcomes) and the same pure aggregation
+ * (computePlayOutcomeStats), but scoped to plays closed within the last
+ * `days` (falling back to opened_at when closed_at is null — the identical
+ * day-cutoff pattern getSpxTradeHistory already uses in
+ * src/lib/platform/spx-service.ts) instead of the last 500 all-time rows.
+ *
+ * fetchPlayOutcomeStats() itself deliberately stays all-time: it backs the
+ * public track record page (track-record-public.ts), the shadow-recompute
+ * cross-check (correctness/track-record-verifier.ts), admin analytics, and
+ * more — all of which want the platform's lifetime number. This sibling
+ * exists so a caller can compute a *rolling* win rate that lines up with
+ * another product's own rolling window (see get_spx_vs_nighthawk_comparison
+ * in largo/run-tool.ts) without repurposing — and risking regressing — the
+ * all-time function everything else already depends on.
+ */
+export async function fetchPlayOutcomeStatsForWindow(days: number): Promise<PlayOutcomeStats> {
+  const cutoff = Date.now() - days * 86_400_000;
+  const inWindow = (r: PlayOutcomeRow) => new Date(r.closed_at ?? r.opened_at).getTime() >= cutoff;
+  if (!dbConfigured()) {
+    return computePlayOutcomeStats(memoryOutcomes.filter((r) => r.outcome !== "open" && inWindow(r)));
+  }
+  const rows = await fetchClosedPlayOutcomes(500);
+  return computePlayOutcomeStats(rows.filter(inWindow));
 }
 
 function bucket(rows: PlayOutcomeRow[], path: PlayEntryPath) {
@@ -375,6 +409,6 @@ export async function fetchRecentPlayOutcomes(limit = 50): Promise<PlayOutcomeRo
   if (!dbConfigured()) {
     return memoryOutcomes.slice(0, limit);
   }
-  const { fetchRecentPlayOutcomeRows } = await import("@/lib/db");
+  const { fetchRecentPlayOutcomeRows } = await import("./db");
   return fetchRecentPlayOutcomeRows(limit);
 }

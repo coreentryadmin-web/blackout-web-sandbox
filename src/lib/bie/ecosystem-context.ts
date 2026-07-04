@@ -1,4 +1,4 @@
-import { dbQuery, dbConfigured } from "@/lib/db";
+import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 
@@ -73,6 +73,41 @@ export type EcosystemAnomaly = {
   direction: string | null;
 };
 
+/**
+ * SPX Slayer's own live/recent play-engine state — the one instrument
+ * ecosystem-context previously never read (spx_open_play/spx_play_outcomes),
+ * even though every other cross-instrument write path (0DTE, Night Hawk,
+ * flow/anomalies) was already wired in. Deliberately a single most-recent
+ * open + single most-recent closed play, not a history list — same shape
+ * precedent as `nighthawk_recent` above, not `recent_audit_entries`'s array.
+ */
+export type EcosystemSpxOpenPlay = {
+  direction: "long" | "short";
+  grade: string;
+  entry_price: number;
+  stop: number | null;
+  target: number | null;
+  headline: string;
+  status: "open" | "closed";
+  opened_at: string;
+};
+
+export type EcosystemSpxClosedPlay = {
+  direction: string;
+  grade: string;
+  entry_price: number;
+  exit_price: number | null;
+  pnl_pts: number | null;
+  outcome: "open" | "win" | "loss" | "breakeven";
+  headline: string;
+  closed_at: string | null;
+};
+
+export type EcosystemSpxPlay = {
+  open_play: EcosystemSpxOpenPlay | null;
+  last_closed: EcosystemSpxClosedPlay | null;
+};
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
@@ -80,6 +115,18 @@ export type EcosystemContext = {
   recent_audit_entries: EcosystemAuditEntry[];
   recent_flow: EcosystemFlowSummary | null;
   recent_anomalies: EcosystemAnomaly[];
+  /**
+   * SPX Slayer's own play-engine state — populated ONLY when `ticker` is
+   * "SPX" or "SPXW" (spx_open_play/spx_play_outcomes carry no ticker column
+   * at all; this is a single-instrument engine, so every other ticker gets
+   * `null` here without a query ever running, mirroring how zerodte_today/
+   * nighthawk_recent are scoped to the requested ticker, just via a
+   * conditional fetch instead of a WHERE clause since the source tables have
+   * nothing to filter on). `null` for a non-SPX ticker is indistinguishable
+   * from "SPX but no play exists yet" at the type level on purpose — a caller
+   * that cares about the difference already knows its own input ticker.
+   */
+  spx_play: EcosystemSpxPlay | null;
   /**
    * Is the live HELIX flow pipeline actually delivering frames right now,
    * cluster-wide (isFlowFrameFreshAnywhere, src/lib/flow-liveness.ts — a
@@ -113,6 +160,7 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   recent_audit_entries: "Last 10 alert_audit_log rows for this ticker — the unified audit trail across all three write-paths (0DTE, Night Hawk published, Night Hawk rejected).",
   recent_flow: "Same-day HELIX call/put/unknown-side premium totals (6h window), reported neutrally — never collapsed into a fabricated bullish/bearish label.",
   recent_anomalies: "Pattern-detected flow anomalies (concentration, coordinated sweep, premium spike, put surge) from the last 24h.",
+  spx_play: "SPX Slayer's own play-engine state — the current open play (if any) and the most recently closed play. Only populated for ticker SPX/SPXW (spx_open_play/spx_play_outcomes have no ticker column, single-instrument engine); null for every other ticker.",
   flow_feed_fresh: "Whether the live HELIX flow pipeline is actually delivering frames right now, cluster-wide — disambiguates a null/empty recent_flow or recent_anomalies as 'unknown' rather than 'genuinely quiet'.",
 };
 
@@ -128,12 +176,57 @@ function emptyContext(ticker: string): EcosystemContext {
     recent_audit_entries: [],
     recent_flow: null,
     recent_anomalies: [],
+    spx_play: null,
     flow_feed_fresh: false,
   };
 }
 
 const FLOW_SUMMARY_WINDOW_HOURS = 6;
 const ANOMALY_WINDOW_HOURS = 24;
+
+/** SPX Slayer trades exactly one instrument; spx_open_play/spx_play_outcomes
+ *  carry no ticker column to filter on, so scoping is a plain ticker-string
+ *  check rather than a SQL WHERE clause (see EcosystemContext.spx_play doc). */
+function isSpxSlayerTicker(upperTicker: string): boolean {
+  return upperTicker === "SPX" || upperTicker === "SPXW";
+}
+
+/** Reuses the exact same fetchers already used by src/lib/platform/spx-service.ts
+ *  (getSpxOpenPlay / getSpxTradeHistory) — no new SQL, no new write path. Only
+ *  called when the ticker is SPX/SPXW; see isSpxSlayerTicker. */
+async function fetchSpxPlaySummary(): Promise<EcosystemSpxPlay> {
+  const [openPlay, closedRows] = await Promise.all([
+    fetchOpenSpxPlay(todayEtYmd()),
+    fetchClosedPlayOutcomes(1),
+  ]);
+  const lastClosed = closedRows[0] ?? null;
+  return {
+    open_play: openPlay
+      ? {
+          direction: openPlay.direction,
+          grade: openPlay.grade,
+          entry_price: openPlay.entry_price,
+          stop: openPlay.stop,
+          target: openPlay.target,
+          headline: openPlay.headline,
+          status: openPlay.status,
+          opened_at: openPlay.opened_at,
+        }
+      : null,
+    last_closed: lastClosed
+      ? {
+          direction: lastClosed.direction,
+          grade: lastClosed.grade,
+          entry_price: lastClosed.entry_price,
+          exit_price: lastClosed.exit_price,
+          pnl_pts: lastClosed.pnl_pts,
+          outcome: lastClosed.outcome,
+          headline: lastClosed.headline,
+          closed_at: lastClosed.closed_at,
+        }
+      : null,
+  };
+}
 
 /**
  * Assembles a single ticker's cross-instrument snapshot from tables that
@@ -147,7 +240,10 @@ const ANOMALY_WINDOW_HOURS = 24;
  * three write-paths), a same-day HELIX flow summary straight from
  * flow_alerts — not just the $1M+ whale tier that reaches alert_audit_log, the
  * full tape for this one ticker — any pattern-detected flow anomalies
- * (flow_anomalies, written by the market-regime-detector cron), and whether
+ * (flow_anomalies, written by the market-regime-detector cron), SPX Slayer's
+ * own open/last-closed play state (spx_play — SPX/SPXW only, via the same
+ * fetchOpenSpxPlay/fetchClosedPlayOutcomes db.ts fetchers spx-service.ts
+ * already uses, no new query path), and whether
  * the live flow pipeline is actually up right now (flow_feed_fresh), so a
  * caller can tell "genuinely quiet" apart from "we can't see, ingestion is
  * down." Fails open to an all-empty context on any error — a lookup failure
@@ -159,7 +255,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, anomalyRes, flowFeedFresh] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes, anomalyRes, flowFeedFresh, spxPlay] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -220,6 +316,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
         [upper, ANOMALY_WINDOW_HOURS]
       ),
       isFlowFrameFreshAnywhere(),
+      isSpxSlayerTicker(upper) ? fetchSpxPlaySummary() : Promise.resolve(null),
     ]);
 
     const z = zerodteRes.rows[0];
@@ -271,6 +368,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
         severity: a.severity,
         direction: a.direction,
       })),
+      spx_play: spxPlay,
       flow_feed_fresh: flowFeedFresh,
     };
   } catch {

@@ -173,7 +173,14 @@ test("self-eval: coverage, verification and win-rate math", () => {
 
 // ── Layer 5: calibration harness (pure) ──────────────────────────────────────────
 
-import { computeCalibration, formatCalibration, type CalibrationInputRow } from "./calibration";
+import {
+  computeCalibration,
+  computeSpxCalibration,
+  formatCalibration,
+  formatSpxCalibration,
+  type CalibrationInputRow,
+  type SpxCalibrationInputRow,
+} from "./calibration";
 
 const calRow = (over: Partial<CalibrationInputRow>): CalibrationInputRow => ({
   session_date: "2026-07-06",
@@ -215,6 +222,62 @@ test("calibration: ungraded rows are excluded from every bucket", () => {
   const rows = [calRow({}), calRow({ plan_outcome: null, plan_pnl_pct: null }), calRow({ plan_outcome: "ungradeable" })];
   const r = computeCalibration(rows, { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
   assert.equal(r.graded_plays, 1);
+});
+
+// ── Layer 5: SPX Slayer calibration pass (additive, parallel to the 0DTE pass above) ─
+
+const spxRow = (over: Partial<SpxCalibrationInputRow>): SpxCalibrationInputRow => ({
+  session_date: "2026-07-06",
+  grade: "B",
+  outcome: "win",
+  pnl_pts: 5,
+  opened_at: "2026-07-06T14:15:00Z", // 10:15 ET — prime window
+  ...over,
+});
+
+test("spx calibration: buckets by grade band and time-of-day, cites evidence in recommendations", () => {
+  const rows: SpxCalibrationInputRow[] = [
+    // grade C/D: 2W/10L over 12 → underperformer (n≥10)
+    ...Array.from({ length: 10 }, () => spxRow({ grade: "C", outcome: "loss", pnl_pts: -3 })),
+    ...Array.from({ length: 2 }, () => spxRow({ grade: "C", outcome: "win", pnl_pts: 4 })),
+    // grade A/A+: 9W/2L over 11 → outperformer
+    ...Array.from({ length: 9 }, () => spxRow({ grade: "A", outcome: "win", pnl_pts: 6 })),
+    ...Array.from({ length: 2 }, () => spxRow({ grade: "A", outcome: "loss", pnl_pts: -2 })),
+  ];
+  const r = computeSpxCalibration(rows, { since: "2026-06-22", through: "2026-07-06", sessions: 10 });
+  assert.equal(r.closed_plays, 23);
+  const low = r.by_grade_band.find((b) => b.label === "C/D")!;
+  assert.equal(low.n, 12);
+  assert.equal(low.win_rate_pct, 16.7);
+  assert.ok(r.recommendations.some((x) => /SPX Slayer grade C\/D underperforms/.test(x)));
+  assert.ok(r.recommendations.some((x) => /SPX Slayer grade A\/A\+ outperforms/.test(x)));
+});
+
+test("spx calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as 0DTE", () => {
+  const rows = Array.from({ length: 5 }, () => spxRow({ grade: "C", outcome: "loss", pnl_pts: -3 }));
+  const r = computeSpxCalibration(rows, { since: "2026-07-01", through: "2026-07-06", sessions: 3 });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatSpxCalibration(r), /never tunes on noise/);
+});
+
+test("spx calibration: open (unclosed) plays are excluded from every bucket", () => {
+  const rows = [spxRow({}), spxRow({ outcome: "open", pnl_pts: null })];
+  const r = computeSpxCalibration(rows, { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(r.closed_plays, 1);
+});
+
+test("calibration: combined report clearly labels the 0DTE vs SPX Slayer sections", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const text = formatCalibration({ ...zeroDte, spx_slayer: spx });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+});
+
+test("calibration: without an attached SPX pass the report stays 0DTE-only — no restructuring", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.spx_slayer, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /SPX Slayer/);
 });
 
 // ── Phase 4: telemetry discovery (pure formatting + thresholds) ──────────────────

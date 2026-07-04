@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 
+// ORPHANED (2026-07-04, docs/audit/FINDINGS.md): signal_events has never received a write in
+// production (see src/app/api/signals/record/route.ts) — the query below always returns an
+// empty `signals` array. No cron actually consumes this route's output today; it stays wired
+// up only because scripts/gha-http-smoke.mjs and scripts/validate-deploy.mjs use it as an
+// auth-gate smoke check (expect 401 unauthenticated). Real accuracy now comes from
+// spx_play_outcomes/nighthawk_play_outcomes via src/lib/signal-accuracy.ts.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
