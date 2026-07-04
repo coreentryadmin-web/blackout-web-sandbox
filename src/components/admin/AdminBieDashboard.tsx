@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { clsx } from "clsx";
+import { fmtPremium } from "@/lib/api";
 import {
   ActionButton,
   DataTable,
@@ -149,12 +150,6 @@ const ROADMAP: Stage[] = [
   { n: 5, name: "BIE opens PRs autonomously", status: "IN PROGRESS", blurb: "The end-state goal — explicitly NOT started as \"BIE writes code\" yet. Step 1 shipped 2026-07-03, dry-run only: for one narrow, 100% mechanical finding (an exported component with zero references anywhere else in src/), BIE drafts a plain-text proposal in the report below — never a diff, never a git action, never an LLM judgment call. A human decides what (if anything) to do about each one. Going further (real draft PRs, broader/LLM-judged finding types) needs its own explicit go-ahead, not assumed from this." },
   { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. A first measurement step shipped 2026-07-03 (Confluence outcomes panel below) — whether 0DTE Command's graded hit rate differs when it agrees/disagrees with a ticker's prior Night Hawk take — but it is read-only and does not feed back into scoring. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
 ];
-
-function fmtPremium(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
-}
 
 function fmtEt(iso: string | null | undefined): string {
   if (!iso) return "—";

@@ -54,13 +54,28 @@ export function isHelixAuditWorthy(route: string): boolean {
 
 /** Pure: shape a whale-tier flow print into an alert_audit_log row. Split out
  *  from the write call so the shape logic is unit-testable without a DB. */
+/** Pure: HELIX's own direction vocabulary ("bullish"/"bearish"/"unknown", set
+ *  in parseUwFlowAlert from the option side) mapped onto the vocabulary
+ *  alert_audit_log.direction already has two OTHER conventions for — 0DTE
+ *  writes lowercase "long"/"short", Night Hawk writes uppercase "LONG"/
+ *  "SHORT". Rather than add a THIRD raw vocabulary to the same shared column
+ *  (which would make any future direction-equality read across all three
+ *  producers wrong by construction, not just inconsistent to look at),
+ *  normalize to the lowercase "long"/"short" convention here — "unknown"
+ *  stays null (direction is nullable), never guessed. */
+export function normalizeHelixDirection(direction: string): "long" | "short" | null {
+  if (direction === "bullish") return "long";
+  if (direction === "bearish") return "short";
+  return null;
+}
+
 export function buildHelixAuditRow(alertIdValue: string, flow: MarketFlowAlert) {
   return {
     alert_type: "helix_whale",
     source_table: "flow_alerts",
     source_key: { alert_id: alertIdValue },
     ticker: flow.ticker,
-    direction: flow.direction,
+    direction: normalizeHelixDirection(flow.direction),
     confidence_score: flow.score,
     confidence_label: null,
     trigger_reason: `$${flow.premium.toLocaleString()} ${flow.option_type} premium print`,
@@ -165,7 +180,17 @@ export async function persistAndPublishFlowAlert(
     // its own writes), so it can never silence the cron that owns this process.
     markFlowFrameDelivered();
     void notifyDiscord(event);
-    if (usingDb && isHelixAuditWorthy(flow.route)) {
+    // Gated on `inserted` specifically, not `shouldPublish` — `shouldPublish` is
+    // also true when the flow_alerts insert THREW (insertFailed, an uncertain
+    // state used to keep the live tape/Discord fan-out working even if we can't
+    // confirm dedup). insertAlertAuditLog has no uniqueness constraint of its
+    // own, so writing on that uncertain path risked a duplicate alert_audit_log
+    // row if the same print's WS+REST double-delivery both hit a transient DB
+    // failure — exactly the scenario fetchDuplicateAlertGroups exists to catch.
+    // `inserted` is only true after a genuine ON CONFLICT DO NOTHING ... RETURNING
+    // confirms this is a real new row, matching the same guarantee 0DTE/Night
+    // Hawk's audit-log writes already rely on.
+    if (inserted && isHelixAuditWorthy(flow.route)) {
       void insertAlertAuditLog(buildHelixAuditRow(id, flow)).catch((err) =>
         console.error("[flow-persist] alert_audit_log insert failed:", id, err)
       );

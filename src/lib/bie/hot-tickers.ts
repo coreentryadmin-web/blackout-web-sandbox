@@ -20,12 +20,17 @@ export type HotTicker = {
 };
 
 /** Pure: drop index/ETF/leveraged-ETP noise from a raw ticker-aggregate list.
- *  Split out from the query so the filtering logic is unit-testable without a DB. */
+ *  The real exclusion happens in SQL (see fetchHotTickers) so a heavy
+ *  index/leverage day can't silently under-fill the result below `limit` —
+ *  this stays exported and applied as a second, redundant pass so the
+ *  filtering intent is still unit-testable without a DB and the result stays
+ *  correct even if the SQL-side exclusion list ever drifts out of sync. */
 export function filterHotTickers(rows: HotTicker[]): HotTicker[] {
   return rows.filter((r) => !INDEX_SET.has(r.ticker) && !LEVERAGED_ETP_SET.has(r.ticker));
 }
 
 const HOT_TICKERS_WINDOW_HOURS = 6;
+const EXCLUDED_HOT_TICKER_SET = [...INDEX_SET, ...LEVERAGED_ETP_SET];
 
 /**
  * Top single-name tickers by total options-flow premium over the last
@@ -38,23 +43,28 @@ export async function fetchHotTickers(limit = 8, windowHours = HOT_TICKERS_WINDO
   const cappedLimit = Math.min(Math.max(limit, 1), 25);
 
   try {
-    // Over-fetch before filtering — an index/ETF name occupying a top slot
-    // must not shrink the final result below `limit` for single names.
+    // Exclude index/ETF/leveraged-ETP names IN THE QUERY, before LIMIT — doing
+    // this as a post-fetch JS filter (an earlier version of this function did)
+    // meant a heavy index/leverage day could occupy most of even a padded
+    // over-fetch window and silently return fewer than `limit` single names
+    // with no signal to the caller that anything was truncated.
     const res = await dbQuery<{ ticker: string; print_count: number; total_premium: number }>(
       `SELECT ticker, COUNT(*)::int AS print_count, COALESCE(SUM(total_premium), 0)::numeric AS total_premium
        FROM flow_alerts
-       WHERE ticker IS NOT NULL AND ticker <> '' AND created_at >= NOW() - ($1 || ' hours')::interval
+       WHERE ticker IS NOT NULL AND ticker <> ''
+         AND NOT (ticker = ANY($1::text[]))
+         AND created_at >= NOW() - ($2 || ' hours')::interval
        GROUP BY ticker
        ORDER BY total_premium DESC
-       LIMIT $2`,
-      [windowHours, cappedLimit * 3]
+       LIMIT $3`,
+      [EXCLUDED_HOT_TICKER_SET, windowHours, cappedLimit]
     );
     const rows: HotTicker[] = res.rows.map((r) => ({
       ticker: r.ticker,
       print_count: Number(r.print_count),
       total_premium: Number(r.total_premium),
     }));
-    return filterHotTickers(rows).slice(0, cappedLimit);
+    return filterHotTickers(rows);
   } catch {
     return [];
   }

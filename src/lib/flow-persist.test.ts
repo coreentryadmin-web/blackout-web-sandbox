@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isHelixAuditWorthy, buildHelixAuditRow } from "./flow-persist";
+import { isHelixAuditWorthy, buildHelixAuditRow, normalizeHelixDirection } from "./flow-persist";
 import type { MarketFlowAlert } from "./providers/unusual-whales";
 
 function flow(overrides: Partial<MarketFlowAlert> = {}): MarketFlowAlert {
@@ -34,7 +34,7 @@ test("buildHelixAuditRow: shapes a whale print into the alert_audit_log row cont
   assert.equal(row.source_table, "flow_alerts");
   assert.deepEqual(row.source_key, { alert_id: "uw:abc123" });
   assert.equal(row.ticker, "AAPL");
-  assert.equal(row.direction, "bullish");
+  assert.equal(row.direction, "long");
   assert.equal(row.confidence_score, 88);
   assert.match(row.trigger_reason, /\$1,500,000 CALL premium print/);
 });
@@ -44,4 +44,18 @@ test("buildHelixAuditRow: decision_trace is an array (required by toJsonbParam's
   assert.ok(Array.isArray(row.decision_trace));
   assert.equal(row.decision_trace.length, 1);
   assert.equal(row.decision_trace[0].premium, 1_500_000);
+});
+
+test("normalizeHelixDirection: maps HELIX's bullish/bearish vocabulary onto alert_audit_log's long/short convention", () => {
+  assert.equal(normalizeHelixDirection("bullish"), "long");
+  assert.equal(normalizeHelixDirection("bearish"), "short");
+});
+
+test("normalizeHelixDirection: unknown side stays null, never guessed", () => {
+  assert.equal(normalizeHelixDirection("unknown"), null);
+});
+
+test("buildHelixAuditRow: a bearish (put-side) print writes direction \"short\", not the raw \"bearish\" string", () => {
+  const row = buildHelixAuditRow("uw:def456", flow({ direction: "bearish", option_type: "PUT" }));
+  assert.equal(row.direction, "short");
 });

@@ -288,6 +288,7 @@ const NIGHTHAWK_OUTCOME_LABEL: Record<string, string> = {
   open: "still open",
   ambiguous: "ambiguous close",
   pending: "pending",
+  unfilled: "never filled",
 };
 
 function fmtEditionDate(ymd: string): string {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucketConfluenceRows, type ConfluenceRow } from "./confluence-outcomes";
+import { bucketConfluenceRows, mapConfluenceRows, type ConfluenceRow, type RawConfluenceRow } from "./confluence-outcomes";
 
 function row(overrides: Partial<ConfluenceRow>): ConfluenceRow {
   return {
@@ -73,4 +73,43 @@ test("bucketConfluenceRows: insufficient_sample clears once a bucket reaches 10"
 test("bucketConfluenceRows: avg_move_pct averages only rows with a non-null move_pct", () => {
   const stats = bucketConfluenceRows([row({ move_pct: 2 }), row({ move_pct: 4 }), row({ move_pct: null })]);
   assert.equal(stats.find((s) => s.bucket === "no_echo")!.avg_move_pct, 3);
+});
+
+function rawRow(overrides: Partial<RawConfluenceRow>): RawConfluenceRow {
+  return {
+    ticker: "AAPL",
+    session_date: "2026-07-02",
+    zerodte_direction: "long",
+    direction_hit: true,
+    move_pct: "1.20",
+    nighthawk_edition_for: null,
+    nighthawk_direction: null,
+    ...overrides,
+  };
+}
+
+test("mapConfluenceRows: converts a Postgres NUMERIC string move_pct to a real number", () => {
+  const [mapped] = mapConfluenceRows([rawRow({ move_pct: "1.20" })]);
+  assert.equal(mapped.move_pct, 1.2);
+  assert.equal(typeof mapped.move_pct, "number");
+});
+
+test("mapConfluenceRows: null move_pct stays null, not the string \"null\" or 0", () => {
+  const [mapped] = mapConfluenceRows([rawRow({ move_pct: null })]);
+  assert.equal(mapped.move_pct, null);
+});
+
+test("mapConfluenceRows + bucketConfluenceRows: string move_pct values sum correctly instead of concatenating", () => {
+  // Regression test for the exact bug found in review: without Number() conversion,
+  // ["1.20", "-0.50", "2.00"].reduce((a,b) => a+b, 0) produces the STRING
+  // "01.20-0.502.00" (JS string concatenation), which coerces to NaN on division
+  // and silently serializes to null — every avg_move_pct looked like "no data."
+  const raw: RawConfluenceRow[] = [
+    rawRow({ move_pct: "1.20" }),
+    rawRow({ move_pct: "-0.50" }),
+    rawRow({ move_pct: "2.00" }),
+  ];
+  const stats = bucketConfluenceRows(mapConfluenceRows(raw));
+  const noEcho = stats.find((s) => s.bucket === "no_echo")!;
+  assert.equal(noEcho.avg_move_pct, 0.9);
 });

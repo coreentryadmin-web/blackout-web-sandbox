@@ -97,8 +97,12 @@ const ANOMALY_WINDOW_HOURS = 24;
 
 /**
  * Assembles a single ticker's cross-instrument snapshot from tables that
- * already exist: today's 0DTE Command take (if any), the most recent Night
- * Hawk take (published or rejected outcome, whichever is newest), the last 10
+ * already exist: today's 0DTE Command take (if any), the most recent
+ * PUBLISHED Night Hawk take from nighthawk_play_outcomes (a play rejected at
+ * the trade-geometry gate is never written to that table — see
+ * buildNighthawkRejectedAuditRow's doc comment in play-outcomes.ts — so a
+ * rejection shows up only in recent_audit_entries below, as an
+ * "nighthawk_rejected" alert_type, never here), the last 10
  * alert_audit_log entries (the unified Stage 4 trail, which already spans all
  * three write-paths), a same-day HELIX flow summary straight from
  * flow_alerts — not just the $1M+ whale tier that reaches alert_audit_log, the

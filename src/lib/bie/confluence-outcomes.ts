@@ -19,6 +19,34 @@ export type ConfluenceRow = {
   nighthawk_direction: string | null;
 };
 
+export type RawConfluenceRow = {
+  ticker: string;
+  session_date: string;
+  zerodte_direction: string;
+  direction_hit: boolean | null;
+  move_pct: string | number | null;
+  nighthawk_edition_for: string | null;
+  nighthawk_direction: string | null;
+};
+
+/** Pure: raw query rows -> typed ConfluenceRow, converting move_pct from
+ *  Postgres's NUMERIC-as-string wire format to a real number. Split out from
+ *  the query specifically because this exact conversion was once missing —
+ *  bucketConfluenceRows sums move_pct, and summing un-converted strings is
+ *  silent JS string concatenation, not addition, producing NaN -> null in
+ *  every avg_move_pct with no error surfaced anywhere. */
+export function mapConfluenceRows(rows: RawConfluenceRow[]): ConfluenceRow[] {
+  return rows.map((r) => ({
+    ticker: r.ticker,
+    session_date: r.session_date,
+    zerodte_direction: r.zerodte_direction,
+    direction_hit: r.direction_hit,
+    move_pct: r.move_pct != null ? Number(r.move_pct) : null,
+    nighthawk_edition_for: r.nighthawk_edition_for,
+    nighthawk_direction: r.nighthawk_direction,
+  }));
+}
+
 export type ConfluenceBucket = "agree" | "disagree" | "no_echo";
 
 export type ConfluenceBucketStats = {
@@ -84,7 +112,7 @@ export async function computeConfluenceOutcomeStats(windowDays = 60): Promise<Co
   if (!dbConfigured()) return null;
 
   try {
-    const res = await dbQuery<ConfluenceRow>(
+    const res = await dbQuery<RawConfluenceRow>(
       `SELECT
          z.ticker,
          z.session_date::text AS session_date,
@@ -102,10 +130,10 @@ export async function computeConfluenceOutcomeStats(windowDays = 60): Promise<Co
          LIMIT 1
        ) n ON true
        WHERE z.graded_at IS NOT NULL
-         AND z.session_date >= (CURRENT_DATE - $1::int)`,
+         AND z.session_date >= ((NOW() AT TIME ZONE 'America/New_York')::date - $1::int)`,
       [windowDays]
     );
-    return bucketConfluenceRows(res.rows);
+    return bucketConfluenceRows(mapConfluenceRows(res.rows));
   } catch {
     return null;
   }

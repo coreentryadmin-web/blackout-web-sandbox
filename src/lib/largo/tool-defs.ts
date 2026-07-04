@@ -369,7 +369,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t(
     "get_ecosystem_context",
-    "BIE cross-instrument snapshot for ONE ticker: today's 0DTE Command take (if any), the most recent Night Hawk take (published or rejected), the last 10 alert_audit_log entries, a same-day HELIX flow summary (print count + call/put premium totals over the last 6h — reported neutrally, never as a single bullish/bearish label), and any pattern-detected flow anomalies in the last 24h (coordinated sweeps, premium spikes, put surges, concentration). Use when a question needs 'what does the rest of the desk already think about this name' rather than a single tool's isolated view — e.g. confirming whether today's 0DTE flag and last night's Night Hawk pick agree or conflict, or whether unusual options flow has been building on the name.",
+    "BIE cross-instrument snapshot for ONE ticker: today's 0DTE Command take (if any), the most recent PUBLISHED Night Hawk take (a rejected play never appears here — check recent_audit_entries for an 'nighthawk_rejected' alert_type instead), the last 10 alert_audit_log entries, a same-day HELIX flow summary (print count + call/put premium totals over the last 6h — reported neutrally, never as a single bullish/bearish label), and any pattern-detected flow anomalies in the last 24h (coordinated sweeps, premium spikes, put surges, concentration). Use when a question needs 'what does the rest of the desk already think about this name' rather than a single tool's isolated view — e.g. confirming whether today's 0DTE flag and last night's Night Hawk pick agree or conflict, or whether unusual options flow has been building on the name.",
     T,
     ["ticker"]
   ),
