@@ -13,6 +13,11 @@ import { dispatchCronWarm, isDispatchableCron } from "@/lib/cron-dispatch";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import { dbConfigured, fetchCronJobLastRuns } from "@/lib/db";
 import { RTH_WRITER_HEAL_AFTER_MIN, rthWriterOverdue } from "@/lib/rth-warm-leader-logic";
+import {
+  alertWsLeaderFailClosedOnce,
+  clearWsLeaderFailClosedAlert,
+  wsLeaderShouldFailOpenWithoutRedis,
+} from "@/lib/ws/leader-lock-shared";
 
 const LEADER_KEY = "rth:warm:leader";
 const LEADER_TTL_SEC = 45;
@@ -45,13 +50,24 @@ async function getLockRedis(): Promise<IoredisLockExtra | null> {
 }
 
 async function tryAcquireLead(): Promise<boolean> {
-  const redis = await getLockRedis();
-  if (!redis) return true; // single-replica / no Redis — run locally
   try {
+    const redis = await getLockRedis();
+    if (!redis) {
+      if (!wsLeaderShouldFailOpenWithoutRedis()) {
+        alertWsLeaderFailClosedOnce("rth-warm-leader");
+        return false; // multi-replica, Redis down — fail closed to avoid N-way cron-warm contention
+      }
+      return true; // single replica — safe to fail open, no contention possible
+    }
+    clearWsLeaderFailClosedAlert("rth-warm-leader");
     const result = await redis.set(LEADER_KEY, "1", "EX", LEADER_TTL_SEC, "NX");
     return result === "OK";
   } catch {
-    return false;
+    if (!wsLeaderShouldFailOpenWithoutRedis()) {
+      alertWsLeaderFailClosedOnce("rth-warm-leader");
+      return false;
+    }
+    return true; // single replica — safe to fail open even on a Redis error
   }
 }
 
