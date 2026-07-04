@@ -7,12 +7,21 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 📋 CEO/CTO Production Readiness Audit COMPLETE 2026-07-04 — full report in `docs/audit/CEO-CTO-AUDIT-20260704.md`
+**Ask:** an explicit CEO/CTO-level production readiness audit across all seven dimensions (data correctness, single source of truth, API/rate-limit safety, infra reliability, security, AI/BIE readiness, product/UX), run as a parallel multi-agent `Workflow` per the CEO's own suggestion — 7 dimension-finder agents piped into per-dimension adversarial verification, barrier-merged, then synthesized by 3 parallel synthesis agents and one assembly pass. 18 agents total, ~38 minutes wall-clock, 0 errors.
+
+**Verdict:** not ready for unrestricted launch, but the gap is narrow — 2 true launch blockers (Largo streams tokens before its own L4 verifier runs; 0DTE Command's freshness badge is a hardcoded `"live"` literal) plus 10 high-severity items, recommended as a focused 1–2 week sprint rather than a re-architecture. 21 findings total across 19 files (2 blocker, 9 high, 8 medium, 2 low), every one with file:line evidence, verified adversarially against live source before inclusion. Full findings, an 8-step data-integrity pipeline proposal (CP-1 vendor-shape guard → CP-5 frontend-never-fabricates), a BIE-as-data-auditor integration plan (explicit standing boundary: BIE validates, never decides, never writes to any scoring/gate/conviction code), and a 30/60/90-day roadmap are in the linked doc — not reproduced here to avoid this file becoming the audit's second copy.
+
+**Status:** report delivered (repo doc + interactive HTML artifact). First fix from its findings already shipped — the `db.ts` `CURRENT_DATE` regression (finding #7), see the entry directly below. Each remaining recommended `fix/<slug>` in the roadmap's Day 0–30 section will get its own branch/PR under the standing issue-handling policy as picked up individually. Two of the top-12 items touch `.tsx` files (`ZeroDteBoard.tsx`, `NetPremiumLeaderboard.tsx`) that now fall under Cursor's UI ownership per the standing "BIE-only, no UI" instruction — flagged here rather than silently started.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — `fetchNighthawkOutcomeAnalytics` regressed the bare-`CURRENT_DATE` bug a second time
 **Where:** `fetchNighthawkOutcomeAnalytics` (`src/lib/db.ts`), which feeds both Largo's `get_confluence_outcomes`-adjacent Night Hawk analytics tool and the `/track-record` page's Night Hawk stats. Its day-window filter used bare Postgres `CURRENT_DATE` — evaluated in the server's UTC session, not the codebase's mandatory ET-date convention — shifting the window a day early during the ~8pm–midnight ET UTC-rollover window. Surfaced by tonight's CEO/CTO production audit (`docs/audit/CEO-CTO-AUDIT-20260704.md`, launch-blocker-adjacent finding #7), which flagged this as a **regression of the identical bug class already found and fixed once in `confluence-outcomes.ts`'s 60-day window** — the fix was never mirrored here.
 
 **Fix:** swapped `CURRENT_DATE` for the established `(NOW() AT TIME ZONE 'America/New_York')::date` pattern already used elsewhere in the same file (`db.ts:1329`) and in `confluence-outcomes.ts:133`. Added a source-text regression test (`db.test.ts`) asserting the query text can't silently revert to bare `CURRENT_DATE` a third time — the function isn't otherwise unit-testable without a live Postgres connection.
 
-**Verification:** `npx tsc --noEmit` clean; full suite `922/922` passing (1 new); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+**Verification:** `npx tsc --noEmit` clean; full suite `922/922` passing (1 new); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green. Merged as PR #402, merge commit `5a27caf`; Railway deployment confirmed **SUCCESS** directly via the GraphQL API (`commitHash` matches exactly, no supersession this time). Live `GET /api/ready` → `{"ok":true,"db":"connected","mode":"private"}`.
 
 ---
 
