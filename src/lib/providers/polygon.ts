@@ -223,7 +223,7 @@ export async function fetchPriorDayCloses(
   const base = new Date(`${beforeYmd}T12:00:00`);
   for (let i = 1; i <= maxLookback; i++) {
     const d = new Date(base.getTime() - i * 86_400_000);
-    const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+    const ymd = todayEtYmd(d);
     try {
       const data = await fetchDailyMarketSummary(ymd);
       const results = data.results ?? [];

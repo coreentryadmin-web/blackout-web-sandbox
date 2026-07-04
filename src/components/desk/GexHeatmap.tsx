@@ -19,6 +19,7 @@ import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitive
 import { shiftPercentForStrike } from "@/components/desk/gex-heatmap/shift-math";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import { todayEt } from "@/lib/et-date";
 import {
   fmtHeatmapMoneySigned,
   heatmapCellStyle,
@@ -2662,7 +2663,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     if (expiries.length === 0) return null;
     // ET, not UTC: `toISOString().slice(0,10)` rolls to "tomorrow" after ~20:00 ET, mislabeling
     // the 0DTE chip. en-CA formats as YYYY-MM-DD, matching the expiry-axis date strings.
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    const today = todayEt();
     return expiries.includes(today) ? today : expiries[0];
   }, [expiries]);
 

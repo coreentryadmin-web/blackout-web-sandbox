@@ -234,7 +234,7 @@ export function fetchUpcomingMacroEvents(daysAhead = 7): MacroEvent[] {
   const endDate = new Date(
     Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2] + Math.max(1, daysAhead))
   );
-  const end = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(endDate);
+  const end = todayEtYmd(endDate);
 
   return ALL_MACRO_SCHEDULE.filter((e) => e.date >= today && e.date <= end).map((e) => ({
     time: eventReleaseTime(e.event),
@@ -256,7 +256,7 @@ export function fetchUpcomingMacroEvents(daysAhead = 7): MacroEvent[] {
 function isoUtcToEtYmd(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+  return todayEtYmd(d);
 }
 
 function isoUtcToEtHhmm(iso: string): string {
@@ -393,7 +393,7 @@ export async function fetchUpcomingMacroEventsLive(daysAhead = 7): Promise<Macro
   const endDate = new Date(
     Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2] + Math.max(1, daysAhead))
   );
-  const end = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(endDate);
+  const end = todayEtYmd(endDate);
   const live = await fetchLiveMacroCalendar();
   const window = live?.filter((e) => e.date != null && e.date >= today && e.date <= end) ?? null;
   return window && window.length ? window : fetchUpcomingMacroEvents(daysAhead);

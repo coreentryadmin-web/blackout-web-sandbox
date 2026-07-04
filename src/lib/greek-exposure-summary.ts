@@ -1,3 +1,5 @@
+import { todayEt } from "@/lib/et-date";
+
 export type GreekExposureBucket = {
   expiry: string;
   gamma: number;
@@ -28,9 +30,7 @@ export function summarizeGreekExposureByExpiry(
 ): GreekExposureSummary | null {
   if (!rows.length) return null;
 
-  const today =
-    todayYmd ??
-    new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const today = todayYmd ?? todayEt();
   const byExpiry = new Map<string, number>();
 
   for (const r of rows) {

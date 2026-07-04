@@ -31,6 +31,7 @@ import {
 } from "@/lib/nighthawk/morning-confirm-verdict";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import { makeRedis } from "@/lib/make-redis";
+import { todayEt as etYmdOf } from "@/lib/et-date";
 import { requireDatabaseInProduction, fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
 import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
 import { todayEt, isTradingDayEt } from "@/lib/nighthawk/session";
@@ -138,8 +139,7 @@ async function fetchSpxPriorClose(): Promise<number | null> {
     // yesterday and the "overnight gap" absorbed a whole extra session's move
     // (enough to false-trip the 20-pt INVALIDATE on a benign morning). Mirrors the
     // etYmdFromMs fix in spx-session.ts.
-    const etDate = (ms: number) =>
-      new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(ms));
+    const etDate = (ms: number) => etYmdOf(new Date(ms));
     const prior = [...bars].reverse().find(
       (b: { t?: number; c?: number }) => b?.t != null && etDate(b.t) < today
     );

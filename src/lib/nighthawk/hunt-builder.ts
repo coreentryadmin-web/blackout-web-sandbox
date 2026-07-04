@@ -1,6 +1,7 @@
 import { getPlatformSnapshot } from "@/lib/platform";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
+import { todayEt as todayEtStr } from "@/lib/et-date";
 import { extractCandidateTickers } from "./candidates";
 import { generateEditionPlays } from "./claude-edition";
 import { DOSSIER_BATCH_SIZE, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
@@ -84,7 +85,7 @@ function flowDteDays(flow: Record<string, unknown>): number | null {
   if (!exp) return null;
   const expMs = new Date(exp.includes("T") ? exp : `${exp}T16:00:00-04:00`).getTime();
   if (!Number.isFinite(expMs)) return null;
-  const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const todayEt = todayEtStr();
   const todayMs = new Date(`${todayEt}T12:00:00-04:00`).getTime();
   return Math.round((expMs - todayMs) / 86_400_000);
 }

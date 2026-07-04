@@ -1,6 +1,7 @@
 import type { SpxDeskSummary } from "@/lib/platform/types";
 import type { PlaybookPlay } from "../types";
 import type { DayTradeSignal } from "./day-trade-types";
+import { todayEt as todayEtStr } from "@/lib/et-date";
 
 export type SpxMacroBias = "bull" | "bear" | "neutral";
 
@@ -87,7 +88,7 @@ export function optionsPlayWithinMaxDte(optionsPlay: string, maxDte: number): bo
   const iso = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   if (iso) {
     const expiry = new Date(`${iso[1]}T16:00:00-04:00`);
-    const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    const todayEt = todayEtStr();
     const todayMs = new Date(`${todayEt}T12:00:00-04:00`).getTime();
     const dte = Math.round((expiry.getTime() - todayMs) / 86_400_000);
     return dte <= maxDte;

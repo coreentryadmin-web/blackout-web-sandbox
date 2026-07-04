@@ -1,4 +1,5 @@
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import { todayEt } from "@/lib/et-date";
 import { notifyPlayDiscord } from "@/lib/spx-play-notify";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 
@@ -848,9 +849,7 @@ async function evaluateFlatPlay(
     );
   }
 
-  const sessionDate = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-  }).format(new Date());
+  const sessionDate = todayEt();
 
   const entryPath = promoteEligible ? "watch_promote" : "cold_buy";
   const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : "";

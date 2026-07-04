@@ -5,6 +5,7 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { computeWeightedConflicts } from "@/lib/spx-play-conflicts";
 import { playDynamicTargetPts } from "@/lib/spx-play-config";
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
+import { todayEt } from "@/lib/et-date";
 
 export type SpxSignalAction = "BUY_CALL" | "BUY_PUT" | "HOLD" | "WAIT";
 export type SpxPlayAction = "SCANNING" | "WATCHING" | "BUY" | "HOLD" | "TRIM" | "SELL";
@@ -77,7 +78,7 @@ function scoreHelixFlowAlignment(
   const nowMs = Date.now();
   const thirtyMinMs = 30 * 60 * 1000;
   // Today in ET — expiry strings are YYYY-MM-DD (UTC date would flip at 7 PM ET)
-  const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(nowMs));
+  const todayYmd = todayEt(new Date(nowMs));
 
   let callPrem = 0;
   let putPrem = 0;
