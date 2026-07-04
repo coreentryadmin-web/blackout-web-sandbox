@@ -55,6 +55,7 @@ import {
   maybeLogSpxPlay,
   logSpxShadowFactors,
   logSpxMacroPredictionsShadowFactor,
+  logSpxEcosystemShadowFactors,
   logMegaCapCatalystShadowFactors,
 } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
@@ -1159,6 +1160,24 @@ export async function evaluateSpxPlay(
   // (spx-play-gates.ts) — zero effect on computeSpxConfluence()'s actual return value.
   firePlayTelemetry("logSpxMacroPredictionsShadowFactor", () =>
     logSpxMacroPredictionsShadowFactor(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE ecosystem-context factor logging (src/lib/spx-signals-shadow-ecosystem.ts)
+  // — the BIE-mediated generalization of the getNhConfluenceBonus() pattern
+  // below to 0DTE Command, plus a differentiated SPX-ticker-scoped flow-
+  // anomaly read. Same fire-and-forget, observation-only contract as
+  // logSpxShadowFactors immediately above: captures confluence.direction
+  // BEFORE the Night Hawk prior bonus below can mutate confluence.score (it
+  // never touches .direction, but capturing both together here keeps this
+  // call and the one above reading identically-aged confluence state).
+  // computeSpxConfluence()'s return value itself is untouched by this call —
+  // see spx-signals.test.ts's byte-for-byte proof.
+  firePlayTelemetry("logSpxEcosystemShadowFactors", () =>
+    logSpxEcosystemShadowFactors(desk, {
+      score: confluence.score,
+      grade: confluence.grade,
+      direction: confluence.direction,
+    })
   );
 
   // SHADOW-MODE factor logging, catalyst edition (src/lib/spx-signals-shadow-
