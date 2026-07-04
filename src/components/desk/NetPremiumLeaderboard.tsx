@@ -9,7 +9,7 @@ import { Panel, Skeleton } from "@/components/ui";
 
 type Row = { ticker: string; calls: number; puts: number; net: number; total: number; callPct: number };
 
-export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
+export function NetPremiumLeaderboard({ alerts, loading = false }: { alerts: FlowAlert[]; loading?: boolean }) {
   const rows = useMemo<Row[]>(() => {
     const map = new Map<string, { calls: number; puts: number }>();
     for (const a of alerts) {
@@ -48,11 +48,15 @@ export function NetPremiumLeaderboard({ alerts }: { alerts: FlowAlert[] }) {
       }
     >
       <div className="flow-panel-body space-y-3">
-        {rows.length === 0 ? (
+        {rows.length === 0 && loading ? (
           <div className="space-y-2 py-1">
             {[1, 2, 3].map((n) => (
               <Skeleton key={n} height={32} rounded="md" />
             ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="py-4 text-center">
+            <p className="font-mono text-[10px] text-cyan-400">No net-premium leaders yet — quiet tape.</p>
           </div>
         ) : (
           rows.map((row, i) => {

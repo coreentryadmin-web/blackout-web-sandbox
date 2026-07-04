@@ -802,7 +802,7 @@ export function FlowFeed() {
               {showMorePanels ? "Fewer panels" : "More panels"}
             </button>
           </div>
-          <NetPremiumLeaderboard alerts={alerts} />
+          <NetPremiumLeaderboard alerts={alerts} loading={loading} />
           <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
           <DarkPoolPanel />
           {showMorePanels && (
