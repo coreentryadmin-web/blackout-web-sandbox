@@ -46,10 +46,19 @@ const sigTotal = (
   )
 )[0].n;
 
-console.log(`Postgres: spx_play_outcomes closed=${playClosed}, signal_outcomes SPX T+30=${sigTotal}`);
-if (playClosed > 0 && sigTotal === 0) {
-  fail("P1-TR-SPLIT", `Ledger has ${playClosed} closed plays; signal_outcomes has 0`);
-}
+// P1-TR-SPLIT (RESOLVED 2026-07-04, docs/audit/FINDINGS.md): this used to fail() here because
+// signal_events/signal_outcomes always had 0 rows while spx_play_outcomes had real closed
+// plays — investigation found nothing in the codebase ever writes to signal_events
+// (POST /api/signals/record has zero callers outside its own route file), so `sigTotal` will
+// be 0 forever BY DESIGN, not because of a live bug. /api/platform/intel and the Night Hawk
+// platform-intel snapshot no longer read signal_outcomes at all — they compute real accuracy
+// straight from spx_play_outcomes/nighthawk_play_outcomes (src/lib/signal-accuracy.ts). This
+// is now an informational log line, not a fail(), so the audit doesn't permanently false-positive
+// on an intentionally-orphaned table.
+console.log(
+  `Postgres: spx_play_outcomes closed=${playClosed}, signal_outcomes SPX T+30=${sigTotal} ` +
+    `(signal_outcomes is expected-empty-by-design — orphaned table, see P1-TR-SPLIT note above)`
+);
 
 const nhCrons = await q(
   `SELECT job_key, status, started_at FROM cron_job_runs

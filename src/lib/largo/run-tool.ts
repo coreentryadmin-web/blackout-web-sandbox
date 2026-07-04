@@ -6,6 +6,7 @@ import { loadLottoRecord } from "@/lib/spx-lotto-store";
 import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import { fetchPositioningSummary } from "@/lib/nighthawk/positioning";
 import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
+import { fetchPlayOutcomeStatsForWindow } from "@/lib/spx-play-outcomes";
 import {
   fetchNighthawkOutcomeAnalytics,
   fetchPendingNighthawkOutcomes,
@@ -1264,6 +1265,79 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
         fetchPendingNighthawkOutcomes(7),
       ]);
       return { window_days: windowDays, analytics, pending };
+    }
+    case "get_spx_vs_nighthawk_comparison": {
+      // WHY THIS TOOL EXISTS (don't delete without reading this): before this
+      // tool, "how's SPX Slayer doing vs Night Hawk this week" forced Largo to
+      // call get_setup_stats + get_nighthawk_outcomes separately and then
+      // synthesize the comparison itself in free text (subtract two win rates,
+      // eyeball which is "hotter"). The Layer-4 grounding verifier
+      // (src/lib/bie/verifier.ts, via largo-verifier.ts) only checks that each
+      // individual NUMBER an answer cites traces back to a real tool result —
+      // it has no notion of a "derived" claim, so it cannot tell a correct
+      // subtraction from a confidently wrong one. Every raw number in a bad
+      // synthesized comparison could be genuine and it would still pass
+      // grounding review. Computing the delta here, once, in code, removes
+      // that blind spot entirely: the model only ever repeats a number the
+      // platform already computed.
+      //
+      // `days` is a rolling day-count window, NOT a calendar week — neither
+      // underlying source supports a real Mon-Sun boundary either (SPX plays
+      // are windowed by days-ago cutoff, Night Hawk by window_days), so this
+      // mirrors that existing honest-approximation convention instead of
+      // pretending to a precision the data doesn't have. It's applied
+      // IDENTICALLY to both products so the comparison itself is apples-to-
+      // apples (a mismatched window — e.g. SPX all-time vs Night Hawk 7d —
+      // would be exactly the kind of silently-wrong derived number this tool
+      // exists to prevent).
+      const rawDays = Number(input.days ?? 7);
+      const days = Number.isFinite(rawDays) ? Math.min(180, Math.max(1, Math.trunc(rawDays))) : 7;
+
+      const [spxStats, nighthawkAnalytics] = await Promise.all([
+        // Reuses the existing SQL fetcher (fetchClosedPlayOutcomes) and the
+        // existing pure aggregator (computePlayOutcomeStats) — see
+        // fetchPlayOutcomeStatsForWindow's own doc comment in
+        // spx-play-outcomes.ts for why this is a sibling of
+        // fetchPlayOutcomeStats() rather than a change to it.
+        fetchPlayOutcomeStatsForWindow(days),
+        fetchNighthawkOutcomeAnalytics(days),
+      ]);
+
+      // Night Hawk has no single "win_rate" field on the raw analytics rows
+      // (get_nighthawk_outcomes intentionally returns raw rows and leaves
+      // interpretation to the model) — so derive it here the same way
+      // src/lib/nighthawk/analytics.ts's winRate() does: target = win,
+      // stop = loss, everything else (open/ambiguous/unfilled) excluded from
+      // the rate denominator because it isn't a decided outcome yet.
+      const nhRows = nighthawkAnalytics.rows;
+      const nighthawk_wins = nhRows.filter((r) => r.outcome === "target").length;
+      const nighthawk_losses = nhRows.filter((r) => r.outcome === "stop").length;
+      const nighthawk_decided = nighthawk_wins + nighthawk_losses;
+      const nighthawk_win_rate = nighthawk_decided > 0 ? nighthawk_wins / nighthawk_decided : 0;
+      const nighthawk_signal_count = nhRows.length;
+
+      const spx_win_rate = spxStats.overall.win_rate;
+      const spx_signal_count = spxStats.total_closed;
+
+      return {
+        days,
+        note: `Rolling ${days}-day window applied identically to both products — an honest approximation of "this ${days === 7 ? "week" : `${days}d`}," not a calendar boundary.`,
+        spx_win_rate,
+        spx_wins: spxStats.overall.wins,
+        spx_losses: spxStats.overall.losses,
+        spx_breakeven: spxStats.overall.breakeven,
+        spx_signal_count,
+        nighthawk_win_rate,
+        nighthawk_wins,
+        nighthawk_losses,
+        nighthawk_pending_count: nighthawkAnalytics.pending_count,
+        nighthawk_signal_count,
+        // Pre-computed once, in code — the whole point of this tool. Positive
+        // win_rate_delta means SPX Slayer's window win rate is hotter than
+        // Night Hawk's over the SAME window; negative means Night Hawk is hotter.
+        win_rate_delta: spx_win_rate - nighthawk_win_rate,
+        signal_count_delta: spx_signal_count - nighthawk_signal_count,
+      };
     }
     case "get_nighthawk_dossier": {
       let editionFor = input.date ? String(input.date) : null;

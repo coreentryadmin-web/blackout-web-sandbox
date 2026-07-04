@@ -51,7 +51,14 @@ import {
   updateOpenPlay,
   type OpenPlayRow,
 } from "@/lib/spx-play-store";
-import { maybeLogSpxPlay } from "@/lib/providers/spx-signal-log";
+import {
+  maybeLogSpxPlay,
+  logSpxShadowFactors,
+  logSpxMacroPredictionsShadowFactor,
+  logSpxSkewShadowFactors,
+  logSpxEcosystemShadowFactors,
+  logMegaCapCatalystShadowFactors,
+} from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
 import {
@@ -1135,6 +1142,59 @@ export async function evaluateSpxPlay(
   if (!confluence) {
     return scanningPayload(desk, null, pickIdleMessage());
   }
+
+  // SHADOW-MODE factor logging (src/lib/spx-signals-shadow.ts) — fire-and-forget,
+  // purely observational. Captures the RAW confluence.score/grade from
+  // computeSpxConfluence() above, BEFORE the Night Hawk prior bonus just below
+  // mutates confluence.score, so the logged "actual_score" pairs each shadow
+  // observation with the pure engine output it should be correlated against.
+  // computeSpxConfluence()'s return value itself is untouched by this call —
+  // see spx-signals.test.ts's byte-for-byte proof.
+  firePlayTelemetry("logSpxShadowFactors", () =>
+    logSpxShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+  // SHADOW-MODE factor logging, part 2 (src/lib/spx-signals-shadow-skew.ts): risk-reversal
+  // skew + realized-vs-implied vol. Same non-blocking idiom, same "read BEFORE the Night Hawk
+  // prior bonus mutates confluence.score" contract as logSpxShadowFactors just above.
+  firePlayTelemetry("logSpxSkewShadowFactors", () =>
+    logSpxSkewShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE macro-prediction factor logging (src/lib/spx-signals-shadow-predictions.ts)
+  // — sibling of the call above, same fire-and-forget/purely-observational contract, same
+  // pre-Night-Hawk-bonus score/grade snapshot. Observes UW prediction-market consensus
+  // specifically around macroHardBlock's own CPI/FOMC/NFP/PPI/GDP hard-block windows
+  // (spx-play-gates.ts) — zero effect on computeSpxConfluence()'s actual return value.
+  firePlayTelemetry("logSpxMacroPredictionsShadowFactor", () =>
+    logSpxMacroPredictionsShadowFactor(desk, { score: confluence.score, grade: confluence.grade })
+  );
+
+  // SHADOW-MODE ecosystem-context factor logging (src/lib/spx-signals-shadow-ecosystem.ts)
+  // — the BIE-mediated generalization of the getNhConfluenceBonus() pattern
+  // below to 0DTE Command, plus a differentiated SPX-ticker-scoped flow-
+  // anomaly read. Same fire-and-forget, observation-only contract as
+  // logSpxShadowFactors immediately above: captures confluence.direction
+  // BEFORE the Night Hawk prior bonus below can mutate confluence.score (it
+  // never touches .direction, but capturing both together here keeps this
+  // call and the one above reading identically-aged confluence state).
+  // computeSpxConfluence()'s return value itself is untouched by this call —
+  // see spx-signals.test.ts's byte-for-byte proof.
+  firePlayTelemetry("logSpxEcosystemShadowFactors", () =>
+    logSpxEcosystemShadowFactors(desk, {
+      score: confluence.score,
+      grade: confluence.grade,
+      direction: confluence.direction,
+    })
+  );
+
+  // SHADOW-MODE factor logging, catalyst edition (src/lib/spx-signals-shadow-
+  // catalysts.ts) — same fire-and-forget idiom, same pre-Night-Hawk-bonus
+  // score/grade snapshot as logSpxShadowFactors just above, kept as its own
+  // call (not folded into logSpxShadowFactors) so each shadow factor's
+  // wiring is independently reviewable/revertible.
+  firePlayTelemetry("logMegaCapCatalystShadowFactors", () =>
+    logMegaCapCatalystShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
 
   // NH morning prior: inject the Night Hawk evening signal as a signed confluence factor.
   // Bounded at ±3 — a soft prior, not an override. Only applies when the edition is fresh

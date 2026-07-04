@@ -1,5 +1,6 @@
 import { dbConfigured, dbQuery } from "@/lib/db";
 import { isPremarketBriefFresh, todayEtYmd } from "@/lib/providers/spx-session";
+import { fetchSignalAccuracyBySource, blendedAccuracy, MIN_SAMPLE_FOR_RECOMMENDATION } from "@/lib/signal-accuracy";
 
 /** Cross-service intel pulled from the same Postgres tables as /api/platform/intel. */
 export type PlatformIntelSnapshot = {
@@ -42,7 +43,7 @@ export async function fetchPlatformIntelSnapshot(): Promise<PlatformIntelSnapsho
   if (!dbConfigured()) return emptySnapshot();
 
   try {
-    const [regimeRes, anomalyRes, briefRes, regimeAccRes] = await Promise.all([
+    const [regimeRes, anomalyRes, briefRes, bySource] = await Promise.all([
       dbQuery("SELECT * FROM market_regime ORDER BY captured_at DESC LIMIT 1", []),
       dbQuery(
         `SELECT ticker, severity FROM flow_anomalies
@@ -55,24 +56,19 @@ export async function fetchPlatformIntelSnapshot(): Promise<PlatformIntelSnapsho
          WHERE brief_type = 'premarket' ORDER BY brief_date DESC LIMIT 1`,
         []
       ),
-      dbQuery(
-        `SELECT se.metadata->>'regime' AS regime,
-                ROUND(COUNT(*) FILTER (WHERE so.direction_correct = true)::numeric /
-                  NULLIF(COUNT(*), 0) * 100, 1) AS win_rate
-         FROM signal_events se
-         JOIN signal_outcomes so ON so.signal_event_id = se.id
-         WHERE se.fired_at > NOW() - INTERVAL '30 days'
-           AND so.checkpoint = 'T+30'
-           AND se.metadata->>'regime' IS NOT NULL
-         GROUP BY se.metadata->>'regime'`,
-        []
-      ),
+      // Real signal accuracy from the LIVE outcome ledgers (spx_play_outcomes,
+      // nighthawk_play_outcomes) — NOT signal_events/signal_outcomes. That bridge table
+      // has never received a single write in production (nothing calls
+      // POST /api/signals/record outside its own route file), so this JOIN used to always
+      // return zero rows and signalRecommendation below was permanently null/CAUTION-only.
+      // See docs/audit/FINDINGS.md and src/lib/signal-accuracy.ts (shared with
+      // /api/platform/intel/route.ts so both report identical numbers).
+      fetchSignalAccuracyBySource(),
     ]);
 
     const regimeRow = regimeRes.rows[0] as Record<string, unknown> | undefined;
     const anomalies = anomalyRes.rows as Array<{ ticker?: string; severity?: string }>;
     const briefRowRaw = briefRes.rows[0] as Record<string, unknown> | undefined;
-    const regimeAcc = regimeAccRes.rows as Array<{ regime?: string; win_rate?: string | number }>;
 
     // Same staleness gate as /api/brief/premarket — this snapshot feeds cron
     // decisioning and AI prompt context (formatPlatformIntelForPrompt below),
@@ -88,18 +84,21 @@ export async function fetchPlatformIntelSnapshot(): Promise<PlatformIntelSnapsho
 
     const composite = regimeRow?.composite != null ? String(regimeRow.composite) : null;
     const critical = anomalies.filter((a) => a.severity === "CRITICAL");
-    const currentAcc = composite
-      ? regimeAcc.find((r) => r.regime === composite)
-      : undefined;
-    const winRate = currentAcc?.win_rate != null ? Number(currentAcc.win_rate) : null;
+    // Blended (SPX Slayer + Night Hawk) real win rate — NOT conditioned on the current
+    // regime. Neither real ledger tags an outcome with the regime active at entry, so a
+    // genuine regime-conditional breakdown isn't derivable without new schema/joins (out
+    // of scope for this data-source fix — see /api/platform/intel/route.ts for the same
+    // call and the same reasoning).
+    const blended = blendedAccuracy(bySource);
+    const hasSample = blended.total >= MIN_SAMPLE_FOR_RECOMMENDATION && blended.winRate != null;
 
     let signalRecommendation: string | null = null;
-    if (winRate != null && winRate < 50 && composite) {
-      signalRecommendation = `REDUCE SIZE — ${composite} regime historical win rate ${winRate}%.`;
+    if (hasSample && (blended.winRate as number) < 50) {
+      signalRecommendation = `REDUCE SIZE — blended signal win rate ${blended.winRate}% across ${blended.total} closed plays (SPX Slayer + Night Hawk)${composite ? `, current regime ${composite}` : ""}.`;
     } else if (critical.length > 0) {
       signalRecommendation = `CAUTION — ${critical.length} critical flow anomaly(ies) in the last hour.`;
-    } else if (winRate != null && winRate >= 50 && composite) {
-      signalRecommendation = `NORMAL SIZE — ${composite} regime historical win rate ${winRate}%.`;
+    } else if (hasSample) {
+      signalRecommendation = `NORMAL SIZE — blended signal win rate ${blended.winRate}% across ${blended.total} closed plays (SPX Slayer + Night Hawk)${composite ? `, current regime ${composite}` : ""}.`;
     }
 
     return {
