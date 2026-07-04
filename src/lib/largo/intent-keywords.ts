@@ -24,6 +24,23 @@ export const VOL_TOOLS_RE = /\b(vol|vix|iv|skew|rank)\b/;
 export const NIGHTHAWK_RE =
   /\b(nighthawk|night hawk|playbook|tomorrow|evening plays|hawk plays|top plays|hawk)\b/;
 
+/**
+ * SPX Slayer's OWN play-engine state (get_spx_play) — phase/setup/bias/confluence/gate
+ * wording next to an SPX-like token, or "play ... veto/reject(ed/ion)" (the play-engine
+ * is the only thing on the desk with gate-block reasoning to explain, so a bare
+ * "why did the play get rejected" is unambiguous even without an explicit spx/sniper
+ * token). Kept distinct from MARKET_REGIME_RE below so an engine-state question
+ * doesn't also nudge Largo toward the market-wide get_market_regime tool (LARGO-110).
+ */
+export const SPX_ENGINE_STATE_RE =
+  /\b(spx|s&p|0dte|sniper|slayer)\b.*\b(phase|setup|bias|confluence|gate|gates|veto|vetoed|reject|rejected|rejection)\b|\b(phase|setup|bias|confluence|gate|gates|veto|vetoed|reject|rejected|rejection)\b.*\b(spx|s&p|0dte|sniper|slayer)\b|\bplay\b.*\b(veto|vetoed|reject|rejected|rejection)\b|\b(veto|vetoed|reject|rejected|rejection)\b.*\bplay\b/;
+
+/**
+ * Market-wide backdrop wording (get_market_regime) — regime/backdrop/environment/playbook,
+ * as opposed to SPX Slayer's own play-engine phase/gates (SPX_ENGINE_STATE_RE above).
+ */
+export const MARKET_REGIME_RE = /\b(market regime|regime|backdrop|environment|playbook)\b/;
+
 export const SCREENER_RE = /\b(screener|squeeze|movers|breadth|sector)\b/;
 
 export const FUNDAMENTAL_RE = /\b(fundamental|financial|insider|congress|analyst|institutional|predictions|smart money|whales)\b/;

@@ -1,11 +1,13 @@
 import type { AnthropicMessage } from "@/lib/providers/anthropic";
 import {
   FLOW_RE,
+  MARKET_REGIME_RE,
   matchesIntent,
   NEWS_RE,
   NIGHTHAWK_RE,
   PLAY_STATE_RE,
   SPX_DESK_RE,
+  SPX_ENGINE_STATE_RE,
   VOL_RE,
 } from "@/lib/largo/intent-keywords";
 
@@ -15,6 +17,10 @@ export type LargoQuestionIntent = {
   needsFlow: boolean;
   needsNews: boolean;
   needsVol: boolean;
+  /** SPX Slayer's OWN play-engine phase/gates/confluence wording — hints get_spx_play (LARGO-110). */
+  needsSpxEngineState: boolean;
+  /** Market-wide backdrop/regime wording, distinct from the above — hints get_market_regime (LARGO-110). */
+  needsMarketRegime: boolean;
   tickerHint: string | null;
   guidance: string;
 };
@@ -73,6 +79,8 @@ export function analyzeLargoQuestion(
   const needsNews = matchesIntent(ctx, NEWS_RE);
   const needsVol = matchesIntent(ctx, VOL_RE);
   const needsNightHawk = matchesIntent(ctx, NIGHTHAWK_RE);
+  const needsSpxEngineState = matchesIntent(ctx, SPX_ENGINE_STATE_RE);
+  const needsMarketRegime = matchesIntent(ctx, MARKET_REGIME_RE);
 
   const tickerHint = extractTicker(question, recentUserText(history));
   const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);
@@ -103,6 +111,17 @@ export function analyzeLargoQuestion(
   if (needsFlow) {
     toolHints.push("get_flow_tape");
   }
+  // Engine-state ("what phase is SPX Slayer in", "why did the play get rejected") vs
+  // market-wide-regime ("what's the market regime today", "good environment for calls")
+  // wording route to two different tools that Claude otherwise conflates on the word
+  // "regime" alone (LARGO-110) — keep these two hints mutually exclusive in practice
+  // since SPX_ENGINE_STATE_RE and MARKET_REGIME_RE target disjoint vocabulary.
+  if (needsSpxEngineState) {
+    toolHints.push("get_spx_play");
+  }
+  if (needsMarketRegime) {
+    toolHints.push("get_market_regime");
+  }
 
   const uniqueTools = Array.from(new Set(toolHints));
 
@@ -125,6 +144,8 @@ export function analyzeLargoQuestion(
     needsFlow,
     needsNews,
     needsVol,
+    needsSpxEngineState,
+    needsMarketRegime,
     tickerHint,
     guidance,
   };
