@@ -3,6 +3,15 @@ import assert from "node:assert/strict";
 import type { NighthawkPlayOutcomeRow } from "@/lib/db";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
 
+// fetchPlayOutcomeStatsForWindow (spx-play-outcomes.ts) branches on dbConfigured()
+// — with no DATABASE_URL/DATABASE_PUBLIC_URL set, it silently reads an in-memory
+// fallback instead of calling the (mocked) fetchClosedPlayOutcomes below, so this
+// suite would pass or fail depending on whatever ambient env the runner happens to
+// have. Force the DB-configured branch so the mock is always actually exercised —
+// this is a fixture value only, dbConfigured() just checks it's non-empty; the
+// mocked "../db" below means nothing ever attempts a real connection.
+process.env.DATABASE_URL = "postgres://test-hermetic-fixture";
+
 // run-tool.ts's import graph transitively pulls in
 // src/lib/providers/gex-positioning.ts (via get_positioning's
 // fetchPositioningSummary), which has `import "server-only"` at its top.
