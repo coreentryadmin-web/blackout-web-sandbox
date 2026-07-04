@@ -1,6 +1,6 @@
 import { dbConfigured, dbQuery, insertShadowFactorObservation, getMeta, insertSpxSignalLog, setMeta } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import type { SpxSignalFactor } from "@/lib/spx-signals";
+import type { SpxPlayDirection, SpxSignalFactor } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { computeShadowFactors, SHADOW_ANOMALY_TICKERS } from "@/lib/spx-signals-shadow";
@@ -13,6 +13,7 @@ import {
 import { fetchUwRealizedVol, fetchUwRiskReversalSkew } from "./unusual-whales";
 import { fetchPolygonIvTermStructure, fetchPolygonRealizedVol } from "./polygon-options-gex";
 import { latestRow, parseLatestImpliedVol, parseLatestRealizedVol, parseLatestRiskReversalSkew } from "@/lib/nighthawk/vol-metrics";
+import { computeEcosystemShadowFactors } from "@/lib/spx-signals-shadow-ecosystem";
 import { computeCatalystShadowFactors, type CatalystInput } from "@/lib/spx-signals-shadow-catalysts";
 import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
@@ -274,6 +275,49 @@ export async function logSpxSkewShadowFactors(
     computeSkewShadowFactor(desk, skewReading),
     computeVolDivergenceShadowFactor(desk, volReading),
   ];
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * SHADOW-MODE factor logging, ecosystem-context flavor — sibling of
+ * logSpxShadowFactors above, same fire-and-forget call contract from
+ * evaluateSpxPlay (src/lib/spx-play-engine.ts), writing into the SAME
+ * spx_confluence_shadow_observations table (factor_name is the discriminator
+ * column — see db.ts's table comment). See
+ * src/lib/spx-signals-shadow-ecosystem.ts's module doc for the full
+ * rationale: this is the BIE-mediated generalization of the live
+ * getNhConfluenceBonus() pattern to 0DTE Command, plus a second,
+ * differentiated SPX-ticker-scoped flow-anomaly read.
+ *
+ * Takes `confluence.direction` (in addition to score/grade) because — unlike
+ * the flow_anomalies factor above, which doesn't need the engine's own bias —
+ * the 0DTE-agreement factor's whole point is comparing 0DTE Command's
+ * direction against the engine's own. Callers must pass the SAME confluence
+ * object logSpxShadowFactors was given (captured before the Night Hawk prior
+ * mutates it), for the identical "pairs with the pure engine output" reason
+ * documented on logSpxShadowFactors above.
+ */
+export async function logSpxEcosystemShadowFactors(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string; direction: SpxPlayDirection | null }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const observations = await computeEcosystemShadowFactors(desk, confluence.direction);
   const sessionDate = todayEtYmd();
 
   for (const obs of observations) {
