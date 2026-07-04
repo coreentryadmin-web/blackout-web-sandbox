@@ -55,6 +55,7 @@ import {
   maybeLogSpxPlay,
   logSpxShadowFactors,
   logSpxMacroPredictionsShadowFactor,
+  logSpxSkewShadowFactors,
   logSpxEcosystemShadowFactors,
   logMegaCapCatalystShadowFactors,
 } from "@/lib/providers/spx-signal-log";
@@ -1151,6 +1152,12 @@ export async function evaluateSpxPlay(
   // see spx-signals.test.ts's byte-for-byte proof.
   firePlayTelemetry("logSpxShadowFactors", () =>
     logSpxShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
+  );
+  // SHADOW-MODE factor logging, part 2 (src/lib/spx-signals-shadow-skew.ts): risk-reversal
+  // skew + realized-vs-implied vol. Same non-blocking idiom, same "read BEFORE the Night Hawk
+  // prior bonus mutates confluence.score" contract as logSpxShadowFactors just above.
+  firePlayTelemetry("logSpxSkewShadowFactors", () =>
+    logSpxSkewShadowFactors(desk, { score: confluence.score, grade: confluence.grade })
   );
 
   // SHADOW-MODE macro-prediction factor logging (src/lib/spx-signals-shadow-predictions.ts)
