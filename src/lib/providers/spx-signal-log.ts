@@ -4,6 +4,9 @@ import type { SpxSignalFactor } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { computeShadowFactors, SHADOW_ANOMALY_TICKERS } from "@/lib/spx-signals-shadow";
+import { computeCatalystShadowFactors, type CatalystInput } from "@/lib/spx-signals-shadow-catalysts";
+import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
+import { polygonConfigured } from "@/lib/providers/config";
 
 const CURSOR_KEY = "spx_signal_log_cursor";
 
@@ -141,6 +144,77 @@ export async function logSpxShadowFactors(
   }));
 
   const observations = computeShadowFactors(desk, anomalies, flowFeedFresh);
+  const sessionDate = todayEtYmd();
+
+  for (const obs of observations) {
+    await insertShadowFactorObservation({
+      session_date: sessionDate,
+      factor_name: obs.factor_name,
+      available: obs.available,
+      implied_weight: obs.implied_weight,
+      direction: obs.direction,
+      detail: obs.detail,
+      price_at_observation: desk.price ?? null,
+      actual_score: confluence.score,
+      actual_grade: confluence.grade,
+    });
+  }
+}
+
+/**
+ * SHADOW-MODE factor logging, catalyst edition — sibling of
+ * logSpxShadowFactors above (same fire-and-forget call site in
+ * evaluateSpxPlay, src/lib/spx-play-engine.ts), kept as its own function
+ * rather than folded into logSpxShadowFactors so this PR's diff there is a
+ * single new call, not a change to the flow-anomaly factor's own body. See
+ * src/lib/spx-signals-shadow-catalysts.ts's module doc for the full
+ * rationale (folding Benzinga catalysts into the real "Mega-caps" factor's
+ * blind spot — it scores `change_pct` with no notion of WHY a leader moved).
+ *
+ * Fetches Benzinga catalysts per mega-cap leader ticker via the SAME
+ * fetchBenzingaCatalysts (src/lib/providers/polygon.ts) every other consumer
+ * uses (largo/run-tool.ts's get_catalysts tool, nights-watch/position-
+ * detail.ts, nighthawk/dossier.ts) — no new provider call. Deliberately does
+ * NOT add a catalyst fetch to buildSpxDesk()/SpxDeskPayload
+ * (src/lib/providers/spx-desk.ts): that builder runs on every desk
+ * poll/render on the member-facing hot path, while this shadow factor only
+ * needs to run once per evaluateSpxPlay tick — same reason
+ * logSpxShadowFactors queries flow_anomalies directly here instead of
+ * threading it through desk. fetchBenzingaCatalysts is itself
+ * serverCache-wrapped (TTL.NEWS, 2min) per ticker, so repeat ticks share one
+ * upstream pull per ticker per window regardless of call site.
+ *
+ * AVAILABILITY: fetchBenzingaCatalysts swallows its own fetch errors and
+ * returns [] on failure (src/lib/providers/polygon.ts), so it cannot itself
+ * signal "the fetch broke" vs "no catalysts." polygonConfigured() (Benzinga
+ * news is served through Polygon's /benzinga/v2/news, gated on
+ * POLYGON_API_KEY) is passed as the best available "the fetch could even
+ * have succeeded" proxy — see computeCatalystShadowFactors's own doc comment
+ * for the honest limitation this leaves (a configured-but-transiently-
+ * failing fetch still reads as "no catalysts found," same as every other
+ * consumer of this fetcher today).
+ */
+export async function logMegaCapCatalystShadowFactors(
+  desk: SpxDeskPayload,
+  confluence: { score: number; grade: string }
+): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const leaders = desk.leader_stocks ?? [];
+  const catalystFetchOk = polygonConfigured();
+
+  let catalysts: CatalystInput[] = [];
+  if (catalystFetchOk && leaders.length > 0) {
+    const perTicker = await Promise.all(
+      leaders.map(async (l): Promise<CatalystInput[]> => {
+        const found = await fetchBenzingaCatalysts(l.ticker, 5);
+        return found.map((c) => ({ ticker: l.ticker, type: c.type, title: c.title, published: c.published }));
+      })
+    );
+    catalysts = perTicker.flat();
+  }
+
+  const observations = computeCatalystShadowFactors(desk, catalysts, catalystFetchOk);
   const sessionDate = todayEtYmd();
 
   for (const obs of observations) {
