@@ -1544,7 +1544,7 @@ body::before {
 .bie-brain-canvas {
   position: relative;
   width: 100%;
-  aspect-ratio: 1280 / 420;
+  aspect-ratio: 1280 / 480;
 }
 
 .bie-brain-scroll-wrap {
@@ -1556,15 +1556,10 @@ body::before {
 }
 
 .bie-brain-layer-band {
-  opacity: 0.045;
+  opacity: 0.035;
 }
 
 .bie-brain-layer-band-validation {
-  opacity: 0.085;
-}
-
-.bie-brain-layer-band-core {
-  fill: #5df7ff;
   opacity: 0.07;
 }
 
@@ -1720,13 +1715,46 @@ body::before {
   50% { opacity: 0.55; }
 }
 
+.bie-brain-cap-node-side {
+  opacity: 0.82;
+}
+
+.bie-reactor-glow {
+  animation: bie-reactor-glow-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes bie-reactor-glow-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
+.bie-reactor-energy-ring {
+  fill: none;
+  stroke: rgba(93, 247, 255, 0.55);
+  stroke-width: 1.8;
+  stroke-dasharray: 14 20;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-reactor-energy-ring-outer {
+  fill: none;
+  stroke: rgba(191, 95, 255, 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 6 28;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-reactor-particle {
+  fill: rgba(148, 226, 255, 0.85);
+  filter: drop-shadow(0 0 3px rgba(93, 247, 255, 0.9));
+}
+
 .bie-brain-core-shell {
   fill: none;
   stroke: url(#bie-core-halo);
-  stroke-width: 1.5;
-  opacity: 0.35;
-  transform-origin: 50% 50%;
-  animation: bie-core-shell-breathe 4s ease-in-out infinite;
+  stroke-width: 2;
+  opacity: 0.45;
+  animation: bie-core-shell-breathe 3.6s ease-in-out infinite;
 }
 
 @keyframes bie-core-shell-breathe {
@@ -1736,29 +1764,31 @@ body::before {
 
 .bie-brain-ring {
   fill: none;
-  stroke: rgba(0, 229, 255, 0.55);
-  stroke-width: 1.5;
+  stroke: rgba(0, 229, 255, 0.6);
+  stroke-width: 2;
   opacity: 0;
-  transform-origin: 50% 50%;
-  animation: bie-brain-ring-ping 3.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  transform-origin: 0 0;
+  transform-box: fill-box;
+  animation: bie-brain-ring-ping 3.2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
 }
 
 @keyframes bie-brain-ring-ping {
-  0% { transform: scale(0.55); opacity: 0.8; }
+  0% { transform: scale(0.5); opacity: 0.85; }
   75% { opacity: 0; }
-  100% { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
 }
 
 .bie-brain-core {
   fill: url(#bie-core-grad);
-  transform-origin: 50% 50%;
-  animation: bie-brain-core-pulse 2.4s ease-in-out infinite;
-  filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.65)) drop-shadow(0 0 26px rgba(191, 95, 255, 0.3));
+  transform-origin: 0 0;
+  transform-box: fill-box;
+  animation: bie-brain-core-pulse 2.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.75)) drop-shadow(0 0 40px rgba(191, 95, 255, 0.35));
 }
 
 @keyframes bie-brain-core-pulse {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
+  50% { transform: scale(1.08); }
 }
 
 .bie-brain-label-overlay {
@@ -1790,6 +1820,25 @@ body::before {
   text-align: right;
 }
 
+.bie-brain-cap-label-side {
+  opacity: 0.78;
+  font-size: clamp(6.5px, 0.95vw, 9px);
+}
+
+.bie-brain-cap-label-intel {
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: clamp(6px, 0.82vw, 8px);
+  letter-spacing: 0.03em;
+  color: rgba(225, 200, 255, 0.9);
+  background: rgba(4, 4, 7, 0.55);
+  border: 1px solid rgba(191, 95, 255, 0.35);
+  padding: 0.08rem 0.3rem;
+  max-width: 5.5rem;
+  white-space: normal;
+  line-height: 1.15;
+}
+
 .bie-brain-cap-label-reasoning {
   transform: translate(14px, -50%);
   text-align: left;
@@ -1813,10 +1862,11 @@ body::before {
 
 .bie-brain-core-label {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: clamp(13px, 1.4vw, 16px);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   color: #04191c;
+  text-shadow: 0 0 12px rgba(93, 247, 255, 0.45);
 }
 
 .bie-brain-core-caption {
@@ -1826,6 +1876,37 @@ body::before {
   text-transform: uppercase;
   color: rgba(4, 25, 28, 0.85);
   white-space: nowrap;
+  animation: bie-core-phrase-fade 2.4s ease-in-out;
+}
+
+@keyframes bie-core-phrase-fade {
+  0% { opacity: 0.35; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+.bie-brain-status-chips {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.45rem;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bie-brain-status-chip {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 6.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--chip-accent, #5df7ff);
+  padding: 0.12rem 0.4rem;
+  border-radius: 2px;
+  background: rgba(4, 4, 7, 0.65);
+  border: 1px solid color-mix(in srgb, var(--chip-accent, #5df7ff) 45%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--chip-accent, #5df7ff) 25%, transparent);
 }
 
 .bie-brain-story-rail {
@@ -1837,6 +1918,95 @@ body::before {
   margin-top: 0.85rem;
   padding-inline: clamp(1.25rem, 5vw, 4rem);
   max-width: 100%;
+}
+
+.bie-output-stack-line {
+  fill: none;
+  stroke: rgba(191, 95, 255, 0.42);
+  stroke-width: 1.6;
+  stroke-dasharray: 0.06 0.05;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-output-stack-bridge {
+  fill: none;
+  stroke: rgba(255, 204, 77, 0.35);
+  stroke-width: 1.2;
+  stroke-dasharray: 0.04 0.06;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-output-stack-chevron {
+  opacity: 0.75;
+  filter: drop-shadow(0 0 4px rgba(191, 95, 255, 0.65));
+}
+
+.bie-output-stack-chevron-out {
+  filter: drop-shadow(0 0 4px rgba(255, 204, 77, 0.65));
+}
+
+.bie-output-stack-pulse {
+  filter: drop-shadow(0 0 4px rgba(191, 95, 255, 0.9));
+}
+
+.bie-brain-output-stack-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.bie-brain-output-stack-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(7px, 0.9vw, 9px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 0.12rem 0.4rem;
+  background: rgba(4, 4, 7, 0.78);
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.bie-brain-output-stack-label-core {
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.bie-brain-output-stack-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.85rem;
+  padding-inline: clamp(1.25rem, 5vw, 4rem);
+}
+
+.bie-brain-output-stack-rail-segment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.bie-brain-output-stack-rail-step {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.bie-brain-output-stack-rail-step-core {
+  font-weight: 700;
+}
+
+.bie-brain-output-stack-rail-arrow {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(148, 226, 255, 0.65);
+  letter-spacing: 0;
 }
 
 .bie-brain-story-step {
@@ -2012,7 +2182,18 @@ body::before {
   }
 
   .bie-brain-core-caption {
-    display: none;
+    display: block;
+    font-size: 6px;
+  }
+
+  .bie-brain-status-chips {
+    gap: 0.25rem;
+  }
+
+  .bie-brain-status-chip {
+    font-size: 5.5px;
+    letter-spacing: 0.12em;
+    padding: 0.08rem 0.28rem;
   }
 }
 
@@ -2027,6 +2208,9 @@ body::before {
   .bie-spine-pulse { display: none; }
   .bie-brain-cap-ring { animation: none; opacity: 0.25; }
   .bie-brain-gate { animation: none; opacity: 0.7; }
+  .bie-reactor-glow { animation: none; opacity: 0.7; }
+  .bie-brain-core-caption { animation: none; }
+  .bie-output-stack-pulse { display: none; }
 }
 
 .bento-card-watermark {
