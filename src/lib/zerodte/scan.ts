@@ -96,6 +96,11 @@ export type ZeroDteScanResult = {
   setups: EnrichedZeroDteSetup[];
   /** Tickers withheld because Night Hawk already published them (latest edition). */
   nighthawk_covered: string[];
+  /** False when the tape fetch this scan depends on failed and silently degraded to an
+   *  empty read — distinguishes "genuinely quiet tape" from "the scan couldn't see the
+   *  tape at all" so the board's freshness badge can tell members apart instead of
+   *  always reading "Live". Never gates scoring/output, purely a provenance signal. */
+  upstream_ok: boolean;
 };
 
 /**
@@ -109,12 +114,16 @@ export async function scanZeroDteBoard(flags?: {
   news?: Map<string, NewsHeat>;
 }): Promise<ZeroDteScanResult> {
   const today = todayEt();
+  let upstreamOk = true;
   const [flows, nhEdition] = await Promise.all([
     // max_dte: 1 is LOAD-BEARING — it scopes the premium ranking to 0-1DTE prints in
     // SQL. Without it the top-400 spans ALL expiries and heavy-day whale prints crowd
     // every 0DTE print out of the scan's input (live-reproduced: $3.1M AAPL stack → 0 setups).
     fetchRecentFlows({ since_hours: 7, min_premium: 150_000, order: "premium", limit: 400, max_dte: 1 }).catch(
-      () => []
+      () => {
+        upstreamOk = false;
+        return [];
+      }
     ),
     fetchLatestNighthawkEdition().catch(() => null),
   ]);
@@ -171,7 +180,7 @@ export async function scanZeroDteBoard(flags?: {
   await attachContractPlans(setups);
   await attachIntradayEdge(setups);
 
-  return { setups, nighthawk_covered: nighthawkCovered };
+  return { setups, nighthawk_covered: nighthawkCovered, upstream_ok: upstreamOk };
 }
 
 /** Cached (3-min) intraday read from a name's own minute bars. */

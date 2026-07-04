@@ -9,6 +9,15 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 FIXED 2026-07-04 — 0DTE Command board's freshness badge was a hardcoded `"live"` literal (launch blocker)
+**Where:** `src/components/zerodte/ZeroDteBoard.tsx:198` passed `status="live"` into `FreshnessChip` as a literal, never derived from any success/failure signal, and `data.as_of` (`route.ts:99`) was just response-build time — independent of whether the underlying scan actually produced data. `scanZeroDteBoard()`'s flow fetch (`scan.ts:116`, `fetchRecentFlows({...}).catch(() => [])`) silently degraded to zero setups on any UW/DB failure, and the route still returned `available:true`. Result: a silently-failed upstream scan rendered as a calm, current, green-badged empty board — indistinguishable from a genuinely quiet tape, and the board's own reassuring empty-state copy ("No A-tier play right now — and that's the discipline...") made this worse, not better.
+
+**Fix:** threaded a real `upstream_ok` boolean from the tape-fetch `.catch()` (now sets `upstreamOk = false` instead of silently swallowing) through `ZeroDteScanResult` → `buildBoardPayload` → the API response. Added `resolveZeroDteFreshness(upstreamOk, asOfMs, nowMs, staleAfterMs=60_000)` — a pure function replacing the hardcoded literal: `upstream_ok===false` → `"offline"`; response older than 60s (6x the board's 10s active-session poll interval) → `"stale"`; otherwise `"live"`. Mirrors the existing `SpxSniperHeader.tsx`'s `resolveFreshness()` age-derived pattern, generalized with the upstream-failure signal this board didn't previously have.
+
+**Verification:** `npx tsc --noEmit` clean; full suite `945/945` passing (5 new); `npm run build` clean; `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🟢 FIXED 2026-07-04 — `NetPremiumLeaderboard` conflated loading with a genuinely quiet tape (audit finding, high)
 **Where:** `src/components/desk/NetPremiumLeaderboard.tsx` had no `loading` prop; the render gate `rows.length === 0 ? <skeletons> : <rows>` couldn't distinguish "awaiting first data" from "data loaded, zero qualifying rows," so a genuinely quiet period looked identical to a stuck/broken panel indefinitely. `FlowFeed.tsx` already computes a `loading` state (line 109, already threaded into `FlowAlertStream`) but wasn't passing it here.
 

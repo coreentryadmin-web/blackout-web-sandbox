@@ -86,7 +86,7 @@ async function buildBoardPayload() {
   // The hunt itself — same pipeline the cron scanner runs every ~2 min. Between
   // cron ticks a member poll refreshes the live view; dossier enrichment is shared
   // through the same per-ticker cache either way.
-  const { setups, nighthawk_covered } = await scanZeroDteBoard({
+  const { setups, nighthawk_covered, upstream_ok } = await scanZeroDteBoard({
     earnings: earningsFlags,
     news: newsFlags,
   });
@@ -97,6 +97,7 @@ async function buildBoardPayload() {
   return roundFloats({
     available: true,
     as_of: new Date().toISOString(),
+    upstream_ok,
     session: {
       date: today,
       trading_day: tradingDay,

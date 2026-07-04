@@ -1,9 +1,22 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
-import { Badge, EmptyState, FreshnessChip, Panel, Skeleton, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
+import {
+  Badge,
+  EmptyState,
+  FreshnessChip,
+  Panel,
+  Skeleton,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+  type FreshnessStatus,
+} from "@/components/ui";
 import type { EnrichedZeroDteSetup, SessionHeat } from "@/lib/zerodte/board";
 import { buildIntelNote, type IntelAction } from "@/lib/zerodte/intel";
 import { etMinutesOf } from "@/lib/zerodte/plan";
@@ -47,11 +60,30 @@ type BoardResponse = {
   available: boolean;
   degraded?: boolean;
   as_of?: string;
+  /** False when the scan's own upstream tape fetch failed and silently degraded to an
+   *  empty read this cycle — distinguishes "genuinely quiet tape" from "the scan
+   *  couldn't see the tape" for the freshness badge below. */
+  upstream_ok?: boolean;
   session?: { date: string; trading_day: boolean; heat: SessionHeat };
   setups?: EnrichedZeroDteSetup[];
   ledger?: LedgerRow[];
   covered_elsewhere?: string[];
 };
+
+/** Pure: derives a real freshness status from the scan's own success signal + response
+ *  age, instead of a hardcoded "live" literal. `staleAfterMs` defaults to 6x the board's
+ *  10s active-session poll interval — enough slack for normal jitter, still short enough
+ *  to flag a genuinely stuck feed well before a member would notice on their own. */
+export function resolveZeroDteFreshness(
+  upstreamOk: boolean | undefined,
+  asOfMs: number,
+  nowMs: number,
+  staleAfterMs = 60_000
+): FreshnessStatus {
+  if (upstreamOk === false) return "offline";
+  if (asOfMs > 0 && nowMs > 0 && nowMs - asOfMs > staleAfterMs) return "stale";
+  return "live";
+}
 
 const fetcher = (url: string) =>
   fetch(url, { cache: "no-store", credentials: "same-origin" }).then((r) => r.json()) as Promise<BoardResponse>;
@@ -184,6 +216,14 @@ function mergePlays(
 
 function HeatHeader({ data }: { data: BoardResponse }) {
   const heat = data.session?.heat;
+  const asOfMs = data.as_of ? new Date(data.as_of).getTime() : 0;
+  const [nowMs, setNowMs] = useState(0);
+  useEffect(() => {
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 10_000);
+    return () => clearInterval(id);
+  }, []);
+  const freshnessStatus = resolveZeroDteFreshness(data.upstream_ok, asOfMs, nowMs);
   if (!heat) return null;
   const hot = heat.heat_pct >= 70;
   return (
@@ -195,7 +235,7 @@ function HeatHeader({ data }: { data: BoardResponse }) {
           </Badge>
           <span className="text-sm text-sky-200/80">{heat.note}</span>
         </div>
-        <FreshnessChip status="live" asOf={data.as_of ? new Date(data.as_of) : null} />
+        <FreshnessChip status={freshnessStatus} asOf={data.as_of ? new Date(data.as_of) : null} />
       </div>
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]" aria-hidden>
         <div
