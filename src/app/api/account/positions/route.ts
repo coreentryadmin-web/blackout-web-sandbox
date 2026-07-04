@@ -16,6 +16,7 @@ import {
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { requireTierApi } from "@/lib/market-api-auth";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,7 +104,7 @@ export async function GET(req: Request) {
       { delta: 0, gamma: 0, theta: 0, vega: 0, totalPremiumAtRisk: 0, totalDeltaDollars: 0, liveLegs: 0 }
     );
 
-    return NextResponse.json({ positions: enriched, portfolioGreeks });
+    return NextResponse.json({ positions: enriched, portfolioGreeks: roundFloats(portfolioGreeks) });
   } catch (error) {
     console.error("[account/positions GET]", error);
     return NextResponse.json({ error: "Failed to load positions" }, { status: 502 });
