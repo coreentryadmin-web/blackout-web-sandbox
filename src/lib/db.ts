@@ -653,6 +653,25 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     CREATE INDEX IF NOT EXISTS idx_bie_interactions_at ON bie_interactions(created_at DESC);
   `);
+  // Task #103 groundwork for #112 (routing Largo turns through BIE's self-eval
+  // loop): the loop needs to know what ACTUALLY happened on a turn, not just the
+  // question/answer_source pair captured above. `tools_used` mirrors the same
+  // JSONB-array idiom `largo_messages.tools_used` already uses (line ~458) — a
+  // real JSON array via toJsonbParam()/`::jsonb`, never a bare array bind (that
+  // serializes to a Postgres ARRAY-literal, not JSON — see toJsonbParam's doc
+  // comment and the Stage-4 audit-trail correction this repo already hit once).
+  // `intent_bucket` is additive alongside the existing `intent` column: `intent`
+  // stays raw (the router's intent name, or NULL on fallback — unchanged
+  // meaning, no existing reader touched), while `intent_bucket` normalizes NULL
+  // to the explicit "claude_fallback" sentinel so a query never has to special-
+  // case NULL to mean "fell through to Claude" vs. some future different
+  // meaning of NULL.
+  await p.query(`
+    ALTER TABLE bie_interactions ADD COLUMN IF NOT EXISTS tools_used JSONB DEFAULT '[]'::jsonb;
+  `);
+  await p.query(`
+    ALTER TABLE bie_interactions ADD COLUMN IF NOT EXISTS intent_bucket TEXT;
+  `);
   // BIE Layer 2 — knowledge store. Embeddings live in portable JSONB (corpus is
   // thousands of chunks; cosine ranking happens in Node) — zero extension
   // dependency, clean upgrade path to pgvector if the corpus outgrows this.
@@ -3773,7 +3792,13 @@ export async function fetchBieInteractionStats(sinceHours = 24): Promise<{
   };
 }
 
-/** BIE learning substrate — best-effort telemetry write, never blocks an answer. */
+/** BIE learning substrate — best-effort telemetry write, never blocks an answer.
+ *  `tools_used`/`intent_bucket` (task #103) are additive groundwork for #112 (routing
+ *  Largo turns through BIE's self-eval loop) — they capture what ACTUALLY happened on
+ *  a turn (the real tool names invoked, and the router's decided bucket: an intent name
+ *  for a deterministic route, or "claude_fallback" — see bieIntentBucket() in
+ *  bie/router.ts) alongside the pre-existing question/intent/answer_source columns,
+ *  which are untouched. */
 export async function insertBieInteraction(row: {
   user_id: string | null;
   question: string;
@@ -3782,11 +3807,14 @@ export async function insertBieInteraction(row: {
   claims_total: number | null;
   claims_verified: number | null;
   latency_ms: number | null;
+  tools_used: string[];
+  intent_bucket: string;
 }): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(
-    `INSERT INTO bie_interactions (user_id, question, intent, answer_source, claims_total, claims_verified, latency_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    `INSERT INTO bie_interactions
+       (user_id, question, intent, answer_source, claims_total, claims_verified, latency_ms, tools_used, intent_bucket)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
     [
       row.user_id,
       row.question.slice(0, 2000),
@@ -3795,6 +3823,8 @@ export async function insertBieInteraction(row: {
       row.claims_total,
       row.claims_verified,
       row.latency_ms,
+      toJsonbParam(row.tools_used),
+      row.intent_bucket,
     ]
   );
 }
