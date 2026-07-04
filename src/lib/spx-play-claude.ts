@@ -410,25 +410,29 @@ Respond ONLY valid JSON (verdict must be exactly "APPROVE_BUY" or "VETO"):
       ...(direction_mismatch !== undefined && { direction_mismatch }),
     };
 
-    // FABRICATION GUARD: Claude's free-text thesis ships verbatim into real-money 0DTE play
-    // cards with no check that the levels it cites are real — verify against the SAME price
-    // data fed into the prompt (mirrors gex-heatmap/explain's narrativeLevelsAreGrounded).
-    // An ungrounded thesis means Claude's own reasoning can't be trusted, so the whole verdict
-    // (not just the prose) falls back to the deterministic mechanical gate, never a fabricated
-    // AI approval/veto.
+    // FABRICATION GUARD: Claude's free-text headline AND thesis both ship verbatim onto the
+    // real-money 0DTE play card with no check that the levels they cite are real — verify
+    // BOTH against the SAME price data fed into the prompt (mirrors gex-heatmap/explain's
+    // narrativeLevelsAreGrounded, and matches spx-commentary.ts's headline+body join — the
+    // headline is just as capable of citing a hallucinated level as the thesis and ships in
+    // the exact same place on the card). Previously only `result.thesis` was checked here, so
+    // a fabricated number in the 12-word headline reached members completely unchecked while
+    // the thesis right next to it was protected. An ungrounded headline OR thesis means
+    // Claude's own reasoning can't be trusted, so the whole verdict (not just the prose) falls
+    // back to the deterministic mechanical gate, never a fabricated AI approval/veto.
     const known = knownPlayLevels(desk, confluence, technicals);
-    const grounding = checkNumbersGrounded(result.thesis, known);
+    const grounding = checkNumbersGrounded(`${result.headline} ${result.thesis}`, known);
     if (!grounding.grounded) {
       console.warn(
-        `[spx-play-claude] ungrounded level ${grounding.ungroundedValue} in Claude thesis — falling back to mechanical verdict.`
+        `[spx-play-claude] ungrounded level ${grounding.ungroundedValue} in Claude headline/thesis — falling back to mechanical verdict.`
       );
       const mech = mechanicalVerdict(
         confluence,
         gates,
         confirmations,
-        `(Claude thesis cited an unverified level — mechanical fallback)`
+        `(Claude verdict cited an unverified level — mechanical fallback)`
       );
-      logPlayVerdict(desk, confluence, mech, "ungrounded_claude_thesis");
+      logPlayVerdict(desk, confluence, mech, "ungrounded_claude_verdict");
       await writeCache(key, mech);
       return mech;
     }
