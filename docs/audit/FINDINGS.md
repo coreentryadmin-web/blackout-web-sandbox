@@ -9,6 +9,20 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 DESIGN FIXED 2026-07-05 — BIE orbit connector lines/mesh too dim to read against the dark hero background (branch `fix/bie-orbit-connector-line-contrast`, direct follow-up to PR #536)
+
+**Status:** FIXED. User feedback on a live-site photo of the just-merged bidirectional pulses/mesh (PR #536): *"The connection lines are not visible.. maybe we change the color to something better for the black color background??"* The photo itself actually showed the lines and pulses rendering correctly (visible spokes from each tool to the core, a pulse mid-travel on a mesh edge) — the underlying feature was never broken, but the chosen stroke opacities were tuned too conservatively for real-world legibility (a photo of a screen compounds the problem via glare/compression, but the root opacity values were genuinely low even on a clean render).
+
+**Root cause:** `.bie-orbit-connector-line` (tool↔core spokes) used `stroke: rgba(148, 226, 255, 0.1)` and `.bie-orbit-mesh-line` (tool↔tool hexagon) used `rgba(148, 226, 255, 0.05)` — both chosen deliberately faint under this component's "premium = restraint" principle (documented in the PR #534/#536 write-ups), but restraint was pushed past the point of legibility rather than just subtlety.
+
+**Fix:** `src/app/globals.css` — bumped `.bie-orbit-connector-line` to `rgba(148, 226, 255, 0.4)` (stroke-width 1.1) plus a `drop-shadow(0 0 2px rgba(93, 247, 255, 0.35))` glow so it reads clearly against the dark field without competing with the brighter traveling pulses; `.bie-orbit-mesh-line` bumped to `rgba(148, 226, 255, 0.2)` — still visibly fainter than the core spokes (preserving the existing "primary vs. secondary relationship" visual hierarchy) but no longer near-invisible. No JS/geometry changes — this was a pure color/opacity contrast fix.
+
+**Verification:** `npx tsc --noEmit` clean. Full suite 1684/1684 passing (no logic touched, CSS-only change). `npm run build` clean. `npm run lint:css` — same 4 pre-existing `main` errors at `globals.css:1584-1587` (unrelated), zero new. `git diff main -- src/lib/spx-signals.ts` empty.
+
+**Not yet confirmed live:** same sandbox limitation as every BIE hero PR this window (Playwright/Chromium blocked) — needs the user to view the live site post-deploy to confirm the lines are now clearly visible.
+
+---
+
 ## 🟢 DESIGN FIXED 2026-07-05 — BIE landing hero read as a hub with six disconnected icons, not one ecosystem (branch `feat/bie-ecosystem-bidirectional-mesh`, direct follow-up to PR #534)
 
 **Status:** FIXED. User feedback on the just-merged tool→core connector lines (PR #534, see the entry further down this doc): *"The pulses are only one way .. like they come from tools into BIE .. they should also travel from BIE to tools right .. And also .. we did not connect tools with each other .. So our system is like eco system right ..."* Both points are correct — the prior PR only drew a one-directional tool→core relationship and left the six tools fully disconnected from each other, which understates what BlackOut actually is (one integrated platform where BIE both ingests from and hands intelligence back to every instrument, per `ecosystem-context.ts`'s real role).

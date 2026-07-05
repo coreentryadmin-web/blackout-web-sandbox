@@ -1779,9 +1779,10 @@ body::before {
 }
 
 .bie-orbit-connector-line {
-  stroke: rgba(148, 226, 255, 0.1);
-  stroke-width: 1;
+  stroke: rgba(148, 226, 255, 0.4);
+  stroke-width: 1.1;
   vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(93, 247, 255, 0.35));
 }
 
 /* Inbound: raw telemetry, tool -> core. Carries the tool's own accent color. */
@@ -1800,7 +1801,7 @@ body::before {
 /* Tool <-> tool mesh — fainter than the core spokes (secondary relationship,
    mediated by BIE's shared ecosystem-context, not a literal direct link). */
 .bie-orbit-mesh-line {
-  stroke: rgba(148, 226, 255, 0.05);
+  stroke: rgba(148, 226, 255, 0.2);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
