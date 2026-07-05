@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getLaunchStatusSnapshot, isToolLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
+import { getLaunchStatusSnapshot, isToolLaunched, isZeroDteCommandLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
 
 // Pure unit tests for launch gating. Alias-free, runnable via `tsx --test` — no Clerk, no Next.
 
@@ -29,6 +29,12 @@ test("LAUNCHED_TOOLS unlocks grid when included", () => {
   const env = E("grid");
   assert.equal(isToolLaunched("grid", env), true);
   assert.equal(isToolLaunched("heatmap", env), false);
+});
+
+test("0DTE Command stays locked until LAUNCHED_0DTE=1 (independent of grid launch)", () => {
+  assert.equal(isZeroDteCommandLaunched({} as NodeJS.ProcessEnv), false);
+  assert.equal(isZeroDteCommandLaunched(E("grid")), false);
+  assert.equal(isZeroDteCommandLaunched({ LAUNCHED_0DTE: "1" } as NodeJS.ProcessEnv), true);
 });
 
 test("LAUNCHED_TOOLS parses CSV, trims, lowercases, ignores unknown keys", () => {

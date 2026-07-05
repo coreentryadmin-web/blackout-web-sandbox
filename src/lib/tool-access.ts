@@ -33,8 +33,8 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: false },
   // 0DTE Command — the always-on 0DTE hunter (formerly "BlackOut Grid"; the classic market grid
-  // lives on as a tab). Ships LOCKED ("Launching Soon"); flip live via LAUNCHED_TOOLS=grid
-  // (additive env, no redeploy). Admin bypass is automatic (tool-access-server.ts).
+  // lives on as a tab). Market Grid ships via LAUNCHED_TOOLS=grid; the 0DTE Command tab stays
+  // admin-only until LAUNCHED_0DTE=1 (see tool-access-server.ts).
   { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: false },
 ] as const;
 
@@ -65,6 +65,11 @@ export function isToolLaunched(key: ToolKey, env: NodeJS.ProcessEnv = process.en
   const meta = TOOL_BY_KEY.get(key);
   if (!meta) return false;
   return meta.defaultLaunched || envLaunchedKeys(env).has(key);
+}
+
+/** Flip via Railway `LAUNCHED_0DTE=1` when 0DTE Command is ready for all premium users. */
+export function isZeroDteCommandLaunched(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.LAUNCHED_0DTE ?? "").trim() === "1";
 }
 
 /** All currently-locked (non-launched) tool keys — drives the nav padlocks. */
