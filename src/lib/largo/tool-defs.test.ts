@@ -4,6 +4,7 @@ import {
   BIE_TOOL_NAMES,
   getToolsForIntent,
   LARGO_TOOL_DEFS,
+  NIGHTHAWK_ENGINE_TOOL_NAMES,
   SPX_ENGINE_TOOL_NAMES,
   TOOL_GROUPS,
   ZERODTE_ENGINE_TOOL_NAMES,
@@ -61,6 +62,42 @@ test("SPX_ENGINE_TOOL_NAMES: excludes the generic ticker-scoped tools bundled in
 
 test("SPX_ENGINE_TOOL_NAMES: no duplicates", () => {
   assert.equal(new Set(SPX_ENGINE_TOOL_NAMES).size, SPX_ENGINE_TOOL_NAMES.length);
+});
+
+// ── Task #144: NIGHTHAWK_ENGINE_TOOL_NAMES (calibration.ts's Night-Hawk-tool-calling
+// cohort) — same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night Hawk. ──
+
+test("NIGHTHAWK_ENGINE_TOOL_NAMES: every name is a real, callable Largo tool", () => {
+  const known = new Set(LARGO_TOOL_DEFS.map((t) => t.name));
+  for (const name of NIGHTHAWK_ENGINE_TOOL_NAMES) {
+    assert.ok(known.has(name), `${name} is in NIGHTHAWK_ENGINE_TOOL_NAMES but not in LARGO_TOOL_DEFS`);
+  }
+});
+
+test("NIGHTHAWK_ENGINE_TOOL_NAMES: every name is a subset of TOOL_GROUPS.platform", () => {
+  for (const name of NIGHTHAWK_ENGINE_TOOL_NAMES) {
+    assert.ok(
+      (TOOL_GROUPS.platform as readonly string[]).includes(name),
+      `${name} is in NIGHTHAWK_ENGINE_TOOL_NAMES but not in TOOL_GROUPS.platform — the cohort must stay a NARROWING of the platform bundle, never wander outside it`
+    );
+  }
+});
+
+test("NIGHTHAWK_ENGINE_TOOL_NAMES: excludes the two cross-product/ambiguous-scope Night-Hawk-adjacent tools", () => {
+  // get_spx_vs_nighthawk_comparison always reads BOTH products' state (conflates,
+  // doesn't narrow); get_platform_snapshot's tools_used entry can't reveal whether
+  // its `include` actually touched the nighthawk slice at all. See the doc comment
+  // on NIGHTHAWK_ENGINE_TOOL_NAMES in tool-defs.ts for the full reasoning.
+  for (const excluded of ["get_spx_vs_nighthawk_comparison", "get_platform_snapshot"]) {
+    assert.ok(
+      !NIGHTHAWK_ENGINE_TOOL_NAMES.includes(excluded),
+      `${excluded} should not be in the Night-Hawk-engine-state cohort`
+    );
+  }
+});
+
+test("NIGHTHAWK_ENGINE_TOOL_NAMES: no duplicates", () => {
+  assert.equal(new Set(NIGHTHAWK_ENGINE_TOOL_NAMES).size, NIGHTHAWK_ENGINE_TOOL_NAMES.length);
 });
 
 // ── Task #149: ZERODTE_ENGINE_TOOL_NAMES (calibration.ts's 0DTE-Command-tool-calling cohort) ──

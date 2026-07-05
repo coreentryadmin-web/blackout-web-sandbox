@@ -642,6 +642,54 @@ export const SPX_ENGINE_TOOL_NAMES = [
   "get_power_hour",
 ];
 
+// Task #144 — the cohort-membership test for "did this Largo turn touch Night
+// Hawk's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
+// same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night Hawk instead
+// of SPX Slayer. Kept just as narrow, and for the same reason: only tools whose
+// run-tool.ts implementation reads Night Hawk's own persisted/computed state
+// belong here — verified against run-tool.ts's case statements, not guessed
+// from naming:
+//   - get_nighthawk_edition -> marketPlatform.nighthawk.getLatestNightHawkEdition()
+//     / getNightHawkEditionForDate(date) — the published edition object itself
+//     (recap, plays, scores) — see run-tool.ts's "get_nighthawk_edition" case.
+//   - get_nighthawk_outcomes -> fetchNighthawkOutcomeAnalytics(windowDays) +
+//     fetchPendingNighthawkOutcomes(7) — Night Hawk's own closed/pending
+//     outcome ledger — see run-tool.ts's "get_nighthawk_outcomes" case.
+//   - get_nighthawk_dossier -> fetchStagedDossiers(editionFor) falling back to
+//     fetchNighthawkScoringHistory(editionFor, ticker) — Night Hawk's own
+//     per-ticker research/scoring state (live staging while tonight's hunt is
+//     still running, the durable archive once it publishes) — see
+//     run-tool.ts's "get_nighthawk_dossier" case.
+//
+// Deliberately EXCLUDES two other Night-Hawk-adjacent TOOL_GROUPS.platform
+// tools, for the same "can't attribute scope from tools_used alone" reasoning
+// SPX_ENGINE_TOOL_NAMES gives above for excluding get_ecosystem_context:
+//   - get_spx_vs_nighthawk_comparison: its run-tool.ts case ALWAYS calls BOTH
+//     fetchPlayOutcomeStatsForWindow (SPX Slayer's own closed plays) AND
+//     fetchNighthawkOutcomeAnalytics (Night Hawk's), then returns a derived
+//     cross-product delta. A turn that called only this tool touched SPX
+//     Slayer's own engine state just as certainly as Night Hawk's — including
+//     it here wouldn't narrow this cohort, it would silently CONFLATE it with
+//     SPX-engine-state turns (the exact failure mode SPX_ENGINE_TOOL_NAMES's
+//     own comment warns against, just from the other direction).
+//   - get_platform_snapshot: a cross-service combo across up to 3 products
+//     (spx/flows/nighthawk) in a single call, gated by its own `include`/
+//     `full_edition` params — but bie_interactions.tools_used records only the
+//     tool NAME, never its call inputs, so a logged row gives no way to tell
+//     whether a given get_platform_snapshot call ever touched the nighthawk
+//     slice at all (it may have been called with `include: ["spx","flows"]`
+//     only). Including it would silently admit unrelated single-product
+//     lookups into a "Night Hawk engine state" cohort.
+// Kept as an explicit literal list (not derived from TOOL_GROUPS.platform), for
+// the same drift-resistance reason as SPX_ENGINE_TOOL_NAMES — see
+// tool-defs.test.ts for the assertion that keeps this list a verified subset of
+// TOOL_GROUPS.platform.
+export const NIGHTHAWK_ENGINE_TOOL_NAMES = [
+  "get_nighthawk_edition",
+  "get_nighthawk_outcomes",
+  "get_nighthawk_dossier",
+];
+
 // Task #149 — the analogous cohort-membership list for 0DTE Command (the SEPARATE
 // multi-ticker scanner behind `/grid`'s default tab, per task #127's standing
 // disambiguation from SPX Slayer above — both are "0DTE"-branded but are two

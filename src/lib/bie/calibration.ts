@@ -20,11 +20,12 @@
 import {
   dbConfigured,
   fetchClosedPlayOutcomes,
+  fetchNighthawkToolCallingBieInteractions,
   fetchSpxToolCallingBieInteractions,
   fetchZeroDteSetupLogRange,
   fetchZeroDteToolCallingBieInteractions,
 } from "@/lib/db";
-import { SPX_ENGINE_TOOL_NAMES, ZERODTE_ENGINE_TOOL_NAMES } from "@/lib/largo/tool-defs";
+import { NIGHTHAWK_ENGINE_TOOL_NAMES, SPX_ENGINE_TOOL_NAMES, ZERODTE_ENGINE_TOOL_NAMES } from "@/lib/largo/tool-defs";
 import { todayEt } from "@/lib/nighthawk/session";
 import { gradeRank } from "@/lib/spx-play-config";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
@@ -73,6 +74,15 @@ export type CalibrationReport = {
    *  fills it in. See computeSpxToolCallCalibration below for the cohort
    *  definition and metrics. */
   spx_tool_calls: SpxToolCallCalibrationReport | null;
+  /** Task #144 — the same cohort idea as spx_tool_calls above, applied to Night
+   *  Hawk instead of SPX Slayer: Largo's own answer-quality cohort for turns
+   *  that touched Night Hawk's live-engine state (published edition, outcome
+   *  ledger, per-ticker dossier). Same attach-after-compute, fail-open, additive
+   *  pattern as every other slice on this report. See
+   *  computeNighthawkToolCallCalibration below for the cohort definition and
+   *  metrics, and its doc comment for why router_matched_n is honestly 0 for
+   *  now (there is no deterministic BIE router intent for Night Hawk). */
+  nighthawk_tool_calls: NighthawkToolCallCalibrationReport | null;
   /** Task #149 — the analogous answer-quality cohort for turns that touched
    *  0DTE Command's own live-engine state (the SEPARATE multi-ticker `/grid`
    *  scanner, per task #127's standing disambiguation from SPX Slayer — not to
@@ -204,11 +214,13 @@ export function computeCalibration(
     by_time_of_day: byTod,
     by_spike: bySpike,
     recommendations: recs,
-    // Attached by runBieCalibration once it has computed the SPX/0DTE-tool-calling
-    // passes too — this pure function only ever sees 0DTE-setup-log rows, so it
-    // never has data to report for any of the additive slices below.
+    // Attached by runBieCalibration once it has computed the SPX/Night Hawk/
+    // 0DTE-tool-calling passes too — this pure function only ever sees
+    // 0DTE-setup-log rows, so it never has data to report for any of the
+    // additive slices below.
     spx_slayer: null,
     spx_tool_calls: null,
+    nighthawk_tool_calls: null,
     zerodte_tool_calls: null,
   };
 }
@@ -423,6 +435,142 @@ export function computeSpxToolCallCalibration(
   };
 }
 
+// ── Task #144: Night-Hawk-tool-calling cohort within bie_interactions
+// (additive, a fourth pass alongside the 0DTE, SPX-Slayer-outcomes, and
+// SPX-tool-calling passes above) ──
+//
+// Same motivation as task #112, applied to the other product BIE knows about:
+// before this, calibration.ts had no way to measure whether Largo's ANSWERS
+// about Night Hawk's live-engine state (tonight's published edition, the
+// win/loss track record, a per-ticker research dossier) were actually GOOD
+// answers. This slice tracks that cohort continuously, same evidence-gating
+// philosophy (n≥10) as every other pass on this report.
+
+/** Slim projection of a bie_interactions row — identical shape to
+ *  SpxToolCallInputRow above (same source table, same columns needed). Kept as
+ *  its own named type rather than reusing SpxToolCallInputRow so a reader never
+ *  has to wonder whether the two cohorts secretly share a definition. */
+export type NighthawkToolCallInputRow = {
+  tools_used: string[];
+  /** "claude_fallback", a router intent name, or null if a row predates task
+   *  #103's intent_bucket column. Carried through for shape-parity with the SPX
+   *  version and so a future router intent (see isNighthawkToolCallingRow's
+   *  comment below) doesn't need a type change — but it plays no role in THIS
+   *  cohort's membership test today. */
+  intent_bucket: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+};
+
+export type NighthawkToolCallCalibrationReport = {
+  window: { since: string; through: string };
+  /** Rows in the cohort — see isNighthawkToolCallingRow for the membership test. */
+  n: number;
+  /** Same raw-count convention as SpxToolCallCalibrationReport. router_matched_n
+   *  is honestly always 0 today — see isNighthawkToolCallingRow's doc comment
+   *  for why: there is no deterministic BIE router intent for Night Hawk
+   *  questions at all, so no bie_interactions row can ever carry a
+   *  Night-Hawk-flavored router match. This is a faithful reflection of the
+   *  current router coverage, not a bug — do not "fix" it by fabricating a
+   *  match. */
+  claude_fallback_n: number;
+  router_matched_n: number;
+  /** router_matched_n / n — see the field's twin on SpxToolCallCalibrationReport.
+   *  Will read 0 (not null) whenever n > 0, for the same reason router_matched_n
+   *  does, until a real router intent exists. null only when n = 0. */
+  router_match_rate_pct: number | null;
+  /** Aggregate sum(claims_verified)/sum(claims_total) across cohort rows that
+   *  actually carried numeric claims (claims_total > 0) — same weighting
+   *  rationale as SpxToolCallCalibrationReport's field. null when no cohort row
+   *  had any graded claims yet. */
+  grounding_pass_rate_pct: number | null;
+  avg_latency_ms: number | null;
+  /** Same evidence-gating philosophy as the other passes — empty until n≥10. */
+  recommendations: string[];
+};
+
+/** Cohort membership: does this bie_interactions row represent a Largo turn
+ *  that touched Night Hawk's own live-engine state? Unlike
+ *  isSpxToolCallingRow above, this is tools_used-ONLY — there is no
+ *  `|| row.intent_bucket === "..."` clause, and that's deliberate, not a gap
+ *  waiting to be filled in. classifyBieIntent (bie/router.ts) recognizes
+ *  exactly 4 deterministic intents (zerodte_plays, ticker_play_state,
+ *  spx_structure, market_context); none of them ever route a Night Hawk
+ *  question. NIGHTHAWK_RE (largo/intent-keywords.ts) exists and looks like it
+ *  could play the same role SPX_STRUCTURE_RE plays for the SPX cohort, but it
+ *  does a completely different job: it only decides which TOOL BUNDLE Largo
+ *  has on hand for a question (getToolsForIntent, tool-defs.ts) — it is never
+ *  consulted by classifyBieIntent's deterministic answer path, so it can never
+ *  cause a bie_interactions row to carry a Night-Hawk-flavored intent_bucket.
+ *  Concretely: a Night Hawk question ALWAYS falls through to Claude
+ *  tool-calling today, so router_matched_n on this cohort will legitimately
+ *  read 0 — an honest reflection of the current router's coverage, not a bug
+ *  to paper over by inventing a fake OR-clause here. If a future task adds a
+ *  real deterministic Night Hawk router intent, add the matching OR-clause
+ *  then (mirroring isSpxToolCallingRow), not before. */
+function isNighthawkToolCallingRow(row: NighthawkToolCallInputRow): boolean {
+  return row.tools_used.some((t) => (NIGHTHAWK_ENGINE_TOOL_NAMES as readonly string[]).includes(t));
+}
+
+/** Pure assembly — feed it bie_interactions-shaped rows (any cohort mix), get
+ *  the Night-Hawk-tool-calling slice's sample count, router-vs-Claude split,
+ *  grounding pass rate, and latency. Same bucket math as
+ *  computeSpxToolCallCalibration above — literally the same shape of report,
+ *  scoped to a different tool-name list. Never touches nighthawk/* generation
+ *  code or any live edition-building gate — read-only reporting over
+ *  already-logged turns. */
+export function computeNighthawkToolCallCalibration(
+  rows: NighthawkToolCallInputRow[],
+  window: { since: string; through: string }
+): NighthawkToolCallCalibrationReport {
+  const cohort = rows.filter(isNighthawkToolCallingRow);
+  const n = cohort.length;
+
+  const claudeFallbackN = cohort.filter((r) => r.answer_source === "claude").length;
+  const routerMatchedN = cohort.filter((r) => r.answer_source === "bie-router").length;
+  const routerMatchRatePct = n > 0 ? Math.round((routerMatchedN / n) * 1000) / 10 : null;
+
+  // Only rows that actually carried numeric claims count toward the grounding
+  // ratio — same rationale as computeSpxToolCallCalibration above.
+  const graded = cohort.filter((r) => (r.claims_total ?? 0) > 0);
+  const totalClaims = graded.reduce((s, r) => s + (r.claims_total ?? 0), 0);
+  const verifiedClaims = graded.reduce((s, r) => s + (r.claims_verified ?? 0), 0);
+  const groundingPassRatePct = totalClaims > 0 ? Math.round((verifiedClaims / totalClaims) * 1000) / 10 : null;
+
+  const latencies = cohort.map((r) => r.latency_ms).filter((l): l is number => l != null);
+  const avgLatencyMs = latencies.length
+    ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+    : null;
+
+  const recs: string[] = [];
+  if (n >= MIN_EVIDENCE && groundingPassRatePct != null && groundingPassRatePct < 70) {
+    recs.push(
+      `Night-Hawk-tool-calling Largo turns show only ${groundingPassRatePct}% claim grounding over ${n} turns — since grounding checks numbers, not answer quality, this is worth a manual read of a few transcripts to see whether Night Hawk's tool outputs are being misread or just under-verified.`
+    );
+  }
+  // Deliberately NO low-router-match-rate recommendation here (unlike the SPX
+  // pass): router_matched_n is structurally always 0 until a Night Hawk router
+  // intent exists (see isNighthawkToolCallingRow above), so a "widen router
+  // coverage" recommendation would fire on every single report forever and
+  // teach a human reader to ignore this section's recommendations entirely —
+  // it would never be evidence of anything actionable, just a permanent, known
+  // fact restated. Once a real router intent exists, this can mirror the SPX
+  // pass's second recommendation.
+
+  return {
+    window,
+    n,
+    claude_fallback_n: claudeFallbackN,
+    router_matched_n: routerMatchedN,
+    router_match_rate_pct: routerMatchRatePct,
+    grounding_pass_rate_pct: groundingPassRatePct,
+    avg_latency_ms: avgLatencyMs,
+    recommendations: recs,
+  };
+}
+
 // ── Task #149: 0DTE-Command-tool-calling cohort within bie_interactions (a
 // fourth pass, alongside the 0DTE-setup-log, SPX-Slayer-outcomes, and
 // SPX-tool-calling passes above) ──
@@ -577,6 +725,7 @@ export function formatCalibration(r: CalibrationReport): string {
   const sections = [zeroDteSection];
   if (r.spx_slayer) sections.push(`---`, ``, formatSpxCalibration(r.spx_slayer));
   if (r.spx_tool_calls) sections.push(`---`, ``, formatSpxToolCallCalibration(r.spx_tool_calls));
+  if (r.nighthawk_tool_calls) sections.push(`---`, ``, formatNighthawkToolCallCalibration(r.nighthawk_tool_calls));
   // Task #149 — labeled "0DTE Command tool-calling" (not bare "0DTE") so it never
   // reads as a duplicate of zeroDteSection above, which is about the SCANNER'S
   // OWN trade P&L (zerodte_setup_log), a completely different axis from this
@@ -614,6 +763,24 @@ export function formatSpxToolCallCalibration(r: SpxToolCallCalibrationReport): s
     r.recommendations.length
       ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
       : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} SPX-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
+  ].join("\n");
+}
+
+export function formatNighthawkToolCallCalibration(r: NighthawkToolCallCalibrationReport): string {
+  return [
+    `Night-Hawk-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched Night Hawk's own engine state)`,
+    ``,
+    `Grounding pass rate: ${r.grounding_pass_rate_pct != null ? `${r.grounding_pass_rate_pct}%` : "no graded claims yet"}`,
+    // Same line shape as formatSpxToolCallCalibration — router_matched_n will read
+    // 0 here today (see isNighthawkToolCallingRow's doc comment: no deterministic
+    // router intent exists for Night Hawk yet), and that 0 is left to print as-is
+    // rather than special-cased away, since it's the honest, current state of
+    // router coverage for this product, not an error condition to hide.
+    `Answered by: ${r.claude_fallback_n} Claude tool-calling turn(s), ${r.router_matched_n} deterministic router match(es)${r.router_match_rate_pct != null ? ` (${r.router_match_rate_pct}% router-matched)` : ""}`,
+    ``,
+    r.recommendations.length
+      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
+      : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} Night-Hawk-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
 }
 
@@ -697,6 +864,34 @@ async function computeSpxToolCallCalibrationFromDb(
   }
 }
 
+/** Task #144's Night-Hawk-tool-calling pass — same rolling window as the other
+ *  passes above, fed by fetchNighthawkToolCallingBieInteractions (which does the
+ *  cohort filtering at the SQL layer — see its doc comment in db.ts for why it's
+ *  tools_used-only, unlike its SPX sibling). Same fail-open contract as
+ *  computeSpxToolCallCalibrationFromDb above, so a problem here can never take
+ *  down the rest of the report. */
+async function computeNighthawkToolCallCalibrationFromDb(
+  since: string,
+  through: string
+): Promise<NighthawkToolCallCalibrationReport | null> {
+  try {
+    const rows = await fetchNighthawkToolCallingBieInteractions(since, NIGHTHAWK_ENGINE_TOOL_NAMES);
+    return computeNighthawkToolCallCalibration(
+      rows.map((r) => ({
+        tools_used: r.tools_used,
+        intent_bucket: r.intent_bucket,
+        answer_source: r.answer_source,
+        claims_total: r.claims_total,
+        claims_verified: r.claims_verified,
+        latency_ms: r.latency_ms,
+      })),
+      { since, through }
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Task #149's 0DTE-Command-tool-calling pass — direct analogue of
  *  computeSpxToolCallCalibrationFromDb above, fed by
  *  fetchZeroDteToolCallingBieInteractions (which does the cohort filtering at
@@ -757,6 +952,10 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
     // independent read-only pass over bie_interactions (Largo's own turns), never
     // touching spx_signals.ts or any live play-engine gate/score/action.
     report.spx_tool_calls = await computeSpxToolCallCalibrationFromDb(since, through);
+    // Task #144: attach the Night-Hawk-tool-calling answer-quality cohort too — a
+    // FOURTH, independent read-only pass over bie_interactions, never touching
+    // spx_signals.ts, nighthawk/* generation code, or any live gate/score/action.
+    report.nighthawk_tool_calls = await computeNighthawkToolCallCalibrationFromDb(since, through);
     // Task #149: attach the 0DTE-Command-tool-calling answer-quality cohort too — a
     // FOURTH, independent read-only pass over bie_interactions, never touching
     // zerodte_setup_log or any live scanner gate/threshold/action.
