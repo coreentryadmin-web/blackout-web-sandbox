@@ -184,6 +184,73 @@ type SpxHealthPayload = {
   errors: string[];
 };
 
+// Thermal health panel (task #138) — payload shape of /api/admin/gex/health, the
+// BlackOut Thermal (GEX/heatmap pipeline) analogue of the SPX health panel above: its
+// own dedicated read-only route (src/app/api/admin/gex/health/route.ts) and data source
+// (src/lib/admin-gex-health.ts) — never the heavier /api/admin/bie-report fetch, and
+// there is no admin-spx-dashboard.ts-style full Thermal tool yet for this to piggyback
+// on either.
+type GexHealthTicker = {
+  ticker: string;
+  cached: boolean;
+  last_compute_at: string | null;
+  age_sec: number | null;
+  ttl_sec: number;
+  stale: boolean;
+  spot: number | null;
+  events_count: number | null;
+};
+
+type GexHealthRegimeEventRow = {
+  id: number;
+  observed_at: string;
+  session_date: string;
+  ticker: string;
+  event_type: string;
+  severity: string;
+  message: string;
+  level: number | null;
+  direction: string | null;
+  from_value: number | null;
+  to_value: number | null;
+  detected_at: string | null;
+};
+
+type GexHealthCronJob = {
+  key: string;
+  name: string;
+  status: string;
+  status_label: string;
+  last_run_at: string | null;
+  age_min: number | null;
+  runs_24h: { ok: number; failed: number; skipped: number };
+};
+
+type GexHealthRecentError = {
+  scope: string | null;
+  name: string;
+  message: string;
+  created_at: string;
+};
+
+type GexHealthPayload = {
+  generated_at: string;
+  db_configured: boolean;
+  tickers: GexHealthTicker[];
+  regime_events: {
+    summary: {
+      window_hours: number;
+      total: number;
+      by_ticker: Array<{ ticker: string; count: number }>;
+      by_type: Array<{ type: string; count: number }>;
+    };
+    recent: GexHealthRegimeEventRow[];
+  };
+  cron: GexHealthCronJob[];
+  recent_errors: GexHealthRecentError[];
+  errors: string[];
+};
+
 // 0DTE Command health panel (task #150) — payload shape of /api/admin/zerodte/health,
 // direct analogue of the SPX health panel above, for the SEPARATE multi-ticker
 // scanner branded "0DTE Command" in-app (`/grid`'s default tab), not SPX Slayer's
@@ -296,6 +363,33 @@ export function AdminBieDashboard() {
     void loadSpxHealth();
   }, [loadSpxHealth]);
 
+  // Thermal health panel (task #138) — SAME independent fetch/state/effect contract as
+  // the SPX health panel above: its own loading/error state and its own effect on
+  // mount, so a failure fetching Thermal health can never blank or block the rest of
+  // this dashboard (or the SPX health panel), and vice versa. Wired into the SAME
+  // "Recompute" button for one refresh affordance.
+  const [gexHealth, setGexHealth] = useState<GexHealthPayload | null>(null);
+  const [gexHealthLoading, setGexHealthLoading] = useState(true);
+  const [gexHealthError, setGexHealthError] = useState<string | null>(null);
+
+  const loadGexHealth = useCallback(async () => {
+    setGexHealthLoading(true);
+    setGexHealthError(null);
+    try {
+      const res = await fetch("/api/admin/gex/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setGexHealth((await res.json()) as GexHealthPayload);
+    } catch (e) {
+      setGexHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setGexHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadGexHealth();
+  }, [loadGexHealth]);
+
   // 0DTE Command health panel (task #150) — same independence contract as the SPX
   // health fetch above: its own state/effect, so a failure here can never blank or
   // block the rest of this dashboard (or the SPX health panel), and vice versa.
@@ -369,6 +463,15 @@ export function AdminBieDashboard() {
         ? "amber"
         : "cyan";
 
+  const gexStaleTickerCount = gexHealth?.tickers.filter((t) => t.stale).length ?? 0;
+  const gexCronUnhealthyCount =
+    gexHealth?.cron.filter((j) => j.status !== "healthy").length ?? 0;
+  const gexHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = gexHealthError
+    ? "amber"
+    : gexHealth && (gexStaleTickerCount > 0 || gexCronUnhealthyCount > 0)
+      ? "amber"
+      : "bull";
+
   return (
     <div className="admin-bie-dashboard">
       <TabCommandHero
@@ -434,6 +537,7 @@ export function AdminBieDashboard() {
             onClick={() => {
               void load();
               void loadSpxHealth();
+              void loadGexHealth();
               void loadZeroDteHealth();
             }}
             disabled={loading}
@@ -684,6 +788,147 @@ export function AdminBieDashboard() {
               ))}
             </tbody>
           </DataTable>
+        )}
+      </GlassPanel>
+
+      {/* Thermal health (task #138) — read-only glance at the BlackOut Thermal
+          (GEX/heatmap) pipeline: per-preset-ticker matrix cache freshness (is the
+          shared gex-heatmap:{ticker} cache actually warm right now — peekGexHeatmapCache
+          never triggers a build, so this panel adds zero upstream cost just from being
+          viewed), the durable regime-transition log (task #136, gex_regime_events —
+          flip/wall/regime crossings across every watched ticker, not just gex-alerts'
+          3-ticker push watchlist), and the THREE Thermal-owned crons (heatmap-warm,
+          gex-eod-snapshot, gex-alerts) filtered from the SAME generic cron-health
+          snapshot the Crons admin tab reads (admin-cron-health.ts) — never re-derived
+          here. Own fetch/state (see loadGexHealth above), same resilience contract as
+          every other panel on this page — a failure here shows "—"/"failed to load"
+          and never breaks the rest of the dashboard. */}
+      <GlassPanel kicker="BlackOut Thermal · read-only cache peek, never triggers a build" title="Thermal health" accent={gexHealthAccent}>
+        {gexHealthError && (
+          <p className="admin-bie-error-text">Thermal health fetch failed: {gexHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip
+            label="Matrix cache"
+            value={
+              gexHealth
+                ? `${gexHealth.tickers.length - gexStaleTickerCount}/${gexHealth.tickers.length} warm`
+                : "—"
+            }
+            tone={!gexHealth ? "neutral" : gexStaleTickerCount > 0 ? "amber" : "bull"}
+          />
+          <MetricChip
+            label="Regime events (24h)"
+            value={gexHealth ? String(gexHealth.regime_events.summary.total) : "—"}
+            tone={gexHealth && !gexHealth.db_configured ? "neutral" : "violet"}
+          />
+          {gexHealth?.cron.map((j) => (
+            <MetricChip
+              key={j.key}
+              label={j.name}
+              value={j.status_label}
+              tone={
+                j.status === "healthy"
+                  ? "bull"
+                  : j.status === "failed" || j.status === "stale"
+                    ? "bear"
+                    : "amber"
+              }
+            />
+          ))}
+        </div>
+
+        <p className="admin-bie-coverage-note">
+          {gexHealth ? `As of ${fmtEt(gexHealth.generated_at)} ET` : gexHealthLoading ? "Loading…" : "—"}
+        </p>
+
+        {gexHealth && !gexHealth.db_configured && (
+          <p className="admin-bie-coverage-note">
+            DB not configured — regime-transition history (gex_regime_events) is
+            unavailable; the cache/cron legs above are unaffected.
+          </p>
+        )}
+
+        <p className="admin-bie-coverage-note">Per-ticker matrix cache</p>
+        {!gexHealth || gexHealth.tickers.length === 0 ? (
+          <p className="admin-bie-empty-text">No preset tickers to report.</p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Cache</th>
+                <th>Age</th>
+                <th>Spot</th>
+                <th>Last-sample events</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gexHealth.tickers.map((t) => (
+                <tr key={t.ticker}>
+                  <td className="admin-td-strong">{t.ticker}</td>
+                  <td>
+                    <span
+                      className={clsx(
+                        "admin-outcome-badge",
+                        t.cached && !t.stale ? "admin-outcome-badge-bull" : "admin-outcome-badge-amber"
+                      )}
+                    >
+                      {!t.cached ? "cold" : t.stale ? "stale" : "warm"}
+                    </span>
+                  </td>
+                  <td>{t.age_sec != null ? `${t.age_sec}s` : "—"}</td>
+                  <td>{t.spot ?? "—"}</td>
+                  <td>{t.events_count ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        <p className="admin-bie-coverage-note">Recent regime transitions (gex_regime_events)</p>
+        {!gexHealth || gexHealth.regime_events.recent.length === 0 ? (
+          <p className="admin-bie-empty-text">
+            {gexHealth && !gexHealth.db_configured
+              ? "DB not configured — history unavailable."
+              : "No flip/wall/regime crossings logged yet."}
+          </p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Message</th>
+                <th>Detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gexHealth.regime_events.recent.map((r) => (
+                <tr key={r.id}>
+                  <td className="admin-td-strong">{r.ticker}</td>
+                  <td>{r.event_type}</td>
+                  <td>{r.direction ?? "—"}</td>
+                  <td className="admin-bie-issue-detail">{r.message}</td>
+                  <td className="admin-bie-issue-meta">{fmtEt(r.detected_at ?? r.observed_at)} ET</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        {gexHealth && gexHealth.recent_errors.length > 0 && (
+          <>
+            <p className="admin-bie-coverage-note admin-bie-error-text">
+              Recent GEX-scoped errors (best-effort filter over the shared error_events sink)
+            </p>
+            {gexHealth.recent_errors.map((e, i) => (
+              <p key={i} className="admin-bie-issue-detail">
+                – [{e.scope ?? "—"}] {e.message} ({fmtEt(e.created_at)} ET)
+              </p>
+            ))}
+          </>
         )}
       </GlassPanel>
 

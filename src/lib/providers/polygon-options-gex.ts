@@ -2493,6 +2493,84 @@ function emptyHeatmap(
   return heatmap;
 }
 
+/** One ticker's shared-cache freshness, as reported by peekGexHeatmapCache. */
+export type GexHeatmapCachePeek = {
+  ticker: string;
+  /** True when a cached matrix entry exists at all (in-memory or Redis) — false is a COLD ticker,
+   *  not necessarily a failure (e.g. never warmed, or evicted past the Redis TTL). */
+  cached: boolean;
+  /** ISO timestamp of the cached entry's build, or null when cold. */
+  last_compute_at: string | null;
+  /** Age of the cached entry in seconds, or null when cold. */
+  age_sec: number | null;
+  /** The base TTL this ticker's matrix is cached under (gexHeatmapCacheMsFor), in seconds. */
+  ttl_sec: number;
+  /** True when cold, OR when the cached entry is older than the stale-while-revalidate ceiling
+   *  (gexHeatmapMaxStaleMs) — i.e. even a background-refresh-tolerant caller would refuse to serve
+   *  it. A cached entry that is merely past its base TTL (but under the SWR ceiling) is NOT stale
+   *  here — fetchGexHeatmap would still serve it while kicking off a background rebuild. */
+  stale: boolean;
+  /** Spot at the cached entry's build time, or null when cold / unavailable. */
+  spot: number | null;
+  /** Event count on the cached entry's last computed sample — 0 means "diffed, nothing crossed",
+   *  null means either cold (no entry) or cold history (fetchGexHeatmap hadn't yet accumulated
+   *  ≥2 positioning-history snapshots when that entry was built) — never conflated. */
+  events_count: number | null;
+};
+
+/**
+ * Admin-health PEEK at the shared `gex-heatmap:{ticker}` cache entry — READ-ONLY, and
+ * DELIBERATELY does not call fetchGexHeatmap: a cache miss here reports `cached:false`
+ * rather than building a fresh matrix, which would cost a live Polygon chain fetch on
+ * every admin-panel poll just from being viewed. Checks the in-memory mirror first (same
+ * `cachedHeatmaps` map fetchGexHeatmap itself checks first), then falls back to a single
+ * Redis read — no upstream call, no write, no single-flight registration. Used by
+ * src/lib/admin-gex-health.ts (task #138, BlackOut Thermal admin health panel) to report
+ * per-ticker cache freshness without adding any cost of its own — the same CACHE-READER
+ * discipline appendGexEodSnapshot/getGexEodHistory already follow in this file, just
+ * skipping even fetchGexHeatmap's own cache-then-build fallback.
+ */
+export async function peekGexHeatmapCache(ticker: string): Promise<GexHeatmapCachePeek> {
+  const { root } = resolveOptionsRoot(ticker);
+  const cacheKey = `${GEX_HEATMAP_CACHE_PREFIX}:${root}`;
+  const ttlMs = gexHeatmapCacheMsFor(root);
+
+  let entry = cachedHeatmaps.get(cacheKey) ?? null;
+  if (!entry) {
+    try {
+      const { sharedCacheGet } = await import("../shared-cache");
+      entry = await sharedCacheGet<{ at: number; data: GexHeatmap }>(cacheKey);
+    } catch {
+      entry = null; // Redis optional — a miss/error here is just "cold", never thrown.
+    }
+  }
+
+  if (!entry) {
+    return {
+      ticker: root,
+      cached: false,
+      last_compute_at: null,
+      age_sec: null,
+      ttl_sec: Math.round(ttlMs / 1000),
+      stale: true,
+      spot: null,
+      events_count: null,
+    };
+  }
+
+  const ageMs = Date.now() - entry.at;
+  return {
+    ticker: root,
+    cached: true,
+    last_compute_at: new Date(entry.at).toISOString(),
+    age_sec: Math.round(ageMs / 1000),
+    ttl_sec: Math.round(ttlMs / 1000),
+    stale: ageMs > gexHeatmapMaxStaleMs(),
+    spot: entry.data.spot > 0 ? entry.data.spot : null,
+    events_count: entry.data.events ? entry.data.events.length : null,
+  };
+}
+
 async function polygonFetchUrl(url: string): Promise<ChainResponse | null> {
   if (!polygonConfigured()) return null;
   const sep = url.includes("?") ? "&" : "?";
