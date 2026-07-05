@@ -3,10 +3,10 @@
  *
  * Railway cron triggers (hit-cron.mjs) can stop firing on schedule after redeploys
  * (#90-class silent death). The staleness watchdog self-heals every 20m, but critical
- * warmers (nights-watch-warm, uw-cache-refresh, heatmap-warm) need sub-5m cadence.
+ * warmers need sub-5m cadence — Railway's native cron floor is 5 minutes, not 1.
  *
- * One cluster leader (Redis SETNX) polls cron_job_runs during RTH and dispatches
- * idempotent warmers via dispatchCronWarm when a writer is overdue.
+ * One cluster leader (Redis SETNX) polls cron_job_runs every 60s during RTH and dispatches
+ * idempotent warmers via dispatchCronWarm when a writer is overdue (desk-warm: 90s).
  */
 import { CRON_JOBS } from "@/lib/cron-registry";
 import { dispatchCronWarm, isDispatchableCron } from "@/lib/cron-dispatch";

@@ -12,8 +12,9 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/desk-warm"
-# Every minute during the UTC band that covers RTH in BOTH EDT and EST (mirrors heatmap-warm).
+# Every 5 min during the UTC band that covers RTH in BOTH EDT and EST (Railway's 5-minute floor).
+# Sub-5m gaps are filled by the in-app rth-warm-leader (Redis-elected, 90s heal threshold for desk-warm).
 # The route's isEtCashRth gate self-skips off-band minutes.
-cronSchedule = "* 11-21 * * 1-5"
+cronSchedule = "*/5 11-21 * * 1-5"
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1

@@ -19,14 +19,12 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/grid-warm"
-# Every 2 min during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
-# 11-21 UTC spans ~7AM-5PM ET. The route's in-process ET gate (inMarketHours, 9:30AM-4:00PM ET
-# weekdays, DST-aware) self-skips the pre-open / off-band minutes, so warms only fire while the
-# desks are live. Mirrors railway.heatmap-warm.toml's market-hours band convention. The Grid's
-# analyst feed trickles in, so a 2-min cadence is plenty (vs heatmap-warm's 1/min) — the
-# snapshot's 10-min TTL covers any gap and serves the last good snapshot through a brief miss.
+# Every 5 min during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
+# 11-21 UTC spans ~7AM-5PM ET. Railway's native cron floor is 5 minutes (*/2 was aspirational).
+# Sub-5m gaps are filled by the in-app rth-warm-leader (4 min heal threshold). The route's ET
+# gate self-skips pre-open / off-band minutes. The Grid snapshot's 10-min TTL covers brief gaps.
 # NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard value
 # overrides this TOML, so update it there too.
-cronSchedule = "*/2 11-21 * * 1-5"
+cronSchedule = "*/5 11-21 * * 1-5"
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1
