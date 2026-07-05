@@ -38,6 +38,20 @@ let toolLoopToolNames: string[] = [];
 // Anthropic API error, etc.) instead of resolving with an answer.
 let toolLoopError: Error | null = null;
 
+// Task #166 — captures every appendLargoMessage() call so the router-path tests below can
+// assert the fix directly: a BIE-router-composed assistant turn must now be persisted WITH a
+// non-empty toolResults array (routed.context), not omitted as it was before this fix. See
+// largo-store.ts's fetchRecentLargoAnswersWithResults doc comment for why that mattered — a
+// router turn persisted with no tool_results was invisible to largo-verifier.ts's nightly
+// numeric-grounding audit.
+type AppendedCall = {
+  role: "user" | "assistant";
+  content: string;
+  toolsUsed: string[];
+  toolResults: unknown[] | undefined;
+};
+let appended: AppendedCall[] = [];
+
 let runLargoQuery: typeof import("./largo-terminal").runLargoQuery;
 let runLargoQueryStream: typeof import("./largo-terminal").runLargoQueryStream;
 
@@ -125,7 +139,16 @@ before(async () => {
       fetchLargoHistory: async () => [],
       fetchLargoMessagesPublic: async () => [],
       sessionOwnedByUser: async () => true,
-      appendLargoMessage: async () => {},
+      appendLargoMessage: async (
+        _sid: string,
+        _userId: string,
+        role: "user" | "assistant",
+        content: string,
+        toolsUsed: string[] = [],
+        toolResults?: unknown[]
+      ) => {
+        appended.push({ role, content, toolsUsed, toolResults });
+      },
     },
   });
 
@@ -185,6 +208,7 @@ before(async () => {
 
 test("runLargoQuery: a deterministic router turn persists intent_bucket = the real intent, tools_used = [blackout_intelligence]", async () => {
   inserted = [];
+  appended = [];
   const result = await runLargoQuery("How are today's plays doing?", "", "user-1");
   await waitForInserts(1);
 
@@ -197,10 +221,26 @@ test("runLargoQuery: a deterministic router turn persists intent_bucket = the re
   // name (not null) whenever the router actually matched.
   assert.equal(row.intent_bucket, "zerodte_plays");
   assert.deepEqual(row.tools_used, ["blackout_intelligence"]);
+
+  // Task #166: the router-composed assistant turn must persist its composed
+  // context as tool_results — previously omitted entirely, which left this whole
+  // path invisible to largo-verifier.ts's nightly grounding audit
+  // (fetchRecentLargoAnswersWithResults filters WHERE tool_results IS NOT NULL).
+  assert.equal(appended.length, 2, "expected one user + one assistant appendLargoMessage call");
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.ok(assistantCall, "assistant turn was persisted");
+  assert.ok(
+    Array.isArray(assistantCall.toolResults) && assistantCall.toolResults.length > 0,
+    "router-composed assistant turn must persist a non-empty toolResults array"
+  );
+  // The mocked composeBieAnswer() for "zerodte_plays" returns context: { live_pnl_pct: 50 } —
+  // confirm it's exactly that payload (wrapped, not dropped or replaced) that gets persisted.
+  assert.deepEqual(assistantCall.toolResults, [{ live_pnl_pct: 50 }]);
 });
 
 test("runLargoQuery: a Claude-fallback turn persists intent_bucket = 'claude_fallback' and the real dispatched tool names", async () => {
   inserted = [];
+  appended = [];
   toolLoopToolNames = [];
   // "Why did NVDA reverse?" fails classifyBieIntent's REASONING_RE guard ("why")
   // — falls through to Claude, exactly like a real unmatched member question.
@@ -222,10 +262,16 @@ test("runLargoQuery: a Claude-fallback turn persists intent_bucket = 'claude_fal
   // mocked tool loop actually invoked. Not an empty array, not a placeholder.
   assert.deepEqual(row.tools_used, ["live_feed_capture", "get_quote", "get_technicals"]);
   assert.equal(result.source, "blackout-web+postgres");
+
+  // Task #166 is scoped to the router path — confirm the pre-existing Claude-tool-loop
+  // persistence (capturedResults, already correct before this fix) is untouched.
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.deepEqual(assistantCall.toolResults, [{ ok: true }, { ok: true }]);
 });
 
 test("runLargoQueryStream: same persistence contract on the streaming path — router branch", async () => {
   inserted = [];
+  appended = [];
   const events: unknown[] = [];
   await runLargoQueryStream("What's the market doing?", "", "user-3", (e) => events.push(e));
   await waitForInserts(1);
@@ -235,6 +281,11 @@ test("runLargoQueryStream: same persistence contract on the streaming path — r
   assert.equal(row.answer_source, "bie-router");
   assert.equal(row.intent_bucket, "market_context");
   assert.deepEqual(row.tools_used, ["blackout_intelligence"]);
+
+  // Task #166 — same fix, streaming call site (runLargoQueryStream's own tryBieRoute
+  // branch, a separate call site from runLargoQuery's above).
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.deepEqual(assistantCall.toolResults, [{ vix: 12.5 }]);
 });
 
 test("runLargoQueryStream: same persistence contract on the streaming path — Claude-fallback branch", async () => {

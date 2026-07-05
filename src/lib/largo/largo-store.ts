@@ -144,8 +144,21 @@ export type RecentLargoAnswer = {
  * largo-verifier.ts's numeric-grounding engine needed but didn't have (see that file's header
  * comment). Unlike fetchLargoMessagesPublic (requires sessionId+userId, single-session), this
  * is a bounded global read across all sessions — deliberately narrow: assistant rows only,
- * only those with a non-null tool_results (rows from before this column existed, or BIE-router
- * answers with no tool calls, are correctly excluded rather than treated as "zero tools used").
+ * only those with a non-null tool_results. Only rows from before this column existed are
+ * excluded now (NULL, pre-migration history with no grounding data to check).
+ *
+ * Task #166 fix: BIE-router-composed answers (largo-terminal.ts's tryBieRoute/composeBieAnswer
+ * path — 0DTE plays, SPX structure, market context) used to be excluded here too, because
+ * appendLargoMessage() was called for them WITHOUT a toolResults argument. That made sense only
+ * on the surface ("the router doesn't call a Largo tool, so there's nothing to persist") — in
+ * reality composeBieAnswer() still reads real platform state (routed.context: the SPX desk
+ * snapshot, market-context payload, or 0DTE board) to build a deterministic answer, and that
+ * state IS the ground truth this exact query needs. Excluding router turns meant the nightly
+ * audit had ZERO coverage of the router/composer path: a regression in composeSpxStructure /
+ * composeMarketContext / composeZeroDtePlays (src/lib/bie/composers.ts) that fed stale or
+ * mis-mapped numbers into an answer had no independent after-the-fact detector. Fixed by having
+ * largo-terminal.ts's two router call sites pass `[routed.context]` as toolResults, so router
+ * turns now persist non-null tool_results and are picked up here like Claude-tool-loop turns.
  */
 export async function fetchRecentLargoAnswersWithResults(limit = 50): Promise<RecentLargoAnswer[]> {
   if (!dbConfigured()) return [];
@@ -192,9 +205,11 @@ export async function appendLargoMessage(
     await client.query("BEGIN");
 
     // tool_results is the ground-truth data the answer was grounded in (largo-verifier.ts's
-    // numeric-grounding engine) — only ever populated for assistant turns that captured tool
-    // calls; NULL (not '[]') when absent so a reader can distinguish "no tools called" from
-    // "grounding not tracked for this row" (pre-migration history).
+    // numeric-grounding engine) — populated for Claude-tool-loop turns (captured tool-call
+    // results) AND, since task #166, BIE-router-composed turns (the composer's source payload,
+    // passed in as a single-element array by largo-terminal.ts's router call sites). NULL (not
+    // '[]') only for pre-migration history rows that predate this column, so a reader can still
+    // distinguish "no grounding data was ever tracked for this row" from "zero tools called."
     await client.query(
       `INSERT INTO largo_messages (session_id, role, content, tools_used, tool_results)
        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`,

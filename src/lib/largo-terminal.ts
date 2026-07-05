@@ -315,7 +315,21 @@ export async function runLargoQuery(
     const ctxNumbers = collectContextNumbers(routed.context);
     const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(sid, userId, "user", question);
-    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    // Persist the composer's own source payload (routed.context) as this turn's
+    // tool_results — the router never calls a Largo *tool*, but composeBieAnswer()
+    // (bie/composers.ts) still reads real platform state (SPX desk, market context,
+    // 0DTE board) to build the answer, and that payload is exactly the ground truth
+    // largo-verifier.ts's nightly grounding audit needs. Wrapped in a single-element
+    // array to match the tool_results column's shape (an array of per-call results) —
+    // collectContextNumbers() recurses through objects/arrays identically either way,
+    // so this doesn't change what numbers are considered "grounded" for THIS turn's
+    // in-line verification above; it only makes the same payload durable for later
+    // audit (task #166 — previously omitted here by explicit prior design, which left
+    // the entire router/composer path with zero nightly-audit coverage; see
+    // largo-store.ts's fetchRecentLargoAnswersWithResults doc comment).
+    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
+      routed.context,
+    ]);
     logBie({
       user_id: userId,
       question,
@@ -465,7 +479,11 @@ export async function runLargoQueryStream(
     const ctxNumbers = collectContextNumbers(routed.context);
     const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(rsid, userId, "user", question);
-    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    // Same tool_results persistence as the non-streaming router branch above (task
+    // #166) — see that branch's comment for the full rationale.
+    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
+      routed.context,
+    ]);
     logBie({
       user_id: userId,
       question,
