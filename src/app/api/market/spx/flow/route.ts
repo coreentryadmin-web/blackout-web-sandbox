@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { deskFlowCacheTtlMs } from "@/lib/providers/config";
-import { buildSpxDeskFlow } from "@/lib/providers/spx-desk";
-import { withServerCache } from "@/lib/server-cache";
+import { loadSpxDeskFlow } from "@/lib/spx-desk-loader";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +12,7 @@ export async function GET(req: NextRequest) {
 
   ensureDataSockets();
   try {
-    const flow = await withServerCache("spx-desk-flow", deskFlowCacheTtlMs(), buildSpxDeskFlow, {
-      staleWhileRevalidate: false,
-    });
+    const flow = await loadSpxDeskFlow();
 
     return NextResponse.json(flow, {
       headers: {
