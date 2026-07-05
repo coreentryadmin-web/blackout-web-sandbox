@@ -119,10 +119,12 @@ export function noEntryCutoffLabel(): string {
   return formatEtTime(playNoEntryAfterEtHour(), playNoEntryAfterEtMin());
 }
 
-/** Force-flatten open 0DTE runners. Default 3:50 PM ET.
+/** Force-flatten open 0DTE runners. Default 3:45 PM ET (see `playForceExitEtMin()` —
+ *  moved from 3:50 PM: the last 15 min has extreme theta/spread collapse on 0DTE).
  *  On early-close days (Black Friday, Christmas Eve) the cutoff is 10 min before
- *  the early close (e.g. 12:50 PM on a 1:00 PM close day) to avoid holding options
- *  that are already worthless after market close.
+ *  the early close (e.g. 12:50 PM on a 1:00 PM close day) — that offset is a fixed
+ *  10 min before the early close itself, not derived from the regular 3:45 PM
+ *  anchor, so it stays correct regardless of the default force-exit time.
  */
 export function isPastForceExitCutoff(now = new Date()): boolean {
   const earlyClose = getEarlyCloseMinutes(now);
