@@ -13,6 +13,7 @@ import {
   type FieldLineRing,
   type FieldParticle,
 } from "./bie-helix-engine";
+import { buildInstrumentGridRings, buildInstrumentGridSpokes } from "./bie-instrument-grid";
 import { buildGateTicks, resolveVerification, type VerificationOutcome } from "./bie-verification";
 import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
 
@@ -23,6 +24,21 @@ import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
  * (organic rings, ambient particles, six-product orbit) stays; the core is now a
  * literal gate a signal must pass, and roughly 1 in 6 cycles is visibly rejected
  * rather than always resolving to a clean success. See docs/design/BIE-HERO-VISION.md.
+ *
+ * Milestone 3 — Brand identity + instrument grid.
+ * The core/field's resting hue was a saturated, fully generic "AI orb" cyan
+ * (#00e5ff/#5df7ff) — indistinguishable from every other AI product's hero and,
+ * worse, close enough to Largo's own canonical cyan (#22d3ee, see MARK_ACCENT)
+ * to read as "this is Largo's color," not BIE's. Recolored the resting/checking
+ * identity to this codebase's own established sky-blue (#38bdf8 — already the
+ * site's :focus-visible accent, not invented for this component) blended toward
+ * the brand gradient's sky stop (#7dd3fc). Verified (emerald, already matched
+ * MARK_ACCENT.spx's "system/primary" green) and rejected (amber-red) are
+ * untouched — those two semantic states were already correctly branded; only
+ * the idle/checking base identity was generic. Also added a fixed, perfectly
+ * regular polar grid (bie-instrument-grid.ts) behind the organic field lines —
+ * "organic living field over rigid instrumentation" reads as a real system
+ * being read, not a diagram floating in empty space.
  */
 
 export const VIEW_W = 1280;
@@ -38,6 +54,13 @@ const FIELD_COUNT = 36;
 const GATE_TICK_COUNT = 28;
 const GATE_INNER_R = 24;
 const GATE_OUTER_R = 31;
+/** Fixed, perfectly regular instrument backdrop the organic field lines float
+ *  within — see bie-instrument-grid.ts. Static (no rotation), deliberately
+ *  fewer/coarser than the 6 organic rings so it reads as underlying structure,
+ *  not a 7th ring to track. */
+const GRID_RING_COUNT = 4;
+const GRID_SPOKE_COUNT = 8;
+const GRID_SPOKE_INNER_FRACTION = 0.1;
 
 const READOUT_LINES = [
   "continuous market intelligence — ingested, verified, never assumed",
@@ -152,10 +175,10 @@ function useFieldParticles(
 
         ctx.save();
         ctx.shadowBlur = p.size * 4.2;
-        ctx.shadowColor = `rgba(255, 210, 80, ${Math.min(0.95, alpha * 1.1)})`;
+        ctx.shadowColor = `rgba(255, 240, 200, ${Math.min(0.95, alpha * 1.1)})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 236, 160, ${alpha})`;
+        ctx.fillStyle = `rgba(250, 245, 230, ${alpha})`;
         ctx.fill();
         ctx.restore();
       }
@@ -186,6 +209,11 @@ export function BieBrainBanner() {
   const ambientMesh = useMemo(() => buildAmbientFieldMesh(CORE.x, CORE.y, MAX_RX, MAX_RY), []);
   const fieldGlow = useMemo(() => fieldGlowRadii(VIEW_W, VIEW_H), []);
   const gateTicks = useMemo(() => buildGateTicks(GATE_TICK_COUNT, GATE_INNER_R, GATE_OUTER_R), []);
+  const gridRings = useMemo(() => buildInstrumentGridRings(GRID_RING_COUNT, MAX_RX, MAX_RY), []);
+  const gridSpokes = useMemo(
+    () => buildInstrumentGridSpokes(GRID_SPOKE_COUNT, MAX_RX, MAX_RY, GRID_SPOKE_INNER_FRACTION),
+    []
+  );
 
   const outerLines = fieldLines.filter((r) => r.layer === "outer");
   const midLines = fieldLines.filter((r) => r.layer === "mid");
@@ -300,22 +328,42 @@ export function BieBrainBanner() {
                 <stop offset="100%" stopColor="rgba(4, 4, 7, 1)" />
               </radialGradient>
               <radialGradient id="bie-field-glow" cx="50%" cy="50%" r="52%">
-                <stop offset="0%" stopColor="rgba(0,229,255,0.14)" />
-                <stop offset="40%" stopColor="rgba(0,229,255,0.05)" />
-                <stop offset="100%" stopColor="rgba(0,229,255,0)" />
+                <stop offset="0%" stopColor="rgba(56,189,248,0.14)" />
+                <stop offset="40%" stopColor="rgba(56,189,248,0.05)" />
+                <stop offset="100%" stopColor="rgba(56,189,248,0)" />
               </radialGradient>
               <radialGradient id="bie-field-vignette" cx="50%" cy="50%" r="72%">
                 <stop offset="74%" stopColor="rgba(4,4,7,0)" />
                 <stop offset="100%" stopColor="rgba(4,4,7,0.18)" />
               </radialGradient>
               <radialGradient id="bie-core-grad" cx="38%" cy="32%" r="72%">
-                <stop offset="0%" stopColor="#5df7ff" />
-                <stop offset="42%" stopColor="#00e5ff" />
-                <stop offset="100%" stopColor="#0a3b45" />
+                <stop offset="0%" stopColor="#eafcff" />
+                <stop offset="42%" stopColor="#38bdf8" />
+                <stop offset="100%" stopColor="#0c3049" />
               </radialGradient>
             </defs>
 
             <rect width={VIEW_W} height={VIEW_H} fill="url(#bie-field-base)" className="bie-field-base" />
+
+            <g
+              className="bie-instrument-grid"
+              aria-hidden
+              transform={`translate(${CORE.x}, ${CORE.y})`}
+            >
+              {gridRings.map((r, i) => (
+                <ellipse key={`grid-ring-${i}`} cx={0} cy={0} rx={r.rx} ry={r.ry} className="bie-instrument-grid-ring" />
+              ))}
+              {gridSpokes.map((s) => (
+                <line
+                  key={`grid-spoke-${s.angleDeg}`}
+                  x1={s.x1}
+                  y1={s.y1}
+                  x2={s.x2}
+                  y2={s.y2}
+                  className="bie-instrument-grid-spoke"
+                />
+              ))}
+            </g>
 
             {atmosphereGlows.map((g) => (
               <ellipse

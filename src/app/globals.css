@@ -1507,7 +1507,7 @@ body::before {
 .bie-intelligence-field .bie-field-canvas {
   background:
     radial-gradient(ellipse 120% 90% at 50% 42%, rgba(0, 40, 52, 0.22) 0%, transparent 58%),
-    radial-gradient(ellipse 85% 70% at 50% 46%, rgba(0, 229, 255, 0.04) 0%, transparent 72%),
+    radial-gradient(ellipse 85% 70% at 50% 46%, rgba(56, 189, 248, 0.04) 0%, transparent 72%),
     #040407;
 }
 
@@ -1515,23 +1515,44 @@ body::before {
   pointer-events: none;
 }
 
+/* Fixed, perfectly regular polar grid behind the organic field lines — see
+   bie-instrument-grid.ts. Static on purpose: the contrast between "rigid
+   instrumentation" (this) and "organic living field" (the rings above it)
+   sells "a real system being read," not a diagram floating in empty space. */
+.bie-instrument-grid {
+  pointer-events: none;
+}
+
+.bie-instrument-grid-ring {
+  fill: none;
+  stroke: rgba(125, 211, 252, 0.05);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-instrument-grid-spoke {
+  stroke: rgba(125, 211, 252, 0.04);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
 .bie-atmosphere-glow {
-  fill: rgba(0, 229, 255, 0.025);
+  fill: rgba(56, 189, 248, 0.025);
   pointer-events: none;
 }
 
 .bie-atmosphere-glow-deep {
-  fill: rgba(0, 180, 220, 0.018);
+  fill: rgba(30, 140, 200, 0.018);
   opacity: 0.7;
 }
 
 .bie-atmosphere-glow-mid {
-  fill: rgba(0, 229, 255, 0.032);
+  fill: rgba(56, 189, 248, 0.032);
   opacity: 0.82;
 }
 
 .bie-atmosphere-glow-inner {
-  fill: rgba(93, 247, 255, 0.045);
+  fill: rgba(125, 211, 252, 0.045);
   opacity: 0.88;
 }
 
@@ -1544,7 +1565,7 @@ body::before {
 
 .bie-ambient-mesh-line {
   fill: none;
-  stroke: rgba(148, 226, 255, 0.022);
+  stroke: rgba(125, 211, 252, 0.022);
   stroke-width: 0.6;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
@@ -1555,25 +1576,25 @@ body::before {
 }
 
 .bie-field-line-mid .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.055);
+  stroke: rgba(56, 189, 248, 0.055);
   stroke-width: 0.8;
 }
 
 .bie-field-line-mid.bie-field-line-3 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.05);
+  stroke: rgba(125, 211, 252, 0.05);
 }
 
 .bie-field-line-mid.bie-field-line-4 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.042);
+  stroke: rgba(56, 189, 248, 0.042);
 }
 
 .bie-field-line-outer.bie-field-line-5 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.022);
+  stroke: rgba(125, 211, 252, 0.022);
   stroke-width: 0.6;
 }
 
 .bie-field-line-outer.bie-field-line-6 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.055);
+  stroke: rgba(125, 211, 252, 0.055);
   stroke-width: 0.85;
 }
 
@@ -1692,9 +1713,14 @@ body::before {
   100% { stroke-opacity: 0; stroke-dashoffset: 0; }
 }
 
+/* Verified = emerald throughout this whole moment (halo, gate-tick, mid rings
+   already agreed on green) — the ripple itself used to stay cyan, the one
+   inconsistent piece of an otherwise-coherent "verified" event. Ripple-c keeps
+   its violet as a deliberate accent sparkle, matching the core-flash keyframe's
+   same brief violet moment elsewhere in this file. */
 .bie-field-ripple {
   fill: none;
-  stroke: rgba(93, 247, 255, 0.45);
+  stroke: rgba(0, 230, 118, 0.5);
   stroke-width: 1.4;
   vector-effect: non-scaling-stroke;
   transform-origin: 0 0;
@@ -1729,7 +1755,7 @@ body::before {
   text-align: center;
   padding: 1.75rem clamp(1rem, 4vw, 2.5rem) 1.35rem;
   margin-top: 0.25rem;
-  border-top: 1px solid rgba(93, 247, 255, 0.06);
+  border-top: 1px solid rgba(56, 189, 248, 0.06);
   background: linear-gradient(
     to bottom,
     rgba(4, 4, 7, 0.55) 0%,
@@ -1742,7 +1768,7 @@ body::before {
 .bie-field-caption .bie-brain-eyebrow {
   font-size: 9px;
   letter-spacing: 0.32em;
-  color: rgba(148, 226, 255, 0.75);
+  color: rgba(125, 211, 252, 0.75);
 }
 
 .bie-field-caption .bie-brain-title {
@@ -1779,10 +1805,10 @@ body::before {
 }
 
 .bie-orbit-connector-line {
-  stroke: rgba(148, 226, 255, 0.4);
+  stroke: rgba(125, 211, 252, 0.4);
   stroke-width: 1.1;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 2px rgba(93, 247, 255, 0.35));
+  filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.35));
 }
 
 /* Inbound: raw telemetry, tool -> core. Carries the tool's own accent color. */
@@ -1791,27 +1817,31 @@ body::before {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tool-accent, #5df7ff) 75%, transparent));
 }
 
-/* Outbound: verified intelligence, core -> tool. Fixed core-cyan, not tool-tinted —
-   this is BIE's signal going back out, distinct from the tool's own raw data. */
+/* Outbound: verified intelligence, core -> tool. Fixed to BIE's own core color
+   (not tool-tinted) — this is BIE's signal going back out, distinct from the
+   tool's own raw data. */
 .bie-orbit-connector-pulse-out {
-  fill: #5df7ff;
-  filter: drop-shadow(0 0 4px rgba(93, 247, 255, 0.75));
+  fill: #38bdf8;
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.75));
 }
 
 /* Tool <-> tool mesh — fainter than the core spokes (secondary relationship,
    mediated by BIE's shared ecosystem-context, not a literal direct link). */
 .bie-orbit-mesh-line {
-  stroke: rgba(148, 226, 255, 0.2);
+  stroke: rgba(125, 211, 252, 0.2);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 /* One pulse continuously circling the whole mesh — "shared context circulates
    through the ecosystem," deliberately ONE traveling element, not six, to keep
-   this restrained rather than turning the periphery into a firehose of dots. */
+   this restrained rather than turning the periphery into a firehose of dots.
+   Neutral white, not a 7th brand color: this represents the ecosystem itself,
+   not any one product — and it travels right past every tool icon including
+   HELIX's, whose own accent (#bf5fff) this used to collide with exactly. */
 .bie-orbit-loop-pulse {
-  fill: #bf5fff;
-  filter: drop-shadow(0 0 4px rgba(191, 95, 255, 0.7));
+  fill: #eef1f5;
+  filter: drop-shadow(0 0 4px rgba(238, 241, 245, 0.6));
 }
 
 .bie-orbit-tool {
@@ -1893,26 +1923,26 @@ body::before {
 }
 
 .bie-field-line-outer .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.035);
+  stroke: rgba(125, 211, 252, 0.035);
   stroke-width: 0.75;
 }
 
 .bie-field-line-outer.bie-field-line-3 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.042);
+  stroke: rgba(56, 189, 248, 0.042);
 }
 
 .bie-field-line-outer.bie-field-line-4 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.028);
+  stroke: rgba(125, 211, 252, 0.028);
   stroke-width: 0.65;
 }
 
 .bie-field-line-inner .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.1);
+  stroke: rgba(56, 189, 248, 0.1);
   stroke-width: 0.95;
 }
 
 .bie-field-line-inner.bie-field-line-1 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.11);
+  stroke: rgba(56, 189, 248, 0.11);
 }
 
 .bie-field-line-inner.bie-field-line-2 .bie-field-line-stroke {
@@ -1920,18 +1950,18 @@ body::before {
 }
 
 .bie-field-line.is-lit .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.38);
+  stroke: rgba(56, 189, 248, 0.38);
   stroke-width: 1.45;
-  filter: drop-shadow(0 0 10px rgba(93, 247, 255, 0.55));
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.55));
   transition: stroke 0.28s ease, stroke-width 0.28s ease, filter 0.28s ease;
 }
 
 .bie-field-line-outer.is-lit .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.32);
+  stroke: rgba(125, 211, 252, 0.32);
 }
 
 .bie-field-line-inner.is-lit .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.55);
+  stroke: rgba(56, 189, 248, 0.55);
 }
 
 .bie-field-line-mid.is-lit .bie-field-line-stroke {
@@ -2048,7 +2078,7 @@ body::before {
   letter-spacing: 0.22em;
   fill: #04191c;
   paint-order: stroke fill;
-  stroke: rgba(93, 247, 255, 0.35);
+  stroke: rgba(56, 189, 248, 0.35);
   stroke-width: 0.4px;
   pointer-events: none;
   user-select: none;
@@ -2301,13 +2331,13 @@ body::before {
 
 @keyframes bie-core-heartbeat {
   0%, 82%, 100% {
-    filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.52));
+    filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.52));
   }
   88% {
-    filter: drop-shadow(0 0 26px rgba(93, 247, 255, 0.92)) drop-shadow(0 0 40px rgba(191, 95, 255, 0.35));
+    filter: drop-shadow(0 0 26px rgba(56, 189, 248, 0.92)) drop-shadow(0 0 40px rgba(191, 95, 255, 0.35));
   }
   93% {
-    filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.58));
+    filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.58));
   }
 }
 
@@ -2317,7 +2347,7 @@ body::before {
 }
 
 .bie-reactor-core.is-verifying .bie-reactor-core-halo {
-  stroke: rgba(93, 247, 255, 0.82);
+  stroke: rgba(56, 189, 248, 0.82);
   opacity: 0.78;
 }
 
@@ -2326,7 +2356,7 @@ body::before {
 }
 
 .bie-reactor-core.is-verifying .bie-gate-tick {
-  stroke: rgba(93, 247, 255, 0.85);
+  stroke: rgba(56, 189, 248, 0.85);
   stroke-width: 1.4;
 }
 
@@ -2359,15 +2389,15 @@ body::before {
 }
 
 @keyframes bie-core-absorb-flash {
-  0% { filter: drop-shadow(0 0 20px rgba(93, 247, 255, 0.7)); }
-  40% { filter: drop-shadow(0 0 36px rgba(93, 247, 255, 1)) drop-shadow(0 0 52px rgba(191, 95, 255, 0.55)); }
-  100% { filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.55)); }
+  0% { filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.7)); }
+  40% { filter: drop-shadow(0 0 36px rgba(56, 189, 248, 1)) drop-shadow(0 0 52px rgba(191, 95, 255, 0.55)); }
+  100% { filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.55)); }
 }
 
 @keyframes bie-core-reject-flash {
   0% { filter: drop-shadow(0 0 18px rgba(255, 107, 74, 0.65)); }
   35% { filter: drop-shadow(0 0 30px rgba(255, 107, 74, 0.95)); }
-  100% { filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.55)); }
+  100% { filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.55)); }
 }
 
 /* The gate — a ring of tick marks around the core, like an aperture/dial. Idle
@@ -2386,7 +2416,7 @@ body::before {
 }
 
 .bie-gate-tick {
-  stroke: rgba(148, 226, 255, 0.32);
+  stroke: rgba(125, 211, 252, 0.32);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
   transition: stroke 0.35s ease, stroke-width 0.35s ease;
@@ -2479,7 +2509,7 @@ body::before {
 
 .bie-reactor-core-halo {
   fill: none;
-  stroke: rgba(0, 229, 255, 0.38);
+  stroke: rgba(56, 189, 248, 0.38);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
   animation: none;
@@ -2516,9 +2546,9 @@ body::before {
 }
 
 @keyframes bie-reactor-core-flash {
-  0% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.6)); }
+  0% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6)); }
   45% { transform: scale(1.12); filter: drop-shadow(0 0 24px rgba(191, 95, 255, 0.85)); }
-  100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.6)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6)); }
 }
 
 .bie-reactor-core-label {
