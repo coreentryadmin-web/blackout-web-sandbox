@@ -106,7 +106,7 @@ export async function fetchPositioningSummary(ticker: string): Promise<Positioni
       }
       return {
         net_gex: gex.net_gex,
-        gex_king_strike: null, // not available in the light contract
+        gex_king_strike: gex.gex_king_strike,
         gamma_flip: flip,
         gamma_regime: regime,
         net_vex: gex.net_vex !== 0 ? gex.net_vex : null,

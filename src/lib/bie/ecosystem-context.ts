@@ -4,6 +4,7 @@ import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { getSpxPlayState } from "@/lib/platform/spx-service";
 import { getFlowTapeSummary } from "@/lib/platform/flow-service";
 import { enrichFlowsWithGex, type GexProximityLabel } from "@/lib/flow-gex-enrichment";
+import { getGexPositioning, type GexPositioning } from "@/lib/providers/gex-positioning";
 import type { SpxPlayPayload } from "@/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 
@@ -152,6 +153,10 @@ export type EcosystemSpxPlay = {
 // type without a second import from spx-play-payload.ts.
 export type { SpxPlayPayload };
 
+// Re-exported so a consumer of EcosystemContext can name the gex_positioning
+// type without a second import from gex-positioning.ts.
+export type { GexPositioning };
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
@@ -242,6 +247,60 @@ export type EcosystemContext = {
    * "unknown," never as "quiet."
    */
   flow_feed_fresh: boolean;
+  /**
+   * BlackOut Thermal's own canonical dealer gamma/vanna/delta/charm positioning
+   * for this ticker — the exact same object `getGexPositioning(ticker)`
+   * (`src/lib/providers/gex-positioning.ts`) already returns for every other
+   * reader of it (the Heat Maps UI, the SPX rail's GEX/VEX lens, Night Hawk's
+   * `fetchPositioningSummary` primary branch, and Largo's own `get_positioning`
+   * tool indirectly, via that same function). Before this field,
+   * `get_ecosystem_context` had ZERO gamma/GEX signal at all — "what does the
+   * desk know about NVDA" answered SPX play state, HELIX flow, and anomalies,
+   * but never mentioned dealer positioning even though Thermal already
+   * computes it for that exact ticker on every heatmap poll.
+   *
+   * Called DIRECTLY (`getGexPositioning(upper)`, no wrapper function) rather
+   * than through a `fetchGexPositioningState()` indirection like
+   * `fetchFlowFullState()` has: `getGexPositioning` already returns
+   * `GexPositioning | null` with the exact honesty convention this field
+   * wants (null on a cold/no-data matrix, never fabricated) and needs no
+   * extra enrichment/reshaping step the way `flow_full_state` needed
+   * `enrichFlowsWithGex()` layered on top of `getFlowTapeSummary()` — a
+   * wrapper here would just be `return getGexPositioning(ticker);` with
+   * nothing else in it, so it's called inline in the `Promise.all` instead
+   * (same reasoning as not wrapping a one-line pass-through).
+   *
+   * Cost/safety: unlike `spx_full_state`'s SPX/SPXW-only gate, this runs
+   * UNCONDITIONALLY for every ticker (GEX positioning is not a
+   * single-instrument product the way the SPX play engine is). Safe to do so
+   * per `getGexPositioning`'s own module contract: its PRIMARY data comes from
+   * a strict CACHE-READER over the shared `gex-heatmap:{ticker}` matrix (never
+   * a second upstream fetch), and the one additional step it always performs
+   * — cross-validating call wall/put wall/flip against UW's REST strike ladder
+   * — is itself 60s-cached and wrapped in `.catch(() => null)`, so it never
+   * throws and never blocks on a live upstream call. `null` when the shared
+   * matrix is cold (no provider configured, no spot, or zero strikes) for this
+   * ticker — mirroring every other field's fail-open-to-null/absent
+   * convention here, never a fabricated all-zero reading.
+   *
+   * Distinct from Largo's standalone `get_positioning` and `get_gex` tools,
+   * not a replacement for either: `get_positioning` (`fetchPositioningSummary`,
+   * `src/lib/nighthawk/positioning.ts`) hands back a DERIVED, reshaped summary
+   * (a `wall_summary` string, a `gamma_regime` string rebuilt from posture,
+   * `gex_king_strike`/vanna collapsed to single numbers) — a strict subset,
+   * missing DEX/CHARM entirely and `nearest_wall`/`distance_to_flip_pct`.
+   * `get_gex` is heavier in a different direction — it returns the raw
+   * per-strike chain/matrix rows (or, for SPX/SPXW intraday, the live merged
+   * desk snapshot), not this canonical light contract at all. `gex_positioning`
+   * sits between the two: the full canonical `GexPositioning` object (posture +
+   * one-liner reads for gamma/vanna/delta/charm, walls, flip, max pain,
+   * nearest-wall/distance-to-flip, `gex_king_strike`, optional
+   * `gex_cross_validation`) without the per-strike granularity `get_gex`
+   * carries. Use this instead of a separate `get_positioning` call when the
+   * turn already needs this ticker's other ecosystem context too; reach for
+   * `get_gex` only when the per-strike/per-expiry chain itself is needed.
+   */
+  gex_positioning: GexPositioning | null;
 };
 
 /**
@@ -268,6 +327,7 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   spx_play: "SPX Slayer's own play-engine state — the current open play (if any) and the most recently closed play. Only populated for ticker SPX/SPXW (spx_open_play/spx_play_outcomes have no ticker column, single-instrument engine); null for every other ticker.",
   spx_full_state: "SPX Slayer's FULL play-engine snapshot — the exact same object Largo's get_spx_play tool returns (phase, every confluence factor, full gate pass/fail state, the 10-item confirmation checklist, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch state, the AI arbiter's verdict, the option ticket). Only populated for ticker SPX/SPXW; null for every other ticker. Sourced from the SAME getSpxPlayState() Largo's tool calls — one derivation, not two.",
   flow_feed_fresh: "Whether the live HELIX flow pipeline is actually delivering frames right now, cluster-wide — disambiguates a null/empty recent_flow or recent_anomalies as 'unknown' rather than 'genuinely quiet'.",
+  gex_positioning: "BlackOut Thermal's canonical dealer gamma/vanna/delta/charm positioning for this ticker — the exact same object getGexPositioning() returns for the Heat Maps UI, the SPX rail, and Night Hawk's positioning read (spot, flip, call/put wall, max pain, gex_king_strike, net GEX/VEX/DEX/CHARM with posture + regime-read one-liners, nearest_wall, distance_to_flip_pct, optional UW cross-validation). Runs for EVERY ticker, not gated to SPX/SPXW like spx_full_state — GEX positioning isn't a single-instrument product. Distinct from get_positioning (a reshaped, DEX/CHARM-less summary) and get_gex (the raw per-strike chain) — this is the full canonical light contract, in between the two. Null when the shared GEX matrix is cold for this ticker.",
 };
 
 export const ECOSYSTEM_CONTEXT_FIELDS: { field: string; description: string }[] = Object.entries(
@@ -286,6 +346,7 @@ function emptyContext(ticker: string): EcosystemContext {
     spx_play: null,
     spx_full_state: null,
     flow_feed_fresh: false,
+    gex_positioning: null,
   };
 }
 
@@ -413,7 +474,12 @@ async function fetchFlowFullState(ticker: string): Promise<EcosystemFlowFullStat
  * already uses, no new query path), SPX Slayer's own FULL play-engine
  * snapshot (spx_full_state — SPX/SPXW only, via the SAME getSpxPlayState()
  * Largo's own get_spx_play tool already calls — see fetchSpxFullState's doc),
- * and whether
+ * BlackOut Thermal's own canonical dealer gamma/vanna/delta/charm positioning
+ * for this ticker (gex_positioning — via the SAME getGexPositioning() every
+ * other reader of it already calls: Heat Maps UI, the SPX rail, Night Hawk's
+ * positioning read; unconditional for every ticker, not SPX/SPXW-gated — see
+ * gex_positioning's doc for its distinction from Largo's own get_positioning/
+ * get_gex tools), and whether
  * the live flow pipeline is actually up right now (flow_feed_fresh), so a
  * caller can tell "genuinely quiet" apart from "we can't see, ingestion is
  * down." Fails open to an all-empty context on any error — a lookup failure
@@ -425,7 +491,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState, gexPositioning] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -489,6 +555,11 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       isFlowFrameFreshAnywhere(),
       isSpxSlayerTicker(upper) ? fetchSpxPlaySummary() : Promise.resolve(null),
       isSpxSlayerTicker(upper) ? fetchSpxFullState() : Promise.resolve(null),
+      // Unconditional, unlike the two SPX-only fetches above — GEX positioning
+      // isn't a single-instrument product. Called directly (no wrapper): see
+      // gex_positioning's doc on EcosystemContext for why getGexPositioning()
+      // already returns exactly the shape/honesty-convention this field wants.
+      getGexPositioning(upper),
     ]);
 
     const z = zerodteRes.rows[0];
@@ -544,6 +615,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       spx_play: spxPlay,
       spx_full_state: spxFullState,
       flow_feed_fresh: flowFeedFresh,
+      gex_positioning: gexPositioning,
     };
   } catch {
     return emptyContext(ticker);
