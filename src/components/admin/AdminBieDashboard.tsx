@@ -702,7 +702,7 @@ export function AdminBieDashboard() {
           proof (mutate:false skips every position/Discord write). Purely
           observability — this panel never writes to, mutates, or triggers
           any play-engine action. */}
-      <GlassPanel kicker="0DTE Command · read-only, never mutates the play engine" title="SPX health" accent={spxHealthAccent}>
+      <GlassPanel kicker="SPX Slayer · read-only, never mutates the play engine" title="SPX health" accent={spxHealthAccent}>
         {spxHealthError && (
           <p className="admin-bie-error-text">SPX health fetch failed: {spxHealthError}</p>
         )}
