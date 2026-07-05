@@ -904,19 +904,33 @@ export type ZeroDteToolCallCalibrationReport = {
 };
 
 /** Cohort membership: does this bie_interactions row represent a Largo turn
- *  that touched 0DTE Command's own live-board state? A UNION of two
- *  conditions, not just a tools_used check — see
- *  fetchZeroDteToolCallingBieInteractions's doc comment (db.ts) for the full
- *  reasoning, which mirrors task #112's SPX reasoning exactly: the
- *  deterministic router's zerodte_plays answer reads the exact same board
- *  state (zerodte_setup_log) internally, but logBie() always records that
- *  path's tools_used as the ["blackout_intelligence"] sentinel rather than the
- *  real tool name, so a pure tools_used check would silently exclude every
- *  router-matched 0DTE-board turn. */
+ *  that touched 0DTE Command's own live-board state? A UNION of conditions,
+ *  not just a tools_used check — see fetchZeroDteToolCallingBieInteractions's
+ *  doc comment (db.ts) for the full reasoning, which mirrors task #112's SPX
+ *  reasoning exactly: the deterministic router's zerodte_plays answer reads
+ *  the exact same board state (zerodte_setup_log) internally, but logBie()
+ *  always records that path's tools_used as the ["blackout_intelligence"]
+ *  sentinel rather than the real tool name, so a pure tools_used check would
+ *  silently exclude every router-matched 0DTE-board turn.
+ *
+ *  Task #162 fix: added the `intent_bucket === "ticker_play_state"` arm. The
+ *  router's OTHER 0DTE-board answer path — composeTickerPlayState, "how's the
+ *  NVDA play" — reads the identical zeroDtePlaysForLargo() board as
+ *  composeZeroDtePlays above, just filtered to one ticker, but router.ts logs
+ *  ITS intent_bucket as "ticker_play_state", a distinct string from
+ *  "zerodte_plays". Since that path also logs the tools_used sentinel, a row
+ *  with intent_bucket = "ticker_play_state" matched NEITHER arm before this
+ *  fix and was invisible to the cohort despite answering from genuinely live
+ *  0DTE Command state — an undercount, not a deliberate exclusion (contrast
+ *  with computeHelixToolCallCalibration/computeThermalToolCallCalibration/
+ *  computeNighthawkToolCallCalibration above, whose tools_used-only cohorts
+ *  are correct because those products have no matching router intent at
+ *  all — see each one's own doc comment). */
 function isZeroDteToolCallingRow(row: ZeroDteToolCallInputRow): boolean {
   return (
     row.tools_used.some((t) => (ZERODTE_ENGINE_TOOL_NAMES as readonly string[]).includes(t)) ||
-    row.intent_bucket === "zerodte_plays"
+    row.intent_bucket === "zerodte_plays" ||
+    row.intent_bucket === "ticker_play_state"
   );
 }
 

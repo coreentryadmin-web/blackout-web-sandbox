@@ -883,6 +883,65 @@ test("zerodte tool-call calibration: a router-matched zerodte_plays row joins th
   assert.equal(r.router_match_rate_pct, 100);
 });
 
+// ── Task #162: fix the undercounted `ticker_play_state` intent_bucket ──────
+// composeTickerPlayState ("how's the NVDA play") reads the exact same
+// zeroDtePlaysForLargo() board as composeZeroDtePlays above, just filtered to
+// one ticker — genuinely 0DTE Command engine state — but router.ts logs ITS
+// intent_bucket as the distinct string "ticker_play_state", not
+// "zerodte_plays". Before this fix, isZeroDteToolCallingRow's OR-condition
+// only checked for "zerodte_plays", so a ticker_play_state row matched
+// neither the tools_used arm (router path always logs the
+// ["blackout_intelligence"] sentinel) nor the intent_bucket arm — invisible
+// to the cohort despite answering from live 0DTE Command state.
+test("zerodte tool-call calibration: a router-matched ticker_play_state row now joins the cohort (task #162 undercount fix)", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "ticker_play_state",
+      answer_source: "bie-router",
+      claims_total: 3,
+      claims_verified: 3,
+      latency_ms: 35,
+    }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("zerodte tool-call calibration: existing zerodte_plays-intent behavior is unchanged by the task #162 fix", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "zerodte_plays",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("zerodte tool-call calibration: a row with neither a matching tool nor a matching intent_bucket is still excluded", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    // Router match for a DIFFERENT product (SPX structure) — never joins this cohort.
+    zeroDteToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+    // Claude fallback that never touched a 0DTE-Command engine tool.
+    zeroDteToolRow({ tools_used: ["get_quote", "get_gex"], intent_bucket: "claude_fallback", answer_source: "claude" }),
+    // Pre-task-#103 row: no intent_bucket at all, no matching tool.
+    zeroDteToolRow({ tools_used: ["get_market_context"], intent_bucket: null, answer_source: "claude" }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+});
+
 test("zerodte tool-call calibration: aggregate grounding pass rate, router-match rate, and avg latency over a mixed cohort", () => {
   const rows: ZeroDteToolCallInputRow[] = [
     zeroDteToolRow({ tools_used: ["get_zerodte_plays"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
