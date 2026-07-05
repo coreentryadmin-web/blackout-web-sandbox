@@ -21,6 +21,7 @@ import {
   dbConfigured,
   fetchClosedPlayOutcomes,
   fetchHelixToolCallingBieInteractions,
+  fetchMarketContextToolCallingBieInteractions,
   fetchNighthawkToolCallingBieInteractions,
   fetchNightsWatchToolCallingBieInteractions,
   fetchSpxToolCallingBieInteractions,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/db";
 import {
   HELIX_ENGINE_TOOL_NAMES,
+  MARKET_ENGINE_TOOL_NAMES,
   NIGHTHAWK_ENGINE_TOOL_NAMES,
   NIGHTS_WATCH_ENGINE_TOOL_NAMES,
   SPX_ENGINE_TOOL_NAMES,
@@ -119,6 +121,15 @@ export type CalibrationReport = {
    *  orchestrator fills it in. See computeZeroDteToolCallCalibration below for
    *  the cohort definition and metrics. */
   zerodte_tool_calls: ZeroDteToolCallCalibrationReport | null;
+  /** Task #161 — the analogous answer-quality cohort for turns that touched
+   *  `market_context`, the FOURTH of BIE's deterministic router intents
+   *  (zerodte_plays/ticker_play_state/spx_structure/market_context — see
+   *  src/lib/bie/router.ts's classifyBieIntent) and, until now, the only one of
+   *  the four with no calibration.ts tool-calling cohort of its own. Same
+   *  attach-after-compute, fail-open, additive pattern as every other slice on
+   *  this report. See computeMarketContextToolCallCalibration below for the
+   *  cohort definition and metrics. */
+  market_context_tool_calls: MarketContextToolCallCalibrationReport | null;
   /** Task #163 — the same cohort idea as spx_tool_calls above, applied to Night's
    *  Watch (the signed-in user's own per-position Hold/Trim/Sell verdict engine)
    *  instead of SPX Slayer: Largo's own answer-quality cohort for turns that
@@ -250,15 +261,16 @@ export function computeCalibration(
     by_spike: bySpike,
     recommendations: recs,
     // Attached by runBieCalibration once it has computed the SPX/HELIX/Thermal/
-    // Night Hawk/0DTE/Night's-Watch-tool-calling passes too — this pure function
-    // only ever sees 0DTE-setup-log rows, so it never has data to report for any
-    // of the additive slices below.
+    // Night Hawk/0DTE/market-context/Night's-Watch-tool-calling passes too — this
+    // pure function only ever sees 0DTE-setup-log rows, so it never has data to
+    // report for any of the additive slices below.
     spx_slayer: null,
     spx_tool_calls: null,
     helix_tool_calls: null,
     thermal_tool_calls: null,
     nighthawk_tool_calls: null,
     zerodte_tool_calls: null,
+    market_context_tool_calls: null,
     nights_watch_tool_calls: null,
   };
 }
@@ -1000,6 +1012,138 @@ export function computeZeroDteToolCallCalibration(
   };
 }
 
+// ── Task #161: market_context-tool-calling cohort within bie_interactions (a
+// FIFTH pass, alongside the 0DTE-setup-log, SPX-Slayer-outcomes, SPX-tool-calling,
+// HELIX-tool-calling, Thermal-tool-calling, Night-Hawk-tool-calling, and
+// 0DTE-Command-tool-calling passes above) ──
+//
+// `market_context` is the FOURTH of BIE's deterministic router intents
+// (src/lib/bie/router.ts's classifyBieIntent: zerodte_plays/ticker_play_state/
+// spx_structure/market_context — see composers.ts's composeMarketContext) and,
+// until now, the only one of the four left without a calibration.ts tool-calling
+// cohort. Same gap task #112 closed for SPX Slayer, applied here to the last
+// remaining router intent: before this, calibration.ts had no way to measure
+// whether Largo's ANSWERS about market-wide context (SPX/VIX/SPY/QQQ, market
+// tide, breadth, session status) were actually GOOD answers — grounding-verifier
+// claim correctness says nothing about whether the answer read a stale snapshot
+// or dispatched the wrong tool. This slice tracks that cohort continuously,
+// mirroring task #112/#149's UNION-membership architecture exactly, since
+// market_context — like zerodte_plays and spx_structure, and unlike HELIX/
+// Thermal/Night Hawk — IS a real deterministic router intent.
+
+/** Slim projection of a bie_interactions row — same shape as SpxToolCallInputRow/
+ *  ZeroDteToolCallInputRow above (same source table, same columns needed). Kept
+ *  as its own named type rather than reused so a caller can never pass one
+ *  product's rows to another's compute function by an accidental structural
+ *  match. */
+export type MarketContextToolCallInputRow = {
+  tools_used: string[];
+  /** "claude_fallback", a router intent name (e.g. "market_context"), or null if
+   *  a row predates task #103's intent_bucket column. */
+  intent_bucket: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+};
+
+export type MarketContextToolCallCalibrationReport = {
+  window: { since: string; through: string };
+  /** Rows in the cohort — see isMarketContextToolCallingRow for the membership test. */
+  n: number;
+  /** Of the n cohort rows, how many were answered by Claude's tool-calling loop
+   *  vs. matched deterministically by the BIE router. Reported as raw counts
+   *  (not just a derived rate), same convention as the SPX/0DTE-tool-calling
+   *  reports. */
+  claude_fallback_n: number;
+  router_matched_n: number;
+  /** router_matched_n / n — a properly-integrated market-context question should
+   *  ideally often be answerable by the deterministic router (composeBieAnswer's
+   *  market_context composer) rather than needing full Claude tool-calling every
+   *  time; tracked over time as a signal of whether router coverage for
+   *  market-context questions is keeping up. null when n = 0. */
+  router_match_rate_pct: number | null;
+  /** Aggregate sum(claims_verified)/sum(claims_total) across cohort rows that
+   *  actually carried numeric claims (claims_total > 0) — weights rows by how
+   *  many claims they made, unlike an unweighted average of each row's own
+   *  ratio. null when no cohort row had any graded claims yet. */
+  grounding_pass_rate_pct: number | null;
+  avg_latency_ms: number | null;
+  /** Same evidence-gating philosophy as the other passes — empty until n≥10. */
+  recommendations: string[];
+};
+
+/** Cohort membership: does this bie_interactions row represent a Largo turn
+ *  that touched market_context's own composed state? A UNION of two conditions,
+ *  not just a tools_used check — same reasoning as isSpxToolCallingRow/
+ *  isZeroDteToolCallingRow above (see fetchMarketContextToolCallingBieInteractions's
+ *  doc comment, db.ts, for the full trace): the deterministic router's
+ *  market_context answer (composeMarketContext, bie/composers.ts) reads the exact
+ *  same get_market_context state a Claude-tool-calling turn would read, but
+ *  logBie() always records that path's tools_used as the ["blackout_intelligence"]
+ *  sentinel rather than the real tool name, so a pure tools_used check would
+ *  silently exclude every router-matched market-context turn. */
+function isMarketContextToolCallingRow(row: MarketContextToolCallInputRow): boolean {
+  return (
+    row.tools_used.some((t) => (MARKET_ENGINE_TOOL_NAMES as readonly string[]).includes(t)) ||
+    row.intent_bucket === "market_context"
+  );
+}
+
+/** Pure assembly — feed it bie_interactions-shaped rows (any cohort mix), get
+ *  the market-context-tool-calling slice's sample count, router-vs-Claude split,
+ *  grounding pass rate, and latency. Never touches spx_signals.ts or any live
+ *  play-engine gate — read-only reporting over already-logged turns, same
+ *  contract as computeSpxToolCallCalibration/computeZeroDteToolCallCalibration
+ *  above. */
+export function computeMarketContextToolCallCalibration(
+  rows: MarketContextToolCallInputRow[],
+  window: { since: string; through: string }
+): MarketContextToolCallCalibrationReport {
+  const cohort = rows.filter(isMarketContextToolCallingRow);
+  const n = cohort.length;
+
+  const claudeFallbackN = cohort.filter((r) => r.answer_source === "claude").length;
+  const routerMatchedN = cohort.filter((r) => r.answer_source === "bie-router").length;
+  const routerMatchRatePct = n > 0 ? Math.round((routerMatchedN / n) * 1000) / 10 : null;
+
+  // Only rows that actually carried numeric claims count toward the grounding
+  // ratio — a turn with zero claims (claims_total = 0) has nothing to verify,
+  // and folding it in would dilute the ratio with a trivial non-signal.
+  const graded = cohort.filter((r) => (r.claims_total ?? 0) > 0);
+  const totalClaims = graded.reduce((s, r) => s + (r.claims_total ?? 0), 0);
+  const verifiedClaims = graded.reduce((s, r) => s + (r.claims_verified ?? 0), 0);
+  const groundingPassRatePct = totalClaims > 0 ? Math.round((verifiedClaims / totalClaims) * 1000) / 10 : null;
+
+  const latencies = cohort.map((r) => r.latency_ms).filter((l): l is number => l != null);
+  const avgLatencyMs = latencies.length
+    ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+    : null;
+
+  const recs: string[] = [];
+  if (n >= MIN_EVIDENCE && groundingPassRatePct != null && groundingPassRatePct < 70) {
+    recs.push(
+      `Market-context-tool-calling Largo turns show only ${groundingPassRatePct}% claim grounding over ${n} turns — since grounding checks numbers, not answer quality, this is worth a manual read of a few transcripts to see whether the market-context snapshot is being misread or just under-verified.`
+    );
+  }
+  if (n >= MIN_EVIDENCE && routerMatchRatePct != null && routerMatchRatePct < 30) {
+    recs.push(
+      `Only ${routerMatchRatePct}% of market-context-tool-calling turns were answered by the deterministic router over ${n} turns — most market-context questions still fall through to full Claude tool-calling; consider widening MARKET_CONTEXT_RE's coverage.`
+    );
+  }
+
+  return {
+    window,
+    n,
+    claude_fallback_n: claudeFallbackN,
+    router_matched_n: routerMatchedN,
+    router_match_rate_pct: routerMatchRatePct,
+    grounding_pass_rate_pct: groundingPassRatePct,
+    avg_latency_ms: avgLatencyMs,
+    recommendations: recs,
+  };
+}
+
 // ── Task #163: Night's-Watch-tool-calling cohort within bie_interactions
 // (additive, a sixth pass alongside the 0DTE, SPX-Slayer-outcomes, and
 // SPX/HELIX/Thermal/Night-Hawk/0DTE-Command-tool-calling passes above) ──
@@ -1180,6 +1324,9 @@ export function formatCalibration(r: CalibrationReport): string {
   // OWN trade P&L (zerodte_setup_log), a completely different axis from this
   // section's Largo-answer-quality measurement over bie_interactions.
   if (r.zerodte_tool_calls) sections.push(`---`, ``, formatZeroDteToolCallCalibration(r.zerodte_tool_calls));
+  // Task #161 — market_context is the last of BIE's 4 deterministic router
+  // intents to get its own tool-calling cohort section.
+  if (r.market_context_tool_calls) sections.push(`---`, ``, formatMarketContextToolCallCalibration(r.market_context_tool_calls));
   if (r.nights_watch_tool_calls)
     sections.push(`---`, ``, formatNightsWatchToolCallCalibration(r.nights_watch_tool_calls));
   return sections.join("\n");
@@ -1283,8 +1430,26 @@ export function formatZeroDteToolCallCalibration(r: ZeroDteToolCallCalibrationRe
   ].join("\n");
 }
 
-/** Task #163 — direct analogue of formatNighthawkToolCallCalibration above, for
- *  Night's Watch's tool-calling cohort. Same line shape, same convention. */
+export function formatMarketContextToolCallCalibration(r: MarketContextToolCallCalibrationReport): string {
+  return [
+    `Market-context-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched market_context's own composed state)`,
+    ``,
+    `Grounding pass rate: ${r.grounding_pass_rate_pct != null ? `${r.grounding_pass_rate_pct}%` : "no graded claims yet"}`,
+    `Avg latency: ${r.avg_latency_ms != null ? `${r.avg_latency_ms}ms` : "—"}`,
+    `Answered by: ${r.claude_fallback_n} Claude tool-calling turn(s), ${r.router_matched_n} deterministic router match(es)${r.router_match_rate_pct != null ? ` (${r.router_match_rate_pct}% router-matched)` : ""}`,
+    ``,
+    r.recommendations.length
+      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
+      : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} market-context-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
+  ].join("\n");
+}
+
+/** SPX Slayer's own closed-play pass — same rolling window as the 0DTE pass above,
+ *  fed by the SAME fetcher spx-play-telemetry.ts's live gate loop uses
+ *  (fetchClosedPlayOutcomes), but consumed here for reporting only. Failure is
+ *  isolated to this helper (never throws) so a problem on SPX Slayer's side can
+ *  never take down the 0DTE half of the report. */
+
 export function formatNightsWatchToolCallCalibration(r: NightsWatchToolCallCalibrationReport): string {
   return [
     `Night's-Watch-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched Night's Watch's own engine state)`,
@@ -1304,6 +1469,11 @@ export function formatNightsWatchToolCallCalibration(r: NightsWatchToolCallCalib
   ].join("\n");
 }
 
+/** SPX Slayer's own closed-play pass — same rolling window as the 0DTE pass above,
+ *  fed by the SAME fetcher spx-play-telemetry.ts's live gate loop uses
+ *  (fetchClosedPlayOutcomes), but consumed here for reporting only. Failure is
+ *  isolated to this helper (never throws) so a problem on SPX Slayer's side can
+ *  never take down the 0DTE half of the report. */
 /** SPX Slayer's own closed-play pass — same rolling window as the 0DTE pass above,
  *  fed by the SAME fetcher spx-play-telemetry.ts's live gate loop uses
  *  (fetchClosedPlayOutcomes), but consumed here for reporting only. Failure is
@@ -1476,6 +1646,35 @@ async function computeZeroDteToolCallCalibrationFromDb(
   }
 }
 
+
+/** Task #161's market-context-tool-calling pass — direct analogue of
+ *  computeSpxToolCallCalibrationFromDb/computeZeroDteToolCallCalibrationFromDb
+ *  above, fed by fetchMarketContextToolCallingBieInteractions (which does the
+ *  cohort filtering at the SQL layer — see its doc comment in db.ts). Same
+ *  fail-open contract (never throws) as every other *FromDb helper in this
+ *  file, so a problem here can never take down the rest of the report. */
+async function computeMarketContextToolCallCalibrationFromDb(
+  since: string,
+  through: string
+): Promise<MarketContextToolCallCalibrationReport | null> {
+  try {
+    const rows = await fetchMarketContextToolCallingBieInteractions(since, MARKET_ENGINE_TOOL_NAMES);
+    return computeMarketContextToolCallCalibration(
+      rows.map((r) => ({
+        tools_used: r.tools_used,
+        intent_bucket: r.intent_bucket,
+        answer_source: r.answer_source,
+        claims_total: r.claims_total,
+        claims_verified: r.claims_verified,
+        latency_ms: r.latency_ms,
+      })),
+      { since, through }
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Task #163's Night's-Watch-tool-calling pass — same rolling window as the other
  *  passes above, fed by fetchNightsWatchToolCallingBieInteractions (which does the
  *  cohort filtering at the SQL layer — see its doc comment in db.ts for why it's
@@ -1554,6 +1753,11 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
     // FOURTH, independent read-only pass over bie_interactions, never touching
     // zerodte_setup_log or any live scanner gate/threshold/action.
     report.zerodte_tool_calls = await computeZeroDteToolCallCalibrationFromDb(since, through);
+    // Task #161: attach the market-context-tool-calling answer-quality cohort too
+    // — the FIFTH, independent read-only pass over bie_interactions, never
+    // touching spx_signals.ts or any live gate/threshold/action. market_context is
+    // the last of BIE's 4 deterministic router intents to get this treatment.
+    report.market_context_tool_calls = await computeMarketContextToolCallCalibrationFromDb(since, through);
     // Task #163: attach the Night's-Watch-tool-calling answer-quality cohort too —
     // a SIXTH, independent read-only pass over bie_interactions, never touching
     // nights-watch-verifier.ts or any live valuation/verdict computation.

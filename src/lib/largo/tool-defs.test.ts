@@ -5,6 +5,7 @@ import {
   getToolsForIntent,
   HELIX_ENGINE_TOOL_NAMES,
   LARGO_TOOL_DEFS,
+  MARKET_ENGINE_TOOL_NAMES,
   NIGHTHAWK_ENGINE_TOOL_NAMES,
   NIGHTS_WATCH_ENGINE_TOOL_NAMES,
   SPX_ENGINE_TOOL_NAMES,
@@ -249,6 +250,46 @@ test("ZERODTE_ENGINE_TOOL_NAMES: no duplicates", () => {
   assert.equal(new Set(ZERODTE_ENGINE_TOOL_NAMES).size, ZERODTE_ENGINE_TOOL_NAMES.length);
 });
 
+// ── Task #161: MARKET_ENGINE_TOOL_NAMES (calibration.ts's market-context-tool-calling
+// cohort) — market_context is the FOURTH of BIE's deterministic router intents
+// (zerodte_plays/ticker_play_state/spx_structure/market_context) and, until this task,
+// the only one without its own tool-calling cohort. ──
+
+test("MARKET_ENGINE_TOOL_NAMES: every name is a real, callable Largo tool", () => {
+  const known = new Set(LARGO_TOOL_DEFS.map((t) => t.name));
+  for (const name of MARKET_ENGINE_TOOL_NAMES) {
+    assert.ok(known.has(name), `${name} is in MARKET_ENGINE_TOOL_NAMES but not in LARGO_TOOL_DEFS`);
+  }
+});
+
+test("MARKET_ENGINE_TOOL_NAMES: every name is a subset of TOOL_GROUPS.vol_analysis, where get_market_context itself lives", () => {
+  for (const name of MARKET_ENGINE_TOOL_NAMES) {
+    assert.ok(
+      (TOOL_GROUPS.vol_analysis as readonly string[]).includes(name),
+      `${name} is in MARKET_ENGINE_TOOL_NAMES but not in TOOL_GROUPS.vol_analysis — the cohort must stay a NARROWING of the bundle it's routed through, never wander outside it`
+    );
+  }
+});
+
+test("MARKET_ENGINE_TOOL_NAMES: is exactly the single-tool list — get_market_context, the one tool composeMarketContext reads", () => {
+  assert.deepEqual(new Set(MARKET_ENGINE_TOOL_NAMES), new Set(["get_market_context"]));
+});
+
+test("MARKET_ENGINE_TOOL_NAMES: excludes get_market_regime — a cross-product BIE tool that reads a completely different backend (fetchPlatformIntelSnapshot), not composeMarketContext's state", () => {
+  // Same reasoning HELIX_ENGINE_TOOL_NAMES's own doc comment gives for excluding
+  // get_market_regime from ITS list: it's a BIE_TOOL_NAMES member precisely
+  // because it's callable regardless of which product's question is being asked,
+  // and bie_interactions.tools_used records only tool NAMES, never call scope.
+  assert.ok(
+    !(MARKET_ENGINE_TOOL_NAMES as readonly string[]).includes("get_market_regime"),
+    "get_market_regime reads platform-wide regime intel, not market_context's own composed state, and should not be in this cohort"
+  );
+});
+
+test("MARKET_ENGINE_TOOL_NAMES: no duplicates", () => {
+  assert.equal(new Set(MARKET_ENGINE_TOOL_NAMES).size, MARKET_ENGINE_TOOL_NAMES.length);
+});
+
 // ── Task #163: NIGHTS_WATCH_ENGINE_TOOL_NAMES (calibration.ts's Night's-Watch-
 // tool-calling cohort) — same-shaped analogue of SPX_ENGINE_TOOL_NAMES above,
 // for Night's Watch (the signed-in user's own per-position Hold/Trim/Sell
@@ -289,7 +330,6 @@ test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: excludes buildPositionDetail's route — i
 test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: no duplicates", () => {
   assert.equal(new Set(NIGHTS_WATCH_ENGINE_TOOL_NAMES).size, NIGHTS_WATCH_ENGINE_TOOL_NAMES.length);
 });
-
 // ── Task #127: get_zerodte_plays vs get_spx_play mis-routing risk ──
 // Both SPX Slayer and 0DTE Command ("BlackOut Grid") are branded "0DTE," but they
 // are two independent engines (single-instrument SPX/SPXW vs. always-on multi-

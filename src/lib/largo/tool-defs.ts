@@ -828,6 +828,39 @@ export const NIGHTHAWK_ENGINE_TOOL_NAMES = [
 // TOOL_GROUPS.platform.
 export const ZERODTE_ENGINE_TOOL_NAMES = ["get_zerodte_plays", "get_zerodte_rejections"];
 
+// Task #161 — the cohort-membership list for `market_context`, the FOURTH of BIE's
+// deterministic router intents (src/lib/bie/router.ts's classifyBieIntent:
+// zerodte_plays/ticker_play_state/spx_structure/market_context) — the one intent
+// left without a calibration.ts tool-calling cohort until now. Same design
+// philosophy as SPX_ENGINE_TOOL_NAMES/ZERODTE_ENGINE_TOOL_NAMES: kept to the tools
+// whose run-tool.ts implementation reads the SAME state the router's own composer
+// reads, verified against run-tool.ts's case statement and composers.ts directly,
+// not guessed from naming:
+//   - get_market_context → run-tool.ts's "get_market_context" case: batches Polygon
+//     index/ETF snapshots (SPX/VIX/SPY/QQQ/IWM/SOXX), UW market tide, market status,
+//     and upcoming-session info behind the shared `market_context` cache, then layers
+//     the user's own live SPX desk summary on top. This is EXACTLY what
+//     composeMarketContext (src/lib/bie/composers.ts) reads via
+//     `runLargoTool("get_market_context", {})` to answer the market_context router
+//     intent — the same one-tool relationship SPX_ENGINE_TOOL_NAMES's
+//     get_spx_structure has to composeSpxStructure.
+// Deliberately EXCLUDES get_market_regime, despite it also being a "market-wide"
+// BIE tool one might reflexively bundle in here: its run-tool.ts case calls
+// fetchPlatformIntelSnapshot() (src/lib/nighthawk/platform-intel-snapshot.ts) — a
+// COMPLETELY DIFFERENT read (platform-wide regime/backdrop intel) that
+// composeMarketContext never touches. get_market_regime is a BIE_TOOL_NAMES member
+// precisely because it's cross-product and callable regardless of which product's
+// question is being asked — HELIX_ENGINE_TOOL_NAMES's own doc comment already
+// excludes it from ITS list for the identical reason ("an explicitly 'market-wide
+// backdrop, not ticker-specific' tool... tells you nothing about HELIX-tape/
+// anomaly-detector answer quality specifically"); the same logic applies here
+// verbatim, just for market_context instead of HELIX. Including it would silently
+// admit turns that never touched market_context's own composed state into this
+// cohort. Kept as an explicit literal list (not derived from TOOL_GROUPS.vol_analysis,
+// where get_market_context itself lives) for the same drift-resistance reason every
+// other *_ENGINE_TOOL_NAMES list is — see tool-defs.test.ts for the assertion that
+// keeps this list a verified subset of TOOL_GROUPS.vol_analysis.
+export const MARKET_ENGINE_TOOL_NAMES = ["get_market_context"];
 // Task #163 — the cohort-membership test for "did this Largo turn touch Night's
 // Watch's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
 // same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night's Watch (the

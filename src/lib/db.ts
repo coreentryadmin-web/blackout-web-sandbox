@@ -4759,6 +4759,63 @@ export async function fetchZeroDteToolCallingBieInteractions(
   }));
 }
 
+/** Task #161 — the raw rows BIE's calibration harness needs to score "how good are
+ *  Largo's answers specifically when market_context's own state was involved"
+ *  (src/lib/bie/calibration.ts's computeMarketContextToolCallCalibration). Direct
+ *  copy of fetchSpxToolCallingBieInteractions's/fetchZeroDteToolCallingBieInteractions's
+ *  shape/SQL above — same SQL-layer cohort filter for the same reason
+ *  (bie_interactions is one row per Largo QUESTION, much higher volume than the
+ *  admission-gated setup-log/closed-play-outcome tables), same UNION-of-two-
+ *  conditions membership test:
+ *    1. `tools_used` overlaps `marketEngineToolNames` (jsonb `?|`) — the Claude
+ *       tool-calling path dispatched get_market_context directly.
+ *    2. `intent_bucket = 'market_context'` — the deterministic BIE router answered
+ *       via composeBieAnswer's composeMarketContext(), which internally calls
+ *       runLargoTool("get_market_context", {}) — the SAME engine read condition 1
+ *       is trying to detect — but logBie() always records the router path's
+ *       tools_used as the single sentinel ["blackout_intelligence"], never the
+ *       real tool name (see largo-terminal.ts's tryBieRoute call sites, same as
+ *       the SPX/0DTE paths above). Without this OR, the cohort could never contain
+ *       a single router-matched row by construction, which would make "how often
+ *       do market-context questions land on the deterministic router vs. Claude
+ *       fallback" read a permanent, meaningless 0% — the exact same failure mode
+ *       task #112 documented for SPX Slayer's own spx_structure intent. */
+export async function fetchMarketContextToolCallingBieInteractions(
+  sinceDate: string,
+  marketEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND (tools_used ?| $2::text[] OR intent_bucket = 'market_context')
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, marketEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 /** Task #163 — the Night's Watch analogue of fetchSpxToolCallingBieInteractions
  *  above: raw bie_interactions rows for "how good are Largo's answers
  *  specifically when Night's Watch's own tools were involved" (src/lib/bie/
@@ -4817,7 +4874,6 @@ export async function fetchNightsWatchToolCallingBieInteractions(
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
   }));
 }
-
 export async function updateZeroDtePlanOutcome(
   sessionDate: string,
   ticker: string,
