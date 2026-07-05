@@ -9,6 +9,7 @@ import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
 import { fetchPlayOutcomeStatsForWindow } from "@/lib/spx-play-outcomes";
 import {
   fetchNighthawkOutcomeAnalytics,
+  fetchNighthawkScoringHistory,
   fetchPendingNighthawkOutcomes,
   fetchRecentFlows,
   fetchStagedDossiers,
@@ -1363,10 +1364,32 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       if (tickerFilter) {
         const all = await fetchStagedDossiers(editionFor);
         const one = all.find((d) => d.ticker === tickerFilter);
-        return { edition_for: editionFor, ticker: tickerFilter, dossier: one ?? null };
+        if (one) {
+          return { edition_for: editionFor, ticker: tickerFilter, dossier: one, archived: false };
+        }
+        // Live staging is cleared the moment an edition publishes (task #129) — fall back to the
+        // durable nighthawk_scoring_history archive so "why was ticker X scored" stays answerable
+        // the morning after, not just while tonight's hunt run is still in flight.
+        const history = await fetchNighthawkScoringHistory(editionFor, tickerFilter);
+        const archivedRow = history[0];
+        const dossier = archivedRow
+          ? { ticker: archivedRow.ticker, dossier: archivedRow.dossier, scored: archivedRow.scored }
+          : null;
+        return { edition_for: editionFor, ticker: tickerFilter, dossier, archived: Boolean(archivedRow) };
       }
-      const tickers = await fetchStagedDossierTickers(editionFor);
-      return { edition_for: editionFor, tickers, note: "Pass a ticker to get its full dossier." };
+      const liveTickers = await fetchStagedDossierTickers(editionFor);
+      if (liveTickers.length) {
+        return { edition_for: editionFor, tickers: liveTickers, archived: false, note: "Pass a ticker to get its full dossier." };
+      }
+      // Same fallback as above, for the no-ticker "list what's available" call.
+      const archivedHistory = await fetchNighthawkScoringHistory(editionFor);
+      const archivedTickers = archivedHistory.map((h) => h.ticker);
+      return {
+        edition_for: editionFor,
+        tickers: archivedTickers,
+        archived: archivedTickers.length > 0,
+        note: "Pass a ticker to get its full dossier.",
+      };
     }
     case "get_lotto_live": {
       // Read-only current record — does NOT re-run the (mutating) lotto evaluator.

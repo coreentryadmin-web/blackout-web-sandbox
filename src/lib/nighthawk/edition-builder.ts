@@ -1,6 +1,7 @@
 import {
   upsertNighthawkEdition,
   dbConfigured,
+  archiveNighthawkStaging,
   clearNighthawkStaging,
   fetchNighthawkEditionByDate,
   fetchNighthawkJob,
@@ -152,6 +153,37 @@ export function serializeBuildError(error: unknown): string {
 }
 
 /**
+ * Durable persistence for Night Hawk's per-candidate scoring dossiers (task #129 — the Night Hawk
+ * analogue of task #108's `spx_engine_snapshots` durability fix). `nighthawk_dossiers_staging` is a
+ * SCRATCH table: scoreCandidate()'s full flow/tech/pos/news/smart-money/fundamental/short-interest/
+ * catalyst breakdown for every ticker the nightly hunt considered lives there only until
+ * `clearNighthawkStaging()` deletes it — which happens the moment the edition publishes, OR the run
+ * collapses to a recap-only fallback, OR a force-rebuild's clobber guard defers to an existing good
+ * edition (every one of this function's 4 call sites below). So "why was ticker X scored/excluded
+ * tonight" was only answerable while the run was still in flight; by the next morning, when a member
+ * actually asks Largo (`get_nighthawk_dossier`), the staging rows were already gone.
+ *
+ * Every former direct call to `clearNighthawkStaging()` now goes through this wrapper instead, so the
+ * archive write always lands immediately before the delete, at the exact same point in the pipeline
+ * `clearNighthawkStaging()` used to run — WHEN staging is cleared relative to publish is unchanged;
+ * this only interposes a durable copy first. Archiving is best-effort: a failure is logged and
+ * swallowed, never blocks the clear — a stuck staging table would break the NEXT run's
+ * checkpoint-resume logic (`fetchStagedDossierTickers` gating `remaining` in stage_dossiers below),
+ * which is worse than losing one night's post-hoc queryability.
+ */
+export async function archiveAndClearNighthawkStaging(editionFor: string): Promise<void> {
+  try {
+    const archived = await archiveNighthawkStaging(editionFor);
+    if (archived > 0) {
+      console.info(`[nighthawk/edition] archived ${archived} scoring dossier(s) for ${editionFor} before staging clear`);
+    }
+  } catch (err) {
+    console.warn(`[nighthawk/edition] scoring-history archive failed for ${editionFor} — staging will still clear:`, err);
+  }
+  await clearNighthawkStaging(editionFor);
+}
+
+/**
  * RECAP-ONLY FALLBACK (audit P0 / #77). When the candidate→play funnel legitimately collapses to
  * zero (no flow candidates, no scored dossiers, all candidates fundamentally blocked, Claude/critic
  * returns nothing), we STILL publish a real edition row — a genuine market recap with `plays: []` —
@@ -247,7 +279,7 @@ async function publishRecapOnlyEdition(params: {
         published_at: new Date().toISOString(),
         error: null,
       });
-      await clearNighthawkStaging(editionFor);
+      await archiveAndClearNighthawkStaging(editionFor);
       logNighthawkJob(
         editionFor,
         "warn",
@@ -270,7 +302,7 @@ async function publishRecapOnlyEdition(params: {
       published_at: new Date().toISOString(),
       error: null,
     });
-    await clearNighthawkStaging(editionFor);
+    await archiveAndClearNighthawkStaging(editionFor);
     logNighthawkJob(editionFor, "info", "published", `Recap-only edition published (no plays) — ${reason}`);
   }
 
@@ -304,7 +336,12 @@ export async function buildEveningEdition(opts?: {
   let job = checkpointing ? await fetchNighthawkJob(editionFor) : null;
 
   if (job?.status === "published" && opts?.force) {
-    await clearNighthawkStaging(editionFor);
+    // Staging for THIS editionFor should already be empty here (the prior successful publish
+    // already archived+cleared it below) — this is a defensive reset in case that didn't happen
+    // cleanly (e.g. a process crash between archive and clear on the prior run). Routed through
+    // the same archive-then-clear wrapper rather than a bare clear so that edge case can never
+    // silently drop a scoring dossier either.
+    await archiveAndClearNighthawkStaging(editionFor);
     await upsertNighthawkJob(editionFor, {
       status: "running",
       current_stage: "stage_context",
@@ -849,7 +886,7 @@ export async function buildEveningEdition(opts?: {
           published_at: new Date().toISOString(),
           error: null,
         });
-        await clearNighthawkStaging(editionFor);
+        await archiveAndClearNighthawkStaging(editionFor);
         logNighthawkJob(editionFor, "info", "published", `Edition published with ${finalPlays.length} plays`);
       }
     } catch (postPublishError) {
