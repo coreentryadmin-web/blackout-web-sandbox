@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 // doc for the full rationale.
 import { SPX_FULL_STATE_FIXTURE } from "./spx-full-state-fixture";
 import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import type { FlowTapeSummary } from "@/lib/platform/types";
+import type { FlowRow } from "@/lib/db";
 
 // mock.module() must be registered before ecosystem-context.ts (and therefore
 // its "@/lib/db" import) is ever loaded — an ordinary top-level `import` of
@@ -63,6 +65,35 @@ mock.module("../platform/spx-service", {
   },
 });
 
+// flow_full_state's two sources, mocked separately so this test file can prove
+// EACH is reused verbatim rather than re-derived: getFlowTapeSummary() (the
+// exact function backing Largo's get_flow_tape tool — src/lib/platform/
+// flow-service.ts) and enrichFlowsWithGex() (the exact GEX enrichment the live
+// /flows member route applies — src/lib/flow-gex-enrichment.ts). Neither
+// mock ever touches a real DB row or a real GEX/upstream call.
+let mockFlowTapeSummary: FlowTapeSummary = { count: 0, total_premium: 0, top_tickers: [], recent: [] };
+let flowTapeCalls: Array<{ ticker?: string; limit?: number } | undefined> = [];
+let mockEnrichedRecent: unknown[] | null = null; // null = pass rows through unchanged
+let enrichCalls: unknown[][] = [];
+
+mock.module("../platform/flow-service", {
+  namedExports: {
+    getFlowTapeSummary: async (opts?: { ticker?: string; limit?: number }) => {
+      flowTapeCalls.push(opts);
+      return mockFlowTapeSummary;
+    },
+  },
+});
+
+mock.module("../flow-gex-enrichment", {
+  namedExports: {
+    enrichFlowsWithGex: async (flows: unknown[]) => {
+      enrichCalls.push(flows);
+      return mockEnrichedRecent ?? flows;
+    },
+  },
+});
+
 let fetchEcosystemContext: typeof import("./ecosystem-context").fetchEcosystemContext;
 let ECOSYSTEM_CONTEXT_FIELDS: typeof import("./ecosystem-context").ECOSYSTEM_CONTEXT_FIELDS;
 let mapNighthawkEchoRows: typeof import("./ecosystem-context").mapNighthawkEchoRows;
@@ -77,6 +108,7 @@ test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty descrip
     "nighthawk_recent",
     "recent_audit_entries",
     "recent_flow",
+    "flow_full_state",
     "recent_anomalies",
     "spx_play",
     "spx_full_state",
@@ -254,6 +286,99 @@ test("fetchEcosystemContext: spx_full_state is null for a non-SPX ticker, and ge
   const ctx = await fetchEcosystemContext("AAPL");
   assert.equal(ctx.spx_full_state, null);
   assert.equal(fullStateCalls, 0, "getSpxPlayState must not run for a non-SPX ticker");
+});
+
+// Regression: fetchEcosystemContext()'s recent_flow hand-rolled its own raw
+// SQL aggregate against flow_alerts, never reusing getFlowTapeSummary() (the
+// exact function backing Largo's own get_flow_tape tool) or enrichFlowsWithGex
+// (the GEX/dark-pool enrichment the live /flows member route already applies
+// to every alert). flow_full_state closes that gap the same way spx_full_state
+// closed it for the play engine: reuse the real functions verbatim instead of
+// re-deriving a second, independently-drifting flow view.
+
+function makeFlowRow(overrides: Partial<FlowRow> = {}): FlowRow {
+  return {
+    ticker: "NVDA",
+    premium: 250000,
+    option_type: "CALL",
+    expiry: "2026-07-10",
+    strike: 130,
+    direction: "bullish",
+    score: 80,
+    route: "sweep",
+    alerted_at: "2026-07-05T14:00:00.000Z",
+    ...overrides,
+  };
+}
+
+test('fetchEcosystemContext("NVDA"): flow_full_state reuses getFlowTapeSummary() ticker-scoped, then enriches recent via enrichFlowsWithGex()', async () => {
+  flowTapeCalls = [];
+  enrichCalls = [];
+  const rowA = makeFlowRow({ strike: 130 });
+  const rowB = makeFlowRow({ strike: 140, premium: 90000 });
+  mockFlowTapeSummary = {
+    count: 2,
+    total_premium: 340000,
+    top_tickers: [{ ticker: "NVDA", premium: 340000, count: 2 }],
+    recent: [rowA, rowB],
+  };
+  // Simulate enrichFlowsWithGex tagging only the row sitting near a GEX wall —
+  // exactly the shape the real src/lib/flow-gex-proximity.ts helper produces.
+  mockEnrichedRecent = [{ ...rowA, gex_proximity: "near_call_wall" }, rowB];
+
+  const ctx = await fetchEcosystemContext("NVDA");
+
+  assert.equal(flowTapeCalls.length, 1, "getFlowTapeSummary should run exactly once");
+  assert.deepEqual(flowTapeCalls[0], { ticker: "NVDA", limit: 50 }, "must be ticker-scoped, not a global tape fetch");
+  assert.equal(enrichCalls.length, 1, "enrichFlowsWithGex should run exactly once, over the exact rows getFlowTapeSummary returned");
+  assert.deepEqual(enrichCalls[0], [rowA, rowB]);
+  assert.deepEqual(ctx.flow_full_state, {
+    count: 2,
+    total_premium: 340000,
+    top_tickers: [{ ticker: "NVDA", premium: 340000, count: 2 }],
+    recent: [{ ...rowA, gex_proximity: "near_call_wall" }, rowB],
+  });
+});
+
+test("fetchEcosystemContext: flow_full_state is null (not an all-zero object) when getFlowTapeSummary finds no prints, mirroring recent_flow's null-when-quiet convention", async () => {
+  flowTapeCalls = [];
+  enrichCalls = [];
+  mockFlowTapeSummary = { count: 0, total_premium: 0, top_tickers: [], recent: [] };
+  mockEnrichedRecent = null;
+
+  const ctx = await fetchEcosystemContext("XYZ");
+
+  assert.equal(ctx.flow_full_state, null);
+  assert.equal(enrichCalls.length, 0, "enrichFlowsWithGex must not run when there is nothing to enrich");
+});
+
+test('fetchEcosystemContext("SPX"): flow_full_state is NOT gated by isSpxSlayerTicker — populates for SPX same as any other ticker', async () => {
+  flowTapeCalls = [];
+  enrichCalls = [];
+  fullStateCalls = 0;
+  mockFullState = SPX_FULL_STATE_FIXTURE;
+  const row = makeFlowRow({ ticker: "SPX" });
+  mockFlowTapeSummary = {
+    count: 1,
+    total_premium: 250000,
+    top_tickers: [{ ticker: "SPX", premium: 250000, count: 1 }],
+    recent: [row],
+  };
+  mockEnrichedRecent = null; // pass through unchanged this time
+
+  const ctx = await fetchEcosystemContext("SPX");
+
+  assert.deepEqual(flowTapeCalls[0], { ticker: "SPX", limit: 50 });
+  assert.deepEqual(ctx.flow_full_state, {
+    count: 1,
+    total_premium: 250000,
+    top_tickers: [{ ticker: "SPX", premium: 250000, count: 1 }],
+    recent: [row],
+  });
+  // Distinct gate check: spx_full_state still requires isSpxSlayerTicker and
+  // still populates here — proving flow_full_state's unconditional fetch
+  // didn't accidentally disturb the SPX-only fields' own gating.
+  assert.equal(fullStateCalls, 1);
 });
 
 test("mapNighthawkEchoRows: maps rows keyed by uppercased ticker", () => {

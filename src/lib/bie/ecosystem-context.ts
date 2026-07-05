@@ -1,8 +1,11 @@
-import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay } from "@/lib/db";
+import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay, type FlowRow } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { getSpxPlayState } from "@/lib/platform/spx-service";
+import { getFlowTapeSummary } from "@/lib/platform/flow-service";
+import { enrichFlowsWithGex, type GexProximityLabel } from "@/lib/flow-gex-enrichment";
 import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import type { FlowTapeSummary } from "@/lib/platform/types";
 
 // BIE ecosystem-context query layer, v1 — "what does the rest of BlackOut
 // currently know about this ticker." Every instrument already writes its own
@@ -55,6 +58,41 @@ export type EcosystemFlowSummary = {
   call_premium: number;
   put_premium: number;
   unknown_premium: number;
+};
+
+/**
+ * HELIX's own FULL flow-tape snapshot for this one ticker — the same shape
+ * Largo's `get_flow_tape` tool already returns (run-tool.ts's `get_flow_tape`
+ * case calls this exact `getFlowTapeSummary()`), scoped to this ticker via
+ * that function's existing `ticker` filter (`src/lib/db.ts::fetchRecentFlows`),
+ * not a second hand-rolled aggregate query like `recent_flow` above. Each
+ * `recent` row is additionally run through `enrichFlowsWithGex()`
+ * (`src/lib/flow-gex-enrichment.ts` — the same enrichment the live
+ * member-facing `/flows` route applies) so a print sitting at/near the
+ * gamma flip or a call/put wall carries `gex_proximity` here too, not just on
+ * the member dashboard.
+ *
+ * Distinct from `recent_flow` on purpose, not a replacement: `recent_flow` is
+ * a deliberately tiny call/put/unknown premium-total aggregate (see its own
+ * doc above) that existing consumers (the ecosystem-shadow SPX factor,
+ * `EcosystemShadowInput`-style narrow `Pick`s, hand-written assertions in
+ * `ecosystem-context.test.ts`) already depend on staying that exact shape —
+ * this field is additive, following the same precedent `spx_full_state` set
+ * alongside `spx_play` (see that field's doc below for the full "why ADD, not
+ * widen/replace" rationale, which applies here identically).
+ *
+ * Honesty convention: `null` when `getFlowTapeSummary()` finds zero prints for
+ * this ticker in-window, mirroring `recent_flow`'s own null-when-quiet
+ * ternary — not an all-zero object. `flow_feed_fresh` is still the one signal
+ * a caller checks to tell "genuinely quiet" apart from "the pipeline is down
+ * and we can't see," exactly as documented on `flow_feed_fresh` below; this
+ * field does not get a second, redundant freshness flag of its own.
+ */
+export type EcosystemFlowFullState = {
+  count: number;
+  total_premium: number;
+  top_tickers: FlowTapeSummary["top_tickers"];
+  recent: Array<FlowRow & { gex_proximity?: GexProximityLabel }>;
 };
 
 /**
@@ -121,6 +159,25 @@ export type EcosystemContext = {
   recent_audit_entries: EcosystemAuditEntry[];
   recent_flow: EcosystemFlowSummary | null;
   recent_anomalies: EcosystemAnomaly[];
+  /**
+   * HELIX's own FULL flow-tape snapshot for this ticker — the exact same
+   * object Largo's `get_flow_tape` tool already returns for this ticker
+   * (count, total_premium, top_tickers, and the full `recent` print list),
+   * built by calling `src/lib/platform/flow-service.ts::getFlowTapeSummary()`
+   * VERBATIM (ticker-scoped via its own existing `ticker` filter — no new
+   * query path) and then running the result through the SAME
+   * `enrichFlowsWithGex()` (`src/lib/flow-gex-enrichment.ts`) the live
+   * member-facing `/flows` route already applies, so each print in `recent`
+   * carries `gex_proximity` (at/near the gamma flip, call wall, or put wall)
+   * exactly like the member dashboard's own tape does. See
+   * `EcosystemFlowFullState`'s doc above for why this is a NEW field
+   * alongside `recent_flow` rather than a widened/replaced one — same
+   * additive precedent `spx_full_state` set below relative to `spx_play`.
+   * `null` when there is no flow for this ticker in-window (mirrors
+   * `recent_flow`'s own null-when-quiet convention); `flow_feed_fresh` is
+   * still the one signal that disambiguates that from "can't see right now."
+   */
+  flow_full_state: EcosystemFlowFullState | null;
   /**
    * SPX Slayer's own play-engine state — populated ONLY when `ticker` is
    * "SPX" or "SPXW" (spx_open_play/spx_play_outcomes carry no ticker column
@@ -206,6 +263,7 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   nighthawk_recent: "Most recent PUBLISHED Night Hawk take — a rejected play never appears here, only as a nighthawk_rejected row in recent_audit_entries.",
   recent_audit_entries: "Last 10 alert_audit_log rows for this ticker — the unified audit trail across all three write-paths (0DTE, Night Hawk published, Night Hawk rejected).",
   recent_flow: "Same-day HELIX call/put/unknown-side premium totals (6h window), reported neutrally — never collapsed into a fabricated bullish/bearish label.",
+  flow_full_state: "HELIX's FULL flow-tape snapshot for this ticker — the exact same object Largo's get_flow_tape tool returns (count, total_premium, top_tickers, and the full recent print list), each print additionally carrying gex_proximity from the same enrichFlowsWithGex() the live /flows route applies. Added alongside recent_flow (not instead of it) — recent_flow's slim call/put/unknown premium totals stay unchanged for existing consumers. Null when there is no flow for this ticker in-window; check flow_feed_fresh to tell that apart from the pipeline being down.",
   recent_anomalies: "Pattern-detected flow anomalies (concentration, coordinated sweep, premium spike, put surge) from the last 24h.",
   spx_play: "SPX Slayer's own play-engine state — the current open play (if any) and the most recently closed play. Only populated for ticker SPX/SPXW (spx_open_play/spx_play_outcomes have no ticker column, single-instrument engine); null for every other ticker.",
   spx_full_state: "SPX Slayer's FULL play-engine snapshot — the exact same object Largo's get_spx_play tool returns (phase, every confluence factor, full gate pass/fail state, the 10-item confirmation checklist, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch state, the AI arbiter's verdict, the option ticket). Only populated for ticker SPX/SPXW; null for every other ticker. Sourced from the SAME getSpxPlayState() Largo's tool calls — one derivation, not two.",
@@ -223,6 +281,7 @@ function emptyContext(ticker: string): EcosystemContext {
     nighthawk_recent: null,
     recent_audit_entries: [],
     recent_flow: null,
+    flow_full_state: null,
     recent_anomalies: [],
     spx_play: null,
     spx_full_state: null,
@@ -290,6 +349,48 @@ async function fetchSpxFullState(): Promise<SpxPlayPayload> {
   return getSpxPlayState();
 }
 
+// Matches Largo's get_flow_tape tool-def default (tool-defs.ts) — one ticker's
+// full recent tape, not the whole platform's.
+const FLOW_FULL_STATE_LIMIT = 50;
+
+/**
+ * Reuses src/lib/platform/flow-service.ts::getFlowTapeSummary() VERBATIM,
+ * ticker-scoped via its own existing `ticker` option (fetchRecentFlows'
+ * `WHERE ticker = $1`, src/lib/db.ts) — the exact function backing Largo's
+ * own `get_flow_tape` tool (run-tool.ts's `get_flow_tape` case). No second,
+ * independently-drifting tape query: this is the same class of "one
+ * derivation, not two" reuse fetchSpxFullState above applies to the play
+ * engine.
+ *
+ * Every returned row is then run through enrichFlowsWithGex()
+ * (src/lib/flow-gex-enrichment.ts) — the same enrichment the live
+ * member-facing `/flows` route (src/app/api/market/flows/route.ts) already
+ * applies to attach `gex_proximity`. Cheap and bounded to call on every
+ * fetchEcosystemContext() invocation, unlike spx_full_state's SPX/SPXW-only
+ * gate: enrichFlowsWithGex fans out to at most 1 unique ticker here (the rows
+ * are already ticker-scoped by the getFlowTapeSummary call above), and that
+ * one lookup races a 300ms timeout against a 60s in-memory cache
+ * (getGexLevelsForTicker) and never rejects — every internal failure there
+ * resolves to a plain pass-through row, not a thrown error — so this adds no
+ * new failure mode to the outer Promise.all beyond the DB query
+ * getFlowTapeSummary already performs.
+ *
+ * Returns null when there is no flow for this ticker in-window, mirroring
+ * recent_flow's own null-when-quiet ternary below (see EcosystemFlowFullState's
+ * doc for why this is the honest choice over an all-zero object).
+ */
+async function fetchFlowFullState(ticker: string): Promise<EcosystemFlowFullState | null> {
+  const summary = await getFlowTapeSummary({ ticker, limit: FLOW_FULL_STATE_LIMIT });
+  if (summary.count === 0) return null;
+  const recent = await enrichFlowsWithGex(summary.recent);
+  return {
+    count: summary.count,
+    total_premium: summary.total_premium,
+    top_tickers: summary.top_tickers,
+    recent,
+  };
+}
+
 /**
  * Assembles a single ticker's cross-instrument snapshot from tables that
  * already exist: today's 0DTE Command take (if any), the most recent
@@ -301,7 +402,11 @@ async function fetchSpxFullState(): Promise<SpxPlayPayload> {
  * alert_audit_log entries (the unified Stage 4 trail, which already spans all
  * three write-paths), a same-day HELIX flow summary straight from
  * flow_alerts — not just the $1M+ whale tier that reaches alert_audit_log, the
- * full tape for this one ticker — any pattern-detected flow anomalies
+ * full tape for this one ticker — HELIX's own FULL flow-tape snapshot
+ * (flow_full_state — via the SAME getFlowTapeSummary() Largo's own
+ * get_flow_tape tool already calls, GEX-enriched via the same
+ * enrichFlowsWithGex() the live /flows route uses — see fetchFlowFullState's
+ * doc), any pattern-detected flow anomalies
  * (flow_anomalies, written by the market-regime-detector cron), SPX Slayer's
  * own open/last-closed play state (spx_play — SPX/SPXW only, via the same
  * fetchOpenSpxPlay/fetchClosedPlayOutcomes db.ts fetchers spx-service.ts
@@ -320,7 +425,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, anomalyRes, flowFeedFresh, spxPlay, spxFullState] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -372,6 +477,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
          WHERE ticker = $1 AND created_at >= NOW() - ($2 || ' hours')::interval`,
         [upper, FLOW_SUMMARY_WINDOW_HOURS]
       ),
+      fetchFlowFullState(upper),
       dbQuery<{ anomaly_type: string; detected_at: string; detail: string; severity: string; direction: string | null }>(
         `SELECT anomaly_type, detected_at, detail, severity, direction
          FROM flow_anomalies
@@ -427,6 +533,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
               unknown_premium: Number(f.unknown_premium),
             }
           : null,
+      flow_full_state: flowFullState,
       recent_anomalies: anomalyRes.rows.map((a) => ({
         anomaly_type: a.anomaly_type,
         detected_at: String(a.detected_at),

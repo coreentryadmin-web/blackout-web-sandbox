@@ -9,6 +9,7 @@ import {
   SPX_DESK_RE,
   SPX_ENGINE_STATE_RE,
   VOL_RE,
+  ZERODTE_COMMAND_RE,
 } from "@/lib/largo/intent-keywords";
 
 export type LargoQuestionIntent = {
@@ -21,6 +22,11 @@ export type LargoQuestionIntent = {
   needsSpxEngineState: boolean;
   /** Market-wide backdrop/regime wording, distinct from the above — hints get_market_regime (LARGO-110). */
   needsMarketRegime: boolean;
+  /** 0DTE Command's OWN multi-ticker scanner ("grid scanner," "0dte command," hunt/scan/find
+   *  wording) — hints get_zerodte_plays, distinct from SPX Slayer's own 0DTE engine above
+   *  which the bare "0dte" token in SPX_DESK_RE/PLAY_STATE_RE/SPX_ENGINE_STATE_RE already
+   *  covers (task #127). */
+  needsZeroDteCommand: boolean;
   tickerHint: string | null;
   guidance: string;
 };
@@ -81,6 +87,7 @@ export function analyzeLargoQuestion(
   const needsNightHawk = matchesIntent(ctx, NIGHTHAWK_RE);
   const needsSpxEngineState = matchesIntent(ctx, SPX_ENGINE_STATE_RE);
   const needsMarketRegime = matchesIntent(ctx, MARKET_REGIME_RE);
+  const needsZeroDteCommand = matchesIntent(ctx, ZERODTE_COMMAND_RE);
 
   const tickerHint = extractTicker(question, recentUserText(history));
   const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);
@@ -122,6 +129,19 @@ export function analyzeLargoQuestion(
   if (needsMarketRegime) {
     toolHints.push("get_market_regime");
   }
+  // 0DTE Command's own multi-ticker scanner board (grid scanner/hunt/find wording
+  // paired with 0dte, or the "0dte command"/"command board" name itself) — a
+  // STRONGER, more specific hint than the bare "0dte" token above, which every
+  // needsSpxDesk/needsPlayState/needsSpxEngineState branch already fires on and
+  // which nudges toward SPX Slayer's OWN tools instead. Both engines are branded
+  // "0DTE," so leaving a bare mention to hint only SPX Slayer's tools would be
+  // wrong for a genuinely scanner-scoped question — this hint doesn't replace
+  // those (a bare "0dte" is still ambiguous on purpose, see question-intent.test.ts),
+  // it adds get_zerodte_plays with more force when the wording actually names the
+  // scanner (task #127).
+  if (needsZeroDteCommand) {
+    toolHints.push("get_zerodte_plays");
+  }
 
   const uniqueTools = Array.from(new Set(toolHints));
 
@@ -146,6 +166,7 @@ export function analyzeLargoQuestion(
     needsVol,
     needsSpxEngineState,
     needsMarketRegime,
+    needsZeroDteCommand,
     tickerHint,
     guidance,
   };

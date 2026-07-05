@@ -55,3 +55,31 @@ test("SPX_ENGINE_TOOL_NAMES: excludes the generic ticker-scoped tools bundled in
 test("SPX_ENGINE_TOOL_NAMES: no duplicates", () => {
   assert.equal(new Set(SPX_ENGINE_TOOL_NAMES).size, SPX_ENGINE_TOOL_NAMES.length);
 });
+
+// ── Task #127: get_zerodte_plays vs get_spx_play mis-routing risk ──
+// Both SPX Slayer and 0DTE Command ("BlackOut Grid") are branded "0DTE," but they
+// are two independent engines (single-instrument SPX/SPXW vs. always-on multi-
+// ticker scanner). get_zerodte_plays' description used to be a thin one-liner
+// with no disambiguating clause at all — this locks in that the rewritten
+// description explicitly tells Claude these are different engines and points to
+// get_spx_play for SPX Slayer's own state, so a future edit can't silently drop it.
+
+test("get_zerodte_plays description explicitly disambiguates from SPX Slayer's own tools", () => {
+  const def = LARGO_TOOL_DEFS.find((t) => t.name === "get_zerodte_plays");
+  assert.ok(def, "get_zerodte_plays must be a registered Largo tool");
+  assert.match(
+    def!.description,
+    /different|DIFFERENT/,
+    "expected get_zerodte_plays description to call out that it is a different engine from SPX Slayer"
+  );
+  assert.match(
+    def!.description,
+    /get_spx_play/,
+    "expected get_zerodte_plays description to point to get_spx_play for SPX Slayer's own play state"
+  );
+  assert.match(
+    def!.description,
+    /multi-ticker|MULTI-TICKER/,
+    "expected get_zerodte_plays description to state it scans across multiple tickers, not just SPX"
+  );
+});
