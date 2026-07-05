@@ -1,0 +1,104 @@
+# SPX Slayer — all-day RTH Cloud Agent (verify + post-close fix)
+#
+# Launches Cursor Cloud Agents on weekdays to verify every SPX surface during RTH
+# and fix all SPX issues after the bell (~1 PM PT / 4 PM ET).
+#
+# Requires: CURSOR_API_KEY (repo secret)
+# See runbook: docs/ops/SPX-RTH-ALL-DAY-AGENT.md
+
+name: SPX RTH all-day agent
+
+on:
+  schedule:
+    # --- VERIFY passes (ET) — dual cron covers EDT + EST ---
+    # 09:28 ET pre-open (6:28 PT)
+    - cron: "28 13 * * 1-5"
+    - cron: "28 14 * * 1-5"
+    # 09:40 ET post-open (6:40 PT)
+    - cron: "40 13 * * 1-5"
+    - cron: "40 14 * * 1-5"
+    # 11:00 ET (8:00 PT)
+    - cron: "0 15 * * 1-5"
+    - cron: "0 16 * * 1-5"
+    # 12:30 ET (9:30 PT)
+    - cron: "30 16 * * 1-5"
+    - cron: "30 17 * * 1-5"
+    # 14:00 ET (11:00 PT)
+    - cron: "0 18 * * 1-5"
+    - cron: "0 19 * * 1-5"
+    # 15:30 ET (12:30 PT)
+    - cron: "30 19 * * 1-5"
+    - cron: "30 20 * * 1-5"
+    # 15:55 ET pre-close (12:55 PT)
+    - cron: "55 19 * * 1-5"
+    - cron: "55 20 * * 1-5"
+    # --- FIX pass: 16:05 ET post-close (~1:05 PM PT) ---
+    - cron: "5 20 * * 1-5"
+    - cron: "5 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Agent mode"
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - fix
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine agent mode
+        id: mode
+        run: |
+          set -euo pipefail
+          INPUT="${{ github.event.inputs.mode }}"
+          if [ -n "$INPUT" ]; then
+            echo "mode=$INPUT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SCHEDULE='${{ github.event.schedule }}'
+          case "$SCHEDULE" in
+            "5 20 * * 1-5"|"5 21 * * 1-5") echo "mode=fix" >> "$GITHUB_OUTPUT" ;;
+            *) echo "mode=verify" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Start Cloud Agent (SPX all-day)
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          AGENT_MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "CURSOR_API_KEY not set — skipping agent launch."
+            echo "Create automations at cursor.com/automations using docs/ops/SPX-RTH-ALL-DAY-AGENT.md"
+            exit 0
+          fi
+
+          if [ "$AGENT_MODE" = "fix" ]; then
+            PROMPT='Autonomous SPX Slayer POST-CLOSE FIX session (~1 PM PT). Read and execute docs/ops/SPX-RTH-ALL-DAY-AGENT.md in fix mode. Run npm run validate:spx-rth -- --phase=post-close. Fix EVERY SPX-related finding from today: matrix cells, desk/pulse/flow cache lanes, play confirmations, cross-endpoint spot/GEX, gates. Branch fix/<slug> per issue, add tests, log docs/audit/FINDINGS.md, PR, merge when GREEN, validate:deploy. Do NOT stop until validate:spx-rth is fully GREEN. Do NOT ask the user.'
+          else
+            PROMPT='Autonomous SPX Slayer RTH VERIFY pass (all-day schedule). Read and execute docs/ops/SPX-RTH-ALL-DAY-AGENT.md in verify mode. Run npm run validate:spx-rth. If Playwright works, run node scripts/rth-comprehensive-sweep.mjs focusing /dashboard: SPX 0DTE matrix every cell, trade alerts, freshness chips, no stale SCANNING confirmations. Log P0/P1 to docs/api-audit/OPEN-ISSUES.md with tag spx-rth-$(date +%Y-%m-%d); fix P0 immediately; defer P2+ to post-close fix agent. Do NOT ask the user.'
+          fi
+          export PROMPT
+
+          payload=$(node -e "
+            console.log(JSON.stringify({
+              prompt: { text: process.env.PROMPT },
+              repos: [{ url: 'https://github.com/coreentryadmin-web/blackout-web', startingRef: 'main' }],
+              autoCreatePR: true
+            }));
+          ")
+
+          resp=$(curl -sf -X POST https://api.cursor.com/v1/agents \
+            -u "${CURSOR_API_KEY}:" \
+            -H 'Content-Type: application/json' \
+            -d "$payload")
+
+          echo "$resp" | node -e "
+            const r = JSON.parse(require('fs').readFileSync(0,'utf8'));
+            const url = r.agent?.url ?? r.url ?? '(see response)';
+            console.log('SPX Cloud Agent started (' + process.env.AGENT_MODE + '):', url);
+          "

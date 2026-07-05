@@ -27,6 +27,8 @@
     "railway:provision": "node scripts/railway-ops-provision.mjs",
     "railway:audit-apply": "node scripts/railway-audit-apply.mjs",
     "validate:railway-crons": "node scripts/validate-railway-cron-manifest.mjs",
+    "validate:spx-bie": "node --import tsx --experimental-test-module-mocks scripts/audit/spx-bie-consistency-validator.mjs",
+    "validate:spx-rth": "node scripts/spx-rth-all-day-audit.mjs",
     "validate:api-auth": "node scripts/verify-api-auth-guards.mjs",
     "validate:railway-cron-schedules": "node scripts/railway-cron-schedule-audit.mjs",
     "ops:collect": "node scripts/ops-collect-action-items.mjs",
