@@ -16,7 +16,11 @@ import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
 import { polygonConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
-import { recordNighthawkRejectedAuditTrail, syncNighthawkPlayOutcomes } from "./play-outcomes";
+import {
+  recordNighthawkRejectedAuditTrail,
+  recordNighthawkStageRejectedAuditTrail,
+  syncNighthawkPlayOutcomes,
+} from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
@@ -654,6 +658,7 @@ export async function buildEveningEdition(opts?: {
         funnel: synthFunnel,
         grounding: synthGrounding,
         geometryRejected,
+        stageRejected,
       } = await generateEditionPlays({
         ctx,
         dossiers: synthesisDossiers,
@@ -673,6 +678,13 @@ export async function buildEveningEdition(opts?: {
       // write silently via the caught rejection, never propagating.
       if (geometryRejected?.length) {
         recordNighthawkRejectedAuditTrail(geometryRejected, editionFor);
+      }
+      // task #141: same treatment for the 3 LATER funnel rejection stages (premium-cap,
+      // illiquid-strike, ungrounded) plus sector-concentration — previously console.warn-only,
+      // so "why was ticker X rejected tonight" had no durable answer for any of these. Same
+      // fire-and-forget / dedup / unconditional-call semantics as geometryRejected above.
+      if (stageRejected?.length) {
+        recordNighthawkStageRejectedAuditTrail(stageRejected, editionFor);
       }
       // Stamp grounding counts onto the funnel so EVERY exit (incl. recap-only fallbacks below)
       // reports them. The checks already ran inside generateEditionPlays before any drop took effect.

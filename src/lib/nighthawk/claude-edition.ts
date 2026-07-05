@@ -9,6 +9,8 @@ import {
   formatEditionChainTables,
   evaluatePlayAgainstChain,
   augmentChainsWithExactContracts,
+  parseOptionsContract,
+  STRIKE_MIN_OI,
 } from "./option-chain-prompt";
 import {
   applyPremiumCapToPlay,
@@ -16,6 +18,7 @@ import {
   type ClaudePlayRaw,
   validatePlayGeometry,
   capSectorConcentration,
+  SECTOR_CONCENTRATION_MAX_PER_SECTOR,
 } from "./play-constraints";
 import {
   EDITION_CHAIN_PREFETCH,
@@ -30,6 +33,7 @@ import type { ScoredCandidate } from "./scorer";
 import { convictionFromScore, convictionRank } from "./scorer";
 import type { PlaybookPlay } from "./types";
 import type { HuntMode } from "./types";
+import type { NighthawkRejectionDetail } from "./play-outcomes";
 
 const SYSTEM = `You are an elite options strategist. Output ONLY a valid JSON array. No markdown fences. Every number and level must come from the prompt data.
 
@@ -137,6 +141,14 @@ export async function generateEditionPlays(params: {
   // trace — not just a ticker. Empty on the mechanical-fallback path (no geometry check runs
   // there) and on a zero-parsed-plays exit (nothing was ever mapped to check).
   geometryRejected?: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }>;
+  // task #141: plays rejected at any of the 3 LATER funnel stages that run strictly after the
+  // geometry gate above — premium-cap (filterPlaysWithinPremiumCap), illiquid-strike (the
+  // chain-contradicted OI loop), and ungrounded (groundPlays' HARD drops) — PLUS
+  // sector-concentration (capSectorConcentration), which runs last in this same function.
+  // Combined into one array (vs. 3-4 separate fields) because the caller (edition-builder.ts)
+  // treats them identically: one fire-and-forget durable audit row per entry, same as
+  // geometryRejected above. Empty on the same early-exit paths geometryRejected is empty on.
+  stageRejected?: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail }>;
 }> {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
@@ -236,6 +248,25 @@ export async function generateEditionPlays(params: {
     );
   }
   const { plays, rejected } = filterPlaysWithinPremiumCap(mapped);
+  // task #141: durable audit rows for every later-funnel rejection stage, accumulated as we go
+  // and returned to the caller (edition-builder.ts, which owns editionFor) alongside
+  // geometryRejected above. Populated below as premium-cap / illiquid-strike / ungrounded /
+  // sector-concentration each run; never fabricated — every entry mirrors a real drop that
+  // already happened via the pre-existing console.warn logging on the same variables.
+  const stageRejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail }> = [];
+  for (const p of rejected) {
+    stageRejected.push({
+      ticker: p.ticker,
+      play: p,
+      detail: {
+        stage: "premium_cap",
+        entry_premium: p.entry_premium ?? null,
+        cap_per_share: MAX_OPTION_PREMIUM_PER_SHARE,
+        entry_cost_per_contract: p.entry_cost_per_contract ?? null,
+        cap_per_contract: MAX_OPTION_COST_PER_CONTRACT,
+      },
+    });
+  }
   chainData = await augmentChainsWithExactContracts({ plays, chains: chainData });
   const chainRows = Object.fromEntries(Object.entries(chainData).map(([ticker, data]) => [ticker, data.rows]));
   const strikeOk: PlaybookPlay[] = [];
@@ -246,10 +277,31 @@ export async function generateEditionPlays(params: {
     // POSITIVELY contradicts the play (present but below the OI floor). Missing rows pass only to the
     // exact-contract grounding step below; they are NOT allowed to publish unless the exact snapshot
     // confirms the contract and reconciles the premium.
-    if (!rows?.length || evaluatePlayAgainstChain(play.options_play, rows).ok) {
+    if (!rows?.length) {
+      strikeOk.push(play);
+      continue;
+    }
+    const verdict = evaluatePlayAgainstChain(play.options_play, rows);
+    if (verdict.ok) {
       strikeOk.push(play);
     } else {
       strikeRejected.push(play);
+      // task #141: same verdict/rows the console.warn below already summarizes, plus the
+      // parsed contract (strike/side/expiry) so the audit row can cite the actual liquidity
+      // number (verdict.matchedOi) that failed the floor, not just "illiquid".
+      const parsedContract = parseOptionsContract(play.options_play);
+      stageRejected.push({
+        ticker: play.ticker,
+        play,
+        detail: {
+          stage: "illiquid_strike",
+          strike: parsedContract?.strike ?? null,
+          side: parsedContract?.side ?? null,
+          expiry: parsedContract?.expiryYmd ?? null,
+          open_interest: verdict.matchedOi,
+          min_open_interest: STRIKE_MIN_OI,
+        },
+      });
     }
   }
   if (strikeRejected.length) {
@@ -264,7 +316,22 @@ export async function generateEditionPlays(params: {
   // the play; SOFT issues (flow/level/prose/PT divergence) keep the play but strip/flag the number.
   // Run on the FULL strikeOk list BEFORE the top-5 slice so a dropped play lets a lower-ranked
   // grounded play fill its slot.
-  const { plays: groundedPlays, summary: grounding } = groundPlays(strikeOk, chainData, dossierMap);
+  const { plays: groundedPlays, summary: grounding, dropped: ungroundedDropped } = groundPlays(
+    strikeOk,
+    chainData,
+    dossierMap
+  );
+  // task #141: one audit-row detail per HARD-dropped play, citing the SAME drop-severity
+  // issues (check + human-readable detail — e.g. "strike ... OI 320 < 500" or "target $x does
+  // not trace to any dossier S/R or chain strike") that groundPlays() already logged via
+  // console.warn and folded into grounding.notes above.
+  for (const d of ungroundedDropped) {
+    stageRejected.push({
+      ticker: d.ticker,
+      play: d.play,
+      detail: { stage: "ungrounded", issues: d.issues.map((i) => ({ check: i.check, detail: i.detail })) },
+    });
+  }
 
   // The flag only controls whether HARD drops take effect — the checks + summary always run/log.
   // When enforcement is OFF we keep strikeOk (so output is unchanged) but still emit the summary so a
@@ -292,6 +359,20 @@ export async function generateEditionPlays(params: {
       sectorCap.dropped.map((d) => `${d.ticker} (${d.sector})`)
     );
   }
+  // task #141: sectorCap.dropped's `filled`/`play` fields (added alongside this task) answer
+  // "how many other tickers already filled this sector" without re-deriving it here.
+  for (const d of sectorCap.dropped) {
+    stageRejected.push({
+      ticker: d.ticker,
+      play: d.play,
+      detail: {
+        stage: "sector_concentration",
+        sector: d.sector,
+        already_filled: d.filled,
+        max_per_sector: SECTOR_CONCENTRATION_MAX_PER_SECTOR,
+      },
+    });
+  }
   const capped = sectorCap.plays.slice(0, EDITION_SYNTHESIS_OVERSHOOT).map((p, i) => ({ ...p, rank: i + 1 }));
 
   if (rejected.length) {
@@ -306,6 +387,7 @@ export async function generateEditionPlays(params: {
     recap,
     raw,
     geometryRejected,
+    stageRejected,
     funnel: {
       parsed: parsed.length,
       stock: mappedAll.length,

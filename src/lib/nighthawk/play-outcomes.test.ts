@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildNighthawkAuditRow,
   buildNighthawkRejectedAuditRow,
+  buildNighthawkStageRejectedAuditRow,
   outcomeSessionDate,
   parsePlayLevels,
   resolveOutcome,
@@ -218,4 +219,147 @@ test("rejected audit row: LONG direction and a corrupt entry-range are recorded 
   assert.equal(audit.decision_trace.length, 1);
   assert.equal(audit.decision_trace[0]!.value, drops[0]);
   assert.equal((audit.input_snapshot as { raw_entry_range: string }).raw_entry_range, "$17-$452");
+});
+
+// ── Stage 4 audit trail, LATER-stage rejections (task #141) ──────────────────────
+// buildNighthawkStageRejectedAuditRow is the generalized sibling of
+// buildNighthawkRejectedAuditRow (geometry-only, above) — one builder shared by the 4
+// later-funnel rejection stages that used to be console.warn-only: premium-cap,
+// illiquid-strike, ungrounded, and sector-concentration. Same fixture-driven, no-database
+// pattern as the geometry tests above.
+
+test("stage-rejected audit row: premium-cap cites the actual premium and the cap threshold", () => {
+  const play = {
+    ticker: "tsla",
+    direction: "LONG",
+    conviction: "a",
+    score: 88,
+    entry_range: "$300-$305",
+    target: "$330",
+    stop: "$290",
+    options_play: "TSLA 320C 08/21, entry prem ~$27.50",
+    entry_premium: 27.5,
+    entry_cost_per_contract: 2750,
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "TSLA",
+      play,
+      detail: {
+        stage: "premium_cap",
+        entry_premium: 27.5,
+        cap_per_share: 20,
+        entry_cost_per_contract: 2750,
+        cap_per_contract: 2000,
+      },
+    },
+    "2026-07-06"
+  );
+
+  assert.equal(audit.alert_type, "nighthawk_rejected");
+  assert.equal(audit.source_table, "claude_edition_synthesis");
+  assert.deepEqual(audit.source_key, { edition_for: "2026-07-06", ticker: "TSLA" });
+  assert.equal(audit.ticker, "TSLA");
+  assert.match(audit.trigger_reason, /premium|afford/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "premium_within_cap", passed: false, value: 27.5, threshold: 20 },
+  ]);
+  assert.equal((audit.input_snapshot as { entry_premium: number }).entry_premium, 27.5);
+  assert.equal((audit.input_snapshot as { cap_per_share: number }).cap_per_share, 20);
+  // A rejected play was never shown to a member — no fabricated final_output (same
+  // convention as the geometry builder).
+  assert.equal(audit.final_output, null);
+});
+
+test("stage-rejected audit row: illiquid-strike cites the strike, the actual OI, and the floor it missed", () => {
+  const play = {
+    ticker: "SNDK",
+    direction: "LONG",
+    conviction: "b",
+    score: 65,
+    entry_range: "$180-$184",
+    target: "$200",
+    stop: "$172",
+    options_play: "SNDK 190C 09/18",
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "SNDK",
+      play,
+      detail: {
+        stage: "illiquid_strike",
+        strike: 190,
+        side: "call",
+        expiry: "2026-09-18",
+        open_interest: 220,
+        min_open_interest: 500,
+      },
+    },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /illiquid|open interest/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "strike_open_interest", passed: false, value: 220, threshold: 500 },
+  ]);
+  assert.equal((audit.input_snapshot as { strike: number }).strike, 190);
+  assert.equal((audit.input_snapshot as { open_interest: number }).open_interest, 220);
+  assert.equal((audit.input_snapshot as { min_open_interest: number }).min_open_interest, 500);
+});
+
+test("stage-rejected audit row: ungrounded cites which claimed level/contract failed and against what", () => {
+  const play = {
+    ticker: "AVGO",
+    direction: "SHORT",
+    conviction: "a",
+    score: 80,
+    entry_range: "$1900-$1920",
+    target: "$1800",
+    stop: "$1960",
+    options_play: "AVGO 1850P 08/21",
+  } as PlaybookPlay;
+  const issues = [
+    { check: "strike", detail: "AVGO strike 1850 call present on-chain but OI 120 < 500 (illiquid/off-chain)." },
+  ];
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    { ticker: "AVGO", play, detail: { stage: "ungrounded", issues } },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /ground/i);
+  assert.equal(audit.decision_trace.length, 1);
+  assert.equal(audit.decision_trace[0]!.value, issues[0]!.detail);
+  assert.deepEqual((audit.input_snapshot as { ungrounded_issues: typeof issues }).ungrounded_issues, issues);
+});
+
+test("stage-rejected audit row: sector-concentration cites the sector and how many tickers already filled it", () => {
+  const play = {
+    ticker: "AMD",
+    direction: "LONG",
+    conviction: "b",
+    score: 70,
+    entry_range: "$150-$154",
+    target: "$168",
+    stop: "$142",
+    options_play: "AMD 160C 08/21",
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "AMD",
+      play,
+      detail: { stage: "sector_concentration", sector: "semis", already_filled: 2, max_per_sector: 2 },
+    },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /sector-concentration/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "sector_concentration_cap", passed: false, value: 2, threshold: 2 },
+  ]);
+  assert.equal((audit.input_snapshot as { sector: string }).sector, "semis");
+  assert.equal((audit.input_snapshot as { already_filled: number }).already_filled, 2);
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groundPlay } from "./grounding";
+import { groundPlay, groundPlays } from "./grounding";
 import { parseOptionsContract, type ChainStrikeRow } from "./option-chain-prompt";
 import type { PlaybookPlay } from "./types";
 
@@ -79,6 +79,45 @@ test("groundPlay drops a confirmed contract when live premium exceeds cap", () =
 
   assert.equal(result.severity, "drop");
   assert.match(result.issues.map((i) => i.detail).join(" "), /\$44\.95 exceeds the \$20\/share cap/);
+});
+
+// ── groundPlays' `dropped` field (task #141) ──────────────────────────────────────
+// groundPlays() is the batch wrapper generateEditionPlays() calls; before this task a HARD
+// drop only ever reached a console.warn + a flattened `summary.notes` string — the caller had
+// no structured way to build a durable rejection-audit row. `dropped` returns the SAME
+// drop-severity issues that produced the note above, just structured (ticker/play/issues).
+
+test("groundPlays: a HARD-dropped play is removed from `plays` AND reported (structured) in `dropped`", () => {
+  const chains = { NBIS: { spot: 296, rows: [frontExpiryRow, nbisSep300Call] } };
+  const dossiers = { NBIS: dossier };
+
+  const { plays: kept, summary, dropped } = groundPlays([play(8.5)], chains, dossiers);
+
+  assert.equal(kept.length, 0, "the dropped play must not survive into the kept list");
+  assert.equal(summary.dropped_ungrounded, 1);
+  assert.equal(dropped.length, 1);
+  assert.equal(dropped[0]!.ticker, "NBIS");
+  assert.equal(dropped[0]!.play.ticker, "NBIS");
+  assert.ok(dropped[0]!.issues.length >= 1);
+  assert.ok(dropped[0]!.issues.every((i) => i.severity === "drop"));
+  assert.match(dropped[0]!.issues.map((i) => i.detail).join(" "), /\$44\.95 exceeds the \$20\/share cap/);
+});
+
+test("groundPlays: an ungrounded/flagged/ok mix only reports the HARD-dropped play in `dropped`", () => {
+  const affordableRow: ChainStrikeRow = {
+    ...nbisSep300Call,
+    call_bid: 6.1,
+    call_ask: 6.55,
+    call_oi: 10_647,
+  };
+  const chains = { NBIS: { spot: 296, rows: [frontExpiryRow, affordableRow] } };
+  const dossiers = { NBIS: dossier };
+
+  // play(6.32) already matches the live mark exactly → "ok", not dropped or flagged.
+  const { plays: kept, dropped } = groundPlays([play(6.32)], chains, dossiers);
+
+  assert.equal(kept.length, 1);
+  assert.equal(dropped.length, 0);
 });
 
 test("groundPlay rewrites a confirmed affordable contract to the live mark", () => {

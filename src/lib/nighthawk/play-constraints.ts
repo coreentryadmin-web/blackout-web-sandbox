@@ -162,6 +162,11 @@ export function validatePlayGeometry(play: PlaybookPlay): PlayGeometryVerdict {
   return { ok: drops.length === 0, drops, flags };
 }
 
+/** Default same-sector cap applied by {@link capSectorConcentration} (task #141: named so
+ *  the durable rejection-audit row can cite the exact threshold that fired, instead of a
+ *  bare literal duplicated at the call site). Value unchanged (was an inline `2` default). */
+export const SECTOR_CONCENTRATION_MAX_PER_SECTOR = 2;
+
 /**
  * Cap same-sector concentration in the final selection (audit MEDIUM: nothing stopped
  * five correlated semis longs from filling the whole book). Keeps ranked order; a play
@@ -172,11 +177,19 @@ export function validatePlayGeometry(play: PlaybookPlay): PlayGeometryVerdict {
 export function capSectorConcentration(
   plays: PlaybookPlay[],
   sectorByTicker: Record<string, string | null | undefined>,
-  maxPerSector = 2
-): { plays: PlaybookPlay[]; dropped: Array<{ ticker: string; sector: string }> } {
+  maxPerSector = SECTOR_CONCENTRATION_MAX_PER_SECTOR
+): {
+  plays: PlaybookPlay[];
+  // task #141: `filled` (the sector's count AT drop time) and the full `play` are NEW
+  // fields alongside the pre-existing `ticker`/`sector` — additive only — so the durable
+  // rejection-audit row (alert_audit_log) can answer "how many other tickers already
+  // filled this sector" and carry the full play snapshot without the caller re-deriving
+  // either from `plays`. Rejection LOGIC/threshold is byte-for-byte unchanged.
+  dropped: Array<{ ticker: string; sector: string; filled: number; play: PlaybookPlay }>;
+} {
   const counts = new Map<string, number>();
   const kept: PlaybookPlay[] = [];
-  const dropped: Array<{ ticker: string; sector: string }> = [];
+  const dropped: Array<{ ticker: string; sector: string; filled: number; play: PlaybookPlay }> = [];
   for (const p of plays) {
     const sector = (sectorByTicker[p.ticker.toUpperCase()] ?? "").trim().toLowerCase();
     if (!sector) {
@@ -185,7 +198,7 @@ export function capSectorConcentration(
     }
     const n = counts.get(sector) ?? 0;
     if (n >= maxPerSector) {
-      dropped.push({ ticker: p.ticker, sector });
+      dropped.push({ ticker: p.ticker, sector, filled: n, play: p });
       continue;
     }
     counts.set(sector, n + 1);
