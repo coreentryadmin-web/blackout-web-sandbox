@@ -1,8 +1,43 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluatePlayGates } from "@/lib/spx-play-gates";
+import { before, mock, test } from "node:test";
 import type { SpxConfluence } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+
+let mockHaltBlock = { block: false as boolean, reason: null as string | null };
+let mockBeforeCashOpen = false;
+let mockPastNoEntry = false;
+/** Default 10:30 ET — past opening range, before no-entry cutoff. */
+let mockEtMinutes = 10 * 60 + 30;
+
+mock.module("./ws/uw-socket", {
+  namedExports: {
+    shouldBlockForTradingHalt: () => mockHaltBlock,
+  },
+});
+
+mock.module("./spx-play-session-guards", {
+  namedExports: {
+    isPastNoEntryCutoff: () => mockPastNoEntry,
+    isBeforeCashOpen: () => mockBeforeCashOpen,
+    cashOpenLabel: () => "9:30 AM ET",
+    noEntryCutoffLabel: () => "3:30 PM ET",
+  },
+});
+
+mock.module("./spx-play-session-time", {
+  namedExports: {
+    etClock: (h: number, m: number) => h * 60 + m,
+    etMinutes: () => mockEtMinutes,
+    formatEtTime: (h: number, m: number) =>
+      `${h}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"} ET`,
+  },
+});
+
+let evaluatePlayGates: typeof import("./spx-play-gates").evaluatePlayGates;
+
+before(async () => {
+  ({ evaluatePlayGates } = await import("./spx-play-gates"));
+});
 
 function baseDesk(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return {
@@ -28,7 +63,11 @@ function baseConfluence(overrides: Partial<SpxConfluence> = {}): SpxConfluence {
     direction: "long",
     confidence: 0.8,
     weighted_conflicts: 1,
-    factors: [{ label: "GEX", weight: 2, detail: "above flip" }],
+    factors: [
+      { label: "GEX", weight: 2, detail: "above flip" },
+      { label: "Flow", weight: 1, detail: "calls" },
+      { label: "VWAP", weight: 1, detail: "above" },
+    ],
     levels: { stop: 5985, target: 6025 },
     ...overrides,
   } as SpxConfluence;
@@ -50,6 +89,7 @@ const passingConfirmations = {
 };
 
 test("evaluatePlayGates: stale halt channel warns but does not block", () => {
+  mockHaltBlock = { block: false, reason: null };
   const result = evaluatePlayGates(
     baseDesk({ halt_channel_stale: true }),
     baseConfluence(),
@@ -60,7 +100,20 @@ test("evaluatePlayGates: stale halt channel warns but does not block", () => {
   assert.match(result.warnings.join(" "), /fail-open/i);
 });
 
+test("evaluatePlayGates: confirmed trading halt blocks entry", () => {
+  mockHaltBlock = { block: true, reason: "TRADING HALT active on SPX" };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /TRADING HALT/i);
+  assert.equal(result.passed, false);
+});
+
 test("evaluatePlayGates: missing GEX walls blocks entry", () => {
+  mockHaltBlock = { block: false, reason: null };
   const result = evaluatePlayGates(
     baseDesk({ gex_walls: [] }),
     baseConfluence(),
@@ -71,7 +124,72 @@ test("evaluatePlayGates: missing GEX walls blocks entry", () => {
   assert.equal(result.passed, false);
 });
 
+test("evaluatePlayGates: stale desk blocks entry", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk({
+      polled_at: new Date(Date.now() - 120_000).toISOString(),
+      gex_age_ms: 120_000,
+    }),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /Desk data stale/i);
+});
+
+test("evaluatePlayGates: mixed tape hard-blocks BUY", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "B", weighted_conflicts: 99 }),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy" }
+  );
+  assert.match(result.blocks.join(" "), /Tape's mixed/i);
+});
+
+test("evaluatePlayGates: mixed tape warns on WATCH intent", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "B", weighted_conflicts: 99 }),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "watch" }
+  );
+  assert.equal(result.blocks.some((b) => b.includes("Tape's mixed")), false);
+  assert.match(result.warnings.join(" "), /Tape's mixed/i);
+});
+
+test("evaluatePlayGates: grade below B blocks BUY", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "C" }),
+    emptySession,
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /below minimum/i);
+});
+
+test("evaluatePlayGates: opening range blocks BUY before ~9:50", () => {
+  mockHaltBlock = { block: false, reason: null };
+  mockEtMinutes = 9 * 60 + 35;
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy" }
+  );
+  assert.match(result.blocks.join(" "), /Opening range/i);
+});
+
 test("evaluatePlayGates: macro CPI window blocks during release", () => {
+  mockHaltBlock = { block: false, reason: null };
+  mockEtMinutes = 8 * 60 + 30;
   const result = evaluatePlayGates(
     baseDesk({
       macro_events: [{ event: "CPI", time: "08:30", country: "US" }],
@@ -80,11 +198,106 @@ test("evaluatePlayGates: macro CPI window blocks during release", () => {
     emptySession,
     passingConfirmations
   );
-  // Fixed ET in spx-signals tests uses Saturday — macro block uses live clock.
-  // When block fires, it must mention Macro hard block.
-  if (result.blocks.some((b) => b.startsWith("Macro hard block"))) {
-    assert.match(result.blocks.join(" "), /Macro hard block/i);
-  } else {
-    assert.ok(true, "outside CPI window at test runtime — skip time-dependent assert");
-  }
+  assert.match(result.blocks.join(" "), /Macro hard block/i);
+});
+
+test("evaluatePlayGates: buy cooldown blocks re-entry after exit", () => {
+  mockHaltBlock = { block: false, reason: null };
+  mockEtMinutes = 10 * 60 + 30;
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "B" }),
+    {
+      ...emptySession,
+      last_sell_at: Date.now() - 60_000,
+    },
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /Buy cooldown/i);
+});
+
+test("evaluatePlayGates: post-STOP cooldown blocks BUY", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "B" }),
+    {
+      ...emptySession,
+      last_stop_at: Date.now() - 60_000,
+    },
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /Post-STOP cooldown/i);
+});
+
+test("evaluatePlayGates: same-direction re-entry lock after loss", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ direction: "long" }),
+    {
+      ...emptySession,
+      last_sell_was_loss: true,
+      last_sell_at: Date.now() - 60_000,
+      last_direction: "long",
+    },
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /Re-entry lock after loss/i);
+});
+
+test("evaluatePlayGates: VIX above 32 blocks new entries", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk({ vix: 33.5 }),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /VIX 33\.5 too hot/i);
+});
+
+test("evaluatePlayGates: pre-market BUY blocked before cash open", () => {
+  mockHaltBlock = { block: false, reason: null };
+  mockBeforeCashOpen = true;
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy" }
+  );
+  assert.match(result.blocks.join(" "), /Pre-market/i);
+  mockBeforeCashOpen = false;
+});
+
+test("evaluatePlayGates: after no-entry cutoff blocks BUY", () => {
+  mockHaltBlock = { block: false, reason: null };
+  mockPastNoEntry = true;
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy" }
+  );
+  assert.match(result.blocks.join(" "), /no new 0DTE entries/i);
+  mockPastNoEntry = false;
+});
+
+test("evaluatePlayGates: failed confirmations block entry", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    {
+      passed: false,
+      passed_count: 1,
+      total: 4,
+      checks: [{ label: "3m MTF", required: true, passed: false, detail: "below level" }],
+    }
+  );
+  assert.match(result.blocks.join(" "), /3m MTF/i);
+  assert.equal(result.entry_mode, "none");
 });

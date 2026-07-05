@@ -387,7 +387,11 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
         )
       ) : (
         <>
-          <div className={clsx("spx-trade-alert-hero", actionClass(play.action))}>
+          <div
+            className={clsx("spx-trade-alert-hero", actionClass(play.action))}
+            aria-live="polite"
+            aria-atomic="true"
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>

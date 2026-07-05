@@ -20,3 +20,12 @@ export function usePollIntervalMs(fastMs: number, slowMs: number): number {
   const open = useEtMarketOpen();
   return open ? fastMs : slowMs;
 }
+
+/** Desk session poll — fast during RTH + premarket (matches useMergedDesk sessionActive). */
+export function useDeskSessionPollIntervalMs(
+  sessionActive: boolean | undefined,
+  fastMs: number,
+  slowMs: number
+): number {
+  return sessionActive ? fastMs : slowMs;
+}

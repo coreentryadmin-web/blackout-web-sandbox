@@ -6,7 +6,7 @@ import { clsx } from "clsx";
 import Link from "next/link";
 import { Panel } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
-import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import { useDeskSessionPollIntervalMs } from "@/hooks/use-et-market-open";
 import {
   recomputeScopedGexLevels,
   resolveOdteExpiry,
@@ -78,6 +78,8 @@ function fmtAsofSeconds(iso: string | undefined): string | null {
 
 type DeskProps = {
   live?: boolean;
+  /** When true (RTH or premarket), matrix polls at 8s; off-session uses 20s. */
+  sessionActive?: boolean;
   liveSpot?: number | null;
   deskGammaFlip?: number | null;
   deskGexKing?: number | null;
@@ -86,13 +88,18 @@ type DeskProps = {
 
 export function SpxGexMatrixHeatmap({
   live: deskLive,
+  sessionActive,
   liveSpot,
   deskGammaFlip,
   deskGexKing,
   gexStale,
 }: DeskProps) {
   const [lens, setLens] = useState<GexHeatmapLens>("gex");
-  const pollMs = usePollIntervalMs(MATRIX_POLL_RTH_MS, MATRIX_POLL_OFF_MS);
+  const pollMs = useDeskSessionPollIntervalMs(
+    sessionActive ?? deskLive,
+    MATRIX_POLL_RTH_MS,
+    MATRIX_POLL_OFF_MS
+  );
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
 
   const { data, isLoading, error, isValidating } = useSWR<GexHeatmapResponse>(
@@ -257,16 +264,29 @@ export function SpxGexMatrixHeatmap({
       bodyClassName="spx-odte-matrix-body !px-1 !py-2 flex flex-1 min-h-0 flex-col"
     >
       <div className="mb-2 shrink-0 space-y-2 px-1">
-        <div className="flex gap-1.5" role="tablist" aria-label="Exposure lens">
+        <div
+          className="flex gap-1.5"
+          role="tablist"
+          aria-label="Exposure lens"
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            setLens((prev) => (prev === "gex" ? "vex" : "gex"));
+          }}
+        >
           {(["gex", "vex"] as const).map((key) => {
             const active = lens === key;
             const disabled = key === "vex" && !hasVex && !isLoading;
+            const panelId = key === "gex" ? "spx-matrix-lens-gex" : "spx-matrix-lens-vex";
             return (
               <button
                 key={key}
                 type="button"
                 role="tab"
+                id={`spx-matrix-tab-${key}`}
                 aria-selected={active}
+                aria-controls={panelId}
+                tabIndex={active ? 0 : -1}
                 disabled={disabled}
                 onClick={() => setLens(key)}
                 className={clsx(
@@ -324,6 +344,12 @@ export function SpxGexMatrixHeatmap({
       ) : !hasData ? (
         <p className="font-mono text-[11px] text-sky-300 py-4 px-2">Mapping dealer nodes…</p>
       ) : (
+        <div
+          id={lens === "gex" ? "spx-matrix-lens-gex" : "spx-matrix-lens-vex"}
+          role="tabpanel"
+          aria-labelledby={`spx-matrix-tab-${lens}`}
+          className="flex flex-1 min-h-0 flex-col"
+        >
         <div
           ref={scrollBoxRef}
           className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-auto overscroll-contain"
@@ -470,7 +496,6 @@ export function SpxGexMatrixHeatmap({
             </tbody>
           </table>
         </div>
-      )}
 
       <div className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-cyan-400">
         <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>
@@ -488,6 +513,8 @@ export function SpxGexMatrixHeatmap({
           Full Thermal →
         </Link>
       </div>
+        </div>
+      )}
     </Panel>
   );
 }

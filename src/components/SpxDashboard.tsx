@@ -124,6 +124,7 @@ export function SpxDashboard() {
           <aside className="spx-sniper-left-rail spx-left-matrix">
             <SpxGexMatrixHeatmap
               live={live}
+              sessionActive={sessionActive}
               liveSpot={desk?.price ?? null}
               deskGammaFlip={desk?.gamma_flip ?? null}
               deskGexKing={desk?.gex_king ?? null}
