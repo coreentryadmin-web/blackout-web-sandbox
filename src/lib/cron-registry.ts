@@ -109,6 +109,17 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Thermal presets so user GETs are pure cache hits (no cold-build bursts)",
   },
   {
+    key: "desk-warm",
+    name: "SPX Desk Warm",
+    kind: "http",
+    path: "/api/cron/desk-warm",
+    schedule_label: "~Every 60s (market hours)",
+    stale_after_min: 10,
+    weekdays_only: true,
+    market_hours_only: true,
+    description: "Pre-warm SPX desk/flow/pulse cache lanes + SPX GEX matrix so dashboard polls are pure cache hits (no multi-second buildSpxDesk blocks)",
+  },
+  {
     key: "grid-warm",
     name: "BlackOut Grid Warm",
     kind: "http",

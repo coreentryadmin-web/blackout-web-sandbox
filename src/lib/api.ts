@@ -93,6 +93,17 @@ export async function requestSpxCommentary(
 /** Full SPX-Sniper desk — Polygon + UW dealer/flow (slower lane, ~10s). */
 export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
 
+/** One-shot dashboard bundle — desk + flow + pulse + merged (+ SPX matrix server-side). */
+export type SpxBootstrapPayload = {
+  desk: SpxDeskPayload;
+  flow: import("@/lib/providers/spx-desk").SpxDeskFlow | null;
+  pulse: import("@/lib/providers/spx-desk").SpxDeskPulse | null;
+  merged: SpxDeskPayload;
+  gexHeatmap: unknown | null;
+};
+
+export const fetchSpxBootstrap = () => marketFetch<SpxBootstrapPayload>("/spx/bootstrap");
+
 /** Fast Polygon pulse — price, session, internals, mega-caps (~2s). */
 export const fetchSpxDeskPulse = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskPulse>("/spx/pulse");
 

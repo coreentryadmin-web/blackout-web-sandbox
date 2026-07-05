@@ -23,6 +23,9 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
 ];
 
+/** Tool routes mount heavy client trees — disable RSC prefetch burst (503 under concurrent ?_rsc=). */
+const TOOL_LINK_PREFETCH = false;
+
 const TOP_LINKS = [
   { href: "/faq", label: "FAQ", iosHide: false as const },
   { href: "/pricing", label: "Pricing", iosHide: true as const },
@@ -65,6 +68,7 @@ function FeatureCards({
             key={it.href}
             role="menuitem"
             href={it.href}
+            prefetch={TOOL_LINK_PREFETCH}
             onClick={onNavigate}
             className={clsx(
               "nav-card",

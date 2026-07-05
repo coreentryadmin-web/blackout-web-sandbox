@@ -33,7 +33,7 @@ async function fetchBootstrap(url: string): Promise<GridBootstrapPayload> {
 export function GridBootstrapPrefetch() {
   const { mutate } = useSWRConfig();
   const { data } = useSWR(BOOTSTRAP_URL, fetchBootstrap, {
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
     dedupingInterval: 30_000,
   });
 

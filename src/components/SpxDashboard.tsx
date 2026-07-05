@@ -1,14 +1,21 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
-import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
 import { SpxGexMatrixHeatmap } from "@/components/desk/SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/lib/spx-halt-banner";
+
+const SpxCommentaryRail = dynamic(
+  () => import("@/components/desk/SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
+  {
+    loading: () => <div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />,
+  }
+);
 
 class SpxPanelErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -131,7 +138,9 @@ export function SpxDashboard() {
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
-          <SpxCommentaryRail desk={desk} live={live} />
+          <Suspense fallback={<div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />}>
+            <SpxCommentaryRail desk={desk} live={live} />
+          </Suspense>
         </SpxPanelErrorBoundary>
       </div>
     </div>

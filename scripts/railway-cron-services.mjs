@@ -13,6 +13,7 @@ export const CRON_SERVICE_NAMES = {
   "gex-eod-snapshot": "GEX-EOD-Snapshot",
   "grid-warm": "Grid-Warm-Cron",
   "heatmap-warm": "heatmap-warm",
+  "desk-warm": "SPX-Desk-Warm",
   "largo-cleanup": "Largo-Chat-CleanUp",
   "market-regime-detector": "Market-Regime-Detector",
   "membership-reconcile": "Membership-Reconcile",

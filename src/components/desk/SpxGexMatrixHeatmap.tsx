@@ -101,7 +101,7 @@ export function SpxGexMatrixHeatmap({
     {
       refreshInterval: pollMs,
       refreshWhenHidden: false,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       keepPreviousData: true,
     }
   );

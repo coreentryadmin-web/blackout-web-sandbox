@@ -1,0 +1,19 @@
+# Railway config for the SPX-Desk-Warm cron service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.desk-warm.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+watchPatterns = [
+  "scripts/hit-cron.mjs",
+  "railway.desk-warm.toml",
+  "nixpacks.toml",
+]
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/desk-warm"
+# Every minute during the UTC band that covers RTH in BOTH EDT and EST (mirrors heatmap-warm).
+# The route's isEtCashRth gate self-skips off-band minutes.
+cronSchedule = "* 11-21 * * 1-5"
+restartPolicyType = "ON_FAILURE"
+numReplicas = 1

@@ -4,6 +4,7 @@ import { isFlowIngestAlternateWriterSkip } from "@/lib/cron-writer-target-fresh"
 export const RTH_WRITER_HEAL_AFTER_MIN: Record<string, number> = {
   "nights-watch-warm": 2,
   "heatmap-warm": 2,
+  "desk-warm": 2,
   "uw-cache-refresh": 4,
   "grid-warm": 4,
   "flow-ingest": 4,

@@ -378,6 +378,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
   const TARGET_FRESH_OVERRIDE_KEYS = new Set([
     "flow-ingest",
     "heatmap-warm",
+    "desk-warm",
     "grid-warm",
     "nights-watch-warm",
     "uw-cache-refresh",

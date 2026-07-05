@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import useSWR from "swr";
-import { fetchSpxDesk, fetchSpxDeskFlow, fetchSpxDeskPulse } from "@/lib/api";
+import useSWR, { useSWRConfig } from "swr";
+import { fetchSpxDesk, fetchSpxDeskFlow, fetchSpxDeskPulse, fetchSpxBootstrap } from "@/lib/api";
 import { mergeDeskLayers, mergePulseIntoDesk, resetSpxDeskMergeCache } from "@/lib/spx-desk-merge";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
@@ -49,6 +49,7 @@ function isDeskSessionLive(pulse?: {
 }
 
 export function useMergedDesk() {
+  const { mutate } = useSWRConfig();
   const sessionDateRef = useRef(todayEtYmd());
   const deskStable = useRef<SpxDeskPayload | undefined>(
     readSessionCache<SpxDeskPayload>(DESK_CACHE_KEY, DESK_CACHE_MAX_AGE_MS)
@@ -60,6 +61,18 @@ export function useMergedDesk() {
   const onPulseConnection = useCallback((connected: boolean) => {
     setPulseSseConnected(connected);
   }, []);
+
+  // Seed pulse/flow/desk SWR caches in one round-trip so first paint avoids 3 parallel cold XHRs.
+  useSWR("spx-desk-bootstrap", fetchSpxBootstrap, {
+    ...swrLiveOpts,
+    revalidateOnFocus: false,
+    dedupingInterval: 8_000,
+    onSuccess: (data) => {
+      if (data.pulse) void mutate("spx-desk-pulse", data.pulse, { revalidate: false });
+      if (data.flow) void mutate("spx-desk-flow", data.flow, { revalidate: false });
+      if (data.desk) void mutate("spx-desk-full", data.desk, { revalidate: false });
+    },
+  });
 
   const { data: pulseRest, isValidating: pulseValidating } = useSWR(
     "spx-desk-pulse",
