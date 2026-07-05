@@ -184,6 +184,31 @@ type SpxHealthPayload = {
   errors: string[];
 };
 
+// 0DTE Command health panel (task #150) — payload shape of /api/admin/zerodte/health,
+// direct analogue of the SPX health panel above, for the SEPARATE multi-ticker
+// scanner branded "0DTE Command" in-app (`/grid`'s default tab), not SPX Slayer's
+// own engine (task #127's naming disambiguation). See
+// src/lib/admin-zerodte-health.ts for the read-only data source and
+// src/app/api/admin/zerodte/health/route.ts for the route.
+type ZeroDteHealthPayload = {
+  generated_at: string;
+  session_date: string;
+  db_configured: boolean;
+  scan: {
+    last_scan_at: string | null;
+    status: "healthy" | "warning" | "stale" | "failed" | "unknown";
+    status_label: string;
+    age_min: number | null;
+    stale_after_min: number;
+  };
+  candidates_scanned: number;
+  committed_count: number;
+  rejected_count: number;
+  rejection_rate: number | null;
+  rejections_sample_capped: boolean;
+  errors: string[];
+};
+
 // Static, hand-kept-in-sync summary of docs/bie/FULL-SYSTEM-AWARENESS.md — the
 // roadmap doc is the source of truth; this is a legible dashboard view of it,
 // not a second source. Update alongside that doc when a stage's status changes.
@@ -271,6 +296,32 @@ export function AdminBieDashboard() {
     void loadSpxHealth();
   }, [loadSpxHealth]);
 
+  // 0DTE Command health panel (task #150) — same independence contract as the SPX
+  // health fetch above: its own state/effect, so a failure here can never blank or
+  // block the rest of this dashboard (or the SPX health panel), and vice versa.
+  // Wired into the SAME "Recompute" button below for one refresh affordance.
+  const [zeroDteHealth, setZeroDteHealth] = useState<ZeroDteHealthPayload | null>(null);
+  const [zeroDteHealthLoading, setZeroDteHealthLoading] = useState(true);
+  const [zeroDteHealthError, setZeroDteHealthError] = useState<string | null>(null);
+
+  const loadZeroDteHealth = useCallback(async () => {
+    setZeroDteHealthLoading(true);
+    setZeroDteHealthError(null);
+    try {
+      const res = await fetch("/api/admin/zerodte/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setZeroDteHealth((await res.json()) as ZeroDteHealthPayload);
+    } catch (e) {
+      setZeroDteHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setZeroDteHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadZeroDteHealth();
+  }, [loadZeroDteHealth]);
+
   const act = useCallback(
     async (id: string, action: "ack" | "resolve") => {
       setActing(id);
@@ -309,6 +360,13 @@ export function AdminBieDashboard() {
       ? "amber"
       : spxPlay?.gates.passed
         ? "bull"
+        : "cyan";
+  const zeroDteHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = zeroDteHealthError
+    ? "amber"
+    : zeroDteHealth?.scan.status === "failed"
+      ? "bear"
+      : zeroDteHealth?.scan.status === "stale" || zeroDteHealth?.scan.status === "warning"
+        ? "amber"
         : "cyan";
 
   return (
@@ -376,6 +434,7 @@ export function AdminBieDashboard() {
             onClick={() => {
               void load();
               void loadSpxHealth();
+              void loadZeroDteHealth();
             }}
             disabled={loading}
           >
@@ -625,6 +684,83 @@ export function AdminBieDashboard() {
               ))}
             </tbody>
           </DataTable>
+        )}
+      </GlassPanel>
+
+      {/* 0DTE Command health (task #150) — read-only glance at the SEPARATE
+          multi-ticker scanner branded "0DTE Command" in-app (/grid's default tab,
+          NOT SPX Slayer's own engine above — see task #127's naming
+          disambiguation): last-scan-time, candidates-scanned, and rejection rate.
+          Own fetch/state (see loadZeroDteHealth above), so a failure here shows
+          "—" in this panel only. All 3 numbers are read from data already
+          persisted by the existing scan pipeline (zerodte_setup_log,
+          zerodte_scan_rejections) and the existing grid-warm cron's run history
+          (buildCronHealthSnapshot) — see src/lib/admin-zerodte-health.ts's module
+          doc for exactly where each figure comes from and why "candidates
+          scanned"/"rejection rate" are today-cumulative, not last-cycle, numbers. */}
+      <GlassPanel
+        kicker="0DTE Command · read-only, sourced entirely from already-persisted data"
+        title="0DTE Command health"
+        accent={zeroDteHealthAccent}
+      >
+        {zeroDteHealthError && (
+          <p className="admin-bie-error-text">0DTE Command health fetch failed: {zeroDteHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip
+            label="Last scan"
+            value={zeroDteHealth ? fmtEt(zeroDteHealth.scan.last_scan_at) : "—"}
+            tone={!zeroDteHealth ? "neutral" : zeroDteHealth.scan.status === "healthy" ? "bull" : "amber"}
+          />
+          <MetricChip
+            label="Scan cron"
+            value={zeroDteHealth?.scan.status ?? "—"}
+            tone={
+              !zeroDteHealth
+                ? "neutral"
+                : zeroDteHealth.scan.status === "healthy"
+                  ? "bull"
+                  : zeroDteHealth.scan.status === "failed"
+                    ? "bear"
+                    : "amber"
+            }
+          />
+          <MetricChip
+            label="Candidates scanned"
+            value={zeroDteHealth ? `${zeroDteHealth.candidates_scanned} (${zeroDteHealth.session_date})` : "—"}
+            tone="cyan"
+          />
+          <MetricChip
+            label="Rejection rate"
+            value={
+              !zeroDteHealth || zeroDteHealth.rejection_rate == null
+                ? "—"
+                : `${Math.round(zeroDteHealth.rejection_rate * 100)}% (${zeroDteHealth.rejected_count}/${zeroDteHealth.candidates_scanned})`
+            }
+            tone={
+              !zeroDteHealth || zeroDteHealth.rejection_rate == null
+                ? "neutral"
+                : zeroDteHealth.rejection_rate > 0.8
+                  ? "amber"
+                  : "violet"
+            }
+          />
+        </div>
+
+        <p className="admin-bie-coverage-note">
+          {zeroDteHealth
+            ? `${zeroDteHealth.scan.status_label}${zeroDteHealth.scan.age_min != null ? ` (${zeroDteHealth.scan.age_min}m ago)` : ""} · stale past ${zeroDteHealth.scan.stale_after_min}m — the grid-warm cron that runs the scan pipeline (no dedicated 0DTE cron key exists), NOT a per-scan-cycle timestamp`
+            : zeroDteHealthLoading
+              ? "Loading…"
+              : "—"}
+        </p>
+        {zeroDteHealth?.rejections_sample_capped && (
+          <p className="admin-bie-coverage-note">
+            Rejection sample may be truncated for a very high-volume session — candidates_scanned/rejection_rate could be a floor, not exact.
+          </p>
+        )}
+        {zeroDteHealth && !zeroDteHealth.db_configured && (
+          <p className="admin-warn">DATABASE_URL not set — candidates-scanned/rejection-rate will read as 0.</p>
         )}
       </GlassPanel>
 
