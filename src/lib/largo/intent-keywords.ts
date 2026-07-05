@@ -41,6 +41,31 @@ export const SPX_ENGINE_STATE_RE =
  */
 export const MARKET_REGIME_RE = /\b(market regime|regime|backdrop|environment|playbook)\b/;
 
+/**
+ * 0DTE Command's OWN multi-ticker scanner (the "0DTE Command" tab at /grid,
+ * `src/lib/zerodte/scan.ts` / `board.ts`) — wording that names the scanner/board
+ * itself, or scan/hunt/find wording paired with 0dte, as distinct from SPX
+ * Slayer's own single-instrument 0DTE engine. This is DELIBERATELY more specific
+ * than the bare "0dte" token already in SPX_DESK_RE / SPX_DESK_TOOLS_RE /
+ * PLAY_STATE_RE / SPX_ENGINE_STATE_RE (left alone — "0dte" alone is still a
+ * legitimate SPX Slayer signal, since SPX Slayer is also a 0DTE product) and
+ * than getToolsForIntent's own bare zero-dte match (which already adds
+ * get_zerodte_plays to the tool ALLOWLIST on that same bare token). Both engines
+ * are branded with the word "0DTE" (SPX Slayer's dashboard vs. the separate
+ * multi-ticker "0DTE Command"/BlackOut Grid scanner), so a bare "0dte" mention
+ * alone hints BOTH engines with no disambiguating signal — this regex exists so
+ * a question that names the scanner specifically ("grid scanner," "0dte
+ * command," or "hunt(er)"/"scan(ner)"/"find(s)" paired with 0dte/zero-dte) gets
+ * an EXTRA, stronger hint toward get_zerodte_plays instead of relying on the
+ * same ambiguous bare token both engines already share (task #127). The
+ * hunt/scan/find family REQUIRES 0dte/zero-dte co-occurrence in the same
+ * question — a bare "hunt"/"scanner" (e.g. "what is Night Hawk hunting
+ * tonight," "did the market scanner pick up anything") is common wording for
+ * entirely unrelated products and must not fire this on its own.
+ */
+export const ZERODTE_COMMAND_RE =
+  /\b(0dte command|zero.?dte command|command board|grid scanner|grid board|blackout grid|across tickers|multi.?ticker|fresh finds?)\b|\b(scan|scans|scanning|scanner|hunt|hunts|hunting|hunter|find|finds|finding)\b.*\b(0.?dte|zero.?dte)\b|\b(0.?dte|zero.?dte)\b.*\b(scan|scans|scanning|scanner|hunt|hunts|hunting|hunter|find|finds|finding)\b/i;
+
 export const SCREENER_RE = /\b(screener|squeeze|movers|breadth|sector)\b/;
 
 export const FUNDAMENTAL_RE = /\b(fundamental|financial|insider|congress|analyst|institutional|predictions|smart money|whales)\b/;
