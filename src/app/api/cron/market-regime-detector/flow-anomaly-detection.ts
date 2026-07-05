@@ -39,7 +39,7 @@
 // real threshold — i.e. genuinely close calls, which is what "why didn't this fire"
 // questions are actually asking about. This band ONLY affects what gets captured in
 // the new near-miss table; it never touches the real anomaly thresholds below.
-import { fetchRecentFlows } from "@/lib/db";
+import { fetchRecentFlows, type FlowRow } from "@/lib/db";
 
 export const LARGE_PRINT_THRESHOLD = 2_000_000;
 export const SKEW_RATIO_THRESHOLD = 10;
@@ -106,14 +106,28 @@ export type FlowAnomalyNearMiss = {
  * never read from, never affects `anomalies` — and a complete no-op when omitted,
  * so the one pre-existing caller (route.ts) sees zero behavior change from this
  * parameter alone.
+ *
+ * `opts.rows`, when supplied, is used INSTEAD of this function's own
+ * fetchRecentFlows call (task #132 — see src/lib/correctness/flows-verifier.ts).
+ * The correctness verifier needs to independently recompute this exact
+ * classification over the exact rows this function scores, in the SAME process
+ * tick. Without an injection point, the verifier's own read and this function's
+ * internal read would be two separate point-in-time queries against a live,
+ * fast-moving 30-minute tape — a print landing between the two reads would look
+ * like a detector regression when it is really just a race between two
+ * independent DB reads. Purely additive: every existing caller (route.ts) omits
+ * `rows` and gets byte-for-byte the same behavior (its own fresh fetch) as before
+ * this parameter existed.
  */
 export async function detectFlowAnomalies(opts?: {
   nearMisses?: FlowAnomalyNearMiss[];
+  rows?: FlowRow[];
 }): Promise<FlowAnomaly[]> {
   const anomalies: FlowAnomaly[] = [];
   try {
-    // Fetch recent 30-min HELIX flows for anomaly detection
-    const rows = await fetchRecentFlows({ since_hours: 0.5, order: "premium" });
+    // Fetch recent 30-min HELIX flows for anomaly detection (unless the caller
+    // already has the exact-window row set to inject — see opts.rows above).
+    const rows = opts?.rows ?? (await fetchRecentFlows({ since_hours: 0.5, order: "premium" }));
     if (!rows.length) return anomalies;
 
     // Group by ticker
