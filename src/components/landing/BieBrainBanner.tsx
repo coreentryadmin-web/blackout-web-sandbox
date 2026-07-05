@@ -351,17 +351,6 @@ export function BieBrainBanner() {
 
             {innerLines.map((ring) => renderFieldLine(ring))}
 
-            <BieOrbitTools
-              tools={FIELD_TOOLS}
-              viewW={VIEW_W}
-              viewH={VIEW_H}
-              coreX={CORE.x}
-              coreY={CORE.y}
-              maxRx={MAX_RX}
-              maxRy={MAX_RY}
-              reduceMotion={reduceMotion}
-            />
-
             {!reduceMotion && phase === "inbound" && pulsePath && (
               <g key={pulseKey} className="bie-reactor-pulse-wave bie-reactor-pulse-inbound">
                 <path id="bie-reactor-impulse" d={pulsePath} className="bie-reactor-impulse-track" pathLength={1} />
@@ -400,6 +389,16 @@ export function BieBrainBanner() {
             </g>
           </svg>
 
+          <BieOrbitTools
+            tools={FIELD_TOOLS}
+            viewW={VIEW_W}
+            viewH={VIEW_H}
+            coreX={CORE.x}
+            coreY={CORE.y}
+            maxRx={MAX_RX}
+            maxRy={MAX_RY}
+            reduceMotion={reduceMotion}
+          />
           </div>
 
           <div className="bie-field-caption">
