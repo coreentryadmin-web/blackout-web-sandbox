@@ -5,7 +5,7 @@
 // leaves a member without an answer.
 
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { zeroDtePlaysForLargo } from "@/lib/zerodte/scan";
+import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */

@@ -8,8 +8,25 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 **Process note, 2026-07-04:** working through the full CEO/CTO audit's remaining ~21 findings back-to-back per explicit "fix everything, don't stop" instruction. Per-fix local verification (tsc/test/build/lint/auth-guards) and a FINDINGS.md entry stay mandatory for every fix; the separate docs-only "deploy confirmed SUCCESS" follow-up PR used earlier tonight is dropped for this batch to avoid serializing ~20 fixes behind ~20 extra PRs — Railway deploy health is spot-checked periodically instead of after every single merge. **Scope note:** the earlier standing "UI is Cursor's job" boundary was specifically about the landing-page BIE banner design work; this "fix everything from the audit" instruction is broader and explicit, so a few of the remaining findings do touch `.tsx` files (`FlowAlertStream.tsx`, `NetPremiumLeaderboard.tsx`, `ZeroDteBoard.tsx`) — each one is a surgical logic-only bug fix (a DTE calculation, a loading-state prop, a freshness signal), never a visual/layout change, to stay out of the way of Cursor's active design work on the same components. **Tooling note:** the GitHub MCP proxy's session quota is separately rate-limited from the underlying GitHub API (confirmed: REST via a direct token has ~14.8k/15k requests remaining while the MCP proxy returned "rate limit exceeded") — from here on, PRs are opened directly ready-for-review (skipping the draft→ready round trip) and comment/review checks use direct REST calls, to conserve that budget for the unavoidable create/merge calls.
 
 ---
+## 🟢 P1 FIXED 2026-07-06 — 0DTE board / Largo / BIE used parallel scan paths (intel + PnL drift risk) (branch `cursor/zerodte-integration-fix-9d1e`)
 
-## 🟢 P1 FIXED 2026-07-06 — Grid `/api/grid/*` cron probes returned 403 `coming_soon` while zerodte board cron worked (branch `cursor/grid-rth-all-day-agent-9d1e`)
+**Status:** FIXED on branch; pending merge.
+
+**Root cause:** `/api/market/zerodte/board` built its payload inline while `zeroDtePlaysForLargo()` ran a **separate** `scanZeroDteBoard()` + `syncLedgerLiveState()` under a different cache key (`largo:zerodte-plays`, 10s). Largo/BIE composers could see different setups, ledger PnL, and Night Hawk dedupe than the member UI. Largo's `buildIntelNote()` calls also omitted `nowEtMinutes` / `lastMark`, so intel lines lacked the UI's live countdown/distance clauses.
+
+**Fix:**
+- Extracted `getZeroDteBoardPayload()` + `zeroDtePlaysForLargo()` to `src/lib/platform/zerodte-service.ts` (single `zerodte:board:v1` cache lane).
+- Board route delegates to `getZeroDteBoardPayload()` only.
+- Largo `get_zerodte_plays` → `marketPlatform.zerodte.zeroDtePlaysForLargo()`.
+- Intel notes now pass `nowEtMinutes` + `lastMark` for parity with `ZeroDteBoard.tsx`.
+
+**Audit additions:** `validate:zerodte-integration`, `validate:zerodte-bie`, `scripts/audit/zerodte-bie-consistency-validator.mjs`.
+
+**Verification:** `src/lib/platform/zerodte-service.test.ts`, `npm run validate:zerodte-bie`, `npm run validate:zerodte-logic`.
+
+---
+
+## 🟢 P1 FIXED 2026-07-06 — Grid `/api/grid/*` cron probes returned 403 `coming_soon` while zerodte board cron worked (branch `cursor/grid-rth-all-day-agent-9d1e`, merged #541)
 
 **Status:** FIXED on branch; pending merge.
 

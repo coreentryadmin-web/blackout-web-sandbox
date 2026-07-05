@@ -900,10 +900,8 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     case "get_lotto_state":
       return marketPlatform.spx.getSpxLottoState();
 
-    case "get_zerodte_plays": {
-      const { zeroDtePlaysForLargo } = await import("@/lib/zerodte/scan");
-      return zeroDtePlaysForLargo();
-    }
+    case "get_zerodte_plays":
+      return marketPlatform.zerodte.zeroDtePlaysForLargo();
     case "get_zerodte_rejections":
       return zeroDteRejectionsForLargo(
         input.ticker ? String(input.ticker) : undefined,

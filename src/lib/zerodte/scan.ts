@@ -54,7 +54,6 @@ import {
   timeOfDayFactor,
   type IntradayRead,
 } from "./intraday";
-import { buildIntelNote } from "./intel";
 import {
   buildContractPlan,
   derivePlayStatus,
@@ -491,80 +490,5 @@ export async function zeroDtePlaysFeed(): Promise<Record<string, unknown>> {
   };
 }
 
-/** Full board read for Largo's get_zerodte_plays tool: live finds + today's ledger,
- *  each carrying the SAME BlackOut Intelligence action/reason line members see.
- *  Collapsed to one build per 10s across concurrent Largo turns. */
-export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
-  return withServerCache("largo:zerodte-plays", 10_000, async () => {
-    const [{ setups, nighthawk_covered }, ledger] = await Promise.all([
-      scanZeroDteBoard(),
-      readZeroDteLedger().then((rows) => syncLedgerLiveState(rows)),
-    ]);
-    const byTicker = new Map(setups.map((s) => [s.ticker, s]));
-    const plays = ledger.map((r) => {
-      const setup = byTicker.get(r.ticker) ?? null;
-      const status = (["OPEN", "HOLD", "TRIM", "CLOSED"].includes(r.status ?? "") ? r.status : "HOLD") as
-        | "OPEN"
-        | "HOLD"
-        | "TRIM"
-        | "CLOSED";
-      const livePnl =
-        r.entry_premium != null && r.entry_premium > 0 && r.last_mark != null
-          ? Math.round(((r.last_mark - r.entry_premium) / r.entry_premium) * 10000) / 100
-          : null;
-      const intel = buildIntelNote({
-        status,
-        setup,
-        plan: setup?.plan ?? null,
-        entryPremium: r.entry_premium,
-        livePnlPct: livePnl,
-        planOutcome: r.plan_outcome,
-        planPnlPct: r.plan_pnl_pct,
-      });
-      return {
-        ticker: r.ticker,
-        direction: r.direction,
-        strike: r.top_strike,
-        status,
-        entry_premium: r.entry_premium,
-        last_mark: r.last_mark,
-        live_pnl_pct: livePnl,
-        peak_score: r.score_max,
-        action: intel.action,
-        intel: intel.reason,
-        graded: r.plan_outcome
-          ? { outcome: r.plan_outcome, pnl_pct: r.plan_pnl_pct }
-          : null,
-      };
-    });
-    const fresh = setups
-      .filter((s) => !ledger.some((r) => r.ticker === s.ticker))
-      .slice(0, 5)
-      .map((s) => ({
-        ticker: s.ticker,
-        direction: s.direction,
-        strike: s.top_strike,
-        score: s.score,
-        gross_premium: s.gross_premium,
-        aggression: s.aggression,
-        plan: s.plan,
-        intel: buildIntelNote({
-          status: s.plan?.entry_status === "MOVED" ? "SKIP" : "OPEN",
-          setup: s,
-          plan: s.plan,
-          entryPremium: s.plan?.entry_max ?? s.top_strike_avg_fill,
-          livePnlPct: null,
-          planOutcome: null,
-          planPnlPct: null,
-        }).reason,
-      }));
-    return {
-      source: "0DTE Command (always-on scanner, /grid)",
-      session_date: todayEt(),
-      plays,
-      fresh_finds: fresh,
-      excluded_covered_elsewhere: nighthawk_covered,
-      rules: "0DTE discipline: no new plays after 15:00 ET; stop -50%, trim +100%, hard exit 15:30 ET.",
-    };
-  });
-}
+/** @deprecated Import from `@/lib/platform/zerodte-service` — single board cache lane. */
+export { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";

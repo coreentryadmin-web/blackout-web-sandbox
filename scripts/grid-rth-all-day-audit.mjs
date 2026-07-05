@@ -218,6 +218,7 @@ async function main() {
   await auditGridWarmCron();
 
   run("npm run validate:zerodte-logic", "zerodte:logic-audit");
+  run("npm run validate:zerodte-integration", "zerodte:cross-tool-integration");
 
   if (CRON) {
     try {

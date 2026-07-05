@@ -33,6 +33,8 @@
     "validate:grid-rth": "node scripts/grid-rth-all-day-audit.mjs",
     "validate:grid-e2e": "node scripts/grid-zerodte-e2e-audit.mjs",
     "validate:zerodte-logic": "node scripts/zerodte-logic-audit.mjs",
+    "validate:zerodte-integration": "node scripts/zerodte-integration-audit.mjs",
+    "validate:zerodte-bie": "node scripts/audit/zerodte-bie-consistency-validator.mjs",
     "validate:api-auth": "node scripts/verify-api-auth-guards.mjs",
     "validate:spx-bie": "node --import tsx --experimental-test-module-mocks scripts/audit/spx-bie-consistency-validator.mjs",
     "validate:railway-cron-schedules": "node scripts/railway-cron-schedule-audit.mjs",
