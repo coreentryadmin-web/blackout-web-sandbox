@@ -65,12 +65,12 @@ export async function requireAnyToolApi(keys: ToolKey[]): Promise<Response | nul
   );
 }
 
-/** Flip via Railway `LAUNCHED_0DTE=1` when 0DTE Command is ready for all premium users. */
+/** Flip via Railway `LAUNCHED_0DTE=0` to hide the 0DTE Command tab while keeping Market Grid live. */
 export { isZeroDteCommandLaunched } from "@/lib/tool-access";
 
 /**
  * PAGE gate for the 0DTE Command tab on /grid. The classic Market Grid tab follows
- * `canAccessTool("grid")`; this sub-surface stays admin-only until LAUNCHED_0DTE=1.
+ * `canAccessTool("grid")`; 0DTE Command tab follows grid unless LAUNCHED_0DTE=0.
  */
 export async function canAccessZeroDteCommand(): Promise<boolean> {
   if (isZeroDteCommandLaunched()) return true;
@@ -80,7 +80,7 @@ export async function canAccessZeroDteCommand(): Promise<boolean> {
 
 /**
  * API gate for `/api/market/zerodte/board`. Cron callers bypass via authorizeCronOrTierApi
- * before this runs; premium non-admins get 403 until LAUNCHED_0DTE=1.
+ * before this runs; premium non-admins get 403 when LAUNCHED_0DTE=0 locks the tab.
  */
 export async function requireZeroDteCommandApi(): Promise<Response | null> {
   if (isZeroDteCommandLaunched()) return null;

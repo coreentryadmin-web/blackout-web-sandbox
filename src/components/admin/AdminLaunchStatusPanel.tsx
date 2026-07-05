@@ -37,9 +37,10 @@ export function AdminLaunchStatusPanel() {
           </h2>
           <p className="mt-1 max-w-2xl font-mono text-[11px] leading-relaxed text-cyan">
             What paying <strong className="font-semibold text-sky-200">non-admin</strong> users see.
-            Admins bypass all gates. Change{" "}
+            Admins bypass all gates. Five tools ship live by default; add{" "}
+            <code className="rounded bg-white/5 px-1 text-sky-200">largo</code> to{" "}
             <code className="rounded bg-white/5 px-1 text-sky-200">LAUNCHED_TOOLS</code> on Railway{" "}
-            <span className="text-white/40">blackout-web → Variables</span> — no code deploy required.
+            <span className="text-white/40">blackout-web → Variables</span> to unlock Largo — no deploy.
           </p>
         </div>
         <div className="text-right">
@@ -55,7 +56,7 @@ export function AdminLaunchStatusPanel() {
         <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 font-mono text-[11px]">
           <span className="text-white/40">LAUNCHED_TOOLS=</span>
           <span className={clsx("font-semibold", status.launched_tools_env ? "text-gold" : "text-white/50")}>
-            {status.launched_tools_env ?? "(unset — SPX Slayer + HELIX only)"}
+            {status.launched_tools_env ?? "(unset — defaults except Largo locked)"}
           </span>
           {status.env_launched_keys.length > 0 && (
             <span className="ml-2 text-cyan">

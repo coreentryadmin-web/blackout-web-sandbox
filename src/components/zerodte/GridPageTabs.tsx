@@ -7,7 +7,7 @@ import { GridSearchBar } from "@/components/grid/GridSearchBar";
 
 /**
  * /grid: admins see 0DTE Command + Market Grid tabs; premium users with `grid` launched
- * see Market Grid only (0DTE Command is admin preview until LAUNCHED_0DTE=1). The classic
+ * see 0DTE Command + Market Grid tabs; Largo on /terminal stays gated.
  * tab keeps its own search bar so the ticker-filter workflow is unchanged. Panels stay
  * unmounted until first visit — the classic Grid's polling/SSE only starts if opened.
  */
