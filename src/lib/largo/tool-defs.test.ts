@@ -522,3 +522,43 @@ test("bare 'edition' wording (no nighthawk/hawk/playbook token) puts get_nightha
     assert.ok(tools.includes("get_platform_snapshot"), `expected get_platform_snapshot on the allowlist for: "${question}"`);
   }
 });
+
+// ── Task #140: generic (ticker-independent) dealer-positioning/GEX wording ──
+// SPX_DESK_TOOLS_RE's bare "gamma"/"gex"/"dealer" tokens already route these
+// questions to TOOL_GROUPS.spx_desk (get_gex, get_gex_regime_events), but that
+// match also means getToolsForIntent's `names.size <= 2` CORE_TOOLS fallback
+// (the only other path that would have pulled in TOOL_GROUPS.stock_analysis)
+// never fires — so get_positioning, the one tool whose own description says it
+// answers "dealer positioning for ANY ticker," was unreachable for exactly the
+// ticker-less questions that most clearly ask for it. Locks in the fix so a
+// future edit to SPX_DESK_TOOLS_RE, GEX_POSITIONING_RE, or TOOL_GROUPS.spx_desk
+// can't silently reopen this gap.
+
+test("generic ticker-less dealer-positioning/GEX wording puts get_positioning on the allowlist", () => {
+  for (const question of [
+    "what's dealer positioning look like",
+    "where's the gamma flip",
+    "show me the GEX walls",
+    "what's the call wall and put wall",
+    "is dealer gamma positive or negative",
+    "what's the current gamma regime",
+    "is the market showing negative gamma",
+    "what's net gex right now",
+  ]) {
+    const tools = getToolsForIntent(question);
+    assert.ok(tools.includes("get_positioning"), `expected get_positioning on the allowlist for: "${question}"`);
+    // The pre-existing GEX-snapshot tools this same wording already reached
+    // before this fix must still be present — this is an addition, not a swap.
+    assert.ok(tools.includes("get_gex"), `expected get_gex on the allowlist for: "${question}"`);
+    assert.ok(tools.includes("get_gex_regime_events"), `expected get_gex_regime_events on the allowlist for: "${question}"`);
+  }
+});
+
+test("unrelated 0DTE/play-state wording does NOT spuriously add get_positioning", () => {
+  // Sanity check against over-routing: bare 0dte/play-board wording matches a
+  // different branch (spx_desk only, never GEX_POSITIONING_RE) and should stay
+  // exactly that — adding get_positioning here would be the false-positive
+  // over-routing this fix is explicitly trying to avoid.
+  const tools = getToolsForIntent("how are today's plays doing");
+  assert.ok(!tools.includes("get_positioning"), "bare 0DTE/play-board wording should not add get_positioning");
+});

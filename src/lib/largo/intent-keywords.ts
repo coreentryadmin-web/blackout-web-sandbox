@@ -170,6 +170,48 @@ export const GEX_REGIME_HISTORY_RE =
 export const FLOW_ANOMALY_NEAR_MISS_RE =
   /(?=.*\b(?:anomaly|anomalies|helix)\b)(?=.*\b(?:near.?miss(?:es)?|didn'?t.{0,25}\b(?:flag|catch|fire|trigger)\b|wasn'?t.{0,25}\b(?:flagged|caught|triggered)\b|below.{0,10}threshold|didn'?t.{0,15}(?:clear|hit).{0,10}threshold)\b)/i;
 
+/**
+ * Generic (ticker-independent) dealer-positioning/GEX language — "dealer
+ * positioning," "gamma flip," "GEX walls," "call wall"/"put wall," "gamma
+ * exposure," "net gex," "gamma/gex regime," "negative gamma" (task #140).
+ * Vocabulary matches the domain GEX_REGIME_HISTORY_RE above already
+ * establishes ("dealer gamma," "gamma regime," "gex regime") plus get_
+ * positioning's own tool description ("net GEX," "negative-gamma flag,"
+ * "wall summary").
+ *
+ * Why this needs its own regex rather than relying on SPX_DESK_TOOLS_RE's
+ * existing bare "gamma"/"gex"/"dealer" tokens (tool-defs.ts's
+ * getToolsForIntent): those tokens DO already fire on most of this
+ * vocabulary and add TOOL_GROUPS.spx_desk (which carries get_gex and
+ * get_gex_regime_events) — but get_positioning, BlackOut Thermal's own
+ * "dealer positioning for ANY ticker" tool (the other half of
+ * THERMAL_ENGINE_TOOL_NAMES), lives ONLY in TOOL_GROUPS.stock_analysis,
+ * which getToolsForIntent gates behind mentionsTicker(). A ticker-less
+ * question that is unambiguously GEX-flavored ("what's dealer positioning
+ * look like," "where's the gamma flip," "show me the GEX walls") matches
+ * SPX_DESK_TOOLS_RE and therefore never falls through to getToolsForIntent's
+ * `names.size <= 2` CORE_TOOLS safety net either — that fallback is the ONLY
+ * other path that would have accidentally included stock_analysis (and thus
+ * get_positioning). Verified via a standalone getToolsForIntent() repro
+ * before this fix: "where's the gamma flip" resolved get_gex and
+ * get_gex_regime_events onto the allowlist but NOT get_positioning — the one
+ * tool whose own description says it answers exactly that question — while a
+ * question matching NO intent regex at all (e.g. "max pain today") got
+ * get_positioning for free via the CORE_TOOLS fallback. Matching more
+ * intent-shaped wording produced a WORSE (narrower, positioning-less) result
+ * than matching nothing at all — the same class of inversion task #143 fixed
+ * for NIGHTHAWK_RE's missing "edition" token.
+ *
+ * Deliberately includes "call wall"/"put wall" as standalone two-word phrases
+ * even though they contain none of SPX_DESK_TOOLS_RE's bare tokens — the
+ * task's own repro phrasings named them explicitly, and today they only
+ * reach get_positioning via the same CORE_TOOLS fallback accident described
+ * above (no other intent regex fires on them at all), so folding them into
+ * this regex makes the routing intentional instead of incidental.
+ */
+export const GEX_POSITIONING_RE =
+  /\b(dealer positioning|dealer gamma|gamma flip|gamma exposure|gamma regime|gex regime|net gex|negative gamma|gex walls?|gamma walls?|call wall|put wall)\b/;
+
 export const SCREENER_RE = /\b(screener|squeeze|movers|breadth|sector)\b/;
 
 export const FUNDAMENTAL_RE = /\b(fundamental|financial|insider|congress|analyst|institutional|predictions|smart money|whales)\b/;

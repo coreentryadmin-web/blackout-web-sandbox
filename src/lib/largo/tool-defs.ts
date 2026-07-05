@@ -2,6 +2,7 @@ import type { AnthropicToolDef } from "@/lib/providers/anthropic";
 import {
   FLOW_TOOLS_RE,
   FUNDAMENTAL_RE,
+  GEX_POSITIONING_RE,
   matchesIntent,
   MY_POSITIONS_RE,
   NEWS_TOOLS_RE,
@@ -861,6 +862,26 @@ export function getToolsForIntent(question: string): string[] {
   }
   if (matchesIntent(lower, SPX_DESK_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.vol_analysis]) names.add(n);
+  }
+  // Generic (ticker-independent) dealer-positioning/GEX language (task #140) —
+  // "dealer positioning," "gamma flip," "GEX walls," "call wall"/"put wall,"
+  // "gamma exposure," etc. SPX_DESK_TOOLS_RE's own bare "gamma"/"gex"/"dealer"
+  // tokens above already fire on most of this vocabulary and add
+  // TOOL_GROUPS.spx_desk (get_gex, get_gex_regime_events) — but get_positioning,
+  // BlackOut Thermal's own "dealer positioning for ANY ticker" tool, lives ONLY
+  // in TOOL_GROUPS.stock_analysis, gated behind mentionsTicker() below. Matching
+  // SPX_DESK_TOOLS_RE also means this turn NEVER falls through to the
+  // `names.size <= 2` CORE_TOOLS fallback that would have accidentally included
+  // stock_analysis — so the more clearly GEX-flavored a ticker-less question
+  // was, the LESS likely it was to get get_positioning. Mirror SPX_DESK_TOOLS_RE's
+  // own bundle (spx_desk + vol_analysis) so this is a strict superset for
+  // phrasing that already matched it, plus explicitly add get_positioning —
+  // the one tool this vocabulary is unambiguously asking for. See
+  // GEX_POSITIONING_RE's own doc comment in intent-keywords.ts for the full
+  // before/after repro.
+  if (matchesIntent(lower, GEX_POSITIONING_RE)) {
+    for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.vol_analysis]) names.add(n);
+    names.add("get_positioning");
   }
   if (matchesIntent(lower, VOL_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.vol_analysis, ...TOOL_GROUPS.spx_desk]) names.add(n);
