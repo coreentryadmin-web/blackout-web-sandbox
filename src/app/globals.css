@@ -1764,6 +1764,30 @@ body::before {
   pointer-events: none;
 }
 
+/* Tool -> core links — makes "every instrument feeds BIE" legible instead of
+   six icons floating with no visible tie to the reactor they orbit. Coordinates
+   are pixel-space (container size), set imperatively per frame — no viewBox. */
+.bie-orbit-connectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.bie-orbit-connector-line {
+  stroke: rgba(148, 226, 255, 0.1);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-orbit-connector-pulse {
+  fill: var(--tool-accent, #5df7ff);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tool-accent, #5df7ff) 75%, transparent));
+}
+
 .bie-orbit-tool {
   position: relative;
   pointer-events: auto;
@@ -3204,6 +3228,7 @@ body::before {
   .bie-ring-pulse-dot { display: none; }
   .bie-gate-ring { animation: none; }
   .bie-gate-reject-flash { display: none; }
+  .bie-orbit-connector-pulse { display: none; }
 }
 
 .bento-card-watermark {

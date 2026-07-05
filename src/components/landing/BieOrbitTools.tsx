@@ -4,8 +4,15 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ProductMark, type MarkProduct } from "@/components/marks/ProductMark";
 import { fieldLineScale } from "./bie-helix-engine";
+import {
+  advancePulseT,
+  connectorPulseOpacity,
+  connectorPulsePosition,
+  pulsePeriodSecForIndex,
+  pulsePhaseForIndex,
+} from "./bie-orbit-connectors";
 import { buildOrbitLayout, readSessionOrbitSeed, type PlacedOrbitTool } from "./bie-orbit-layout";
-import { advanceOrbitDeg, orbitToolPixelPosition } from "./bie-viewbox-map";
+import { advanceOrbitDeg, orbitToolPixelPosition, viewBoxPointToContainer } from "./bie-viewbox-map";
 
 export type OrbitTool = {
   name: string;
@@ -27,6 +34,7 @@ type Props = {
 
 type ToolMotion = {
   orbitDeg: number;
+  pulseT: number;
 };
 
 const RING_SCALES = {
@@ -51,6 +59,8 @@ export function BieOrbitTools({
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const anchorRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const lineRefs = useRef<(SVGLineElement | null)[]>([]);
+  const pulseRefs = useRef<(SVGCircleElement | null)[]>([]);
   const geoRef = useRef({ viewW, viewH, coreX, coreY, maxRx, maxRy });
 
   const [layout, setLayout] = useState<PlacedOrbitTool[] | null>(null);
@@ -68,7 +78,10 @@ export function BieOrbitTools({
     const host = hostRef.current;
     if (!host || !layout?.length) return;
 
-    const motion: ToolMotion[] = layout.map(() => ({ orbitDeg: 0 }));
+    const motion: ToolMotion[] = layout.map((_, i) => ({
+      orbitDeg: 0,
+      pulseT: pulsePhaseForIndex(i, layout.length),
+    }));
 
     let raf = 0;
     let last = performance.now();
@@ -77,6 +90,8 @@ export function BieOrbitTools({
       const rect = host.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
       const g = geoRef.current;
+
+      const corePx = viewBoxPointToContainer(g.coreX, g.coreY, rect.width, rect.height, g.viewW, g.viewH, "meet");
 
       layout.forEach((tool, i) => {
         const anchor = anchorRefs.current[i];
@@ -98,6 +113,22 @@ export function BieOrbitTools({
         });
         anchor.style.left = `${px.x}px`;
         anchor.style.top = `${px.y}px`;
+
+        const line = lineRefs.current[i];
+        if (line) {
+          line.setAttribute("x1", corePx.x.toFixed(1));
+          line.setAttribute("y1", corePx.y.toFixed(1));
+          line.setAttribute("x2", px.x.toFixed(1));
+          line.setAttribute("y2", px.y.toFixed(1));
+        }
+
+        const pulse = pulseRefs.current[i];
+        if (pulse && !reduceMotion) {
+          const p = connectorPulsePosition(corePx, px, m.pulseT);
+          pulse.setAttribute("cx", p.x.toFixed(1));
+          pulse.setAttribute("cy", p.y.toFixed(1));
+          pulse.setAttribute("opacity", connectorPulseOpacity(m.pulseT).toFixed(3));
+        }
       });
     };
 
@@ -113,6 +144,7 @@ export function BieOrbitTools({
             tool.orbitPeriodSec,
             tool.orbitDirection
           );
+          motion[i].pulseT = advancePulseT(motion[i].pulseT, dt, pulsePeriodSecForIndex(i));
         });
       }
 
@@ -134,6 +166,28 @@ export function BieOrbitTools({
 
   return (
     <div ref={hostRef} className="bie-orbit-tools" aria-label="Platform instruments">
+      <svg className="bie-orbit-connectors" aria-hidden focusable="false">
+        {layout?.map((tool, i) => (
+          <g key={`connector-${tool.name}`} style={{ ["--tool-accent" as string]: tool.accent }}>
+            <line
+              ref={(el) => {
+                lineRefs.current[i] = el;
+              }}
+              className="bie-orbit-connector-line"
+            />
+            {!reduceMotion && (
+              <circle
+                ref={(el) => {
+                  pulseRefs.current[i] = el;
+                }}
+                r={2.4}
+                className="bie-orbit-connector-pulse"
+              />
+            )}
+          </g>
+        ))}
+      </svg>
+
       {layout?.map((tool, i) => (
         <div
           key={tool.name}
