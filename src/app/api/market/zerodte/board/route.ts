@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
+import { requireZeroDteCommandApi } from "@/lib/tool-access-server";
 import { etNowParts, isTradingDayEt, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
 import { readGridEarnings } from "@/lib/providers/grid";
@@ -31,6 +32,11 @@ const BOARD_TTL_MS = 5_000;
 export async function GET(req: NextRequest) {
   const authResult = await authorizeCronOrTierApi(req, "premium");
   if (authResult instanceof Response) return authResult;
+
+  if (authResult.via === "user") {
+    const zeroDteDenied = await requireZeroDteCommandApi();
+    if (zeroDteDenied) return zeroDteDenied;
+  }
 
   const dbDenied = requireDatabaseInProduction();
   if (dbDenied) return dbDenied;

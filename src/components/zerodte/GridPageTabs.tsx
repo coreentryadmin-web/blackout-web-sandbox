@@ -6,13 +6,23 @@ import { GridBoard } from "@/components/grid/GridBoard";
 import { GridSearchBar } from "@/components/grid/GridSearchBar";
 
 /**
- * /grid now leads with the 0DTE Command board (the "what should I trade right now"
- * surface); the classic cross-market Grid stays intact one tab over. The classic
- * tab keeps its own search bar (it was previously in the page header) so the
- * ticker-filter workflow is unchanged. Panels stay unmounted until first visit —
- * the classic Grid's polling/SSE only starts if the user actually opens it.
+ * /grid: admins see 0DTE Command + Market Grid tabs; premium users with `grid` launched
+ * see Market Grid only (0DTE Command is admin preview until LAUNCHED_0DTE=1). The classic
+ * tab keeps its own search bar so the ticker-filter workflow is unchanged. Panels stay
+ * unmounted until first visit — the classic Grid's polling/SSE only starts if opened.
  */
-export function GridPageTabs() {
+export function GridPageTabs({ showZeroDteCommand = false }: { showZeroDteCommand?: boolean }) {
+  if (!showZeroDteCommand) {
+    return (
+      <>
+        <div className="mb-4 flex justify-end">
+          <GridSearchBar />
+        </div>
+        <GridBoard />
+      </>
+    );
+  }
+
   return (
     <Tabs defaultValue="command">
       <TabList aria-label="Grid boards" className="max-w-fit">

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
-import { canAccessTool } from "@/lib/tool-access-server";
+import { canAccessTool, canAccessZeroDteCommand } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
 import { PageShell, PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
@@ -14,10 +14,10 @@ export const metadata: Metadata = {
 };
 
 /**
- * /grid — 0DTE Command (default tab) + the classic Market Grid (second tab).
+ * /grid — 0DTE Command (admin preview tab) + the classic Market Grid tab.
  * Server Component: tier gate + launch gate + metadata; the client tabs own
- * layout/polling. Gated to `grid` (admins bypass), so non-admins see the
- * ComingSoon padlock until it ships.
+ * layout/polling. `grid` in LAUNCHED_TOOLS opens Market Grid for premium;
+ * 0DTE Command stays admin-only until LAUNCHED_0DTE=1.
  *
  * Product rule: this surface finds NEW plays only — it never reprints the SPX
  * engines' plays or Night Hawk's picks. The server-side scanner (grid-warm cron)
@@ -30,18 +30,24 @@ export default async function GridPage() {
   await requireTier("premium");
   if (!(await canAccessTool("grid"))) return <ComingSoon toolKey="grid" />;
 
+  const showZeroDteCommand = await canAccessZeroDteCommand();
+
   return (
     <PageShell fullBleed>
       <div className="px-2 sm:px-4 xl:px-6">
         <GridTickerProvider>
           <PageHeader
-            kicker="Always-on 0DTE hunter"
-            title="0DTE Command"
-            subtitle="Runs all session finding new 0DTE plays — fresh names only, every find logged and graded."
+            kicker={showZeroDteCommand ? "Always-on 0DTE hunter" : "Cross-market recon"}
+            title={showZeroDteCommand ? "0DTE Command" : "Market Grid"}
+            subtitle={
+              showZeroDteCommand
+                ? "Runs all session finding new 0DTE plays — fresh names only, every find logged and graded."
+                : "Unified news, flow, movers, macro, and dealer positioning — one ticker-scoped command surface."
+            }
             badge={<ProductMark product="grid" size={44} />}
           />
           <div className="mt-5">
-            <GridPageTabs />
+            <GridPageTabs showZeroDteCommand={showZeroDteCommand} />
           </div>
         </GridTickerProvider>
       </div>
