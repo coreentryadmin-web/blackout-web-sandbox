@@ -62,6 +62,23 @@ export function nextTradingDayEt(from?: string): string {
   return formatEtDate(cursor);
 }
 
+/**
+ * The most recent trading day at or before `now` (ET calendar date) — walks
+ * backward through weekends/holidays, mirroring nextTradingDayEt's forward walk.
+ * Used to detect whether a "last captured" snapshot (e.g. market_regime,
+ * task #173) is from the current/most-recently-completed trading session, or is
+ * a leftover from a prior one (weekend, holiday, cron outage).
+ */
+export function mostRecentTradingDayEt(now: Date = new Date()): string {
+  let ymd = formatEtDate(now);
+  for (let i = 0; i < 12; i++) {
+    if (isTradingDayEt(ymd)) return ymd;
+    const cursor = new Date(`${ymd}T12:00:00`);
+    ymd = formatEtDate(new Date(cursor.getTime() - 86_400_000));
+  }
+  return ymd;
+}
+
 export function etNowParts(): { hour: number; minute: number; weekday: string } {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: ET,
