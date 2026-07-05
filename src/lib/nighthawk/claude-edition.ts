@@ -140,7 +140,17 @@ export async function generateEditionPlays(params: {
   // trade-geometry gate, with the full mapped play so the caller can build a real decision
   // trace — not just a ticker. Empty on the mechanical-fallback path (no geometry check runs
   // there) and on a zero-parsed-plays exit (nothing was ever mapped to check).
-  geometryRejected?: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }>;
+  // `scored` (task #142): the SAME ScoredCandidate scoreCandidate() computed for this ticker
+  // this run — dossierMap[ticker].scored, the identical object mapClaudePlayToEdition already
+  // reads above for pinnedScore/scoredDirection — so the rejection audit row can explain the
+  // desk's confluence read on the name, not just the failed target/stop geometry. null only
+  // when this ticker never had a matching dossier this run (mechanical-fallback path, or a
+  // ticker Claude named outside the scored candidate set). See the push site below for why
+  // this reads the in-memory dossier rather than nighthawk_scoring_history (task #129): that
+  // table is only archived AFTER this function returns (edition-builder.ts's
+  // archiveAndClearNighthawkStaging runs post-publish), so a DB read here would find nothing
+  // for tonight's edition.
+  geometryRejected?: Array<{ ticker: string; drops: string[]; play: PlaybookPlay; scored: ScoredCandidate | null }>;
   // task #141: plays rejected at any of the 3 LATER funnel stages that run strictly after the
   // geometry gate above — premium-cap (filterPlaysWithinPremiumCap), illiquid-strike (the
   // chain-contradicted OI loop), and ungrounded (groundPlays' HARD drops) — PLUS
@@ -148,7 +158,10 @@ export async function generateEditionPlays(params: {
   // Combined into one array (vs. 3-4 separate fields) because the caller (edition-builder.ts)
   // treats them identically: one fire-and-forget durable audit row per entry, same as
   // geometryRejected above. Empty on the same early-exit paths geometryRejected is empty on.
-  stageRejected?: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail }>;
+  // `scored` (task #142): same in-memory confluence breakdown as geometryRejected's `scored`
+  // — every one of the 4 later-stage push sites below runs on a play still backed by the same
+  // dossierMap this function built at the top, so the same lookup applies uniformly.
+  stageRejected?: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored: ScoredCandidate | null }>;
 }> {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
@@ -229,7 +242,7 @@ export async function generateEditionPlays(params: {
   // Validated with the SAME parser the outcome grader uses, so publish-time truth
   // and grading truth cannot diverge.
   const mapped: typeof mappedAll = [];
-  const geometryRejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }> = [];
+  const geometryRejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay; scored: ScoredCandidate | null }> = [];
   for (const play of mappedAll) {
     const verdict = validatePlayGeometry(play);
     if (verdict.ok) {
@@ -238,7 +251,12 @@ export async function generateEditionPlays(params: {
         console.warn(`[nighthawk/geometry] ${play.ticker} flagged: ${verdict.flags.join("; ")}`);
       }
     } else {
-      geometryRejected.push({ ticker: play.ticker, drops: verdict.drops, play });
+      // task #142: dossierMap[play.ticker]?.scored is the SAME ScoredCandidate object read
+      // above (line ~70/80) for pinnedScore/scoredDirection — reusing it here, in memory,
+      // rather than a nighthawk_scoring_history DB lookup, which would find nothing for
+      // tonight's edition (that table only gets archived post-publish, well after this
+      // function returns — see edition-builder.ts's archiveAndClearNighthawkStaging).
+      geometryRejected.push({ ticker: play.ticker, drops: verdict.drops, play, scored: dossierMap[play.ticker]?.scored ?? null });
     }
   }
   if (geometryRejected.length) {
@@ -253,7 +271,7 @@ export async function generateEditionPlays(params: {
   // geometryRejected above. Populated below as premium-cap / illiquid-strike / ungrounded /
   // sector-concentration each run; never fabricated — every entry mirrors a real drop that
   // already happened via the pre-existing console.warn logging on the same variables.
-  const stageRejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail }> = [];
+  const stageRejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored: ScoredCandidate | null }> = [];
   for (const p of rejected) {
     stageRejected.push({
       ticker: p.ticker,
@@ -265,6 +283,8 @@ export async function generateEditionPlays(params: {
         entry_cost_per_contract: p.entry_cost_per_contract ?? null,
         cap_per_contract: MAX_OPTION_COST_PER_CONTRACT,
       },
+      // task #142: same in-memory confluence breakdown as geometryRejected above.
+      scored: dossierMap[p.ticker]?.scored ?? null,
     });
   }
   chainData = await augmentChainsWithExactContracts({ plays, chains: chainData });
@@ -301,6 +321,8 @@ export async function generateEditionPlays(params: {
           open_interest: verdict.matchedOi,
           min_open_interest: STRIKE_MIN_OI,
         },
+        // task #142: same in-memory confluence breakdown as geometryRejected above.
+        scored: dossierMap[play.ticker]?.scored ?? null,
       });
     }
   }
@@ -330,6 +352,8 @@ export async function generateEditionPlays(params: {
       ticker: d.ticker,
       play: d.play,
       detail: { stage: "ungrounded", issues: d.issues.map((i) => ({ check: i.check, detail: i.detail })) },
+      // task #142: same in-memory confluence breakdown as geometryRejected above.
+      scored: dossierMap[d.ticker]?.scored ?? null,
     });
   }
 
@@ -371,6 +395,8 @@ export async function generateEditionPlays(params: {
         already_filled: d.filled,
         max_per_sector: SECTOR_CONCENTRATION_MAX_PER_SECTOR,
       },
+      // task #142: same in-memory confluence breakdown as geometryRejected above.
+      scored: dossierMap[d.ticker]?.scored ?? null,
     });
   }
   const capped = sectorCap.plays.slice(0, EDITION_SYNTHESIS_OVERSHOOT).map((p, i) => ({ ...p, rank: i + 1 }));

@@ -2,6 +2,7 @@ import { before, test, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { NighthawkRejectionDetail } from "./play-outcomes";
 import type { PlaybookPlay } from "./types";
+import type { ScoredCandidate } from "./scorer";
 
 // Task #141: Night Hawk's synthesis funnel has 4 real rejection stages AFTER a candidate has
 // already survived the trade-geometry gate — premium-cap, illiquid-strike, ungrounded, and
@@ -199,6 +200,83 @@ test("recordNighthawkStageRejectedAuditTrail: multiple stages in one edition eac
 
   assert.equal(state.inserted.length, 2);
   assert.deepEqual(state.inserted.map((r) => r.ticker).sort(), ["AAA", "BBB"]);
+});
+
+// ── Confluence-factor pass-through reaches the actual DB write (task #142) ────────
+// play-outcomes.test.ts proves the pure builders fold `scored` into input_snapshot.confluence
+// correctly (fixture-only, no DB). This proves the end-to-end path — the SAME optional
+// `scored` field threaded from a caller (edition-builder.ts, via claude-edition.ts's
+// dossierMap lookup) all the way to the row insertNighthawkRejectedAuditLog actually receives.
+
+const SCORED_FIXTURE: ScoredCandidate = {
+  ticker: "NVDA",
+  score: 91,
+  direction: "long",
+  flow_score: 32,
+  tech_score: 25,
+  pos_score: 15,
+  news_score: 11,
+  smart_money_score: 8,
+  conviction: "A",
+};
+
+test("recordNighthawkStageRejectedAuditTrail: scored candidate's confluence breakdown reaches the written row", async () => {
+  const { recordNighthawkStageRejectedAuditTrail } = await mod();
+  resetState();
+
+  const p = play({ ticker: "NVDA", entry_premium: 27.5, entry_cost_per_contract: 2750 });
+  const detail: NighthawkRejectionDetail = {
+    stage: "premium_cap",
+    entry_premium: 27.5,
+    cap_per_share: 20,
+    entry_cost_per_contract: 2750,
+    cap_per_contract: 2000,
+  };
+  recordNighthawkStageRejectedAuditTrail([{ ticker: "NVDA", play: p, detail, scored: SCORED_FIXTURE }], "2026-07-06");
+  await flush();
+
+  assert.equal(state.inserted.length, 1);
+  const confluence = (state.inserted[0]!.input_snapshot as { confluence: Record<string, unknown> }).confluence;
+  assert.equal(confluence.total_score, 91);
+  assert.equal(confluence.flow_score, 32);
+  assert.equal(confluence.smart_money_score, 8);
+});
+
+test("recordNighthawkStageRejectedAuditTrail: omitting scored writes confluence:null, never a fabricated reading", async () => {
+  const { recordNighthawkStageRejectedAuditTrail } = await mod();
+  resetState();
+
+  const p = play({ ticker: "AMD" });
+  const detail: NighthawkRejectionDetail = {
+    stage: "sector_concentration",
+    sector: "semis",
+    already_filled: 2,
+    max_per_sector: 2,
+  };
+  recordNighthawkStageRejectedAuditTrail([{ ticker: "AMD", play: p, detail }], "2026-07-06");
+  await flush();
+
+  assert.equal(state.inserted.length, 1);
+  assert.equal((state.inserted[0]!.input_snapshot as { confluence: unknown }).confluence, null);
+});
+
+test("recordNighthawkRejectedAuditTrail (geometry): scored candidate's confluence breakdown reaches the written row via the thin wrapper", async () => {
+  const { recordNighthawkRejectedAuditTrail } = await mod();
+  resetState();
+
+  const p = play({ ticker: "TSLA" });
+  recordNighthawkRejectedAuditTrail(
+    [{ ticker: "TSLA", drops: ["target on wrong side of entry"], play: p, scored: SCORED_FIXTURE }],
+    "2026-07-06"
+  );
+  await flush();
+
+  assert.equal(state.inserted.length, 1);
+  const row = state.inserted[0]!;
+  assert.equal(row.ticker, "TSLA");
+  const confluence = (row.input_snapshot as { confluence: Record<string, unknown> }).confluence;
+  assert.equal(confluence.total_score, 91);
+  assert.equal(confluence.conviction, "A");
 });
 
 test("recordNighthawkStageRejectedAuditTrail: a write failure is swallowed, never thrown (must not break publishing)", async () => {
