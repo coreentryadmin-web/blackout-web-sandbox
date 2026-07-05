@@ -206,6 +206,12 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_signal_log", "SPX signal log from Postgres.", { limit: { type: "integer" } }),
 
+  t(
+    "get_spx_engine_snapshots",
+    "Retrospective log of the SPX play engine's REJECTED/scanning history — answers 'why was the last signal rejected' or 'what was the engine doing at time Y', which get_signal_log CANNOT answer: get_signal_log's spx_signal_log table only ever records a COMMITTED BUY/SELL/TRIM signal, so a gate-blocked entry, a Claude veto, a WATCHING/near-miss setup, or a plain no-setup SCANNING tick leaves zero trace there — the evaluation happened, then vanished once the next poll tick overwrote it in memory. This tool reads spx_engine_snapshots instead: one row per DISTINCT phase/action/direction/gates state the engine has passed through (throttled to state transitions only, not one row per poll tick, so consecutive identical ticks collapse into a single row spanning that whole period) — phase (SCANNING/WATCHING/OPEN), action, direction, score, the exact gates.blocks list that kept a would-be entry from firing (e.g. 'MTF conflict', 'below full min score', 'Claude veto: ...'), a thesis/explanation string, and the engine's as_of timestamp for that state. Use for 'why didn't SPX Slayer take a trade earlier today', 'what was blocking entry at 10:15', or 'when did the engine's bias flip from bullish to bearish watching' — questions about the engine's rejected/scanning history. For the committed trade history itself, use get_signal_log (recent fired signals) or get_trade_history (closed, graded trades) instead.",
+    { limit: { type: "integer" } }
+  ),
+
   t("get_lotto_state", "Today's lotto state from Postgres."),
 
   t(
@@ -435,6 +441,7 @@ export const TOOL_GROUPS = {
     "get_open_plays",
     "get_flow_tape",
     "get_signal_log",
+    "get_spx_engine_snapshots",
     "get_lotto_state",
     "get_setup_stats",
     "get_trade_history",
@@ -554,6 +561,53 @@ export const TOOL_GROUPS = {
     "get_etf_detail",
   ],
 } as const;
+
+// Task #112 — the cohort-membership test for "did this Largo turn touch SPX
+// Slayer's OWN live-engine state" (BIE's self-eval loop, calibration.ts). This is
+// deliberately a NARROWER list than TOOL_GROUPS.spx_desk above: spx_desk is a
+// *routing* bundle (every tool Largo should have on hand when a question smells
+// SPX-flavored, per getToolsForIntent below), so it also carries generic,
+// ticker-agnostic market-data tools that are bundled in purely for convenience —
+// get_flow_tape, get_greek_flow, get_gex, get_group_greek_flow all take a
+// `ticker`/`group` input and hit the same generic UW/Polygon providers
+// run-tool.ts uses for ANY ticker (get_greek_flow/get_gex are even shared with
+// TOOL_GROUPS.stock_analysis). A turn that only called those tells you nothing
+// about SPX-Slayer-engine-state answer quality specifically — it could just as
+// easily have been an AAPL flow question. This list keeps only the tools whose
+// run-tool.ts implementation reads the engine's own state — `marketPlatform.spx.*`
+// (getSpxDeskSummary/getSpxPlayState/getSpxOpenPlay/getSpxSignalLog/
+// getSpxLottoState/getSpxSetupStats/getSpxTradeHistory) or pure compute over the
+// already-cached live desk / the engine's own lotto/power-hour evaluator output
+// (get_spx_confluence, get_lotto_live, get_power_hour) — verified against
+// run-tool.ts's case statements, not guessed from naming. Deliberately excludes
+// get_ecosystem_context (in BIE_TOOL_NAMES/TOOL_GROUPS.platform): it's a
+// cross-product tool callable for ANY ticker, and bie_interactions.tools_used only
+// records tool NAMES, never call inputs — there is no way to tell from a
+// bie_interactions row alone whether a given get_ecosystem_context call was
+// scoped to SPX or to some other ticker, so including it would silently admit
+// unrelated cross-product lookups into an "SPX engine state" cohort. Kept as an
+// explicit literal list (not derived from TOOL_GROUPS.spx_desk) so this cohort
+// tracks "did Largo read the engine's own state" and does not silently
+// widen/narrow if spx_desk's bundle composition changes for unrelated
+// (system-prompt-routing) reasons — see tool-defs.test.ts for the assertion that
+// keeps this list a verified subset of spx_desk.
+export const SPX_ENGINE_TOOL_NAMES = [
+  "get_spx_structure",
+  "get_spx_play",
+  "get_open_plays",
+  "get_signal_log",
+  // get_spx_engine_snapshots (task #108, merged alongside this cohort list) reads the
+  // exact same engine-state stream as get_signal_log — the throttled, gate-rejection-
+  // inclusive snapshot log rather than the committed-only one — so it belongs in this
+  // cohort for the same reason get_signal_log does.
+  "get_spx_engine_snapshots",
+  "get_lotto_state",
+  "get_lotto_live",
+  "get_setup_stats",
+  "get_trade_history",
+  "get_spx_confluence",
+  "get_power_hour",
+];
 
 const CORE_TOOLS = [
   "get_market_context",

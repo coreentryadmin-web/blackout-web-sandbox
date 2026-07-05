@@ -17,7 +17,13 @@
 // (n≥10/bucket), so both self-improving loops are at least visible in one
 // place even though they don't talk to each other.
 
-import { dbConfigured, fetchClosedPlayOutcomes, fetchZeroDteSetupLogRange } from "@/lib/db";
+import {
+  dbConfigured,
+  fetchClosedPlayOutcomes,
+  fetchSpxToolCallingBieInteractions,
+  fetchZeroDteSetupLogRange,
+} from "@/lib/db";
+import { SPX_ENGINE_TOOL_NAMES } from "@/lib/largo/tool-defs";
 import { todayEt } from "@/lib/nighthawk/session";
 import { gradeRank } from "@/lib/spx-play-config";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
@@ -58,6 +64,14 @@ export type CalibrationReport = {
    *  wired in by the async orchestrator). Additive field — the 0DTE shape above
    *  is unchanged. */
   spx_slayer: SpxCalibrationReport | null;
+  /** Task #112 — Largo's own answer-quality cohort for turns that touched SPX
+   *  Slayer's live-engine state (bie_interactions, not spx_play_outcomes — this
+   *  measures BIE's ANSWERS about the engine, not the engine's own trade P&L,
+   *  which is what spx_slayer above already covers). Same attach-after-compute
+   *  pattern as spx_slayer: null until runBieCalibration's async orchestrator
+   *  fills it in. See computeSpxToolCallCalibration below for the cohort
+   *  definition and metrics. */
+  spx_tool_calls: SpxToolCallCalibrationReport | null;
 };
 
 // ── SPX Slayer's own closed-play calibration (additive, parallel to the 0DTE pass) ──
@@ -178,9 +192,11 @@ export function computeCalibration(
     by_time_of_day: byTod,
     by_spike: bySpike,
     recommendations: recs,
-    // Attached by runBieCalibration once it has computed the SPX pass too — this
-    // pure function only ever sees 0DTE rows, so it never has SPX data to report.
+    // Attached by runBieCalibration once it has computed the SPX passes too —
+    // this pure function only ever sees 0DTE rows, so it never has SPX data to
+    // report for either additive slice below.
     spx_slayer: null,
+    spx_tool_calls: null,
   };
 }
 
@@ -277,6 +293,123 @@ export function computeSpxCalibration(
   };
 }
 
+// ── Task #112: SPX-tool-calling cohort within bie_interactions (additive, a
+// third pass alongside the 0DTE and SPX-Slayer-outcomes passes above) ──
+//
+// Before this, calibration.ts could measure whether SPX Slayer's PLAYS made
+// money (computeSpxCalibration above) but had no way to measure whether
+// Largo's ANSWERS about SPX Slayer's live engine state (walls, gamma flip,
+// open plays, signal log, lotto/power-hour state...) were actually GOOD
+// answers — grounding-verifier claim-by-claim correctness says nothing about
+// whether the answer picked the right tool, read the right phase, or served
+// stale-but-technically-accurate info. This slice tracks that cohort
+// continuously instead of "assuming it's fine because grounding passed once."
+
+/** Slim projection of a bie_interactions row — only what this slice's cohort
+ *  test and metrics need. */
+export type SpxToolCallInputRow = {
+  tools_used: string[];
+  /** "claude_fallback", a router intent name (e.g. "spx_structure"), or null if
+   *  a row predates task #103's intent_bucket column. */
+  intent_bucket: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+};
+
+export type SpxToolCallCalibrationReport = {
+  window: { since: string; through: string };
+  /** Rows in the cohort — see isSpxToolCallingRow for the membership test. */
+  n: number;
+  /** Of the n cohort rows, how many were answered by Claude's tool-calling loop
+   *  vs. matched deterministically by the BIE router. Reported as raw counts
+   *  (not just a derived rate) so a reader never has to reconstruct them from a
+   *  percentage, same convention fetchBieInteractionStats already uses. */
+  claude_fallback_n: number;
+  router_matched_n: number;
+  /** router_matched_n / n — a properly-integrated SPX Slayer question should
+   *  ideally often be answerable by the deterministic router (composeBieAnswer's
+   *  spx_structure intent) rather than needing full Claude tool-calling every
+   *  time; tracked over time as a signal of whether router coverage for SPX
+   *  questions is keeping up. null when n = 0. */
+  router_match_rate_pct: number | null;
+  /** Aggregate sum(claims_verified)/sum(claims_total) across cohort rows that
+   *  actually carried numeric claims (claims_total > 0) — weights rows by how
+   *  many claims they made, unlike an unweighted average of each row's own
+   *  ratio. null when no cohort row had any graded claims yet. */
+  grounding_pass_rate_pct: number | null;
+  avg_latency_ms: number | null;
+  /** Same evidence-gating philosophy as the other two passes — empty until n≥10. */
+  recommendations: string[];
+};
+
+/** Cohort membership: does this bie_interactions row represent a Largo turn
+ *  that touched SPX Slayer's own live-engine state? A UNION of two conditions,
+ *  not just a tools_used check — see fetchSpxToolCallingBieInteractions's doc
+ *  comment (db.ts) for the full reasoning on why the intent_bucket check is
+ *  required: the deterministic router's spx_structure answer reads the exact
+ *  same engine state via runLargoTool("get_spx_structure", {}) internally, but
+ *  logBie() always records that path's tools_used as the ["blackout_intelligence"]
+ *  sentinel rather than the real tool name, so a pure tools_used check would
+ *  silently exclude every router-matched SPX-engine turn. */
+function isSpxToolCallingRow(row: SpxToolCallInputRow): boolean {
+  return row.tools_used.some((t) => (SPX_ENGINE_TOOL_NAMES as readonly string[]).includes(t)) ||
+    row.intent_bucket === "spx_structure";
+}
+
+/** Pure assembly — feed it bie_interactions-shaped rows (any cohort mix), get
+ *  the SPX-tool-calling slice's sample count, router-vs-Claude split, grounding
+ *  pass rate, and latency. Never touches spx_signals.ts or any live play-engine
+ *  gate — read-only reporting over already-logged turns. */
+export function computeSpxToolCallCalibration(
+  rows: SpxToolCallInputRow[],
+  window: { since: string; through: string }
+): SpxToolCallCalibrationReport {
+  const cohort = rows.filter(isSpxToolCallingRow);
+  const n = cohort.length;
+
+  const claudeFallbackN = cohort.filter((r) => r.answer_source === "claude").length;
+  const routerMatchedN = cohort.filter((r) => r.answer_source === "bie-router").length;
+  const routerMatchRatePct = n > 0 ? Math.round((routerMatchedN / n) * 1000) / 10 : null;
+
+  // Only rows that actually carried numeric claims count toward the grounding
+  // ratio — a turn with zero claims (claims_total = 0) has nothing to verify,
+  // and folding it in would dilute the ratio with a trivial non-signal.
+  const graded = cohort.filter((r) => (r.claims_total ?? 0) > 0);
+  const totalClaims = graded.reduce((s, r) => s + (r.claims_total ?? 0), 0);
+  const verifiedClaims = graded.reduce((s, r) => s + (r.claims_verified ?? 0), 0);
+  const groundingPassRatePct = totalClaims > 0 ? Math.round((verifiedClaims / totalClaims) * 1000) / 10 : null;
+
+  const latencies = cohort.map((r) => r.latency_ms).filter((l): l is number => l != null);
+  const avgLatencyMs = latencies.length
+    ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+    : null;
+
+  const recs: string[] = [];
+  if (n >= MIN_EVIDENCE && groundingPassRatePct != null && groundingPassRatePct < 70) {
+    recs.push(
+      `SPX-tool-calling Largo turns show only ${groundingPassRatePct}% claim grounding over ${n} turns — since grounding checks numbers, not answer quality, this is worth a manual read of a few transcripts to see whether the desk tools' outputs are being misread or just under-verified.`
+    );
+  }
+  if (n >= MIN_EVIDENCE && routerMatchRatePct != null && routerMatchRatePct < 30) {
+    recs.push(
+      `Only ${routerMatchRatePct}% of SPX-tool-calling turns were answered by the deterministic router over ${n} turns — most SPX-engine-state questions still fall through to full Claude tool-calling; consider widening composeSpxStructure's coverage.`
+    );
+  }
+
+  return {
+    window,
+    n,
+    claude_fallback_n: claudeFallbackN,
+    router_matched_n: routerMatchedN,
+    router_match_rate_pct: routerMatchRatePct,
+    grounding_pass_rate_pct: groundingPassRatePct,
+    avg_latency_ms: avgLatencyMs,
+    recommendations: recs,
+  };
+}
+
 export function formatCalibration(r: CalibrationReport): string {
   const bucket = (b: CalibrationBucket) =>
     `- ${b.label}: ${b.n} plays, ${b.wins}W/${b.losses}L${b.win_rate_pct != null ? ` (${b.win_rate_pct}%)` : ""}${b.avg_pnl_pct != null ? `, avg ${b.avg_pnl_pct >= 0 ? "+" : ""}${b.avg_pnl_pct}%` : ""}`;
@@ -299,10 +432,12 @@ export function formatCalibration(r: CalibrationReport): string {
       : `Recommendations: none yet — no bucket has ${MIN_EVIDENCE}+ graded plays. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
 
-  if (!r.spx_slayer) return zeroDteSection;
-  // Clearly separated, clearly labeled second section — two self-improving loops,
-  // reported together but never merged into one set of buckets/recommendations.
-  return [zeroDteSection, ``, `---`, ``, formatSpxCalibration(r.spx_slayer)].join("\n");
+  // Clearly separated, clearly labeled additional sections — self-improving
+  // passes reported together but never merged into one set of buckets/recommendations.
+  const sections = [zeroDteSection];
+  if (r.spx_slayer) sections.push(`---`, ``, formatSpxCalibration(r.spx_slayer));
+  if (r.spx_tool_calls) sections.push(`---`, ``, formatSpxToolCallCalibration(r.spx_tool_calls));
+  return sections.join("\n");
 }
 
 export function formatSpxCalibration(r: SpxCalibrationReport): string {
@@ -320,6 +455,20 @@ export function formatSpxCalibration(r: SpxCalibrationReport): string {
     r.recommendations.length
       ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
       : `Recommendations: none yet — no bucket has ${MIN_EVIDENCE}+ closed plays. The harness waits for evidence; it never tunes on noise.`,
+  ].join("\n");
+}
+
+export function formatSpxToolCallCalibration(r: SpxToolCallCalibrationReport): string {
+  return [
+    `SPX-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched SPX Slayer's own engine state)`,
+    ``,
+    `Grounding pass rate: ${r.grounding_pass_rate_pct != null ? `${r.grounding_pass_rate_pct}%` : "no graded claims yet"}`,
+    `Avg latency: ${r.avg_latency_ms != null ? `${r.avg_latency_ms}ms` : "—"}`,
+    `Answered by: ${r.claude_fallback_n} Claude tool-calling turn(s), ${r.router_matched_n} deterministic router match(es)${r.router_match_rate_pct != null ? ` (${r.router_match_rate_pct}% router-matched)` : ""}`,
+    ``,
+    r.recommendations.length
+      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
+      : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} SPX-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
 }
 
@@ -355,6 +504,34 @@ async function computeSpxSlayerCalibration(
   }
 }
 
+/** Task #112's SPX-tool-calling pass — same rolling window as the other two
+ *  passes above, fed by fetchSpxToolCallingBieInteractions (which does the
+ *  cohort filtering at the SQL layer — see its doc comment in db.ts). Failure
+ *  is isolated to this helper (never throws), same fail-open contract as
+ *  computeSpxSlayerCalibration above, so a problem here can never take down the
+ *  rest of the report. */
+async function computeSpxToolCallCalibrationFromDb(
+  since: string,
+  through: string
+): Promise<SpxToolCallCalibrationReport | null> {
+  try {
+    const rows = await fetchSpxToolCallingBieInteractions(since, SPX_ENGINE_TOOL_NAMES);
+    return computeSpxToolCallCalibration(
+      rows.map((r) => ({
+        tools_used: r.tools_used,
+        intent_bucket: r.intent_bucket,
+        answer_source: r.answer_source,
+        claims_total: r.claims_total,
+        claims_verified: r.claims_verified,
+        latency_ms: r.latency_ms,
+      })),
+      { since, through }
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Build the rolling-window calibration report, persist it into the knowledge
  *  store, and return it. Runs on the daily cron tick; safe ad hoc. */
 export async function runBieCalibration(days = 14): Promise<CalibrationReport | null> {
@@ -383,6 +560,10 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
     // data — it does NOT feed into spx-play-telemetry.ts's live adaptive gates
     // (that loop keeps reading fetchPlayOutcomeStats() on its own, unchanged).
     report.spx_slayer = await computeSpxSlayerCalibration(since, through);
+    // Task #112: attach the SPX-tool-calling answer-quality cohort too — a THIRD,
+    // independent read-only pass over bie_interactions (Largo's own turns), never
+    // touching spx_signals.ts or any live play-engine gate/score/action.
+    report.spx_tool_calls = await computeSpxToolCallCalibrationFromDb(since, through);
     await storeKnowledge("self_eval", `bie:calibration:${through}`, formatCalibration(report)).catch(() => 0);
     return report;
   } catch {

@@ -891,6 +891,8 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       });
     case "get_signal_log":
       return marketPlatform.spx.getSpxSignalLog(Number(input.limit ?? 20));
+    case "get_spx_engine_snapshots":
+      return marketPlatform.spx.getSpxEngineSnapshots(Number(input.limit ?? 20));
     case "get_lotto_state":
       return marketPlatform.spx.getSpxLottoState();
 

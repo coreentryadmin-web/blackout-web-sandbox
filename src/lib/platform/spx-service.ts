@@ -6,6 +6,7 @@ import {
   fetchSpxAdminRollups,
 } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { fetchRecentSpxSnapshots } from "@/lib/providers/spx-signal-log";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
@@ -108,6 +109,20 @@ export async function getSpxSetupStats() {
 
 export async function getSpxSignalLog(limit = 20) {
   return fetchRecentSpxSignalLogs(limit);
+}
+
+/**
+ * Task #108 — retrospective engine-state snapshot log, the sibling of getSpxSignalLog
+ * above that answers "why was the last signal rejected / what was the engine doing at
+ * time Y" instead of "what did it actually fire." Routed through
+ * fetchRecentSpxSnapshots (src/lib/providers/spx-signal-log.ts) rather than calling
+ * db.ts's fetchRecentSpxEngineSnapshots directly (unlike getSpxSignalLog above, which
+ * does bypass its own provider-layer sibling fetchRecentSpxSignals) — kept the query
+ * threaded through the provider module that owns the throttle/write side of this
+ * feature so both halves live in one place.
+ */
+export async function getSpxEngineSnapshots(limit = 20) {
+  return fetchRecentSpxSnapshots(limit);
 }
 
 export async function getSpxLottoState() {

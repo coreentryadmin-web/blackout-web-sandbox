@@ -1,4 +1,13 @@
-import { dbConfigured, dbQuery, insertShadowFactorObservation, getMeta, insertSpxSignalLog, setMeta } from "@/lib/db";
+import {
+  dbConfigured,
+  dbQuery,
+  insertShadowFactorObservation,
+  getMeta,
+  insertSpxSignalLog,
+  insertSpxEngineSnapshot,
+  fetchRecentSpxEngineSnapshots,
+  setMeta,
+} from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import type { SpxPlayDirection, SpxSignalFactor } from "@/lib/spx-signals";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
@@ -98,6 +107,123 @@ export async function maybeLogSpxPlay(
     factors: play.factors,
   });
   await setMeta(CURSOR_KEY, key);
+}
+
+const ENGINE_SNAPSHOT_CURSOR_KEY = "spx_engine_snapshot_cursor";
+
+/**
+ * Structural input for maybeLogSpxEngineSnapshot below — deliberately a narrow
+ * shape (same idiom as maybeLogSpxPlay's own `desk`/`play` params above and
+ * every logSpx*ShadowFactors' `confluence` param) rather than importing the
+ * full SpxPlayPayload type from spx-play-payload.ts: this file only ever
+ * reads these 7 fields off whatever evaluateSpxPlay (src/lib/spx-play-
+ * engine.ts) produced, so there's no reason to couple this module to that
+ * type's full shape (or invite an import cycle back toward the engine).
+ */
+export type SpxEngineSnapshotInput = {
+  phase: string;
+  action: string;
+  direction: string | null;
+  score: number;
+  thesis: string;
+  headline: string;
+  gates: { passed: boolean; blocks: string[] };
+  as_of: string | null;
+};
+
+export type SpxEngineSnapshotRow = {
+  id: number;
+  observed_at: string;
+  session_date: string;
+  phase: string;
+  action: string;
+  direction: string | null;
+  score: number;
+  gates_passed: boolean;
+  gates_blocks: unknown;
+  thesis: string;
+  as_of: string | null;
+};
+
+/**
+ * State-transition key for the throttle in maybeLogSpxEngineSnapshot below.
+ * Deliberately excludes score/thesis/headline — same reasoning as signalKey()
+ * above (score/confidence/headline jitter tick-to-tick on an otherwise-
+ * unchanged rejection/scan state and would defeat the throttle if included).
+ * Keys only on the fields that represent an ACTUAL engine-state change: which
+ * phase/action the engine is in, which direction (if any) it's leaning, and
+ * exactly which gates are blocking entry right now. A direction flip with no
+ * other change (e.g. bullish watch -> bearish watch) is included on purpose:
+ * it's exactly the kind of transition "why was the engine scanning/watching
+ * at time Y" needs to see, even though phase/action/blocks look identical.
+ */
+function engineSnapshotStateKey(
+  snap: Pick<SpxEngineSnapshotInput, "phase" | "action" | "direction" | "gates">
+): string {
+  return JSON.stringify({
+    phase: snap.phase,
+    action: snap.action,
+    direction: snap.direction,
+    blocks: snap.gates.blocks,
+  });
+}
+
+/**
+ * Retrospective, throttled snapshot of EVERY evaluateSpxPlay tick — not just
+ * committed BUY/SELL/TRIM signals (maybeLogSpxPlay above, which never even
+ * looks at a rejected/scanning tick since it early-returns on any action
+ * outside that allowlist). evaluateSpxPlay runs on every mutate:true poll
+ * (effectively every RTH minute — see src/lib/spx-evaluator.ts's
+ * runSpxEvaluator), and until this function existed, a tick that did NOT
+ * commit a signal (SCANNING, WATCHING/near-miss, a gate-blocked entry, a
+ * Claude veto) left zero trace anywhere once the next tick overwrote it in
+ * memory — "why was the last signal rejected" or "what was the engine doing
+ * at 10:15" was unanswerable after the fact. Writes into the SEPARATE
+ * spx_engine_snapshots table (src/lib/db.ts) rather than widening
+ * spx_signal_log's schema: a rejection/scan has no committed
+ * direction/entry/premium the way a real signal does.
+ *
+ * THROTTLED via the SAME platform_meta-cursor idiom maybeLogSpxPlay uses
+ * above (getMeta/setMeta around a state key), just keyed on
+ * engineSnapshotStateKey's phase/action/direction/gates.blocks tuple instead
+ * of maybeLogSpxPlay's action/direction signal key — writing unconditionally
+ * here would flood Postgres with a near-duplicate row every single poll tick
+ * while the engine idles in an unchanged SCANNING/WATCHING state, unlike
+ * maybeLogSpxPlay (which only ever sees a handful of BUY/SELL/TRIM actions
+ * per session to begin with).
+ *
+ * Called from evaluateSpxPlay's exported wrapper in src/lib/spx-play-
+ * engine.ts via firePlayTelemetry, exactly like every other best-effort write
+ * in that file — no internal try/catch, a failure here must never affect the
+ * real signal shown to members.
+ */
+export async function maybeLogSpxEngineSnapshot(snap: SpxEngineSnapshotInput): Promise<void> {
+  if (!dbConfigured()) return;
+
+  const key = engineSnapshotStateKey(snap);
+  const prev = await getMeta(ENGINE_SNAPSHOT_CURSOR_KEY);
+  if (prev === key) return;
+
+  await insertSpxEngineSnapshot({
+    session_date: todayEtYmd(),
+    phase: snap.phase,
+    action: snap.action,
+    direction: snap.direction,
+    score: snap.score,
+    gates_passed: snap.gates.passed,
+    gates_blocks: snap.gates.blocks,
+    // Prefer thesis (the richer, gate/Claude-aware explanation text) and fall back to
+    // headline only when thesis is empty — mirrors how member-facing UIs already treat
+    // these two SpxPlayPayload fields (thesis is the "why", headline the short label).
+    thesis: snap.thesis || snap.headline,
+    as_of: snap.as_of,
+  });
+  await setMeta(ENGINE_SNAPSHOT_CURSOR_KEY, key);
+}
+
+export async function fetchRecentSpxSnapshots(limit = 50): Promise<SpxEngineSnapshotRow[]> {
+  if (!dbConfigured()) return [];
+  return fetchRecentSpxEngineSnapshots(limit);
 }
 
 // Watched-ticker window for the flow-anomaly shadow factor — same 30-minute

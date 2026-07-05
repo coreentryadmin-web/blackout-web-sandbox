@@ -59,6 +59,7 @@ import {
   logSpxEcosystemShadowFactors,
   logMegaCapCatalystShadowFactors,
   logSpxPrecedentsShadowFactor,
+  maybeLogSpxEngineSnapshot,
 } from "@/lib/providers/spx-signal-log";
 import { evaluateMtfHybrid, keyLevelForDirection, mtfHardPass } from "@/lib/spx-play-mtf";
 import type { MtfHybrid } from "@/lib/spx-play-mtf";
@@ -1056,7 +1057,48 @@ async function evaluateFlatPlay(
   };
 }
 
+/**
+ * Public entry point — thin wrapper around evaluateSpxPlayCore below whose ONLY job is
+ * the task #108 retrospective snapshot log: firing maybeLogSpxEngineSnapshot with
+ * whatever payload the core evaluator produced, on every mutate:true call (i.e. every
+ * real poll tick from spx-evaluator.ts's runSpxEvaluator — see that file's
+ * runSpxEvaluator), regardless of which branch inside evaluateSpxPlayCore produced it
+ * (closed-session SCANNING, gate-blocked/Claude-vetoed SCANNING, WATCHING near-miss,
+ * or a committed OPEN/SELL). Read-only snapshot callers (getSpxPlaySnapshot,
+ * spx-evaluator.ts's readSpxPlaySnapshot) always pass mutate:false, so they never
+ * write here — same "no member-facing read triggers a persistence side effect"
+ * contract every other write in this file already holds itself to.
+ *
+ * Wrapping the whole function (rather than adding a maybeLogSpxEngineSnapshot call
+ * inside each of evaluateSpxPlayCore's several return points) is deliberate: it's a
+ * pure, additive, zero-risk way to observe EVERY exit path through one single choke
+ * point without touching a single line of the actual gate/score/branching logic
+ * below — this is a read-only telemetry write, not a behavior change.
+ */
 export async function evaluateSpxPlay(
+  desk: SpxDeskPayload,
+  prefetchedTechnicals?: PlayTechnicals | null,
+  options?: { mutate?: boolean }
+): Promise<SpxPlayPayload> {
+  const payload = await evaluateSpxPlayCore(desk, prefetchedTechnicals, options);
+  if (options?.mutate === true) {
+    firePlayTelemetry("maybeLogSpxEngineSnapshot", () =>
+      maybeLogSpxEngineSnapshot({
+        phase: payload.phase,
+        action: payload.action,
+        direction: payload.direction,
+        score: payload.score,
+        thesis: payload.thesis,
+        headline: payload.headline,
+        gates: { passed: payload.gates.passed, blocks: payload.gates.blocks },
+        as_of: payload.as_of,
+      })
+    );
+  }
+  return payload;
+}
+
+async function evaluateSpxPlayCore(
   desk: SpxDeskPayload,
   prefetchedTechnicals?: PlayTechnicals | null,
   options?: { mutate?: boolean }

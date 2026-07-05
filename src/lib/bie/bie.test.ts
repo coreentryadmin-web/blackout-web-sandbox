@@ -188,10 +188,13 @@ test("self-eval: coverage, verification and win-rate math", () => {
 import {
   computeCalibration,
   computeSpxCalibration,
+  computeSpxToolCallCalibration,
   formatCalibration,
   formatSpxCalibration,
+  formatSpxToolCallCalibration,
   type CalibrationInputRow,
   type SpxCalibrationInputRow,
+  type SpxToolCallInputRow,
 } from "./calibration";
 
 const calRow = (over: Partial<CalibrationInputRow>): CalibrationInputRow => ({
@@ -290,6 +293,136 @@ test("calibration: without an attached SPX pass the report stays 0DTE-only — n
   const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
   assert.equal(zeroDte.spx_slayer, null);
   assert.doesNotMatch(formatCalibration(zeroDte), /SPX Slayer/);
+});
+
+// ── Task #112: SPX-tool-calling cohort within bie_interactions ──────────────────
+// Largo's own answer-quality cohort — turns where SPX Slayer's live-engine state
+// was involved, either via a real tool dispatch (Claude path) or the router's
+// spx_structure composer (which reads the same engine state internally but never
+// records a real tool name — see isSpxToolCallingRow's doc comment).
+
+const spxToolRow = (over: Partial<SpxToolCallInputRow>): SpxToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_spx_play"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("spx tool-call calibration: cohort includes tools_used intersecting SPX_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: SpxToolCallInputRow[] = [
+    spxToolRow({ tools_used: ["live_feed_capture", "get_spx_play"] }), // in cohort
+    spxToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only — NOT in cohort
+    spxToolRow({ tools_used: ["live_feed_capture", "get_signal_log"] }), // in cohort
+  ];
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("spx tool-call calibration: a router-matched spx_structure row joins the cohort despite tools_used being the router's sentinel", () => {
+  const rows: SpxToolCallInputRow[] = [
+    spxToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "spx_structure",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+    // A router match for a DIFFERENT product (0DTE board) never joins this cohort.
+    spxToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "zerodte_plays", answer_source: "bie-router" }),
+  ];
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("spx tool-call calibration: aggregate grounding pass rate, router-match rate, and avg latency over a mixed cohort", () => {
+  const rows: SpxToolCallInputRow[] = [
+    spxToolRow({ tools_used: ["get_spx_play"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    spxToolRow({ tools_used: ["get_open_plays"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    spxToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "spx_structure",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+  ];
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 2);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.router_match_rate_pct, 33.3);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 40) / 3 = 3346.67 → rounds to 3347.
+  assert.equal(r.avg_latency_ms, 3347);
+});
+
+test("spx tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: SpxToolCallInputRow[] = [
+    spxToolRow({ tools_used: ["get_spx_play"], claims_total: 0, claims_verified: 0 }),
+    spxToolRow({ tools_used: ["get_spx_play"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("spx tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    spxToolRow({ tools_used: ["get_spx_play"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatSpxToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("spx tool-call calibration: cites low grounding and low router-match-rate once evidence clears n≥10", () => {
+  const rows: SpxToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    spxToolRow({ tools_used: ["get_spx_play"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeSpxToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  assert.ok(r.recommendations.some((x) => /Only 0% of SPX-tool-calling turns were answered by the deterministic router/.test(x)));
+});
+
+test("spx tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeSpxToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatSpxToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all three sections — 0DTE, SPX Slayer outcomes, and SPX-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const toolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const text = formatCalibration({ ...zeroDte, spx_slayer: spx, spx_tool_calls: toolCalls });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached spx_tool_calls pass, the report doesn't grow a third section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.spx_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /SPX-tool-calling/);
 });
 
 // ── Phase 4: telemetry discovery (pure formatting + thresholds) ──────────────────
