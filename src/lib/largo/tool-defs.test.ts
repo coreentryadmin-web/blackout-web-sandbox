@@ -6,6 +6,7 @@ import {
   HELIX_ENGINE_TOOL_NAMES,
   LARGO_TOOL_DEFS,
   NIGHTHAWK_ENGINE_TOOL_NAMES,
+  NIGHTS_WATCH_ENGINE_TOOL_NAMES,
   SPX_ENGINE_TOOL_NAMES,
   THERMAL_ENGINE_TOOL_NAMES,
   TOOL_GROUPS,
@@ -246,6 +247,47 @@ test("ZERODTE_ENGINE_TOOL_NAMES: is exactly the 0DTE Command pair — get_zerodt
 
 test("ZERODTE_ENGINE_TOOL_NAMES: no duplicates", () => {
   assert.equal(new Set(ZERODTE_ENGINE_TOOL_NAMES).size, ZERODTE_ENGINE_TOOL_NAMES.length);
+});
+
+// ── Task #163: NIGHTS_WATCH_ENGINE_TOOL_NAMES (calibration.ts's Night's-Watch-
+// tool-calling cohort) — same-shaped analogue of SPX_ENGINE_TOOL_NAMES above,
+// for Night's Watch (the signed-in user's own per-position Hold/Trim/Sell
+// verdict engine). ──
+
+test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: every name is a real, callable Largo tool", () => {
+  const known = new Set(LARGO_TOOL_DEFS.map((t) => t.name));
+  for (const name of NIGHTS_WATCH_ENGINE_TOOL_NAMES) {
+    assert.ok(known.has(name), `${name} is in NIGHTS_WATCH_ENGINE_TOOL_NAMES but not in LARGO_TOOL_DEFS`);
+  }
+});
+
+test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: every name is a subset of TOOL_GROUPS.my_book", () => {
+  for (const name of NIGHTS_WATCH_ENGINE_TOOL_NAMES) {
+    assert.ok(
+      (TOOL_GROUPS.my_book as readonly string[]).includes(name),
+      `${name} is in NIGHTS_WATCH_ENGINE_TOOL_NAMES but not in TOOL_GROUPS.my_book — the cohort must stay a NARROWING of the my_book bundle, never wander outside it`
+    );
+  }
+});
+
+test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: is exactly the Night's Watch singleton — get_my_positions", () => {
+  // TOOL_GROUPS.my_book contains exactly one tool today, so this cohort's list is
+  // simply that one tool (no generic tools bundled in alongside it to exclude,
+  // unlike SPX_ENGINE_TOOL_NAMES's narrowing of the larger spx_desk bundle).
+  assert.deepEqual(new Set(NIGHTS_WATCH_ENGINE_TOOL_NAMES), new Set(["get_my_positions"]));
+});
+
+test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: excludes buildPositionDetail's route — it is not a registered Largo tool", () => {
+  // buildPositionDetail() (src/lib/nights-watch/position-detail.ts) powers the
+  // account panel's click→detail modal via a plain Next.js API route
+  // (src/app/api/account/positions/[id]/detail/route.ts), not a Largo tool — so
+  // there is no "get_position_detail"-shaped companion tool name to include here.
+  const known = new Set(LARGO_TOOL_DEFS.map((t) => t.name));
+  assert.ok(!known.has("get_position_detail"), "get_position_detail is not (and should not be) a registered Largo tool");
+});
+
+test("NIGHTS_WATCH_ENGINE_TOOL_NAMES: no duplicates", () => {
+  assert.equal(new Set(NIGHTS_WATCH_ENGINE_TOOL_NAMES).size, NIGHTS_WATCH_ENGINE_TOOL_NAMES.length);
 });
 
 // ── Task #127: get_zerodte_plays vs get_spx_play mis-routing risk ──

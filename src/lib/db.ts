@@ -4759,6 +4759,65 @@ export async function fetchZeroDteToolCallingBieInteractions(
   }));
 }
 
+/** Task #163 — the Night's Watch analogue of fetchSpxToolCallingBieInteractions
+ *  above: raw bie_interactions rows for "how good are Largo's answers
+ *  specifically when Night's Watch's own tools were involved" (src/lib/bie/
+ *  calibration.ts's computeNightsWatchToolCallCalibration).
+ *
+ *  Deliberately ASYMMETRIC vs. the SPX/0DTE-Command versions above (and
+ *  matching the Night Hawk version's asymmetry instead): membership here is
+ *  tools_used-ONLY — there is no `OR intent_bucket = '...'` clause. That's not
+ *  an oversight: classifyBieIntent (bie/router.ts) recognizes exactly 4
+ *  deterministic intents (zerodte_plays, ticker_play_state, spx_structure,
+ *  market_context) and NONE of them route a Night's-Watch/"my positions"
+ *  question — there is no router path that ever answers one deterministically.
+ *  MY_POSITIONS_RE (largo/intent-keywords.ts) looks similar in spirit to the
+ *  SPX_STRUCTURE_RE the router uses, but it does a completely different job:
+ *  it only decides which TOOL BUNDLE Largo has on hand for a question
+ *  (getToolsForIntent, tool-defs.ts) — it never feeds classifyBieIntent's
+ *  answer path, so it can never produce a bie_interactions row whose
+ *  intent_bucket is anything Night's-Watch-flavored. Adding a fake OR-clause
+ *  here would just always evaluate false — dead SQL dressed up as a UNION,
+ *  exactly the kind of thing a future reader might "fix" by fabricating a
+ *  match. If a future task ever adds a real deterministic Night's Watch router
+ *  intent, THIS is the query (and computeNightsWatchToolCallCalibration's
+ *  cohort test below) that should grow the matching OR-clause. */
+export async function fetchNightsWatchToolCallingBieInteractions(
+  sinceDate: string,
+  nightsWatchEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, nightsWatchEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 export async function updateZeroDtePlanOutcome(
   sessionDate: string,
   ticker: string,
