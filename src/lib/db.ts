@@ -1040,6 +1040,40 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_spx_engine_snapshots_observed_at
       ON spx_engine_snapshots (observed_at DESC);
+
+    -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
+    -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
+    -- (src/lib/nighthawk/scorer.ts) computes a FULL breakdown for every ticker the nightly hunt
+    -- considers — flow/tech/pos/news/smart-money/fundamental/short-interest/catalyst sub-scores,
+    -- fundamental_block, trading_halt — and edition-builder.ts stages it via saveDossierStaging()
+    -- into nighthawk_dossiers_staging DURING the hunt run. But nighthawk_dossiers_staging is a
+    -- SCRATCH table: clearNighthawkStaging() deletes it the moment the edition publishes (or the
+    -- run collapses to a recap-only fallback), so the existing get_nighthawk_dossier Largo tool
+    -- could only answer "why was ticker X scored/excluded tonight" WHILE the run was still in
+    -- flight — by the next morning, when a member actually asks, the staging rows were already
+    -- gone. This table is a durable copy, archived immediately before every clearNighthawkStaging()
+    -- call (see archiveAndClearNighthawkStaging in edition-builder.ts) so the same question stays
+    -- answerable indefinitely. UNIQUE(edition_for, ticker) + upsert (not append-only) because a
+    -- checkpoint-resumed build can archive the same edition's partial staging more than once as
+    -- more tickers get scored across resumes — later archives should supersede earlier ones for
+    -- the same ticker, not duplicate them. No throttling needed (unlike spx_engine_snapshots,
+    -- which guards against a tight per-minute poll loop): the nightly hunt runs once per night,
+    -- and this is a single bulk archive of already-computed rows, not a per-tick write.
+    CREATE TABLE IF NOT EXISTS nighthawk_scoring_history (
+      id           BIGSERIAL PRIMARY KEY,
+      edition_for  DATE NOT NULL,
+      ticker       TEXT NOT NULL,
+      dossier_json JSONB NOT NULL,
+      scored_json  JSONB,
+      -- created_at of the staging row this was archived from (when scoreCandidate actually ran),
+      -- kept separate from archived_at (when the archive write happened) for the same
+      -- staleness-vs-write-latency reason spx_engine_snapshots separates as_of from observed_at.
+      staged_at    TIMESTAMPTZ NOT NULL,
+      archived_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (edition_for, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_nighthawk_scoring_history_edition
+      ON nighthawk_scoring_history(edition_for);
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
@@ -4585,6 +4619,83 @@ export function logNighthawkJob(
 export async function clearNighthawkStaging(editionFor: string): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(`DELETE FROM nighthawk_dossiers_staging WHERE edition_for = $1::date`, [editionFor]);
+}
+
+/**
+ * Archive (task #129) whatever is CURRENTLY in nighthawk_dossiers_staging for this edition into
+ * the durable nighthawk_scoring_history table. Callers MUST invoke this before clearNighthawkStaging
+ * — it reads the same staging rows clearNighthawkStaging is about to delete, so calling it after
+ * (or not at all) would archive nothing. A single INSERT...SELECT (not a fetch-then-loop-insert from
+ * the app layer) so the copy is one round trip and can never race a concurrent staging write.
+ * ON CONFLICT DO UPDATE (not append-only): a checkpoint-resumed build can call this more than once
+ * for the same edition_for as more tickers get staged across resumes — the later, fuller archive for
+ * a given ticker should win, not stack duplicate rows. Returns the archived row count for logging;
+ * never throws on an empty staging table (0 rows archived is a valid, common outcome — e.g. the
+ * stage_candidates-zero recap-only fallback, which clears staging before any dossier was ever staged).
+ */
+export async function archiveNighthawkStaging(editionFor: string): Promise<number> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    INSERT INTO nighthawk_scoring_history (edition_for, ticker, dossier_json, scored_json, staged_at)
+    SELECT edition_for, ticker, dossier_json, scored_json, created_at
+    FROM nighthawk_dossiers_staging
+    WHERE edition_for = $1::date
+    ON CONFLICT (edition_for, ticker) DO UPDATE SET
+      dossier_json = EXCLUDED.dossier_json,
+      scored_json = EXCLUDED.scored_json,
+      staged_at = EXCLUDED.staged_at,
+      archived_at = NOW()
+    `,
+    [editionFor]
+  );
+  return res.rowCount ?? 0;
+}
+
+/**
+ * Read path for the durable archive above. Same shape as fetchStagedDossiers so callers (the
+ * get_nighthawk_dossier Largo tool) can fall back to this transparently once staging is cleared for
+ * that edition. Pass `ticker` to scope to one candidate (mirrors fetchStagedDossiers' find-by-ticker
+ * usage); omit it to list everything archived for the edition.
+ */
+export async function fetchNighthawkScoringHistory(
+  editionFor: string,
+  ticker?: string
+): Promise<
+  Array<{
+    ticker: string;
+    dossier: Record<string, unknown>;
+    scored: Record<string, unknown> | null;
+    staged_at: string;
+    archived_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = ticker
+    ? await (await getPool()).query(
+        `
+        SELECT ticker, dossier_json, scored_json, staged_at, archived_at
+        FROM nighthawk_scoring_history
+        WHERE edition_for = $1::date AND ticker = $2
+        `,
+        [editionFor, ticker.toUpperCase()]
+      )
+    : await (await getPool()).query(
+        `
+        SELECT ticker, dossier_json, scored_json, staged_at, archived_at
+        FROM nighthawk_scoring_history
+        WHERE edition_for = $1::date
+        ORDER BY ticker ASC
+        `,
+        [editionFor]
+      );
+  return res.rows.map((r) => ({
+    ticker: String(r.ticker).toUpperCase(),
+    dossier: (r.dossier_json as Record<string, unknown>) ?? {},
+    scored: (r.scored_json as Record<string, unknown>) ?? null,
+    staged_at: String(r.staged_at),
+    archived_at: String(r.archived_at),
+  }));
 }
 
 /** Fail jobs stuck in `running` (or intermediate stage) long enough to block resume/idempotency. */

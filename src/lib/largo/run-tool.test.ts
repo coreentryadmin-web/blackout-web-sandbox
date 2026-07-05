@@ -33,15 +33,60 @@ mock.module("server-only", { namedExports: {} });
 // module — verified empirically: a static import of a name missing from the
 // mock throws "does not provide an export named ..."). run-tool.ts statically
 // imports several OTHER names from "@/lib/db" (fetchPendingNighthawkOutcomes,
-// fetchRecentFlows, fetchStagedDossiers, fetchStagedDossierTickers) and
-// spx-play-outcomes.ts imports fetchClosedPlayOutcomes — so the real module is
-// imported first (inside `before`, since top-level await isn't supported by
-// this project's CJS test transform) and spread, overriding only the two
-// fetchers this test drives.
+// fetchRecentFlows, fetchStagedDossiers, fetchStagedDossierTickers,
+// fetchNighthawkScoringHistory) and spx-play-outcomes.ts imports
+// fetchClosedPlayOutcomes — so the real module is imported first (inside
+// `before`, since top-level await isn't supported by this project's CJS test
+// transform) and spread, overriding only the fetchers the describe blocks
+// below actually drive.
 let mockSpxRows: PlayOutcomeRow[] = [];
 let mockNighthawkRows: NighthawkPlayOutcomeRow[] = [];
 let mockNighthawkPendingCount = 0;
 let capturedNighthawkWindow: number | null = null;
+
+// Task #129 fixtures — get_nighthawk_dossier's live-staging + durable-archive fallback.
+// Declared here (module scope, hoisted `before` below) rather than inside their own
+// describe's `before` because run-tool.ts is a SINGLE module cached by Node's ESM loader
+// on first dynamic import — a second `mock.module("../db", …)` call after that first
+// import would never actually reach the already-resolved module graph, so every db
+// override this file needs must live in the ONE shared `before` hook.
+let mockStagedDossiers: Array<{
+  ticker: string;
+  dossier: Record<string, unknown>;
+  scored: Record<string, unknown> | null;
+}> = [];
+let mockStagedTickers: string[] = [];
+let mockScoringHistory: Array<{
+  ticker: string;
+  dossier: Record<string, unknown>;
+  scored: Record<string, unknown> | null;
+  staged_at: string;
+  archived_at: string;
+}> = [];
+
+let runLargoTool: typeof import("./run-tool").runLargoTool;
+
+before(async () => {
+  const realDb = await import("../db");
+  mock.module("../db", {
+    namedExports: {
+      ...realDb,
+      fetchClosedPlayOutcomes: async (_limit: number) => mockSpxRows,
+      fetchNighthawkOutcomeAnalytics: async (windowDays: number) => {
+        capturedNighthawkWindow = windowDays;
+        return { rows: mockNighthawkRows, pending_count: mockNighthawkPendingCount };
+      },
+      fetchStagedDossiers: async (_editionFor: string) => mockStagedDossiers,
+      fetchStagedDossierTickers: async (_editionFor: string) => mockStagedTickers,
+      // Real fetchNighthawkScoringHistory signature: (editionFor, ticker?). Mirrors the
+      // real SQL's ticker-scoped filter so a ticker-scoped call never leaks another
+      // candidate's archived row.
+      fetchNighthawkScoringHistory: async (_editionFor: string, ticker?: string) =>
+        ticker ? mockScoringHistory.filter((h) => h.ticker === ticker) : mockScoringHistory,
+    },
+  });
+  ({ runLargoTool } = await import("./run-tool"));
+});
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
@@ -98,23 +143,6 @@ function nighthawkRow(overrides: Partial<NighthawkPlayOutcomeRow>): NighthawkPla
 }
 
 describe("runLargoTool: get_spx_vs_nighthawk_comparison", () => {
-  let runLargoTool: typeof import("./run-tool").runLargoTool;
-
-  before(async () => {
-    const realDb = await import("../db");
-    mock.module("../db", {
-      namedExports: {
-        ...realDb,
-        fetchClosedPlayOutcomes: async (_limit: number) => mockSpxRows,
-        fetchNighthawkOutcomeAnalytics: async (windowDays: number) => {
-          capturedNighthawkWindow = windowDays;
-          return { rows: mockNighthawkRows, pending_count: mockNighthawkPendingCount };
-        },
-      },
-    });
-    ({ runLargoTool } = await import("./run-tool"));
-  });
-
   test("computes each product's win rate over the SAME rolling window plus a correct pre-computed delta", async () => {
     // SPX Slayer: 4 closed rows, but only 3 fall inside a 7-day window — the
     // 10-day-old row must be excluded by fetchPlayOutcomeStatsForWindow's own
@@ -199,5 +227,117 @@ describe("runLargoTool: get_spx_vs_nighthawk_comparison", () => {
     })) as Record<string, unknown>;
     assert.equal(nonNumeric.days, 7);
     assert.equal(capturedNighthawkWindow, 7);
+  });
+});
+
+describe("runLargoTool: get_nighthawk_dossier (task #129 durable scoring-history fallback)", () => {
+  test("ticker lookup: returns the live-staged dossier when staging still has it, archived:false", async () => {
+    mockStagedDossiers = [
+      { ticker: "AAPL", dossier: { ticker: "AAPL", sector: "Tech" }, scored: { ticker: "AAPL", score: 82 } },
+    ];
+    mockScoringHistory = []; // archive not needed — should never even be consulted
+
+    const result = (await runLargoTool("get_nighthawk_dossier", {
+      date: "2026-07-05",
+      ticker: "AAPL",
+    })) as Record<string, unknown>;
+
+    assert.equal(result.edition_for, "2026-07-05");
+    assert.equal(result.ticker, "AAPL");
+    assert.equal(result.archived, false);
+    assert.deepEqual(result.dossier, {
+      ticker: "AAPL",
+      dossier: { ticker: "AAPL", sector: "Tech" },
+      scored: { ticker: "AAPL", score: 82 },
+    });
+  });
+
+  test("ticker lookup: falls back to nighthawk_scoring_history once live staging has been cleared for the edition (archived:true)", async () => {
+    // Simulates the exact gap this task closes: the edition already published, so
+    // clearNighthawkStaging() emptied nighthawk_dossiers_staging for this date — but
+    // archiveAndClearNighthawkStaging archived it first, so the durable table still has it.
+    mockStagedDossiers = [];
+    mockScoringHistory = [
+      {
+        ticker: "TSLA",
+        dossier: { ticker: "TSLA", sector: "Auto" },
+        scored: { ticker: "TSLA", score: 91, fundamental_block: false },
+        staged_at: "2026-07-04T23:10:00.000Z",
+        archived_at: "2026-07-05T00:05:00.000Z",
+      },
+    ];
+
+    const result = (await runLargoTool("get_nighthawk_dossier", {
+      date: "2026-07-04",
+      ticker: "TSLA",
+    })) as Record<string, unknown>;
+
+    assert.equal(result.edition_for, "2026-07-04");
+    assert.equal(result.ticker, "TSLA");
+    assert.equal(result.archived, true, "must flag that this answer came from the durable archive, not live staging");
+    assert.deepEqual(result.dossier, {
+      ticker: "TSLA",
+      dossier: { ticker: "TSLA", sector: "Auto" },
+      scored: { ticker: "TSLA", score: 91, fundamental_block: false },
+    });
+  });
+
+  test("ticker lookup: neither live staging nor the archive has the ticker — null dossier, archived:false", async () => {
+    mockStagedDossiers = [];
+    mockScoringHistory = [];
+
+    const result = (await runLargoTool("get_nighthawk_dossier", {
+      date: "2026-07-04",
+      ticker: "NVDA",
+    })) as Record<string, unknown>;
+
+    assert.equal(result.dossier, null);
+    assert.equal(result.archived, false);
+  });
+
+  test("no-ticker listing: returns live-staged tickers when staging is still populated, archived:false", async () => {
+    mockStagedDossiers = [];
+    mockStagedTickers = ["AAPL", "MSFT"];
+    mockScoringHistory = [];
+
+    const result = (await runLargoTool("get_nighthawk_dossier", { date: "2026-07-05" })) as Record<string, unknown>;
+
+    assert.deepEqual(result.tickers, ["AAPL", "MSFT"]);
+    assert.equal(result.archived, false);
+  });
+
+  test("no-ticker listing: falls back to the archived tickers once live staging is empty for the edition (archived:true)", async () => {
+    mockStagedTickers = [];
+    mockScoringHistory = [
+      {
+        ticker: "AAPL",
+        dossier: {},
+        scored: null,
+        staged_at: "2026-07-04T23:00:00.000Z",
+        archived_at: "2026-07-05T00:05:00.000Z",
+      },
+      {
+        ticker: "TSLA",
+        dossier: {},
+        scored: null,
+        staged_at: "2026-07-04T23:01:00.000Z",
+        archived_at: "2026-07-05T00:05:00.000Z",
+      },
+    ];
+
+    const result = (await runLargoTool("get_nighthawk_dossier", { date: "2026-07-04" })) as Record<string, unknown>;
+
+    assert.deepEqual(result.tickers, ["AAPL", "TSLA"]);
+    assert.equal(result.archived, true);
+  });
+
+  test("no-ticker listing: neither staging nor archive has anything for this edition — empty list, archived:false", async () => {
+    mockStagedTickers = [];
+    mockScoringHistory = [];
+
+    const result = (await runLargoTool("get_nighthawk_dossier", { date: "2026-07-04" })) as Record<string, unknown>;
+
+    assert.deepEqual(result.tickers, []);
+    assert.equal(result.archived, false);
   });
 });

@@ -367,7 +367,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     }
   ),
 
-  t("get_nighthawk_dossier", "Night Hawk per-ticker research dossier behind a pick (the full scored research). Omit ticker to list dossier tickers for the edition.", {
+  t("get_nighthawk_dossier", "Night Hawk per-ticker research dossier behind a pick (the full scored research) — flow/tech/positioning/news/smart-money/fundamental/short-interest/catalyst sub-scores, fundamental_block, trading_halt. Omit ticker to list dossier tickers for the edition. Works both WHILE tonight's hunt is still building AND the morning after it publishes: live staging is cleared once an edition publishes, so this transparently falls back to the durable nighthawk_scoring_history archive once that happens (response includes `archived: true` when the answer came from the archive rather than live staging) — always the right tool for 'why was ticker X scored/excluded', regardless of when it's asked.", {
     date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest." },
     ticker: { type: "string", description: "Ticker to fetch the full dossier for." },
   }),
