@@ -106,3 +106,25 @@ test("bare, genuinely ambiguous '0dte play' question keeps its pre-existing (unr
   assert.equal(intent.needsPlayState, true, "expected needsPlayState for a bare '0dte play' mention (pre-existing behavior)");
   assert.equal(intent.needsZeroDteCommand, false, "expected !needsZeroDteCommand — no scanner-naming wording present");
 });
+
+test("bare 'hunt'/'scanner' wording with NO 0dte context does not falsely fire needsZeroDteCommand", () => {
+  // Caught during merge review: the first cut of ZERODTE_COMMAND_RE's hunt/scan/find
+  // alternation had no required co-occurrence with 0dte/zero-dte, so it bare-matched
+  // "hunt"/"scanner" in totally unrelated questions — e.g. Night Hawk's own nightly
+  // "hunt" for candidates, or a generic market scanner question. That reintroduced
+  // the exact overlap problem this task exists to fix (an irrelevant tool nudged in
+  // for a question about a different product entirely). Every scan/hunt/find variant
+  // now REQUIRES 0dte/zero-dte in the same question.
+  for (const question of [
+    "what is Night Hawk hunting tonight",
+    "did the market scanner pick up anything on NVDA",
+    "how is my hunt going",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsZeroDteCommand,
+      false,
+      `expected !needsZeroDteCommand for unrelated hunt/scan wording: "${question}"`
+    );
+  }
+});

@@ -55,12 +55,16 @@ export const MARKET_REGIME_RE = /\b(market regime|regime|backdrop|environment|pl
  * multi-ticker "0DTE Command"/BlackOut Grid scanner), so a bare "0dte" mention
  * alone hints BOTH engines with no disambiguating signal — this regex exists so
  * a question that names the scanner specifically ("grid scanner," "0dte
- * command," "hunt(er)," "scan(ner)," or "find(s)" paired with 0dte) gets an
- * EXTRA, stronger hint toward get_zerodte_plays instead of relying on the same
- * ambiguous bare token both engines already share (task #127).
+ * command," or "hunt(er)"/"scan(ner)"/"find(s)" paired with 0dte/zero-dte) gets
+ * an EXTRA, stronger hint toward get_zerodte_plays instead of relying on the
+ * same ambiguous bare token both engines already share (task #127). The
+ * hunt/scan/find family REQUIRES 0dte/zero-dte co-occurrence in the same
+ * question — a bare "hunt"/"scanner" (e.g. "what is Night Hawk hunting
+ * tonight," "did the market scanner pick up anything") is common wording for
+ * entirely unrelated products and must not fire this on its own.
  */
 export const ZERODTE_COMMAND_RE =
-  /\b(0dte command|zero.?dte command|command board|grid scanner|grid board|blackout grid|across tickers|multi.?ticker|fresh finds?)\b|\b(scan|scans|scanning|scanner|hunt|hunts|hunting|hunter)\b|\b(find|finds|finding)\b.*\b(0.?dte|zero.?dte)\b|\b(0.?dte|zero.?dte)\b.*\b(find|finds|finding)\b/i;
+  /\b(0dte command|zero.?dte command|command board|grid scanner|grid board|blackout grid|across tickers|multi.?ticker|fresh finds?)\b|\b(scan|scans|scanning|scanner|hunt|hunts|hunting|hunter|find|finds|finding)\b.*\b(0.?dte|zero.?dte)\b|\b(0.?dte|zero.?dte)\b.*\b(scan|scans|scanning|scanner|hunt|hunts|hunting|hunter|find|finds|finding)\b/i;
 
 export const SCREENER_RE = /\b(screener|squeeze|movers|breadth|sector)\b/;
 
