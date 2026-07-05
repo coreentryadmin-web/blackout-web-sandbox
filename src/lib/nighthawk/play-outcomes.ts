@@ -181,7 +181,11 @@ export type NighthawkRejectionDetail =
   | { stage: "ungrounded"; issues: Array<{ check: string; detail: string }> }
   | { stage: "sector_concentration"; sector: string; already_filled: number; max_per_sector: number };
 
-const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"], string> = {
+// Exported (task #145) so nighthawk/analytics.ts can invert this map — the admin funnel/
+// rejection-rate panel groups `alert_audit_log.trigger_reason` rows (a plain TEXT column,
+// already grouped in SQL by fetchNighthawkFunnelStats in db.ts) back into a short stage
+// slug/label without re-deriving or hardcoding a second copy of these 5 reason strings.
+export const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"], string> = {
   geometry: "rejected at synthesis — failed the trade-geometry gate (untradeable risk plan)",
   premium_cap: "rejected at synthesis — entry premium exceeded the platform's affordability cap",
   illiquid_strike:

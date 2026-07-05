@@ -1,5 +1,83 @@
-import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
+import { fetchNighthawkFunnelStats, fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
 import { entryRangeMid } from "@/lib/nighthawk/entry-range";
+import { REJECTION_TRIGGER_REASON, type NighthawkRejectionDetail } from "@/lib/nighthawk/play-outcomes";
+
+// Task #145: funnel/rejection-rate stats. Reverse-indexes REJECTION_TRIGGER_REASON (the single
+// source of truth for the 5 rejection-stage strings, play-outcomes.ts) by its TEXT value so a
+// `trigger_reason` read back from `alert_audit_log` (already grouped in SQL by
+// fetchNighthawkFunnelStats) can be labeled with its short stage slug — no second copy of the
+// reason strings, no decision_trace JSON parsing needed just to show which stage a rejection
+// came from.
+const STAGE_BY_TRIGGER_REASON = new Map<string, NighthawkRejectionDetail["stage"]>(
+  (Object.entries(REJECTION_TRIGGER_REASON) as Array<[NighthawkRejectionDetail["stage"], string]>).map(
+    ([stage, reason]) => [reason, stage]
+  )
+);
+
+/** "sector_concentration" -> "Sector concentration". Falls back to the raw slug for a
+ *  trigger_reason that doesn't match any known stage (defensive only — every row this reads
+ *  was itself written from REJECTION_TRIGGER_REASON's 5 fixed values; see
+ *  fetchNighthawkFunnelStats's doc comment). */
+function stageLabel(stage: string): string {
+  return stage
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export type NighthawkFunnelStage = {
+  /** Short machine-readable slug, e.g. "premium_cap" — one of NighthawkRejectionDetail["stage"],
+   *  or "other" for a trigger_reason this map doesn't recognize (should never happen in practice). */
+  stage: string;
+  /** Human-readable label for the UI, e.g. "Premium cap". */
+  label: string;
+  /** The raw, full trigger_reason sentence — shown as a tooltip/detail string. */
+  trigger_reason: string;
+  n: number;
+};
+
+export type NighthawkFunnelStats = {
+  window_days: number;
+  /** Plays that survived synthesis and were shown to members (nighthawk_play_outcomes rows
+   *  in the window — one per edition/ticker). */
+  published_count: number;
+  /** Plays rejected at any of the 4 synthesis-funnel stages (alert_audit_log rows with
+   *  alert_type = 'nighthawk_rejected' in the window). */
+  rejected_count: number;
+  /** published_count + rejected_count — every candidate that reached a publish/reject decision
+   *  this window. NOT the full scored-candidate pool (that count isn't durably logged today). */
+  candidates_count: number;
+  /** rejected_count / candidates_count. 0 when there were no candidates at all. */
+  rejection_rate: number;
+  /** Rejected count broken down by stage, sorted by n descending (already sorted in SQL). */
+  by_stage: NighthawkFunnelStage[];
+};
+
+/** Pure transform from raw funnel counts (db.ts's fetchNighthawkFunnelStats) into the shaped,
+ *  labeled stats the admin dashboard renders — split out so it's unit-testable without a DB. */
+export function buildNighthawkFunnel(
+  windowDays: number,
+  publishedCount: number,
+  rejectedByReason: Array<{ trigger_reason: string; n: number }>
+): NighthawkFunnelStats {
+  const by_stage: NighthawkFunnelStage[] = rejectedByReason
+    .map((r) => {
+      const stage = STAGE_BY_TRIGGER_REASON.get(r.trigger_reason) ?? "other";
+      return { stage, label: stageLabel(stage), trigger_reason: r.trigger_reason, n: r.n };
+    })
+    .sort((a, b) => b.n - a.n);
+  const rejected_count = by_stage.reduce((sum, r) => sum + r.n, 0);
+  const candidates_count = publishedCount + rejected_count;
+  return {
+    window_days: windowDays,
+    published_count: publishedCount,
+    rejected_count,
+    candidates_count,
+    rejection_rate: candidates_count > 0 ? rejected_count / candidates_count : 0,
+    by_stage,
+  };
+}
 
 export type NighthawkMetrics = {
   window_days: number;
@@ -27,6 +105,10 @@ export type NighthawkMetrics = {
   by_sector: Array<{ sector: string; n: number; win_rate: number; avg_return_pct: number }>;
   by_score_bucket: Array<{ bucket: string; n: number; win_rate: number }>;
   by_edition: Array<{ edition_for: string; n: number; win_rate: number; avg_return_pct: number }>;
+  /** Task #145: synthesis funnel — candidates considered vs. published vs. rejected (by stage),
+   *  over the same window_days. Independent of total_resolved/pending_count above: those are
+   *  POST-publish outcome grading, this is the PRE-publish publish/reject decision itself. */
+  funnel: NighthawkFunnelStats;
 };
 
 const SCORE_BUCKETS = ["40-54", "55-69", "70-84", "85-100"] as const;
@@ -124,6 +206,7 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
     by_edition: [],
     stop_data_unavailable_count: 0,
     unfilled_count: 0,
+    funnel: buildNighthawkFunnel(windowDays, 0, []),
   };
 }
 
@@ -137,10 +220,16 @@ function isStopDataUnavailable(r: NighthawkPlayOutcomeRow): boolean {
 }
 
 export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMetrics> {
-  const { rows, pending_count } = await fetchNighthawkOutcomeAnalytics(windowDays);
+  // Independent reads (outcome grading vs. the pre-publish funnel) — run in parallel so the
+  // funnel query never adds to this route's latency on top of the existing outcome query.
+  const [{ rows, pending_count }, funnelRaw] = await Promise.all([
+    fetchNighthawkOutcomeAnalytics(windowDays),
+    fetchNighthawkFunnelStats(windowDays),
+  ]);
+  const funnel = buildNighthawkFunnel(windowDays, funnelRaw.published_count, funnelRaw.rejected_by_reason);
 
   if (rows.length === 0) {
-    return { ...emptyMetrics(windowDays), pending_count };
+    return { ...emptyMetrics(windowDays), pending_count, funnel };
   }
 
   const total = rows.length;
@@ -217,5 +306,6 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     by_sector,
     by_score_bucket,
     by_edition,
+    funnel,
   };
 }

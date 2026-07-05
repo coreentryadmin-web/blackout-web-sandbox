@@ -5279,6 +5279,62 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
   };
 }
 
+export type NighthawkFunnelRawStats = {
+  published_count: number;
+  rejected_by_reason: Array<{ trigger_reason: string; n: number }>;
+};
+
+/**
+ * Task #145: raw counts behind the admin Night Hawk dashboard's funnel/rejection-rate panel —
+ * how many candidates were PUBLISHED vs REJECTED at synthesis over the window, the rejected
+ * side broken down by `trigger_reason` (a plain TEXT column on `alert_audit_log`, one of the
+ * 5 fixed strings `REJECTION_TRIGGER_REASON` in nighthawk/play-outcomes.ts writes — grouping
+ * by it here means the stage breakdown needs zero `decision_trace` JSON parsing).
+ *
+ * Windowed the same way `fetchNighthawkOutcomeAnalytics` windows its own `edition_for` query,
+ * so both sides of the funnel line up over the identical date range.
+ *
+ * `nighthawk_play_outcomes` (UNIQUE(edition_for, ticker) — see its CREATE TABLE above) is the
+ * published-side ground truth, deliberately NOT `alert_audit_log`'s own `alert_type =
+ * 'nighthawk'` count: `recordNighthawkAuditTrail` (play-outcomes.ts) only inserts a row for a
+ * ticker's FIRST-ever publish (`freshlyPublished`), so it would undercount any play that
+ * carries over or re-appears across editions within the window. The rejected side has no such
+ * table to fall back on — `alert_audit_log` IS the only record of a rejection (see
+ * `insertNighthawkRejectedAuditLog`'s doc comment) — so that side reads from it directly.
+ */
+export async function fetchNighthawkFunnelStats(windowDays = 30): Promise<NighthawkFunnelRawStats> {
+  await ensureSchema();
+  // Same backstop as fetchNighthawkOutcomeAnalytics — coerce to a safe positive integer so no
+  // caller can crash the $1::int cast below with a non-integer arg.
+  const safeWindowDays =
+    Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 30;
+  const pool = await getPool();
+  const [publishedRes, rejectedRes] = await Promise.all([
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::int AS count
+       FROM nighthawk_play_outcomes
+       WHERE edition_for >= (CURRENT_DATE - ($1::int || ' days')::interval)`,
+      [safeWindowDays]
+    ),
+    pool.query<{ trigger_reason: string; n: string }>(
+      `SELECT trigger_reason, COUNT(*)::int AS n
+       FROM alert_audit_log
+       WHERE alert_type = 'nighthawk_rejected'
+         AND (source_key->>'edition_for')::date >= (CURRENT_DATE - ($1::int || ' days')::interval)
+       GROUP BY trigger_reason
+       ORDER BY n DESC`,
+      [safeWindowDays]
+    ),
+  ]);
+  return {
+    published_count: Number(publishedRes.rows[0]?.count ?? 0),
+    rejected_by_reason: rejectedRes.rows.map((r) => ({
+      trigger_reason: String(r.trigger_reason),
+      n: Number(r.n),
+    })),
+  };
+}
+
 export type NighthawkJobRow = {
   id: number;
   edition_for: string;
