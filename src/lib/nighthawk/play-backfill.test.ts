@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { pickAffordableChainContract } from "./play-backfill";
+import { buildDirectionalStockLevels } from "./play-levels";
+import { validatePlayGeometry } from "./play-constraints";
+import type { PlaybookPlay } from "./types";
 import type { ChainStrikeRow, EditionChainData } from "./option-chain-prompt";
 
 const rows: ChainStrikeRow[] = [
@@ -55,4 +58,42 @@ test("pickAffordableChainContract: returns null when no affordable liquid contra
     rows: rows.map((r) => ({ ...r, call_ask: 25, put_ask: 25 })),
   };
   assert.equal(pickAffordableChainContract("NET", "long", expensive), null);
+});
+
+test("buildDirectionalStockLevels: LONG backfill shape passes geometry gate", () => {
+  const levels = buildDirectionalStockLevels({ direction: "long", support: 60.72, resistance: 71.01 });
+  const play: PlaybookPlay = {
+    rank: 2,
+    ticker: "MAGS",
+    direction: "LONG",
+    conviction: "B",
+    play_type: "stock",
+    thesis: "",
+    key_signal: "",
+    options_play: "-",
+    risk_note: "",
+    score: 80,
+    ...levels,
+  };
+  assert.equal(validatePlayGeometry(play).ok, true);
+  assert.notEqual(levels.stop, "60.72");
+});
+
+test("buildDirectionalStockLevels: prior Near-$X + stop=X shape FAILS geometry (regression guard)", () => {
+  const play: PlaybookPlay = {
+    rank: 2,
+    ticker: "MAGS",
+    direction: "LONG",
+    conviction: "B",
+    play_type: "stock",
+    thesis: "",
+    key_signal: "",
+    entry_range: "Near $60.72",
+    target: "71.01",
+    stop: "60.72",
+    options_play: "-",
+    risk_note: "",
+    score: 80,
+  };
+  assert.equal(validatePlayGeometry(play).ok, false);
 });

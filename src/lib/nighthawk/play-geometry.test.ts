@@ -84,6 +84,16 @@ test("geometry: conditional prose + numeric band validates against the band", ()
   assert.equal(v.ok, true);
 });
 
+test("partitionPlaysByGeometry: splits failing backfill-shaped plays", async () => {
+  const { partitionPlaysByGeometry } = await import("./play-constraints");
+  const good = play({});
+  const bad = play({ entry_range: "Near $60.72", target: "71.01", stop: "60.72", ticker: "MAGS" });
+  const { passing, failing } = partitionPlaysByGeometry([good, bad]);
+  assert.equal(passing.length, 1);
+  assert.equal(failing.length, 1);
+  assert.equal(failing[0]!.play.ticker, "MAGS");
+});
+
 // ── sector concentration cap ─────────────────────────────────────────────────────
 
 test("sector cap: third same-sector play is dropped, other sectors backfill", () => {

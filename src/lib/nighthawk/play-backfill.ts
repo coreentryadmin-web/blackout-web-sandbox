@@ -2,6 +2,8 @@ import { mapClaudePlayToEdition } from "./claude-edition";
 import { EDITION_MIN_PUBLISH_PLAYS, MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
 import type { TickerDossier } from "./dossier";
 import { GROUNDING_MIN_OI } from "./grounding";
+import { validatePlayGeometry } from "./play-constraints";
+import { buildDirectionalStockLevels } from "./play-levels";
 import {
   fetchEditionChains,
   type ChainStrikeRow,
@@ -87,6 +89,11 @@ export async function backfillThinEditionPlays(params: {
     const contract = pickAffordableChainContract(ticker, scored.direction, chains[ticker]);
     const support = dossier.tech?.support_levels?.[0];
     const resistance = dossier.tech?.resistance_levels?.[0];
+    const levels = buildDirectionalStockLevels({
+      direction: scored.direction,
+      support,
+      resistance,
+    });
     const play = mapClaudePlayToEdition(
       {
         ticker,
@@ -96,9 +103,9 @@ export async function backfillThinEditionPlays(params: {
         key_signal:
           dossier.tech?.summary ??
           `Ranked-pool backfill (score ${Math.round(scored.score)}) — verify before entry.`,
-        entry_range: support != null ? `Near $${support}` : "See technical levels",
-        target: resistance != null ? String(resistance) : "-",
-        stop: support != null ? String(support) : "-",
+        entry_range: levels.entry_range,
+        target: levels.target,
+        stop: levels.stop,
         options_play: contract?.options_play ?? "-",
         entry_premium: contract?.entry_premium,
         score: scored.score,
@@ -106,6 +113,11 @@ export async function backfillThinEditionPlays(params: {
       backfilled.length + 1,
       params.dossiers
     );
+    // Defense in depth: skip backfill candidates that still fail geometry (e.g. resistance ≤ support).
+    if (!validatePlayGeometry(play).ok) {
+      console.warn(`[nighthawk/backfill] skipped ${ticker} — levels fail geometry gate`);
+      continue;
+    }
     backfilled.push(play);
     used.add(ticker);
     notes.push(

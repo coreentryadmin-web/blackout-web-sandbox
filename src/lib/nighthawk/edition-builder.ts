@@ -33,6 +33,7 @@ import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from ".
 import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { backfillThinEditionPlays } from "./play-backfill";
+import { partitionPlaysByGeometry } from "./play-constraints";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -791,6 +792,22 @@ export async function buildEveningEdition(opts?: {
     }
 
     // STAGE 6 — Publish
+    // FINAL GEOMETRY GATE: thin-edition backfill and checkpoint-resume can introduce plays that
+    // never ran through generateEditionPlays' geometry filter — reject them here rather than
+    // persisting untradeable risk plans (audit task #146 / ops #519).
+    {
+      const { passing, failing } = partitionPlaysByGeometry(finalPlays);
+      if (failing.length) {
+        console.warn(
+          "[nighthawk/edition] final geometry gate rejected:",
+          failing.map((f) => `${f.play.ticker}: ${f.drops.join("; ")}`)
+        );
+        finalPlays = passing.map((p, i) => ({ ...p, rank: i + 1 }));
+        funnel.published = finalPlays.length;
+        funnel.critic_passed = finalPlays.length;
+      }
+    }
+
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
     // exits above already route an empty funnel to publishRecapOnlyEdition (recap_only:true in meta).
     // This last-resort guard catches any way finalPlays could arrive empty here — a stale/old

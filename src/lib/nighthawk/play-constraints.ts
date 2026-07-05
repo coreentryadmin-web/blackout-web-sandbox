@@ -162,6 +162,21 @@ export function validatePlayGeometry(play: PlaybookPlay): PlayGeometryVerdict {
   return { ok: drops.length === 0, drops, flags };
 }
 
+/** Split plays by the publish-time geometry gate — used as a final write-side guard. */
+export function partitionPlaysByGeometry(plays: PlaybookPlay[]): {
+  passing: PlaybookPlay[];
+  failing: Array<{ play: PlaybookPlay; drops: string[] }>;
+} {
+  const passing: PlaybookPlay[] = [];
+  const failing: Array<{ play: PlaybookPlay; drops: string[] }> = [];
+  for (const play of plays) {
+    const verdict = validatePlayGeometry(play);
+    if (verdict.ok) passing.push(play);
+    else failing.push({ play, drops: verdict.drops });
+  }
+  return { passing, failing };
+}
+
 /** Default same-sector cap applied by {@link capSectorConcentration} (task #141: named so
  *  the durable rejection-audit row can cite the exact threshold that fired, instead of a
  *  bare literal duplicated at the call site). Value unchanged (was an inline `2` default). */

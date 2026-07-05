@@ -29,6 +29,7 @@ import {
   PLAYBOOK_PREMIUM_CAP_LINE,
 } from "./constants";
 import { groundPlays, type GroundingSummary } from "./grounding";
+import { buildDirectionalStockLevels } from "./play-levels";
 import type { ScoredCandidate } from "./scorer";
 import { convictionFromScore, convictionRank } from "./scorer";
 import type { PlaybookPlay } from "./types";
@@ -167,24 +168,30 @@ export async function generateEditionPlays(params: {
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
 
   if (!anthropicConfigured()) {
-    const fallback = params.ranked.slice(0, 5).map((s, i) =>
-      mapClaudePlayToEdition(
+    const fallback = params.ranked.slice(0, 5).map((s, i) => {
+      const dossier = dossierMap[s.ticker];
+      const levels = buildDirectionalStockLevels({
+        direction: s.direction,
+        support: dossier?.tech?.support_levels?.[0],
+        resistance: dossier?.tech?.resistance_levels?.[0],
+      });
+      return mapClaudePlayToEdition(
         {
           ticker: s.ticker,
           type: "stock",
           direction: s.direction === "long" ? "LONG" : "SHORT",
           conviction: s.conviction,
-          key_signal: dossierMap[s.ticker]?.tech?.summary ?? "Mechanical fallback — Claude unavailable.",
-          entry_range: "See technical levels",
-          target: dossierMap[s.ticker]?.tech?.resistance_levels?.[0]?.toString() ?? "-",
-          stop: dossierMap[s.ticker]?.tech?.support_levels?.[0]?.toString() ?? "-",
+          key_signal: dossier?.tech?.summary ?? "Mechanical fallback — Claude unavailable.",
+          entry_range: levels.entry_range,
+          target: levels.target,
+          stop: levels.stop,
           options_play: "-",
           score: s.score,
         },
         i + 1,
         dossierMap
-      )
-    );
+      );
+    });
     return { plays: fallback, recap, raw: null };
   }
 
