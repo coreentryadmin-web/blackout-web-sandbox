@@ -1,13 +1,15 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-test("loadSpxDesk and loadMergedSpxDesk share exactly one buildSpxDesk cache lane (regression: cache-key race let the member dashboard and trade-alert panel disagree on trade direction)", async () => {
-  let buildCount = 0;
+test("loadSpxDesk, loadSpxDeskPulse, and loadSpxDeskFlow share one cache lane each with loadMergedSpxDesk (regression: bare keys raced date-scoped loader keys)", async () => {
+  let deskCount = 0;
+  let pulseCount = 0;
+  let flowCount = 0;
   mock.module("../providers/spx-desk", {
     namedExports: {
-      buildSpxDesk: async () => ({ marker: ++buildCount }),
-      buildSpxDeskFlow: async () => ({ available: false }),
-      buildSpxDeskPulse: async () => ({ available: false }),
+      buildSpxDesk: async () => ({ marker: ++deskCount }),
+      buildSpxDeskFlow: async () => ({ marker: ++flowCount }),
+      buildSpxDeskPulse: async () => ({ marker: ++pulseCount }),
     },
   });
   // A fixed, test-only session date so this test's cache entries can never collide with a
@@ -23,22 +25,32 @@ test("loadSpxDesk and loadMergedSpxDesk share exactly one buildSpxDesk cache lan
     },
   });
 
-  const { loadSpxDesk, loadMergedSpxDesk } = await import("../spx-desk-loader");
+  const { loadSpxDesk, loadSpxDeskPulse, loadSpxDeskFlow, loadMergedSpxDesk } =
+    await import("../spx-desk-loader");
 
-  const fromStandaloneLoader = await loadSpxDesk();
-  const fromMergedLoader = (await loadMergedSpxDesk()).desk;
+  const fromStandaloneDesk = await loadSpxDesk();
+  const fromStandalonePulse = await loadSpxDeskPulse();
+  const fromStandaloneFlow = await loadSpxDeskFlow();
+  const merged = await loadMergedSpxDesk();
 
-  // The regression: the standalone /api/market/spx/desk route used to cache buildSpxDesk()
-  // under a bare "spx-desk" key while this loader used "spx-desk:${date}" — two
-  // independently-expiring lanes, each invoking buildSpxDesk() on its own schedule against a
-  // live WS tide store. If that key mismatch ever comes back, buildSpxDesk runs twice here
-  // and the two results are different objects.
   assert.equal(
-    buildCount,
+    deskCount,
     1,
     "buildSpxDesk ran more than once — loadSpxDesk() and loadMergedSpxDesk() are using different cache keys again"
   );
-  assert.deepEqual(fromStandaloneLoader, fromMergedLoader);
+  assert.equal(
+    pulseCount,
+    1,
+    "buildSpxDeskPulse ran more than once — pulse cache key mismatch between standalone route and loader"
+  );
+  assert.equal(
+    flowCount,
+    1,
+    "buildSpxDeskFlow ran more than once — flow cache key mismatch between standalone route and loader"
+  );
+  assert.deepEqual(fromStandaloneDesk, merged.desk);
+  assert.deepEqual(fromStandalonePulse, merged.pulse);
+  assert.deepEqual(fromStandaloneFlow, merged.flow);
 
   mock.restoreAll();
 });

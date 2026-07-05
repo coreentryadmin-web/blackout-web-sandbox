@@ -345,8 +345,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
   const showConfirmationPanel =
     Boolean(confirmationLayer) &&
-    (play?.action === "SCANNING" ||
-      play?.action === "WATCHING" ||
+    (play?.action === "WATCHING" ||
       play?.action === "BUY" ||
       (!play && playRefreshing));
 

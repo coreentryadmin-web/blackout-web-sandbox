@@ -9,7 +9,31 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
-## 🟢 DESIGN FIXED 2026-07-05 — BIE orbit connector lines/mesh too dim to read against the dark hero background (branch `fix/bie-orbit-connector-line-contrast`, direct follow-up to PR #536)
+## 🟢 P1 FIXED 2026-07-05 — SPX desk pulse/flow dual cache keys + stale confirmations during SCANNING (branch `fix/spx-desk-cache-confirmations-9d1e`, deep re-audit follow-up to PR #535)
+
+**Status:** FIXED locally; draft PR pending merge.
+
+**Finding 1 — pulse/flow cache lane split (same class as the desk fix in PR #535):**
+- `loadMergedSpxDesk()` cached pulse/flow under `spx-desk-pulse:${date}` / `spx-desk-flow:${date}` (`src/lib/spx-desk-loader.ts`).
+- Standalone `/api/market/spx/pulse` and `/flow` used bare keys `spx-desk-pulse` / `spx-desk-flow` with their own TTL refresh schedules.
+- `useMergedDesk` polls those standalone routes → member UI could read a different tide/GEX snapshot than `spx-evaluate` cron / play route within the same refresh cycle.
+
+**Finding 2 — stale confirmation panel during SCANNING:**
+- `useStablePlayConfirmations` returned `live ?? stableRef` with no clear on SCANNING reset.
+- `mergePlayWithCache` in `useSpxPlay.ts` merged cached WATCH/BUY confirmations into fresh SCANNING payloads when direction matched.
+- `SpxTradeAlerts` intentionally rendered the confirmation panel for `action === "SCANNING"` → members could see prior ✓ checks while hero read SCANNING.
+
+**Fix:**
+- Added `loadSpxDeskPulse()` / `loadSpxDeskFlow()` as the single cache lanes; pulse/flow routes delegate to them (mirrors `loadSpxDesk()` / desk route pattern).
+- `useStablePlayConfirmations`: clear stable layer + session cache when play resets to SCANNING without live confirmations.
+- `mergePlayWithCache`: return fresh payload unchanged when `action === "SCANNING"` and no confirmation layer.
+- `SpxTradeAlerts`: confirmation panel no longer shown for SCANNING.
+
+**Tests:** `src/lib/__tests__/spx-desk-loader.test.ts` (pulse/flow cache lane regression); `src/hooks/useSpxPlay.test.ts` (merge + SCANNING). Added `npm run validate:spx-bie` with `--experimental-test-module-mocks` so Layer B of `spx-bie-consistency-validator.mjs` runs without `mock.module is not a function`.
+
+**Verification:** `npm test`, `npx tsc --noEmit` (pending this commit).
+
+---
 
 **Status:** FIXED. User feedback on a live-site photo of the just-merged bidirectional pulses/mesh (PR #536): *"The connection lines are not visible.. maybe we change the color to something better for the black color background??"* The photo itself actually showed the lines and pulses rendering correctly (visible spokes from each tool to the core, a pulse mid-travel on a mesh edge) — the underlying feature was never broken, but the chosen stroke opacities were tuned too conservatively for real-world legibility (a photo of a screen compounds the problem via glare/compression, but the root opacity values were genuinely low even on a clean render).
 

@@ -41,13 +41,30 @@ export async function loadSpxDesk(): Promise<SpxDeskPayload> {
   });
 }
 
+/**
+ * THE single cache lane for buildSpxDeskPulse() — same contract as loadSpxDesk().
+ * Standalone /api/market/spx/pulse must call this, not withServerCache directly.
+ */
+export async function loadSpxDeskPulse(): Promise<SpxDeskPulse> {
+  const date = todayEtYmd();
+  return withServerCache(`spx-desk-pulse:${date}`, deskPulseCacheTtlMs(), buildSpxDeskPulse);
+}
+
+/**
+ * THE single cache lane for buildSpxDeskFlow() — same contract as loadSpxDesk().
+ * Standalone /api/market/spx/flow must call this, not withServerCache directly.
+ */
+export async function loadSpxDeskFlow(): Promise<SpxDeskFlow> {
+  const date = todayEtYmd();
+  return withServerCache(`spx-desk-flow:${date}`, deskFlowCacheTtlMs(), buildSpxDeskFlow);
+}
+
 /** Single server path: cache lanes → merge pulse + flow into desk. */
 export async function loadMergedSpxDesk(): Promise<MergedSpxDeskBundle> {
-  const date = todayEtYmd();
   const [desk, flow, pulse] = await Promise.all([
     loadSpxDesk(),
-    withServerCache(`spx-desk-flow:${date}`, deskFlowCacheTtlMs(), buildSpxDeskFlow),
-    withServerCache(`spx-desk-pulse:${date}`, deskPulseCacheTtlMs(), buildSpxDeskPulse),
+    loadSpxDeskFlow(),
+    loadSpxDeskPulse(),
   ]);
 
   const merged = mergeDeskLayers(desk, flow, pulse);
