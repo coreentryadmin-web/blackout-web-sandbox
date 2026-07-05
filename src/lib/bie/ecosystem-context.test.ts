@@ -12,6 +12,7 @@ import { SPX_FULL_STATE_FIXTURE } from "./spx-full-state-fixture";
 import type { SpxPlayPayload } from "@/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 import type { FlowRow } from "@/lib/db";
+import type { GexPositioning } from "@/lib/providers/gex-positioning";
 
 // mock.module() must be registered before ecosystem-context.ts (and therefore
 // its "@/lib/db" import) is ever loaded — an ordinary top-level `import` of
@@ -94,6 +95,25 @@ mock.module("../flow-gex-enrichment", {
   },
 });
 
+// gex_positioning's single source: getGexPositioning() (src/lib/providers/
+// gex-positioning.ts), the same canonical cache-reader the Heat Maps UI, the
+// SPX rail, and Night Hawk's fetchPositioningSummary primary branch already
+// read. Mocked as its own module — never a real GEX-heatmap fetch or UW
+// cross-validation call — so this test file can prove fetchEcosystemContext()
+// calls it VERBATIM (no wrapper reshaping the result) and unconditionally
+// (not gated by isSpxSlayerTicker the way spx_play/spx_full_state are).
+let mockGexPositioning: GexPositioning | null = null;
+let gexPositioningCalls: string[] = [];
+
+mock.module("../providers/gex-positioning", {
+  namedExports: {
+    getGexPositioning: async (ticker: string) => {
+      gexPositioningCalls.push(ticker);
+      return mockGexPositioning;
+    },
+  },
+});
+
 let fetchEcosystemContext: typeof import("./ecosystem-context").fetchEcosystemContext;
 let ECOSYSTEM_CONTEXT_FIELDS: typeof import("./ecosystem-context").ECOSYSTEM_CONTEXT_FIELDS;
 let mapNighthawkEchoRows: typeof import("./ecosystem-context").mapNighthawkEchoRows;
@@ -113,6 +133,7 @@ test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty descrip
     "spx_play",
     "spx_full_state",
     "flow_feed_fresh",
+    "gex_positioning",
   ];
   assert.deepEqual(
     ECOSYSTEM_CONTEXT_FIELDS.map((f) => f.field).sort(),
@@ -379,6 +400,94 @@ test('fetchEcosystemContext("SPX"): flow_full_state is NOT gated by isSpxSlayerT
   // still populates here — proving flow_full_state's unconditional fetch
   // didn't accidentally disturb the SPX-only fields' own gating.
   assert.equal(fullStateCalls, 1);
+});
+
+// Regression: fetchEcosystemContext() had NO gamma/GEX-positioning field at
+// all — BlackOut Thermal already computes dealer gamma/vanna/delta/charm
+// positioning for every ticker (getGexPositioning(), the same canonical
+// cache-reader the Heat Maps UI, the SPX rail, and Night Hawk's positioning
+// read all already use), but "what does the desk know about this ticker" via
+// BIE never surfaced it. gex_positioning closes that gap by calling
+// getGexPositioning() verbatim — no wrapper, no reshaping — unconditionally
+// for every ticker, since GEX positioning (unlike the SPX play engine) is not
+// a single-instrument product.
+
+function makeGexPositioning(overrides: Partial<GexPositioning> = {}): GexPositioning {
+  return {
+    ticker: "NVDA",
+    spot: 150,
+    change_pct: 1.2,
+    asof: "2026-07-05T14:00:00.000Z",
+    flip: 148,
+    call_wall: 155,
+    put_wall: 140,
+    max_pain: 150,
+    gex_king_strike: 155,
+    net_gex: -500_000_000,
+    gamma_posture: "short",
+    gamma_regime_read: "short gamma below flip",
+    net_vex: 10_000_000,
+    vanna_posture: "positive",
+    vanna_regime_read: "positive vanna",
+    net_dex: null,
+    dex_posture: null,
+    dex_regime_read: null,
+    net_charm: null,
+    charm_posture: null,
+    charm_regime_read: null,
+    nearest_wall: { strike: 155, kind: "resistance", distance_pts: 5 },
+    distance_to_flip_pct: 1.35,
+    shift_summary: null,
+    source: "polygon",
+    ...overrides,
+  };
+}
+
+test('fetchEcosystemContext("NVDA"): gex_positioning reuses getGexPositioning() verbatim, ticker-scoped', async () => {
+  gexPositioningCalls = [];
+  mockGexPositioning = makeGexPositioning();
+
+  const ctx = await fetchEcosystemContext("NVDA");
+
+  assert.deepEqual(gexPositioningCalls, ["NVDA"], "getGexPositioning should run exactly once, with the uppercased ticker");
+  assert.deepEqual(ctx.gex_positioning, mockGexPositioning, "gex_positioning must pass through the entire canonical object untouched, not a summarized subset");
+});
+
+test("fetchEcosystemContext: gex_positioning is null when getGexPositioning finds a cold/no-data matrix, not a fabricated reading", async () => {
+  gexPositioningCalls = [];
+  mockGexPositioning = null;
+
+  const ctx = await fetchEcosystemContext("ZZZZ");
+
+  assert.deepEqual(gexPositioningCalls, ["ZZZZ"]);
+  assert.equal(ctx.gex_positioning, null);
+});
+
+test('fetchEcosystemContext("SPX"): gex_positioning is NOT gated by isSpxSlayerTicker — populates for every ticker, unlike spx_play/spx_full_state', async () => {
+  gexPositioningCalls = [];
+  fullStateCalls = 0;
+  mockFullState = SPX_FULL_STATE_FIXTURE;
+  mockGexPositioning = makeGexPositioning({ ticker: "SPX", spot: 5500, call_wall: 5550, put_wall: 5450 });
+
+  const ctx = await fetchEcosystemContext("SPX");
+
+  assert.deepEqual(gexPositioningCalls, ["SPX"]);
+  assert.deepEqual(ctx.gex_positioning, mockGexPositioning);
+  // Distinct gate check, mirroring flow_full_state's own equivalent test above:
+  // spx_full_state still requires isSpxSlayerTicker and still populates here —
+  // proving gex_positioning's unconditional fetch didn't disturb the SPX-only
+  // fields' own gating in the same Promise.all.
+  assert.equal(fullStateCalls, 1);
+});
+
+test('fetchEcosystemContext("AAPL"): gex_positioning populates for an ordinary single-name ticker exactly like SPX or a quiet ticker', async () => {
+  gexPositioningCalls = [];
+  mockGexPositioning = makeGexPositioning({ ticker: "AAPL", spot: 210, call_wall: 215, put_wall: 205 });
+
+  const ctx = await fetchEcosystemContext("AAPL");
+
+  assert.deepEqual(gexPositioningCalls, ["AAPL"]);
+  assert.deepEqual(ctx.gex_positioning, mockGexPositioning);
 });
 
 test("mapNighthawkEchoRows: maps rows keyed by uppercased ticker", () => {
