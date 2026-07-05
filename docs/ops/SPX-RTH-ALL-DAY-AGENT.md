@@ -1,16 +1,16 @@
 # SPX Slayer — all-day RTH verification agent (autonomous)
 
-**Purpose:** On live trading days, run a dedicated Cloud Agent that verifies **every SPX Slayer surface** — especially the **0DTE GEX matrix (every cell)** — from **market open through close**, logs any defect immediately, and **fixes everything after the bell** without asking the operator.
+**Mission:** Zero tolerance for SPX defects. Every button on `/dashboard`, every GEX/VEX matrix cell, every cross-tool integration (Thermal, HELIX, Largo, Grid, 0DTE, Night Hawk, BIE) must be **100% correct** during RTH. The agent runs **automatically from market open through close**, logs every flaw, and **fixes everything after the bell** — no operator prompts.
 
-**First scheduled run:** **Monday 2026-07-06** (normal NYSE session — Jul 3 was the observed holiday).
+**First live session:** **Monday 2026-07-06** · **Opens 6:30 AM PT** (= 9:30 AM ET).
 
-| Wall clock | Session |
-|---|---|
-| **6:30 AM PT** (= **9:30 AM ET**) | RTH open — first verify pass |
-| **6:30 AM – 1:00 PM PT** (= **9:30 AM – 4:00 PM ET**) | All-day verify passes (no merges for non-critical unless P0) |
-| **~1:05 PM PT** (= **4:05 PM ET**) | **Post-close fix window** — branch → fix → test → PR → merge → re-verify until GREEN |
+| PT | ET | Mode |
+|---|---|---|
+| **6:30 AM** | **9:30 AM** | **First verify pass (market open)** |
+| 6:30 AM – 1:00 PM | 9:30 AM – 4:00 PM | Verify passes every ~90 min |
+| **~1:05 PM** | **4:05 PM** | **Post-close fix — merge until fully GREEN** |
 
-**Prerequisite merges before first open pass:** land **PR #539** (pulse/flow cache lanes + SCANNING confirmation staleness) on `main` so tomorrow's audit validates the fixed code path.
+**Merge before open:** **PR #539** (pulse/flow cache + SCANNING confirmations) + **PR #540** (this agent + scripts).
 
 ---
 
@@ -18,139 +18,236 @@
 
 | Mode | When | Behavior |
 |---|---|---|
-| **`verify`** | Every pass during RTH (see schedule below) | Run probes + UI sweep; log P0/P1 to `OPEN-ISSUES.md`; **fix P0 live** (data leak / wrong trade signal); defer P2+ to post-close unless trivial |
-| **`fix`** | Post-close (~16:05 ET) | Triage today's findings; **fix every SPX-related issue**; one issue per `fix/<slug>` branch; test; PR; merge; `validate:deploy` + full SPX pass until GREEN |
+| **`verify`** | Every scheduled pass during RTH | Full API + UI E2E; click **every** control; validate **every** matrix cell (GEX + VEX); cross-tool integration; fix **P0 only** live; log all else |
+| **`fix`** | Post-close (~1:05 PM PT) | Fix **every** SPX finding from today; test; PR; merge; re-run full suite until **zero FAIL** |
 
-**Never ask the user for permission** during either mode.
+**Never ask the user for permission.**
 
 ---
 
-## Command (single orchestrated pass)
+## Step 0 — Read this runbook end-to-end
+
+You are the **SPX Slayer all-day agent**. Your bar is institutional: **not a single bug, flaw, stale number, or broken integration**.
+
+---
+
+## Step 1 — Automated probe suite (every pass)
 
 ```bash
-# During RTH — exits 0 only when every SPX probe is GREEN
+# Primary gate — exits non-zero on any FAIL
 npm run validate:spx-rth
 
-# Post-close — same probes + writes audit-output/spx-rth-*.md; exit 1 if anything failed
-npm run validate:spx-rth -- --phase=post-close
+# Full dashboard E2E — clicks buttons, matrix UI vs API, cross-tool integration
+npm run validate:spx-e2e
 
-# Off-hours dry run (holiday rehearsal)
-node scripts/spx-rth-all-day-audit.mjs --force
+# Cross-provider oracle (when POLYGON + UW keys are literal, not ${{...}})
+node scripts/audit/data-validator.mjs
 ```
 
-### What `validate:spx-rth` checks (SPX-only, exhaustive)
+### What `validate:spx-rth` covers
 
-1. **`validate:rth-open`** — deploy, crons, sockets, `spx-evaluate` ticking
-2. **SPX matrix deep audit** — `scripts/heatmap-matrix-audit.mjs --tickers=SPX`
-   - Every GEX/VEX/DEX/CHARM cell finite
+1. **`validate:rth-open`** — deploy, crons, `spx-evaluate`, options-socket authenticated
+2. **Matrix deep audit** — `heatmap-matrix-audit.mjs --tickers=SPX`
+   - **Every GEX / VEX / DEX / CHARM cell** finite
    - Σ `strike_totals` == headline `total` per lens
-   - Cell re-sum vs `strike_totals` (INV-2) for **every strike**
-   - Walls, flip, king derivations vs reported values
-   - Mapper cross-check (`gexPositioningFromHeatmap` vs matrix block)
-3. **SPX cross-endpoint spot/GEX agreement** (same refresh window):
-   - `/api/market/spx/desk` spot
-   - `/api/market/gex-heatmap?ticker=SPX` spot
-   - `/api/market/gex-positioning?ticker=SPX` spot + flip + walls
-   - `/api/market/spx/play` levels (when present)
-   - Tolerance: spot Δ ≤ **0.15** index points; flip/walls exact or ≤ **1** pt
-4. **Desk cache lane consistency** — desk / pulse / flow / merged agree on spot + tide direction within one poll
-5. **`validate:spx-bie`** — member `/spx/play` vs `getSpxPlayState()` (BIE/Largo single derivation)
-6. **`/api/cron/data-correctness?force=1`** — zero SPX-layer flags
+   - **Every strike:** cell re-sum vs `strike_totals` (INV-2)
+   - Walls, flip, king derivations
+   - Mapper vs `gex-positioning`
+3. **Cross-endpoint spot/GEX** — desk, heatmap, positioning, play (Δ ≤ 0.15 pts spot)
+4. **Desk cache lanes** — desk / pulse / flow / merged agree when lanes live
+5. **`validate:spx-bie`** — member `/spx/play` == `getSpxPlayState()` (BIE + Largo single derivation)
+6. **`data-correctness` cron** — zero SPX-layer flags
 7. **`ops:collect`** — zero action items
 
 ---
 
-## UI verification (every `verify` pass)
+## Step 2 — UI E2E: click EVERY control on `/dashboard`
 
-Run when Playwright is available (`npx playwright install chromium` once per VM):
+Run: **`npm run validate:spx-e2e`** (Playwright — `npx playwright install chromium` once per VM).
 
-```bash
-node scripts/rth-comprehensive-sweep.mjs
-node scripts/audit/rth-browser-test.mjs
+If Playwright is blocked, manually execute the checklist below via `computerUse` or production browser against `https://blackouttrades.com/dashboard` with a premium admin session (`sign_in_token` — delete user after).
+
+### 2A — Sign-in & shell
+
+| # | Action | Pass |
+|---|---|---|
+| 1 | Open `/dashboard` with premium session | Page loads, no upgrade wall |
+| 2 | Wait for skeleton to clear | Header + matrix + trade alerts visible |
+| 3 | Check console | **Zero** errors (ignore benign ticker-search 400 off-dashboard) |
+| 4 | `FreshnessChip` / LIVE badge | Not `stale` during RTH when APIs fresh |
+
+### 2B — SPX header (`SpxSniperHeader`)
+
+| # | Action | Pass |
+|---|---|---|
+| 5 | SPX price | Matches `/api/market/spx/desk` `price` within **0.15** pts |
+| 6 | VIX, VWAP, γ-flip, tide | Finite; γ-flip matches `gex-positioning` flip |
+| 7 | Session indicators | RTH copy correct (not "MARKET CLOSED" during RTH) |
+
+### 2C — 0DTE GEX matrix (`SpxGexMatrixHeatmap`) — **CRITICAL**
+
+| # | Action | Pass |
+|---|---|---|
+| 8 | Click **GEX** tab (`#spx-matrix-tab-gex`) | Tab activates; matrix populates; `role=tab` aria correct |
+| 9 | Click **VEX** tab (`#spx-matrix-tab-vex`) | VEX cells populate (or tab hidden if no VEX — then SKIP) |
+| 10 | Click **GEX** again | Returns to GEX without error |
+| 11 | Count strike rows | ≥ **80** during RTH |
+| 12 | **Every visible cell** | Finite formatted value or `·` at zero — **never** `NaN`, `undefined`, `$—` |
+| 13 | **GEX king ★** | Visible on 0DTE expiry column; matches argmax \|net GEX\| from API |
+| 14 | **Spot row** | Tracks live spot; updates within **8s** poll without manual refresh |
+| 15 | Net GEX / Net VEX headline | Matches API `gex.total` / `vex.total` |
+| 16 | Scroll matrix vertically | No layout break; cells stay aligned |
+| 17 | Compare **20 sampled cells** (GEX + VEX) | Match `/api/market/gex-heatmap?ticker=SPX` JSON within formatting tolerance |
+
+**Cell validation rule:** For each strike `K` and near-term expiry `E`, UI displayed value must equal API `cells[K][E]` after shared `fmtHeatmapMoneySigned` formatting. Re-sum of cells for strike `K` must equal `strike_totals[K]`.
+
+### 2D — Trade alerts (`SpxTradeAlerts`)
+
+| # | Action | Pass |
+|---|---|---|
+| 18 | Hero action | Matches `/api/market/spx/play` `action` + `direction` |
+| 19 | **SCANNING state** | **No** confirmation panel with stale ✓ checks |
+| 20 | WATCHING / BUY | Confirmations match play API when present |
+| 21 | Score / confidence | Match play payload |
+| 22 | Entry / stop / target levels | Match play `levels` when non-null |
+| 23 | Lotto dock (`.spx-lotto-dock`) | Renders; status matches `/api/market/spx/lotto` |
+| 24 | Power hour dock | Visible 2:45–3:15 PM ET; matches `/api/market/spx/power-hour` |
+| 25 | Play history list | Updates on action transitions without refresh |
+
+### 2E — Commentary rail (`SpxCommentaryRail`)
+
+| # | Action | Pass |
+|---|---|---|
+| 26 | Click expand/collapse button | Toggles without error |
+| 27 | Commentary text | Grounded (from server cache on miss — no hallucinated numbers) |
+
+### 2F — Halt banners (when applicable)
+
+| # | Action | Pass |
+|---|---|---|
+| 28 | Active halt banner | Matches desk `active_halts` |
+| 29 | Degraded halt feed banner | Only when `halt_channel_stale` + session active; never claims "blocked" incorrectly |
+
+---
+
+## Step 3 — Cross-tool integration (SPX as hub)
+
+Validate SPX numbers **agree across the ecosystem**. Use authenticated API calls or tool traces.
+
+| Tool | Endpoint / probe | Must agree with SPX Slayer |
+|---|---|---|
+| **BlackOut Thermal** | `GET /api/market/gex-heatmap?ticker=SPX` | **Same payload** as dashboard matrix (shared route + `gex-heatmap-display.ts`) |
+| **Thermal SPY** | `GET /api/market/gex-heatmap?ticker=SPY` | `cross_validation` flags if diverged — log WARN |
+| **GEX positioning** | `GET /api/market/gex-positioning?ticker=SPX` | spot, flip, walls, net_gex == matrix header |
+| **HELIX** | `GET /api/market/flows?limit=30` | SPX/SPXW prints during active tape; desk tide direction consistent |
+| **Largo** | `POST /api/market/largo/query` — *"Current SPX play state?"* | Uses `get_spx_play` or `get_ecosystem_context`; answer grounded |
+| **BIE** | `validate:spx-bie` | `spx_full_state` == member `/spx/play` (same `getSpxPlayState()`) |
+| **Grid** | `GET /api/grid/bootstrap` | Loads; SPX spot in macro context not stale vs desk |
+| **0DTE Command** | `GET /api/market/zerodte/board` | SPX setups reference live spot; no fabricated premiums |
+| **Night Hawk** | `GET /api/market/nighthawk/edition` | Edition loads; SPX positioning echo consistent with gex-positioning |
+| **Track record** | `GET /api/public/track-record` | SPX play stats arithmetically correct |
+
+**Single-source rules (never duplicate):**
+- GEX matrix → `/api/market/gex-heatmap` only
+- Play state → `spx-evaluate` cron write / `readSpxPlaySnapshot` read
+- BIE `spx_full_state` + Largo `get_spx_play` → **`getSpxPlayState()` only**
+
+---
+
+## Step 4 — Live auto-update (no manual refresh)
+
+On `/dashboard`, sit **60 seconds** without refreshing:
+
+| Surface | Expected cadence |
+|---|---|
+| Header SPX price | ~1.5–3s (pulse) |
+| Matrix spot row | ~8s RTH |
+| Trade alert hero | ~3s |
+| Matrix cells | ~8s RTH (server cache `SPX_GEX_HEATMAP_CACHE_SEC` default 8) |
+
+Flag anything static during RTH that should tick.
+
+---
+
+## Step 5 — Log findings
+
+Append to **`docs/api-audit/OPEN-ISSUES.md`** with tag **`spx-rth-YYYY-MM-DD`**:
+
+```
+| Severity | ID | Detail | Backing API | Fix defer? |
 ```
 
-**Focus on `/dashboard` only for SPX matrix UI:**
+- **P0** (wrong trade signal, data leak, matrix cell wrong vs API) → **fix immediately** in verify mode
+- **P1** (cross-tool disagreement, stale confirmations, cache lane split) → fix in verify if trivial; else post-close
+- **P2** (UX labeling, king scope confusion) → post-close
 
-| Check | Pass criteria |
-|---|---|
-| Matrix renders | ≥ **80** strike rows during RTH; no blank ladder |
-| Every visible cell | Finite formatted value or honest empty state — **never** `NaN`, `undefined`, `$—` on live strikes |
-| GEX/VEX lens toggle | Both lenses populate; king ★ visible on 0DTE column |
-| Spot row | Tracks desk spot within **0.15** pts (poll 8s RTH) |
-| Trade alert hero | Action matches play API; **no stale ✓ confirmations during SCANNING** (PR #539) |
-| LIVE / freshness chips | Not `stale` during RTH when APIs report fresh `as_of` |
-| Console | Zero errors on `/dashboard` |
-
-If browser is blocked (cloud sandbox), fall back to API probes above + capture HTTP JSON as evidence in `audit-output/`.
+Open GitHub issue with label **`ops-auto-fix`** for any P0/P1.
 
 ---
 
-## Verify schedule (weekdays — GitHub + Cursor)
+## Step 6 — Post-close fix mode (~1:05 PM PT)
 
-GitHub Actions workflow: **`.github/workflows/spx-rth-all-day-agent.yml`**
+1. `npm run validate:spx-rth -- --phase=post-close`
+2. `npm run validate:spx-e2e`
+3. Read all today's `spx-rth-*` tagged findings
+4. For **each** issue: `fix/<slug>` → test → `docs/audit/FINDINGS.md` → PR → merge
+5. Loop: `validate:deploy-wait` → `validate:spx-rth` → `validate:spx-e2e` until **zero FAIL**
+6. Append post-close summary — must end **GREEN**
 
-| Pass | ET | PT | UTC (EDT) | Mode |
+---
+
+## Schedule (auto-launch)
+
+**GitHub:** `.github/workflows/spx-rth-all-day-agent.yml`  
+**Requires:** `CURSOR_API_KEY` in repo secrets
+
+| Pass | PT | ET | UTC (EDT Jul) | Mode |
 |---|---|---|---|---|
-| Pre-open warm-up | 09:28 | 06:28 | 13:28 | verify |
-| Post-open | 09:40 | 06:40 | 13:40 | verify |
-| Mid-morning | 11:00 | 08:00 | 15:00 | verify |
-| Midday | 12:30 | 09:30 | 16:30 | verify |
-| Afternoon | 14:00 | 11:00 | 18:00 | verify |
-| Pre-close | 15:30 | 12:30 | 19:30 | verify |
-| Last tick | 15:55 | 12:55 | 19:55 | verify |
-| **Post-close fix** | **16:05** | **13:05** | **20:05** | **fix** |
+| **Market open** | **6:30** | **9:30** | **13:30** | verify |
+| Post-open | 6:45 | 9:45 | 13:45 | verify |
+| Mid-morning | 8:00 | 11:00 | 15:00 | verify |
+| Midday | 9:30 | 12:30 | 16:30 | verify |
+| Afternoon | 11:00 | 14:00 | 18:00 | verify |
+| Pre-close | 12:30 | 15:30 | 19:30 | verify |
+| Last tick | 12:55 | 15:55 | 19:55 | verify |
+| **Post-close fix** | **1:05** | **4:05** | **20:05** | **fix** |
 
-Dual cron rows (EDT + EST) are in the workflow file. GitHub may delay scheduled runs a few minutes — acceptable.
-
----
-
-## Cursor Automation (dashboard backup)
-
-If `CURSOR_API_KEY` is missing in GitHub, create **two** automations at [cursor.com/automations](https://cursor.com/automations):
-
-### Automation A — SPX verify (all-day)
-
-- **Repo:** `coreentryadmin-web/blackout-web` · branch `main`
-- **Schedule:** Mon–Fri, cron `28,40 13 * * 1-5` and `0 15,30 16,0 18,30 19,55 19 * * 1-5` (adjust for EST months — mirror workflow file)
-- **Prompt:**
-
-> Autonomous SPX Slayer RTH **verify** pass. Read and execute `docs/ops/SPX-RTH-ALL-DAY-AGENT.md` in **verify** mode. Run `npm run validate:spx-rth`. Run `node scripts/rth-comprehensive-sweep.mjs` if Playwright works. Focus `/dashboard`: SPX 0DTE matrix every cell, trade alerts, no stale SCANNING confirmations. Log P0/P1 to `docs/api-audit/OPEN-ISSUES.md`; fix P0 immediately; defer P2+ to post-close. Do NOT ask the user.
-
-### Automation B — SPX post-close fix
-
-- **Schedule:** Mon–Fri **16:05 ET** (`5 20 * * 1-5` UTC in EDT)
-- **Prompt:**
-
-> Autonomous SPX Slayer **post-close fix** session. Read `docs/ops/SPX-RTH-ALL-DAY-AGENT.md` in **fix** mode. Run `npm run validate:spx-rth -- --phase=post-close`. Fix **every** SPX-related finding from today (matrix cells, desk/play divergence, confirmations, cache lanes, gates). Branch `fix/<slug>` per issue, test, `docs/audit/FINDINGS.md`, draft PR, merge when GREEN, `validate:deploy`. Do NOT stop until SPX pass is fully GREEN. Do NOT ask the user.
+Dual EST crons (+1h UTC) are in the workflow file.
 
 ---
 
-## Fix loop (post-close `fix` mode)
+## Cursor Automation (if GitHub secret missing)
 
-1. Read today's entries in `docs/api-audit/OPEN-ISSUES.md` tagged `spx-rth-2026-07-06` (or current date).
-2. Prioritize: **P0** (wrong numbers / trade signal) → **P1** (matrix/desk/play disagreement) → **P2**.
-3. For each issue: `fix/<slug>` → minimal fix → nearest `*.test.ts` → FINDINGS.md → PR → merge.
-4. After each merge: `npm run validate:deploy-wait && npm run validate:spx-rth`.
-5. Final gate: `node scripts/audit/data-validator.mjs` (full cross-provider oracle) if secrets available.
-6. Append post-close summary to `OPEN-ISSUES.md` — **GREEN** or list of remaining blockers.
+Create at [cursor.com/automations](https://cursor.com/automations):
+
+### Verify automation — starts **6:30 AM PT** weekdays
+
+**Prompt (paste verbatim):**
+
+> You are the SPX Slayer all-day RTH verification agent. Read **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`** completely and execute **verify** mode. Run **`npm run validate:spx-rth`** then **`npm run validate:spx-e2e`**. On `/dashboard`: click **every button** (GEX tab, VEX tab, commentary expand); validate **every matrix cell** (GEX and VEX) against `/api/market/gex-heatmap?ticker=SPX`; confirm trade alerts match `/api/market/spx/play` with **no stale confirmations during SCANNING**; verify integrations with **Thermal, HELIX, Largo, Grid, 0DTE, Night Hawk, BIE** per the runbook § Step 3. Sit 60s and confirm live auto-update. Log all findings to **`docs/api-audit/OPEN-ISSUES.md`** tagged **`spx-rth-YYYY-MM-DD`**. Fix P0 immediately. Do **not** ask the user.
+
+### Fix automation — **1:05 PM PT** weekdays
+
+**Prompt:**
+
+> SPX Slayer post-close fix agent. Read **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`** § Step 6. Run **`npm run validate:spx-rth -- --phase=post-close`** and **`npm run validate:spx-e2e`**. Fix **every** SPX issue from today (matrix cells, desk/play divergence, confirmations, cache lanes, cross-tool integration). Branch **`fix/<slug>`**, test, **`docs/audit/FINDINGS.md`**, PR, merge, **`validate:deploy`**. Repeat until **zero FAIL**. Do **not** stop until fully GREEN. Do **not** ask the user.
 
 ---
 
-## Secrets (GitHub Actions → Settings → Secrets)
+## Secrets
 
-| Secret | Used for |
+| Secret | Purpose |
 |---|---|
 | `CURSOR_API_KEY` | Launch Cloud Agents |
-| `CRON_SECRET` | SPX API probes (cron bearer) |
-| `DATABASE_PUBLIC_URL` | `spx-evaluate` / cron freshness |
-| `POLYGON_API_KEY` | Spot oracle |
-| `CLERK_SECRET_KEY` + `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser sweep sign-in |
-| `UW_API_KEY` | GEX cross-validation (optional) |
+| `CRON_SECRET` | SPX cron bearer probes |
+| `CLERK_SECRET_KEY` + `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | E2E sign-in |
+| `DATABASE_PUBLIC_URL` | Cron freshness |
+| `POLYGON_API_KEY` + `UW_API_KEY` | `data-validator.mjs` oracle |
 
 ---
 
-## Related docs
+## Related
 
-- General RTH open: `docs/ops/RTH-OPEN-RUNBOOK.md`
-- SPX audit fixes (2026-07-05): `docs/audit/SPX-AUDIT-FIXES-2026-07-05.md`, PR #535 / #539
-- Platform audit skill: `.cursor/skills/platform-audit/SKILL.md`
+- `docs/ops/RTH-OPEN-RUNBOOK.md` — general RTH infra
+- `docs/audit/SPX-AUDIT-FIXES-2026-07-05.md` — recent SPX fixes
+- `.cursor/skills/platform-audit/SKILL.md`

@@ -1,22 +1,18 @@
 # SPX Slayer — all-day RTH Cloud Agent (verify + post-close fix)
 #
-# Launches Cursor Cloud Agents on weekdays to verify every SPX surface during RTH
-# and fix all SPX issues after the bell (~1 PM PT / 4 PM ET).
-#
-# Requires: CURSOR_API_KEY (repo secret)
-# See runbook: docs/ops/SPX-RTH-ALL-DAY-AGENT.md
+# Auto-starts 6:30 AM PT (9:30 AM ET) on weekdays. See docs/ops/SPX-RTH-ALL-DAY-AGENT.md
 
 name: SPX RTH all-day agent
 
 on:
   schedule:
-    # --- VERIFY passes (ET) — dual cron covers EDT + EST ---
-    # 09:28 ET pre-open (6:28 PT)
-    - cron: "28 13 * * 1-5"
-    - cron: "28 14 * * 1-5"
-    # 09:40 ET post-open (6:40 PT)
-    - cron: "40 13 * * 1-5"
-    - cron: "40 14 * * 1-5"
+    # --- VERIFY (ET) — dual cron EDT + EST ---
+    # 09:30 ET market open (6:30 PT) — FIRST PASS
+    - cron: "30 13 * * 1-5"
+    - cron: "30 14 * * 1-5"
+    # 09:45 ET (6:45 PT)
+    - cron: "45 13 * * 1-5"
+    - cron: "45 14 * * 1-5"
     # 11:00 ET (8:00 PT)
     - cron: "0 15 * * 1-5"
     - cron: "0 16 * * 1-5"
@@ -29,10 +25,10 @@ on:
     # 15:30 ET (12:30 PT)
     - cron: "30 19 * * 1-5"
     - cron: "30 20 * * 1-5"
-    # 15:55 ET pre-close (12:55 PT)
+    # 15:55 ET (12:55 PT)
     - cron: "55 19 * * 1-5"
     - cron: "55 20 * * 1-5"
-    # --- FIX pass: 16:05 ET post-close (~1:05 PM PT) ---
+    # --- FIX: 16:05 ET (~1:05 PM PT) ---
     - cron: "5 20 * * 1-5"
     - cron: "5 21 * * 1-5"
   workflow_dispatch:
@@ -73,14 +69,14 @@ jobs:
           set -euo pipefail
           if [ -z "${CURSOR_API_KEY:-}" ]; then
             echo "CURSOR_API_KEY not set — skipping agent launch."
-            echo "Create automations at cursor.com/automations using docs/ops/SPX-RTH-ALL-DAY-AGENT.md"
+            echo "Create Cursor Automations from docs/ops/SPX-RTH-ALL-DAY-AGENT.md (starts 6:30 AM PT)"
             exit 0
           fi
 
           if [ "$AGENT_MODE" = "fix" ]; then
-            PROMPT='Autonomous SPX Slayer POST-CLOSE FIX session (~1 PM PT). Read and execute docs/ops/SPX-RTH-ALL-DAY-AGENT.md in fix mode. Run npm run validate:spx-rth -- --phase=post-close. Fix EVERY SPX-related finding from today: matrix cells, desk/pulse/flow cache lanes, play confirmations, cross-endpoint spot/GEX, gates. Branch fix/<slug> per issue, add tests, log docs/audit/FINDINGS.md, PR, merge when GREEN, validate:deploy. Do NOT stop until validate:spx-rth is fully GREEN. Do NOT ask the user.'
+            PROMPT='SPX Slayer post-close fix agent (~1:05 PM PT). Read docs/ops/SPX-RTH-ALL-DAY-AGENT.md Section Step 6 completely. Run npm run validate:spx-rth -- --phase=post-close AND npm run validate:spx-e2e. Fix EVERY SPX finding from today: every matrix cell GEX/VEX, desk/pulse/flow cache lanes, play confirmations, Thermal/HELIX/Largo/Grid/0DTE/BIE integration. Branch fix/<slug>, test, docs/audit/FINDINGS.md, PR, merge, validate:deploy. Repeat until validate:spx-rth AND validate:spx-e2e are zero FAIL. Do NOT stop until fully GREEN. Do NOT ask the user.'
           else
-            PROMPT='Autonomous SPX Slayer RTH VERIFY pass (all-day schedule). Read and execute docs/ops/SPX-RTH-ALL-DAY-AGENT.md in verify mode. Run npm run validate:spx-rth. If Playwright works, run node scripts/rth-comprehensive-sweep.mjs focusing /dashboard: SPX 0DTE matrix every cell, trade alerts, freshness chips, no stale SCANNING confirmations. Log P0/P1 to docs/api-audit/OPEN-ISSUES.md with tag spx-rth-$(date +%Y-%m-%d); fix P0 immediately; defer P2+ to post-close fix agent. Do NOT ask the user.'
+            PROMPT='You are the SPX Slayer all-day RTH verification agent starting at market open (6:30 AM PT). Read docs/ops/SPX-RTH-ALL-DAY-AGENT.md completely — execute verify mode. Run npm run validate:spx-rth then npm run validate:spx-e2e. On /dashboard click EVERY button (GEX tab, VEX tab, commentary expand). Validate EVERY matrix cell GEX and VEX against /api/market/gex-heatmap?ticker=SPX — 100% correct, zero NaN/stale/wrong values. Trade alerts must match /api/market/spx/play; NO stale confirmations during SCANNING. Verify cross-tool integration: Thermal (same heatmap), HELIX flows, Largo get_spx_play, BIE spx_full_state, Grid bootstrap, 0DTE board, Night Hawk edition — per runbook Step 3. Sit 60s confirm live auto-update. Log findings to docs/api-audit/OPEN-ISSUES.md tagged spx-rth-YYYY-MM-DD. Fix P0 immediately. Do NOT ask the user.'
           fi
           export PROMPT
 

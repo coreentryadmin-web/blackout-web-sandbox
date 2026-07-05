@@ -29,6 +29,7 @@
     "validate:railway-crons": "node scripts/validate-railway-cron-manifest.mjs",
     "validate:spx-bie": "node --import tsx --experimental-test-module-mocks scripts/audit/spx-bie-consistency-validator.mjs",
     "validate:spx-rth": "node scripts/spx-rth-all-day-audit.mjs",
+    "validate:spx-e2e": "node scripts/spx-dashboard-e2e-audit.mjs",
     "validate:api-auth": "node scripts/verify-api-auth-guards.mjs",
     "validate:railway-cron-schedules": "node scripts/railway-cron-schedule-audit.mjs",
     "ops:collect": "node scripts/ops-collect-action-items.mjs",

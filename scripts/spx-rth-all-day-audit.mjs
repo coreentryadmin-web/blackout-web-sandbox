@@ -199,7 +199,14 @@ async function main() {
   // 4. BIE/Largo single-derivation cross-check
   run("npm run validate:spx-bie", "spx:bie-consistency");
 
-  // 5. Ops + data-correctness
+  // 5. Dashboard E2E (clicks + cross-tool) when Clerk keys present
+  if (process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    run("npm run validate:spx-e2e", "spx:dashboard-e2e");
+  } else {
+    rec("spx:dashboard-e2e", "SKIP", "CLERK keys not set — API-only pass");
+  }
+
+  // 6. Ops + data-correctness
   if (CRON) {
     try {
       const dc = await fetchJson("/api/cron/data-correctness?force=1");
