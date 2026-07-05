@@ -1,11 +1,16 @@
-// The visual link between each orbit tool and the core. Without this, the six
-// product icons read as decoration floating near the reactor rather than
-// instruments feeding it — there's nothing on screen showing that SPX Slayer,
-// HELIX, etc. actually connect to BIE. A thin static line plus a continuously
-// traveling pulse (tool -> core) makes "every tool streams data into BIE"
-// legible at a glance, echoing the existing readout line "continuous market
-// intelligence — ingested, verified, never assumed". Pure geometry/timing,
-// split out so it's unit-testable without a browser/DOM.
+// The visual links that make BIE read as an ecosystem, not a hub with six
+// disconnected decorations parked near it. Two kinds of connection:
+//  1. Tool <-> core, BIDIRECTIONAL — raw telemetry flows tool -> core (tool's
+//     own accent color) and verified intelligence flows core -> tool (BIE's
+//     cyan), echoing the readout lines "ingested, verified" (in) and "the
+//     engine never stops learning" (out, back to the instruments).
+//  2. Tool <-> tool, a single faint hexagon loop connecting all six in a
+//     fixed order, with ONE traveling "context" pulse continuously visiting
+//     every tool in turn — the tools don't just feed BIE, they're part of
+//     one connected system. Deliberately ONE loop pulse, not six: the whole
+//     point of these two milestones' restraint principle is one meaningful
+//     motion per relationship, not a firehose of simultaneous particles.
+// Pure geometry/timing, split out so it's unit-testable without a browser/DOM.
 
 export type Point = { x: number; y: number };
 
@@ -30,19 +35,51 @@ export function advancePulseT(current: number, dtSec: number, periodSec: number)
   return next % 1;
 }
 
-/** Position along the tool -> core line at phase t (0 = at the tool, 1 = at the core). */
-export function connectorPulsePosition(core: Point, tool: Point, t: number): Point {
+/** Position along a line at phase t (0 = at `from`, 1 = at `to`). Direction-agnostic — callers pick tool->core or core->tool by argument order. */
+export function connectorPulsePosition(from: Point, to: Point, t: number): Point {
   return {
-    x: tool.x + (core.x - tool.x) * t,
-    y: tool.y + (core.y - tool.y) * t,
+    x: from.x + (to.x - from.x) * t,
+    y: from.y + (to.y - from.y) * t,
   };
 }
 
-/** Fades in leaving the tool and out arriving at the core, so it never pops. */
+/** Fades in leaving `from` and out arriving at `to`, so a traveling pulse never pops. */
 export function connectorPulseOpacity(t: number, fadeFraction = 0.18): number {
   const clamped = Math.min(1, Math.max(0, t));
   if (fadeFraction <= 0) return 1;
   const fadeIn = Math.min(1, clamped / fadeFraction);
   const fadeOut = Math.min(1, (1 - clamped) / fadeFraction);
   return Math.min(fadeIn, fadeOut);
+}
+
+/**
+ * Outbound (core -> tool) runs on its own phase, offset half a cycle from
+ * the inbound (tool -> core) pulse on the same line, so the two never sit on
+ * top of each other — they read as two distinct handshakes, not one blob.
+ */
+export function outboundPulsePhaseForIndex(index: number, count: number): number {
+  return (pulsePhaseForIndex(index, count) + 0.5) % 1;
+}
+
+/** How long the single ecosystem pulse takes to visit all six tools once. */
+export const ECOSYSTEM_LOOP_PERIOD_SEC = 9;
+
+/** Which mesh edge (0-indexed, tool i -> tool i+1) the loop pulse currently sits on. */
+export function loopSegmentIndex(loopT: number, segmentCount: number): number {
+  if (segmentCount <= 0) return 0;
+  const t = ((loopT % 1) + 1) % 1;
+  return Math.min(segmentCount - 1, Math.floor(t * segmentCount));
+}
+
+/** Progress (0..1) within the current mesh edge. */
+export function loopSegmentLocalT(loopT: number, segmentCount: number): number {
+  if (segmentCount <= 0) return 0;
+  const t = ((loopT % 1) + 1) % 1;
+  return (t * segmentCount) % 1;
+}
+
+/** Build the fixed cyclic edge list connecting `count` tools into one loop (0-1, 1-2, ..., last-0). */
+export function buildMeshEdges(count: number): Array<[number, number]> {
+  if (count <= 1) return [];
+  return Array.from({ length: count }, (_, i) => [i, (i + 1) % count]);
 }

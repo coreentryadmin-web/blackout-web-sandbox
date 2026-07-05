@@ -1764,9 +1764,10 @@ body::before {
   pointer-events: none;
 }
 
-/* Tool -> core links — makes "every instrument feeds BIE" legible instead of
-   six icons floating with no visible tie to the reactor they orbit. Coordinates
-   are pixel-space (container size), set imperatively per frame — no viewBox. */
+/* Tool <-> core links (bidirectional) + a tool <-> tool mesh — makes "this is
+   one connected ecosystem, not six icons floating near a reactor" legible.
+   Coordinates are pixel-space (container size), set imperatively per frame —
+   no viewBox. See bie-orbit-connectors.ts for the pulse-direction geometry. */
 .bie-orbit-connectors {
   position: absolute;
   inset: 0;
@@ -1783,9 +1784,33 @@ body::before {
   vector-effect: non-scaling-stroke;
 }
 
-.bie-orbit-connector-pulse {
+/* Inbound: raw telemetry, tool -> core. Carries the tool's own accent color. */
+.bie-orbit-connector-pulse-in {
   fill: var(--tool-accent, #5df7ff);
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tool-accent, #5df7ff) 75%, transparent));
+}
+
+/* Outbound: verified intelligence, core -> tool. Fixed core-cyan, not tool-tinted —
+   this is BIE's signal going back out, distinct from the tool's own raw data. */
+.bie-orbit-connector-pulse-out {
+  fill: #5df7ff;
+  filter: drop-shadow(0 0 4px rgba(93, 247, 255, 0.75));
+}
+
+/* Tool <-> tool mesh — fainter than the core spokes (secondary relationship,
+   mediated by BIE's shared ecosystem-context, not a literal direct link). */
+.bie-orbit-mesh-line {
+  stroke: rgba(148, 226, 255, 0.05);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* One pulse continuously circling the whole mesh — "shared context circulates
+   through the ecosystem," deliberately ONE traveling element, not six, to keep
+   this restrained rather than turning the periphery into a firehose of dots. */
+.bie-orbit-loop-pulse {
+  fill: #bf5fff;
+  filter: drop-shadow(0 0 4px rgba(191, 95, 255, 0.7));
 }
 
 .bie-orbit-tool {
@@ -3228,7 +3253,9 @@ body::before {
   .bie-ring-pulse-dot { display: none; }
   .bie-gate-ring { animation: none; }
   .bie-gate-reject-flash { display: none; }
-  .bie-orbit-connector-pulse { display: none; }
+  .bie-orbit-connector-pulse-in,
+  .bie-orbit-connector-pulse-out,
+  .bie-orbit-loop-pulse { display: none; }
 }
 
 .bento-card-watermark {
