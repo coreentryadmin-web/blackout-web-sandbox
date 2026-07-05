@@ -22,10 +22,16 @@ import {
   fetchClosedPlayOutcomes,
   fetchNighthawkToolCallingBieInteractions,
   fetchSpxToolCallingBieInteractions,
+  fetchThermalToolCallingBieInteractions,
   fetchZeroDteSetupLogRange,
   fetchZeroDteToolCallingBieInteractions,
 } from "@/lib/db";
-import { NIGHTHAWK_ENGINE_TOOL_NAMES, SPX_ENGINE_TOOL_NAMES, ZERODTE_ENGINE_TOOL_NAMES } from "@/lib/largo/tool-defs";
+import {
+  NIGHTHAWK_ENGINE_TOOL_NAMES,
+  SPX_ENGINE_TOOL_NAMES,
+  THERMAL_ENGINE_TOOL_NAMES,
+  ZERODTE_ENGINE_TOOL_NAMES,
+} from "@/lib/largo/tool-defs";
 import { todayEt } from "@/lib/nighthawk/session";
 import { gradeRank } from "@/lib/spx-play-config";
 import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
@@ -74,6 +80,14 @@ export type CalibrationReport = {
    *  fills it in. See computeSpxToolCallCalibration below for the cohort
    *  definition and metrics. */
   spx_tool_calls: SpxToolCallCalibrationReport | null;
+  /** Task #137 — the same answer-quality cohort as spx_tool_calls above, but for
+   *  BlackOut Thermal (the GEX/dealer-positioning product behind /heatmap) instead
+   *  of SPX Slayer. Additive field, same attach-after-compute pattern: null until
+   *  runBieCalibration's async orchestrator fills it in. See
+   *  computeThermalToolCallCalibration below for the cohort definition and
+   *  metrics, and its doc comment for why this cohort's router_matched_n is
+   *  legitimately always 0 today (BIE's router has no Thermal/GEX intent). */
+  thermal_tool_calls: ThermalToolCallCalibrationReport | null;
   /** Task #144 — the same cohort idea as spx_tool_calls above, applied to Night
    *  Hawk instead of SPX Slayer: Largo's own answer-quality cohort for turns
    *  that touched Night Hawk's live-engine state (published edition, outcome
@@ -214,12 +228,13 @@ export function computeCalibration(
     by_time_of_day: byTod,
     by_spike: bySpike,
     recommendations: recs,
-    // Attached by runBieCalibration once it has computed the SPX/Night Hawk/
-    // 0DTE-tool-calling passes too — this pure function only ever sees
+    // Attached by runBieCalibration once it has computed the SPX/Thermal/Night
+    // Hawk/0DTE-tool-calling passes too — this pure function only ever sees
     // 0DTE-setup-log rows, so it never has data to report for any of the
     // additive slices below.
     spx_slayer: null,
     spx_tool_calls: null,
+    thermal_tool_calls: null,
     nighthawk_tool_calls: null,
     zerodte_tool_calls: null,
   };
@@ -420,6 +435,135 @@ export function computeSpxToolCallCalibration(
   if (n >= MIN_EVIDENCE && routerMatchRatePct != null && routerMatchRatePct < 30) {
     recs.push(
       `Only ${routerMatchRatePct}% of SPX-tool-calling turns were answered by the deterministic router over ${n} turns — most SPX-engine-state questions still fall through to full Claude tool-calling; consider widening composeSpxStructure's coverage.`
+    );
+  }
+
+  return {
+    window,
+    n,
+    claude_fallback_n: claudeFallbackN,
+    router_matched_n: routerMatchedN,
+    router_match_rate_pct: routerMatchRatePct,
+    grounding_pass_rate_pct: groundingPassRatePct,
+    avg_latency_ms: avgLatencyMs,
+    recommendations: recs,
+  };
+}
+
+// ── Task #137: Thermal-tool-calling cohort within bie_interactions (additive, a
+// fourth pass alongside the 0DTE, SPX-Slayer-outcomes, and SPX-tool-calling passes
+// above) ──
+//
+// Same gap as task #112, but for BlackOut Thermal (the dealer-GEX/positioning
+// product behind /heatmap) instead of SPX Slayer: before this, calibration.ts had
+// no way to measure whether Largo's ANSWERS about Thermal's own computed state
+// (dealer positioning, gamma flip, walls, regime-transition history) were actually
+// GOOD answers — grounding-verifier claim correctness says nothing about whether
+// the answer picked the right tool or served stale-but-technically-accurate info.
+// This slice tracks that cohort continuously, mirroring task #112's shape exactly.
+
+/** Slim projection of a bie_interactions row — only what this slice's cohort test
+ *  and metrics need. Same shape as SpxToolCallInputRow. */
+export type ThermalToolCallInputRow = {
+  tools_used: string[];
+  /** "claude_fallback", a router intent name, or null if a row predates task
+   *  #103's intent_bucket column. Carried on the type for shape-parity with
+   *  SpxToolCallInputRow, but see isThermalToolCallingRow below — this cohort's
+   *  membership test never reads it. */
+  intent_bucket: string | null;
+  answer_source: string;
+  claims_total: number | null;
+  claims_verified: number | null;
+  latency_ms: number | null;
+};
+
+export type ThermalToolCallCalibrationReport = {
+  window: { since: string; through: string };
+  /** Rows in the cohort — see isThermalToolCallingRow for the membership test. */
+  n: number;
+  /** Of the n cohort rows, how many were answered by Claude's tool-calling loop
+   *  vs. matched deterministically by the BIE router. Same raw-counts convention
+   *  as SpxToolCallCalibrationReport. router_matched_n is expected to read 0 —
+   *  see isThermalToolCallingRow's doc comment for why that's an honest reading
+   *  of reality, not a bug. */
+  claude_fallback_n: number;
+  router_matched_n: number;
+  /** router_matched_n / n. null when n = 0. */
+  router_match_rate_pct: number | null;
+  /** Aggregate sum(claims_verified)/sum(claims_total) across cohort rows that
+   *  actually carried numeric claims (claims_total > 0) — same weighting
+   *  convention as SpxToolCallCalibrationReport. null when no cohort row had any
+   *  graded claims yet. */
+  grounding_pass_rate_pct: number | null;
+  avg_latency_ms: number | null;
+  /** Same evidence-gating philosophy as the other passes — empty until n≥10. */
+  recommendations: string[];
+};
+
+/** Cohort membership: does this bie_interactions row represent a Largo turn that
+ *  touched BlackOut Thermal's own computed/cached dealer-positioning state? A
+ *  PLAIN tools_used membership test — deliberately NOT a UNION with an
+ *  intent_bucket check the way isSpxToolCallingRow (above) is.
+ *
+ *  isSpxToolCallingRow needs that OR because BIE's deterministic router has a
+ *  spx_structure intent whose composer internally calls the exact same SPX-engine
+ *  read a Claude-tool-calling turn would make, but logBie() always records that
+ *  path's tools_used as the ["blackout_intelligence"] sentinel rather than the
+ *  real tool name — so a pure tools_used check would silently exclude every
+ *  router-matched SPX-engine turn.
+ *
+ *  BIE's router (src/lib/bie/router.ts's classifyBieIntent) has NO intent at all
+ *  for Thermal/GEX-positioning questions — only zerodte_plays, ticker_play_state,
+ *  spx_structure, and market_context exist. There is no router path that reads
+ *  Thermal's engine state and mislabels its tools_used, so there is nothing to OR
+ *  in here. This is DELIBERATE, not an oversight: adding a Thermal router intent
+ *  would be a materially bigger scope change (new classification regexes, new
+ *  composer, new follow-up chips) than this cohort-tracking task calls for. A
+ *  future reader should NOT "fix" the resulting router_matched_n = 0 by fabricating
+ *  an intent_bucket match here — that number is an honest, correct reflection of
+ *  the router's current coverage, and computeThermalToolCallCalibration reports it
+ *  as such rather than papering over it. */
+function isThermalToolCallingRow(row: ThermalToolCallInputRow): boolean {
+  return row.tools_used.some((t) => (THERMAL_ENGINE_TOOL_NAMES as readonly string[]).includes(t));
+}
+
+/** Pure assembly — feed it bie_interactions-shaped rows (any cohort mix), get the
+ *  Thermal-tool-calling slice's sample count, router-vs-Claude split, grounding
+ *  pass rate, and latency. Same math as computeSpxToolCallCalibration; never
+ *  touches spx_signals.ts, any live play-engine gate, or Thermal's own GEX
+ *  compute pipeline — read-only reporting over already-logged turns. */
+export function computeThermalToolCallCalibration(
+  rows: ThermalToolCallInputRow[],
+  window: { since: string; through: string }
+): ThermalToolCallCalibrationReport {
+  const cohort = rows.filter(isThermalToolCallingRow);
+  const n = cohort.length;
+
+  const claudeFallbackN = cohort.filter((r) => r.answer_source === "claude").length;
+  const routerMatchedN = cohort.filter((r) => r.answer_source === "bie-router").length;
+  const routerMatchRatePct = n > 0 ? Math.round((routerMatchedN / n) * 1000) / 10 : null;
+
+  // Only rows that actually carried numeric claims count toward the grounding
+  // ratio — same reasoning as computeSpxToolCallCalibration's identical guard.
+  const graded = cohort.filter((r) => (r.claims_total ?? 0) > 0);
+  const totalClaims = graded.reduce((s, r) => s + (r.claims_total ?? 0), 0);
+  const verifiedClaims = graded.reduce((s, r) => s + (r.claims_verified ?? 0), 0);
+  const groundingPassRatePct = totalClaims > 0 ? Math.round((verifiedClaims / totalClaims) * 1000) / 10 : null;
+
+  const latencies = cohort.map((r) => r.latency_ms).filter((l): l is number => l != null);
+  const avgLatencyMs = latencies.length
+    ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+    : null;
+
+  const recs: string[] = [];
+  if (n >= MIN_EVIDENCE && groundingPassRatePct != null && groundingPassRatePct < 70) {
+    recs.push(
+      `Thermal-tool-calling Largo turns show only ${groundingPassRatePct}% claim grounding over ${n} turns — since grounding checks numbers, not answer quality, this is worth a manual read of a few transcripts to see whether the GEX/positioning tools' outputs are being misread or just under-verified.`
+    );
+  }
+  if (n >= MIN_EVIDENCE && routerMatchRatePct != null && routerMatchRatePct < 30) {
+    recs.push(
+      `Only ${routerMatchRatePct}% of Thermal-tool-calling turns were answered by the deterministic router over ${n} turns — BIE's router has no dedicated Thermal/GEX intent today, so every one of these turns falls through to full Claude tool-calling; consider adding a deterministic GEX-positioning intent to classifyBieIntent.`
     );
   }
 
@@ -725,6 +869,7 @@ export function formatCalibration(r: CalibrationReport): string {
   const sections = [zeroDteSection];
   if (r.spx_slayer) sections.push(`---`, ``, formatSpxCalibration(r.spx_slayer));
   if (r.spx_tool_calls) sections.push(`---`, ``, formatSpxToolCallCalibration(r.spx_tool_calls));
+  if (r.thermal_tool_calls) sections.push(`---`, ``, formatThermalToolCallCalibration(r.thermal_tool_calls));
   if (r.nighthawk_tool_calls) sections.push(`---`, ``, formatNighthawkToolCallCalibration(r.nighthawk_tool_calls));
   // Task #149 — labeled "0DTE Command tool-calling" (not bare "0DTE") so it never
   // reads as a duplicate of zeroDteSection above, which is about the SCANNER'S
@@ -763,6 +908,20 @@ export function formatSpxToolCallCalibration(r: SpxToolCallCalibrationReport): s
     r.recommendations.length
       ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
       : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} SPX-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
+  ].join("\n");
+}
+
+export function formatThermalToolCallCalibration(r: ThermalToolCallCalibrationReport): string {
+  return [
+    `Thermal-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched BlackOut Thermal's own engine state)`,
+    ``,
+    `Grounding pass rate: ${r.grounding_pass_rate_pct != null ? `${r.grounding_pass_rate_pct}%` : "no graded claims yet"}`,
+    `Avg latency: ${r.avg_latency_ms != null ? `${r.avg_latency_ms}ms` : "—"}`,
+    `Answered by: ${r.claude_fallback_n} Claude tool-calling turn(s), ${r.router_matched_n} deterministic router match(es)${r.router_match_rate_pct != null ? ` (${r.router_match_rate_pct}% router-matched)` : ""}`,
+    ``,
+    r.recommendations.length
+      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
+      : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} Thermal-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
 }
 
@@ -849,6 +1008,34 @@ async function computeSpxToolCallCalibrationFromDb(
   try {
     const rows = await fetchSpxToolCallingBieInteractions(since, SPX_ENGINE_TOOL_NAMES);
     return computeSpxToolCallCalibration(
+      rows.map((r) => ({
+        tools_used: r.tools_used,
+        intent_bucket: r.intent_bucket,
+        answer_source: r.answer_source,
+        claims_total: r.claims_total,
+        claims_verified: r.claims_verified,
+        latency_ms: r.latency_ms,
+      })),
+      { since, through }
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Task #137's Thermal-tool-calling pass — same rolling window as the other
+ *  passes above, fed by fetchThermalToolCallingBieInteractions (which does the
+ *  cohort filtering at the SQL layer — see its doc comment in db.ts). Failure is
+ *  isolated to this helper (never throws), same fail-open contract as
+ *  computeSpxToolCallCalibrationFromDb above, so a problem here can never take
+ *  down the rest of the report. */
+async function computeThermalToolCallCalibrationFromDb(
+  since: string,
+  through: string
+): Promise<ThermalToolCallCalibrationReport | null> {
+  try {
+    const rows = await fetchThermalToolCallingBieInteractions(since, THERMAL_ENGINE_TOOL_NAMES);
+    return computeThermalToolCallCalibration(
       rows.map((r) => ({
         tools_used: r.tools_used,
         intent_bucket: r.intent_bucket,
@@ -952,6 +1139,11 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
     // independent read-only pass over bie_interactions (Largo's own turns), never
     // touching spx_signals.ts or any live play-engine gate/score/action.
     report.spx_tool_calls = await computeSpxToolCallCalibrationFromDb(since, through);
+    // Task #137: attach the Thermal-tool-calling answer-quality cohort too — a
+    // FOURTH, independent read-only pass over bie_interactions (Largo's own
+    // turns), never touching spx_signals.ts, any live play-engine gate/score/
+    // action, or Thermal's own GEX compute pipeline.
+    report.thermal_tool_calls = await computeThermalToolCallCalibrationFromDb(since, through);
     // Task #144: attach the Night-Hawk-tool-calling answer-quality cohort too — a
     // FOURTH, independent read-only pass over bie_interactions, never touching
     // spx_signals.ts, nighthawk/* generation code, or any live gate/score/action.

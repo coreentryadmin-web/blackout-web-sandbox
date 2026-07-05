@@ -642,6 +642,68 @@ export const SPX_ENGINE_TOOL_NAMES = [
   "get_power_hour",
 ];
 
+// Task #137 — the cohort-membership test for "did this Largo turn touch BlackOut
+// Thermal's OWN computed/cached dealer-positioning state" (BIE's self-eval loop,
+// calibration.ts), same purpose as SPX_ENGINE_TOOL_NAMES above but for Thermal
+// (the GEX/gamma/dealer-positioning product behind /heatmap) instead of SPX Slayer.
+//
+// Verified against run-tool.ts's case statements, not guessed from naming — and
+// the naming trap here is real, so read carefully before "fixing" this list:
+//   - get_positioning (case "get_positioning" → fetchPositioningSummary,
+//     src/lib/nighthawk/positioning.ts): PRIMARY path calls getGexPositioning(sym)
+//     (src/lib/providers/gex-positioning.ts), which is a strict CACHE-READER over
+//     fetchGexHeatmap's shared `gex-heatmap:{ticker}` matrix — that file's own doc
+//     comment calls it "the ONE source every other tool/service/AI surface consumes
+//     for the Heat Maps dealer-positioning data." This is exactly Thermal's own
+//     engine state (spot, gamma flip, call/put walls, max pain, GEX king strike,
+//     net GEX/VEX/DEX/CHARM). INCLUDED.
+//   - get_gex_regime_events (case "get_gex_regime_events" → gexRegimeEventsForLargo,
+//     src/lib/providers/gex-regime-events.ts): reads gex_regime_events, task #136's
+//     durable Postgres log of flip/wall/regime transitions — persisted directly off
+//     computeGexEvents()' diff of Thermal's own fetchGexHeatmap matrix (see that
+//     file's header comment: "ONE DERIVATION, NOT TWO... every call site passes in
+//     the EXACT GexEvent[] array computeGexEvents() already produced"). This is
+//     Thermal's own transition HISTORY, the durable analogue of the CURRENT-state
+//     snapshot get_positioning returns. INCLUDED. (Note: tool-defs.test.ts already
+//     asserts this name is NOT part of SPX_ENGINE_TOOL_NAMES, for the unrelated
+//     reason that it's ticker-generic rather than SPX-Slayer-engine-specific — that
+//     exclusion says nothing about Thermal-specificity, which is the only axis this
+//     list cares about.)
+//   - get_gex (case "get_gex"): despite the name — and despite this being "the GEX
+//     product" — this tool's implementation does NOT read fetchGexHeatmap or
+//     getGexPositioning at all. For SPX/I:SPX at today's expiry it reads
+//     getLargoSpxLiveDesk(userId), i.e. SPX SLAYER's own live desk (SPX_ENGINE_TOOL_
+//     NAMES' territory, not Thermal's). For every other case it calls
+//     fetchPolygonOdteGexRows → fetchPolygonOdteDeskBundle, a THIRD, separate,
+//     spot-keyed (no ticker parameter at all) cache — the 0DTE desk bundle, not the
+//     per-ticker Thermal heatmap matrix — or, failing that, raw ad hoc Unusual
+//     Whales spot-exposure/gex-level calls. None of get_gex's three branches ever
+//     touch Thermal's canonical cache. EXCLUDED — the same "too generic, verified
+//     via the case body" reasoning SPX_ENGINE_TOOL_NAMES's own comment gives for
+//     excluding get_gex from ITS list, just landing on the identical conclusion for
+//     a different, Thermal-specific reason: it doesn't read Thermal's state either.
+//   - get_options_chain / get_oi_per_strike / get_max_pain / get_greeks /
+//     get_atm_chains / get_options_volume (all TOOL_GROUPS.stock_analysis): each
+//     one independently fetches+computes over a raw polygonChainBundle() chain for
+//     whatever ticker/expiry was asked, with no read of the shared heatmap cache —
+//     generic per-ticker options-chain shape, not a Thermal-positioning-specific
+//     read. EXCLUDED.
+//   - get_ecosystem_context (BIE_TOOL_NAMES/TOOL_GROUPS.platform): its payload DOES
+//     embed gex_positioning (the same getGexPositioning() object get_positioning
+//     returns), but it's a cross-product, ANY-ticker tool, and bie_interactions.
+//     tools_used only records tool NAMES, never call inputs — there's no way to
+//     tell from a row alone whether a given call actually needed the GEX slice or
+//     was scoped to something unrelated (e.g. a 0DTE/Night Hawk question about a
+//     name with no Thermal angle at all). Same reasoning SPX_ENGINE_TOOL_NAMES's
+//     own comment gives for excluding it from that list. EXCLUDED.
+// Kept as an explicit literal list (not derived from TOOL_GROUPS.stock_analysis)
+// for the same reason SPX_ENGINE_TOOL_NAMES is: so this cohort tracks "did Largo
+// read Thermal's own computed state" and can't silently widen/narrow if
+// stock_analysis's bundle composition changes for unrelated routing reasons — see
+// tool-defs.test.ts for the assertion keeping this a verified subset of
+// TOOL_GROUPS.stock_analysis.
+export const THERMAL_ENGINE_TOOL_NAMES = ["get_positioning", "get_gex_regime_events"];
+
 // Task #144 — the cohort-membership test for "did this Largo turn touch Night
 // Hawk's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
 // same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night Hawk instead

@@ -190,16 +190,19 @@ import {
   computeNighthawkToolCallCalibration,
   computeSpxCalibration,
   computeSpxToolCallCalibration,
+  computeThermalToolCallCalibration,
   computeZeroDteToolCallCalibration,
   formatCalibration,
   formatNighthawkToolCallCalibration,
   formatSpxCalibration,
   formatSpxToolCallCalibration,
+  formatThermalToolCallCalibration,
   formatZeroDteToolCallCalibration,
   type CalibrationInputRow,
   type NighthawkToolCallInputRow,
   type SpxCalibrationInputRow,
   type SpxToolCallInputRow,
+  type ThermalToolCallInputRow,
   type ZeroDteToolCallInputRow,
 } from "./calibration";
 
@@ -429,6 +432,130 @@ test("calibration: without an attached spx_tool_calls pass, the report doesn't g
   const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
   assert.equal(zeroDte.spx_tool_calls, null);
   assert.doesNotMatch(formatCalibration(zeroDte), /SPX-tool-calling/);
+});
+
+// ── Task #137: Thermal-tool-calling cohort within bie_interactions ──────────────
+// Same shape as task #112's SPX-tool-calling cohort above, but for BlackOut
+// Thermal (the GEX/dealer-positioning product behind /heatmap). The one
+// deliberate asymmetry: BIE's router has NO Thermal/GEX intent at all (only
+// zerodte_plays/ticker_play_state/spx_structure/market_context exist), so unlike
+// isSpxToolCallingRow there is no intent_bucket OR-clause — see
+// isThermalToolCallingRow's doc comment in calibration.ts.
+
+const thermalToolRow = (over: Partial<ThermalToolCallInputRow>): ThermalToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_positioning"],
+  intent_bucket: null,
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 1200,
+  ...over,
+});
+
+test("thermal tool-call calibration: cohort includes tools_used intersecting THERMAL_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_positioning"] }), // in cohort
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only (get_gex excluded) — NOT in cohort
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_gex_regime_events"] }), // in cohort
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("thermal tool-call calibration: a router-sentinel row never joins the cohort, for ANY intent_bucket — BIE has no Thermal router intent to OR in", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+    thermalToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "market_context", answer_source: "bie-router" }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_matched_n, 0);
+});
+
+test("thermal tool-call calibration: aggregate grounding pass rate and avg latency over a mixed cohort; router_matched_n is honestly 0", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["get_positioning"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    thermalToolRow({ tools_used: ["get_gex_regime_events"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.claude_fallback_n, 2);
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, 0);
+  // sum(verified)/sum(total) = (4+3)/(4+6) = 7/10 = 70% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 70);
+  // (4000 + 6000) / 2 = 5000.
+  assert.equal(r.avg_latency_ms, 5000);
+});
+
+test("thermal tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 0, claims_verified: 0 }),
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("thermal tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatThermalToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("thermal tool-call calibration: cites low grounding and the router-coverage gap once evidence clears n≥10", () => {
+  const rows: ThermalToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    thermalToolRow({ tools_used: ["get_positioning"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  assert.ok(r.recommendations.some((x) => /Only 0% of Thermal-tool-calling turns were answered by the deterministic router/.test(x)));
+});
+
+test("thermal tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeThermalToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatThermalToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all four sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, and Thermal-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spxToolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const thermalToolCalls = computeThermalToolCallCalibration([thermalToolRow({ tools_used: ["get_positioning"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: spxToolCalls,
+    thermal_tool_calls: thermalToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /Thermal-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached thermal_tool_calls pass, the report doesn't grow a fourth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.thermal_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /Thermal-tool-calling/);
 });
 
 // ── Task #144: Night-Hawk-tool-calling cohort within bie_interactions ───────────

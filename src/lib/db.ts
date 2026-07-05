@@ -4471,6 +4471,62 @@ export async function fetchSpxToolCallingBieInteractions(
   }));
 }
 
+/** Task #137 — the raw rows BIE's calibration harness needs to score "how good are
+ *  Largo's answers specifically when BlackOut Thermal's own GEX/positioning tools
+ *  were involved" (src/lib/bie/calibration.ts's computeThermalToolCallCalibration).
+ *  Same SQL-layer-filter rationale as fetchSpxToolCallingBieInteractions above
+ *  (bie_interactions is one row per Largo QUESTION — much higher volume than the
+ *  admission-gated setup-log/closed-play-outcome tables — so filtering here beats
+ *  pulling the whole rolling window client-side just to throw most of it away).
+ *
+ *  DELIBERATE ASYMMETRY vs. fetchSpxToolCallingBieInteractions: this is a PLAIN
+ *  `tools_used ?|` membership test, with NO `OR intent_bucket = '...'` clause.
+ *  The SPX version needs that OR because BIE's deterministic router has a
+ *  `spx_structure` intent that answers via the exact same engine read a
+ *  Claude-tool-calling turn would make, but always logs the ["blackout_intelligence"]
+ *  sentinel instead of the real tool name (see that function's doc comment). BIE's
+ *  router (src/lib/bie/router.ts's classifyBieIntent) has NO intent at all for
+ *  Thermal/GEX-positioning questions — only zerodte_plays/ticker_play_state/
+ *  spx_structure/market_context exist — so there is no router path to reroute
+ *  around and nothing to OR in. Every Thermal-engine-tool turn in bie_interactions
+ *  necessarily went through Claude's tool-calling loop and recorded the real tool
+ *  name, so a pure tools_used check already sees the complete cohort. */
+export async function fetchThermalToolCallingBieInteractions(
+  sinceDate: string,
+  thermalEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, thermalEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 /** Task #144 — the Night Hawk analogue of fetchSpxToolCallingBieInteractions
  *  above: raw bie_interactions rows for "how good are Largo's answers
  *  specifically when Night Hawk's own tools were involved" (src/lib/bie/
