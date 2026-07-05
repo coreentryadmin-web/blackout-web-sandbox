@@ -9,7 +9,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
-- **SPX Slayer left rail:** `SpxOdteMatrixPanel` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**).
+- **SPX Slayer left rail:** `SpxGexMatrixHeatmap` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**). Bootstrap seeds matrix SWR via `/api/market/spx/bootstrap`.
 - **BlackOut Thermal (`/heatmap`):** full `GexHeatmap.tsx` matrix shares **`src/lib/gex-heatmap-display.ts`** cell format/color scale with the SPX rail (GEX/VEX/DEX/CHARM lenses). Both surfaces read `cross_validation` from `/api/market/gex-heatmap` when preset tickers diverge from UW.
 - The WebSocket market-data managers are **not** a separate process — they boot lazily inside the Node
   server on the first `/api/market/*` request (`src/lib/ws/init-data-sockets.ts`).

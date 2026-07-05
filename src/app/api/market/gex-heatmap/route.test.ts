@@ -20,6 +20,7 @@ import type { GexHeatmap } from "../../../../lib/providers/polygon-options-gex";
 
 let mockHeatmap: GexHeatmap | null = null;
 let fetchGexHeatmapCalls = 0;
+let capturedLaunchTools: string[] | null = null;
 // Task #174 fixture: defaults to "market open" so every PRE-EXISTING test above keeps its
 // original behavior untouched (the off-hours gate is a no-op when isEtCashRth() is true).
 let mockMarketOpen = true;
@@ -31,7 +32,10 @@ mock.module("../../../../lib/market-api-auth", {
 });
 mock.module("../../../../lib/tool-access-server", {
   namedExports: {
-    requireToolApi: async () => null, // tool launched — never gate the test
+    requireAnyToolApi: async (tools: string[]) => {
+      capturedLaunchTools = tools;
+      return null; // tool launched — never gate the test
+    },
   },
 });
 mock.module("../../../../lib/providers/polygon-options-gex", {
@@ -166,6 +170,13 @@ describe("/api/market/gex-heatmap available flag", () => {
 
   before(async () => {
     ({ GET } = await import("./route"));
+  });
+
+  test("M1: launch gate checks spx OR heatmap (not heatmap-only)", async () => {
+    mockHeatmap = liveHeatmap();
+    capturedLaunchTools = null;
+    await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=SPX"));
+    assert.deepEqual(capturedLaunchTools, ["spx", "heatmap"]);
   });
 
   test("a non-null but EMPTY heatmap (spot:0, strikes:[]) now reports available:false — pre-fix this returned true", async () => {

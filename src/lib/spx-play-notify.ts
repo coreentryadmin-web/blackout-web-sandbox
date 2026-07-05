@@ -1,7 +1,7 @@
 import { postDiscordWebhook } from "@/lib/discord-post";
 import { notifyPlayPersonal } from "@/lib/personal-alert-fanout";
 
-export type PlayDiscordAction = "BUY" | "SELL" | "TRIM";
+export type PlayDiscordAction = "BUY" | "SELL" | "TRIM" | "WATCH";
 
 export async function notifyPlayDiscord(input: {
   action: PlayDiscordAction;
@@ -15,7 +15,14 @@ export async function notifyPlayDiscord(input: {
   const url = process.env.DISCORD_PLAY_WEBHOOK_URL?.trim();
   if (!url) return;
 
-  const emoji = input.action === "BUY" ? "🟢" : input.action === "TRIM" ? "🟡" : "🔴";
+  const emoji =
+    input.action === "BUY"
+      ? "🟢"
+      : input.action === "TRIM"
+        ? "🟡"
+        : input.action === "WATCH"
+          ? "👁️"
+          : "🔴";
   const dir = input.direction?.toUpperCase() ?? "—";
   const lines = [
     `${emoji} **SPX PLAY ${input.action}** · ${dir}`,

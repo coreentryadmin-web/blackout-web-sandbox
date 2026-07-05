@@ -6,8 +6,14 @@
 import {
   playForceExitEtHour,
   playForceExitEtMin,
+  playLottoIntradayCutoffEtHour,
+  playLottoIntradayCutoffEtMin,
   playNoEntryAfterEtHour,
   playNoEntryAfterEtMin,
+  playPowerHourEndEtHour,
+  playPowerHourEndEtMin,
+  playPowerHourStartEtHour,
+  playPowerHourStartEtMin,
 } from "@/lib/spx-play-config";
 import { etClock, etMinutes, formatEtTime } from "@/lib/spx-play-session-time";
 import { formatEtDate, isTradingDayEt } from "@/lib/nighthawk/session";
@@ -60,11 +66,35 @@ export function isEtWeekday(now: Date): boolean {
   return d >= 1 && d <= 5;
 }
 
-/** 7:00–10:30 AM ET weekdays — parallel lotto engine window. */
+/** 7:00–10:30 AM ET weekdays — opening-range lotto window (pre-market WATCH expiry). */
 export function isLottoWindow(now = new Date()): boolean {
   if (!isEtWeekday(now)) return false;
   const etMins = etMinutes(now);
   return etMins >= PREMARKET_START_ET_MINS && etMins < etClock(10, 30);
+}
+
+/** 7:00 AM–2:00 PM ET weekdays — client poll window for lotto (matches engine intraday cutoff). */
+export function isLottoPollWindow(now = new Date()): boolean {
+  if (!isEtWeekday(now)) return false;
+  const etMins = etMinutes(now);
+  return (
+    etMins >= PREMARKET_START_ET_MINS &&
+    etMins < etClock(playLottoIntradayCutoffEtHour(), playLottoIntradayCutoffEtMin())
+  );
+}
+
+/** 2:45–3:15 PM ET weekdays — power hour lotto window. */
+export function isPowerHourWindow(now = new Date()): boolean {
+  if (!isEtWeekday(now)) return false;
+  const etMins = etMinutes(now);
+  return (
+    etMins >= etClock(playPowerHourStartEtHour(), playPowerHourStartEtMin()) &&
+    etMins < etClock(playPowerHourEndEtHour(), playPowerHourEndEtMin())
+  );
+}
+
+export function isPastPowerHourWindow(now = new Date()): boolean {
+  return isEtWeekday(now) && etMinutes(now) >= etClock(playPowerHourEndEtHour(), playPowerHourEndEtMin());
 }
 
 /** 7:00 AM–4:15 PM ET weekdays — server cron evaluation window for play + lotto.
@@ -115,7 +145,12 @@ export function isPastNoEntryCutoff(now = new Date()): boolean {
   return etMinutes(now) >= cutoffMins;
 }
 
-export function noEntryCutoffLabel(): string {
+export function noEntryCutoffLabel(now = new Date()): string {
+  const earlyClose = getEarlyCloseMinutes(now);
+  if (earlyClose != null) {
+    const cutoffMins = earlyClose - 30;
+    return formatEtTime(Math.floor(cutoffMins / 60), cutoffMins % 60);
+  }
   return formatEtTime(playNoEntryAfterEtHour(), playNoEntryAfterEtMin());
 }
 

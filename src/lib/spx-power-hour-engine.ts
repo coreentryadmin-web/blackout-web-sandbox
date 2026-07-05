@@ -30,7 +30,7 @@ import { polygonTrackedFetch } from "@/lib/providers/polygon-rate-limiter";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { round5 } from "@/lib/round5";
 import { notifyPlayDiscord } from "@/lib/spx-play-notify";
-import { isEtWeekday } from "@/lib/spx-play-session-guards";
+import { isPastPowerHourWindow, isPowerHourWindow } from "@/lib/spx-play-session-guards";
 import { etClock, etMinutes } from "@/lib/spx-play-session-time";
 import {
   POWER_HOUR_SIZING_NOTE,
@@ -100,16 +100,6 @@ function windowCloseLabel(): string {
   const h = playPowerHourEndEtHour();
   const m = playPowerHourEndEtMin();
   return `${h}:${String(m).padStart(2, "0")} ET`;
-}
-
-export function isPowerHourWindow(now = new Date()): boolean {
-  if (!isEtWeekday(now)) return false;
-  const m = etMinutes(now);
-  return m >= windowStartMins() && m < windowEndMins();
-}
-
-export function isPastPowerHourWindow(now = new Date()): boolean {
-  return isEtWeekday(now) && etMinutes(now) >= windowEndMins();
 }
 
 function isWatchExpired(now = new Date()): boolean {
@@ -517,7 +507,7 @@ export async function evaluateSpxPowerHour(
 
   await savePowerHourRecord(watch);
   void notifyPlayDiscord({
-    action: "BUY",
+    action: "WATCH",
     direction,
     headline: `Power Hour WATCH — ${watch.headline}`,
     thesis: watch.thesis,
@@ -561,3 +551,5 @@ export async function readSpxPowerHourSnapshot(desk: SpxDeskPayload): Promise<Po
   if (isWatchExpired(now)) return nonePayload("expired");
   return nonePayload("no_setup");
 }
+
+export { isPastPowerHourWindow, isPowerHourWindow } from "@/lib/spx-play-session-guards";

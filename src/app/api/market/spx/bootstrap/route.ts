@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
@@ -30,10 +31,13 @@ export async function GET(req: NextRequest) {
 
   ensureDataSockets();
 
+  const locked = await requireAnyToolApi(["spx", "heatmap"]);
+  const gexAllowed = !locked;
+
   try {
     const [bundle, gexHeatmap] = await Promise.all([
       loadMergedSpxDesk(),
-      fetchGexHeatmap("SPX").catch(() => null),
+      gexAllowed ? fetchGexHeatmap("SPX").catch(() => null) : Promise.resolve(null),
     ]);
 
     const payload: SpxBootstrapPayload = {

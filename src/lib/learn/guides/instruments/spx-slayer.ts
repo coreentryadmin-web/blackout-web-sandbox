@@ -14,7 +14,7 @@ export const spxSlayerGuide = defineToolGuide({
   layout: {
     title: "Desk layout",
     paragraphs: [
-      "Open `/dashboard` on a wide screen for the intended experience. On mobile, panels stack with Trade Alerts first; on xl breakpoints you get a true command center: left structure rail, center play engine, right Largo commentary.",
+      "Open `/dashboard` on a wide screen for the intended experience. On mobile, panels stack with Trade Alerts first; on xl breakpoints you get a true command center: left GEX matrix, center play engine, right Largo commentary. The left rail is matrix-only — no Benzinga scroll, live tape, or interval-flow panels.",
       "Optional halt banners sit above everything. A confirmed active halt blocks entries; a degraded halt feed does not block by itself (the engine fails open with a warning) — read that banner before interpreting any verdict below it, and manually verify no active halt exists.",
       "Scan top-to-bottom, left-to-right during the open: header for regime → left matrix for strike context → center for actionable verdict → right rail for narrative synthesis. Do not start in the commentary rail and work backward.",
     ],
@@ -52,21 +52,21 @@ export const spxSlayerGuide = defineToolGuide({
       tip: "FreshnessChip goes stale if polled data is older than ~90s or feed_stalled is set — do not size up on stale structure.",
     },
     {
-      name: "SpxOdteMatrixPanel",
-      location: "Left rail",
+      name: "SpxGexMatrixHeatmap",
+      location: "Left rail (matrix-only — no tape or news panels)",
       purpose:
-        "Scrollable 0DTE strike ladder showing net dealer GEX or VEX per strike, with spot row, pivot overlays, and flip totals.",
+        "Compact multi-expiry dealer GEX/VEX matrix with spot row, per-column kings, and 0DTE-scoped flip totals.",
       shows: [
         "Lens toggle: GEX vs VEX",
-        "γ/vanna flip level and net exposure total",
-        "Floor pivot grid (R1/R2/S1/S2 from prior day range)",
-        "Sticky table: Strike | Label | 0DTE expiry column with signed dollar values",
-        "Row labels: King, Max +/−, Spot, R1/R2/S1/S2",
-        "Legend, strike count, matrix as-of timestamp",
+        "γ flip and net exposure for the active 0DTE (or front-expiry) column",
+        "Sticky grid: Strike × expiry columns with signed dollar cells",
+        "Spot row highlight, king nodes (★), column max +/- gamma walls",
+        "Cross-validation note when UW oracle diverges from Polygon walls",
+        "Matrix as-of timestamp and stale badge when GEX is aged",
       ],
       actions: [
         "Toggle GEX / VEX lens",
-        "Auto-scroll centers the spot row when price moves",
+        "Auto-scroll keeps the spot strike row centered when price moves",
       ],
       cadence: "GEX heatmap poll: 8s RTH / 20s off-hours; live spot via pulse SSE",
       consume:

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { getEarlyCloseMinutes, isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { getEarlyCloseMinutes, isLottoPollWindow, isLottoWindow, isSpxEngineCronWindow, noEntryCutoffLabel } from "@/lib/spx-play-session-guards";
 
 const ENV_KEY = "SPX_EARLY_CLOSE_ET_MINS";
 
@@ -70,4 +70,13 @@ test("isSpxEngineCronWindow: true on a real trading day at the same clock time",
 
 test("isSpxEngineCronWindow: still false outside the window on a real trading day", () => {
   assert.equal(isSpxEngineCronWindow(new Date("2026-07-06T09:00:00.000Z")), false); // Mon 05:00 ET — before the 7am window
+});
+
+test("isLottoPollWindow extends through 2 PM ET intraday cutoff", () => {
+  assert.equal(isLottoWindow(new Date("2026-07-06T15:00:00.000Z")), false);
+  assert.equal(isLottoPollWindow(new Date("2026-07-06T15:00:00.000Z")), true);
+});
+
+test("noEntryCutoffLabel reflects early-close session (30 min before 1 PM close)", () => {
+  assert.equal(noEntryCutoffLabel(new Date("2026-12-24T17:00:00.000Z")), "12:30 PM ET");
 });

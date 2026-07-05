@@ -656,12 +656,8 @@ Hard rules:
     return parsed;
   }
 
-  return {
-    headline: "Desk update",
-    bias: "neutral",
-    body: raw.slice(0, 800),
-    watch: [],
-    changed: delta,
-    as_of: new Date().toISOString(),
-  };
+  // JSON parse failure — same contract as ungrounded output: never cache, never serve raw
+  // model text (audit C2: raw fallback bypassed the fabrication guard).
+  console.warn("[spx-commentary] JSON parse failed — discarding (never cached).");
+  return null;
 }

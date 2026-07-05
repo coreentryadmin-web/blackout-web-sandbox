@@ -146,4 +146,14 @@ describe("spx-commentary: grounding-failure audit trail", () => {
     assert.equal(result, null);
     assert.equal(auditLogCalls.length, 0, "no DB configured means no write attempt at all");
   });
+
+  test("JSON parse failure returns null (never serves ungrounded raw text)", async () => {
+    mockRaw = "This is not JSON — just prose from the model.";
+    mockGrounded = true;
+
+    const result = await generateSpxCommentary(fakeDesk(), null);
+
+    assert.equal(result, null);
+    assert.equal(auditLogCalls.length, 0);
+  });
 });

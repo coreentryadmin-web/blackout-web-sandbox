@@ -139,7 +139,7 @@ export type EcosystemSpxClosedPlay = {
   entry_price: number;
   exit_price: number | null;
   pnl_pts: number | null;
-  outcome: "open" | "win" | "loss" | "breakeven";
+  outcome: "open" | "win" | "loss" | "breakeven" | "superseded";
   headline: string;
   closed_at: string | null;
 };

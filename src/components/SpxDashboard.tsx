@@ -118,11 +118,13 @@ export function SpxDashboard() {
         <SpxSniperHeader desk={desk} live={live} />
       </SpxPanelErrorBoundary>
 
+      {/* Left rail: GEX matrix only — no Benzinga scroll, live tape, or interval-flow stack. */}
       <div className="spx-sniper-triple">
         <SpxPanelErrorBoundary>
           <aside className="spx-sniper-left-rail spx-left-matrix">
             <SpxGexMatrixHeatmap
               live={live}
+              sessionActive={sessionActive}
               liveSpot={desk?.price ?? null}
               deskGammaFlip={desk?.gamma_flip ?? null}
               deskGexKing={desk?.gex_king ?? null}

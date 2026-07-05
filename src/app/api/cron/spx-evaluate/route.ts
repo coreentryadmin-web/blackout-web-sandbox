@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const payload = {
       ok: true,
       skipped: true,
-      reason: "Outside SPX engine evaluation window (7:00–16:00 ET weekdays)",
+      reason: "Outside SPX engine evaluation window (7:00–16:15 ET weekdays)",
     };
     await logCronRun("spx-evaluate", started, payload);
     return NextResponse.json(payload);

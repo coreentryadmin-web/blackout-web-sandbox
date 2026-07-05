@@ -604,9 +604,8 @@ async function evaluateFlatPlay(
           direction,
           price: desk.price,
           level: keyLevel,
-          hybridHardOk:
-            mtfHardPass(direction, keyLevel, technicals) ||
-            Boolean(mtf?.ok && gradeRank(confluence.grade) >= 2),
+          // WATCH→ENTRY promote requires hard MTF only — no soft 3m/5m bypass (see mtfHardPass).
+          hybridHardOk: mtfHardPass(direction, keyLevel, technicals),
           score: abs,
           fullMinScore: promoteMin,
           desk,

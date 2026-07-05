@@ -11,7 +11,7 @@ import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
@@ -243,8 +243,8 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  // Launch gate — locked to non-admins until this tool ships.
-  const locked = await requireToolApi("heatmap");
+  // Launch gate — SPX Slayer left rail reads this matrix; allow spx OR heatmap launch.
+  const locked = await requireAnyToolApi(["spx", "heatmap"]);
   if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();

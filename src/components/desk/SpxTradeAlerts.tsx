@@ -6,12 +6,14 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxPlayPayload, SpxPlayAction } from "@/lib/spx-play-engine";
 import { useSpxPlay } from "@/hooks/useSpxPlay";
 import { useSpxLotto } from "@/hooks/useSpxLotto";
+import { useSpxPowerHour } from "@/hooks/useSpxPowerHour";
 import { useStablePlayConfirmations } from "@/hooks/useStablePlayConfirmations";
 import { SpxSniperBackdrop } from "@/components/desk/SpxSniperBackdrop";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import type { LottoPlayPayload } from "@/lib/spx-lotto-engine";
-import { isLottoWindow } from "@/lib/spx-play-session-guards";
+import type { PowerHourPlayPayload } from "@/lib/spx-power-hour-engine";
+import { isLottoPollWindow, isPowerHourWindow } from "@/lib/spx-play-session-guards";
 import {
   lottoPanelEmptyCopy,
   lottoPanelLoadingCopy,
@@ -152,7 +154,7 @@ function LottoPlayBlock({
   lottoLoading: boolean;
   lottoRefreshing: boolean;
 }) {
-  const inWindow = isLottoWindow();
+  const inWindow = isLottoPollWindow();
 
   if (lotto && lotto.phase !== "NONE") {
     return (
@@ -236,9 +238,81 @@ function LottoPlayBlock({
   );
 }
 
+function PowerHourPlayBlock({
+  powerHour,
+  powerHourLoading,
+  powerHourRefreshing,
+}: {
+  powerHour: PowerHourPlayPayload | null;
+  powerHourLoading: boolean;
+  powerHourRefreshing: boolean;
+}) {
+  const inWindow = isPowerHourWindow();
+  const showDock =
+    inWindow ||
+    (powerHour != null && (powerHour.phase === "WATCH" || powerHour.phase === "HOLD"));
+
+  if (!showDock && !powerHourLoading) return null;
+
+  if (powerHour && powerHour.phase !== "NONE") {
+    return (
+      <div
+        className={clsx(
+          "spx-lotto-play-block spx-power-hour-play-block",
+          powerHour.phase === "WATCH" && "spx-lotto-play-block-watch",
+          powerHour.phase === "HOLD" && "spx-lotto-play-block-ready"
+        )}
+      >
+        <p className="spx-lotto-play-kicker">Power hour · {powerHour.phase}</p>
+        <p className="spx-lotto-play-headline">{powerHour.headline}</p>
+        {powerHour.thesis && powerHour.thesis !== powerHour.headline && (
+          <p className="spx-lotto-play-thesis">{powerHour.thesis}</p>
+        )}
+        {powerHour.contract_label && (
+          <p className="spx-lotto-play-contract">
+            {powerHour.direction === "long" ? "CALL" : "PUT"} · {powerHour.contract_label}
+          </p>
+        )}
+        {powerHour.target_price != null && (
+          <p className="spx-lotto-play-contract">
+            Target +{powerHour.target_pts} pts · Stop −{powerHour.stop_pts} pts
+          </p>
+        )}
+        {powerHour.pnl_pts != null && powerHour.phase === "HOLD" && (
+          <p className="spx-lotto-play-contract">
+            Live PnL: {powerHour.pnl_pts >= 0 ? "+" : ""}
+            {powerHour.pnl_pts.toFixed(1)} pts
+          </p>
+        )}
+        <p className="spx-lotto-play-footnote">
+          {powerHour.status_message}
+          {powerHourRefreshing && " · live"}
+        </p>
+      </div>
+    );
+  }
+
+  if (inWindow) {
+    return (
+      <div className="spx-lotto-play-block spx-lotto-play-block-empty">
+        <p className="spx-lotto-play-kicker">Power hour</p>
+        <p className="spx-lotto-play-headline">
+          {powerHourLoading ? "Scanning closing momentum…" : "No power-hour setup armed yet."}
+        </p>
+        <p className="spx-lotto-play-thesis">
+          Near-money 0DTE momentum window · 2:45–3:15 PM ET.
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }: Props) {
   const { play, playRefreshing } = useSpxPlay(sessionActive);
   const { lotto, lottoLoading, lottoRefreshing } = useSpxLotto();
+  const { powerHour, powerHourLoading, powerHourRefreshing } = useSpxPowerHour();
   const confirmationLayer = useStablePlayConfirmations(play);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const lastIdRef = useRef<string>("");
@@ -313,7 +387,11 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
         )
       ) : (
         <>
-          <div className={clsx("spx-trade-alert-hero", actionClass(play.action))}>
+          <div
+            className={clsx("spx-trade-alert-hero", actionClass(play.action))}
+            aria-live="polite"
+            aria-atomic="true"
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
@@ -573,6 +651,11 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           lotto={lotto}
           lottoLoading={lottoLoading}
           lottoRefreshing={lottoRefreshing}
+        />
+        <PowerHourPlayBlock
+          powerHour={powerHour}
+          powerHourLoading={powerHourLoading}
+          powerHourRefreshing={powerHourRefreshing}
         />
       </div>
       </div>
