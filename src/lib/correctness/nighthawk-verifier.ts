@@ -16,6 +16,7 @@ import {
   fetchEditionChains,
   type EditionChainData,
 } from "@/lib/nighthawk/option-chain-prompt";
+import { validatePlayGeometry } from "@/lib/nighthawk/play-constraints";
 
 // ---------------------------------------------------------------------------
 // NIGHT HAWK (evening plays scanner / published editions) data-correctness verifier — priority #4.
@@ -26,6 +27,12 @@ import {
 //   L2 invariant (grounding) — every published play's ticker MUST have a staged dossier snapshot for
 //      that edition (a play with no dossier was not grounded in any data); ranks are 1..N unique;
 //      premium-cap flag agrees with entry_premium ≤ $20; conviction/direction are in-vocabulary.
+//   L2 invariant (geometry, task #146) — a published play's PERSISTED entry_range/target/stop must
+//      still satisfy the SAME direction-aware geometry rule validatePlayGeometry() enforces at the
+//      publish gate (LONG: target above / stop below the entry mid; SHORT: reversed; corrupt entry
+//      ranges rejected). Until this task, target/stop LEVELS had zero independent post-publish
+//      validation — only entry_premium was chain-confirmed (L4 below). See the dedicated comment
+//      above that check for why it calls the REAL gate function rather than reimplementing it.
 //   L1 shadow-recompute (dossier cross-check) — the per-play numbers the edition surfaces
 //      (flow_streak_days, iv_rank) must equal the dossier snapshot's own values (the play can't claim
 //      a flow streak / IV rank the dossier it was built from doesn't carry). Independent re-read.
@@ -38,11 +45,18 @@ import {
 // RATE DISCIPLINE: the edition + dossiers are DB readers (one read each). The chain-confirm layer is
 // the only upstream touch — it is CAPPED to CORRECTNESS_NIGHTHAWK_SAMPLE plays (default 3), fetches ONE
 // ATM chain per sampled ticker through the existing rate-limited Polygon/UW funnel (fetchEditionChains),
-// and is fully gateable. NO per-play fan-out beyond the cap; editions are evaluated once per run.
+// and is fully gateable. NO per-play fan-out beyond the cap; editions are evaluated once per run. The
+// geometry check is pure/in-process (parsePlayLevels + arithmetic) — zero I/O, runs on every play.
 //
 // HONESTY: dossier cross-checks are SHADOW-RECOMPUTES against the snapshot (the play vs the data it
 // was built from — proves internal grounding, not that the snapshot itself was objectively right). The
-// chain-confirm is the strongest claim: a strike either IS liquid in the live chain or it isn't.
+// geometry check is an INVARIANT, not a shadow-recompute: it re-derives the gate's own pass/fail
+// verdict against what is actually PERSISTED and served today, so it cannot prove the gate's threshold
+// math is objectively correct (play-geometry.test.ts already unit-tests that exhaustively as a pure
+// function) — it proves the persisted record STILL satisfies the invariant the gate is supposed to
+// guarantee, catching drift the gate itself can never see (DB corruption, a serialization bug, or a
+// write path that bypassed the gate entirely). The chain-confirm is the strongest claim: a strike
+// either IS liquid in the live chain or it isn't.
 // ---------------------------------------------------------------------------
 
 const VALID_CONVICTION = new Set(["A", "B", "C", "A+", "B+", "C+"]);
@@ -240,6 +254,53 @@ export async function verifyNightHawk(_marketOpen: boolean): Promise<TickerScore
           ? "All play convictions are in-vocabulary (A/B/C grades)."
           : `${badVocab} play(s) carry an out-of-vocabulary conviction grade.`,
         { id: "conviction-vocab", expected: 0, actual: badVocab }
+      )
+    );
+  }
+
+  // ── L2 INVARIANT: published target/stop still satisfy the publish-gate geometry rule (task #146) ─
+  // Re-parses each PUBLISHED play's persisted entry_range/target/stop via parsePlayLevels() (by calling
+  // validatePlayGeometry() itself, which parses internally) and re-checks the exact direction-aware
+  // rule the live publish gate (validatePlayGeometry, src/lib/nighthawk/play-constraints.ts) enforces
+  // BEFORE a play is allowed to publish: LONG target must sit above / stop below the entry-range mid;
+  // SHORT is reversed; an unparseable target/stop or a corrupt entry range (non-positive bound, or
+  // width > 20% of mid — the class PR #207 shipped once) drops the play outright.
+  //
+  // Deliberately calls the REAL validatePlayGeometry() rather than reimplementing the geometry rule
+  // from scratch (contrast flows-verifier.ts's flow-anomaly shadow-recompute, which intentionally does
+  // NOT import the code it is checking). The two situations are different: that check exists to catch a
+  // REGRESSION IN THE GATE'S OWN THRESHOLD MATH, so a from-scratch re-derivation was required — importing
+  // the code under test would let a bug in it be structurally mirrored in the very check meant to catch
+  // it. This check exists to catch DRIFT BETWEEN GATE TIME AND READ TIME on already-published data: did
+  // the persisted record a member is looking at right now still pass the same gate a play must have
+  // passed to publish? A published play failing this is proof of one of three things — the gate was
+  // bypassed by some other write path, the persisted JSON was corrupted after publish, or a serialization
+  // round-trip mangled a level — none of which a from-scratch reimplementation would catch any better
+  // than the real function (both would parse the same persisted strings), while a duplicated copy of the
+  // gate's own thresholds (e.g. the 20%-of-mid corruption band) would silently drift out of sync with a
+  // deliberate future change to validatePlayGeometry and start producing false flags. play-geometry.test.ts
+  // already unit-tests validatePlayGeometry's own logic exhaustively as a pure function — this layer's
+  // job is narrower and different: prove today's SERVED numbers still satisfy it, not re-litigate whether
+  // the rule itself is correctly implemented.
+  {
+    let corrupted = 0;
+    const detail: string[] = [];
+    for (const p of plays) {
+      const verdict = validatePlayGeometry(p);
+      if (!verdict.ok) {
+        corrupted++;
+        if (detail.length < 5) detail.push(`${p.ticker} (rank ${p.rank}): ${verdict.drops.join("; ")}`);
+      }
+    }
+    checks.push(
+      mk(
+        "invariant",
+        "geometry",
+        corrupted === 0 ? "consistency-only" : "flag",
+        corrupted === 0
+          ? `All ${plays.length} published plays' persisted entry/target/stop still satisfy validatePlayGeometry's direction-aware geometry gate (target/stop correctly ordered vs. entry mid; entry range not corrupt) — the same invariant enforced at publish time.`
+          : `${corrupted} published play(s) have persisted target/stop that FAIL validatePlayGeometry's geometry gate post-publish: ${detail.join(" | ")} — the gate was bypassed at publish time, or the levels were corrupted/mangled after.`,
+        { id: "published-geometry-gate", expected: 0, actual: corrupted }
       )
     );
   }
