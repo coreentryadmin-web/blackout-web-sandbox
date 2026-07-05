@@ -133,4 +133,6 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
 
+**SPX all-day agent (matrix + trade alerts + every button + cross-tool):** see **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`**. Auto-starts **6:30 AM PT** weekdays. Runs **`npm run validate:spx-rth`** + **`npm run validate:spx-e2e`**. Post-close fix **~1:05 PM PT**. Workflow: **`.github/workflows/spx-rth-all-day-agent.yml`**.
+
 Off-hours / weekends: RTH script skips automatically; still run `npm run validate:deploy` after pushes to `main`.

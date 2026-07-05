@@ -33,3 +33,12 @@ GitHub Actions **`ops-auto-fix.yml`** runs every 20 min: collects cron/error fai
 If using Cursor scheduled Cloud Agents, set cron to **09:32 AM ET Mon–Fri** with prompt:
 
 > Execute `docs/ops/RTH-OPEN-RUNBOOK.md` autonomously. Run `npm run validate:rth-open`, fix any failures, do not ask me.
+
+## SPX Slayer all-day agent (dedicated)
+
+For full SPX matrix + trade-alert verification **all trading day** with post-close fix at **~1 PM PT**:
+
+- Runbook: **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`** (clicks every button, validates every GEX/VEX cell, cross-tool integration)
+- Commands: **`npm run validate:spx-rth`** + **`npm run validate:spx-e2e`**
+- GitHub: **`spx-rth-all-day-agent.yml`** (first pass **6:30 AM PT / 9:30 AM ET**)
+- First run: **Monday 2026-07-06** — merge **PR #539** + **#540** before open
