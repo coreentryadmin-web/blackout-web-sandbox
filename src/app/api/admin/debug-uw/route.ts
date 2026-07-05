@@ -48,6 +48,10 @@ export async function GET(req: NextRequest) {
     try { parsed = JSON.parse(text); } catch { parsed = text; }
     return NextResponse.json({ status: r.status, endpoint, raw: parsed });
   } catch (e) {
-    return NextResponse.json({ error: String(e), endpoint });
+    // Admin-gated (low blast radius), but keep the same hygiene as every other route in this
+    // sweep -- log the real fetch/network error server-side only, return a fixed string. Same
+    // pattern established in /api/ready (task #66).
+    console.error("[admin/debug-uw] fetch failed:", e);
+    return NextResponse.json({ error: "Failed to reach Unusual Whales endpoint", endpoint });
   }
 }

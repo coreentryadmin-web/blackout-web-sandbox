@@ -9,6 +9,33 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟠 MEDIUM FIXED 2026-07-05 — Raw-error-leak anti-pattern swept across 7 API routes (task #171, branch `fix/raw-error-leak-sweep`)
+
+**Root cause:** task #66 (see the `/api/ready` entry further down this doc) fixed the exact same anti-pattern — a route's `catch` block forwarding `err instanceof Error ? err.message : String(err)` (or bare `String(err)`) verbatim into the JSON error response — in one file, but that fix was never swept to the rest of the codebase for consistency. A completed security audit re-found the identical pattern in 7 more routes. Raw driver/exception text can embed internal detail (hostnames like `*.railway.internal`, Postgres constraint/connection-error text, stack fragments) that has no business reaching a browser.
+
+**Instances fixed (file:line is the pre-fix `catch` block location):**
+1. **`src/app/api/nighthawk/play-status/route.ts:68-74`** (GET) — **Medium severity, highest blast radius of the 7.** Gated by `authorizeCronOrTierApi(req, "premium")` + `requireToolApi("nighthawk")` — reachable by ANY signed-in premium member, not just admins/cron. A Redis failure or malformed cached blob's raw message was returned as `{ available: false, error }` in a 500 body straight to a regular member's browser.
+2. **`src/app/api/market/regime/route.ts:61`** (POST) — cron-only (`isCronAuthorized`), `{ error: String(err) }`.
+3. **`src/app/api/market/anomalies/route.ts:55`** (POST) — cron-only, `{ error: String(err) }`.
+4. **`src/app/api/track-record/publish/route.ts:25`** (POST) — cron-only, `{ error: String(err) }`.
+5. **`src/app/api/brief/store/route.ts:32`** (POST) — cron-only, `{ error: String(err) }`.
+6. **`src/app/api/coaching/alerts/route.ts:64`** (POST) — cron-only, `{ error: String(err) }`.
+7. **`src/app/api/admin/debug-uw/route.ts:50-52`** (GET) — admin-gated (`requireAdminApi`), `{ error: String(e), endpoint }` — hygiene-only, lowest blast radius of the 7 (already requires an authenticated admin), included for consistency since it's the exact same pattern from the same audit.
+
+**Note on scope:** the task brief described this as "6 API routes" in its framing but then listed all 7 of the above as "confirmed instances" from the audit — the two numbers don't reconcile (5 cron routes + nighthawk = 6, then admin/debug-uw is a 7th called out separately). Fixed all 7 rather than leaving a confirmed, already-documented instance of the identical bug unpatched; flagging the discrepancy explicitly here rather than silently picking one interpretation.
+
+**Fix (same pattern as task #66's `/api/ready` fix, applied identically to all 7):** log the real exception server-side only via `console.error("[route/path] ...", err)` (bracket-prefix convention already used throughout `src/app/api/**`), and return a fixed, route-appropriate generic string in the response's `error` field instead. Every route's existing HTTP status code and every other response field (`endpoint`, `date`, etc.) are byte-for-byte unchanged — only the `error` value's *content* changed, never its presence/absence or the surrounding shape.
+
+**Evidence no consumer depended on the raw error content:** checked every call site. `fetchNightHawkPlayStatus` (`src/lib/api.ts`) only branches on `res.ok` and falls back to `{ available: false }` on any non-2xx — it never reads the JSON body's `error` field on failure, so nighthawk/play-status's client (`NightHawkFeed.tsx`) is unaffected. `scripts/gha-http-smoke.mjs` and `scripts/deep-audit.mjs` only assert `available === true` on regime's 200-OK success path, never inspect `error` on failure. The 5 cron POST routes' only caller is the cron scheduler itself (fire-and-forget, doesn't parse the body). `NightsWatchPanel.tsx`'s `data?.error` read at line ~1172 is against `coaching/alerts`'s **GET** handler (a separate, untouched catch block that already returned `{ alerts: [] }` with no `error` field) — not the POST path this fix touches.
+
+**What was deliberately left unchanged:** the GET handlers on `market/regime`, `market/anomalies`, and `coaching/alerts` already fail closed with a safe generic response (`{ available: false }` / `{ anomalies: [] }` / `{ alerts: [] }`, no raw error at all) — those catch blocks were already correct and are untouched. `pingDatabase()`'s analogous passthrough in `db.ts` remains out of scope per task #66's own note (only fix "if/when surfaced through any public route").
+
+**Tests:** no existing `*.test.ts` file covers any of these 7 route files or their directories (confirmed via search) — per the task's own guidance, a full test suite wasn't required for this mechanical fix since there's no sibling test file to extend.
+
+**Verification:** `git diff main -- src/lib/spx-signals.ts` empty. `npx tsc --noEmit` clean. Full suite passing on both Node 22 and Node 20 (`--import tsx --experimental-test-module-mocks --test $(find src -name '*.test.ts')`). `npm run build` clean. `npm run lint:brand` / `npm run lint:vendor` clean. (Exact pass counts in the PR description.)
+
+---
+
 ## BIE self-eval: HELIX (flow) gets its own tool-calling calibration cohort — task #133 (branch `fix/helix-bie-calibration-cohort`)
 
 **Status:** SHIPPED. Direct sibling of task #112 (SPX Slayer's own tool-calling cohort, entry below) — same gap, same architecture, applied to HELIX (the market-wide options-flow product behind `/flows`) instead of SPX Slayer. Landing concurrently with tasks #137/#144/#149, which do the identical pattern for three other products against the same three files (`calibration.ts`, `db.ts`, `tool-defs.ts`) — merge-order conflicts across those four PRs are expected and are a human's call to resolve, not this branch's.
