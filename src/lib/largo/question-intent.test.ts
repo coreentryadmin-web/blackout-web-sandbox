@@ -273,3 +273,75 @@ test("bare 'near miss'/'below threshold' wording with NO anomaly/HELIX context d
     );
   }
 });
+
+// Task #143: get_nighthawk_edition vs get_platform_snapshot were both hinted
+// on a bare needsNightHawk match with zero preference signal, even though only
+// get_nighthawk_edition's `date` param can ever serve a SPECIFIC past edition —
+// get_platform_snapshot's nighthawk fields are always the latest edition,
+// full_edition:true or not. needsNighthawkDatedEdition gives a dated question a
+// stronger, explicit hint (plus its own guidance line) toward get_nighthawk_edition.
+
+test("Night Hawk wording paired with a date/day qualifier hints get_nighthawk_edition via needsNighthawkDatedEdition", () => {
+  for (const question of [
+    "what did night hawk pick yesterday",
+    "show me last night's night hawk edition",
+    "what were night hawk's picks on monday",
+    "what was in the 2026-07-02 edition",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsNighthawkDatedEdition, true, `expected needsNighthawkDatedEdition for: "${question}"`);
+    assert.match(intent.guidance, /get_nighthawk_edition/, `expected get_nighthawk_edition hint in guidance for: "${question}"`);
+    assert.match(
+      intent.guidance,
+      /always the latest edition only/,
+      `expected the dated-edition guidance line for: "${question}"`
+    );
+  }
+});
+
+test("bare Night Hawk wording with NO date qualifier does not fire needsNighthawkDatedEdition (stays on the generic, unpreferenced hint)", () => {
+  // "what are tonight's night hawk picks" has no yesterday/last-night/weekday/date
+  // token — the pre-existing needsNightHawk pair (get_nighthawk_edition AND
+  // get_platform_snapshot, no preference) still fires, but this task's job is only
+  // to resolve the SPECIFIC dated-wording case, not manufacture signal that isn't
+  // in the question.
+  const intent = analyzeLargoQuestion("what are tonight's night hawk picks", []);
+  assert.equal(intent.needsNighthawkDatedEdition, false);
+  assert.match(intent.guidance, /get_platform_snapshot/, "expected the generic pair to still include get_platform_snapshot");
+});
+
+test("bare date/day wording with NO Night Hawk token does not falsely fire needsNighthawkDatedEdition", () => {
+  // Same false-positive discipline as ZERODTE_REJECTION_RE/FLOW_ANOMALY_NEAR_MISS_RE
+  // — "yesterday" or "last Monday" alone is common phrasing for entirely unrelated
+  // questions (a stock's prior close, an earnings date) and must require the
+  // explicit nighthawk/hawk/playbook/edition token.
+  for (const question of [
+    "what happened last monday",
+    "what was AAPL's close yesterday",
+    "any earnings on 2026-07-02",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsNighthawkDatedEdition,
+      false,
+      `expected !needsNighthawkDatedEdition for unrelated wording: "${question}"`
+    );
+  }
+});
+
+// Task #143: NIGHTHAWK_RE's "edition" gap — the live /nighthawk UI renders
+// "Edition live"/"Prior edition" as its own primary vocabulary, but NIGHTHAWK_RE
+// had no "edition"/"editions" token at all, so this completely natural phrasing
+// got needsNightHawk: false (tool-defs.test.ts covers the resulting allowlist
+// gap on the same regex).
+
+test("'edition'/'editions' phrasing triggers the Night Hawk tool hints (NIGHTHAWK_RE token gap)", () => {
+  // needsNightHawk itself is an internal-only variable (not part of the returned
+  // LargoQuestionIntent) — assert on its one observable effect instead: the
+  // get_nighthawk_edition/get_platform_snapshot pair landing in guidance.
+  for (const question of ["is a new edition live yet", "what's in tonight's edition", "any prior editions worth reviewing"]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.match(intent.guidance, /get_nighthawk_edition/, `expected get_nighthawk_edition hint for: "${question}"`);
+    assert.match(intent.guidance, /get_platform_snapshot/, `expected get_platform_snapshot hint for: "${question}"`);
+  }
+});

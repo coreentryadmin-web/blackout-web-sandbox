@@ -21,8 +21,43 @@ export const VOL_RE = /\b(iv|vol|vix|skew|rank|realized)\b/;
 
 export const VOL_TOOLS_RE = /\b(vol|vix|iv|skew|rank)\b/;
 
+// "edition"/"editions" added alongside the existing bare tokens (task #143) — the
+// live /nighthawk UI itself renders "Edition live" / "Prior edition" as its own
+// primary vocabulary (PlaybookBoard.tsx), so a member asking "what's in tonight's
+// edition" or "is a new edition live yet" uses completely natural product language
+// that had NO token in this regex at all. Verified via a standalone
+// getToolsForIntent() repro before the fix: that phrasing matched none of
+// nighthawk/night hawk/playbook/tomorrow/evening plays/hawk plays/top plays/hawk,
+// so NIGHTHAWK_RE never fired, TOOL_GROUPS.platform (get_nighthawk_edition,
+// get_platform_snapshot, get_nighthawk_outcomes, get_nighthawk_dossier, etc.) was
+// never added to the turn's tool allowlist, and getToolsForIntent's own
+// `names.size <= 2` fallback dumped the ENTIRE unrelated CORE_TOOLS bundle (SPX
+// desk + stock analysis + vol analysis) instead — the same class of "plainly
+// on-topic phrasing silently drops the right tool bundle" bug task #130 found and
+// fixed for FLOW_RE's missing "flows"/"flowing" siblings. Added as a flat bare
+// alternative (matching this regex's own pre-existing style, not a new
+// co-occurrence idiom) for the same "minimal, precedent-matching" reason task
+// #130 gave for its own fix.
 export const NIGHTHAWK_RE =
-  /\b(nighthawk|night hawk|playbook|tomorrow|evening plays|hawk plays|top plays|hawk)\b/;
+  /\b(nighthawk|night hawk|playbook|tomorrow|evening plays|hawk plays|top plays|hawk|edition|editions)\b/;
+
+/**
+ * A Night Hawk question scoped to a SPECIFIC day (task #143) — "yesterday's
+ * edition," "last night's picks," "what did Night Hawk say on Monday," an
+ * explicit date. This is a REAL capability split, not just a wording nuance:
+ * get_nighthawk_edition's `date` (YYYY-MM-DD) param can serve any past edition,
+ * while get_platform_snapshot's `nighthawk`/`nighthawk_edition` fields are
+ * ALWAYS the latest published edition, full_edition:true or not — there is no
+ * parameter on get_platform_snapshot that can ever answer a dated question, so a
+ * turn that resolves to get_platform_snapshot here would silently answer the
+ * wrong night's picks rather than merely a thinner summary. REQUIRES
+ * co-occurrence with a nighthawk-ish token (same false-positive discipline as
+ * ZERODTE_REJECTION_RE/FLOW_ANOMALY_NEAR_MISS_RE) — a bare "yesterday" or
+ * "last Monday" alone is common phrasing for entirely unrelated questions (a
+ * stock's prior close, an earnings date) and must not fire on its own.
+ */
+export const NIGHTHAWK_DATED_EDITION_RE =
+  /(?=.*\b(?:nighthawk|night hawk|hawk|playbook|edition|editions)\b)(?=.*\b(?:yesterday|last night|prior night|previous night|night before|last week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b)/i;
 
 /**
  * SPX Slayer's OWN play-engine state (get_spx_play) — phase/setup/bias/confluence/gate

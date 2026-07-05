@@ -224,24 +224,32 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     "0DTE Command's near-miss/gate-rejection log — answers 'why didn't ticker X make the Grid board' or 'what has the scanner been rejecting today', which get_zerodte_plays structurally CANNOT answer: that tool only ever shows candidates that already cleared every one of the scanner's 4 evidence gates (gross premium ≥ $750k, at-the-ask aggression share ≥ 30%, side dominance ≥ 65%, and not a deep-ITM stock-replacement strike) — a candidate that failed even ONE of those checks is invisible there and left no trace anywhere until this tool existed. Reads zerodte_scan_rejections: one row per ticker per DISTINCT rejection state (throttled to state transitions, not one row per scan cycle), naming exactly which `gate_failed` (min_gross/min_aggr_share/min_dominance/max_itm_pct/no_dominant_strike) stopped the candidate, the live `threshold` it was measured against, and whichever of gross_premium/aggression/side_dominance/otm_pct had actually been computed before the scan short-circuited past it — later-gate metrics are `null`, never guessed, when an earlier gate already rejected the ticker (e.g. a min_gross rejection never learns a direction or aggression share, because the live scan never computes those for it either). Pass `ticker` to scope to one name's rejection history, or omit for the most recent rejections across every candidate. IMPORTANT — this is 0DTE Command's OWN multi-ticker scanner (src/lib/zerodte/board.ts, the exact same engine get_zerodte_plays reads), a COMPLETELY DIFFERENT product from SPX Slayer: for SPX/SPXW's own single-instrument engine's rejected/scanning history, use get_spx_engine_snapshots instead — do not conflate the two just because both are 0DTE-flavored.",
     { ticker: { type: "string" }, limit: { type: "integer" } }
   ),
-  t("get_nighthawk_edition", "Night Hawk evening playbook — top plays, recap, market context. Same data as /nighthawk.", {
-    date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
-  }),
+  t(
+    "get_nighthawk_edition",
+    "Night Hawk's OWN dedicated tool — always returns the FULL published edition object, regardless of any parameter: `available`, `edition_for`, `published_at`, `recap_headline`, `recap_summary`, `market_recap`, and `plays` (the complete array: rank, ticker, direction, conviction, play_type, thesis, key_signal, entry_range, target, stop, options_play, entry_premium/entry_cost_per_contract, premium_cap_ok, risk_note, score, flow_streak_days, iv_rank — every field a member sees on /nighthawk), plus state flags `recap_only` (a recap published but no play survived the funnel), `degraded` (served from a legacy/fallback source, not the first-class pipeline), `stale`/`served_for` (tonight's edition isn't published yet, so an OLDER edition was served instead — do not say 'Edition live'), and `carry_until_close`. Pass `date` (YYYY-MM-DD) to pull a SPECIFIC PAST edition — this is the ONLY Night Hawk tool that can do that; omit for the latest published edition. IMPORTANT — do not substitute get_platform_snapshot for this: that tool's own `nighthawk` field is a STRIPPED SUMMARY by default (recap_headline + up to 5 bare ticker symbols only — no thesis/entry/target/stop/score at all) unless its `full_edition` flag is explicitly set true, and even then it can only ever return the LATEST published edition — it has no `date` parameter and can never answer 'what did Night Hawk pick on [a past date]'. Use THIS tool whenever the question needs the plays' own detail or is scoped to a specific day; reach for get_platform_snapshot only when the SAME turn also needs the SPX desk and/or flow tape alongside Night Hawk.",
+    {
+      date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
+    }
+  ),
 
   t("get_flow_tape", "HELIX tape from Postgres — recent alerts + top tickers by premium.", {
     ticker: { type: "string" },
     limit: { type: "integer", default: 50 },
   }),
 
-  t("get_platform_snapshot", "Cross-service snapshot: SPX desk + flow tape + Night Hawk edition in one call.", {
-    include: {
-      type: "array",
-      items: { type: "string", enum: ["spx", "flows", "nighthawk", "largo"] },
-      description: "Subset of services; default all three.",
-    },
-    flow_limit: { type: "integer", default: 50 },
-    full_edition: { type: "boolean", description: "Include full Night Hawk play objects." },
-  }),
+  t(
+    "get_platform_snapshot",
+    "Cross-service, ONE-CALL combo across up to 3 products in parallel — NOT a substitute for a product's own dedicated tool when the question needs that product's full detail. `spx` — the exact same object get_spx_structure returns (both call the identical getSpxDeskSummary() — price, GEX, flow, dark pool, macro, tide). `flows` — the exact same object get_flow_tape returns (both call the identical getFlowTapeSummary(): count/total_premium/top_tickers/recent), same default limit 50 (override with `flow_limit`). `nighthawk` — by DEFAULT a STRIPPED-DOWN summary ONLY (available/edition_for/published_at/recap_headline/play_count/top_tickers as bare ticker strings — no thesis/entry/target/stop/score at all); pass `full_edition: true` to ALSO get a `nighthawk_edition` field holding the exact same full object get_nighthawk_edition returns — but even then this is ALWAYS the LATEST published edition. There is no date parameter here, unlike get_nighthawk_edition's own `date` (YYYY-MM-DD) for a specific past edition. Use `include` (subset of spx/flows/nighthawk; defaults to all three) to skip services you don't need. NOTE: 'largo' is also listed as an enum option but is currently a no-op — no largo-specific data exists in this snapshot, so including it fetches nothing extra. IMPORTANT — for a Night-Hawk-ONLY question needing actual play detail (thesis/entry/target/stop/score) or a specific past date, call get_nighthawk_edition directly instead: this tool's default nighthawk field can't answer either, and full_edition:true still can't answer the date case. Reach for THIS tool only when the question genuinely spans multiple products in the same turn (e.g. 'how does the SPX desk look alongside tonight's flow tape and Night Hawk picks').",
+    {
+      include: {
+        type: "array",
+        items: { type: "string", enum: ["spx", "flows", "nighthawk", "largo"] },
+        description: "Subset of services; default all three. 'largo' is currently a no-op.",
+      },
+      flow_limit: { type: "integer", default: 50 },
+      full_edition: { type: "boolean", description: "Include the full Night Hawk edition object (latest only — no date param)." },
+    }
+  ),
 
   t("get_gex", "GEX/dealer map. Polygon chain GEX first; UW spot exposures fallback. For SPX/I:SPX, all strike levels are SPX-denomination (thousands). Default to I:SPX (not SPY) when the user asks about index GEX or gamma walls.", {
 

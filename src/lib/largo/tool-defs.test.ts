@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BIE_TOOL_NAMES, LARGO_TOOL_DEFS, SPX_ENGINE_TOOL_NAMES, TOOL_GROUPS } from "./tool-defs";
+import { BIE_TOOL_NAMES, getToolsForIntent, LARGO_TOOL_DEFS, SPX_ENGINE_TOOL_NAMES, TOOL_GROUPS } from "./tool-defs";
 
 test("BIE_TOOL_NAMES: every name is a real, callable Largo tool", () => {
   const known = new Set(LARGO_TOOL_DEFS.map((t) => t.name));
@@ -224,4 +224,109 @@ test("get_market_regime description points forward to get_flow_anomaly_near_miss
     /get_flow_anomaly_near_misses/,
     "expected get_market_regime to point to get_flow_anomaly_near_misses for anomalies that never cleared the threshold"
   );
+});
+
+// ── Task #143: get_nighthawk_edition vs get_platform_snapshot ──
+// Both tools could answer a Night-Hawk-flavored question, but only one of them
+// (get_nighthawk_edition) always returns full play detail and supports a `date`
+// param for a specific past edition — get_platform_snapshot's own nighthawk field
+// is a stripped summary by default, and even with full_edition:true it can only
+// ever return the LATEST published edition. Neither description said so before
+// this fix. Locks in the disambiguating language so a future edit can't quietly
+// drop it and reintroduce the "wrong tool → incomplete or wrong-date answer" risk.
+
+function nighthawkDef(name: string) {
+  const def = LARGO_TOOL_DEFS.find((t) => t.name === name);
+  assert.ok(def, `${name} must be a registered Largo tool`);
+  return def!;
+}
+
+test("get_nighthawk_edition description documents the full play-level fields and the date param's unique capability", () => {
+  const def = nighthawkDef("get_nighthawk_edition");
+  for (const field of ["thesis", "entry_range", "target", "stop", "score"]) {
+    assert.match(def.description, new RegExp(field), `expected get_nighthawk_edition to document the \`${field}\` play field`);
+  }
+  assert.match(
+    def.description,
+    /ONLY Night Hawk tool that can do that/,
+    "expected get_nighthawk_edition to state that its `date` param is uniquely its own"
+  );
+  assert.match(
+    def.description,
+    /get_platform_snapshot/,
+    "expected get_nighthawk_edition to reference get_platform_snapshot for disambiguation"
+  );
+  assert.match(
+    def.description,
+    /STRIPPED SUMMARY/,
+    "expected get_nighthawk_edition to characterize get_platform_snapshot's default nighthawk field as a stripped summary"
+  );
+});
+
+test("get_platform_snapshot description documents the default slim nighthawk summary, full_edition's scope, and the latest-only limitation", () => {
+  const def = nighthawkDef("get_platform_snapshot");
+  assert.match(
+    def.description,
+    /STRIPPED-DOWN summary ONLY/,
+    "expected get_platform_snapshot to state its nighthawk field is a stripped-down summary by default"
+  );
+  assert.match(
+    def.description,
+    /ALWAYS the LATEST published edition/,
+    "expected get_platform_snapshot to state full_edition never serves anything but the latest edition"
+  );
+  assert.match(
+    def.description,
+    /no date parameter/,
+    "expected get_platform_snapshot to explicitly state it has no date parameter"
+  );
+  assert.match(
+    def.description,
+    /get_nighthawk_edition/,
+    "expected get_platform_snapshot to reference get_nighthawk_edition for disambiguation"
+  );
+});
+
+test("get_nighthawk_edition and get_platform_snapshot both name the exact fields that distinguish full detail from a summary", () => {
+  const edition = nighthawkDef("get_nighthawk_edition");
+  const snapshot = nighthawkDef("get_platform_snapshot");
+  // Both descriptions must agree on the same "what's missing from the summary"
+  // vocabulary so a reader of either one gets the same disambiguating signal.
+  for (const field of ["thesis", "entry", "target", "stop", "score"]) {
+    assert.match(edition.description, new RegExp(field, "i"), `expected get_nighthawk_edition to name \`${field}\` as a real play field`);
+    assert.match(snapshot.description, new RegExp(field, "i"), `expected get_platform_snapshot to name \`${field}\` as missing from its summary`);
+  }
+});
+
+test("get_platform_snapshot documents that its spx/flows fields are the exact same objects get_spx_structure/get_flow_tape return", () => {
+  const def = nighthawkDef("get_platform_snapshot");
+  assert.match(def.description, /get_spx_structure returns/);
+  assert.match(def.description, /get_flow_tape returns/);
+});
+
+test("get_platform_snapshot documents that its 'largo' include option is currently a no-op", () => {
+  const def = nighthawkDef("get_platform_snapshot");
+  assert.match(def.description, /'largo'.*no-op|no-op.*'largo'/is);
+});
+
+// ── Task #143: NIGHTHAWK_RE's "edition" gap ──
+// The live /nighthawk UI renders "Edition live"/"Prior edition" as its own
+// primary vocabulary, but NIGHTHAWK_RE had no "edition"/"editions" token at all —
+// a plainly on-topic question phrased that way got NIGHTHAWK_RE: false, dropped
+// TOOL_GROUPS.platform (get_nighthawk_edition, get_platform_snapshot, and every
+// other Night-Hawk/platform tool) out of the turn's tool allowlist entirely, and
+// fell back to getToolsForIntent's `names.size <= 2` branch, which dumps the
+// entire unrelated CORE_TOOLS bundle instead (same class of bug task #130 found
+// for FLOW_RE's missing "flows"/"flowing" siblings).
+
+test("bare 'edition' wording (no nighthawk/hawk/playbook token) puts get_nighthawk_edition and get_platform_snapshot on the allowlist", () => {
+  for (const question of [
+    "is a new edition live yet",
+    "what's in tonight's edition",
+    "show me last night's edition",
+  ]) {
+    const tools = getToolsForIntent(question);
+    assert.ok(tools.includes("get_nighthawk_edition"), `expected get_nighthawk_edition on the allowlist for: "${question}"`);
+    assert.ok(tools.includes("get_platform_snapshot"), `expected get_platform_snapshot on the allowlist for: "${question}"`);
+  }
 });

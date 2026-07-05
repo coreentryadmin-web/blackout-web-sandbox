@@ -6,6 +6,7 @@ import {
   MARKET_REGIME_RE,
   matchesIntent,
   NEWS_RE,
+  NIGHTHAWK_DATED_EDITION_RE,
   NIGHTHAWK_RE,
   PLAY_STATE_RE,
   SPX_DESK_RE,
@@ -45,6 +46,11 @@ export type LargoQuestionIntent = {
    *  needsMarketRegime above (get_market_regime's committed-anomaly COUNT only) and from
    *  needsZeroDteRejections (0DTE Command's own separate scanner/threshold set). */
   needsFlowAnomalyNearMisses: boolean;
+  /** Night Hawk wording scoped to a SPECIFIC day ("yesterday's edition," "last night's
+   *  picks," an explicit date) — hints get_nighthawk_edition specifically (task #143),
+   *  since get_platform_snapshot's nighthawk fields are ALWAYS the latest edition, with
+   *  no date parameter at all, even when its full_edition flag is set. */
+  needsNighthawkDatedEdition: boolean;
   tickerHint: string | null;
   guidance: string;
 };
@@ -109,6 +115,7 @@ export function analyzeLargoQuestion(
   const needsZeroDteRejections = matchesIntent(ctx, ZERODTE_REJECTION_RE);
   const needsGexRegimeHistory = matchesIntent(ctx, GEX_REGIME_HISTORY_RE);
   const needsFlowAnomalyNearMisses = matchesIntent(ctx, FLOW_ANOMALY_NEAR_MISS_RE);
+  const needsNighthawkDatedEdition = matchesIntent(ctx, NIGHTHAWK_DATED_EDITION_RE);
 
   const tickerHint = extractTicker(question, recentUserText(history));
   const scopeTicker = tickerHint ?? (needsSpxDesk ? "SPX" : null);
@@ -184,6 +191,16 @@ export function analyzeLargoQuestion(
   if (needsFlowAnomalyNearMisses) {
     toolHints.push("get_flow_anomaly_near_misses");
   }
+  // Night Hawk wording scoped to a SPECIFIC day (task #143) — a STRONGER, more
+  // specific hint than the generic needsNightHawk pair above (which hints BOTH
+  // get_nighthawk_edition and get_platform_snapshot with no preference at all).
+  // get_platform_snapshot's nighthawk fields are always the LATEST edition, no
+  // date parameter, full_edition or not — only get_nighthawk_edition's own `date`
+  // can ever serve a dated question, so this needs its own explicit guidance
+  // line (not just a tool name) or the missing `date` param is easy to forget.
+  if (needsNighthawkDatedEdition) {
+    toolHints.push("get_nighthawk_edition");
+  }
 
   const uniqueTools = Array.from(new Set(toolHints));
 
@@ -193,6 +210,9 @@ export function analyzeLargoQuestion(
     "Live feed auto-captured this turn. Every figure you cite must be in that feed or a tool call you make now — no guessing, no invented stacks or premiums.",
     needsFlow
       ? "Flow question: use strike_stacks from feed/tools if present; if absent, do not describe a stack. Call get_options_flow if tape looks incomplete."
+      : null,
+    needsNighthawkDatedEdition
+      ? "Dated Night Hawk question: call get_nighthawk_edition with `date` set to that day — get_platform_snapshot's nighthawk data is always the latest edition only, even with full_edition:true, and can never answer a specific past date."
       : null,
     `Tool hints if needed: ${uniqueTools.join(", ")}.`,
     "End with **Bottom line:** when substantive — opinion there; facts above must stay feed-verified.",
@@ -212,6 +232,7 @@ export function analyzeLargoQuestion(
     needsZeroDteRejections,
     needsGexRegimeHistory,
     needsFlowAnomalyNearMisses,
+    needsNighthawkDatedEdition,
     tickerHint,
     guidance,
   };
