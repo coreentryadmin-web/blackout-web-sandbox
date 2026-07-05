@@ -1122,6 +1122,63 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_zerodte_scan_rejections_ticker
       ON zerodte_scan_rejections (ticker, observed_at DESC);
 
+    -- gex_regime_events (task #136): durable log of BlackOut Thermal's GEX
+    -- regime/flip/wall-crossing events, detected by computeGexEvents() (src/lib/
+    -- providers/polygon-options-gex.ts) on every fresh GEX matrix compute (cache
+    -- miss). Before this table existed, computeGexEvents' output only ever lived
+    -- on the shared, TTL-capped gex-heatmap:{ticker} matrix cache and the
+    -- gex-history:{ticker} intraday positioning-history RING (capped at
+    -- GEX_HISTORY_MAX ~24 samples / ~2h, GEX_HISTORY_TTL_SEC ~3h) — once the ring
+    -- rotated past a sample or the matrix cache/TTL expired, the event itself was
+    -- gone. /api/cron/gex-alerts/route.ts consumes the SAME events array to fire
+    -- live push alerts, but only ever writes a Redis DEDUP key on fire
+    -- (gex-alert-sent:{ticker}:{type}:{etDate}[:level]) — a record that a push
+    -- WAS sent, never a durable record of the event's own before/after values,
+    -- and only for the 3-ticker REGIME_WATCHLIST (SPY/SPX/QQQ) + the subset of
+    -- event types that are broadcast-worthy. So "at time T, SPY's gamma flip
+    -- crossed" or "how many times has NVDA's call wall broken today" was
+    -- unanswerable after the fact for ANY ticker, and unanswerable at ALL once
+    -- the ring/cache/dedup keys rotated even for the 3 watchlist names.
+    -- event_type is one of computeGexEvents' 4 GexEvent.type values
+    -- (flip_crossed/wall_broken/regime_flipped/net_gex_sign_flipped); level/
+    -- direction/message mirror GexEvent's own fields verbatim (never re-derived);
+    -- from_value/to_value are the natural before/after numeric pair for that
+    -- event type (spot before/after the crossed level for flip_crossed/
+    -- wall_broken; the gamma-flip level at each end for regime_flipped, since
+    -- posture there is computed per-end against that end's OWN flip; net GEX
+    -- dollars before/after for net_gex_sign_flipped) — see GexEvent's own
+    -- from_value/to_value doc comment in polygon-options-gex.ts for exactly
+    -- which pair each type carries, and null when an event type has no single
+    -- natural numeric pair (never fabricated). detected_at is computeGexEvents'
+    -- own "at" (the ISO timestamp of the sample where the cross was detected),
+    -- kept separate from observed_at (this row's insert time) for the same
+    -- staleness-vs-write-latency reason spx_engine_snapshots separates as_of
+    -- from observed_at. Written by persistGexRegimeEvents (src/lib/providers/
+    -- gex-regime-events.ts), throttled via its OWN per-(ticker, event
+    -- type+direction) platform_meta state-transition cursor — DELIBERATELY
+    -- INDEPENDENT of gex-alerts' Redis dedup key (different storage, different
+    -- key namespace, different throttle granularity: this one persists EVERY
+    -- distinct transition all day, not once per ET-date) so durable history and
+    -- live-alert dedup can never suppress each other.
+    CREATE TABLE IF NOT EXISTS gex_regime_events (
+      id           BIGSERIAL PRIMARY KEY,
+      observed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date DATE NOT NULL,
+      ticker       TEXT NOT NULL,
+      event_type   TEXT NOT NULL,
+      severity     TEXT NOT NULL,
+      message      TEXT NOT NULL,
+      level        NUMERIC,
+      direction    TEXT,
+      from_value   NUMERIC,
+      to_value     NUMERIC,
+      detected_at  TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_gex_regime_events_observed_at
+      ON gex_regime_events (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_gex_regime_events_ticker
+      ON gex_regime_events (ticker, observed_at DESC);
+
     -- flow_anomaly_near_misses (task #131): durable near-miss/rejection log for
     -- HELIX's flow-anomaly detector (src/app/api/cron/market-regime-detector/
     -- flow-anomaly-detection.ts's detectFlowAnomalies, route.ts's dedup loop) — the
@@ -2044,6 +2101,96 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
     prints: r.prints != null ? Number(r.prints) : null,
     first_seen: r.first_seen != null ? String(r.first_seen) : null,
     last_seen: r.last_seen != null ? String(r.last_seen) : null,
+  }));
+}
+
+/**
+ * Persists one GEX regime-transition row (task #136,
+ * src/lib/providers/gex-regime-events.ts's persistGexRegimeEvents). Same "always
+ * insert, caller already decided whether to call" idiom as
+ * insertZeroDteScanRejection/insertSpxEngineSnapshot above — the throttle (only
+ * write on a real per-(ticker, event type+direction) state transition) lives in
+ * the caller, not here.
+ */
+export async function insertGexRegimeEvent(row: {
+  session_date: string;
+  ticker: string;
+  event_type: string;
+  severity: string;
+  message: string;
+  level: number | null;
+  direction: string | null;
+  from_value: number | null;
+  to_value: number | null;
+  detected_at: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO gex_regime_events (
+      session_date, ticker, event_type, severity, message,
+      level, direction, from_value, to_value, detected_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `,
+    [
+      row.session_date,
+      row.ticker,
+      row.event_type,
+      row.severity,
+      row.message,
+      row.level,
+      row.direction,
+      row.from_value,
+      row.to_value,
+      row.detected_at,
+    ]
+  );
+}
+
+export async function fetchGexRegimeEventRows(opts?: { ticker?: string; limit?: number }): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    session_date: string;
+    ticker: string;
+    event_type: string;
+    severity: string;
+    message: string;
+    level: number | null;
+    direction: string | null;
+    from_value: number | null;
+    to_value: number | null;
+    detected_at: string | null;
+  }>
+> {
+  await ensureSchema();
+  const limit = opts?.limit ?? 50;
+  const ticker = opts?.ticker?.toUpperCase();
+  const cols = `id, observed_at, session_date, ticker, event_type, severity, message,
+           level, direction, from_value, to_value, detected_at`;
+  const res = ticker
+    ? await (await getPool()).query(
+        `SELECT ${cols} FROM gex_regime_events WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
+        [ticker, limit]
+      )
+    : await (await getPool()).query(
+        `SELECT ${cols} FROM gex_regime_events ORDER BY observed_at DESC LIMIT $1`,
+        [limit]
+      );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    observed_at: String(r.observed_at),
+    session_date: String(r.session_date),
+    ticker: String(r.ticker),
+    event_type: String(r.event_type),
+    severity: String(r.severity),
+    message: String(r.message),
+    level: r.level != null ? Number(r.level) : null,
+    direction: r.direction != null ? String(r.direction) : null,
+    from_value: r.from_value != null ? Number(r.from_value) : null,
+    to_value: r.to_value != null ? Number(r.to_value) : null,
+    detected_at: r.detected_at != null ? String(r.detected_at) : null,
   }));
 }
 

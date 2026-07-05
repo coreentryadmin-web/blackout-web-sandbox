@@ -2,6 +2,7 @@ import type { AnthropicMessage } from "@/lib/providers/anthropic";
 import {
   FLOW_ANOMALY_NEAR_MISS_RE,
   FLOW_RE,
+  GEX_REGIME_HISTORY_RE,
   MARKET_REGIME_RE,
   matchesIntent,
   NEWS_RE,
@@ -34,6 +35,11 @@ export type LargoQuestionIntent = {
    *  from needsZeroDteCommand above (the committed-plays board) and from
    *  needsSpxEngineState (SPX Slayer's own rejected/scanning history). */
   needsZeroDteRejections: boolean;
+  /** BlackOut Thermal's GEX regime/flip/wall-crossing HISTORY wording ("when did the
+   *  flip last cross," "how many times has the wall moved today") — hints
+   *  get_gex_regime_events (task #136), distinct from needsSpxDesk/get_gex's
+   *  CURRENT-snapshot-only view. */
+  needsGexRegimeHistory: boolean;
   /** HELIX flow-anomaly near-miss/rejection wording ("why didn't HELIX flag X," "near miss
    *  on the anomaly scan") — hints get_flow_anomaly_near_misses (task #131), distinct from
    *  needsMarketRegime above (get_market_regime's committed-anomaly COUNT only) and from
@@ -101,6 +107,7 @@ export function analyzeLargoQuestion(
   const needsMarketRegime = matchesIntent(ctx, MARKET_REGIME_RE);
   const needsZeroDteCommand = matchesIntent(ctx, ZERODTE_COMMAND_RE);
   const needsZeroDteRejections = matchesIntent(ctx, ZERODTE_REJECTION_RE);
+  const needsGexRegimeHistory = matchesIntent(ctx, GEX_REGIME_HISTORY_RE);
   const needsFlowAnomalyNearMisses = matchesIntent(ctx, FLOW_ANOMALY_NEAR_MISS_RE);
 
   const tickerHint = extractTicker(question, recentUserText(history));
@@ -163,6 +170,12 @@ export function analyzeLargoQuestion(
   if (needsZeroDteRejections) {
     toolHints.push("get_zerodte_rejections");
   }
+  // GEX regime/flip/wall-crossing HISTORY wording ("when did the flip last cross,"
+  // "how many times has the wall moved today") — a DIFFERENT question from
+  // get_gex/get_positioning (current snapshot only, no memory of earlier crosses).
+  if (needsGexRegimeHistory) {
+    toolHints.push("get_gex_regime_events");
+  }
   // HELIX flow-anomaly near-miss wording ("why didn't HELIX flag X," "near miss on
   // the anomaly scan") — a DIFFERENT question from needsMarketRegime above (which
   // only ever surfaces the COUNT of anomalies that already fired): this hints the
@@ -197,6 +210,7 @@ export function analyzeLargoQuestion(
     needsMarketRegime,
     needsZeroDteCommand,
     needsZeroDteRejections,
+    needsGexRegimeHistory,
     needsFlowAnomalyNearMisses,
     tickerHint,
     guidance,

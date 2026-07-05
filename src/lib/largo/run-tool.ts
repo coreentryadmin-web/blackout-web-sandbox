@@ -26,6 +26,7 @@ import { isSpxTicker } from "@/lib/spx-desk-live";
 import { getPlatformSnapshot, marketPlatform } from "@/lib/platform";
 import { summarizeSpxDesk } from "@/lib/platform/spx-service";
 import { zeroDteRejectionsForLargo } from "@/lib/zerodte/rejections";
+import { gexRegimeEventsForLargo } from "@/lib/providers/gex-regime-events";
 import { flowAnomalyNearMissesForLargo } from "@/lib/platform/flow-anomaly-near-misses";
 import {
   buildPeerRelativeStrength,
@@ -1277,6 +1278,11 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       const sym = uwTicker(ticker);
       return { ticker: sym, ...(await fetchPositioningSummary(sym)) };
     }
+    case "get_gex_regime_events":
+      return gexRegimeEventsForLargo(
+        input.ticker ? String(input.ticker) : undefined,
+        Number(input.limit ?? 20)
+      );
     case "get_nighthawk_outcomes": {
       // Clamp to a valid INTEGER window (mirrors the admin /nighthawk/analytics parseWindow:
       // 7–180). The model can emit a non-integer here — including echoing a raw fractional

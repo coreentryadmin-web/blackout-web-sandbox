@@ -175,6 +175,54 @@ test("bare 'near miss'/'rejected' wording with NO 0dte/grid context does not fal
   }
 });
 
+// Task #136: BlackOut Thermal's GEX regime/flip/wall-crossing HISTORY is now a
+// durable log (gex_regime_events) with its own Largo tool (get_gex_regime_events) —
+// "when did the flip last cross" / "how many times has the wall moved" is a
+// genuinely different question from get_gex/get_positioning's CURRENT-snapshot-only
+// view, so it gets its own hint, same pattern as needsZeroDteRejections above.
+
+test("GEX regime-history wording (retrospective/count trigger + a GEX-domain token) hints get_gex_regime_events", () => {
+  for (const question of [
+    "when did SPY's gamma flip last cross",
+    "how many times has NVDA's call wall broken today",
+    "has the gamma regime flipped this session",
+    "what's SPX's wall history today",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsGexRegimeHistory, true, `expected needsGexRegimeHistory for: "${question}"`);
+    assert.match(intent.guidance, /get_gex_regime_events/, `expected get_gex_regime_events hint for: "${question}"`);
+  }
+});
+
+test("bare market-regime wording (no GEX-domain token) does not falsely fire needsGexRegimeHistory — stays disjoint from needsMarketRegime", () => {
+  // "regime" alone is MARKET_REGIME_RE's own vocabulary (LARGO-110) — this hint must
+  // require an explicit GEX-domain token (gamma flip/gex/wall/etc.), not fire on the
+  // bare word "regime" the way MARKET_REGIME_RE deliberately does for its own tool.
+  for (const question of ["what's the market regime today", "is this a good regime for calls"]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsGexRegimeHistory,
+      false,
+      `expected !needsGexRegimeHistory for market-regime wording: "${question}"`
+    );
+  }
+});
+
+test("bare retrospective/count wording with NO GEX-domain token does not falsely fire needsGexRegimeHistory", () => {
+  for (const question of [
+    "how many times did I trade today",
+    "when did the market open",
+    "how many times has AAPL missed earnings",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsGexRegimeHistory,
+      false,
+      `expected !needsGexRegimeHistory for unrelated wording: "${question}"`
+    );
+  }
+});
+
 // Task #131: detectFlowAnomalies' below-threshold/dedup-suppressed candidates now
 // have a durable log (flow_anomaly_near_misses) and a dedicated Largo tool
 // (get_flow_anomaly_near_misses) — "why didn't HELIX flag ticker X" is a genuinely

@@ -353,6 +353,12 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_positioning", "Dealer positioning for ANY ticker — net GEX, gex king strike, gamma flip, gamma regime, net vex (vanna), max pain, negative-gamma flag, wall summary. For SPX/I:SPX queries, all strike levels returned are SPX-denomination (thousands, e.g. 5500) — never SPY (hundreds).", T, ["ticker"]),
 
+  t(
+    "get_gex_regime_events",
+    "BlackOut Thermal's durable log of GEX regime/flip/wall-crossing events — answers 'when did SPY's gamma flip last cross', 'how many times has NVDA's call wall broken today', or 'has the gamma regime flipped this session', which get_positioning/get_gex structurally CANNOT answer: those two only ever return the CURRENT snapshot, with no memory of what changed earlier in the session. Reads gex_regime_events: one row per DISTINCT (ticker, event type + direction) transition (throttled to real state changes, not one row per matrix poll), each carrying event_type (flip_crossed / wall_broken / regime_flipped / net_gex_sign_flipped), severity (warn for destabilizing crosses, info otherwise), the human message, the level crossed (flip/wall strike) when applicable, direction, and the natural from_value/to_value numeric pair for that event type (spot before/after the crossed level for flip_crossed/wall_broken; the gamma-flip level at each end for regime_flipped; net GEX dollars before/after for net_gex_sign_flipped) — null when a type has no single natural pair, never fabricated. Pass `ticker` to scope to one name's transition history, or omit for the most recent transitions across every ticker BlackOut Thermal has computed a fresh matrix for. IMPORTANT — this is a DIFFERENT question from get_positioning/get_gex (current state) and from /api/cron/gex-alerts' live push notifications (which only ever fire for SPY/SPX/QQQ and only for a subset of these same event types) — this tool's history spans EVERY ticker Thermal has touched today and every event type, independent of whether a push was ever sent.",
+    { ticker: { type: "string" }, limit: { type: "integer" } }
+  ),
+
   t("get_nighthawk_outcomes", "Night Hawk track record — realized win/loss vs target/stop over a window, plus still-pending plays. Use to cite credibility (e.g. hit-rate over 30d).", {
     window_days: { type: "integer", default: 30 },
   }),
@@ -458,6 +464,7 @@ export const TOOL_GROUPS = {
     "get_trade_history",
     "get_greek_flow",
     "get_gex",
+    "get_gex_regime_events",
     "get_group_greek_flow",
     // cross-tool desk objects newly surfaced to Largo
     "get_spx_confluence",
@@ -496,6 +503,7 @@ export const TOOL_GROUPS = {
     "get_short_interest",
     "get_nbbo",
     "get_positioning",
+    "get_gex_regime_events",
     // previously orphaned — LARGO-9
     "get_seasonality",
     "get_qqq_relative_strength",

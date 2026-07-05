@@ -129,6 +129,51 @@ test("get_zerodte_plays description points forward to get_zerodte_rejections for
   );
 });
 
+// Task #136: BlackOut Thermal's GEX regime/flip/wall-crossing transition history
+// (gex_regime_events) gets its own Largo tool, direct analogue of get_zerodte_rejections
+// above — a genuinely different question from get_positioning/get_gex's CURRENT-state-only
+// snapshot.
+
+test("get_gex_regime_events is a real tool, reachable via TOOL_GROUPS.stock_analysis and TOOL_GROUPS.spx_desk", () => {
+  const def = LARGO_TOOL_DEFS.find((t) => t.name === "get_gex_regime_events");
+  assert.ok(def, "get_gex_regime_events must be a registered Largo tool");
+  assert.ok(
+    TOOL_GROUPS.stock_analysis.includes("get_gex_regime_events"),
+    "get_gex_regime_events must be routed via TOOL_GROUPS.stock_analysis — Largo would never call it otherwise"
+  );
+  assert.ok(
+    (TOOL_GROUPS.spx_desk as readonly string[]).includes("get_gex_regime_events"),
+    "get_gex_regime_events should also be reachable from the SPX desk bundle, alongside get_gex"
+  );
+});
+
+test("get_gex_regime_events description disambiguates from get_positioning/get_gex's current-snapshot-only view", () => {
+  const def = LARGO_TOOL_DEFS.find((t) => t.name === "get_gex_regime_events");
+  assert.ok(def);
+  assert.match(
+    def!.description,
+    /get_positioning/,
+    "expected get_gex_regime_events description to reference get_positioning (the current-snapshot sibling tool)"
+  );
+  assert.match(
+    def!.description,
+    /get_gex/,
+    "expected get_gex_regime_events description to reference get_gex (the current-snapshot sibling tool)"
+  );
+  assert.match(
+    def!.description,
+    /CURRENT/,
+    "expected get_gex_regime_events description to explicitly call out the current-vs-history distinction"
+  );
+});
+
+test("get_gex_regime_events is NOT part of SPX_ENGINE_TOOL_NAMES — generic/ticker-scoped like get_gex, not SPX-Slayer-engine-specific", () => {
+  assert.ok(
+    !SPX_ENGINE_TOOL_NAMES.includes("get_gex_regime_events"),
+    "get_gex_regime_events is a generic ticker-scoped tool (like get_gex/get_positioning), not SPX Slayer's own engine-state cohort"
+  );
+});
+
 // ── Task #131: get_flow_anomaly_near_misses — HELIX's flow-anomaly near-miss/
 // rejection log, distinct from BOTH get_market_regime's committed-anomaly COUNT
 // and get_ecosystem_context's per-ticker `recent_anomalies` (both read the

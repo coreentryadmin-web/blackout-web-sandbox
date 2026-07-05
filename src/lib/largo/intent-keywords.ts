@@ -85,6 +85,31 @@ export const ZERODTE_REJECTION_RE =
   /\b(near.?miss(es)?|gate.{0,15}reject(?:ed|ion)?|reject(?:ed|ion)?.{0,15}gate|gate.{0,15}fail(?:ed|s)?|fail(?:ed|s)?.{0,15}gate|didn'?t.{0,20}\b(?:make|hit)\b|wasn'?t.{0,20}\b(?:flagged|listed)\b|isn'?t.{0,20}\b(?:on|flagged)\b)\b.*\b(0.?dte|zero.?dte|grid)\b|\b(0.?dte|zero.?dte|grid)\b.*\b(near.?miss(es)?|gate.{0,15}reject(?:ed|ion)?|reject(?:ed|ion)?.{0,15}gate|gate.{0,15}fail(?:ed|s)?|fail(?:ed|s)?.{0,15}gate|didn'?t.{0,20}\b(?:make|hit)\b|wasn'?t.{0,20}\b(?:flagged|listed)\b|isn'?t.{0,20}\b(?:on|flagged)\b)\b/i;
 
 /**
+ * BlackOut Thermal's GEX regime/flip/wall-crossing HISTORY ("when did the flip
+ * last cross," "how many times has the wall moved today," "has the gamma
+ * regime flipped this session," "what's the wall history today") — hints
+ * get_gex_regime_events (task #136), the durable transition log. Distinct from
+ * get_positioning/get_gex's CURRENT-state-only snapshot: those tools have no
+ * memory of what already happened earlier in the session, so a genuinely
+ * retrospective/count question needs this tool instead. Three independent
+ * ways to fire, each requiring an explicit domain token co-occurring with
+ * retrospective/transition wording — same "REQUIRE co-occurrence, never fire
+ * on the generic word alone" discipline ZERODTE_REJECTION_RE documents above
+ * (a bare "how many times"/"when did"/"regime" is common phrasing for
+ * countless unrelated questions, including this repo's OWN MARKET_REGIME_RE):
+ *   1. A domain+history compound word pair ("flip/wall/regime/gex history") —
+ *      self-sufficient on its own since the domain token IS part of the phrase.
+ *   2. A GEX-specific two-word phrase (gamma flip / call wall / put wall / gex
+ *      regime / gamma regime / dealer gamma) paired with a transition verb
+ *      (crossed/broke/broken/flipped/moved/shifted) in either order.
+ *   3. A generic retrospective/count trigger (when did / how many times / last
+ *      cross) paired with a bare domain token (gamma flip/flip/gex/gamma/wall/
+ *      call wall/put wall/regime) in either order.
+ */
+export const GEX_REGIME_HISTORY_RE =
+  /\b(flip|wall|regime|gex)\s+history\b|\b(gamma flip|call wall|put wall|gex regime|gamma regime|dealer gamma)\b.{0,25}\b(cross(?:ed|ing)?|broke|broken|flipped|moved|shifted)\b|\b(cross(?:ed|ing)?|broke|broken|flipped|moved|shifted)\b.{0,25}\b(gamma flip|call wall|put wall|gex regime|gamma regime|dealer gamma)\b|\b(when did|how many times|last cross(?:ed)?)\b.{0,30}\b(gamma flip|flip|gex|gamma|wall|call wall|put wall|regime)\b|\b(gamma flip|flip|gex|gamma|wall|call wall|put wall|regime)\b.{0,30}\b(when did|how many times|last cross(?:ed)?)\b/i;
+
+/**
  * HELIX flow-anomaly near-miss/rejection wording ("why didn't HELIX flag X,"
  * "near miss on the anomaly scan," "didn't trigger an anomaly," "below the
  * anomaly threshold") — hints get_flow_anomaly_near_misses (task #131), the
