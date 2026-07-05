@@ -25,7 +25,11 @@
  *   AUDIT_OUT   output dir for reports (default: <cwd>/audit-output, gitignored)
  *   AUDIT_APP_URL   app base (default https://blackouttrades.com)
  *   AUDIT_EMAIL     temp user email (default claude-audit-temp@blackouttrades.com)
- *   AUDIT_PHONE     temp user phone (default +14155550123; instance requires a phone)
+ *   AUDIT_PHONE     temp user phone (default: freshly generated each run — fixed fake
+ *                   415-555 prefix + a random 4-digit suffix, see lib/audit-phone.mjs;
+ *                   instance requires a phone). A hardcoded default here previously
+ *                   collided with an already-registered Clerk user and broke every
+ *                   subsequent unattended run — see docs/audit/FINDINGS.md (task #175).
  *
  * NOTE: WebSocket feeds are NOT validated here (agent/proxy environments block WS
  * upgrades). Members see WS data via these REST endpoints, which ARE validated.
@@ -37,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isTradingDayEt, todayEtYmd } from '../gha-et-window.mjs';
 import { isAuthFailureStatus } from './lib/auth-status.mjs';
+import { generateDefaultAuditPhone } from './lib/audit-phone.mjs';
 
 const SECRET = req('CLERK_SECRET_KEY');
 const PUB = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
@@ -44,7 +49,11 @@ const UWK = req('UW_API_KEY');
 const POLY = req('POLYGON_API_KEY');
 const APP = process.env.AUDIT_APP_URL || 'https://blackouttrades.com';
 const EMAIL = process.env.AUDIT_EMAIL || 'claude-audit-temp@blackouttrades.com';
-const PHONE = process.env.AUDIT_PHONE || '+14155550123';
+// See lib/audit-phone.mjs for why the default is generated per-run instead of a fixed
+// constant (task #175: a hardcoded default eventually collided with an existing Clerk
+// user and broke every subsequent unattended run). AUDIT_PHONE, when set, is still used
+// verbatim — this fallback only fires when the operator hasn't overridden it.
+const PHONE = process.env.AUDIT_PHONE || generateDefaultAuditPhone();
 const OUT = process.env.AUDIT_OUT || join(process.cwd(), 'audit-output');
 const API = 'https://api.clerk.com/v1';
 const PB = 'https://api.polygon.io';
