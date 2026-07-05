@@ -15,6 +15,7 @@ import { requireToolApi } from "@/lib/tool-access-server";
 import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
+import { isEtCashRth } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -337,6 +338,46 @@ export async function GET(req: NextRequest) {
       // Night Hawk context — null when no current play exists for this ticker.
       nighthawk_context: nighthawkContext,
     });
+
+    // ── Off-hours shift gate (task #174, P1) ──────────────────────────────────────────
+    // `shift`/`vex_shift` are diffed from the positioning-history ring ONLY when the matrix
+    // cache refreshes (polygon-options-gex.ts's "SHIFT (intraday migration) — fresh compute
+    // ONLY" block, ~line 2284) — that computation has ZERO market-hours awareness. Once the
+    // matrix cache's last refresh happens to land during RTH, the cached shift object (with
+    // its present-tense "Over the last Xh Ym: ... migrated..." summary) is served UNCHANGED
+    // to every user through the entire closed period (evenings/weekends/holidays) until the
+    // next refresh — reading as if the migration just happened when the market has actually
+    // been closed the whole time. Confirmed live: SPX heatmap served shift.available:true
+    // with a fresh-reading "Over the last 2h14m: gamma flip migrated..." summary on a closed
+    // market (see docs/audit/FINDINGS.md). Same "stale content served as live" bug class as
+    // task #173's market-regime staleness fix and spx-session.ts's isPremarketBriefFresh gate.
+    //
+    // Fix: whenever the market is NOT in cash RTH RIGHT NOW, override `available` to false on
+    // BOTH shift objects — REGARDLESS of what the cached computation produced — and replace the
+    // rest of the object with the same minimal { available:false, status:'collecting' } shape
+    // the "not enough history yet" cold-start path already uses. Two deliberate choices:
+    //   1. Applied HERE (the route), not in polygon-options-gex.ts's compute path. "Is the
+    //      market closed RIGHT NOW" is a property of THIS READ (now), not of the moment the
+    //      cache was (re)computed — the route already holds the freshest wall-clock read, and
+    //      this override must re-apply on EVERY cache hit (every request during the closed
+    //      window reads the SAME cached object), not just the refresh that computed it.
+    //   2. We blank the WHOLE object (not just flip the boolean) so the misleading present-
+    //      tense `summary` string, delta_by_strike, etc. never leave the server while closed —
+    //      half-fixing this by leaving `available:false` next to a live-reading summary string
+    //      would still leak the exact misleading text a raw-JSON consumer (or a future UI) could
+    //      render. Reusing the existing 'collecting' status (rather than inventing a new one) is
+    //      intentional: GexHeatmap.tsx's Shift panel branches ONLY on `shift.available` truthiness
+    //      (never on `status`'s value — grepped), so a new status literal would add a type-surface
+    //      change with zero behavioral effect; reusing the shape already proven by the cold-start
+    //      path is the smaller, safer diff.
+    // Out of scope (deliberately untouched): computeMetricShift's diff math, wall/flip-migration
+    // calculations, and the cache-refresh trigger — those are correct; this is purely a "don't
+    // present a stale/cached result as if it's happening right now" presentation-layer gate.
+    if (!isEtCashRth()) {
+      rounded.shift = { available: false, status: "collecting" };
+      if (rounded.vex_shift) rounded.vex_shift = { available: false, status: "collecting" };
+    }
+
     // Reconcile each metric's total AFTER rounding: independently rounding total and
     // each strike_totals entry can drift by a cent or two (live-caught P0: NVDA GEX
     // Σstrike_totals != total, docs/audit/FINDINGS.md 2026-07-03). The pre-rounding

@@ -20,6 +20,9 @@ import type { GexHeatmap } from "../../../../lib/providers/polygon-options-gex";
 
 let mockHeatmap: GexHeatmap | null = null;
 let fetchGexHeatmapCalls = 0;
+// Task #174 fixture: defaults to "market open" so every PRE-EXISTING test above keeps its
+// original behavior untouched (the off-hours gate is a no-op when isEtCashRth() is true).
+let mockMarketOpen = true;
 
 mock.module("../../../../lib/market-api-auth", {
   namedExports: {
@@ -67,6 +70,11 @@ mock.module("../../../../lib/db", {
     fetchLatestNighthawkEdition: async () => null,
   },
 });
+mock.module("../../../../lib/et-market-hours", {
+  namedExports: {
+    isEtCashRth: () => mockMarketOpen,
+  },
+});
 // heatmap-allowlist is intentionally left real (its own header notes it's a pure data +
 // predicate module, safe outside a server bundle) — "ZZZZ" below is neither a preset nor an
 // overlay-allowlisted ticker, so cross_validation/overlays stay on their skip paths for free.
@@ -102,6 +110,28 @@ function liveHeatmap(overrides: Partial<GexHeatmap> = {}): GexHeatmap {
     shift: { available: false, status: "collecting" },
     source: "polygon",
     data_delay: "15-min delayed",
+    ...overrides,
+  };
+}
+
+/**
+ * A REAL computed shift/vex_shift payload (task #174 fixture) — mirrors the exact live-observed
+ * shape from the audit: a present-tense summary + real deltas, as produced by computeMetricShift
+ * once ≥2 positioning-history snapshots exist. Used to prove the off-hours gate overrides
+ * `available` regardless of what the underlying (correctly-computed) cached object holds.
+ */
+function realShift(overrides: Partial<GexHeatmap["shift"]> = {}): GexHeatmap["shift"] {
+  return {
+    available: true,
+    delta_by_strike: { "100": 5000, "105": -1200 },
+    flip_migration: { from: 96, to: 98, delta_pts: 2 },
+    wall_changes: {
+      call_wall: { from: 98, to: 100, moved_pts: 2, grew_pct: 12.5 },
+      put_wall: { from: 106, to: 105, moved_pts: -1, grew_pct: null },
+    },
+    summary: "Over the last 2h14m: the 100 call wall built +12.5%, gamma flip migrated up 2 pts (dealers building).",
+    since_ms: 8_040_000,
+    baseline_ts: 1_751_000_000_000,
     ...overrides,
   };
 }
@@ -182,5 +212,83 @@ describe("/api/market/gex-heatmap available flag", () => {
     // fields (there's nothing to merge), unlike the non-null-but-empty case above which still
     // spreads the full (empty-valued) heatmap object.
     assert.equal(body.strikes, undefined);
+  });
+});
+
+// Task #174 (P1): computeMetricShift's diff has ZERO market-hours awareness — it only runs when
+// the matrix cache refreshes, so a cached shift object with a present-tense "Over the last Xh Ym:
+// ... migrated..." summary keeps being served UNCHANGED to every user through an entire closed
+// period (evenings/weekends/holidays) until the next refresh. Confirmed live: SPX heatmap served
+// shift.available:true with a fresh-reading migration summary on a closed market. The fix
+// overrides `available` to false on BOTH shift and vex_shift in the route's response whenever
+// isEtCashRth() is false RIGHT NOW — regardless of what the cached heatmap object holds — and
+// blanks the rest of the object (never fabricated, same shape the cold-start "collecting" path
+// already uses) so the misleading summary text never leaves the server while markets are closed.
+describe("/api/market/gex-heatmap off-hours shift gate", () => {
+  let GET: (req: NextRequest) => Promise<Response>;
+
+  before(async () => {
+    ({ GET } = await import("./route"));
+  });
+
+  test("outside RTH, shift.available is forced false even though the cached heatmap has REAL computed shift data", async () => {
+    mockMarketOpen = false;
+    mockHeatmap = liveHeatmap({ shift: realShift() });
+    const res = await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=ZZZZ"));
+    const body = await res.json();
+    assert.equal(body.shift.available, false, "market is closed — a real shift must still be suppressed");
+    assert.equal(body.shift.status, "collecting");
+    // The whole object is blanked, not just the boolean — the present-tense summary that
+    // triggered this bug (audit-quoted: "Over the last 2h14m: gamma flip migrated...") must
+    // never leave the server while the market is closed, even as a "hidden" field.
+    assert.equal(body.shift.summary, undefined);
+    assert.equal(body.shift.delta_by_strike, undefined);
+    assert.equal(body.shift.flip_migration, undefined);
+  });
+
+  test("outside RTH, vex_shift.available is ALSO forced false when it independently carries real data", async () => {
+    mockMarketOpen = false;
+    mockHeatmap = liveHeatmap({
+      shift: realShift(),
+      vex_shift: realShift({ summary: "Over the last 2h14m: net dealer vanna melted -8% (dealers thinning)." }),
+    });
+    const res = await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=ZZZZ"));
+    const body = await res.json();
+    assert.equal(body.vex_shift.available, false);
+    assert.equal(body.vex_shift.status, "collecting");
+    assert.equal(body.vex_shift.summary, undefined);
+  });
+
+  test("outside RTH, a heatmap with NO vex_shift field stays without one (never fabricated)", async () => {
+    mockMarketOpen = false;
+    mockHeatmap = liveHeatmap({ shift: realShift() });
+    delete (mockHeatmap as { vex_shift?: unknown }).vex_shift;
+    const res = await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=ZZZZ"));
+    const body = await res.json();
+    assert.equal(body.vex_shift, undefined, "the gate must not manufacture a vex_shift block that was never present");
+  });
+
+  test("DURING RTH, the same real shift/vex_shift data passes through unchanged (no regression on the happy path)", async () => {
+    mockMarketOpen = true;
+    mockHeatmap = liveHeatmap({
+      shift: realShift(),
+      vex_shift: realShift({ summary: "Over the last 2h14m: net dealer vanna melted -8% (dealers thinning)." }),
+    });
+    const res = await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=ZZZZ"));
+    const body = await res.json();
+    assert.equal(body.shift.available, true);
+    assert.equal(body.shift.summary, realShift().summary);
+    assert.equal(body.shift.flip_migration.delta_pts, 2);
+    assert.equal(body.vex_shift.available, true);
+    assert.equal(body.vex_shift.summary, "Over the last 2h14m: net dealer vanna melted -8% (dealers thinning).");
+  });
+
+  test("outside RTH, an ALREADY-collecting shift (cold history, no real data yet) stays available:false (gate is a no-op, not a regression)", async () => {
+    mockMarketOpen = false;
+    mockHeatmap = liveHeatmap(); // default shift: { available:false, status:"collecting" }, no vex_shift
+    const res = await GET(new NextRequest("http://localhost/api/market/gex-heatmap?ticker=ZZZZ"));
+    const body = await res.json();
+    assert.equal(body.shift.available, false);
+    assert.equal(body.shift.status, "collecting");
   });
 });
