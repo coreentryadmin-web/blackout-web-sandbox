@@ -16,8 +16,7 @@ export const metadata: Metadata = {
 /**
  * /grid — 0DTE Command (admin preview tab) + the classic Market Grid tab.
  * Server Component: tier gate + launch gate + metadata; the client tabs own
- * layout/polling. `grid` in LAUNCHED_TOOLS opens Market Grid for premium;
- * 0DTE Command stays admin-only until LAUNCHED_0DTE=1.
+ * layout/polling. Premium users see 0DTE Command + Market Grid tabs; Largo stays gated.
  *
  * Product rule: this surface finds NEW plays only — it never reprints the SPX
  * engines' plays or Night Hawk's picks. The server-side scanner (grid-warm cron)

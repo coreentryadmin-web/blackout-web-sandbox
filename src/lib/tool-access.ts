@@ -2,10 +2,9 @@
 // no Next, no process beyond env) so it is client + server + unit-test safe. Admin bypass is layered on
 // in tool-access-server.ts — this module only knows the per-tool launch state.
 //
-// WHY: paying (Whop) users should NOT get the whole site on day one. SPX Slayer + HELIX ship live;
-// Largo, Heatmaps, and Night Hawk are gated behind a padlock until they're finished. The locked set is
-// env-overridable (LAUNCHED_TOOLS) so each tool can be flipped live with a single Railway var edit —
-// no code change, no redeploy, no risk of shipping a bug just to unlock a feature.
+// WHY: paying (Whop) users get every finished desk tool on day one; Largo stays gated
+// behind a padlock until its launch. The locked set remains env-overridable
+// (LAUNCHED_TOOLS) for additive unlocks — default-launched tools cannot be locked via env.
 
 export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "grid";
 
@@ -29,13 +28,12 @@ export type ToolMeta = {
 export const TOOLS: readonly ToolMeta[] = [
   { key: "spx", label: "SPX Slayer", href: "/dashboard", product: "spx", defaultLaunched: true },
   { key: "flows", label: "HELIX", href: "/flows", product: "helix", defaultLaunched: true },
-  { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: false },
+  { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: true },
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
-  { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: false },
-  // 0DTE Command — the always-on 0DTE hunter (formerly "BlackOut Grid"; the classic market grid
-  // lives on as a tab). Market Grid ships via LAUNCHED_TOOLS=grid; the 0DTE Command tab stays
-  // admin-only until LAUNCHED_0DTE=1 (see tool-access-server.ts).
-  { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: false },
+  { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: true },
+  // 0DTE Command + Market Grid — both live with grid; 0DTE tab follows grid unless
+  // LAUNCHED_0DTE=0 explicitly locks the scanner tab (see isZeroDteCommandLaunched).
+  { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: true },
 ] as const;
 
 const TOOL_BY_KEY = new Map<ToolKey, ToolMeta>(TOOLS.map((t) => [t.key, t]));
@@ -67,9 +65,12 @@ export function isToolLaunched(key: ToolKey, env: NodeJS.ProcessEnv = process.en
   return meta.defaultLaunched || envLaunchedKeys(env).has(key);
 }
 
-/** Flip via Railway `LAUNCHED_0DTE=1` when 0DTE Command is ready for all premium users. */
+/** 0DTE Command tab on /grid — follows grid launch; override with LAUNCHED_0DTE=1/0. */
 export function isZeroDteCommandLaunched(env: NodeJS.ProcessEnv = process.env): boolean {
-  return String(env.LAUNCHED_0DTE ?? "").trim() === "1";
+  const explicit = String(env.LAUNCHED_0DTE ?? "").trim();
+  if (explicit === "0") return false;
+  if (explicit === "1") return true;
+  return isToolLaunched("grid", env);
 }
 
 /** All currently-locked (non-launched) tool keys — drives the nav padlocks. */
