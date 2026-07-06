@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { OrbitTool } from "./BieOrbitTools";
 import {
+  ORBIT_OSCILLATION_AMPLITUDE_DEG,
+  TOOL_ORBIT_RINGS,
   TOOL_RING_ANCHOR_DEG,
   buildOrbitLayout,
   orbitAngularSeparationDeg,
@@ -64,6 +66,38 @@ describe("buildOrbitLayout", () => {
       b.map((t) => t.startAngleDeg)
     );
     assert.notEqual(a[0].orbitPeriodSec, b[0].orbitPeriodSec);
+  });
+
+  it("gives every tool the shared oscillation amplitude", () => {
+    const layout = buildOrbitLayout(TOOLS, SCALES, 42);
+    for (const tool of layout) {
+      assert.equal(tool.oscillationAmplitudeDeg, ORBIT_OSCILLATION_AMPLITUDE_DEG);
+    }
+  });
+});
+
+describe("adjacent-ring anchors can never swing into collision", () => {
+  it("every adjacent ring pair's anchor separation exceeds 2x the oscillation amplitude, with margin", () => {
+    // Two tools on rings that are numerically adjacent (1&2, 2&3, ... 6&1) sit
+    // in near-identical radius bands (see bie-helix-engine's fieldLineWarp),
+    // so they're the pairs that CAN visually collide if their swings ever
+    // bring them to the same angle. Non-adjacent rings (e.g. 1&5) have such
+    // different radii that angular closeness alone can't cause a collision,
+    // so they're not checked here. A safety margin beyond the bare minimum
+    // (2x amplitude) covers each icon's own visual footprint (~52px mark +
+    // label), not just its center point.
+    const SAFETY_MARGIN_DEG = 20;
+    const minRequired = 2 * ORBIT_OSCILLATION_AMPLITUDE_DEG + SAFETY_MARGIN_DEG;
+
+    for (let i = 0; i < TOOL_ORBIT_RINGS.length; i++) {
+      const ringA = TOOL_ORBIT_RINGS[i];
+      const ringB = TOOL_ORBIT_RINGS[(i + 1) % TOOL_ORBIT_RINGS.length];
+      const gap = orbitAngularSeparationDeg(TOOL_RING_ANCHOR_DEG[ringA], TOOL_RING_ANCHOR_DEG[ringB]);
+      assert.ok(
+        gap >= minRequired,
+        `ring ${ringA} <-> ring ${ringB}: anchor gap ${gap}deg is under the ${minRequired}deg required to guarantee no collision`
+      );
+    }
   });
 });
 

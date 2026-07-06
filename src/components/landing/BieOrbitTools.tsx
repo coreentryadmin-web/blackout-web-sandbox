@@ -116,6 +116,7 @@ export function BieOrbitTools({
         const px = orbitToolPixelPosition({
           startAngleDeg: tool.startAngleDeg,
           orbitDeg: m.orbitDeg,
+          oscillationAmplitudeDeg: tool.oscillationAmplitudeDeg,
           coreX: g.coreX,
           coreY: g.coreY,
           maxRx: g.maxRx,

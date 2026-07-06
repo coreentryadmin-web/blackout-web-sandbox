@@ -22,7 +22,22 @@ export type PlacedOrbitTool = OrbitTool & {
   startAngleDeg: number;
   orbitPeriodSec: number;
   orbitDirection: 1 | -1;
+  oscillationAmplitudeDeg: number;
 };
+
+/**
+ * How far (in degrees) each tool swings from its anchor, each direction. Tools
+ * used to drift a full continuous 360° orbit, so any two — regardless of
+ * anchor — would eventually pass through the same angle at the same moment
+ * and visually collide (their screen distance at that point is well under the
+ * ~52px icon size). Bounding the swing to a wobble around the anchor, sized to
+ * less than half the smallest adjacent-ring anchor gap (see the "no adjacent
+ * pair can ever swing into collision" test in bie-orbit-layout.test.ts), makes
+ * collision impossible by construction instead of merely unlikely. This also
+ * matches this component's own stated intent — "fixed compass anchors" — which
+ * unbounded drift never actually honored.
+ */
+export const ORBIT_OSCILLATION_AMPLITUDE_DEG = 24;
 
 const SESSION_KEY = "bie-orbit-seed";
 
@@ -99,6 +114,7 @@ export function buildOrbitLayout(
       startAngleDeg: TOOL_RING_ANCHOR_DEG[ring],
       orbitPeriodSec: RING_ORBIT_PERIOD_SEC[ring] + jitter,
       orbitDirection: RING_ORBIT_DIRECTION[ring],
+      oscillationAmplitudeDeg: ORBIT_OSCILLATION_AMPLITUDE_DEG,
     };
   });
 }
