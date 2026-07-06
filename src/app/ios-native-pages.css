@@ -562,8 +562,8 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-form-fullpage
 /* Keyboard open — shrink chat to visual viewport (prevents web-like overflow/zoom break) */
 html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native,
 html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-terminal-native {
-  min-height: var(--ios-vv-height, 100dvh);
-  max-height: var(--ios-vv-height, 100dvh);
+  min-height: 0;
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
 }
 
 html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-chat-container {
@@ -614,6 +614,7 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-messages {
   padding: 0.65rem 0.65rem 0.35rem;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   gap: 0.65rem;
 }
 
@@ -628,6 +629,8 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble {
   background: var(--ios-surface-1);
   padding: 0.65rem 0.75rem;
   border-left: 2px solid var(--ios-accent);
+  max-width: 100%;
+  overflow: visible;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble-user {
@@ -649,6 +652,8 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-body {
   color: #e0f2fe;
   font-size: 15px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-tools {
@@ -742,8 +747,13 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-send:disable
 }
 
 html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native {
-  min-height: var(--ios-vv-height, 100dvh);
-  max-height: var(--ios-vv-height, 100dvh);
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-native-desk {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-native-matrix-only {

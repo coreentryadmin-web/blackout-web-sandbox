@@ -348,6 +348,15 @@ if (largoNative.includes("largo-native-desk") && largoNative.includes("useLargoC
 } else {
   fail("largo:mobile-only-desk", "expected dedicated LargoNativeTerminal");
 }
+if (largoNative.includes("resetIosViewport")) ok("largo:keyboard-viewport-reset");
+else fail("largo:keyboard-viewport-reset", "expected resetIosViewport on input blur");
+
+const keyboardHook = readFileSync(join(root, "src/hooks/useIosKeyboardInset.ts"), "utf8");
+if (keyboardHook.includes("resetIosViewport") && !keyboardHook.includes("position: fixed")) {
+  ok("ios:keyboard-no-body-fixed");
+} else {
+  fail("ios:keyboard-no-body-fixed", "expected keyboard sync without body position:fixed");
+}
 
 const viewportLock = readFileSync(join(root, "src/components/ios/IosViewportLock.tsx"), "utf8");
 if (viewportLock.includes("maximum-scale=1")) ok("ios:viewport-zoom-lock");
@@ -356,6 +365,14 @@ else fail("ios:viewport-zoom-lock", "expected IosViewportLock");
 const inputLockCss = readFileSync(join(root, "src/app/ios-native-input-lock.css"), "utf8");
 if (inputLockCss.includes("font-size: 16px !important")) ok("ios:input-16px-lock");
 else fail("ios:input-16px-lock", "expected 16px input lock CSS");
+if (!inputLockCss.includes("position: fixed")) ok("ios:input-lock-no-body-fixed");
+else fail("ios:input-lock-no-body-fixed", "body position:fixed causes post-keyboard stuck layout");
+
+if (pagesCss.includes("largo-native-messages") && pagesCss.includes("justify-content: flex-end")) {
+  ok("largo:messages-pin-above-composer");
+} else {
+  fail("largo:messages-pin-above-composer", "expected flex-end pin on Largo messages");
+}
 
 const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
 if (rootLayout.includes("IosViewportLock") && rootLayout.includes("ios-native-input-lock.css")) {

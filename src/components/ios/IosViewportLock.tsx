@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { isIosAppShell } from "@/lib/ios-app-shell";
+import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 
 const IOS_VIEWPORT =
   "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
@@ -29,7 +30,18 @@ export function IosViewportLock() {
     apply();
     const observer = new MutationObserver(apply);
     observer.observe(document.head, { childList: true, subtree: true, attributes: true });
-    return () => observer.disconnect();
+
+    const onFocusOut = (e: FocusEvent) => {
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return;
+      window.setTimeout(() => resetIosViewport(), 160);
+    };
+    document.addEventListener("focusout", onFocusOut);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("focusout", onFocusOut);
+    };
   }, []);
 
   return null;

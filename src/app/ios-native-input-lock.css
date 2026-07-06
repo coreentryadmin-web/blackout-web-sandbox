@@ -20,16 +20,21 @@ html.ios-app [contenteditable="true"] {
 }
 
 html.ios-app.ios-keyboard-open {
-  height: var(--ios-vv-height, 100dvh);
   overflow: hidden;
 }
 
 html.ios-app.ios-keyboard-open body {
-  height: var(--ios-vv-height, 100dvh);
   overflow: hidden;
-  position: fixed;
-  inset: 0;
-  width: 100%;
+}
+
+/* Shrink the native shell to the visual viewport while typing — never pin body (sticks after dismiss). */
+html.ios-app.ios-keyboard-open.ios-native-shell .ios-native-page-stage {
+  height: var(--ios-vv-height, 100dvh);
+  max-height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="largo"] .largo-page-shell-native {
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
 }
 
 /* Native shell — fixed type scale on mobile-only surfaces */

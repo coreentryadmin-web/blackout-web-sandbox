@@ -3,7 +3,7 @@
 import { clsx } from "clsx";
 import { LargoMessageBody } from "@/components/desk/LargoMessageBody";
 import { LargoThinkingState } from "@/components/desk/LargoThinkingState";
-import { useIosKeyboardInset } from "@/hooks/useIosKeyboardInset";
+import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 import { LARGO_SUGGESTIONS, largoToolLabel, useLargoChat } from "@/hooks/useLargoChat";
 
 const PLACEHOLDER = "Ask Largo — SPX, flow, news…";
@@ -11,7 +11,6 @@ const PLACEHOLDER_BUSY = "Pulling live data…";
 
 /** Mobile-only Largo desk — no web Panel, no responsive breakpoints. */
 export function LargoNativeTerminal() {
-  useIosKeyboardInset(true);
   const {
     messages,
     input,
@@ -107,6 +106,8 @@ export function LargoNativeTerminal() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onFocus={() => bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })}
+          onBlur={() => window.setTimeout(() => resetIosViewport(), 160)}
           placeholder={loading ? PLACEHOLDER_BUSY : PLACEHOLDER}
           aria-label="Ask Largo"
           className="largo-native-input"
