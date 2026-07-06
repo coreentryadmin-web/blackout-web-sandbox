@@ -204,8 +204,7 @@ export function FlowAlertStream({
 
         <div
           ref={scrollRef}
-          className="flow-scroll overflow-y-auto px-1"
-          style={{ maxHeight: "calc(100vh - 210px)" }}
+          className="flow-scroll flow-scroll-max overflow-y-auto px-1"
           onScroll={() => { if (scrollRef.current && scrollRef.current.scrollTop < 40) setNewCount(0); }}
           role="log"
           aria-live="polite"

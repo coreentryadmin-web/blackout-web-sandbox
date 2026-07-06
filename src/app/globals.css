@@ -4302,9 +4302,11 @@ body::before {
   html.ios-app {
     --nav-offset: calc(76px + env(safe-area-inset-top, 0px) + 12px);
     --ios-tab-offset: 0px;
+    --viewport-chrome: var(--nav-offset);
   }
   html.ios-app.ios-tab-bar {
-    --ios-tab-offset: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    --ios-tab-offset: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+    --viewport-chrome: calc(var(--nav-offset) + var(--ios-tab-offset));
   }
   html.ios-app .nav-kicker {
     display: none;
@@ -4358,9 +4360,19 @@ body::before {
     .spx-sniper-triple {
       min-height: 0;
     }
-    .spx-sniper-desk {
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  @media (max-width: 1023px) {
+    .spx-sniper-triple .spx-sniper-chart-col {
+      min-height: min(420px, calc(55dvh - var(--ios-tab-offset, 0px) * 0.15));
     }
+    html.ios-app.ios-tab-bar .nav-sheet-toggle {
+      display: none;
+    }
+  }
+
+  html.ios-app.ios-tab-bar .nighthawk-page-root {
+    min-height: calc(100svh - var(--nav-offset) - var(--ios-tab-offset));
   }
 
   /* iOS app — bottom tool tab bar (native-style primary navigation) */
@@ -4403,11 +4415,45 @@ body::before {
   .ios-app-tab-icon {
     @apply shrink-0;
   }
-  html.ios-app.ios-tab-bar .spx-sniper-desk,
   html.ios-app.ios-tab-bar .page-shell,
-  html.ios-app.ios-tab-bar main[id="main"] {
+  html.ios-app.ios-tab-bar .ios-desk-shell,
+  html.ios-app.ios-tab-bar .largo-page-main {
     padding-bottom: var(--ios-tab-offset);
   }
+
+  /* Flow tape scroll region — clear fixed nav + iOS tab bar */
+  .flow-scroll-max {
+    max-height: calc(100dvh - var(--nav-offset) - var(--ios-tab-offset, 0px) - 12rem);
+  }
+
+  html.ios-app .auth-mobile-pane {
+    padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .ios-account-page {
+    padding-top: var(--nav-offset);
+    padding-bottom: 3rem;
+  }
+  html.ios-app .ios-account-page {
+    padding-bottom: max(3rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  html.ios-app .ios-tool-locked-screen {
+    padding-top: var(--nav-offset);
+    min-height: calc(100svh - var(--ios-tab-offset, 0px));
+  }
+
+  html.ios-app.ios-tab-bar .largo-page-shell {
+    height: calc(100dvh - var(--ios-tab-offset));
+    min-height: 0;
+  }
+
+  html.ios-app .helix-tide-bar {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
   @media (max-width: 1023px) {
     html.ios-app .nav-auth .nav-push-slot {
       display: none;

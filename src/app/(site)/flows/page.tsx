@@ -27,7 +27,7 @@ export default async function FlowsPage() {
           <HelixTideBar />
         </div>
       </div>
-      <div className="mt-4 max-w-none px-2 md:px-3">
+      <div className="content-rail mt-4 max-w-none">
         <FlowAnomalyBanner />
         <FlowFeed />
       </div>

@@ -11,6 +11,7 @@ type DeskShellProps = {
 export function DeskShell({ children, fullBleed, className }: DeskShellProps) {
   return (
     <div
+      id="main"
       className={clsx(
         "relative w-full pb-8 ios-desk-shell",
         fullBleed
@@ -18,7 +19,7 @@ export function DeskShell({ children, fullBleed, className }: DeskShellProps) {
           : "content-rail mx-auto w-full",
         className
       )}
-      style={{ paddingTop: "var(--nav-offset)", paddingBottom: "calc(2rem + var(--ios-tab-offset, 0px))" }}
+      style={{ paddingTop: "var(--nav-offset)" }}
     >
       {children}
     </div>

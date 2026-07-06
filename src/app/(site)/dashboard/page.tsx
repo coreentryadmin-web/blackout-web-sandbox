@@ -15,9 +15,7 @@ export default async function DashboardPage() {
 
   return (
     <DeskShell fullBleed>
-      <main id="main">
-        <SpxDashboard />
-      </main>
+      <SpxDashboard />
     </DeskShell>
   );
 }

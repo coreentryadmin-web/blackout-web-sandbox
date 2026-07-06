@@ -28,13 +28,20 @@ console.log("validate:ios-mobile-desk — static CSS/component guards\n");
 
 const cssNeedles = [
   ["html.ios-app {", "iOS safe-area nav offset"],
+  ["--viewport-chrome", "viewport chrome token"],
   ["--ios-tab-offset", "iOS bottom tab bar offset token"],
   [".ios-app-tab-bar", "iOS bottom tab bar component styles"],
+  ["html.ios-app.ios-tab-bar .nav-sheet-toggle", "hide hamburger when tab bar visible"],
   ["overflow-x: hidden", "WKWebView horizontal overflow guard"],
   ["html.nav-locked .nav-brand", "drawer-open nav wordmark hide"],
   ["html.ios-app .nav-auth .nav-push-slot", "hide push toggle from cramped top bar"],
   [".spx-hero-price", "mobile hero price scale hook"],
   ["grid-template-columns: repeat(2, minmax(0, 1fr))", "mobile metric block grid"],
+  [".flow-scroll-max", "HELIX tape height clears nav + tab bar"],
+  [".ios-tool-locked-screen", "ComingSoon nav clearance"],
+  [".auth-mobile-pane", "sign-in safe-area padding"],
+  [".ios-account-page", "account page nav offset"],
+  ["html.ios-app.ios-tab-bar .ios-desk-shell", "single bottom inset owner for desk"],
 ];
 
 const sourceNeedles = [
@@ -71,6 +78,20 @@ if (!header.includes('"— — —"')) {
   ok("header:no-triple-dash placeholder");
 } else {
   fail("header:no-triple-dash placeholder", 'still renders "— — —"');
+}
+
+const dashboard = readFileSync(join(root, "src/app/(site)/dashboard/page.tsx"), "utf8");
+if (!dashboard.includes('<main id="main">')) {
+  ok("dashboard:no-nested-main");
+} else {
+  fail("dashboard:no-nested-main", "duplicate id=main breaks skip link");
+}
+
+const flowStream = readFileSync(join(root, "src/components/desk/FlowAlertStream.tsx"), "utf8");
+if (flowStream.includes("flow-scroll-max") && !flowStream.includes("100vh - 210px")) {
+  ok("helix:flow-tape-viewport");
+} else {
+  fail("helix:flow-tape-viewport", "expected flow-scroll-max without hardcoded 100vh");
 }
 
 const BASE = (process.env.VALIDATE_BASE || "https://blackouttrades.com").replace(/\/$/, "");

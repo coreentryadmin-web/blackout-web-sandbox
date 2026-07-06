@@ -17,7 +17,7 @@ export default async function NightHawkPage() {
 
   return (
     <PageShell fullBleed contentClassName="!py-0">
-      <div className="flex min-h-[calc(100svh-var(--nav-offset))] max-w-none flex-col px-2 pb-4 pt-4 md:px-3">
+      <div className="nighthawk-page-root flex min-h-[calc(100svh-var(--nav-offset)-var(--ios-tab-offset,0px))] max-w-none flex-col px-2 pb-4 pt-4 md:px-3">
         <PageHeader
           kicker="Overnight playbook"
           title="Night Hawk"
