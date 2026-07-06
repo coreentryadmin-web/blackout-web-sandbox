@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
@@ -57,20 +57,32 @@ export async function GET(req: NextRequest) {
     const selfHealEnabled = process.env.CRON_WATCHDOG_SELF_HEAL?.trim() === "1";
     const healTargets = rthStale.filter((j) => isDispatchableCron(j.key));
     const healed: Array<{ key: string; ok: boolean; status: number; detail?: string }> = [];
-    if (selfHealEnabled && healTargets.length > 0) {
+
+    // Self-heal MUST NOT block the HTTP response. Each dispatchCronWarm can run a full warmer
+    // (grid-warm, heatmap-warm, …) synchronously — several in sequence routinely exceeds
+    // Cloudflare's ~100s origin timeout → HTTP 524 on this route and a false P0 in ops-collect.
+    // Mirror nighthawk-edition: dispatch in after() so the snapshot returns in seconds.
+    const runSelfHeal = async () => {
       for (const job of healTargets) {
         const res = await dispatchCronWarm(job.key);
-        healed.push({
-          key: job.key,
-          ok: res.ok,
-          status: res.status,
-          detail: res.error ?? res.detail,
-        });
         console[res.ok ? "warn" : "error"](
           `[cron/cron-staleness-watchdog] self-heal ${res.ok ? "re-warmed" : "FAILED"} stale cron '${job.key}' (status ${res.status})${
             res.error || res.detail ? ` — ${res.error ?? res.detail}` : ""
           }`
         );
+      }
+    };
+    if (selfHealEnabled && healTargets.length > 0) {
+      const dispatchHeal = () => {
+        void runSelfHeal().catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.error(`[cron/cron-staleness-watchdog] background self-heal REJECTED: ${detail}`);
+        });
+      };
+      try {
+        after(dispatchHeal);
+      } catch {
+        dispatchHeal();
       }
     } else if (rthStale.length > 0 && !selfHealEnabled) {
       // Self-heal could have helped but is disarmed — make that visible to operators.
@@ -110,12 +122,9 @@ export async function GET(req: NextRequest) {
               .map((j) => `• **${j.name}** (\`${j.key}\`) — ${j.status_label}`)
               .join("\n")
         );
-        if (selfHealEnabled && healed.length > 0) {
+        if (selfHealEnabled && healTargets.length > 0) {
           sections.push(
-            `Self-heal: ` +
-              healed
-                .map((h) => `\`${h.key}\` ${h.ok ? "re-warmed ✅" : `failed ❌ (${h.detail ?? h.status})`}`)
-                .join(" · ")
+            `Self-heal dispatched (background): ${healTargets.map((j) => `\`${j.key}\``).join(" · ")}`
           );
         }
       }
@@ -167,6 +176,7 @@ export async function GET(req: NextRequest) {
       error_spike: errorSpike,
       alert_delivered: problems.length > 0 || errorSpike !== "none" ? alertDelivered : null,
       self_heal_enabled: selfHealEnabled,
+      self_heal_dispatched: healTargets.map((j) => j.key),
       self_healed: healed,
     };
     await logCronRun("cron-staleness-watchdog", started, result);

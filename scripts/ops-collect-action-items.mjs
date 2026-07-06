@@ -143,15 +143,43 @@ async function postgresItems() {
   await c.end();
 }
 
+async function fetchWithTimeout(url, headers, timeoutMs) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { headers, signal: ac.signal });
+    const text = await r.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* HTML 524 page */
+    }
+    return { status: r.status, json };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { status: 0, json: null, err: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function httpItems() {
   if (!CRON) return;
   const H = { Authorization: `Bearer ${CRON}` };
 
   try {
-    const w = await fetch(`${BASE}/api/cron/cron-staleness-watchdog`, { headers: H });
-    const wj = await w.json().catch(() => ({}));
+    // Cloudflare origin timeout is ~100s; self-heal used to block the watchdog past that.
+    // 90s cap + one retry avoids a transient 524 becoming a standing P0.
+    const WATCHDOG_TIMEOUT_MS = 90_000;
+    let w = await fetchWithTimeout(`${BASE}/api/cron/cron-staleness-watchdog`, H, WATCHDOG_TIMEOUT_MS);
+    if (w.status === 524 || w.status === 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+      w = await fetchWithTimeout(`${BASE}/api/cron/cron-staleness-watchdog`, H, WATCHDOG_TIMEOUT_MS);
+    }
+    const wj = w.json ?? {};
     if (w.status !== 200) {
-      add("P0", "watchdog", "watchdog:http", "Cron watchdog HTTP error", `HTTP ${w.status}`);
+      add("P0", "watchdog", "watchdog:http", "Cron watchdog HTTP error", `HTTP ${w.status}${w.err ? ` (${w.err})` : ""}`);
     } else {
       for (const key of wj.rth_stale_keys ?? []) {
         add("P0", "watchdog", `watchdog:rth-stale:${key}`, `RTH stale cron: ${key}`, "market_hours_stale during RTH — live data warmer may be down.");
@@ -171,8 +199,8 @@ async function httpItems() {
   }
 
   try {
-    const dc = await fetch(`${BASE}/api/cron/data-correctness?force=1`, { headers: H });
-    const dj = await dc.json().catch(() => ({}));
+    const dc = await fetchWithTimeout(`${BASE}/api/cron/data-correctness?force=1`, H, 90_000);
+    const dj = dc.json ?? {};
     if (dc.status === 200 && (dj.flags?.length ?? 0) > 0) {
       const top = dj.flags.slice(0, 5).map((f) => `[${f.layer}/${f.metric}] ${f.detail}`).join("; ");
       add("P0", "correctness", "correctness:flags", `${dj.flags.length} data-correctness FLAG(s)`, top);
