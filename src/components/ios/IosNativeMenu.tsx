@@ -71,7 +71,7 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
             <p className="ios-native-menu-kicker">Instruments</p>
 
             <motion.div
-              className="ios-native-menu-grid"
+              className="ios-native-menu-list"
               variants={LIST_STAGGER}
               initial="hidden"
               animate="show"

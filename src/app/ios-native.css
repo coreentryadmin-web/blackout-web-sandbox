@@ -143,7 +143,7 @@ html.ios-app.ios-native-shell .nav-bar {
   text-align: center;
 }
 
-.ios-native-menu-grid {
+.ios-native-menu-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
@@ -252,38 +252,11 @@ html.ios-app.ios-native-shell .spx-sniper-command {
   border-bottom-color: rgba(255, 255, 255, 0.04);
 }
 
-/* ── Floating dock tab bar (native shell only) ── */
-html.ios-app.ios-native-shell .ios-app-tab-bar {
-  left: 10px;
-  right: 10px;
-  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-  width: auto;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding-bottom: 0;
-  background: rgba(8, 8, 14, 0.92);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.65),
-    0 0 0 1px rgba(0, 230, 118, 0.06) inset;
-}
-
+/* Tab-bar geometry/skin/active-state now owned by ios-native-command.css
+   (rail) + ios-native-tab-rail.css (hierarchy) + ios-native-nav.css (active
+   bar) — this file only reserves the offset variable those rely on. */
 html.ios-app.ios-native-shell.ios-tab-bar {
   --ios-tab-offset: calc(4.25rem + env(safe-area-inset-bottom, 0px));
-}
-
-html.ios-app.ios-native-shell .ios-app-tab-link-active {
-  color: var(--tab-accent, #00e676);
-  background: color-mix(in srgb, var(--tab-accent, #00e676) 12%, transparent);
-}
-
-html.ios-app.ios-native-shell .ios-app-tab-active-bar {
-  background: var(--tab-accent, #00e676);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--tab-accent, #00e676) 75%, transparent);
-}
-
-html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-label {
-  color: var(--tab-accent, #00e676);
-  text-shadow: 0 0 10px color-mix(in srgb, var(--tab-accent, #00e676) 45%, transparent);
 }
 
 /* Card surfaces for tool content */

@@ -9,6 +9,31 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟡 IN PROGRESS 2026-07-06 — iOS native shell: CTO-level redesign audit (Phase 0a shipped; multi-phase effort, branch `fix/ios-dead-floating-dock-css` first of many)
+
+**Status:** Phase 0a fixed and PR'd; Phases 0b–3 planned, tracked as tasks #178–#185. User request (verbatim): *"Cursor did work, but I did not like its work .. can you please continue where it left off … I am giving you full permissions and rights .. you need to work hard to make it the best looking and professional UI ios application .. you can remodel it completely .. every page, sub page, buttons, clicks, every single layout page needs to be audit and worked on .. no duplication of data across mobile UI."*
+
+**Context:** the iOS "native shell" (`apps/blackout-ios` Capacitor wrapper around the same Next.js app, gated by `BlackOutiOSApp` UA sniffing → `.ios-app`/`.ios-native-shell` classes on `<html>`) has had 5+ PRs of rapid iteration from Cursor (#546–#560, plus unlabeled direct-to-main commits landing *during this audit*: `ebaa746`, `a1d5883`, `d4da30f`). A full architecture read (dispatched to a research subagent, independently re-verified against source) surfaced concrete, evidence-based duplication/inconsistency — exactly what the user flagged:
+1. The "are we in the native shell" gate is implemented **4 separate times** with slightly different logic (`useIosNativeShell` hook, plus inline re-derivations in `IosAppChrome`, `IosAppTabBar`, `IosAppDeskRedirect`).
+2. **Two independent tool registries** (`tool-access.ts`'s `TOOLS` for web nav, `ios-tool-routes.ts`'s `IOS_TOOLS` for iOS chrome) hand-kept in sync with no compiler check.
+3. Layout constants (header height, tab-rail height, device-tier breakpoints) redefined **2–5x across CSS files** with drifting values — which value wins for a given route/state depends on cascade order + specificity across multiple files simultaneously.
+4. The tab bar's geometry had been fully re-designed at least twice (floating pill dock → edge-to-edge rail) with the **old direction's CSS left in the file, fully overridden but never deleted** — confirmed dead property-by-property (verified `.ios-app-tab-bar`, `.ios-app-tab-link-active`, `.ios-app-tab-active-bar` in `ios-native.css` are 100% shadowed by later-imported `ios-native-command.css`/`ios-native-nav.css`/`ios-native-tab-rail.css`, including one target element that's `display: none` entirely).
+5. `.ios-native-menu-grid` renders as a vertical flex list (confirmed via cascade), not a grid — the class name is a leftover from an earlier 2-column-grid design; the component's own doc comment already says "not a 2×2 card grid."
+
+**This is a large effort — plan (tracked in tasks #178–#185, executed as a sequence of small PRs per the standing one-issue-per-branch policy, not one mega-diff):**
+- **Phase 0 (foundation, no visual change):** delete confirmed-dead CSS (0a, this PR), unify the 4-way gate into one hook (0b), single source of truth for layout constants (0c) and the tool registry (0d), then collapse 8→fewer clearly-layered CSS files (0e).
+- **Phase 1:** redesign the nav shell (header/rail/menu) to one resolved, cohesive premium design language.
+- **Phase 2:** per-tool page redesign audit (SPX Slayer, HELIX, Thermal, Largo, Night Hawk, 0DTE Command).
+- **Phase 3:** utility pages (Account/FAQ/Learn/Upgrade/Admin) inside the native shell.
+
+**Phase 0a fix (this PR):** removed the fully-dead "floating dock tab bar" block from `ios-native.css` (kept the still-live `--ios-tab-offset` declaration sitting in the same region — confirmed via grep that 4 other files still read that variable). Renamed `.ios-native-menu-grid` → `.ios-native-menu-list` in the 3 places it appears (component + 2 CSS definitions) to match actual behavior. Updated `scripts/validate-ios-mobile-desk.mjs`'s static check that had been asserting the now-deleted selector against the wrong file (moved it to assert the real geometry owner, `ios-native-command.css`) — this validator is presence-based grep, not cascade-aware, so it could not have caught the dead code itself; a future check should assert winning values, not just presence.
+
+**Note for whoever picks up Phase 0b onward:** Cursor pushed 4 more commits directly to `main` touching this exact subsystem (`ios-native-tab-rail.css`, `ios-native-tokens.css`, `ios-native-cards.css`, `ios-native-organize.css`, `ios-native-input-lock.css`, `ios-haptics.ts`, +1342/-33 across 17 files) **during** this audit's recon — re-fetch and re-verify findings against latest `main` before starting each subsequent phase; the CSS file inventory and cascade order will keep moving.
+
+**Verification (Phase 0a):** `node scripts/validate-ios-mobile-desk.mjs` 150/150. `npx tsc --noEmit` clean. Full suite 1722/1722. `npm run build` clean. `npm run lint` clean (pre-existing warnings only). `npm run lint:css` — same 6 pre-existing errors present on `main` before this change (confirmed via `git stash` diff), none introduced. `git diff main -- src/lib/spx-signals.ts` empty.
+
+**Not yet confirmed live:** same sandbox limitation as prior UI work — Playwright browser automation in this remote environment cannot reach the public internet through the agent proxy (`ERR_CONNECTION_RESET` even via curl-verified-working hosts, both direct and with explicit proxy launch options — Chromium's own network stack doesn't route through it the way `fetch`/curl do) or spoof an authenticated local-dev session without weakening the auth script's origin check (declined by the auto-mode safety classifier, correctly — origin spoofing is a real bypass pattern even for legitimate test infra). This is a pure dead-code deletion with zero behavior change per the cascade analysis above, so live visual risk is effectively nil, but a human TestFlight/simulator check is still worth doing before Phase 1's actual visual redesign work ships.
+
 ---
 
 ## 🟡 P1 FOUND+FIXED 2026-07-06 — 0DTE Command's ambient Largo feed used a stale parallel scan path (branch `fix/zerodte-ambient-feed-parallel-path`)

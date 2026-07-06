@@ -383,7 +383,7 @@ html.ios-app.ios-native-shell .ios-native-menu-kicker {
   margin-bottom: 0.5rem;
 }
 
-html.ios-app.ios-native-shell .ios-native-menu-grid {
+html.ios-app.ios-native-shell .ios-native-menu-list {
   display: flex;
   flex-direction: column;
   gap: 0;

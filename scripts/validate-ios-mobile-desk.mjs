@@ -58,7 +58,6 @@ const nativeNeedles = [
   [".ios-native-menu-sheet", "native bottom sheet menu"],
   ["html.ios-app.ios-native-shell .spx-sniper-identity", "hide duplicate SPX title"],
   ["html.ios-app.ios-native-shell.ios-tab-bar .page-tool-header", "hide duplicate page headers"],
-  ["html.ios-app.ios-native-shell .ios-app-tab-bar", "floating dock tab bar"],
 ];
 const pagesCss = readFileSync(join(root, "src/app/ios-native-pages.css"), "utf8");
 const pagesNeedles = [
@@ -132,6 +131,7 @@ const commandCss = readFileSync(join(root, "src/app/ios-native-command.css"), "u
 const commandNeedles = [
   ["--cmd-panel", "command panel token"],
   ["--cmd-radius-panel", "sharp panel radius"],
+  ["html.ios-app.ios-native-shell .ios-app-tab-bar", "instrument rail geometry (edge-to-edge, not floating dock)"],
   [".ios-app-tab-label", "instrument rail full labels"],
   [".ios-native-header-kicker", "command bar kicker"],
   [".helix-native-watchlist", "HELIX watchlist strip"],
