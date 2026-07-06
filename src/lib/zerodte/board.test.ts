@@ -499,6 +499,29 @@ test("lifecycle: a touched stop stays CLOSED even if the premium bounces", () =>
   assert.equal(s.live_pnl_pct, -50);
 });
 
+// P0 regression guard: peak/trough are latched extremes with no timestamp, so once
+// BOTH have crossed their thresholds this function alone can't know which happened
+// first. A play that legitimately doubled (peak >= target) and only later craters
+// (trough <= stop, e.g. 0DTE theta collapse into the close) must stay a win — not
+// retroactively become a stop-out just because the crash pushed the trough down
+// after the fact. Mirrors gradePlanFromBars' chronological "first touch wins"
+// standard the ledger grades every play against the next day.
+test("lifecycle: a play that already doubled stays TRIM even after later crashing through the stop level", () => {
+  // entry 4.2 -> target 8.4, stop 2.1. peak (8.5) already cleared target; trough
+  // (1.5) has since also cleared stop — the crash-after-target scenario.
+  const s = derivePlayStatus({ entryPremium: 4.2, mark: 1.6, peak: 8.5, trough: 1.5, nowEtMinutes: 15 * 60 });
+  assert.equal(s.status, "TRIM", "target was hit first — a later crash must not flip this to a stop-out");
+  assert.notEqual(s.closed_reason, "stopped");
+});
+
+test("lifecycle: a play that hits the stop WITHOUT ever reaching target still closes stopped", () => {
+  // Sanity check for the same reorder: a genuine stop-first case (peak never
+  // cleared target) must be unaffected by checking peak before trough.
+  const s = derivePlayStatus({ entryPremium: 4.2, mark: 2.0, peak: 4.6, trough: 1.5, nowEtMinutes: 13 * 60 });
+  assert.equal(s.status, "CLOSED");
+  assert.equal(s.closed_reason, "stopped");
+});
+
 test("lifecycle: everything is CLOSED after the 15:30 ET hard exit", () => {
   const s = derivePlayStatus({ entryPremium: 4.2, mark: 4.8, peak: 4.8, trough: 4.0, nowEtMinutes: 15 * 60 + 31 });
   assert.equal(s.status, "CLOSED");

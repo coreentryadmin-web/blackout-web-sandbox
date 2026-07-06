@@ -9,6 +9,26 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🔴 P0 FOUND+FIXED 2026-07-06 — 0DTE Command's live status could relabel an already-winning play as a stop-out (branch `fix/zerodte-live-status-target-before-stop`)
+
+**Surface:** 0DTE Command (`/grid`), `derivePlayStatus()` in `src/lib/zerodte/plan.ts` — the pure function that derives a live play's lifecycle status (`OPEN`/`HOLD`/`TRIM`/`CLOSED`) on every scan cycle (`syncLedgerLiveState`, `scan.ts:420-462`). Found by a dedicated deep-audit agent tasked with tracing every play/trade-management state transition end to end and verifying against live production data.
+
+**Root cause:** `peak`/`trough` are latched extremes of the contract's mark since the play was flagged (persisted every tick, never reset), with no timestamp attached to either. The function checked `trough <= stop` (→ `CLOSED`/`"stopped"`) *before* `peak >= target` (→ `TRIM`). Since both checks only see the current latched values — never *which threshold was crossed first* — a play that legitimately doubled (`peak >= target`, a win) and only later crashed back down through the stop level (routine for 0DTE theta collapse into the close) got permanently relabeled `CLOSED`/`"stopped"` — a loss — even though target was hit first. This directly contradicts the file's own doc comment ("peak ≥ target → TRIM until close") and the separate, chronologically-correct retrospective grader `gradePlanFromBars()` (same file, walks bars in time order, "first touch wins"), which would grade the identical price path `"doubled"`. The next day's retrospective grade and the live-session status would disagree about whether the same play won or lost.
+
+**Downstream damage:** `buildIntelNote`'s `CLOSED` branch (`intel.ts`) then fabricates a "the flow never followed through" narrative for a play that, in fact, did follow through — surfaced live on `/grid` and to Largo/BIE (`get_zerodte_plays`, `composeZeroDtePlays`/`composeTickerPlayState` — both share the same `zeroDtePlaysForLargo()` call). It also corrupts the published win/loss track record if the row is ever graded from its live-latched state rather than re-derived from bars.
+
+**Live corroboration:** at audit time, a real open TSLA play (flagged that morning) was sitting in `TRIM` at +210–245% across an 8-minute live poll — i.e. exactly the latched state this bug's precondition (`peak >= target` already true) depends on, live in production.
+
+**Why it wasn't caught earlier:** no test exercised `trough <= stop` and `peak >= target` both being true in the same call — the one existing TRIM test (`board.test.ts`, pre-fix) only set a `trough` comfortably above the stop level, and the one existing "touched stop stays CLOSED" test only set a `peak` that never reached target. No test proved which check should win when both are true.
+
+**Fix:** swapped the check order — `peak >= target` (TRIM) is now checked *before* `trough <= stop` (CLOSED/stopped). Since `peak` only ever grows once target is crossed, this makes a target-hit sticky/terminal in practice (every future tick keeps returning TRIM, matching "TRIM until close"), while a genuine stop-first case is untouched — `peak` can't yet have reached target when that row closes, so it still falls through to the stop check exactly as before.
+
+**Evidence:** new regression test `"lifecycle: a play that already doubled stays TRIM even after later crashing through the stop level"` (`board.test.ts`) — confirmed it fails against the pre-fix code (`CLOSED` instead of `TRIM`) and passes post-fix; a paired sanity test confirms the genuine stop-first case is unaffected. Full suite: 1748/1748 passing (1746 pre-existing + 2 new), `tsc --noEmit` clean, `eslint` clean, `npm run build` clean.
+
+**Status:** FIXED; PR #586 pending merge.
+
+---
+
 ## 🟡 IN PROGRESS 2026-07-06 — iOS native shell: CTO-level redesign audit (Phase 0a shipped; multi-phase effort, branch `fix/ios-dead-floating-dock-css` first of many)
 
 **Status:** Phase 0a fixed and PR'd; Phases 0b–3 planned, tracked as tasks #178–#185. User request (verbatim): *"Cursor did work, but I did not like its work .. can you please continue where it left off … I am giving you full permissions and rights .. you need to work hard to make it the best looking and professional UI ios application .. you can remodel it completely .. every page, sub page, buttons, clicks, every single layout page needs to be audit and worked on .. no duplication of data across mobile UI."*
@@ -33,6 +53,8 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 **Verification (Phase 0a):** `node scripts/validate-ios-mobile-desk.mjs` 150/150. `npx tsc --noEmit` clean. Full suite 1722/1722. `npm run build` clean. `npm run lint` clean (pre-existing warnings only). `npm run lint:css` — same 6 pre-existing errors present on `main` before this change (confirmed via `git stash` diff), none introduced. `git diff main -- src/lib/spx-signals.ts` empty.
 
 **Not yet confirmed live:** same sandbox limitation as prior UI work — Playwright browser automation in this remote environment cannot reach the public internet through the agent proxy (`ERR_CONNECTION_RESET` even via curl-verified-working hosts, both direct and with explicit proxy launch options — Chromium's own network stack doesn't route through it the way `fetch`/curl do) or spoof an authenticated local-dev session without weakening the auth script's origin check (declined by the auto-mode safety classifier, correctly — origin spoofing is a real bypass pattern even for legitimate test infra). This is a pure dead-code deletion with zero behavior change per the cascade analysis above, so live visual risk is effectively nil, but a human TestFlight/simulator check is still worth doing before Phase 1's actual visual redesign work ships.
+
+**Phase 0a status:** merged via #562.
 
 ---
 

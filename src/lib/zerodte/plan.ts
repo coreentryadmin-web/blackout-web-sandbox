@@ -236,11 +236,21 @@ export function derivePlayStatus(input: {
   const stop = entryPremium * (1 + PLAN_RULES.stop_pct / 100);
   const target = entryPremium * (1 + PLAN_RULES.target_pct / 100);
 
-  if (trough != null && trough <= stop) {
-    return { status: "CLOSED", live_pnl_pct: PLAN_RULES.stop_pct, closed_reason: "stopped" };
-  }
+  // Target checked BEFORE stop. peak/trough are latched extremes with no timestamp,
+  // so a naive stop-first check can't tell "hit stop, never recovered" apart from
+  // "hit target first, THEN craters" — both eventually show trough <= stop. But peak
+  // only ever grows once set, so checking peak first makes a target hit STICKY: once
+  // any tick pushes peak >= target, every future tick (this function is re-evaluated
+  // every scan cycle against the still-open row) keeps returning TRIM regardless of
+  // what trough does afterward — matching gradePlanFromBars' chronological "first
+  // touch wins" grading and this file's own "peak >= target -> TRIM until close" doc
+  // comment. A genuine stop-first case is unaffected: peak can't have reached target
+  // yet when the row closes, so it still falls through to the stop check below.
   if (peak != null && peak >= target) {
     return { status: "TRIM", live_pnl_pct: pnl, closed_reason: null };
+  }
+  if (trough != null && trough <= stop) {
+    return { status: "CLOSED", live_pnl_pct: PLAN_RULES.stop_pct, closed_reason: "stopped" };
   }
   if (mark != null && mark <= entryPremium * 1.1 && nowEtMinutes < NEW_PLAY_CUTOFF_ET_MINUTES) {
     return { status: "OPEN", live_pnl_pct: pnl, closed_reason: null };
