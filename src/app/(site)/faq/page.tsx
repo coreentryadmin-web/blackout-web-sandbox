@@ -1,8 +1,7 @@
 export const dynamic = "force-static";
 
 import type { Metadata } from "next";
-import { FaqSection } from "@/components/landing/FaqSection";
-import { LandingFooter } from "@/components/landing/LandingFooter";
+import { FaqPageShell } from "@/components/faq/FaqPageShell";
 
 export const metadata: Metadata = {
   title: "FAQ · BlackOut",
@@ -11,12 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function FaqPage() {
-  return (
-    <div className="landing-page min-h-screen void-bg text-white overflow-x-hidden">
-      <main id="main">
-        <FaqSection />
-      </main>
-      <LandingFooter />
-    </div>
-  );
+  return <FaqPageShell />;
 }

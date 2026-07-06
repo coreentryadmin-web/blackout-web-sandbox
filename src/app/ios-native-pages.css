@@ -668,3 +668,279 @@ html.ios-app.ios-native-shell[data-ios-route="account"] .cl-navbarButton {
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FAQ — native accordion (replaces horizontal bento pan)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--ios-viewport-h);
+  padding-top: var(--ios-header-offset);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native > main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] #faq {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .faq-native-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0.35rem 0.65rem 0.5rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail {
+  flex-shrink: 0;
+  margin: 0 -0.65rem;
+  padding: 0 0.65rem 0.4rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-scroll {
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
+  border-radius: var(--cmd-radius-panel, 4px);
+  background: var(--cmd-panel, rgba(8, 9, 14, 0.85));
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-chip {
+  flex-shrink: 0;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
+  background: transparent;
+  font-family: var(--cmd-mono, var(--font-jetbrains));
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-chip:last-child {
+  border-right: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-chip-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--ios-accent) 12%, transparent);
+  box-shadow: inset 0 2px 0 var(--ios-accent);
+}
+
+html.ios-app.ios-native-shell .faq-native-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.5rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-item {
+  border: 1px solid var(--ios-border, rgba(125, 211, 252, 0.12));
+  border-radius: var(--ios-radius-md, 6px);
+  background: var(--ios-surface-1, rgba(8, 9, 14, 0.85));
+  border-left: 2px solid var(--ios-accent);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .faq-native-question {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .faq-native-question-text {
+  flex: 1;
+  min-width: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-chevron {
+  flex-shrink: 0;
+  font-family: var(--font-jetbrains);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ios-accent);
+}
+
+html.ios-app.ios-native-shell .faq-native-answer {
+  padding: 0 0.85rem 0.85rem;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #e0f2fe;
+  border-top: 1px solid rgba(125, 211, 252, 0.08);
+  padding-top: 0.65rem;
+  margin: 0 0.85rem 0.85rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-support {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  text-align: center;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-label {
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  margin: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-copy {
+  margin: 0.25rem 0 0.65rem;
+  font-size: 13px;
+  color: #fff;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1rem;
+  border-radius: var(--ios-radius-md);
+  background: linear-gradient(180deg, #00e676, #0f9d58);
+  color: #021c14;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LEARN — native chapter hub + articles
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--ios-viewport-h);
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-content-native {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 0.65rem 1rem !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-hero-native {
+  padding-top: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-featured-native {
+  padding: 0.85rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-featured-native .font-syne {
+  font-size: 1.15rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-card {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-1);
+  border-left: 2px solid var(--ios-accent);
+  padding: 0.85rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-card .text-secondary {
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-header {
+  margin-bottom: 1rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-title {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-description,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-prose-body,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-step-body,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-callout-body {
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-heading {
+  font-size: 1.1rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-nav {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-nav-link {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-1);
+  padding: 0.75rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-toc-pill {
+  border-radius: var(--ios-radius-md);
+  white-space: nowrap;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hero-glow {
+  display: none;
+}
+

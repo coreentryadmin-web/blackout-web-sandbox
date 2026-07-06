@@ -3,47 +3,51 @@
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { BookOpen, Compass } from "lucide-react";
+import { clsx } from "clsx";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { CURRICULUM } from "@/lib/learn/curriculum";
 import { LEARN_NAV, learnHref } from "@/lib/learn/nav";
 import { LearnHeroGlow, LearnStagger, LearnStaggerItem } from "@/components/learn/LearnMotion";
+import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 
 export function LearnHub() {
   const reduced = useReducedMotion();
+  const native = useIosNativeShell();
   const start = LEARN_NAV[0]!;
   const chapters = LEARN_NAV.slice(1);
 
   return (
-    <div className="relative">
-      <LearnHeroGlow />
+    <div className={clsx("relative", native && "learn-hub-native")}>
+      {!native && <LearnHeroGlow />}
 
       <motion.header
-        className="learn-hub-hero mb-12"
-        initial={reduced ? false : { opacity: 0, y: 24 }}
+        className={clsx("learn-hub-hero", native ? "learn-hub-hero-native mb-6" : "mb-12")}
+        initial={reduced || native ? false : { opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
       >
-        <p className="learn-hub-kicker">
-          <BookOpen className="size-3.5" aria-hidden />
-          BlackOut Academy
+        {!native && (
+          <p className="learn-hub-kicker">
+            <BookOpen className="size-3.5" aria-hidden />
+            BlackOut Academy
+          </p>
+        )}
+        {!native && <h1 className="learn-hub-title">Learn the platform</h1>}
+        <p className={clsx(native ? "text-sm leading-relaxed text-sky-300" : "learn-hub-subtitle")}>
+          {native
+            ? "Structured chapters from first login to advanced workflows — cross-linked to live desks."
+            : "A structured textbook from first login to advanced workflows. Each chapter connects tools, navigation, and dealer intelligence — with cross-links to live desks and related guides."}
         </p>
-        <h1 className="learn-hub-title">Learn the platform</h1>
-        <p className="learn-hub-subtitle">
-          A structured textbook from first login to advanced workflows. Each chapter connects tools,
-          navigation, and dealer intelligence — with cross-links to live desks and related guides.
-        </p>
-        <div className="learn-hub-meta">
+        <div className={clsx(native ? "mt-3 flex flex-wrap gap-x-2 font-mono text-[10px] text-cyan-400" : "learn-hub-meta")}>
           <span>{CURRICULUM.length} chapters</span>
           <span aria-hidden>·</span>
-          <span>Updated with every launch</span>
-          <span aria-hidden>·</span>
-          <span>Educational only — not financial advice</span>
+          <span>Educational only</span>
         </div>
       </motion.header>
 
-      <Link href={learnHref(start.slug)} className="group mb-10 block">
+      <Link href={learnHref(start.slug)} className={clsx("group block", native ? "mb-6" : "mb-10")}>
         <motion.div
-          className="learn-hub-featured"
+          className={clsx("learn-hub-featured", native && "learn-hub-featured-native")}
           whileHover={reduced ? undefined : { y: -2 }}
           transition={{ duration: 0.25 }}
         >
@@ -66,7 +70,7 @@ export function LearnHub() {
         </motion.div>
       </Link>
 
-      <LearnStagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <LearnStagger className={clsx("grid gap-4", native ? "grid-cols-1" : "sm:grid-cols-2 xl:grid-cols-3")}>
         {chapters.map((guide, i) => (
           <LearnStaggerItem key={guide.slug}>
             <Link href={learnHref(guide.slug)} className="group block h-full">

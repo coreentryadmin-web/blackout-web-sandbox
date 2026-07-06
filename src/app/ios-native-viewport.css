@@ -145,6 +145,19 @@ html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-inner-native {
   padding-bottom: 0 !important;
 }
 
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  flex: 1;
+  min-height: var(--ios-viewport-h);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell-main {
+  padding-bottom: 0 !important;
+}
+
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-desk,
 html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-content-canvas {
   flex: 1;

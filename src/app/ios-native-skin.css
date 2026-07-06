@@ -512,11 +512,17 @@ html.ios-app.ios-native-shell[data-ios-route="upgrade"] .page-tool-header {
 }
 
 html.ios-app.ios-native-shell[data-ios-route="faq"] .landing-page,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 html.ios-app.ios-native-shell[data-ios-route="learn"] main,
 html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub {
-  padding-top: calc(var(--ios-header-offset) + 0.5rem);
-  padding-left: 0.65rem;
-  padding-right: 0.65rem;
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="faq"] .landing-footer,

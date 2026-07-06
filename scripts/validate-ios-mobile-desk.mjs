@@ -79,6 +79,10 @@ const pagesNeedles = [
   [".account-page-title-block", "account title hide hook"],
   [".helix-ios-toolbar", "HELIX sticky filter bar"],
   [".grid-page-tabs", "grid page tabs hook"],
+  ['data-ios-route="faq"', "FAQ native page scope"],
+  ['data-ios-route="learn"', "Learn native page scope"],
+  [".faq-native-view", "FAQ native accordion layout"],
+  [".learn-page-shell-native", "Learn native page shell hook"],
 ];
 for (const [needle, label] of pagesNeedles) {
   if (pagesCss.includes(needle)) ok(`pages-css:${label}`, needle);
@@ -263,6 +267,34 @@ if (gridPage.includes("GridPageShell")) ok("grid:uses-grid-page-shell");
 else fail("grid:uses-grid-page-shell", "expected GridPageShell");
 if (nhPage.includes("NighthawkPageShell")) ok("nighthawk:uses-nighthawk-page-shell");
 else fail("nighthawk:uses-nighthawk-page-shell", "expected NighthawkPageShell");
+
+const faqPage = readFileSync(join(root, "src/app/(site)/faq/page.tsx"), "utf8");
+const learnLayout = readFileSync(join(root, "src/app/(site)/learn/layout.tsx"), "utf8");
+if (faqPage.includes("FaqPageShell")) ok("faq:uses-faq-page-shell");
+else fail("faq:uses-faq-page-shell", "expected FaqPageShell");
+if (learnLayout.includes("LearnPageShell")) ok("learn:uses-learn-page-shell");
+else fail("learn:uses-learn-page-shell", "expected LearnPageShell");
+
+const faqNative = readFileSync(join(root, "src/components/faq/FaqNativeView.tsx"), "utf8");
+if (faqNative.includes("faq-native-view") && faqNative.includes("faq-native-cat-chip")) {
+  ok("faq:native-accordion-view");
+} else {
+  fail("faq:native-accordion-view", "expected FaqNativeView accordion layout");
+}
+
+const faqSection = readFileSync(join(root, "src/components/landing/FaqSection.tsx"), "utf8");
+if (faqSection.includes("FaqNativeView") && faqSection.includes("useIosNativeShell")) {
+  ok("faq:native-shell-gate");
+} else {
+  fail("faq:native-shell-gate", "expected FaqSection to gate native view");
+}
+
+const learnHub = readFileSync(join(root, "src/components/learn/LearnHub.tsx"), "utf8");
+if (learnHub.includes("useIosNativeShell") && learnHub.includes("learn-hub-native")) {
+  ok("learn:hub-native-gate");
+} else {
+  fail("learn:hub-native-gate", "expected LearnHub compact native mode");
+}
 
 const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
 if (rootLayout.includes("ios-native-motion.css")) ok("layout:ios-native-motion-imported");
