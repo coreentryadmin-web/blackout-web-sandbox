@@ -143,9 +143,39 @@ for (const [needle, label] of commandNeedles) {
   else fail(`command-css:${label}`, `missing ${needle}`);
 }
 
+const tabBar = readFileSync(join(root, "src/components/IosAppTabBar.tsx"), "utf8");
+if (tabBar.includes("ios-app-tab-underline") && tabBar.includes("iosHapticSelection")) {
+  ok("nav:tab-rail-active-hierarchy");
+} else {
+  fail("nav:tab-rail-active-hierarchy", "expected sliding underline + haptics on tab rail");
+}
+
+const tabRailCss = readFileSync(join(root, "src/app/ios-native-tab-rail.css"), "utf8");
+if (tabRailCss.includes("ios-app-tab-link-active") && tabRailCss.includes("ios-tab-glow-pulse")) {
+  ok("nav:tab-rail-css");
+} else {
+  fail("nav:tab-rail-css", "expected ios-native-tab-rail.css active/inactive styles");
+}
+
+const cardsCss = readFileSync(join(root, "src/app/ios-native-cards.css"), "utf8");
+if (cardsCss.includes("ios-card-alert-ring") && cardsCss.includes("largo-native-bubble-assistant")) {
+  ok("cards:semantic-variants");
+} else {
+  fail("cards:semantic-variants", "expected ios-native-cards.css semantic surfaces");
+}
+
+const haptics = readFileSync(join(root, "src/lib/ios-haptics.ts"), "utf8");
+if (haptics.includes("iosHapticSelection") && haptics.includes("Haptics")) ok("ios:haptics-bridge");
+else fail("ios:haptics-bridge", "expected ios-haptics.ts Capacitor bridge");
+
 const menu = readFileSync(join(root, "src/components/ios/IosNativeMenu.tsx"), "utf8");
 if (menu.includes("Instruments")) ok("command:deck-menu-label");
 else fail("command:deck-menu-label", "expected Instruments kicker in IosNativeMenu");
+if (menu.includes("drag=\"y\"") && menu.includes("iosHapticImpact")) {
+  ok("nav:menu-swipe-sheet");
+} else {
+  fail("nav:menu-swipe-sheet", "expected swipe-to-dismiss command deck sheet");
+}
 
 const skinNeedles = [
   [".ios-native-ambient", "route ambient glow"],
@@ -172,7 +202,6 @@ if (chrome.includes("ios-native-ambient")) {
   fail("skin:ambient-layer-mounted", "expected ios-native-ambient in IosAppChrome");
 }
 
-const tabBar = readFileSync(join(root, "src/components/IosAppTabBar.tsx"), "utf8");
 if (tabBar.includes("tab.short")) ok("nav:instrument-rail-short-labels");
 else fail("nav:instrument-rail-short-labels", "expected short labels on tab rail");
 if (tabBar.includes("path !== \"/terminal\"")) ok("nav:largo-hides-tab-rail");

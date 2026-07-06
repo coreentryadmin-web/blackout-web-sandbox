@@ -24,6 +24,8 @@ import "./ios-native-viewport.css";
 import "./ios-native-input-lock.css";
 import "./ios-native-tokens.css";
 import "./ios-native-organize.css";
+import "./ios-native-tab-rail.css";
+import "./ios-native-cards.css";
 
 // Self-hosted via next/font (no render-blocking @import, no FOUT/CLS). Variable
 // names MUST match tailwind.config fontFamily tokens (--font-anton/-syne/

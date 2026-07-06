@@ -10,6 +10,7 @@ import { ProductMark } from "@/components/marks/ProductMark";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 import { IOS_TOOLS, isIosToolRoute } from "@/lib/ios-tool-routes";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
+import { iosHapticSelection } from "@/lib/ios-haptics";
 
 const TAB_SPRING = { type: "spring" as const, stiffness: 520, damping: 42 };
 
@@ -47,28 +48,43 @@ export function IosAppTabBar({ lockedTools = [] }: { lockedTools?: ToolKey[] }) 
           return (
             <li key={tab.href} className="ios-app-tab-li">
               {active && (
-                <motion.span
-                  layoutId="ios-native-tab-indicator"
-                  className="ios-app-tab-indicator"
-                  style={{ "--tab-accent": tab.accent } as React.CSSProperties}
-                  transition={TAB_SPRING}
-                  aria-hidden
-                />
+                <>
+                  <motion.span
+                    layoutId="ios-native-tab-indicator"
+                    className="ios-app-tab-indicator"
+                    style={{ "--tab-accent": tab.accent } as React.CSSProperties}
+                    transition={TAB_SPRING}
+                    aria-hidden
+                  />
+                  <motion.span
+                    layoutId="ios-native-tab-underline"
+                    className="ios-app-tab-underline"
+                    style={{ "--tab-accent": tab.accent } as React.CSSProperties}
+                    transition={TAB_SPRING}
+                    aria-hidden
+                  />
+                </>
               )}
               <Link
                 href={tab.href}
                 prefetch={false}
                 scroll={false}
+                onClick={() => {
+                  if (!active) iosHapticSelection();
+                }}
                 className={clsx(
                   "ios-app-tab-link",
                   active && "ios-app-tab-link-active",
+                  !active && "ios-app-tab-link-inactive",
                   locked && "ios-app-tab-link-locked"
                 )}
                 style={{ "--tab-accent": tab.accent } as React.CSSProperties}
                 aria-current={active ? "page" : undefined}
                 aria-label={tab.label}
               >
-                <ProductMark product={tab.mark} size={18} title={tab.label} className="ios-app-tab-icon" />
+                <span className="ios-app-tab-icon-wrap">
+                  <ProductMark product={tab.mark} size={active ? 20 : 18} title={tab.label} className="ios-app-tab-icon" />
+                </span>
                 <span className="ios-app-tab-label">{tab.short}</span>
               </Link>
             </li>

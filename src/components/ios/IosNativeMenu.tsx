@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -8,6 +9,7 @@ import { IOS_TOOLS } from "@/lib/ios-tool-routes";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
+import { iosHapticImpact, iosHapticSelection } from "@/lib/ios-haptics";
 
 type Props = {
   open: boolean;
@@ -16,7 +18,8 @@ type Props = {
   showAdmin?: boolean;
 };
 
-const SHEET_SPRING = { type: "spring" as const, stiffness: 480, damping: 42 };
+const SHEET_SPRING = { type: "spring" as const, stiffness: 420, damping: 38, mass: 0.85 };
+const DISMISS_OFFSET = 96;
 const LIST_STAGGER = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.03, delayChildren: 0.04 } },
@@ -29,6 +32,10 @@ const LIST_ITEM = {
 /** Command deck — vertical instrument list (not a 2×2 card grid). */
 export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Props) {
   const path = usePathname();
+
+  useEffect(() => {
+    if (open) iosHapticImpact("Light");
+  }, [open]);
 
   return (
     <AnimatePresence>
@@ -53,6 +60,12 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={SHEET_SPRING}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0.05, bottom: 0.35 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > DISMISS_OFFSET || info.velocity.y > 520) onClose();
+            }}
           >
             <div className="ios-native-menu-handle" aria-hidden />
             <p className="ios-native-menu-kicker">Instruments</p>
@@ -73,7 +86,10 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
                       href={tool.href}
                       prefetch={false}
                       scroll={false}
-                      onClick={onClose}
+                      onClick={() => {
+                        iosHapticSelection();
+                        onClose();
+                      }}
                       className={clsx(
                         "ios-native-menu-tool",
                         active && "ios-native-menu-tool-active",

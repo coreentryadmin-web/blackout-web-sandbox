@@ -157,17 +157,7 @@ html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels {
   margin-bottom: var(--ios-space-2) !important;
 }
 
-/* Tab rail — short labels, even columns */
-html.ios-app.ios-native-shell .ios-app-tab-label {
-  font-size: 9px !important;
-  letter-spacing: 0.06em;
-  -webkit-line-clamp: 1;
-}
-
-html.ios-app.ios-native-shell .ios-app-tab-li {
-  min-width: 3.25rem !important;
-  max-width: 4.5rem !important;
-}
+/* Tab rail — short labels; active/inactive hierarchy in ios-native-tab-rail.css */
 
 /* Unified chip rail (watchlist, FAQ categories, filters) */
 html.ios-app.ios-native-shell .ios-native-chip-rail {

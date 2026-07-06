@@ -1,0 +1,146 @@
+/**
+ * Instrument rail — intentional selected vs inactive hierarchy (not six equal buttons).
+ */
+
+html.ios-app.ios-native-shell .ios-app-tab-bar {
+  background: rgba(4, 4, 7, 0.98);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-li {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Inactive — recede */
+html.ios-app.ios-native-shell .ios-app-tab-link {
+  opacity: 0.42;
+  transform: translateY(0);
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.25s ease;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link .ios-app-tab-icon {
+  opacity: 0.55;
+  filter: none;
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: #5a7a9a;
+  text-shadow: none;
+  transition:
+    font-size 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.25s ease,
+    text-shadow 0.32s ease;
+}
+
+/* Active — lift, glow, larger label */
+html.ios-app.ios-native-shell .ios-app-tab-link-active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 8%, transparent);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active::before {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-icon-wrap {
+  transform: translateY(-3px);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-icon {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tab-accent, #00e676) 65%, transparent))
+    drop-shadow(0 2px 8px color-mix(in srgb, var(--tab-accent, #00e676) 35%, transparent));
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-label {
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 50%, transparent);
+}
+
+/* Sliding glow pill (framer layoutId) */
+html.ios-app.ios-native-shell .ios-app-tab-indicator {
+  display: block !important;
+  position: absolute;
+  inset: 3px 2px 4px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tab-accent, #00e676) 12%, transparent);
+  box-shadow:
+    0 0 28px color-mix(in srgb, var(--tab-accent, #00e676) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Moving underline */
+html.ios-app.ios-native-shell .ios-app-tab-underline {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--tab-accent, var(--ios-accent));
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 90%, transparent),
+    0 0 24px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 40%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link:active:not(.ios-app-tab-link-active) {
+  opacity: 0.65;
+  transform: scale(0.96);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-locked {
+  opacity: 0.28;
+}
+
+@keyframes ios-tab-glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 28px color-mix(in srgb, var(--tab-accent, #00e676) 28%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 36px color-mix(in srgb, var(--tab-accent, #00e676) 42%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-indicator {
+  animation: ios-tab-glow-pulse 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.ios-app.ios-native-shell .ios-app-tab-indicator {
+    animation: none;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-icon-wrap {
+    transform: none;
+  }
+}

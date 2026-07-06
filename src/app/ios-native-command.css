@@ -172,19 +172,9 @@ html.ios-app.ios-native-shell .ios-app-tab-link-active {
   color: #fff;
 }
 
-html.ios-app.ios-native-shell .ios-app-tab-link-active::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 12%;
-  right: 12%;
-  height: 2px;
-  background: var(--tab-accent, var(--ios-accent));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 80%, transparent);
-}
-
+/* Tab rail visual hierarchy — see ios-native-tab-rail.css */
 html.ios-app.ios-native-shell .ios-app-tab-indicator {
-  display: none;
+  /* layoutId glow pill — styled in tab-rail.css */
 }
 
 html.ios-app.ios-native-shell .ios-app-tab-label {
