@@ -92,7 +92,19 @@ async function authSession() {
     skip_legal_checks: true,
   });
   const cj = J(create);
-  const userId = cj?.id;
+  let userId = cj?.id;
+  if (!userId && /form_identifier_exists/.test(JSON.stringify(cj?.errors || ""))) {
+    const lookup = curl({
+      method: "GET",
+      url: `${API}/users?email_address=${encodeURIComponent(EMAIL)}`,
+      headers: { Authorization: `Bearer ${SECRET}` },
+    });
+    const existing = J(lookup)?.[0];
+    userId = existing?.id;
+    if (userId) {
+      backend("PATCH", `/users/${userId}`, { public_metadata: { role: "admin", tier: "premium" } });
+    }
+  }
   if (!userId) throw new Error(`Clerk user create failed: ${create.b.slice(0, 200)}`);
   const ticket = J(backend("POST", "/sign_in_tokens", { user_id: userId }))?.token;
   if (!ticket) throw new Error("sign_in_token failed");

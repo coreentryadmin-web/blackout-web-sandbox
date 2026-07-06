@@ -1,5 +1,41 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-03 16:57 ET
+Last updated: 2026-07-06 13:45 ET
+
+## Manual SPX + Grid RTH agent run — 2026-07-06 ~09:37 ET (Mon market open)
+
+**Session:** User asked agent to run scheduled SPX/Grid market-open workflows manually (GitHub scheduled workflows had 0 runs — new workflow 24h activation window). Agent executed verify-mode audits against production.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ GREEN — deploy OK, crons ticking, sockets authenticated |
+| `npm run validate:spx-rth` | ❌ 4 FAIL (verify) — see below |
+| `npm run validate:grid-rth` | ❌ 3 FAIL (verify) — nested zerodte + e2e + data-correctness |
+| `npm run validate:zerodte-logic` | ❌ 1 FAIL — `live:ledger-consistency` (1 row PnL math) |
+
+### SPX failures (pre-fix)
+
+| Probe | Detail | Fix status |
+|---|---|---|
+| `spx:cross-endpoint` | Heatmap spot vs positioning Δ ~4.7 pts; **play SCANNING carries confirmations** | **FIX PR** `fix/spx-scanning-confirmations-rth-9d1e` — server `spx-play-engine` leak |
+| `spx:desk-lanes` | desk vs merged spot Δ=0.05; desk vs pulse Δ=1.51 | **WATCH** — likely refresh skew between cache lanes; re-check post-deploy |
+| `spx:dashboard-e2e` | Clerk `form_identifier_exists` on fixed `AUDIT_EMAIL` | **FIX PR** — adopt existing user in e2e scripts |
+| `spx:data-correctness` | HTTP 524 on `/api/cron/data-correctness?force=1` | **WATCH** — Cloudflare timeout on heavy cron; retry off-peak |
+
+### Grid failures (pre-fix)
+
+| Probe | Detail | Fix status |
+|---|---|---|
+| `zerodte:cross-tool-integration` | Nested from `live:ledger-consistency` | **WATCH** — live board row PnL rounding |
+| `grid:data-correctness` | HTTP 524 | Same as SPX |
+| `grid:dashboard-e2e` | curl timeout 90s | **WATCH** — may clear after Clerk adopt fix + lighter load |
+
+### Scheduled workflow note
+
+`.github/workflows/spx-rth-all-day-agent.yml` and `grid-rth-all-day-agent.yml` merged 2026-07-05 ~22:00 UTC with **0 total runs** on first RTH morning — GitHub Actions scheduled workflow activation can take up to 24h. Expect first auto-fire **2026-07-07** 09:30 ET unless manually dispatched from GitHub UI.
+
+---
 
 ## RTH comprehensive sweep — 2026-07-03 ~16:49–16:57 ET (pass 5 — Independence Day observed, post-close)
 
