@@ -42,6 +42,8 @@ Last updated: 2026-07-06 16:15 ET
 
 **Reports:** `audit-output/spx-rth-2026-07-06-verify-1783368608139.json`, `spx-dashboard-e2e-1783368516515.json`, `spx-bie-consistency-2026-07-06T20-09-34-054Z.json`
 
+**Post-close re-run (~16:30 ET, PR #621 deployed):** `validate:spx-rth --force --phase=post-close` → 7 PASS / 1 FAIL (`spx:bie-consistency` — sandbox compares prod HTTP vs local in-process `getSpxPlayState()` with 11s gap; structural fix merged). `validate:spx-e2e` → 17 PASS / 1 FAIL (`ui:live-badge-rth` OFFLINE — expected post-16:00 ET close) / 1 SKIP. Matrix + cross-tool integration remain GREEN.
+
 ---
 
 ## RTH comprehensive sweep — 2026-07-06 ~16:04–16:14 ET (post-close pass #4)
