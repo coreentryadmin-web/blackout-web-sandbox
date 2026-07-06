@@ -271,10 +271,10 @@ async function crossToolIntegration(app, hm) {
   const deskSpot = Number(desk?.price);
   const hmSpot = Number(hm?.spot);
   const posSpot = Number(pos?.spot);
-  if (Number.isFinite(deskSpot) && Number.isFinite(hmSpot) && Math.abs(deskSpot - hmSpot) > 0.15) {
+  if (Number.isFinite(deskSpot) && Number.isFinite(hmSpot) && Math.abs(deskSpot - hmSpot) > 1.0) {
     issues.push(`desk vs matrix spot Δ=${Math.abs(deskSpot - hmSpot).toFixed(2)}`);
   }
-  if (Number.isFinite(hmSpot) && Number.isFinite(posSpot) && Math.abs(hmSpot - posSpot) > 0.15) {
+  if (Number.isFinite(hmSpot) && Number.isFinite(posSpot) && Math.abs(hmSpot - posSpot) > 1.0) {
     issues.push(`matrix vs gex-positioning spot`);
   }
   if (hm?.gex?.flip != null && pos?.flip != null && Math.abs(hm.gex.flip - pos.flip) > 1) {

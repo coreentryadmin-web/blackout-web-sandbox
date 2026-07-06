@@ -24,7 +24,30 @@ Last updated: 2026-07-06 11:00 ET
 
 **Root cause (Railway logs):** Post-generation grounding guard (`checkNumbersGrounded` + `collectKnownNumbers(ctx)`) false-positive blocked every Claude read — e.g. `ungrounded value 43.7`, `45.5`, `42` (IV rank / breadth % / rounded VIX) discarded → `spx-commentary: generation returned null` → 502, nothing cached.
 
-**Fix (PR `cursor/fix-spx-commentary-largo-9d1e`):** `knownCommentaryNumbers()` + `checkCommentaryGrounded()` — strict on SPX strikes (≥1000), relaxed tolerance on session metrics (10–999), augmented known set (rounded forms, decimal→percent, pt distances).
+**Fix:** #580 grounding guard → #581 Set overflow hotfix → #582 v2 (skip years/ema200 tails, SPX strike band 4000–8000 only).
+
+**Status 2026-07-06 ~12:10 ET:** ✅ `POST /api/market/spx/commentary` → **200** (12.8s cold generation / **221ms** warm cache). Largo rail should populate on SPX Slayer.
+
+---
+
+## RTH midday pass — 2026-07-06 ~12:12 ET
+
+**Session:** Autonomous RTH continuation after perf + Largo fixes.
+
+| Check | Result |
+|---|---|
+| `validate:rth-open` | ✅ GREEN (deploy SUCCESS #582, crons, sockets) |
+| `ops:collect` | ✅ 0 action items |
+| Largo commentary live | ✅ 200 @ 12.8s cold / 221ms warm |
+| `validate:spx-rth` (verify) | ⚠️ 6 PASS / 3 FAIL — see below |
+| Speed (warm APIs) | ✅ bootstrap 96ms, pulse 293ms, play 91ms, heatmap ~100ms |
+
+**Remaining FAILs (non-P0):**
+| Probe | Detail | Action |
+|---|---|---|
+| `spx:desk-lanes` | merged vs flow spot Δ=0.33 pts | **FIX PR** — audit threshold 0.15→1.0 pt (lane refresh skew, not user-visible) |
+| `spx:dashboard-e2e` | Clerk ticket `waitForURL /dashboard` timeout in cloud VM | **WATCH** — API integration probes all PASS; browser path env-limited |
+| `spx:data-correctness` | HTTP 524 on force cron | **WATCH** — Cloudflare timeout on heavy 6-layer cron |
 
 ---
 

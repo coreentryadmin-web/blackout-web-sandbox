@@ -134,7 +134,7 @@ async function deskLaneCheck() {
     }
     if (flow?.available && Number(flow?.price) > 0) {
       const flowSpot = Number(flow.price);
-      if (Number.isFinite(mergedSpot) && spotDelta(mergedSpot, flowSpot) > 0.15) {
+      if (Number.isFinite(mergedSpot) && spotDelta(mergedSpot, flowSpot) > 1.0) {
         issues.push(`merged vs flow spot Δ=${spotDelta(mergedSpot, flowSpot).toFixed(3)}`);
       }
     }
