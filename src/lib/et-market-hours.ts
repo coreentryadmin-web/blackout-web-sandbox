@@ -28,6 +28,27 @@ export function isEtMarketHours(now = new Date()): boolean {
   return isEtCashRth(now);
 }
 
+/**
+ * Extended cache-warm window: weekday trading days, 4:00 AM–8:00 PM ET (the standard US-equity
+ * pre-market + cash + after-hours span). The cache-warm crons (grid/heatmap/desk/nights-watch —
+ * see rth-warm-leader.ts) key off this instead of isEtCashRth: those crons used to stop dead the
+ * instant cash RTH ended (4:00 PM ET) and stayed off until 9:30 AM the next trading day (and all
+ * weekend), so any evening/pre-market visit forced every short-TTL cache to cold-rebuild on the
+ * next real hit instead of serving a warm read — reproduced live 2026-07-06 ~18:41 ET as the
+ * site-wide slowness report (SPX desk 4.5s, GEX heatmap 2.4s, 0DTE board 1.8s cold vs <150ms
+ * warm). See docs/audit/FINDINGS.md.
+ */
+export function isEtExtendedWarmHours(now = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  if (!isTradingDayEt(todayEt(now))) return false;
+  const mins = etMinutes(now);
+  return mins >= etClock(4, 0) && mins <= etClock(20, 0);
+}
+
 /** Stable hash for sharding tickers across cron ticks (0 … mod-1). */
 export function tickerShard(ticker: string, mod: number): number {
   const t = ticker.trim().toUpperCase();

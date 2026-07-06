@@ -5,12 +5,16 @@
  * (#90-class silent death). The staleness watchdog self-heals every 20m, but critical
  * warmers need sub-5m cadence — Railway's native cron floor is 5 minutes, not 1.
  *
- * One cluster leader (Redis SETNX) polls cron_job_runs every 60s during RTH and dispatches
- * idempotent warmers via dispatchCronWarm when a writer is overdue (desk-warm: 90s).
+ * One cluster leader (Redis SETNX) polls cron_job_runs every 60s during the extended warm
+ * window (4 AM–8 PM ET weekdays — isEtExtendedWarmHours, wider than cash RTH on purpose: this
+ * loop runs inside the always-on web server process, not a Railway-scheduled trigger, so it's
+ * the one lever that can keep caches warm through pre-market/after-hours browsing without any
+ * Railway config change — see FINDINGS.md 2026-07-06) and dispatches idempotent warmers via
+ * dispatchCronWarm when a writer is overdue (desk-warm: 90s).
  */
 import { CRON_JOBS } from "@/lib/cron-registry";
 import { dispatchCronWarm, isDispatchableCron } from "@/lib/cron-dispatch";
-import { isEtCashRth } from "@/lib/et-market-hours";
+import { isEtExtendedWarmHours } from "@/lib/et-market-hours";
 import { dbConfigured, fetchCronJobLastRuns } from "@/lib/db";
 import { RTH_WRITER_HEAL_AFTER_MIN, rthWriterOverdue } from "@/lib/rth-warm-leader-logic";
 import {
@@ -106,7 +110,7 @@ function releaseLead(): void {
 }
 
 async function tick(): Promise<void> {
-  if (!isEtCashRth()) return;
+  if (!isEtExtendedWarmHours()) return;
   if (!dbConfigured()) return;
   if (!process.env.CRON_SECRET?.trim()) return;
 

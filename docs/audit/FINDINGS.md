@@ -8,7 +8,45 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-<<<<<<< HEAD
+## 🔴 P0 FOUND+FIXED 2026-07-06 — Site-wide "everything is slow" outside cash RTH: every cache-warm cron (and its in-app backup) went fully dark 4:00 PM–9:30 AM ET + all weekend (branch `fix/off-hours-cache-warm-gap`)
+
+**Report:** user-reported *"the entire website was slow today .. everything .. navigating .. data coming .. entirely"* — flagged P0.
+
+**Live evidence:** `scripts/site-latency-audit.mjs` against `https://blackouttrades.com` at 18:41 ET (an hour+ after the 4:00 PM cash close) reproduced real, non-trivial cold-path latency across *unrelated* endpoints simultaneously:
+- `/api/market/spx/desk` — 4533ms cold vs 87ms warm
+- `/api/market/gex-heatmap` — 2377ms on what should've been a warm hit
+- `/api/market/zerodte/board` — 1849ms cold vs 84ms warm
+- An earlier same-session pass had also caught `/api/grid/bootstrap` at 23.8s cold vs 108ms warm.
+
+**Root cause:** four Redis-backed cache warmers — `grid-warm`, `heatmap-warm`, `desk-warm`, `nights-watch-warm` — are the *sole writers* for the `/api/grid/*`, `/api/market/gex-heatmap`, `/api/market/spx/desk`, and Night's Watch reads (cache-reader rule: those routes never fetch upstream themselves). Three independent layers all gated this warming to `isEtCashRth()` (9:30 AM–4:00 PM ET, weekdays only):
+1. Railway's own cron trigger schedule (`railway.*.toml`, `cronSchedule = "*/5 11-21 * * 1-5"` ≈ 7 AM–5 PM ET weekdays only — never fires nights/weekends at all).
+2. Each route's own in-handler self-skip (`if (!force && !isEtCashRth()) return {skipped:true}`).
+3. **`rth-warm-leader.ts`'s `tick()`** — the in-process, always-on backup specifically built to cover for Railway cron silently dying (#90-class) — also gated its *entire* 60s poll loop on `if (!isEtCashRth()) return;`, so even this backup did nothing outside cash RTH.
+
+Net effect: from 4:00 PM ET to 9:30 AM ET the next trading day, and all day Saturday/Sunday, **zero** proactive warming ran for any of these four caches. Any real visit outside that window (evening/pre-market browsing, or — as measured here — this very audit) landed on an expired TTL and paid the full cold-rebuild cost (which cascades: `/api/grid/bootstrap` → `readGridBootstrapMarket()` → `getGexPositioning("SPX")` → `fetchGexHeatmap("SPX")`, the same function already documented elsewhere in this file as a 60–120s uncached full-chain rebuild against Polygon when *its own* cache is cold). Multiple pages fetch several of these endpoints on load, so the user's "everything, all at once" description matches exactly: it wasn't one slow endpoint, it was the whole warming layer being off simultaneously.
+
+**Fix:** added `isEtExtendedWarmHours()` to `src/lib/et-market-hours.ts` — weekday trading days, 4:00 AM–8:00 PM ET (standard US-equity pre-market + cash + after-hours span) — and pointed `rth-warm-leader.ts`'s `tick()` gate at it instead of `isEtCashRth()`. This is the minimal, *guaranteed-effective* fix: the leader loop runs inside the always-on Next.js web server process (booted from `ensureDataSockets()`, not a Railway-scheduled trigger), so widening its own gate takes effect on deploy with **no Railway config dependency**. Its dispatch path (`dispatchCronWarm`) already calls `grid-warm`/`heatmap-warm`/`desk-warm`/`nights-watch-warm` with `force:true` (bypassing each route's own cash-RTH self-skip), so this single one-line gate change is sufficient to keep all four warm through pre-market and evening hours.
+
+**Deliberately left unchanged:** Railway's own `cronSchedule` bands in `railway.*.toml` (layer 1 above) still only fire 7 AM–5 PM ET — widening those requires a matching *manual* Railway dashboard sync (the toml's own comment: *"if cronSchedule was set in the dashboard UI, the dashboard value overrides this TOML"*), so a code-only change there could look fixed in the repo while doing nothing live. The in-app leader doesn't have that dependency, which is why it's the primary fix; the Railway schedule widening is a legitimate follow-up but out of scope for this PR. Weekend coverage is also intentionally left as-is (today's report was a weekday) — worth a follow-up if members regularly check the site on weekends.
+
+**Evidence:** new tests in `et-market-hours.test.ts` cover the exact reproduction time (18:41 ET) plus pre-market, cash-RTH, dead-of-night, weekend, and holiday boundaries. Full suite: 1808/1808 passing (was 1803 before PR #634/#636 landed since this session's summary). `npx tsc --noEmit` clean. `npx eslint` clean. `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty. Also fixed an unrelated committed git-conflict-marker corruption in this file (from the PR #636 merge) while adding this entry — both entries preserved.
+
+**Status:** FIXED — pushed.
+
+---
+
+## 🟡 P1 FOUND+FIXED 2026-07-06 — Largo mobile "Connection interrupted" on long tool-loop queries (branch `fix/largo-mobile-sse-heartbeat`)
+
+**Surface:** iOS Terminal Largo (`LargoNativeTerminal` / `useLargoChat`) — user question *"How is Asts looking?"*.
+
+**Root cause:** Backend succeeded (live probe 200 in 32–44s) but SSE stream was silent for 40–90s during Claude tool loops (tokens deliberately withheld until verification). Mobile/CF proxies dropped the idle connection → client `queryLargoStream` threw *"stream ended without result"* → generic *"Connection interrupted"* copy. UI also rendered an empty assistant bubble above the thinking panel.
+
+**Fix:** (1) 12s `{type:"ping"}` heartbeats in `largo/query` SSE route; (2) client ignores pings + 130s abort timeout; (3) `largoStreamErrorMessage()` for 429/502/timeout/stream-cut; (4) defer assistant bubble until content arrives; (5) `LargoTerminal` refactored onto shared `useLargoChat` hook.
+
+**Status:** FIXED.
+
+---
+
 ## 🟢 RESOLVED 2026-07-06 — CodeQL request-forgery alert (`api-tracked-fetch.ts:100`) actually closed: added a destination-host allowlist at the shared fetch choke point instead of relying on per-fragment ticker sanitizers (branch `fix/trackedfetch-host-allowlist`)
 
 **Surface:** `trackedFetch()` in `src/lib/api-tracked-fetch.ts` — the single network-egress choke point every external provider call in this codebase funnels through.
@@ -22,17 +60,6 @@ in this file.
 **Evidence:** 2 new tests in `api-tracked-fetch.test.ts` — a disallowed host rejects before any network call is attempted; a lookalike subdomain of a real provider (`api.unusualwhales.com.evil.com`) is correctly rejected (hostname comparison, not substring match). Existing tests updated to allowlist their local `127.0.0.1` test server via a new test-only `__allowFetchHostForTest()` escape hatch (never intended for application code). Full suite: 1803/1803 passing. `npx tsc --noEmit` clean. `npx eslint` clean. `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
 
 **Status:** FIXED — pushed; supersedes the "TRACKED (not blocking)" entry below, which is left in place as the record of what was tried and why it didn't work.
-=======
-## 🟡 P1 FOUND+FIXED 2026-07-06 — Largo mobile "Connection interrupted" on long tool-loop queries (branch `fix/largo-mobile-sse-heartbeat`)
-
-**Surface:** iOS Terminal Largo (`LargoNativeTerminal` / `useLargoChat`) — user question *"How is Asts looking?"*.
-
-**Root cause:** Backend succeeded (live probe 200 in 32–44s) but SSE stream was silent for 40–90s during Claude tool loops (tokens deliberately withheld until verification). Mobile/CF proxies dropped the idle connection → client `queryLargoStream` threw *"stream ended without result"* → generic *"Connection interrupted"* copy. UI also rendered an empty assistant bubble above the thinking panel.
-
-**Fix:** (1) 12s `{type:"ping"}` heartbeats in `largo/query` SSE route; (2) client ignores pings + 130s abort timeout; (3) `largoStreamErrorMessage()` for 429/502/timeout/stream-cut; (4) defer assistant bubble until content arrives; (5) `LargoTerminal` refactored onto shared `useLargoChat` hook.
-
-**Status:** FIXED.
->>>>>>> 2eb0a03e (fix(largo): SSE heartbeats + mobile stream UX for long tool loops)
 
 ---
 
