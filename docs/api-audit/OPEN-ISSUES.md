@@ -74,7 +74,7 @@ Last updated: 2026-07-06 15:33 ET
 
 **P1 root cause:** `fetchGexHeatmap()` disabled stale-while-revalidate during SPX fast-move (>0.5% in-window). After 5s TTL expiry, member GETs blocked on 60–120s chain rebuild → `/api/market/gex-heatmap?ticker=SPX` **502 @ ~58s**, dashboard "Loading gamma matrix…", header GEX `—`, `gex_stale` badge.
 
-**Fix:** `fix/spx-gex-heatmap-fast-move-swr` — always SWR on TTL miss (fast-move only shortens accept TTL).
+**Fix:** `fix/spx-gex-heatmap-fast-move-swr` — always SWR on TTL miss (fast-move only shortens accept TTL). **Deployed PR #616** — post-deploy `validate:member-dashboard` **13/13 GREEN** (171 matrix rows), `validate:rth-open` GREEN. Issue #615 closed.
 
 **Missing-field audit (this pass):** only matrix-related `—` fields (GEX header, γ flip, Net GEX) — all traced to heatmap 502; no other blanks across 7 pages.
 
