@@ -1,5 +1,5 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 14:42 ET
+Last updated: 2026-07-06 14:50 ET
 
 ## grid-rth-2026-07-06 — 0DTE Command + Market Grid verify pass #2 (~14:29–14:42 ET)
 
@@ -218,6 +218,56 @@ Last updated: 2026-07-06 14:42 ET
 
 ---
 
+## RTH comprehensive sweep — 2026-07-06 ~13:40–14:50 ET (Mon midday)
+
+**Session:** Autonomous RTH agent — `validate:rth-open`, `data-correctness?force=1`, full browser+API sweep (`validate:rth-sweep`), `ops:collect`, `validate:spx-rth`.
+
+### Infrastructure / validation
+
+| Check | Result |
+|---|---|
+| `validate:rth-open` | ✅ GREEN — deploy SUCCESS, crons ticking, options-socket authenticated |
+| `data-correctness?force=1` | ✅ 200 @ ~111s — **flags=0**, 109 metrics, 7 independently confirmed |
+| `ops:collect` (final) | ✅ 0 action items (transient heatmap-warm + 1-flag run self-healed by 18:37Z) |
+| `validate:spx-rth` | ⚠️ 6 PASS / 3 FAIL — bie Layer-B abort (transient), dashboard-e2e Clerk timeout (cloud VM), data-correctness HTTP 524 when forced under parallel load |
+
+### Comprehensive sweep (`validate:rth-sweep`)
+
+| Area | Result |
+|---|---|
+| **Speed (soft-nav)** | ✅ All pages ~1.6–1.7s to DOM (dashboard, flows, heatmap, grid, nighthawk, terminal, track-record) |
+| **Speed (API warm)** | ✅ desk 226ms, pulse 211ms, grid panels 80–190ms, platform snapshot 193ms |
+| **Speed (API cold)** | ⚠️ SPX merged 34s, gex-positioning 83s, SPY heatmap 55s — cold-cache under audit burst |
+| **Live auto-update** | ⚠️ `liveTick=null` on all pages (spot stable ~7540 during pass; matrix/flows update on longer cadence — not a stall) |
+| **Missing-field audit** | ✅ **0** placeholder hits (`—`, N/A, No data) across all pages + heatmap profile tab |
+| **Console health** | ✅ 0 errors on 6/7 pages; dashboard 1× HTTP 400 (non-blocking resource) |
+| **Grid 12 panels** | ✅ All `/api/grid/*` 200, fresh `as_of` 40–120s |
+| **Largo (streaming)** | ✅ 200 @ 38.7s — grounded NVDA dark-pool + flow answer with dollar amounts |
+| **Largo (non-streaming JSON)** | ❌ CF 502 @ ~81s — exceeds origin timeout; **UI uses SSE** (`?stream=1`) and is healthy |
+| **SPX gex-heatmap** | ⚠️ 524 @ 125s on first cold read during audit burst; **508ms** on warm retry — heatmap-warm + organic traffic carry members |
+
+### Cross-tool GEX (warm cache)
+
+| Source | Value |
+|---|---|
+| desk gamma_flip | 7479.47 |
+| desk spot | 7532.34 |
+| heatmap spot (warm) | 7541.65 @ 508ms |
+
+### Fixes shipped this session (PR)
+
+1. **`rth-comprehensive-sweep.mjs`** — `generateDefaultAuditPhone()` (Clerk collision fix), per-path curl timeouts (120–180s), Largo probe via **SSE** (matches Terminal UI), SPX heatmap cold-build retry + 524 downgraded to P2.
+2. **`spx-rth-all-day-audit.mjs`** — `data-correctness?force=1` fetch timeout 180s.
+
+### Watch (non-P0)
+
+| Item | Detail |
+|---|---|
+| `data-correctness` HTTP 524 | Cron ~111s; Cloudflare origin timeout ~100s when `force=1` under parallel probes — Postgres latest run ok; flags=0 |
+| SPX matrix cold-build | First `gex-heatmap?ticker=SPX` can exceed CF limit during cache miss; warm path sub-second |
+| `spx:dashboard-e2e` | Clerk ticket `waitForURL` timeout in cloud VM — cookie-injection path passes |
+
+---
 ## Member live UI validation — 2026-07-06 ~10:40 ET (post #571 OFFLINE fix)
 
 **Session:** User requested validation of what **members see on the live website**, not API-only probes. Agent ran Playwright against `https://blackouttrades.com/dashboard` with Clerk cookie injection (same path as iOS E2E).

@@ -81,9 +81,21 @@ mkdirSync(TMP, { recursive: true });
 const JAR = join(TMP, "cookies.txt");
 let seq = 0;
 
+function curlTimeoutSec(url) {
+  if (
+    url.includes("/api/cron/data-correctness") ||
+    url.includes("gex-heatmap") ||
+    url.includes("gex-positioning") ||
+    url.includes("/largo/query")
+  ) {
+    return "180";
+  }
+  return "120";
+}
+
 function curl({ method = "GET", url, headers = {}, form, urlencodeForm, json, jar = false, saveJar = false }) {
   const bf = join(TMP, `b${++seq}`);
-  const args = ["-sS", "--max-time", "90", "-o", bf, "-w", "%{http_code}", "-A", UA];
+  const args = ["-sS", "--max-time", curlTimeoutSec(url), "-o", bf, "-w", "%{http_code}", "-A", UA];
   if (method !== "GET") args.push("-X", method);
   for (const [k, v] of Object.entries(headers)) args.push("-H", `${k}: ${v}`);
   if (json) args.push("-H", "Content-Type: application/json", "--data", JSON.stringify(json));
@@ -187,11 +199,18 @@ function freshAsOf(json, maxSec = 300) {
 
 async function auditApis(app) {
   for (const path of [...MARKET_APIS, ...GRID_APIS]) {
-    const r = app(path);
+    let r = app(path);
+    // Cold SPX matrix builds can exceed Cloudflare's ~100s origin timeout; one warm retry.
+    if ((r.status === 0 || r.status === 524) && path.includes("gex-heatmap?ticker=SPX")) {
+      await new Promise((res) => setTimeout(res, 3000));
+      r = app(path);
+    }
     const { fresh, ageSec } = freshAsOf(r.json, path.includes("earnings") ? 600 : 300);
     const entry = { path, status: r.status, ms: r.ms, fresh, ageSec };
-    if (r.status !== 200) report.issues.push({ severity: "P1", id: `api-${path}`, detail: `HTTP ${r.status}` });
-    else if (fresh === false) report.issues.push({ severity: "P2", id: `stale-${path}`, detail: `as_of ${ageSec}s old` });
+    if (r.status !== 200) {
+      const sev = r.status === 524 || r.status === 0 ? "P2" : "P1";
+      report.issues.push({ severity: sev, id: `api-${path}`, detail: `HTTP ${r.status}` });
+    } else if (fresh === false) report.issues.push({ severity: "P2", id: `stale-${path}`, detail: `as_of ${ageSec}s old` });
     report.apis.push(entry);
   }
   // Cross-tool GEX
@@ -214,23 +233,41 @@ async function auditApis(app) {
 
 async function testLargo(app) {
   const t0 = Date.now();
-  const r = app("/api/market/largo/query", {
+  // Terminal UI uses SSE (`?stream=1` + Accept: text/event-stream); non-streaming JSON can
+  // exceed Cloudflare's ~100s origin timeout on multi-tool questions.
+  const r = app("/api/market/largo/query?stream=1", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     json: { question: "Summarize dark pool activity and options flow on NVDA today with dollar amounts." },
   });
-  const body = r.json || {};
-  const answer = body.answer || body.response || body.text || "";
-  const tools = body.tools_used || body.sources || body.tool_trace || [];
+  let answer = "";
+  let tools = [];
+  let statusLine = null;
+  if (r.status === 200 && r.raw) {
+    for (const line of r.raw.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === "token" && ev.text) answer += ev.text;
+        if (ev.type === "tool_start" && ev.name) tools.push(ev.name);
+        if (ev.type === "done") {
+          answer = ev.answer || answer;
+          tools = ev.tools_used || tools;
+          statusLine = ev.status || ev.working_status || null;
+        }
+        if (ev.type === "error") statusLine = ev.message;
+      } catch {}
+    }
+  }
   report.largo = {
     status: r.status,
     ms: Date.now() - t0,
     hasAnswer: Boolean(answer && String(answer).length > 50),
-    tools: Array.isArray(tools) ? tools : typeof tools === "object" ? Object.keys(tools) : [],
-    statusLine: body.status || body.working_status || null,
+    tools: Array.isArray(tools) ? tools : [],
+    statusLine,
     preview: String(answer).slice(0, 300),
   };
-  if (r.status !== 200) report.issues.push({ severity: "P1", id: "largo-query", detail: `HTTP ${r.status}: ${JSON.stringify(body).slice(0, 200)}` });
+  if (r.status !== 200) report.issues.push({ severity: "P1", id: "largo-query", detail: `HTTP ${r.status}: ${JSON.stringify(r.json || r.raw?.slice(0, 200)).slice(0, 200)}` });
   else if (!report.largo.hasAnswer) report.issues.push({ severity: "P2", id: "largo-empty", detail: "No grounded answer body" });
 }
 

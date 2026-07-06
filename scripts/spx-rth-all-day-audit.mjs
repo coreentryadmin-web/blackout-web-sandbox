@@ -44,9 +44,10 @@ function run(cmd, label) {
   return true;
 }
 
-async function fetchJson(path) {
+async function fetchJson(path, { timeoutMs = 120_000 } = {}) {
   const r = await fetch(`${BASE}${path}`, {
     headers: { Authorization: `Bearer ${CRON}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status} ${path}`);
   return r.json();
