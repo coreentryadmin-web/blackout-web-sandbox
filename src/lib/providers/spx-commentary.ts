@@ -10,7 +10,6 @@ import {
   augmentKnownCommentaryNumbers,
   checkCommentaryGrounded,
   collectKnownNumbers,
-  extractNumbersFromText,
   type GroundingCheckResult,
 } from "@/lib/grounding-guard";
 import { dbConfigured, insertAlertAuditLog } from "@/lib/db";
@@ -437,6 +436,11 @@ function validateDeskData(ctx: Record<string, unknown>): { ok: true } | { ok: fa
   return { ok: true };
 }
 
+/** SPX strike / index level — excludes flow premiums and other large dollar magnitudes. */
+function isCommentaryStrikeLevel(n: number): boolean {
+  return n >= 1000 && n <= 20_000;
+}
+
 /** Every number the Live Desk AI prompt can legitimately cite — price levels, metrics,
  *  formatted-string magnitudes, and common derived forms (rounded, pt distance, pct as whole). */
 export function knownCommentaryNumbers(
@@ -445,7 +449,8 @@ export function knownCommentaryNumbers(
 ): number[] {
   const raw = new Set<number>();
   const add = (n: number | null | undefined) => {
-    if (n != null && Number.isFinite(n)) raw.add(Number(n));
+    if (n == null || !Number.isFinite(n)) return;
+    raw.add(Number(n));
   };
 
   add(desk.price);
@@ -501,20 +506,19 @@ export function knownCommentaryNumbers(
     for (const v of Object.values(breadth)) add(typeof v === "number" ? v : null);
   }
 
-  for (const n of collectKnownNumbers(ctx)) raw.add(n);
-  for (const n of extractNumbersFromText(JSON.stringify(ctx))) raw.add(n);
+  for (const n of collectKnownNumbers(ctx)) add(n);
 
   const price = desk.price;
   if (price != null && Number.isFinite(price)) {
-    for (const lvl of raw) {
-      if (lvl >= 1000) {
-        const dist = lvl - price;
-        add(dist);
-        add(Math.abs(dist));
-        add(Math.round(dist));
-        add(Math.round(Math.abs(dist)));
-        add(parseFloat(Math.abs(dist).toFixed(1)));
-      }
+    // Snapshot strike levels only — never iterate a Set while mutating it, and never
+    // treat flow premiums (millions) as "levels" for distance derivation (Set overflow).
+    for (const lvl of Array.from(raw).filter(isCommentaryStrikeLevel)) {
+      const dist = lvl - price;
+      add(dist);
+      add(Math.abs(dist));
+      add(Math.round(dist));
+      add(Math.round(Math.abs(dist)));
+      add(parseFloat(Math.abs(dist).toFixed(1)));
     }
   }
 
