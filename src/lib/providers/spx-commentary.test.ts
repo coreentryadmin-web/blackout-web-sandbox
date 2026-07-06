@@ -30,11 +30,11 @@ mock.module("./anthropic", {
 
 mock.module("../grounding-guard", {
   namedExports: {
-    // collectKnownNumbers's real recursive walk isn't under test here — the whole point of
-    // mocking checkNumbersGrounded is to force pass/fail deterministically without needing a
-    // real ctx JSON to (not) match against.
+    augmentKnownCommentaryNumbers: (known: number[]) => known,
+    knownCommentaryNumbers: () => [],
     collectKnownNumbers: () => [],
-    checkNumbersGrounded: () => ({ grounded: mockGrounded, ungroundedValue: mockUngroundedValue }),
+    extractNumbersFromText: () => [],
+    checkCommentaryGrounded: () => ({ grounded: mockGrounded, ungroundedValue: mockUngroundedValue }),
   },
 });
 

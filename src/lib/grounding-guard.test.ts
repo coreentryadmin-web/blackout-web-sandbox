@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { checkNumbersGrounded, collectKnownNumbers, extractNumbersFromText } from "./grounding-guard";
+import { checkNumbersGrounded, collectKnownNumbers, extractNumbersFromText, checkCommentaryGrounded, augmentKnownCommentaryNumbers } from "./grounding-guard";
 
 describe("grounding-guard", () => {
   it("passes when known is empty (nothing to check against)", () => {
@@ -52,6 +52,23 @@ describe("grounding-guard", () => {
     // 747 is outside tolerance of 745 and not itself a known level.
     const tooFar = checkNumbersGrounded("Pin near 747.", [745]);
     assert.equal(tooFar.grounded, false);
+  });
+
+  it("checkCommentaryGrounded allows rounded session metrics in the 10–999 band", () => {
+    const known = augmentKnownCommentaryNumbers([43.712, 13.2, 6242, 6254]);
+    const roundedIv = checkCommentaryGrounded("IV rank {{45}} (options pricey).", known);
+    assert.equal(roundedIv.grounded, true);
+    const roundedVix = checkCommentaryGrounded("VIX {{14}} (calm).", known);
+    assert.equal(roundedVix.grounded, true);
+    const ptDistance = checkCommentaryGrounded("R {{6254}} (+12, call wall).", [...known, 12]);
+    assert.equal(ptDistance.grounded, true);
+  });
+
+  it("checkCommentaryGrounded still rejects fabricated SPX strikes", () => {
+    const known = augmentKnownCommentaryNumbers([6242, 6254, 6220]);
+    const fake = checkCommentaryGrounded("Breakout toward {{6120}}.", known);
+    assert.equal(fake.grounded, false);
+    assert.equal(fake.ungroundedValue, 6120);
   });
 
   it("returns the first ungrounded value for diagnostics", () => {

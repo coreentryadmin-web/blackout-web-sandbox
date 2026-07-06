@@ -18,6 +18,16 @@ Last updated: 2026-07-06 11:00 ET
 
 ---
 
+## Largo commentary (SPX Slayer) — 502 / empty rail — 2026-07-06
+
+**Symptom:** SPX Slayer right rail stuck on "Largo, standing by for live tape…" or retrying; `POST /api/market/spx/commentary` → **502**.
+
+**Root cause (Railway logs):** Post-generation grounding guard (`checkNumbersGrounded` + `collectKnownNumbers(ctx)`) false-positive blocked every Claude read — e.g. `ungrounded value 43.7`, `45.5`, `42` (IV rank / breadth % / rounded VIX) discarded → `spx-commentary: generation returned null` → 502, nothing cached.
+
+**Fix (PR `cursor/fix-spx-commentary-largo-9d1e`):** `knownCommentaryNumbers()` + `checkCommentaryGrounded()` — strict on SPX strikes (≥1000), relaxed tolerance on session metrics (10–999), augmented known set (rounded forms, decimal→percent, pt distances).
+
+---
+
 ## Manual SPX + Grid RTH agent run — 2026-07-06 ~09:37 ET (Mon market open)
 
 **Session:** User asked agent to run scheduled SPX/Grid market-open workflows manually (GitHub scheduled workflows had 0 runs — new workflow 24h activation window). Agent executed verify-mode audits against production.
