@@ -1,5 +1,64 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 17:02 ET
+Last updated: 2026-07-06 17:18 ET
+
+## grid-rth-2026-07-06 — 0DTE Command + Market Grid verify pass #6 (~17:17–17:18 ET, post-close)
+
+**Session:** Grid RTH all-day agent verify pass per `docs/ops/GRID-RTH-ALL-DAY-AGENT.md`. Commands: `validate:grid-rth --force` → `validate:zerodte-logic` → `validate:grid-e2e`. First `grid-rth` attempt skipped outside RTH; re-run with `--force` after `npm install` + Playwright Chromium (fresh checkout missing `pg`, `react`, `playwright`).
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:grid-rth` | ✅ **GREEN** — 24 PASS / 0 FAIL |
+| `npm run validate:zerodte-logic` | ✅ **GREEN** — 16/16 |
+| `npm run validate:grid-e2e` | ✅ **GREEN** — 14/14 (0 FAIL, 1 WARN) |
+| `npm run ops:collect` (nested) | ✅ 0 action items |
+
+### 0DTE logic — all gates GREEN (post-close state)
+
+| Probe | Result |
+|---|---|
+| Gate funnel (SETUP_MIN_GROSS, aggression, dominance, ITM) | ✅ NVDA score=65, audit trace all pass |
+| Plan exits (stop −50%, target +100%, time stop 15:30 ET) | ✅ stop=2.1 target=8.4 |
+| Trade lifecycle (OPEN → TRIM → CLOSED, sticky trough) | ✅ OPEN/TRIM/CLOSED/CLOSED |
+| Plan grading (stop wins when both touch same bar) | ✅ stopped |
+| Session heat (RTH → POWER_HOUR @ 15:00 ET cutoff) | ✅ RTH→POWER_HOUR (pure); live CLOSED heat=0% |
+| mergePlays UI (past cutoff / MOVED → SKIP) | ✅ SKIP |
+| Live board gate invariants | ✅ 3 setups, 0 violations |
+| Live ledger PnL math | ✅ 5 rows, 0 issues |
+| Live upstream + cutoff constant | ✅ 15:00 ET |
+
+### Grid panels + crons — all GREEN
+
+| Probe | Result |
+|---|---|
+| All 9 `/api/grid/*` panels | ✅ finite numbers, fresh `as_of` (bootstrap 6s, economy 568s) |
+| `/api/market/zerodte/board` | ✅ upstream_ok, heat=CLOSED, setups=3, ledger=5 |
+| `zerodte:ledger-pnl` | ✅ 5 rows checked |
+| `cron:grid-warm` | ✅ skipped off-hours (expected post-close) |
+| `integration:grid-gex-spot` | ✅ spot 7537.43 |
+| `integration:helix-flows` | ✅ 30 prints |
+| `integration:nighthawk-dedupe` | ✅ 3 tickers covered elsewhere |
+| `grid:data-correctness` | ✅ flags=0 mode=full |
+
+### UI E2E — tab click-through GREEN
+
+| Probe | Result |
+|---|---|
+| `ui:page-load` | ✅ "0DTE Command · BlackOut" |
+| `ui:tab-0dte-command` | ✅ clicked |
+| `ui:session-heat` | ⚠️ heat header not visible (API confirms CLOSED heat=0% post-close — expected off-hours render) |
+| `ui:tab-market-grid` | ✅ clicked |
+| `ui:search-bar` | ✅ SPY filter |
+| `ui:console-errors` | ✅ zero errors |
+
+### P0 assessment
+
+**No P0 defects.** Post-close verify: all 0DTE gates, plan exits, trade lifecycle, ledger PnL math, session heat cutoffs (CLOSED @ 17:17 ET), mergePlays SKIP rules, 9 grid panels, HELIX flows cross-feed, Night Hawk dedupe, and `/grid` tab navigation verified on live production.
+
+**Reports:** `audit-output/grid-rth-2026-07-06-verify-1783372696616.json`, `zerodte-logic-1783372703700.json`, `grid-e2e-1783372710787.json`
+
+---
 
 ## RTH comprehensive sweep — 2026-07-06 ~16:56–17:02 ET (post-close pass #5)
 
