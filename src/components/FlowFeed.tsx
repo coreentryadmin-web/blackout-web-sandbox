@@ -585,8 +585,8 @@ export function FlowFeed() {
           aria-label="HELIX lens"
           className="ios-native-desk-segment"
           segments={[
-            { id: "tape", label: "TAPE" },
-            { id: "analytics", label: "ANLY" },
+            { id: "tape", label: "Live tape" },
+            { id: "analytics", label: "Analytics" },
           ]}
         />
       )}

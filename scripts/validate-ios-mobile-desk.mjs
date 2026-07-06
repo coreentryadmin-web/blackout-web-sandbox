@@ -125,7 +125,7 @@ const commandCss = readFileSync(join(root, "src/app/ios-native-command.css"), "u
 const commandNeedles = [
   ["--cmd-panel", "command panel token"],
   ["--cmd-radius-panel", "sharp panel radius"],
-  [".ios-app-tab-code", "instrument rail codes"],
+  [".ios-app-tab-label", "instrument rail full labels"],
   [".ios-native-header-kicker", "command bar kicker"],
   [".helix-native-watchlist", "HELIX watchlist strip"],
   ["ios-app-pending-shell", "anti-flash pending shell"],
@@ -165,10 +165,10 @@ if (chrome.includes("ios-native-ambient")) {
 }
 
 const tabBar = readFileSync(join(root, "src/components/IosAppTabBar.tsx"), "utf8");
-if (tabBar.includes("ios-app-tab-code") && tabBar.includes("scroll={false}")) {
-  ok("nav:instrument-rail-codes");
+if (tabBar.includes("ios-app-tab-label") && tabBar.includes("scroll={false}")) {
+  ok("nav:instrument-rail-labels");
 } else {
-  fail("nav:instrument-rail-codes", "expected instrument codes + scroll={false}");
+  fail("nav:instrument-rail-labels", "expected full tool labels + scroll={false}");
 }
 
 const pageTransition = readFileSync(join(root, "src/components/ios/IosNativePageTransition.tsx"), "utf8");

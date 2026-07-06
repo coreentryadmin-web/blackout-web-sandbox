@@ -48,8 +48,8 @@ export function NightHawkFeed() {
           aria-label="Night Hawk view"
           className="ios-native-desk-segment mb-2"
           segments={[
-            { id: "playbook", label: "BOOK" },
-            { id: "watch", label: "WATCH" },
+            { id: "playbook", label: "Playbook" },
+            { id: "watch", label: "Night's Watch" },
           ]}
         />
       )}

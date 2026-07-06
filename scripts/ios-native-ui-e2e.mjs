@@ -115,7 +115,7 @@ async function testToolPage(page, tab) {
   await shot(page, `tab-${tab.route}`);
 
   if (tab.route === "dashboard") {
-    if (await clickSegment(page, "MATX")) {
+    if (await clickSegment(page, "Matrix")) {
       ok("spx:segment-matrix");
       await shot(page, "spx-matrix");
       const gexTab = page.locator("#spx-matrix-tab-gex, [id*='matrix-tab-gex']").first();
@@ -129,11 +129,11 @@ async function testToolPage(page, tab) {
         ok("spx:matrix-vex-tab");
       }
     }
-    if (await clickSegment(page, "PLAYS")) {
+    if (await clickSegment(page, "Plays")) {
       ok("spx:segment-plays");
       await shot(page, "spx-plays");
     }
-    if (await clickSegment(page, "INTEL")) {
+    if (await clickSegment(page, "Intel")) {
       ok("spx:segment-intel");
       await shot(page, "spx-intel");
     }
@@ -146,11 +146,11 @@ async function testToolPage(page, tab) {
   }
 
   if (tab.route === "flows") {
-    if (await clickSegment(page, "ANLY")) {
+    if (await clickSegment(page, "Analytics")) {
       ok("helix:segment-analytics");
       await shot(page, "helix-analytics");
     }
-    if (await clickSegment(page, "TAPE")) {
+    if (await clickSegment(page, "Live tape")) {
       ok("helix:segment-tape");
       await shot(page, "helix-tape");
     }
@@ -200,11 +200,11 @@ async function testToolPage(page, tab) {
   }
 
   if (tab.route === "nighthawk") {
-    if (await clickSegment(page, "WATCH")) {
+    if (await clickSegment(page, "Night's Watch")) {
       ok("hawk:segment-watch");
       await shot(page, "hawk-watch");
     }
-    if (await clickSegment(page, "BOOK")) {
+    if (await clickSegment(page, "Playbook")) {
       ok("hawk:segment-playbook");
     }
   }

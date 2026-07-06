@@ -86,7 +86,6 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
                         <span className="ios-native-menu-tool-label">{tool.label}</span>
                         <span className="ios-native-menu-tool-sub">{tool.tagline}</span>
                       </div>
-                      <span className="ios-native-menu-tool-code">{tool.code}</span>
                     </Link>
                   </motion.div>
                 );
@@ -95,20 +94,20 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
 
             <div className="ios-native-menu-links">
               <Link href="/account" scroll={false} onClick={onClose} className="ios-native-menu-link">
-                Account · SYS
+                Account
               </Link>
               <Link href="/upgrade" scroll={false} onClick={onClose} className="ios-native-menu-link">
-                Membership · TIER
+                Membership
               </Link>
               <Link href="/faq" scroll={false} onClick={onClose} className="ios-native-menu-link">
-                FAQ · HELP
+                FAQ
               </Link>
               <Link href="/learn" scroll={false} onClick={onClose} className="ios-native-menu-link">
-                Learn · EDU
+                Learn
               </Link>
               {showAdmin && (
                 <Link href="/admin" scroll={false} onClick={onClose} className="ios-native-menu-link text-bear">
-                  Admin · OPS
+                  Admin
                 </Link>
               )}
             </div>

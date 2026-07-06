@@ -155,18 +155,6 @@ export type IosHeaderMeta = {
   showBack: boolean;
 };
 
-const UTILITY_KICKERS: Record<
-  "account" | "faq" | "learn" | "upgrade" | "admin" | "other",
-  string
-> = {
-  account: "SYS",
-  faq: "FAQ",
-  learn: "EDU",
-  upgrade: "TIER",
-  admin: "OPS",
-  other: "BO",
-};
-
 /** Header title/accent for native chrome — tools + utility routes. */
 export function getIosHeaderMeta(path: string): IosHeaderMeta {
   const tool = getIosToolMeta(path);
@@ -174,7 +162,7 @@ export function getIosHeaderMeta(path: string): IosHeaderMeta {
     return {
       key: getIosRouteKey(path),
       title: tool.label,
-      kicker: tool.code,
+      kicker: tool.tagline,
       accent: tool.accent,
       mark: tool.mark,
       showBack: false,
@@ -191,11 +179,10 @@ export function getIosHeaderMeta(path: string): IosHeaderMeta {
       ? key
       : "other";
   const utility = IOS_UTILITY_META[utilityKey];
-  const kicker = UTILITY_KICKERS[utilityKey];
   return {
     key,
     title: utility.title,
-    kicker,
+    kicker: "",
     accent: utility.accent,
     showBack: key !== "other" && !isIosToolRoute(path),
   };

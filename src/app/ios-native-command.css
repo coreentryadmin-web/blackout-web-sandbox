@@ -15,7 +15,7 @@ html.ios-app.ios-native-shell {
   --cmd-radius-panel: 6px;
   --cmd-mono: var(--font-jetbrains, ui-monospace, monospace);
   --cmd-display: var(--font-syne, system-ui, sans-serif);
-  --cmd-rail-h: 3.5rem;
+  --cmd-rail-h: 4.125rem;
 }
 
 /* ── Void grid + scan atmosphere ── */
@@ -72,12 +72,21 @@ html.ios-app.ios-native-shell .ios-native-header-title-inner {
 }
 
 html.ios-app.ios-native-shell .ios-native-header-kicker {
-  font-family: var(--cmd-mono);
-  font-size: 8px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-family: var(--cmd-display);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: #7dd3fc;
-  line-height: 1;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-title-inner:not(:has(.ios-native-header-kicker:not(:empty))) {
+  gap: 0;
 }
 
 html.ios-app.ios-native-shell .ios-native-header-title-text {
@@ -146,9 +155,9 @@ html.ios-app.ios-native-shell .ios-app-tab-list {
 }
 
 html.ios-app.ios-native-shell .ios-app-tab-link {
-  gap: 0.15rem;
+  gap: 0.2rem;
   min-height: var(--cmd-rail-h);
-  padding: 0.3rem 0.1rem 0.35rem;
+  padding: 0.25rem 0.15rem 0.3rem;
   border-left: 1px solid var(--cmd-edge);
   border-radius: 0;
   position: relative;
@@ -178,21 +187,30 @@ html.ios-app.ios-native-shell .ios-app-tab-indicator {
   display: none;
 }
 
-html.ios-app.ios-native-shell .ios-app-tab-code {
-  font-family: var(--cmd-mono);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: #7dd3fc;
-  line-height: 1;
-}
-
-html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-code {
-  color: var(--tab-accent, var(--ios-accent));
-  text-shadow: 0 0 8px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 50%, transparent);
-}
-
 html.ios-app.ios-native-shell .ios-app-tab-label {
+  font-family: var(--cmd-display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #7dd3fc;
+  line-height: 1.15;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-label {
+  color: #fff;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 40%, transparent);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-code {
   display: none;
 }
 
@@ -224,15 +242,15 @@ html.ios-app.ios-native-shell .ios-native-segment-bracket {
 }
 
 html.ios-app.ios-native-shell .ios-native-segment-btn {
-  min-height: 2.375rem;
-  padding: 0.35rem 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
   border-radius: 0;
   border-right: 1px solid var(--cmd-edge);
-  font-family: var(--cmd-mono);
-  font-size: 9px;
+  font-family: var(--cmd-display);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: #7dd3fc;
   background: transparent;
 }
@@ -432,11 +450,7 @@ html.ios-app.ios-native-shell .ios-native-menu-tool-sub {
 }
 
 html.ios-app.ios-native-shell .ios-native-menu-tool-code {
-  font-family: var(--cmd-mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  color: var(--tool-accent, #7dd3fc);
-  flex-shrink: 0;
+  display: none;
 }
 
 html.ios-app.ios-native-shell .ios-native-menu-links {

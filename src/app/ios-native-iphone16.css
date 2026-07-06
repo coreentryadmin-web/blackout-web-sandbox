@@ -11,7 +11,7 @@
 @media (min-width: 393px) {
   html.ios-app.ios-native-shell {
     --ios-tier: pro;
-    --cmd-rail-h: 3.625rem;
+    --cmd-rail-h: 4.25rem;
     --ios-content-pad-x: 0.75rem;
     --ios-hero-price-size: 2.5rem;
     --ios-chart-min-h: min(64dvh, 540px);
@@ -29,7 +29,10 @@
 
   html.ios-app.ios-native-shell .ios-app-tab-code {
     font-size: 9px;
-    letter-spacing: 0.16em;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-label {
+    font-size: 8px;
   }
 
   html.ios-app.ios-native-shell .page-shell,
@@ -64,8 +67,7 @@
 /* ── Pro Max — exploit 440×956 canvas ── */
 @media (min-width: 430px) {
   html.ios-app.ios-native-shell {
-    --ios-tier: pro-max;
-    --cmd-rail-h: 3.875rem;
+    --cmd-rail-h: 4.5rem;
     --ios-content-pad-x: 0.85rem;
     --ios-hero-price-size: 2.85rem;
     --ios-chart-min-h: min(68dvh, 620px);

@@ -82,7 +82,9 @@ export function IosNativeHeader({ path, onMenuOpen }: Props) {
               exit={{ opacity: 0, y: -4 }}
               transition={TITLE_SPRING}
             >
-              <span className="ios-native-header-kicker">{meta.kicker}</span>
+              {meta.kicker ? (
+                <span className="ios-native-header-kicker">{meta.kicker}</span>
+              ) : null}
               <div className="flex items-center justify-center gap-1.5 min-w-0">
                 {meta.mark ? (
                   <ProductMark product={meta.mark} size={16} title={meta.title} className="shrink-0" />

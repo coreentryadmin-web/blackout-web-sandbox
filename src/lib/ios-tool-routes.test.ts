@@ -87,8 +87,8 @@ describe("getIosRouteKey", () => {
 });
 
 describe("getIosHeaderMeta", () => {
-  it("returns instrument code kickers for tools", () => {
-    assert.equal(getIosHeaderMeta("/flows").kicker, "HLX");
+  it("returns tagline kickers for tools", () => {
+    assert.equal(getIosHeaderMeta("/flows").kicker, "Institutional flow tape");
     assert.equal(getIosHeaderMeta("/flows").title, "HELIX");
     assert.equal(getIosHeaderMeta("/flows").showBack, false);
   });
@@ -96,8 +96,8 @@ describe("getIosHeaderMeta", () => {
   it("returns utility titles with back affordance", () => {
     const account = getIosHeaderMeta("/account");
     assert.equal(account.title, "Account");
-    assert.equal(account.kicker, "SYS");
+    assert.equal(account.kicker, "");
     assert.equal(account.showBack, true);
-    assert.equal(getIosHeaderMeta("/learn").kicker, "EDU");
+    assert.equal(getIosHeaderMeta("/learn").title, "Learn");
   });
 });

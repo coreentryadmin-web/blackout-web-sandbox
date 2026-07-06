@@ -131,9 +131,9 @@ export function SpxDashboard() {
           aria-label="SPX desk view"
           className="ios-native-desk-segment"
           segments={[
-            { id: "plays", label: "PLAYS" },
-            { id: "matrix", label: "MATX" },
-            { id: "intel", label: "INTEL" },
+            { id: "plays", label: "Plays" },
+            { id: "matrix", label: "Matrix" },
+            { id: "intel", label: "Intel" },
           ]}
         />
       )}
