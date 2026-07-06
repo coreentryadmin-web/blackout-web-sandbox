@@ -16,7 +16,9 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * links or upsell CTAs inside the app surface.
  */
 const config: CapacitorConfig = {
-  appId: "com.blackout-trades.app",
+  // Capacitor rejects hyphens (Java package rules). Apple ASC bundle is
+  // com.blackout-trades.app — patched in Xcode via scripts/patch-ios-bundle-id.mjs.
+  appId: "com.blackouttrades.app",
   appName: "BlackOut",
   // Appended to the WKWebView user-agent so the web app can detect it's running
   // INSIDE the iOS app and hide all pricing / purchase UI (App Store guideline

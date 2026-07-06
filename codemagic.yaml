@@ -29,8 +29,13 @@ workflows:
         script: npm ci || npm install
       - name: Generate native iOS project (Capacitor)
         script: |
-          npx cap add ios || echo "ios platform already present"
+          set -e
+          # Capacitor appId must have no hyphens; Apple bundle ID is patched after sync.
+          if [ ! -f ios/App/App.xcodeproj/project.pbxproj ]; then
+            npx cap add ios
+          fi
           npx cap sync ios
+          node scripts/patch-ios-bundle-id.mjs
       - name: Set up code signing (auto via App Store Connect API key)
         script: |
           set -e

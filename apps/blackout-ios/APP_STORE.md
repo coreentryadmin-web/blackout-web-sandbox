@@ -6,10 +6,9 @@
 |-------|--------|
 | **Legal entity** | BLACKOUT TRADE LLC |
 | **Team ID** | `ZA32C782N5` |
-| **Bundle ID** | `com.blackout-trades.app` |
+| **Bundle ID** | `com.blackout-trades.app` (Apple ASC / signing) |
 | **App Store Connect Apple ID** | `6787797476` |
 | **SKU** | `blackout-ios-2020` |
-| **Capacitor appId** | `com.blackout-trades.app` (matches bundle) |
 | **WKWebView UA token** | `BlackOutiOSApp` (must match `src/app/layout.tsx`) |
 
 ## Codemagic (recommended — no Mac)
