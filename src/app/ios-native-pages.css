@@ -360,7 +360,10 @@ html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll td:fi
 /* Thermal ticker search — native bottom sheet (replaces fixed dropdown + 12px focus zoom) */
 html.ios-app.ios-native-shell .gex-ticker-native-sheet {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--ios-vv-offset-top, 0px);
+  height: var(--ios-vv-height, 100dvh);
   z-index: 180;
   display: flex;
   flex-direction: column;
@@ -447,7 +450,20 @@ html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row
 }
 
 html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-ticker-native-sheet-panel {
-  max-height: min(58dvh, calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - 1rem));
+  max-height: min(52dvh, calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - 1.5rem));
+  margin-bottom: 0.35rem;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-ticker-native-sheet {
+  height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-matrix-scroll {
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - var(--ios-tab-offset) - 14rem) !important;
+}
+
+html.ios-app.ios-native-shell.gex-ticker-sheet-open[data-ios-route="heatmap"] .gex-heatmap-panel-native {
+  overflow: visible;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .max-h-\[clamp\(480px\,74vh\,880px\)\],

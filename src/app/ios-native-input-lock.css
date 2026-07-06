@@ -37,6 +37,19 @@ html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="largo"] .largo-p
   max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
 }
 
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-shell-native,
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-content-native {
+  min-height: 0;
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-inner-native,
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-desk-native {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+}
+
 /* Native shell — fixed type scale on mobile-only surfaces */
 html.ios-app.ios-native-shell .largo-native-body,
 html.ios-app.ios-native-shell .largo-native-bubble-label {

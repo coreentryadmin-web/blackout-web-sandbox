@@ -330,6 +330,11 @@ if (gexHeatmap.includes("nativeShell={nativeShell}") && gexHeatmap.includes("gex
 } else {
   fail("thermal:native-ticker-sheet", "expected TickerSwitcher native bottom sheet");
 }
+if (gexHeatmap.includes("resetIosViewport") && gexHeatmap.includes("gex-ticker-sheet-open")) {
+  ok("thermal:keyboard-viewport-reset");
+} else {
+  fail("thermal:keyboard-viewport-reset", "expected resetIosViewport on Thermal ticker sheet");
+}
 
 const largoTerm = readFileSync(join(root, "src/components/desk/LargoTerminal.tsx"), "utf8");
 if (largoTerm.includes("useIosKeyboardInset")) {

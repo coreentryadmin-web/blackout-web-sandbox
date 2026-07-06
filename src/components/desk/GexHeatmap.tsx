@@ -19,6 +19,7 @@ import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitive
 import { shiftPercentForStrike } from "@/components/desk/gex-heatmap/shift-math";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 import { todayEt } from "@/lib/et-date";
 import {
   fmtHeatmapMoneySigned,
@@ -1560,9 +1561,19 @@ function TickerSwitcher({
 
   useEffect(() => {
     if (!nativeShell || !open) return;
-    document.documentElement.classList.add("nav-locked");
-    return () => document.documentElement.classList.remove("nav-locked");
+    document.documentElement.classList.add("nav-locked", "gex-ticker-sheet-open");
+    return () => {
+      document.documentElement.classList.remove("nav-locked", "gex-ticker-sheet-open");
+      window.setTimeout(() => resetIosViewport(), 160);
+    };
   }, [nativeShell, open]);
+
+  const closeNativeSheet = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setDebouncedQuery("");
+    window.setTimeout(() => resetIosViewport(), 160);
+  }, []);
 
   useLayoutEffect(() => {
     if (!open || nativeShell) {
@@ -1592,9 +1603,12 @@ function TickerSwitcher({
     const sym = t.trim().toUpperCase();
     if (!sym) return;
     onPick(sym);
-    setQuery("");
-    setDebouncedQuery("");
-    setOpen(false);
+    if (nativeShell) closeNativeSheet();
+    else {
+      setQuery("");
+      setDebouncedQuery("");
+      setOpen(false);
+    }
   }
 
   function openMenu() {
@@ -1618,7 +1632,8 @@ function TickerSwitcher({
       e.preventDefault();
       setActive((i) => Math.max(i - 1, 0));
     } else if (e.key === "Escape") {
-      setOpen(false);
+      if (nativeShell) closeNativeSheet();
+      else setOpen(false);
     }
   }
 
@@ -1692,6 +1707,14 @@ function TickerSwitcher({
         setOpen(true);
       }}
       onKeyDown={onSearchKeyDown}
+      onBlur={() => {
+        if (!nativeShell) return;
+        window.setTimeout(() => {
+          if (!document.documentElement.classList.contains("ios-keyboard-open")) {
+            resetIosViewport();
+          }
+        }, 160);
+      }}
       placeholder="Search any ticker…"
       aria-label="Search any ticker"
       role="combobox"
@@ -1721,7 +1744,7 @@ function TickerSwitcher({
           type="button"
           className="gex-ticker-native-sheet-backdrop"
           aria-label="Close ticker search"
-          onClick={() => setOpen(false)}
+          onClick={closeNativeSheet}
         />
         <div className="gex-ticker-native-sheet-panel">
           <div className="gex-ticker-native-sheet-grabber" aria-hidden />

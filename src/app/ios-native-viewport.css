@@ -159,7 +159,8 @@ html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell-main {
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-desk,
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-content-canvas {
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-content-canvas,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-desk-native {
   flex: 1;
   min-height: 0;
   display: flex;
