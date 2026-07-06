@@ -10,7 +10,9 @@ import { fetchRecentSpxSnapshots } from "@/lib/providers/spx-signal-log";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
+import { playMemberReadCacheSec } from "@/lib/spx-play-config";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { withServerCache } from "@/lib/server-cache";
 import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import type { SpxDeskSummary } from "./types";
@@ -72,7 +74,7 @@ export async function getSpxDeskSummary(): Promise<SpxDeskSummary> {
   return summarizeSpxDesk(merged);
 }
 
-export async function getSpxPlayState() {
+async function evaluateSpxPlayState() {
   const { merged } = await loadMergedSpxDesk();
   const technicals = await buildPlayTechnicals(merged.price, {
     vwap: merged.vwap,
@@ -82,6 +84,17 @@ export async function getSpxPlayState() {
     lod: merged.lod,
   });
   return readSpxPlaySnapshot(merged, technicals);
+}
+
+/**
+ * Single derivation for member `/api/market/spx/play`, BIE `spx_full_state`, and Largo
+ * `get_spx_play`. Collapses member polls into one eval per cache window — no
+ * stale-while-revalidate so BIE/Largo and the dashboard never disagree on grade/score.
+ */
+export async function getSpxPlayState() {
+  const date = todayEtYmd();
+  const ttlMs = playMemberReadCacheSec() * 1000;
+  return withServerCache(`spx-play-read:${date}`, ttlMs, evaluateSpxPlayState);
 }
 
 export async function getSpxOpenPlay() {

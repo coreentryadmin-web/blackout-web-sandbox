@@ -1,5 +1,48 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 16:14 ET
+Last updated: 2026-07-06 16:15 ET
+
+## spx-rth-2026-07-06 — SPX Slayer all-day verify pass (~15:18–16:15 ET)
+
+**Session:** Market-open verify pass per `docs/ops/SPX-RTH-ALL-DAY-AGENT.md`. Commands: `validate:spx-rth` (×3) → `validate:spx-e2e` (×2) → `validate:spx-bie` → 60s live auto-update probe.
+
+### Validation summary (final pass, warm cache)
+
+| Check | Result |
+|---|---|
+| `npm run validate:spx-rth` | ⚠️ **6 PASS / 1 FAIL** — `spx:bie-consistency` (see P0 below); infra/matrix/e2e/data-correctness GREEN on retry |
+| `npm run validate:spx-e2e` | ✅ **GREEN** — 17 PASS / 0 FAIL / 1 SKIP |
+| `npm run validate:rth-open` | ✅ GREEN — spx-evaluate ticking, crons ok |
+| `heatmap-matrix-audit --tickers=SPX` | ✅ **152 strikes · 32 checks · 0 flags** |
+| 60s live auto-update | ⚠️ Static spot post-16:00 ET close (expected off-hours) |
+
+### UI E2E — every control + cross-tool GREEN
+
+| Probe | Result |
+|---|---|
+| `matrix:every-cell-api` | ✅ GEX+VEX+DEX+CHARM · 152 strikes · finite |
+| `ui:click-gex-tab` / `ui:click-vex-tab` | ✅ clicked · 173 strike rows |
+| `ui:matrix-text-sanity` | ✅ zero NaN/undefined |
+| `integration:thermal-cross-validation` | ✅ same heatmap route |
+| `integration:helix-flows` | ✅ 30 prints |
+| `integration:grid-bootstrap` | ✅ |
+| `integration:zerodte-board` | ✅ 3 setups |
+| `integration:nighthawk-edition` | ✅ |
+| `integration:largo-spx-query` | ✅ `blackout_intelligence` |
+| `integration:bie-play-route` | ✅ action=SCANNING, no stale confirmations |
+| `ui:click-commentary-expand` | ⚠️ SKIP — no expand control on dashboard |
+
+### Findings
+
+| Severity | ID | Detail | Backing API | Fix defer? |
+|---|---|---|---|---|
+| **P0** | `spx-play-member-bie-divergence` | Member `GET /api/market/spx/play` disagreed with `getSpxPlayState()` (BIE/Largo): grade A vs B, score 83 vs 71, `gates.play_idea` text mismatch — root cause: route duplicated the eval chain behind its own `withServerCache({ staleWhileRevalidate: true })` while BIE called fresh `getSpxPlayState()` | `validate:spx-bie` Layer B live diff @ 20:09 ET | **FIXED** — PR #621 |
+| **P1** | `spx-gex-heatmap-cold-latency` | `/api/market/gex-heatmap?ticker=SPX` cold miss **83–120s** (CF 524 / curl timeout) under audit burst; **~14s** warm | curl timing @ 19:57 UTC | post-close — heatmap-warm cron carries members; audit scripts need longer timeout or warm-first |
+| **P2** | `spx-commentary-expand-missing` | No commentary expand/collapse control on `/dashboard` for E2E to click | `validate:spx-e2e` SKIP | post-close UX |
+| **P2** | `spx-bie-route-duplication` | Member route duplicated chain vs `getSpxPlayState()` (structural drift risk) | `validate:spx-bie` WARN | **FIXED** PR #621 |
+
+**Reports:** `audit-output/spx-rth-2026-07-06-verify-1783368608139.json`, `spx-dashboard-e2e-1783368516515.json`, `spx-bie-consistency-2026-07-06T20-09-34-054Z.json`
+
+---
 
 ## RTH comprehensive sweep — 2026-07-06 ~16:04–16:14 ET (post-close pass #4)
 

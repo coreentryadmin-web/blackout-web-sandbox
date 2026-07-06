@@ -8,7 +8,22 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🔴 P1 FOUND+FIXED 2026-07-06 — Thermal's zero-gamma-flip detector was structurally blind to half of all real crossings; CHARM's pinning-direction narrative was backwards (branch `fix/gex-zero-flip-and-charm-direction`)
+## 🔴 P0 FOUND+FIXED 2026-07-06 — member `/api/market/spx/play` diverged from BIE/Largo `getSpxPlayState()` (grade/score/gates) due to duplicate cache lane with SWR (branch `fix/spx-play-single-derivation`)
+
+**Surface:** SPX Slayer trade alerts (`/dashboard`), BIE `spx_full_state`, Largo `get_spx_play`.
+
+**Root cause:** `src/app/api/market/spx/play/route.ts` re-implemented `loadMergedSpxDesk → buildPlayTechnicals → readSpxPlaySnapshot` inline and wrapped it in `withServerCache(..., { staleWhileRevalidate: true })`, while BIE/Largo called `getSpxPlayState()` directly with no SWR. During RTH verify @ 20:09 ET, Layer B of `validate:spx-bie` caught grade **A vs B**, score **83 vs 71**, `factors.length` 13 vs 14, and mismatched `gates.play_idea` copy — far beyond the documented 0.005 rounding tolerance.
+
+**Evidence:** `audit-output/spx-bie-consistency-2026-07-06T20-09-34-054Z.json` — 5 FAIL on live field diff; `validate:spx-e2e` passed SCANNING with no stale confirmations on the member route.
+
+**Fix:** moved the shared `spx-play-read:${date}` cache into `getSpxPlayState()` (no `staleWhileRevalidate`); member route now calls `getSpxPlayState()` + `roundFloats()` only. Single derivation for member + BIE + Largo.
+
+**Tests:** `src/lib/platform/spx-service.play.test.ts` — source-invariant guards (route delegates to `getSpxPlayState`, no duplicate chain/SWR).
+
+**Status:** FIXED (pending deploy).
+
+---
+
 
 **Surface:** `computeZeroGammaFlip()` and `computeCharmRegime()` in `src/lib/providers/polygon-options-gex.ts` — feed GEX `flip`, DEX `zero_level`, and CHARM `zero_level`/`regime.read` on every `/heatmap` (BlackOut Thermal) response, `GexPositioning.flip`/`distance_to_flip_pct`, the Shift/EOD history rings, `gex-regime-events.ts`, and Largo/BIE's live desk context (`largo-live-feed.ts:467`, "Charm/pinning read: ..."). Found by a background deep-audit agent tasked with independently re-verifying this file's regime math against live Polygon chains and finite-difference derivatives, continuing the standing "check Thermal's heatmap math, really deep" audit.
 
