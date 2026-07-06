@@ -214,6 +214,9 @@ async function isLargoKillSwitchTripped(): Promise<boolean> {
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+/** Keep mobile/CF proxies from killing silent tool-loop SSE legs (40–90s with no tokens). */
+const LARGO_SSE_HEARTBEAT_MS = 12_000;
+
 function wantsStream(req: NextRequest): boolean {
   if (req.nextUrl.searchParams.get("stream") === "1") return true;
   const accept = req.headers.get("accept") ?? "";
@@ -334,6 +337,11 @@ export async function POST(req: NextRequest) {
           }
         };
 
+        const heartbeatTimer = setInterval(() => {
+          send({ type: "ping", t: Date.now() });
+        }, LARGO_SSE_HEARTBEAT_MS);
+        send({ type: "ping", t: Date.now() });
+
         try {
           await runLargoQueryStream(question, resolvedSessionId, userId, (event) => {
             if (!send(event)) {
@@ -346,6 +354,7 @@ export async function POST(req: NextRequest) {
           console.error("[market/largo/query stream]", error);
           send({ type: "error", message: "Largo query failed" });
         } finally {
+          clearInterval(heartbeatTimer);
           closed = true;
           // Record one consumed query against the daily budget (best-effort, fail-open)
           // BEFORE releasing the concurrency slot. Recorded unconditionally: a started

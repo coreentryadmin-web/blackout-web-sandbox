@@ -8,6 +8,7 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+<<<<<<< HEAD
 ## 🟢 RESOLVED 2026-07-06 — CodeQL request-forgery alert (`api-tracked-fetch.ts:100`) actually closed: added a destination-host allowlist at the shared fetch choke point instead of relying on per-fragment ticker sanitizers (branch `fix/trackedfetch-host-allowlist`)
 
 **Surface:** `trackedFetch()` in `src/lib/api-tracked-fetch.ts` — the single network-egress choke point every external provider call in this codebase funnels through.
@@ -21,6 +22,17 @@ in this file.
 **Evidence:** 2 new tests in `api-tracked-fetch.test.ts` — a disallowed host rejects before any network call is attempted; a lookalike subdomain of a real provider (`api.unusualwhales.com.evil.com`) is correctly rejected (hostname comparison, not substring match). Existing tests updated to allowlist their local `127.0.0.1` test server via a new test-only `__allowFetchHostForTest()` escape hatch (never intended for application code). Full suite: 1803/1803 passing. `npx tsc --noEmit` clean. `npx eslint` clean. `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
 
 **Status:** FIXED — pushed; supersedes the "TRACKED (not blocking)" entry below, which is left in place as the record of what was tried and why it didn't work.
+=======
+## 🟡 P1 FOUND+FIXED 2026-07-06 — Largo mobile "Connection interrupted" on long tool-loop queries (branch `fix/largo-mobile-sse-heartbeat`)
+
+**Surface:** iOS Terminal Largo (`LargoNativeTerminal` / `useLargoChat`) — user question *"How is Asts looking?"*.
+
+**Root cause:** Backend succeeded (live probe 200 in 32–44s) but SSE stream was silent for 40–90s during Claude tool loops (tokens deliberately withheld until verification). Mobile/CF proxies dropped the idle connection → client `queryLargoStream` threw *"stream ended without result"* → generic *"Connection interrupted"* copy. UI also rendered an empty assistant bubble above the thinking panel.
+
+**Fix:** (1) 12s `{type:"ping"}` heartbeats in `largo/query` SSE route; (2) client ignores pings + 130s abort timeout; (3) `largoStreamErrorMessage()` for 429/502/timeout/stream-cut; (4) defer assistant bubble until content arrives; (5) `LargoTerminal` refactored onto shared `useLargoChat` hook.
+
+**Status:** FIXED.
+>>>>>>> 2eb0a03e (fix(largo): SSE heartbeats + mobile stream UX for long tool loops)
 
 ---
 

@@ -1,5 +1,17 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 18:00 ET
+Last updated: 2026-07-06 22:35 ET
+
+## Largo mobile stream fix — 2026-07-06 (user-reported "Connection interrupted")
+
+**Session:** User screenshot on iOS Terminal Largo — *"How is Asts looking?"* → generic connection error after ~40s silent wait. Live API probe succeeded (200 in 32–44s); root cause was idle SSE legs during tool loops + empty assistant bubble + generic catch-all error.
+
+| Severity | ID | Fix | Status |
+|---|---|---|---|
+| **P1** | `largo-mobile-sse-idle-drop` | 12s SSE `ping` heartbeats on `/api/market/largo/query?stream=1` | **FIXED** |
+| **P2** | `largo-empty-bubble-during-load` | Defer assistant bubble until first token/done; show `LargoThinkingState` only | **FIXED** |
+| **P2** | `largo-generic-connection-error` | `largoStreamErrorMessage()` — 429/502/timeout/stream-cut copy | **FIXED** |
+
+---
 
 ## post-close fix batch — 2026-07-06 (all remaining open issues)
 

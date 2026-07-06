@@ -374,6 +374,9 @@ export const fetchMarketNews = () =>
 
 // ── Largo (BlackOut intel only) ───────────────────────────────────────────────
 
+/** Client-side ceiling — route maxDuration is 120s; leave headroom for slow mobile proxies. */
+const LARGO_STREAM_TIMEOUT_MS = 130_000;
+
 export const queryLargo = (question: string, sessionId: string) =>
   marketFetch<{ answer: string; session_id: string; source?: string; tools_used?: string[] }>(
     "/largo/query",
@@ -397,23 +400,40 @@ export async function queryLargoStream(
   followups?: string[];
   verification?: ClaimVerification;
 }> {
-  const res = await fetch(`${MARKET_BASE}/largo/query?stream=1`, {
-    method: "POST",
-    cache: "no-store",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      Pragma: "no-cache",
-      "Cache-Control": "no-cache",
-    },
-    body: JSON.stringify({ question, session_id: sessionId }),
-  });
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), LARGO_STREAM_TIMEOUT_MS);
 
-  if (!res.ok) throw new Error(`Market /largo/query → ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${MARKET_BASE}/largo/query?stream=1`, {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: abort.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        Pragma: "no-cache",
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify({ question, session_id: sessionId }),
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (abort.signal.aborted) throw new Error("Largo stream timeout");
+    throw err;
+  }
+
+  if (!res.ok) {
+    clearTimeout(timeout);
+    throw new Error(`Market /largo/query → ${res.status}`);
+  }
 
   const reader = res.body?.getReader();
-  if (!reader) throw new Error("Market /largo/query stream unavailable");
+  if (!reader) {
+    clearTimeout(timeout);
+    throw new Error("Largo stream unavailable");
+  }
 
   const decoder = new TextDecoder();
   let buffer = "";
@@ -428,49 +448,57 @@ export async function queryLargoStream(
       }
     | null = null;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload) continue;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload) continue;
 
-      const event = JSON.parse(payload) as {
-        type: string;
-        text?: string;
-        name?: string;
-        message?: string;
-        answer?: string;
-        session_id?: string;
-        source?: string;
-        tools_used?: string[];
-        followups?: string[];
-        verification?: ClaimVerification;
-      };
-
-      if (event.type === "token" && event.text) onToken(event.text);
-      if (event.type === "tool_start" && event.name) onTool?.(event.name);
-      if (event.type === "done" && event.answer && event.session_id) {
-        result = {
-          answer: event.answer,
-          session_id: event.session_id,
-          source: event.source,
-          tools_used: event.tools_used,
-          followups: event.followups,
-          verification: event.verification,
+        const event = JSON.parse(payload) as {
+          type: string;
+          text?: string;
+          name?: string;
+          message?: string;
+          answer?: string;
+          session_id?: string;
+          source?: string;
+          tools_used?: string[];
+          followups?: string[];
+          verification?: ClaimVerification;
         };
-      }
-      if (event.type === "error") {
-        throw new Error(event.message ?? "Largo stream failed");
+
+        if (event.type === "ping") continue;
+        if (event.type === "token" && event.text) onToken(event.text);
+        if (event.type === "tool_start" && event.name) onTool?.(event.name);
+        if (event.type === "done" && event.answer && event.session_id) {
+          result = {
+            answer: event.answer,
+            session_id: event.session_id,
+            source: event.source,
+            tools_used: event.tools_used,
+            followups: event.followups,
+            verification: event.verification,
+          };
+        }
+        if (event.type === "error") {
+          throw new Error(event.message ?? "Largo stream failed");
+        }
       }
     }
+  } catch (err) {
+    if (abort.signal.aborted) throw new Error("Largo stream timeout");
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!result) throw new Error("Largo stream ended without result");

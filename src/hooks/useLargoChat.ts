@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { queryLargoStream, fetchLargoSession } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { isIosAppShell } from "@/lib/ios-app-shell";
+import { largoStreamErrorMessage } from "@/lib/largo-stream-errors";
 
 export type LargoMessage = {
   id: string;
@@ -65,6 +66,18 @@ export const LARGO_SUGGESTIONS = [
   "Give me today's market structure in 3 lines",
 ] as const;
 
+function upsertAssistantMessage(
+  messages: LargoMessage[],
+  assistantId: string,
+  patch: Partial<LargoMessage> & { content: string }
+): LargoMessage[] {
+  const existing = messages.find((msg) => msg.id === assistantId);
+  if (!existing) {
+    return [...messages, { id: assistantId, role: "assistant", ...patch }];
+  }
+  return messages.map((msg) => (msg.id === assistantId ? { ...msg, ...patch } : msg));
+}
+
 /** Shared Largo chat session + streaming (web desk + native mobile). */
 export function useLargoChat() {
   const [messages, setMessages] = useState<LargoMessage[]>([LARGO_WELCOME]);
@@ -114,7 +127,7 @@ export function useLargoChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, activeTools]);
 
   async function runQuery(rawQ: string) {
     const q = rawQ.trim();
@@ -129,7 +142,6 @@ export function useLargoChat() {
     setStreaming(false);
 
     const assistantId = `a-${++msgId.current}`;
-    setMessages((m) => [...m, { id: assistantId, role: "assistant", content: "" }]);
 
     streamBufRef.current = "";
     if (streamFlushRef.current) {
@@ -148,9 +160,7 @@ export function useLargoChat() {
             streamFlushRef.current = setTimeout(() => {
               streamFlushRef.current = null;
               const content = streamBufRef.current;
-              setMessages((m) =>
-                m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))
-              );
+              setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
             }, 50);
           }
         },
@@ -162,24 +172,17 @@ export function useLargoChat() {
       sessionId.current = res.session_id;
       sessionStorage.setItem(LARGO_SESSION_KEY, sessionId.current);
       setMessages((m) =>
-        m.map((msg) =>
-          msg.id === assistantId ? { ...msg, content: res.answer, tools: res.tools_used } : msg
-        )
+        upsertAssistantMessage(m, assistantId, {
+          content: res.answer,
+          tools: res.tools_used,
+        })
       );
       setFollowups(Array.isArray(res.followups) ? res.followups.slice(0, 3) : []);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "";
-      let content =
-        "Connection interrupted — couldn't reach live data. Send your question again.";
-      if (raw.includes("401")) content = "Sign in with Premium to reach Largo.";
-      else if (raw.includes("403")) {
-        content = isIosAppShell()
-          ? "Largo is a Premium instrument. Membership is managed on the web."
-          : "Largo is a Premium instrument. Unlock Premium to deploy it.";
-      } else if (raw.includes("503")) content = "Largo offline — the desk will reconnect shortly.";
-      setMessages((m) =>
-        m.map((msg) => (msg.id === assistantId ? { ...msg, content } : msg))
-      );
+      const content = largoStreamErrorMessage(err instanceof Error ? err.message : "", {
+        ios: isIosAppShell(),
+      });
+      setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
     } finally {
       if (streamFlushRef.current) {
         clearTimeout(streamFlushRef.current);
@@ -187,6 +190,7 @@ export function useLargoChat() {
       }
       setLoading(false);
       setStreaming(false);
+      setActiveTools([]);
     }
   }
 
