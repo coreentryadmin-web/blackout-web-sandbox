@@ -6,11 +6,14 @@
 // to Claude (the general-reasoning fallback). Conservative by design: a missed
 // route costs one Claude call; a wrong route costs trust. When unsure → null.
 
+import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
+
 export type BieIntent =
   | "zerodte_plays" // "how are today's plays doing" / the 0DTE board
   | "ticker_play_state" // "how's the NVDA play" — a name on today's ledger
   | "spx_structure" // "SPX levels / walls / gamma flip"
-  | "market_context"; // "what's the market doing right now"
+  | "market_context" // "what's the market doing right now"
+  | "ticker_ecosystem"; // "what's going on with NVDA" — any known ticker, not just today's ledger
 
 export type BieRoute = {
   intent: BieIntent;
@@ -28,9 +31,30 @@ const MARKET_CONTEXT_RE =
 
 const PLAY_STATE_RE = /\b(play|position|status|doing|hold|trim|exit|sell|still (valid|good|on))\b/i;
 
+// Deliberately excludes "think"/"opinion"/"take on this" phrasing that could
+// read as wanting reasoning, not a data dump — REASONING_RE below already
+// sends anything with "think" to Claude, so a branch built around it here
+// would be dead code anyway (REASONING_RE runs first).
+const TICKER_ECOSYSTEM_RE =
+  /\bwhat'?s? (going on|happening) (with|on)\b|\bwhat'?s? the (word|story|deal|latest) (with|on)\b|\bany (info|news|flow|activity) on\b|\banything (on|about)\b/i;
+
 /** Questions with these shapes need REASONING, not lookup — always Claude. */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
+
+/** A known ticker (curated whitelist) or an explicit $-prefixed symbol only —
+ *  never "any capitalized 1-5 letter token," which mis-pins words like CALLS/
+ *  HOLD/SETUP/BULL as tickers (the exact bug LARGO-9 fixed elsewhere; reusing
+ *  the same KNOWN_TICKERS whitelist here instead of re-deriving a weaker check). */
+function extractKnownTicker(question: string): string | null {
+  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
+  for (const m of matches) {
+    const hadDollar = m.startsWith("$");
+    const cand = m.replace(/^\$/, "");
+    if (hadDollar || KNOWN_TICKERS.has(cand)) return cand;
+  }
+  return null;
+}
 
 /**
  * Classify a question for deterministic answering. `ledgerTickers` = tickers on
@@ -52,6 +76,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
 
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
   if (MARKET_CONTEXT_RE.test(q)) return { intent: "market_context", ticker: null };
+
+  // Any known ticker (not just today's ledger) + an open-ended "what's going
+  // on" ask — routes to the same cross-instrument snapshot get_ecosystem_context
+  // already gives Claude as a tool, just without the LLM round trip.
+  if (TICKER_ECOSYSTEM_RE.test(q)) {
+    const ticker = extractKnownTicker(q);
+    if (ticker) return { intent: "ticker_ecosystem", ticker };
+  }
 
   return null;
 }
@@ -77,5 +109,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["How are today's plays doing?", "Where are dealers positioned?", "Is this flow real or noise?"];
     case "market_context":
       return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
+    case "ticker_ecosystem":
+      return ["Is that confirmed by Night Hawk too?", "How are today's plays doing?", "What's the SPX setup right now?"];
   }
 }

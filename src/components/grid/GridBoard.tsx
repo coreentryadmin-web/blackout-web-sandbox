@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { PulseStrip } from "./PulseStrip";
 import { GridNewsPanel } from "./GridNewsPanel";
 import { GridFlowPanel } from "./GridFlowPanel";
@@ -79,16 +80,30 @@ function GridToolbar() {
   );
 }
 
+/** Defer below-the-fold panel mount so bootstrap + first row paint before poll fan-out. */
+function GridDeferredMount({ delayMs, children }: { delayMs: number; children: ReactNode }) {
+  const [mounted, setMounted] = useState(delayMs === 0);
+  useEffect(() => {
+    if (mounted) return;
+    const id = window.setTimeout(() => setMounted(true), delayMs);
+    return () => window.clearTimeout(id);
+  }, [delayMs, mounted]);
+  if (!mounted) return <div className="grid-panel-deferred" aria-hidden />;
+  return children;
+}
+
 /** Renders the masonry, skipping hidden panels; each card wrapped in its scope. */
 function GridDeck() {
   const layout = useGridLayout();
   return (
     <div className="grid-board">
-      {PANELS.map(({ id, title, node }) =>
+      {PANELS.map(({ id, title, node }, index) =>
         layout?.isHidden(id) ? null : (
-          <GridPanelScope key={id} id={id} title={title}>
-            {node}
-          </GridPanelScope>
+          <GridDeferredMount key={id} delayMs={index < 4 ? 0 : (index - 3) * 120}>
+            <GridPanelScope id={id} title={title}>
+              {node}
+            </GridPanelScope>
+          </GridDeferredMount>
         )
       )}
     </div>
@@ -101,7 +116,7 @@ function GridDeck() {
  */
 export function GridBoard() {
   return (
-    <SWRConfig value={{ revalidateOnFocus: true }}>
+    <SWRConfig value={{ revalidateOnFocus: false, dedupingInterval: 3000 }}>
       <GridLayoutProvider>
         <GridBootstrapPrefetch />
         <GridBanner />

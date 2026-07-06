@@ -7,6 +7,8 @@ import {
   resolveOptionsRoot,
   type GexHeatmap,
   type ChainContract,
+  type DexMetricBlock,
+  type CharmMetricBlock,
 } from "@/lib/providers/polygon-options-gex";
 import { gexPositioningFromHeatmap } from "@/lib/providers/gex-positioning";
 import {
@@ -38,6 +40,20 @@ import { odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRow
 // DESIGN: this is a DELIBERATELY INDEPENDENT re-derivation of the key aggregates, NOT a
 // fork of the GEX engine. The argmax/flip/sum algorithms below are written from scratch
 // here so a bug in the production helpers can't hide behind a shared implementation.
+//
+// DEX/CHARM (task #139): polygon-options-gex.ts's `buildMetric()` computes net dealer
+// dollar-DELTA (DEX) and dollar-CHARM (CHARM) in the SAME contract pass as GEX/VEX (no
+// extra fetch) and serves them on `GexHeatmap.dex` / `GexHeatmap.charm` — but until this
+// task NOTHING independently validated them (this file was 100% GEX/VEX). The
+// `dexCharmInvariantChecks` / `dexCharmSanityChecks` / `dexCharmCrossToolChecks` functions
+// below extend coverage to both blocks, mirroring the GEX/VEX pattern check-for-check
+// (Σ==total, cell-resum, per-strike sign integrity, a real-crossing check for `zero_level`
+// analogous to the gamma flip, plus a posture-vs-sign invariant unique to DEX/CHARM since
+// neither block carries a call/put-wall pair). They are ADDITIVE, separate functions —
+// `invariantChecks` / `sanityChecks` / `crossToolChecks` above are unmodified byte-for-byte.
+// DEX/CHARM have no cross-provider oracle today (no second source computes them) — that
+// stays an honest coverage gap, exactly like the non-SPX GEX case already handled below,
+// not a fabricated check against nothing.
 // ---------------------------------------------------------------------------
 
 /** Tolerances — wide enough to never false-positive on fp/timing jitter, tight enough to catch a real bug. */
@@ -410,6 +426,253 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
 }
 
 // ---------------------------------------------------------------------------
+// LAYER 2 (cont'd) — DEX / CHARM INVARIANTS (task #139).
+//
+// DEX (net dealer dollar-DELTA) and CHARM (net dealer dollar-CHARM) are computed by the
+// SAME buildMetric() contract pass as GEX/VEX (polygon-options-gex.ts's buildMetric(),
+// wired at ~2226-2229) and already SERVED on GexHeatmap.dex / GexHeatmap.charm
+// (dex_strike_totals / charm_strike_totals / zero_level / regime.posture, etc.) — before
+// this task they had ZERO independent validation. This mirrors the GEX/VEX Σ==total /
+// cell-resum / per-strike-sign trio from the loop ABOVE, applied to dex/charm, WITHOUT
+// touching that loop (it is left byte-for-byte as written; this is a separate, additive
+// function wired in by verifyHeatmapTicker's runners list below).
+//
+// Two things do NOT carry over 1:1 from GEX, by design of the served shape
+// (polygon-options-gex.ts:565-612):
+//   • DexMetricBlock / CharmMetricBlock carry NO call/put-wall pair — only a `zero_level`
+//     (per-strike sign-crossing nearest spot) — so INV-3's "wall == argmax" check has no
+//     analog here. `zero_level` DOES have a direct analog to INV-4 (gamma flip): both are
+//     produced by the SAME computeZeroGammaFlip() helper the engine uses for gex.flip
+//     (polygon-options-gex.ts:2263 dex, :2274 charm) — so the SAME "is this a real neg→pos
+//     crossing" check applies unchanged, just renamed (a served level that ISN'T a real
+//     sign crossing is the same class of bug regardless of which metric it's on).
+//   • Both blocks expose a `regime.posture` that is a PURE, DOCUMENTED function of
+//     sign(total) (computeDexRegime / computeCharmRegime, polygon-options-gex.ts:902-935 —
+//     total>0 ⇒ "long"/"positive", total<0 ⇒ "short"/"negative", else null). That
+//     determinism makes posture-vs-sign a clean, hard, no-oracle-needed invariant with no
+//     GEX equivalent (GEX's posture is instead vs the flip, already covered by cross-tool
+//     checks) — added below as its own check per block.
+//
+// DEX/CHARM are OPTIONAL on GexHeatmap (older cached payloads predate them) — absence is
+// reported `skipped`, never fabricated, never flagged.
+// ---------------------------------------------------------------------------
+export function dexCharmInvariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
+  const out: CheckResult[] = [];
+  const spot = hm.spot;
+  const nearTermExpiries = new Set([...hm.expiries].sort().slice(0, 8));
+
+  // ── DEX ──────────────────────────────────────────────────────────────────
+  if (!hm.dex) {
+    out.push(
+      mk(ctx, "invariant", "net_dex", "skipped", "No DEX block on this matrix (older cached payload predates it) — skipped, not flagged.", {
+        id: "block-present",
+      })
+    );
+  } else {
+    out.push(...blockSumAndSignChecks(ctx, "net_dex", hm.dex, nearTermExpiries));
+    out.push(...zeroLevelRealCrossingCheck(ctx, "dex_zero_level", hm.dex.strike_totals, hm.dex.zero_level, spot));
+    out.push(...postureMatchesSignCheck(ctx, "dex_posture", hm.dex.total, hm.dex.regime.posture, "long", "short"));
+  }
+
+  // ── CHARM ────────────────────────────────────────────────────────────────
+  if (!hm.charm) {
+    out.push(
+      mk(ctx, "invariant", "net_charm", "skipped", "No CHARM block on this matrix (older cached payload predates it) — skipped, not flagged.", {
+        id: "block-present",
+      })
+    );
+  } else {
+    out.push(...blockSumAndSignChecks(ctx, "net_charm", hm.charm, nearTermExpiries));
+    out.push(...zeroLevelRealCrossingCheck(ctx, "charm_zero_level", hm.charm.strike_totals, hm.charm.zero_level, spot));
+    out.push(...postureMatchesSignCheck(ctx, "charm_posture", hm.charm.total, hm.charm.regime.posture, "positive", "negative"));
+  }
+
+  return out;
+}
+
+/**
+ * Σ(per-strike total)==total, cell-resum==strike_totals, and per-strike sign-integrity —
+ * the SAME three checks the GEX/VEX loop in `invariantChecks` runs (INV-1 / INV-2 / INV-2b),
+ * extracted here so `dexCharmInvariantChecks` can run them for DEX/CHARM verbatim WITHOUT
+ * that loop importing or calling this (it stays self-contained, exactly as originally
+ * written). Any wording/tolerance change here has NO effect on the GEX/VEX checks above.
+ */
+function blockSumAndSignChecks(
+  ctx: Ctx,
+  metricKey: "net_dex" | "net_charm",
+  block: Pick<DexMetricBlock | CharmMetricBlock, "cells" | "strike_totals" | "total">,
+  nearTermExpiries: Set<string>
+): CheckResult[] {
+  const out: CheckResult[] = [];
+  const strikeTotals = block.strike_totals;
+  const reportedTotal = block.total;
+
+  // Σ(per-strike total) == reported total (within fp tolerance).
+  const independentSum = sumTotals(strikeTotals);
+  const fd = fractionalDiff(independentSum, reportedTotal);
+  out.push(
+    mk(
+      ctx,
+      "invariant",
+      metricKey,
+      fd <= TOL.netFractional ? "consistency-only" : "flag",
+      fd <= TOL.netFractional
+        ? `Σ(strike_totals)=${independentSum.toExponential(4)} reconciles to reported total ${reportedTotal.toExponential(4)} (Δ ${(fd * 100).toExponential(2)}%).`
+        : `Σ(strike_totals)=${independentSum.toExponential(4)} does NOT match reported total ${reportedTotal.toExponential(4)} — Δ ${(fd * 100).toFixed(4)}% > tol (aggregation/scale bug).`,
+      { id: "strike-sum-eq-total", expected: independentSum, actual: reportedTotal, tolerance: TOL.netFractional }
+    )
+  );
+
+  // Cells re-summed to near-term == strike_totals (the matrix the user SEES matches levels).
+  const reSummed = reSumCellsToNearTermTotals(block.cells, nearTermExpiries);
+  let worstCellDiff = 0;
+  let worstStrike = "";
+  const keys = new Set([...Object.keys(reSummed), ...Object.keys(strikeTotals)]);
+  for (const k of keys) {
+    const a = Number(reSummed[k] ?? 0);
+    const b = Number(strikeTotals[k] ?? 0);
+    const d = fractionalDiff(a, b);
+    if (d > worstCellDiff) {
+      worstCellDiff = d;
+      worstStrike = k;
+    }
+  }
+  if (Object.keys(reSummed).length > 0) {
+    out.push(
+      mk(
+        ctx,
+        "invariant",
+        metricKey,
+        worstCellDiff <= 0.001 ? "consistency-only" : "skipped",
+        worstCellDiff <= 0.001
+          ? `Re-summed cells reconcile to strike_totals across ${Object.keys(strikeTotals).length} strikes (worst Δ ${(worstCellDiff * 100).toExponential(2)}%).`
+          : `Cell-vs-strike_total reconciliation inconclusive at ${worstStrike} (Δ ${(worstCellDiff * 100).toFixed(2)}%) — likely the near-term expiry-axis approximation, not a bug; skipped to avoid false flag.`,
+        { id: "cells-eq-strike-totals", tolerance: 0.001 }
+      )
+    );
+  }
+
+  // Per-strike SIGN integrity (temporal-immune — see INV-2b's comment above for the full
+  // rationale; identical logic, applied to the DEX/CHARM cell/strike_total pair).
+  {
+    let signConflictStrike = "";
+    let conflictCellSum = 0;
+    let conflictTotal = 0;
+    for (const [k, totalRaw] of Object.entries(strikeTotals)) {
+      const total = Number(totalRaw);
+      const cellSum = Number(reSummed[k] ?? 0);
+      if (!Number.isFinite(total) || !Number.isFinite(cellSum)) continue;
+      if (Math.abs(total) < 1 || Math.abs(cellSum) < Math.abs(total) * 1e-3) continue;
+      if (Math.sign(cellSum) !== Math.sign(total)) {
+        signConflictStrike = k;
+        conflictCellSum = cellSum;
+        conflictTotal = total;
+        break;
+      }
+    }
+    out.push(
+      mk(
+        ctx,
+        "invariant",
+        metricKey,
+        signConflictStrike === "" ? "consistency-only" : "flag",
+        signConflictStrike === ""
+          ? `Per-strike SIGN integrity holds: every strike's served cell re-sum agrees in sign with its strike_total (temporal-immune; no fresh fetch).`
+          : `Per-strike SIGN CONFLICT at ${signConflictStrike}: served cells re-sum to ${conflictCellSum.toExponential(3)} but strike_total is ${conflictTotal.toExponential(3)} — the served matrix contradicts ITSELF (per-cell sign / aggregation bug), independent of any timing.`,
+        { id: "cell-sign-eq-strike-total", expected: conflictTotal, actual: conflictCellSum }
+      )
+    );
+  }
+
+  return out;
+}
+
+/**
+ * The zero_level (DEX/CHARM) analog of INV-4's gamma-flip check: is the served level a REAL
+ * neg→pos sign change of the per-strike net totals? Reuses `deriveFlip` verbatim (it is
+ * generic over any strike-total map — it does not know or care whether the metric is GEX,
+ * DEX, or CHARM), so a bug in dex/charm's zero-level detection is caught exactly like a
+ * gamma-flip bug would be.
+ */
+function zeroLevelRealCrossingCheck(
+  ctx: Ctx,
+  metric: "dex_zero_level" | "charm_zero_level",
+  strikeTotals: Record<string, number>,
+  reported: number | null,
+  spot: number
+): CheckResult[] {
+  const derived = deriveFlip(strikeTotals, spot);
+  if (reported == null && derived == null) {
+    return [
+      mk(ctx, "invariant", metric, "consistency-only", "No clean neg→pos crossing and none reported — consistent.", {
+        id: "zero-level-real-crossing",
+      }),
+    ];
+  }
+  if (reported != null && derived != null) {
+    const close = Math.abs(reported - derived) <= Math.max(spot * 0.01, 1);
+    return [
+      mk(
+        ctx,
+        "invariant",
+        metric,
+        close ? "consistency-only" : "flag",
+        close
+          ? `Reported zero-level ${fmt(reported)} matches an independent neg→pos crossing ${fmt(derived)}.`
+          : `Reported zero-level ${fmt(reported)} is NOT at an independent neg→pos crossing (nearest ${fmt(derived)}) — zero-level is not a real sign change.`,
+        { id: "zero-level-real-crossing", expected: derived, actual: reported, tolerance: Math.max(spot * 0.01, 1) }
+      ),
+    ];
+  }
+  // One side null, the other not — mirrors INV-4's fallback handling: only flag-worthy when
+  // WE find a clean crossing near spot and the engine reports none (a dropped real crossing).
+  const flagWorthy = reported == null && derived != null && spot > 0 && Math.abs(derived - spot) < spot * 0.05;
+  return [
+    mk(
+      ctx,
+      "invariant",
+      metric,
+      flagWorthy ? "flag" : "consistency-only",
+      flagWorthy
+        ? `A clean neg→pos crossing exists near spot at ${fmt(derived)} but the matrix reports NO zero-level — zero-level detection may be dropping a real crossing.`
+        : `Zero-level detection differs from the per-strike derivation (reported ${fmt(reported)}, derived ${fmt(derived)}) — within the documented fallback behavior; not flagged.`,
+      { id: "zero-level-real-crossing", expected: derived, actual: reported }
+    ),
+  ];
+}
+
+/**
+ * DEX/CHARM-only invariant with no GEX analog: `regime.posture` is a PURE, DOCUMENTED
+ * function of sign(total) (computeDexRegime / computeCharmRegime, polygon-options-gex.ts:
+ * 902-935) — total>0 ⇒ `posLabel`, total<0 ⇒ `negLabel`, else null. A served posture that
+ * disagrees with the served total's own sign is a #80-class label/number divergence bug,
+ * catchable with NO oracle because both sides are already on the SAME payload.
+ */
+function postureMatchesSignCheck(
+  ctx: Ctx,
+  metric: "dex_posture" | "charm_posture",
+  total: number,
+  servedPosture: string | null,
+  posLabel: string,
+  negLabel: string
+): CheckResult[] {
+  const expectedPosture: string | null = Number.isFinite(total) && total !== 0 ? (total > 0 ? posLabel : negLabel) : null;
+  const ok = expectedPosture === servedPosture;
+  return [
+    mk(
+      ctx,
+      "invariant",
+      metric,
+      ok ? "consistency-only" : "flag",
+      ok
+        ? `${metric} "${servedPosture ?? "null"}" matches sign(total=${total.toExponential(3)}) per the documented posture mapping.`
+        : `${metric} "${servedPosture ?? "null"}" CONTRADICTS sign(total=${total.toExponential(3)}) — documented mapping implies "${expectedPosture ?? "null"}" (label/number divergence, #80 class).`,
+      { id: "posture-matches-sign", expected: expectedPosture, actual: servedPosture }
+    ),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // LAYER 3 — SANITY BOUNDS (plausible ranges, no NaN/Inf, valid expiries)
 // ---------------------------------------------------------------------------
 function sanityChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
@@ -511,6 +774,90 @@ function sanityChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
         { id: "net-gex-magnitude", actual: hm.gex.total, tolerance: ceiling }
       )
     );
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// LAYER 3 (cont'd) — DEX / CHARM SANITY BOUNDS (task #139). Same shape as `sanityChecks`
+// above (NaN/Inf guard, near-spot banding, magnitude ceiling) applied to the DEX/CHARM
+// totals + zero_level — a separate, additive function; `sanityChecks` itself is untouched.
+// ---------------------------------------------------------------------------
+export function dexCharmSanityChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
+  const out: CheckResult[] = [];
+
+  const blocks: Array<{
+    metricKey: "net_dex" | "net_charm";
+    zeroMetric: "dex_zero_level" | "charm_zero_level";
+    label: "DEX" | "CHARM";
+    block: DexMetricBlock | CharmMetricBlock | undefined;
+  }> = [
+    { metricKey: "net_dex", zeroMetric: "dex_zero_level", label: "DEX", block: hm.dex },
+    { metricKey: "net_charm", zeroMetric: "charm_zero_level", label: "CHARM", block: hm.charm },
+  ];
+
+  for (const { metricKey, zeroMetric, label, block } of blocks) {
+    if (!block) {
+      out.push(
+        mk(ctx, "sanity-bound", metricKey, "skipped", `No ${label} block on this matrix — sanity bounds skipped, not flagged.`, {
+          id: "block-present",
+        })
+      );
+      continue;
+    }
+
+    // No NaN/Inf in the served total / zero_level.
+    const bad: string[] = [];
+    if (!Number.isFinite(block.total)) bad.push("total");
+    if (block.zero_level != null && !Number.isFinite(block.zero_level)) bad.push("zero_level");
+    out.push(
+      mk(
+        ctx,
+        "sanity-bound",
+        metricKey,
+        bad.length === 0 ? "consistency-only" : "flag",
+        bad.length === 0
+          ? `No NaN/Inf in served ${metricKey} aggregates (total, zero_level).`
+          : `Non-finite served ${metricKey} aggregate(s): ${bad.join(", ")}.`,
+        { id: "no-nan-inf" }
+      )
+    );
+
+    // zero_level within ±50% of spot (same banding sanity as call_wall/put_wall/flip/max_pain).
+    if (block.zero_level != null && hm.spot > 0) {
+      const within = Math.abs(block.zero_level - hm.spot) <= hm.spot * 0.5;
+      out.push(
+        mk(
+          ctx,
+          "sanity-bound",
+          zeroMetric,
+          within ? "consistency-only" : "flag",
+          within
+            ? `${zeroMetric} ${fmt(block.zero_level)} is within ±50% of spot ${fmt(hm.spot)}.`
+            : `${zeroMetric} ${fmt(block.zero_level)} is implausibly far from spot ${fmt(hm.spot)} (>50%) — strike-key/scale bug?`,
+          { id: `${zeroMetric}-near-spot`, expected: hm.spot, actual: block.zero_level, tolerance: hm.spot * 0.5 }
+        )
+      );
+    }
+
+    // Plausible magnitude ceiling — same spot²·1e8 absurd-blow-up tripwire as net GEX.
+    if (hm.spot > 0 && Number.isFinite(block.total)) {
+      const ceiling = hm.spot * hm.spot * 1e8;
+      const within = Math.abs(block.total) <= ceiling;
+      out.push(
+        mk(
+          ctx,
+          "sanity-bound",
+          metricKey,
+          within ? "consistency-only" : "flag",
+          within
+            ? `${metricKey} magnitude ${block.total.toExponential(2)} is within the plausible ceiling.`
+            : `${metricKey} magnitude ${block.total.toExponential(2)} exceeds the absurd-blow-up ceiling ${ceiling.toExponential(2)} — scale/units bug.`,
+          { id: `${metricKey}-magnitude`, actual: block.total, tolerance: ceiling }
+        )
+      );
+    }
   }
 
   return out;
@@ -1034,6 +1381,125 @@ async function crossToolChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResult[]>
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// LAYER 5 (cont'd) — DEX / CHARM CROSS-TOOL CONSISTENCY (task #139). getGexPositioning
+// (gex-positioning.ts) already surfaces net_dex/dex_posture/net_charm/charm_posture,
+// mirroring hm.dex/hm.charm 1:1 (gex-positioning.ts:76-89) — but nothing diffed them
+// against the matrix before. Same TEMPORAL-IMMUNE pattern `crossToolChecks` uses above:
+// map the ALREADY-HELD `hm` snapshot via the pure `gexPositioningFromHeatmap` (NOT a
+// second `fetchGexHeatmap` — it is a synchronous mapper over `hm`, so calling it again here
+// is free and can't introduce a cache-refresh timing skew), so a mismatch can only be a
+// real derivation bug. Separate, additive function — `crossToolChecks` itself is untouched.
+// ---------------------------------------------------------------------------
+export function dexCharmCrossToolChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
+  const out: CheckResult[] = [];
+  const pos = gexPositioningFromHeatmap(ctx.ticker, hm);
+  if (!pos) {
+    out.push(
+      mk(ctx, "cross-tool", "net_dex", "skipped", `getGexPositioning("${ctx.ticker}") returned null — cross-tool DEX/CHARM checks skipped.`, {
+        id: "positioning-vs-matrix-dex",
+      })
+    );
+    return out;
+  }
+
+  if (!hm.dex) {
+    out.push(
+      mk(ctx, "cross-tool", "net_dex", "skipped", "No DEX block on this matrix — cross-tool DEX check skipped.", {
+        id: "positioning-vs-matrix-dex",
+      })
+    );
+  } else if (pos.net_dex == null) {
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "net_dex",
+        "flag",
+        `Matrix has a DEX block (total ${hm.dex.total.toExponential(3)}) but getGexPositioning("${ctx.ticker}").net_dex is null — derivation gap.`,
+        { id: "positioning-vs-matrix-dex", expected: hm.dex.total, actual: null }
+      )
+    );
+  } else {
+    const dd = fractionalDiff(pos.net_dex, hm.dex.total);
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "net_dex",
+        dd <= TOL.netFractional ? "consistency-only" : "flag",
+        dd <= TOL.netFractional
+          ? `getGexPositioning net_dex matches matrix total ${hm.dex.total.toExponential(3)}.`
+          : `getGexPositioning net_dex ${pos.net_dex.toExponential(3)} != matrix total ${hm.dex.total.toExponential(3)}.`,
+        { id: "positioning-vs-matrix-dex", expected: hm.dex.total, actual: pos.net_dex, tolerance: TOL.netFractional }
+      )
+    );
+  }
+  if (hm.dex) {
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "dex_posture",
+        pos.dex_posture === hm.dex.regime.posture ? "consistency-only" : "flag",
+        pos.dex_posture === hm.dex.regime.posture
+          ? `getGexPositioning dex_posture "${pos.dex_posture}" == matrix dex.regime.posture "${hm.dex.regime.posture}".`
+          : `getGexPositioning dex_posture "${pos.dex_posture}" != matrix dex.regime.posture "${hm.dex.regime.posture}" (#80 class).`,
+        { id: "positioning-vs-matrix-dex-posture", expected: hm.dex.regime.posture, actual: pos.dex_posture }
+      )
+    );
+  }
+
+  if (!hm.charm) {
+    out.push(
+      mk(ctx, "cross-tool", "net_charm", "skipped", "No CHARM block on this matrix — cross-tool CHARM check skipped.", {
+        id: "positioning-vs-matrix-charm",
+      })
+    );
+  } else if (pos.net_charm == null) {
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "net_charm",
+        "flag",
+        `Matrix has a CHARM block (total ${hm.charm.total.toExponential(3)}) but getGexPositioning("${ctx.ticker}").net_charm is null — derivation gap.`,
+        { id: "positioning-vs-matrix-charm", expected: hm.charm.total, actual: null }
+      )
+    );
+  } else {
+    const cd = fractionalDiff(pos.net_charm, hm.charm.total);
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "net_charm",
+        cd <= TOL.netFractional ? "consistency-only" : "flag",
+        cd <= TOL.netFractional
+          ? `getGexPositioning net_charm matches matrix total ${hm.charm.total.toExponential(3)}.`
+          : `getGexPositioning net_charm ${pos.net_charm.toExponential(3)} != matrix total ${hm.charm.total.toExponential(3)}.`,
+        { id: "positioning-vs-matrix-charm", expected: hm.charm.total, actual: pos.net_charm, tolerance: TOL.netFractional }
+      )
+    );
+  }
+  if (hm.charm) {
+    out.push(
+      mk(
+        ctx,
+        "cross-tool",
+        "charm_posture",
+        pos.charm_posture === hm.charm.regime.posture ? "consistency-only" : "flag",
+        pos.charm_posture === hm.charm.regime.posture
+          ? `getGexPositioning charm_posture "${pos.charm_posture}" == matrix charm.regime.posture "${hm.charm.regime.posture}".`
+          : `getGexPositioning charm_posture "${pos.charm_posture}" != matrix charm.regime.posture "${hm.charm.regime.posture}" (#80 class).`,
+        { id: "positioning-vs-matrix-charm-posture", expected: hm.charm.regime.posture, actual: pos.charm_posture }
+      )
+    );
+  }
+
+  return out;
+}
+
 // ── small format helpers ──────────────────────────────────────────────────
 function fmt(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "n/a";
@@ -1086,11 +1552,14 @@ export async function verifyHeatmapTicker(ticker: string, marketOpen: boolean): 
   // Run each layer defensively — a throw becomes a skipped check, never an abort.
   const runners: Array<[string, () => CheckResult[] | Promise<CheckResult[]>]> = [
     ["invariant", () => invariantChecks(ctx, hm)],
+    ["dex-charm-invariant", () => dexCharmInvariantChecks(ctx, hm)],
     ["sanity", () => sanityChecks(ctx, hm)],
+    ["dex-charm-sanity", () => dexCharmSanityChecks(ctx, hm)],
     ["freshness", () => [freshnessCheck(ctx, hm, marketOpen)]],
     ["shadow", () => shadowRecomputeChecks(ctx, hm)],
     ["oracle", () => crossProviderChecks(ctx, hm)],
     ["cross-tool", () => crossToolChecks(ctx, hm)],
+    ["dex-charm-cross-tool", () => dexCharmCrossToolChecks(ctx, hm)],
   ];
   for (const [name, run] of runners) {
     try {

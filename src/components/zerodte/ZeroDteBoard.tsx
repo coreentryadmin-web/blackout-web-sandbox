@@ -148,7 +148,7 @@ type PlayRow = {
   nighthawkEcho: NighthawkEcho | null;
 };
 
-function mergePlays(
+export function mergePlays(
   setups: EnrichedZeroDteSetup[],
   ledger: LedgerRow[],
   heatState: SessionHeat["state"] | undefined

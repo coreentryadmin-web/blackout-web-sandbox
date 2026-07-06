@@ -200,6 +200,17 @@ async function runCleanup(): Promise<CleanupRunResult> {
     // coaching_alerts: every-10-min RTH rows (UI reads only the last ~30 min). Previously
     // unbounded — keep 90 days.
     { key: "coaching_alerts", run: () => deleteOlderThan("coaching_alerts", "generated_at", 90) },
+
+    // SPX shadow + engine telemetry — high write volume during RTH.
+    {
+      key: "spx_confluence_shadow_observations",
+      run: () => deleteOlderThan("spx_confluence_shadow_observations", "observed_at", 180),
+    },
+    {
+      key: "spx_engine_snapshots",
+      run: () => deleteOlderThan("spx_engine_snapshots", "observed_at", 90),
+    },
+    { key: "lotto_plays", run: () => deleteOlderThan("lotto_plays", "created_at", 365) },
   ];
 
   // allSettled: one table's transient timeout must not abort the rest of the nightly prune.

@@ -29,6 +29,20 @@ export type GroundingCheckResult = {
  * so a "745" read against a known 745.0 level passes, but a hallucinated "812" against a
  * 730-760 band fails.
  */
+function levelTolerance(lvl: number): number {
+  return Math.max(lvl * 0.0015, 0.5); // ~0.15% or half a point
+}
+
+/** Calendar years in news headlines — not SPX levels. */
+function isCalendarYear(n: number): boolean {
+  return Number.isInteger(n) && n >= 2018 && n <= 2038;
+}
+
+/** Current SPX index / strike band — excludes years (2026) and dollar magnitudes. */
+function isPlausibleSpxStrike(n: number): boolean {
+  return n >= 4000 && n <= 8000;
+}
+
 export function checkNumbersGrounded(text: string, known: number[]): GroundingCheckResult {
   if (known.length === 0) return { grounded: true, ungroundedValue: null };
 
@@ -36,7 +50,7 @@ export function checkNumbersGrounded(text: string, known: number[]): GroundingCh
   // even if it's numerically "close" to nothing.
   const minKnown = Math.min(...known);
   const maxKnown = Math.max(...known);
-  const tol = (lvl: number) => Math.max(lvl * 0.0015, 0.5); // ~0.15% or half a point
+  const tol = levelTolerance;
 
   // Match decimal numbers; the trailing context lets us reject %/money/units in code below.
   const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
@@ -69,6 +83,84 @@ export function checkNumbersGrounded(text: string, known: number[]): GroundingCh
     }
   }
   return { grounded: true, ungroundedValue: null };
+}
+
+/**
+ * SPX Live Desk AI (Largo commentary) cites two number classes in one read:
+ *   • SPX strikes / levels (6000+) — must be strictly grounded (same as play-gate).
+ *   • Session metrics (IV rank, VIX, breadth %, point distances, confluence score) in the
+ *     10–999 band — models round these and often quote decimals as whole percents (0.43 → 43).
+ * Using collectKnownNumbers() alone false-positive blocks legitimate reads when the model
+ * rounds VIX/IV rank or cites a pt distance that isn't stored as its own numeric leaf.
+ *
+ * Price levels (>= 1000): strict tolerance. Metrics (10–999): wider tolerance against the
+ * augmented known set built by augmentKnownCommentaryNumbers().
+ */
+export function checkCommentaryGrounded(text: string, known: number[]): GroundingCheckResult {
+  if (known.length === 0) return { grounded: true, ungroundedValue: null };
+
+  const strikeKnown = known.filter(isPlausibleSpxStrike);
+  const metricKnown = known.filter((n) => n >= 10 && !isPlausibleSpxStrike(n) && !isCalendarYear(n));
+  const metricTol = (n: number) => Math.max(n * 0.05, 3);
+
+  const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const raw = m[0];
+    const value = Number(raw.replace(/,/g, ""));
+    if (!Number.isFinite(value)) continue;
+
+    const start = m.index;
+    const end = start + raw.length;
+    const before = text.slice(Math.max(0, start - 1), start);
+    const after = text.slice(end, end + 2);
+
+    if (after.startsWith("%")) continue;
+    if (before === "$") continue;
+    if (/^[%MBK]/.test(after)) continue;
+    // Label tails: "ema200", "sma50" — not standalone levels.
+    if (/[a-zA-Z]/.test(before)) continue;
+    if (value < 10) continue;
+    if (isCalendarYear(value)) continue;
+
+    if (isPlausibleSpxStrike(value)) {
+      const grounded = strikeKnown.some((lvl) => Math.abs(lvl - value) <= levelTolerance(lvl));
+      if (!grounded) {
+        return { grounded: false, ungroundedValue: value };
+      }
+      continue;
+    }
+
+    // Session metrics (IV rank, VIX, breadth %, confluence score, pt distances, sample sizes).
+    if (value >= 10 && value < 4000) {
+      const grounded = metricKnown.some((lvl) => Math.abs(lvl - value) <= metricTol(value));
+      if (!grounded) {
+        return { grounded: false, ungroundedValue: value };
+      }
+    }
+    // Ignore other bands (millions, timestamps, out-of-range noise).
+  }
+  return { grounded: true, ungroundedValue: null };
+}
+
+/** Expand a desk-context number set with rounded forms and decimal→percent aliases. */
+export function augmentKnownCommentaryNumbers(known: number[]): number[] {
+  const out = new Set<number>();
+  const add = (n: number | null | undefined) => {
+    if (n == null || !Number.isFinite(n)) return;
+    out.add(n);
+    if (Math.abs(n) >= 1) {
+      out.add(Math.round(n));
+      out.add(parseFloat(n.toFixed(1)));
+    }
+    // Breadth/change fields often arrive as 0–1 decimals but the model cites whole percents.
+    if (n > 0 && n <= 1) {
+      out.add(parseFloat((n * 100).toFixed(1)));
+      out.add(Math.round(n * 100));
+    }
+  };
+  for (const n of known) add(n);
+  return Array.from(out);
 }
 
 /**

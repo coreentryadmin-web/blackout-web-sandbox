@@ -1,0 +1,1232 @@
+/**
+ * Native iOS — per-tool page layouts (inside the product shell).
+ * Scoped to html.ios-app.ios-native-shell + data-ios-route.
+ */
+
+/* ── Shared utilities ── */
+html.ios-app.ios-native-shell {
+  --ios-content-gap: 0.65rem;
+  --ios-card-radius: 16px;
+  --ios-panel-radius: 14px;
+}
+
+html.ios-app.ios-native-shell .ios-native-panel-hidden {
+  display: none !important;
+}
+
+html.ios-app.ios-native-shell .page-shell,
+html.ios-app.ios-native-shell .ios-desk-shell {
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
+}
+
+html.ios-app.ios-native-shell .page-shell > .content-rail,
+html.ios-app.ios-native-shell .ios-desk-shell > * {
+  padding-top: 0.35rem;
+}
+
+/* Segment control — tool view switcher */
+.ios-native-segment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0.35rem 0 0.65rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ios-native-segment-btn {
+  flex: 1;
+  min-height: 2.625rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #7dd3fc;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ios-native-segment-btn-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--segment-accent, #00e676) 18%, transparent);
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--segment-accent, #00e676) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ios-native-segment-btn:active {
+  transform: scale(0.97);
+}
+
+.ios-native-desk-segment {
+  position: sticky;
+  top: calc(var(--ios-header-offset) + 2px);
+  z-index: 20;
+  margin-top: 0;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Card surfaces — panels read as native cards */
+html.ios-app.ios-native-shell .spx-sniper-panel,
+html.ios-app.ios-native-shell .spx-odte-matrix-panel,
+html.ios-app.ios-native-shell .spx-commentary-rail-desk,
+html.ios-app.ios-native-shell .flow-panel,
+html.ios-app.ios-native-shell .nighthawk-playbook,
+html.ios-app.ios-native-shell .nighthawk-watch,
+html.ios-app.ios-native-shell .grid-card,
+html.ios-app.ios-native-shell .largo-terminal-fullpage {
+  border-radius: var(--ios-panel-radius);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPX SLAYER — dashboard (compact top chrome on native)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .ios-desk-shell {
+  padding-top: var(--ios-header-offset) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .ios-native-desk-segment {
+  position: static;
+  top: auto;
+  margin: 0.25rem 0 0.45rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command,
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command-native {
+  margin: 0 0 0.35rem;
+  padding: 0.55rem 0.65rem 0.6rem !important;
+  border-radius: var(--ios-card-radius);
+  border-bottom: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command-native .relative.z-10 {
+  gap: 0.45rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command-native .spx-hero-price {
+  font-size: 2.35rem !important;
+  line-height: 1;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-native-meta .t-kicker {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command .spx-hero-price {
+  font-size: 2.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-hero-metric-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-hero-metric-block:last-child {
+  grid-column: 1 / -1;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-triple {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-content-gap);
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-chart-col {
+  order: unset;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-left-matrix,
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-odte-matrix-panel {
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-gex-matrix-scroll {
+  -webkit-overflow-scrolling: touch;
+  max-height: min(52dvh, 440px);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-commentary-viewport {
+  max-height: min(50dvh, 420px);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-panel-header,
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-trade-alerts-header {
+  padding: 0.65rem 0.75rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-hero-stat-pill {
+  min-width: 0;
+  flex: 1 1 calc(50% - 0.25rem);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command .grid.w-full {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HELIX — flows (native shell)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-shell-native.page-shell {
+  padding-top: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-content-native {
+  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.35rem) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-inner-native {
+  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-native-tide {
+  border-radius: var(--ios-panel-radius);
+  padding: 0.35rem 0.5rem;
+  background: var(--ios-surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-desk {
+  gap: var(--ios-content-gap);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-toolbar {
+  position: static;
+  top: auto;
+  margin: 0.35rem 0;
+  padding: 0.5rem;
+  border-radius: var(--ios-panel-radius);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-toolbar .font-mono.hidden.sm\:block {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-toolbar > button:not(.flow-seg-btn) {
+  min-height: 2.25rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-scroll-max {
+  max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 11rem);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-panel {
+  border-radius: var(--ios-panel-radius);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-analytics-col > div:first-child {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-analytics-col .flow-panel {
+  margin-bottom: 0.5rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THERMAL — heatmap (native mobile desk)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .thermal-page-shell-native.page-shell {
+  min-height: 100dvh;
+  padding-top: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .thermal-page-content-native {
+  min-height: calc(100dvh - var(--ios-header-offset));
+  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.5rem) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .thermal-page-inner-native {
+  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .page-tool-header,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .page-shell > .px-4 > .page-tool-header {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-desk-native {
+  gap: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-panel-native {
+  border-radius: var(--ios-panel-radius) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-panel-native > div:last-child {
+  padding: 0.65rem !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  border-radius: var(--ios-panel-radius);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row > span.ml-auto {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row [role="tablist"] {
+  position: static;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row [role="tab"] {
+  min-height: var(--ios-touch, 2.75rem);
+  font-size: 12px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels {
+  margin-bottom: 0.5rem !important;
+  border-radius: var(--ios-panel-radius);
+  padding: 0.65rem 0.75rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels > div:last-child {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels .font-mono.text-\[8px\] {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels .font-mono.text-\[15px\] {
+  font-size: 17px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.5rem;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-legend > span:first-child {
+  grid-column: 1 / -1;
+  font-size: 11px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll {
+  max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 15.5rem) !important;
+  min-height: min(46dvh, 380px) !important;
+  margin-bottom: 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--ios-panel-radius);
+  -webkit-overflow-scrolling: touch;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll table {
+  min-width: 32rem;
+  font-size: 12px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll th,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll td {
+  padding: 0.45rem 0.4rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll th:first-child,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll td:first-child {
+  min-width: 4.25rem;
+}
+
+/* Thermal ticker search — native bottom sheet (replaces fixed dropdown + 12px focus zoom) */
+html.ios-app.ios-native-shell .gex-ticker-native-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--ios-vv-offset-top, 0px);
+  height: var(--ios-vv-height, 100dvh);
+  z-index: 180;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72dvh, 520px);
+  margin: 0 0.35rem calc(var(--ios-tab-offset, 0px) + 0.35rem);
+  padding: 0.5rem 0.65rem 0.65rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-lg) var(--ios-radius-lg) var(--ios-radius-md) var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  box-shadow: var(--ios-shadow-lg);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-grabber {
+  width: 2.25rem;
+  height: 3px;
+  margin: 0 auto 0.5rem;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.35);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-search {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 16px;
+  outline: none;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-search:focus {
+  border-color: var(--ios-border-accent);
+  box-shadow: 0 0 0 3px var(--ios-accent-muted);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-trigger {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: var(--ios-radius-md);
+  border-color: var(--ios-border);
+  background: var(--ios-surface-2);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row > div:first-child {
+  width: 100%;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-ticker-native-sheet-panel {
+  max-height: min(52dvh, calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - 1.5rem));
+  margin-bottom: 0.35rem;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-ticker-native-sheet {
+  height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-matrix-scroll {
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - var(--ios-tab-offset) - 14rem) !important;
+}
+
+html.ios-app.ios-native-shell.gex-ticker-sheet-open[data-ios-route="heatmap"] .gex-heatmap-panel-native {
+  overflow: visible;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .max-h-\[clamp\(480px\,74vh\,880px\)\],
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .max-h-\[clamp\(360px\,56vh\,600px\)\] {
+  max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 12rem);
+  -webkit-overflow-scrolling: touch;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-rail,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-methodology {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] [role="tablist"] {
+  position: static;
+  z-index: auto;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .min-w-\[36rem\] {
+  min-width: 32rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LARGO — edge-to-edge chat (header + tab bar are the only chrome)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="largo"] .ios-native-page-stage {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-header {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-shell,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-shell-native {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main-native {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  padding: var(--ios-header-offset) 0 0;
+  gap: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-terminal-fullpage,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-terminal-native {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-terminal-native .desk-panel-body-bare,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-terminal-fullpage .desk-panel-body-bare {
+  flex: 1;
+  min-height: 0;
+  padding: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-chat-container {
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-messages-fullpage {
+  flex: 1;
+  min-height: 0;
+  padding: 0.85rem 0.85rem 0.35rem;
+  margin-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-messages-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-form-fullpage {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.65rem 0.75rem calc(0.45rem + var(--ios-tab-offset, 0px));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(4, 4, 7, 0.94);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+/* Keyboard open — shrink chat to visual viewport (prevents web-like overflow/zoom break) */
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native,
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-terminal-native {
+  min-height: 0;
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-chat-container {
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-messages-fullpage {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-fullpage {
+  font-size: 16px !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main > p.font-mono {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-suggestions-grid {
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-suggestions {
+  padding: 0 0.15rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-msg-welcome {
+  max-width: 100%;
+}
+
+/* Largo — mobile-only desk (not adapted web Panel) */
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-desk {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.65rem 0.65rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-native-messages {
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble {
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  padding: 0.65rem 0.75rem;
+  border-left: 2px solid var(--ios-accent);
+  max-width: 100%;
+  overflow: visible;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble-user {
+  border-left-color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.06);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble-label {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-body {
+  color: #e0f2fe;
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-tool-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  background: rgba(34, 211, 238, 0.08);
+  padding: 0.2rem 0.5rem;
+  font-family: var(--font-jetbrains);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestions-label {
+  margin: 0;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestion {
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-composer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: stretch;
+  padding: 0.55rem 0.65rem calc(0.45rem + var(--ios-tab-offset, 0px));
+  border-top: 1px solid var(--ios-border);
+  background: rgba(4, 4, 7, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ios-touch);
+  padding: 0 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 16px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-send {
+  flex-shrink: 0;
+  min-width: 4.25rem;
+  min-height: var(--ios-touch);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: var(--ios-radius-md);
+  background: rgba(34, 211, 238, 0.12);
+  color: #7dd3fc;
+  font-family: var(--font-syne);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-send:disabled {
+  opacity: 0.45;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native {
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-native-desk {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-native-matrix-only {
+  margin-top: 0.35rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NIGHT HAWK — nighthawk (native shell)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-shell-native.page-shell {
+  padding-top: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-inner-native {
+  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem calc(var(--ios-tab-offset, 0px) + 0.35rem);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-root {
+  padding-top: 0.25rem;
+  padding-left: 0;
+  padding-right: 0;
+  min-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset));
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .page-tool-header {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-content-gap);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-kicker,
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-watch-kicker {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-title,
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-watch-title {
+  font-size: 1.05rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-headline,
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-hint {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-play-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-play-signal {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-record-strip {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.35rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-play-detail-modal {
+  width: 100%;
+  max-width: 100%;
+  max-height: 92dvh;
+  border-radius: 18px 18px 0 0;
+  margin: 0;
+  align-self: flex-end;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-market-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   0DTE COMMAND — grid (native shell)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-shell-native.page-shell {
+  padding-top: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-content-native {
+  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.35rem) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-inner-native {
+  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .page-shell > .px-2 {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .page-tool-header {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs [role="tablist"] {
+  position: static;
+  top: auto;
+  z-index: auto;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  margin-bottom: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board {
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board > .grid-card {
+  min-height: 200px;
+  animation: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .min-w-\[680px\] {
+  min-width: 36rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs .mb-4.flex {
+  justify-content: stretch;
+  margin-bottom: 0.65rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs .mb-4.flex > * {
+  width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCOUNT
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="account"] .account-page-title-block {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="account"] .ios-account-page {
+  padding-top: calc(var(--ios-header-offset) + 0.5rem);
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+html.ios-app.ios-native-shell[data-ios-route="account"] .cl-rootBox {
+  width: 100%;
+  max-width: 100%;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="account"] .cl-card {
+  border-radius: var(--ios-card-radius);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="account"] .cl-navbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  border-right: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  gap: 0.35rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="account"] .cl-navbarButton {
+  flex: 1 1 calc(50% - 0.2rem);
+  justify-content: center;
+  min-height: 2.5rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-native-segment-btn:active {
+    transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FAQ — native accordion (replaces horizontal bento pan)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--ios-viewport-h);
+  padding-top: var(--ios-header-offset);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native > main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] #faq {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .faq-native-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0.35rem 0.65rem 0.5rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail {
+  flex-shrink: 0;
+  margin: 0 -0.65rem;
+  padding: 0 0.65rem 0.4rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip-scroll {
+  border: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
+  border-radius: var(--cmd-radius-panel, 4px);
+  background: var(--cmd-panel, rgba(8, 9, 14, 0.85));
+  gap: 0;
+  padding: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip {
+  flex-shrink: 0;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
+  border-radius: 0;
+  background: transparent;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #7dd3fc;
+  min-height: 2.5rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip:last-child {
+  border-right: 0;
+  margin-right: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--ios-accent) 12%, transparent);
+  box-shadow: inset 0 2px 0 var(--ios-accent);
+}
+
+html.ios-app.ios-native-shell .faq-native-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.5rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-item {
+  border: 1px solid var(--ios-border, rgba(125, 211, 252, 0.12));
+  border-radius: var(--ios-radius-md, 6px);
+  background: var(--ios-surface-1, rgba(8, 9, 14, 0.85));
+  border-left: 2px solid var(--ios-accent);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .faq-native-question {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .faq-native-question-text {
+  flex: 1;
+  min-width: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-chevron {
+  flex-shrink: 0;
+  font-family: var(--font-jetbrains);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ios-accent);
+}
+
+html.ios-app.ios-native-shell .faq-native-answer {
+  padding: 0 0.85rem 0.85rem;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #e0f2fe;
+  border-top: 1px solid rgba(125, 211, 252, 0.08);
+  padding-top: 0.65rem;
+  margin: 0 0.85rem 0.85rem;
+}
+
+html.ios-app.ios-native-shell .faq-native-support {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  text-align: center;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-label {
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  margin: 0;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-copy {
+  margin: 0.25rem 0 0.65rem;
+  font-size: 13px;
+  color: #fff;
+}
+
+html.ios-app.ios-native-shell .faq-native-support-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1rem;
+  border-radius: var(--ios-radius-md);
+  background: linear-gradient(180deg, #00e676, #0f9d58);
+  color: #021c14;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LEARN — native chapter hub + articles
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--ios-viewport-h);
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-content-native {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 0.65rem 1rem !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-hero-native {
+  padding-top: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-featured-native {
+  padding: 0.85rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-featured-native .font-syne {
+  font-size: 1.15rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-card {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-1);
+  border-left: 2px solid var(--ios-accent);
+  padding: 0.85rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub-card .text-secondary {
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-header {
+  margin-bottom: 1rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-title {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-doc-description,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-prose-body,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-step-body,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-callout-body {
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-heading {
+  font-size: 1.1rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-nav {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-chapter-nav-link {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-1);
+  padding: 0.75rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-toc-pill {
+  border-radius: var(--ios-radius-md);
+  white-space: nowrap;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hero-glow {
+  display: none;
+}
+

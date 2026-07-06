@@ -1,4 +1,5 @@
 import { getSpxDeskSummary } from "@/lib/platform/spx-service";
+import { formatEtDate, isBeforeOrAtMarketCloseEt } from "@/lib/nighthawk/session";
 import { runHuntScan } from "../hunt-builder";
 import type { HuntPlay } from "../types";
 import {
@@ -9,23 +10,38 @@ import {
 import type { DayTradeAgentConfig, DayTradeAgentRun, DayTradeSignal } from "./day-trade-types";
 
 /**
- * Returns true when the US equity market is closed for the day (>= 16:00 ET).
- * Uses a fixed UTC offset: ET is UTC-4 during EDT (Mar–Nov) and UTC-5 during EST (Nov–Mar).
+ * Returns true when the US equity market is closed for the day: either it isn't a
+ * trading day at all (weekend/holiday), or it's a trading day at/past 16:00 ET.
+ *
+ * Previously hand-rolled a fixed UTC offset ("EDT Mar-Nov, EST otherwise") and had no
+ * weekday/holiday check at all. Both were bugs: the real US DST boundary is the 2nd
+ * Sunday of March -> 1st Sunday of November, not calendar-month edges, so the offset
+ * was wrong for ~5 weeks a year (all of November after DST truly ends, and early March
+ * before it truly starts) — a full 1-hour skew that made this function think the market
+ * had closed while it was still open. Confirmed live: at Mar 5 2026 20:45 UTC (real ET
+ * 15:45, market open) the old month-based math used the EDT offset (-4) instead of the
+ * correct EST offset (-5) for that date, computing 16:45 ET and returning `true` a full
+ * hour early. Fixed by delegating to the canonical ET-aware helpers in
+ * `@/lib/nighthawk/session` (`isBeforeOrAtMarketCloseEt`, backed by `Intl.DateTimeFormat`
+ * with the real `America/New_York` timezone database, so it tracks the actual DST
+ * transition dates) instead of re-deriving the ET offset by hand — the same helper
+ * `nighthawk/edition/route.ts` already uses, and the same `Intl`-based approach
+ * `zerodte/scan.ts`'s `etNowParts()` calls use. `isBeforeOrAtMarketCloseEt` also folds
+ * in `isTradingDayEt`, which adds the weekday/holiday gate every other EOD-discipline
+ * gate in the codebase already has (`isSpxEngineCronWindow`, `isPastForceExitCutoff`'s
+ * early-close table, etc.) but this function was missing — a weekend/holiday day now
+ * correctly reads as "closed" instead of silently gliding through the hour math as if
+ * it were a live trading session.
  */
-function isMarketClosed(now: Date = new Date()): boolean {
-  // Approximate ET offset: EDT = UTC-4, EST = UTC-5.
-  const month = now.getUTCMonth() + 1; // 1-based
-  const etOffsetHours = month >= 3 && month <= 11 ? -4 : -5;
-  const etHour = now.getUTCHours() + etOffsetHours;
-  const etMinute = now.getUTCMinutes();
-  return etHour > 16 || (etHour === 16 && etMinute >= 0);
+export function isMarketClosed(now: Date = new Date()): boolean {
+  return !isBeforeOrAtMarketCloseEt(formatEtDate(now), now);
 }
 
 /**
  * Expire any CANDIDATE or WATCH signals when the market is at or past 16:00 ET.
  * Stale 0DTE signals must not persist as actionable after the close.
  */
-function expireSignalsAtMarketClose(signals: DayTradeSignal[], now: Date = new Date()): DayTradeSignal[] {
+export function expireSignalsAtMarketClose(signals: DayTradeSignal[], now: Date = new Date()): DayTradeSignal[] {
   if (!isMarketClosed(now)) return signals;
   return signals.map((s) =>
     s.phase === "CANDIDATE" || s.phase === "WATCH"

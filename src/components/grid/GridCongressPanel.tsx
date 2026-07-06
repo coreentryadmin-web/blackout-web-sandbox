@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridCongresstrade, GridCongressSnapshot } from "@/lib/providers/grid";
 
@@ -58,8 +59,12 @@ function fmtFiled(d: string): string {
 
 export function GridCongressPanel() {
   const { ticker, isFiltered } = useGridTicker();
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
   const url = `/api/grid/congress${ticker ? `?ticker=${ticker}` : ""}`;
-  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
+  const { data, error } = useSWR<Res>(panelKey(url), fetcher, {
+    refreshInterval: isFiltered ? 30_000 : 300_000,
+    revalidateOnMount,
+  });
   const trades: GridCongresstrade[] = data?.trades ?? [];
   const live = !error && (data?.available ?? false);
 

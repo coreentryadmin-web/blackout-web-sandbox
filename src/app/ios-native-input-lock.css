@@ -1,0 +1,58 @@
+/**
+ * iOS app — prevent WKWebView focus-zoom and runaway text scaling.
+ * Applies to ALL html.ios-app surfaces (not only signed-in native shell).
+ */
+
+html.ios-app {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.ios-app input,
+html.ios-app textarea,
+html.ios-app select,
+html.ios-app [contenteditable="true"] {
+  font-size: 16px !important;
+  line-height: 1.35;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.ios-app.ios-keyboard-open {
+  overflow: hidden;
+}
+
+html.ios-app.ios-keyboard-open body {
+  overflow: hidden;
+}
+
+/* Shrink the native shell to the visual viewport while typing — never pin body (sticks after dismiss). */
+html.ios-app.ios-keyboard-open.ios-native-shell .ios-native-page-stage {
+  height: var(--ios-vv-height, 100dvh);
+  max-height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="largo"] .largo-page-shell-native {
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-shell-native,
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-content-native {
+  min-height: 0;
+  max-height: calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset, 0px));
+}
+
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .thermal-page-inner-native,
+html.ios-app.ios-keyboard-open.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-desk-native {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+}
+
+/* Native shell — fixed type scale on mobile-only surfaces */
+html.ios-app.ios-native-shell .largo-native-body,
+html.ios-app.ios-native-shell .largo-native-bubble-label {
+  font-size: 15px !important;
+  line-height: 1.5;
+}

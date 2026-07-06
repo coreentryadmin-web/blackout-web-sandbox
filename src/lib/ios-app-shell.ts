@@ -1,5 +1,5 @@
 /**
- * Detects the Capacitor iOS app shell (blackout-ios) at runtime, client-side only.
+ * Detects the Capacitor iOS app shell (apps/blackout-ios in blackout-web) at runtime,
  * `layout.tsx`'s inline head script adds the `ios-app` class to <html> when the
  * WKWebView's user-agent carries the "BlackOutiOSApp" token it appends (see
  * capacitor.config.ts's `appendUserAgent`). Reuse THAT class rather than re-parsing

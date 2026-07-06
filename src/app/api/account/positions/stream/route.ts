@@ -10,12 +10,25 @@ import { requireToolApi } from "@/lib/tool-access-server";
 import { requireTierApi } from "@/lib/market-api-auth";
 import { getEnrichedOpenAndRecentClosedForUser } from "@/lib/nights-watch/enrichment";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
+import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PUSH_INTERVAL_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
+
+// Per-instance connection cap (fd/memory guard) — task #170 audit gap: of the codebase's 4 SSE
+// routes, this was the only one with NEITHER this cap NOR the backpressure check below. A single
+// valid premium session (real user, trial account, or a leaked session cookie) could open an
+// unbounded number of connections here — each spawns its own timer loop pushing enriched
+// positions every ~3s forever — and simply never read the response body, growing every
+// un-drained connection's internal queue without limit: a slow-loris/fan-out DoS against a
+// single replica's memory/fd budget using nothing but one valid session. 500 matches the other
+// user-facing (non-admin) SSE route (flows/stream); admin's telemetry stream uses a lower 100
+// since admins are few. Override via POSITIONS_SSE_MAX_STREAMS.
+let activeStreams = 0;
+const MAX_STREAMS = Number(process.env.POSITIONS_SSE_MAX_STREAMS ?? 500);
 
 export async function GET(req: Request) {
   const gate = await requireTierApi("premium");
@@ -25,6 +38,10 @@ export async function GET(req: Request) {
   // Launch gate — locked to non-admins until this tool ships.
   const locked = await requireToolApi("nighthawk");
   if (locked) return locked;
+
+  if (activeStreams >= MAX_STREAMS) {
+    return new Response("Too many active streams — try again shortly", { status: 503 });
+  }
 
   // Boot the shared data sockets (idempotent). Required for live WS option marks.
   ensureDataSockets();
@@ -36,15 +53,31 @@ export async function GET(req: Request) {
       let pushTimer: ReturnType<typeof setTimeout> | null = null;
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
       let closed = false;
+      let counted = false;
 
       const cleanup = () => {
+        if (closed) return;
         closed = true;
+        if (counted) activeStreams = Math.max(0, activeStreams - 1);
         if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
         if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
       };
 
       const send = (chunk: string) => {
         if (closed) return;
+        // Backpressure: a slow/non-reading client lets the controller's internal queue grow
+        // (desiredSize goes increasingly negative). Drop the lagging client rather than let
+        // this per-connection loop buffer unbounded — healthy clients keep desiredSize >= 0,
+        // so this never trips for them (mirrors flows/stream, spx/pulse/stream, admin/apis/stream).
+        if (sseBackpressureExceeded(controller.desiredSize)) {
+          try {
+            controller.close();
+          } catch {
+            // already closed/errored
+          }
+          cleanup();
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
@@ -64,6 +97,9 @@ export async function GET(req: Request) {
           pushTimer = setTimeout(() => { void push(); }, PUSH_INTERVAL_MS);
         }
       };
+
+      activeStreams++;
+      counted = true;
 
       // Abort on client disconnect.
       req.signal.addEventListener("abort", () => {

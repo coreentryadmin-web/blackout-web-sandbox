@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { SpxPlayPayload } from "@/lib/spx-play-engine";
-import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
+import { readSessionCache, writeSessionCache, clearSessionCacheKey } from "@/lib/session-cache";
 
 const LAYER_CACHE_KEY = "spx-play-confirmation-layer";
 const LAYER_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -43,13 +43,22 @@ export function useStablePlayConfirmations(play: SpxPlayPayload | null | undefin
   useEffect(() => {
     if (!play) return;
     const next = layerFromPlay(play);
-    if (!next) return;
-    stableRef.current = next;
-    writeSessionCache(LAYER_CACHE_KEY, next);
+    if (next) {
+      stableRef.current = next;
+      writeSessionCache(LAYER_CACHE_KEY, next);
+      return;
+    }
+    // Play reset to SCANNING without confirmations — drop stale WATCH/BUY checks.
+    if (play.action === "SCANNING") {
+      stableRef.current = null;
+      clearSessionCacheKey(LAYER_CACHE_KEY);
+    }
   }, [play]);
 
   const live = play ? layerFromPlay(play) : null;
-  return live ?? stableRef.current;
+  if (live) return live;
+  if (play?.action === "SCANNING") return null;
+  return stableRef.current;
 }
 
 export function shouldPersistPlayPayload(payload: SpxPlayPayload): boolean {

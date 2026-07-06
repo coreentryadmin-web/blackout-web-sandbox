@@ -41,8 +41,28 @@ test("router: reasoning-shaped questions NEVER route — Claude keeps them", () 
   );
 });
 
+test("router: 'what's going on with' a known ticker routes to the ecosystem snapshot, even off-ledger", () => {
+  const r = classifyBieIntent("What's going on with AAPL", LEDGER);
+  assert.equal(r?.intent, "ticker_ecosystem");
+  assert.equal(r?.ticker, "AAPL");
+  // Any known ticker works, not just today's 0DTE ledger.
+  assert.equal(classifyBieIntent("any flow on GOOGL", LEDGER)?.ticker, "GOOGL");
+  assert.equal(classifyBieIntent("anything on COIN today", LEDGER)?.ticker, "COIN");
+  assert.equal(classifyBieIntent("what's the latest on $RKLB", LEDGER)?.ticker, "RKLB");
+});
+
+test("router: 'what's going on with' never fires without a recognizable ticker", () => {
+  // "IT" is a real word capitalized mid-sentence, not a ticker — must NOT mis-pin (LARGO-9 class bug).
+  assert.equal(classifyBieIntent("what's going on with IT lately", LEDGER), null);
+  assert.equal(classifyBieIntent("what's going on", LEDGER), null);
+});
+
+test("router: 'what does X think' phrasing stays with Claude (REASONING_RE wins, not the ecosystem branch)", () => {
+  assert.equal(classifyBieIntent("what does the desk think about NVDA", LEDGER), null);
+});
+
 test("router: every intent has follow-up chips (no LLM on the router path)", () => {
-  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context"] as const) {
+  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context", "ticker_ecosystem"] as const) {
     assert.ok(bieFollowups(intent).length === 3);
   }
 });
@@ -187,14 +207,32 @@ test("self-eval: coverage, verification and win-rate math", () => {
 
 import {
   computeCalibration,
+  computeHelixToolCallCalibration,
+  computeMarketContextToolCallCalibration,
+  computeNighthawkToolCallCalibration,
+  computeNightsWatchToolCallCalibration,
   computeSpxCalibration,
   computeSpxToolCallCalibration,
+  computeThermalToolCallCalibration,
+  computeZeroDteToolCallCalibration,
   formatCalibration,
+  formatHelixToolCallCalibration,
+  formatMarketContextToolCallCalibration,
+  formatNighthawkToolCallCalibration,
+  formatNightsWatchToolCallCalibration,
   formatSpxCalibration,
   formatSpxToolCallCalibration,
+  formatThermalToolCallCalibration,
+  formatZeroDteToolCallCalibration,
   type CalibrationInputRow,
+  type HelixToolCallInputRow,
+  type MarketContextToolCallInputRow,
+  type NighthawkToolCallInputRow,
+  type NightsWatchToolCallInputRow,
   type SpxCalibrationInputRow,
   type SpxToolCallInputRow,
+  type ThermalToolCallInputRow,
+  type ZeroDteToolCallInputRow,
 } from "./calibration";
 
 const calRow = (over: Partial<CalibrationInputRow>): CalibrationInputRow => ({
@@ -424,6 +462,906 @@ test("calibration: without an attached spx_tool_calls pass, the report doesn't g
   assert.equal(zeroDte.spx_tool_calls, null);
   assert.doesNotMatch(formatCalibration(zeroDte), /SPX-tool-calling/);
 });
+
+// ── Task #133: HELIX-tool-calling cohort within bie_interactions ────────────────
+// Largo's own answer-quality cohort — turns where HELIX's own tape/anomaly-
+// detector state was involved. Unlike the SPX cohort above, membership is a PURE
+// tools_used check — there is no deterministic HELIX router intent to OR in (see
+// isHelixToolCallingRow's doc comment in calibration.ts), so every row here uses
+// answer_source: "claude" by default and router_matched_n/router_match_rate_pct
+// are expected to read 0/0% throughout.
+
+const helixToolRow = (over: Partial<HelixToolCallInputRow>): HelixToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_flow_tape"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("helix tool-call calibration: cohort includes tools_used intersecting HELIX_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: HelixToolCallInputRow[] = [
+    helixToolRow({ tools_used: ["live_feed_capture", "get_flow_tape"] }), // in cohort
+    helixToolRow({ tools_used: ["live_feed_capture", "get_options_flow", "get_dark_pool"] }), // generic-only — NOT in cohort
+    helixToolRow({ tools_used: ["live_feed_capture", "get_flow_anomaly_near_misses"] }), // in cohort
+  ];
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("helix tool-call calibration: a router-matched row NEVER joins the cohort — no intent_bucket OR-clause exists for HELIX", () => {
+  const rows: HelixToolCallInputRow[] = [
+    // Even a bie-router answer_source with the router's sentinel tools_used does
+    // NOT join — isHelixToolCallingRow is tools_used-only, unlike SPX's UNION test.
+    helixToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "spx_structure",
+      answer_source: "bie-router",
+    }),
+  ];
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+});
+
+test("helix tool-call calibration: aggregate grounding pass rate and avg latency over a mixed cohort, router-match rate stays 0", () => {
+  const rows: HelixToolCallInputRow[] = [
+    helixToolRow({ tools_used: ["get_flow_tape"], claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    helixToolRow({ tools_used: ["get_flow_anomaly_near_misses"], claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    helixToolRow({ tools_used: ["get_flow_tape", "get_flow_anomaly_near_misses"], claims_total: 5, claims_verified: 5, latency_ms: 2000 }),
+  ];
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 3);
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, 0);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 2000) / 3 = 4000.
+  assert.equal(r.avg_latency_ms, 4000);
+});
+
+test("helix tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: HelixToolCallInputRow[] = [
+    helixToolRow({ tools_used: ["get_flow_tape"], claims_total: 0, claims_verified: 0 }),
+    helixToolRow({ tools_used: ["get_flow_tape"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("helix tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    helixToolRow({ tools_used: ["get_flow_tape"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatHelixToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("helix tool-call calibration: at n=10 evidence clears and low grounding fires a recommendation (no router-match recommendation exists)", () => {
+  const rows: HelixToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    helixToolRow({ tools_used: ["get_flow_tape"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeHelixToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  // Unlike the SPX pass, there is no "Only X% ... answered by the deterministic
+  // router" recommendation for HELIX — a permanent, structural 0% would be noise,
+  // not evidence-cited signal (see isHelixToolCallingRow's doc comment).
+  assert.equal(r.recommendations.length, 1);
+});
+
+test("helix tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeHelixToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatHelixToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all four sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, and HELIX-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spxToolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const helixToolCalls = computeHelixToolCallCalibration([helixToolRow({ tools_used: ["get_flow_tape"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: spxToolCalls,
+    helix_tool_calls: helixToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /HELIX-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached helix_tool_calls pass, the report doesn't grow a fourth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.helix_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /HELIX-tool-calling/);
+});
+
+// ── Task #137: Thermal-tool-calling cohort within bie_interactions ──────────────
+// Same shape as task #112's SPX-tool-calling cohort above, but for BlackOut
+// Thermal (the GEX/dealer-positioning product behind /heatmap). The one
+// deliberate asymmetry: BIE's router has NO Thermal/GEX intent at all (only
+// zerodte_plays/ticker_play_state/spx_structure/market_context exist), so unlike
+// isSpxToolCallingRow there is no intent_bucket OR-clause — see
+// isThermalToolCallingRow's doc comment in calibration.ts.
+
+const thermalToolRow = (over: Partial<ThermalToolCallInputRow>): ThermalToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_positioning"],
+  intent_bucket: null,
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 1200,
+  ...over,
+});
+
+test("thermal tool-call calibration: cohort includes tools_used intersecting THERMAL_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_positioning"] }), // in cohort
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only (get_gex excluded) — NOT in cohort
+    thermalToolRow({ tools_used: ["live_feed_capture", "get_gex_regime_events"] }), // in cohort
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("thermal tool-call calibration: a router-sentinel row never joins the cohort, for ANY intent_bucket — BIE has no Thermal router intent to OR in", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+    thermalToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "market_context", answer_source: "bie-router" }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_matched_n, 0);
+});
+
+test("thermal tool-call calibration: aggregate grounding pass rate and avg latency over a mixed cohort; router_matched_n is honestly 0", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["get_positioning"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    thermalToolRow({ tools_used: ["get_gex_regime_events"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.claude_fallback_n, 2);
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, 0);
+  // sum(verified)/sum(total) = (4+3)/(4+6) = 7/10 = 70% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 70);
+  // (4000 + 6000) / 2 = 5000.
+  assert.equal(r.avg_latency_ms, 5000);
+});
+
+test("thermal tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: ThermalToolCallInputRow[] = [
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 0, claims_verified: 0 }),
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("thermal tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    thermalToolRow({ tools_used: ["get_positioning"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatThermalToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("thermal tool-call calibration: cites low grounding and the router-coverage gap once evidence clears n≥10", () => {
+  const rows: ThermalToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    thermalToolRow({ tools_used: ["get_positioning"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeThermalToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  assert.ok(r.recommendations.some((x) => /Only 0% of Thermal-tool-calling turns were answered by the deterministic router/.test(x)));
+});
+
+test("thermal tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeThermalToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatThermalToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all four sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, and Thermal-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spxToolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const thermalToolCalls = computeThermalToolCallCalibration([thermalToolRow({ tools_used: ["get_positioning"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: spxToolCalls,
+    thermal_tool_calls: thermalToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /Thermal-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached thermal_tool_calls pass, the report doesn't grow a fourth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.thermal_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /Thermal-tool-calling/);
+});
+
+// ── Task #144: Night-Hawk-tool-calling cohort within bie_interactions ───────────
+// Same idea as the task #112 SPX block above, applied to Night Hawk. Cohort
+// membership is tools_used-ONLY (no intent_bucket OR-clause) because there is no
+// deterministic BIE router intent for Night Hawk questions at all — see
+// isNighthawkToolCallingRow's doc comment in calibration.ts.
+
+const nighthawkToolRow = (over: Partial<NighthawkToolCallInputRow>): NighthawkToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_nighthawk_edition"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("nighthawk tool-call calibration: cohort includes tools_used intersecting NIGHTHAWK_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: NighthawkToolCallInputRow[] = [
+    nighthawkToolRow({ tools_used: ["live_feed_capture", "get_nighthawk_edition"] }), // in cohort
+    nighthawkToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only — NOT in cohort
+    nighthawkToolRow({ tools_used: ["live_feed_capture", "get_nighthawk_dossier"] }), // in cohort
+  ];
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("nighthawk tool-call calibration: an intent_bucket alone, WITHOUT a matching tool call, never joins the cohort", () => {
+  // Unlike the SPX cohort, there is no router path that can answer a Night Hawk
+  // question deterministically — so even a made-up "nighthawk"-flavored
+  // intent_bucket must NOT be enough on its own to admit a row (guards against a
+  // future edit reintroducing an OR-clause that isn't backed by a real router
+  // intent).
+  const rows: NighthawkToolCallInputRow[] = [
+    nighthawkToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "nighthawk_edition", answer_source: "bie-router" }),
+  ];
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+});
+
+test("nighthawk tool-call calibration: aggregate grounding pass rate and avg latency over a mixed cohort; router_matched_n is honestly 0", () => {
+  const rows: NighthawkToolCallInputRow[] = [
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    nighthawkToolRow({ tools_used: ["get_nighthawk_outcomes"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    nighthawkToolRow({ tools_used: ["get_nighthawk_dossier"], answer_source: "claude", claims_total: 5, claims_verified: 5, latency_ms: 40 }),
+  ];
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 3);
+  // No deterministic router intent for Night Hawk exists — always 0, never fabricated.
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, 0);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 40) / 3 = 3346.67 → rounds to 3347.
+  assert.equal(r.avg_latency_ms, 3347);
+});
+
+test("nighthawk tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: NighthawkToolCallInputRow[] = [
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], claims_total: 0, claims_verified: 0 }),
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("nighthawk tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatNighthawkToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("nighthawk tool-call calibration: exactly n=10 clears the evidence gate and cites low grounding", () => {
+  const rows: NighthawkToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  // Deliberately no "router coverage" recommendation for Night Hawk — see
+  // computeNighthawkToolCallCalibration's comment: with router_matched_n
+  // structurally always 0, that recommendation would fire on every report
+  // forever and teach a reader to ignore this section.
+  assert.ok(!r.recommendations.some((x) => /router/i.test(x)));
+});
+
+test("nighthawk tool-call calibration: n=11 (just above the gate) still cites low grounding", () => {
+  const rows: NighthawkToolCallInputRow[] = Array.from({ length: 11 }, () =>
+    nighthawkToolRow({ tools_used: ["get_nighthawk_edition"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNighthawkToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 11);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+});
+
+test("nighthawk tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeNighthawkToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatNighthawkToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all four sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, and Night-Hawk-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spxToolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const nighthawkToolCalls = computeNighthawkToolCallCalibration(
+    [nighthawkToolRow({ tools_used: ["get_nighthawk_edition"] })],
+    { since: "2026-07-06", through: "2026-07-06" }
+  );
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: spxToolCalls,
+    nighthawk_tool_calls: nighthawkToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /Night-Hawk-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached nighthawk_tool_calls pass, the report doesn't grow a fourth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.nighthawk_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /Night-Hawk-tool-calling/);
+});
+
+// ── Task #149: 0DTE-Command-tool-calling cohort within bie_interactions ─────────
+// Direct analogue of the task #112 SPX-tool-calling cohort above, applied to 0DTE
+// Command (the SEPARATE multi-ticker `/grid` scanner, per task #127's standing
+// disambiguation — not SPX Slayer). Largo's own answer-quality cohort for turns
+// where 0DTE Command's live board state was involved, either via a real tool
+// dispatch (Claude path) or the router's zerodte_plays composer (which reads the
+// same board state internally but never records a real tool name — see
+// isZeroDteToolCallingRow's doc comment).
+
+const zeroDteToolRow = (over: Partial<ZeroDteToolCallInputRow>): ZeroDteToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_zerodte_plays"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("zerodte tool-call calibration: cohort includes tools_used intersecting ZERODTE_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({ tools_used: ["live_feed_capture", "get_zerodte_plays"] }), // in cohort
+    zeroDteToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only — NOT in cohort
+    zeroDteToolRow({ tools_used: ["live_feed_capture", "get_zerodte_rejections"] }), // in cohort
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("zerodte tool-call calibration: a router-matched zerodte_plays row joins the cohort despite tools_used being the router's sentinel", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "zerodte_plays",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+    // A router match for a DIFFERENT product (SPX structure) never joins this cohort.
+    zeroDteToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+// ── Task #162: fix the undercounted `ticker_play_state` intent_bucket ──────
+// composeTickerPlayState ("how's the NVDA play") reads the exact same
+// zeroDtePlaysForLargo() board as composeZeroDtePlays above, just filtered to
+// one ticker — genuinely 0DTE Command engine state — but router.ts logs ITS
+// intent_bucket as the distinct string "ticker_play_state", not
+// "zerodte_plays". Before this fix, isZeroDteToolCallingRow's OR-condition
+// only checked for "zerodte_plays", so a ticker_play_state row matched
+// neither the tools_used arm (router path always logs the
+// ["blackout_intelligence"] sentinel) nor the intent_bucket arm — invisible
+// to the cohort despite answering from live 0DTE Command state.
+test("zerodte tool-call calibration: a router-matched ticker_play_state row now joins the cohort (task #162 undercount fix)", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "ticker_play_state",
+      answer_source: "bie-router",
+      claims_total: 3,
+      claims_verified: 3,
+      latency_ms: 35,
+    }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("zerodte tool-call calibration: existing zerodte_plays-intent behavior is unchanged by the task #162 fix", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "zerodte_plays",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("zerodte tool-call calibration: a row with neither a matching tool nor a matching intent_bucket is still excluded", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    // Router match for a DIFFERENT product (SPX structure) — never joins this cohort.
+    zeroDteToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+    // Claude fallback that never touched a 0DTE-Command engine tool.
+    zeroDteToolRow({ tools_used: ["get_quote", "get_gex"], intent_bucket: "claude_fallback", answer_source: "claude" }),
+    // Pre-task-#103 row: no intent_bucket at all, no matching tool.
+    zeroDteToolRow({ tools_used: ["get_market_context"], intent_bucket: null, answer_source: "claude" }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+});
+
+test("zerodte tool-call calibration: aggregate grounding pass rate, router-match rate, and avg latency over a mixed cohort", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({ tools_used: ["get_zerodte_plays"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    zeroDteToolRow({ tools_used: ["get_zerodte_rejections"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    zeroDteToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "zerodte_plays",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 2);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.router_match_rate_pct, 33.3);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 40) / 3 = 3346.67 → rounds to 3347.
+  assert.equal(r.avg_latency_ms, 3347);
+});
+
+test("zerodte tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: ZeroDteToolCallInputRow[] = [
+    zeroDteToolRow({ tools_used: ["get_zerodte_plays"], claims_total: 0, claims_verified: 0 }),
+    zeroDteToolRow({ tools_used: ["get_zerodte_plays"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("zerodte tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    zeroDteToolRow({ tools_used: ["get_zerodte_plays"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatZeroDteToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("zerodte tool-call calibration: cites low grounding and low router-match-rate once evidence clears n≥10", () => {
+  const rows: ZeroDteToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    zeroDteToolRow({ tools_used: ["get_zerodte_plays"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeZeroDteToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  assert.ok(r.recommendations.some((x) => /Only 0% of 0DTE-Command-tool-calling turns were answered by the deterministic router/.test(x)));
+});
+
+test("zerodte tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeZeroDteToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatZeroDteToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all four sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, and 0DTE-Command-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const toolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const zeroDteToolCalls = computeZeroDteToolCallCalibration([zeroDteToolRow({ tools_used: ["get_zerodte_plays"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: toolCalls,
+    zerodte_tool_calls: zeroDteToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /0DTE Command tool-calling Largo turns/);
+});
+
+test("calibration: without an attached zerodte_tool_calls pass, the report doesn't grow a fourth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.zerodte_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /0DTE Command tool-calling Largo turns/);
+});
+
+// ── Task #161: market-context-tool-calling cohort within bie_interactions ───────
+// market_context is the FOURTH of BIE's deterministic router intents
+// (zerodte_plays/ticker_play_state/spx_structure/market_context — see
+// src/lib/bie/router.ts's classifyBieIntent) and, until this task, the only one
+// of the four without its own tool-calling cohort. Largo's own answer-quality
+// cohort for turns where market_context's own composed state was involved,
+// either via a real tool dispatch (Claude path) or the router's
+// composeMarketContext composer (which reads the same get_market_context state
+// internally but never records a real tool name — see
+// isMarketContextToolCallingRow's doc comment). Same UNION-membership
+// architecture as task #112/#149's SPX/0DTE cohorts, since market_context — like
+// those two — IS a real router intent, unlike HELIX/Thermal/Night Hawk.
+
+const marketContextToolRow = (over: Partial<MarketContextToolCallInputRow>): MarketContextToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_market_context"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("market-context tool-call calibration: cohort includes tools_used intersecting MARKET_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: MarketContextToolCallInputRow[] = [
+    marketContextToolRow({ tools_used: ["live_feed_capture", "get_market_context"] }), // in cohort
+    marketContextToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only — NOT in cohort
+    marketContextToolRow({ tools_used: ["get_market_context"] }), // in cohort
+  ];
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("market-context tool-call calibration: a router-matched market_context row joins the cohort despite tools_used being the router's sentinel", () => {
+  const rows: MarketContextToolCallInputRow[] = [
+    marketContextToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "market_context",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+    // A router match for a DIFFERENT product (SPX structure) never joins this cohort.
+    marketContextToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "spx_structure", answer_source: "bie-router" }),
+  ];
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 1);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.claude_fallback_n, 0);
+  assert.equal(r.router_match_rate_pct, 100);
+});
+
+test("market-context tool-call calibration: aggregate grounding pass rate, router-match rate, and avg latency over a mixed cohort", () => {
+  const rows: MarketContextToolCallInputRow[] = [
+    marketContextToolRow({ tools_used: ["get_market_context"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    marketContextToolRow({ tools_used: ["get_market_context"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    marketContextToolRow({
+      tools_used: ["blackout_intelligence"],
+      intent_bucket: "market_context",
+      answer_source: "bie-router",
+      claims_total: 5,
+      claims_verified: 5,
+      latency_ms: 40,
+    }),
+  ];
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 2);
+  assert.equal(r.router_matched_n, 1);
+  assert.equal(r.router_match_rate_pct, 33.3);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 40) / 3 = 3346.67 → rounds to 3347.
+  assert.equal(r.avg_latency_ms, 3347);
+});
+
+test("market-context tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: MarketContextToolCallInputRow[] = [
+    marketContextToolRow({ tools_used: ["get_market_context"], claims_total: 0, claims_verified: 0 }),
+    marketContextToolRow({ tools_used: ["get_market_context"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("market-context tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    marketContextToolRow({ tools_used: ["get_market_context"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatMarketContextToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("market-context tool-call calibration: cites low grounding and low router-match-rate once evidence clears n≥10", () => {
+  const rows: MarketContextToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    marketContextToolRow({ tools_used: ["get_market_context"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeMarketContextToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.equal(r.router_match_rate_pct, 0);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  assert.ok(r.recommendations.some((x) => /Only 0% of market-context-tool-calling turns were answered by the deterministic router/.test(x)));
+});
+
+test("market-context tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeMarketContextToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatMarketContextToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all five sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, 0DTE-Command-tool-calling, and market-context-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const toolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const zeroDteToolCalls = computeZeroDteToolCallCalibration([zeroDteToolRow({ tools_used: ["get_zerodte_plays"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const marketContextToolCalls = computeMarketContextToolCallCalibration(
+    [marketContextToolRow({ tools_used: ["get_market_context"] })],
+    { since: "2026-07-06", through: "2026-07-06" }
+  );
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: toolCalls,
+    zerodte_tool_calls: zeroDteToolCalls,
+    market_context_tool_calls: marketContextToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /0DTE Command tool-calling Largo turns/);
+  assert.match(text, /Market-context-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached market_context_tool_calls pass, the report doesn't grow a fifth section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.market_context_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /Market-context-tool-calling Largo turns/);
+});
+
+// ── Task #163: Night's-Watch-tool-calling cohort within bie_interactions ────────
+// Same idea as the task #112 SPX block and the task #144 Night Hawk block above,
+// applied to Night's Watch (the signed-in user's own per-position Hold/Trim/Sell
+// verdict engine, get_my_positions). Cohort membership is tools_used-ONLY (no
+// intent_bucket OR-clause) because there is no deterministic BIE router intent
+// for Night's-Watch/"my positions" questions at all — see
+// isNightsWatchToolCallingRow's doc comment in calibration.ts.
+
+const nightsWatchToolRow = (over: Partial<NightsWatchToolCallInputRow>): NightsWatchToolCallInputRow => ({
+  tools_used: ["live_feed_capture", "get_my_positions"],
+  intent_bucket: "claude_fallback",
+  answer_source: "claude",
+  claims_total: 4,
+  claims_verified: 4,
+  latency_ms: 3000,
+  ...over,
+});
+
+test("nights watch tool-call calibration: cohort includes tools_used intersecting NIGHTS_WATCH_ENGINE_TOOL_NAMES, excludes generic-only turns", () => {
+  const rows: NightsWatchToolCallInputRow[] = [
+    nightsWatchToolRow({ tools_used: ["live_feed_capture", "get_my_positions"] }), // in cohort
+    nightsWatchToolRow({ tools_used: ["live_feed_capture", "get_quote", "get_gex"] }), // generic-only — NOT in cohort
+    nightsWatchToolRow({ tools_used: ["get_my_positions"] }), // in cohort
+  ];
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+});
+
+test("nights watch tool-call calibration: an intent_bucket alone, WITHOUT a matching tool call, never joins the cohort", () => {
+  // Unlike the SPX cohort, there is no router path that can answer a Night's
+  // Watch question deterministically — so even a made-up "nights_watch"-flavored
+  // intent_bucket must NOT be enough on its own to admit a row (guards against a
+  // future edit reintroducing an OR-clause that isn't backed by a real router
+  // intent).
+  const rows: NightsWatchToolCallInputRow[] = [
+    nightsWatchToolRow({ tools_used: ["blackout_intelligence"], intent_bucket: "nights_watch", answer_source: "bie-router" }),
+  ];
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+});
+
+test("nights watch tool-call calibration: aggregate grounding pass rate and avg latency over a mixed cohort; router_matched_n is honestly 0", () => {
+  const rows: NightsWatchToolCallInputRow[] = [
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], answer_source: "claude", claims_total: 4, claims_verified: 4, latency_ms: 4000 }),
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], answer_source: "claude", claims_total: 6, claims_verified: 3, latency_ms: 6000 }),
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], answer_source: "claude", claims_total: 5, claims_verified: 5, latency_ms: 40 }),
+  ];
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 3);
+  assert.equal(r.claude_fallback_n, 3);
+  // No deterministic router intent for Night's Watch exists — always 0, never fabricated.
+  assert.equal(r.router_matched_n, 0);
+  assert.equal(r.router_match_rate_pct, 0);
+  // sum(verified)/sum(total) = (4+3+5)/(4+6+5) = 12/15 = 80% — weighted, not an
+  // unweighted average of each row's own ratio.
+  assert.equal(r.grounding_pass_rate_pct, 80);
+  // (4000 + 6000 + 40) / 3 = 3346.67 → rounds to 3347.
+  assert.equal(r.avg_latency_ms, 3347);
+});
+
+test("nights watch tool-call calibration: turns with zero numeric claims are excluded from the grounding ratio but still counted in n", () => {
+  const rows: NightsWatchToolCallInputRow[] = [
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], claims_total: 0, claims_verified: 0 }),
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], claims_total: 4, claims_verified: 2 }),
+  ];
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-06-22", through: "2026-07-06" });
+  assert.equal(r.n, 2);
+  assert.equal(r.grounding_pass_rate_pct, 50);
+});
+
+test("nights watch tool-call calibration: refuses to recommend on thin evidence — waits for n≥10, same gate as the other passes", () => {
+  const rows = Array.from({ length: 5 }, () =>
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.recommendations.length, 0);
+  assert.match(formatNightsWatchToolCallCalibration(r), /never tunes on noise/);
+});
+
+test("nights watch tool-call calibration: exactly n=10 clears the evidence gate and cites low grounding", () => {
+  const rows: NightsWatchToolCallInputRow[] = Array.from({ length: 10 }, () =>
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 10);
+  assert.equal(r.grounding_pass_rate_pct, 25);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+  // Deliberately no "router coverage" recommendation for Night's Watch — see
+  // computeNightsWatchToolCallCalibration's comment: with router_matched_n
+  // structurally always 0, that recommendation would fire on every report
+  // forever and teach a reader to ignore this section.
+  assert.ok(!r.recommendations.some((x) => /router/i.test(x)));
+});
+
+test("nights watch tool-call calibration: n=11 (just above the gate) still cites low grounding", () => {
+  const rows: NightsWatchToolCallInputRow[] = Array.from({ length: 11 }, () =>
+    nightsWatchToolRow({ tools_used: ["get_my_positions"], answer_source: "claude", claims_total: 4, claims_verified: 1 })
+  );
+  const r = computeNightsWatchToolCallCalibration(rows, { since: "2026-07-01", through: "2026-07-06" });
+  assert.equal(r.n, 11);
+  assert.ok(r.recommendations.some((x) => /show only 25% claim grounding/.test(x)));
+});
+
+test("nights watch tool-call calibration: empty cohort reports null rates, not zero/NaN", () => {
+  const r = computeNightsWatchToolCallCalibration([], { since: "2026-07-06", through: "2026-07-06" });
+  assert.equal(r.n, 0);
+  assert.equal(r.router_match_rate_pct, null);
+  assert.equal(r.grounding_pass_rate_pct, null);
+  assert.equal(r.avg_latency_ms, null);
+  assert.match(formatNightsWatchToolCallCalibration(r), /no graded claims yet/);
+});
+
+test("calibration: combined report can carry all six sections — 0DTE, SPX Slayer outcomes, SPX-tool-calling, Night-Hawk-tool-calling, and Night's-Watch-tool-calling turns", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spx = computeSpxCalibration([spxRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  const spxToolCalls = computeSpxToolCallCalibration([spxToolRow({ tools_used: ["get_spx_play"] })], {
+    since: "2026-07-06",
+    through: "2026-07-06",
+  });
+  const nighthawkToolCalls = computeNighthawkToolCallCalibration(
+    [nighthawkToolRow({ tools_used: ["get_nighthawk_edition"] })],
+    { since: "2026-07-06", through: "2026-07-06" }
+  );
+  const nightsWatchToolCalls = computeNightsWatchToolCallCalibration(
+    [nightsWatchToolRow({ tools_used: ["get_my_positions"] })],
+    { since: "2026-07-06", through: "2026-07-06" }
+  );
+  const text = formatCalibration({
+    ...zeroDte,
+    spx_slayer: spx,
+    spx_tool_calls: spxToolCalls,
+    nighthawk_tool_calls: nighthawkToolCalls,
+    nights_watch_tool_calls: nightsWatchToolCalls,
+  });
+  assert.match(text, /0DTE Command calibration/);
+  assert.match(text, /SPX Slayer calibration/);
+  assert.match(text, /SPX-tool-calling Largo turns/);
+  assert.match(text, /Night-Hawk-tool-calling Largo turns/);
+  assert.match(text, /Night's-Watch-tool-calling Largo turns/);
+});
+
+test("calibration: without an attached nights_watch_tool_calls pass, the report doesn't grow an extra section", () => {
+  const zeroDte = computeCalibration([calRow({})], { since: "2026-07-06", through: "2026-07-06", sessions: 1 });
+  assert.equal(zeroDte.nights_watch_tool_calls, null);
+  assert.doesNotMatch(formatCalibration(zeroDte), /Night's-Watch-tool-calling/);
+});
+
 
 // ── Phase 4: telemetry discovery (pure formatting + thresholds) ──────────────────
 

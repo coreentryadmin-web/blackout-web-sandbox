@@ -3,14 +3,14 @@
 import useSWR from "swr";
 import { useEffect } from "react";
 import { fetchSpxLottoToday } from "@/lib/api";
-import { isLottoWindow } from "@/lib/spx-play-session-guards";
+import { isLottoPollWindow } from "@/lib/spx-play-session-guards";
 
 const LOTTO_PREMARKET_MS = 60_000;
 const LOTTO_OPEN_MS = 10_000;
 
-/** Poll interval during the lotto window; 0 outside it (still fetches once on mount). */
+/** Poll interval during the lotto poll window; 0 outside it (still fetches once on mount). */
 export function lottoPollIntervalMs(): number {
-  if (!isLottoWindow()) return 0;
+  if (!isLottoPollWindow()) return 0;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     hour: "numeric",
@@ -23,7 +23,7 @@ export function lottoPollIntervalMs(): number {
   return mins < 9 * 60 + 30 ? LOTTO_PREMARKET_MS : LOTTO_OPEN_MS;
 }
 
-/** Lotto track polls independently of main desk session — 7:00–10:30 AM ET only. */
+/** Lotto track polls independently of main desk session — 7:00 AM–2:00 PM ET (engine intraday cutoff). */
 export function useSpxLotto() {
   const interval = lottoPollIntervalMs();
   const { data, isValidating, isLoading, mutate } = useSWR("spx-lotto-today", fetchSpxLottoToday, {
@@ -67,6 +67,6 @@ export function useSpxLotto() {
     lottoHistory: data?.history ?? [],
     lottoLoading: isLoading && !data,
     lottoRefreshing: isValidating && Boolean(data),
-    lottoWindowActive: isLottoWindow(),
+    lottoWindowActive: isLottoPollWindow(),
   };
 }

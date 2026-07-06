@@ -3,12 +3,14 @@ import test from "node:test";
 import {
   buildNighthawkAuditRow,
   buildNighthawkRejectedAuditRow,
+  buildNighthawkStageRejectedAuditRow,
   outcomeSessionDate,
   parsePlayLevels,
   resolveOutcome,
 } from "./play-outcomes";
 import type { NighthawkPlayOutcomeRow } from "@/lib/db";
 import type { PlaybookPlay } from "./types";
+import type { ScoredCandidate } from "./scorer";
 
 test("outcomeSessionDate resolves the edition date itself, not the next trading day", () => {
   assert.equal(outcomeSessionDate({ edition_for: "2026-06-30" }), "2026-06-30");
@@ -218,4 +220,333 @@ test("rejected audit row: LONG direction and a corrupt entry-range are recorded 
   assert.equal(audit.decision_trace.length, 1);
   assert.equal(audit.decision_trace[0]!.value, drops[0]);
   assert.equal((audit.input_snapshot as { raw_entry_range: string }).raw_entry_range, "$17-$452");
+});
+
+// ── Stage 4 audit trail, LATER-stage rejections (task #141) ──────────────────────
+// buildNighthawkStageRejectedAuditRow is the generalized sibling of
+// buildNighthawkRejectedAuditRow (geometry-only, above) — one builder shared by the 4
+// later-funnel rejection stages that used to be console.warn-only: premium-cap,
+// illiquid-strike, ungrounded, and sector-concentration. Same fixture-driven, no-database
+// pattern as the geometry tests above.
+
+test("stage-rejected audit row: premium-cap cites the actual premium and the cap threshold", () => {
+  const play = {
+    ticker: "tsla",
+    direction: "LONG",
+    conviction: "a",
+    score: 88,
+    entry_range: "$300-$305",
+    target: "$330",
+    stop: "$290",
+    options_play: "TSLA 320C 08/21, entry prem ~$27.50",
+    entry_premium: 27.5,
+    entry_cost_per_contract: 2750,
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "TSLA",
+      play,
+      detail: {
+        stage: "premium_cap",
+        entry_premium: 27.5,
+        cap_per_share: 20,
+        entry_cost_per_contract: 2750,
+        cap_per_contract: 2000,
+      },
+    },
+    "2026-07-06"
+  );
+
+  assert.equal(audit.alert_type, "nighthawk_rejected");
+  assert.equal(audit.source_table, "claude_edition_synthesis");
+  assert.deepEqual(audit.source_key, { edition_for: "2026-07-06", ticker: "TSLA" });
+  assert.equal(audit.ticker, "TSLA");
+  assert.match(audit.trigger_reason, /premium|afford/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "premium_within_cap", passed: false, value: 27.5, threshold: 20 },
+  ]);
+  assert.equal((audit.input_snapshot as { entry_premium: number }).entry_premium, 27.5);
+  assert.equal((audit.input_snapshot as { cap_per_share: number }).cap_per_share, 20);
+  // A rejected play was never shown to a member — no fabricated final_output (same
+  // convention as the geometry builder).
+  assert.equal(audit.final_output, null);
+});
+
+test("stage-rejected audit row: illiquid-strike cites the strike, the actual OI, and the floor it missed", () => {
+  const play = {
+    ticker: "SNDK",
+    direction: "LONG",
+    conviction: "b",
+    score: 65,
+    entry_range: "$180-$184",
+    target: "$200",
+    stop: "$172",
+    options_play: "SNDK 190C 09/18",
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "SNDK",
+      play,
+      detail: {
+        stage: "illiquid_strike",
+        strike: 190,
+        side: "call",
+        expiry: "2026-09-18",
+        open_interest: 220,
+        min_open_interest: 500,
+      },
+    },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /illiquid|open interest/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "strike_open_interest", passed: false, value: 220, threshold: 500 },
+  ]);
+  assert.equal((audit.input_snapshot as { strike: number }).strike, 190);
+  assert.equal((audit.input_snapshot as { open_interest: number }).open_interest, 220);
+  assert.equal((audit.input_snapshot as { min_open_interest: number }).min_open_interest, 500);
+});
+
+test("stage-rejected audit row: ungrounded cites which claimed level/contract failed and against what", () => {
+  const play = {
+    ticker: "AVGO",
+    direction: "SHORT",
+    conviction: "a",
+    score: 80,
+    entry_range: "$1900-$1920",
+    target: "$1800",
+    stop: "$1960",
+    options_play: "AVGO 1850P 08/21",
+  } as PlaybookPlay;
+  const issues = [
+    { check: "strike", detail: "AVGO strike 1850 call present on-chain but OI 120 < 500 (illiquid/off-chain)." },
+  ];
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    { ticker: "AVGO", play, detail: { stage: "ungrounded", issues } },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /ground/i);
+  assert.equal(audit.decision_trace.length, 1);
+  assert.equal(audit.decision_trace[0]!.value, issues[0]!.detail);
+  assert.deepEqual((audit.input_snapshot as { ungrounded_issues: typeof issues }).ungrounded_issues, issues);
+});
+
+test("stage-rejected audit row: sector-concentration cites the sector and how many tickers already filled it", () => {
+  const play = {
+    ticker: "AMD",
+    direction: "LONG",
+    conviction: "b",
+    score: 70,
+    entry_range: "$150-$154",
+    target: "$168",
+    stop: "$142",
+    options_play: "AMD 160C 08/21",
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "AMD",
+      play,
+      detail: { stage: "sector_concentration", sector: "semis", already_filled: 2, max_per_sector: 2 },
+    },
+    "2026-07-06"
+  );
+
+  assert.match(audit.trigger_reason, /sector-concentration/i);
+  assert.deepEqual(audit.decision_trace, [
+    { check: "sector_concentration_cap", passed: false, value: 2, threshold: 2 },
+  ]);
+  assert.equal((audit.input_snapshot as { sector: string }).sector, "semis");
+  assert.equal((audit.input_snapshot as { already_filled: number }).already_filled, 2);
+});
+
+// ── Confluence-factor context on rejection rows (task #142) ──────────────────────
+// The ORIGINAL gap this task closed: decision_trace/input_snapshot for a rejected play
+// carried only the failed gate's own numbers (target/stop, premium/cap, OI/floor, ...) —
+// never the confluence-factor breakdown scoreCandidate() (scorer.ts) computed for that
+// same ticker this run (flow/tech/pos/news/smart-money/fundamental/short-interest/
+// catalyst sub-scores). Re-investigated post-#129/#141: a DB join against
+// nighthawk_scoring_history at rejection-build time would find NOTHING for tonight's
+// edition (that table only archives post-publish — see claude-edition.ts's
+// geometryRejected push-site comment) — so the fix threads the caller's already-in-memory
+// ScoredCandidate through instead, via a new optional `scored` field, folded into
+// input_snapshot.confluence by every stage (not just geometry) since the fold happens in
+// the shared `base` object all 5 stages already share.
+
+const FULL_SCORED_FIXTURE: ScoredCandidate = {
+  ticker: "TSLA",
+  score: 88,
+  direction: "long",
+  flow_score: 30,
+  tech_score: 22,
+  pos_score: 14,
+  news_score: 10,
+  smart_money_score: 8,
+  fundamental_score: 3,
+  catalyst_score: 2,
+  catalyst_flags: ["binary FDA event ahead"],
+  short_interest_score: 5,
+  earnings_risk: true,
+  conviction: "A",
+  regime_multiplier: 1.15,
+  fundamental_block: false,
+  fundamental_flags: ["strong margins"],
+  trading_halt: false,
+};
+
+test("rejected audit row (geometry): scored candidate's confluence breakdown is folded into input_snapshot, never re-derived", () => {
+  const play = {
+    ticker: "TSLA",
+    direction: "LONG",
+    conviction: "a",
+    score: 88,
+    entry_range: "$300-$305",
+    target: "$330",
+    stop: "$290",
+    options_play: "TSLA 320C 08/21, entry prem ~$27.50",
+  } as PlaybookPlay;
+  const drops = ["LONG target 330 is not above entry mid 302.50 by enough margin"];
+
+  const audit = buildNighthawkRejectedAuditRow(
+    { ticker: "TSLA", drops, play, scored: FULL_SCORED_FIXTURE },
+    "2026-07-06"
+  );
+
+  const confluence = (audit.input_snapshot as { confluence: Record<string, unknown> }).confluence;
+  assert.deepEqual(confluence, {
+    total_score: 88,
+    direction: "long",
+    conviction: "A",
+    flow_score: 30,
+    tech_score: 22,
+    pos_score: 14,
+    news_score: 10,
+    smart_money_score: 8,
+    fundamental_score: 3,
+    catalyst_score: 2,
+    catalyst_flags: ["binary FDA event ahead"],
+    short_interest_score: 5,
+    earnings_risk: true,
+    regime_multiplier: 1.15,
+    fundamental_block: false,
+    fundamental_flags: ["strong margins"],
+    trading_halt: false,
+  });
+  // The pre-existing geometry fields are untouched by this addition (additive-only fold).
+  assert.equal((audit.input_snapshot as { raw_target: string }).raw_target, "$330");
+});
+
+test("rejected audit row (geometry): confluence is null (not fabricated) when no scored candidate is available", () => {
+  const play = {
+    ticker: "SNDK",
+    direction: "SHORT",
+    conviction: "b",
+    entry_range: "$1880-$1900",
+    target: "$1950",
+    stop: "$1723",
+  } as PlaybookPlay;
+
+  // `scored` omitted entirely — mirrors a caller on the mechanical-fallback path, or a
+  // ticker Claude named outside this run's scored candidate set (dossierMap miss).
+  const audit = buildNighthawkRejectedAuditRow({ ticker: "SNDK", drops: ["x"], play }, "2026-07-06");
+  assert.equal((audit.input_snapshot as { confluence: unknown }).confluence, null);
+});
+
+test("confluenceSnapshot defaults every optional ScoredCandidate field honestly (null/empty/false, never fabricated)", () => {
+  // A minimal ScoredCandidate missing every optional sub-score/flag field — the shape
+  // scoreCandidate() actually produces when e.g. no catalyst/short-interest signal fired.
+  const minimal: ScoredCandidate = {
+    ticker: "AMD",
+    score: 70,
+    direction: "long",
+    flow_score: 25,
+    tech_score: 20,
+    pos_score: 15,
+    news_score: 5,
+    smart_money_score: 5,
+    conviction: "B",
+  };
+  const play = {
+    ticker: "AMD",
+    direction: "LONG",
+    conviction: "b",
+    entry_range: "$150-$154",
+    target: "$168",
+    stop: "$142",
+    options_play: "AMD 160C 08/21",
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "AMD",
+      play,
+      detail: { stage: "sector_concentration", sector: "semis", already_filled: 2, max_per_sector: 2 },
+      scored: minimal,
+    },
+    "2026-07-06"
+  );
+
+  assert.deepEqual((audit.input_snapshot as { confluence: Record<string, unknown> }).confluence, {
+    total_score: 70,
+    direction: "long",
+    conviction: "B",
+    flow_score: 25,
+    tech_score: 20,
+    pos_score: 15,
+    news_score: 5,
+    smart_money_score: 5,
+    fundamental_score: null,
+    catalyst_score: null,
+    catalyst_flags: [],
+    short_interest_score: null,
+    earnings_risk: false,
+    regime_multiplier: null,
+    fundamental_block: false,
+    fundamental_flags: [],
+    trading_halt: false,
+  });
+});
+
+test("stage-rejected audit row (premium-cap): confluence breakdown folds in identically to the geometry stage — proves the shared `base` fold, not a per-stage special case", () => {
+  const play = {
+    ticker: "TSLA",
+    direction: "LONG",
+    conviction: "a",
+    score: 88,
+    entry_range: "$300-$305",
+    target: "$330",
+    stop: "$290",
+    options_play: "TSLA 320C 08/21, entry prem ~$27.50",
+    entry_premium: 27.5,
+    entry_cost_per_contract: 2750,
+  } as PlaybookPlay;
+
+  const audit = buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: "TSLA",
+      play,
+      detail: {
+        stage: "premium_cap",
+        entry_premium: 27.5,
+        cap_per_share: 20,
+        entry_cost_per_contract: 2750,
+        cap_per_contract: 2000,
+      },
+      scored: FULL_SCORED_FIXTURE,
+    },
+    "2026-07-06"
+  );
+
+  const confluence = (audit.input_snapshot as { confluence: Record<string, unknown> }).confluence;
+  assert.equal(confluence.total_score, 88);
+  assert.equal(confluence.flow_score, 30);
+  assert.equal(confluence.smart_money_score, 8);
+  // Stage-specific fields still present alongside the new confluence key (additive, not a
+  // replacement of premium_cap's own established input_snapshot fields).
+  assert.equal((audit.input_snapshot as { entry_premium: number }).entry_premium, 27.5);
 });

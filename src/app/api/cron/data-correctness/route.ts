@@ -20,6 +20,11 @@
 // the RTH window unless ?force=1. Fires notifyOpsDiscord({critical}) on any FLAG and {warning} on new
 // consistency-only coverage gaps. Persists the run via logCronRun and emits a markdown scorecard to
 // docs/auto/data-correctness-<date>.md (best-effort; skipped silently on a read-only FS).
+//
+// ?surface=heatmap runs ONLY the Heat Maps (GEX/VEX/DEX/CHARM) verifier instead of the full 8-surface
+// platform sweep — the full sweep's sequential per-surface upstream calls can run long enough during
+// RTH to trip an edge gateway timeout (~100s, well inside the route's own maxDuration=120) and return
+// a bodyless 524; this gives a fast, targeted path to the one surface most worth re-checking on demand.
 
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
@@ -30,6 +35,7 @@ import { logCronRun } from "@/lib/cron-run";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import {
   runFullCorrectness,
+  runHeatmapCorrectness,
   correctnessTickers,
   renderScorecardMarkdown,
   scorecardStatus,
@@ -52,9 +58,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
+  // Full-platform sweep sequentially runs 8+ surfaces (each with its own upstream fetches) and
+  // can run long enough during RTH to trip an edge gateway timeout (~100s) before the platform's
+  // own maxDuration=120 ever kicks in — surfacing as a 524 with zero response body. `surface=heatmap`
+  // runs ONLY the Heat Maps (GEX/VEX/DEX/CHARM) verifier so a targeted re-check (or this exact
+  // symptom) doesn't require paying for the other 7 surfaces' runtime.
+  const surface = req.nextUrl.searchParams.get("surface");
+
   try {
     const tickers = correctnessTickers();
-    const card = await runFullCorrectness(tickers);
+    const card = surface === "heatmap" ? await runHeatmapCorrectness(tickers) : await runFullCorrectness(tickers);
     const overall = scorecardStatus(card);
 
     // ── Markdown scorecard → docs/auto/data-correctness-<date>.md (best-effort) ──

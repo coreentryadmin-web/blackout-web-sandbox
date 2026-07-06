@@ -73,6 +73,7 @@ export function FreshnessChip({ status, asOf, label, className }: FreshnessChipP
 
   return (
     <span
+      data-freshness={status}
       className={clsx(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums",
         STATUS_TONE[status],

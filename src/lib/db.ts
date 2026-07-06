@@ -1074,6 +1074,159 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_nighthawk_scoring_history_edition
       ON nighthawk_scoring_history(edition_for);
+
+    -- zerodte_scan_rejections (task #147): durable near-miss/rejection log for 0DTE
+    -- Command's scanner (src/lib/zerodte/board.ts's deriveZeroDteSetups, src/lib/
+    -- zerodte/scan.ts's warmZeroDteBoard) — the 0DTE-Command analogue of
+    -- spx_engine_snapshots above, for the SEPARATE multi-ticker scanner (NOT SPX
+    -- Slayer). deriveZeroDteSetups computes real gate metrics (gross premium,
+    -- at-the-ask aggression share, side dominance, OTM%) for every candidate ticker
+    -- it aggregates from the HELIX tape and checks them against 4 thresholds
+    -- (SETUP_MIN_GROSS/SETUP_MIN_AGGR_SHARE/SETUP_MIN_DOMINANCE/SETUP_MAX_ITM_PCT),
+    -- but short-circuits (continue) past any candidate that fails one — before
+    -- this table existed nothing was written for a rejected candidate, so "why
+    -- didn't ticker X ever hit the Grid board" was unanswerable after the fact.
+    -- Committed setups already have a durable record via zerodte_setup_log/
+    -- persistZeroDteScan — this table is deliberately the REJECTED half only, never
+    -- a duplicate of that one. gate_failed records exactly which of the 4 gates (or
+    -- the structural no_dominant_strike guard) stopped the candidate; the numeric
+    -- columns are nullable because deriveZeroDteSetups short-circuits BEFORE
+    -- computing later-gate metrics — a gross-premium rejection genuinely never
+    -- computes aggression/dominance/otm_pct, so those stay null rather than being
+    -- fabricated. threshold cites the actual live gate constant at rejection time
+    -- (mirrors buildZeroDteAuditRow's same discipline) so a later threshold tune
+    -- can't retroactively relabel a historical row. Written by
+    -- persistZeroDteRejections (src/lib/zerodte/rejections.ts), throttled to one
+    -- row per ticker per DISTINCT (gate_failed, direction) state per session — see
+    -- that file's module doc for why this can't reuse spx_engine_snapshots' single-
+    -- cursor throttle idiom (many simultaneous candidate tickers, not one
+    -- instrument).
+    CREATE TABLE IF NOT EXISTS zerodte_scan_rejections (
+      id             BIGSERIAL PRIMARY KEY,
+      observed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date   DATE NOT NULL,
+      ticker         TEXT NOT NULL,
+      gate_failed    TEXT NOT NULL,
+      threshold      NUMERIC,
+      gross_premium  NUMERIC,
+      aggression     NUMERIC,
+      side_dominance NUMERIC,
+      otm_pct        NUMERIC,
+      direction      TEXT,
+      prints         INTEGER,
+      first_seen     TIMESTAMPTZ,
+      last_seen      TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_zerodte_scan_rejections_observed_at
+      ON zerodte_scan_rejections (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_zerodte_scan_rejections_ticker
+      ON zerodte_scan_rejections (ticker, observed_at DESC);
+
+    -- gex_regime_events (task #136): durable log of BlackOut Thermal's GEX
+    -- regime/flip/wall-crossing events, detected by computeGexEvents() (src/lib/
+    -- providers/polygon-options-gex.ts) on every fresh GEX matrix compute (cache
+    -- miss). Before this table existed, computeGexEvents' output only ever lived
+    -- on the shared, TTL-capped gex-heatmap:{ticker} matrix cache and the
+    -- gex-history:{ticker} intraday positioning-history RING (capped at
+    -- GEX_HISTORY_MAX ~24 samples / ~2h, GEX_HISTORY_TTL_SEC ~3h) — once the ring
+    -- rotated past a sample or the matrix cache/TTL expired, the event itself was
+    -- gone. /api/cron/gex-alerts/route.ts consumes the SAME events array to fire
+    -- live push alerts, but only ever writes a Redis DEDUP key on fire
+    -- (gex-alert-sent:{ticker}:{type}:{etDate}[:level]) — a record that a push
+    -- WAS sent, never a durable record of the event's own before/after values,
+    -- and only for the 3-ticker REGIME_WATCHLIST (SPY/SPX/QQQ) + the subset of
+    -- event types that are broadcast-worthy. So "at time T, SPY's gamma flip
+    -- crossed" or "how many times has NVDA's call wall broken today" was
+    -- unanswerable after the fact for ANY ticker, and unanswerable at ALL once
+    -- the ring/cache/dedup keys rotated even for the 3 watchlist names.
+    -- event_type is one of computeGexEvents' 4 GexEvent.type values
+    -- (flip_crossed/wall_broken/regime_flipped/net_gex_sign_flipped); level/
+    -- direction/message mirror GexEvent's own fields verbatim (never re-derived);
+    -- from_value/to_value are the natural before/after numeric pair for that
+    -- event type (spot before/after the crossed level for flip_crossed/
+    -- wall_broken; the gamma-flip level at each end for regime_flipped, since
+    -- posture there is computed per-end against that end's OWN flip; net GEX
+    -- dollars before/after for net_gex_sign_flipped) — see GexEvent's own
+    -- from_value/to_value doc comment in polygon-options-gex.ts for exactly
+    -- which pair each type carries, and null when an event type has no single
+    -- natural numeric pair (never fabricated). detected_at is computeGexEvents'
+    -- own "at" (the ISO timestamp of the sample where the cross was detected),
+    -- kept separate from observed_at (this row's insert time) for the same
+    -- staleness-vs-write-latency reason spx_engine_snapshots separates as_of
+    -- from observed_at. Written by persistGexRegimeEvents (src/lib/providers/
+    -- gex-regime-events.ts), throttled via its OWN per-(ticker, event
+    -- type+direction) platform_meta state-transition cursor — DELIBERATELY
+    -- INDEPENDENT of gex-alerts' Redis dedup key (different storage, different
+    -- key namespace, different throttle granularity: this one persists EVERY
+    -- distinct transition all day, not once per ET-date) so durable history and
+    -- live-alert dedup can never suppress each other.
+    CREATE TABLE IF NOT EXISTS gex_regime_events (
+      id           BIGSERIAL PRIMARY KEY,
+      observed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date DATE NOT NULL,
+      ticker       TEXT NOT NULL,
+      event_type   TEXT NOT NULL,
+      severity     TEXT NOT NULL,
+      message      TEXT NOT NULL,
+      level        NUMERIC,
+      direction    TEXT,
+      from_value   NUMERIC,
+      to_value     NUMERIC,
+      detected_at  TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_gex_regime_events_observed_at
+      ON gex_regime_events (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_gex_regime_events_ticker
+      ON gex_regime_events (ticker, observed_at DESC);
+
+    -- flow_anomaly_near_misses (task #131): durable near-miss/rejection log for
+    -- HELIX's flow-anomaly detector (src/app/api/cron/market-regime-detector/
+    -- flow-anomaly-detection.ts's detectFlowAnomalies, route.ts's dedup loop) — the
+    -- HELIX analogue of spx_engine_snapshots/zerodte_scan_rejections above, for a
+    -- THIRD, separate engine (5-min market-wide flow-anomaly scan, not SPX Slayer's
+    -- single-instrument engine or 0DTE Command's multi-ticker setup scanner).
+    -- detectFlowAnomalies computes real per-ticker metrics (max single print,
+    -- call/put premium totals + skew ratio) for every ticker with recent HELIX
+    -- flow, but only ever surfaces an anomaly once it clears a hard threshold
+    -- (LARGE_PREMIUM_PRINT >= $2M single print, DIRECTIONAL_FLOW_SKEW >= 10:1 on
+    -- $500k+ total premium) — a candidate that falls short left NO trace anywhere.
+    -- Note table (NOT view, NOT column) note: this is a genuinely THIRD-different
+    -- discard path from the sibling tables' single "gate rejected, continue" shape
+    -- — reason distinguishes the TWO structurally different ways a computed
+    -- candidate never reaches flow_anomalies: 'BELOW_THRESHOLD' (the metric itself
+    -- never cleared the hard threshold; severity is null because the real detector
+    -- never assigns one to a candidate that doesn't fire) vs 'DEDUP_SUPPRESSED'
+    -- (the candidate DID clear its threshold — it's a fully-formed anomaly with a
+    -- real severity — but route.ts's own 15-minute same-type+ticker dedup window
+    -- already had a match, so the INSERT into flow_anomalies never ran). Conflating
+    -- these two into one reason would make "why didn't X fire" unanswerable in
+    -- exactly the two most common follow-up shapes members actually ask ("was it
+    -- just below the bar" vs. "did it already fire recently and get suppressed").
+    -- metric_value/threshold are cited in the SAME unit the real detector compares
+    -- (dollars for LARGE_PREMIUM_PRINT, a ratio for DIRECTIONAL_FLOW_SKEW — see
+    -- flow-anomaly-detection.ts's FlowAnomaly.metric_value doc for why the plain
+    -- premium column alone is the wrong unit for a skew row). Written by
+    -- persistFlowAnomalyNearMisses (src/lib/platform/flow-anomaly-near-misses.ts),
+    -- throttled via the SAME per-ticker platform_meta JSON-cursor idiom
+    -- persistZeroDteRejections uses (many simultaneous candidate tickers per tick,
+    -- not one instrument) — see that file's module doc for the full reasoning.
+    CREATE TABLE IF NOT EXISTS flow_anomaly_near_misses (
+      id            BIGSERIAL PRIMARY KEY,
+      observed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      anomaly_type  TEXT NOT NULL,
+      ticker        TEXT,
+      reason        TEXT NOT NULL,
+      metric_value  NUMERIC NOT NULL,
+      threshold     NUMERIC NOT NULL,
+      premium       NUMERIC,
+      direction     TEXT,
+      severity      TEXT,
+      detail        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_flow_anomaly_near_misses_observed_at
+      ON flow_anomaly_near_misses (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_flow_anomaly_near_misses_ticker
+      ON flow_anomaly_near_misses (ticker, observed_at DESC);
   `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
@@ -1845,6 +1998,330 @@ export async function fetchRecentSpxEngineSnapshots(limit = 50): Promise<
     gates_blocks: r.gates_blocks,
     thesis: String(r.thesis),
     as_of: r.as_of != null ? String(r.as_of) : null,
+  }));
+}
+
+/**
+ * Persists one 0DTE Command near-miss/rejection row (task #147,
+ * src/lib/zerodte/rejections.ts's persistZeroDteRejections). Same "always insert,
+ * caller already decided whether to call" idiom as insertSpxEngineSnapshot above —
+ * the throttle (only write on a real per-ticker gate_failed/direction state
+ * transition) lives in the caller, not here, so this function itself has no ON
+ * CONFLICT / dedup logic. Singular (one row, not a batch) because a scan cycle's
+ * rejection count is bounded by the candidate universe (single digits to low
+ * tens) — the caller loops this per changed ticker rather than needing a
+ * multi-row statement.
+ */
+export async function insertZeroDteScanRejection(row: {
+  session_date: string;
+  ticker: string;
+  gate_failed: string;
+  threshold: number | null;
+  gross_premium: number;
+  aggression: number | null;
+  side_dominance: number | null;
+  otm_pct: number | null;
+  direction: string | null;
+  prints: number;
+  first_seen: string | null;
+  last_seen: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO zerodte_scan_rejections (
+      session_date, ticker, gate_failed, threshold, gross_premium,
+      aggression, side_dominance, otm_pct, direction, prints,
+      first_seen, last_seen
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    `,
+    [
+      row.session_date,
+      row.ticker,
+      row.gate_failed,
+      row.threshold,
+      row.gross_premium,
+      row.aggression,
+      row.side_dominance,
+      row.otm_pct,
+      row.direction,
+      row.prints,
+      row.first_seen,
+      row.last_seen,
+    ]
+  );
+}
+
+export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit?: number }): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    session_date: string;
+    ticker: string;
+    gate_failed: string;
+    threshold: number | null;
+    gross_premium: number;
+    aggression: number | null;
+    side_dominance: number | null;
+    otm_pct: number | null;
+    direction: string | null;
+    prints: number | null;
+    first_seen: string | null;
+    last_seen: string | null;
+  }>
+> {
+  await ensureSchema();
+  const limit = opts?.limit ?? 50;
+  const ticker = opts?.ticker?.toUpperCase();
+  const cols = `id, observed_at, session_date, ticker, gate_failed, threshold,
+           gross_premium, aggression, side_dominance, otm_pct, direction, prints,
+           first_seen, last_seen`;
+  const res = ticker
+    ? await (await getPool()).query(
+        `SELECT ${cols} FROM zerodte_scan_rejections WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
+        [ticker, limit]
+      )
+    : await (await getPool()).query(
+        `SELECT ${cols} FROM zerodte_scan_rejections ORDER BY observed_at DESC LIMIT $1`,
+        [limit]
+      );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    observed_at: String(r.observed_at),
+    session_date: String(r.session_date),
+    ticker: String(r.ticker),
+    gate_failed: String(r.gate_failed),
+    threshold: r.threshold != null ? Number(r.threshold) : null,
+    gross_premium: r.gross_premium != null ? Number(r.gross_premium) : 0,
+    aggression: r.aggression != null ? Number(r.aggression) : null,
+    side_dominance: r.side_dominance != null ? Number(r.side_dominance) : null,
+    otm_pct: r.otm_pct != null ? Number(r.otm_pct) : null,
+    direction: r.direction != null ? String(r.direction) : null,
+    prints: r.prints != null ? Number(r.prints) : null,
+    first_seen: r.first_seen != null ? String(r.first_seen) : null,
+    last_seen: r.last_seen != null ? String(r.last_seen) : null,
+  }));
+}
+
+/**
+ * Persists one GEX regime-transition row (task #136,
+ * src/lib/providers/gex-regime-events.ts's persistGexRegimeEvents). Same "always
+ * insert, caller already decided whether to call" idiom as
+ * insertZeroDteScanRejection/insertSpxEngineSnapshot above — the throttle (only
+ * write on a real per-(ticker, event type+direction) state transition) lives in
+ * the caller, not here.
+ */
+export async function insertGexRegimeEvent(row: {
+  session_date: string;
+  ticker: string;
+  event_type: string;
+  severity: string;
+  message: string;
+  level: number | null;
+  direction: string | null;
+  from_value: number | null;
+  to_value: number | null;
+  detected_at: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO gex_regime_events (
+      session_date, ticker, event_type, severity, message,
+      level, direction, from_value, to_value, detected_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `,
+    [
+      row.session_date,
+      row.ticker,
+      row.event_type,
+      row.severity,
+      row.message,
+      row.level,
+      row.direction,
+      row.from_value,
+      row.to_value,
+      row.detected_at,
+    ]
+  );
+}
+
+export async function fetchGexRegimeEventRows(opts?: { ticker?: string; limit?: number }): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    session_date: string;
+    ticker: string;
+    event_type: string;
+    severity: string;
+    message: string;
+    level: number | null;
+    direction: string | null;
+    from_value: number | null;
+    to_value: number | null;
+    detected_at: string | null;
+  }>
+> {
+  await ensureSchema();
+  const limit = opts?.limit ?? 50;
+  const ticker = opts?.ticker?.toUpperCase();
+  const cols = `id, observed_at, session_date, ticker, event_type, severity, message,
+           level, direction, from_value, to_value, detected_at`;
+  const res = ticker
+    ? await (await getPool()).query(
+        `SELECT ${cols} FROM gex_regime_events WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
+        [ticker, limit]
+      )
+    : await (await getPool()).query(
+        `SELECT ${cols} FROM gex_regime_events ORDER BY observed_at DESC LIMIT $1`,
+        [limit]
+      );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    observed_at: String(r.observed_at),
+    session_date: String(r.session_date),
+    ticker: String(r.ticker),
+    event_type: String(r.event_type),
+    severity: String(r.severity),
+    message: String(r.message),
+    level: r.level != null ? Number(r.level) : null,
+    direction: r.direction != null ? String(r.direction) : null,
+    from_value: r.from_value != null ? Number(r.from_value) : null,
+    to_value: r.to_value != null ? Number(r.to_value) : null,
+    detected_at: r.detected_at != null ? String(r.detected_at) : null,
+  }));
+}
+
+/**
+ * Persists one HELIX flow-anomaly near-miss/rejection row (task #131,
+ * src/lib/platform/flow-anomaly-near-misses.ts's persistFlowAnomalyNearMisses).
+ * Same "always insert, caller already decided whether/how to throttle" idiom as
+ * insertZeroDteScanRejection above — this function has no ON CONFLICT/dedup logic
+ * of its own. Singular (one row, not a batch) for the same reason: a single 5-min
+ * detector tick's near-miss count is bounded by the candidate universe.
+ */
+export async function insertFlowAnomalyNearMiss(row: {
+  anomaly_type: string;
+  ticker: string | null;
+  reason: string;
+  metric_value: number;
+  threshold: number;
+  premium: number | null;
+  direction: string | null;
+  severity: string | null;
+  detail: string;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO flow_anomaly_near_misses (
+      anomaly_type, ticker, reason, metric_value, threshold,
+      premium, direction, severity, detail
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `,
+    [
+      row.anomaly_type,
+      row.ticker,
+      row.reason,
+      row.metric_value,
+      row.threshold,
+      row.premium,
+      row.direction,
+      row.severity,
+      row.detail,
+    ]
+  );
+}
+
+export async function fetchFlowAnomalyNearMisses(opts?: { ticker?: string; limit?: number }): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    anomaly_type: string;
+    ticker: string | null;
+    reason: string;
+    metric_value: number;
+    threshold: number;
+    premium: number | null;
+    direction: string | null;
+    severity: string | null;
+    detail: string;
+  }>
+> {
+  await ensureSchema();
+  const limit = opts?.limit ?? 50;
+  const ticker = opts?.ticker?.toUpperCase();
+  const cols = `id, observed_at, anomaly_type, ticker, reason, metric_value,
+           threshold, premium, direction, severity, detail`;
+  const res = ticker
+    ? await (await getPool()).query(
+        `SELECT ${cols} FROM flow_anomaly_near_misses WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
+        [ticker, limit]
+      )
+    : await (await getPool()).query(
+        `SELECT ${cols} FROM flow_anomaly_near_misses ORDER BY observed_at DESC LIMIT $1`,
+        [limit]
+      );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    observed_at: String(r.observed_at),
+    anomaly_type: String(r.anomaly_type),
+    ticker: r.ticker != null ? String(r.ticker) : null,
+    reason: String(r.reason),
+    metric_value: Number(r.metric_value),
+    threshold: Number(r.threshold),
+    premium: r.premium != null ? Number(r.premium) : null,
+    direction: r.direction != null ? String(r.direction) : null,
+    severity: r.severity != null ? String(r.severity) : null,
+    detail: String(r.detail),
+  }));
+}
+
+/**
+ * Reads the flow_anomalies table (migration 004_god_tier_features.sql) — the
+ * COMMITTED half of HELIX's anomaly pipeline: every LARGE_PREMIUM_PRINT /
+ * DIRECTIONAL_FLOW_SKEW candidate that cleared detectFlowAnomalies' real
+ * threshold AND survived route.ts's 15-min same-type+ticker dedup window (see
+ * flow-anomaly-detection.ts's module doc). Plain SELECT, no new writer — the
+ * market-regime-detector cron (route.ts) is already the sole writer.
+ *
+ * Task #134's admin-helix-health.ts pairs this with fetchFlowAnomalyNearMisses
+ * (task #131, the REJECTED half) using the SAME committed/rejected-union
+ * pattern admin-zerodte-health.ts already established for
+ * zerodte_setup_log/zerodte_scan_rejections — this is that pattern's THIRD
+ * instance, after 0DTE Command and (implicitly) SPX Slayer's engine snapshots.
+ */
+export type FlowAnomalyRow = {
+  id: number;
+  detected_at: string;
+  anomaly_type: string;
+  ticker: string | null;
+  detail: string;
+  premium: number | null;
+  direction: string | null;
+  severity: string | null;
+};
+
+export async function fetchFlowAnomalies(opts?: { limit?: number }): Promise<FlowAnomalyRow[]> {
+  await ensureSchema();
+  const limit = opts?.limit ?? 500;
+  const res = await (await getPool()).query(
+    `SELECT id, detected_at, anomaly_type, ticker, detail, premium, direction, severity
+     FROM flow_anomalies ORDER BY detected_at DESC LIMIT $1`,
+    [limit]
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    detected_at: String(r.detected_at),
+    anomaly_type: String(r.anomaly_type),
+    ticker: r.ticker != null ? String(r.ticker) : null,
+    detail: String(r.detail),
+    premium: r.premium != null ? Number(r.premium) : null,
+    direction: r.direction != null ? String(r.direction) : null,
+    severity: r.severity != null ? String(r.severity) : null,
   }));
 }
 
@@ -4039,6 +4516,364 @@ export async function fetchSpxToolCallingBieInteractions(
   }));
 }
 
+/** Task #133 — the HELIX analogue of fetchSpxToolCallingBieInteractions above: the
+ *  raw rows BIE's calibration harness needs to score "how good are Largo's answers
+ *  specifically when HELIX's own tape/anomaly-detector state was involved"
+ *  (src/lib/bie/calibration.ts's computeHelixToolCallCalibration). Same SQL-layer
+ *  filtering rationale (bie_interactions is one row per Largo QUESTION, much
+ *  higher volume than fetch-then-filter-in-JS tables like zerodte_setup_log), but
+ *  DELIBERATELY WITHOUT an `intent_bucket = '...'` OR-clause — unlike SPX Slayer's
+ *  fetcher above, this is not an oversight. Investigated src/lib/bie/router.ts's
+ *  classifyBieIntent() directly: it recognizes exactly four intents
+ *  (zerodte_plays, ticker_play_state, spx_structure, market_context) and NONE of
+ *  them route a HELIX/flow question deterministically — there is no
+ *  composeBieAnswer branch that reads the flow tape or the anomaly near-miss log
+ *  the way composeSpxStructure reads SPX Slayer's engine state. So there is no
+ *  intent_bucket value a router-matched HELIX turn could ever carry, and adding a
+ *  clause like `OR intent_bucket = 'flow_analysis'` would be fabricating a match
+ *  condition for a code path that does not exist. A pure tools_used check is the
+ *  complete and correct membership test for this cohort today; if a future task
+ *  adds a deterministic HELIX router intent, this fetcher (and
+ *  computeHelixToolCallCalibration's router_matched_n, which will legitimately
+ *  read 0 until then) should gain the analogous OR-clause at that time. */
+export async function fetchHelixToolCallingBieInteractions(
+  sinceDate: string,
+  helixEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, helixEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+/** Task #137 — the raw rows BIE's calibration harness needs to score "how good are
+ *  Largo's answers specifically when BlackOut Thermal's own GEX/positioning tools
+ *  were involved" (src/lib/bie/calibration.ts's computeThermalToolCallCalibration).
+ *  Same SQL-layer-filter rationale as fetchSpxToolCallingBieInteractions above
+ *  (bie_interactions is one row per Largo QUESTION — much higher volume than the
+ *  admission-gated setup-log/closed-play-outcome tables — so filtering here beats
+ *  pulling the whole rolling window client-side just to throw most of it away).
+ *
+ *  DELIBERATE ASYMMETRY vs. fetchSpxToolCallingBieInteractions: this is a PLAIN
+ *  `tools_used ?|` membership test, with NO `OR intent_bucket = '...'` clause.
+ *  The SPX version needs that OR because BIE's deterministic router has a
+ *  `spx_structure` intent that answers via the exact same engine read a
+ *  Claude-tool-calling turn would make, but always logs the ["blackout_intelligence"]
+ *  sentinel instead of the real tool name (see that function's doc comment). BIE's
+ *  router (src/lib/bie/router.ts's classifyBieIntent) has NO intent at all for
+ *  Thermal/GEX-positioning questions — only zerodte_plays/ticker_play_state/
+ *  spx_structure/market_context exist — so there is no router path to reroute
+ *  around and nothing to OR in. Every Thermal-engine-tool turn in bie_interactions
+ *  necessarily went through Claude's tool-calling loop and recorded the real tool
+ *  name, so a pure tools_used check already sees the complete cohort. */
+export async function fetchThermalToolCallingBieInteractions(
+  sinceDate: string,
+  thermalEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, thermalEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+/** Task #144 — the Night Hawk analogue of fetchSpxToolCallingBieInteractions
+ *  above: raw bie_interactions rows for "how good are Largo's answers
+ *  specifically when Night Hawk's own tools were involved" (src/lib/bie/
+ *  calibration.ts's computeNighthawkToolCallCalibration).
+ *
+ *  Deliberately ASYMMETRIC vs. the SPX version above: membership here is
+ *  tools_used-ONLY — there is no `OR intent_bucket = '...'` clause. That's not
+ *  an oversight: classifyBieIntent (bie/router.ts) recognizes exactly 4
+ *  deterministic intents (zerodte_plays, ticker_play_state, spx_structure,
+ *  market_context) and NONE of them route Night Hawk questions — there is no
+ *  router path that ever answers a Night Hawk question deterministically.
+ *  NIGHTHAWK_RE (largo/intent-keywords.ts) looks similar in spirit to the
+ *  SPX_STRUCTURE_RE the router uses, but it does a completely different job:
+ *  it only decides which TOOL BUNDLE Largo has on hand for a question
+ *  (getToolsForIntent, tool-defs.ts) — it never feeds classifyBieIntent's
+ *  answer path, so it can never produce a bie_interactions row whose
+ *  intent_bucket is anything Night-Hawk-flavored. Adding a fake OR-clause here
+ *  would just always evaluate false — dead SQL dressed up as a UNION, exactly
+ *  the kind of thing a future reader might "fix" by fabricating a match. If a
+ *  future task ever adds a real deterministic Night Hawk router intent, THIS
+ *  is the query (and computeNighthawkToolCallCalibration's cohort test below)
+ *  that should grow the matching OR-clause. */
+export async function fetchNighthawkToolCallingBieInteractions(
+  sinceDate: string,
+  nighthawkEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, nighthawkEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+/** Task #149 — the analogous raw-rows fetch for BIE's calibration harness to score
+ *  "how good are Largo's answers specifically when 0DTE Command's own tools were
+ *  involved" (src/lib/bie/calibration.ts's computeZeroDteToolCallCalibration).
+ *  Direct copy of fetchSpxToolCallingBieInteractions's shape/SQL above — same
+ *  SQL-layer cohort filter for the same reason (bie_interactions is one row per
+ *  Largo QUESTION, much higher volume than the admission-gated setup-log table),
+ *  same UNION-of-conditions membership test:
+ *    1. `tools_used` overlaps `zeroDteEngineToolNames` (jsonb `?|`) — the Claude
+ *       tool-calling path dispatched get_zerodte_plays or get_zerodte_rejections.
+ *    2. `intent_bucket = 'zerodte_plays'` — the deterministic BIE router answered
+ *       via composeBieAnswer's 0DTE-plays composer, which internally reads the
+ *       SAME zerodte_setup_log state condition 1 is trying to detect — but
+ *       logBie() always records the router path's tools_used as the single
+ *       sentinel ["blackout_intelligence"], never the real tool name (see
+ *       largo-terminal.ts's tryBieRoute call sites, same as the SPX path above).
+ *       Without this OR, the cohort could never contain a single router-matched
+ *       row by construction, which would make "how often do 0DTE-board questions
+ *       land on the deterministic router vs. Claude fallback" read a permanent,
+ *       meaningless 0% — the exact same failure mode task #112 documented for
+ *       SPX Slayer's own spx_structure intent.
+ *    3. `intent_bucket = 'ticker_play_state'` — task #162 fix: this condition was
+ *       MISSING until this commit, and its absence was a genuine undercounting
+ *       bug, not a deliberate scope narrowing like the sibling products'
+ *       tools_used-only cohorts. composeTickerPlayState (src/lib/bie/composers.ts)
+ *       answers "how's the NVDA play" questions by calling the EXACT SAME
+ *       zeroDtePlaysForLargo() board read as condition 2's composeZeroDtePlays,
+ *       just pre-filtered to one ticker — genuinely 0DTE Command engine state,
+ *       not a different product or an ambiguous cross-product tool. But
+ *       router.ts's classifyBieIntent logs this turn's intent_bucket as the
+ *       distinct value "ticker_play_state" (not "zerodte_plays"), and logBie()
+ *       still records tools_used as the ["blackout_intelligence"] sentinel on
+ *       this path too — so before this fix, neither condition 1 nor condition 2
+ *       matched a ticker_play_state row. Every router-matched per-ticker
+ *       0DTE-board turn was silently invisible to this cohort, undercounting
+ *       n/router_matched_n by the same mechanism condition 2's comment already
+ *       warns about, just one intent_bucket value further than this function's
+ *       author accounted for. */
+export async function fetchZeroDteToolCallingBieInteractions(
+  sinceDate: string,
+  zeroDteEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND (tools_used ?| $2::text[] OR intent_bucket = 'zerodte_plays' OR intent_bucket = 'ticker_play_state')
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, zeroDteEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+/** Task #161 — the raw rows BIE's calibration harness needs to score "how good are
+ *  Largo's answers specifically when market_context's own state was involved"
+ *  (src/lib/bie/calibration.ts's computeMarketContextToolCallCalibration). Direct
+ *  copy of fetchSpxToolCallingBieInteractions's/fetchZeroDteToolCallingBieInteractions's
+ *  shape/SQL above — same SQL-layer cohort filter for the same reason
+ *  (bie_interactions is one row per Largo QUESTION, much higher volume than the
+ *  admission-gated setup-log/closed-play-outcome tables), same UNION-of-two-
+ *  conditions membership test:
+ *    1. `tools_used` overlaps `marketEngineToolNames` (jsonb `?|`) — the Claude
+ *       tool-calling path dispatched get_market_context directly.
+ *    2. `intent_bucket = 'market_context'` — the deterministic BIE router answered
+ *       via composeBieAnswer's composeMarketContext(), which internally calls
+ *       runLargoTool("get_market_context", {}) — the SAME engine read condition 1
+ *       is trying to detect — but logBie() always records the router path's
+ *       tools_used as the single sentinel ["blackout_intelligence"], never the
+ *       real tool name (see largo-terminal.ts's tryBieRoute call sites, same as
+ *       the SPX/0DTE paths above). Without this OR, the cohort could never contain
+ *       a single router-matched row by construction, which would make "how often
+ *       do market-context questions land on the deterministic router vs. Claude
+ *       fallback" read a permanent, meaningless 0% — the exact same failure mode
+ *       task #112 documented for SPX Slayer's own spx_structure intent. */
+export async function fetchMarketContextToolCallingBieInteractions(
+  sinceDate: string,
+  marketEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND (tools_used ?| $2::text[] OR intent_bucket = 'market_context')
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, marketEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
+/** Task #163 — the Night's Watch analogue of fetchSpxToolCallingBieInteractions
+ *  above: raw bie_interactions rows for "how good are Largo's answers
+ *  specifically when Night's Watch's own tools were involved" (src/lib/bie/
+ *  calibration.ts's computeNightsWatchToolCallCalibration).
+ *
+ *  Deliberately ASYMMETRIC vs. the SPX/0DTE-Command versions above (and
+ *  matching the Night Hawk version's asymmetry instead): membership here is
+ *  tools_used-ONLY — there is no `OR intent_bucket = '...'` clause. That's not
+ *  an oversight: classifyBieIntent (bie/router.ts) recognizes exactly 4
+ *  deterministic intents (zerodte_plays, ticker_play_state, spx_structure,
+ *  market_context) and NONE of them route a Night's-Watch/"my positions"
+ *  question — there is no router path that ever answers one deterministically.
+ *  MY_POSITIONS_RE (largo/intent-keywords.ts) looks similar in spirit to the
+ *  SPX_STRUCTURE_RE the router uses, but it does a completely different job:
+ *  it only decides which TOOL BUNDLE Largo has on hand for a question
+ *  (getToolsForIntent, tool-defs.ts) — it never feeds classifyBieIntent's
+ *  answer path, so it can never produce a bie_interactions row whose
+ *  intent_bucket is anything Night's-Watch-flavored. Adding a fake OR-clause
+ *  here would just always evaluate false — dead SQL dressed up as a UNION,
+ *  exactly the kind of thing a future reader might "fix" by fabricating a
+ *  match. If a future task ever adds a real deterministic Night's Watch router
+ *  intent, THIS is the query (and computeNightsWatchToolCallCalibration's
+ *  cohort test below) that should grow the matching OR-clause. */
+export async function fetchNightsWatchToolCallingBieInteractions(
+  sinceDate: string,
+  nightsWatchEngineToolNames: string[],
+  limit = 3000
+): Promise<
+  Array<{
+    tools_used: string[];
+    intent_bucket: string | null;
+    answer_source: string;
+    claims_total: number | null;
+    claims_verified: number | null;
+    latency_ms: number | null;
+    created_at: string;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query<QueryResultRow>(
+    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
+     FROM bie_interactions
+     WHERE created_at >= $1::date
+       AND tools_used ?| $2::text[]
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [sinceDate, nightsWatchEngineToolNames, limit]
+  );
+  return res.rows.map((r) => ({
+    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
+    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
+    answer_source: String(r.answer_source),
+    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
+    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
+    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
 export async function updateZeroDtePlanOutcome(
   sessionDate: string,
   ticker: string,
@@ -4441,6 +5276,62 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
   return {
     rows: resolvedRes.rows.map(mapNighthawkPlayOutcomeRow),
     pending_count: Number(pendingRes.rows[0]?.count ?? 0),
+  };
+}
+
+export type NighthawkFunnelRawStats = {
+  published_count: number;
+  rejected_by_reason: Array<{ trigger_reason: string; n: number }>;
+};
+
+/**
+ * Task #145: raw counts behind the admin Night Hawk dashboard's funnel/rejection-rate panel —
+ * how many candidates were PUBLISHED vs REJECTED at synthesis over the window, the rejected
+ * side broken down by `trigger_reason` (a plain TEXT column on `alert_audit_log`, one of the
+ * 5 fixed strings `REJECTION_TRIGGER_REASON` in nighthawk/play-outcomes.ts writes — grouping
+ * by it here means the stage breakdown needs zero `decision_trace` JSON parsing).
+ *
+ * Windowed the same way `fetchNighthawkOutcomeAnalytics` windows its own `edition_for` query,
+ * so both sides of the funnel line up over the identical date range.
+ *
+ * `nighthawk_play_outcomes` (UNIQUE(edition_for, ticker) — see its CREATE TABLE above) is the
+ * published-side ground truth, deliberately NOT `alert_audit_log`'s own `alert_type =
+ * 'nighthawk'` count: `recordNighthawkAuditTrail` (play-outcomes.ts) only inserts a row for a
+ * ticker's FIRST-ever publish (`freshlyPublished`), so it would undercount any play that
+ * carries over or re-appears across editions within the window. The rejected side has no such
+ * table to fall back on — `alert_audit_log` IS the only record of a rejection (see
+ * `insertNighthawkRejectedAuditLog`'s doc comment) — so that side reads from it directly.
+ */
+export async function fetchNighthawkFunnelStats(windowDays = 30): Promise<NighthawkFunnelRawStats> {
+  await ensureSchema();
+  // Same backstop as fetchNighthawkOutcomeAnalytics — coerce to a safe positive integer so no
+  // caller can crash the $1::int cast below with a non-integer arg.
+  const safeWindowDays =
+    Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 30;
+  const pool = await getPool();
+  const [publishedRes, rejectedRes] = await Promise.all([
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::int AS count
+       FROM nighthawk_play_outcomes
+       WHERE edition_for >= (CURRENT_DATE - ($1::int || ' days')::interval)`,
+      [safeWindowDays]
+    ),
+    pool.query<{ trigger_reason: string; n: string }>(
+      `SELECT trigger_reason, COUNT(*)::int AS n
+       FROM alert_audit_log
+       WHERE alert_type = 'nighthawk_rejected'
+         AND (source_key->>'edition_for')::date >= (CURRENT_DATE - ($1::int || ' days')::interval)
+       GROUP BY trigger_reason
+       ORDER BY n DESC`,
+      [safeWindowDays]
+    ),
+  ]);
+  return {
+    published_count: Number(publishedRes.rows[0]?.count ?? 0),
+    rejected_by_reason: rejectedRes.rows.map((r) => ({
+      trigger_reason: String(r.trigger_reason),
+      n: Number(r.n),
+    })),
   };
 }
 

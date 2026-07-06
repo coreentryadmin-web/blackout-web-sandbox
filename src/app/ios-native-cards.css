@@ -1,0 +1,95 @@
+/**
+ * Native card semantics — scan-friendly surfaces (metrics, AI, alerts, risk, bull, offline).
+ */
+
+/* ── Metrics: minimal flat tiles ── */
+html.ios-app.ios-native-shell .spx-hero-metric-block,
+html.ios-app.ios-native-shell .gex-key-levels > div:last-child > div,
+html.ios-app.ios-native-shell .nighthawk-market-context-item {
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: var(--ios-radius-sm, 8px);
+  background: rgba(255, 255, 255, 0.02) !important;
+  box-shadow: none !important;
+}
+
+/* ── AI: subtle gradient wash ── */
+html.ios-app.ios-native-shell .largo-native-bubble-assistant,
+html.ios-app.ios-native-shell .spx-commentary-rail-desk,
+html.ios-app.ios-native-shell .largo-suggestion-chip {
+  background: linear-gradient(
+    145deg,
+    rgba(34, 211, 238, 0.08) 0%,
+    rgba(8, 9, 14, 0.92) 45%,
+    rgba(191, 95, 255, 0.06) 100%
+  ) !important;
+  border-color: rgba(125, 211, 252, 0.18) !important;
+}
+
+/* ── Alerts: animated accent ring ── */
+@keyframes ios-card-alert-ring {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 230, 118, 0.35),
+      0 0 0 0 rgba(0, 230, 118, 0);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 230, 118, 0.65),
+      0 0 18px rgba(0, 230, 118, 0.2);
+  }
+}
+
+html.ios-app.ios-native-shell .spx-trade-alert-hero,
+html.ios-app.ios-native-shell .spx-lotto-play-card {
+  animation: ios-card-alert-ring 2.4s ease-in-out infinite;
+}
+
+/* ── Risk / bearish: red glow ── */
+html.ios-app.ios-native-shell .spx-alert-sell.spx-trade-alert-hero,
+html.ios-app.ios-native-shell .nighthawk-play-row[data-tone="bear"],
+html.ios-app.ios-native-shell .flow-seg-btn-active-put {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 45, 85, 0.35),
+    0 0 20px rgba(255, 45, 85, 0.12) !important;
+}
+
+/* ── Bullish: emerald accent rail ── */
+html.ios-app.ios-native-shell .spx-alert-buy-call.spx-trade-alert-hero,
+html.ios-app.ios-native-shell .spx-alert-buy-put.spx-trade-alert-hero,
+html.ios-app.ios-native-shell .flow-seg-btn-active-call,
+html.ios-app.ios-native-shell .spx-hero-metric-block.is-bull {
+  border-left: 2px solid #00e676 !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 230, 118, 0.2),
+    0 0 16px rgba(0, 230, 118, 0.08) !important;
+}
+
+/* ── Offline / stale: muted glass ── */
+html.ios-app.ios-native-shell .spx-desk-closed,
+html.ios-app.ios-native-shell .spx-commentary-offline,
+html.ios-app.ios-native-shell [data-freshness="stale"],
+html.ios-app.ios-native-shell [data-freshness="offline"] {
+  background: rgba(8, 9, 14, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0.88;
+}
+
+html.ios-app.ios-native-shell .flow-panel,
+html.ios-app.ios-native-shell .grid-card,
+html.ios-app.ios-native-shell .nighthawk-playbook,
+html.ios-app.ios-native-shell .nighthawk-watch {
+  border-left-width: 2px;
+  border-left-style: solid;
+  border-left-color: color-mix(in srgb, var(--ios-accent) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.ios-app.ios-native-shell .spx-trade-alert-hero,
+  html.ios-app.ios-native-shell .spx-lotto-play-card {
+    animation: none;
+    box-shadow: inset 0 0 0 1px rgba(0, 230, 118, 0.4);
+  }
+}

@@ -38,9 +38,9 @@ const CLERK_APPEARANCE = {
 
 export default function AccountPage() {
   return (
-    <main className="min-h-screen pt-20 pb-12 px-4 flex flex-col items-center">
+    <main className="ios-account-page ios-native-page ios-native-page-account min-h-screen px-4 flex flex-col items-center">
       <div className="w-full max-w-4xl">
-        <div className="mb-6">
+        <div className="account-page-title-block mb-6">
           <h1 className="font-syne text-2xl font-bold text-white">Account Settings</h1>
           <p className="font-mono text-[12px] text-sky-300/60 mt-1 uppercase tracking-[0.14em]">
             Profile · Security · Connected devices

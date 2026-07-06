@@ -58,10 +58,9 @@ function overlayFromStream(
 export function usePulseStream(
   basePulse?: SpxDeskPulse | null,
   onConnectionChange?: (connected: boolean) => void
-): { pulse: SpxDeskPulse | undefined; sseConnected: boolean; intervalFlow: { rows: Record<string, unknown>[]; updatedAt: number } | null } {
+): { pulse: SpxDeskPulse | undefined; sseConnected: boolean } {
   const [overlay, setOverlay] = useState<Partial<SpxDeskPulse> | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
-  const [intervalFlow, setIntervalFlow] = useState<{ rows: Record<string, unknown>[]; updatedAt: number } | null>(null);
   const baseRef = useRef(basePulse);
   baseRef.current = basePulse;
   const onConnectionChangeRef = useRef(onConnectionChange);
@@ -74,7 +73,6 @@ export function usePulseStream(
           ...prev,
           ...overlayFromStream(snap, baseRef.current ?? undefined),
         }));
-        if (snap.intervalFlow) setIntervalFlow(snap.intervalFlow);
       },
       {
         onOpen: () => {
@@ -100,5 +98,5 @@ export function usePulseStream(
     return { ...basePulse, ...overlay };
   }, [basePulse, overlay]);
 
-  return { pulse, sseConnected, intervalFlow };
+  return { pulse, sseConnected };
 }

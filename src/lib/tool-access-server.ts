@@ -1,6 +1,6 @@
 import "server-only";
 import { getAdminStatus, resolveAdminApi } from "@/lib/admin-access";
-import { isToolLaunched, type ToolKey } from "@/lib/tool-access";
+import { isToolLaunched, isZeroDteCommandLaunched, type ToolKey } from "@/lib/tool-access";
 
 // Server-side launch gate = the per-tool launch flag (tool-access.ts) + admin bypass (admin-access.ts,
 // the Railway ADMIN_EMAILS allowlist / publicMetadata.role==="admin"). Admins always get every tool
@@ -15,6 +15,22 @@ export async function canAccessTool(key: ToolKey): Promise<boolean> {
   if (isToolLaunched(key)) return true;
   const { admin } = await getAdminStatus();
   return admin;
+}
+
+/** Desk/cron auth result from authorizeMarketDeskApi / authorizeCronOrTierApi. */
+export type DeskApiAuth = { userId: string | null; via: "cron" | "user" };
+
+/**
+ * Launch gate for cache-reader desk routes. Cron bearer (ops audits, grid-warm probes) skips
+ * the per-tool launch flag — same contract as zerodte board's cron bypass. Premium members
+ * still hit requireToolApi when via === "user".
+ */
+export async function requireToolApiForDeskCaller(
+  auth: DeskApiAuth,
+  key: ToolKey
+): Promise<Response | null> {
+  if (auth.via === "cron") return null;
+  return requireToolApi(key);
 }
 
 /**
@@ -46,5 +62,35 @@ export async function requireAnyToolApi(keys: ToolKey[]): Promise<Response | nul
   return new Response(
     JSON.stringify({ error: "coming_soon", message: "This tool is launching soon." }),
     { status: 403, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+/** Flip via Railway `LAUNCHED_0DTE=0` to hide the 0DTE Command tab while keeping Market Grid live. */
+export { isZeroDteCommandLaunched } from "@/lib/tool-access";
+
+/**
+ * PAGE gate for the 0DTE Command tab on /grid. The classic Market Grid tab follows
+ * `canAccessTool("grid")`; 0DTE Command tab follows grid unless LAUNCHED_0DTE=0.
+ */
+export async function canAccessZeroDteCommand(): Promise<boolean> {
+  if (isZeroDteCommandLaunched()) return true;
+  const { admin } = await getAdminStatus();
+  return admin;
+}
+
+/**
+ * API gate for `/api/market/zerodte/board`. Cron callers bypass via authorizeCronOrTierApi
+ * before this runs; premium non-admins get 403 when LAUNCHED_0DTE=0 locks the tab.
+ */
+export async function requireZeroDteCommandApi(): Promise<Response | null> {
+  if (isZeroDteCommandLaunched()) return null;
+  const { actor, denied } = await resolveAdminApi();
+  if (actor) return null;
+  return (
+    denied ??
+    new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    })
   );
 }

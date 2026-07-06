@@ -16,3 +16,9 @@ tsconfig.tsbuildinfo
 
 # data-validator runtime output (may contain live production data)
 audit-output/
+
+# iOS Capacitor (generated / local)
+apps/blackout-ios/node_modules/
+apps/blackout-ios/ios/
+# Stale clone of deprecated standalone repo (root only — not apps/blackout-ios/)
+/blackout-ios/

@@ -43,7 +43,7 @@ export function HelixTideBar() {
     : "bg-sky-400/15 text-sky-300 outline-sky-400/50";
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-[rgba(8,9,14,0.5)] px-3 py-2">
+    <div className="helix-tide-bar flex items-center gap-3 rounded-lg border border-white/8 bg-[rgba(8,9,14,0.5)] px-3 py-2">
       {/* Bias pill */}
       <span
         className={clsx(

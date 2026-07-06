@@ -274,7 +274,7 @@ export async function openPlay(
     try {
       MEMORY_OPEN.row = full;
       if (outcome) {
-        const { recordPlayEntry } = await import("@/lib/spx-play-outcomes");
+        const { recordPlayEntry } = await import("./spx-play-outcomes");
         await recordPlayEntry({ ...outcome, open_play_id: full.id });
       }
       return { row: full, created: true };
@@ -356,7 +356,7 @@ export async function closeOpenPlay(
       await client.query("BEGIN");
 
       if (outcome.close) {
-        const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
+        const { recordPlayClose } = await import("./spx-play-outcomes");
         await recordPlayClose(id, outcome.close, client);
       }
 
@@ -385,7 +385,7 @@ export async function closeOpenPlay(
   } else {
     // No DB — update in-memory state directly.
     if (outcome.close) {
-      const { recordPlayClose } = await import("@/lib/spx-play-outcomes");
+      const { recordPlayClose } = await import("./spx-play-outcomes");
       await recordPlayClose(id, outcome.close);
     }
     MEMORY_OPEN.row = null;

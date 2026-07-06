@@ -57,7 +57,7 @@ export type PlayOutcomeRow = {
   mae_pts: number;
   trim_done: boolean;
   pnl_pts: number | null;
-  outcome: "open" | "win" | "loss" | "breakeven";
+  outcome: "open" | "win" | "loss" | "breakeven" | "superseded";
   exit_action: PlayExitAction | null;
   headline: string;
   opened_at: string;
@@ -377,9 +377,10 @@ function bucket(rows: PlayOutcomeRow[], path: PlayEntryPath) {
   };
 }
 
-/** Pure stats aggregation — exported for unit tests. */
+/** Pure stats aggregation — exported for unit tests. Superseded rows are bookkeeping-only
+ * (force-closed stale opens) and never count toward win rate. */
 export function computePlayOutcomeStats(rows: PlayOutcomeRow[]): PlayOutcomeStats {
-  const closed = rows.filter((r) => r.outcome !== "open");
+  const closed = rows.filter((r) => r.outcome !== "open" && r.outcome !== "superseded");
   const wins = closed.filter((r) => r.outcome === "win").length;
   const losses = closed.filter((r) => r.outcome === "loss").length;
   const breakeven = closed.filter((r) => r.outcome === "breakeven").length;

@@ -11,10 +11,11 @@ import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
+import { isEtCashRth } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -242,8 +243,8 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  // Launch gate — locked to non-admins until this tool ships.
-  const locked = await requireToolApi("heatmap");
+  // Launch gate — SPX Slayer left rail reads this matrix; allow spx OR heatmap launch.
+  const locked = await requireAnyToolApi(["spx", "heatmap"]);
   if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
@@ -313,8 +314,20 @@ export async function GET(req: NextRequest) {
       ).catch(() => null);
     }
 
+    // A non-null heatmap can still be UNUSABLE: fetchGexHeatmap's emptyHeatmap() fallback
+    // (polygon-options-gex.ts ~2422) returns a real GexHeatmap object — never null — whenever
+    // spot resolution fails (spot:0) and/or the options chain comes back with zero contracts
+    // (strikes:[]). The `!heatmap` guard above only catches the null case, so this branch was
+    // unconditionally stamping `available: true` on that unusable object too — a client (this
+    // route's own GexHeatmap.tsx UI, plus validate-live-prod/live-fixes-audit) would see
+    // available:true next to spot:0 and an empty strikes array, i.e. a "usable" flag on data
+    // that has nothing real to show. Confirmed live for SPY/QQQ — see docs/audit/FINDINGS.md
+    // (2026-07-05). Mirror the SAME "no usable data" contract as the `!heatmap` branch above:
+    // available is true only when a real spot resolved AND the matrix actually has strikes.
+    const heatmapUsable = heatmap.spot > 0 && heatmap.strikes.length > 0;
+
     const rounded = roundFloats({
-      available: true,
+      available: heatmapUsable,
       ...heatmap,
       cross_validation,
       overlays,
@@ -325,6 +338,46 @@ export async function GET(req: NextRequest) {
       // Night Hawk context — null when no current play exists for this ticker.
       nighthawk_context: nighthawkContext,
     });
+
+    // ── Off-hours shift gate (task #174, P1) ──────────────────────────────────────────
+    // `shift`/`vex_shift` are diffed from the positioning-history ring ONLY when the matrix
+    // cache refreshes (polygon-options-gex.ts's "SHIFT (intraday migration) — fresh compute
+    // ONLY" block, ~line 2284) — that computation has ZERO market-hours awareness. Once the
+    // matrix cache's last refresh happens to land during RTH, the cached shift object (with
+    // its present-tense "Over the last Xh Ym: ... migrated..." summary) is served UNCHANGED
+    // to every user through the entire closed period (evenings/weekends/holidays) until the
+    // next refresh — reading as if the migration just happened when the market has actually
+    // been closed the whole time. Confirmed live: SPX heatmap served shift.available:true
+    // with a fresh-reading "Over the last 2h14m: gamma flip migrated..." summary on a closed
+    // market (see docs/audit/FINDINGS.md). Same "stale content served as live" bug class as
+    // task #173's market-regime staleness fix and spx-session.ts's isPremarketBriefFresh gate.
+    //
+    // Fix: whenever the market is NOT in cash RTH RIGHT NOW, override `available` to false on
+    // BOTH shift objects — REGARDLESS of what the cached computation produced — and replace the
+    // rest of the object with the same minimal { available:false, status:'collecting' } shape
+    // the "not enough history yet" cold-start path already uses. Two deliberate choices:
+    //   1. Applied HERE (the route), not in polygon-options-gex.ts's compute path. "Is the
+    //      market closed RIGHT NOW" is a property of THIS READ (now), not of the moment the
+    //      cache was (re)computed — the route already holds the freshest wall-clock read, and
+    //      this override must re-apply on EVERY cache hit (every request during the closed
+    //      window reads the SAME cached object), not just the refresh that computed it.
+    //   2. We blank the WHOLE object (not just flip the boolean) so the misleading present-
+    //      tense `summary` string, delta_by_strike, etc. never leave the server while closed —
+    //      half-fixing this by leaving `available:false` next to a live-reading summary string
+    //      would still leak the exact misleading text a raw-JSON consumer (or a future UI) could
+    //      render. Reusing the existing 'collecting' status (rather than inventing a new one) is
+    //      intentional: GexHeatmap.tsx's Shift panel branches ONLY on `shift.available` truthiness
+    //      (never on `status`'s value — grepped), so a new status literal would add a type-surface
+    //      change with zero behavioral effect; reusing the shape already proven by the cold-start
+    //      path is the smaller, safer diff.
+    // Out of scope (deliberately untouched): computeMetricShift's diff math, wall/flip-migration
+    // calculations, and the cache-refresh trigger — those are correct; this is purely a "don't
+    // present a stale/cached result as if it's happening right now" presentation-layer gate.
+    if (!isEtCashRth()) {
+      rounded.shift = { available: false, status: "collecting" };
+      if (rounded.vex_shift) rounded.vex_shift = { available: false, status: "collecting" };
+    }
+
     // Reconcile each metric's total AFTER rounding: independently rounding total and
     // each strike_totals entry can drift by a cent or two (live-caught P0: NVDA GEX
     // Σstrike_totals != total, docs/audit/FINDINGS.md 2026-07-03). The pre-rounding

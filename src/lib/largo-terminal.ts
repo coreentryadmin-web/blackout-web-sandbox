@@ -315,7 +315,21 @@ export async function runLargoQuery(
     const ctxNumbers = collectContextNumbers(routed.context);
     const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(sid, userId, "user", question);
-    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    // Persist the composer's own source payload (routed.context) as this turn's
+    // tool_results — the router never calls a Largo *tool*, but composeBieAnswer()
+    // (bie/composers.ts) still reads real platform state (SPX desk, market context,
+    // 0DTE board) to build the answer, and that payload is exactly the ground truth
+    // largo-verifier.ts's nightly grounding audit needs. Wrapped in a single-element
+    // array to match the tool_results column's shape (an array of per-call results) —
+    // collectContextNumbers() recurses through objects/arrays identically either way,
+    // so this doesn't change what numbers are considered "grounded" for THIS turn's
+    // in-line verification above; it only makes the same payload durable for later
+    // audit (task #166 — previously omitted here by explicit prior design, which left
+    // the entire router/composer path with zero nightly-audit coverage; see
+    // largo-store.ts's fetchRecentLargoAnswersWithResults doc comment).
+    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
+      routed.context,
+    ]);
     logBie({
       user_id: userId,
       question,
@@ -415,6 +429,31 @@ export async function runLargoQuery(
       followups,
       verification,
     };
+  } catch (error) {
+    // Task #165 — this try block previously had ONLY a finally, no catch: any throw out of
+    // anthropicToolLoop (a tool-loop timeout, an Anthropic API error, a runTool throw, etc.)
+    // propagated straight past logBie() to the caller (route.ts's POST handler, which just
+    // 502s), so a failed turn left NO row in bie_interactions at all. Every calibration cohort
+    // in bie/calibration.ts computes grounding_pass_rate_pct/router_match_rate_pct only over
+    // rows that exist, so a spike in tool-loop failures — exactly when trust in the platform is
+    // most at risk — was completely invisible to every report. Log a minimal failure row here:
+    // claims are explicitly null (not 0) because a turn that never produced an answer has no
+    // claims to have verified — 0 would falsely read as "verified none of the claims," a
+    // different and wrong statement. Then RETHROW the original error unchanged so the caller's
+    // existing error handling (the 502 response) is completely untouched — this is a pure
+    // additive logging side effect, never a swallow.
+    logBie({
+      user_id: userId,
+      question,
+      intent: null,
+      answer_source: "error",
+      claims_total: null,
+      claims_verified: null,
+      latency_ms: Date.now() - startedAt,
+      tools_used: Array.from(new Set(toolsUsed)),
+      intent_bucket: bieIntentBucket(null),
+    });
+    throw error;
   } finally {
     resetLargoSpxDeskCache(userId);
   }
@@ -440,7 +479,11 @@ export async function runLargoQueryStream(
     const ctxNumbers = collectContextNumbers(routed.context);
     const verification = verifyClaims(routed.answer, ctxNumbers);
     await appendLargoMessage(rsid, userId, "user", question);
-    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"]);
+    // Same tool_results persistence as the non-streaming router branch above (task
+    // #166) — see that branch's comment for the full rationale.
+    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
+      routed.context,
+    ]);
     logBie({
       user_id: userId,
       question,
@@ -570,6 +613,24 @@ export async function runLargoQueryStream(
   } catch (error) {
     if (isSseClientDisconnect(error)) return;
     const message = error instanceof Error ? error.message : "Largo query failed";
+    // Task #165 — same gap as runLargoQuery's try block above, on the streaming path: this
+    // catch already existed (it emits an "error" SSE event), but it never called logBie either,
+    // so a failed streaming turn was equally invisible to every BIE calibration cohort. Log a
+    // minimal failure row — same null-claims rationale as the non-streaming path above — BEFORE
+    // emitting the error event, so the write is attempted even if the client has already gone
+    // away by the time emit() throws. Purely additive: the error event still fires exactly as
+    // before, nothing here changes what the client sees.
+    logBie({
+      user_id: userId,
+      question,
+      intent: null,
+      answer_source: "error",
+      claims_total: null,
+      claims_verified: null,
+      latency_ms: Date.now() - startedAt,
+      tools_used: Array.from(new Set(toolsUsed)),
+      intent_bucket: bieIntentBucket(null),
+    });
     try {
       onEvent({ type: "error", message });
     } catch (emitErr) {

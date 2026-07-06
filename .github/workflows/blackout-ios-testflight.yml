@@ -1,0 +1,65 @@
+# Build BlackOut iOS → TestFlight on a GitHub-hosted Mac.
+# Requires secrets: APPLE_TEAM_ID, APP_STORE_CONNECT_ISSUER_ID,
+# APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_PRIVATE_KEY
+#
+# Manual trigger until ASC API key is in GitHub Secrets.
+# Codemagic (apps/blackout-ios/codemagic.yaml) is the primary path.
+
+name: BlackOut iOS TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/blackout-ios/**"
+      - ".github/workflows/blackout-ios-testflight.yml"
+
+jobs:
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate iOS config
+        run: node apps/blackout-ios/scripts/validate-config.mjs
+
+  build-ios:
+    needs: validate-config
+    runs-on: macos-14
+    if: github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: apps/blackout-ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/blackout-ios/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Generate iOS project
+        run: |
+          npx cap add ios || true
+          npx cap sync ios
+
+      - name: Install CocoaPods
+        run: cd ios/App && pod install
+
+      - name: Build and upload (requires ASC secrets)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_STORE_CONNECT_PRIVATE_KEY" ]; then
+            echo "Skip IPA upload — add App Store Connect API secrets to GitHub Actions."
+            echo "Use Codemagic (apps/blackout-ios/codemagic.yaml) as primary build path."
+            exit 0
+          fi
+          echo "Full Fastlane/upload step: add when ASC .p8 is in GitHub Secrets."

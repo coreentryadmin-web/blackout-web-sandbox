@@ -93,6 +93,17 @@ export async function requestSpxCommentary(
 /** Full SPX-Sniper desk — Polygon + UW dealer/flow (slower lane, ~10s). */
 export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
 
+/** One-shot dashboard bundle — desk + flow + pulse + merged (+ SPX matrix server-side). */
+export type SpxBootstrapPayload = {
+  desk: SpxDeskPayload;
+  flow: import("@/lib/providers/spx-desk").SpxDeskFlow | null;
+  pulse: import("@/lib/providers/spx-desk").SpxDeskPulse | null;
+  merged: SpxDeskPayload;
+  gexHeatmap: import("@/lib/providers/polygon-options-gex").GexHeatmap | null;
+};
+
+export const fetchSpxBootstrap = () => marketFetch<SpxBootstrapPayload>("/spx/bootstrap");
+
 /** Fast Polygon pulse — price, session, internals, mega-caps (~2s). */
 export const fetchSpxDeskPulse = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskPulse>("/spx/pulse");
 
@@ -119,6 +130,14 @@ export const fetchSpxLottoToday = () =>
       headline: string | null;
     }>;
   }>("/lotto/today");
+
+/** Power hour track (2:45–3:15 PM ET) — read-only cron-maintained record. */
+export const fetchSpxPowerHour = () =>
+  marketFetch<{
+    available: boolean;
+    as_of: string;
+    power_hour: import("@/lib/spx-power-hour-engine").PowerHourPlayPayload;
+  }>("/spx/power-hour");
 
 /** Merged SPX Sniper desk — pulse + flow + full desk (single server merge). */
 export async function fetchSpxMerged() {

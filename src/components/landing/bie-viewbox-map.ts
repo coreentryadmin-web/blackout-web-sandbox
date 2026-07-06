@@ -12,6 +12,19 @@ export function advanceOrbitDeg(
   return ((next % 360) + 360) % 360;
 }
 
+/**
+ * Bounded back-and-forth swing around a fixed anchor, driven by a continuously
+ * advancing phase. `orbitDeg` still wraps 0-360 (via advanceOrbitDeg) — this
+ * just maps that phase through a sine instead of adding it directly, so the
+ * result never leaves [anchorDeg - amplitudeDeg, anchorDeg + amplitudeDeg]
+ * regardless of how far the phase has advanced. See ORBIT_OSCILLATION_AMPLITUDE_DEG
+ * in bie-orbit-layout.ts for why this amplitude makes tool-icon collisions
+ * between adjacent rings impossible by construction, not just unlikely.
+ */
+export function oscillationAngleDeg(anchorDeg: number, orbitDeg: number, amplitudeDeg: number): number {
+  return anchorDeg + amplitudeDeg * Math.sin((orbitDeg * Math.PI) / 180);
+}
+
 /** Map SVG viewBox coordinates to pixel positions inside a container (matches preserveAspectRatio meet/slice). */
 export function viewBoxPointToContainer(
   vx: number,
@@ -39,6 +52,7 @@ export function viewBoxPointToContainer(
 export function orbitToolPixelPosition(args: {
   startAngleDeg: number;
   orbitDeg: number;
+  oscillationAmplitudeDeg: number;
   coreX: number;
   coreY: number;
   maxRx: number;
@@ -50,7 +64,7 @@ export function orbitToolPixelPosition(args: {
   containerW: number;
   containerH: number;
 }): { x: number; y: number } {
-  const angle = args.startAngleDeg + args.orbitDeg;
+  const angle = oscillationAngleDeg(args.startAngleDeg, args.orbitDeg, args.oscillationAmplitudeDeg);
   const vb = pointOnFieldLine(
     args.coreX,
     args.coreY,

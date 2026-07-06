@@ -4,6 +4,8 @@ import { isFlowIngestAlternateWriterSkip } from "@/lib/cron-writer-target-fresh"
 export const RTH_WRITER_HEAL_AFTER_MIN: Record<string, number> = {
   "nights-watch-warm": 2,
   "heatmap-warm": 2,
+  /** 1.5 = 90s — tighter than other warmers; desk cold-build blocks are the top UX pain point. */
+  "desk-warm": 1.5,
   "uw-cache-refresh": 4,
   "grid-warm": 4,
   "flow-ingest": 4,

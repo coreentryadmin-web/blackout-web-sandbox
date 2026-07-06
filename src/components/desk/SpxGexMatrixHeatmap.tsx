@@ -6,7 +6,7 @@ import { clsx } from "clsx";
 import Link from "next/link";
 import { Panel } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
-import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import { useDeskSessionPollIntervalMs } from "@/hooks/use-et-market-open";
 import {
   recomputeScopedGexLevels,
   resolveOdteExpiry,
@@ -24,6 +24,10 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
+import {
+  readGexHeatmapSessionCache,
+  writeGexHeatmapSessionCache,
+} from "@/lib/gex-heatmap-session-cache";
 
 const MATRIX_POLL_RTH_MS = 8_000;
 const MATRIX_POLL_OFF_MS = 20_000;
@@ -78,6 +82,8 @@ function fmtAsofSeconds(iso: string | undefined): string | null {
 
 type DeskProps = {
   live?: boolean;
+  /** When true (RTH or premarket), matrix polls at 8s; off-session uses 20s. */
+  sessionActive?: boolean;
   liveSpot?: number | null;
   deskGammaFlip?: number | null;
   deskGexKing?: number | null;
@@ -86,14 +92,20 @@ type DeskProps = {
 
 export function SpxGexMatrixHeatmap({
   live: deskLive,
+  sessionActive,
   liveSpot,
   deskGammaFlip,
   deskGexKing,
   gexStale,
 }: DeskProps) {
   const [lens, setLens] = useState<GexHeatmapLens>("gex");
-  const pollMs = usePollIntervalMs(MATRIX_POLL_RTH_MS, MATRIX_POLL_OFF_MS);
+  const pollMs = useDeskSessionPollIntervalMs(
+    sessionActive ?? deskLive,
+    MATRIX_POLL_RTH_MS,
+    MATRIX_POLL_OFF_MS
+  );
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
+  const cachedMatrix = useMemo(() => readGexHeatmapSessionCache<GexHeatmapResponse>("SPX"), []);
 
   const { data, isLoading, error, isValidating } = useSWR<GexHeatmapResponse>(
     matrixKey,
@@ -101,8 +113,14 @@ export function SpxGexMatrixHeatmap({
     {
       refreshInterval: pollMs,
       refreshWhenHidden: false,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       keepPreviousData: true,
+      fallbackData: cachedMatrix,
+      onSuccess: (payload) => {
+        if (payload?.available && payload.gex?.strike_totals) {
+          writeGexHeatmapSessionCache("SPX", payload);
+        }
+      },
     }
   );
 
@@ -241,8 +259,8 @@ export function SpxGexMatrixHeatmap({
       kicker={`SPX · ${lensLabel} matrix · near-term`}
       title="Dealer gamma map"
       actions={
-        <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-white/70">
-          {isValidating && !isLoading && <span className="text-white/50">↻</span>}
+        <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-sky-300">
+          {isValidating && !isLoading && <span className="text-cyan-400">↻</span>}
           <span
             className={clsx("badge-live-dot", feedLive ? "animate-pulse" : "opacity-40")}
             aria-hidden
@@ -257,16 +275,29 @@ export function SpxGexMatrixHeatmap({
       bodyClassName="spx-odte-matrix-body !px-1 !py-2 flex flex-1 min-h-0 flex-col"
     >
       <div className="mb-2 shrink-0 space-y-2 px-1">
-        <div className="flex gap-1.5" role="tablist" aria-label="Exposure lens">
+        <div
+          className="flex gap-1.5"
+          role="tablist"
+          aria-label="Exposure lens"
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            setLens((prev) => (prev === "gex" ? "vex" : "gex"));
+          }}
+        >
           {(["gex", "vex"] as const).map((key) => {
             const active = lens === key;
             const disabled = key === "vex" && !hasVex && !isLoading;
+            const panelId = key === "gex" ? "spx-matrix-lens-gex" : "spx-matrix-lens-vex";
             return (
               <button
                 key={key}
                 type="button"
                 role="tab"
+                id={`spx-matrix-tab-${key}`}
                 aria-selected={active}
+                aria-controls={panelId}
+                tabIndex={active ? 0 : -1}
                 disabled={disabled}
                 onClick={() => setLens(key)}
                 className={clsx(
@@ -284,7 +315,7 @@ export function SpxGexMatrixHeatmap({
         </div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[10px]">
           <div>
-            <span className="text-white/50 uppercase tracking-wider">
+            <span className="text-sky-300 uppercase tracking-wider">
               γ flip {isTrueZeroDte ? "(0DTE)" : "(col)"}
             </span>
             <div className="text-sm font-bold tabular-nums text-white">
@@ -292,14 +323,14 @@ export function SpxGexMatrixHeatmap({
             </div>
           </div>
           <div>
-            <span className="text-white/50 uppercase tracking-wider">Net {lensLabel}</span>
+            <span className="text-sky-300 uppercase tracking-wider">Net {lensLabel}</span>
             <div className="text-sm font-bold tabular-nums text-white">
               {hasData ? fmtHeatmapMoneySigned(odteLevels.netTotal) : "—"}
             </div>
           </div>
         </div>
         {flipDiffers && deskGammaFlip != null && (
-          <p className="font-mono text-[9px] leading-snug text-white/45">
+          <p className="font-mono text-[9px] leading-snug text-cyan-400">
             Header γ flip {fmtHeatmapStrike(deskGammaFlip)} uses 8-expiry aggregate.
             {deskGexKing != null ? ` King ${fmtHeatmapStrike(deskGexKing)}.` : ""}
           </p>
@@ -318,19 +349,29 @@ export function SpxGexMatrixHeatmap({
       </div>
 
       {isLoading && !data ? (
-        <p className="font-mono text-[11px] text-white/60 py-4 px-2">Loading gamma matrix…</p>
+        <p className="font-mono text-[11px] text-sky-300 py-4 px-2">Loading gamma matrix…</p>
       ) : error && !hasData ? (
-        <p className="font-mono text-[11px] text-white/60 py-4 px-2">Matrix unavailable — retrying…</p>
+        <p className="font-mono text-[11px] text-sky-300 py-4 px-2">Matrix unavailable — retrying…</p>
       ) : !hasData ? (
-        <p className="font-mono text-[11px] text-white/60 py-4 px-2">Mapping dealer nodes…</p>
+        <p className="font-mono text-[11px] text-sky-300 py-4 px-2">Mapping dealer nodes…</p>
       ) : (
+        <div
+          id={lens === "gex" ? "spx-matrix-lens-gex" : "spx-matrix-lens-vex"}
+          role="tabpanel"
+          aria-labelledby={`spx-matrix-tab-${lens}`}
+          className="flex flex-1 min-h-0 flex-col"
+        >
         <div
           ref={scrollBoxRef}
           className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-auto overscroll-contain"
         >
-          <table className="spx-gex-matrix-table w-max min-w-full border-collapse font-mono text-[12px] tabular-nums">
+          <table
+            className="spx-gex-matrix-table w-max min-w-full border-collapse font-mono text-[12px] tabular-nums"
+            role="grid"
+            aria-label="SPX dealer gamma matrix by strike and expiry"
+          >
             <thead className="sticky top-0 z-20 bg-[#08080e]">
-              <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/55">
+              <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-sky-300">
                 <th className="sticky left-0 z-30 bg-[#08080e] py-1.5 pl-1 pr-2 text-left font-semibold">
                   Strike
                 </th>
@@ -466,9 +507,8 @@ export function SpxGexMatrixHeatmap({
             </tbody>
           </table>
         </div>
-      )}
 
-      <div className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-white/45">
+      <div className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-cyan-400">
         <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>
         {columnKings.size > 0 && (
           <span>
@@ -484,6 +524,8 @@ export function SpxGexMatrixHeatmap({
           Full Thermal →
         </Link>
       </div>
+        </div>
+      )}
     </Panel>
   );
 }

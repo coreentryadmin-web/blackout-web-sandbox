@@ -12,6 +12,18 @@ import { fetchRecentFlows, type FlowRow } from "@/lib/db";
 import { fetchOptionTrades, type OptionTradesAggregate } from "@/lib/providers/option-trades";
 import { polygonConfigured } from "@/lib/providers/config";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import {
+  detectFlowAnomalies,
+  type FlowAnomaly,
+  type FlowAnomalyNearMiss,
+} from "@/app/api/cron/market-regime-detector/flow-anomaly-detection";
+import {
+  classifyFlowAnomalies,
+  classificationDiffIsClean,
+  describeClassificationDiff,
+  diffClassifiedLists,
+  type ClassifiedFlowItem,
+} from "@/lib/correctness/flow-anomaly-scope";
 
 // ---------------------------------------------------------------------------
 // FLOWS (HELIX) data-correctness verifier — priority surface #2.
@@ -43,6 +55,19 @@ import { todayEtYmd } from "@/lib/providers/spx-session";
 // metric is promoted to INDEPENDENTLY-CONFIRMED ("pass"); on a material divergence we FLAG. When
 // Massive is unavailable / the tape is thin the cross-check SKIPS and the metric degrades to
 // consistency-only — internally reconciled + faithful-to-source, never a false green.
+//
+// FLOW-ANOMALY DETECTOR shadow-recompute (task #132): everything above validates the TAPE
+// aggregates. It has NO coverage of the separate flow-ANOMALY detector
+// (src/app/api/cron/market-regime-detector/flow-anomaly-detection.ts's detectFlowAnomalies) —
+// the LARGE_PREMIUM_PRINT / DIRECTIONAL_FLOW_SKEW threshold math, the skew-ratio computation, and
+// the near-miss band (task #131) could regress silently: nothing short of the FlowAnomalyBanner
+// looking wrong in production would ever catch it. We fetch the SAME 30-minute window
+// detectFlowAnomalies itself reads (fetchRecentFlows({ since_hours: 0.5, order: "premium" })),
+// independently recompute the classification from scratch (flow-anomaly-scope.ts's
+// classifyFlowAnomalies — a from-scratch re-implementation, not a call into the detector), and
+// call the REAL detectFlowAnomalies() on the EXACT SAME rows via its opts.rows injection point
+// (added by this task) so both sides see identical data with zero TOCTOU race against the live
+// tape. A disagreement (missing, extra, or wrong metric_value) is a detector regression → FLAG.
 // ---------------------------------------------------------------------------
 
 const TOL = {
@@ -320,6 +345,118 @@ async function crossCheckAgainstMassive(ctx: Ctx, rows: FlowRow[]): Promise<Chec
   );
 }
 
+/** Adapt detectFlowAnomalies' FlowAnomaly[] output to the common ClassifiedFlowItem shape.
+ *  Defensive null-filtering only (ticker/direction are typed nullable but the live
+ *  implementation never actually produces null for either) — an item that fails this
+ *  shape check is dropped from the comparison rather than crashing the verifier. */
+function adaptAnomalies(items: FlowAnomaly[]): ClassifiedFlowItem[] {
+  const out: ClassifiedFlowItem[] = [];
+  for (const it of items) {
+    if (!it.ticker) continue;
+    if (it.direction !== "bullish" && it.direction !== "bearish") continue;
+    if (it.type !== "LARGE_PREMIUM_PRINT" && it.type !== "DIRECTIONAL_FLOW_SKEW") continue;
+    out.push({ anomaly_type: it.type, ticker: it.ticker, direction: it.direction, metric_value: it.metric_value });
+  }
+  return out;
+}
+
+/** Same adaptation for FlowAnomalyNearMiss[] — detectFlowAnomalies itself only ever assigns
+ *  reason "BELOW_THRESHOLD" (DEDUP_SUPPRESSED is added later, externally, by route.ts — out of
+ *  scope for this shadow-recompute, which validates detectFlowAnomalies alone). */
+function adaptNearMisses(items: FlowAnomalyNearMiss[]): ClassifiedFlowItem[] {
+  const out: ClassifiedFlowItem[] = [];
+  for (const it of items) {
+    if (it.reason !== "BELOW_THRESHOLD") continue;
+    if (!it.ticker) continue;
+    if (it.direction !== "bullish" && it.direction !== "bearish") continue;
+    if (it.anomaly_type !== "LARGE_PREMIUM_PRINT" && it.anomaly_type !== "DIRECTIONAL_FLOW_SKEW") continue;
+    out.push({ anomaly_type: it.anomaly_type, ticker: it.ticker, direction: it.direction, metric_value: it.metric_value });
+  }
+  return out;
+}
+
+/**
+ * FLOW-ANOMALY DETECTOR shadow-recompute (task #132) — see module doc above. Fetches the SAME
+ * 30-minute window detectFlowAnomalies reads, independently recomputes the classification
+ * (flow-anomaly-scope.ts, written from scratch), and calls the REAL detectFlowAnomalies() on the
+ * identical rows (via its opts.rows injection point) so both sides see the exact same data.
+ * Never throws — a thrown/failed fetch or detector call degrades to a skipped check.
+ */
+async function verifyFlowAnomalyDetector(ctx: Ctx): Promise<CheckResult[]> {
+  let anomalyRows: FlowRow[] = [];
+  try {
+    anomalyRows = await fetchRecentFlows({ since_hours: 0.5, order: "premium" });
+  } catch {
+    anomalyRows = [];
+  }
+
+  if (anomalyRows.length === 0) {
+    return [
+      mk(
+        ctx,
+        "shadow-recompute",
+        "anomaly_detection",
+        "skipped",
+        "No flow prints in the last 30 minutes — the anomaly-detector shadow-recompute has nothing to compare this run (not a flag; detectFlowAnomalies itself is a no-op on an empty window too).",
+        { id: "anomaly-detector-shadow-recompute" }
+      ),
+    ];
+  }
+
+  const expected = classifyFlowAnomalies(anomalyRows);
+
+  const actualNearMisses: FlowAnomalyNearMiss[] = [];
+  let actualAnomalies: FlowAnomaly[] = [];
+  try {
+    actualAnomalies = await detectFlowAnomalies({ rows: anomalyRows, nearMisses: actualNearMisses });
+  } catch {
+    // detectFlowAnomalies already catches internally and returns [] on its own errors; this
+    // guards the injected-rows call path too, so a thrown adapter bug can't crash the sweep.
+    return [
+      mk(
+        ctx,
+        "shadow-recompute",
+        "anomaly_detection",
+        "skipped",
+        "detectFlowAnomalies threw when called with the shadow-recompute's injected rows — shadow-recompute not assertable this run.",
+        { id: "anomaly-detector-shadow-recompute" }
+      ),
+    ];
+  }
+
+  const checks: CheckResult[] = [];
+
+  const anomalyDiff = diffClassifiedLists(expected.anomalies, adaptAnomalies(actualAnomalies));
+  checks.push(
+    mk(
+      ctx,
+      "shadow-recompute",
+      "anomaly_detection",
+      classificationDiffIsClean(anomalyDiff) ? "consistency-only" : "flag",
+      classificationDiffIsClean(anomalyDiff)
+        ? `detectFlowAnomalies' actual output (${actualAnomalies.length} anomaly(ies): LARGE_PREMIUM_PRINT/DIRECTIONAL_FLOW_SKEW) matches the independent threshold-math recompute over the same ${anomalyRows.length}-row 30m window.`
+        : `detectFlowAnomalies' actual output DIVERGES from the independent recompute over the same ${anomalyRows.length}-row 30m window — ${describeClassificationDiff(anomalyDiff)}.`,
+      { id: "anomaly-detector-shadow-recompute", expected: expected.anomalies.length, actual: actualAnomalies.length }
+    )
+  );
+
+  const nearMissDiff = diffClassifiedLists(expected.nearMisses, adaptNearMisses(actualNearMisses));
+  checks.push(
+    mk(
+      ctx,
+      "shadow-recompute",
+      "anomaly_near_miss",
+      classificationDiffIsClean(nearMissDiff) ? "consistency-only" : "flag",
+      classificationDiffIsClean(nearMissDiff)
+        ? `detectFlowAnomalies' BELOW_THRESHOLD near-miss output (${actualNearMisses.length}) matches the independent near-miss-band recompute over the same ${anomalyRows.length}-row 30m window.`
+        : `detectFlowAnomalies' BELOW_THRESHOLD near-miss output DIVERGES from the independent recompute over the same ${anomalyRows.length}-row 30m window — ${describeClassificationDiff(nearMissDiff)}.`,
+      { id: "anomaly-near-miss-shadow-recompute", expected: expected.nearMisses.length, actual: actualNearMisses.length }
+    )
+  );
+
+  return checks;
+}
+
 function groupMetrics(ticker: string, checks: CheckResult[]): MetricScore[] {
   const byMetric = new Map<string, CheckResult[]>();
   for (const c of checks) {
@@ -521,6 +658,14 @@ export async function verifyFlows(marketOpen: boolean): Promise<TickerScore> {
   // coverage gap that previously made flows consistency-only by construction. Best-effort: a
   // skipped cross-check (Massive down / thin tape) degrades to consistency-only, never a false green.
   checks.push(await crossCheckAgainstMassive(ctx, rows));
+
+  // ── FLOW-ANOMALY DETECTOR shadow-recompute (task #132) ────────────────────
+  // See module doc above: validates detectFlowAnomalies' threshold math/skew-ratio/near-miss-band
+  // classification itself, not just the tape aggregates checked above. Its own bounded 30-minute
+  // read (separate from the 48h tape read above — a different window/order the anomaly detector
+  // itself uses; see flow-anomaly-scope.ts's module doc for why reusing the 48h/2000-cap tape
+  // above would NOT be a faithful stand-in for it).
+  checks.push(...(await verifyFlowAnomalyDetector(ctx)));
 
   const metrics = groupMetrics(ticker, checks);
   return { ticker, status: worstStatus(metrics.map((m) => m.status)), metrics };

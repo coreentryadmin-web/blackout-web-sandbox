@@ -19,6 +19,7 @@ import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitive
 import { shiftPercentForStrike } from "@/components/desk/gex-heatmap/shift-math";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
+import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 import { todayEt } from "@/lib/et-date";
 import {
   fmtHeatmapMoneySigned,
@@ -26,6 +27,10 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
+import {
+  readGexHeatmapSessionCache,
+  writeGexHeatmapSessionCache,
+} from "@/lib/gex-heatmap-session-cache";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
@@ -1469,6 +1474,7 @@ function TickerSwitcher({
   spot,
   changePct,
   showSpot,
+  nativeShell = false,
 }: {
   ticker: string;
   onPick: (t: string) => void;
@@ -1476,6 +1482,8 @@ function TickerSwitcher({
   spot?: number;
   changePct?: number;
   showSpot?: boolean;
+  /** iOS native shell — bottom sheet picker instead of fixed dropdown (avoids focus zoom + layout break). */
+  nativeShell?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -1543,9 +1551,9 @@ function TickerSwitcher({
     return opts;
   }, [presetMatches, searchResults]);
 
-  // Close the dropdown on outside click (trigger + portaled menu).
+  // Close the dropdown on outside click (trigger + portaled menu). Native sheet uses backdrop.
   useEffect(() => {
-    if (!open) return;
+    if (!open || nativeShell) return;
     function onDoc(e: MouseEvent) {
       const t = e.target as Node;
       if (boxRef.current?.contains(t) || menuRef.current?.contains(t)) return;
@@ -1553,18 +1561,34 @@ function TickerSwitcher({
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  }, [open, nativeShell]);
+
+  useEffect(() => {
+    if (!nativeShell || !open) return;
+    document.documentElement.classList.add("nav-locked", "gex-ticker-sheet-open");
+    return () => {
+      document.documentElement.classList.remove("nav-locked", "gex-ticker-sheet-open");
+      window.setTimeout(() => resetIosViewport(), 160);
+    };
+  }, [nativeShell, open]);
+
+  const closeNativeSheet = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setDebouncedQuery("");
+    window.setTimeout(() => resetIosViewport(), 160);
+  }, []);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!open || nativeShell) {
       setMenuPos(null);
       return;
     }
     updateMenuPos();
-  }, [open, updateMenuPos]);
+  }, [open, nativeShell, updateMenuPos]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || nativeShell) return;
     const onReflow = () => updateMenuPos();
     window.addEventListener("resize", onReflow);
     window.addEventListener("scroll", onReflow, true);
@@ -1572,7 +1596,7 @@ function TickerSwitcher({
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
     };
-  }, [open, updateMenuPos]);
+  }, [open, nativeShell, updateMenuPos]);
 
   // Reset the keyboard cursor to the top whenever the option set changes.
   useEffect(() => {
@@ -1583,9 +1607,12 @@ function TickerSwitcher({
     const sym = t.trim().toUpperCase();
     if (!sym) return;
     onPick(sym);
-    setQuery("");
-    setDebouncedQuery("");
-    setOpen(false);
+    if (nativeShell) closeNativeSheet();
+    else {
+      setQuery("");
+      setDebouncedQuery("");
+      setOpen(false);
+    }
   }
 
   function openMenu() {
@@ -1596,99 +1623,151 @@ function TickerSwitcher({
 
   const changeBull = (changePct ?? 0) >= 0;
 
+  function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = options[active] ?? options[0];
+      if (opt) pick(opt.ticker);
+      else if (query.trim()) pick(query);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, Math.max(0, options.length - 1)));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Escape") {
+      if (nativeShell) closeNativeSheet();
+      else setOpen(false);
+    }
+  }
+
+  const optionList = (
+    <ul
+      id="ticker-listbox"
+      role="listbox"
+      aria-label="Tickers"
+      className={clsx(
+        nativeShell
+          ? "gex-ticker-native-sheet-list"
+          : "mt-1 max-h-60 overflow-y-auto overscroll-contain"
+      )}
+    >
+      {options.length === 0 ? (
+        <li className="px-2 py-2 text-center font-mono text-[10px] uppercase tracking-widest text-sky-300/60">
+          No matches
+        </li>
+      ) : (
+        options.map((o, i) => {
+          const isActive = i === active;
+          const isCurrent = o.ticker === ticker;
+          return (
+            <li key={o.ticker} id={`ticker-opt-${i}`} role="option" aria-selected={isCurrent}>
+              <button
+                type="button"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(o.ticker)}
+                className={clsx(
+                  "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
+                  nativeShell ? "gex-ticker-native-sheet-option min-h-[var(--ios-touch,2.75rem)]" : "",
+                  isActive ? "bg-cyan-400/12" : "hover:bg-cyan-400/10"
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={clsx(
+                      "font-mono font-semibold",
+                      nativeShell ? "text-sm" : "text-[12px]",
+                      isCurrent ? "text-cyan-400" : "text-white"
+                    )}
+                  >
+                    {o.ticker}
+                  </span>
+                  {o.preset && (
+                    <span className="font-mono text-[8px] uppercase tracking-wider text-sky-300/50">
+                      preset
+                    </span>
+                  )}
+                </span>
+                {o.name && (
+                  <span className={clsx("truncate text-sky-300/70", nativeShell ? "text-xs" : "text-[10px]")}>
+                    {o.name}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })
+      )}
+    </ul>
+  );
+
+  const searchInput = (
+    <input
+      ref={inputRef}
+      type="text"
+      value={query}
+      onChange={(e) => {
+        setQuery(e.target.value);
+        setOpen(true);
+      }}
+      onKeyDown={onSearchKeyDown}
+      onBlur={() => {
+        if (!nativeShell) return;
+        window.setTimeout(() => {
+          if (!document.documentElement.classList.contains("ios-keyboard-open")) {
+            resetIosViewport();
+          }
+        }, 160);
+      }}
+      placeholder="Search any ticker…"
+      aria-label="Search any ticker"
+      role="combobox"
+      aria-expanded={open}
+      aria-controls="ticker-listbox"
+      aria-activedescendant={open && options.length ? `ticker-opt-${active}` : undefined}
+      spellCheck={false}
+      autoComplete="off"
+      className={clsx(
+        nativeShell
+          ? "gex-ticker-native-sheet-search"
+          : "w-full rounded-md border border-white/12 bg-[rgba(4,6,10,0.7)] px-2.5 py-1.5 font-mono text-[12px] text-white placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
+      )}
+    />
+  );
+
+  const nativeSheet =
+    nativeShell && open ? (
+      <div
+        ref={menuRef}
+        className="gex-ticker-native-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select ticker"
+      >
+        <button
+          type="button"
+          className="gex-ticker-native-sheet-backdrop"
+          aria-label="Close ticker search"
+          onClick={closeNativeSheet}
+        />
+        <div className="gex-ticker-native-sheet-panel">
+          <div className="gex-ticker-native-sheet-grabber" aria-hidden />
+          <p className="gex-ticker-native-sheet-title">Select ticker</p>
+          {searchInput}
+          {optionList}
+        </div>
+      </div>
+    ) : null;
+
   const dropdown =
-    open && menuPos ? (
+    !nativeShell && open && menuPos ? (
       <div
         ref={menuRef}
         className="fixed z-[200] rounded-lg border border-white/12 bg-[rgba(8,9,14,0.97)] p-1.5 shadow-xl backdrop-blur"
         style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width }}
       >
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              const opt = options[active] ?? options[0];
-              if (opt) pick(opt.ticker);
-              else if (query.trim()) pick(query);
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setActive((i) => Math.min(i + 1, Math.max(0, options.length - 1)));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setActive((i) => Math.max(i - 1, 0));
-            } else if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder="Search any ticker…"
-          aria-label="Search any ticker"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls="ticker-listbox"
-          aria-activedescendant={open && options.length ? `ticker-opt-${active}` : undefined}
-          spellCheck={false}
-          autoComplete="off"
-          className={clsx(
-            "w-full rounded-md border border-white/12 bg-[rgba(4,6,10,0.7)] px-2.5 py-1.5 font-mono text-[12px] text-white",
-            "placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
-          )}
-        />
-        <ul
-          id="ticker-listbox"
-          role="listbox"
-          aria-label="Tickers"
-          className="mt-1 max-h-60 overflow-y-auto overscroll-contain"
-        >
-          {options.length === 0 ? (
-            <li className="px-2 py-2 text-center font-mono text-[10px] uppercase tracking-widest text-sky-300/60">
-              No matches
-            </li>
-          ) : (
-            options.map((o, i) => {
-              const isActive = i === active;
-              const isCurrent = o.ticker === ticker;
-              return (
-                <li key={o.ticker} id={`ticker-opt-${i}`} role="option" aria-selected={isCurrent}>
-                  <button
-                    type="button"
-                    onMouseEnter={() => setActive(i)}
-                    onClick={() => pick(o.ticker)}
-                    className={clsx(
-                      "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
-                      isActive ? "bg-cyan-400/12" : "hover:bg-cyan-400/10"
-                    )}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className={clsx(
-                          "font-mono text-[12px] font-semibold",
-                          isCurrent ? "text-cyan-400" : "text-white"
-                        )}
-                      >
-                        {o.ticker}
-                      </span>
-                      {o.preset && (
-                        <span className="font-mono text-[8px] uppercase tracking-wider text-sky-300/50">
-                          preset
-                        </span>
-                      )}
-                    </span>
-                    {o.name && (
-                      <span className="truncate text-[10px] text-sky-300/70">{o.name}</span>
-                    )}
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
+        {searchInput}
+        {optionList}
       </div>
     ) : null;
 
@@ -1704,7 +1783,8 @@ function TickerSwitcher({
         aria-label={`Ticker: ${ticker}. Change ticker`}
         className={clsx(
           "inline-flex items-center gap-1.5 rounded-md border border-white/12 bg-[rgba(8,9,14,0.6)] px-2.5 py-1.5 outline-none transition-colors",
-          "hover:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400"
+          "hover:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400",
+          nativeShell && "gex-ticker-native-trigger min-h-[var(--ios-touch,2.75rem)]"
         )}
       >
         <span aria-hidden className="text-sky-300/70">🔍</span>
@@ -1742,7 +1822,9 @@ function TickerSwitcher({
       )}
 
       </div>
-      {typeof document !== "undefined" && dropdown ? createPortal(dropdown, document.body) : null}
+      {typeof document !== "undefined" && (nativeSheet || dropdown)
+        ? createPortal(nativeSheet ?? dropdown, document.body)
+        : null}
     </>
   );
 }
@@ -2404,7 +2486,13 @@ function KeyLevelBox({
   );
 }
 
-export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string }) {
+export function GexHeatmap({
+  ticker: initialTicker = "SPY",
+  nativeShell = false,
+}: {
+  ticker?: string;
+  nativeShell?: boolean;
+}) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [lens, setLens] = useState<Lens>("gex");
   // View selection ("pair-a" = Matrix (full width); "pair-b" = Profile + Curve + Shift).
@@ -2464,7 +2552,13 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
       // deduping keep focus-triggered refetches cheap (they hit the warm cache).
       revalidateOnFocus: true,
       keepPreviousData: true,
-      onSuccess: clearForceNonce,
+      fallbackData: readGexHeatmapSessionCache<GexHeatmapResponse>(ticker),
+      onSuccess: (payload) => {
+        if (payload?.available && payload.gex?.strike_totals) {
+          writeGexHeatmapSessionCache(ticker, payload);
+        }
+        clearForceNonce();
+      },
       onError: clearForceNonce,
     }
   );
@@ -2556,7 +2650,8 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
     setForceNonce(0);
     setFastFlash(false);
     setExpiryScope("all");
-  }, [ticker]);
+    if (nativeShell) setPairView("pair-a");
+  }, [ticker, nativeShell]);
 
   // Clear any pending timers on unmount.
   useEffect(() => {
@@ -2729,6 +2824,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   // the success-branch gate below so the view TabList on the control row only shows when
   // there's a real block to switch between (not during load / stale / empty states).
   const showViewTabs = !((isLoading && !data) || stale) && !empty && !blockEmpty;
+  const showMatrixTabs = showViewTabs && !nativeShell;
 
   // Peak magnitude across the active block's cells drives the matrix color scale.
   const peak = useMemo(() => {
@@ -2897,6 +2993,44 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
         }
       }
       if (bestStrike != null) out[e] = bestStrike;
+    }
+    return out;
+  }, [cells, expiries, strikes]);
+
+  // ── PER-DAY call-wall / put-wall across the Matrix columns ───────────────────
+  // For EACH expiry column, its own highest POSITIVE cell (call wall) and highest
+  // NEGATIVE cell (put wall) — distinct from perDayAnchorByExpiry above (that's
+  // argmax|net|, i.e. whichever SIDE dominates the column; this tracks BOTH sides
+  // independently). When the column's dominant value is positive, its anchor and
+  // call-wall are the same strike (trivially — the largest-magnitude value can't
+  // be beaten in absolute terms by a same-sign value, so it's also that side's
+  // max); the OTHER side's wall, if the column has one, still gets its own
+  // separate marker. This mirrors SPX Slayer's per-column columnExtremeWalls
+  // (src/components/desk/SpxGexMatrixHeatmap.tsx) exactly, including the
+  // ascending-strike / strict `>`/`<` tie-break convention (lowest strike wins).
+  // Pure over `cells`/`expiries`/`strikes` (no Math.random/Date) → render-safe (#418).
+  const perDayExtremesByExpiry = useMemo<
+    Record<string, { callWall: number | null; putWall: number | null }>
+  >(() => {
+    const out: Record<string, { callWall: number | null; putWall: number | null }> = {};
+    const strikesAsc = [...strikes].sort((a, b) => a - b);
+    for (const e of expiries) {
+      let callWall: number | null = null;
+      let putWall: number | null = null;
+      let posMax = 0;
+      let negMin = 0;
+      for (const sNum of strikesAsc) {
+        const v = cells[String(sNum)]?.[e];
+        if (typeof v !== "number" || v === 0) continue;
+        if (v > posMax) {
+          posMax = v;
+          callWall = sNum;
+        } else if (v < negMin) {
+          negMin = v;
+          putWall = sNum;
+        }
+      }
+      out[e] = { callWall, putWall };
     }
     return out;
   }, [cells, expiries, strikes]);
@@ -3374,7 +3508,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
 
   const matrixPanel = (
     <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest">
+      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest gex-matrix-legend">
         <span className="mr-1 shrink-0 font-bold tracking-[0.2em] text-sky-300">
           Strike × Expiry Matrix
         </span>
@@ -3415,39 +3549,40 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             <span className="text-white">{fmtStrike(matrixAnchorStrike)}</span>
           </span>
         )}
-        {/* +GEX PEAK legend — the dominant call wall (single highest positive cell), GOLD. */}
+        {/* +GEX PEAK legend — the dominant call wall (single highest positive cell), matching
+            SPX Slayer's .spx-odte-matrix-row--max-pos BULL GREEN exactly. */}
         {posPeakCell != null && (
-          <span className="flex items-center gap-1.5 text-gold">
+          <span className="flex items-center gap-1.5" style={{ color: "#00e676" }}>
             <span
               aria-hidden
               className="h-2.5 w-2.5 rounded-sm"
-              style={{ outline: "2px solid #ffd23f", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(255,210,63,0.7)" }}
+              style={{ outline: "2px solid #00e676", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(0,230,118,0.7)" }}
             />
             <span aria-hidden>+{lensUpper} peak</span>
             <span className="text-white">{fmtStrike(posPeakCell.strike)}</span>
           </span>
         )}
-        {/* −GEX PEAK legend — the dominant put wall (single lowest negative cell), BRIGHT BEAR. */}
+        {/* −GEX PEAK legend — the dominant put wall (single lowest negative cell), matching
+            SPX Slayer's .spx-odte-matrix-row--max-neg VIOLET exactly. */}
         {negPeakCell != null && (
-          <span className="flex items-center gap-1.5" style={{ color: "#ff5c78" }}>
+          <span className="flex items-center gap-1.5" style={{ color: "#8b5cf6" }}>
             <span
               aria-hidden
               className="h-2.5 w-2.5 rounded-sm"
-              style={{ outline: "2px solid #ff5c78", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(255,92,120,0.7)" }}
+              style={{ outline: "2px solid #8b5cf6", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(109,40,217,0.7)" }}
             />
             <span aria-hidden>−{lensUpper} peak</span>
             <span className="text-white">{fmtStrike(negPeakCell.strike)}</span>
           </span>
         )}
-        {/* Per-day anchor legend (Step 4) — the subtle white ring/dot marking each expiry
-            column's own dominant strike. Only shown when ≥1 column has a per-day anchor. */}
+        {/* Per-day King legend (Step 4) — the amber ★ marking each expiry column's own
+            dominant strike, matching SPX Slayer's per-column King star exactly. Only shown
+            when ≥1 column has a per-day King. */}
         {Object.keys(perDayAnchorByExpiry).length > 0 && (
-          <span className="flex items-center gap-1.5 text-white/70">
-            <span
-              aria-hidden
-              className="h-2 w-2 rounded-sm"
-              style={{ outline: "1px solid rgba(255,255,255,0.7)", outlineOffset: "-1px" }}
-            />
+          <span className="flex items-center gap-1.5 text-amber-300/80">
+            <span aria-hidden className="text-[13px] leading-none text-amber-400 [text-shadow:0_0_6px_rgba(251,191,36,0.9)]">
+              ★
+            </span>
             <span aria-hidden>per-day King</span>
           </span>
         )}
@@ -3488,7 +3623,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
             Recent Ranges was removed — matrix is the primary surface on this tab. */}
         <div
           ref={matrixScrollRef}
-          className="max-h-[clamp(480px,74vh,880px)] min-h-[clamp(360px,58vh,640px)] overflow-auto overscroll-contain"
+          className="max-h-[clamp(480px,74vh,880px)] min-h-[clamp(360px,58vh,640px)] overflow-auto overscroll-contain gex-matrix-scroll"
           role="region"
           tabIndex={0}
           aria-label={`${data?.underlying ?? ticker} dealer ${vocab.noun.toLowerCase()} exposure matrix, strikes by expiration`}
@@ -3606,33 +3741,49 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                       // overall anchor strike. Keeps its diverging magnitude color; a white ◆
                       // pin + white ring sit ON TOP so it pops as the prominent anchor cell.
                       const isAnchorCell = isAnchor && matrixAnchorExpiry != null && e === matrixAnchorExpiry;
-                      // ── +GEX / −GEX PEAK cells (recolor): the two DOMINANT WALLS across the
-                      // whole matrix. The single highest +cell → GOLD border/glow (dominant call
-                      // wall); the single lowest −cell → BRIGHT BEAR (#ff5c78) border/glow
-                      // (dominant put wall). When a peak coincides with the ANCHOR cell we LAYER
-                      // them: the peak's gold/bear glow sits INSIDE (inset), the white anchor ring
-                      // on the OUTER edge — neither is hidden.
+                      // ── +GEX / −GEX PEAK cells: the two DOMINANT WALLS across the whole
+                      // matrix. The single highest +cell → BULL GREEN border/glow (dominant call
+                      // wall); the single lowest −cell → VIOLET (#8b5cf6) border/glow (dominant
+                      // put wall) — matching SPX Slayer's row-level max-pos/max-neg palette
+                      // exactly (src/components/desk/SpxGexMatrixHeatmap.tsx /
+                      // .spx-odte-matrix-row--max-pos/--max-neg in globals.css) so the two
+                      // products read as one visual language, not two different conventions.
+                      // When a peak coincides with the ANCHOR cell we LAYER them: the peak's
+                      // glow sits INSIDE (inset), the white anchor ring on the OUTER edge —
+                      // neither is hidden.
                       const isPosPeakCell =
                         posPeakCell != null && posPeakCell.strike === strike && posPeakCell.expiry === e;
                       const isNegPeakCell =
                         negPeakCell != null && negPeakCell.strike === strike && negPeakCell.expiry === e;
                       // PER-DAY anchor cell (Step 4) — this strike owns the argmax|net GEX| in
-                      // expiry column `e`. Subtle white ring (no pin) so per-day anchors read as a
-                      // quiet secondary layer beneath the one prominent overall anchor. The overall
-                      // anchor cell + the +/−GEX peaks outrank it (we suppress the subtle ring there).
+                      // expiry column `e`. Marked with the same ★ amber King star SPX Slayer uses
+                      // for its own per-column King (SpxGexMatrixHeatmap.tsx) so "per-day King"
+                      // looks identical across both products. The overall anchor cell + the
+                      // +/−GEX peaks outrank it (we suppress the star there to avoid stacking three
+                      // markers in one corner).
                       const isDayAnchorCell =
                         !isAnchorCell && !isPosPeakCell && !isNegPeakCell &&
                         perDayAnchorByExpiry[e] === strike && has && v !== 0;
+                      // PER-DAY call-wall / put-wall — this column's own highest positive / most
+                      // negative cell (may be the SAME strike as isDayAnchorCell, or a distinct
+                      // second cell on the opposite side — see perDayExtremesByExpiry above).
+                      // Gets the same pulsing brightness/scale glow SPX Slayer applies to its
+                      // per-column extreme (.spx-gex-matrix-extreme-pop / bie-heatmap-extreme-pop
+                      // share one keyframe) — deliberately independent of isDayAnchorCell, exactly
+                      // like SPX Slayer never suppresses one for the other.
+                      const dayExtremes = perDayExtremesByExpiry[e];
+                      const isDayCallWallCell = has && dayExtremes?.callWall === strike;
+                      const isDayPutWallCell = has && dayExtremes?.putWall === strike;
 
                       // Compose the highlight style so overlapping markers layer cleanly:
-                      //  • the +/−GEX PEAK draws an INSET ring + glow (gold or bear) INSIDE the cell;
+                      //  • the +/−GEX PEAK draws an INSET ring + glow (green or violet) INSIDE the cell;
                       //  • the ANCHOR draws a WHITE outline on the OUTER edge (so it frames the cell)
                       //    + a white inset glow only when it ISN'T overlapping a peak (the peak owns
                       //    the inner glow in the overlap case so the two never clash).
                       const peakInset = isPosPeakCell
-                        ? "inset 0 0 0 2px #ffd23f, inset 0 0 14px rgba(255,210,63,0.55)"
+                        ? "inset 0 0 0 2px #00e676, inset 0 0 14px rgba(0,230,118,0.55)"
                         : isNegPeakCell
-                          ? "inset 0 0 0 2px #ff5c78, inset 0 0 14px rgba(255,92,120,0.55)"
+                          ? "inset 0 0 0 2px #8b5cf6, inset 0 0 14px rgba(109,40,217,0.55)"
                           : null;
                       const anchorInset =
                         isAnchorCell && !peakInset ? "inset 0 0 14px rgba(255,255,255,0.5)" : null;
@@ -3643,9 +3794,9 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                       const highlightStyle: React.CSSProperties = isAnchorCell
                         ? { outline: "2px solid #ffffff", outlineOffset: "1px", boxShadow }
                         : isPosPeakCell
-                          ? { outline: "2px solid #ffd23f", outlineOffset: "-2px", boxShadow }
+                          ? { outline: "2px solid #00e676", outlineOffset: "-2px", boxShadow }
                           : isNegPeakCell
-                            ? { outline: "2px solid #ff5c78", outlineOffset: "-2px", boxShadow }
+                            ? { outline: "2px solid #8b5cf6", outlineOffset: "-2px", boxShadow }
                             : isDayAnchorCell
                               ? {
                                   // PER-DAY anchor — a SUBTLE thin white ring, no glow/pin, so the
@@ -3689,10 +3840,14 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                                 : isNegPeakCell
                                   ? `−${lensUpper} PEAK · ${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — dominant put wall`
                                   : isDayAnchorCell
-                                    ? `${fmtExpiry(e)} anchor · ${strike} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — this expiry's dominant strike`
-                                    : has
-                                      ? `${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })}`
-                                      : undefined
+                                    ? `${fmtExpiry(e)} King · ${strike} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — this expiry's dominant strike${isDayCallWallCell ? " · also this expiry's call wall" : isDayPutWallCell ? " · also this expiry's put wall" : ""}`
+                                    : isDayCallWallCell
+                                      ? `${fmtExpiry(e)} call wall · ${strike} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — this expiry's highest positive`
+                                      : isDayPutWallCell
+                                        ? `${fmtExpiry(e)} put wall · ${strike} · ${fmtHeatmapMoneySigned(val, { showZero: true })} — this expiry's highest negative`
+                                        : has
+                                          ? `${strike} · ${fmtExpiry(e)} · ${fmtHeatmapMoneySigned(val, { showZero: true })}`
+                                          : undefined
                           }
                         >
                           {/* white ◆ pin pinned to the overall anchor cell's corner — the ANCHOR marker */}
@@ -3704,15 +3859,20 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
                               <AnchorGlyph size={9} />
                             </span>
                           )}
-                          {/* per-day anchor — a tiny white dot in the corner (subtle, no pin glyph) */}
+                          {/* per-day King — the same amber ★ SPX Slayer uses for its own
+                              per-column King (SpxGexMatrixHeatmap.tsx), so the marker reads
+                              identically across both products. */}
                           {isDayAnchorCell && (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute right-0.5 top-0.5 h-1 w-1 rounded-full"
-                              style={{ backgroundColor: "rgba(255,255,255,0.8)" }}
-                            />
+                              className="pointer-events-none absolute right-0.5 top-0 text-[13px] leading-none text-amber-400 [text-shadow:0_0_6px_rgba(251,191,36,0.9)]"
+                            >
+                              ★
+                            </span>
                           )}
-                          {fmtHeatmapMoneySigned(val, { showZero: true })}
+                          <span className={clsx((isDayCallWallCell || isDayPutWallCell) && "gex-heatmap-extreme-pop")}>
+                            {fmtHeatmapMoneySigned(val, { showZero: true })}
+                          </span>
                         </td>
                       );
                     })}
@@ -3755,7 +3915,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
   );
 
   return (
-    <Panel accent={panelAccent} className="overflow-visible">
+    <Panel accent={panelAccent} className={clsx("overflow-visible gex-heatmap-panel", nativeShell && "gex-heatmap-panel-native")}>
       {/* ── ONE compact control row (UI refactor) ──────────────────────────────
           [🔍 ticker + spot]  [ Profile+Matrix | Curve+Shift ]  …spacer…  [live · GEX VEX DEX CHARM]
           The old full-width ticker-chip row, the big central spot readout, and the
@@ -3767,7 +3927,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           page. The freshness indicator that lived on that header's actions slot is
           preserved as the minimal Live/Quote-only dot at the far right of this row.
           Wraps gracefully on narrow widths (flex-wrap). */}
-      <div className="relative z-[40] mb-3 flex flex-wrap items-center gap-x-4 gap-y-3 overflow-visible rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur">
+      <div className="relative z-[40] mb-3 flex flex-wrap items-center gap-x-4 gap-y-3 overflow-visible rounded-xl border border-white/10 bg-[rgba(8,9,14,0.45)] px-3 py-2.5 backdrop-blur gex-heatmap-control-row">
         {/* Compact searchable ticker + the ONE kept clean spot reference. */}
         <TickerSwitcher
           ticker={ticker}
@@ -3775,11 +3935,12 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
           spot={headerSpot}
           changePct={headerChangePct}
           showSpot={(live || quoteOnly) && headerSpot > 0}
+          nativeShell={nativeShell}
         />
 
         {/* View tabs — Matrix | Profile + Curve + Shift. Controlled mirror of the body
             TabPanels (both driven by `pairView`). Only meaningful with a real block. */}
-        {showViewTabs && (
+        {showMatrixTabs && (
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")}>
             <TabList aria-label={`${lensUpper} views`} className="max-w-full overflow-x-auto">
               <Tab value="pair-a">Matrix</Tab>
@@ -3864,7 +4025,7 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
 
       {/* Key levels sit tight under the control row — matrix is the hero below. */}
       {showViewTabs && (
-        <KeyLevelBox cells={levelCells} kicker={`${lensUpper} structure`} className="mb-3" />
+        <KeyLevelBox cells={levelCells} kicker={`${lensUpper} structure`} className="mb-3 gex-key-levels" />
       )}
 
       {/* Night Hawk active-play badge — renders only when a NH edition from the last 24h
@@ -3982,20 +4143,18 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               ──────────────── */}
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-3">
             <TabPanels>
-              {/* Tab A — Matrix ALONE, full content width. */}
               <TabPanel value="pair-a">{matrixPanel}</TabPanel>
-
-              {/* Tab B — Profile (wide left) + Curve & Shift (stacked right) on a 12-col grid;
-                  stacks on md/sm. */}
-              <TabPanel value="pair-b">
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-                  <div className="min-w-0 lg:col-span-7">{profilePanel}</div>
-                  <div className="grid min-w-0 content-start gap-5 lg:col-span-5">
-                    {curvePanel}
-                    {shiftPanel}
+              {!nativeShell ? (
+                <TabPanel value="pair-b">
+                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+                    <div className="min-w-0 lg:col-span-7">{profilePanel}</div>
+                    <div className="grid min-w-0 content-start gap-5 lg:col-span-5">
+                      {curvePanel}
+                      {shiftPanel}
+                    </div>
                   </div>
-                </div>
-              </TabPanel>
+                </TabPanel>
+              ) : null}
             </TabPanels>
           </Tabs>
 
@@ -4004,23 +4163,24 @@ export function GexHeatmap({ ticker: initialTicker = "SPY" }: { ticker?: string 
               wall / put wall / max pain already lead the page in the consolidated key-level
               box. ASK LARGO leads; the two small optional cards (dark-pool, flow) sit beside
               it and each self-hides when empty. ── */}
-          <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
-            <LargoRead key={ticker} ticker={ticker} />
-            {/* Optional rail cards — dark-pool levels + flow summary (each self-hides when empty). */}
-            <div className="grid content-start gap-4">
-              <DarkPoolRail darkPoolLevels={darkPoolLevels} />
-              <FlowSummary flowByStrike={flowByStrike} overlaysLoaded={data != null} />
+          {!nativeShell && (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr] gex-heatmap-rail">
+              <LargoRead key={ticker} ticker={ticker} />
+              <div className="grid content-start gap-4">
+                <DarkPoolRail darkPoolLevels={darkPoolLevels} />
+                <FlowSummary flowByStrike={flowByStrike} overlaysLoaded={data != null} />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* ── Methodology disclosure — honest about the dealer-sign assumption ── */}
-          <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/75">
+          {!nativeShell && (
+          <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/75 gex-heatmap-methodology">
             <span aria-hidden className="mr-1 text-sky-300/70">ⓘ</span>
             Net dealer gamma uses the standard convention (dealers long calls / short
             puts); vanna is computed closed-form from implied volatility. Levels are model
             estimates from option open interest — market-structure analysis, not advice.
           </p>
+          )}
         </>
       )}
     </Panel>

@@ -1,50 +1,49 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getLaunchStatusSnapshot, isToolLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
+import { getLaunchStatusSnapshot, isToolLaunched, isZeroDteCommandLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
 
 // Pure unit tests for launch gating. Alias-free, runnable via `tsx --test` — no Clerk, no Next.
 
 const E = (v?: string): NodeJS.ProcessEnv => ({ LAUNCHED_TOOLS: v } as NodeJS.ProcessEnv);
 
-test("defaults: SPX + HELIX live; Heatmaps/Largo/Night Hawk/Grid locked", () => {
+test("defaults: all tools live except Largo", () => {
   const env = {} as NodeJS.ProcessEnv;
   assert.equal(isToolLaunched("spx", env), true);
   assert.equal(isToolLaunched("flows", env), true);
-  assert.equal(isToolLaunched("heatmap", env), false);
-  assert.equal(isToolLaunched("largo", env), false);
-  assert.equal(isToolLaunched("nighthawk", env), false);
-  assert.equal(isToolLaunched("grid", env), false);
-  assert.deepEqual(lockedToolKeys(env).sort(), ["grid", "heatmap", "largo", "nighthawk"]);
-});
-
-test("LAUNCHED_TOOLS is additive — unlocking one tool leaves the others locked", () => {
-  const env = E("heatmap");
   assert.equal(isToolLaunched("heatmap", env), true);
+  assert.equal(isToolLaunched("nighthawk", env), true);
+  assert.equal(isToolLaunched("grid", env), true);
   assert.equal(isToolLaunched("largo", env), false);
-  assert.equal(isToolLaunched("nighthawk", env), false);
-  assert.deepEqual(lockedToolKeys(env).sort(), ["grid", "largo", "nighthawk"]);
+  assert.deepEqual(lockedToolKeys(env), ["largo"]);
+  assert.equal(isZeroDteCommandLaunched(env), true);
 });
 
-test("LAUNCHED_TOOLS unlocks grid when included", () => {
-  const env = E("grid");
-  assert.equal(isToolLaunched("grid", env), true);
-  assert.equal(isToolLaunched("heatmap", env), false);
+test("LAUNCHED_TOOLS is additive — can still unlock Largo without affecting defaults", () => {
+  const env = E("largo");
+  assert.equal(isToolLaunched("largo", env), true);
+  assert.equal(isToolLaunched("heatmap", env), true);
+  assert.deepEqual(lockedToolKeys(env), []);
+});
+
+test("0DTE Command follows grid; LAUNCHED_0DTE=0 locks the tab even when grid is live", () => {
+  assert.equal(isZeroDteCommandLaunched({} as NodeJS.ProcessEnv), true);
+  assert.equal(isZeroDteCommandLaunched({ LAUNCHED_0DTE: "0" } as NodeJS.ProcessEnv), false);
+  assert.equal(isZeroDteCommandLaunched({ LAUNCHED_0DTE: "1" } as NodeJS.ProcessEnv), true);
 });
 
 test("LAUNCHED_TOOLS parses CSV, trims, lowercases, ignores unknown keys", () => {
-  const env = E("  Largo , NIGHTHAWK , GRID , bogus ");
+  const env = E("  Largo , bogus ");
   assert.equal(isToolLaunched("largo", env), true);
-  assert.equal(isToolLaunched("nighthawk", env), true);
   assert.equal(isToolLaunched("grid", env), true);
-  assert.equal(isToolLaunched("heatmap", env), false);
-  assert.deepEqual(lockedToolKeys(env), ["heatmap"]);
+  assert.deepEqual(lockedToolKeys(env), []);
 });
 
 test("can never accidentally lock the default-live tools via env", () => {
-  const env = E("heatmap,largo,nighthawk,grid");
+  const env = {} as NodeJS.ProcessEnv;
   assert.equal(isToolLaunched("spx", env), true);
   assert.equal(isToolLaunched("flows", env), true);
-  assert.deepEqual(lockedToolKeys(env), []); // all unlocked
+  assert.equal(isToolLaunched("heatmap", env), true);
+  assert.equal(isToolLaunched("grid", env), true);
 });
 
 test("toolKeyForHref maps in-app routes to keys, null for non-tools", () => {
@@ -64,15 +63,15 @@ test("every tool has a unique key + href", () => {
 test("getLaunchStatusSnapshot reflects env and default-live tools", () => {
   const unset = getLaunchStatusSnapshot({} as NodeJS.ProcessEnv);
   assert.equal(unset.launched_tools_env, null);
-  assert.equal(unset.open_count, 2);
+  assert.equal(unset.open_count, 5);
   assert.equal(unset.total_count, 6);
-  assert.deepEqual(unset.locked_keys.sort(), ["grid", "heatmap", "largo", "nighthawk"]);
+  assert.deepEqual(unset.locked_keys, ["largo"]);
   assert.equal(unset.tools.find((t) => t.key === "spx")?.launch_source, "default");
-  assert.equal(unset.tools.find((t) => t.key === "heatmap")?.launch_source, "locked");
+  assert.equal(unset.tools.find((t) => t.key === "heatmap")?.launch_source, "default");
+  assert.equal(unset.tools.find((t) => t.key === "largo")?.launch_source, "locked");
 
-  const all = getLaunchStatusSnapshot(E("heatmap,nighthawk,largo,grid"));
-  assert.equal(all.open_count, 6);
-  assert.deepEqual(all.locked_keys, []);
-  assert.equal(all.launched_tools_env, "heatmap,nighthawk,largo,grid");
-  assert.equal(all.tools.find((t) => t.key === "grid")?.launch_source, "env");
+  const largoOnly = getLaunchStatusSnapshot(E("largo"));
+  assert.equal(largoOnly.open_count, 6);
+  assert.deepEqual(largoOnly.locked_keys, []);
+  assert.equal(largoOnly.tools.find((t) => t.key === "largo")?.launch_source, "env");
 });

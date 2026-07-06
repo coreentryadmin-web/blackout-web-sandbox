@@ -6,11 +6,11 @@ builder = "nixpacks"
 buildCommand = "echo 'cron trigger service: no app build needed'"
 # Only redeploy this trigger service when its OWN driver/config changes — NOT on docs/src/
 # log commits. Without this, EVERY repo commit (incl. the frequent autonomous-SDLC docs/auto
-# log pushes) redeployed all cron trigger services, stalling the every-minute warm writers
-# ~15-21 min mid-RTH and tripping the cron-staleness watchdog. This service only runs
-# scripts/hit-cron.mjs — ALL business logic lives in the main blackout-web app it pings —
-# so it only needs to redeploy when hit-cron.mjs or this TOML changes. Mirrors railway.toml's
-# proven repo-relative-glob watchPatterns (a leading-slash "/**" matches NOTHING on Railway).
+# log pushes) redeployed all cron trigger services, stalling warm writers mid-RTH and tripping
+# the cron-staleness watchdog. This service only runs scripts/hit-cron.mjs — ALL business
+# logic lives in the main blackout-web app it pings — so it only needs to redeploy when
+# hit-cron.mjs or this TOML changes. Mirrors railway.toml's proven repo-relative-glob
+# watchPatterns (a leading-slash "/**" matches NOTHING on Railway).
 watchPatterns = [
   "scripts/hit-cron.mjs",
   "railway.nights-watch-warm.toml",
@@ -19,12 +19,12 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/nights-watch-warm"
-# Every minute during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
-# 11-21 UTC spans ~7AM-5PM ET. The route's in-process ET gate (inMarketHours, 9:30AM-4:00PM
-# ET weekdays, DST-aware) self-skips the pre-open / off-band minutes, so warms only fire while
-# chains actually move. Mirrors railway.uw-cache-refresh.toml's market-hours band convention.
+# Every 5 min during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
+# 11-21 UTC spans ~7AM-5PM ET. Railway's native cron floor is 5 minutes (not 1 minute).
+# Sub-5m gaps are filled by the in-app rth-warm-leader (2 min heal threshold). The route's
+# in-process ET gate self-skips pre-open / off-band minutes.
 # NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard
 # value overrides this TOML, so update it there too.
-cronSchedule = "* 11-21 * * 1-5"
+cronSchedule = "*/5 11-21 * * 1-5"
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1

@@ -1,0 +1,2 @@
+# Codemagic config moved to repo root: ../../codemagic.yaml
+# Connect coreentryadmin-web/blackout-web in Codemagic (auto-detects root codemagic.yaml).

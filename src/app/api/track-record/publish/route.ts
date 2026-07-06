@@ -22,6 +22,10 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    // Cron-only write path, but still don't forward raw exception text (Postgres driver/
+    // constraint errors can embed internal detail) -- log server-side, return a fixed string.
+    // Same pattern established in /api/ready (task #66).
+    console.error("[track-record/publish] POST failed:", err);
+    return NextResponse.json({ error: "Failed to publish track record" }, { status: 500 });
   }
 }

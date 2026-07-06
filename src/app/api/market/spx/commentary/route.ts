@@ -4,6 +4,7 @@ import { requireTierApi } from "@/lib/market-api-auth";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { generateSpxCommentary, type SpxCommentaryResult } from "@/lib/providers/spx-commentary";
 import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { serverCache } from "@/lib/server-cache";
 import { sharedCacheGet } from "@/lib/shared-cache";
 
@@ -34,18 +35,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Commentary unavailable" }, { status: 503 });
   }
 
-  let body: { desk?: SpxDeskPayload };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
+  // Body is optional — generation always uses the server-side merged desk.
+  void req.json().catch(() => null);
 
-  if (!body.desk?.available || !body.desk.price) {
-    return NextResponse.json({ error: "Desk data required" }, { status: 400 });
-  }
-
-  const desk = body.desk;
   const now = Date.now();
   const windowSlot = Math.floor(now / COMMENTARY_TTL_MS);
   const cacheKey = `spx-commentary:shared:v2:${windowSlot}`;
@@ -63,6 +55,11 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await serverCache<CommentaryCache>(cacheKey, COMMENTARY_TTL_MS, async () => {
+      const { merged: desk } = await loadMergedSpxDesk();
+      if (!desk.available || !(desk.price != null && desk.price > 0)) {
+        throw new Error("spx-commentary: desk unavailable");
+      }
+
       // Cross-tool access: give the desk AI the platform's OWN engine state (open play,
       // lotto, power-hour) + recent win-rate so its read aligns with the rest of the
       // platform (never contradicts an open position) and can calibrate conviction. All

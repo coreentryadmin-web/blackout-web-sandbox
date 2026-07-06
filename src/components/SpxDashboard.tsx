@@ -1,14 +1,24 @@
 "use client";
 
-import React from "react";
+import React, { Suspense, useState } from "react";
+import dynamic from "next/dynamic";
+import { clsx } from "clsx";
 import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/hooks/useMergedDesk";
+import { useIosNativeShell } from "@/hooks/useIosNativeShell";
+import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
-import { SpxCommentaryRail } from "@/components/desk/SpxCommentaryRail";
 import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
 import { SpxGexMatrixHeatmap } from "@/components/desk/SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/lib/spx-halt-banner";
+
+const SpxCommentaryRail = dynamic(
+  () => import("@/components/desk/SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
+  {
+    loading: () => <div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />,
+  }
+);
 
 class SpxPanelErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -33,6 +43,8 @@ export function SpxDashboard() {
   const { isLoaded, user } = useUser();
   const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
   const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
+  const nativeShell = useIosNativeShell();
+  const [iosPanel, setIosPanel] = useState<"plays" | "matrix" | "intel">("plays");
 
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
     return (
@@ -108,14 +120,41 @@ export function SpxDashboard() {
         </div>
       )}
       <SpxPanelErrorBoundary>
-        <SpxSniperHeader desk={desk} live={live} />
+        <SpxSniperHeader desk={desk} live={live} nativeShell={nativeShell} />
       </SpxPanelErrorBoundary>
 
-      <div className="spx-sniper-triple">
+      {nativeShell && (
+        <IosNativeSegment
+          value={iosPanel}
+          onChange={setIosPanel}
+          accent="#00e676"
+          aria-label="SPX desk view"
+          className="ios-native-desk-segment"
+          segments={[
+            { id: "plays", label: "Plays" },
+            { id: "matrix", label: "Matrix" },
+            { id: "intel", label: "Intel" },
+          ]}
+        />
+      )}
+
+      {/* Left rail: GEX matrix only — no Benzinga scroll, live tape, or interval-flow stack. */}
+      <div
+        className="spx-sniper-triple"
+        data-ios-panel={nativeShell ? iosPanel : undefined}
+      >
         <SpxPanelErrorBoundary>
-          <aside className="spx-sniper-left-rail spx-left-matrix">
+          <aside
+            key={nativeShell ? iosPanel : "matrix"}
+            className={clsx(
+              "spx-sniper-left-rail spx-left-matrix",
+              nativeShell && iosPanel !== "matrix" && "ios-native-panel-hidden",
+              nativeShell && iosPanel === "matrix" && "ios-native-panel-visible"
+            )}
+          >
             <SpxGexMatrixHeatmap
               live={live}
+              sessionActive={sessionActive}
               liveSpot={desk?.price ?? null}
               deskGammaFlip={desk?.gamma_flip ?? null}
               deskGexKing={desk?.gex_king ?? null}
@@ -125,13 +164,30 @@ export function SpxDashboard() {
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
-          <div className="spx-sniper-chart-col spx-center-stack">
+          <div
+            key={nativeShell ? iosPanel : "plays"}
+            className={clsx(
+              "spx-sniper-chart-col spx-center-stack",
+              nativeShell && iosPanel !== "plays" && "ios-native-panel-hidden",
+              nativeShell && iosPanel === "plays" && "ios-native-panel-visible"
+            )}
+          >
             <SpxTradeAlerts desk={desk} live={live} refreshing={refreshing} sessionActive={sessionActive} />
           </div>
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
-          <SpxCommentaryRail desk={desk} live={live} />
+          <Suspense fallback={<div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />}>
+            <div
+              key={nativeShell ? iosPanel : "intel"}
+              className={clsx(
+                nativeShell && iosPanel !== "intel" && "ios-native-panel-hidden",
+                nativeShell && iosPanel === "intel" && "ios-native-panel-visible"
+              )}
+            >
+              <SpxCommentaryRail desk={desk} live={live} />
+            </div>
+          </Suspense>
         </SpxPanelErrorBoundary>
       </div>
     </div>

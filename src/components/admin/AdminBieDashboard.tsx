@@ -184,6 +184,171 @@ type SpxHealthPayload = {
   errors: string[];
 };
 
+// Thermal health panel (task #138) — payload shape of /api/admin/gex/health, the
+// BlackOut Thermal (GEX/heatmap pipeline) analogue of the SPX health panel above: its
+// own dedicated read-only route (src/app/api/admin/gex/health/route.ts) and data source
+// (src/lib/admin-gex-health.ts) — never the heavier /api/admin/bie-report fetch, and
+// there is no admin-spx-dashboard.ts-style full Thermal tool yet for this to piggyback
+// on either.
+type GexHealthTicker = {
+  ticker: string;
+  cached: boolean;
+  last_compute_at: string | null;
+  age_sec: number | null;
+  ttl_sec: number;
+  stale: boolean;
+  spot: number | null;
+  events_count: number | null;
+};
+
+type GexHealthRegimeEventRow = {
+  id: number;
+  observed_at: string;
+  session_date: string;
+  ticker: string;
+  event_type: string;
+  severity: string;
+  message: string;
+  level: number | null;
+  direction: string | null;
+  from_value: number | null;
+  to_value: number | null;
+  detected_at: string | null;
+};
+
+type GexHealthCronJob = {
+  key: string;
+  name: string;
+  status: string;
+  status_label: string;
+  last_run_at: string | null;
+  age_min: number | null;
+  runs_24h: { ok: number; failed: number; skipped: number };
+};
+
+type GexHealthRecentError = {
+  scope: string | null;
+  name: string;
+  message: string;
+  created_at: string;
+};
+
+type GexHealthPayload = {
+  generated_at: string;
+  db_configured: boolean;
+  tickers: GexHealthTicker[];
+  regime_events: {
+    summary: {
+      window_hours: number;
+      total: number;
+      by_ticker: Array<{ ticker: string; count: number }>;
+      by_type: Array<{ type: string; count: number }>;
+    };
+    recent: GexHealthRegimeEventRow[];
+  };
+  cron: GexHealthCronJob[];
+  recent_errors: GexHealthRecentError[];
+  errors: string[];
+};
+
+// 0DTE Command health panel (task #150) — payload shape of /api/admin/zerodte/health,
+// direct analogue of the SPX health panel above, for the SEPARATE multi-ticker
+// scanner branded "0DTE Command" in-app (`/grid`'s default tab), not SPX Slayer's
+// own engine (task #127's naming disambiguation). See
+// src/lib/admin-zerodte-health.ts for the read-only data source and
+// src/app/api/admin/zerodte/health/route.ts for the route.
+type ZeroDteHealthPayload = {
+  generated_at: string;
+  session_date: string;
+  db_configured: boolean;
+  scan: {
+    last_scan_at: string | null;
+    status: "healthy" | "warning" | "stale" | "failed" | "unknown";
+    status_label: string;
+    age_min: number | null;
+    stale_after_min: number;
+  };
+  candidates_scanned: number;
+  committed_count: number;
+  rejected_count: number;
+  rejection_rate: number | null;
+  rejections_sample_capped: boolean;
+  errors: string[];
+};
+
+// HELIX health panel (task #134) — payload shape of /api/admin/helix/health, the
+// HELIX flow-ingestion-pipeline analogue of the two panels above: cron liveness for
+// flow-ingest + market-regime-detector, a read-only cluster-wide live-tape heartbeat
+// peek (never triggers a reconnect/poll of its own), and today's committed-vs-
+// near-miss anomaly counts (the SAME committed/rejected union pattern 0DTE Command's
+// panel uses, applied to flow_anomalies/flow_anomaly_near_misses). See
+// src/lib/admin-helix-health.ts for the read-only data source and
+// src/app/api/admin/helix/health/route.ts for the route.
+type HelixHealthCronJob = {
+  key: string;
+  name: string;
+  status: string;
+  status_label: string;
+  last_run_at: string | null;
+  age_min: number | null;
+  runs_24h: { ok: number; failed: number; skipped: number };
+};
+
+type HelixHealthTapePeek = {
+  heartbeat_present: boolean;
+  last_frame_at: string | null;
+  age_sec: number | null;
+  fresh: boolean;
+};
+
+type HelixHealthAnomalyRow = {
+  id: number;
+  detected_at: string;
+  anomaly_type: string;
+  ticker: string | null;
+  detail: string;
+  premium: number | null;
+  direction: string | null;
+  severity: string | null;
+};
+
+type HelixHealthNearMissRow = {
+  id: number;
+  observed_at: string;
+  anomaly_type: string;
+  ticker: string | null;
+  reason: string;
+  metric_value: number;
+  threshold: number;
+  premium: number | null;
+  direction: string | null;
+  severity: string | null;
+  detail: string;
+};
+
+type HelixHealthRecentError = {
+  scope: string | null;
+  name: string;
+  message: string;
+  created_at: string;
+};
+
+type HelixHealthPayload = {
+  generated_at: string;
+  session_date: string;
+  db_configured: boolean;
+  cron: HelixHealthCronJob[];
+  tape: HelixHealthTapePeek;
+  candidates_scanned: number;
+  committed_count: number;
+  near_miss_only_count: number;
+  near_miss_rate: number | null;
+  recent_committed: HelixHealthAnomalyRow[];
+  recent_near_misses: HelixHealthNearMissRow[];
+  recent_errors: HelixHealthRecentError[];
+  errors: string[];
+};
+
 // Static, hand-kept-in-sync summary of docs/bie/FULL-SYSTEM-AWARENESS.md — the
 // roadmap doc is the source of truth; this is a legible dashboard view of it,
 // not a second source. Update alongside that doc when a stage's status changes.
@@ -271,6 +436,85 @@ export function AdminBieDashboard() {
     void loadSpxHealth();
   }, [loadSpxHealth]);
 
+  // Thermal health panel (task #138) — SAME independent fetch/state/effect contract as
+  // the SPX health panel above: its own loading/error state and its own effect on
+  // mount, so a failure fetching Thermal health can never blank or block the rest of
+  // this dashboard (or the SPX health panel), and vice versa. Wired into the SAME
+  // "Recompute" button for one refresh affordance.
+  const [gexHealth, setGexHealth] = useState<GexHealthPayload | null>(null);
+  const [gexHealthLoading, setGexHealthLoading] = useState(true);
+  const [gexHealthError, setGexHealthError] = useState<string | null>(null);
+
+  const loadGexHealth = useCallback(async () => {
+    setGexHealthLoading(true);
+    setGexHealthError(null);
+    try {
+      const res = await fetch("/api/admin/gex/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setGexHealth((await res.json()) as GexHealthPayload);
+    } catch (e) {
+      setGexHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setGexHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadGexHealth();
+  }, [loadGexHealth]);
+
+  // 0DTE Command health panel (task #150) — same independence contract as the SPX
+  // health fetch above: its own state/effect, so a failure here can never blank or
+  // block the rest of this dashboard (or the SPX health panel), and vice versa.
+  // Wired into the SAME "Recompute" button below for one refresh affordance.
+  const [zeroDteHealth, setZeroDteHealth] = useState<ZeroDteHealthPayload | null>(null);
+  const [zeroDteHealthLoading, setZeroDteHealthLoading] = useState(true);
+  const [zeroDteHealthError, setZeroDteHealthError] = useState<string | null>(null);
+
+  const loadZeroDteHealth = useCallback(async () => {
+    setZeroDteHealthLoading(true);
+    setZeroDteHealthError(null);
+    try {
+      const res = await fetch("/api/admin/zerodte/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setZeroDteHealth((await res.json()) as ZeroDteHealthPayload);
+    } catch (e) {
+      setZeroDteHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setZeroDteHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadZeroDteHealth();
+  }, [loadZeroDteHealth]);
+
+  // HELIX health panel (task #134) — same independence contract as every other
+  // health fetch above: its own state/effect, so a failure here can never blank or
+  // block the rest of this dashboard (or any other panel), and vice versa. Wired
+  // into the SAME "Recompute" button below for one refresh affordance.
+  const [helixHealth, setHelixHealth] = useState<HelixHealthPayload | null>(null);
+  const [helixHealthLoading, setHelixHealthLoading] = useState(true);
+  const [helixHealthError, setHelixHealthError] = useState<string | null>(null);
+
+  const loadHelixHealth = useCallback(async () => {
+    setHelixHealthLoading(true);
+    setHelixHealthError(null);
+    try {
+      const res = await fetch("/api/admin/helix/health", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setHelixHealth((await res.json()) as HelixHealthPayload);
+    } catch (e) {
+      setHelixHealthError(e instanceof Error ? e.message : "failed to load");
+    } finally {
+      setHelixHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHelixHealth();
+  }, [loadHelixHealth]);
+
   const act = useCallback(
     async (id: string, action: "ack" | "resolve") => {
       setActing(id);
@@ -310,6 +554,31 @@ export function AdminBieDashboard() {
       : spxPlay?.gates.passed
         ? "bull"
         : "cyan";
+  const zeroDteHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = zeroDteHealthError
+    ? "amber"
+    : zeroDteHealth?.scan.status === "failed"
+      ? "bear"
+      : zeroDteHealth?.scan.status === "stale" || zeroDteHealth?.scan.status === "warning"
+        ? "amber"
+        : "cyan";
+
+  const gexStaleTickerCount = gexHealth?.tickers.filter((t) => t.stale).length ?? 0;
+  const gexCronUnhealthyCount =
+    gexHealth?.cron.filter((j) => j.status !== "healthy").length ?? 0;
+  const gexHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = gexHealthError
+    ? "amber"
+    : gexHealth && (gexStaleTickerCount > 0 || gexCronUnhealthyCount > 0)
+      ? "amber"
+      : "bull";
+
+  const helixCronUnhealthyCount = helixHealth?.cron.filter((j) => j.status !== "healthy").length ?? 0;
+  const helixHealthAccent: "bull" | "bear" | "violet" | "cyan" | "amber" = helixHealthError
+    ? "amber"
+    : helixHealth && helixHealth.cron.some((j) => j.status === "failed" || j.status === "stale")
+      ? "bear"
+      : helixHealth && (helixCronUnhealthyCount > 0 || !helixHealth.tape.fresh)
+        ? "amber"
+        : "bull";
 
   return (
     <div className="admin-bie-dashboard">
@@ -376,6 +645,9 @@ export function AdminBieDashboard() {
             onClick={() => {
               void load();
               void loadSpxHealth();
+              void loadGexHealth();
+              void loadZeroDteHealth();
+              void loadHelixHealth();
             }}
             disabled={loading}
           >
@@ -539,7 +811,7 @@ export function AdminBieDashboard() {
           proof (mutate:false skips every position/Discord write). Purely
           observability — this panel never writes to, mutates, or triggers
           any play-engine action. */}
-      <GlassPanel kicker="0DTE Command · read-only, never mutates the play engine" title="SPX health" accent={spxHealthAccent}>
+      <GlassPanel kicker="SPX Slayer · read-only, never mutates the play engine" title="SPX health" accent={spxHealthAccent}>
         {spxHealthError && (
           <p className="admin-bie-error-text">SPX health fetch failed: {spxHealthError}</p>
         )}
@@ -625,6 +897,387 @@ export function AdminBieDashboard() {
               ))}
             </tbody>
           </DataTable>
+        )}
+      </GlassPanel>
+
+      {/* Thermal health (task #138) — read-only glance at the BlackOut Thermal
+          (GEX/heatmap) pipeline: per-preset-ticker matrix cache freshness (is the
+          shared gex-heatmap:{ticker} cache actually warm right now — peekGexHeatmapCache
+          never triggers a build, so this panel adds zero upstream cost just from being
+          viewed), the durable regime-transition log (task #136, gex_regime_events —
+          flip/wall/regime crossings across every watched ticker, not just gex-alerts'
+          3-ticker push watchlist), and the THREE Thermal-owned crons (heatmap-warm,
+          gex-eod-snapshot, gex-alerts) filtered from the SAME generic cron-health
+          snapshot the Crons admin tab reads (admin-cron-health.ts) — never re-derived
+          here. Own fetch/state (see loadGexHealth above), same resilience contract as
+          every other panel on this page — a failure here shows "—"/"failed to load"
+          and never breaks the rest of the dashboard. */}
+      <GlassPanel kicker="BlackOut Thermal · read-only cache peek, never triggers a build" title="Thermal health" accent={gexHealthAccent}>
+        {gexHealthError && (
+          <p className="admin-bie-error-text">Thermal health fetch failed: {gexHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip
+            label="Matrix cache"
+            value={
+              gexHealth
+                ? `${gexHealth.tickers.length - gexStaleTickerCount}/${gexHealth.tickers.length} warm`
+                : "—"
+            }
+            tone={!gexHealth ? "neutral" : gexStaleTickerCount > 0 ? "amber" : "bull"}
+          />
+          <MetricChip
+            label="Regime events (24h)"
+            value={gexHealth ? String(gexHealth.regime_events.summary.total) : "—"}
+            tone={gexHealth && !gexHealth.db_configured ? "neutral" : "violet"}
+          />
+          {gexHealth?.cron.map((j) => (
+            <MetricChip
+              key={j.key}
+              label={j.name}
+              value={j.status_label}
+              tone={
+                j.status === "healthy"
+                  ? "bull"
+                  : j.status === "failed" || j.status === "stale"
+                    ? "bear"
+                    : "amber"
+              }
+            />
+          ))}
+        </div>
+
+        <p className="admin-bie-coverage-note">
+          {gexHealth ? `As of ${fmtEt(gexHealth.generated_at)} ET` : gexHealthLoading ? "Loading…" : "—"}
+        </p>
+
+        {gexHealth && !gexHealth.db_configured && (
+          <p className="admin-bie-coverage-note">
+            DB not configured — regime-transition history (gex_regime_events) is
+            unavailable; the cache/cron legs above are unaffected.
+          </p>
+        )}
+
+        <p className="admin-bie-coverage-note">Per-ticker matrix cache</p>
+        {!gexHealth || gexHealth.tickers.length === 0 ? (
+          <p className="admin-bie-empty-text">No preset tickers to report.</p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Cache</th>
+                <th>Age</th>
+                <th>Spot</th>
+                <th>Last-sample events</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gexHealth.tickers.map((t) => (
+                <tr key={t.ticker}>
+                  <td className="admin-td-strong">{t.ticker}</td>
+                  <td>
+                    <span
+                      className={clsx(
+                        "admin-outcome-badge",
+                        t.cached && !t.stale ? "admin-outcome-badge-bull" : "admin-outcome-badge-amber"
+                      )}
+                    >
+                      {!t.cached ? "cold" : t.stale ? "stale" : "warm"}
+                    </span>
+                  </td>
+                  <td>{t.age_sec != null ? `${t.age_sec}s` : "—"}</td>
+                  <td>{t.spot ?? "—"}</td>
+                  <td>{t.events_count ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        <p className="admin-bie-coverage-note">Recent regime transitions (gex_regime_events)</p>
+        {!gexHealth || gexHealth.regime_events.recent.length === 0 ? (
+          <p className="admin-bie-empty-text">
+            {gexHealth && !gexHealth.db_configured
+              ? "DB not configured — history unavailable."
+              : "No flip/wall/regime crossings logged yet."}
+          </p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Message</th>
+                <th>Detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gexHealth.regime_events.recent.map((r) => (
+                <tr key={r.id}>
+                  <td className="admin-td-strong">{r.ticker}</td>
+                  <td>{r.event_type}</td>
+                  <td>{r.direction ?? "—"}</td>
+                  <td className="admin-bie-issue-detail">{r.message}</td>
+                  <td className="admin-bie-issue-meta">{fmtEt(r.detected_at ?? r.observed_at)} ET</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        {gexHealth && gexHealth.recent_errors.length > 0 && (
+          <>
+            <p className="admin-bie-coverage-note admin-bie-error-text">
+              Recent GEX-scoped errors (best-effort filter over the shared error_events sink)
+            </p>
+            {gexHealth.recent_errors.map((e, i) => (
+              <p key={i} className="admin-bie-issue-detail">
+                – [{e.scope ?? "—"}] {e.message} ({fmtEt(e.created_at)} ET)
+              </p>
+            ))}
+          </>
+        )}
+      </GlassPanel>
+
+      {/* 0DTE Command health (task #150) — read-only glance at the SEPARATE
+          multi-ticker scanner branded "0DTE Command" in-app (/grid's default tab,
+          NOT SPX Slayer's own engine above — see task #127's naming
+          disambiguation): last-scan-time, candidates-scanned, and rejection rate.
+          Own fetch/state (see loadZeroDteHealth above), so a failure here shows
+          "—" in this panel only. All 3 numbers are read from data already
+          persisted by the existing scan pipeline (zerodte_setup_log,
+          zerodte_scan_rejections) and the existing grid-warm cron's run history
+          (buildCronHealthSnapshot) — see src/lib/admin-zerodte-health.ts's module
+          doc for exactly where each figure comes from and why "candidates
+          scanned"/"rejection rate" are today-cumulative, not last-cycle, numbers. */}
+      <GlassPanel
+        kicker="0DTE Command · read-only, sourced entirely from already-persisted data"
+        title="0DTE Command health"
+        accent={zeroDteHealthAccent}
+      >
+        {zeroDteHealthError && (
+          <p className="admin-bie-error-text">0DTE Command health fetch failed: {zeroDteHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip
+            label="Last scan"
+            value={zeroDteHealth ? fmtEt(zeroDteHealth.scan.last_scan_at) : "—"}
+            tone={!zeroDteHealth ? "neutral" : zeroDteHealth.scan.status === "healthy" ? "bull" : "amber"}
+          />
+          <MetricChip
+            label="Scan cron"
+            value={zeroDteHealth?.scan.status ?? "—"}
+            tone={
+              !zeroDteHealth
+                ? "neutral"
+                : zeroDteHealth.scan.status === "healthy"
+                  ? "bull"
+                  : zeroDteHealth.scan.status === "failed"
+                    ? "bear"
+                    : "amber"
+            }
+          />
+          <MetricChip
+            label="Candidates scanned"
+            value={zeroDteHealth ? `${zeroDteHealth.candidates_scanned} (${zeroDteHealth.session_date})` : "—"}
+            tone="cyan"
+          />
+          <MetricChip
+            label="Rejection rate"
+            value={
+              !zeroDteHealth || zeroDteHealth.rejection_rate == null
+                ? "—"
+                : `${Math.round(zeroDteHealth.rejection_rate * 100)}% (${zeroDteHealth.rejected_count}/${zeroDteHealth.candidates_scanned})`
+            }
+            tone={
+              !zeroDteHealth || zeroDteHealth.rejection_rate == null
+                ? "neutral"
+                : zeroDteHealth.rejection_rate > 0.8
+                  ? "amber"
+                  : "violet"
+            }
+          />
+        </div>
+
+        <p className="admin-bie-coverage-note">
+          {zeroDteHealth
+            ? `${zeroDteHealth.scan.status_label}${zeroDteHealth.scan.age_min != null ? ` (${zeroDteHealth.scan.age_min}m ago)` : ""} · stale past ${zeroDteHealth.scan.stale_after_min}m — the grid-warm cron that runs the scan pipeline (no dedicated 0DTE cron key exists), NOT a per-scan-cycle timestamp`
+            : zeroDteHealthLoading
+              ? "Loading…"
+              : "—"}
+        </p>
+        {zeroDteHealth?.rejections_sample_capped && (
+          <p className="admin-bie-coverage-note">
+            Rejection sample may be truncated for a very high-volume session — candidates_scanned/rejection_rate could be a floor, not exact.
+          </p>
+        )}
+        {zeroDteHealth && !zeroDteHealth.db_configured && (
+          <p className="admin-warn">DATABASE_URL not set — candidates-scanned/rejection-rate will read as 0.</p>
+        )}
+      </GlassPanel>
+
+      {/* HELIX health (task #134) — read-only glance at HELIX's flow-ingestion
+          pipeline: cron liveness for the two crons that make up the pipeline
+          (flow-ingest, the raw UW flow tape writer; market-regime-detector, which
+          derives flow_regime and writes flow_anomalies/flow_anomaly_near_misses
+          from that tape), a cluster-wide live-tape heartbeat PEEK (never triggers
+          a reconnect/poll of its own — see peekFlowLivenessHeartbeat's doc), and
+          today's committed-vs-near-miss anomaly counts — the SAME committed/
+          rejected union pattern 0DTE Command's panel above uses, applied to
+          flow_anomalies (committed) / flow_anomaly_near_misses (task #131, the
+          rejected half). Own fetch/state (see loadHelixHealth above), same
+          resilience contract as every other panel on this page. */}
+      <GlassPanel
+        kicker="HELIX · read-only heartbeat peek, never triggers a reconnect/poll"
+        title="HELIX health"
+        accent={helixHealthAccent}
+      >
+        {helixHealthError && (
+          <p className="admin-bie-error-text">HELIX health fetch failed: {helixHealthError}</p>
+        )}
+        <div className="admin-metric-chip-row">
+          <MetricChip
+            label="Live tape heartbeat"
+            value={
+              !helixHealth
+                ? "—"
+                : !helixHealth.tape.heartbeat_present
+                  ? "cold"
+                  : helixHealth.tape.fresh
+                    ? "fresh"
+                    : `stale (${helixHealth.tape.age_sec}s)`
+            }
+            tone={
+              !helixHealth ? "neutral" : helixHealth.tape.fresh ? "bull" : "amber"
+            }
+          />
+          {helixHealth?.cron.map((j) => (
+            <MetricChip
+              key={j.key}
+              label={j.name}
+              value={j.status_label}
+              tone={
+                j.status === "healthy"
+                  ? "bull"
+                  : j.status === "failed" || j.status === "stale"
+                    ? "bear"
+                    : "amber"
+              }
+            />
+          ))}
+          <MetricChip
+            label="Candidates scanned"
+            value={helixHealth ? `${helixHealth.candidates_scanned} (${helixHealth.session_date})` : "—"}
+            tone="cyan"
+          />
+          <MetricChip
+            label="Near-miss rate"
+            value={
+              !helixHealth || helixHealth.near_miss_rate == null
+                ? "—"
+                : `${Math.round(helixHealth.near_miss_rate * 100)}% (${helixHealth.near_miss_only_count}/${helixHealth.candidates_scanned})`
+            }
+            tone={
+              !helixHealth || helixHealth.near_miss_rate == null
+                ? "neutral"
+                : helixHealth.near_miss_rate > 0.8
+                  ? "amber"
+                  : "violet"
+            }
+          />
+        </div>
+
+        <p className="admin-bie-coverage-note">
+          {helixHealth
+            ? `As of ${fmtEt(helixHealth.generated_at)} ET · heartbeat ${helixHealth.tape.last_frame_at ? `last frame ${fmtEt(helixHealth.tape.last_frame_at)} ET` : "never observed this session"}`
+            : helixHealthLoading
+              ? "Loading…"
+              : "—"}
+        </p>
+
+        {helixHealth && !helixHealth.db_configured && (
+          <p className="admin-warn">
+            DATABASE_URL not set — candidates-scanned/near-miss-rate/anomaly tables below will read as 0/empty.
+          </p>
+        )}
+
+        <p className="admin-bie-coverage-note">Committed anomalies today (flow_anomalies)</p>
+        {!helixHealth || helixHealth.recent_committed.length === 0 ? (
+          <p className="admin-bie-empty-text">No committed HELIX anomalies logged yet today.</p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Premium</th>
+                <th>Detail</th>
+                <th>Detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {helixHealth.recent_committed.map((r) => (
+                <tr key={r.id}>
+                  <td className="admin-td-strong">{r.ticker ?? "—"}</td>
+                  <td>{r.anomaly_type}</td>
+                  <td>{r.direction ?? "—"}</td>
+                  <td>{fmtPremium(r.premium)}</td>
+                  <td className="admin-bie-issue-detail">{r.detail}</td>
+                  <td className="admin-bie-issue-meta">{fmtEt(r.detected_at)} ET</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        <p className="admin-bie-coverage-note">Near-misses today (flow_anomaly_near_misses, task #131)</p>
+        {!helixHealth || helixHealth.recent_near_misses.length === 0 ? (
+          <p className="admin-bie-empty-text">
+            {helixHealth && !helixHealth.db_configured
+              ? "DB not configured — near-miss history unavailable."
+              : "No near-misses logged yet today."}
+          </p>
+        ) : (
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Type</th>
+                <th>Reason</th>
+                <th>Direction</th>
+                <th>Detail</th>
+                <th>Observed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {helixHealth.recent_near_misses.map((r) => (
+                <tr key={r.id}>
+                  <td className="admin-td-strong">{r.ticker ?? "—"}</td>
+                  <td>{r.anomaly_type}</td>
+                  <td>{r.reason}</td>
+                  <td>{r.direction ?? "—"}</td>
+                  <td className="admin-bie-issue-detail">{r.detail}</td>
+                  <td className="admin-bie-issue-meta">{fmtEt(r.observed_at)} ET</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+
+        {helixHealth && helixHealth.recent_errors.length > 0 && (
+          <>
+            <p className="admin-bie-coverage-note admin-bie-error-text">
+              Recent HELIX-scoped errors (best-effort filter over the shared error_events sink)
+            </p>
+            {helixHealth.recent_errors.map((e, i) => (
+              <p key={i} className="admin-bie-issue-detail">
+                – [{e.scope ?? "—"}] {e.message} ({fmtEt(e.created_at)} ET)
+              </p>
+            ))}
+          </>
         )}
       </GlassPanel>
 

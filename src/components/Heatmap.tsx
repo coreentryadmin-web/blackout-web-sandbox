@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { clsx } from "clsx";
 
 // Code-split the ~4k-line GexHeatmap so it doesn't sit in the shared bundle or block
 // hydration. ssr:false → the page shell + skeleton paint immediately on navigation,
@@ -27,10 +28,10 @@ const GexHeatmap = dynamic(
  * it duplicated the in-panel Live/Quote-only badge + spot, and the engine still
  * surfaces its status there. The component file is kept for other desks.
  */
-export function Heatmap() {
+export function Heatmap({ nativeShell = false }: { nativeShell?: boolean }) {
   return (
-    <div className="desk-layout space-y-5">
-      <GexHeatmap ticker="SPY" />
+    <div className={clsx("desk-layout gex-heatmap-desk space-y-5", nativeShell && "gex-heatmap-desk-native")}>
+      <GexHeatmap ticker="SPY" nativeShell={nativeShell} />
     </div>
   );
 }

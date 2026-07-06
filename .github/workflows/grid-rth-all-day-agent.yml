@@ -1,0 +1,93 @@
+# 0DTE Command + Market Grid — all-day RTH Cloud Agent (verify + post-close fix)
+#
+# Auto-starts 6:30 AM PT (9:30 AM ET) on weekdays. See docs/ops/GRID-RTH-ALL-DAY-AGENT.md
+
+name: Grid RTH all-day agent
+
+on:
+  schedule:
+    # --- VERIFY (ET) — dual cron EDT + EST ---
+    - cron: "30 13 * * 1-5"
+    - cron: "30 14 * * 1-5"
+    - cron: "45 13 * * 1-5"
+    - cron: "45 14 * * 1-5"
+    - cron: "0 15 * * 1-5"
+    - cron: "0 16 * * 1-5"
+    - cron: "30 16 * * 1-5"
+    - cron: "30 17 * * 1-5"
+    - cron: "0 18 * * 1-5"
+    - cron: "0 19 * * 1-5"
+    - cron: "30 19 * * 1-5"
+    - cron: "30 20 * * 1-5"
+    - cron: "55 19 * * 1-5"
+    - cron: "55 20 * * 1-5"
+    # --- FIX: 16:05 ET (~1:05 PM PT) ---
+    - cron: "5 20 * * 1-5"
+    - cron: "5 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Agent mode"
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - fix
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine agent mode
+        id: mode
+        run: |
+          set -euo pipefail
+          INPUT="${{ github.event.inputs.mode }}"
+          if [ -n "$INPUT" ]; then
+            echo "mode=$INPUT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SCHEDULE='${{ github.event.schedule }}'
+          case "$SCHEDULE" in
+            "5 20 * * 1-5"|"5 21 * * 1-5") echo "mode=fix" >> "$GITHUB_OUTPUT" ;;
+            *) echo "mode=verify" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Start Cloud Agent (Grid all-day)
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          AGENT_MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "CURSOR_API_KEY not set — skipping agent launch."
+            echo "Create Cursor Automations from docs/ops/GRID-RTH-ALL-DAY-AGENT.md (starts 6:30 AM PT)"
+            exit 0
+          fi
+
+          if [ "$AGENT_MODE" = "fix" ]; then
+            PROMPT='0DTE Command + Market Grid post-close fix agent (~1:05 PM PT). Read docs/ops/GRID-RTH-ALL-DAY-AGENT.md Section Step 4 completely. Run npm run validate:grid-rth -- --phase=post-close AND npm run validate:zerodte-logic AND npm run validate:grid-e2e. Fix EVERY Grid/0DTE finding from today: gate logic, play picking, trade management (OPEN/HOLD/TRIM/CLOSED), mergePlays UI, grid panel cron bypass, ledger PnL. Branch fix/<slug>, test, docs/audit/FINDINGS.md, PR, merge, validate:deploy. Repeat until all three validators are zero FAIL. Do NOT stop until fully GREEN. Do NOT ask the user.'
+          else
+            PROMPT='You are the 0DTE Command + Market Grid all-day RTH verification agent starting at market open (6:30 AM PT). Read docs/ops/GRID-RTH-ALL-DAY-AGENT.md completely — execute verify mode. Run npm run validate:grid-rth then npm run validate:zerodte-logic then npm run validate:grid-e2e. Validate EVERY 0DTE gate, plan exit, trade lifecycle state, ledger PnL math, session heat cutoffs, mergePlays UI rules. Verify all 9 grid panels + zerodte board + grid-warm cron. Cross-tool: HELIX flows feed scanner, Night Hawk dedupe, Grid bootstrap spot vs GEX. On /grid click 0DTE Command + Market Grid tabs. Log findings to docs/api-audit/OPEN-ISSUES.md tagged grid-rth-YYYY-MM-DD. Fix P0 immediately. Do NOT ask the user.'
+          fi
+          export PROMPT
+
+          payload=$(node -e "
+            console.log(JSON.stringify({
+              prompt: { text: process.env.PROMPT },
+              repos: [{ url: 'https://github.com/coreentryadmin-web/blackout-web', startingRef: 'main' }],
+              autoCreatePR: true
+            }));
+          ")
+
+          resp=$(curl -sf -X POST https://api.cursor.com/v1/agents \
+            -u "${CURSOR_API_KEY}:" \
+            -H 'Content-Type: application/json' \
+            -d "$payload")
+
+          echo "$resp" | node -e "
+            const r = JSON.parse(require('fs').readFileSync(0,'utf8'));
+            const url = r.agent?.url ?? r.url ?? '(see response)';
+            console.log('Grid Cloud Agent started (' + process.env.AGENT_MODE + '):', url);
+          "

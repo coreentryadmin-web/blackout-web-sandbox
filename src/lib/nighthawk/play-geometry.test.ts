@@ -84,6 +84,16 @@ test("geometry: conditional prose + numeric band validates against the band", ()
   assert.equal(v.ok, true);
 });
 
+test("partitionPlaysByGeometry: splits failing backfill-shaped plays", async () => {
+  const { partitionPlaysByGeometry } = await import("./play-constraints");
+  const good = play({});
+  const bad = play({ entry_range: "Near $60.72", target: "71.01", stop: "60.72", ticker: "MAGS" });
+  const { passing, failing } = partitionPlaysByGeometry([good, bad]);
+  assert.equal(passing.length, 1);
+  assert.equal(failing.length, 1);
+  assert.equal(failing[0]!.play.ticker, "MAGS");
+});
+
 // ── sector concentration cap ─────────────────────────────────────────────────────
 
 test("sector cap: third same-sector play is dropped, other sectors backfill", () => {
@@ -96,7 +106,14 @@ test("sector cap: third same-sector play is dropped, other sectors backfill", ()
   const sectors = { NVDA: "semis", AVGO: "semis", AMD: "semis", XOM: "energy" };
   const { plays: kept, dropped } = capSectorConcentration(plays, sectors, 2);
   assert.deepEqual(kept.map((p) => p.ticker), ["NVDA", "AVGO", "XOM"]);
-  assert.deepEqual(dropped, [{ ticker: "AMD", sector: "semis" }]);
+  // task #141: `dropped` now also carries `filled` (the sector's count when AMD was
+  // dropped — semis already had 2, NVDA + AVGO) and the full rejected `play` object, so
+  // a durable rejection-audit row can be built without re-deriving either from `plays`.
+  assert.equal(dropped.length, 1);
+  assert.equal(dropped[0]!.ticker, "AMD");
+  assert.equal(dropped[0]!.sector, "semis");
+  assert.equal(dropped[0]!.filled, 2);
+  assert.equal(dropped[0]!.play.ticker, "AMD");
 });
 
 test("sector cap: unknown sector is exempt", () => {

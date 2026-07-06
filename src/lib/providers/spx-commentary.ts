@@ -7,7 +7,8 @@ import {
 } from "@/lib/largo/flow-strike-stacks";
 import { fmtPremium } from "@/lib/fmt-money";
 import {
-  checkNumbersGrounded,
+  augmentKnownCommentaryNumbers,
+  checkCommentaryGrounded,
   collectKnownNumbers,
   type GroundingCheckResult,
 } from "@/lib/grounding-guard";
@@ -435,6 +436,95 @@ function validateDeskData(ctx: Record<string, unknown>): { ok: true } | { ok: fa
   return { ok: true };
 }
 
+/** SPX strike / index level — excludes flow premiums and other large dollar magnitudes. */
+function isCommentaryStrikeLevel(n: number): boolean {
+  return n >= 1000 && n <= 20_000;
+}
+
+/** Every number the Live Desk AI prompt can legitimately cite — price levels, metrics,
+ *  formatted-string magnitudes, and common derived forms (rounded, pt distance, pct as whole). */
+export function knownCommentaryNumbers(
+  desk: SpxDeskPayload,
+  ctx: Record<string, unknown>
+): number[] {
+  const raw = new Set<number>();
+  const add = (n: number | null | undefined) => {
+    if (n == null || !Number.isFinite(n)) return;
+    raw.add(Number(n));
+  };
+
+  add(desk.price);
+  add(desk.vwap);
+  add(desk.hod);
+  add(desk.lod);
+  add(desk.pdh);
+  add(desk.pdl);
+  add(desk.gamma_flip);
+  add(desk.gex_king);
+  add(desk.max_pain);
+  add(desk.ema20);
+  add(desk.ema50);
+  add(desk.ema200);
+  add(desk.sma50);
+  add(desk.sma200);
+  add(desk.vix);
+  add(desk.uw_iv_rank);
+  add(desk.vix_change_pct);
+  add(desk.spx_change_pct);
+  add(desk.tick);
+  add(desk.trin);
+  add(desk.add);
+  add(desk.nope);
+  add(desk.nope_net_delta);
+  add(desk.gex_net);
+  add(desk.flow_0dte_call_premium);
+  add(desk.flow_0dte_put_premium);
+  add(desk.flow_0dte_net);
+  add(desk.tide_call_premium);
+  add(desk.tide_put_premium);
+  add(desk.tide_net);
+
+  for (const l of desk.levels ?? []) add(l.value);
+  for (const w of desk.gex_walls ?? []) add(w.strike);
+  for (const s of desk.strike_stacks ?? []) {
+    add(s.strike);
+    add(s.total_premium);
+  }
+  for (const f of desk.spx_flows ?? []) {
+    add(f.strike);
+    add(f.premium);
+  }
+
+  const confluence = ctx.confluence as { score?: number; levels?: { entry?: number; stop?: number; target?: number } } | undefined;
+  add(confluence?.score);
+  add(confluence?.levels?.entry);
+  add(confluence?.levels?.stop);
+  add(confluence?.levels?.target);
+
+  const breadth = ctx.market_breadth as Record<string, number | null | undefined> | undefined;
+  if (breadth) {
+    for (const v of Object.values(breadth)) add(typeof v === "number" ? v : null);
+  }
+
+  for (const n of collectKnownNumbers(ctx)) add(n);
+
+  const price = desk.price;
+  if (price != null && Number.isFinite(price)) {
+    // Snapshot strike levels only — never iterate a Set while mutating it, and never
+    // treat flow premiums (millions) as "levels" for distance derivation (Set overflow).
+    for (const lvl of Array.from(raw).filter(isCommentaryStrikeLevel)) {
+      const dist = lvl - price;
+      add(dist);
+      add(Math.abs(dist));
+      add(Math.round(dist));
+      add(Math.round(Math.abs(dist)));
+      add(parseFloat(Math.abs(dist).toFixed(1)));
+    }
+  }
+
+  return augmentKnownCommentaryNumbers(Array.from(raw));
+}
+
 /** Best-effort audit-log write for a Live Desk AI generation that failed the post-generation
  *  grounding check — mirrors spx-play-claude.ts's logPlayVerdict(), the sibling AI-narration
  *  surface that already writes every verdict (pass or fail) to alert_audit_log. Before this,
@@ -640,8 +730,8 @@ Hard rules:
     // missed one and a false-positive block). Returning null here (not a fallback narrative)
     // means the route's serverCache treats this exactly like a generation failure: nothing is
     // cached, the caller gets a retryable 502.
-    const known = collectKnownNumbers(ctx);
-    const grounding = checkNumbersGrounded(`${parsed.headline}\n${parsed.body}`, known);
+    const known = knownCommentaryNumbers(desk, ctxRec);
+    const grounding = checkCommentaryGrounded(`${parsed.headline}\n${parsed.body}`, known);
     if (!grounding.grounded) {
       console.warn(
         `[spx-commentary] ungrounded value ${grounding.ungroundedValue} in generated commentary — discarding (never cached).`
@@ -656,12 +746,8 @@ Hard rules:
     return parsed;
   }
 
-  return {
-    headline: "Desk update",
-    bias: "neutral",
-    body: raw.slice(0, 800),
-    watch: [],
-    changed: delta,
-    as_of: new Date().toISOString(),
-  };
+  // JSON parse failure — same contract as ungrounded output: never cache, never serve raw
+  // model text (audit C2: raw fallback bypassed the fabrication guard).
+  console.warn("[spx-commentary] JSON parse failed — discarding (never cached).");
+  return null;
 }

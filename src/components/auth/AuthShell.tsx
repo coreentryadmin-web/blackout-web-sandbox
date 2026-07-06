@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { clsx } from "clsx";
 import { PricingBackdrop } from "@/components/landing/PricingBackdrop";
 import { AuthProofRail } from "@/components/auth/AuthProofRail";
+import { isIosAppShell } from "@/lib/ios-app-shell";
 
 const paneStagger = {
   hidden: {},
@@ -23,8 +26,19 @@ const riseItem = {
  * MotionConfig reducedMotion="user".
  */
 export function AuthShell({ mode, children }: { mode: "signin" | "signup"; children: React.ReactNode }) {
+  const [iosApp, setIosApp] = useState(false);
+
+  useEffect(() => {
+    setIosApp(isIosAppShell());
+  }, []);
+
   return (
-    <main className="relative grid min-h-[100dvh] overflow-hidden bg-[#040407] lg:grid-cols-[1.05fr_0.95fr]">
+    <main
+      className={clsx(
+        "relative grid min-h-[100dvh] overflow-hidden bg-[#040407]",
+        iosApp ? "auth-ios-app grid-cols-1" : "lg:grid-cols-[1.05fr_0.95fr]"
+      )}
+    >
       {/* full-bleed animated backdrop (behind both panes) */}
       <PricingBackdrop />
 
@@ -83,33 +97,43 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 flex items-center justify-center p-6 sm:p-10"
+        className="auth-mobile-pane relative z-10 flex items-center justify-center p-6 sm:p-10"
       >
         {/* legibility scrim — darkens behind the form, edges keep the backdrop motion */}
         <div
           aria-hidden
           className="absolute inset-0"
           style={{
-            background:
-              "radial-gradient(ellipse 100% 90% at 50% 50%, rgba(4,4,7,0.86), rgba(4,4,7,0.5) 70%, transparent), linear-gradient(to right, rgba(4,4,7,0.6), transparent)",
+            background: iosApp
+              ? "radial-gradient(ellipse 120% 80% at 50% 30%, rgba(4,4,7,0.92), rgba(4,4,7,0.75))"
+              : "radial-gradient(ellipse 100% 90% at 50% 50%, rgba(4,4,7,0.86), rgba(4,4,7,0.5) 70%, transparent), linear-gradient(to right, rgba(4,4,7,0.6), transparent)",
           }}
         />
         <div className="relative z-10 mx-auto w-full max-w-[420px]">
           {/* mobile brand header (the pitch pane is hidden below lg) */}
-          <div className="mb-8 text-center lg:hidden">
-            <Link
-              href="/"
-              aria-label="Back to BlackOut home"
-              className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.35em] uppercase text-sky-300 hover:text-bull"
-            >
-              <span className="nav-dot" aria-hidden /> ← Back home
-            </Link>
-            <h1 className="mt-4 font-anton text-5xl tracking-[0.04em] text-white">BLACKOUT</h1>
-            <p className="mt-2 font-mono text-[10px] tracking-[0.4em] uppercase text-bull">Institutional 0DTE · Options Flow</p>
+          <div className={clsx("mb-8 text-center lg:hidden", iosApp && "auth-ios-brand mb-6")}>
+            {!iosApp && (
+              <Link
+                href="/"
+                aria-label="Back to BlackOut home"
+                className="inline-flex items-center gap-2 font-mono text-[10px] tracking-[0.35em] uppercase text-sky-300 hover:text-bull"
+              >
+                <span className="nav-dot" aria-hidden /> ← Back home
+              </Link>
+            )}
+            <h1 className={clsx("font-anton tracking-[0.04em] text-white", iosApp ? "mt-0 text-6xl" : "mt-4 text-5xl")}>
+              BLACKOUT
+            </h1>
+            <p className="mt-2 font-mono text-[10px] tracking-[0.4em] uppercase text-bull">
+              Institutional 0DTE · Options Flow
+            </p>
           </div>
 
           <div className="relative">
             <div aria-hidden className="absolute -inset-4 rounded-3xl bg-bull/10 opacity-60 blur-2xl" />
+            <p className="show-in-ios-app relative z-10 mb-4 text-center font-mono text-[11px] leading-relaxed text-sky-300">
+              Use email sign-in in the app. Google OAuth is not supported inside the iOS shell — use your email and the one-time code.
+            </p>
             <div className="auth-card-frame relative">{children}</div>
           </div>
         </div>

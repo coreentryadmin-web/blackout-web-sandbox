@@ -2,6 +2,7 @@ import type { AnthropicToolDef } from "@/lib/providers/anthropic";
 import {
   FLOW_TOOLS_RE,
   FUNDAMENTAL_RE,
+  GEX_POSITIONING_RE,
   matchesIntent,
   MY_POSITIONS_RE,
   NEWS_TOOLS_RE,
@@ -225,12 +226,21 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t(
     "get_zerodte_plays",
-    "0DTE Command's OWN live scanner board (the default tab at /grid, formerly branded 'BlackOut Grid') — a DIFFERENT, MULTI-TICKER engine from SPX Slayer: an always-on scanner that hunts the broader tape all session for brand-new 0DTE setups across many tickers (index products like SPY/QQQ/NDX are eligible alongside single names), never SPX/SPXW's own single-instrument play engine. Returns: `plays` — today's ledger of setups the scanner has already flagged, each with lifecycle `status` (OPEN/HOLD/TRIM/CLOSED), `direction`, `strike`, `entry_premium`, `last_mark`, `live_pnl_pct`, `peak_score`, the current BlackOut Intelligence `action`/`intel` reasoning line, and (once closed) a `graded` outcome/pnl_pct; `fresh_finds` — the top 5 setups the scanner just surfaced this cycle that are NOT yet on the ledger (ticker/direction/strike/score/gross_premium/aggression/plan/intel); `excluded_covered_elsewhere` — tickers deliberately withheld from fresh_finds because last night's Night Hawk edition already covers them (a name members already have is a repeat, not a find, so it won't double-count here); and `rules`, the 0DTE discipline every play is managed to (no new entries after 15:00 ET, -50%/+100% stop/trim plan, hard exit by 15:30 ET). IMPORTANT — do not conflate this with SPX Slayer: this tool has no visibility into and never reflects SPX Slayer's own phase/gates/confluence/score for its current or most recent play. For SPX/SPXW's own single-instrument play-engine state, use get_spx_play (or get_spx_structure for the full desk view) instead — only reach for this tool when the question is actually about the multi-ticker 0DTE Command scanner/board itself.",
+    "0DTE Command's OWN live scanner board (the default tab at /grid, formerly branded 'BlackOut Grid') — a DIFFERENT, MULTI-TICKER engine from SPX Slayer: an always-on scanner that hunts the broader tape all session for brand-new 0DTE setups across many tickers (index products like SPY/QQQ/NDX are eligible alongside single names), never SPX/SPXW's own single-instrument play engine. Returns: `plays` — today's ledger of setups the scanner has already flagged, each with lifecycle `status` (OPEN/HOLD/TRIM/CLOSED), `direction`, `strike`, `entry_premium`, `last_mark`, `live_pnl_pct`, `peak_score`, the current BlackOut Intelligence `action`/`intel` reasoning line, and (once closed) a `graded` outcome/pnl_pct; `fresh_finds` — the top 5 setups the scanner just surfaced this cycle that are NOT yet on the ledger (ticker/direction/strike/score/gross_premium/aggression/plan/intel); `excluded_covered_elsewhere` — tickers deliberately withheld from fresh_finds because last night's Night Hawk edition already covers them (a name members already have is a repeat, not a find, so it won't double-count here); and `rules`, the 0DTE discipline every play is managed to (no new entries after 15:00 ET, -50%/+100% stop/trim plan, hard exit by 15:30 ET). IMPORTANT — do not conflate this with SPX Slayer: this tool has no visibility into and never reflects SPX Slayer's own phase/gates/confluence/score for its current or most recent play. For SPX/SPXW's own single-instrument play-engine state, use get_spx_play (or get_spx_structure for the full desk view) instead — only reach for this tool when the question is actually about the multi-ticker 0DTE Command scanner/board itself. This tool ONLY shows setups that already cleared every gate — for a candidate that DIDN'T make the board, use get_zerodte_rejections instead.",
     {}
   ),
-  t("get_nighthawk_edition", "Night Hawk evening playbook — top plays, recap, market context. Same data as /nighthawk.", {
-    date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
-  }),
+  t(
+    "get_zerodte_rejections",
+    "0DTE Command's near-miss/gate-rejection log — answers 'why didn't ticker X make the Grid board' or 'what has the scanner been rejecting today', which get_zerodte_plays structurally CANNOT answer: that tool only ever shows candidates that already cleared every one of the scanner's 4 evidence gates (gross premium ≥ $750k, at-the-ask aggression share ≥ 30%, side dominance ≥ 65%, and not a deep-ITM stock-replacement strike) — a candidate that failed even ONE of those checks is invisible there and left no trace anywhere until this tool existed. Reads zerodte_scan_rejections: one row per ticker per DISTINCT rejection state (throttled to state transitions, not one row per scan cycle), naming exactly which `gate_failed` (min_gross/min_aggr_share/min_dominance/max_itm_pct/no_dominant_strike/no_underlying_price — the last means the tape never carried a usable underlying price for that ticker, so the deep-ITM stock-replacement check couldn't run and fails closed rather than passing the candidate through unchecked) stopped the candidate, the live `threshold` it was measured against, and whichever of gross_premium/aggression/side_dominance/otm_pct had actually been computed before the scan short-circuited past it — later-gate metrics are `null`, never guessed, when an earlier gate already rejected the ticker (e.g. a min_gross rejection never learns a direction or aggression share, because the live scan never computes those for it either). Pass `ticker` to scope to one name's rejection history, or omit for the most recent rejections across every candidate. IMPORTANT — this is 0DTE Command's OWN multi-ticker scanner (src/lib/zerodte/board.ts, the exact same engine get_zerodte_plays reads), a COMPLETELY DIFFERENT product from SPX Slayer: for SPX/SPXW's own single-instrument engine's rejected/scanning history, use get_spx_engine_snapshots instead — do not conflate the two just because both are 0DTE-flavored.",
+    { ticker: { type: "string" }, limit: { type: "integer" } }
+  ),
+  t(
+    "get_nighthawk_edition",
+    "Night Hawk's OWN dedicated tool — always returns the FULL published edition object, regardless of any parameter: `available`, `edition_for`, `published_at`, `recap_headline`, `recap_summary`, `market_recap`, and `plays` (the complete array: rank, ticker, direction, conviction, play_type, thesis, key_signal, entry_range, target, stop, options_play, entry_premium/entry_cost_per_contract, premium_cap_ok, risk_note, score, flow_streak_days, iv_rank — every field a member sees on /nighthawk), plus state flags `recap_only` (a recap published but no play survived the funnel), `degraded` (served from a legacy/fallback source, not the first-class pipeline), `stale`/`served_for` (tonight's edition isn't published yet, so an OLDER edition was served instead — do not say 'Edition live'), and `carry_until_close`. Pass `date` (YYYY-MM-DD) to pull a SPECIFIC PAST edition — this is the ONLY Night Hawk tool that can do that; omit for the latest published edition. IMPORTANT — do not substitute get_platform_snapshot for this: that tool's own `nighthawk` field is a STRIPPED SUMMARY by default (recap_headline + up to 5 bare ticker symbols only — no thesis/entry/target/stop/score at all) unless its `full_edition` flag is explicitly set true, and even then it can only ever return the LATEST published edition — it has no `date` parameter and can never answer 'what did Night Hawk pick on [a past date]'. Use THIS tool whenever the question needs the plays' own detail or is scoped to a specific day; reach for get_platform_snapshot only when the SAME turn also needs the SPX desk and/or flow tape alongside Night Hawk.",
+    {
+      date: { type: "string", description: "Edition date YYYY-MM-DD; defaults to latest published." },
+    }
+  ),
 
   t(
     "get_flow_tape",
@@ -241,15 +251,19 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     }
   ),
 
-  t("get_platform_snapshot", "Cross-service snapshot: SPX desk + flow tape + Night Hawk edition in one call.", {
-    include: {
-      type: "array",
-      items: { type: "string", enum: ["spx", "flows", "nighthawk", "largo"] },
-      description: "Subset of services; default all three.",
-    },
-    flow_limit: { type: "integer", default: 50 },
-    full_edition: { type: "boolean", description: "Include full Night Hawk play objects." },
-  }),
+  t(
+    "get_platform_snapshot",
+    "Cross-service, ONE-CALL combo across up to 3 products in parallel — NOT a substitute for a product's own dedicated tool when the question needs that product's full detail. `spx` — the exact same object get_spx_structure returns (both call the identical getSpxDeskSummary() — price, GEX, flow, dark pool, macro, tide). `flows` — the exact same object get_flow_tape returns (both call the identical getFlowTapeSummary(): count/total_premium/top_tickers/recent), same default limit 50 (override with `flow_limit`). `nighthawk` — by DEFAULT a STRIPPED-DOWN summary ONLY (available/edition_for/published_at/recap_headline/play_count/top_tickers as bare ticker strings — no thesis/entry/target/stop/score at all); pass `full_edition: true` to ALSO get a `nighthawk_edition` field holding the exact same full object get_nighthawk_edition returns — but even then this is ALWAYS the LATEST published edition. There is no date parameter here, unlike get_nighthawk_edition's own `date` (YYYY-MM-DD) for a specific past edition. Use `include` (subset of spx/flows/nighthawk; defaults to all three) to skip services you don't need. NOTE: 'largo' is also listed as an enum option but is currently a no-op — no largo-specific data exists in this snapshot, so including it fetches nothing extra. IMPORTANT — for a Night-Hawk-ONLY question needing actual play detail (thesis/entry/target/stop/score) or a specific past date, call get_nighthawk_edition directly instead: this tool's default nighthawk field can't answer either, and full_edition:true still can't answer the date case. Reach for THIS tool only when the question genuinely spans multiple products in the same turn (e.g. 'how does the SPX desk look alongside tonight's flow tape and Night Hawk picks').",
+    {
+      include: {
+        type: "array",
+        items: { type: "string", enum: ["spx", "flows", "nighthawk", "largo"] },
+        description: "Subset of services; default all three. 'largo' is currently a no-op.",
+      },
+      flow_limit: { type: "integer", default: 50 },
+      full_edition: { type: "boolean", description: "Include the full Night Hawk edition object (latest only — no date param)." },
+    }
+  ),
 
   t("get_gex", "GEX/dealer map. Polygon chain GEX first; UW spot exposures fallback. For SPX/I:SPX, all strike levels are SPX-denomination (thousands). Default to I:SPX (not SPY) when the user asks about index GEX or gamma walls.", {
 
@@ -360,6 +374,12 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_positioning", "Dealer positioning for ANY ticker — net GEX, gex king strike, gamma flip, gamma regime, net vex (vanna), max pain, negative-gamma flag, wall summary. For SPX/I:SPX queries, all strike levels returned are SPX-denomination (thousands, e.g. 5500) — never SPY (hundreds).", T, ["ticker"]),
 
+  t(
+    "get_gex_regime_events",
+    "BlackOut Thermal's durable log of GEX regime/flip/wall-crossing events — answers 'when did SPY's gamma flip last cross', 'how many times has NVDA's call wall broken today', or 'has the gamma regime flipped this session', which get_positioning/get_gex structurally CANNOT answer: those two only ever return the CURRENT snapshot, with no memory of what changed earlier in the session. Reads gex_regime_events: one row per DISTINCT (ticker, event type + direction) transition (throttled to real state changes, not one row per matrix poll), each carrying event_type (flip_crossed / wall_broken / regime_flipped / net_gex_sign_flipped), severity (warn for destabilizing crosses, info otherwise), the human message, the level crossed (flip/wall strike) when applicable, direction, and the natural from_value/to_value numeric pair for that event type (spot before/after the crossed level for flip_crossed/wall_broken; the gamma-flip level at each end for regime_flipped; net GEX dollars before/after for net_gex_sign_flipped) — null when a type has no single natural pair, never fabricated. Pass `ticker` to scope to one name's transition history, or omit for the most recent transitions across every ticker BlackOut Thermal has computed a fresh matrix for. IMPORTANT — this is a DIFFERENT question from get_positioning/get_gex (current state) and from /api/cron/gex-alerts' live push notifications (which only ever fire for SPY/SPX/QQQ and only for a subset of these same event types) — this tool's history spans EVERY ticker Thermal has touched today and every event type, independent of whether a push was ever sent.",
+    { ticker: { type: "string" }, limit: { type: "integer" } }
+  ),
+
   t("get_nighthawk_outcomes", "Night Hawk track record — realized win/loss vs target/stop over a window, plus still-pending plays. Use to cite credibility (e.g. hit-rate over 30d).", {
     window_days: { type: "integer", default: 30 },
   }),
@@ -417,7 +437,13 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t(
     "get_market_regime",
-    "Market-wide backdrop, not ticker-specific and NOT SPX Slayer's own play-engine state: composite regime (BREAKOUT_BULL/BREAKDOWN_BEAR/RANGE_BOUND/MIXED), GEX regime, flow regime, the suggested playbook, net GEX, above/below VWAP, IV percentile, count of critical flow anomalies in the last hour (+ which tickers), and the premarket brief's call/put walls. This is the SAME data Night Hawk's own scoring already reads internally (src/lib/nighthawk/platform-intel-snapshot.ts) — use for 'what's the market regime / what's the backdrop / is this a good environment for X' questions. Does NOT cover SPX Slayer's own phase/gates/score/confluence for its current or most recent play — for that, use get_spx_play (or get_ecosystem_context's spx_full_state field)."
+    "Market-wide backdrop, not ticker-specific and NOT SPX Slayer's own play-engine state: composite regime (BREAKOUT_BULL/BREAKDOWN_BEAR/RANGE_BOUND/MIXED), GEX regime, flow regime, the suggested playbook, net GEX, above/below VWAP, IV percentile, count of critical flow anomalies in the last hour (+ which tickers), and the premarket brief's call/put walls. This is the SAME data Night Hawk's own scoring already reads internally (src/lib/nighthawk/platform-intel-snapshot.ts) — use for 'what's the market regime / what's the backdrop / is this a good environment for X' questions. Does NOT cover SPX Slayer's own phase/gates/score/confluence for its current or most recent play — for that, use get_spx_play (or get_ecosystem_context's spx_full_state field). This anomaly count only ever includes anomalies that actually FIRED — for a candidate that didn't clear the anomaly threshold (or fired but got dedup-suppressed), use get_flow_anomaly_near_misses instead."
+  ),
+
+  t(
+    "get_flow_anomaly_near_misses",
+    "HELIX's near-miss/rejection log for its market-wide flow-anomaly detector (src/app/api/cron/market-regime-detector's 5-min RTH cron) — answers 'why didn't ticker X get flagged as an anomaly' or 'what has HELIX's anomaly scan been passing over today', which NEITHER of the two existing anomaly-reading surfaces can answer: get_ecosystem_context's `recent_anomalies` field and get_market_regime's critical-anomaly count BOTH only ever read the flow_anomalies table, which the live detector writes to ONLY once a candidate clears a hard threshold — a $2M+ single option print (LARGE_PREMIUM_PRINT) or a 10:1+ call/put premium skew on $500k+ total volume (DIRECTIONAL_FLOW_SKEW). A candidate that fell short — a $1.8M print, an 8:1 skew — is invisible in both of those and left no trace anywhere until this tool existed. Reads flow_anomaly_near_misses: one row per (ticker, anomaly_type) pair per DISTINCT near-miss state (throttled to state transitions, not one row per cron tick), each row naming the `anomaly_type`, the `reason` it never reached flow_anomalies — 'BELOW_THRESHOLD' (the metric itself never cleared the hard threshold; only genuinely close calls are captured, at least half-way to the real threshold, not every sub-threshold value) vs. 'DEDUP_SUPPRESSED' (the candidate DID clear its threshold this tick, but a matching anomaly was already logged for the same ticker+type within the last 15 minutes, so the write was skipped — a structurally different, later-pipeline-stage reason, never conflated with BELOW_THRESHOLD) — the live `metric_value` and `threshold` it was measured against (a dollar amount for LARGE_PREMIUM_PRINT, a ratio for DIRECTIONAL_FLOW_SKEW — do not confuse with `premium`, which is always a dollar total), `direction`, and (for DEDUP_SUPPRESSED only — a BELOW_THRESHOLD candidate never reaches the point where the live detector assigns one) `severity`. Pass `ticker` to scope to one name's near-miss history, or omit for the most recent near-misses across every candidate. IMPORTANT — this is a DIFFERENT question from get_ecosystem_context's `recent_anomalies` and get_market_regime's anomaly count (both committed-only, i.e. anomalies that DID fire) and from get_zerodte_rejections (0DTE Command's OWN separate multi-ticker scanner, a completely different engine and threshold set) — only reach for this tool when the question is specifically about why HELIX's flow-anomaly detector did NOT flag something.",
+    { ticker: { type: "string" }, limit: { type: "integer" } }
   ),
 
   t(
@@ -459,6 +485,7 @@ export const TOOL_GROUPS = {
     "get_trade_history",
     "get_greek_flow",
     "get_gex",
+    "get_gex_regime_events",
     "get_group_greek_flow",
     // cross-tool desk objects newly surfaced to Largo
     "get_spx_confluence",
@@ -497,6 +524,7 @@ export const TOOL_GROUPS = {
     "get_short_interest",
     "get_nbbo",
     "get_positioning",
+    "get_gex_regime_events",
     // previously orphaned — LARGO-9
     "get_seasonality",
     "get_qqq_relative_strength",
@@ -548,6 +576,7 @@ export const TOOL_GROUPS = {
   platform: [
     "get_platform_snapshot",
     "get_zerodte_plays",
+    "get_zerodte_rejections",
     "get_nighthawk_edition",
     // cross-tool Night Hawk objects newly surfaced to Largo
     "get_nighthawk_outcomes",
@@ -558,6 +587,11 @@ export const TOOL_GROUPS = {
     // The BIE-authored tools (ecosystem-context, hot-tickers, market-regime,
     // confluence-outcomes) — see BIE_TOOL_NAMES above for the canonical list.
     ...BIE_TOOL_NAMES,
+    // HELIX flow-anomaly near-miss/rejection log (task #131) — reads the same
+    // market-regime-detector cron's output as get_market_regime above, so it
+    // lives right alongside it here rather than in BIE_TOOL_NAMES (which is
+    // reserved for the BIE-authored cross-instrument snapshot family).
+    "get_flow_anomaly_near_misses",
   ],
   my_book: [
     // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).
@@ -621,6 +655,277 @@ export const SPX_ENGINE_TOOL_NAMES = [
   "get_power_hour",
 ];
 
+// Task #133 — the cohort-membership test for "did this Largo turn touch HELIX's
+// OWN persisted/computed state" (BIE's self-eval loop, calibration.ts), the same
+// pattern SPX_ENGINE_TOOL_NAMES established above for SPX Slayer. HELIX is the
+// market-wide options-flow product behind `/flows` — its own engine state is (1)
+// the ingested flow tape itself (Postgres `flow_alerts`, what the /flows page
+// renders) and (2) the market-regime-detector cron's near-miss/rejection log
+// (`flow_anomaly_near_misses`, task #131). Verified against run-tool.ts's case
+// statements, not guessed from naming:
+//   - get_flow_tape → marketPlatform.flows.getFlowTapeSummary() → fetchRecentFlows()
+//     (src/lib/platform/flow-service.ts, src/lib/db.ts) — reads the ingested tape
+//     from Postgres and returns HELIX's own aggregate view (count, total_premium,
+//     top_tickers, recent prints). This exact return shape is independently
+//     branded "HELIX's ENTIRE flow-tape snapshot" in get_ecosystem_context's own
+//     description (its `flow_full_state` field documents "the exact same object
+//     get_flow_tape returns") — confirming this is treated elsewhere in the
+//     codebase as HELIX's canonical state object, not a generic per-ticker proxy.
+//   - get_flow_anomaly_near_misses → flowAnomalyNearMissesForLargo() →
+//     fetchFlowAnomalyNearMisses() (src/lib/platform/flow-anomaly-near-misses.ts,
+//     src/lib/db.ts) — reads flow_anomaly_near_misses, the anomaly detector's own
+//     throttled near-miss/rejection log. Nothing else reads this table.
+// Deliberately EXCLUDED, verified against the same case statements: every other
+// TOOL_GROUPS.flow_analysis tool (get_options_flow, get_global_flow, get_dark_pool,
+// get_nope, get_flow_per_strike, get_flow_expiry_breakdown, get_net_prem_ticks,
+// get_lit_flow, get_unusual_trades, get_market_oi_change, get_etf_flow,
+// get_market_stats, get_option_contract) hits generic ticker-scoped UW/Polygon
+// providers (fetchUw*) usable for ANY ticker — the same reasoning
+// SPX_ENGINE_TOOL_NAMES's own doc comment gives for excluding get_greek_flow/
+// get_gex from that list. get_postgres_flows is the one close call: it calls
+// marketPlatform.flows.getFlowTape() (the SAME fetchRecentFlows() table
+// get_flow_tape reads), but returns the raw ingested rows with no HELIX-specific
+// aggregation/branding — unlike get_flow_tape, nothing else in the codebase
+// treats get_postgres_flows's return shape as HELIX's canonical object, so it's
+// left out to keep this list to the two tools that are unambiguously "read
+// HELIX's own state," not "happen to touch the same table." Also excluded, same
+// reasoning SPX_ENGINE_TOOL_NAMES gives for excluding get_ecosystem_context: the
+// BIE-authored cross-product tools (get_hot_tickers, get_market_regime, and the
+// rest of BIE_TOOL_NAMES) and get_platform_snapshot are callable for ANY ticker
+// or span multiple products at once, and bie_interactions.tools_used records
+// only tool NAMES, never call inputs — a turn that called get_market_regime (an
+// explicitly "market-wide backdrop, not ticker-specific" tool per its own
+// description) tells you nothing about HELIX-tape/anomaly-detector answer
+// quality specifically. Kept as an explicit literal list (not derived from
+// TOOL_GROUPS.spx_desk/flow_analysis/platform) for the same drift-resistance
+// reason SPX_ENGINE_TOOL_NAMES is — see tool-defs.test.ts for the assertion
+// that keeps this list a verified subset of spx_desk ∪ flow_analysis ∪ platform.
+// (get_flow_tape itself lives in spx_desk, bundled there for SPX-flavored
+// routing convenience per SPX_ENGINE_TOOL_NAMES's own comment above, not in
+// flow_analysis; get_flow_anomaly_near_misses lives in platform.)
+export const HELIX_ENGINE_TOOL_NAMES = ["get_flow_tape", "get_flow_anomaly_near_misses"];
+
+// Task #137 — the cohort-membership test for "did this Largo turn touch BlackOut
+// Thermal's OWN computed/cached dealer-positioning state" (BIE's self-eval loop,
+// calibration.ts), same purpose as SPX_ENGINE_TOOL_NAMES above but for Thermal
+// (the GEX/gamma/dealer-positioning product behind /heatmap) instead of SPX Slayer.
+//
+// Verified against run-tool.ts's case statements, not guessed from naming — and
+// the naming trap here is real, so read carefully before "fixing" this list:
+//   - get_positioning (case "get_positioning" → fetchPositioningSummary,
+//     src/lib/nighthawk/positioning.ts): PRIMARY path calls getGexPositioning(sym)
+//     (src/lib/providers/gex-positioning.ts), which is a strict CACHE-READER over
+//     fetchGexHeatmap's shared `gex-heatmap:{ticker}` matrix — that file's own doc
+//     comment calls it "the ONE source every other tool/service/AI surface consumes
+//     for the Heat Maps dealer-positioning data." This is exactly Thermal's own
+//     engine state (spot, gamma flip, call/put walls, max pain, GEX king strike,
+//     net GEX/VEX/DEX/CHARM). INCLUDED.
+//   - get_gex_regime_events (case "get_gex_regime_events" → gexRegimeEventsForLargo,
+//     src/lib/providers/gex-regime-events.ts): reads gex_regime_events, task #136's
+//     durable Postgres log of flip/wall/regime transitions — persisted directly off
+//     computeGexEvents()' diff of Thermal's own fetchGexHeatmap matrix (see that
+//     file's header comment: "ONE DERIVATION, NOT TWO... every call site passes in
+//     the EXACT GexEvent[] array computeGexEvents() already produced"). This is
+//     Thermal's own transition HISTORY, the durable analogue of the CURRENT-state
+//     snapshot get_positioning returns. INCLUDED. (Note: tool-defs.test.ts already
+//     asserts this name is NOT part of SPX_ENGINE_TOOL_NAMES, for the unrelated
+//     reason that it's ticker-generic rather than SPX-Slayer-engine-specific — that
+//     exclusion says nothing about Thermal-specificity, which is the only axis this
+//     list cares about.)
+//   - get_gex (case "get_gex"): despite the name — and despite this being "the GEX
+//     product" — this tool's implementation does NOT read fetchGexHeatmap or
+//     getGexPositioning at all. For SPX/I:SPX at today's expiry it reads
+//     getLargoSpxLiveDesk(userId), i.e. SPX SLAYER's own live desk (SPX_ENGINE_TOOL_
+//     NAMES' territory, not Thermal's). For every other case it calls
+//     fetchPolygonOdteGexRows → fetchPolygonOdteDeskBundle, a THIRD, separate,
+//     spot-keyed (no ticker parameter at all) cache — the 0DTE desk bundle, not the
+//     per-ticker Thermal heatmap matrix — or, failing that, raw ad hoc Unusual
+//     Whales spot-exposure/gex-level calls. None of get_gex's three branches ever
+//     touch Thermal's canonical cache. EXCLUDED — the same "too generic, verified
+//     via the case body" reasoning SPX_ENGINE_TOOL_NAMES's own comment gives for
+//     excluding get_gex from ITS list, just landing on the identical conclusion for
+//     a different, Thermal-specific reason: it doesn't read Thermal's state either.
+//   - get_options_chain / get_oi_per_strike / get_max_pain / get_greeks /
+//     get_atm_chains / get_options_volume (all TOOL_GROUPS.stock_analysis): each
+//     one independently fetches+computes over a raw polygonChainBundle() chain for
+//     whatever ticker/expiry was asked, with no read of the shared heatmap cache —
+//     generic per-ticker options-chain shape, not a Thermal-positioning-specific
+//     read. EXCLUDED.
+//   - get_ecosystem_context (BIE_TOOL_NAMES/TOOL_GROUPS.platform): its payload DOES
+//     embed gex_positioning (the same getGexPositioning() object get_positioning
+//     returns), but it's a cross-product, ANY-ticker tool, and bie_interactions.
+//     tools_used only records tool NAMES, never call inputs — there's no way to
+//     tell from a row alone whether a given call actually needed the GEX slice or
+//     was scoped to something unrelated (e.g. a 0DTE/Night Hawk question about a
+//     name with no Thermal angle at all). Same reasoning SPX_ENGINE_TOOL_NAMES's
+//     own comment gives for excluding it from that list. EXCLUDED.
+// Kept as an explicit literal list (not derived from TOOL_GROUPS.stock_analysis)
+// for the same reason SPX_ENGINE_TOOL_NAMES is: so this cohort tracks "did Largo
+// read Thermal's own computed state" and can't silently widen/narrow if
+// stock_analysis's bundle composition changes for unrelated routing reasons — see
+// tool-defs.test.ts for the assertion keeping this a verified subset of
+// TOOL_GROUPS.stock_analysis.
+export const THERMAL_ENGINE_TOOL_NAMES = ["get_positioning", "get_gex_regime_events"];
+
+// Task #144 — the cohort-membership test for "did this Largo turn touch Night
+// Hawk's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
+// same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night Hawk instead
+// of SPX Slayer. Kept just as narrow, and for the same reason: only tools whose
+// run-tool.ts implementation reads Night Hawk's own persisted/computed state
+// belong here — verified against run-tool.ts's case statements, not guessed
+// from naming:
+//   - get_nighthawk_edition -> marketPlatform.nighthawk.getLatestNightHawkEdition()
+//     / getNightHawkEditionForDate(date) — the published edition object itself
+//     (recap, plays, scores) — see run-tool.ts's "get_nighthawk_edition" case.
+//   - get_nighthawk_outcomes -> fetchNighthawkOutcomeAnalytics(windowDays) +
+//     fetchPendingNighthawkOutcomes(7) — Night Hawk's own closed/pending
+//     outcome ledger — see run-tool.ts's "get_nighthawk_outcomes" case.
+//   - get_nighthawk_dossier -> fetchStagedDossiers(editionFor) falling back to
+//     fetchNighthawkScoringHistory(editionFor, ticker) — Night Hawk's own
+//     per-ticker research/scoring state (live staging while tonight's hunt is
+//     still running, the durable archive once it publishes) — see
+//     run-tool.ts's "get_nighthawk_dossier" case.
+//
+// Deliberately EXCLUDES two other Night-Hawk-adjacent TOOL_GROUPS.platform
+// tools, for the same "can't attribute scope from tools_used alone" reasoning
+// SPX_ENGINE_TOOL_NAMES gives above for excluding get_ecosystem_context:
+//   - get_spx_vs_nighthawk_comparison: its run-tool.ts case ALWAYS calls BOTH
+//     fetchPlayOutcomeStatsForWindow (SPX Slayer's own closed plays) AND
+//     fetchNighthawkOutcomeAnalytics (Night Hawk's), then returns a derived
+//     cross-product delta. A turn that called only this tool touched SPX
+//     Slayer's own engine state just as certainly as Night Hawk's — including
+//     it here wouldn't narrow this cohort, it would silently CONFLATE it with
+//     SPX-engine-state turns (the exact failure mode SPX_ENGINE_TOOL_NAMES's
+//     own comment warns against, just from the other direction).
+//   - get_platform_snapshot: a cross-service combo across up to 3 products
+//     (spx/flows/nighthawk) in a single call, gated by its own `include`/
+//     `full_edition` params — but bie_interactions.tools_used records only the
+//     tool NAME, never its call inputs, so a logged row gives no way to tell
+//     whether a given get_platform_snapshot call ever touched the nighthawk
+//     slice at all (it may have been called with `include: ["spx","flows"]`
+//     only). Including it would silently admit unrelated single-product
+//     lookups into a "Night Hawk engine state" cohort.
+// Kept as an explicit literal list (not derived from TOOL_GROUPS.platform), for
+// the same drift-resistance reason as SPX_ENGINE_TOOL_NAMES — see
+// tool-defs.test.ts for the assertion that keeps this list a verified subset of
+// TOOL_GROUPS.platform.
+export const NIGHTHAWK_ENGINE_TOOL_NAMES = [
+  "get_nighthawk_edition",
+  "get_nighthawk_outcomes",
+  "get_nighthawk_dossier",
+];
+
+// Task #149 — the analogous cohort-membership list for 0DTE Command (the SEPARATE
+// multi-ticker scanner behind `/grid`'s default tab, per task #127's standing
+// disambiguation from SPX Slayer above — both are "0DTE"-branded but are two
+// independent engines). Same design philosophy as SPX_ENGINE_TOOL_NAMES: kept to
+// the tools whose run-tool.ts implementation reads 0DTE Command's OWN persisted/
+// computed engine state, verified against run-tool.ts's case statements, not
+// guessed from naming:
+//   - get_zerodte_plays → zeroDtePlaysForLargo() (zerodte/scan.ts) → readZeroDteLedger()
+//     joined with scanZeroDteBoard()'s live finds — reads zerodte_setup_log, the
+//     board's own committed-setup ledger.
+//   - get_zerodte_rejections → zeroDteRejectionsForLargo() (zerodte/rejections.ts) —
+//     reads zerodte_scan_rejections (task #147), the board's own near-miss/gate-
+//     rejection log. See admin-zerodte-health.ts's module doc for more background
+//     on both tables.
+// Unlike SPX_ENGINE_TOOL_NAMES, this is NOT a narrowing of a larger routing bundle —
+// TOOL_GROUPS.platform (where both tools live) has no generic, ticker-agnostic
+// tools bundled in alongside them the way spx_desk does, so there is nothing to
+// exclude; this list is simply the full pair. Kept as an explicit literal list
+// (not derived from TOOL_GROUPS.platform) for the same reason SPX_ENGINE_TOOL_NAMES
+// is: this cohort tracks "did Largo read 0DTE Command's own engine state" and must
+// not silently widen if TOOL_GROUPS.platform gains unrelated tools later — see
+// tool-defs.test.ts for the assertion that keeps this list a verified subset of
+// TOOL_GROUPS.platform.
+export const ZERODTE_ENGINE_TOOL_NAMES = ["get_zerodte_plays", "get_zerodte_rejections"];
+
+// Task #161 — the cohort-membership list for `market_context`, the FOURTH of BIE's
+// deterministic router intents (src/lib/bie/router.ts's classifyBieIntent:
+// zerodte_plays/ticker_play_state/spx_structure/market_context) — the one intent
+// left without a calibration.ts tool-calling cohort until now. Same design
+// philosophy as SPX_ENGINE_TOOL_NAMES/ZERODTE_ENGINE_TOOL_NAMES: kept to the tools
+// whose run-tool.ts implementation reads the SAME state the router's own composer
+// reads, verified against run-tool.ts's case statement and composers.ts directly,
+// not guessed from naming:
+//   - get_market_context → run-tool.ts's "get_market_context" case: batches Polygon
+//     index/ETF snapshots (SPX/VIX/SPY/QQQ/IWM/SOXX), UW market tide, market status,
+//     and upcoming-session info behind the shared `market_context` cache, then layers
+//     the user's own live SPX desk summary on top. This is EXACTLY what
+//     composeMarketContext (src/lib/bie/composers.ts) reads via
+//     `runLargoTool("get_market_context", {})` to answer the market_context router
+//     intent — the same one-tool relationship SPX_ENGINE_TOOL_NAMES's
+//     get_spx_structure has to composeSpxStructure.
+// Deliberately EXCLUDES get_market_regime, despite it also being a "market-wide"
+// BIE tool one might reflexively bundle in here: its run-tool.ts case calls
+// fetchPlatformIntelSnapshot() (src/lib/nighthawk/platform-intel-snapshot.ts) — a
+// COMPLETELY DIFFERENT read (platform-wide regime/backdrop intel) that
+// composeMarketContext never touches. get_market_regime is a BIE_TOOL_NAMES member
+// precisely because it's cross-product and callable regardless of which product's
+// question is being asked — HELIX_ENGINE_TOOL_NAMES's own doc comment already
+// excludes it from ITS list for the identical reason ("an explicitly 'market-wide
+// backdrop, not ticker-specific' tool... tells you nothing about HELIX-tape/
+// anomaly-detector answer quality specifically"); the same logic applies here
+// verbatim, just for market_context instead of HELIX. Including it would silently
+// admit turns that never touched market_context's own composed state into this
+// cohort. Kept as an explicit literal list (not derived from TOOL_GROUPS.vol_analysis,
+// where get_market_context itself lives) for the same drift-resistance reason every
+// other *_ENGINE_TOOL_NAMES list is — see tool-defs.test.ts for the assertion that
+// keeps this list a verified subset of TOOL_GROUPS.vol_analysis.
+export const MARKET_ENGINE_TOOL_NAMES = ["get_market_context"];
+// Task #163 — the cohort-membership test for "did this Largo turn touch Night's
+// Watch's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
+// same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night's Watch (the
+// signed-in user's own per-position Hold/Trim/Sell verdict engine, `/account`'s
+// positions panel) instead of SPX Slayer. This is exactly the surface
+// nights-watch-verifier.ts (src/lib/correctness/nights-watch-verifier.ts,
+// priority correctness surface #3) already shadow-recomputes and chain-confirms
+// — that verifier proves the VALUATION FORMULA is correct; this cohort measures
+// whether Largo's ANSWERS about it are actually good, the same gap task #112
+// closed for SPX Slayer.
+//
+// Verified against run-tool.ts's "get_my_positions" case body, not guessed from
+// naming: it calls getEnrichedPositionsForUser(userId, statusArg)
+// (src/lib/nights-watch/enrichment.ts), which reads the user's saved positions
+// and re-derives each one's live valuation plus the deterministic Hold/Trim/Sell
+// verdict (src/lib/nights-watch/verdict.ts) — a proprietary derived judgment
+// analogous to SPX Slayer's grade/action that SPX_ENGINE_TOOL_NAMES's cohort
+// tracks answer quality for.
+//
+// Unlike SPX_ENGINE_TOOL_NAMES, this is NOT a narrowing of a larger routing
+// bundle: TOOL_GROUPS.my_book contains exactly this one tool (the per-user
+// position tool getToolsForIntent surfaces on a Night's-Watch-flavored question
+// via MY_POSITIONS_RE — see getToolsForIntent below), so there is nothing
+// generic to exclude; this list is simply that one tool. Kept as an explicit
+// literal list (not `TOOL_GROUPS.my_book` itself) for the same drift-resistance
+// reason SPX_ENGINE_TOOL_NAMES is: this cohort tracks "did Largo read Night's
+// Watch's own engine state" and must not silently widen if TOOL_GROUPS.my_book
+// gains an unrelated tool later — see tool-defs.test.ts for the assertion that
+// keeps this list a verified subset of TOOL_GROUPS.my_book.
+//
+// buildPositionDetail() (src/lib/nights-watch/position-detail.ts) is a
+// deliberately EXCLUDED near-miss, not an oversight: it recomputes the same
+// verdict with richer per-position context for the account panel's click→detail
+// modal, but it is wired directly to a plain Next.js API route
+// (src/app/api/account/positions/[id]/detail/route.ts), NOT to a Largo tool —
+// grepping largo/tool-defs.ts and largo/run-tool.ts for
+// "position_detail"/"positionDetail" turns up nothing, confirming no such tool
+// exists to add here. If a future task ever exposes it to Largo, add it here then.
+//
+// Cohort test (calibration.ts's isNightsWatchToolCallingRow) is tools_used-ONLY,
+// no `OR intent_bucket = '...'` clause — the same asymmetry as
+// NIGHTHAWK_ENGINE_TOOL_NAMES above, for the identical reason: classifyBieIntent
+// (src/lib/bie/router.ts) recognizes exactly 4 deterministic intents
+// (zerodte_plays, ticker_play_state, spx_structure, market_context) and none of
+// them ever route a Night's-Watch/"my positions" question. MY_POSITIONS_RE
+// (largo/intent-keywords.ts) plays the same role NIGHTHAWK_RE plays for Night
+// Hawk — it only decides which TOOL BUNDLE Largo has on hand
+// (getToolsForIntent), and is never consulted by classifyBieIntent's answer
+// path — so it can never cause a bie_interactions row to carry a
+// Night's-Watch-flavored intent_bucket. See isNightsWatchToolCallingRow's own
+// doc comment in calibration.ts for the full reasoning.
+export const NIGHTS_WATCH_ENGINE_TOOL_NAMES = ["get_my_positions"];
+
 const CORE_TOOLS = [
   "get_market_context",
   ...TOOL_GROUPS.spx_desk,
@@ -643,6 +948,10 @@ export function getToolsForIntent(question: string): string[] {
   // 0DTE Command — "today's plays", the board, or anything zero-DTE flavored.
   if (/\b(0\s*dte|zero\s*dte|zerodte|command board|today'?s plays|the plays|scanner plays)\b/i.test(lower)) {
     names.add("get_zerodte_plays");
+    // Near-miss/rejection log (task #147) — added alongside get_zerodte_plays on the
+    // same bare-token match so a "why didn't X make the 0dte board" question always
+    // has both tools available, not just the committed-plays one.
+    names.add("get_zerodte_rejections");
     for (const n of TOOL_GROUPS.spx_desk) names.add(n);
   }
 
@@ -651,6 +960,26 @@ export function getToolsForIntent(question: string): string[] {
   }
   if (matchesIntent(lower, SPX_DESK_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.vol_analysis]) names.add(n);
+  }
+  // Generic (ticker-independent) dealer-positioning/GEX language (task #140) —
+  // "dealer positioning," "gamma flip," "GEX walls," "call wall"/"put wall,"
+  // "gamma exposure," etc. SPX_DESK_TOOLS_RE's own bare "gamma"/"gex"/"dealer"
+  // tokens above already fire on most of this vocabulary and add
+  // TOOL_GROUPS.spx_desk (get_gex, get_gex_regime_events) — but get_positioning,
+  // BlackOut Thermal's own "dealer positioning for ANY ticker" tool, lives ONLY
+  // in TOOL_GROUPS.stock_analysis, gated behind mentionsTicker() below. Matching
+  // SPX_DESK_TOOLS_RE also means this turn NEVER falls through to the
+  // `names.size <= 2` CORE_TOOLS fallback that would have accidentally included
+  // stock_analysis — so the more clearly GEX-flavored a ticker-less question
+  // was, the LESS likely it was to get get_positioning. Mirror SPX_DESK_TOOLS_RE's
+  // own bundle (spx_desk + vol_analysis) so this is a strict superset for
+  // phrasing that already matched it, plus explicitly add get_positioning —
+  // the one tool this vocabulary is unambiguously asking for. See
+  // GEX_POSITIONING_RE's own doc comment in intent-keywords.ts for the full
+  // before/after repro.
+  if (matchesIntent(lower, GEX_POSITIONING_RE)) {
+    for (const n of [...TOOL_GROUPS.spx_desk, ...TOOL_GROUPS.vol_analysis]) names.add(n);
+    names.add("get_positioning");
   }
   if (matchesIntent(lower, VOL_TOOLS_RE)) {
     for (const n of [...TOOL_GROUPS.vol_analysis, ...TOOL_GROUPS.spx_desk]) names.add(n);

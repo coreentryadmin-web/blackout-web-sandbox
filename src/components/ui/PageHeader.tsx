@@ -32,7 +32,10 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
   return (
     <header
       ref={ref as React.Ref<HTMLElement>}
-      className={clsx("flex flex-wrap items-end justify-between gap-4", className)}
+      className={clsx(
+        "page-tool-header flex flex-wrap items-end justify-between gap-4",
+        className
+      )}
       {...rest}
     >
       <div className="min-w-0">

@@ -360,6 +360,11 @@ export function parseOptionsContract(optionsPlay: string): ParsedOptionsContract
  * over-filter that zeroed every edition: 17 candidates → 0 plays because none of Claude's chosen
  * expiries/strikes happened to land inside that narrow front-expiry ATM window.
  */
+/** Default OI floor for the SOFT chain-contradiction check below (task #141: named so the
+ *  durable illiquid-strike rejection audit row can cite the exact threshold that fired,
+ *  instead of a bare `500` literal duplicated at each call site). Value unchanged. */
+export const STRIKE_MIN_OI = 500;
+
 export type StrikeValidation = {
   /** May the play proceed? True unless the chain positively contradicts it (present but illiquid). */
   ok: boolean;
@@ -367,6 +372,11 @@ export type StrikeValidation = {
   verified: boolean;
   /** True only when the strike+expiry IS in the chain but OI is below the floor — a real contradiction. */
   contradicted: boolean;
+  /** task #141: best (max) OI across the matched strike+expiry rows for the play's side, so a
+   *  rejection-audit row can record the actual liquidity number that failed the floor — not
+   *  just the boolean. Null when the strike+expiry wasn't found in the chain at all (nothing to
+   *  measure); this does NOT change `ok`/`verified`/`contradicted`, which are unchanged. */
+  matchedOi: number | null;
 };
 
 /**
@@ -379,12 +389,12 @@ export type StrikeValidation = {
 export function evaluatePlayAgainstChain(
   optionsPlay: string,
   rows: ChainStrikeRow[],
-  minOi = 500
+  minOi = STRIKE_MIN_OI
 ): StrikeValidation {
   const parsed = parseOptionsContract(optionsPlay);
   // No parseable strike at all → we can't verify, but we also can't contradict. Let it through;
   // premium-cap + critic remain the other guards. (Hard-dropping here was part of the over-filter.)
-  if (!parsed) return { ok: true, verified: false, contradicted: false };
+  if (!parsed) return { ok: true, verified: false, contradicted: false, matchedOi: null };
 
   const oiForSide = (row: ChainStrikeRow): number => {
     if (parsed.side === "call") return row.call_oi;
@@ -402,11 +412,12 @@ export function evaluatePlayAgainstChain(
 
   // Strike+expiry not present in the front-two-expiry ATM window → unverifiable, NOT contradicted.
   // This is the common case for swing/leap plays; pass it through rather than zeroing the edition.
-  if (!strikeRows.length) return { ok: true, verified: false, contradicted: false };
+  if (!strikeRows.length) return { ok: true, verified: false, contradicted: false, matchedOi: null };
 
   // Present in the chain: now the OI floor is meaningful. Verified if any matching row clears it.
-  const verified = strikeRows.some((row) => oiForSide(row) >= minOi);
-  return { ok: verified, verified, contradicted: !verified };
+  const bestOi = Math.max(...strikeRows.map(oiForSide));
+  const verified = bestOi >= minOi;
+  return { ok: verified, verified, contradicted: !verified, matchedOi: bestOi };
 }
 
 /**

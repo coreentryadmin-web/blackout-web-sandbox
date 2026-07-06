@@ -8,7 +8,7 @@ import type {
 import { anthropicText, anthropicConfigured } from "@/lib/providers/anthropic";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { gexContextBlock, gexContextLine } from "@/lib/providers/gex-positioning";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireAnyToolApi } from "@/lib/tool-access-server";
 import { checkNumbersGrounded } from "@/lib/grounding-guard";
 import { fmtPremium } from "@/lib/fmt-money";
 
@@ -182,7 +182,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth;
 
   // Launch gate — locked to non-admins until this tool ships.
-  const locked = await requireToolApi("heatmap");
+  const locked = await requireAnyToolApi(["spx", "heatmap"]);
   if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();
@@ -191,6 +191,10 @@ export async function GET(req: NextRequest) {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     Pragma: "no-cache",
   };
+
+  if (!/^[A-Z0-9.\-]{1,8}$/.test(ticker)) {
+    return NextResponse.json({ error: "Invalid ticker" }, { status: 400, headers: noStore });
+  }
 
   // 1. Never fabricate when AI is unconfigured.
   if (!anthropicConfigured()) {

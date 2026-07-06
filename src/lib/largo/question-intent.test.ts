@@ -150,3 +150,220 @@ test("bare singular 'flow' still sets needsFlow (no regression from the plural/g
   const intent = analyzeLargoQuestion("what's the options flow situation right now", []);
   assert.equal(intent.needsFlow, true);
 });
+
+// Task #147: deriveZeroDteSetups' gate-rejection near-misses now have a durable log
+// (zerodte_scan_rejections) and a dedicated Largo tool (get_zerodte_rejections) —
+// "why didn't ticker X make the Grid board" is a genuinely different question from
+// needsZeroDteCommand above (the committed-plays board) and from needsSpxEngineState
+// (SPX Slayer's own rejected/scanning history), so it gets its own hint.
+
+test("near-miss/rejection wording paired with a 0dte/grid token hints get_zerodte_rejections", () => {
+  for (const question of [
+    "why didn't AAPL make the 0dte board",
+    "was NVDA a near miss on the grid scanner",
+    "what gate did TSLA fail on the grid",
+    "why wasn't SNDK flagged by the 0dte scan",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsZeroDteRejections, true, `expected needsZeroDteRejections for: "${question}"`);
+    assert.match(intent.guidance, /get_zerodte_rejections/, `expected get_zerodte_rejections hint for: "${question}"`);
+  }
+});
+
+test("near-miss wording with NO 0dte/grid token stays unresolved, same documented gap as the bare-0dte case", () => {
+  // "why didn't AAPL make the board" has no explicit 0dte/zero-dte/grid token — same
+  // intentional, documented ambiguity ZERODTE_COMMAND_RE already leaves for a bare
+  // "0dte play" mention (see the test above this block). This hint's job is to
+  // resolve the SPECIFIC-wording case, not manufacture signal that isn't present.
+  const intent = analyzeLargoQuestion("why didn't AAPL make the board today", []);
+  assert.equal(intent.needsZeroDteRejections, false);
+});
+
+test("bare 'near miss'/'rejected' wording with NO 0dte/grid context does not falsely fire needsZeroDteRejections", () => {
+  // Same false-positive discipline as ZERODTE_COMMAND_RE's own hunt/scan/find family
+  // (task #127's merge-time fix) — "near miss" or "didn't make it" alone is common
+  // phrasing for entirely unrelated questions and must require the explicit token.
+  for (const question of [
+    "that trade was a near miss on my stop loss",
+    "was AAPL rejected from tonight's Night Hawk edition",
+    "why didn't my order hit",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsZeroDteRejections,
+      false,
+      `expected !needsZeroDteRejections for unrelated wording: "${question}"`
+    );
+  }
+});
+
+// Task #136: BlackOut Thermal's GEX regime/flip/wall-crossing HISTORY is now a
+// durable log (gex_regime_events) with its own Largo tool (get_gex_regime_events) —
+// "when did the flip last cross" / "how many times has the wall moved" is a
+// genuinely different question from get_gex/get_positioning's CURRENT-snapshot-only
+// view, so it gets its own hint, same pattern as needsZeroDteRejections above.
+
+test("GEX regime-history wording (retrospective/count trigger + a GEX-domain token) hints get_gex_regime_events", () => {
+  for (const question of [
+    "when did SPY's gamma flip last cross",
+    "how many times has NVDA's call wall broken today",
+    "has the gamma regime flipped this session",
+    "what's SPX's wall history today",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsGexRegimeHistory, true, `expected needsGexRegimeHistory for: "${question}"`);
+    assert.match(intent.guidance, /get_gex_regime_events/, `expected get_gex_regime_events hint for: "${question}"`);
+  }
+});
+
+test("bare market-regime wording (no GEX-domain token) does not falsely fire needsGexRegimeHistory — stays disjoint from needsMarketRegime", () => {
+  // "regime" alone is MARKET_REGIME_RE's own vocabulary (LARGO-110) — this hint must
+  // require an explicit GEX-domain token (gamma flip/gex/wall/etc.), not fire on the
+  // bare word "regime" the way MARKET_REGIME_RE deliberately does for its own tool.
+  for (const question of ["what's the market regime today", "is this a good regime for calls"]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsGexRegimeHistory,
+      false,
+      `expected !needsGexRegimeHistory for market-regime wording: "${question}"`
+    );
+  }
+});
+
+test("bare retrospective/count wording with NO GEX-domain token does not falsely fire needsGexRegimeHistory", () => {
+  for (const question of [
+    "how many times did I trade today",
+    "when did the market open",
+    "how many times has AAPL missed earnings",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsGexRegimeHistory,
+      false,
+      `expected !needsGexRegimeHistory for unrelated wording: "${question}"`
+    );
+  }
+});
+
+// Task #131: detectFlowAnomalies' below-threshold/dedup-suppressed candidates now
+// have a durable log (flow_anomaly_near_misses) and a dedicated Largo tool
+// (get_flow_anomaly_near_misses) — "why didn't HELIX flag ticker X" is a genuinely
+// different question from needsMarketRegime above (get_market_regime's committed-
+// anomaly COUNT only) and from needsZeroDteRejections (0DTE Command's own separate
+// scanner/threshold set), so it gets its own hint.
+
+test("near-miss/anomaly wording paired with an anomaly/HELIX token hints get_flow_anomaly_near_misses", () => {
+  for (const question of [
+    "why didn't HELIX flag AAPL today",
+    "was TSLA a near miss on the anomaly scan",
+    "why wasn't SNDK flagged as a HELIX anomaly",
+    "did NVDA trigger a HELIX anomaly or was it a near miss",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsFlowAnomalyNearMisses, true, `expected needsFlowAnomalyNearMisses for: "${question}"`);
+    assert.match(
+      intent.guidance,
+      /get_flow_anomaly_near_misses/,
+      `expected get_flow_anomaly_near_misses hint for: "${question}"`
+    );
+  }
+});
+
+test("near-miss wording with NO anomaly/HELIX token stays unresolved, same documented gap as the 0dte-rejection case", () => {
+  // "why didn't AAPL fire today" has no explicit anomaly/helix token — same
+  // intentional, documented ambiguity ZERODTE_REJECTION_RE already leaves for a
+  // bare "why didn't X make the board" mention. This hint's job is to resolve the
+  // SPECIFIC-wording case, not manufacture signal that isn't present.
+  const intent = analyzeLargoQuestion("why didn't AAPL fire today", []);
+  assert.equal(intent.needsFlowAnomalyNearMisses, false);
+});
+
+test("bare 'near miss'/'below threshold' wording with NO anomaly/HELIX context does not falsely fire needsFlowAnomalyNearMisses", () => {
+  // Same false-positive discipline as ZERODTE_REJECTION_RE's own co-occurrence
+  // requirement — "near miss" or "wasn't flagged" alone is common phrasing for
+  // entirely unrelated questions and must require the explicit anomaly/HELIX token.
+  for (const question of [
+    "that trade was a near miss on my stop loss",
+    "was AAPL rejected from tonight's Night Hawk edition",
+    "why wasn't AAPL flagged for the 0dte board",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsFlowAnomalyNearMisses,
+      false,
+      `expected !needsFlowAnomalyNearMisses for unrelated wording: "${question}"`
+    );
+  }
+});
+
+// Task #143: get_nighthawk_edition vs get_platform_snapshot were both hinted
+// on a bare needsNightHawk match with zero preference signal, even though only
+// get_nighthawk_edition's `date` param can ever serve a SPECIFIC past edition —
+// get_platform_snapshot's nighthawk fields are always the latest edition,
+// full_edition:true or not. needsNighthawkDatedEdition gives a dated question a
+// stronger, explicit hint (plus its own guidance line) toward get_nighthawk_edition.
+
+test("Night Hawk wording paired with a date/day qualifier hints get_nighthawk_edition via needsNighthawkDatedEdition", () => {
+  for (const question of [
+    "what did night hawk pick yesterday",
+    "show me last night's night hawk edition",
+    "what were night hawk's picks on monday",
+    "what was in the 2026-07-02 edition",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsNighthawkDatedEdition, true, `expected needsNighthawkDatedEdition for: "${question}"`);
+    assert.match(intent.guidance, /get_nighthawk_edition/, `expected get_nighthawk_edition hint in guidance for: "${question}"`);
+    assert.match(
+      intent.guidance,
+      /always the latest edition only/,
+      `expected the dated-edition guidance line for: "${question}"`
+    );
+  }
+});
+
+test("bare Night Hawk wording with NO date qualifier does not fire needsNighthawkDatedEdition (stays on the generic, unpreferenced hint)", () => {
+  // "what are tonight's night hawk picks" has no yesterday/last-night/weekday/date
+  // token — the pre-existing needsNightHawk pair (get_nighthawk_edition AND
+  // get_platform_snapshot, no preference) still fires, but this task's job is only
+  // to resolve the SPECIFIC dated-wording case, not manufacture signal that isn't
+  // in the question.
+  const intent = analyzeLargoQuestion("what are tonight's night hawk picks", []);
+  assert.equal(intent.needsNighthawkDatedEdition, false);
+  assert.match(intent.guidance, /get_platform_snapshot/, "expected the generic pair to still include get_platform_snapshot");
+});
+
+test("bare date/day wording with NO Night Hawk token does not falsely fire needsNighthawkDatedEdition", () => {
+  // Same false-positive discipline as ZERODTE_REJECTION_RE/FLOW_ANOMALY_NEAR_MISS_RE
+  // — "yesterday" or "last Monday" alone is common phrasing for entirely unrelated
+  // questions (a stock's prior close, an earnings date) and must require the
+  // explicit nighthawk/hawk/playbook/edition token.
+  for (const question of [
+    "what happened last monday",
+    "what was AAPL's close yesterday",
+    "any earnings on 2026-07-02",
+  ]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(
+      intent.needsNighthawkDatedEdition,
+      false,
+      `expected !needsNighthawkDatedEdition for unrelated wording: "${question}"`
+    );
+  }
+});
+
+// Task #143: NIGHTHAWK_RE's "edition" gap — the live /nighthawk UI renders
+// "Edition live"/"Prior edition" as its own primary vocabulary, but NIGHTHAWK_RE
+// had no "edition"/"editions" token at all, so this completely natural phrasing
+// got needsNightHawk: false (tool-defs.test.ts covers the resulting allowlist
+// gap on the same regex).
+
+test("'edition'/'editions' phrasing triggers the Night Hawk tool hints (NIGHTHAWK_RE token gap)", () => {
+  // needsNightHawk itself is an internal-only variable (not part of the returned
+  // LargoQuestionIntent) — assert on its one observable effect instead: the
+  // get_nighthawk_edition/get_platform_snapshot pair landing in guidance.
+  for (const question of ["is a new edition live yet", "what's in tonight's edition", "any prior editions worth reviewing"]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.match(intent.guidance, /get_nighthawk_edition/, `expected get_nighthawk_edition hint for: "${question}"`);
+    assert.match(intent.guidance, /get_platform_snapshot/, `expected get_platform_snapshot hint for: "${question}"`);
+  }
+});

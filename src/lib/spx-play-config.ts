@@ -348,6 +348,11 @@ export function playTechnicalsCacheSec(): number {
   return num(process.env.SPX_PLAY_TECHNICALS_CACHE_SEC, 30);
 }
 
+/** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */
+export function playMemberReadCacheSec(): number {
+  return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 3);
+}
+
 export function gradeRank(grade: string): number {
   const ranks: Record<string, number> = { D: 0, C: 1, B: 2, A: 3, "A+": 4 };
   return ranks[grade.toUpperCase()] ?? 0;

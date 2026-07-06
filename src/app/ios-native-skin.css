@@ -1,0 +1,586 @@
+/**
+ * BlackOut iOS — unified design system (tokens, surfaces, controls, per-route skin).
+ * Scoped to html.ios-app.ios-native-shell only.
+ */
+
+/* ═══ Design tokens ═══ */
+html.ios-app.ios-native-shell {
+  --ios-accent: #00e676;
+  --ios-accent-rgb: 0, 230, 118;
+  --ios-accent-glow: color-mix(in srgb, var(--ios-accent) 35%, transparent);
+  --ios-accent-soft: color-mix(in srgb, var(--ios-accent) 12%, transparent);
+  --ios-accent-muted: color-mix(in srgb, var(--ios-accent) 8%, transparent);
+
+  --ios-surface-0: #040407;
+  --ios-surface-1: rgba(10, 11, 18, 0.94);
+  --ios-surface-2: rgba(255, 255, 255, 0.035);
+  --ios-surface-3: rgba(255, 255, 255, 0.06);
+  --ios-glass: rgba(8, 9, 16, 0.88);
+
+  --ios-border: rgba(255, 255, 255, 0.08);
+  --ios-border-strong: rgba(255, 255, 255, 0.14);
+  --ios-border-accent: color-mix(in srgb, var(--ios-accent) 35%, rgba(255, 255, 255, 0.08));
+
+  --ios-radius-sm: 10px;
+  --ios-radius-md: 14px;
+  --ios-radius-lg: 18px;
+  --ios-radius-xl: 22px;
+
+  --ios-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --ios-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.48);
+  --ios-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --ios-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --ios-shadow-card: var(--ios-shadow-md), var(--ios-shadow-inset);
+  --ios-shadow-glow: 0 0 40px var(--ios-accent-glow);
+
+  --ios-touch: 2.75rem;
+  --ios-label: 10px;
+  --ios-body: 13px;
+  /* 16px floor on inputs — below this iOS WKWebView auto-zooms on focus and breaks native layout */
+  --ios-input: 16px;
+  --ios-title: 15px;
+
+  --ios-card-radius: var(--ios-radius-lg);
+  --ios-panel-radius: var(--ios-radius-md);
+  --ios-content-gap: 0.75rem;
+}
+
+/* Per-route accent identity */
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] {
+  --ios-accent: #00e676;
+  --ios-accent-rgb: 0, 230, 118;
+}
+html.ios-app.ios-native-shell[data-ios-route="flows"] {
+  --ios-accent: #bf5fff;
+  --ios-accent-rgb: 191, 95, 255;
+}
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] {
+  --ios-accent: #ff6b2b;
+  --ios-accent-rgb: 255, 107, 43;
+}
+html.ios-app.ios-native-shell[data-ios-route="largo"] {
+  --ios-accent: #22d3ee;
+  --ios-accent-rgb: 34, 211, 238;
+}
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] {
+  --ios-accent: #ff2d55;
+  --ios-accent-rgb: 255, 45, 85;
+}
+html.ios-app.ios-native-shell[data-ios-route="grid"] {
+  --ios-accent: #ffcc4d;
+  --ios-accent-rgb: 255, 204, 77;
+}
+html.ios-app.ios-native-shell[data-ios-route="account"],
+html.ios-app.ios-native-shell[data-ios-route="upgrade"],
+html.ios-app.ios-native-shell[data-ios-route="faq"],
+html.ios-app.ios-native-shell[data-ios-route="learn"],
+html.ios-app.ios-native-shell[data-ios-route="admin"] {
+  --ios-accent: #7dd3fc;
+  --ios-accent-rgb: 125, 211, 252;
+}
+
+/* Ambient route glow */
+.ios-native-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 130% 70% at 50% -15%,
+      color-mix(in srgb, var(--ios-accent) 16%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 55% 45% at 100% 85%,
+      color-mix(in srgb, var(--ios-accent) 7%, transparent),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 40% 35% at 0% 70%,
+      rgba(56, 189, 248, 0.05),
+      transparent 45%
+    );
+}
+
+html.ios-app.ios-native-shell body {
+  background: var(--ios-surface-0);
+}
+
+html.ios-app.ios-native-shell .ios-native-page-stage,
+html.ios-app.ios-native-shell .page-shell,
+html.ios-app.ios-native-shell .ios-desk-shell,
+html.ios-app.ios-native-shell .ios-account-page {
+  position: relative;
+  z-index: 1;
+}
+
+/* ═══ Premium shell chrome refresh ═══ */
+html.ios-app.ios-native-shell .ios-native-header {
+  background: var(--ios-glass);
+  border-bottom-color: var(--ios-border);
+  box-shadow: var(--ios-shadow-md);
+}
+
+html.ios-app.ios-native-shell .ios-native-header-accent {
+  height: 2px;
+  opacity: 1;
+  box-shadow: 0 0 20px var(--ios-accent-glow);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-bar {
+  background: var(--ios-glass);
+  border-color: var(--ios-border-strong);
+  box-shadow: var(--ios-shadow-lg), 0 0 0 1px var(--ios-accent-muted) inset;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-sheet {
+  background: linear-gradient(180deg, rgba(12, 13, 22, 0.98) 0%, var(--ios-surface-0) 100%);
+  border-color: var(--ios-border-strong);
+}
+
+html.ios-app.ios-native-shell .ios-native-segment {
+  background: var(--ios-surface-2);
+  border-color: var(--ios-border);
+  box-shadow: var(--ios-shadow-inset);
+}
+
+/* ═══ Universal glass card surfaces ═══ */
+html.ios-app.ios-native-shell .spx-sniper-command,
+html.ios-app.ios-native-shell .spx-sniper-panel,
+html.ios-app.ios-native-shell .spx-odte-matrix-panel,
+html.ios-app.ios-native-shell .spx-commentary-rail-desk,
+html.ios-app.ios-native-shell .flow-panel,
+html.ios-app.ios-native-shell .desk-panel,
+html.ios-app.ios-native-shell section[class*="Panel"],
+html.ios-app.ios-native-shell .nighthawk-playbook,
+html.ios-app.ios-native-shell .nighthawk-watch,
+html.ios-app.ios-native-shell .grid-card,
+html.ios-app.ios-native-shell .largo-terminal-fullpage:not(.largo-terminal-native),
+html.ios-app.ios-native-shell .cl-card,
+html.ios-app.ios-native-shell .ios-tool-locked-screen > div {
+  background: var(--ios-surface-1) !important;
+  border: 1px solid var(--ios-border) !important;
+  box-shadow: var(--ios-shadow-card);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+}
+
+html.ios-app.ios-native-shell .spx-sniper-command {
+  border-color: var(--ios-border-accent) !important;
+  box-shadow: var(--ios-shadow-card), var(--ios-shadow-glow);
+}
+
+/* Panel headers — compact institutional */
+html.ios-app.ios-native-shell .spx-sniper-panel-header,
+html.ios-app.ios-native-shell .spx-trade-alerts-header,
+html.ios-app.ios-native-shell .flow-panel-header,
+html.ios-app.ios-native-shell .nighthawk-playbook-header,
+html.ios-app.ios-native-shell .nighthawk-watch-header,
+html.ios-app.ios-native-shell .grid-card-head {
+  border-bottom-color: var(--ios-border) !important;
+  background: linear-gradient(180deg, var(--ios-accent-muted) 0%, transparent 100%);
+}
+
+html.ios-app.ios-native-shell .flow-panel-title,
+html.ios-app.ios-native-shell .spx-sniper-panel-header h3,
+html.ios-app.ios-native-shell .grid-card-title {
+  font-size: var(--ios-label) !important;
+  letter-spacing: 0.14em !important;
+  color: #fff !important;
+}
+
+/* ═══ Button system ═══ */
+html.ios-app.ios-native-shell button,
+html.ios-app.ios-native-shell a.rounded-xl.font-semibold,
+html.ios-app.ios-native-shell a.rounded-md.font-semibold,
+html.ios-app.ios-native-shell .flow-seg-btn,
+html.ios-app.ios-native-shell .grid-chip-btn,
+html.ios-app.ios-native-shell .spx-odte-lens-toggle,
+html.ios-app.ios-native-shell .largo-suggestion-chip,
+html.ios-app.ios-native-shell .ios-native-menu-link,
+html.ios-app.ios-native-shell .ios-native-menu-tool {
+  -webkit-tap-highlight-color: transparent;
+  border-radius: var(--ios-radius-sm);
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+html.ios-app.ios-native-shell button:active:not(:disabled),
+html.ios-app.ios-native-shell a.rounded-xl.font-semibold:active,
+html.ios-app.ios-native-shell .flow-seg-btn:active,
+html.ios-app.ios-native-shell .grid-chip-btn:active,
+html.ios-app.ios-native-shell .spx-odte-lens-toggle:active {
+  transform: scale(0.96);
+}
+
+/* Primary CTAs — bull glow */
+html.ios-app.ios-native-shell a.bg-bull,
+html.ios-app.ios-native-shell button.bg-bull,
+html.ios-app.ios-native-shell .flow-seg-btn-active-all,
+html.ios-app.ios-native-shell [class*="bg-bull/"] {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--ios-accent) 25%, transparent);
+}
+
+/* Segmented controls */
+html.ios-app.ios-native-shell .flow-seg-group,
+html.ios-app.ios-native-shell [role="tablist"]:not([class*="unstyled"]) {
+  background: var(--ios-surface-2) !important;
+  border: 1px solid var(--ios-border) !important;
+  border-radius: var(--ios-radius-md) !important;
+  padding: 4px !important;
+  box-shadow: var(--ios-shadow-inset) !important;
+}
+
+html.ios-app.ios-native-shell .flow-seg-btn {
+  min-height: var(--ios-touch);
+  border-radius: var(--ios-radius-sm) !important;
+  font-size: var(--ios-label) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  color: #7dd3fc !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+html.ios-app.ios-native-shell .flow-seg-btn-active-all,
+html.ios-app.ios-native-shell .flow-seg-btn-active-call,
+html.ios-app.ios-native-shell .flow-seg-btn-active-put {
+  color: #fff !important;
+  background: var(--ios-accent-soft) !important;
+  box-shadow: 0 0 16px var(--ios-accent-glow) !important;
+}
+
+html.ios-app.ios-native-shell [role="tab"] {
+  min-height: var(--ios-touch);
+  border-radius: var(--ios-radius-sm) !important;
+  font-weight: 700 !important;
+}
+
+html.ios-app.ios-native-shell [role="tab"][aria-selected="true"],
+html.ios-app.ios-native-shell [role="tab"][data-state="active"] {
+  background: var(--ios-accent-soft) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px var(--ios-accent-glow);
+}
+
+html.ios-app.ios-native-shell .grid-chip-btn,
+html.ios-app.ios-native-shell .spx-odte-lens-toggle {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ios-radius-sm) !important;
+  border: 1px solid var(--ios-border) !important;
+  background: var(--ios-surface-2) !important;
+  font-size: var(--ios-label) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+}
+
+html.ios-app.ios-native-shell .spx-odte-lens-toggle[aria-pressed="true"],
+html.ios-app.ios-native-shell .grid-chip-btn[aria-pressed="true"],
+html.ios-app.ios-native-shell .spx-odte-lens-toggle--gex-active,
+html.ios-app.ios-native-shell .spx-odte-lens-toggle--vex-active {
+  border-color: var(--ios-border-accent) !important;
+  background: var(--ios-accent-soft) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px var(--ios-accent-glow);
+}
+
+/* Outline / ghost links */
+html.ios-app.ios-native-shell a.border-bull,
+html.ios-app.ios-native-shell a.border-white,
+html.ios-app.ios-native-shell button.border-white {
+  border-radius: var(--ios-radius-sm) !important;
+  min-height: var(--ios-touch);
+  backdrop-filter: blur(8px);
+}
+
+/* ═══ Inputs ═══ */
+html.ios-app.ios-native-shell input[type="text"],
+html.ios-app.ios-native-shell input[type="search"],
+html.ios-app.ios-native-shell input[type="email"],
+html.ios-app.ios-native-shell textarea,
+html.ios-app.ios-native-shell .largo-input-wrap input,
+html.ios-app.ios-native-shell .cl-formFieldInput {
+  min-height: var(--ios-touch) !important;
+  border-radius: var(--ios-radius-md) !important;
+  border: 1px solid var(--ios-border) !important;
+  background: var(--ios-surface-2) !important;
+  color: #fff !important;
+  font-size: var(--ios-input) !important;
+  box-shadow: var(--ios-shadow-inset);
+}
+
+html.ios-app.ios-native-shell input:focus,
+html.ios-app.ios-native-shell textarea:focus {
+  border-color: var(--ios-border-accent) !important;
+  box-shadow: 0 0 0 3px var(--ios-accent-muted), var(--ios-shadow-inset);
+  outline: none;
+}
+
+/* ═══ Metric tiles & stat pills ═══ */
+html.ios-app.ios-native-shell .spx-hero-stat-pill,
+html.ios-app.ios-native-shell .spx-hero-metric-block,
+html.ios-app.ios-native-shell .nighthawk-market-context-item {
+  background: var(--ios-surface-2) !important;
+  border: 1px solid var(--ios-border) !important;
+  border-radius: var(--ios-radius-sm) !important;
+  box-shadow: var(--ios-shadow-inset);
+}
+
+html.ios-app.ios-native-shell .spx-hero-stat-label,
+html.ios-app.ios-native-shell .spx-hero-metric-block-title,
+html.ios-app.ios-native-shell .nighthawk-market-context-label {
+  color: #7dd3fc !important;
+  font-size: 9px !important;
+  letter-spacing: 0.14em !important;
+}
+
+/* ═══ Flow tape rows ═══ */
+html.ios-app.ios-native-shell .flow-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+html.ios-app.ios-native-shell .flow-scroll > div,
+html.ios-app.ios-native-shell .flow-scroll li {
+  border-radius: var(--ios-radius-sm);
+}
+
+html.ios-app.ios-native-shell .flow-badge {
+  border-radius: 6px;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+}
+
+/* ═══ Largo chat skin ═══ */
+html.ios-app.ios-native-shell .largo-msg-bubble {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-2);
+  box-shadow: var(--ios-shadow-sm);
+}
+
+html.ios-app.ios-native-shell .largo-msg-bubble[data-role="user"],
+html.ios-app.ios-native-shell .largo-msg-bubble.largo-msg-user {
+  border-color: var(--ios-border-accent);
+  background: var(--ios-accent-muted);
+}
+
+html.ios-app.ios-native-shell .largo-suggestion-chip {
+  width: 100%;
+  min-height: var(--ios-touch);
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-2);
+  border-radius: var(--ios-radius-md);
+  text-align: left;
+  color: #7dd3fc;
+  font-size: var(--ios-body);
+}
+
+html.ios-app.ios-native-shell .largo-tool-chip {
+  border-radius: 999px;
+  border: 1px solid var(--ios-border);
+  background: var(--ios-accent-muted);
+  font-size: 9px;
+  padding: 2px 8px;
+}
+
+html.ios-app.ios-native-shell .largo-send-btn,
+html.ios-app.ios-native-shell .largo-send-btn-native {
+  min-width: var(--ios-touch);
+  min-height: var(--ios-touch);
+  border-radius: var(--ios-radius-md);
+  box-shadow: 0 0 20px var(--ios-accent-glow);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-fullpage {
+  min-height: var(--ios-touch);
+  border-radius: var(--ios-radius-md) !important;
+  background: var(--ios-surface-2) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-msg-welcome .largo-message-body,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-msg-welcome .largo-msg-text {
+  color: #e0f2fe;
+}
+
+/* ═══ Night Hawk cards ═══ */
+html.ios-app.ios-native-shell .nighthawk-play-row {
+  background: var(--ios-surface-2) !important;
+  border: 1px solid var(--ios-border) !important;
+  border-radius: var(--ios-radius-md) !important;
+  box-shadow: var(--ios-shadow-sm);
+}
+
+html.ios-app.ios-native-shell .nighthawk-record-strip {
+  background: var(--ios-surface-2);
+  border-radius: var(--ios-radius-sm);
+  border: 1px solid var(--ios-border);
+}
+
+html.ios-app.ios-native-shell .nighthawk-play-detail-modal {
+  background: var(--ios-surface-1) !important;
+  border: 1px solid var(--ios-border-strong) !important;
+  box-shadow: var(--ios-shadow-lg);
+}
+
+/* ═══ Grid cards ═══ */
+html.ios-app.ios-native-shell .grid-card {
+  border-radius: var(--ios-radius-lg) !important;
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .grid-card-accent-bar {
+  height: 2px;
+  opacity: 1;
+}
+
+html.ios-app.ios-native-shell .grid-card-foot {
+  border-top-color: var(--ios-border);
+  background: var(--ios-surface-2);
+}
+
+html.ios-app.ios-native-shell .zerodte-table-wrap,
+html.ios-app.ios-native-shell .overflow-x-auto {
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+}
+
+/* ═══ Thermal matrix container ═══ */
+html.ios-app.ios-native-shell .gex-heatmap-desk > div:not(.gex-heatmap-panel-native) {
+  border-radius: var(--ios-radius-lg);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-panel-native {
+  background: var(--ios-surface-1) !important;
+  box-shadow: var(--ios-shadow-card);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row [role="tablist"] {
+  background: var(--ios-surface-2);
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  padding: 3px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels {
+  background: var(--ios-surface-2) !important;
+  border-color: var(--ios-border) !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll {
+  background: var(--ios-surface-2);
+}
+
+html.ios-app.ios-native-shell .desk-layout {
+  gap: var(--ios-content-gap);
+}
+
+/* ═══ Locked / upgrade / utility pages ═══ */
+html.ios-app.ios-native-shell .ios-tool-locked-screen {
+  background: transparent !important;
+}
+
+html.ios-app.ios-native-shell .ios-tool-locked-screen > div {
+  padding: 2rem 1.25rem;
+  border-radius: var(--ios-radius-xl);
+  border: 1px solid var(--ios-border-strong);
+  box-shadow: var(--ios-shadow-lg), var(--ios-shadow-glow);
+}
+
+html.ios-app.ios-native-shell .ios-tool-locked-screen a {
+  min-height: var(--ios-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ios-radius-md);
+  padding: 0.65rem 1.25rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="upgrade"] .show-in-ios-app,
+html.ios-app.ios-native-shell[data-ios-route="upgrade"] .content-rail > div {
+  border-radius: var(--ios-radius-lg);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="upgrade"] .page-tool-header {
+  display: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] .landing-page,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] main,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-hub {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] .landing-footer,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .landing-footer {
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] details,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-card,
+html.ios-app.ios-native-shell[data-ios-route="learn"] article {
+  border-radius: var(--ios-radius-md);
+  border: 1px solid var(--ios-border);
+  background: var(--ios-surface-1);
+  box-shadow: var(--ios-shadow-sm);
+}
+
+/* ═══ Badges & live indicators ═══ */
+html.ios-app.ios-native-shell .badge-live,
+html.ios-app.ios-native-shell .FreshnessChip,
+html.ios-app.ios-native-shell [class*="freshness"] {
+  border-radius: 999px;
+}
+
+/* ═══ Modals & drawers ═══ */
+html.ios-app.ios-native-shell [role="dialog"],
+html.ios-app.ios-native-shell .ticker-drawer,
+html.ios-app.ios-native-shell [class*="drawer"] {
+  border-radius: var(--ios-radius-xl) var(--ios-radius-xl) 0 0;
+}
+
+/* ═══ Scrollbars (WebKit) ═══ */
+html.ios-app.ios-native-shell ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+html.ios-app.ios-native-shell ::-webkit-scrollbar-thumb {
+  background: rgba(125, 211, 252, 0.35);
+  border-radius: 999px;
+}
+
+html.ios-app.ios-native-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ═══ Empty / loading states ═══ */
+html.ios-app.ios-native-shell .spx-desk-skeleton,
+html.ios-app.ios-native-shell [class*="skeleton"],
+html.ios-app.ios-native-shell .animate-pulse {
+  border-radius: var(--ios-radius-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.ios-app.ios-native-shell button:active,
+  html.ios-app.ios-native-shell .flow-seg-btn:active,
+  html.ios-app.ios-native-shell .grid-chip-btn:active {
+    transform: none;
+  }
+}

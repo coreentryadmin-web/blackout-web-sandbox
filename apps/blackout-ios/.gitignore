@@ -1,0 +1,9 @@
+node_modules/
+# Generated native project — created by `npx cap add ios` on the Mac.
+# Commit it AFTER the first generate if you want to track native changes;
+# ignored by default so the scaffold stays clean.
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+.DS_Store
+*.log

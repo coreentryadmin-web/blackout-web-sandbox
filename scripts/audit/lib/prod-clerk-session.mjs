@@ -112,6 +112,7 @@ export async function mintClerkPremiumSession({ appUrl }) {
     return {
       skip: false,
       cookieHeader: `__session=${jwt}; __client_uat=${clientUat}`,
+      signInUrl: `${appUrl}/sign-in?__clerk_ticket=${ticket}`,
       cleanup: async () => {
         try {
           await backend("DELETE", `/users/${userId}`);

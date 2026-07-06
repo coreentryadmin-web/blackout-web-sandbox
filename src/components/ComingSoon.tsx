@@ -9,7 +9,7 @@ export function ComingSoon({ toolKey }: { toolKey: ToolKey }) {
   const label = meta?.label ?? "This tool";
 
   return (
-    <div className="relative flex min-h-[calc(100svh-var(--nav-offset,4rem))] flex-col items-center justify-center px-6 py-16 text-center bg-[#040407]">
+    <div className="ios-tool-locked-screen relative flex flex-col items-center justify-center px-6 py-16 text-center bg-[#040407]">
       <div className="relative z-10 flex max-w-lg flex-col items-center gap-6">
         <div className="relative">
           {meta ? <ProductMark product={meta.product} size={76} /> : null}

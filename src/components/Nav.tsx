@@ -10,6 +10,8 @@ import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
+import { isIosAppShell } from "@/lib/ios-app-shell";
+import { getIosToolNavLabel } from "@/lib/ios-tool-routes";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
@@ -22,6 +24,9 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + Night's Watch positions", accent: "red" },
   { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
 ];
+
+/** Tool routes mount heavy client trees — disable RSC prefetch burst (503 under concurrent ?_rsc=). */
+const TOOL_LINK_PREFETCH = false;
 
 const TOP_LINKS = [
   { href: "/faq", label: "FAQ", iosHide: false as const },
@@ -65,6 +70,7 @@ function FeatureCards({
             key={it.href}
             role="menuitem"
             href={it.href}
+            prefetch={TOOL_LINK_PREFETCH}
             onClick={onNavigate}
             className={clsx(
               "nav-card",
@@ -113,6 +119,14 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const isFaqActive = path.startsWith("/faq");
   const isPricingActive = path.startsWith("/pricing");
   const isAdminTrackActive = path.startsWith("/admin/track-record");
+
+  const [iosApp, setIosApp] = useState(false);
+  useEffect(() => {
+    setIosApp(isIosAppShell());
+  }, []);
+  const brandHref = iosApp && isSignedIn ? "/dashboard" : "/";
+  const iosToolLabel = iosApp && isSignedIn ? getIosToolNavLabel(path) : null;
+  const iosToolChrome = Boolean(iosToolLabel);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -213,14 +227,21 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
       initial={isHome && !reduced ? { opacity: 0, y: -20 } : undefined}
       animate={isHome && !reduced ? { opacity: 1, y: 0 } : undefined}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-      className="nav-bar"
+      className={clsx("nav-bar", iosToolChrome && "nav-bar-ios-tool")}
     >
       <div className="nav-surface" aria-hidden>
         <span className="nav-progress" />
       </div>
 
       <div className="nav-inner">
-        <Link href="/" className="nav-brand group">
+        {iosToolLabel && (
+          <div className="ios-nav-context pointer-events-none absolute inset-x-0 top-1/2 z-[1] -translate-y-1/2 text-center">
+            <span className="font-syne text-[13px] font-bold tracking-[0.06em] text-white">
+              {iosToolLabel}
+            </span>
+          </div>
+        )}
+        <Link href={brandHref} className={clsx("nav-brand group", iosToolChrome && "nav-brand-ios-compact")}>
           <span className="nav-dot" aria-hidden />
           <span className="nav-brand-stack">
             <span className="nav-wordmark font-anton">BLACKOUT</span>
@@ -342,7 +363,9 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
           )}
           {isLoaded && isSignedIn && (
             <div className="flex items-center gap-2">
-              <PushNotificationToggle compact />
+              <span className="nav-push-slot">
+                <PushNotificationToggle compact />
+              </span>
               <UserButton appearance={CLERK_APPEARANCE} userProfileUrl="/account" />
             </div>
           )}
@@ -394,7 +417,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                     className={clsx(
                       "nav-sheet-link font-syne",
                       iosHide && "hide-in-ios-app",
-                      active && "nav-pill-item-active"
+                      active && "nav-sheet-link-active"
                     )}
                   >
                     {label}
@@ -404,7 +427,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
               <Link
                 href="/learn"
                 onClick={() => setMobileOpen(false)}
-                className={clsx("nav-sheet-link font-syne", isLearnActive && "nav-pill-item-active")}
+                className={clsx("nav-sheet-link font-syne", isLearnActive && "nav-sheet-link-active")}
               >
                 Learn
               </Link>
@@ -412,7 +435,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                 <Link
                   href="/admin/track-record"
                   onClick={() => setMobileOpen(false)}
-                  className={clsx("nav-sheet-link font-syne nav-pill-admin", isAdminTrackActive && "nav-pill-item-active")}
+                  className={clsx("nav-sheet-link font-syne nav-pill-admin", isAdminTrackActive && "nav-sheet-link-active")}
                 >
                   Track Record
                 </Link>

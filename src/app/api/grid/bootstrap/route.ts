@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireToolApiForDeskCaller } from "@/lib/tool-access-server";
 import { readGridBootstrapMarket } from "@/lib/grid/grid-market-bootstrap";
 import { readGridBootstrapPanels } from "@/lib/providers/grid";
 import { roundFloats } from "@/lib/round-floats";
+import { withServerCache } from "@/lib/server-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,13 @@ const NO_STORE = {
   Pragma: "no-cache",
 };
 
+const GRID_BOOTSTRAP_CACHE_MS = 8_000;
+
+async function buildGridBootstrapResponse() {
+  const [panels, market] = await Promise.all([readGridBootstrapPanels(), readGridBootstrapMarket()]);
+  return roundFloats({ ...panels, market });
+}
+
 /**
  * GET /api/grid/bootstrap — single response with Redis-backed Grid panel snapshots plus
  * market-route seeds (Pulse, GEX SPX, whale flow). Collapses staggered client fetches into
@@ -21,12 +29,17 @@ const NO_STORE = {
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
-  const locked = await requireToolApi("grid");
+  const locked = await requireToolApiForDeskCaller(auth, "grid");
   if (locked) return locked;
 
   try {
-    const [panels, market] = await Promise.all([readGridBootstrapPanels(), readGridBootstrapMarket()]);
-    return NextResponse.json(roundFloats({ ...panels, market }), { status: 200, headers: NO_STORE });
+    const payload = await withServerCache(
+      "grid-bootstrap:v1",
+      GRID_BOOTSTRAP_CACHE_MS,
+      buildGridBootstrapResponse,
+      { staleWhileRevalidate: true }
+    );
+    return NextResponse.json(payload, { status: 200, headers: NO_STORE });
   } catch {
     return NextResponse.json(
       { as_of: new Date().toISOString(), panels: {} },

@@ -55,6 +55,7 @@ node scripts/rth-open-check.mjs --force
 | **`railway-cron-config-check.yml`** | **on PR/push** (cron TOML/registry) | none |
 | **`cron-audit-query.yml`** | **hourly RTH** + **every 6h** off-hours | `DATABASE_PUBLIC_URL` |
 | **`ops-auto-fix.yml`** | **every 20 min** | `CURSOR_API_KEY`, `DATABASE_PUBLIC_URL`, `CRON_SECRET`, `GITHUB_TOKEN` (repo) |
+| **`spx-rth-all-day-agent.yml`** | **09:28–15:55 ET verify + 16:05 ET fix** | `CURSOR_API_KEY`, `CRON_SECRET` |
 
 ### Railway env (blackout-web service)
 

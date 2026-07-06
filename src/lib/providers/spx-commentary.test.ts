@@ -30,11 +30,11 @@ mock.module("./anthropic", {
 
 mock.module("../grounding-guard", {
   namedExports: {
-    // collectKnownNumbers's real recursive walk isn't under test here — the whole point of
-    // mocking checkNumbersGrounded is to force pass/fail deterministically without needing a
-    // real ctx JSON to (not) match against.
+    augmentKnownCommentaryNumbers: (known: number[]) => known,
+    knownCommentaryNumbers: () => [],
     collectKnownNumbers: () => [],
-    checkNumbersGrounded: () => ({ grounded: mockGrounded, ungroundedValue: mockUngroundedValue }),
+    extractNumbersFromText: () => [],
+    checkCommentaryGrounded: () => ({ grounded: mockGrounded, ungroundedValue: mockUngroundedValue }),
   },
 });
 
@@ -145,5 +145,15 @@ describe("spx-commentary: grounding-failure audit trail", () => {
 
     assert.equal(result, null);
     assert.equal(auditLogCalls.length, 0, "no DB configured means no write attempt at all");
+  });
+
+  test("JSON parse failure returns null (never serves ungrounded raw text)", async () => {
+    mockRaw = "This is not JSON — just prose from the model.";
+    mockGrounded = true;
+
+    const result = await generateSpxCommentary(fakeDesk(), null);
+
+    assert.equal(result, null);
+    assert.equal(auditLogCalls.length, 0);
   });
 });

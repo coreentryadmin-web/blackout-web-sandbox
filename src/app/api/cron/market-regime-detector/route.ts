@@ -13,8 +13,15 @@ import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { fetchRecentFlows, dbQuery } from "@/lib/db";
+import { dbQuery } from "@/lib/db";
 import { deriveComposite } from "./derive-composite";
+import {
+  detectFlowAnomalies,
+  LARGE_PRINT_THRESHOLD,
+  SKEW_RATIO_THRESHOLD,
+  type FlowAnomalyNearMiss,
+} from "./flow-anomaly-detection";
+import { persistFlowAnomalyNearMisses } from "@/lib/platform/flow-anomaly-near-misses";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,91 +57,11 @@ function deriveFlowRegime(
 }
 
 // ── Anomaly detection ──────────────────────────────────────────────────────────
-
-type Anomaly = {
-  type: string;
-  ticker: string | null;
-  detail: string;
-  premium: number | null;
-  direction: string | null;
-  severity: string;
-};
-
-async function detectFlowAnomalies(): Promise<Anomaly[]> {
-  const anomalies: Anomaly[] = [];
-  try {
-    // Fetch recent 30-min HELIX flows for anomaly detection
-    const rows = await fetchRecentFlows({ since_hours: 0.5, order: "premium" });
-    if (!rows.length) return anomalies;
-
-    // Group by ticker
-    const byTicker = new Map<string, typeof rows>();
-    for (const r of rows) {
-      const t = r.ticker ?? "SPX";
-      if (!byTicker.has(t)) byTicker.set(t, []);
-      byTicker.get(t)!.push(r);
-    }
-
-    for (const [ticker, prints] of byTicker) {
-      let callPrem = 0;
-      let putPrem = 0;
-      let maxSingle = 0;
-      let maxSingleRow: (typeof rows)[0] | null = null;
-
-      for (const p of prints) {
-        const prem = p.premium ?? 0;
-        if (p.option_type?.toUpperCase().startsWith("C")) callPrem += prem;
-        else putPrem += prem;
-        if (prem > maxSingle) {
-          maxSingle = prem;
-          maxSingleRow = p;
-        }
-      }
-
-      // Large single print > $2M
-      if (maxSingle >= 2_000_000 && maxSingleRow) {
-        const dir = maxSingleRow.option_type?.toUpperCase().startsWith("C") ? "bullish" : "bearish";
-        anomalies.push({
-          type: "LARGE_PREMIUM_PRINT",
-          ticker,
-          detail: `${ticker}: $${(maxSingle / 1_000_000).toFixed(1)}M single ${maxSingleRow.option_type?.toUpperCase()} print at strike ${maxSingleRow.strike}`,
-          premium: maxSingle,
-          direction: dir,
-          severity: maxSingle >= 5_000_000 ? "CRITICAL" : "HIGH",
-        });
-      }
-
-      // Extreme call/put skew (10:1 or 1:10)
-      const total = callPrem + putPrem;
-      if (total >= 500_000) {
-        const callRatio = putPrem > 0 ? callPrem / putPrem : callPrem > 0 ? 99 : 0;
-        const putRatio = callPrem > 0 ? putPrem / callPrem : putPrem > 0 ? 99 : 0;
-        if (callRatio >= 10) {
-          anomalies.push({
-            type: "DIRECTIONAL_FLOW_SKEW",
-            ticker,
-            detail: `${ticker}: extreme call skew (${callRatio.toFixed(0)}:1 call/put) — $${(callPrem / 1_000_000).toFixed(1)}M calls vs $${(putPrem / 1_000_000).toFixed(1)}M puts`,
-            premium: total,
-            direction: "bullish",
-            severity: "HIGH",
-          });
-        } else if (putRatio >= 10) {
-          anomalies.push({
-            type: "DIRECTIONAL_FLOW_SKEW",
-            ticker,
-            detail: `${ticker}: extreme put skew (${putRatio.toFixed(0)}:1 put/call) — $${(putPrem / 1_000_000).toFixed(1)}M puts vs $${(callPrem / 1_000_000).toFixed(1)}M calls`,
-            premium: total,
-            direction: "bearish",
-            severity: "HIGH",
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[market-regime-detector] anomaly scan failed:", err);
-  }
-  return anomalies;
-}
+// detectFlowAnomalies() itself now lives in ./flow-anomaly-detection.ts (same split
+// derive-composite.ts already needed — Next.js's route-export validator rejects any
+// named export from route.ts besides the HTTP method handlers, so a testable pure
+// function can't live here). See that file's module doc for the near-miss capture
+// (task #131/HELIX) this route now wires up below.
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -154,10 +81,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
+  // Always collected (cheap — a handful of array pushes per candidate ticker);
+  // whether it's ever WRITTEN anywhere is decided below, after the dedup loop adds
+  // its own DEDUP_SUPPRESSED entries alongside these BELOW_THRESHOLD ones.
+  const nearMisses: FlowAnomalyNearMiss[] = [];
+
   try {
     const [{ merged }, anomalies] = await Promise.all([
       loadMergedSpxDesk(),
-      detectFlowAnomalies(),
+      detectFlowAnomalies({ nearMisses }),
     ]);
 
     if (!merged.available) {
@@ -209,8 +141,33 @@ export async function GET(req: NextRequest) {
           [a.type, a.ticker, a.detail, a.premium, a.direction, a.severity, JSON.stringify(a)]
         );
         anomaliesInserted++;
+      } else {
+        // This anomaly cleared its real threshold (it's a fully-formed Anomaly,
+        // not a below-threshold candidate) but the 15-min dedup window already has
+        // a match, so the INSERT above never happens — a SECOND, structurally
+        // different way a computed anomaly leaves no trace in flow_anomalies.
+        // Task #131: record it with reason DEDUP_SUPPRESSED (never BELOW_THRESHOLD
+        // — that reason is reserved for detectFlowAnomalies' own sub-threshold
+        // candidates) so "why didn't X fire again" is distinguishable from "X never
+        // cleared the bar at all."
+        nearMisses.push({
+          anomaly_type: a.type,
+          ticker: a.ticker,
+          reason: "DEDUP_SUPPRESSED",
+          metric_value: a.metric_value,
+          threshold: a.type === "LARGE_PREMIUM_PRINT" ? LARGE_PRINT_THRESHOLD : SKEW_RATIO_THRESHOLD,
+          premium: a.premium,
+          direction: a.direction,
+          severity: a.severity,
+          detail: a.detail,
+        });
       }
     }
+
+    // Near-miss log (task #131) — best-effort, throttled write; a failure here must
+    // never affect the real regime/anomaly writes above, which have already
+    // committed by this point.
+    const nearMissesLogged = await persistFlowAnomalyNearMisses(nearMisses).catch(() => 0);
 
     const payload = {
       ok: true,
@@ -221,6 +178,8 @@ export async function GET(req: NextRequest) {
       flow_regime,
       anomalies_found: anomalies.length,
       anomalies_inserted: anomaliesInserted,
+      near_misses_found: nearMisses.length,
+      near_misses_logged: nearMissesLogged,
       ms: Date.now() - started,
     };
     await logCronRun("market-regime-detector", started, payload);

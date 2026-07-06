@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireToolApiForDeskCaller } from "@/lib/tool-access-server";
 import { polygonConfigured } from "@/lib/providers/config";
 import { readGridAnalysts, classifyAnalystAction } from "@/lib/providers/grid";
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  const locked = await requireToolApi("grid");
+  const locked = await requireToolApiForDeskCaller(auth, "grid");
   if (locked) return locked;
 
   const noStore = {

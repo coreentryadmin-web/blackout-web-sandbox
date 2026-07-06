@@ -2,20 +2,29 @@
 
 ## Cursor Cloud specific instructions
 
-BLACKOUT (`blackout-web`) is a single **Next.js 15 (App Router) / TypeScript** app — not a monorepo.
+BLACKOUT (`blackout-web`) is a single **Next.js 15 (App Router) / TypeScript** app with an iOS
+Capacitor shell at **`apps/blackout-ios/`** (one repo — no separate `blackout-ios` GitHub repo).
 The ~20 `railway.*.toml` files at the repo root are production cron *trigger* services that just call
 `/api/cron/*`; they are not separate apps and are not needed locally. Commands live in `package.json`
 (`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`) and CI is `.github/workflows/ci.yml`.
 
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
-- **SPX Slayer left rail:** `SpxOdteMatrixPanel` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**).
+- **SPX Slayer left rail:** `SpxGexMatrixHeatmap` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**). Bootstrap seeds matrix SWR via `/api/market/spx/bootstrap`.
 - **BlackOut Thermal (`/heatmap`):** full `GexHeatmap.tsx` matrix shares **`src/lib/gex-heatmap-display.ts`** cell format/color scale with the SPX rail (GEX/VEX/DEX/CHARM lenses). Both surfaces read `cross_validation` from `/api/market/gex-heatmap` when preset tickers diverge from UW.
 - The WebSocket market-data managers are **not** a separate process — they boot lazily inside the Node
   server on the first `/api/market/*` request (`src/lib/ws/init-data-sockets.ts`).
 - Blocking CI checks are `npx tsc --noEmit` and `npm run lint:brand`. `npm run lint` (ESLint/jsx-a11y)
   and `npm run lint:css` (stylelint) are **non-blocking** in CI (they emit warnings, `continue-on-error`).
 - Tests: `npm test` (`node --test` via `tsx`, files `src/**/*.test.ts`). No DB/env needed for tests.
+
+### iOS app (Capacitor shell)
+- **Location:** `apps/blackout-ios/` — loads `https://blackouttrades.com` in WKWebView; `appendUserAgent: BlackOutiOSApp`.
+- **Web detection:** `src/app/layout.tsx` adds `html.ios-app`; CSS hides in-app pricing (App Store 3.1.1).
+- **Validate config:** `npm run validate:ios-config`
+- **Cloud build:** root `codemagic.yaml` → connect **`coreentryadmin-web/blackout-web`** in Codemagic, workflow **`ios-release`**.
+- **Setup:** `apps/blackout-ios/APP_STORE.md` (Apple ID `6787797476`, bundle `com.blackout-trades.app`).
+- **Mobile UI E2E (Playwright):** `npm run test:ios-ui-e2e` — iPhone viewport + `BlackOutiOSApp` UA, Clerk temp-user auth, clicks every bottom tab + primary segment/control, screenshots → `/opt/cursor/artifacts/ios-ui-e2e/`. Requires `CLERK_SECRET_KEY` + publishable key. Static guards: `npm run validate:ios-mobile-desk`. Full native chrome (`ios-native-shell`) is validated once PR #557 is deployed.
 
 ### Ops auto-fix (cron/errors → agent)
 - **`npm run ops:collect`** — scan prod Postgres + live watchdog; JSON action items (exit 1 if any).
@@ -132,5 +141,7 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` in Railway logs.
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
+
+**SPX all-day agent (matrix + trade alerts + every button + cross-tool):** see **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`**. Auto-starts **6:30 AM PT** weekdays. Runs **`npm run validate:spx-rth`** + **`npm run validate:spx-e2e`**. Post-close fix **~1:05 PM PT**. Workflow: **`.github/workflows/spx-rth-all-day-agent.yml`**.
 
 Off-hours / weekends: RTH script skips automatically; still run `npm run validate:deploy` after pushes to `main`.

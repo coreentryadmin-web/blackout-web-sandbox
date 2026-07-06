@@ -10,7 +10,22 @@ import { MotionProvider } from "@/components/MotionProvider";
 import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
 import { PwaRegister } from "@/components/PwaRegister";
+import { IosViewportLock } from "@/components/ios/IosViewportLock";
+import { IosKeyboardRoot } from "@/hooks/useIosKeyboardInset";
 import "./globals.css";
+import "./ios-native.css";
+import "./ios-native-pages.css";
+import "./ios-native-nav.css";
+import "./ios-native-skin.css";
+import "./ios-native-motion.css";
+import "./ios-native-command.css";
+import "./ios-native-iphone16.css";
+import "./ios-native-viewport.css";
+import "./ios-native-input-lock.css";
+import "./ios-native-tokens.css";
+import "./ios-native-organize.css";
+import "./ios-native-tab-rail.css";
+import "./ios-native-cards.css";
 
 // Self-hosted via next/font (no render-blocking @import, no FOUT/CLS). Variable
 // names MUST match tailwind.config fontFamily tokens (--font-anton/-syne/
@@ -101,7 +116,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{if(/BlackOutiOSApp/.test(navigator.userAgent)){document.documentElement.classList.add('ios-app')}}catch(e){}",
+              "try{if(/BlackOutiOSApp/.test(navigator.userAgent)){document.documentElement.classList.add('ios-app');var m=document.querySelector('meta[name=viewport]');if(m)m.setAttribute('content','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover');var cw=Math.min(window.screen.width,window.innerWidth||window.screen.width);if(cw>=430){document.documentElement.classList.add('ios-tier-pro-max')}else if(cw>=393){document.documentElement.classList.add('ios-tier-pro')}var p=location.pathname;if(/^\\/(dashboard|flows|heatmap|terminal|nighthawk|grid|account|faq|learn|upgrade|admin)(\\/|$)/.test(p)){document.documentElement.classList.add('ios-app-pending-shell')}}}catch(e){}",
           }}
         />
       </head>
@@ -122,6 +137,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <SessionCacheGuard />
             <ClientErrorReporter />
             <PwaRegister />
+            <IosViewportLock />
+            <IosKeyboardRoot />
             <LandingChrome />
             <OnboardingGuide />
             {children}

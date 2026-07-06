@@ -1,0 +1,579 @@
+/**
+ * BlackOut iOS — Mobile Command Center
+ * Bloomberg Terminal × TradingView × spatial HUD.
+ * Sharp, dark, data-dense. NOT generic fintech cards/tabs.
+ * Scoped: html.ios-app.ios-native-shell
+ */
+
+html.ios-app.ios-native-shell {
+  --cmd-void: #040407;
+  --cmd-panel: rgba(6, 7, 12, 0.96);
+  --cmd-edge: rgba(255, 255, 255, 0.07);
+  --cmd-edge-bright: rgba(255, 255, 255, 0.14);
+  --cmd-scan: color-mix(in srgb, var(--ios-accent) 55%, transparent);
+  --cmd-radius: 4px;
+  --cmd-radius-panel: 6px;
+  --cmd-mono: var(--font-jetbrains, ui-monospace, monospace);
+  --cmd-display: var(--font-syne, system-ui, sans-serif);
+  --cmd-rail-h: 4.125rem;
+}
+
+/* ── Void grid + scan atmosphere ── */
+html.ios-app.ios-native-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(125, 211, 252, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 120% 80% at 50% 20%, black 20%, transparent 75%);
+}
+
+html.ios-app.ios-native-shell .ios-native-ambient {
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+
+html.ios-app.ios-native-shell .ios-native-ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(125, 211, 252, 0.015) 3px,
+    rgba(125, 211, 252, 0.015) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── Command bar (header) ── */
+html.ios-app.ios-native-shell .ios-native-header {
+  background: rgba(4, 4, 7, 0.94);
+  border-bottom: 1px solid var(--cmd-edge);
+  box-shadow: 0 1px 0 var(--cmd-scan), 0 8px 32px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+}
+
+html.ios-app.ios-native-shell .ios-native-header-inner {
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+  min-height: 2.625rem;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-title-inner {
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-kicker {
+  font-family: var(--cmd-display);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #7dd3fc;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-title-inner:not(:has(.ios-native-header-kicker:not(:empty))) {
+  gap: 0;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-title-text {
+  font-family: var(--cmd-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+  line-height: 1.1;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-accent {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ios-accent) 35%,
+    var(--ios-accent) 65%,
+    transparent 100%
+  ) !important;
+  box-shadow: 0 0 12px var(--ios-accent-glow);
+}
+
+html.ios-app.ios-native-shell .ios-native-icon-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--cmd-radius);
+  border: 1px solid var(--cmd-edge);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+html.ios-app.ios-native-shell .ios-native-icon-btn:active {
+  border-color: var(--cmd-scan);
+  background: color-mix(in srgb, var(--ios-accent) 8%, transparent);
+}
+
+/* ── Instrument rail (bottom — NOT floating pill dock) ── */
+html.ios-app.ios-native-shell .ios-app-tab-bar {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid var(--cmd-edge-bright);
+  background: rgba(4, 4, 7, 0.97);
+  box-shadow:
+    0 -1px 0 var(--cmd-scan),
+    0 -16px 48px rgba(0, 0, 0, 0.75);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-bar::before {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--ios-accent) 70%, transparent),
+    transparent
+  );
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-list {
+  min-height: var(--cmd-rail-h);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link {
+  gap: 0.2rem;
+  min-height: var(--cmd-rail-h);
+  padding: 0.25rem 0.15rem 0.3rem;
+  border-left: 1px solid var(--cmd-edge);
+  border-radius: 0;
+  position: relative;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-li:first-child .ios-app-tab-link {
+  border-left: 0;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active {
+  background: color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 6%, transparent);
+  color: #fff;
+}
+
+/* Tab rail visual hierarchy — see ios-native-tab-rail.css */
+html.ios-app.ios-native-shell .ios-app-tab-indicator {
+  /* layoutId glow pill — styled in tab-rail.css */
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-label {
+  font-family: var(--cmd-display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #7dd3fc;
+  line-height: 1.15;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-label {
+  color: #fff;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--tab-accent, var(--ios-accent)) 40%, transparent);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-code {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-icon {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--tab-accent, #00e676) 25%, transparent));
+}
+
+html.ios-app.ios-native-shell.ios-tab-bar {
+  --ios-tab-offset: calc(var(--cmd-rail-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Lens rail (view switcher — NOT pill tabs) ── */
+html.ios-app.ios-native-shell .ios-native-segment {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0;
+  padding: 0;
+  margin: 0.35rem 0 0.55rem;
+  border-radius: var(--cmd-radius-panel);
+  border: 1px solid var(--cmd-edge-bright);
+  background: var(--cmd-panel);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-bracket {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-btn {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0;
+  border-right: 1px solid var(--cmd-edge);
+  font-family: var(--cmd-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #7dd3fc;
+  background: transparent;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-btn:last-child {
+  border-right: 0;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-indicator {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-btn-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--segment-accent, var(--ios-accent)) 14%, transparent);
+  box-shadow:
+    inset 0 2px 0 var(--segment-accent, var(--ios-accent)),
+    inset 0 0 24px color-mix(in srgb, var(--segment-accent, var(--ios-accent)) 12%, transparent);
+}
+
+html.ios-app.ios-native-shell .ios-native-desk-segment {
+  position: sticky;
+  top: calc(var(--ios-header-offset) + 1px);
+  z-index: 25;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ── Data modules (panels — NOT rounded glass cards) ── */
+html.ios-app.ios-native-shell .spx-sniper-panel,
+html.ios-app.ios-native-shell .spx-odte-matrix-panel,
+html.ios-app.ios-native-shell .spx-commentary-rail-desk,
+html.ios-app.ios-native-shell .flow-panel,
+html.ios-app.ios-native-shell .desk-panel,
+html.ios-app.ios-native-shell .nighthawk-playbook,
+html.ios-app.ios-native-shell .nighthawk-watch,
+html.ios-app.ios-native-shell .grid-card,
+html.ios-app.ios-native-shell .gex-heatmap-panel-native,
+html.ios-app.ios-native-shell .spx-sniper-command,
+html.ios-app.ios-native-shell .spx-sniper-command-native {
+  border-radius: var(--cmd-radius-panel) !important;
+  border: 1px solid var(--cmd-edge) !important;
+  border-left: 2px solid var(--ios-accent) !important;
+  background: var(--cmd-panel) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 4px 24px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.ios-app.ios-native-shell .spx-sniper-panel-header,
+html.ios-app.ios-native-shell .flow-panel-header,
+html.ios-app.ios-native-shell .nighthawk-playbook-header,
+html.ios-app.ios-native-shell .nighthawk-watch-header,
+html.ios-app.ios-native-shell .grid-card-head {
+  border-bottom: 1px solid var(--cmd-edge) !important;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ios-accent) 6%, transparent),
+    transparent
+  ) !important;
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
+}
+
+html.ios-app.ios-native-shell .spx-sniper-panel-header h3,
+html.ios-app.ios-native-shell .flow-panel-title,
+html.ios-app.ios-native-shell .grid-card-title {
+  font-family: var(--cmd-mono) !important;
+  font-size: 9px !important;
+  letter-spacing: 0.2em !important;
+  text-transform: uppercase !important;
+}
+
+/* Metric tiles — terminal readout blocks */
+html.ios-app.ios-native-shell .spx-hero-stat-pill,
+html.ios-app.ios-native-shell .spx-hero-metric-block,
+html.ios-app.ios-native-shell .nighthawk-market-context-item {
+  border-radius: var(--cmd-radius) !important;
+  border: 1px solid var(--cmd-edge) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.ios-app.ios-native-shell .spx-hero-price {
+  font-family: var(--cmd-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Filter controls — exchange keys not chips */
+html.ios-app.ios-native-shell .flow-seg-group,
+html.ios-app.ios-native-shell [role="tablist"]:not(.ios-native-segment) {
+  border-radius: var(--cmd-radius-panel) !important;
+  border: 1px solid var(--cmd-edge) !important;
+  background: var(--cmd-panel) !important;
+  padding: 2px !important;
+  gap: 0 !important;
+}
+
+html.ios-app.ios-native-shell .flow-seg-btn {
+  border-radius: var(--cmd-radius) !important;
+  font-family: var(--cmd-mono) !important;
+  font-size: 9px !important;
+  letter-spacing: 0.12em !important;
+}
+
+html.ios-app.ios-native-shell .flow-seg-btn-active-all,
+html.ios-app.ios-native-shell .flow-seg-btn-active-call,
+html.ios-app.ios-native-shell .flow-seg-btn-active-put {
+  box-shadow: inset 0 0 0 1px var(--cmd-scan) !important;
+}
+
+/* ── Command deck (menu — NOT 2×2 card grid) ── */
+html.ios-app.ios-native-shell .ios-native-menu-sheet {
+  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--cmd-edge-bright);
+  border-bottom: 0;
+  background: rgba(4, 4, 7, 0.98);
+  box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.85);
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-handle {
+  width: 28px;
+  height: 3px;
+  border-radius: 0;
+  background: var(--cmd-edge-bright);
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-kicker {
+  font-family: var(--cmd-mono);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  color: #7dd3fc;
+  text-align: left;
+  padding-left: 0.15rem;
+  border-bottom: 1px solid var(--cmd-edge);
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius-panel);
+  overflow: hidden;
+  background: var(--cmd-panel);
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--cmd-edge);
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool:last-child {
+  border-bottom: 0;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool-active {
+  border-left: 2px solid var(--tool-accent, var(--ios-accent));
+  background: color-mix(in srgb, var(--tool-accent, var(--ios-accent)) 8%, transparent);
+  box-shadow: inset 0 0 32px color-mix(in srgb, var(--tool-accent, var(--ios-accent)) 6%, transparent);
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool-label {
+  font-family: var(--cmd-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool-sub {
+  font-family: var(--cmd-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-tool-code {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-links {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin-top: 0.75rem;
+  padding-top: 0;
+  border-top: 0;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius-panel);
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-link {
+  flex: none;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--cmd-edge);
+  background: transparent;
+  font-family: var(--cmd-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+html.ios-app.ios-native-shell .ios-native-menu-link:last-child {
+  border-bottom: 0;
+}
+
+/* Learn chapter rail */
+html.ios-app.ios-native-shell .learn-mobile-nav {
+  position: sticky;
+  top: var(--ios-header-offset);
+  z-index: 22;
+  margin: 0 -0.65rem;
+  padding: 0.35rem 0.65rem;
+  background: rgba(4, 4, 7, 0.92);
+  border-bottom: 1px solid var(--cmd-edge);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+html.ios-app.ios-native-shell .learn-mobile-nav-scroll {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius-panel);
+}
+
+html.ios-app.ios-native-shell .learn-mobile-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .learn-mobile-nav-chip {
+  flex-shrink: 0;
+  padding: 0.55rem 0.75rem;
+  border-right: 1px solid var(--cmd-edge);
+  font-family: var(--cmd-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: #7dd3fc;
+  background: var(--cmd-panel);
+}
+
+html.ios-app.ios-native-shell .learn-mobile-nav-chip:last-child {
+  border-right: 0;
+}
+
+html.ios-app.ios-native-shell .learn-mobile-nav-chip-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--ios-accent) 12%, transparent);
+  box-shadow: inset 0 2px 0 var(--ios-accent);
+}
+
+/* Pending shell — kill web nav flash */
+html.ios-app.ios-app-pending-shell .nav-bar {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+html.ios-app.ios-app-pending-shell:not(.ios-native-shell) .page-shell,
+html.ios-app.ios-app-pending-shell:not(.ios-native-shell) .ios-desk-shell,
+html.ios-app.ios-app-pending-shell:not(.ios-native-shell) .ios-account-page {
+  padding-top: var(--ios-header-offset, calc(2.625rem + env(safe-area-inset-top, 0px)));
+}
+
+/* HELIX watchlist strip */
+html.ios-app.ios-native-shell .helix-native-watchlist {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius-panel);
+  background: var(--cmd-panel);
+}
+
+html.ios-app.ios-native-shell .helix-native-watch-chip {
+  flex-shrink: 0;
+  padding: 0.45rem 0.65rem;
+  border: 0;
+  border-right: 1px solid var(--cmd-edge);
+  background: transparent;
+  font-family: var(--cmd-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #7dd3fc;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .helix-native-watch-chip-active {
+  color: #fff;
+  background: color-mix(in srgb, #bf5fff 12%, transparent);
+  box-shadow: inset 0 2px 0 #bf5fff;
+}
+
+html.ios-app.ios-native-shell .helix-native-watch-chip:last-child {
+  border-right: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.ios-app.ios-native-shell .ios-app-tab-link-active::before {
+    box-shadow: none;
+  }
+}

@@ -38,6 +38,13 @@
 html.ios-app .hide-in-ios-app { display: none !important; }
 .show-in-ios-app { display: none; }
 html.ios-app .show-in-ios-app { display: revert; }
+/* Google/Apple OAuth in WKWebView hits Clerk authorization_invalid (cookie/state).
+   Email + one-time code works; hide social providers in the iOS shell only. */
+html.ios-app .cl-socialButtons,
+html.ios-app .cl-socialButtonsRoot,
+html.ios-app .cl-dividerRow {
+  display: none !important;
+}
 
 :root {
   /* Fonts are provided by next/font (see layout.tsx) as
@@ -1507,7 +1514,7 @@ body::before {
 .bie-intelligence-field .bie-field-canvas {
   background:
     radial-gradient(ellipse 120% 90% at 50% 42%, rgba(0, 40, 52, 0.22) 0%, transparent 58%),
-    radial-gradient(ellipse 85% 70% at 50% 46%, rgba(0, 229, 255, 0.04) 0%, transparent 72%),
+    radial-gradient(ellipse 85% 70% at 50% 46%, rgba(56, 189, 248, 0.04) 0%, transparent 72%),
     #040407;
 }
 
@@ -1515,23 +1522,44 @@ body::before {
   pointer-events: none;
 }
 
+/* Fixed, perfectly regular polar grid behind the organic field lines — see
+   bie-instrument-grid.ts. Static on purpose: the contrast between "rigid
+   instrumentation" (this) and "organic living field" (the rings above it)
+   sells "a real system being read," not a diagram floating in empty space. */
+.bie-instrument-grid {
+  pointer-events: none;
+}
+
+.bie-instrument-grid-ring {
+  fill: none;
+  stroke: rgba(125, 211, 252, 0.05);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.bie-instrument-grid-spoke {
+  stroke: rgba(125, 211, 252, 0.04);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
 .bie-atmosphere-glow {
-  fill: rgba(0, 229, 255, 0.025);
+  fill: rgba(56, 189, 248, 0.025);
   pointer-events: none;
 }
 
 .bie-atmosphere-glow-deep {
-  fill: rgba(0, 180, 220, 0.018);
+  fill: rgba(30, 140, 200, 0.018);
   opacity: 0.7;
 }
 
 .bie-atmosphere-glow-mid {
-  fill: rgba(0, 229, 255, 0.032);
+  fill: rgba(56, 189, 248, 0.032);
   opacity: 0.82;
 }
 
 .bie-atmosphere-glow-inner {
-  fill: rgba(93, 247, 255, 0.045);
+  fill: rgba(125, 211, 252, 0.045);
   opacity: 0.88;
 }
 
@@ -1544,7 +1572,7 @@ body::before {
 
 .bie-ambient-mesh-line {
   fill: none;
-  stroke: rgba(148, 226, 255, 0.022);
+  stroke: rgba(125, 211, 252, 0.022);
   stroke-width: 0.6;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
@@ -1555,25 +1583,25 @@ body::before {
 }
 
 .bie-field-line-mid .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.055);
+  stroke: rgba(56, 189, 248, 0.055);
   stroke-width: 0.8;
 }
 
 .bie-field-line-mid.bie-field-line-3 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.05);
+  stroke: rgba(125, 211, 252, 0.05);
 }
 
 .bie-field-line-mid.bie-field-line-4 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.042);
+  stroke: rgba(56, 189, 248, 0.042);
 }
 
 .bie-field-line-outer.bie-field-line-5 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.022);
+  stroke: rgba(125, 211, 252, 0.022);
   stroke-width: 0.6;
 }
 
 .bie-field-line-outer.bie-field-line-6 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.055);
+  stroke: rgba(125, 211, 252, 0.055);
   stroke-width: 0.85;
 }
 
@@ -1692,9 +1720,14 @@ body::before {
   100% { stroke-opacity: 0; stroke-dashoffset: 0; }
 }
 
+/* Verified = emerald throughout this whole moment (halo, gate-tick, mid rings
+   already agreed on green) — the ripple itself used to stay cyan, the one
+   inconsistent piece of an otherwise-coherent "verified" event. Ripple-c keeps
+   its violet as a deliberate accent sparkle, matching the core-flash keyframe's
+   same brief violet moment elsewhere in this file. */
 .bie-field-ripple {
   fill: none;
-  stroke: rgba(93, 247, 255, 0.45);
+  stroke: rgba(0, 230, 118, 0.5);
   stroke-width: 1.4;
   vector-effect: non-scaling-stroke;
   transform-origin: 0 0;
@@ -1729,7 +1762,7 @@ body::before {
   text-align: center;
   padding: 1.75rem clamp(1rem, 4vw, 2.5rem) 1.35rem;
   margin-top: 0.25rem;
-  border-top: 1px solid rgba(93, 247, 255, 0.06);
+  border-top: 1px solid rgba(56, 189, 248, 0.06);
   background: linear-gradient(
     to bottom,
     rgba(4, 4, 7, 0.55) 0%,
@@ -1742,7 +1775,7 @@ body::before {
 .bie-field-caption .bie-brain-eyebrow {
   font-size: 9px;
   letter-spacing: 0.32em;
-  color: rgba(148, 226, 255, 0.75);
+  color: rgba(125, 211, 252, 0.75);
 }
 
 .bie-field-caption .bie-brain-title {
@@ -1762,6 +1795,60 @@ body::before {
   position: absolute;
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+/* Tool <-> core links (bidirectional) + a tool <-> tool mesh — makes "this is
+   one connected ecosystem, not six icons floating near a reactor" legible.
+   Coordinates are pixel-space (container size), set imperatively per frame —
+   no viewBox. See bie-orbit-connectors.ts for the pulse-direction geometry. */
+.bie-orbit-connectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.bie-orbit-connector-line {
+  stroke: rgba(125, 211, 252, 0.4);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.35));
+}
+
+/* Inbound: raw telemetry, tool -> core. Carries the tool's own accent color. */
+.bie-orbit-connector-pulse-in {
+  fill: var(--tool-accent, #5df7ff);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tool-accent, #5df7ff) 75%, transparent));
+}
+
+/* Outbound: verified intelligence, core -> tool. Fixed to BIE's own core color
+   (not tool-tinted) — this is BIE's signal going back out, distinct from the
+   tool's own raw data. */
+.bie-orbit-connector-pulse-out {
+  fill: #38bdf8;
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.75));
+}
+
+/* Tool <-> tool mesh — fainter than the core spokes (secondary relationship,
+   mediated by BIE's shared ecosystem-context, not a literal direct link). */
+.bie-orbit-mesh-line {
+  stroke: rgba(125, 211, 252, 0.2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* One pulse continuously circling the whole mesh — "shared context circulates
+   through the ecosystem," deliberately ONE traveling element, not six, to keep
+   this restrained rather than turning the periphery into a firehose of dots.
+   Neutral white, not a 7th brand color: this represents the ecosystem itself,
+   not any one product — and it travels right past every tool icon including
+   HELIX's, whose own accent (#bf5fff) this used to collide with exactly. */
+.bie-orbit-loop-pulse {
+  fill: #eef1f5;
+  filter: drop-shadow(0 0 4px rgba(238, 241, 245, 0.6));
 }
 
 .bie-orbit-tool {
@@ -1843,26 +1930,26 @@ body::before {
 }
 
 .bie-field-line-outer .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.035);
+  stroke: rgba(125, 211, 252, 0.035);
   stroke-width: 0.75;
 }
 
 .bie-field-line-outer.bie-field-line-3 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.042);
+  stroke: rgba(56, 189, 248, 0.042);
 }
 
 .bie-field-line-outer.bie-field-line-4 .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.028);
+  stroke: rgba(125, 211, 252, 0.028);
   stroke-width: 0.65;
 }
 
 .bie-field-line-inner .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.1);
+  stroke: rgba(56, 189, 248, 0.1);
   stroke-width: 0.95;
 }
 
 .bie-field-line-inner.bie-field-line-1 .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.11);
+  stroke: rgba(56, 189, 248, 0.11);
 }
 
 .bie-field-line-inner.bie-field-line-2 .bie-field-line-stroke {
@@ -1870,18 +1957,18 @@ body::before {
 }
 
 .bie-field-line.is-lit .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.38);
+  stroke: rgba(56, 189, 248, 0.38);
   stroke-width: 1.45;
-  filter: drop-shadow(0 0 10px rgba(93, 247, 255, 0.55));
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.55));
   transition: stroke 0.28s ease, stroke-width 0.28s ease, filter 0.28s ease;
 }
 
 .bie-field-line-outer.is-lit .bie-field-line-stroke {
-  stroke: rgba(148, 226, 255, 0.32);
+  stroke: rgba(125, 211, 252, 0.32);
 }
 
 .bie-field-line-inner.is-lit .bie-field-line-stroke {
-  stroke: rgba(93, 247, 255, 0.55);
+  stroke: rgba(56, 189, 248, 0.55);
 }
 
 .bie-field-line-mid.is-lit .bie-field-line-stroke {
@@ -1918,15 +2005,6 @@ body::before {
 .bie-inner-node {
   fill: rgba(255, 224, 120, 0.88);
   filter: drop-shadow(0 0 8px rgba(255, 200, 60, 0.75));
-}
-
-.bie-galaxy-nodes {
-  pointer-events: none;
-}
-
-.bie-galaxy-node {
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
 .bie-reactor-live .bie-star-node {
@@ -2007,7 +2085,7 @@ body::before {
   letter-spacing: 0.22em;
   fill: #04191c;
   paint-order: stroke fill;
-  stroke: rgba(93, 247, 255, 0.35);
+  stroke: rgba(56, 189, 248, 0.35);
   stroke-width: 0.4px;
   pointer-events: none;
   user-select: none;
@@ -2260,42 +2338,117 @@ body::before {
 
 @keyframes bie-core-heartbeat {
   0%, 82%, 100% {
-    filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.52));
+    filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.52));
   }
   88% {
-    filter: drop-shadow(0 0 26px rgba(93, 247, 255, 0.92)) drop-shadow(0 0 40px rgba(191, 95, 255, 0.35));
+    filter: drop-shadow(0 0 26px rgba(56, 189, 248, 0.92)) drop-shadow(0 0 40px rgba(191, 95, 255, 0.35));
   }
   93% {
-    filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.58));
+    filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.58));
   }
 }
 
-.bie-reactor-core.is-absorbing .bie-brain-core {
+/* Verifying — the gate is actively checking the inbound signal. */
+.bie-reactor-core.is-verifying .bie-brain-core {
   animation: bie-core-absorb-flash 0.5s ease-out;
 }
 
-.bie-reactor-core.is-absorbing .bie-reactor-core-halo {
-  stroke: rgba(93, 247, 255, 0.82);
+.bie-reactor-core.is-verifying .bie-reactor-core-halo {
+  stroke: rgba(56, 189, 248, 0.82);
   opacity: 0.78;
 }
 
-.bie-reactor-core.is-absorbing .bie-core-label-svg {
+.bie-reactor-core.is-verifying .bie-core-label-svg {
   fill: #011318;
 }
 
-.bie-reactor-core.is-emitting .bie-reactor-core-halo {
+.bie-reactor-core.is-verifying .bie-gate-tick {
+  stroke: rgba(56, 189, 248, 0.85);
+  stroke-width: 1.4;
+}
+
+/* Verified — the claim checked out; the confirmed-signal color is a distinct
+   green from the cyan "checking" state, not a brighter version of it, so the
+   two outcomes read as different events, not different intensities of one event. */
+.bie-reactor-core.is-verified .bie-reactor-core-halo {
   stroke: rgba(0, 230, 118, 0.55);
   opacity: 0.55;
 }
 
+.bie-reactor-core.is-verified .bie-gate-tick {
+  stroke: rgba(0, 230, 118, 0.55);
+}
+
+/* Rejected — the claim did not check out and never passed the gate. Warm/red,
+   used nowhere else in this animation, so its rarity keeps its meaning. */
+.bie-reactor-core.is-rejected .bie-brain-core {
+  animation: bie-core-reject-flash 0.6s ease-out;
+}
+
+.bie-reactor-core.is-rejected .bie-reactor-core-halo {
+  stroke: rgba(255, 107, 74, 0.72);
+  opacity: 0.7;
+}
+
+.bie-reactor-core.is-rejected .bie-gate-tick {
+  stroke: rgba(255, 107, 74, 0.8);
+  stroke-width: 1.4;
+}
+
 @keyframes bie-core-absorb-flash {
-  0% { filter: drop-shadow(0 0 20px rgba(93, 247, 255, 0.7)); }
-  40% { filter: drop-shadow(0 0 36px rgba(93, 247, 255, 1)) drop-shadow(0 0 52px rgba(191, 95, 255, 0.55)); }
-  100% { filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.55)); }
+  0% { filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.7)); }
+  40% { filter: drop-shadow(0 0 36px rgba(56, 189, 248, 1)) drop-shadow(0 0 52px rgba(191, 95, 255, 0.55)); }
+  100% { filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.55)); }
+}
+
+@keyframes bie-core-reject-flash {
+  0% { filter: drop-shadow(0 0 18px rgba(255, 107, 74, 0.65)); }
+  35% { filter: drop-shadow(0 0 30px rgba(255, 107, 74, 0.95)); }
+  100% { filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.55)); }
+}
+
+/* The gate — a ring of tick marks around the core, like an aperture/dial. Idle
+   state is a calm, slow-rotating instrument; it brightens per-outcome above. */
+.bie-gate-ring {
+  transform-origin: 0 0;
+}
+
+.bie-reactor-live .bie-gate-ring {
+  animation: bie-gate-rotate 120s linear infinite;
+}
+
+@keyframes bie-gate-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.bie-gate-tick {
+  stroke: rgba(125, 211, 252, 0.32);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.35s ease, stroke-width 0.35s ease;
+}
+
+/* A small flare that contracts back rather than expanding outward — the visual
+   opposite of `.bie-field-ripple`, on purpose: this signal stopped here. */
+.bie-gate-reject-flash {
+  fill: none;
+  stroke: rgba(255, 107, 74, 0.65);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  transform-origin: 0 0;
+  transform-box: fill-box;
+  animation: bie-gate-reject-pulse 0.9s ease-out forwards;
+}
+
+@keyframes bie-gate-reject-pulse {
+  0% { transform: scale(0.82); opacity: 0.85; }
+  55% { transform: scale(1.18); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 0; }
 }
 
 .bie-reactor-signal-dot {
-  filter: drop-shadow(0 0 10px rgba(93, 247, 255, 0.95));
+  filter: drop-shadow(0 0 10px rgba(169, 180, 196, 0.85));
 }
 
 .bie-reactor-phase-inbound .bie-field-glow {
@@ -2303,7 +2456,7 @@ body::before {
   transition: opacity 0.4s ease;
 }
 
-.bie-reactor-phase-absorb .bie-field-glow {
+.bie-reactor-phase-verifying .bie-field-glow {
   opacity: 1;
   transition: opacity 0.35s ease;
 }
@@ -2363,7 +2516,7 @@ body::before {
 
 .bie-reactor-core-halo {
   fill: none;
-  stroke: rgba(0, 229, 255, 0.38);
+  stroke: rgba(56, 189, 248, 0.38);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
   animation: none;
@@ -2400,9 +2553,9 @@ body::before {
 }
 
 @keyframes bie-reactor-core-flash {
-  0% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.6)); }
+  0% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6)); }
   45% { transform: scale(1.12); filter: drop-shadow(0 0 24px rgba(191, 95, 255, 0.85)); }
-  100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.6)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6)); }
 }
 
 .bie-reactor-core-label {
@@ -3136,6 +3289,11 @@ body::before {
   .bie-field-loop-pulse,
   .bie-inner-link-pulse,
   .bie-ring-pulse-dot { display: none; }
+  .bie-gate-ring { animation: none; }
+  .bie-gate-reject-flash { display: none; }
+  .bie-orbit-connector-pulse-in,
+  .bie-orbit-connector-pulse-out,
+  .bie-orbit-loop-pulse { display: none; }
 }
 
 .bento-card-watermark {
@@ -3851,6 +4009,7 @@ body::before {
   .nav-bar {
     @apply fixed top-0 inset-x-0 z-[100];
     height: 76px;
+    padding-top: env(safe-area-inset-top, 0px);
     transition: height 0.32s var(--ease-draw);
   }
   .nav-bar[data-scrolled="true"] { height: 60px; }
@@ -4058,9 +4217,11 @@ body::before {
   }
   .nav-sheet-scrim { @apply fixed inset-0 z-[140]; background: rgba(0, 0, 0, 0.6); }
   .nav-sheet {
-    @apply fixed inset-y-0 right-0 z-[150] flex flex-col gap-1 p-5 overflow-y-auto;
+    @apply fixed inset-y-0 right-0 z-[150] flex flex-col gap-1 overflow-y-auto;
     width: 88vw;
     max-width: 24rem;
+    padding: max(1.25rem, env(safe-area-inset-top, 0px)) max(1.25rem, env(safe-area-inset-right, 0px))
+      max(1.25rem, env(safe-area-inset-bottom, 0px)) 1.25rem;
     background: rgba(4, 4, 7, 0.97);
     -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
@@ -4076,6 +4237,438 @@ body::before {
   .nav-sheet-link { @apply block py-3 min-h-[44px] no-underline; font-weight: 700; font-size: 18px; color: #fff; }
   .nav-sheet-link:hover { color: #00e676; }
   .nav-sheet-auth { @apply flex flex-col gap-3 mt-2; }
+  .nav-sheet-link-active { color: #00e676; }
+
+  /* Mobile drawer cards: mega-menu `.nav-card:last-child { col-span-2 }` breaks a
+     1-column sheet grid (implicit 2nd column → clipped cards + word-per-line wrap). */
+  @media (max-width: 1023px) {
+    .nav-sheet-cards .nav-card {
+      display: grid;
+      grid-template-columns: 3.25rem minmax(0, 1fr) auto;
+      grid-template-rows: auto auto;
+      column-gap: 0.75rem;
+      row-gap: 0.2rem;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+      padding: 0.875rem 1rem;
+    }
+    .nav-sheet-cards .nav-card:last-child {
+      grid-column: auto;
+    }
+    .nav-sheet-cards .nav-card-chip {
+      grid-row: 1 / span 2;
+      grid-column: 1;
+      width: 3.25rem;
+      height: 3.25rem;
+    }
+    .nav-sheet-cards .nav-card-label {
+      grid-column: 2;
+      grid-row: 1;
+      font-size: 0.95rem;
+      line-height: 1.25;
+    }
+    .nav-sheet-cards .nav-card-sub {
+      grid-column: 2;
+      grid-row: 2;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #7dd3fc;
+    }
+    .nav-sheet-cards .nav-card-open {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      align-self: center;
+      white-space: nowrap;
+    }
+  }
+
+  /* iOS app shell — trim marketing chrome; signed-in users redirect to /dashboard. */
+  html.ios-app #features,
+  html.ios-app #edge {
+    display: none;
+  }
+  html.ios-app .landing-section-hero {
+    min-height: min(88dvh, 720px);
+    padding-top: max(6rem, calc(env(safe-area-inset-top, 0px) + 4rem));
+  }
+
+  /* iOS WKWebView shell — no horizontal page drift; nav clears notch safe area. */
+  html.ios-app,
+  html.ios-app body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+  html.ios-app {
+    --nav-offset: calc(76px + env(safe-area-inset-top, 0px) + 12px);
+    --ios-tab-offset: 0px;
+    --viewport-chrome: var(--nav-offset);
+  }
+  html.ios-app.ios-tab-bar {
+    --ios-tab-offset: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+    --viewport-chrome: calc(var(--nav-offset) + var(--ios-tab-offset));
+  }
+  html.ios-app .nav-kicker {
+    display: none;
+  }
+  html.ios-app .spx-sniper-command h1 {
+    font-size: 1.375rem;
+  }
+  html.ios-app .spx-hero-tagline-sub {
+    display: none;
+  }
+
+  @media (max-width: 1023px) {
+    .nav-inner {
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 0.5rem;
+    }
+    .nav-kicker {
+      display: none;
+    }
+    .nav-wordmark {
+      font-size: 22px;
+      letter-spacing: 0.03em;
+    }
+    /* Drawer open: hide the bar wordmark so it doesn't peek beside the sheet head. */
+    html.nav-locked .nav-brand {
+      visibility: hidden;
+    }
+  }
+
+  @media (max-width: 639px) {
+    .spx-sniper-command {
+      padding: 1rem 0.75rem;
+    }
+    .spx-sniper-command .spx-hero-price {
+      font-size: 2.75rem;
+      line-height: 1;
+    }
+    .spx-hero-metric-blocks {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+      gap: 0.5rem;
+    }
+    .spx-hero-metric-block {
+      min-width: 0;
+      flex: none;
+    }
+    .spx-hero-metric-block:last-child {
+      grid-column: 1 / -1;
+    }
+    .spx-sniper-triple {
+      min-height: 0;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .spx-sniper-triple .spx-sniper-chart-col {
+      min-height: min(420px, calc(55dvh - var(--ios-tab-offset, 0px) * 0.15));
+    }
+    html.ios-app.ios-tab-bar .nav-sheet-toggle {
+      display: none;
+    }
+  }
+
+  html.ios-app.ios-tab-bar .nighthawk-page-root {
+    min-height: calc(100svh - var(--nav-offset) - var(--ios-tab-offset));
+  }
+
+  /* iOS app — bottom tool tab bar (native-style primary navigation) */
+  .ios-app-tab-bar {
+    @apply fixed inset-x-0 bottom-0 z-[95] border-t border-bull/20;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(4, 4, 7, 0.94);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .ios-app-tab-list {
+    @apply grid list-none m-0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0;
+  }
+  .ios-app-tab-li {
+    @apply min-w-0;
+  }
+  .ios-app-tab-link {
+    @apply flex flex-col items-center justify-center gap-0.5 no-underline;
+    min-height: 3.25rem;
+    padding: 0.35rem 0.15rem 0.45rem;
+    color: #7dd3fc;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .ios-app-tab-link-active {
+    color: #00e676;
+    background: rgba(0, 230, 118, 0.06);
+  }
+  .ios-app-tab-link-locked {
+    opacity: 0.55;
+  }
+  .ios-app-tab-label {
+    @apply truncate max-w-full px-0.5;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .ios-app-tab-icon {
+    @apply shrink-0;
+  }
+  html.ios-app.ios-tab-bar .page-shell,
+  html.ios-app.ios-tab-bar .ios-desk-shell,
+  html.ios-app.ios-tab-bar .largo-page-main {
+    padding-bottom: var(--ios-tab-offset);
+  }
+
+  /* Flow tape scroll region — clear fixed nav + iOS tab bar */
+  .flow-scroll-max {
+    max-height: calc(100dvh - var(--nav-offset) - var(--ios-tab-offset, 0px) - 12rem);
+  }
+
+  html.ios-app .auth-mobile-pane {
+    padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .ios-account-page {
+    padding-top: var(--nav-offset);
+    padding-bottom: 3rem;
+  }
+  html.ios-app .ios-account-page {
+    padding-bottom: max(3rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  html.ios-app .ios-tool-locked-screen {
+    padding-top: var(--nav-offset);
+    min-height: calc(100svh - var(--ios-tab-offset, 0px));
+  }
+
+  html.ios-app.ios-tab-bar .largo-page-shell {
+    height: calc(100dvh - var(--ios-tab-offset));
+    min-height: 0;
+  }
+
+  html.ios-app .helix-tide-bar {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  /* ── iOS premium polish — institutional motion, touch, and chrome ── */
+  @keyframes ios-page-enter {
+    from { opacity: 0.88; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  html.ios-app .nav-bar-ios-tool .nav-surface {
+    opacity: 1;
+  }
+
+  html.ios-app .nav-bar-ios-tool .nav-brand-ios-compact {
+    opacity: 0;
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  html.ios-app .ios-nav-context span {
+    text-shadow: 0 0 24px rgba(0, 230, 118, 0.35);
+  }
+
+  html.ios-app .page-shell,
+  html.ios-app .ios-desk-shell {
+    animation: ios-page-enter 0.38s var(--ease-draw) both;
+  }
+
+  html.ios-app .page-tool-header {
+    padding-bottom: 0.65rem;
+    margin-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(0, 230, 118, 0.14);
+  }
+
+  html.ios-app .page-tool-header h1 {
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+  }
+
+  html.ios-app .page-tool-header p {
+    margin-top: 0.35rem;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  /* Bottom tab bar — glow rail + active indicator + press feedback */
+  .ios-app-tab-bar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 230, 118, 0.55), transparent);
+    pointer-events: none;
+  }
+
+  .ios-app-tab-link {
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      transform var(--dur-fast) var(--ease-snap),
+      color 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .ios-app-tab-link:active {
+    transform: scale(0.92);
+  }
+
+  .ios-app-tab-active-bar {
+    position: absolute;
+    top: 0;
+    left: 22%;
+    right: 22%;
+    height: 2px;
+    border-radius: 0 0 4px 4px;
+    background: #00e676;
+    box-shadow: 0 0 14px rgba(0, 230, 118, 0.85);
+  }
+
+  .ios-app-tab-link-active {
+    background: linear-gradient(180deg, rgba(0, 230, 118, 0.12) 0%, rgba(0, 230, 118, 0.04) 100%);
+  }
+
+  .ios-app-tab-link-active .ios-app-tab-label {
+    color: #00e676;
+    text-shadow: 0 0 10px rgba(0, 230, 118, 0.45);
+  }
+
+  /* Segmented controls + sub-buttons — touch-first sizing */
+  html.ios-app .flow-seg-group {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    padding: 3px;
+    border-radius: 10px;
+    box-shadow: 0 0 16px rgba(0, 230, 118, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  html.ios-app .flow-seg-btn {
+    flex: 1;
+    min-height: 2.625rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 10px;
+    border-radius: 7px;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-fast) var(--ease-snap), background 0.15s ease, color 0.15s ease;
+  }
+
+  html.ios-app .flow-seg-btn:active {
+    transform: scale(0.96);
+  }
+
+  html.ios-app .grid-chip-btn,
+  html.ios-app .spx-odte-lens-toggle {
+    min-height: 2.5rem;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-fast) var(--ease-snap), border-color 0.15s ease, background 0.15s ease;
+  }
+
+  html.ios-app .grid-chip-btn:active,
+  html.ios-app .spx-odte-lens-toggle:active {
+    transform: scale(0.96);
+  }
+
+  /* Sub-page tabs — full-width segmented rail on phone */
+  html.ios-app [role="tablist"]:not([class*="unstyled"]) {
+    width: 100%;
+    max-width: none;
+    border-radius: 12px;
+    padding: 4px;
+    box-shadow: 0 0 20px rgba(0, 230, 118, 0.06);
+  }
+
+  html.ios-app [role="tab"] {
+    flex: 1;
+    justify-content: center;
+    min-height: 2.75rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.ios-app [role="tab"]:active {
+    transform: scale(0.97);
+  }
+
+  /* Primary actions — 44px touch floor (Button + outline CTAs) */
+  html.ios-app a.rounded-xl.font-semibold,
+  html.ios-app button.rounded-xl.font-semibold {
+    min-height: 2.75rem;
+  }
+
+  html.ios-app .nav-sheet-toggle,
+  html.ios-app .nav-sheet-close {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    transition: transform var(--dur-fast) var(--ease-snap), background 0.15s ease;
+  }
+
+  html.ios-app .nav-sheet-toggle:active,
+  html.ios-app .nav-sheet-close:active {
+    transform: scale(0.92);
+  }
+
+  html.ios-app .nav-sheet-link {
+    border-radius: 10px;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    transition: color 0.15s ease, background 0.15s ease, transform var(--dur-fast) var(--ease-snap);
+  }
+
+  html.ios-app .nav-sheet-link:active {
+    transform: scale(0.98);
+    background: rgba(0, 230, 118, 0.06);
+  }
+
+  html.ios-app .nav-sheet-cards .nav-card {
+    border-radius: 14px;
+    transition: transform var(--dur-base) var(--ease-draw), border-color 0.15s ease;
+  }
+
+  html.ios-app .nav-sheet-cards .nav-card:active {
+    transform: scale(0.985);
+  }
+
+  html.ios-app .spx-hero-stat-pill,
+  html.ios-app .spx-hero-metric-block {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 4px 18px rgba(0, 0, 0, 0.35);
+  }
+
+  html.ios-app .spx-sniper-command {
+    box-shadow:
+      0 0 60px rgba(0, 230, 118, 0.12),
+      inset 0 0 48px rgba(0, 230, 118, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html.ios-app .page-shell,
+    html.ios-app .ios-desk-shell {
+      animation: none;
+    }
+    html.ios-app .ios-app-tab-link:active,
+    html.ios-app .flow-seg-btn:active,
+    html.ios-app [role="tab"]:active {
+      transform: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    html.ios-app .nav-auth .nav-push-slot {
+      display: none;
+    }
+  }
 
   /* ===== Auth + Upgrade ===== */
   .auth-grad {
@@ -9832,6 +10425,14 @@ body::before {
     50% { transform: scale(1.16); filter: brightness(1.55); }
   }
   .spx-gex-matrix-extreme-pop {
+    display: inline-block;
+    animation: spx-gex-matrix-pop 1.8s ease-in-out infinite;
+  }
+
+  /* Thermal's GEX heatmap (GexHeatmap.tsx) per-day call-wall/put-wall pop —
+     shares SPX Slayer's keyframe so both products' extreme-cell glow reads
+     as one visual language. */
+  .gex-heatmap-extreme-pop {
     display: inline-block;
     animation: spx-gex-matrix-pop 1.8s ease-in-out infinite;
   }

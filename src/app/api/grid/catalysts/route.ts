@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireToolApiForDeskCaller } from "@/lib/tool-access-server";
 import { readGridCatalysts } from "@/lib/providers/grid";
 import { fetchBenzingaCatalysts } from "@/lib/providers/polygon";
 
@@ -12,7 +12,7 @@ const NO_STORE = { "Cache-Control": "no-store, no-cache, must-revalidate, max-ag
 export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
-  const locked = await requireToolApi("grid");
+  const locked = await requireToolApiForDeskCaller(auth, "grid");
   if (locked) return locked;
   try {
     const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase().trim() || undefined;

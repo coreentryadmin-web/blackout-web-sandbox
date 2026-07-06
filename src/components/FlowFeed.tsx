@@ -33,6 +33,10 @@ import { WatchlistBar } from "@/components/desk/WatchlistBar";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui";
 import type { NightHawkEdition } from "@/lib/nighthawk/types";
+import { useIosNativeShell } from "@/hooks/useIosNativeShell";
+import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
+import { IosSectionHeader } from "@/components/ios/IosSectionHeader";
+import { IosNativeChipRail } from "@/components/ios/IosNativeChipRail";
 
 const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 // Audit gap #16: the client floor MUST match the server ingest floor (flow-persist
@@ -106,6 +110,9 @@ function exportCSV(alerts: FlowAlert[]) {
 export function FlowFeed() {
   // Data
   const [alerts, setAlerts]               = useState<FlowAlert[]>([]);
+  const nativeShell = useIosNativeShell();
+  const [iosView, setIosView] = useState<"tape" | "analytics">("tape");
+  const [helixToolsOpen, setHelixToolsOpen] = useState(false);
   const [loading, setLoading]             = useState(true);
   const [live, setLive]                   = useState(false);
   // Filters
@@ -558,21 +565,174 @@ export function FlowFeed() {
           : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
   return (
-    <div className="desk-layout flex flex-col gap-4">
+    <div className="desk-layout helix-desk flex flex-col gap-4">
       {/* ── AI Brief ────────────────────────────────────────────────────── */}
-      <FlowBrief />
+      {!nativeShell && <FlowBrief />}
 
       {/* ── Watchlist rail (P2) ─────────────────────────────────────────── */}
-      <WatchlistBar
-        watchlist={watchlist.watchlist}
-        activeTicker={tickerFilter}
-        onSelect={(t) => setTickerFilter(t)}
-        onRemove={watchlist.remove}
-        onClear={() => { watchlist.clear(); setWatchlistOnly(false); }}
-      />
+      {!nativeShell && (
+        <WatchlistBar
+          watchlist={watchlist.watchlist}
+          activeTicker={tickerFilter}
+          onSelect={(t) => setTickerFilter(t)}
+          onRemove={watchlist.remove}
+          onClear={() => { watchlist.clear(); setWatchlistOnly(false); }}
+        />
+      )}
+
+      {nativeShell && (
+        <IosNativeSegment
+          value={iosView}
+          onChange={setIosView}
+          accent="#bf5fff"
+          aria-label="HELIX lens"
+          className="ios-native-desk-segment"
+          segments={[
+            { id: "tape", label: "Live tape" },
+            { id: "analytics", label: "Analytics" },
+          ]}
+        />
+      )}
+
+      {nativeShell && watchlist.watchlist.length > 0 && (
+        <IosNativeChipRail
+          ariaLabel="Watchlist"
+          value={tickerFilter}
+          onChange={setTickerFilter}
+          chips={[
+            { id: "", label: "ALL" },
+            ...watchlist.watchlist.map((t) => ({ id: t, label: t })),
+          ]}
+        />
+      )}
 
       {/* ── Filter bar ──────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
+      {nativeShell ? (
+        <div
+          className={clsx(
+            "helix-native-toolbar",
+            nativeShell && iosView !== "tape" && "ios-native-panel-hidden"
+          )}
+        >
+          <IosSectionHeader
+            label="Tape filters"
+            action={{
+              label: helixToolsOpen ? "Hide tools" : "More tools",
+              onClick: () => setHelixToolsOpen((v) => !v),
+            }}
+          />
+          <div className="helix-native-toolbar-row">
+            <div className="flow-seg-group">
+              {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTypeFilter(t)}
+                  className={clsx(
+                    "flow-seg-btn",
+                    typeFilter === t &&
+                      (t === "CALL"
+                        ? "flow-seg-btn-active-call"
+                        : t === "PUT"
+                          ? "flow-seg-btn-active-put"
+                          : "flow-seg-btn-active-all")
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <input
+              value={tickerFilter}
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
+                setTickerFilter(val);
+              }}
+              placeholder="Ticker"
+              aria-label="Search ticker"
+              maxLength={6}
+              className="font-mono font-bold rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none tracking-widest uppercase border-[rgba(0,230,118,0.35)] text-[#00e676] placeholder:text-[rgba(0,230,118,0.35)]"
+            />
+          </div>
+          <div className="helix-native-toolbar-row">
+            <div className="flow-seg-group">
+              {PREMIUM_PRESETS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setMinPremium(v)}
+                  className={clsx("flow-seg-btn", minPremium === v && "flow-seg-btn-active-all")}
+                >
+                  {v >= 1_000_000 ? `$${v / 1_000_000}M+` : `$${v / 1000}K+`}
+                </button>
+              ))}
+            </div>
+          </div>
+          {helixToolsOpen ? (
+            <div className="helix-native-toolbar-tools">
+              <button
+                type="button"
+                onClick={replayMode ? stopReplay : startReplay}
+                disabled={!replayMode && alerts.length === 0}
+                className={clsx(
+                  "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border transition-all",
+                  replayMode
+                    ? "border-gold/70 text-gold bg-gold/15"
+                    : "border-[rgba(0,230,118,0.3)] text-[#00e676]"
+                )}
+              >
+                {replayMode ? "■ Stop" : "▶ Replay"}
+              </button>
+              {replayMode &&
+                [0.5, 1, 2].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setReplaySpeed(s)}
+                    className={clsx(
+                      "font-mono text-[10px] px-1.5 py-[3px] rounded border",
+                      replaySpeed === s
+                        ? "bg-gold/20 text-gold border-gold/60"
+                        : "text-cyan-400 border-white/10"
+                    )}
+                  >
+                    {s}×
+                  </button>
+                ))}
+              <button
+                type="button"
+                onClick={() => setAudioEnabled((v) => !v)}
+                className={clsx(
+                  "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border",
+                  audioEnabled ? "border-purple/60 text-purple-light bg-purple/15" : "border-white/10 text-cyan-400"
+                )}
+              >
+                {audioEnabled ? "Audio on" : "Audio"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWatchlistOnly((v) => !v)}
+                disabled={watchlist.watchlist.length === 0}
+                className={clsx(
+                  "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border disabled:opacity-30",
+                  watchlistOnly ? "border-gold/70 text-gold bg-gold/15" : "border-cyan-800/40 text-cyan-400"
+                )}
+              >
+                ★ Watch
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCSV(displayAlerts)}
+                disabled={displayAlerts.length === 0}
+                className="font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border border-white/10 text-cyan-400 disabled:opacity-30"
+              >
+                Export CSV
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+      <div className={clsx("helix-ios-toolbar flex flex-wrap items-center gap-2", nativeShell && iosView !== "tape" && "ios-native-panel-hidden")}>
         {/* Premium presets */}
         <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-bull hidden sm:block">MIN</span>
         <div className="flow-seg-group">
@@ -765,11 +925,19 @@ export function FlowFeed() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Main grid ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Flow tape — 8 cols */}
-        <div className="lg:col-span-8 xl:col-span-8">
+        <div
+          key={nativeShell ? iosView : "tape"}
+          className={clsx(
+            "lg:col-span-8 xl:col-span-8 helix-ios-tape-col",
+            nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
+            nativeShell && iosView === "tape" && "ios-native-panel-visible"
+          )}
+        >
           <FlowAlertStream
             flows={displayAlerts}
             live={live}
@@ -791,7 +959,23 @@ export function FlowFeed() {
         </div>
 
         {/* Right column — primary analytics; expand for full desk */}
-        <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-3">
+        <div
+          key={nativeShell ? iosView : "analytics"}
+          className={clsx(
+            "lg:col-span-4 xl:col-span-4 flex flex-col gap-3 helix-ios-analytics-col",
+            nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
+            nativeShell && iosView === "analytics" && "ios-native-panel-visible"
+          )}
+        >
+          {nativeShell ? (
+            <IosSectionHeader
+              label="Analytics"
+              action={{
+                label: showMorePanels ? "Fewer panels" : "More panels",
+                onClick: () => setShowMorePanels((v) => !v),
+              }}
+            />
+          ) : (
           <div className="flex items-center justify-between gap-2 px-1">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
             <button
@@ -802,6 +986,7 @@ export function FlowFeed() {
               {showMorePanels ? "Fewer panels" : "More panels"}
             </button>
           </div>
+          )}
           <NetPremiumLeaderboard alerts={alerts} loading={loading} />
           <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
           <DarkPoolPanel />

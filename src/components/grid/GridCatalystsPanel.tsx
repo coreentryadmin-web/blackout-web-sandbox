@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridCatalystItem, GridCatalystsSnapshot } from "@/lib/providers/grid";
 
@@ -72,8 +73,12 @@ function CatalystRow({ item }: { item: GridCatalystItem }) {
  */
 export function GridCatalystsPanel() {
   const { ticker, isFiltered } = useGridTicker();
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
   const url = `/api/grid/catalysts${ticker ? `?ticker=${ticker}` : ""}`;
-  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
+  const { data, error } = useSWR<Res>(panelKey(url), fetcher, {
+    refreshInterval: isFiltered ? 30_000 : 300_000,
+    revalidateOnMount,
+  });
   const items: GridCatalystItem[] = data?.items ?? [];
   const live = !error && (data?.available ?? false);
 

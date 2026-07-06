@@ -11,8 +11,11 @@ type DeskShellProps = {
 export function DeskShell({ children, fullBleed, className }: DeskShellProps) {
   return (
     <div
+      id="main"
       className={clsx(
-        "relative w-full pb-8",
+        "relative w-full ios-desk-shell",
+        /* pb-8 only on web — native shell uses ios-native-viewport.css fill */
+        "pb-8 ios-desk-shell-web-pad",
         fullBleed
           ? "max-w-none px-2 sm:px-3 lg:px-4 xl:px-5"
           : "content-rail mx-auto w-full",

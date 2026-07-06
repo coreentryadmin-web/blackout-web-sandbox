@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>BlackOut</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #040407;
+        color: #7dd3fc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .wrap { padding: 2rem; }
+      h1 { font-size: 1.1rem; letter-spacing: 0.35em; color: #fff; margin: 0 0 0.75rem; }
+      p { font-size: 0.85rem; color: #7dd3fc; margin: 0; opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Offline fallback shell ONLY. When online, capacitor.config.ts server.url
+      loads https://blackouttrades.com and this file is never shown. This is the
+      screen a user sees if the app opens with no connectivity before first load.
+    -->
+    <div class="wrap">
+      <h1>BLACKOUT</h1>
+      <p>Reconnecting to the desk…</p>
+    </div>
+  </body>
+</html>

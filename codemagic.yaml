@@ -1,0 +1,55 @@
+# BlackOut iOS — Codemagic CI/CD (monorepo: apps/blackout-ios)
+#
+# Connect repo coreentryadmin-web/blackout-web in Codemagic — this file is at repo root.
+# See apps/blackout-ios/APP_STORE.md for Apple IDs and setup checklist.
+
+workflows:
+  ios-release:
+    name: BlackOut iOS Release
+    working_directory: apps/blackout-ios
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: BlackOut ASC
+    environment:
+      # Do NOT set ios_signing here — Codemagic auto-fetches profiles at build
+      # start and fails with "No matching profiles found" before our script can
+      # --create them. Signing is configured in the script step below instead.
+      vars:
+        BUNDLE_ID: "com.blackout-trades.app"
+        APPLE_TEAM_ID: "ZA32C782N5"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+        APP_STORE_APPLE_ID: 6787797476
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install JS dependencies
+        script: npm ci || npm install
+      - name: Generate native iOS project (Capacitor)
+        script: |
+          set -e
+          # Capacitor appId must have no hyphens; Apple bundle ID is patched after sync.
+          if [ ! -f ios/App/App.xcodeproj/project.pbxproj ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
+          node scripts/patch-ios-bundle-id.mjs
+      - name: Set up code signing (auto via App Store Connect API key)
+        script: bash scripts/codemagic-signing.sh
+      - name: Install CocoaPods
+        script: |
+          cd ios/App && pod install
+      - name: Build signed IPA
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

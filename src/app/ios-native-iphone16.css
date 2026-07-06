@@ -1,0 +1,169 @@
+/**
+ * BlackOut iOS — iPhone 16 Pro / Pro Max command-center layout.
+ * Logical viewports (portrait, @2x/3x):
+ *   Pro:     402 × 874 pt  (1206 × 2622 px)
+ *   Pro Max: 440 × 956 pt  (1320 × 2868 px)
+ * Dynamic Island safe-area handled via env(safe-area-inset-*).
+ * Scoped: html.ios-app.ios-native-shell
+ */
+
+/* ── Shared Pro-tier tokens (16 Pro baseline) ── */
+@media (min-width: 393px) {
+  html.ios-app.ios-native-shell {
+    --ios-tier: pro;
+    --cmd-rail-h: 4.25rem;
+    --ios-content-pad-x: 0.75rem;
+    --ios-hero-price-size: 2.5rem;
+    --ios-chart-min-h: min(64dvh, 540px);
+    --ios-matrix-max-h: min(56dvh, 480px);
+    --ios-tape-max-h: min(58dvh, 500px);
+  }
+
+  html.ios-app.ios-native-shell .ios-native-header-inner {
+    min-height: 2.75rem;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-icon {
+    transform: scale(1.05);
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-code {
+    font-size: 9px;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-label {
+    font-size: 8px;
+  }
+
+  html.ios-app.ios-native-shell .page-shell,
+  html.ios-app.ios-native-shell .ios-desk-shell {
+    padding-left: var(--ios-content-pad-x);
+    padding-right: var(--ios-content-pad-x);
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command-native .spx-hero-price,
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-command .spx-hero-price {
+    font-size: var(--ios-hero-price-size) !important;
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-chart-col {
+    min-height: var(--ios-chart-min-h);
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-gex-matrix-scroll {
+    max-height: var(--ios-matrix-max-h);
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-scroll-max {
+    max-height: var(--ios-tape-max-h);
+  }
+
+  html.ios-app.ios-native-shell .ios-native-segment-btn {
+    min-height: 2.5rem;
+    font-size: 10px;
+  }
+}
+
+/* ── Pro Max — exploit 440×956 canvas ── */
+@media (min-width: 430px) {
+  html.ios-app.ios-native-shell {
+    --cmd-rail-h: 4.5rem;
+    --ios-content-pad-x: 0.85rem;
+    --ios-hero-price-size: 2.85rem;
+    --ios-chart-min-h: min(68dvh, 620px);
+    --ios-matrix-max-h: min(62dvh, 560px);
+    --ios-tape-max-h: min(64dvh, 580px);
+    --ios-content-gap: 0.75rem;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-icon {
+    transform: scale(1.12);
+  }
+
+  html.ios-app.ios-native-shell .ios-native-header-title-text {
+    font-size: 14px;
+  }
+
+  /* SPX — 3-up metric readout on Pro Max */
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-hero-metric-blocks {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-hero-metric-block:last-child {
+    grid-column: auto;
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-left-matrix,
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-odte-matrix-panel {
+    min-height: min(62dvh, 560px);
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-commentary-viewport {
+    max-height: min(54dvh, 480px);
+  }
+
+  /* Thermal — taller matrix viewport */
+  html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll {
+    max-height: min(62dvh, 560px);
+  }
+
+  html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Grid — two-up board on Pro Max when cards exist */
+  html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  /* Largo — taller message well */
+  html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-messages-scroll,
+  html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main-native {
+    min-height: min(72dvh, 680px);
+  }
+
+  /* Command deck — wider instrument rows */
+  html.ios-app.ios-native-shell .ios-native-menu-tool {
+    padding: 0.85rem 1rem;
+  }
+
+  html.ios-app.ios-native-shell .ios-native-menu-tool-label {
+    font-size: 14px;
+  }
+}
+
+/* Head-script tier hooks (sync with layout inline script) */
+html.ios-app.ios-tier-pro.ios-native-shell {
+  --ios-device-label: "16 Pro";
+}
+
+html.ios-app.ios-tier-pro-max.ios-native-shell {
+  --ios-device-label: "16 Pro Max";
+}
+
+/* Dynamic Island — extra top breathing room on Pro tier */
+@supports (padding-top: env(safe-area-inset-top)) {
+  html.ios-app.ios-native-shell.ios-tier-pro,
+  html.ios-app.ios-native-shell.ios-tier-pro-max {
+    --ios-header-offset: calc(2.875rem + max(env(safe-area-inset-top, 0px), 47px));
+  }
+}
+
+/* Pro Max vertical space — reduce dead zone above instrument rail */
+@media (min-width: 430px) and (min-height: 900px) {
+  html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-triple {
+    gap: 0.75rem;
+  }
+}
+
+/* Landscape guard — command center stays portrait-first */
+@media (orientation: landscape) and (max-height: 500px) {
+  html.ios-app.ios-native-shell .ios-native-header-kicker {
+    display: none;
+  }
+
+  html.ios-app.ios-native-shell {
+    --cmd-rail-h: 3.25rem;
+  }
+}

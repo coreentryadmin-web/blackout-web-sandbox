@@ -14,10 +14,8 @@ export default async function DashboardPage() {
   await requireTier("premium");
 
   return (
-    <DeskShell fullBleed>
-      <main id="main">
-        <SpxDashboard />
-      </main>
+    <DeskShell fullBleed className="ios-native-page ios-native-page-spx">
+      <SpxDashboard />
     </DeskShell>
   );
 }

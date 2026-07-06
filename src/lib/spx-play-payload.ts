@@ -138,6 +138,14 @@ export function intelGates(
   };
 }
 
+/** API contract: SCANNING must not expose confirmation checks (stale-layer guard). */
+export function confirmationsForAction(
+  action: SpxPlayAction,
+  confirmations: PlayConfirmationResult | null
+): PlayConfirmationResult | null {
+  return action === "SCANNING" ? null : confirmations;
+}
+
 export function scanningPayload(
   desk: SpxDeskPayload,
   confluence: SpxConfluence | null,

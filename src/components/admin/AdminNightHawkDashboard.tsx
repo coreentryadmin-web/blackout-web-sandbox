@@ -454,6 +454,44 @@ export function AdminNightHawkDashboard() {
         />
       </section>
 
+      <DeckPanel title="Funnel · Rejection rate" accent="amber" defaultOpen storageKey="nh-funnel">
+        <div className="admin-mega-grid admin-nh-stats-row">
+          <MegaStat
+            label="Candidates considered"
+            value={String(data.funnel.candidates_count)}
+            sub={`Last ${data.funnel.window_days} days`}
+            tone="neutral"
+          />
+          <MegaStat label="Published" value={String(data.funnel.published_count)} tone="bull" />
+          <MegaStat label="Rejected" value={String(data.funnel.rejected_count)} tone="bear" />
+          <MegaStat
+            label="Rejection rate"
+            value={pct(data.funnel.rejection_rate)}
+            sub="Rejected ÷ candidates considered"
+            tone={data.funnel.rejection_rate >= 0.5 ? "bear" : "amber"}
+          />
+        </div>
+        {data.funnel.by_stage.length === 0 ? (
+          <EmptyDeck
+            title="No rejections in this window."
+            hint="Every scored candidate that reached a decision was published."
+          />
+        ) : (
+          <div className="admin-nh-buckets">
+            {data.funnel.by_stage.map((s) => (
+              <HorzBar
+                key={s.stage}
+                label={s.label}
+                value={s.n}
+                max={data.funnel.rejected_count}
+                tone="bear"
+                right={`${s.n} · ${pct(data.funnel.rejected_count > 0 ? s.n / data.funnel.rejected_count : 0)}`}
+              />
+            ))}
+          </div>
+        )}
+      </DeckPanel>
+
       <DeckPanel title="Conviction validation" accent="violet" defaultOpen storageKey="nh-conviction">
         {convictionRows.length === 0 ? (
           <EmptyDeck title="No conviction-tier data yet." />

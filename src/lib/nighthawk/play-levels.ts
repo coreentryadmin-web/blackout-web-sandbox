@@ -45,3 +45,51 @@ export function parsePlayLevels(play: PlaybookPlay): ParsedPlayLevels {
     stop: parseDecimal(play.stop),
   };
 }
+
+/** Format a stock price for member-visible entry/target/stop strings. */
+export function formatStockLevel(n: number): string {
+  return n.toFixed(2);
+}
+
+/**
+ * Build entry/target/stop strings for ranked-pool or mechanical-fallback plays that
+ * satisfy validatePlayGeometry's direction-aware gate. "Near $X" + stop=X (the prior
+ * backfill shape) collapses entry mid to X and fails LONG geometry (stop not below mid).
+ */
+export function buildDirectionalStockLevels(params: {
+  direction: "long" | "short";
+  support?: number | null;
+  resistance?: number | null;
+}): { entry_range: string; target: string; stop: string } {
+  const support = params.support != null && Number.isFinite(params.support) ? params.support : null;
+  const resistance =
+    params.resistance != null && Number.isFinite(params.resistance) ? params.resistance : null;
+
+  if (params.direction === "long" && support != null && resistance != null && resistance > support) {
+    const lo = support * 0.998;
+    const hi = support;
+    const stop = support * 0.99;
+    return {
+      entry_range: `$${formatStockLevel(lo)}-$${formatStockLevel(hi)}`,
+      target: formatStockLevel(resistance),
+      stop: formatStockLevel(stop),
+    };
+  }
+
+  if (params.direction === "short" && support != null && resistance != null && resistance > support) {
+    const lo = resistance;
+    const hi = resistance * 1.002;
+    const stop = resistance * 1.01;
+    return {
+      entry_range: `$${formatStockLevel(lo)}-$${formatStockLevel(hi)}`,
+      target: formatStockLevel(support),
+      stop: formatStockLevel(stop),
+    };
+  }
+
+  return {
+    entry_range: support != null ? `Near $${formatStockLevel(support)}` : "See technical levels",
+    target: resistance != null ? formatStockLevel(resistance) : "-",
+    stop: support != null ? formatStockLevel(support) : "-",
+  };
+}

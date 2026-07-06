@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridMover, GridMoversSnapshot } from "@/lib/providers/grid";
 
@@ -26,7 +27,11 @@ function MoverRow({ m, side }: { m: GridMover; side: "up" | "down" }) {
 
 export function GridMoversPanel() {
   const { isFiltered } = useGridTicker();
-  const { data, error } = useSWR<Res>("/api/grid/movers", fetcher, { refreshInterval: 90_000 });
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
+  const { data, error } = useSWR<Res>(panelKey("/api/grid/movers"), fetcher, {
+    refreshInterval: 90_000,
+    revalidateOnMount,
+  });
   const gainers: GridMover[] = data?.gainers ?? [];
   const losers: GridMover[] = data?.losers ?? [];
   const live = !error && (data?.available ?? false);

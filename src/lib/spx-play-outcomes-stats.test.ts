@@ -45,3 +45,15 @@ test("computePlayOutcomeStats overall win rate and path buckets", () => {
   assert.equal(stats.watch_promote.count, 1);
   assert.equal(stats.watch_promote.win_rate, 1);
 });
+
+test("computePlayOutcomeStats excludes superseded rows from win rate", () => {
+  const stats = computePlayOutcomeStats([
+    row({ entry_path: "cold_buy", outcome: "win" }),
+    row({ entry_path: "cold_buy", outcome: "superseded" }),
+    row({ entry_path: "cold_buy", outcome: "loss" }),
+  ]);
+  assert.equal(stats.total_closed, 2);
+  assert.equal(stats.overall.wins, 1);
+  assert.equal(stats.overall.losses, 1);
+  assert.equal(stats.overall.win_rate, 0.5);
+});

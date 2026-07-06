@@ -92,9 +92,11 @@ if (!cronSecret) {
 }
 
 const CRON_BOOTSTRAP = [
+  { key: "alert-outcome-sync", serviceName: "Alert-Outcome-Sync" },
   { key: "provider-health-reconcile", serviceName: "provider-health-reconcile" },
   { key: "market-regime-detector", serviceName: "Market-Regime-Detector" },
   { key: "spx-issues-sync", serviceName: "SPX-Issues-Sync" },
+  { key: "desk-warm", serviceName: "SPX-Desk-Warm" },
 ];
 
 function ensureCronService(serviceName, cronKey) {
@@ -150,5 +152,6 @@ for (const { key, serviceName } of CRON_BOOTSTRAP) {
 console.log("\nGREEN — Railway ops provision complete.\n");
 console.log("Verify after deploy:");
 console.log("  npm run validate:cron");
+console.log("  node scripts/hit-cron.mjs /api/cron/alert-outcome-sync");
 console.log("  node scripts/hit-cron.mjs /api/cron/provider-health-reconcile");
 console.log("  node scripts/hit-cron.mjs /api/cron/market-regime-detector\n");

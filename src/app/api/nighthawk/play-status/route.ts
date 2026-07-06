@@ -66,10 +66,16 @@ export async function GET(req: NextRequest) {
       { headers: NO_STORE_HEADERS }
     );
   } catch (err) {
+    // Log the real exception server-side only. Unlike the cron-gated routes with this same
+    // anti-pattern, this route is reachable by ANY signed-in premium member (authorizeCronOrTierApi
+    // gates on tier, not admin/cron) -- a Redis failure or malformed cached blob's raw message can
+    // embed internal detail (e.g. "*.railway.internal" hostnames, driver connection-error text)
+    // that must never reach a regular member's browser. Same "log raw, return fixed string"
+    // pattern established in /api/ready (task #66).
     const error = err instanceof Error ? err.message : String(err);
     console.error("[nighthawk/play-status] error:", error);
     return NextResponse.json(
-      { available: false, error },
+      { available: false, error: "Status temporarily unavailable" },
       { status: 500, headers: NO_STORE_HEADERS }
     );
   } finally {

@@ -5,6 +5,7 @@ import { polygonTrackedFetch } from "./polygon-rate-limiter";
 import { isHeatmapPreset } from "../heatmap-allowlist";
 import { isLiveOdteSession } from "./unusual-whales";
 import { fmtPremium } from "@/lib/fmt-money";
+import { persistGexRegimeEvents } from "./gex-regime-events";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -632,6 +633,24 @@ export type GexEvent = {
   level?: number;
   /** Direction of the cross, e.g. 'into long gamma' / 'above call wall' / 'short → long'. */
   direction?: string;
+  /**
+   * Natural before/after numeric pair for this crossing (task #136, additive —
+   * ADDED alongside the pre-existing fields above, never altering any of the
+   * conditions that decide WHETHER an event fires). What the pair means depends
+   * on `type`, since each event is a different kind of crossing:
+   *   - flip_crossed / wall_broken: SPOT before/after — these events fire on
+   *     spot moving across a level that itself is held FIXED as the shared
+   *     reference (the prior sample's flip/wall), so spot is the value that
+   *     actually changed, not the level.
+   *   - regime_flipped: the gamma-flip level at the prior sample vs. the
+   *     current sample — posture here is computed per-end against THAT end's
+   *     own flip, so unlike flip_crossed the flip itself can differ between
+   *     from_value/to_value.
+   *   - net_gex_sign_flipped: total net dealer GEX dollars before/after.
+   * Both null when not computable at the point of detection — never fabricated.
+   */
+  from_value?: number | null;
+  to_value?: number | null;
   /** ISO timestamp of THIS sample (when the cross was detected). */
   at: string;
 };
@@ -1706,8 +1725,15 @@ function computeVexShift(
  *
  * `ring` is the full positioning-history ring INCLUDING the just-appended current snapshot; the
  * prior is the latest snapshot strictly before `current.ts`.
+ *
+ * Exported (task #136) so polygon-options-gex.test.ts can exercise this pure diff directly with
+ * ring/current fixtures — same "export a pure internal helper purely for direct unit testing"
+ * precedent this file already sets with resolveHeatmapPageGuard/gexContractDedupeKey above. This
+ * is the ONE place regime-transition events are derived; gex-regime-events.ts's
+ * persistGexRegimeEvents and /api/cron/gex-alerts both consume this function's output rather than
+ * re-deriving it, per the task's "one derivation, not two" requirement.
  */
-function computeGexEvents(
+export function computeGexEvents(
   ring: GexHistorySnapshot[],
   current: {
     ts: number;
@@ -1754,6 +1780,8 @@ function computeGexEvents(
         message: `Spot crossed the gamma flip (${fmt(prior.flip)}) ${intoLong ? "into LONG gamma — range-bound, fade extremes" : "into SHORT gamma — momentum / vol expansion, moves accelerate"}.`,
         level: prior.flip,
         direction: intoLong ? "into long gamma" : "into short gamma",
+        from_value: priorSpot,
+        to_value: curSpot,
         at,
       });
     }
@@ -1769,6 +1797,8 @@ function computeGexEvents(
         message: `Spot broke ABOVE the call wall (${fmt(priorWalls.callWall)}) — gamma resistance gave way; room higher opens up.`,
         level: priorWalls.callWall,
         direction: "above call wall",
+        from_value: priorSpot,
+        to_value: curSpot,
         at,
       });
     }
@@ -1781,6 +1811,8 @@ function computeGexEvents(
         message: `Spot broke BELOW the put wall (${fmt(priorWalls.putWall)}) — gamma support gave way; downside opens up.`,
         level: priorWalls.putWall,
         direction: "below put wall",
+        from_value: priorSpot,
+        to_value: curSpot,
         at,
       });
     }
@@ -1799,6 +1831,8 @@ function computeGexEvents(
       severity: intoLong ? "info" : "warn",
       message: `Gamma regime flipped ${priorPosture} → ${curPosture}${current.flip != null ? ` (flip ${fmt(current.flip)})` : ""} — ${intoLong ? "dealers now long gamma, expect mean-reversion" : "dealers now short gamma, expect trend / vol expansion"}.`,
       direction: `${priorPosture} → ${curPosture}`,
+      from_value: prior.flip,
+      to_value: current.flip,
       at,
     });
   }
@@ -1817,6 +1851,8 @@ function computeGexEvents(
       severity: toPos ? "info" : "warn",
       message: `Net dealer GEX flipped ${toPos ? "NEGATIVE → POSITIVE — book now net long gamma (stabilizing)" : "POSITIVE → NEGATIVE — book now net short gamma (destabilizing)"}.`,
       direction: toPos ? "negative → positive" : "positive → negative",
+      from_value: priorTotal,
+      to_value: current.total,
       at,
     });
   }
@@ -2201,8 +2237,20 @@ async function buildGexHeatmapUncached(
       charmBuilt.cells[String(s)] != null
   );
 
-  // Max pain (GEX-only, shared at top) from the same banded chain.
-  const maxPain = computeMaxPainFromChain(contracts);
+  // Max pain must be scoped to ONE expiry — unlike GEX/VEX/DEX/CHARM (which legitimately SUM
+  // dealer exposure across several coexisting near-term expiries), max pain asks "at what price
+  // does THIS expiry's holders collectively lose the most," a question tied to one settlement
+  // date. `contracts` here spans every expiry inside the strike band (fetchHeatmapBand has no
+  // expiration_date filter), so passing it straight to computeMaxPainFromChain blended OI across
+  // unrelated settlement dates into a number that looked like max pain but wasn't scoped to
+  // anything a trader could act on (docs/audit/FINDINGS.md). Scope to the front/nearest expiry,
+  // matching how fetchPolygonOdteDeskBundle and fetchPolygonPositioningBundle already correctly
+  // compute max pain from a single-expiry chain.
+  const frontExpiry = sortedAll[0];
+  const frontExpiryContracts = contracts.filter(
+    (c) => String(c.details?.expiration_date ?? "").slice(0, 10) === frontExpiry
+  );
+  const maxPain = computeMaxPainFromChain(frontExpiryContracts);
 
   // GEX levels + regime.
   const gexFlip = computeZeroGammaFlip(gexBuilt.strikeTotals, spot);
@@ -2290,6 +2338,24 @@ async function buildGexHeatmapUncached(
     shift = { available: false, status: "collecting" };
     vexShift = { available: false, status: "collecting" };
     events = undefined;
+  }
+
+  // ── DURABLE REGIME-TRANSITION LOG (task #136) ────────────────────────────────
+  // Fire-and-forget persistence of the SAME `events` array just computed above —
+  // no re-derivation, no new detection logic, no new threshold (see
+  // gex-regime-events.ts's module doc for the full "one derivation, not two"
+  // rationale). Deliberately OUTSIDE the try/catch above and never awaited: a
+  // slow/unavailable Postgres must not add latency to this hot matrix-build path,
+  // and a persistence failure must never affect the events/shift this function
+  // returns to its caller (identical contract to appendGexHistory/
+  // appendGexEodSnapshot's own best-effort, never-throws guarantees).
+  if (events && events.length > 0) {
+    void persistGexRegimeEvents(root, events).catch((err) => {
+      console.error(
+        "[gex-regime-events] persist failed:",
+        err instanceof Error ? err.message : err
+      );
+    });
   }
 
   // ── DAY-OVER-DAY HISTORY CONTEXT ("vs prior close") ──────────────────────────
@@ -2437,6 +2503,84 @@ function emptyHeatmap(
     );
   }
   return heatmap;
+}
+
+/** One ticker's shared-cache freshness, as reported by peekGexHeatmapCache. */
+export type GexHeatmapCachePeek = {
+  ticker: string;
+  /** True when a cached matrix entry exists at all (in-memory or Redis) — false is a COLD ticker,
+   *  not necessarily a failure (e.g. never warmed, or evicted past the Redis TTL). */
+  cached: boolean;
+  /** ISO timestamp of the cached entry's build, or null when cold. */
+  last_compute_at: string | null;
+  /** Age of the cached entry in seconds, or null when cold. */
+  age_sec: number | null;
+  /** The base TTL this ticker's matrix is cached under (gexHeatmapCacheMsFor), in seconds. */
+  ttl_sec: number;
+  /** True when cold, OR when the cached entry is older than the stale-while-revalidate ceiling
+   *  (gexHeatmapMaxStaleMs) — i.e. even a background-refresh-tolerant caller would refuse to serve
+   *  it. A cached entry that is merely past its base TTL (but under the SWR ceiling) is NOT stale
+   *  here — fetchGexHeatmap would still serve it while kicking off a background rebuild. */
+  stale: boolean;
+  /** Spot at the cached entry's build time, or null when cold / unavailable. */
+  spot: number | null;
+  /** Event count on the cached entry's last computed sample — 0 means "diffed, nothing crossed",
+   *  null means either cold (no entry) or cold history (fetchGexHeatmap hadn't yet accumulated
+   *  ≥2 positioning-history snapshots when that entry was built) — never conflated. */
+  events_count: number | null;
+};
+
+/**
+ * Admin-health PEEK at the shared `gex-heatmap:{ticker}` cache entry — READ-ONLY, and
+ * DELIBERATELY does not call fetchGexHeatmap: a cache miss here reports `cached:false`
+ * rather than building a fresh matrix, which would cost a live Polygon chain fetch on
+ * every admin-panel poll just from being viewed. Checks the in-memory mirror first (same
+ * `cachedHeatmaps` map fetchGexHeatmap itself checks first), then falls back to a single
+ * Redis read — no upstream call, no write, no single-flight registration. Used by
+ * src/lib/admin-gex-health.ts (task #138, BlackOut Thermal admin health panel) to report
+ * per-ticker cache freshness without adding any cost of its own — the same CACHE-READER
+ * discipline appendGexEodSnapshot/getGexEodHistory already follow in this file, just
+ * skipping even fetchGexHeatmap's own cache-then-build fallback.
+ */
+export async function peekGexHeatmapCache(ticker: string): Promise<GexHeatmapCachePeek> {
+  const { root } = resolveOptionsRoot(ticker);
+  const cacheKey = `${GEX_HEATMAP_CACHE_PREFIX}:${root}`;
+  const ttlMs = gexHeatmapCacheMsFor(root);
+
+  let entry = cachedHeatmaps.get(cacheKey) ?? null;
+  if (!entry) {
+    try {
+      const { sharedCacheGet } = await import("../shared-cache");
+      entry = await sharedCacheGet<{ at: number; data: GexHeatmap }>(cacheKey);
+    } catch {
+      entry = null; // Redis optional — a miss/error here is just "cold", never thrown.
+    }
+  }
+
+  if (!entry) {
+    return {
+      ticker: root,
+      cached: false,
+      last_compute_at: null,
+      age_sec: null,
+      ttl_sec: Math.round(ttlMs / 1000),
+      stale: true,
+      spot: null,
+      events_count: null,
+    };
+  }
+
+  const ageMs = Date.now() - entry.at;
+  return {
+    ticker: root,
+    cached: true,
+    last_compute_at: new Date(entry.at).toISOString(),
+    age_sec: Math.round(ageMs / 1000),
+    ttl_sec: Math.round(ttlMs / 1000),
+    stale: ageMs > gexHeatmapMaxStaleMs(),
+    spot: entry.data.spot > 0 ? entry.data.spot : null,
+    events_count: entry.data.events ? entry.data.events.length : null,
+  };
 }
 
 async function polygonFetchUrl(url: string): Promise<ChainResponse | null> {

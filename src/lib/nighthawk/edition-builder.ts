@@ -16,7 +16,11 @@ import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
 import { polygonConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
-import { recordNighthawkRejectedAuditTrail, syncNighthawkPlayOutcomes } from "./play-outcomes";
+import {
+  recordNighthawkRejectedAuditTrail,
+  recordNighthawkStageRejectedAuditTrail,
+  syncNighthawkPlayOutcomes,
+} from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
@@ -29,6 +33,7 @@ import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from ".
 import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { backfillThinEditionPlays } from "./play-backfill";
+import { partitionPlaysByGeometry } from "./play-constraints";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -654,6 +659,7 @@ export async function buildEveningEdition(opts?: {
         funnel: synthFunnel,
         grounding: synthGrounding,
         geometryRejected,
+        stageRejected,
       } = await generateEditionPlays({
         ctx,
         dossiers: synthesisDossiers,
@@ -673,6 +679,13 @@ export async function buildEveningEdition(opts?: {
       // write silently via the caught rejection, never propagating.
       if (geometryRejected?.length) {
         recordNighthawkRejectedAuditTrail(geometryRejected, editionFor);
+      }
+      // task #141: same treatment for the 3 LATER funnel rejection stages (premium-cap,
+      // illiquid-strike, ungrounded) plus sector-concentration — previously console.warn-only,
+      // so "why was ticker X rejected tonight" had no durable answer for any of these. Same
+      // fire-and-forget / dedup / unconditional-call semantics as geometryRejected above.
+      if (stageRejected?.length) {
+        recordNighthawkStageRejectedAuditTrail(stageRejected, editionFor);
       }
       // Stamp grounding counts onto the funnel so EVERY exit (incl. recap-only fallbacks below)
       // reports them. The checks already ran inside generateEditionPlays before any drop took effect.
@@ -779,6 +792,22 @@ export async function buildEveningEdition(opts?: {
     }
 
     // STAGE 6 — Publish
+    // FINAL GEOMETRY GATE: thin-edition backfill and checkpoint-resume can introduce plays that
+    // never ran through generateEditionPlays' geometry filter — reject them here rather than
+    // persisting untradeable risk plans (audit task #146 / ops #519).
+    {
+      const { passing, failing } = partitionPlaysByGeometry(finalPlays);
+      if (failing.length) {
+        console.warn(
+          "[nighthawk/edition] final geometry gate rejected:",
+          failing.map((f) => `${f.play.ticker}: ${f.drops.join("; ")}`)
+        );
+        finalPlays = passing.map((p, i) => ({ ...p, rank: i + 1 }));
+        funnel.published = finalPlays.length;
+        funnel.critic_passed = finalPlays.length;
+      }
+    }
+
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
     // exits above already route an empty funnel to publishRecapOnlyEdition (recap_only:true in meta).
     // This last-resort guard catches any way finalPlays could arrive empty here — a stale/old

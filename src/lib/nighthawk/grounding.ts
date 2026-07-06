@@ -456,6 +456,11 @@ export function extractStatedFlowDollars(text: string): number | null {
   return best;
 }
 
+/** task #141: one HARD-dropped play's ticker/original play/drop-severity issues, so the caller can
+ *  build a durable rejection-audit row citing exactly which claimed level(s) failed to ground and
+ *  against what — `summary.notes` only has a flattened text line, not the structured detail. */
+export type GroundingDroppedPlay = { ticker: string; play: PlaybookPlay; issues: GroundingIssue[] };
+
 /**
  * Ground an entire batch of plays. Returns the surviving (kept, possibly mutated) plays plus a
  * summary for the funnel log + edition meta. Dropped plays are removed; flagged plays are kept with
@@ -465,8 +470,12 @@ export function groundPlays(
   plays: PlaybookPlay[],
   chains: Record<string, EditionChainData>,
   dossiers: Record<string, TickerDossier>
-): { plays: PlaybookPlay[]; summary: GroundingSummary } {
+): { plays: PlaybookPlay[]; summary: GroundingSummary; dropped: GroundingDroppedPlay[] } {
   const kept: PlaybookPlay[] = [];
+  // task #141: additive — records the SAME plays `summary.dropped_ungrounded` already counted and
+  // `summary.notes` already logged as text, just structured instead of flattened, so a caller can
+  // write a durable per-ticker audit row. Drop/keep logic and thresholds below are untouched.
+  const dropped: GroundingDroppedPlay[] = [];
   const summary: GroundingSummary = { grounded: 0, dropped_ungrounded: 0, flagged: 0, notes: [] };
 
   for (const play of plays) {
@@ -484,9 +493,11 @@ export function groundPlays(
 
     if (result.severity === "drop") {
       summary.dropped_ungrounded += 1;
-      const reason = result.issues.filter((i) => i.severity === "drop").map((i) => i.detail).join(" ");
+      const dropIssues = result.issues.filter((i) => i.severity === "drop");
+      const reason = dropIssues.map((i) => i.detail).join(" ");
       summary.notes.push(`DROP ${play.ticker}: ${reason}`);
       console.warn(`[nighthawk/grounding] DROP ${play.ticker}: ${reason}`);
+      dropped.push({ ticker: play.ticker, play, issues: dropIssues });
       continue;
     }
 
@@ -503,5 +514,5 @@ export function groundPlays(
 
   // Re-rank survivors 1..N so a dropped play doesn't leave a rank gap.
   const reranked = kept.map((p, i) => ({ ...p, rank: i + 1 }));
-  return { plays: reranked, summary };
+  return { plays: reranked, summary, dropped };
 }

@@ -1,0 +1,123 @@
+/**
+ * Native iOS navigation motion — page transitions, tab indicator, header crossfade.
+ */
+
+html.ios-app.ios-native-shell {
+  --ios-nav-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Disable legacy CSS enter animation — framer handles page transitions */
+html.ios-app.ios-native-shell .page-shell,
+html.ios-app.ios-native-shell .ios-desk-shell {
+  animation: none !important;
+}
+
+html.ios-app.ios-native-shell .ios-native-page-stage {
+  will-change: transform, opacity;
+}
+
+/* Tab bar — sliding spring indicator */
+html.ios-app.ios-native-shell .ios-app-tab-li {
+  position: relative;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-indicator {
+  position: absolute;
+  inset: 4px 2px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tab-accent, #00e676) 14%, transparent);
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--tab-accent, #00e676) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link {
+  position: relative;
+  z-index: 1;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-active-bar {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-icon {
+  transform: scale(1.08);
+  transition: transform 0.32s var(--ios-nav-spring);
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-link .ios-app-tab-icon {
+  transition: transform 0.28s var(--ios-nav-spring);
+}
+
+/* Header title crossfade container */
+html.ios-app.ios-native-shell .ios-native-header-title {
+  position: relative;
+  min-height: 1.5rem;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-title-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+html.ios-app.ios-native-shell .ios-native-header-accent {
+  transition: background 0.35s var(--ios-nav-spring);
+}
+
+/* Segment sliding pill */
+html.ios-app.ios-native-shell .ios-native-segment {
+  position: relative;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--segment-accent, #00e676) 18%, transparent);
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--segment-accent, #00e676) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-btn {
+  position: relative;
+  z-index: 1;
+}
+
+html.ios-app.ios-native-shell .ios-native-segment-btn-active {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Internal panel crossfade (segment switches within a tool) */
+@keyframes ios-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html.ios-app.ios-native-shell .ios-native-panel-visible {
+  animation: ios-panel-enter 0.32s var(--ios-nav-spring) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.ios-app.ios-native-shell .ios-native-panel-visible {
+    animation: none;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-link-active .ios-app-tab-icon {
+    transform: none;
+  }
+}

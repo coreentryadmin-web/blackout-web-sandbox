@@ -87,6 +87,20 @@ export async function probeWriterTargetFresh(jobKey: string): Promise<WriterTarg
         detail: `gex-heatmap:SPX asof ${ageMin != null ? `${ageMin.toFixed(1)}m` : "?"} ago`,
       };
     }
+    case "desk-warm": {
+      const { loadSpxDesk } = await import("@/lib/spx-desk-loader");
+      try {
+        const desk = await loadSpxDesk();
+        const ageMin = ageMinFromIso(desk.polled_at ?? desk.as_of);
+        const fresh = ageMin != null && ageMin <= 2;
+        return {
+          fresh,
+          detail: `spx-desk asof ${ageMin != null ? `${ageMin.toFixed(1)}m` : "?"} ago`,
+        };
+      } catch {
+        return { fresh: false, detail: "spx-desk cache cold" };
+      }
+    }
     case "grid-warm": {
       const { GRID_KEYS } = await import("@/lib/providers/grid");
       const { getUwCacheRedis } = await import("@/lib/providers/uw-shared-cache");

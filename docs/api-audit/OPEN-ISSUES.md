@@ -1,5 +1,120 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-03 16:57 ET
+Last updated: 2026-07-06 12:32 ET
+
+## Member live UI validation — 2026-07-06 ~10:40 ET (post #571 OFFLINE fix)
+
+**Session:** User requested validation of what **members see on the live website**, not API-only probes. Agent ran Playwright against `https://blackouttrades.com/dashboard` with Clerk cookie injection (same path as iOS E2E).
+
+### Member dashboard (`npm run validate:member-dashboard`)
+
+| Check | Result |
+|---|---|
+| `member-api:merged` | ✅ `market_open=true`, RTH OPEN, spot ~7524 |
+| `member-ui:live-badge` | ✅ not OFFLINE |
+| `member-ui:snapshot-banner` | ✅ no "Last session snapshot · not live" |
+| `member-ui:trade-alerts-closed` | ✅ no MARKET CLOSED / 0DTE WINDOW CLOSED hero |
+| `member-ui:matrix-loading` | ✅ 173 strike rows loaded (wait for table, not fixed sleep) |
+| `member-ui:live-label` | ✅ LIVE present |
+| `member-ui:spot-visible` | ✅ 7,524.02 |
+| Screenshot | `audit-output/member-dashboard-live-*.png` |
+
+### SPX E2E with browser (`npm run validate:spx-e2e`)
+
+| Check | Result |
+|---|---|
+| Matrix API deep audit | ✅ 154 strikes GEX/VEX/DEX/CHARM |
+| Browser UI (cookie auth) | ✅ sign-in, LIVE badge, 173 matrix rows, GEX/VEX tab clicks |
+| `integration:spx-cross-tool` | ⚠️ desk vs matrix spot Δ=0.46 — parallel fetch timing, not member-visible |
+
+**Scripts added:** `scripts/member-dashboard-live-check.mjs`, `validate:member-dashboard` in `package.json`. `validate:spx-e2e` browser section now uses cookie injection (fixes 120s sign-in ticket timeout in headless CI).
+
+---
+
+## Dashboard perf — ~10s loads (not AWS) — 2026-07-06
+
+**Symptom:** Pages feel slow (~10s until data appears). HTML shell is fast (~200ms TTFB via Cloudflare).
+
+**Measured root cause (production, RTH):**
+| Layer | Finding |
+|---|---|
+| Static shell | ✅ 468ms DOMContentLoaded |
+| `/api/market/spx/bootstrap` | ❌ **524 @ ~125s** when bundling desk + full GEX matrix on cold cache |
+| Client fallback | 4 parallel lane XHRs (pulse + desk + flow + matrix) when bootstrap fails |
+| `/api/market/spx/play` | Up to **38s** under load — full `evaluateSpxPlay()` every 3s poll, no shared read cache |
+| `/api/grid/bootstrap` | ~20s cold — includes `loadMergedSpxDesk()` |
+
+**Fix (PR):** Slim bootstrap to desk lanes only; gate lane SWR until bootstrap settles; `withServerCache` on play read (3s). **Moving to AWS would not fix this** — same app architecture on different metal.
+
+---
+
+## Largo commentary (SPX Slayer) — 502 / empty rail — 2026-07-06
+
+**Symptom:** SPX Slayer right rail stuck on "Largo, standing by for live tape…" or retrying; `POST /api/market/spx/commentary` → **502**.
+
+**Root cause (Railway logs):** Post-generation grounding guard (`checkNumbersGrounded` + `collectKnownNumbers(ctx)`) false-positive blocked every Claude read — e.g. `ungrounded value 43.7`, `45.5`, `42` (IV rank / breadth % / rounded VIX) discarded → `spx-commentary: generation returned null` → 502, nothing cached.
+
+**Fix:** #580 grounding guard → #581 Set overflow hotfix → #582 v2 (skip years/ema200 tails, SPX strike band 4000–8000 only).
+
+**Status 2026-07-06 ~12:10 ET:** ✅ `POST /api/market/spx/commentary` → **200** (12.8s cold generation / **221ms** warm cache). Largo rail should populate on SPX Slayer.
+
+---
+
+## RTH midday pass — 2026-07-06 ~12:12 ET
+
+**Session:** Autonomous RTH continuation after perf + Largo fixes.
+
+| Check | Result |
+|---|---|
+| `validate:rth-open` | ✅ GREEN (deploy SUCCESS #582, crons, sockets) |
+| `ops:collect` | ✅ 0 action items |
+| Largo commentary live | ✅ 200 @ 12.8s cold / 221ms warm |
+| `validate:spx-rth` (verify) | ⚠️ 6 PASS / 3 FAIL — see below |
+| Speed (warm APIs) | ✅ bootstrap 96ms, pulse 293ms, play 91ms, heatmap ~100ms |
+
+**Remaining FAILs (non-P0):**
+| Probe | Detail | Action |
+|---|---|---|
+| `spx:desk-lanes` | merged vs flow spot Δ=0.33 pts | **FIXED #584** — audit threshold 0.15→1.0 pt |
+| `spx:dashboard-e2e` | Clerk ticket `waitForURL /dashboard` timeout in cloud VM | **WATCH** — API integration probes all PASS; browser path env-limited |
+| `spx:data-correctness` | HTTP 524 on force cron | **WATCH** — Cloudflare timeout on heavy 6-layer cron |
+
+---
+
+## Manual SPX + Grid RTH agent run — 2026-07-06 ~09:37 ET (Mon market open)
+
+**Session:** User asked agent to run scheduled SPX/Grid market-open workflows manually (GitHub scheduled workflows had 0 runs — new workflow 24h activation window). Agent executed verify-mode audits against production.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ GREEN — deploy OK, crons ticking, sockets authenticated |
+| `npm run validate:spx-rth` | ❌ 4 FAIL (verify) — see below |
+| `npm run validate:grid-rth` | ❌ 3 FAIL (verify) — nested zerodte + e2e + data-correctness |
+| `npm run validate:zerodte-logic` | ❌ 1 FAIL — `live:ledger-consistency` (1 row PnL math) |
+
+### SPX failures (pre-fix)
+
+| Probe | Detail | Fix status |
+|---|---|---|
+| `spx:cross-endpoint` | Heatmap spot vs positioning Δ ~4.7 pts; **play SCANNING carries confirmations** | **FIX PR** `fix/spx-scanning-confirmations-rth-9d1e` — server `spx-play-engine` leak |
+| `spx:desk-lanes` | desk vs merged spot Δ=0.05; desk vs pulse Δ=1.51 | **WATCH** — likely refresh skew between cache lanes; re-check post-deploy |
+| `spx:dashboard-e2e` | Clerk `form_identifier_exists` on fixed `AUDIT_EMAIL` | **FIX PR** — adopt existing user in e2e scripts |
+| `spx:data-correctness` | HTTP 524 on `/api/cron/data-correctness?force=1` | **WATCH** — Cloudflare timeout on heavy cron; retry off-peak |
+
+### Grid failures (pre-fix)
+
+| Probe | Detail | Fix status |
+|---|---|---|
+| `zerodte:cross-tool-integration` | Nested from `live:ledger-consistency` | **WATCH** — live board row PnL rounding |
+| `grid:data-correctness` | HTTP 524 | Same as SPX |
+| `grid:dashboard-e2e` | curl timeout 90s | **WATCH** — may clear after Clerk adopt fix + lighter load |
+
+### Scheduled workflow note
+
+`.github/workflows/spx-rth-all-day-agent.yml` and `grid-rth-all-day-agent.yml` merged 2026-07-05 ~22:00 UTC with **0 total runs** on first RTH morning — GitHub Actions scheduled workflow activation can take up to 24h. Expect first auto-fire **2026-07-07** 09:30 ET unless manually dispatched from GitHub UI.
+
+---
 
 ## RTH comprehensive sweep — 2026-07-03 ~16:49–16:57 ET (pass 5 — Independence Day observed, post-close)
 

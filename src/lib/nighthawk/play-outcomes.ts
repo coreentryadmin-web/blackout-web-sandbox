@@ -1,4 +1,5 @@
 import type { PlaybookPlay } from "./types";
+import type { ScoredCandidate } from "./scorer";
 import {
   fetchPendingNighthawkOutcomes,
   insertAlertAuditLog,
@@ -106,12 +107,250 @@ export function buildNighthawkAuditRow(
  *  attribution (unlike the published-row builder) — sector capping runs on the
  *  already-geometry-passed list downstream, so a rejected play was never sector-scored.
  *  `final_output` is null: a rejected play was never shown to a member, so there is no
- *  real "final output" to record. */
+ *  real "final output" to record.
+ *
+ *  `scored` (task #142, optional — omit or pass `null` when unavailable) is the confluence-
+ *  factor breakdown `scoreCandidate()` computed for this ticker THIS run (flow/tech/pos/news/
+ *  smart-money/fundamental/short-interest/catalyst sub-scores) — folded into `input_snapshot`
+ *  by `inputSnapshotForRejection` below so "why was ticker X rejected" also answers "and what
+ *  did the desk's confluence read on it look like." See that function's doc for why this is
+ *  passed in by the caller (claude-edition.ts's in-memory dossierMap) rather than looked up
+ *  here from `nighthawk_scoring_history` (task #129). */
 export function buildNighthawkRejectedAuditRow(
-  rejected: { ticker: string; drops: string[]; play: PlaybookPlay },
+  rejected: { ticker: string; drops: string[]; play: PlaybookPlay; scored?: ScoredCandidate | null },
   editionFor: string
 ): NighthawkAuditRow {
-  const { play, drops } = rejected;
+  // task #141: delegates to the generalized stage-rejection builder below (defined later in
+  // this file, but function declarations are hoisted and this only RUNS after the module has
+  // fully evaluated, same as any other cross-reference in this file). Output is byte-for-byte
+  // identical to the pre-#141 implementation for every field EXCEPT input_snapshot's new
+  // `confluence` key (task #142, additive) — verified by the existing tests in
+  // play-outcomes.test.ts, which are unchanged by this refactor.
+  return buildNighthawkStageRejectedAuditRow(
+    {
+      ticker: rejected.ticker,
+      play: rejected.play,
+      detail: { stage: "geometry", drops: rejected.drops },
+      scored: rejected.scored ?? null,
+    },
+    editionFor
+  );
+}
+
+// ── Stage 4 audit trail, LATER-stage rejections (task #141) ──────────────────────────────
+// `validatePlayGeometry()` above is only the FIRST of several real rejection points in the
+// synthesis funnel (claude-edition.ts's generateEditionPlays). Three more run strictly AFTER
+// a candidate has already survived geometry and is being considered for publication —
+// premium-cap, illiquid-strike (chain-contradicted OI), numeric-grounding ("ungrounded"),
+// plus sector-concentration in the same funnel (edition-builder.ts's capSectorConcentration
+// call, invoked from claude-edition.ts). Before this task NONE of the four wrote anything
+// durable — each was a `console.warn` only, so "why was ticker X rejected tonight" had a real
+// answer for geometry drops but was invisible by the next morning for every other reason,
+// even though the pipeline had already computed exactly why. See docs/audit/FINDINGS.md
+// (task #141) for the full root-cause writeup.
+//
+// DESIGN CHOICE: one discriminated-union `NighthawkRejectionDetail` + one generic builder
+// (`buildNighthawkStageRejectedAuditRow`) instead of 4 near-duplicate build/record function
+// pairs. `buildNighthawkRejectedAuditRow`/`recordNighthawkRejectedAuditTrail` above are kept
+// as thin geometry-specific wrappers around the generic builder — same exported names/
+// signatures as before this task (existing call site in edition-builder.ts and the existing
+// tests above are untouched) — so this is a pure internal DRY-up for the geometry case, not a
+// behavior change. All 4 stages share the same `alert_type: 'nighthawk_rejected'` /
+// `source_table: 'claude_edition_synthesis'` and the same DB write path
+// (`insertNighthawkRejectedAuditLog`), which already dedups on
+// `(alert_type, ticker, source_key->>'edition_for')` — a force-rebuild that re-derives the
+// same rejection for the same ticker/edition never writes a duplicate row, regardless of
+// which of the 4 stages it came from.
+export type NighthawkRejectionDetail =
+  | { stage: "geometry"; drops: string[] }
+  | {
+      stage: "premium_cap";
+      entry_premium: number | null;
+      cap_per_share: number;
+      entry_cost_per_contract: number | null;
+      cap_per_contract: number;
+    }
+  | {
+      stage: "illiquid_strike";
+      strike: number | null;
+      side: "call" | "put" | null;
+      expiry: string | null;
+      open_interest: number | null;
+      min_open_interest: number;
+    }
+  | { stage: "ungrounded"; issues: Array<{ check: string; detail: string }> }
+  | { stage: "sector_concentration"; sector: string; already_filled: number; max_per_sector: number };
+
+// Exported (task #145) so nighthawk/analytics.ts can invert this map — the admin funnel/
+// rejection-rate panel groups `alert_audit_log.trigger_reason` rows (a plain TEXT column,
+// already grouped in SQL by fetchNighthawkFunnelStats in db.ts) back into a short stage
+// slug/label without re-deriving or hardcoding a second copy of these 5 reason strings.
+export const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"], string> = {
+  geometry: "rejected at synthesis — failed the trade-geometry gate (untradeable risk plan)",
+  premium_cap: "rejected at synthesis — entry premium exceeded the platform's affordability cap",
+  illiquid_strike:
+    "rejected at synthesis — chain-contradicted strike (present on-chain but open interest below the liquidity floor)",
+  ungrounded:
+    "rejected at synthesis — claimed level(s)/contract did not ground against real chain or dossier data",
+  sector_concentration: "rejected at synthesis — sector-concentration cap reached for this edition",
+};
+
+function decisionTraceForRejection(
+  detail: NighthawkRejectionDetail
+): Array<{ check: string; passed: boolean; value: unknown; threshold: unknown }> {
+  switch (detail.stage) {
+    case "geometry":
+      return detail.drops.map((reason, i) => ({
+        check: `geometry_drop_${i + 1}`,
+        passed: false,
+        value: reason,
+        threshold: null,
+      }));
+    case "premium_cap":
+      return [
+        {
+          check: "premium_within_cap",
+          passed: false,
+          value: detail.entry_premium,
+          threshold: detail.cap_per_share,
+        },
+      ];
+    case "illiquid_strike":
+      return [
+        {
+          check: "strike_open_interest",
+          passed: false,
+          value: detail.open_interest,
+          threshold: detail.min_open_interest,
+        },
+      ];
+    case "ungrounded":
+      return detail.issues.map((issue, i) => ({
+        check: `ungrounded_${issue.check}_${i + 1}`,
+        passed: false,
+        value: issue.detail,
+        threshold: null,
+      }));
+    case "sector_concentration":
+      return [
+        {
+          check: "sector_concentration_cap",
+          passed: false,
+          value: detail.already_filled,
+          threshold: detail.max_per_sector,
+        },
+      ];
+  }
+}
+
+/** task #142: compact confluence-factor summary folded into every rejection stage's
+ *  `input_snapshot` (see `inputSnapshotForRejection` below) — the exact sub-scores
+ *  `scoreCandidate()` (scorer.ts) computed for this ticker, never re-derived or
+ *  recomputed here. `null` when the caller has no matching `ScoredCandidate` for this
+ *  ticker/run (mechanical-fallback path, or a ticker named outside the scored candidate
+ *  set) — honest per this module's "never fabricate" convention, same as every other
+ *  optional field in this file (e.g. `stop_data_unavailable`, `raw` in the synthesis
+ *  result). Deliberately NOT a full dump of `ScoredCandidate` — `catalyst_flags`/
+ *  `fundamental_flags` arrays are kept (small, human-readable) but nothing from the
+ *  underlying dossier itself (news articles, congress trades, dark-pool prints) is
+ *  duplicated here; that full context is what `nighthawk_scoring_history`/
+ *  `get_nighthawk_dossier` remain the source of truth for (task #129) — this is a
+ *  same-row SUMMARY so a rejection's audit row is self-explaining without a second
+ *  lookup, not a second copy of the archive. */
+function confluenceSnapshot(scored: ScoredCandidate | null | undefined): Record<string, unknown> | null {
+  if (!scored) return null;
+  return {
+    total_score: scored.score,
+    direction: scored.direction,
+    conviction: scored.conviction,
+    flow_score: scored.flow_score,
+    tech_score: scored.tech_score,
+    pos_score: scored.pos_score,
+    news_score: scored.news_score,
+    smart_money_score: scored.smart_money_score,
+    fundamental_score: scored.fundamental_score ?? null,
+    catalyst_score: scored.catalyst_score ?? null,
+    catalyst_flags: scored.catalyst_flags ?? [],
+    short_interest_score: scored.short_interest_score ?? null,
+    earnings_risk: scored.earnings_risk ?? false,
+    regime_multiplier: scored.regime_multiplier ?? null,
+    fundamental_block: scored.fundamental_block ?? false,
+    fundamental_flags: scored.fundamental_flags ?? [],
+    trading_halt: scored.trading_halt ?? false,
+  };
+}
+
+function inputSnapshotForRejection(
+  detail: NighthawkRejectionDetail,
+  play: PlaybookPlay,
+  levels: ReturnType<typeof parsePlayLevels>,
+  scored?: ScoredCandidate | null
+): Record<string, unknown> {
+  const base = {
+    entry_range_low: levels.entry_range_low,
+    entry_range_high: levels.entry_range_high,
+    target: levels.target,
+    stop: levels.stop,
+    score: play.score ?? null,
+    // task #142: folded in for EVERY stage (not just geometry) — the same in-memory
+    // dossier is available at all 5 rejection push sites in claude-edition.ts's
+    // generateEditionPlays(). See confluenceSnapshot's doc for the honesty convention
+    // and why this reads the in-memory ScoredCandidate rather than joining
+    // nighthawk_scoring_history: that table isn't archived until AFTER a rejection is
+    // already recorded (archiveAndClearNighthawkStaging runs post-publish, in
+    // edition-builder.ts, strictly later than generateEditionPlays' rejection
+    // collection) — a DB read at build time would find nothing for tonight's edition.
+    confluence: confluenceSnapshot(scored),
+  };
+  switch (detail.stage) {
+    case "geometry":
+      return { ...base, raw_entry_range: play.entry_range, raw_target: play.target, raw_stop: play.stop };
+    case "premium_cap":
+      return {
+        ...base,
+        entry_premium: detail.entry_premium,
+        cap_per_share: detail.cap_per_share,
+        entry_cost_per_contract: detail.entry_cost_per_contract,
+        cap_per_contract: detail.cap_per_contract,
+        options_play: play.options_play,
+      };
+    case "illiquid_strike":
+      return {
+        ...base,
+        strike: detail.strike,
+        side: detail.side,
+        expiry: detail.expiry,
+        open_interest: detail.open_interest,
+        min_open_interest: detail.min_open_interest,
+        options_play: play.options_play,
+      };
+    case "ungrounded":
+      return { ...base, ungrounded_issues: detail.issues, options_play: play.options_play };
+    case "sector_concentration":
+      return {
+        ...base,
+        sector: detail.sector,
+        already_filled: detail.already_filled,
+        max_per_sector: detail.max_per_sector,
+      };
+  }
+}
+
+/** Build the audit-trail row for a play rejected at ANY of the 4 later-funnel stages
+ *  (premium-cap, illiquid-strike, ungrounded, sector-concentration) — the generalized
+ *  sibling of {@link buildNighthawkRejectedAuditRow} (geometry-only). `source_table` /
+ *  `alert_type` match the geometry builder: a rejected play at any of these stages is
+ *  never written to `nighthawk_play_outcomes`, so this audit row is its ONLY record.
+ *  `final_output` is null for the same reason the geometry builder's is — a rejected
+ *  play was never shown to a member.
+ *
+ *  `scored` (task #142, optional): see {@link buildNighthawkRejectedAuditRow}'s doc — the
+ *  same confluence-breakdown pass-through, applied uniformly to all 4 later stages here. */
+export function buildNighthawkStageRejectedAuditRow(
+  rejected: { ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored?: ScoredCandidate | null },
+  editionFor: string
+): NighthawkAuditRow {
+  const { play, detail, scored } = rejected;
   const ticker = String(play.ticker ?? "").toUpperCase();
   const levels = parsePlayLevels(play);
   const direction: "LONG" | "SHORT" = String(play.direction ?? "LONG").toUpperCase().includes("SHORT")
@@ -125,38 +364,24 @@ export function buildNighthawkRejectedAuditRow(
     direction,
     confidence_score: play.score ?? null,
     confidence_label: String(play.conviction ?? "B").toUpperCase(),
-    trigger_reason: "rejected at synthesis — failed the trade-geometry gate (untradeable risk plan)",
-    decision_trace: drops.map((reason, i) => ({
-      check: `geometry_drop_${i + 1}`,
-      passed: false,
-      value: reason,
-      threshold: null,
-    })),
-    input_snapshot: {
-      entry_range_low: levels.entry_range_low,
-      entry_range_high: levels.entry_range_high,
-      target: levels.target,
-      stop: levels.stop,
-      score: play.score ?? null,
-      raw_entry_range: play.entry_range,
-      raw_target: play.target,
-      raw_stop: play.stop,
-    },
+    trigger_reason: REJECTION_TRIGGER_REASON[detail.stage],
+    decision_trace: decisionTraceForRejection(detail),
+    input_snapshot: inputSnapshotForRejection(detail, play, levels, scored),
     final_output: null,
   };
 }
 
-/** Fire-and-forget: one audit row per geometry-rejected play. Safe to call on every
- *  synthesis run (fresh or force-rebuilt) — `insertNighthawkRejectedAuditLog`'s
- *  `ON CONFLICT ... DO NOTHING` (via the partial unique index) absorbs a re-derived
- *  rejection for the same edition/ticker without writing a duplicate row. Failures are
- *  logged, never thrown — the audit trail must not be able to break edition publishing. */
-export function recordNighthawkRejectedAuditTrail(
-  rejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay }>,
+/** Fire-and-forget: one audit row per play rejected at any of the 4 later-funnel stages
+ *  (premium-cap, illiquid-strike, ungrounded, sector-concentration). Same dedup/failure
+ *  semantics as {@link recordNighthawkRejectedAuditTrail}: `insertNighthawkRejectedAuditLog`'s
+ *  `ON CONFLICT ... DO NOTHING` absorbs a re-derived rejection on a force-rebuild, and a
+ *  write failure is logged, never thrown. */
+export function recordNighthawkStageRejectedAuditTrail(
+  rejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored?: ScoredCandidate | null }>,
   editionFor: string
 ): void {
   for (const r of rejected) {
-    const row = buildNighthawkRejectedAuditRow(r, editionFor);
+    const row = buildNighthawkStageRejectedAuditRow(r, editionFor);
     void insertNighthawkRejectedAuditLog({
       source_key: row.source_key,
       ticker: row.ticker,
@@ -167,9 +392,36 @@ export function recordNighthawkRejectedAuditTrail(
       decision_trace: row.decision_trace,
       input_snapshot: row.input_snapshot,
     }).catch((err) => {
-      console.warn(`[nighthawk-audit] failed to write rejected alert_audit_log for ${row.ticker}:`, err);
+      console.warn(
+        `[nighthawk-audit] failed to write rejected alert_audit_log (${r.detail.stage}) for ${row.ticker}:`,
+        err
+      );
     });
   }
+}
+
+/** Fire-and-forget: one audit row per geometry-rejected play. Safe to call on every
+ *  synthesis run (fresh or force-rebuilt) — `insertNighthawkRejectedAuditLog`'s
+ *  `ON CONFLICT ... DO NOTHING` (via the partial unique index) absorbs a re-derived
+ *  rejection for the same edition/ticker without writing a duplicate row. Failures are
+ *  logged, never thrown — the audit trail must not be able to break edition publishing.
+ *  Thin wrapper over {@link recordNighthawkStageRejectedAuditTrail} (task #141) — same
+ *  external signature/behavior as before that task (plus task #142's optional `scored`
+ *  pass-through), kept for the existing edition-builder.ts call site and the existing
+ *  tests above. */
+export function recordNighthawkRejectedAuditTrail(
+  rejected: Array<{ ticker: string; drops: string[]; play: PlaybookPlay; scored?: ScoredCandidate | null }>,
+  editionFor: string
+): void {
+  recordNighthawkStageRejectedAuditTrail(
+    rejected.map((r) => ({
+      ticker: r.ticker,
+      play: r.play,
+      detail: { stage: "geometry" as const, drops: r.drops },
+      scored: r.scored ?? null,
+    })),
+    editionFor
+  );
 }
 
 /** Fire-and-forget: one audit row per FRESHLY published ticker (never on a

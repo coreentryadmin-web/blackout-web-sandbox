@@ -32,6 +32,25 @@ type InsertedRow = {
 
 let inserted: InsertedRow[] = [];
 let toolLoopToolNames: string[] = [];
+// Task #165 — when set, the mocked anthropicToolLoop below dispatches one tool (so the
+// failure row's tools_used can be proven to carry whatever partial progress happened before
+// the throw) and then throws this error, simulating a real tool-loop failure (timeout,
+// Anthropic API error, etc.) instead of resolving with an answer.
+let toolLoopError: Error | null = null;
+
+// Task #166 — captures every appendLargoMessage() call so the router-path tests below can
+// assert the fix directly: a BIE-router-composed assistant turn must now be persisted WITH a
+// non-empty toolResults array (routed.context), not omitted as it was before this fix. See
+// largo-store.ts's fetchRecentLargoAnswersWithResults doc comment for why that mattered — a
+// router turn persisted with no tool_results was invisible to largo-verifier.ts's nightly
+// numeric-grounding audit.
+type AppendedCall = {
+  role: "user" | "assistant";
+  content: string;
+  toolsUsed: string[];
+  toolResults: unknown[] | undefined;
+};
+let appended: AppendedCall[] = [];
 
 let runLargoQuery: typeof import("./largo-terminal").runLargoQuery;
 let runLargoQueryStream: typeof import("./largo-terminal").runLargoQueryStream;
@@ -75,6 +94,13 @@ before(async () => {
       anthropicToolLoop: async (params: {
         runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
       }) => {
+        if (toolLoopError) {
+          // Partial progress before the failure — proves the logged failure row's
+          // tools_used carries whatever really happened, not an empty placeholder.
+          await params.runTool("get_quote", { ticker: "NVDA" });
+          toolLoopToolNames.push("get_quote");
+          throw toolLoopError;
+        }
         await params.runTool("get_quote", { ticker: "NVDA" });
         await params.runTool("get_technicals", { ticker: "NVDA" });
         toolLoopToolNames.push("get_quote", "get_technicals");
@@ -113,7 +139,16 @@ before(async () => {
       fetchLargoHistory: async () => [],
       fetchLargoMessagesPublic: async () => [],
       sessionOwnedByUser: async () => true,
-      appendLargoMessage: async () => {},
+      appendLargoMessage: async (
+        _sid: string,
+        _userId: string,
+        role: "user" | "assistant",
+        content: string,
+        toolsUsed: string[] = [],
+        toolResults?: unknown[]
+      ) => {
+        appended.push({ role, content, toolsUsed, toolResults });
+      },
     },
   });
 
@@ -173,6 +208,7 @@ before(async () => {
 
 test("runLargoQuery: a deterministic router turn persists intent_bucket = the real intent, tools_used = [blackout_intelligence]", async () => {
   inserted = [];
+  appended = [];
   const result = await runLargoQuery("How are today's plays doing?", "", "user-1");
   await waitForInserts(1);
 
@@ -185,10 +221,26 @@ test("runLargoQuery: a deterministic router turn persists intent_bucket = the re
   // name (not null) whenever the router actually matched.
   assert.equal(row.intent_bucket, "zerodte_plays");
   assert.deepEqual(row.tools_used, ["blackout_intelligence"]);
+
+  // Task #166: the router-composed assistant turn must persist its composed
+  // context as tool_results — previously omitted entirely, which left this whole
+  // path invisible to largo-verifier.ts's nightly grounding audit
+  // (fetchRecentLargoAnswersWithResults filters WHERE tool_results IS NOT NULL).
+  assert.equal(appended.length, 2, "expected one user + one assistant appendLargoMessage call");
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.ok(assistantCall, "assistant turn was persisted");
+  assert.ok(
+    Array.isArray(assistantCall.toolResults) && assistantCall.toolResults.length > 0,
+    "router-composed assistant turn must persist a non-empty toolResults array"
+  );
+  // The mocked composeBieAnswer() for "zerodte_plays" returns context: { live_pnl_pct: 50 } —
+  // confirm it's exactly that payload (wrapped, not dropped or replaced) that gets persisted.
+  assert.deepEqual(assistantCall.toolResults, [{ live_pnl_pct: 50 }]);
 });
 
 test("runLargoQuery: a Claude-fallback turn persists intent_bucket = 'claude_fallback' and the real dispatched tool names", async () => {
   inserted = [];
+  appended = [];
   toolLoopToolNames = [];
   // "Why did NVDA reverse?" fails classifyBieIntent's REASONING_RE guard ("why")
   // — falls through to Claude, exactly like a real unmatched member question.
@@ -210,10 +262,16 @@ test("runLargoQuery: a Claude-fallback turn persists intent_bucket = 'claude_fal
   // mocked tool loop actually invoked. Not an empty array, not a placeholder.
   assert.deepEqual(row.tools_used, ["live_feed_capture", "get_quote", "get_technicals"]);
   assert.equal(result.source, "blackout-web+postgres");
+
+  // Task #166 is scoped to the router path — confirm the pre-existing Claude-tool-loop
+  // persistence (capturedResults, already correct before this fix) is untouched.
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.deepEqual(assistantCall.toolResults, [{ ok: true }, { ok: true }]);
 });
 
 test("runLargoQueryStream: same persistence contract on the streaming path — router branch", async () => {
   inserted = [];
+  appended = [];
   const events: unknown[] = [];
   await runLargoQueryStream("What's the market doing?", "", "user-3", (e) => events.push(e));
   await waitForInserts(1);
@@ -223,6 +281,11 @@ test("runLargoQueryStream: same persistence contract on the streaming path — r
   assert.equal(row.answer_source, "bie-router");
   assert.equal(row.intent_bucket, "market_context");
   assert.deepEqual(row.tools_used, ["blackout_intelligence"]);
+
+  // Task #166 — same fix, streaming call site (runLargoQueryStream's own tryBieRoute
+  // branch, a separate call site from runLargoQuery's above).
+  const assistantCall = appended.find((c) => c.role === "assistant")!;
+  assert.deepEqual(assistantCall.toolResults, [{ vix: 12.5 }]);
 });
 
 test("runLargoQueryStream: same persistence contract on the streaming path — Claude-fallback branch", async () => {
@@ -238,4 +301,71 @@ test("runLargoQueryStream: same persistence contract on the streaming path — C
   assert.equal(row.intent, null);
   assert.equal(row.intent_bucket, "claude_fallback");
   assert.deepEqual(row.tools_used, ["live_feed_capture", "get_quote", "get_technicals"]);
+});
+
+// Task #165 — root cause: runLargoQuery's try block wrapping anthropicToolLoop had ONLY a
+// finally, no catch, so a thrown error skipped logBie() entirely and propagated straight to
+// the API route (a bare 502) with no trace in bie_interactions. These two tests lock in the
+// fix: the error must still propagate/emit completely unchanged (never swallowed), AND a
+// minimal failure row must land so calibration reports can see the failure happened at all.
+test("runLargoQuery: a thrown tool-loop error still propagates AND writes a logBie row with answer_source 'error'", async () => {
+  inserted = [];
+  toolLoopToolNames = [];
+  toolLoopError = new Error("tool loop boom");
+  try {
+    await assert.rejects(
+      () => runLargoQuery("Why did NVDA reverse today?", "", "user-err-1"),
+      /tool loop boom/
+    );
+    await waitForInserts(1);
+
+    assert.equal(inserted.length, 1);
+    const row = inserted[0]!;
+    assert.equal(row.answer_source, "error");
+    // Claims are explicitly null (never 0) — a turn that never produced an answer has no
+    // claims that were "verified none of," which is what 0 would falsely imply.
+    assert.equal(row.claims_total, null);
+    assert.equal(row.claims_verified, null);
+    assert.equal(row.intent, null);
+    assert.equal(row.intent_bucket, "claude_fallback");
+    // Whatever tool progress happened before the throw is still captured — not an empty
+    // placeholder — same "real tool names dispatched this turn" contract as the success path.
+    assert.deepEqual(row.tools_used, ["live_feed_capture", "get_quote"]);
+    assert.equal(typeof row.latency_ms, "number");
+  } finally {
+    toolLoopError = null;
+  }
+});
+
+test("runLargoQueryStream: a thrown tool-loop error still emits an 'error' SSE event AND writes a logBie row with answer_source 'error'", async () => {
+  inserted = [];
+  toolLoopToolNames = [];
+  toolLoopError = new Error("stream tool loop boom");
+  try {
+    const events: unknown[] = [];
+    // runLargoQueryStream's own catch swallows the error (it emits an SSE event instead of
+    // rethrowing) — the call must resolve, not reject.
+    await runLargoQueryStream("Should I hold my TSLA play into the close?", "", "user-err-2", (e) =>
+      events.push(e)
+    );
+    await waitForInserts(1);
+
+    assert.equal(inserted.length, 1);
+    const row = inserted[0]!;
+    assert.equal(row.answer_source, "error");
+    assert.equal(row.claims_total, null);
+    assert.equal(row.claims_verified, null);
+    assert.equal(row.intent_bucket, "claude_fallback");
+    assert.deepEqual(row.tools_used, ["live_feed_capture", "get_quote"]);
+
+    // The pre-existing error-event behavior is completely unchanged by this fix — purely
+    // additive logging, never a swallow of the visible failure signal either.
+    const errorEvent = events.find((e) => (e as { type?: string }).type === "error") as
+      | { type: string; message: string }
+      | undefined;
+    assert.ok(errorEvent, "expected an 'error' SSE event");
+    assert.equal(errorEvent?.message, "stream tool loop boom");
+  } finally {
+    toolLoopError = null;
+  }
 });

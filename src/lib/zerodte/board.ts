@@ -164,13 +164,77 @@ function aggressionWeight(askPct: number | null | undefined): number {
   return 0.15;
 }
 
+// ── Gate-rejection / near-miss capture (task #147) ────────────────────────────────
+// deriveZeroDteSetups below evaluates 4 real gates per aggregated candidate ticker
+// (SETUP_MIN_GROSS, SETUP_MIN_AGGR_SHARE, SETUP_MIN_DOMINANCE, SETUP_MAX_ITM_PCT) —
+// plus two defensive structural guards: a dominant side with premium but somehow no
+// strike on record (practically unreachable in real data), and a candidate whose tape
+// never carried a usable underlying price (see no_underlying_price below — NOT
+// practically unreachable; UW alert payloads can legitimately omit it) — and
+// `continue`s straight past any candidate that fails one, with nothing surviving past
+// that loop iteration.
+// This type + the optional `opts.rejections` out-array below let a caller durably
+// record exactly what was known about a candidate AT THE POINT it was rejected — no
+// more, no less. A rejection at an EARLIER gate genuinely never computes the LATER
+// gates' metrics (the real scan short-circuits there too), so this deliberately
+// leaves those fields `null` rather than back-filling a full recompute the live scan
+// itself never performs — the same "never fabricate a reading that wasn't actually
+// evaluated" discipline this codebase applies to shadow-factor availability.
+export type ZeroDteGateFailure =
+  | "min_gross"
+  | "min_aggr_share"
+  | "min_dominance"
+  | "max_itm_pct"
+  | "no_dominant_strike"
+  | "no_underlying_price";
+
+export type ZeroDteGateRejection = {
+  ticker: string;
+  gate_failed: ZeroDteGateFailure;
+  /** The real threshold constant this candidate was measured against (cited live,
+   *  same discipline buildZeroDteAuditRow uses, so a future threshold tune can't
+   *  retroactively relabel a historical rejection). `null` for the structural
+   *  no_dominant_strike/no_underlying_price guards, which have no numeric threshold. */
+  threshold: number | null;
+  gross_premium: number;
+  /** Null when the scan never reached the aggression-share gate for this candidate. */
+  aggression: number | null;
+  /** Null when the scan never reached the dominance gate for this candidate. */
+  side_dominance: number | null;
+  /** Null when the scan never reached the moneyness gate — including a
+   *  no_underlying_price rejection, since that IS the moneyness gate failing closed
+   *  on unreadable data (P0 fix: previously an unknown underlying price silently
+   *  SKIPPED this gate instead of failing it — see SETUP_MAX_ITM_PCT below). */
+  otm_pct: number | null;
+  /** The dominant side's lean, once the scan gets far enough to compute it (gate C
+   *  onward). Null for a min_gross/min_aggr_share rejection — the real scan does not
+   *  know a direction at that point either. */
+  direction: "long" | "short" | null;
+  prints: number;
+  first_seen: string | null;
+  last_seen: string | null;
+};
+
 /**
  * Derive ranked single-name setups from HELIX tape rows. Index products should be
  * excluded upstream (SPX has its own engines on this board).
+ *
+ * `opts.rejections`, when supplied, is an accumulator this function pushes a
+ * `ZeroDteGateRejection` into for every candidate ticker that fails a gate — purely
+ * additive (mutates the caller's array; never read from, never affects `setups`) and
+ * a complete no-op when omitted, so every existing caller/test that doesn't pass it
+ * sees zero behavior or allocation change. See the module doc above the type for why
+ * the captured data is necessarily partial per gate.
  */
 export function deriveZeroDteSetups(
   rows: FlowSetupInput[],
-  opts?: { maxSetups?: number; excludeTickers?: Set<string>; nowMs?: number; todayYmd?: string }
+  opts?: {
+    maxSetups?: number;
+    excludeTickers?: Set<string>;
+    nowMs?: number;
+    todayYmd?: string;
+    rejections?: ZeroDteGateRejection[];
+  }
 ): ZeroDteSetup[] {
   const maxSetups = opts?.maxSetups ?? 8;
   type Agg = {
@@ -282,16 +346,61 @@ export function deriveZeroDteSetups(
 
   const setups: ZeroDteSetup[] = [];
   for (const [ticker, agg] of Array.from(byTicker.entries())) {
-    if (agg.gross < SETUP_MIN_GROSS) continue;
+    if (agg.gross < SETUP_MIN_GROSS) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "min_gross",
+        threshold: SETUP_MIN_GROSS,
+        gross_premium: agg.gross,
+        aggression: null,
+        side_dominance: null,
+        otm_pct: null,
+        direction: null,
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
+    }
     // Aggressor filter: direction is read from AT-THE-ASK premium only. A tape of
     // sold premium (low aggressive share) is harvesting, not conviction — skip it.
     const aggrTotal = agg.callAggr + agg.putAggr;
     const aggression = agg.gross > 0 ? agg.aggrWeighted / agg.gross : 0;
-    if (aggrTotal <= 0 || aggression < SETUP_MIN_AGGR_SHARE) continue;
+    if (aggrTotal <= 0 || aggression < SETUP_MIN_AGGR_SHARE) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "min_aggr_share",
+        threshold: SETUP_MIN_AGGR_SHARE,
+        gross_premium: agg.gross,
+        aggression: Math.round(aggression * 100) / 100,
+        side_dominance: null,
+        otm_pct: null,
+        direction: null,
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
+    }
     const dominantCall = agg.callAggr >= agg.putAggr;
     const winning = dominantCall ? agg.callAggr : agg.putAggr;
     const dominance = winning / aggrTotal;
-    if (dominance < SETUP_MIN_DOMINANCE) continue;
+    if (dominance < SETUP_MIN_DOMINANCE) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "min_dominance",
+        threshold: SETUP_MIN_DOMINANCE,
+        gross_premium: agg.gross,
+        aggression: Math.round(aggression * 100) / 100,
+        side_dominance: Math.round(dominance * 100) / 100,
+        otm_pct: null,
+        direction: dominantCall ? "long" : "short",
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
+    }
 
     // Dominant strike on the winning side.
     let top: { prem: number; strike: number; expiry: number; fillPrem: number; fillW: number; contracts: number; oi: number } | null = null;
@@ -303,16 +412,73 @@ export function deriveZeroDteSetups(
         topExpiry = key.split("|")[1] ?? "";
       }
     }
-    if (!top) continue;
+    if (!top) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "no_dominant_strike",
+        threshold: null,
+        gross_premium: agg.gross,
+        aggression: Math.round(aggression * 100) / 100,
+        side_dominance: Math.round(dominance * 100) / 100,
+        otm_pct: null,
+        direction: dominantCall ? "long" : "short",
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
+    }
     const avgFill = top.fillW > 0 ? Math.round((top.fillPrem / top.fillW) * 100) / 100 : null;
 
     // Moneyness: deep-ITM top strike = stock replacement, not a directional 0DTE
-    // bet — excluded outright (the fake-out class live-caught on day one).
-    let otmPct: number | null = null;
-    if (agg.underlying && agg.underlying > 0) {
-      const raw = ((top.strike - agg.underlying) / agg.underlying) * 100;
-      otmPct = Math.round((dominantCall ? raw : -raw) * 100) / 100;
-      if (otmPct < -SETUP_MAX_ITM_PCT) continue;
+    // bet — excluded outright (the fake-out class live-caught on day one). This
+    // gate needs a real underlying price to evaluate. P0 FIX: this used to be
+    // `if (agg.underlying && agg.underlying > 0) { ...check...}` with NO else —
+    // when every print for a ticker's tape came back missing underlying_last/
+    // underlying_price/stock_price (a real UW payload gap, not hypothetical), the
+    // whole moneyness gate was silently SKIPPED and the candidate fell through to
+    // `setups.push(...)` below with `otm_pct: null`, i.e. a deep-ITM stock-
+    // replacement print (the exact SNDK 1880p-at-1723 class this gate exists to
+    // catch) could reach the live board completely ungated. Worse, a live
+    // underlying price is available moments later in scan.ts's attachContractPlans
+    // (`snap?.underlyingPrice`) but was never fed back to re-check this gate. Since
+    // this product has NO independent verifier (unlike SPX Slayer/Heat Maps), a
+    // fail-open gate here is invisible in production. Fixed to fail CLOSED, like
+    // every other gate in this function: unknown moneyness is now a rejection, not
+    // a free pass.
+    if (!(agg.underlying && agg.underlying > 0)) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "no_underlying_price",
+        threshold: null,
+        gross_premium: agg.gross,
+        aggression: Math.round(aggression * 100) / 100,
+        side_dominance: Math.round(dominance * 100) / 100,
+        otm_pct: null,
+        direction: dominantCall ? "long" : "short",
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
+    }
+    const raw = ((top.strike - agg.underlying) / agg.underlying) * 100;
+    const otmPct = Math.round((dominantCall ? raw : -raw) * 100) / 100;
+    if (otmPct < -SETUP_MAX_ITM_PCT) {
+      opts?.rejections?.push({
+        ticker,
+        gate_failed: "max_itm_pct",
+        threshold: -SETUP_MAX_ITM_PCT,
+        gross_premium: agg.gross,
+        aggression: Math.round(aggression * 100) / 100,
+        side_dominance: Math.round(dominance * 100) / 100,
+        otm_pct: otmPct,
+        direction: dominantCall ? "long" : "short",
+        prints: agg.prints,
+        first_seen: agg.firstSeen,
+        last_seen: agg.lastSeen,
+      });
+      continue;
     }
     // New money: implied contracts traded on the top strike exceed its OI.
     const newMoney = top.contracts > 0 && top.oi > 0 && top.contracts > top.oi;
@@ -554,7 +720,12 @@ export function buildZeroDteAuditRow(setup: EnrichedZeroDteSetup, sessionDate: s
       { check: "gross_premium_min", passed: setup.gross_premium >= SETUP_MIN_GROSS, value: setup.gross_premium, threshold: SETUP_MIN_GROSS },
       { check: "aggression_share_min", passed: (setup.aggression ?? 0) >= SETUP_MIN_AGGR_SHARE, value: setup.aggression, threshold: SETUP_MIN_AGGR_SHARE },
       { check: "side_dominance_min", passed: setup.side_dominance >= SETUP_MIN_DOMINANCE, value: setup.side_dominance, threshold: SETUP_MIN_DOMINANCE },
-      { check: "max_itm_pct", passed: setup.otm_pct == null || setup.otm_pct >= -SETUP_MAX_ITM_PCT, value: setup.otm_pct, threshold: -SETUP_MAX_ITM_PCT },
+      // P0 fix: previously `setup.otm_pct == null || ...` — a null reading (unknown
+      // underlying price) was recorded as PASSED. deriveZeroDteSetups now rejects
+      // those candidates outright (no_underlying_price), so a setup should never
+      // reach this function with a null otm_pct — but the audit trail fails CLOSED
+      // on it too, defense-in-depth, rather than assuming that invariant holds.
+      { check: "max_itm_pct", passed: setup.otm_pct != null && setup.otm_pct >= -SETUP_MAX_ITM_PCT, value: setup.otm_pct, threshold: -SETUP_MAX_ITM_PCT },
       { check: "intraday_conflict", passed: !setup.intraday_conflict, value: setup.intraday_conflict, threshold: false },
     ],
     input_snapshot: {

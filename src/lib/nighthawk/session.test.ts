@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   isBeforeOrAtMarketCloseEt,
   isTradingDayEt,
+  mostRecentTradingDayEt,
   nextTradingDayEt,
 } from "./session";
 
@@ -24,6 +25,21 @@ test("nextTradingDayEt skips the holiday weekend: Thu 07-02 -> Mon 07-06", () =>
 
 test("plain weekend skip: Fri -> Mon", () => {
   assert.equal(nextTradingDayEt("2026-07-10"), "2026-07-13");
+});
+
+// task #173 (market_regime staleness): mostRecentTradingDayEt is the boundary
+// /api/market/regime's GET compares a captured_at against to decide `stale`.
+test("mostRecentTradingDayEt returns today when today is itself a trading day", () => {
+  assert.equal(mostRecentTradingDayEt(new Date("2026-07-02T14:00:00Z")), "2026-07-02");
+});
+
+test("mostRecentTradingDayEt walks back over the July-4th-observed holiday weekend: Sun 07-05 -> Thu 07-02", () => {
+  // 07-05 (Sun) -> 07-04 (Sat) -> 07-03 (Fri, holiday) -> 07-02 (Thu, trading day).
+  assert.equal(mostRecentTradingDayEt(new Date("2026-07-05T16:00:00Z")), "2026-07-02");
+});
+
+test("mostRecentTradingDayEt walks back over a plain weekend: Sat -> Fri", () => {
+  assert.equal(mostRecentTradingDayEt(new Date("2026-07-11T16:00:00Z")), "2026-07-10");
 });
 
 test("isBeforeOrAtMarketCloseEt keeps an edition active through its session close", () => {

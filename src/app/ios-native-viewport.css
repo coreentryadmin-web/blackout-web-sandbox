@@ -1,0 +1,212 @@
+/**
+ * Native iOS — viewport fill (no dead space above instrument rail).
+ * Single bottom inset owner: fixed tab bar height via --ios-tab-offset.
+ * Content flexes to fill 100dvh − header − rail.
+ */
+
+html.ios-app.ios-native-shell.ios-tab-bar {
+  --ios-viewport-h: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset));
+}
+
+html.ios-app.ios-native-shell .ios-native-page-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+/* One shell — no stacked padding-bottom on shell + children */
+html.ios-app.ios-native-shell.ios-tab-bar .page-shell,
+html.ios-app.ios-native-shell.ios-tab-bar .ios-desk-shell,
+html.ios-app.ios-native-shell.ios-tab-bar .largo-page-main {
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell .page-shell > .content-rail,
+html.ios-app.ios-native-shell .ios-desk-shell > * {
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell .ios-desk-shell,
+html.ios-app.ios-native-shell .page-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: var(--ios-viewport-h, calc(100dvh - var(--ios-header-offset)));
+  box-sizing: border-box;
+}
+
+html.ios-app.ios-native-shell .ios-desk-shell.pb-8,
+html.ios-app.ios-native-shell .ios-desk-shell-web-pad {
+  padding-bottom: 0 !important;
+}
+
+/* ═══ SPX dashboard — fill the canvas ═══ */
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .ios-desk-shell {
+  padding-top: var(--ios-header-offset) !important;
+  padding-bottom: 0 !important;
+  min-height: var(--ios-viewport-h);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-desk {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.35rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-triple {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-content-gap);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-chart-col,
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-left-matrix,
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-commentary-rail-desk {
+  flex: 1;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-center-stack {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-trade-alerts-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: auto !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-panel-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-sniper-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-desk-closed {
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  padding: 1.5rem 1rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-trade-alert-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-gex-matrix-scroll {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-odte-matrix-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-commentary-viewport {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ═══ Other tool routes — fill available height ═══ */
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-inner-native,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .thermal-page-inner-native,
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main-native,
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-inner-native,
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-inner-native {
+  flex: 1;
+  min-height: var(--ios-viewport-h);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="faq"] .faq-page-native,
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-page-shell-native {
+  flex: 1;
+  min-height: var(--ios-viewport-h);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="learn"] .learn-shell-main {
+  padding-bottom: 0 !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-desk,
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-content-canvas,
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-desk-native {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-scroll-max {
+  flex: 1;
+  min-height: 0;
+  max-height: none !important;
+}
+
+/* Instrument rail — scroll for full names without mangled truncation */
+html.ios-app.ios-native-shell .ios-app-tab-list {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-li {
+  flex: 1 0 auto;
+  min-width: 4.25rem;
+  max-width: 5.5rem;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-label {
+  font-size: 8px;
+  line-height: 1.2;
+  -webkit-line-clamp: 2;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 430px) {
+  html.ios-app.ios-native-shell .ios-app-tab-li {
+    min-width: 4.75rem;
+    max-width: 6.25rem;
+  }
+
+  html.ios-app.ios-native-shell .ios-app-tab-label {
+    font-size: 9px;
+  }
+}

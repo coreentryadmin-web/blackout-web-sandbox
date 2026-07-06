@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import type { GridSectorRow, GridSectorsSnapshot } from "@/lib/providers/grid";
 
 type Res = { available: boolean } & Partial<GridSectorsSnapshot>;
@@ -35,7 +36,11 @@ function SectorCell({ sector }: { sector: GridSectorRow }) {
 
 export function GridSectorsPanel() {
   const { isFiltered } = useGridTicker();
-  const { data, error } = useSWR<Res>("/api/grid/sectors", fetcher, { refreshInterval: 90_000 });
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
+  const { data, error } = useSWR<Res>(panelKey("/api/grid/sectors"), fetcher, {
+    refreshInterval: 90_000,
+    revalidateOnMount,
+  });
   const sectors: GridSectorRow[] = data?.sectors ?? [];
   const live = !error && (data?.available ?? false);
 

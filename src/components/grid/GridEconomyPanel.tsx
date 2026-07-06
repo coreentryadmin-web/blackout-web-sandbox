@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridEconomySnapshot } from "@/lib/providers/grid";
 import type { UwMacroIndicatorSnapshot } from "@/lib/providers/unusual-whales";
@@ -62,7 +63,11 @@ function ChangeBadge({ pct }: { pct: number | null }) {
 
 export function GridEconomyPanel() {
   const { isFiltered } = useGridTicker();
-  const { data, error } = useSWR<Res>("/api/grid/economy", fetcher, { refreshInterval: 3_600_000 });
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
+  const { data, error } = useSWR<Res>(panelKey("/api/grid/economy"), fetcher, {
+    refreshInterval: 3_600_000,
+    revalidateOnMount,
+  });
   const indicators: UwMacroIndicatorSnapshot[] = data?.indicators ?? [];
   const live = !error && (data?.available ?? false);
 

@@ -6,13 +6,16 @@ import type { PlatformServiceId, PlatformSnapshot } from "./types";
 import * as spx from "./spx-service";
 import * as flows from "./flow-service";
 import * as nighthawk from "./nighthawk-service";
+import * as zerodte from "./zerodte-service";
 
 export type { PlatformServiceId, PlatformSnapshot, SpxDeskSummary, FlowTapeSummary, NightHawkEditionSummary } from "./types";
+export type { ZeroDteBoardPayload } from "./zerodte-service";
 
 export const marketPlatform = {
   spx,
   flows,
   nighthawk,
+  zerodte,
 
   /** Invoke any Largo tool by name — lazy import avoids circular deps with run-tool. */
   async invokeLargoTool(name: string, input: Record<string, unknown> = {}): Promise<unknown> {

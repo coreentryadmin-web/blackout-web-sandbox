@@ -14,6 +14,8 @@ description: Canonical BlackOut production audit probes, env names, and validati
 ```bash
 npm run validate:deploy          # after every main push
 npm run validate:rth-open        # weekday RTH (09:00–16:15 ET)
+npm run validate:spx-rth         # SPX all-day audit (matrix + desk + play + E2E)
+npm run validate:spx-e2e         # SPX /dashboard click-through + cross-tool
 npm run validate:gha-smoke       # prod HTTP smoke
 node scripts/gha-rth-audit.mjs   # full GHA audit (needs CRON_SECRET)
 ```

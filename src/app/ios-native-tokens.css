@@ -1,0 +1,20 @@
+/**
+ * BlackOut iOS native — single spacing + type scale (command center).
+ * Import before page/shell overrides.
+ */
+
+html.ios-app.ios-native-shell {
+  --ios-space-1: 0.25rem;
+  --ios-space-2: 0.5rem;
+  --ios-space-3: 0.75rem;
+  --ios-space-4: 1rem;
+  --ios-space-5: 1.25rem;
+
+  --ios-type-label: 10px;
+  --ios-type-section: 11px;
+  --ios-type-body: 15px;
+  --ios-type-title: 13px;
+
+  --ios-content-gap: var(--ios-space-3);
+  --ios-section-gap: var(--ios-space-4);
+}
