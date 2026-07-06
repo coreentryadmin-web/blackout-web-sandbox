@@ -55,6 +55,7 @@ node scripts/gha-rth-audit.mjs   # full GHA audit (needs CRON_SECRET)
 
 - RTH: `docs/ops/RTH-OPEN-RUNBOOK.md`
 - Auto-fix: `docs/ops/OPS-AUTO-FIX.md`
+- Merge policy: `CLAUDE.md` § Merge authorization — **auto-merge to `main` once CI green; no approval**
 - Open issues: `docs/api-audit/OPEN-ISSUES.md`
 - Full probe reference: `docs/api-audit/AUDIT-SKILL-REFERENCE.md`
 

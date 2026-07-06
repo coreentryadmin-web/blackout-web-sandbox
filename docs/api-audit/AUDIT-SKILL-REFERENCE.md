@@ -1,6 +1,6 @@
 # Audit SKILL reference (canonical — sync external task configs to this file)
 
-Last updated: 2026-06-29
+Last updated: 2026-07-06
 
 > **Purpose:** Scheduled deep-audit / connectivity / https-monitor tasks often ship with a
 > `SKILL.md` outside this repo. When those probes use stale paths or env names they generate

@@ -15,8 +15,15 @@ alwaysApply: true
    npm run validate:rth-open
    ```
 3. Do **not** wait for the user to say "market is open" or "continue tomorrow."
-4. If validation fails → diagnose → fix → commit → push → poll deploy → re-run until GREEN.
+4. If validation fails → diagnose → fix → branch → PR → **auto-merge to `main` once CI is green** → poll deploy → re-run until GREEN.
 5. After 09:35 ET, verify in Postgres that `spx-evaluate` is ticking and options-socket logs show `authenticated`.
+
+## Merge policy (standing)
+
+**Auto-merge to `main`** once required CI (`verify`) is green. Do not ask the user for merge
+approval. Enable `gh pr merge --auto --squash --delete-branch` on agent PRs; `cursor/*` branches
+also get this from `.github/workflows/automerge.yml`. Exceptions: draft PRs, red CI, Dependabot
+major bumps until fixed, deploy-risky holds — see `CLAUDE.md` § Merge authorization.
 
 ## After hours
 

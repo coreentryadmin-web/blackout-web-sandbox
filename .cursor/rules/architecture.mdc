@@ -23,7 +23,8 @@ Canonical repo is `blackout-platform/blackout-web` — `BO-AAI/` and any root `b
    `text-cyan-400`/`text-sky-300`/`text-white`.
 4. **Institutional UI bar** — Bloomberg/TradingView/Stripe/Linear, not Discord. See
    `DESIGN_BENCHMARK.md` + `institutional-design.mdc`. Use `FreshnessChip` for live state.
-5. **Default commit+push to `main`** (Railway auto-deploys); branch only for deploy-risky work.
+5. **Default commit+push to `main`** via PR auto-merge once CI is green (Railway auto-deploys);
+   branch only for deploy-risky work — still auto-merge after verification, don't wait for review.
 
 ## The data pipeline (internalize this)
 Providers (rate-limited; ONE WebSocket per key via Redis leader election) → **writers**

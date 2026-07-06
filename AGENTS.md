@@ -129,6 +129,20 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
     `DATABASE_SSL=0` (SSL auto-disables for localhost anyway). The `blackout` DB and `postgres`
     password were created during setup.
 
+### Merge policy (standing — confirmed 2026-07-06)
+
+**Auto-merge every verified PR into `main`** once local checks and required CI (`verify`) are green.
+Do not ask the user for merge approval. Workflow:
+
+1. Branch (`fix/*` or `cursor/*`) → commit → push → open PR to `main`
+2. Run local verification (tsc/test as applicable)
+3. Enable auto-merge: `gh pr merge <n> --auto --squash --delete-branch` (or wait for
+   `.github/workflows/automerge.yml` on `cursor/*` branches)
+4. Poll Railway deploy → `npm run validate:deploy`
+
+Full policy + exceptions: **`CLAUDE.md`** § Merge authorization. `FINDINGS.md` entries merge with
+their fix PR in the same session.
+
 ### Autonomous RTH resume (Cloud Agent — do NOT wait for user)
 
 **User preference:** continue at market open without being asked. Never prompt for permission.
@@ -137,7 +151,7 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 
 1. Read and execute `docs/ops/RTH-OPEN-RUNBOOK.md` **before** other work.
 2. Run `npm run validate:rth-open` (wraps `validate:deploy` + RTH session checks).
-3. If anything fails → fix → commit → push → poll Railway deploy → re-run until GREEN.
+3. If anything fails → fix → branch → PR → **auto-merge to `main` once CI is green** → poll Railway deploy → re-run until GREEN.
 4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` in Railway logs.
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
