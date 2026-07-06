@@ -176,17 +176,30 @@ function polygonSpotNow(ticker, isRth) {
  *  symbol (src/lib/ws/options-socket.ts:buildOcc) and guessing whether it resolves.
  *  Cached per (ticker, direction, strike) since the same setup can appear in both `setups`
  *  and `ledger` in one run. Returns null when no matching contract exists (a real bug) OR
- *  when the inputs are unusable (never conflated with a substantive FAIL by the caller). */
+ *  when the inputs are unusable (never conflated with a substantive FAIL by the caller).
+ *
+ *  IMPORTANT: unlike buildOcc's SPX->SPXW swap (which builds an OCC *ticker symbol*, where
+ *  Polygon/Massive really do list SPX index options under an "O:SPXW..." prefix), this
+ *  endpoint's `underlying_ticker` *filter parameter* only recognizes the underlying's plain
+ *  ticker "SPX" — passing "SPXW" here returns zero results even for real, live contracts
+ *  (confirmed directly against Polygon: `underlying_ticker=SPX&strike_price=7505` resolves
+ *  `O:SPXW260706C07505000`; `underlying_ticker=SPXW` with identical other params returns
+ *  `results: []`, whether the caller passed "SPXW" as a literal or via buildOcc's swap).
+ *  The 0DTE board's own `ticker` field for this instrument is "SPXW" (matching how UW/the
+ *  flow feed label the weekly, per src/lib/ws/options-socket.ts), so BOTH "SPX" and "SPXW"
+ *  inputs must normalize to "SPX" for this query — this was a false-positive FAIL bug in
+ *  this validator, not a real 0DTE Command data issue. Do not reintroduce a swap TO "SPXW"
+ *  here. */
 const zerodteContractCache = new Map();
 function resolveZeroDteContract(ticker, direction, strike, todayYmd, nextDayYmd) {
   const key = `${ticker}|${direction}|${strike}`;
   if (zerodteContractCache.has(key)) return zerodteContractCache.get(key);
-  const root = ticker === 'SPX' ? 'SPXW' : ticker; // same root swap as buildOcc
+  const underlyingTicker = ticker === 'SPX' || ticker === 'SPXW' ? 'SPX' : ticker;
   const contractType = direction === 'long' ? 'call' : direction === 'short' ? 'put' : null;
   let resolved = null;
   if (contractType && Number.isFinite(strike) && strike > 0) {
     const qs = new URLSearchParams({
-      underlying_ticker: root, contract_type: contractType, strike_price: String(strike),
+      underlying_ticker: underlyingTicker, contract_type: contractType, strike_price: String(strike),
       expired: 'false', 'expiration_date.gte': todayYmd, 'expiration_date.lte': nextDayYmd,
       sort: 'expiration_date', order: 'asc', limit: '5',
     });

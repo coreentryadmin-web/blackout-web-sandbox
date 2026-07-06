@@ -9,6 +9,22 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟡 P2 FOUND+FIXED 2026-07-06 — Audit validator false-positived on every live SPXW 0DTE play (branch `fix/zerodte-validator-spxw-underlying-ticker`)
+
+**Surface:** `scripts/audit/data-validator.mjs`'s `resolveZeroDteContract()` — the helper that proves a 0DTE Command ledger row's `top_strike` corresponds to a real, listed Polygon options contract. Found while manually re-running the validator mid-session (market open, RTH) per the user's ask to keep checking the SPX Grid/heatmaps through the day — a live SPXW play FAILed even though the platform's own play data was correct.
+
+**Root cause:** the function queries Polygon's `/v3/reference/options/contracts` with `underlying_ticker: root`, where `root` copied `src/lib/ws/options-socket.ts:buildOcc`'s SPX→SPXW swap verbatim. That swap is correct for building an OCC **ticker symbol** (Polygon really does list SPX index contracts as `O:SPXW260706C07505000`), but the reference-contracts endpoint's `underlying_ticker` **filter parameter** only recognizes the plain root "SPX" — passing "SPXW" silently returns `results: []` for every query, real contracts included. Confirmed directly against Polygon: `underlying_ticker=SPX&strike_price=7505&expiration_date.gte=2026-07-06` resolves `O:SPXW260706C07505000` (a live, real, tradeable 0DTE contract matching the exact ledger row that failed); `underlying_ticker=SPXW` with identical other params returns empty. Compounding factor: the 0DTE board's own `ticker` field for this instrument is already `"SPXW"` (not `"SPX"`) — so the pre-fix ternary (`ticker === 'SPX' ? 'SPXW' : ticker`) never even triggered a swap for this input; it was already "SPXW" going in, and stayed "SPXW" going out, still wrong.
+
+**Why it matters:** every SPXW/SPX 0DTE ledger row would FAIL this check on every future run — not a rare edge case, since SPX is one of 0DTE Command's core surfaced instruments. Left unfixed, this is exactly the kind of validator "crying wolf" that trains whoever reads the daily report to start ignoring real FAILs.
+
+**Fix:** normalize `underlying_ticker` to `"SPX"` for the query whenever the input ticker is either `"SPX"` or `"SPXW"`, while leaving the *resolved* OCC ticker in the function's return value untouched (Polygon's response already correctly returns `O:SPXW...`-prefixed tickers regardless of what was queried).
+
+**Evidence:** live re-run before the fix: `[FAIL] 0DTE ledger SPXW: top_strike 7505c exists in Polygon's real chain`. Live re-run after the fix, same market session, same ledger row: `[PASS] 0DTE ledger SPXW: top_strike 7505c exists in Polygon's real chain — resolved O:SPXW260706C07505000 (expiry 2026-07-06)`, plus two previously-`skipped`/blocked downstream checks (`underlying_at_flag`, `entry_premium` vs Polygon minute bars) now also run and PASS. Full run total went from `{"PASS":29,"INFO":5,"FAIL":1}` to `{"PASS":31,"INFO":4}` — zero FAILs, no other check's outcome changed.
+
+**Status:** FIXED and verified live; draft PR pending.
+
+---
+
 ## 🔴 P0 FOUND+FIXED 2026-07-06 — SPX Slayer's open-play `signal_committed` was hardcoded `true`, even on read-only (mutate:false) polls (branch `fix/spx-signal-committed-mutate-gate`)
 
 **Surface:** SPX Slayer (`/dashboard`), `evaluateOpenPlay()` in `src/lib/spx-play-engine.ts` — the function that manages an already-open play every time it's evaluated (member-facing 3s poll via `useSpxPlay.ts` → `/api/market/spx/play` → `readSpxPlaySnapshot()` → `evaluateSpxPlay(desk, technicals, {mutate:false})`, AND the real 5-minute cron via `runSpxEvaluator()` → `evaluateSpxPlay(..., {mutate:true})`, Railway `railway.spx-evaluate.toml`). Found during the requested full CTO-level audit of SPX Slayer's entry gates and outcome grading. This was the single most severe unfixed finding from that audit.
