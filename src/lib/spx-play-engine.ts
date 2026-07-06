@@ -548,7 +548,11 @@ async function evaluateOpenPlay(
     lotto_play: null,
     power_play: null,
     session_phase: "cash",
-    signal_committed: true,
+    // Every DB write in this function (updateOpenPlay/closeOpenPlay above) is
+    // already gated on `mutate` — this must match, or a mutate:false read (the
+    // member-facing 3s poll) can render a full "SELL — TARGET"/"STOP" card that
+    // claims to be committed when nothing was actually closed. See FINDINGS.md.
+    signal_committed: mutate,
     as_of: confluence.as_of,
   };
 }
