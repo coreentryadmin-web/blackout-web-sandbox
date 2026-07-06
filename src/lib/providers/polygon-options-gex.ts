@@ -947,8 +947,15 @@ function computeDexRegime(total: number): DexRegime {
  * Derive the dealer-CHARM regime (posture + plain pinning read) from the net dealer dollar-charm
  * total. Charm is the passive delta-decay flow that GROWS as expiry nears — the engine of
  * pre-OPEX and end-of-day pinning toward heavy-OI strikes. Never fabricates: ~flat → null + neutral.
+ *
+ * Direction (get this right — same dealer sign convention as computeDexRegime, calls +1/puts -1):
+ * charm = ∂Δ/∂t, so a POSITIVE total means the dealer book's assumed delta INCREASES as time
+ * passes → dealers must SELL stock to stay hedged → DOWNWARD pressure. NEGATIVE → delta
+ * decreases → dealers must BUY → UPWARD pressure. (Independently corroborated against
+ * published dealer-charm-exposure methodology, e.g. "positive CHEX → dealers sell shares daily,
+ * a headwind.") The read text below was previously backwards (positive said "pins upward").
  */
-function computeCharmRegime(total: number): CharmRegime {
+export function computeCharmRegime(total: number): CharmRegime {
   const posture: "positive" | "negative" | null =
     Number.isFinite(total) && total !== 0 ? (total > 0 ? "positive" : "negative") : null;
 
@@ -956,9 +963,9 @@ function computeCharmRegime(total: number): CharmRegime {
   if (posture == null) {
     read = "Net charm ~flat — minimal delta-decay flow; little time-driven pinning pressure expected.";
   } else if (posture === "positive") {
-    read = "Net charm positive — as expiry nears, delta decay pushes dealer hedging that PINS price upward toward heavy strikes; strongest pre-OPEX and into the close.";
+    read = "Net charm positive — as expiry nears, delta decay pushes dealer hedging that DRAGS price downward toward heavy strikes; strongest pre-OPEX and into the close.";
   } else {
-    read = "Net charm negative — delta decay pushes dealer hedging that DRAGS price downward toward heavy strikes as expiry nears; strongest pre-OPEX and into the close.";
+    read = "Net charm negative — delta decay pushes dealer hedging that PINS price upward toward heavy strikes as expiry nears; strongest pre-OPEX and into the close.";
   }
   return { posture, read };
 }
@@ -1275,27 +1282,31 @@ async function fetchHeatmapBand(
 /**
  * Compute the zero-gamma flip from per-strike NET dealer gamma totals.
  *
- * PRIMARY: the strike (linear-interpolated to gamma=0) where per-strike net gamma transitions
- * negative→positive — the structural level below which dealers are net SHORT gamma and above
- * which net LONG — choosing the crossing NEAREST spot. This is robust on heavily one-sided
- * books (a deep net-short profile still has a clean sign flip), where the old cumulative-sum
- * crossing returned null because the running total never crossed back through zero.
+ * PRIMARY: the strike (linear-interpolated to gamma=0) where per-strike net gamma changes
+ * sign — in EITHER direction — choosing the crossing NEAREST spot. Real per-strike gamma
+ * profiles are lumpy (OI concentrates in specific strikes), so positive→negative transitions
+ * are just as common as negative→positive and can legitimately be the crossing closest to
+ * spot; restricting to one direction made the function structurally blind to half of the real
+ * crossings, silently picking a farther, wrong-direction level whenever the true nearest
+ * crossing ran the other way. This is robust on heavily one-sided books (a deep net-short
+ * profile still has a clean sign flip), where the old cumulative-sum crossing returned null
+ * because the running total never crossed back through zero.
  * FALLBACK: the legacy cumulative-crossing, then null.
  */
-function computeZeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
+export function computeZeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
   const rows = Object.entries(strikeTotals)
     .map(([s, g]) => ({ strike: Number(s), gamma: g }))
     .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
     .sort((a, b) => a.strike - b.strike);
   if (rows.length < 2) return null;
 
-  // Primary: per-strike negative→positive sign transitions, interpolated to gamma = 0.
+  // Primary: per-strike sign transitions in EITHER direction, interpolated to gamma = 0.
   const crossings: number[] = [];
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1];
     const b = rows[i];
-    if (a.gamma < 0 && b.gamma > 0) {
-      const frac = (0 - a.gamma) / (b.gamma - a.gamma); // 0..1 where gamma crosses 0
+    if ((a.gamma < 0 && b.gamma > 0) || (a.gamma > 0 && b.gamma < 0)) {
+      const frac = (0 - a.gamma) / (b.gamma - a.gamma); // 0..1 where gamma crosses 0 (direction-agnostic)
       crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
     }
   }

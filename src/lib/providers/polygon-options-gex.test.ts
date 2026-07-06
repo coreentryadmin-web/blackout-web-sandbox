@@ -8,6 +8,8 @@ import {
   computeGexEvents,
   computeMaxPainFromChain,
   resolveExpiryAxis,
+  computeZeroGammaFlip,
+  computeCharmRegime,
   type GexHistorySnapshot,
   type ChainContract,
 } from "./polygon-options-gex";
@@ -220,6 +222,61 @@ test("computeMaxPainFromChain: blending two DIFFERENT expiries' OI changes the a
 
 test("computeMaxPainFromChain: empty input returns null, never a fabricated strike", () => {
   assert.equal(computeMaxPainFromChain([]), null);
+});
+
+// ── computeZeroGammaFlip: the primary per-strike crossing detector only matched
+// neg→pos sign transitions, making it structurally blind to pos→neg crossings — which are
+// just as common on real, lumpy per-strike gamma profiles and can legitimately be the one
+// nearest spot. Live-verified against real SPY/QQQ chains (see FINDINGS.md): the code's
+// answer was measurably farther from spot than the true nearest crossing on every metric
+// checked (GEX flip, DEX/CHARM zero_level) whenever the true nearest crossing ran pos→neg.
+
+test("computeZeroGammaFlip: finds a neg→pos crossing (already worked pre-fix)", () => {
+  const strikeTotals = { "95": -50, "105": 150 }; // crosses zero at 95 + 10*(50/200) = 97.5
+  assert.equal(computeZeroGammaFlip(strikeTotals, 100), 97.5);
+});
+
+test("computeZeroGammaFlip: finds a pos→neg crossing — the exact class the old neg→pos-only check missed", () => {
+  const strikeTotals = { "95": 150, "105": -50 }; // crosses zero at 95 + 10*(150/200) = 102.5
+  assert.equal(computeZeroGammaFlip(strikeTotals, 100), 102.5);
+});
+
+test("computeZeroGammaFlip: with BOTH a neg→pos and a pos→neg crossing, picks whichever is truly nearest spot — even when that's the pos→neg one", () => {
+  // neg→pos crossing at 100 (95:-10 → 105:+10 → mid 100), pos→neg crossing at 210
+  // (200:+10 → 220:-10 → mid 210). Spot at 205 is nearest the pos→neg crossing (5 away)
+  // vs the neg→pos one (105 away) — the old neg→pos-only code would wrongly return 100.
+  const strikeTotals = { "95": -10, "105": 10, "200": 10, "220": -10 };
+  assert.equal(computeZeroGammaFlip(strikeTotals, 205), 210);
+});
+
+test("computeZeroGammaFlip: fewer than 2 strikes returns null", () => {
+  assert.equal(computeZeroGammaFlip({ "100": 50 }, 100), null);
+});
+
+// ── computeCharmRegime: the narrative direction was backwards. charm = ∂Δ/∂t, so a
+// POSITIVE total means the dealer book's delta increases as time passes → dealers must SELL
+// to stay hedged → DOWNWARD pressure (not "pins upward" as the code previously claimed).
+// Independently corroborated against published dealer-charm-exposure methodology (see
+// FINDINGS.md) and against computeDexRegime's own dealer sign convention in this same file.
+
+test("computeCharmRegime: positive charm reads DOWNWARD (dealers sell to stay hedged), not upward", () => {
+  const regime = computeCharmRegime(50_000);
+  assert.equal(regime.posture, "positive");
+  assert.match(regime.read, /DRAGS price downward/);
+  assert.doesNotMatch(regime.read, /PINS price upward/);
+});
+
+test("computeCharmRegime: negative charm reads UPWARD (dealers buy to stay hedged), not downward", () => {
+  const regime = computeCharmRegime(-50_000);
+  assert.equal(regime.posture, "negative");
+  assert.match(regime.read, /PINS price upward/);
+  assert.doesNotMatch(regime.read, /DRAGS price downward/);
+});
+
+test("computeCharmRegime: ~flat total never fabricates a directional posture", () => {
+  const regime = computeCharmRegime(0);
+  assert.equal(regime.posture, null);
+  assert.match(regime.read, /~flat/);
 });
 
 // ── fetchPolygonIvTermStructure must share HEATMAP_PAGE_GUARD, not its own smaller

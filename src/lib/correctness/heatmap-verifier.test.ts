@@ -221,7 +221,7 @@ test("dexCharmInvariantChecks: near_term_expiries prevents false SIGN CONFLICT w
   assert.equal(check!.outcome, "consistency-only");
 });
 
-test("dexCharmInvariantChecks: DEX zero_level reported far from the real neg→pos crossing — FLAGs", () => {
+test("dexCharmInvariantChecks: DEX zero_level reported far from the real sign-change crossing — FLAGs", () => {
   const ctx = makeCtx();
   const strikeTotals = { "95": -50, "105": 150 }; // real crossing at 97.5
   const dex = makeDexBlock(strikeTotals, { zero_level: 50 }); // nowhere near 97.5
@@ -231,7 +231,22 @@ test("dexCharmInvariantChecks: DEX zero_level reported far from the real neg→p
   const check = findCheck(out, "dex_zero_level", "zero-level-real-crossing");
   assert.ok(check);
   assert.equal(check!.outcome, "flag");
-  assert.match(check!.detail, /NOT at an independent neg→pos crossing/);
+  assert.match(check!.detail, /NOT at an independent sign-change crossing/);
+});
+
+test("dexCharmInvariantChecks: DEX zero_level real crossing runs pos→neg (not just neg→pos) — still detected, not missed", () => {
+  const ctx = makeCtx();
+  // +150 at 95, -50 at 105 → crossing at 95 + 10*(150/200) = 102.5, running the OPPOSITE
+  // direction from the sibling test above — the exact class of crossing the old neg→pos-only
+  // restriction in deriveFlip() would have silently missed.
+  const strikeTotals = { "95": 150, "105": -50 };
+  const dex = makeDexBlock(strikeTotals, { zero_level: 102.5, posture: "short" });
+  const hm = makeHeatmap({ dex });
+
+  const out = dexCharmInvariantChecks(ctx, hm);
+  const check = findCheck(out, "dex_zero_level", "zero-level-real-crossing");
+  assert.ok(check);
+  assert.equal(check!.outcome, "consistency-only");
 });
 
 test("dexCharmInvariantChecks: DEX posture contradicts sign(total) — FLAGs a label/number divergence (#80 class)", () => {
@@ -264,7 +279,10 @@ test("dexCharmInvariantChecks: total ~flat (0) → posture must be null, not fab
 
 test("dexCharmInvariantChecks: CHARM mirrors DEX — clean block passes, posture contradiction FLAGs", () => {
   const ctx = makeCtx();
-  const strikeTotals = { "95": 50, "105": -150 }; // total = -100 (negative) → posture "negative"
+  // Both strikes negative — total = -100 (negative → posture "negative") with NO sign crossing
+  // at all (same-signed throughout), so null-reported zero_level is genuinely consistency-only
+  // regardless of crossing direction — this test is about the posture invariant, not zero-level.
+  const strikeTotals = { "95": -50, "105": -50 };
   const cleanCharm = makeCharmBlock(strikeTotals, { zero_level: null, posture: "negative" });
   const cleanOut = dexCharmInvariantChecks(ctx, makeHeatmap({ charm: cleanCharm }));
   assert.deepEqual(

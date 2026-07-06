@@ -116,9 +116,14 @@ function sumTotals(strikeTotals: Record<string, number>): number {
 }
 
 /**
- * Independent zero-flip detection: the per-strike net total sign-change (negative→positive)
+ * Independent zero-flip detection: the per-strike net total sign-change (either direction)
  * nearest spot, interpolated to 0. Written from scratch (does NOT import computeZeroGammaFlip) so a
- * bug there is detectable. Returns null when there is no clean neg→pos crossing.
+ * bug there is detectable. Returns null when there is no clean crossing.
+ *
+ * Checks BOTH neg→pos and pos→neg transitions — restricting to one direction would make this
+ * oracle share the exact same blind spot as a buggy computeZeroGammaFlip (real per-strike
+ * profiles are lumpy; a pos→neg crossing can legitimately be the one nearest spot), which would
+ * make a real discrepancy invisible to this cross-check by construction.
  */
 function deriveFlip(strikeTotals: Record<string, number>, spot: number): number | null {
   const rows = Object.entries(strikeTotals)
@@ -130,7 +135,7 @@ function deriveFlip(strikeTotals: Record<string, number>, spot: number): number 
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1];
     const b = rows[i];
-    if (a.gamma < 0 && b.gamma > 0) {
+    if ((a.gamma < 0 && b.gamma > 0) || (a.gamma > 0 && b.gamma < 0)) {
       const frac = (0 - a.gamma) / (b.gamma - a.gamma);
       crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
     }
@@ -382,13 +387,13 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
     void derivedKing;
   }
 
-  // INV-4: gamma flip is a REAL neg→pos sign change of per-strike net gamma.
+  // INV-4: gamma flip is a REAL sign change of per-strike net gamma.
   {
     const derivedFlip = deriveFlip(hm.gex.strike_totals, spot);
     const reported = hm.gex.flip;
     if (reported == null && derivedFlip == null) {
       out.push(
-        mk(ctx, "invariant", "gamma_flip", "consistency-only", "No clean neg→pos gamma crossing and none reported — consistent.", {
+        mk(ctx, "invariant", "gamma_flip", "consistency-only", "No clean sign-change gamma crossing and none reported — consistent.", {
           id: "flip-real-crossing",
         })
       );
@@ -401,8 +406,8 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
           "gamma_flip",
           close ? "consistency-only" : "flag",
           close
-            ? `Reported flip ${fmt(reported)} matches an independent neg→pos crossing ${fmt(derivedFlip)}.`
-            : `Reported flip ${fmt(reported)} is NOT at an independent neg→pos crossing (nearest ${fmt(derivedFlip)}) — flip is not a real sign change.`,
+            ? `Reported flip ${fmt(reported)} matches an independent sign-change crossing ${fmt(derivedFlip)}.`
+            : `Reported flip ${fmt(reported)} is NOT at an independent sign-change crossing (nearest ${fmt(derivedFlip)}) — flip is not a real sign change.`,
           { id: "flip-real-crossing", expected: derivedFlip, actual: reported, tolerance: Math.max(spot * 0.01, 1) }
         )
       );
@@ -419,7 +424,7 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
           "gamma_flip",
           flagWorthy ? "flag" : "consistency-only",
           flagWorthy
-            ? `A clean neg→pos crossing exists near spot at ${fmt(derivedFlip)} but the matrix reports NO flip — flip detection may be dropping a real crossing.`
+            ? `A clean sign-change crossing exists near spot at ${fmt(derivedFlip)} but the matrix reports NO flip — flip detection may be dropping a real crossing.`
             : `Flip detection differs from the per-strike derivation (reported ${fmt(reported)}, derived ${fmt(derivedFlip)}) — within the documented fallback behavior; not flagged.`,
           { id: "flip-real-crossing", expected: derivedFlip, actual: reported }
         )
@@ -448,7 +453,7 @@ function invariantChecks(ctx: Ctx, hm: GexHeatmap): CheckResult[] {
 //     (per-strike sign-crossing nearest spot) — so INV-3's "wall == argmax" check has no
 //     analog here. `zero_level` DOES have a direct analog to INV-4 (gamma flip): both are
 //     produced by the SAME computeZeroGammaFlip() helper the engine uses for gex.flip
-//     (polygon-options-gex.ts:2263 dex, :2274 charm) — so the SAME "is this a real neg→pos
+//     (polygon-options-gex.ts:2263 dex, :2274 charm) — so the SAME "is this a real
 //     crossing" check applies unchanged, just renamed (a served level that ISN'T a real
 //     sign crossing is the same class of bug regardless of which metric it's on).
 //   • Both blocks expose a `regime.posture` that is a PURE, DOCUMENTED function of
@@ -594,7 +599,7 @@ function blockSumAndSignChecks(
 
 /**
  * The zero_level (DEX/CHARM) analog of INV-4's gamma-flip check: is the served level a REAL
- * neg→pos sign change of the per-strike net totals? Reuses `deriveFlip` verbatim (it is
+ * sign change (either direction) of the per-strike net totals? Reuses `deriveFlip` verbatim (it is
  * generic over any strike-total map — it does not know or care whether the metric is GEX,
  * DEX, or CHARM), so a bug in dex/charm's zero-level detection is caught exactly like a
  * gamma-flip bug would be.
@@ -609,7 +614,7 @@ function zeroLevelRealCrossingCheck(
   const derived = deriveFlip(strikeTotals, spot);
   if (reported == null && derived == null) {
     return [
-      mk(ctx, "invariant", metric, "consistency-only", "No clean neg→pos crossing and none reported — consistent.", {
+      mk(ctx, "invariant", metric, "consistency-only", "No clean sign-change crossing and none reported — consistent.", {
         id: "zero-level-real-crossing",
       }),
     ];
@@ -623,8 +628,8 @@ function zeroLevelRealCrossingCheck(
         metric,
         close ? "consistency-only" : "flag",
         close
-          ? `Reported zero-level ${fmt(reported)} matches an independent neg→pos crossing ${fmt(derived)}.`
-          : `Reported zero-level ${fmt(reported)} is NOT at an independent neg→pos crossing (nearest ${fmt(derived)}) — zero-level is not a real sign change.`,
+          ? `Reported zero-level ${fmt(reported)} matches an independent sign-change crossing ${fmt(derived)}.`
+          : `Reported zero-level ${fmt(reported)} is NOT at an independent sign-change crossing (nearest ${fmt(derived)}) — zero-level is not a real sign change.`,
         { id: "zero-level-real-crossing", expected: derived, actual: reported, tolerance: Math.max(spot * 0.01, 1) }
       ),
     ];
@@ -639,7 +644,7 @@ function zeroLevelRealCrossingCheck(
       metric,
       flagWorthy ? "flag" : "consistency-only",
       flagWorthy
-        ? `A clean neg→pos crossing exists near spot at ${fmt(derived)} but the matrix reports NO zero-level — zero-level detection may be dropping a real crossing.`
+        ? `A clean sign-change crossing exists near spot at ${fmt(derived)} but the matrix reports NO zero-level — zero-level detection may be dropping a real crossing.`
         : `Zero-level detection differs from the per-strike derivation (reported ${fmt(reported)}, derived ${fmt(derived)}) — within the documented fallback behavior; not flagged.`,
       { id: "zero-level-real-crossing", expected: derived, actual: reported }
     ),
