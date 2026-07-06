@@ -2317,6 +2317,17 @@ Merge commit `78c4d10`. Its own Railway deployment shows `REMOVED` in the GraphQ
 
 ---
 
+## 🧠 BIE router: new `ticker_ecosystem` intent SHIPPED 2026-07-04 — "what's going on with X" answered without a Claude call, for ANY known ticker
+**What shipped:** Largo's Layer 3 deterministic router (`src/lib/bie/router.ts`) gains a 5th intent. Previously `ticker_play_state` only routed for a ticker on TODAY'S 0DTE ledger — a general "what's going on with AAPL" (not on the ledger) fell through to Claude every time, even though `fetchEcosystemContext()` (built earlier tonight) can answer it deterministically for any ticker. The new `ticker_ecosystem` intent matches open-ended info-request phrasing ("what's going on with X", "any flow on X", "anything on X", "what's the latest on X") against the curated `KNOWN_TICKERS` whitelist (`src/lib/largo/question-intent.ts`) or an explicit `$`-prefixed symbol — never "any capitalized 1-5 letter token," which is the exact false-positive class (`LARGO-9`) that mis-pinned words like CALLS/HOLD/SETUP/BULL as tickers before that whitelist existed. `composeTickerEcosystem()` (`src/lib/bie/composers.ts`) formats the same `fetchEcosystemContext()` payload the `get_ecosystem_context` Largo tool already exposes — zero new data plumbing.
+
+**Deliberately conservative:** "what does the desk think about X" phrasing was considered and explicitly rejected — it already matches `REASONING_RE`'s `\bthink\b` and routes to Claude, and a branch built to override that would be dead code. The router's standing philosophy holds: a missed route costs one Claude call, a wrong route costs trust, so ambiguous-toward-reasoning phrasing stays with Claude.
+
+**Backend-only**, per standing instruction — no `.tsx` files touched.
+
+**Verification:** `npx tsc --noEmit` clean, `npm test` 917/917 passing (4 new router eval-set cases, matching the existing "no route change ships without the eval set passing" discipline), `npm run build` clean, `lint:brand`/`lint:vendor`/`verify-api-auth-guards.mjs` all green.
+
+---
+
 ## 🧠 BIE semantic precedent search SHIPPED 2026-07-04 — "has this setup happened before, and what happened"
 **The gap:** BIE's L2 knowledge layer (embeddings + cosine search) has existed since Phase 2, but it only ever indexed prose — docs, findings, editions. It never touched the platform's own structured trading history in `alert_audit_log`, so a genuinely new kind of question — "find me past alerts that resemble this one, and what happened" — was unanswerable; a member or Largo could only filter by exact ticker/date, never by resemblance.
 

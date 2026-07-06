@@ -156,6 +156,48 @@ async function composeMarketContext(): Promise<BieComposed | null> {
   };
 }
 
+async function composeTickerEcosystem(ticker: string): Promise<BieComposed | null> {
+  const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
+  const ctx = await fetchEcosystemContext(ticker);
+  const lines: string[] = [`**${ctx.ticker} — cross-instrument snapshot**`, ""];
+  let any = false;
+
+  if (ctx.zerodte_today) {
+    any = true;
+    const z = ctx.zerodte_today;
+    lines.push(
+      `- **0DTE Command today:** ${z.direction}, score ${fmt(z.score)}${z.conviction ? `, ${z.conviction} conviction` : ""}${z.status ? ` (${z.status})` : ""}`
+    );
+  }
+  if (ctx.nighthawk_recent) {
+    any = true;
+    const n = ctx.nighthawk_recent;
+    lines.push(
+      `- **Night Hawk (${n.edition_for}):** ${n.direction}, ${n.conviction} conviction${n.score != null ? `, score ${fmt(n.score)}` : ""} — outcome: ${n.outcome}`
+    );
+  }
+  if (ctx.recent_flow) {
+    any = true;
+    const f = ctx.recent_flow;
+    lines.push(
+      `- **HELIX flow (last ${f.window_hours}h):** ${f.print_count} prints — $${fmt(f.call_premium, 0)} call premium, $${fmt(f.put_premium, 0)} put premium${f.unknown_premium > 0 ? `, $${fmt(f.unknown_premium, 0)} unclassified` : ""}`
+    );
+  }
+  if (ctx.recent_anomalies.length > 0) {
+    any = true;
+    lines.push(`- **Flow anomalies (24h):** ${ctx.recent_anomalies.map((a) => `${a.anomaly_type} (${a.severity})`).join(", ")}`);
+  }
+  if (!any) {
+    lines.push(
+      ctx.flow_feed_fresh
+        ? "Nothing notable on the desk for this name right now — no 0DTE flag, no recent Night Hawk take, no unusual flow."
+        : "_The live flow pipeline isn't reporting fresh data right now, so this may be incomplete — not necessarily quiet, just unconfirmed._"
+    );
+  }
+  lines.push("", "_Cross-instrument read — the same signal Largo's tools compose from. Ask a follow-up for the reasoning behind any of this._");
+  return { answer: lines.join("\n"), context: ctx };
+}
+
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
 export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
   try {
@@ -168,6 +210,8 @@ export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | n
         return await composeSpxStructure();
       case "market_context":
         return await composeMarketContext();
+      case "ticker_ecosystem":
+        return route.ticker ? await composeTickerEcosystem(route.ticker) : null;
       default:
         return null;
     }

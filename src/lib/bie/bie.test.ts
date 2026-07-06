@@ -41,8 +41,28 @@ test("router: reasoning-shaped questions NEVER route — Claude keeps them", () 
   );
 });
 
+test("router: 'what's going on with' a known ticker routes to the ecosystem snapshot, even off-ledger", () => {
+  const r = classifyBieIntent("What's going on with AAPL", LEDGER);
+  assert.equal(r?.intent, "ticker_ecosystem");
+  assert.equal(r?.ticker, "AAPL");
+  // Any known ticker works, not just today's 0DTE ledger.
+  assert.equal(classifyBieIntent("any flow on GOOGL", LEDGER)?.ticker, "GOOGL");
+  assert.equal(classifyBieIntent("anything on COIN today", LEDGER)?.ticker, "COIN");
+  assert.equal(classifyBieIntent("what's the latest on $RKLB", LEDGER)?.ticker, "RKLB");
+});
+
+test("router: 'what's going on with' never fires without a recognizable ticker", () => {
+  // "IT" is a real word capitalized mid-sentence, not a ticker — must NOT mis-pin (LARGO-9 class bug).
+  assert.equal(classifyBieIntent("what's going on with IT lately", LEDGER), null);
+  assert.equal(classifyBieIntent("what's going on", LEDGER), null);
+});
+
+test("router: 'what does X think' phrasing stays with Claude (REASONING_RE wins, not the ecosystem branch)", () => {
+  assert.equal(classifyBieIntent("what does the desk think about NVDA", LEDGER), null);
+});
+
 test("router: every intent has follow-up chips (no LLM on the router path)", () => {
-  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context"] as const) {
+  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context", "ticker_ecosystem"] as const) {
     assert.ok(bieFollowups(intent).length === 3);
   }
 });
