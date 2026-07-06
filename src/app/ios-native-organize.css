@@ -1,0 +1,231 @@
+/**
+ * Native shell — visual rhythm + calmer chrome (less stacked noise).
+ */
+
+/* Softer void grid — data first, not atmosphere */
+html.ios-app.ios-native-shell::before {
+  opacity: 0.18;
+}
+
+html.ios-app.ios-native-shell .ios-native-ambient {
+  opacity: 0.35;
+}
+
+/* One vertical rhythm for tool pages */
+html.ios-app.ios-native-shell .ios-native-page-stage {
+  gap: var(--ios-section-gap);
+}
+
+html.ios-app.ios-native-shell .desk-layout,
+html.ios-app.ios-native-shell .gex-heatmap-desk-native,
+html.ios-app.ios-native-shell .helix-desk {
+  gap: var(--ios-content-gap) !important;
+}
+
+/* Section headers */
+.ios-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ios-space-2);
+  margin: 0 0 var(--ios-space-2);
+  padding: 0 var(--ios-space-1);
+}
+
+.ios-section-header-label {
+  margin: 0;
+  font-family: var(--cmd-mono, var(--font-jetbrains));
+  font-size: var(--ios-type-label);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+.ios-section-header-action {
+  border: 0;
+  background: transparent;
+  font-family: var(--cmd-mono, var(--font-jetbrains));
+  font-size: var(--ios-type-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ios-accent, #7dd3fc);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Largo — no bottom rail (chat-first) */
+html.ios-app.ios-native-shell.ios-tab-bar[data-ios-route="largo"] .ios-app-tab-bar {
+  display: none !important;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] {
+  --ios-tab-offset: 0px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-composer {
+  padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* HELIX compact toolbar */
+html.ios-app.ios-native-shell .helix-native-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-space-2);
+  padding: var(--ios-space-2);
+  border: 1px solid var(--cmd-edge, rgba(255, 255, 255, 0.07));
+  border-radius: var(--cmd-radius-panel, 6px);
+  background: var(--cmd-panel);
+}
+
+html.ios-app.ios-native-shell .helix-native-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ios-space-2);
+}
+
+html.ios-app.ios-native-shell .helix-native-toolbar-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ios-space-2);
+  padding-top: var(--ios-space-2);
+  border-top: 1px solid var(--cmd-edge);
+}
+
+html.ios-app.ios-native-shell .helix-native-tools-toggle {
+  margin-left: auto;
+  min-height: var(--ios-touch, 2.75rem);
+  padding: 0 0.75rem;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius, 4px);
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--cmd-mono);
+  font-size: var(--ios-type-label);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell .helix-native-toolbar input {
+  width: 5.5rem !important;
+  min-height: var(--ios-touch) !important;
+  padding: 0 0.65rem !important;
+  font-size: 16px !important;
+}
+
+/* SPX collapsible desk stats */
+html.ios-app.ios-native-shell .spx-native-stats-toggle {
+  width: 100%;
+  margin-top: var(--ios-space-2);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--cmd-edge);
+  border-radius: var(--cmd-radius-panel);
+  background: var(--cmd-panel);
+  font-family: var(--cmd-mono);
+  font-size: var(--ios-type-label);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  text-align: left;
+}
+
+html.ios-app.ios-native-shell .spx-native-stats-panel {
+  margin-top: var(--ios-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-space-2);
+}
+
+html.ios-app.ios-native-shell .spx-sniper-command-native .spx-hero-price {
+  font-size: 2.35rem !important;
+  line-height: 1 !important;
+}
+
+html.ios-app.ios-native-shell .spx-sniper-native-meta .t-kicker {
+  display: none;
+}
+
+/* Thermal — tighter control stack */
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row {
+  gap: var(--ios-space-2);
+  padding: var(--ios-space-2);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-key-levels {
+  margin-bottom: var(--ios-space-2) !important;
+}
+
+/* Tab rail — short labels, even columns */
+html.ios-app.ios-native-shell .ios-app-tab-label {
+  font-size: 9px !important;
+  letter-spacing: 0.06em;
+  -webkit-line-clamp: 1;
+}
+
+html.ios-app.ios-native-shell .ios-app-tab-li {
+  min-width: 3.25rem !important;
+  max-width: 4.5rem !important;
+}
+
+/* Unified chip rail (watchlist, FAQ categories, filters) */
+html.ios-app.ios-native-shell .ios-native-chip-rail {
+  margin: 0 calc(-1 * var(--ios-space-1));
+  overflow: hidden;
+}
+
+html.ios-app.ios-native-shell .ios-native-chip-scroll {
+  display: flex;
+  gap: var(--ios-space-2);
+  overflow-x: auto;
+  padding: 0 var(--ios-space-1) var(--ios-space-1);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-chip-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+html.ios-app.ios-native-shell .ios-native-chip {
+  flex: 0 0 auto;
+  min-height: var(--ios-touch, 2.75rem);
+  padding: 0 0.85rem;
+  border: 1px solid var(--cmd-edge, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cmd-radius, 4px);
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--cmd-mono, var(--font-jetbrains));
+  font-size: var(--ios-type-label);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9fb4d4;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .ios-native-chip-active {
+  border-color: color-mix(in srgb, var(--ios-accent, #7dd3fc) 55%, transparent);
+  background: color-mix(in srgb, var(--ios-accent, #7dd3fc) 12%, transparent);
+  color: #e0f2fe;
+}
+
+html.ios-app.ios-native-shell .ios-native-chip:last-child {
+  margin-right: var(--ios-space-2);
+}
+
+/* Grid — segment switcher instead of desktop tabs */
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs-native {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ios-content-gap);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs-native-panel {
+  min-width: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs [role="tablist"] {
+  display: none;
+}

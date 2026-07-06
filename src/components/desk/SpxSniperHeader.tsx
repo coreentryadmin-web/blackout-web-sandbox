@@ -29,6 +29,7 @@ function resolveFreshness(
 }
 
 export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
+  const [nativeStatsOpen, setNativeStatsOpen] = useState(false);
   const hasQuote = Boolean(desk?.available && (desk?.price ?? 0) > 0);
   /** Show grounded desk numbers whenever we have a quote — even when session is closed. */
   const showValues = Boolean(live || hasQuote);
@@ -97,7 +98,6 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
           <div className="min-w-0 flex-1">
             {nativeShell && (
               <div className="spx-sniper-native-meta mb-2 flex flex-wrap items-center gap-2">
-                <Kicker className="!mb-0">SPX · 0DTE</Kicker>
                 <MarketStatusPill label={desk?.market_label} />
                 <FreshnessChip status={freshness.status} asOf={freshness.asOf} />
                 {live && desk?.gex_stale && (
@@ -151,29 +151,62 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
                 tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
               />
             </div>
-            {nativeShell && (
-              <div className="spx-sniper-native-levels mt-2 grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
-                <StatPill
-                  label="Regime"
-                  value={showValues ? (desk?.regime ?? "—") : "—"}
-                  tone="violet"
-                  capitalize
-                />
-                <StatPill
-                  label="γ Flip"
-                  value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
-                  tone="magenta"
-                />
-                <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
-                <StatPill
-                  label="IV Rank"
-                  value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
-                  tone="gold"
-                />
-              </div>
-            )}
-          </div>
-
+            {nativeShell ? (
+              <>
+                <button
+                  type="button"
+                  className="spx-native-stats-toggle"
+                  aria-expanded={nativeStatsOpen}
+                  onClick={() => setNativeStatsOpen((v) => !v)}
+                >
+                  {nativeStatsOpen ? "Hide desk stats" : "Show desk stats"}
+                </button>
+                {nativeStatsOpen ? (
+                  <div className="spx-native-stats-panel">
+                    <div className="spx-sniper-native-levels grid w-full grid-cols-2 gap-2">
+                      <StatPill
+                        label="Regime"
+                        value={showValues ? (desk?.regime ?? "—") : "—"}
+                        tone="violet"
+                        capitalize
+                      />
+                      <StatPill
+                        label="γ Flip"
+                        value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
+                        tone="magenta"
+                      />
+                      <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
+                      <StatPill
+                        label="IV Rank"
+                        value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
+                        tone="gold"
+                      />
+                    </div>
+                    <div className="spx-hero-metric-blocks">
+                      <MetricBlock title="EMA" tone="orange">
+                        <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
+                        <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" />
+                        <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" />
+                      </MetricBlock>
+                      <MetricBlock title="SMA" tone="violet">
+                        <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" />
+                        <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" />
+                      </MetricBlock>
+                      <MetricBlock title="Session" tone="bull">
+                        <div className="spx-hero-metric-pair">
+                          <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact />
+                          <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact />
+                        </div>
+                        <div className="spx-hero-metric-pair">
+                          <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact />
+                          <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact />
+                        </div>
+                      </MetricBlock>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
           <div className="spx-hero-metric-blocks">
             <MetricBlock title="EMA" tone="orange">
               <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
@@ -214,6 +247,8 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
                 />
               </div>
             </MetricBlock>
+          </div>
+            )}
           </div>
         </div>
 

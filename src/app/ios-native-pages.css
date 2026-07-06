@@ -977,40 +977,33 @@ html.ios-app.ios-native-shell .faq-native-cat-rail {
   padding: 0 0.65rem 0.4rem;
 }
 
-html.ios-app.ios-native-shell .faq-native-cat-scroll {
-  display: flex;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip-scroll {
   border: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
   border-radius: var(--cmd-radius-panel, 4px);
   background: var(--cmd-panel, rgba(8, 9, 14, 0.85));
+  gap: 0;
+  padding: 0;
 }
 
-html.ios-app.ios-native-shell .faq-native-cat-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-html.ios-app.ios-native-shell .faq-native-cat-chip {
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip {
   flex-shrink: 0;
   padding: 0.55rem 0.7rem;
   border: 0;
   border-right: 1px solid var(--cmd-edge, rgba(125, 211, 252, 0.12));
+  border-radius: 0;
   background: transparent;
-  font-family: var(--cmd-mono, var(--font-jetbrains));
   font-size: 9px;
-  font-weight: 700;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: #7dd3fc;
-  -webkit-tap-highlight-color: transparent;
+  min-height: 2.5rem;
 }
 
-html.ios-app.ios-native-shell .faq-native-cat-chip:last-child {
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip:last-child {
   border-right: 0;
+  margin-right: 0;
 }
 
-html.ios-app.ios-native-shell .faq-native-cat-chip-active {
+html.ios-app.ios-native-shell .faq-native-cat-rail .ios-native-chip-active {
   color: #fff;
   background: color-mix(in srgb, var(--ios-accent) 12%, transparent);
   box-shadow: inset 0 2px 0 var(--ios-accent);

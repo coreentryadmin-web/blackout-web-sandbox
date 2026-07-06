@@ -98,6 +98,8 @@ const sourceNeedles = [
   ["src/components/IosAppTabBar.tsx", "IosAppTabBar"],
   ["src/components/ios/IosAppChrome.tsx", "IosAppChrome"],
   ["src/components/ios/IosNativePageTransition.tsx", "IosNativePageTransition"],
+  ["src/components/ios/IosSectionHeader.tsx", "IosSectionHeader"],
+  ["src/components/ios/IosNativeChipRail.tsx", "IosNativeChipRail"],
   ["src/lib/ios-tool-routes.ts", "ios-tool-routes"],
 ];
 const navCss = readFileSync(join(root, "src/app/ios-native-nav.css"), "utf8");
@@ -142,8 +144,8 @@ for (const [needle, label] of commandNeedles) {
 }
 
 const menu = readFileSync(join(root, "src/components/ios/IosNativeMenu.tsx"), "utf8");
-if (menu.includes("CMD · INSTRUMENT SELECT")) ok("command:deck-menu-label");
-else fail("command:deck-menu-label", "expected command deck kicker in IosNativeMenu");
+if (menu.includes("Instruments")) ok("command:deck-menu-label");
+else fail("command:deck-menu-label", "expected Instruments kicker in IosNativeMenu");
 
 const skinNeedles = [
   [".ios-native-ambient", "route ambient glow"],
@@ -171,10 +173,34 @@ if (chrome.includes("ios-native-ambient")) {
 }
 
 const tabBar = readFileSync(join(root, "src/components/IosAppTabBar.tsx"), "utf8");
+if (tabBar.includes("tab.short")) ok("nav:instrument-rail-short-labels");
+else fail("nav:instrument-rail-short-labels", "expected short labels on tab rail");
+if (tabBar.includes("path !== \"/terminal\"")) ok("nav:largo-hides-tab-rail");
+else fail("nav:largo-hides-tab-rail", "expected Largo to hide bottom rail");
 if (tabBar.includes("ios-app-tab-label") && tabBar.includes("scroll={false}")) {
   ok("nav:instrument-rail-labels");
 } else {
-  fail("nav:instrument-rail-labels", "expected full tool labels + scroll={false}");
+  fail("nav:instrument-rail-labels", "expected tab rail labels + scroll={false}");
+}
+
+const organizeCss = readFileSync(join(root, "src/app/ios-native-organize.css"), "utf8");
+if (organizeCss.includes("helix-native-toolbar") && organizeCss.includes("spx-native-stats-toggle")) {
+  ok("organize:compact-tool-chrome");
+} else {
+  fail("organize:compact-tool-chrome", "expected organize CSS for HELIX/SPX");
+}
+if (organizeCss.includes("ios-native-chip-rail")) ok("organize:unified-chip-rail");
+else fail("organize:unified-chip-rail", "expected shared chip rail styles");
+
+const chipRail = readFileSync(join(root, "src/components/ios/IosNativeChipRail.tsx"), "utf8");
+if (chipRail.includes("ios-native-chip-scroll")) ok("organize:IosNativeChipRail");
+else fail("organize:IosNativeChipRail", "expected IosNativeChipRail component");
+
+const gridTabs = readFileSync(join(root, "src/components/zerodte/GridPageTabs.tsx"), "utf8");
+if (gridTabs.includes("IosNativeSegment") && gridTabs.includes("grid-page-tabs-native")) {
+  ok("organize:grid-native-segment");
+} else {
+  fail("organize:grid-native-segment", "expected native segment on Grid");
 }
 
 const pageTransition = readFileSync(join(root, "src/components/ios/IosNativePageTransition.tsx"), "utf8");
@@ -278,7 +304,7 @@ if (learnLayout.includes("LearnPageShell")) ok("learn:uses-learn-page-shell");
 else fail("learn:uses-learn-page-shell", "expected LearnPageShell");
 
 const faqNative = readFileSync(join(root, "src/components/faq/FaqNativeView.tsx"), "utf8");
-if (faqNative.includes("faq-native-view") && faqNative.includes("faq-native-cat-chip")) {
+if (faqNative.includes("faq-native-view") && faqNative.includes("IosNativeChipRail")) {
   ok("faq:native-accordion-view");
 } else {
   fail("faq:native-accordion-view", "expected FaqNativeView accordion layout");

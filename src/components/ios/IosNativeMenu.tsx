@@ -55,7 +55,7 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
             transition={SHEET_SPRING}
           >
             <div className="ios-native-menu-handle" aria-hidden />
-            <p className="ios-native-menu-kicker">CMD · INSTRUMENT SELECT</p>
+            <p className="ios-native-menu-kicker">Instruments</p>
 
             <motion.div
               className="ios-native-menu-grid"

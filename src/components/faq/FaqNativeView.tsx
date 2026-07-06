@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { clsx } from "clsx";
 import {
   FAQ_CATEGORIES,
   FAQ_ITEMS,
   FAQ_SUPPORT_EMAIL,
   type FaqCatKey,
 } from "@/lib/faq/content";
+import { IosNativeChipRail } from "@/components/ios/IosNativeChipRail";
 
 /** Native iOS FAQ — vertical category rail + accordion (no horizontal bento pan). */
 export function FaqNativeView() {
@@ -33,25 +33,18 @@ export function FaqNativeView() {
 
   return (
     <div className="faq-native-view">
-      <nav className="faq-native-cat-rail" aria-label="FAQ categories">
-        <div className="faq-native-cat-scroll">
-          {FAQ_CATEGORIES.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              className={clsx("faq-native-cat-chip", cat === c.key && "faq-native-cat-chip-active")}
-              aria-pressed={cat === c.key}
-              onClick={() => {
-                setCat(c.key);
-                const first = FAQ_ITEMS.find((f) => f.catKey === c.key);
-                if (first) setOpenId(first.id);
-              }}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      <IosNativeChipRail
+        ariaLabel="FAQ categories"
+        value={cat}
+        onChange={(id) => {
+          const next = id as FaqCatKey;
+          setCat(next);
+          const first = FAQ_ITEMS.find((f) => f.catKey === next);
+          if (first) setOpenId(first.id);
+        }}
+        chips={FAQ_CATEGORIES.map((c) => ({ id: c.key, label: c.label }))}
+        className="faq-native-cat-rail"
+      />
 
       <div className="faq-native-list" role="list">
         {items.map((f) => {

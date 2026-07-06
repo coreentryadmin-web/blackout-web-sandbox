@@ -35,7 +35,7 @@ type Props = {
 export function IosNativeHeader({ path, onMenuOpen }: Props) {
   const router = useRouter();
   const meta = getIosHeaderMeta(path);
-  const titleKey = `${meta.key}:${meta.kicker}`;
+  const titleKey = `${meta.key}:${meta.title}`;
 
   return (
     <header className="ios-native-header" role="banner">
@@ -82,7 +82,7 @@ export function IosNativeHeader({ path, onMenuOpen }: Props) {
               exit={{ opacity: 0, y: -4 }}
               transition={TITLE_SPRING}
             >
-              {meta.kicker ? (
+              {meta.kicker && meta.showBack ? (
                 <span className="ios-native-header-kicker">{meta.kicker}</span>
               ) : null}
               <div className="flex items-center justify-center gap-1.5 min-w-0">

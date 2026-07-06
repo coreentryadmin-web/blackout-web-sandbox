@@ -23,7 +23,13 @@ export function IosAppTabBar({ lockedTools = [] }: { lockedTools?: ToolKey[] }) 
     setIosApp(isIosAppShell());
   }, []);
 
-  const visible = iosApp && isLoaded && isSignedIn && isIosToolRoute(path);
+  const visible =
+    iosApp &&
+    isLoaded &&
+    isSignedIn &&
+    isIosToolRoute(path) &&
+    path !== "/terminal" &&
+    !path.startsWith("/terminal/");
   useEffect(() => {
     document.documentElement.classList.toggle("ios-tab-bar", visible);
     return () => document.documentElement.classList.remove("ios-tab-bar");
@@ -63,7 +69,7 @@ export function IosAppTabBar({ lockedTools = [] }: { lockedTools?: ToolKey[] }) 
                 aria-label={tab.label}
               >
                 <ProductMark product={tab.mark} size={18} title={tab.label} className="ios-app-tab-icon" />
-                <span className="ios-app-tab-label">{tab.label}</span>
+                <span className="ios-app-tab-label">{tab.short}</span>
               </Link>
             </li>
           );
