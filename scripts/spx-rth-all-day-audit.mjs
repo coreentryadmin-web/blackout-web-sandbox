@@ -61,20 +61,23 @@ async function spxCrossEndpointCheck() {
     return;
   }
   try {
-    const [desk, heatmap, positioning, play] = await Promise.all([
-      fetchJson("/api/market/spx/desk"),
+    const [mergedWrap, heatmap, positioning, play] = await Promise.all([
+      fetchJson("/api/market/spx/merged"),
       fetchJson("/api/market/gex-heatmap?ticker=SPX"),
       fetchJson("/api/market/gex-positioning?ticker=SPX"),
       fetchJson("/api/market/spx/play"),
     ]);
+    const merged = mergedWrap?.merged ?? mergedWrap;
 
-    const deskSpot = Number(desk?.price ?? desk?.quote?.price ?? desk?.spot);
+    const liveSpot = Number(merged?.price ?? merged?.quote?.price ?? merged?.spot);
     const hmSpot = Number(heatmap?.spot);
     const posSpot = Number(positioning?.spot);
 
     const issues = [];
-    if (spotDelta(deskSpot, hmSpot) > 0.15) {
-      issues.push(`desk spot ${deskSpot} vs heatmap ${hmSpot} Δ=${spotDelta(deskSpot, hmSpot).toFixed(3)}`);
+    // Heatmap/GEX share one spot lane; merged desk uses the ~1s pulse lane — allow ≤1 pt
+    // during fast tape when the 8s heatmap cache is mid-refresh.
+    if (spotDelta(liveSpot, hmSpot) > 1.0) {
+      issues.push(`merged spot ${liveSpot} vs heatmap ${hmSpot} Δ=${spotDelta(liveSpot, hmSpot).toFixed(3)}`);
     }
     if (spotDelta(hmSpot, posSpot) > 0.15) {
       issues.push(`heatmap spot ${hmSpot} vs positioning ${posSpot}`);
@@ -99,7 +102,7 @@ async function spxCrossEndpointCheck() {
       rec(
         "spx:cross-endpoint",
         "PASS",
-        `spot desk=${deskSpot} hm=${hmSpot} play=${play?.action}/${play?.phase}`
+        `spot merged=${liveSpot} hm=${hmSpot} play=${play?.action}/${play?.phase}`
       );
     }
   } catch (e) {
@@ -113,32 +116,26 @@ async function deskLaneCheck() {
     return;
   }
   try {
-    const [desk, pulse, flow, mergedWrap] = await Promise.all([
-      fetchJson("/api/market/spx/desk"),
+    const [pulse, flow, mergedWrap] = await Promise.all([
       fetchJson("/api/market/spx/pulse"),
       fetchJson("/api/market/spx/flow"),
       fetchJson("/api/market/spx/merged"),
     ]);
     const merged = mergedWrap?.merged ?? mergedWrap;
 
-    const deskSpot = Number(desk?.price ?? desk?.quote?.price ?? desk?.spot);
     const mergedSpot = Number(merged?.price ?? merged?.quote?.price ?? merged?.spot);
 
     const issues = [];
-    if (Number.isFinite(deskSpot) && Number.isFinite(mergedSpot) && spotDelta(deskSpot, mergedSpot) > 0.01) {
-      issues.push(`desk vs merged spot Δ=${spotDelta(deskSpot, mergedSpot).toFixed(3)}`);
-    }
-
     if (pulse?.available && Number(pulse?.price) > 0) {
       const pulseSpot = Number(pulse.price);
-      if (spotDelta(deskSpot, pulseSpot) > 0.15) {
-        issues.push(`desk vs pulse spot Δ=${spotDelta(deskSpot, pulseSpot).toFixed(3)}`);
+      if (Number.isFinite(mergedSpot) && spotDelta(mergedSpot, pulseSpot) > 0.05) {
+        issues.push(`merged vs pulse spot Δ=${spotDelta(mergedSpot, pulseSpot).toFixed(3)}`);
       }
     }
     if (flow?.available && Number(flow?.price) > 0) {
       const flowSpot = Number(flow.price);
-      if (spotDelta(deskSpot, flowSpot) > 0.15) {
-        issues.push(`desk vs flow spot Δ=${spotDelta(deskSpot, flowSpot).toFixed(3)}`);
+      if (Number.isFinite(mergedSpot) && spotDelta(mergedSpot, flowSpot) > 0.15) {
+        issues.push(`merged vs flow spot Δ=${spotDelta(mergedSpot, flowSpot).toFixed(3)}`);
       }
     }
 
@@ -150,7 +147,7 @@ async function deskLaneCheck() {
     if (issues.length) {
       rec("spx:desk-lanes", "FAIL", issues.join("; "));
     } else {
-      rec("spx:desk-lanes", "PASS", `spot=${deskSpot} pulse=${pulse?.available} flow=${flow?.available}`);
+      rec("spx:desk-lanes", "PASS", `spot=${mergedSpot} pulse=${pulse?.available} flow=${flow?.available}`);
     }
   } catch (e) {
     rec("spx:desk-lanes", "FAIL", e.message);

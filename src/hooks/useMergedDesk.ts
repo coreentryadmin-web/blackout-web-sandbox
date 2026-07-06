@@ -8,6 +8,7 @@ import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { usePulseStream } from "@/hooks/usePulseStream";
+import { isClientDeskSessionOpen, isDeskSessionLiveFromPulse, resolveDeskLive, resolveDeskSessionActive, shouldDiscardStaleClosedDeskCache } from "@/lib/spx-desk-session-client";
 
 const PULSE_REST_MS = 1_000;
 const PULSE_REST_SSE_MS = 10_000;
@@ -35,19 +36,6 @@ const swrLiveOpts = {
 };
 
 
-function isDeskSessionLive(pulse?: {
-  market_open?: boolean;
-  market_label?: string;
-  market_status?: string;
-}): boolean {
-  if (!pulse) return true;
-  return (
-    pulse.market_open === true ||
-    pulse.market_label === "PRE-MARKET" ||
-    pulse.market_status === "premarket"
-  );
-}
-
 export function useMergedDesk() {
   const { mutate } = useSWRConfig();
   const sessionDateRef = useRef(todayEtYmd());
@@ -55,12 +43,27 @@ export function useMergedDesk() {
     readSessionCache<SpxDeskPayload>(DESK_CACHE_KEY, DESK_CACHE_MAX_AGE_MS)
   );
   const [pulseSseConnected, setPulseSseConnected] = useState(false);
+  const [etSessionOpen, setEtSessionOpen] = useState(true);
   // Initialized becomes true after the first pulse or REST response arrives.
   // Prevents sessionActive from returning true before any data is loaded.
   const [initialized, setInitialized] = useState(false);
   const onPulseConnection = useCallback((connected: boolean) => {
     setPulseSseConnected(connected);
   }, []);
+
+  // ET session clock — prevents a post-close sessionStorage snapshot from pinning OFFLINE
+  // during RTH when REST pulse is slow and SSE only overlays price (no market_open).
+  useEffect(() => {
+    const tick = () => setEtSessionOpen(isClientDeskSessionOpen());
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldDiscardStaleClosedDeskCache(deskStable.current, etSessionOpen)) return;
+    deskStable.current = undefined;
+  }, [etSessionOpen]);
 
   // Seed pulse/flow/desk SWR caches in one round-trip so first paint avoids 3 parallel cold XHRs.
   useSWR("spx-desk-bootstrap", fetchSpxBootstrap, {
@@ -90,11 +93,14 @@ export function useMergedDesk() {
     {
       ...swrLiveOpts,
       refreshInterval: (latest) => {
-        if (!isDeskSessionLive(latest)) return 0;
+        if (!isDeskSessionLiveFromPulse(latest) && !isClientDeskSessionOpen()) return 0;
         return pulseSseConnected ? PULSE_REST_SSE_MS : PULSE_REST_MS;
       },
       dedupingInterval: 800,
       focusThrottleInterval: PULSE_REST_MS,
+      onError: () => {
+        /* REST pulse can fail transiently — ET session gate keeps RTH polling alive. */
+      },
     }
   );
 
@@ -130,10 +136,12 @@ export function useMergedDesk() {
     }
   }, [initialized, pulse, pulseRest]);
 
-  const sessionActive =
-    initialized
-      ? isDeskSessionLive(pulse) || isDeskSessionLive(deskStable.current)
-      : false;
+  const sessionActive = resolveDeskSessionActive({
+    initialized,
+    pulse,
+    deskStable: deskStable.current,
+    etSessionOpen,
+  });
 
   const {
     data: desk,
@@ -189,8 +197,17 @@ export function useMergedDesk() {
       }
     }
 
+    if (out && etSessionOpen && !isDeskSessionLiveFromPulse(out) && (out.price ?? 0) > 0) {
+      out = {
+        ...out,
+        market_open: true,
+        market_status: pulse?.market_status ?? "open",
+        market_label: pulse?.market_label ?? "RTH OPEN",
+      };
+    }
+
     return out;
-  }, [desk, flow, pulse]);
+  }, [desk, flow, pulse, etSessionOpen]);
 
   // Side effects for the merged desk, in commit phase:
   //  1. deskStable.current is updated on EVERY change (unthrottled) — sessionActive
@@ -231,15 +248,7 @@ export function useMergedDesk() {
     };
   }, []);
 
-  const live = Boolean(
-    sessionActive &&
-      merged?.available &&
-      (merged?.price ?? 0) > 0 &&
-      !merged?.feed_stalled &&
-      (merged?.market_open === true ||
-        merged?.market_label === "PRE-MARKET" ||
-        merged?.market_status === "premarket")
-  );
+  const live = resolveDeskLive({ sessionActive, merged, etSessionOpen });
 
   const refreshing =
     sessionActive &&

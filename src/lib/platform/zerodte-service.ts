@@ -112,7 +112,7 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
 
   void gradeZeroDteLedger().catch(() => {});
 
-  return roundFloats({
+  const payload = roundFloats({
     available: true,
     as_of: new Date().toISOString(),
     upstream_ok,
@@ -121,6 +121,16 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
     ledger: ledgerRows.map((r) => mapLedgerRow(r, nighthawkEcho)),
     covered_elsewhere: nighthawk_covered,
   }) as ZeroDteBoardPayload;
+
+  // roundFloats() rounds entry_premium/last_mark independently; recompute PnL from the
+  // member-visible rounded premiums so live_pnl_pct always matches (mark-entry)/entry.
+  return {
+    ...payload,
+    ledger: payload.ledger.map((row) => ({
+      ...row,
+      live_pnl_pct: livePnlPct(row.entry_premium, row.last_mark),
+    })),
+  };
 }
 
 /** Cached board read — shared by the member route and Largo/BIE consumers. */

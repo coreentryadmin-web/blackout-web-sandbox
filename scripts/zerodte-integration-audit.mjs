@@ -44,14 +44,15 @@ async function auditCrossToolLive() {
     return;
   }
 
-  const [zb, boot, gex, flows, nh, desk] = await Promise.all([
+  const [zb, boot, gex, flows, nh, mergedWrap] = await Promise.all([
     fetchJson("/api/market/zerodte/board"),
     fetchJson("/api/grid/bootstrap"),
     fetchJson("/api/market/gex-positioning?ticker=SPX"),
     fetchJson("/api/market/flows?limit=30"),
     fetchJson("/api/market/nighthawk/edition"),
-    fetchJson("/api/market/spx/desk"),
+    fetchJson("/api/market/spx/merged"),
   ]);
+  const mergedDesk = mergedWrap.json?.merged ?? mergedWrap.json;
 
   if (zb.status !== 200 || !zb.json.available) {
     rec("integration:zerodte-board", "FAIL", `HTTP ${zb.status}`);
@@ -74,10 +75,10 @@ async function auditCrossToolLive() {
     rec("integration:grid-bootstrap", "WARN", `HTTP ${boot.status}`);
   }
 
-  const deskSpot = Number(desk.json?.price ?? desk.json?.spot);
+  const liveSpot = Number(mergedDesk?.price ?? mergedDesk?.spot);
   const gexSpot = Number(gex.json?.spot);
-  if (Number.isFinite(deskSpot) && Number.isFinite(gexSpot) && spotDelta(deskSpot, gexSpot) > 0.2) {
-    rec("integration:spx-desk-gex", "FAIL", `desk ${deskSpot} vs gex ${gexSpot}`);
+  if (Number.isFinite(liveSpot) && Number.isFinite(gexSpot) && spotDelta(liveSpot, gexSpot) > 0.2) {
+    rec("integration:spx-desk-gex", "FAIL", `merged ${liveSpot} vs gex ${gexSpot}`);
   } else if (Number.isFinite(gexSpot)) {
     rec("integration:spx-desk-gex", "PASS", `spot ${gexSpot}`);
   }
