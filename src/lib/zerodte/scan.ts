@@ -59,6 +59,7 @@ import {
   derivePlayStatus,
   gradePlanFromBars,
   NEW_PLAY_CUTOFF_ET_MINUTES,
+  resolveLedgerEntryPremium,
   type PlanBar,
 } from "./plan";
 
@@ -302,9 +303,10 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     gross_premium: s.gross_premium,
     spike: s.spike,
     underlying: s.underlying_price,
-    // Premium reference the plan grades against: live mark at flag, else the
-    // flow's own average fill.
-    entry_premium: s.plan?.mark ?? s.top_strike_avg_fill ?? null,
+    // Premium reference the plan grades against — MUST match entry_max (the
+    // member's actual "enter at or below" instruction), not the raw live mark;
+    // see resolveLedgerEntryPremium's doc comment (plan.ts) for why.
+    entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
     flags_json: {

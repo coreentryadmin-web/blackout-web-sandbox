@@ -133,6 +133,23 @@ export function buildContractPlan(input: {
   };
 }
 
+/**
+ * The premium reference persisted to the ledger row — consumed by BOTH
+ * gradePlanFromBars (the final win/loss grade) and derivePlayStatus (live
+ * OPEN/HOLD/TRIM/CLOSED math via peak/trough). This MUST resolve the same way
+ * buildContractPlan's own `entry_max` does (flow's fill, falling back to mark),
+ * since entry_max is the literal "enter at or below this premium" instruction
+ * shown to the member and what the plan's own stop_premium/target_premium are
+ * computed from — grading against a different reference (e.g. the live mark at
+ * flag time) would score a trade the member was never actually told to make.
+ */
+export function resolveLedgerEntryPremium(
+  planEntryMax: number | null | undefined,
+  flowAvgFill: number | null
+): number | null {
+  return planEntryMax ?? flowAvgFill ?? null;
+}
+
 // ── Plan grading (the accountability half) ────────────────────────────────────────
 
 export type PlanBar = { t: number; h: number; l: number; c: number };
