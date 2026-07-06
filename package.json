@@ -33,6 +33,7 @@
     "validate:grid-rth": "node scripts/grid-rth-all-day-audit.mjs",
     "validate:grid-e2e": "node scripts/grid-zerodte-e2e-audit.mjs",
     "validate:ios-config": "node apps/blackout-ios/scripts/validate-config.mjs",
+    "validate:ios-mobile-desk": "node scripts/validate-ios-mobile-desk.mjs",
     "validate:zerodte-logic": "node scripts/zerodte-logic-audit.mjs",
     "validate:zerodte-integration": "node scripts/zerodte-integration-audit.mjs",
     "validate:zerodte-bie": "node scripts/audit/zerodte-bie-consistency-validator.mjs",

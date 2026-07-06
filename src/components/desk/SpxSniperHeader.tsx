@@ -27,6 +27,9 @@ function resolveFreshness(
 }
 
 export function SpxSniperHeader({ desk, live }: Props) {
+  const hasQuote = Boolean(desk?.available && (desk?.price ?? 0) > 0);
+  /** Show grounded desk numbers whenever we have a quote — even when session is closed. */
+  const showValues = Boolean(live || hasQuote);
   const bull = (desk?.spx_change_pct ?? 0) >= 0;
 
   const polledAtMs = desk?.polled_at
@@ -66,7 +69,7 @@ export function SpxSniperHeader({ desk, live }: Props) {
               <h1 className="font-syne text-2xl font-bold tracking-tight text-white md:text-3xl">
                 SPX Slayer
               </h1>
-              <p className="mt-1 font-mono text-[11px] tracking-[0.08em] text-secondary">
+              <p className="spx-hero-tagline-sub mt-1 font-mono text-[11px] tracking-[0.08em] text-secondary">
                 GEX structure · dealer positioning · session levels
               </p>
             </div>
@@ -80,13 +83,18 @@ export function SpxSniperHeader({ desk, live }: Props) {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
                 className={clsx(
-                  "t-num text-6xl font-semibold leading-none drop-shadow-[0_0_18px_currentColor] sm:text-7xl md:text-8xl",
+                  "spx-hero-price t-num text-6xl font-semibold leading-none drop-shadow-[0_0_18px_currentColor] sm:text-7xl md:text-8xl",
                   bull ? "text-bull" : "text-bear-text"
                 )}
               >
-                {live ? fmtPrice(desk?.price ?? null, 2) : "— — —"}
+                {showValues ? fmtPrice(desk?.price ?? null, 2) : "—"}
               </motion.p>
             </AnimatePresence>
+            {!live && hasQuote && (
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300">
+                Last session snapshot · not live
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span
                 className={clsx(
@@ -94,17 +102,21 @@ export function SpxSniperHeader({ desk, live }: Props) {
                   bull ? "text-bull" : "text-bear-text"
                 )}
               >
-                {live ? fmtPct(desk?.spx_change_pct ?? null) : "—"}
+                {showValues ? fmtPct(desk?.spx_change_pct ?? null) : "—"}
               </span>
-              <StatPill label="VIX" value={live && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"} tone="orange" />
+              <StatPill
+                label="VIX"
+                value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
+                tone="orange"
+              />
               <StatPill
                 label="VWAP"
-                value={live ? fmtPrice(desk?.vwap ?? null) : "—"}
+                value={showValues ? fmtPrice(desk?.vwap ?? null) : "—"}
                 tone={desk?.above_vwap ? "bull" : "bear"}
               />
               <StatPill
                 label="GEX"
-                value={live && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
+                value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
                 tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
               />
             </div>
@@ -112,22 +124,42 @@ export function SpxSniperHeader({ desk, live }: Props) {
 
           <div className="spx-hero-metric-blocks">
             <MetricBlock title="EMA" tone="orange">
-              <MetricRow label="20" value={live ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
-              <MetricRow label="50" value={live ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" />
-              <MetricRow label="200" value={live ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" />
+              <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
+              <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" />
+              <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" />
             </MetricBlock>
             <MetricBlock title="SMA" tone="violet">
-              <MetricRow label="50" value={live ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" />
-              <MetricRow label="200" value={live ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" />
+              <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" />
+              <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" />
             </MetricBlock>
             <MetricBlock title="Session" tone="bull">
               <div className="spx-hero-metric-pair">
-                <MetricRow label="HOD" value={live ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact />
-                <MetricRow label="PDH" value={live ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact />
+                <MetricRow
+                  label="HOD"
+                  value={showValues ? fmtPrice(desk?.hod ?? null) : "—"}
+                  tone="resistance"
+                  compact
+                />
+                <MetricRow
+                  label="PDH"
+                  value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"}
+                  tone="resistance"
+                  compact
+                />
               </div>
               <div className="spx-hero-metric-pair">
-                <MetricRow label="LOD" value={live ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact />
-                <MetricRow label="PDL" value={live ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact />
+                <MetricRow
+                  label="LOD"
+                  value={showValues ? fmtPrice(desk?.lod ?? null) : "—"}
+                  tone="support"
+                  compact
+                />
+                <MetricRow
+                  label="PDL"
+                  value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"}
+                  tone="support"
+                  compact
+                />
               </div>
             </MetricBlock>
           </div>
@@ -144,12 +176,21 @@ export function SpxSniperHeader({ desk, live }: Props) {
             )}
           </div>
           <div className="grid w-full min-w-[200px] grid-cols-2 gap-2 sm:grid-cols-4 xl:w-auto">
-            <StatPill label="Regime" value={live ? (desk?.regime ?? "—") : "—"} tone="violet" capitalize />
-            <StatPill label="γ Flip" value={live && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"} tone="magenta" />
-            <StatPill label="Max Pain" value={live ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
+            <StatPill
+              label="Regime"
+              value={showValues ? (desk?.regime ?? "—") : "—"}
+              tone="violet"
+              capitalize
+            />
+            <StatPill
+              label="γ Flip"
+              value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
+              tone="magenta"
+            />
+            <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
             <StatPill
               label="IV Rank"
-              value={live && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
+              value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
               tone="gold"
             />
           </div>

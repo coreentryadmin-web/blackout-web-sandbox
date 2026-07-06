@@ -4293,6 +4293,72 @@ body::before {
     padding-top: max(6rem, calc(env(safe-area-inset-top, 0px) + 4rem));
   }
 
+  /* iOS WKWebView shell — no horizontal page drift; nav clears notch safe area. */
+  html.ios-app,
+  html.ios-app body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+  html.ios-app {
+    --nav-offset: calc(76px + env(safe-area-inset-top, 0px) + 12px);
+  }
+  html.ios-app .nav-kicker {
+    display: none;
+  }
+  html.ios-app .spx-sniper-command h1 {
+    font-size: 1.375rem;
+  }
+  html.ios-app .spx-hero-tagline-sub {
+    display: none;
+  }
+
+  @media (max-width: 1023px) {
+    .nav-inner {
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 0.5rem;
+    }
+    .nav-kicker {
+      display: none;
+    }
+    .nav-wordmark {
+      font-size: 22px;
+      letter-spacing: 0.03em;
+    }
+    /* Drawer open: hide the bar wordmark so it doesn't peek beside the sheet head. */
+    html.nav-locked .nav-brand {
+      visibility: hidden;
+    }
+  }
+
+  @media (max-width: 639px) {
+    .spx-sniper-command {
+      padding: 1rem 0.75rem;
+    }
+    .spx-sniper-command .spx-hero-price {
+      font-size: 2.75rem;
+      line-height: 1;
+    }
+    .spx-hero-metric-blocks {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+      gap: 0.5rem;
+    }
+    .spx-hero-metric-block {
+      min-width: 0;
+      flex: none;
+    }
+    .spx-hero-metric-block:last-child {
+      grid-column: 1 / -1;
+    }
+    .spx-sniper-triple {
+      min-height: 0;
+    }
+    .spx-sniper-desk {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+
   /* ===== Auth + Upgrade ===== */
   .auth-grad {
     background-image: linear-gradient(90deg, #00e676, #34d399 55%, #7dd3fc);
