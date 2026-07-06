@@ -1,5 +1,64 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 14:50 ET
+Last updated: 2026-07-06 15:10 ET
+
+## RTH comprehensive sweep — 2026-07-06 ~14:44–15:07 ET (autonomous RTH agent)
+
+**Session:** Executed `docs/ops/RTH-OPEN-RUNBOOK.md` + full comprehensive test sweep (browser + API + missing-field audit). Mid-session Railway deploy (`8315a121` BUILDING 14:39 ET) caused transient member-dashboard OFFLINE; cleared post-deploy.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:rth-open` | ✅ **GREEN** (post-deploy) |
+| `npm run validate:member-dashboard` | ✅ **13/13** — LIVE badge, 172 matrix rows, spot ~7538 |
+| `npm run validate:spx-e2e` | ✅ **18/18** — matrix every cell, cross-tool, Largo |
+| `npm run validate:grid-rth` | ⚠️ **21 PASS / 1 FAIL** — `integration:cross-tool` HTTP 524 on `/api/grid/bootstrap` (edge timeout under concurrent audit) |
+| `npm run validate:rth-sweep` | ⚠️ **2 P1 audit-infra** — curl 90s timeout on `spx/merged` + `gex-heatmap` SPX/SPY under parallel load; browser pages all **~1.6–1.8s** soft-nav, **0 missing-field hits** |
+| `GET /api/cron/data-correctness?force=1` (external) | ⚠️ **524/timeout** at CF edge (~100s) — Postgres cron authoritative: **flags=0**, `overall_status=consistency-only` |
+| `npm run ops:collect` | ✅ 0 action items (post-deploy) |
+
+### Per-page sweep (premium session, ~14:46 ET pass)
+
+| Page | Hard/soft load | Missing-field (`—`/N/A) | Console | Live tick observed |
+|---|---|---|---|---|
+| `/dashboard` | hard 1.8s | 0 | 1× 400 (Clerk ticket reuse in sweep auth) | null (spot static in 12s window) |
+| `/flows` | soft 1.7s | 0 | clean | null |
+| `/heatmap` (matrix) | soft 1.8s | 0 | clean | null |
+| `/grid` | soft 1.7s | 0 | clean | null |
+| `/nighthawk` | soft 1.7s | 0 | clean | null |
+| `/terminal` (Largo) | soft 1.7s | 0 | clean | null |
+| `/track-record` | soft 1.6s | 0 | clean | null |
+
+**Largo:** `POST /api/market/largo/query` 200 in ~75s — grounded NVDA dark-pool + flow answer with dollar amounts; dynamic tool trace.
+
+### Data correctness (cross-tool)
+
+| Probe | Result |
+|---|---|
+| SPX spot API vs desk | ✅ merged `market_open=true` price ~7538–7540 |
+| GEX matrix | ✅ 151 strikes, spot aligned |
+| GEX flip cross-tool (desk vs gex-positioning vs heatmap) | ✅ within 1pt when endpoints respond (parallel fetch can skew >1pt — WATCH) |
+| Postgres `data-correctness` cron | ✅ flags=0, 7 pass / 99 consistency-only (expected single-source gaps) |
+
+### Fixes shipped this session
+
+| Fix | Why |
+|---|---|
+| `useMergedDesk` `initialLoading` — require `merged` or `deskStable`, not `pulseRest` alone | Prevented OFFLINE/MARKET CLOSED hero while heavy lanes still loading (pulseRest arriving first flipped `deskLoading` false) |
+| `rth-comprehensive-sweep.mjs` — `generateDefaultAuditPhone()` | Clerk phone collision on `+14155550123` blocked sweep auth |
+
+### Remaining WATCH (no P0/P1 — no GitHub issue)
+
+| Item | Detail | Action |
+|---|---|---|
+| CF 524 on heavy crons | `data-correctness?force=1`, `grid/bootstrap` timeout externally during concurrent audits | Use Postgres `cron_job_runs.meta_json` or `surface=heatmap` fast path; Railway internal cron is authoritative |
+| Audit curl 90s timeouts | `spx/merged`, `gex-heatmap` under parallel sweep + Largo | Endpoints succeed sequentially; increase audit timeout or serialize heavy probes |
+| Transient OFFLINE during deploy | Member dashboard failed 14:09 ET during BUILDING deploy | Expected — re-verify post-deploy |
+| `liveTick=null` in sweep | 12s observation window; SPX spot stable | Not a defect |
+
+**Reports:** `audit-output/rth-sweep-2026-07-06T18-46-38-130Z.json`, `member-dashboard-live-1783363478942.png`, `spx-dashboard-e2e-1783364175385.json`, `grid-rth-2026-07-06-verify-1783364828708.json`
+
+---
 
 ## grid-rth-2026-07-06 — 0DTE Command + Market Grid verify pass #2 (~14:29–14:42 ET)
 

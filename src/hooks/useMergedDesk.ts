@@ -267,7 +267,9 @@ export function useMergedDesk() {
     Boolean(merged) &&
     ((deskValidating && Boolean(desk)) || flowValidating || pulseValidating);
 
-  const initialLoading = !merged && !pulseRest && !deskStable.current;
+  // Keep skeleton until merged desk OR session cache exists — pulseRest alone must not
+  // flip deskLoading false (that rendered OFFLINE/MARKET CLOSED while heavy lanes still load).
+  const initialLoading = !merged && !deskStable.current;
 
   return {
     desk: merged,
