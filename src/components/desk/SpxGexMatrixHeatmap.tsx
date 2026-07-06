@@ -24,9 +24,13 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
+import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 
 const MATRIX_POLL_RTH_MS = 8_000;
 const MATRIX_POLL_OFF_MS = 20_000;
+const MATRIX_CACHE_KEY = "spx-gex-matrix";
+/** Stale-while-revalidate: show last matrix instantly on navigation/refresh. */
+const MATRIX_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 /** Near-term columns shown in the compact rail (matches competitor density). */
 const MAX_EXPIRY_COLS = 6;
 
@@ -101,6 +105,10 @@ export function SpxGexMatrixHeatmap({
     MATRIX_POLL_OFF_MS
   );
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
+  const cachedMatrix = useMemo(
+    () => readSessionCache<GexHeatmapResponse>(MATRIX_CACHE_KEY, MATRIX_CACHE_MAX_AGE_MS),
+    []
+  );
 
   const { data, isLoading, error, isValidating } = useSWR<GexHeatmapResponse>(
     matrixKey,
@@ -110,6 +118,12 @@ export function SpxGexMatrixHeatmap({
       refreshWhenHidden: false,
       revalidateOnFocus: false,
       keepPreviousData: true,
+      fallbackData: cachedMatrix,
+      onSuccess: (payload) => {
+        if (payload?.available && payload.gex?.strike_totals) {
+          writeSessionCache(MATRIX_CACHE_KEY, payload);
+        }
+      },
     }
   );
 

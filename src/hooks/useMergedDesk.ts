@@ -93,10 +93,11 @@ export function useMergedDesk() {
 
   const bootstrapSettled = !bootstrapLoading;
   const bootstrapSeeded = Boolean(bootstrap);
-  const lanesActive = bootstrapSettled;
+  // Pulse is the fast lane (~50–200ms) — never wait on bootstrap or desk rebuild.
+  const heavyLanesActive = bootstrapSettled;
 
   const { data: pulseRest, isValidating: pulseValidating } = useSWR(
-    lanesActive ? "spx-desk-pulse" : null,
+    "spx-desk-pulse",
     fetchSpxDeskPulse,
     {
       ...swrLiveOpts,
@@ -156,7 +157,7 @@ export function useMergedDesk() {
     data: desk,
     isLoading: deskLoading,
     isValidating: deskValidating,
-  } = useSWR(lanesActive ? "spx-desk-full" : null, fetchSpxDesk, {
+  } = useSWR(heavyLanesActive ? "spx-desk-full" : null, fetchSpxDesk, {
     ...swrLiveOpts,
     revalidateOnMount: !bootstrapSeeded,
     refreshInterval: sessionActive ? FULL_DESK_MS : 0,
@@ -165,7 +166,7 @@ export function useMergedDesk() {
   });
 
   const { data: flow, isValidating: flowValidating } = useSWR(
-    lanesActive ? "spx-desk-flow" : null,
+    heavyLanesActive ? "spx-desk-flow" : null,
     fetchSpxDeskFlow,
     {
       ...swrLiveOpts,
@@ -266,7 +267,7 @@ export function useMergedDesk() {
     Boolean(merged) &&
     ((deskValidating && Boolean(desk)) || flowValidating || pulseValidating);
 
-  const initialLoading = (bootstrapLoading || deskLoading) && !merged;
+  const initialLoading = !merged && !pulseRest && !deskStable.current;
 
   return {
     desk: merged,
