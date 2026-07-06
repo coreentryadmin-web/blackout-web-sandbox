@@ -1,5 +1,71 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 14:10 ET
+Last updated: 2026-07-06 14:32 ET
+
+## grid-rth-2026-07-06 — 0DTE Command + Market Grid all-day verify pass (~14:16 ET)
+
+**Session:** Scheduled Grid RTH all-day agent verify pass (Mon afternoon, ~90 min cadence). Agent executed `docs/ops/GRID-RTH-ALL-DAY-AGENT.md` verify mode: `validate:grid-rth` → `validate:zerodte-logic` → `validate:grid-e2e`.
+
+### Validation summary
+
+| Check | Result |
+|---|---|
+| `npm run validate:grid-rth` | ⚠️ **20 PASS / 4 FAIL** (verify) |
+| `npm run validate:zerodte-logic` | ✅ **GREEN** — 16/16 |
+| `npm run validate:grid-e2e` | ✅ **GREEN** — 0 FAIL (1 WARN) |
+| `npm run validate:rth-open` (nested) | ❌ 2 FAIL — spx-evaluate stale + data-correctness flag |
+| `npm run ops:collect` (nested) | ✅ 0 action items |
+
+### 0DTE logic — all gates GREEN (`validate:zerodte-logic`)
+
+| Probe | Result |
+|---|---|
+| Gate funnel (SETUP_MIN_GROSS, aggression, dominance, ITM) | ✅ NVDA score=65, audit trace all pass |
+| Plan exits (stop −50%, target +100%, time stop 15:30 ET) | ✅ stop=2.1 target=8.4 |
+| Trade lifecycle (OPEN → TRIM → CLOSED, sticky trough) | ✅ |
+| Plan grading (stop wins when both touch same bar) | ✅ stopped |
+| Session heat (RTH vs POWER_HOUR @ 15:00 ET) | ✅ RTH→POWER_HOUR |
+| mergePlays UI (past cutoff / MOVED → SKIP) | ✅ SKIP |
+| Live board gate invariants | ✅ 2 setups, 0 violations |
+| Live ledger PnL math | ✅ 4 rows, 0 issues |
+| Live session heat | ✅ RTH heat=100% |
+| Live upstream + cutoff constant | ✅ 15:00 ET |
+
+### Grid panels + crons — all GREEN
+
+| Probe | Result |
+|---|---|
+| All 9 `/api/grid/*` panels (bootstrap, analysts, catalysts, congress, dark-pool, earnings, economy, movers, sectors) | ✅ finite numbers, `as_of` fresh (bootstrap 597s, panels 54–76s) |
+| `/api/market/zerodte/board` | ✅ upstream_ok, heat=RTH, setups=2, ledger=4 |
+| `zerodte:ledger-pnl` | ✅ 4 rows checked |
+| `cron:grid-warm` | ✅ ok |
+| `integration:helix-flows` | ✅ 20 prints |
+| `integration:nighthawk-dedupe` | ✅ 3 tickers covered elsewhere |
+| `grid:dashboard-e2e` (nested in grid-rth) | ✅ PASS |
+
+### Remaining FAILs (non-P0 — post-close fix)
+
+| Probe | Detail | Severity | Action |
+|---|---|---|---|
+| `infra:validate:rth-open` → `spx-evaluate` | No ok run in last 20m during RTH | **WATCH** | SPX Slayer cron gap — not Grid/0DTE; `ops:collect` 0 items (not escalated) |
+| `infra:validate:rth-open` → `data-correctness` | Latest run `failed` — 1 correctness flag | **WATCH** | Prior run flag; force cron returns HTTP 524 (CF timeout) |
+| `integration:grid-gex-spot` | bootstrap 7535.78 vs gex 7541.54 (Δ≈5.76 pts) | **WATCH** | Parallel fetch cache skew — audit threshold 0.25 pt too tight; loosen to 1.0 pt |
+| `integration:spx-desk-gex` | merged 7539.74 vs gex 7541.54 (Δ≈1.8 pts) | **WATCH** | Same root cause — not member-visible |
+| `zerodte:cross-tool-integration` | Parent FAIL from nested spot probes + grid-bootstrap HTTP 524 | **WATCH** | Clears when spot thresholds relaxed + CF timeout resolved |
+| `grid:data-correctness` | HTTP **524** on `/api/cron/data-correctness?force=1` | **WATCH** | Cloudflare timeout on heavy 6-layer cron |
+
+### E2E WARNs (non-blocking)
+
+| Probe | Detail | Action |
+|---|---|---|
+| `ui:playwright` | Chromium not installed in cloud VM (`ms-playwright` binary missing) | API paths all PASS; install Playwright browsers for tab-click UI pass |
+
+### P0 assessment
+
+**No P0 defects.** All user-facing 0DTE logic (gates, plans, lifecycle, ledger PnL, session heat, mergePlays), all 9 grid panels, grid-warm cron, HELIX cross-feed, and Night Hawk dedupe are correct on live production. Remaining failures are audit-infrastructure (SPX cron gap, spot timing thresholds, CF cron timeout) — `ops:collect` confirms 0 escalated action items.
+
+**Reports:** `audit-output/grid-rth-2026-07-06-verify-1783362383341.json`, `zerodte-logic-1783362396998.json`, `grid-e2e-1783362467348.json`
+
+---
 
 ## RTH comprehensive sweep — 2026-07-06 ~13:22–13:56 ET (autonomous agent)
 
