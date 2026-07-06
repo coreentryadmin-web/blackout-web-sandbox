@@ -466,11 +466,34 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
 // any future surface) consumes the SAME deterministic intelligence the board shows
 // members — one brain, many mouths. No LLM in this path.
 
-/** Compact ledger snapshot for ambient awareness (cheap: one DB read; statuses are
- *  already latched by the cron). Used in Largo's live feed on every question. */
+/** Compact ledger snapshot for ambient awareness. Used in Largo's live feed on EVERY
+ *  question (captureLargoLiveFeed in largo-live-feed.ts), unconditionally — unlike
+ *  get_zerodte_plays, which Largo only calls when it decides the question needs it.
+ *  That makes this the code path a member's answer is actually built from most of
+ *  the time for "how's my NVDA play doing" style questions.
+ *
+ *  P1 FIX (found during the 0DTE Command entry-gate audit, see FINDINGS.md): this
+ *  used to read readZeroDteLedger() RAW with no live-quote sync, trusting the
+ *  status/last_mark exactly as the ~2-min grid-warm cron last wrote them to
+ *  Postgres. That is precisely the "0DTE board / Largo / BIE used parallel scan
+ *  paths" bug class already found+fixed for the get_zerodte_plays TOOL path and
+ *  BIE composers (both now funnel through zeroDtePlaysForLargo() /
+ *  getZeroDteBoardPayload() in zerodte-service.ts, which DOES call
+ *  syncLedgerLiveState() before mapping ledger rows) — that fix never touched this
+ *  function, so the ambient feed could tell Largo a play was still "OPEN" at a
+ *  stale mark for up to ~2 minutes (or longer if a cron tick was missed) after it
+ *  had actually stopped out or doubled, and Largo's system prompt treats this block
+ *  as "authoritative source for this turn" without necessarily calling the fresher
+ *  tool. Now calls the SAME syncLedgerLiveState() the canonical board payload uses,
+ *  so this reflects the live quote, not the last cron write. Deliberately still a
+ *  direct ledger read (not routed through getZeroDteBoardPayload()) rather than the
+ *  heavier full-board rebuild: this ambient block only ever surfaces already-
+ *  flagged ledger rows (never `setups`/`fresh_finds`), and importing
+ *  zerodte-service.ts here would be circular (it imports FROM this module). */
 export async function zeroDtePlaysFeed(): Promise<Record<string, unknown>> {
-  const rows = await readZeroDteLedger();
-  if (rows.length === 0) return { available: false, note: "no 0DTE plays flagged this session" };
+  const raw = await readZeroDteLedger();
+  if (raw.length === 0) return { available: false, note: "no 0DTE plays flagged this session" };
+  const rows = await syncLedgerLiveState(raw).catch(() => raw);
   return {
     available: true,
     session_date: todayEt(),

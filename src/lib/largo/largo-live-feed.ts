@@ -71,7 +71,11 @@ export async function captureLargoLiveFeed(
     { key: "market", promise: tool("get_market_context") },
     // Ambient desk awareness: the 0DTE Command board's own plays, on EVERY turn —
     // Largo should never be surprised by a play the platform itself published.
-    // Cheap (single ledger read; statuses pre-latched by the cron).
+    // One ledger read + one batched live-quote sync (soft-deadlined at 2.5s, the
+    // same cost the /grid board page already pays every 5-10s) — P1 fix: this used
+    // to trust the ledger row exactly as the ~2-min cron last wrote it, which could
+    // tell Largo a play was still OPEN after it had actually already stopped out
+    // (see zeroDtePlaysFeed's doc comment in scan.ts / FINDINGS.md).
     {
       key: "zerodte_plays",
       promise: import("@/lib/zerodte/scan")

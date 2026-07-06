@@ -69,6 +69,24 @@ rec(
   /case "zerodte"/.test(read("src/lib/bie/alert-outcome-sync.ts"))
 );
 
+// P1 regression guard added after the 0DTE entry-gate audit (FINDINGS.md,
+// "0DTE Command's ambient Largo feed used a stale parallel scan path"): the
+// original 2026-07-06 fix above only checked the get_zerodte_plays TOOL path
+// and BIE composers — it never checked captureLargoLiveFeed's UNCONDITIONAL
+// "on every turn" ambient injection (largo-live-feed.ts), which read the raw,
+// cron-latched ledger with no live-quote sync until this same audit caught it.
+// zeroDtePlaysFeed() (scan.ts) now calls syncLedgerLiveState() itself before
+// mapping rows — assert both halves of that fix stay wired.
+rec(
+  "static:zerodte-ambient-feed-live-synced",
+  /syncLedgerLiveState\(raw\)/.test(read("src/lib/zerodte/scan.ts"))
+);
+
+rec(
+  "static:largo-live-feed-uses-zeroDtePlaysFeed",
+  /zeroDtePlaysFeed/.test(read("src/lib/largo/largo-live-feed.ts"))
+);
+
 // Layer B — live consistency when CRON + tsx available
 const CRON = process.env.CRON_SECRET;
 const BASE = (process.env.AUDIT_APP_URL ?? "https://blackouttrades.com").replace(/\/$/, "");

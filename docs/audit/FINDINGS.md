@@ -9,6 +9,34 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+---
+
+## 🟡 P1 FOUND+FIXED 2026-07-06 — 0DTE Command's ambient Largo feed used a stale parallel scan path (branch `fix/zerodte-ambient-feed-parallel-path`)
+
+**Surface:** Largo's `captureLargoLiveFeed()` (`src/lib/largo/largo-live-feed.ts`) injects a "0DTE Command plays (OUR live board — /grid)" block into Largo's system prompt on **every single turn**, unconditionally — explicitly to make sure "Largo should never be surprised by a play the platform itself published." Found while verifying the durability of the 2026-07-06 fix already logged above titled "0DTE board / Largo / BIE used parallel scan paths" — this audit's item #5 explicitly asked to confirm that fix was durable and no new divergence had crept in.
+
+**Root cause:** that prior fix consolidated the member board route, Largo's `get_zerodte_plays` **tool**, and the BIE composers onto one function (`zeroDtePlaysForLargo()` / `getZeroDteBoardPayload()` in `src/lib/platform/zerodte-service.ts`), which calls `syncLedgerLiveState()` — a fresh, batched live-quote fetch — before mapping ledger rows. It never touched `zeroDtePlaysFeed()` (`src/lib/zerodte/scan.ts`), a **separate, older function** that `captureLargoLiveFeed()` calls directly for the ambient "every turn" injection:
+```ts
+export async function zeroDtePlaysFeed(): Promise<Record<string, unknown>> {
+  const rows = await readZeroDteLedger();   // raw DB read — NO live sync
+  ...
+  plays: rows.map((r) => ({ ..., status: r.status ?? "HOLD", last_mark: r.last_mark, ... }))
+}
+```
+`readZeroDteLedger()` returns whatever `status`/`last_mark` the ~2-minute `grid-warm` cron last wrote to Postgres — so a play that has since stopped out or doubled could still read "OPEN" at its old mark in Largo's context for up to ~2 minutes (longer if a cron tick was missed), while the member-facing `/grid` board and the `get_zerodte_plays` tool (both routed through `syncLedgerLiveState()`) would already show the correct, current state. Largo's system prompt treats this ambient block as **"authoritative source for this turn"** and is only told to call the fresher tool "if the user asks about any of these names" — for a direct "how's my NVDA play doing" question, the answer is built from the stale ambient block far more often than from an explicit tool call. This is the exact "0DTE board / Largo / BIE used parallel scan paths" bug class recurring in a fourth code path the original fix never reached.
+
+**Why it wasn't caught by the existing regression tooling:** `scripts/audit/zerodte-bie-consistency-validator.mjs` (added by the original fix specifically to guard this class of regression) has static checks for the board route, `run-tool.ts`, and `bie/composers.ts` — but had no check at all for `largo-live-feed.ts` / `zeroDtePlaysFeed`, so this divergence was invisible to the tooling built to catch exactly this.
+
+**Fix:** `zeroDtePlaysFeed()` now calls the same `syncLedgerLiveState()` the canonical board payload uses before mapping rows, so it reflects the live quote instead of the last cron write. Deliberately NOT routed through the heavier `getZeroDteBoardPayload()` (which would also rerun the full HELIX scan + dossier enrichment on every Largo turn, and is circular to import from `scan.ts` since `zerodte-service.ts` imports FROM `scan.ts`) — this ambient block only ever surfaces already-flagged ledger rows, never `setups`/`fresh_finds`, so the minimal fix (add the missing sync call) closes the actual divergence at the same cost profile the board page already pays. Added two new static checks to `zerodte-bie-consistency-validator.mjs` (`zerodte-ambient-feed-live-synced`, `largo-live-feed-uses-zeroDtePlaysFeed`) so this exact regression can't silently recur a third time.
+
+**Blast radius:** one function (`zeroDtePlaysFeed`), one call site (`captureLargoLiveFeed`'s `zerodte_plays` job). No change to the member board, the `get_zerodte_plays` tool, or BIE composers — they were already correct.
+
+**Evidence:** new `src/lib/zerodte/scan.test.ts` — `"zeroDtePlaysFeed: reflects the FRESH live-synced status/mark, not the stale cron-written row"` builds a ledger row exactly as the cron would have last written it (`status: "OPEN"`, `last_mark: 4.2`) with a live quote snapshot already at `2.0` (past the -50% stop); pre-fix this would assert `status: "OPEN"` (the bug), post-fix it correctly asserts `status: "CLOSED"` / `last_mark: 2.0` and that `updateZeroDteLiveState` was actually called. Three more tests cover an unchanged live play, an empty ledger, and a CLOSED (terminal) row never being re-synced. Full suite: 1734/1734 passing, `tsc --noEmit` clean, `eslint` clean, `zerodte-bie-consistency-validator.mjs` GREEN (13/13, including the 2 new checks).
+
+**Status:** FIXED; merged via #576.
+
+---
+
 ## 🟡 P2 FOUND+FIXED 2026-07-06 — Audit validator false-positived on every live SPXW 0DTE play (branch `fix/zerodte-validator-spxw-underlying-ticker`)
 
 **Surface:** `scripts/audit/data-validator.mjs`'s `resolveZeroDteContract()` — the helper that proves a 0DTE Command ledger row's `top_strike` corresponds to a real, listed Polygon options contract. Found while manually re-running the validator mid-session (market open, RTH) per the user's ask to keep checking the SPX Grid/heatmaps through the day — a live SPXW play FAILed even though the platform's own play data was correct.
