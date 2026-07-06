@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 
 /**
- * Tracks iOS virtual keyboard via visualViewport — sets `ios-keyboard-open` on
- * <html> and `--ios-vv-height` so native chat/search layouts shrink instead of
- * breaking (WKWebView focus zoom is separately prevented by 16px input text).
+ * Global iOS keyboard + visual viewport sync for the Capacitor shell.
+ * Mounted once from root layout so every search/input surface benefits.
  */
 export function useIosKeyboardInset(enabled: boolean): void {
   useEffect(() => {
@@ -34,4 +33,12 @@ export function useIosKeyboardInset(enabled: boolean): void {
       root.style.removeProperty("--ios-vv-offset-top");
     };
   }, [enabled]);
+}
+
+/** Root-level keyboard tracker — always on inside ios-app. */
+export function IosKeyboardRoot() {
+  const [ios, setIos] = useState(false);
+  useEffect(() => setIos(isIosAppShell()), []);
+  useIosKeyboardInset(ios);
+  return null;
 }

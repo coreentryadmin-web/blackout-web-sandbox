@@ -312,7 +312,31 @@ if (largoTerm.includes("useIosKeyboardInset")) {
   fail("largo:keyboard-inset-hook", "expected useIosKeyboardInset in LargoTerminal");
 }
 
+const largoPage = readFileSync(join(root, "src/components/desk/LargoPageShell.tsx"), "utf8");
+if (largoPage.includes("LargoNativeTerminal")) ok("largo:native-terminal-component");
+else fail("largo:native-terminal-component", "expected LargoNativeTerminal in LargoPageShell");
+
+const largoNative = readFileSync(join(root, "src/components/desk/LargoNativeTerminal.tsx"), "utf8");
+if (largoNative.includes("largo-native-desk") && largoNative.includes("useLargoChat")) {
+  ok("largo:mobile-only-desk");
+} else {
+  fail("largo:mobile-only-desk", "expected dedicated LargoNativeTerminal");
+}
+
+const viewportLock = readFileSync(join(root, "src/components/ios/IosViewportLock.tsx"), "utf8");
+if (viewportLock.includes("maximum-scale=1")) ok("ios:viewport-zoom-lock");
+else fail("ios:viewport-zoom-lock", "expected IosViewportLock");
+
+const inputLockCss = readFileSync(join(root, "src/app/ios-native-input-lock.css"), "utf8");
+if (inputLockCss.includes("font-size: 16px !important")) ok("ios:input-16px-lock");
+else fail("ios:input-16px-lock", "expected 16px input lock CSS");
+
 const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
+if (rootLayout.includes("IosViewportLock") && rootLayout.includes("ios-native-input-lock.css")) {
+  ok("layout:ios-viewport-lock-mounted");
+} else {
+  fail("layout:ios-viewport-lock-mounted", "expected IosViewportLock + input-lock CSS");
+}
 if (rootLayout.includes("ios-native-motion.css")) ok("layout:ios-native-motion-imported");
 else fail("layout:ios-native-motion-imported", "expected ios-native-motion.css import");
 if (rootLayout.includes("ios-native-command.css")) ok("layout:ios-native-command-imported");

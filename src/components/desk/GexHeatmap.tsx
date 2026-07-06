@@ -2617,7 +2617,8 @@ export function GexHeatmap({
     setForceNonce(0);
     setFastFlash(false);
     setExpiryScope("all");
-  }, [ticker]);
+    if (nativeShell) setPairView("pair-a");
+  }, [ticker, nativeShell]);
 
   // Clear any pending timers on unmount.
   useEffect(() => {
@@ -2790,6 +2791,7 @@ export function GexHeatmap({
   // the success-branch gate below so the view TabList on the control row only shows when
   // there's a real block to switch between (not during load / stale / empty states).
   const showViewTabs = !((isLoading && !data) || stale) && !empty && !blockEmpty;
+  const showMatrixTabs = showViewTabs && !nativeShell;
 
   // Peak magnitude across the active block's cells drives the matrix color scale.
   const peak = useMemo(() => {
@@ -3841,7 +3843,7 @@ export function GexHeatmap({
 
         {/* View tabs — Matrix | Profile + Curve + Shift. Controlled mirror of the body
             TabPanels (both driven by `pairView`). Only meaningful with a real block. */}
-        {showViewTabs && (
+        {showMatrixTabs && (
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")}>
             <TabList aria-label={`${lensUpper} views`} className="max-w-full overflow-x-auto">
               <Tab value="pair-a">Matrix</Tab>
@@ -4044,20 +4046,18 @@ export function GexHeatmap({
               ──────────────── */}
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-3">
             <TabPanels>
-              {/* Tab A — Matrix ALONE, full content width. */}
               <TabPanel value="pair-a">{matrixPanel}</TabPanel>
-
-              {/* Tab B — Profile (wide left) + Curve & Shift (stacked right) on a 12-col grid;
-                  stacks on md/sm. */}
-              <TabPanel value="pair-b">
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-                  <div className="min-w-0 lg:col-span-7">{profilePanel}</div>
-                  <div className="grid min-w-0 content-start gap-5 lg:col-span-5">
-                    {curvePanel}
-                    {shiftPanel}
+              {!nativeShell ? (
+                <TabPanel value="pair-b">
+                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+                    <div className="min-w-0 lg:col-span-7">{profilePanel}</div>
+                    <div className="grid min-w-0 content-start gap-5 lg:col-span-5">
+                      {curvePanel}
+                      {shiftPanel}
+                    </div>
                   </div>
-                </div>
-              </TabPanel>
+                </TabPanel>
+              ) : null}
             </TabPanels>
           </Tabs>
 
@@ -4066,23 +4066,24 @@ export function GexHeatmap({
               wall / put wall / max pain already lead the page in the consolidated key-level
               box. ASK LARGO leads; the two small optional cards (dark-pool, flow) sit beside
               it and each self-hides when empty. ── */}
-          <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr] gex-heatmap-rail">
-            {/* ── Largo read — AI desk-read narrative (lazy, keyed by ticker) ── */}
-            <LargoRead key={ticker} ticker={ticker} />
-            {/* Optional rail cards — dark-pool levels + flow summary (each self-hides when empty). */}
-            <div className="grid content-start gap-4">
-              <DarkPoolRail darkPoolLevels={darkPoolLevels} />
-              <FlowSummary flowByStrike={flowByStrike} overlaysLoaded={data != null} />
+          {!nativeShell && (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr] gex-heatmap-rail">
+              <LargoRead key={ticker} ticker={ticker} />
+              <div className="grid content-start gap-4">
+                <DarkPoolRail darkPoolLevels={darkPoolLevels} />
+                <FlowSummary flowByStrike={flowByStrike} overlaysLoaded={data != null} />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* ── Methodology disclosure — honest about the dealer-sign assumption ── */}
+          {!nativeShell && (
           <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/75 gex-heatmap-methodology">
             <span aria-hidden className="mr-1 text-sky-300/70">ⓘ</span>
             Net dealer gamma uses the standard convention (dealers long calls / short
             puts); vanna is computed closed-form from implied volatility. Levels are model
             estimates from option open interest — market-structure analysis, not advice.
           </p>
+          )}
         </>
       )}
     </Panel>

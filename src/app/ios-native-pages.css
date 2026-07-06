@@ -597,6 +597,159 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-msg-welcome {
   max-width: 100%;
 }
 
+/* Largo — mobile-only desk (not adapted web Panel) */
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-desk {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.65rem 0.65rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-native-messages {
+  flex: 1;
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble {
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  padding: 0.65rem 0.75rem;
+  border-left: 2px solid var(--ios-accent);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble-user {
+  border-left-color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.06);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-bubble-label {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-body {
+  color: #e0f2fe;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-tool-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  background: rgba(34, 211, 238, 0.08);
+  padding: 0.2rem 0.5rem;
+  font-family: var(--font-jetbrains);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestions-label {
+  margin: 0;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-suggestion {
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-composer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: stretch;
+  padding: 0.55rem 0.65rem calc(0.45rem + var(--ios-tab-offset, 0px));
+  border-top: 1px solid var(--ios-border);
+  background: rgba(4, 4, 7, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--ios-touch);
+  padding: 0 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 16px;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-send {
+  flex-shrink: 0;
+  min-width: 4.25rem;
+  min-height: var(--ios-touch);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: var(--ios-radius-md);
+  background: rgba(34, 211, 238, 0.12);
+  color: #7dd3fc;
+  font-family: var(--font-syne);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-native-send:disabled {
+  opacity: 0.45;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native {
+  min-height: var(--ios-vv-height, 100dvh);
+  max-height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-native-matrix-only {
+  margin-top: 0.35rem;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    NIGHT HAWK — nighthawk (native shell)
    ═══════════════════════════════════════════════════════════════════════════ */

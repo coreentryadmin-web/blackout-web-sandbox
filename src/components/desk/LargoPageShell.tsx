@@ -1,6 +1,7 @@
 "use client";
 
 import { clsx } from "clsx";
+import { LargoNativeTerminal } from "@/components/desk/LargoNativeTerminal";
 import { LargoTerminal } from "@/components/desk/LargoTerminal";
 import { PageHeader, Badge } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
@@ -41,7 +42,11 @@ export function LargoPageShell() {
             }
           />
         )}
-        <LargoTerminal fullPage nativeShell={nativeShell} />
+        {nativeShell ? (
+          <LargoNativeTerminal />
+        ) : (
+          <LargoTerminal fullPage nativeShell={false} />
+        )}
         {!nativeShell && (
           <p className="font-mono text-[10px] text-sky-300/60 text-center pt-1">
             Educational. Not advice. You decide.

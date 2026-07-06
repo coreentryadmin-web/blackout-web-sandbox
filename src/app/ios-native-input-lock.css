@@ -1,0 +1,40 @@
+/**
+ * iOS app — prevent WKWebView focus-zoom and runaway text scaling.
+ * Applies to ALL html.ios-app surfaces (not only signed-in native shell).
+ */
+
+html.ios-app {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.ios-app input,
+html.ios-app textarea,
+html.ios-app select,
+html.ios-app [contenteditable="true"] {
+  font-size: 16px !important;
+  line-height: 1.35;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.ios-app.ios-keyboard-open {
+  height: var(--ios-vv-height, 100dvh);
+  overflow: hidden;
+}
+
+html.ios-app.ios-keyboard-open body {
+  height: var(--ios-vv-height, 100dvh);
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+/* Native shell — fixed type scale on mobile-only surfaces */
+html.ios-app.ios-native-shell .largo-native-body,
+html.ios-app.ios-native-shell .largo-native-bubble-label {
+  font-size: 15px !important;
+  line-height: 1.5;
+}
