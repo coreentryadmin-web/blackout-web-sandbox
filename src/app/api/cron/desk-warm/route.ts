@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadBootstrapBundle, loadMergedSpxDesk } from "@/lib/spx-desk-loader";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
@@ -38,13 +38,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
-  const [mergedResult, gexResult] = await Promise.allSettled([
+  const [mergedResult, gexResult, bootstrapResult] = await Promise.allSettled([
     loadMergedSpxDesk(),
     fetchGexHeatmap("SPX"),
+    loadBootstrapBundle(),
   ]);
 
   const deskOk = mergedResult.status === "fulfilled";
   const gexOk = gexResult.status === "fulfilled";
+  const bootstrapOk = bootstrapResult.status === "fulfilled";
 
   if (!deskOk) {
     console.warn(
@@ -59,17 +61,19 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const allFailed = !deskOk && !gexOk;
+  const allFailed = !deskOk && !gexOk && !bootstrapOk;
   await logCronRun("desk-warm", started, {
     ok: !allFailed,
     desk: deskOk,
     gex: gexOk,
-    ...(allFailed ? { error: "desk and gex warm both failed" } : {}),
+    bootstrap: bootstrapOk,
+    ...(allFailed ? { error: "desk, gex, and bootstrap warm all failed" } : {}),
   });
 
   return NextResponse.json({
     ok: !allFailed,
     desk: deskOk,
     gex: gexOk,
+    bootstrap: bootstrapOk,
   });
 }

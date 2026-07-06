@@ -70,3 +70,18 @@ export async function loadMergedSpxDesk(): Promise<MergedSpxDeskBundle> {
   const merged = mergeDeskLayers(desk, flow, pulse);
   return { desk, flow, pulse, merged };
 }
+
+async function buildMergedBundle(): Promise<MergedSpxDeskBundle> {
+  return loadMergedSpxDesk();
+}
+
+/**
+ * One Redis key for GET /api/market/spx/bootstrap — single round-trip on warm cache
+ * instead of three separate lane reads + merge on every dashboard load.
+ */
+export async function loadBootstrapBundle(): Promise<MergedSpxDeskBundle> {
+  const date = todayEtYmd();
+  return withServerCache(`spx-bootstrap:${date}`, deskCacheTtlMs(), buildMergedBundle, {
+    staleWhileRevalidate: true,
+  });
+}

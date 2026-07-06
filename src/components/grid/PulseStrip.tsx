@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { fetchSpxState, type SpxState } from "@/lib/api";
 import { GridCard } from "./GridCard";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 
 function fmt(n: number | null | undefined, digits = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -44,16 +45,18 @@ function Chip({
  */
 export function PulseStrip() {
   const { ticker } = useGridTicker();
-  const { data, error } = useSWR<SpxState>("grid-pulse", fetchSpxState, {
+  const { ready, revalidateOnMount } = useGridBootstrapGate();
+  const { data, error } = useSWR<SpxState>(ready ? "grid-pulse" : null, fetchSpxState, {
     refreshInterval: 20_000,
+    revalidateOnMount,
   });
 
   // GEX chip — follows the active ticker; defaults to market-wide SPX
   const gexTicker = ticker ?? "SPX";
   const { data: gex } = useSWR(
-    `grid-pulse-gex-${gexTicker}`,
+    ready ? `grid-pulse-gex-${gexTicker}` : null,
     () => fetch(`/api/market/gex-positioning?ticker=${gexTicker}`, { credentials: "same-origin" }).then((r) => r.json()),
-    { refreshInterval: 60_000 }
+    { refreshInterval: 60_000, revalidateOnMount }
   );
   // Use gamma_posture (spot-vs-flip) for the chip so it matches the GEX Regime panel
   // exactly — previously this read net_gex sign, so the two panels could disagree

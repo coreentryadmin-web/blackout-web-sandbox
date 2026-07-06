@@ -27,6 +27,10 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
+import {
+  readGexHeatmapSessionCache,
+  writeGexHeatmapSessionCache,
+} from "@/lib/gex-heatmap-session-cache";
 
 /** GEX regime read derived server-side from spot vs the gamma flip. */
 type GexRegime = {
@@ -2548,7 +2552,13 @@ export function GexHeatmap({
       // deduping keep focus-triggered refetches cheap (they hit the warm cache).
       revalidateOnFocus: true,
       keepPreviousData: true,
-      onSuccess: clearForceNonce,
+      fallbackData: readGexHeatmapSessionCache<GexHeatmapResponse>(ticker),
+      onSuccess: (payload) => {
+        if (payload?.available && payload.gex?.strike_totals) {
+          writeGexHeatmapSessionCache(ticker, payload);
+        }
+        clearForceNonce();
+      },
       onError: clearForceNonce,
     }
   );

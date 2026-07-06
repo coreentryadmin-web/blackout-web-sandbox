@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadBootstrapBundle, type MergedSpxDeskBundle } from "@/lib/spx-desk-loader";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";
@@ -11,10 +11,10 @@ const NO_STORE = {
 } as const;
 
 export type SpxBootstrapPayload = {
-  desk: Awaited<ReturnType<typeof loadMergedSpxDesk>>["desk"];
-  flow: Awaited<ReturnType<typeof loadMergedSpxDesk>>["flow"];
-  pulse: Awaited<ReturnType<typeof loadMergedSpxDesk>>["pulse"];
-  merged: Awaited<ReturnType<typeof loadMergedSpxDesk>>["merged"];
+  desk: MergedSpxDeskBundle["desk"];
+  flow: MergedSpxDeskBundle["flow"];
+  pulse: MergedSpxDeskBundle["pulse"];
+  merged: MergedSpxDeskBundle["merged"];
   /** Deprecated — matrix loads via /gex-heatmap (own cache lane). Kept for older clients. */
   gexHeatmap: null;
 };
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof Response) return auth;
 
   try {
-    const bundle = await loadMergedSpxDesk();
+    const bundle = await loadBootstrapBundle();
 
     const payload: SpxBootstrapPayload = {
       desk: bundle.desk,

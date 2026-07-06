@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
 import type { GridEarningsItem, GridEarningsSnapshot, GridEarningsHistoryItem } from "@/lib/providers/grid";
 
@@ -147,8 +148,12 @@ function TickerEarningsView({ data }: { data: TickerRes }) {
 
 export function GridEarningsPanel() {
   const { ticker, isFiltered } = useGridTicker();
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
   const url = `/api/grid/earnings${ticker ? `?ticker=${ticker}` : ""}`;
-  const { data, error } = useSWR<Res>(url, fetcher, { refreshInterval: isFiltered ? 30_000 : 300_000 });
+  const { data, error } = useSWR<Res>(panelKey(url), fetcher, {
+    refreshInterval: isFiltered ? 30_000 : 300_000,
+    revalidateOnMount,
+  });
   const live = !error && (data?.available ?? false);
 
   const isTickerMode = data && "mode" in data && data.mode === "ticker";

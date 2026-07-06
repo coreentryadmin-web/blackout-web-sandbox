@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { clsx } from "clsx";
 import { GridCard } from "./GridCard";
 import { useGridTicker } from "@/lib/grid/grid-ticker-context";
+import { useGridBootstrapGate } from "@/hooks/useGridBootstrapGate";
 import type { GridAnalystAction } from "@/lib/providers/grid";
 
 type AnalystsResponse = { available: boolean; as_of?: string; actions?: GridAnalystAction[]; ticker?: string };
@@ -50,9 +51,11 @@ function timeAgo(published: string): string {
  */
 export function AnalystActions() {
   const { ticker, isFiltered } = useGridTicker();
+  const { panelKey, revalidateOnMount } = useGridBootstrapGate();
   const url = `/api/grid/analysts${ticker ? `?ticker=${ticker}` : ""}`;
-  const { data, error } = useSWR<AnalystsResponse>(url, fetchAnalysts, {
+  const { data, error } = useSWR<AnalystsResponse>(panelKey(url), fetchAnalysts, {
     refreshInterval: isFiltered ? 30_000 : 120_000,
+    revalidateOnMount,
   });
 
   const actions = data?.actions ?? [];
