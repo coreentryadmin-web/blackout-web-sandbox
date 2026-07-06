@@ -33,6 +33,16 @@ function levelTolerance(lvl: number): number {
   return Math.max(lvl * 0.0015, 0.5); // ~0.15% or half a point
 }
 
+/** Calendar years in news headlines — not SPX levels. */
+function isCalendarYear(n: number): boolean {
+  return Number.isInteger(n) && n >= 2018 && n <= 2038;
+}
+
+/** Current SPX index / strike band — excludes years (2026) and dollar magnitudes. */
+function isPlausibleSpxStrike(n: number): boolean {
+  return n >= 4000 && n <= 8000;
+}
+
 export function checkNumbersGrounded(text: string, known: number[]): GroundingCheckResult {
   if (known.length === 0) return { grounded: true, ungroundedValue: null };
 
@@ -89,9 +99,9 @@ export function checkNumbersGrounded(text: string, known: number[]): GroundingCh
 export function checkCommentaryGrounded(text: string, known: number[]): GroundingCheckResult {
   if (known.length === 0) return { grounded: true, ungroundedValue: null };
 
-  const minKnown = Math.min(...known);
-  const maxKnown = Math.max(...known);
-  const metricTol = (n: number) => Math.max(n * 0.04, 2.5);
+  const strikeKnown = known.filter(isPlausibleSpxStrike);
+  const metricKnown = known.filter((n) => n >= 10 && !isPlausibleSpxStrike(n) && !isCalendarYear(n));
+  const metricTol = (n: number) => Math.max(n * 0.05, 3);
 
   const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
   let m: RegExpExecArray | null;
@@ -108,14 +118,27 @@ export function checkCommentaryGrounded(text: string, known: number[]): Groundin
     if (after.startsWith("%")) continue;
     if (before === "$") continue;
     if (/^[%MBK]/.test(after)) continue;
+    // Label tails: "ema200", "sma50" — not standalone levels.
+    if (/[a-zA-Z]/.test(before)) continue;
     if (value < 10) continue;
-    if (value < minKnown * 0.9 || value > maxKnown * 1.1) continue;
+    if (isCalendarYear(value)) continue;
 
-    const tol = value >= 1000 ? levelTolerance(value) : metricTol(value);
-    const grounded = known.some((lvl) => Math.abs(lvl - value) <= tol);
-    if (!grounded) {
-      return { grounded: false, ungroundedValue: value };
+    if (isPlausibleSpxStrike(value)) {
+      const grounded = strikeKnown.some((lvl) => Math.abs(lvl - value) <= levelTolerance(lvl));
+      if (!grounded) {
+        return { grounded: false, ungroundedValue: value };
+      }
+      continue;
     }
+
+    // Session metrics (IV rank, VIX, breadth %, confluence score, pt distances, sample sizes).
+    if (value >= 10 && value < 4000) {
+      const grounded = metricKnown.some((lvl) => Math.abs(lvl - value) <= metricTol(value));
+      if (!grounded) {
+        return { grounded: false, ungroundedValue: value };
+      }
+    }
+    // Ignore other bands (millions, timestamps, out-of-range noise).
   }
   return { grounded: true, ungroundedValue: null };
 }

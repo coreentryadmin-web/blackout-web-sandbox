@@ -64,6 +64,14 @@ describe("grounding-guard", () => {
     assert.equal(ptDistance.grounded, true);
   });
 
+  it("checkCommentaryGrounded ignores calendar years and indicator label tails", () => {
+    const known = augmentKnownCommentaryNumbers([6242, 6254, 6220]);
+    const year = checkCommentaryGrounded("NEWS  {{2026}} tariff headline quoted verbatim.", known);
+    assert.equal(year.grounded, true);
+    const emaLabel = checkCommentaryGrounded("WHY  Holding above ema200 cushion.", known);
+    assert.equal(emaLabel.grounded, true);
+  });
+
   it("checkCommentaryGrounded still rejects fabricated SPX strikes", () => {
     const known = augmentKnownCommentaryNumbers([6242, 6254, 6220]);
     const fake = checkCommentaryGrounded("Breakout toward {{6120}}.", known);
