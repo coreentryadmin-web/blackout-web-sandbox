@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { queryLargoStream, fetchLargoSession } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { isIosAppShell } from "@/lib/ios-app-shell";
+import { useIosKeyboardInset } from "@/hooks/useIosKeyboardInset";
 import { Panel, PanelHeader, FreshnessChip, Button } from "@/components/ui";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
@@ -97,6 +98,8 @@ export function LargoTerminal({
   // We accumulate tokens in a ref and flush to state at most every 50ms.
   const streamBufRef = useRef("");
   const streamFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useIosKeyboardInset(nativeShell);
 
   useEffect(() => {
     const stored =

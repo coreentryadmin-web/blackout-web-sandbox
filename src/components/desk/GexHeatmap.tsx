@@ -1469,6 +1469,7 @@ function TickerSwitcher({
   spot,
   changePct,
   showSpot,
+  nativeShell = false,
 }: {
   ticker: string;
   onPick: (t: string) => void;
@@ -1476,6 +1477,8 @@ function TickerSwitcher({
   spot?: number;
   changePct?: number;
   showSpot?: boolean;
+  /** iOS native shell — bottom sheet picker instead of fixed dropdown (avoids focus zoom + layout break). */
+  nativeShell?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -1543,9 +1546,9 @@ function TickerSwitcher({
     return opts;
   }, [presetMatches, searchResults]);
 
-  // Close the dropdown on outside click (trigger + portaled menu).
+  // Close the dropdown on outside click (trigger + portaled menu). Native sheet uses backdrop.
   useEffect(() => {
-    if (!open) return;
+    if (!open || nativeShell) return;
     function onDoc(e: MouseEvent) {
       const t = e.target as Node;
       if (boxRef.current?.contains(t) || menuRef.current?.contains(t)) return;
@@ -1553,18 +1556,24 @@ function TickerSwitcher({
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  }, [open, nativeShell]);
+
+  useEffect(() => {
+    if (!nativeShell || !open) return;
+    document.documentElement.classList.add("nav-locked");
+    return () => document.documentElement.classList.remove("nav-locked");
+  }, [nativeShell, open]);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!open || nativeShell) {
       setMenuPos(null);
       return;
     }
     updateMenuPos();
-  }, [open, updateMenuPos]);
+  }, [open, nativeShell, updateMenuPos]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || nativeShell) return;
     const onReflow = () => updateMenuPos();
     window.addEventListener("resize", onReflow);
     window.addEventListener("scroll", onReflow, true);
@@ -1572,7 +1581,7 @@ function TickerSwitcher({
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
     };
-  }, [open, updateMenuPos]);
+  }, [open, nativeShell, updateMenuPos]);
 
   // Reset the keyboard cursor to the top whenever the option set changes.
   useEffect(() => {
@@ -1596,99 +1605,142 @@ function TickerSwitcher({
 
   const changeBull = (changePct ?? 0) >= 0;
 
+  function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = options[active] ?? options[0];
+      if (opt) pick(opt.ticker);
+      else if (query.trim()) pick(query);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, Math.max(0, options.length - 1)));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  const optionList = (
+    <ul
+      id="ticker-listbox"
+      role="listbox"
+      aria-label="Tickers"
+      className={clsx(
+        nativeShell
+          ? "gex-ticker-native-sheet-list"
+          : "mt-1 max-h-60 overflow-y-auto overscroll-contain"
+      )}
+    >
+      {options.length === 0 ? (
+        <li className="px-2 py-2 text-center font-mono text-[10px] uppercase tracking-widest text-sky-300/60">
+          No matches
+        </li>
+      ) : (
+        options.map((o, i) => {
+          const isActive = i === active;
+          const isCurrent = o.ticker === ticker;
+          return (
+            <li key={o.ticker} id={`ticker-opt-${i}`} role="option" aria-selected={isCurrent}>
+              <button
+                type="button"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(o.ticker)}
+                className={clsx(
+                  "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
+                  nativeShell ? "gex-ticker-native-sheet-option min-h-[var(--ios-touch,2.75rem)]" : "",
+                  isActive ? "bg-cyan-400/12" : "hover:bg-cyan-400/10"
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={clsx(
+                      "font-mono font-semibold",
+                      nativeShell ? "text-sm" : "text-[12px]",
+                      isCurrent ? "text-cyan-400" : "text-white"
+                    )}
+                  >
+                    {o.ticker}
+                  </span>
+                  {o.preset && (
+                    <span className="font-mono text-[8px] uppercase tracking-wider text-sky-300/50">
+                      preset
+                    </span>
+                  )}
+                </span>
+                {o.name && (
+                  <span className={clsx("truncate text-sky-300/70", nativeShell ? "text-xs" : "text-[10px]")}>
+                    {o.name}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })
+      )}
+    </ul>
+  );
+
+  const searchInput = (
+    <input
+      ref={inputRef}
+      type="text"
+      value={query}
+      onChange={(e) => {
+        setQuery(e.target.value);
+        setOpen(true);
+      }}
+      onKeyDown={onSearchKeyDown}
+      placeholder="Search any ticker…"
+      aria-label="Search any ticker"
+      role="combobox"
+      aria-expanded={open}
+      aria-controls="ticker-listbox"
+      aria-activedescendant={open && options.length ? `ticker-opt-${active}` : undefined}
+      spellCheck={false}
+      autoComplete="off"
+      className={clsx(
+        nativeShell
+          ? "gex-ticker-native-sheet-search"
+          : "w-full rounded-md border border-white/12 bg-[rgba(4,6,10,0.7)] px-2.5 py-1.5 font-mono text-[12px] text-white placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
+      )}
+    />
+  );
+
+  const nativeSheet =
+    nativeShell && open ? (
+      <div
+        ref={menuRef}
+        className="gex-ticker-native-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select ticker"
+      >
+        <button
+          type="button"
+          className="gex-ticker-native-sheet-backdrop"
+          aria-label="Close ticker search"
+          onClick={() => setOpen(false)}
+        />
+        <div className="gex-ticker-native-sheet-panel">
+          <div className="gex-ticker-native-sheet-grabber" aria-hidden />
+          <p className="gex-ticker-native-sheet-title">Select ticker</p>
+          {searchInput}
+          {optionList}
+        </div>
+      </div>
+    ) : null;
+
   const dropdown =
-    open && menuPos ? (
+    !nativeShell && open && menuPos ? (
       <div
         ref={menuRef}
         className="fixed z-[200] rounded-lg border border-white/12 bg-[rgba(8,9,14,0.97)] p-1.5 shadow-xl backdrop-blur"
         style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width }}
       >
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              const opt = options[active] ?? options[0];
-              if (opt) pick(opt.ticker);
-              else if (query.trim()) pick(query);
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setActive((i) => Math.min(i + 1, Math.max(0, options.length - 1)));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setActive((i) => Math.max(i - 1, 0));
-            } else if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder="Search any ticker…"
-          aria-label="Search any ticker"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls="ticker-listbox"
-          aria-activedescendant={open && options.length ? `ticker-opt-${active}` : undefined}
-          spellCheck={false}
-          autoComplete="off"
-          className={clsx(
-            "w-full rounded-md border border-white/12 bg-[rgba(4,6,10,0.7)] px-2.5 py-1.5 font-mono text-[12px] text-white",
-            "placeholder:text-sky-300/40 outline-none focus-visible:border-sky-400/60 focus-visible:ring-1 focus-visible:ring-sky-400/50"
-          )}
-        />
-        <ul
-          id="ticker-listbox"
-          role="listbox"
-          aria-label="Tickers"
-          className="mt-1 max-h-60 overflow-y-auto overscroll-contain"
-        >
-          {options.length === 0 ? (
-            <li className="px-2 py-2 text-center font-mono text-[10px] uppercase tracking-widest text-sky-300/60">
-              No matches
-            </li>
-          ) : (
-            options.map((o, i) => {
-              const isActive = i === active;
-              const isCurrent = o.ticker === ticker;
-              return (
-                <li key={o.ticker} id={`ticker-opt-${i}`} role="option" aria-selected={isCurrent}>
-                  <button
-                    type="button"
-                    onMouseEnter={() => setActive(i)}
-                    onClick={() => pick(o.ticker)}
-                    className={clsx(
-                      "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
-                      isActive ? "bg-cyan-400/12" : "hover:bg-cyan-400/10"
-                    )}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span
-                        className={clsx(
-                          "font-mono text-[12px] font-semibold",
-                          isCurrent ? "text-cyan-400" : "text-white"
-                        )}
-                      >
-                        {o.ticker}
-                      </span>
-                      {o.preset && (
-                        <span className="font-mono text-[8px] uppercase tracking-wider text-sky-300/50">
-                          preset
-                        </span>
-                      )}
-                    </span>
-                    {o.name && (
-                      <span className="truncate text-[10px] text-sky-300/70">{o.name}</span>
-                    )}
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
+        {searchInput}
+        {optionList}
       </div>
     ) : null;
 
@@ -1704,7 +1756,8 @@ function TickerSwitcher({
         aria-label={`Ticker: ${ticker}. Change ticker`}
         className={clsx(
           "inline-flex items-center gap-1.5 rounded-md border border-white/12 bg-[rgba(8,9,14,0.6)] px-2.5 py-1.5 outline-none transition-colors",
-          "hover:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400"
+          "hover:border-sky-400/50 focus-visible:ring-2 focus-visible:ring-sky-400",
+          nativeShell && "gex-ticker-native-trigger min-h-[var(--ios-touch,2.75rem)]"
         )}
       >
         <span aria-hidden className="text-sky-300/70">🔍</span>
@@ -1742,7 +1795,9 @@ function TickerSwitcher({
       )}
 
       </div>
-      {typeof document !== "undefined" && dropdown ? createPortal(dropdown, document.body) : null}
+      {typeof document !== "undefined" && (nativeSheet || dropdown)
+        ? createPortal(nativeSheet ?? dropdown, document.body)
+        : null}
     </>
   );
 }
@@ -3781,6 +3836,7 @@ export function GexHeatmap({
           spot={headerSpot}
           changePct={headerChangePct}
           showSpot={(live || quoteOnly) && headerSpot > 0}
+          nativeShell={nativeShell}
         />
 
         {/* View tabs — Matrix | Profile + Curve + Shift. Controlled mirror of the body

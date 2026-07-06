@@ -36,6 +36,8 @@ html.ios-app.ios-native-shell {
   --ios-touch: 2.75rem;
   --ios-label: 10px;
   --ios-body: 13px;
+  /* 16px floor on inputs — below this iOS WKWebView auto-zooms on focus and breaks native layout */
+  --ios-input: 16px;
   --ios-title: 15px;
 
   --ios-card-radius: var(--ios-radius-lg);
@@ -309,7 +311,7 @@ html.ios-app.ios-native-shell .cl-formFieldInput {
   border: 1px solid var(--ios-border) !important;
   background: var(--ios-surface-2) !important;
   color: #fff !important;
-  font-size: var(--ios-body) !important;
+  font-size: var(--ios-input) !important;
   box-shadow: var(--ios-shadow-inset);
 }
 

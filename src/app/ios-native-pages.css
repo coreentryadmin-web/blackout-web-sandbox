@@ -357,6 +357,99 @@ html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll td:fi
   min-width: 4.25rem;
 }
 
+/* Thermal ticker search — native bottom sheet (replaces fixed dropdown + 12px focus zoom) */
+html.ios-app.ios-native-shell .gex-ticker-native-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72dvh, 520px);
+  margin: 0 0.35rem calc(var(--ios-tab-offset, 0px) + 0.35rem);
+  padding: 0.5rem 0.65rem 0.65rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-lg) var(--ios-radius-lg) var(--ios-radius-md) var(--ios-radius-md);
+  background: var(--ios-surface-1);
+  box-shadow: var(--ios-shadow-lg);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-grabber {
+  width: 2.25rem;
+  height: 3px;
+  margin: 0 auto 0.5rem;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.35);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-jetbrains);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-search {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--ios-border);
+  border-radius: var(--ios-radius-md);
+  background: var(--ios-surface-2);
+  color: #fff;
+  font-size: 16px;
+  outline: none;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-search:focus {
+  border-color: var(--ios-border-accent);
+  box-shadow: 0 0 0 3px var(--ios-accent-muted);
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-sheet-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html.ios-app.ios-native-shell .gex-ticker-native-trigger {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: var(--ios-radius-md);
+  border-color: var(--ios-border);
+  background: var(--ios-surface-2);
+}
+
+html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-heatmap-control-row > div:first-child {
+  width: 100%;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="heatmap"] .gex-ticker-native-sheet-panel {
+  max-height: min(58dvh, calc(var(--ios-vv-height, 100dvh) - var(--ios-header-offset) - 1rem));
+}
+
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .max-h-\[clamp\(480px\,74vh\,880px\)\],
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .max-h-\[clamp\(360px\,56vh\,600px\)\] {
   max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 12rem);
@@ -464,6 +557,27 @@ html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-form-fullpage
   background: rgba(4, 4, 7, 0.94);
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+/* Keyboard open — shrink chat to visual viewport (prevents web-like overflow/zoom break) */
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-page-main-native,
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-terminal-native {
+  min-height: var(--ios-vv-height, 100dvh);
+  max-height: var(--ios-vv-height, 100dvh);
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-chat-container {
+  min-height: 0;
+}
+
+html.ios-app.ios-native-shell.ios-keyboard-open[data-ios-route="largo"] .largo-messages-fullpage {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-input-fullpage {
+  font-size: 16px !important;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main > p.font-mono {

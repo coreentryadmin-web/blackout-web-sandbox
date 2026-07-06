@@ -83,6 +83,7 @@ const pagesNeedles = [
   ['data-ios-route="learn"', "Learn native page scope"],
   [".faq-native-view", "FAQ native accordion layout"],
   [".learn-page-shell-native", "Learn native page shell hook"],
+  [".gex-ticker-native-sheet", "Thermal native ticker bottom sheet"],
 ];
 for (const [needle, label] of pagesNeedles) {
   if (pagesCss.includes(needle)) ok(`pages-css:${label}`, needle);
@@ -150,6 +151,7 @@ const skinNeedles = [
   ["--ios-surface-1", "glass surface token"],
   ["--ios-shadow-card", "card shadow token"],
   ["--ios-touch:", "touch target token"],
+  ["--ios-input:", "16px input token prevents iOS focus zoom"],
   [".flow-seg-btn-active-all", "segment active skin"],
   [".largo-suggestion-chip", "Largo chip skin"],
   [".nighthawk-play-row", "Night Hawk card skin"],
@@ -294,6 +296,20 @@ if (learnHub.includes("useIosNativeShell") && learnHub.includes("learn-hub-nativ
   ok("learn:hub-native-gate");
 } else {
   fail("learn:hub-native-gate", "expected LearnHub compact native mode");
+}
+
+const gexHeatmap = readFileSync(join(root, "src/components/desk/GexHeatmap.tsx"), "utf8");
+if (gexHeatmap.includes("nativeShell={nativeShell}") && gexHeatmap.includes("gex-ticker-native-sheet")) {
+  ok("thermal:native-ticker-sheet");
+} else {
+  fail("thermal:native-ticker-sheet", "expected TickerSwitcher native bottom sheet");
+}
+
+const largoTerm = readFileSync(join(root, "src/components/desk/LargoTerminal.tsx"), "utf8");
+if (largoTerm.includes("useIosKeyboardInset")) {
+  ok("largo:keyboard-inset-hook");
+} else {
+  fail("largo:keyboard-inset-hook", "expected useIosKeyboardInset in LargoTerminal");
 }
 
 const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
