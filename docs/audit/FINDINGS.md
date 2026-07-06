@@ -9,6 +9,34 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🔴 P0 FOUND+FIXED 2026-07-06 — 0DTE Command's moneyness gate FAILED OPEN when a ticker's tape carried no underlying price (branch `fix/zerodte-itm-gate-missing-underlying-price`)
+
+**Surface:** 0DTE Command / the Grid (`/grid`), `deriveZeroDteSetups()` — the entry-gate function that decides which candidates reach the live board. Found during a deep adversarial "hunt for a phantom pass" audit requested specifically because this product (unlike SPX Slayer's `desk-verifier.ts` or Heat Maps' `heatmap-verifier.ts`) has **no independent correctness verifier** — a fail-open bug here is invisible in production with nothing to catch it.
+
+**Root cause (`src/lib/zerodte/board.ts`, pre-fix ~line 433-455):** the deep-ITM "stock replacement" exclusion — the exact gate added after the live SNDK 1880p-at-1723 fake-out (a stock-replacement play masquerading as a directional 0DTE bet) — was implemented as:
+```ts
+let otmPct: number | null = null;
+if (agg.underlying && agg.underlying > 0) {
+  const raw = ((top.strike - agg.underlying) / agg.underlying) * 100;
+  otmPct = Math.round((dominantCall ? raw : -raw) * 100) / 100;
+  if (otmPct < -SETUP_MAX_ITM_PCT) { /* push rejection; continue */ }
+}
+// falls through to setups.push(...) with otm_pct: null when agg.underlying was never set
+```
+There was **no `else` branch**. `agg.underlying` is populated from the freshest print's `underlying_price` field (itself a `COALESCE` over `underlying_last`/`underlying_price`/`stock_price` in the UW `raw_payload`, per `src/lib/db.ts`'s `fetchRecentFlows`). When **every** print for a candidate ticker's tape window came back missing all three of those keys — a real, not hypothetical, UW payload gap (this same file has a documented, live-verified instance of UW sending numeric fields as JSON strings on ~48% of rows) — `agg.underlying` stayed `null`, the entire moneyness check was **silently skipped**, and the candidate fell through to `setups.push(...)` with `otm_pct: null` — i.e., a genuinely deep-ITM, stock-replacement print (the class of setup this gate exists specifically to catch) could reach the live board and be shown to paying members as a validly-gated 0DTE setup, with `alert_audit_log`'s own decision trace recording the check as **`passed: true`** (`setup.otm_pct == null || ...` treated a null reading as a pass).
+
+**Why it wasn't caught earlier:** the 3 numeric gates immediately above this one (`SETUP_MIN_GROSS`, `SETUP_MIN_AGGR_SHARE`, `SETUP_MIN_DOMINANCE`) always evaluate — they operate on fields (premium, `ask_pct` via a documented default weight) that are never structurally skippable — so the codebase's "every gate always runs" pattern held for 3 of 4 checks and the 4th's asymmetry (an `if` with no corresponding `else`-reject) was easy to miss without adversarial review. `board.test.ts`'s existing ITM-gate test (`"gates: deep-ITM top strike (stock replacement) is excluded"`) only ever exercised the case where `underlying_price` IS present — there was no test for the "tape never carried one at all" path, so nothing would have failed even in CI. Compounding evidence this was a real gap, not theoretical: `scan.ts`'s `attachContractPlans()` fetches a **live** underlying price from the options snapshot (`snap?.underlyingPrice`) moments later while building the contract plan — the data needed to close this gap already exists downstream in the same request, but was never fed back to re-check the gate.
+
+**Blast radius:** one call site (`deriveZeroDteSetups` in `board.ts`) feeds all three downstream consumers of the board (member route, Largo `get_zerodte_plays`, BIE composers — all via `getZeroDteBoardPayload()`/`zeroDtePlaysForLargo()`), so the fix protects all of them at the source. Also touched: `buildZeroDteAuditRow()`'s `max_itm_pct` decision-trace check (same `== null` → pass logic, fixed to fail closed too, defense-in-depth) and the Largo tool description for `get_zerodte_rejections` in `src/lib/largo/tool-defs.ts` (enumerated the possible `gate_failed` values; now includes the new reason so Largo can correctly explain a rejection to a member who asks).
+
+**Fix:** the moneyness check in `deriveZeroDteSetups` now fails **closed**: when `agg.underlying` is missing/invalid, the candidate is rejected with a new `gate_failed: "no_underlying_price"` reason (added to the `ZeroDteGateFailure` union) instead of silently passing through ungated. This makes all 4 real gates + the 2 structural guards behave symmetrically — none of them can be silently bypassed by missing data. `otm_pct` is now guaranteed non-null for any setup that reaches `setups.push(...)`. Deliberately left unchanged: the `aggressionWeight()` default (0.7) for missing `ask_pct` — that path already fails **closed enough** in practice (it's a partial-credit blend across a real premium total, not an unconditional skip of a whole gate) and changing its calibration is a separate, non-bug design question flagged for human review, not folded into this fix to keep the PR to one issue.
+
+**Evidence:** new test `"gates: missing underlying price fails CLOSED, not open — P0 regression guard"` in `src/lib/zerodte/board.test.ts` reproduces the exact deep-ITM fixture from the existing ITM test (1880 put, stock effectively at 1723) but with `underlying_price: undefined` on every row — pre-fix this returned 1 setup (the bug); post-fix it returns 0 setups and one `no_underlying_price` rejection with `otm_pct: null` (never guessed). A second new test proves `buildZeroDteAuditRow`'s `max_itm_pct` check now fails closed on a null reading. Full suite: 1726/1726 passing, `tsc --noEmit` clean, `eslint` clean on all 3 changed files.
+
+**Status:** FIXED on branch; draft PR pending.
+
+---
+
 ## 🟢 P1 FIXED 2026-07-06 — SPX play API leaked confirmations during SCANNING (branch `fix/spx-scanning-confirmations-rth-9d1e`, manual RTH agent run)
 
 **Status:** FIXED locally; PR pending merge + deploy.

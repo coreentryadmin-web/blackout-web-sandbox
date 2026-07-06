@@ -552,6 +552,41 @@ test("gates: deep-ITM top strike (stock replacement) is excluded", () => {
   assert.ok(deriveZeroDteSetups(otm)[0]!.otm_pct! > 0);
 });
 
+test("gates: missing underlying price fails CLOSED, not open — P0 regression guard", () => {
+  // Same deep-ITM shape as the test above (1880 put, stock effectively at 1723 —
+  // 9% ITM) but the tape never carried a usable underlying price for this ticker
+  // (every UW field the extractor checks — underlying_last/underlying_price/
+  // stock_price — came back missing/invalid). Before the fix, deriveZeroDteSetups
+  // silently SKIPPED the whole moneyness gate in this case and let the candidate
+  // through with otm_pct: null — a real stock-replacement fake-out would have
+  // reached the live board completely ungated. It must now be rejected instead.
+  const rows = [
+    row({ premium: 3_000_000, option_type: "put", strike: 1880, underlying_price: undefined }),
+  ];
+  const rejections: ZeroDteGateRejection[] = [];
+  const out = deriveZeroDteSetups(rows, { rejections });
+  assert.equal(out.length, 0, "a candidate with no underlying price must not reach the board");
+  assert.equal(rejections.length, 1);
+  assert.equal(rejections[0]!.gate_failed, "no_underlying_price");
+  assert.equal(rejections[0]!.otm_pct, null, "otm_pct was never computed — must not be guessed");
+
+  // A perfectly healthy, non-ITM candidate with a real underlying price is
+  // unaffected by this gate — proves the fix didn't turn into a blanket reject.
+  const healthy = [row({ premium: 3_000_000, option_type: "put", strike: 1700, underlying_price: 1723 })];
+  assert.equal(deriveZeroDteSetups(healthy).length, 1);
+});
+
+test("audit row: max_itm_pct check fails closed on a null otm_pct reading (defense in depth)", () => {
+  const rows = [row({ premium: 900_000, strike: 190 }), row({ premium: 700_000, strike: 190 })];
+  const setup = deriveZeroDteSetups(rows)[0]!;
+  const enriched = enrichSetup(setup, null);
+  enriched.otm_pct = null; // simulate a bad invariant even though the gate now prevents this upstream
+  const audit = buildZeroDteAuditRow(enriched, "2026-07-06");
+  const itm = audit.decision_trace.find((c) => c.check === "max_itm_pct");
+  assert.ok(itm);
+  assert.equal(itm!.passed, false, "a null otm_pct must never be recorded as a passed check");
+});
+
 test("gates: new-money flag when implied contracts exceed the strike's OI", () => {
   const rows = [
     row({ premium: 2_000_000, fill_price: 2.0, open_interest: 5_000 }), // 10k contracts vs 5k OI
