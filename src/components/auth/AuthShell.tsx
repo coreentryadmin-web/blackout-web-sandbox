@@ -110,6 +110,9 @@ export function AuthShell({ mode, children }: { mode: "signin" | "signup"; child
 
           <div className="relative">
             <div aria-hidden className="absolute -inset-4 rounded-3xl bg-bull/10 opacity-60 blur-2xl" />
+            <p className="show-in-ios-app relative z-10 mb-4 text-center font-mono text-[11px] leading-relaxed text-sky-300">
+              Use email sign-in in the app. Google OAuth is not supported inside the iOS shell — use your email and the one-time code.
+            </p>
             <div className="auth-card-frame relative">{children}</div>
           </div>
         </div>

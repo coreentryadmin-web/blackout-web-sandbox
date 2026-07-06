@@ -38,6 +38,13 @@
 html.ios-app .hide-in-ios-app { display: none !important; }
 .show-in-ios-app { display: none; }
 html.ios-app .show-in-ios-app { display: revert; }
+/* Google/Apple OAuth in WKWebView hits Clerk authorization_invalid (cookie/state).
+   Email + one-time code works; hide social providers in the iOS shell only. */
+html.ios-app .cl-socialButtons,
+html.ios-app .cl-socialButtonsRoot,
+html.ios-app .cl-dividerRow {
+  display: none !important;
+}
 
 :root {
   /* Fonts are provided by next/font (see layout.tsx) as

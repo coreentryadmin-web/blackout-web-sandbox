@@ -29,6 +29,10 @@
 
 From repo root: `npm run validate:ios-config`
 
+### Sign-in on TestFlight
+
+Google (and other social) OAuth **does not work** inside the Capacitor WKWebView — Clerk returns `authorization_invalid` on the OAuth callback. The web app hides social buttons when running in the iOS shell; **use email + one-time code** to sign in. Native Google sign-in is a future enhancement (Clerk native SDK or ASWebAuthenticationSession).
+
 ## GitHub Actions (alternative)
 
 Repo → Settings → Secrets → Actions:
