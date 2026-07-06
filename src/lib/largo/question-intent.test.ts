@@ -129,6 +129,28 @@ test("bare 'hunt'/'scanner' wording with NO 0dte context does not falsely fire n
   }
 });
 
+// Task #130: FLOW_RE originally only matched the bare singular "flow" — it had no
+// "flows"/"flowing" sibling the way "sweep"/"sweeps" already got in the same
+// alternation. "\bflow\b" does not match "flows" or "flowing" (no word boundary
+// right after "flow" in either), so a plainly flow-related question phrased with
+// either natural inflection got needsFlow: false and, more seriously, dropped
+// get_options_flow/get_global_flow/get_postgres_flows out of Largo's tool ALLOWLIST
+// entirely (getToolsForIntent, tool-defs.test.ts covers that half) and skipped the
+// get_flow_tape/get_greek_flow live-feed pre-fetch gated on needsFlow
+// (largo-live-feed.ts). Verified via a standalone repro before touching the regex.
+
+test("'flows'/'flowing' phrasing sets needsFlow (FLOW_RE plural/gerund gap)", () => {
+  for (const question of ["any options flows building up today", "what's flowing on the tape lately"]) {
+    const intent = analyzeLargoQuestion(question, []);
+    assert.equal(intent.needsFlow, true, `expected needsFlow for: "${question}"`);
+  }
+});
+
+test("bare singular 'flow' still sets needsFlow (no regression from the plural/gerund fix)", () => {
+  const intent = analyzeLargoQuestion("what's the options flow situation right now", []);
+  assert.equal(intent.needsFlow, true);
+});
+
 // Task #147: deriveZeroDteSetups' gate-rejection near-misses now have a durable log
 // (zerodte_scan_rejections) and a dedicated Largo tool (get_zerodte_rejections) —
 // "why didn't ticker X make the Grid board" is a genuinely different question from

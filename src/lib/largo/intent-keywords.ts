@@ -5,10 +5,20 @@ export const SPX_DESK_RE =
 
 export const SPX_DESK_TOOLS_RE = /\b(spx|s&p|play|signal|0dte|sniper|gamma|gex|dealer|greek flow|mag7|mag 7)\b/;
 
+// Task #130: "flow" originally had no plural/gerund sibling the way "sweep"/"sweeps"
+// already did in this same alternation — "\bflow\b" does not match "flows" or
+// "flowing" (a word-boundary requires a non-word char immediately after "flow", which
+// "flows"/"flowing" don't have). Verified via a standalone repro: "any options flows
+// building up today" and "any big outflows today" both left needsFlow false and
+// dropped get_options_flow/get_global_flow/get_postgres_flows out of Largo's tool
+// ALLOWLIST entirely (getToolsForIntent), not just out of the soft guidance-hint text
+// — and also skipped the get_flow_tape/get_greek_flow live-feed pre-fetch gated on
+// needsFlow (largo-live-feed.ts). Added "flows"/"flowing" as explicit siblings, same
+// style as the pre-existing "sweep"/"sweeps" pair, for both natural inflections.
 export const FLOW_RE =
-  /\b(flow|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/;
+  /\b(flow|flows|flowing|sweep|whale|dark pool|tape|premium|unusual|sweeps|nope|tide)\b/;
 
-export const FLOW_TOOLS_RE = /\b(flow|tape|sweep|whale|dark pool|premium|unusual)\b/;
+export const FLOW_TOOLS_RE = /\b(flow|flows|flowing|tape|sweep|whale|dark pool|premium|unusual)\b/;
 
 export const PLAY_STATE_RE =
   /\b(spx|s&p|0dte|sniper|lotto)\b.*\b(buy|sell|hold|trim|play|setup|signal)\b|\b(play state|open play|desk play)\b/i;

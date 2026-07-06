@@ -94,7 +94,12 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_options_volume", "Options volume. Polygon chain aggregate first; UW fallback.", T, ["ticker"]),
 
-  t("get_options_flow", "UW ONLY — live flow alerts, 0DTE premium, strike_stacks (Repeated Hits + same-strike accumulation). No Polygon equivalent.", T, ["ticker"]),
+  t(
+    "get_options_flow",
+    "Per-ticker options flow — the only one of Largo's 4 flow tools that REQUIRES a ticker. For SPX/SPXW: returns a flow-only slice of the live SPX Sniper desk (the exact same in-memory desk get_spx_structure dumps in full — no extra API call) — flow_alerts (the desk's own spx_flows), unified_tape (top 20 prints), intraday_0dte {call_premium, put_premium, net}, bias, and strike_stacks computed over the desk's flow_alerts (not the wider unified_tape); source 'spx_sniper_desk'. For every OTHER ticker: MERGES three live Unusual Whales REST pulls (per-ticker flow-alerts capped at 50, flow-per-strike-intraday for the 0DTE aggregate, flow-recent capped at 100) with up to 48h / 500 rows of BlackOut's OWN Postgres-ingested HELIX tape (fetchRecentFlows — the exact same flow_alerts table get_flow_tape and get_postgres_flows read), deduped by strike+type+expiry+premium+alert-minute so a print present in both sources is never double-counted, then computes strike_stacks (Repeated Hits + same-strike accumulation) over that deduped MERGED set. The response's helix_session_alerts (row count) and source ('unusual_whales + helix' vs plain 'unusual_whales') tell you whether HELIX actually contributed rows this call. IMPORTANT — despite the UW-sourced live pull, this is NOT purely UW-only data for non-SPX tickers: there is genuinely no Polygon equivalent to this product (live flow-alerts / strike_stacks), but 'no Polygon' does not mean 'no Postgres/HELIX' — part of what it returns is BlackOut's own ingested tape. Use get_global_flow instead when the question is market-wide rather than about one ticker (it also accepts an optional ticker filter, but stays pure live-UW with no HELIX merge). Use get_flow_tape or get_postgres_flows instead when you only need the already-ingested Postgres tape without paying for a fresh live UW round trip (e.g. a cross-ticker leaderboard).",
+    T,
+    ["ticker"]
+  ),
 
   t("get_net_prem_ticks", "UW ONLY — tick-level net premium velocity.", T, ["ticker"]),
 
@@ -203,7 +208,11 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_setup_stats", "Win rates by setup from Postgres."),
 
-  t("get_postgres_flows", "Ingested flow alerts from Postgres.", { ticker: { type: "string" }, limit: { type: "integer" } }),
+  t(
+    "get_postgres_flows",
+    "Raw ingested flow-alert prints from Postgres (BlackOut's own HELIX ingestion of the UW option_trades WS feed + cron backfill, the flow_alerts table) — the SAME data source get_flow_tape reads, but WITHOUT get_flow_tape's aggregates: just the flat print list (ticker, premium, option_type, strike, expiry, direction, score, route, alerted_at, dte, and a handful of enrichment fields), sorted biggest-premium-first by default, last 48h window, default limit 25 (vs get_flow_tape's 50). get_flow_tape is a strict SUPERSET of this tool — it calls this exact same underlying fetch and returns the result verbatim as its own `recent` field, then adds count/total_premium/top_tickers on top — so prefer get_flow_tape unless you specifically want the bare print list with nothing else attached. No live UW REST call is made (contrast get_options_flow, which DOES call UW live for a single ticker and additionally merges this same Postgres tape in), and no strike_stacks are computed (that pattern-detection is get_options_flow/get_global_flow only).",
+    { ticker: { type: "string" }, limit: { type: "integer", default: 25 } }
+  ),
 
   t("get_signal_log", "SPX signal log from Postgres.", { limit: { type: "integer" } }),
 
@@ -233,10 +242,14 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     }
   ),
 
-  t("get_flow_tape", "HELIX tape from Postgres — recent alerts + top tickers by premium.", {
-    ticker: { type: "string" },
-    limit: { type: "integer", default: 50 },
-  }),
+  t(
+    "get_flow_tape",
+    "HELIX tape from Postgres (the flow_alerts table — same ingestion pipeline as get_postgres_flows): count, total_premium, top_tickers (top 10 by aggregated premium, each with ticker/premium/count), and recent (the flat print list — identical rows to what get_postgres_flows returns on its own; this tool calls that exact same underlying fetch and returns it verbatim as `recent`, then adds the aggregates on top). A strict SUPERSET of get_postgres_flows, never a different view — get_postgres_flows exists for when you want ONLY the bare print list. Default limit 50 (vs get_postgres_flows' 25), last 48h window, sorted biggest-premium-first by default; ticker is optional (omit for a platform-wide tape + leaderboard). No live UW REST call — contrast get_options_flow, which DOES call UW live for a single ticker and merges this same Postgres tape in, and get_global_flow, which is a pure live UW pull with no Postgres data at all. No strike_stacks (that pattern-detection is get_options_flow/get_global_flow only). If you already need this ticker's other cross-instrument context too, prefer get_ecosystem_context's flow_full_state field instead of a standalone call — it returns this exact object (via the same underlying function) plus per-print GEX-proximity enrichment.",
+    {
+      ticker: { type: "string" },
+      limit: { type: "integer", default: 50 },
+    }
+  ),
 
   t(
     "get_platform_snapshot",
@@ -345,17 +358,16 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
     to: { type: "string", description: "YYYY-MM-DD end date" },
   }, ["contract_id"]),
 
-  t("get_global_flow", "UW ONLY — market-wide flow alerts with filters; includes strike_stacks.", {
-
-    ticker: { type: "string" },
-
-    min_premium: { type: "number" },
-
-    is_call: { type: "boolean" },
-
-    is_put: { type: "boolean" },
-
-  }),
+  t(
+    "get_global_flow",
+    "Market-wide options flow — a single live Unusual Whales REST pull (/api/option-trades/flow-alerts, up to 200 alerts server-side, capped at 40 returned) across ALL tickers, not scoped to one name by default; optionally narrow with a ticker filter and/or min_premium/is_call/is_put. Pure live UW data — no Postgres/HELIX merge, unlike get_options_flow's non-SPX path — so this one genuinely is UW ONLY with no Polygon equivalent. Also computes strike_stacks (Repeated Hits + same-strike accumulation) over whatever alerts this pull returns. Use get_options_flow instead for a single ticker's flow — it REQUIRES a ticker and, for non-SPX names, additionally merges in BlackOut's own Postgres-ingested HELIX tape for a fuller same-session picture than a live UW pull alone gives you. Use get_flow_tape or get_postgres_flows instead for the already-ingested Postgres tape (aggregated top_tickers/count/total_premium, or the raw print list) without paying for a fresh live UW round trip.",
+    {
+      ticker: { type: "string" },
+      min_premium: { type: "number" },
+      is_call: { type: "boolean" },
+      is_put: { type: "boolean" },
+    }
+  ),
 
   // --- Cross-tool objects the platform already computes (Largo audit wiring) ---
   t("get_spx_confluence", "SPX confluence engine — the scored desk thesis: action (BUY_CALL/BUY_PUT/HOLD/WAIT), bias, score (-100..100), grade A+..D, agreeing vs conflicting factors with weights, entry/stop/target/invalidation. Explains WHY the desk leans a direction. Pure compute on the live desk."),
