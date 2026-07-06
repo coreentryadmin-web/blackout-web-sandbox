@@ -2,7 +2,7 @@ import "server-only";
 
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadSpxDesk } from "@/lib/spx-desk-loader";
 import { deskPayloadToSpxState, emptySpxState, type SpxState } from "@/lib/spx-desk-state";
 
 export type GridBootstrapMarket = {
@@ -14,7 +14,7 @@ export type GridBootstrapMarket = {
 /** Pulse + GEX + whale flow seed for Grid market-route panels (single server pass). */
 export async function readGridBootstrapMarket(): Promise<GridBootstrapMarket> {
   const [deskResult, gexResult, flowsResult] = await Promise.allSettled([
-    loadMergedSpxDesk().then(({ merged }) => deskPayloadToSpxState(merged)),
+    loadSpxDesk().then((desk) => deskPayloadToSpxState(desk)),
     getGexPositioning("SPX").then((pos) =>
       pos ? ({ available: true, ...pos } as Record<string, unknown>) : ({ available: false } as const),
     ),
