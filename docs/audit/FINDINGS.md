@@ -8,7 +8,22 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🔴 P0 FOUND+FIXED 2026-07-06 — Cron staleness watchdog HTTP 524 (ops-collect false P0) when self-heal blocked the response past Cloudflare's origin timeout (branch `cursor/cron-watchdog-http-error-d47f`)
+## 🔴 P1 FOUND+FIXED 2026-07-06 — SPX gex-heatmap blocked on fast-move cache miss → 502 + dashboard matrix stuck loading (branch `fix/spx-gex-heatmap-fast-move-swr`)
+
+**Surface:** `GET /api/market/gex-heatmap?ticker=SPX`, SPX Slayer left rail (`SpxGexMatrixHeatmap`), `validate:member-dashboard`, RTH comprehensive sweep ~14:49–15:20 ET.
+
+**Root cause:** `fetchGexHeatmap()` disabled stale-while-revalidate whenever `isHeatmapFastMove(SPX)` (spot moved >0.5% in-window). Fast-move also shortens accept TTL to 5s. After TTL expiry every member GET blocked on `buildGexHeatmapUncached()` (60–120s chain rebuild) instead of returning the last good matrix + background refresh → Cloudflare/Railway **502**, UI stuck on "Loading gamma matrix…", desk `gex_stale` badge, header GEX `—`.
+
+**Evidence:** `member-dashboard-live-check` FAIL matrix-loading/matrix-rows @ 19:17Z; isolated probe `gex-heatmap?ticker=SPX` → **502 @ 58s**; sweep concurrent probe HTTP 0 @ 90s. `validate:rth-open` GREEN (desk-warm cron ok) — warm cache existed but fast-move path bypassed SWR.
+
+**Fix:** Always run `tryStaleWhileRevalidateHeatmap()` on cache miss (remove `if (!fastMove)` guard). Fast-move still shortens fresh TTL; SWR serves up to `GEX_HEATMAP_MAX_STALE_SEC` while rebuilding.
+
+**Blast radius:** Preset tickers during volatile sessions may briefly serve slightly stale matrix cells while background refresh runs — desk already surfaces `gex_stale` when structure is aged; strictly better than 502/blank matrix.
+
+**Status:** FIXED (pending deploy).
+
+---
+
 
 **Surface:** `GET /api/cron/cron-staleness-watchdog`, `scripts/ops-collect-action-items.mjs` (`watchdog:http`), GitHub issue #601.
 

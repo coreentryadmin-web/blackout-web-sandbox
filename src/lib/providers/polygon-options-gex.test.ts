@@ -45,6 +45,19 @@ test("an explicit 0 env value is falsy, so it's treated as unset (defaults to 20
   assert.equal(resolveHeatmapPageGuard("0"), 200);
 });
 
+test("fetchGexHeatmap keeps stale-while-revalidate during preset fast-move (no blocking guard)", () => {
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "polygon-options-gex.ts"),
+    "utf8"
+  );
+  assert.doesNotMatch(
+    src,
+    /if\s*\(\s*!fastMove\s*\)\s*\{[\s\S]*?tryStaleWhileRevalidateHeatmap/,
+    "fast-move must not disable SWR — TTL-boundary misses would block member GETs"
+  );
+  assert.match(src, /const stale = tryStaleWhileRevalidateHeatmap\(/);
+});
+
 // ── task #136: computeGexEvents — the pure diff durable persistence (gex-regime-
 // events.ts) and /api/cron/gex-alerts both consume without re-deriving. ──
 

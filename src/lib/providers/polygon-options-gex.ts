@@ -1125,7 +1125,9 @@ function gexHeatmapCacheMsFor(root: string): number {
  * Max age of a matrix entry we'll still SERVE while refreshing in the background.
  * Covers the heatmap-warm cron gap (Railway fires once/min; matrix fresh TTL ~20s) so a
  * cold replica or TTL-boundary miss returns the last good matrix instantly instead of
- * blocking 20–35s on a chain rebuild. Disabled during preset fast-move (price ran >0.5%).
+ * blocking 20–35s on a chain rebuild. Always enabled — including preset fast-move — so a
+ * shortened accept TTL (5s) never forces every member GET to block on a full chain rebuild
+ * (live-caught 2026-07-06: SPX /gex-heatmap 502 + dashboard matrix stuck loading).
  */
 function gexHeatmapMaxStaleMs(): number {
   const sec = Number(process.env.GEX_HEATMAP_MAX_STALE_SEC ?? 90);
@@ -1942,21 +1944,20 @@ export async function fetchGexHeatmap(
       /* redis optional */
     }
 
-    // Stale-while-revalidate: cron warms once/min but fresh TTL is ~20s — without this,
-    // every TTL-boundary miss blocks callers on a full chain rebuild (cold desk 20–35s).
-    if (!fastMove) {
-      const stale = tryStaleWhileRevalidateHeatmap(
-        cacheKey,
-        root,
-        optionsRoot,
-        now,
-        ttlMs,
-        baseTtlMs,
-        mem,
-        redisHit
-      );
-      if (stale) return stale;
-    }
+    // Stale-while-revalidate: cron warms once/min but fresh TTL is ~20s (5s during fast-move).
+    // Without this, every TTL-boundary miss blocks callers on a full chain rebuild (cold desk
+    // 20–120s → Cloudflare 502). Fast-move shortens accept-age, not whether we may block.
+    const stale = tryStaleWhileRevalidateHeatmap(
+      cacheKey,
+      root,
+      optionsRoot,
+      now,
+      ttlMs,
+      baseTtlMs,
+      mem,
+      redisHit
+    );
+    if (stale) return stale;
   }
 
   // ── Single-flight (#9): coalesce concurrent cache-miss builds for this ticker ──

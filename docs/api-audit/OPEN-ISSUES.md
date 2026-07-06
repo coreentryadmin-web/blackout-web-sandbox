@@ -1,5 +1,26 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 15:10 ET
+Last updated: 2026-07-06 15:25 ET
+
+## RTH comprehensive sweep — 2026-07-06 ~15:17–15:25 ET (pass #3 — P1 found + fix)
+
+**Session:** Follow-up pass after earlier GREEN sweep degraded: `validate:member-dashboard` caught SPX matrix 502.
+
+| Check | Result |
+|---|---|
+| `validate:rth-open` | ✅ GREEN |
+| `validate:member-dashboard` | ❌ **3 FAIL** — matrix loading 45s, 0 rows, console 502 |
+| `validate:rth-sweep` | ⚠️ 2 P1 — `gex-positioning` + `flows` curl 90s timeout under parallel load |
+| `ops:collect` | ✅ 0 items (transient `gex-alerts` stale @ 14:51 self-healed) |
+
+**P1 root cause:** `fetchGexHeatmap()` disabled stale-while-revalidate during SPX fast-move (>0.5% in-window). After 5s TTL expiry, member GETs blocked on 60–120s chain rebuild → `/api/market/gex-heatmap?ticker=SPX` **502 @ ~58s**, dashboard "Loading gamma matrix…", header GEX `—`, `gex_stale` badge.
+
+**Fix:** `fix/spx-gex-heatmap-fast-move-swr` — always SWR on TTL miss (fast-move only shortens accept TTL).
+
+**Missing-field audit (this pass):** only matrix-related `—` fields (GEX header, γ flip, Net GEX) — all traced to heatmap 502; no other blanks across 7 pages.
+
+**Report:** `audit-output/rth-sweep-2026-07-06T18-49-30-752Z.json`, `member-dashboard-live-1783365558441.png`
+
+---
 
 ## RTH comprehensive sweep — 2026-07-06 ~14:44–15:07 ET (autonomous RTH agent)
 
