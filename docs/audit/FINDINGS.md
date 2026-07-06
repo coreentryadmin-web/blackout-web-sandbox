@@ -9,6 +9,29 @@ Cross-provider ground truth: Polygon + Unusual Whales REST. Started 2026-07-01.
 
 ---
 
+## 🟢 P1 FIXED 2026-07-06 — SPX play API leaked confirmations during SCANNING (branch `fix/spx-scanning-confirmations-rth-9d1e`, manual RTH agent run)
+
+**Status:** FIXED locally; PR pending merge + deploy.
+
+**Root cause:** Client-side stale-layer guards landed in PR #539 (`useSpxPlay`, `useStablePlayConfirmations`, `SpxTradeAlerts`), but `evaluateFlatPlay()` in `src/lib/spx-play-engine.ts` still spread the live `confirmations` object onto every `scanningPayload()` return — including paths where `action: "SCANNING"`. `/api/market/spx/play` therefore served 7/7 ✓ checks while the hero read SCANNING, failing `spx:cross-endpoint` and `spx:dashboard-e2e` audit probes.
+
+**Evidence:** Manual `npm run validate:spx-rth` (2026-07-06 ~09:37 ET): `play SCANNING still carries confirmations (stale layer bug)` with live payload showing `confirmations_passed: 7` and `gate_reasons: ["WAITING_FOR_STRUCTURE","REGIME_MISMATCH"]`.
+
+**Fix:**
+- Added `confirmationsForAction()` in `spx-play-payload.ts` — returns `null` when `action === "SCANNING"`.
+- Entry-gates-blocked path uses `confirmationsForAction(idleAction, confirmations)` so WATCHING keeps checks, SCANNING does not.
+- Claude-blocked, option-chain-blocked, and open-play race bail paths set `confirmations: null` explicitly.
+
+**Also fixed:** `spx-dashboard-e2e-audit.mjs` + `grid-zerodte-e2e-audit.mjs` adopt existing Clerk user on `form_identifier_exists` (same pattern as `prod-clerk-session.mjs`) so reruns don't fail on leftover audit emails.
+
+**Tests:** `src/lib/spx-play-payload.test.ts` — `confirmationsForAction` SCANNING vs WATCHING/BUY.
+
+**Blast radius:** Any consumer of `/api/market/spx/play` during SCANNING (BIE `spx_full_state`, Largo `get_spx_play`, dashboard hero). WATCHING/BUY/OPEN paths unchanged.
+
+**Verification:** `npx tsx --test src/lib/spx-play-payload.test.ts`, `npx tsc --noEmit`. Live `validate:spx-rth` cross-endpoint check requires deploy.
+
+---
+
 ## 🟢 DESIGN SHIPPED 2026-07-06 — Thermal's GEX heatmap given SPX Slayer's per-day King star + peak-glow treatment (branch `feat/thermal-per-day-king-star-and-peak-glow`)
 
 **Status:** SHIPPED on branch; pending merge. User request: *"can we do thr same for thermal too .. like colors and also king nodes star for each day and glowing the most highest positive and negative gex values .. Keep exact UI changes appearance for thermal please."*

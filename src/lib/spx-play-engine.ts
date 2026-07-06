@@ -90,6 +90,7 @@ import {
   currentSessionPhase,
   telemetrySummary,
   intelGates,
+  confirmationsForAction,
   scanningPayload,
   technicalsSummary,
 } from "@/lib/spx-play-payload";
@@ -735,15 +736,16 @@ async function evaluateFlatPlay(
       flow_data_age_ms: desk.flow_data_age_ms,
       gex_walls_count: desk.gex_walls?.length ?? 0,
     });
+    const idleAction = watchBand ? "WATCHING" : "SCANNING";
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), entryGatesView, sessionExtras),
-      confirmations,
+      confirmations: confirmationsForAction(idleAction, confirmations),
       technicals: techSum,
       mtf,
       watch: watchState,
       telemetry,
-      phase: watchBand ? "WATCHING" : "SCANNING",
-      action: watchBand ? "WATCHING" : "SCANNING",
+      phase: idleAction,
+      action: idleAction,
       headline: watchBand
         ? `${confluence.grade} ${direction === "long" ? "bullish" : "bearish"} — on watch`
         : pickIdleMessage(),
@@ -803,7 +805,7 @@ async function evaluateFlatPlay(
       headline: claude.headline,
       thesis: claude.thesis,
       claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
-      confirmations,
+      confirmations: null,
       technicals: techSum,
       mtf,
       watch: watchState,
@@ -834,7 +836,7 @@ async function evaluateFlatPlay(
         entry_mode: "none",
         play_idea: entryGatesView.play_idea,
       }, sessionExtras),
-      confirmations,
+      confirmations: null,
       technicals: techSum,
       mtf,
       option_ticket: optionTicket,
@@ -967,7 +969,7 @@ async function evaluateFlatPlay(
     // disappeared. Bail without firing Discord/telemetry to avoid duplicate side effects.
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), entryGatesView, sessionExtras),
-      confirmations,
+      confirmations: null,
       technicals: techSum,
       mtf,
       watch: watchState,
