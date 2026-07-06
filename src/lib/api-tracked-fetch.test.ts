@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { trackedFetch } from "./api-tracked-fetch";
+import { trackedFetch, __allowFetchHostForTest } from "./api-tracked-fetch";
+
+// The host-allowlist guard (SSRF hardening) rejects any destination outside this app's
+// known providers by default — these tests need their own local ephemeral server allowed.
+__allowFetchHostForTest("127.0.0.1");
 
 function listen(server: Server): Promise<string> {
   return new Promise((resolve) => {
@@ -65,4 +69,24 @@ test("trackedFetch honors a caller-supplied signal alongside the default timeout
   } finally {
     server.close();
   }
+});
+
+// SSRF hardening (request-forgery, FINDINGS.md): trackedFetch is the single network-egress
+// choke point for every provider this app calls. Per-fragment ticker/path sanitizers at each
+// call site (safeTicker, resolveOptionsRoot, etc.) close injection there, but a future
+// unsanitized caller could still slip through — this is the backstop that closes the whole
+// bug class at the one place every flow must pass through, regardless of how its URL was
+// built upstream.
+test("trackedFetch refuses to fetch a host outside the known-provider allowlist, without ever attempting the network call", async () => {
+  await assert.rejects(
+    () => trackedFetch("polygon", "/test", "https://evil.example.com/exfiltrate"),
+    /disallowed host/i
+  );
+});
+
+test("trackedFetch refuses a disallowed host even when it's just a differently-cased/subdomain lookalike of a real provider", async () => {
+  await assert.rejects(
+    () => trackedFetch("unusual_whales", "/test", "https://api.unusualwhales.com.evil.com/x"),
+    /disallowed host/i
+  );
 });

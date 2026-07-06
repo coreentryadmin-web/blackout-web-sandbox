@@ -66,6 +66,45 @@ function sleep(ms: number) {
 // legitimately slow-but-healthy responses.
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
+// SSRF hardening (request-forgery): `trackedFetch` is the single network-egress choke
+// point for every external provider this app calls (Polygon, Unusual Whales, web search,
+// the internal blackout_engine, admin health probes). Every caller builds its URL from a
+// fixed base plus a caller-supplied ticker/path fragment; per-fragment sanitizers
+// (safeTicker/resolveOptionsRoot/etc. — see FINDINGS.md) close the injection at each of
+// those call sites, but a future caller could still add a new, unsanitized one. Validating
+// the ACTUAL DESTINATION HOST here, once, against a fixed allowlist built ONLY from
+// trusted server config (env vars / hardcoded provider hostnames — never from the request
+// itself) closes the whole bug class at the one place every flow must pass through: no
+// caller can ever reach an unexpected host, regardless of how its path/ticker was built.
+function hostnameOf(urlOrBase: string | undefined): string | null {
+  if (!urlOrBase) return null;
+  try {
+    return new URL(urlOrBase).hostname;
+  } catch {
+    return null;
+  }
+}
+
+const ALLOWED_FETCH_HOSTS = new Set(
+  [
+    hostnameOf(process.env.POLYGON_API_BASE) ?? "api.massive.com",
+    hostnameOf(process.env.UW_API_BASE) ?? "api.unusualwhales.com",
+    // Internal engine base is fully environment-configured (no safe hardcoded default —
+    // it varies per deploy), so only allow it when actually set.
+    hostnameOf(process.env.API_BASE),
+    "api.tavily.com",
+    "google.serper.dev",
+    "api.search.brave.com",
+  ].filter((h): h is string => Boolean(h))
+);
+
+/** Test-only escape hatch for local ephemeral test servers (e.g. 127.0.0.1:<random port>
+ *  in api-tracked-fetch.test.ts). Never call this from application code — allowlisting a
+ *  host here is exactly the control this file exists to enforce everywhere else. */
+export function __allowFetchHostForTest(host: string): void {
+  ALLOWED_FETCH_HOSTS.add(host);
+}
+
 export async function trackedFetch(
   provider: ApiProviderId,
   endpointKey: string,
@@ -84,6 +123,14 @@ export async function trackedFetch(
   // Use the sanitized URL when building the body hint so API keys in the query string
   // are scrubbed BEFORE the hint is stored in the telemetry ring buffer.
   const requestBody = requestBodyHint(safeUrl, fetchInit);
+
+  // Reject before ever calling fetch() if the destination isn't one of this app's known
+  // providers — see ALLOWED_FETCH_HOSTS above. Not caught by the retry loop below: an
+  // unexpected host is a configuration/injection problem, never a transient failure.
+  const destHost = hostnameOf(url);
+  if (!destHost || !ALLOWED_FETCH_HOSTS.has(destHost)) {
+    throw new Error(`trackedFetch: refusing to fetch disallowed host "${destHost ?? url}"`);
+  }
 
   let lastEvent: ApiCallEvent | null = null;
 

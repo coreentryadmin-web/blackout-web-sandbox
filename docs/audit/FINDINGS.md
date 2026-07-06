@@ -8,6 +8,22 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 RESOLVED 2026-07-06 — CodeQL request-forgery alert (`api-tracked-fetch.ts:100`) actually closed: added a destination-host allowlist at the shared fetch choke point instead of relying on per-fragment ticker sanitizers (branch `fix/trackedfetch-host-allowlist`)
+
+**Surface:** `trackedFetch()` in `src/lib/api-tracked-fetch.ts` — the single network-egress choke point every external provider call in this codebase funnels through.
+
+**Background — why the two prior attempts (both already merged, see below) weren't enough:** PR #603 shipped a `trackedFetch` timeout fix that touched the `fetch()` sink CodeQL's `js/request-forgery` query watches. Two independent, textbook-correct sanitizer fixes were applied at the *ticker/path-fragment* level — a charset-strip sanitizer, then a validate-and-reject guard — and CodeQL re-flagged the identical alert both times. On reflection, the reason is structural, not a mistake in either fix: both sanitizers' PASSING branch returns the literal, untransformed input value (a strip either changes nothing for a clean ticker, and the reject guard's true-branch returns the parameter itself unchanged) — from a pure taint-tracking perspective, a value that reaches a sink *unchanged* along the “good” path is exactly as tainted as the raw input, no matter how many checks gated getting there. CodeQL's SSRF sanitizer recognition is built around validating the *actual destination* (parsed URL / hostname against a known-safe set) — not validating a *fragment* that later gets spliced into a URL elsewhere. Every prior fix validated the wrong thing for what this specific query checks.
+
+**Fix:** added a destination-host allowlist directly in `trackedFetch()`, immediately before the `fetch()` call. The allowlist (`ALLOWED_FETCH_HOSTS`) is built once from trusted server config only — `process.env.POLYGON_API_BASE`/`UW_API_BASE`/`API_BASE` (parsed to hostname, falling back to the hardcoded default host for Polygon/UW) plus the three hardcoded web-search hostnames — never from anything request-derived. Before every fetch, `new URL(url).hostname` is checked against this set; anything else throws before `fetch()` is ever called. This is the exact "validate the parsed destination against a known-safe allowlist" pattern CodeQL's sanitizer recognition for this query is built around, and — independent of what CodeQL does or doesn't recognize — it's the objectively stronger fix: no caller can ever reach an unexpected host regardless of how its ticker/path was constructed upstream, closing the whole bug class at the one place every flow must pass through rather than depending on every current *and future* call site remembering to sanitize its own fragment correctly.
+
+**Blast radius:** none for legitimate traffic — every real call site (Polygon, Unusual Whales, web search ×3, the internal engine, admin health probes) already only ever targets one of the allowlisted hosts. The existing ticker/path-fragment sanitizers (`safeTicker`, `resolveOptionsRoot`, etc.) are left in place as defense-in-depth, not reverted.
+
+**Evidence:** 2 new tests in `api-tracked-fetch.test.ts` — a disallowed host rejects before any network call is attempted; a lookalike subdomain of a real provider (`api.unusualwhales.com.evil.com`) is correctly rejected (hostname comparison, not substring match). Existing tests updated to allowlist their local `127.0.0.1` test server via a new test-only `__allowFetchHostForTest()` escape hatch (never intended for application code). Full suite: 1803/1803 passing. `npx tsc --noEmit` clean. `npx eslint` clean. `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
+
+**Status:** FIXED — pushed; supersedes the "TRACKED (not blocking)" entry below, which is left in place as the record of what was tried and why it didn't work.
+
+---
+
 ## 🔴 P0 FOUND+FIXED 2026-07-06 — 0DTE Command's live status check was a one-sided band — ADD-to-a-loser bug (branch `fix/all-open-issues-20260706`)
 
 **Surface:** `derivePlayStatus()` in `src/lib/zerodte/plan.ts` — OPEN/HOLD lifecycle for live ledger rows.
