@@ -390,7 +390,7 @@ async function browserDashboard(session, hm) {
       rec("ui:matrix-text-sanity", "PASS");
     }
 
-    const expandBtn = page.locator(".spx-commentary-rail button, .spx-desk-commentary button").first();
+    const expandBtn = page.locator("#spx-commentary-expand, #spx-commentary-rail-toggle").first();
     if (await expandBtn.count()) {
       await expandBtn.click();
       rec("ui:click-commentary-expand", "PASS");

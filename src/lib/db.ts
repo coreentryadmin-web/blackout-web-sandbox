@@ -3609,8 +3609,11 @@ export type ZeroDteSetupLogUpsert = {
 };
 
 /** Upsert scanner finds — one row per (session, ticker). First sighting pins
- *  underlying_at_flag/first_flagged_at forever (that's what gets graded); later
- *  scans refresh the live fields and ratchet score_max.
+ *  underlying_at_flag/first_flagged_at/direction/top_strike/expiry/entry_premium/
+ *  flow_avg_fill/plan_json forever (that's the exact contract+price that gets
+ *  graded and shown as the ledger's entry); later scans only refresh conviction/
+ *  scoring signals (score, dossier_score, conviction, gross_premium, spike,
+ *  underlying_latest, flags_json) and ratchet score_max.
  *
  *  Returns the tickers that were a FRESH INSERT this call (first flag of the
  *  session), detected via the `xmax = 0` Postgres idiom (xmax is unset on a
@@ -3632,9 +3635,6 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         first_flagged_at, last_seen_at
       ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,NOW(),NOW())
       ON CONFLICT (session_date, ticker) DO UPDATE SET
-        direction = EXCLUDED.direction,
-        top_strike = EXCLUDED.top_strike,
-        expiry = EXCLUDED.expiry,
         score = EXCLUDED.score,
         score_max = GREATEST(zerodte_setup_log.score_max, EXCLUDED.score),
         dossier_score = COALESCE(EXCLUDED.dossier_score, zerodte_setup_log.dossier_score),
@@ -3644,7 +3644,13 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         underlying_latest = COALESCE(EXCLUDED.underlying_latest, zerodte_setup_log.underlying_latest),
         flags_json = COALESCE(EXCLUDED.flags_json, zerodte_setup_log.flags_json),
         -- Plan fields are PINNED at first flag: the graded plan must be the plan as
-        -- first printed, never re-priced by a later scan (no hindsight).
+        -- first printed, never re-priced by a later scan (no hindsight). direction/
+        -- top_strike/expiry MUST be pinned together with entry_premium/plan_json —
+        -- plan_json.occ is built from exactly these three fields in the SAME scan
+        -- cycle that computes entry_premium (attachContractPlans -> buildOcc).
+        direction = COALESCE(zerodte_setup_log.direction, EXCLUDED.direction),
+        top_strike = COALESCE(zerodte_setup_log.top_strike, EXCLUDED.top_strike),
+        expiry = COALESCE(zerodte_setup_log.expiry, EXCLUDED.expiry),
         entry_premium = COALESCE(zerodte_setup_log.entry_premium, EXCLUDED.entry_premium),
         flow_avg_fill = COALESCE(zerodte_setup_log.flow_avg_fill, EXCLUDED.flow_avg_fill),
         plan_json = COALESCE(zerodte_setup_log.plan_json, EXCLUDED.plan_json),

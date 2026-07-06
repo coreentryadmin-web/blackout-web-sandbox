@@ -269,7 +269,15 @@ export function derivePlayStatus(input: {
   if (trough != null && trough <= stop) {
     return { status: "CLOSED", live_pnl_pct: PLAN_RULES.stop_pct, closed_reason: "stopped" };
   }
-  if (mark != null && mark <= entryPremium * 1.1 && nowEtMinutes < NEW_PLAY_CUTOFF_ET_MINUTES) {
+  // Symmetric band per this function's own doc comment ("within 10% of entry") — a lower
+  // bound is required, not just an upper one, or a play sliding toward the stop (but not
+  // there yet) stays labeled OPEN/"still enterable" the whole way down.
+  if (
+    mark != null &&
+    mark <= entryPremium * 1.1 &&
+    mark >= entryPremium * 0.9 &&
+    nowEtMinutes < NEW_PLAY_CUTOFF_ET_MINUTES
+  ) {
     return { status: "OPEN", live_pnl_pct: pnl, closed_reason: null };
   }
   return { status: "HOLD", live_pnl_pct: pnl, closed_reason: null };

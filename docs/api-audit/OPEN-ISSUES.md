@@ -1,5 +1,18 @@
 # BlackOut Open Issues Log
-Last updated: 2026-07-06 17:22 ET
+Last updated: 2026-07-06 18:00 ET
+
+## post-close fix batch — 2026-07-06 (all remaining open issues)
+
+**Session:** User-requested fix-all. Branch `fix/all-open-issues-20260706`.
+
+| Severity | ID | Fix | Status |
+|---|---|---|---|
+| **P0** | `zerodte-open-status-lower-bound` | Symmetric ±10% OPEN band in `derivePlayStatus()` | **FIXED** |
+| **P1** | `zerodte-ledger-pin-strike-expiry` | Pin `direction`/`top_strike`/`expiry` in ledger UPSERT | **FIXED** |
+| **P1** | `spx-gex-heatmap-cold-latency` | Warm-first + 180s timeout in `heatmap-matrix-audit.mjs` | **FIXED** |
+| **P2** | `spx-commentary-expand-missing` | `#spx-commentary-expand` + `#spx-commentary-rail-toggle` | **FIXED** |
+
+---
 
 ## RTH comprehensive sweep — 2026-07-06 ~17:17–17:22 ET (post-close pass #6)
 

@@ -101,6 +101,9 @@ function CommentaryBody({ body, featured }: { body: string; featured: boolean })
       </div>
       {needsCollapse && (
         <button
+          id="spx-commentary-expand"
+          type="button"
+          aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
           className="mt-2 font-mono text-[10px] text-purple-light/70 hover:text-purple-light transition-colors"
         >
@@ -121,6 +124,7 @@ export function SpxCommentaryRail({
   const [entries, setEntries] = useState<FeedEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const prevRef = useRef<Partial<SpxDeskPayload> | null>(null);
   const lastFetchRef = useRef(0);
   const inFlightRef = useRef(false);
@@ -257,6 +261,20 @@ export function SpxCommentaryRail({
             {live ? "Largo" : "Largo · offline"}
           </span>
         </div>
+        {live && (
+          <button
+            id="spx-commentary-rail-toggle"
+            type="button"
+            aria-expanded={!railCollapsed}
+            onClick={() => setRailCollapsed((v) => !v)}
+            className={clsx(
+              "font-mono text-[10px] text-purple-light/70 hover:text-purple-light transition-colors shrink-0",
+              loading ? "" : "ml-auto"
+            )}
+          >
+            {railCollapsed ? "▼ expand" : "▲ collapse"}
+          </button>
+        )}
         {loading && (
           <span className="ml-auto font-mono text-[10px] text-cyan-400 animate-pulse">
             Reading…
@@ -264,7 +282,7 @@ export function SpxCommentaryRail({
         )}
       </div>
 
-      <div className="spx-commentary-viewport">
+      <div className={clsx("spx-commentary-viewport", railCollapsed && "hidden")}>
         {!live ? (
           <div
             className={clsx(

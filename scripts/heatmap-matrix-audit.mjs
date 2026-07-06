@@ -95,7 +95,16 @@ function sameStrike(a, b) {
 }
 
 async function fetchHeatmap(ticker) {
-  const r = await fetch(`${BASE}/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`, { headers: H });
+  const url = `${BASE}/api/market/gex-heatmap?ticker=${encodeURIComponent(ticker)}`;
+  const opts = { headers: H, signal: AbortSignal.timeout(180_000) };
+  // Warm-first: a cold SPX matrix build can exceed CF's origin timeout under parallel
+  // audit load; priming populates the cache so the audited fetch hits warm SWR.
+  try {
+    await fetch(url, opts);
+  } catch {
+    /* priming miss is ok — audited fetch below still tries */
+  }
+  const r = await fetch(url, opts);
   return r.json();
 }
 

@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { mapAlertAuditTrailRow, computeSafePgPoolMaxDefault } from "./db";
 
 test("mapAlertAuditTrailRow: converts NUMERIC confidence_score (a string from node-pg) to a real number", () => {
@@ -67,4 +69,27 @@ test("computeSafePgPoolMaxDefault: divides the documented PgBouncer budget acros
 test("computeSafePgPoolMaxDefault: clamps to a floor of 1 for absurd replica counts", () => {
   assert.equal(computeSafePgPoolMaxDefault(20, 1000), 1);
   assert.equal(computeSafePgPoolMaxDefault(20, 0), 20, "replicaCount<=1 must not divide by zero");
+});
+
+test("upsertZeroDteSetupLog: direction/top_strike/expiry are pinned (COALESCE-guarded) in the ON CONFLICT UPDATE", () => {
+  const src = readFileSync(fileURLToPath(new URL("./db.ts", import.meta.url)), "utf8");
+  const upsertBody = src.slice(
+    src.indexOf("export async function upsertZeroDteSetupLog"),
+    src.indexOf("RETURNING (xmax = 0) AS inserted")
+  );
+  assert.match(
+    upsertBody,
+    /direction\s*=\s*COALESCE\(zerodte_setup_log\.direction,\s*EXCLUDED\.direction\)/
+  );
+  assert.match(
+    upsertBody,
+    /top_strike\s*=\s*COALESCE\(zerodte_setup_log\.top_strike,\s*EXCLUDED\.top_strike\)/
+  );
+  assert.match(
+    upsertBody,
+    /expiry\s*=\s*COALESCE\(zerodte_setup_log\.expiry,\s*EXCLUDED\.expiry\)/
+  );
+  assert.match(upsertBody, /entry_premium\s*=\s*COALESCE\(zerodte_setup_log\.entry_premium,\s*EXCLUDED\.entry_premium\)/);
+  assert.match(upsertBody, /flow_avg_fill\s*=\s*COALESCE\(zerodte_setup_log\.flow_avg_fill,\s*EXCLUDED\.flow_avg_fill\)/);
+  assert.match(upsertBody, /plan_json\s*=\s*COALESCE\(zerodte_setup_log\.plan_json,\s*EXCLUDED\.plan_json\)/);
 });

@@ -8,6 +8,50 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P0 FOUND+FIXED 2026-07-06 — 0DTE Command's live status check was a one-sided band — ADD-to-a-loser bug (branch `fix/all-open-issues-20260706`)
+
+**Surface:** `derivePlayStatus()` in `src/lib/zerodte/plan.ts` — OPEN/HOLD lifecycle for live ledger rows.
+
+**Root cause:** doc comment promised symmetric ±10% band; code only checked upper bound (`mark <= entry * 1.1`). Plays down 33%+ stayed OPEN → `buildIntelNote` returned `action: "ADD"`.
+
+**Fix:** added lower bound `mark >= entryPremium * 0.9`. Regression test in `board.test.ts`.
+
+**Status:** FIXED.
+
+---
+
+## 🔴 P1 FOUND+FIXED 2026-07-06 — 0DTE ledger `top_strike`/`expiry`/`direction` drifted while `entry_premium` stayed pinned (branch `fix/all-open-issues-20260706`)
+
+**Surface:** `upsertZeroDteSetupLog()` in `src/lib/db.ts`.
+
+**Root cause:** ON CONFLICT updated strike/expiry/direction on every scan but pinned entry_premium/plan_json — row could show mismatched contract vs price.
+
+**Fix:** COALESCE-pin `direction`, `top_strike`, `expiry` same as entry_premium. Regression test in `db.test.ts`.
+
+**Status:** FIXED.
+
+---
+
+## 🟢 P2 FOUND+FIXED 2026-07-06 — SPX commentary rail had no stable expand control for E2E (branch `fix/all-open-issues-20260706`)
+
+**Surface:** `SpxCommentaryRail.tsx` — expand only rendered when featured body exceeded 12 lines.
+
+**Fix:** `id="spx-commentary-expand"` on body toggle; `id="spx-commentary-rail-toggle"` header collapse always visible when `live`. E2E selector updated.
+
+**Status:** FIXED.
+
+---
+
+## 🟢 P1 FOUND+FIXED 2026-07-06 — SPX gex-heatmap cold miss under audit burst (branch `fix/all-open-issues-20260706`)
+
+**Surface:** `heatmap-matrix-audit.mjs` — parallel audit could 524 on cold SPX matrix build.
+
+**Fix:** warm-first priming fetch + 180s timeout before audited fetch.
+
+**Status:** FIXED.
+
+---
+
 ## 🔴 CRITICAL FOUND+FIXED 2026-07-06 — the charset-*stripping* fix for the request-forgery alert below did NOT close it: CodeQL re-flagged the identical sink as a live critical alert on the exact commit that shipped the strip-based sanitizers (branch `fix/trackedfetch-default-timeout`)
 
 **Surface:** `safeTicker()`/`safePathSegment()`/`safeDateSegment()` (`unusual-whales.ts`) and `resolveOptionsRoot()` (`polygon-options-gex.ts`) — the same four choke-point sanitizers documented in the entry directly below this one.

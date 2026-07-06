@@ -555,6 +555,23 @@ test("lifecycle: OPEN while enterable, HOLD past cutoff or above the band", () =
   assert.equal(ran.live_pnl_pct, 30.95);
 });
 
+test("lifecycle: a mark BELOW the entry band (but above the stop) is HOLD, not OPEN — the ADD-to-a-loser bug", () => {
+  const base = { entryPremium: 4.2, peak: 4.2, trough: 4.2, nowEtMinutes: 11 * 60 };
+  const insideBand = derivePlayStatus({ ...base, mark: 3.8 });
+  assert.equal(insideBand.status, "OPEN");
+  const belowBand = derivePlayStatus({ ...base, mark: 3.7, trough: 3.7 });
+  assert.equal(belowBand.status, "HOLD");
+  const liveCase = derivePlayStatus({
+    entryPremium: 2.08,
+    mark: 1.38,
+    peak: 2.08,
+    trough: 1.38,
+    nowEtMinutes: 11 * 60,
+  });
+  assert.equal(liveCase.status, "HOLD");
+  assert.equal(liveCase.live_pnl_pct, -33.65);
+});
+
 test("lifecycle: TRIM latches once the premium has doubled", () => {
   const s = derivePlayStatus({ entryPremium: 4.2, mark: 6.0, peak: 8.5, trough: 4.0, nowEtMinutes: 13 * 60 });
   assert.equal(s.status, "TRIM"); // peak tagged 2x even though mark pulled back
