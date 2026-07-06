@@ -3,7 +3,7 @@
  * Lint Capacitor + Codemagic config before a cloud Mac build.
  * Runs on Linux/Windows — no Xcode required.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -15,6 +15,7 @@ function read(path) {
   return readFileSync(path, "utf8");
 }
 
+const pkg = JSON.parse(read(join(appRoot, "package.json")));
 const cap = read(join(appRoot, "capacitor.config.ts"));
 const cm = read(join(repoRoot, "codemagic.yaml"));
 
@@ -26,6 +27,13 @@ const expected = {
   url: "https://blackouttrades.com",
   workingDir: "apps/blackout-ios",
 };
+
+if (!pkg.devDependencies?.typescript) {
+  fail.push("devDependencies must include typescript (required for capacitor.config.ts on Codemagic)");
+}
+if (existsSync(join(appRoot, "capacitor.config.ts")) && !existsSync(join(appRoot, "node_modules/typescript/package.json"))) {
+  fail.push("run npm install in apps/blackout-ios — typescript missing from node_modules");
+}
 
 if (!cap.includes(`appId: "${expected.appId}"`)) fail.push(`capacitor appId must be ${expected.appId}`);
 if (!cap.includes(`appendUserAgent: "${expected.ua}"`)) fail.push(`appendUserAgent must be ${expected.ua}`);
@@ -45,6 +53,7 @@ if (fail.length) {
   process.exit(1);
 }
 
+console.log("  ✓ typescript devDependency (capacitor.config.ts)");
 console.log("  ✓ appId / bundle ID");
 console.log("  ✓ root codemagic.yaml (monorepo apps/blackout-ios)");
 console.log("  ✓ Apple ID + Team ID");

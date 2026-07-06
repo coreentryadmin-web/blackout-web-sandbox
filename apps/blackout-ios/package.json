@@ -19,6 +19,7 @@
     "@capacitor/splash-screen": "^6.0.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.2.0"
+    "@capacitor/cli": "^6.2.0",
+    "typescript": "^5"
   }
 }
