@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { Nav } from "@/components/Nav";
+import { IosAppTabBar } from "@/components/IosAppTabBar";
 import { MarketSessionProvider } from "@/components/platform/MarketSessionProvider";
 import { MarketPulseLayer } from "@/components/platform/MarketPulseLayer";
 import { isAdminUser } from "@/lib/admin-access";
@@ -37,6 +38,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <MarketSessionProvider />
       <MarketPulseLayer />
       <Nav lockedTools={lockedTools} />
+      <IosAppTabBar lockedTools={lockedTools} />
       {children}
     </>
   );

@@ -4301,6 +4301,10 @@ body::before {
   }
   html.ios-app {
     --nav-offset: calc(76px + env(safe-area-inset-top, 0px) + 12px);
+    --ios-tab-offset: 0px;
+  }
+  html.ios-app.ios-tab-bar {
+    --ios-tab-offset: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
   html.ios-app .nav-kicker {
     display: none;
@@ -4356,6 +4360,57 @@ body::before {
     }
     .spx-sniper-desk {
       padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+
+  /* iOS app — bottom tool tab bar (native-style primary navigation) */
+  .ios-app-tab-bar {
+    @apply fixed inset-x-0 bottom-0 z-[95] border-t border-bull/20;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(4, 4, 7, 0.94);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .ios-app-tab-list {
+    @apply grid list-none m-0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0;
+  }
+  .ios-app-tab-li {
+    @apply min-w-0;
+  }
+  .ios-app-tab-link {
+    @apply flex flex-col items-center justify-center gap-0.5 no-underline;
+    min-height: 3.25rem;
+    padding: 0.35rem 0.15rem 0.45rem;
+    color: #7dd3fc;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .ios-app-tab-link-active {
+    color: #00e676;
+    background: rgba(0, 230, 118, 0.06);
+  }
+  .ios-app-tab-link-locked {
+    opacity: 0.55;
+  }
+  .ios-app-tab-label {
+    @apply truncate max-w-full px-0.5;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .ios-app-tab-icon {
+    @apply shrink-0;
+  }
+  html.ios-app.ios-tab-bar .spx-sniper-desk,
+  html.ios-app.ios-tab-bar .page-shell,
+  html.ios-app.ios-tab-bar main[id="main"] {
+    padding-bottom: var(--ios-tab-offset);
+  }
+  @media (max-width: 1023px) {
+    html.ios-app .nav-auth .nav-push-slot {
+      display: none;
     }
   }
 

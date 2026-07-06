@@ -28,11 +28,27 @@ console.log("validate:ios-mobile-desk — static CSS/component guards\n");
 
 const cssNeedles = [
   ["html.ios-app {", "iOS safe-area nav offset"],
+  ["--ios-tab-offset", "iOS bottom tab bar offset token"],
+  [".ios-app-tab-bar", "iOS bottom tab bar component styles"],
   ["overflow-x: hidden", "WKWebView horizontal overflow guard"],
   ["html.nav-locked .nav-brand", "drawer-open nav wordmark hide"],
+  ["html.ios-app .nav-auth .nav-push-slot", "hide push toggle from cramped top bar"],
   [".spx-hero-price", "mobile hero price scale hook"],
   ["grid-template-columns: repeat(2, minmax(0, 1fr))", "mobile metric block grid"],
 ];
+
+const sourceNeedles = [
+  ["src/components/IosAppTabBar.tsx", "IosAppTabBar"],
+  ["src/lib/ios-tool-routes.ts", "ios-tool-routes"],
+];
+for (const [file, label] of sourceNeedles) {
+  try {
+    readFileSync(join(root, file), "utf8");
+    ok(`file:${label}`, file);
+  } catch {
+    fail(`file:${label}`, `missing ${file}`);
+  }
+}
 for (const [needle, label] of cssNeedles) {
   if (css.includes(needle)) ok(`css:${label}`, needle);
   else fail(`css:${label}`, `missing ${needle}`);
@@ -42,6 +58,13 @@ if (header.includes("showValues") && header.includes("hasQuote")) {
   ok("header:closed-session snapshot", "showValues when desk has quote");
 } else {
   fail("header:closed-session snapshot", "expected hasQuote + showValues");
+}
+
+const nav = readFileSync(join(root, "src/components/Nav.tsx"), "utf8");
+if (nav.includes("brandHref") && nav.includes('iosApp && isSignedIn ? "/dashboard"')) {
+  ok("nav:ios-brand-dashboard");
+} else {
+  fail("nav:ios-brand-dashboard", "signed-in iOS brand should link to /dashboard");
 }
 
 if (!header.includes('"— — —"')) {

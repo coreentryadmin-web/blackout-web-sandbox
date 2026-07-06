@@ -12,13 +12,13 @@ export function DeskShell({ children, fullBleed, className }: DeskShellProps) {
   return (
     <div
       className={clsx(
-        "relative w-full pb-8",
+        "relative w-full pb-8 ios-desk-shell",
         fullBleed
           ? "max-w-none px-2 sm:px-3 lg:px-4 xl:px-5"
           : "content-rail mx-auto w-full",
         className
       )}
-      style={{ paddingTop: "var(--nav-offset)" }}
+      style={{ paddingTop: "var(--nav-offset)", paddingBottom: "calc(2rem + var(--ios-tab-offset, 0px))" }}
     >
       {children}
     </div>

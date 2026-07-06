@@ -10,6 +10,7 @@ import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
 import { useFocusTrap } from "@/components/ui";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
+import { isIosAppShell } from "@/lib/ios-app-shell";
 
 type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
@@ -118,6 +119,12 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const isPricingActive = path.startsWith("/pricing");
   const isAdminTrackActive = path.startsWith("/admin/track-record");
 
+  const [iosApp, setIosApp] = useState(false);
+  useEffect(() => {
+    setIosApp(isIosAppShell());
+  }, []);
+  const brandHref = iosApp && isSignedIn ? "/dashboard" : "/";
+
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn || !userId) {
@@ -224,7 +231,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
       </div>
 
       <div className="nav-inner">
-        <Link href="/" className="nav-brand group">
+        <Link href={brandHref} className="nav-brand group">
           <span className="nav-dot" aria-hidden />
           <span className="nav-brand-stack">
             <span className="nav-wordmark font-anton">BLACKOUT</span>
@@ -346,7 +353,9 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
           )}
           {isLoaded && isSignedIn && (
             <div className="flex items-center gap-2">
-              <PushNotificationToggle compact />
+              <span className="nav-push-slot">
+                <PushNotificationToggle compact />
+              </span>
               <UserButton appearance={CLERK_APPEARANCE} userProfileUrl="/account" />
             </div>
           )}
