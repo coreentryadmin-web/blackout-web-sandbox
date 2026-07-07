@@ -161,8 +161,28 @@ function pinCandlesOnTop(candleSeries: ISeriesApi<"Candlestick">): void {
   if (count > 0) candleSeries.setSeriesOrder(count - 1);
 }
 
-const VOLUME_UP = "rgba(0, 230, 118, 0.45)";
-const VOLUME_DOWN = "rgba(255, 45, 85, 0.45)";
+const VOLUME_UP = "rgba(0, 230, 118, 0.72)";
+const VOLUME_DOWN = "rgba(255, 45, 85, 0.72)";
+
+function barsNeedSpyVolume(bars: VectorBar[]): boolean {
+  return bars.length > 0 && !bars.some((b) => b.volume != null && b.volume > 0);
+}
+
+function mergeSpyVolumeRows(
+  bars: VectorBar[],
+  rows: Array<{ time: number; volume: number }>
+): VectorBar[] {
+  if (!rows.length) return bars;
+  const map = new Map(rows.map((r) => [r.time, r.volume]));
+  let touched = false;
+  const merged = bars.map((b) => {
+    const vol = map.get(b.time);
+    if (vol == null || vol <= 0) return b;
+    touched = true;
+    return { ...b, volume: vol };
+  });
+  return touched ? merged : bars;
+}
 
 function volumeHistogramData(bars: VectorBar[]): HistogramData<Time>[] {
   const out: HistogramData<Time>[] = [];
@@ -486,6 +506,7 @@ export function VectorChart({
   const [gexAsOf, setGexAsOf] = useState<number | null>(null);
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
+  const [chartReady, setChartReady] = useState(false);
 
   useEffect(() => {
     timeframeRef.current = timeframe;
@@ -722,7 +743,7 @@ export function VectorChart({
       1
     );
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.85, bottom: 0 },
+      scaleMargins: { top: 0.2, bottom: 0.02 },
     });
     chart.panes()[0]?.setStretchFactor(3);
     chart.panes()[1]?.setStretchFactor(1);
@@ -735,6 +756,7 @@ export function VectorChart({
     chartRef.current = chart;
     seriesRef.current = series;
     volumeSeriesRef.current = volumeSeries;
+    setChartReady(true);
     callBeadsRef.current = createSeriesMarkers(series, []);
     putBeadsRef.current = createSeriesMarkers(series, []);
 
@@ -794,9 +816,39 @@ export function VectorChart({
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       volumeSeriesRef.current = null;
+      setChartReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Client backfill when SSR seed missed SPY volume (rate-limit / transient Polygon blip). */
+  useEffect(() => {
+    if (!chartReady || !barsNeedSpyVolume(minuteBarsRef.current)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/spy-volume?ymd=${encodeURIComponent(sessionYmd)}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          volumes?: Array<{ time: number; volume: number }>;
+        };
+        if (!data.volumes?.length || cancelled) return;
+        const merged = mergeSpyVolumeRows(minuteBarsRef.current, data.volumes);
+        if (!merged.some((b) => b.volume != null && b.volume > 0)) return;
+        minuteBarsRef.current = merged;
+        setSessionBars(merged);
+        const display = displayBarsFromMinute(merged, timeframeRef.current);
+        applyDisplayBars(seriesRef.current!, volumeSeriesRef.current, display);
+      } catch {
+        /* best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chartReady, sessionYmd]);
 
   useEffect(() => {
     if (!replayMode || !playing || timelineRef.current.length === 0) {
@@ -952,6 +1004,9 @@ export function VectorChart({
 
       <div className="relative">
         <VectorCrosshairLegend state={crosshair} />
+        <p className="pointer-events-none absolute bottom-2 left-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300">
+          SPY vol
+        </p>
         <div
           ref={containerRef}
           className="vector-chart-canvas"

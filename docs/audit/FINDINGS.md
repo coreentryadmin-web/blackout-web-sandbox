@@ -32,7 +32,17 @@ QQQ and SPXW both fit this pattern exactly (both `TRIM`, both necessarily peaked
 
 **Verification:** `npx tsc --noEmit` clean. Full suite 1749/1749 passing (1 new). `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
 
-## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector honesty gaps + SPY volume pane (branch `fix/vector-honesty-volume`)
+## 🟠 P1 FOUND+FIXING 2026-07-07 — Vector SPY volume pane empty on prod (branch `fix/vector-volume-visible`)
+
+**User report:** volume histogram not visible on `/vector` after PR #666.
+
+**Evidence:** Playwright on prod — chart has **two panes** (413px + 138px canvases) but RSC payload had **zero** `"volume"` fields; local `fetchVectorSeedBars` returns 100% bars with volume. Histogram `scaleMargins.top: 0.85` squashed bars into ~15% of the volume pane.
+
+**Root cause:** (1) SSR parallel SPX+SPY fetch — SPY failure swallowed by `.catch(() => [])` left seed bars without volume. (2) No client backfill. (3) Volume pane styling made bars nearly invisible even when data existed.
+
+**Fix:** sequential SPX then `fetchSpyVolumeByMinute` with retry; tier-gated `GET /api/market/vector/spy-volume` client backfill; brighter histogram colors + `scaleMargins` 0.2; "SPY vol" label.
+
+## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector honesty gaps + SPY volume pane (branch `fix/vector-honesty-volume`, PR #666)
 
 **Surface:** `/vector` SSE stream, crosshair legend, nav copy, lens toggle, chart volume pane.
 

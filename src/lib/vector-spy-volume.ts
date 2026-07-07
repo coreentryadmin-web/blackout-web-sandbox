@@ -4,6 +4,41 @@ import { fetchStockMinuteBars } from "@/lib/providers/polygon";
 type AggBar = { t?: number; o: number; h: number; l: number; c: number; v?: number };
 type FetchSpyBars = (symbol: string, from: string, to: string) => Promise<AggBar[]>;
 
+const SPY_RETRY_MS = 350;
+
+/** Minute epoch seconds → SPY share volume for that session day. */
+export async function fetchSpyVolumeByMinute(
+  ymd: string,
+  fetchSpy: FetchSpyBars = fetchStockMinuteBars,
+  attempts = 2
+): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const bars = await fetchSpy("SPY", ymd, ymd);
+      for (const b of bars) {
+        if (typeof b.t !== "number" || b.v == null || b.v <= 0) continue;
+        map.set(Math.floor(b.t / 1000), b.v);
+      }
+      if (map.size > 0) return map;
+    } catch {
+      /* retry below */
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, SPY_RETRY_MS));
+    }
+  }
+  return map;
+}
+
+/** JSON-friendly volume rows for client backfill when SSR seed missed SPY. */
+export async function fetchSpyVolumeRows(ymd: string): Promise<Array<{ time: number; volume: number }>> {
+  const map = await fetchSpyVolumeByMinute(ymd);
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, volume]) => ({ time, volume }));
+}
+
 type VolumeCache = { barTimeSec: number; volume: number; fetchedAt: number };
 
 let cache: VolumeCache | null = null;

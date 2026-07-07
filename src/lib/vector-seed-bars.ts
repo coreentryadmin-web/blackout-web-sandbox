@@ -1,6 +1,7 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import { formatEtDate, previousTradingDayEt } from "@/lib/nighthawk/session";
 import { fetchIndexMinuteBars } from "@/lib/providers/polygon";
+import { fetchSpyVolumeByMinute } from "@/lib/vector-spy-volume";
 
 export type VectorSeedBar = {
   time: UTCTimestamp;
@@ -31,15 +32,6 @@ function mapMinuteBars(bars: AggBar[], volumeByTime?: Map<number, number>): Vect
     });
 }
 
-function volumeMapFromSpyBars(spyBars: AggBar[]): Map<number, number> {
-  const map = new Map<number, number>();
-  for (const b of spyBars) {
-    if (typeof b.t !== "number" || b.v == null || b.v <= 0) continue;
-    map.set(Math.floor(b.t / 1000), b.v);
-  }
-  return map;
-}
-
 /**
  * Seed bars for the Vector chart: today's session first, then walk back through prior
  * trading days until Polygon returns data. Off-hours / pre-market on a new calendar day
@@ -47,7 +39,8 @@ function volumeMapFromSpyBars(spyBars: AggBar[]): Map<number, number> {
  */
 export async function fetchVectorSeedBars(
   now = new Date(),
-  fetchBars: typeof fetchIndexMinuteBars = fetchIndexMinuteBars
+  fetchBars: typeof fetchIndexMinuteBars = fetchIndexMinuteBars,
+  fetchSpyVolume: (ymd: string) => Promise<Map<number, number>> = fetchSpyVolumeByMinute
 ): Promise<{
   bars: VectorSeedBar[];
   sessionYmd: string;
@@ -55,11 +48,13 @@ export async function fetchVectorSeedBars(
   const today = formatEtDate(now);
   let ymd = today;
   for (let i = 0; i < 12; i++) {
-    const [spxBars, spyBars] = await Promise.all([
-      fetchBars("I:SPX", ymd, ymd).catch(() => []),
-      fetchBars("SPY", ymd, ymd).catch(() => []),
-    ]);
-    const mapped = mapMinuteBars(spxBars, volumeMapFromSpyBars(spyBars));
+    const spxBars = await fetchBars("I:SPX", ymd, ymd).catch(() => []);
+    if (!spxBars.length) {
+      ymd = previousTradingDayEt(ymd);
+      continue;
+    }
+    const spyVolume = await fetchSpyVolume(ymd);
+    const mapped = mapMinuteBars(spxBars, spyVolume);
     if (mapped.length > 0) return { bars: mapped, sessionYmd: ymd };
     ymd = previousTradingDayEt(ymd);
   }
