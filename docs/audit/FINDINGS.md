@@ -8,7 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟠 P1 FOUND+FIXING 2026-07-07 — SPX Slayer hero EMA/SMA labels overlap values on desktop
+## 🔴 P0 FOUND+FIXING 2026-07-07 — Tailwind purged `src/features/` CSS after folder migration (desktop desk broken)
+
+**Surface:** `/dashboard` and other tools moved to `src/features/*` in PR #684.
+
+**Root cause:** `tailwind.config.ts` `content` paths scanned `src/components/**` + `src/app/**` only — **not** `src/features/**`. JIT purged every class used exclusively under features (e.g. `.spx-hero-metric-row`, `.spx-hero-metric-blocks`). Hero EMA rows lost layout rules → labels merged with values (`20`+`7,453` → `207,453`). PR #688 grid fix was in `globals.css` but those rules were also purged because the class names only appear in `SpxSniperHeader.tsx` under features.
+
+**Evidence:** Prod CSS `eecdc0a9f03d1db3.css` (382KB) — `spx-hero-metric-row` absent. After adding `./src/features/**` → `c7340c3f8c0381db.css` (489KB) includes `grid-template-columns:minmax(1.75rem,auto) minmax(0,1fr)`.
+
+**Fix:** Add `./src/features/**/*.{js,ts,jsx,tsx,mdx}` to Tailwind `content`.
+
+**Status:** FIX PR open (`fix/tailwind-features-content-path`).
+
+## 🟠 P1 FOUND+FIXED 2026-07-07 — SPX Slayer hero EMA/SMA labels overlap values on desktop
 
 **Surface:** `/dashboard` — `SpxSniperHeader` EMA/SMA metric blocks (desktop ≥1024px).
 
@@ -18,7 +30,7 @@ in this file.
 
 **Fix:** Grid two-column metric rows (`label | value` with `text-right` + `min-w-0`); bump block `min-w` to 128px. Night Hawk `PlaybookPlayRow` `Date.now()` in render → post-mount clock (React #418 on `/nighthawk`).
 
-**Status:** FIX PR open (`fix/desktop-hero-metric-overlap`).
+**Status:** FIXED (#688) — insufficient alone until Tailwind content path fixed (see P0 above).
 
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — Legacy Railway cron triggers crashed after route removals (grid-warm / nights-watch-warm / positions-expiry)
 
