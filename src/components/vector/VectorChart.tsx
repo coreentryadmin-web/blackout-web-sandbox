@@ -69,6 +69,7 @@ import {
   aggregateVectorBars,
   type VectorTimeframeMinutes,
 } from "@/lib/vector-bar-timeframes";
+import { mergeSpyVolumeRows } from "@/lib/vector-spy-volume-merge";
 
 export type VectorBar = {
   time: UTCTimestamp;
@@ -90,6 +91,9 @@ const DARK_POOL_COLOR = "#00d4ff";
 const REPLAY_STEP_MS = 350;
 const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
+/** Re-poll cadence for the SPY volume backfill — Polygon only publishes one new closed
+ *  minute bar per minute, so anything faster than that would just refetch the same data. */
+const SPY_VOLUME_BACKFILL_MS = 60_000;
 /** If the viewport is within this many bars of the live edge, new bars may follow (TradingView-style). */
 const LIVE_FOLLOW_THRESHOLD_BARS = 2;
 
@@ -151,22 +155,6 @@ function pinCandlesOnTop(candleSeries: ISeriesApi<"Candlestick">): void {
 
 const VOLUME_UP = "rgba(0, 230, 118, 0.72)";
 const VOLUME_DOWN = "rgba(255, 45, 85, 0.72)";
-
-function mergeSpyVolumeRows(
-  bars: VectorBar[],
-  rows: Array<{ time: number; volume: number }>
-): VectorBar[] {
-  if (!rows.length) return bars;
-  const map = new Map(rows.map((r) => [r.time, r.volume]));
-  let touched = false;
-  const merged = bars.map((b) => {
-    const vol = map.get(b.time);
-    if (vol == null || vol <= 0) return b;
-    touched = true;
-    return { ...b, volume: vol };
-  });
-  return touched ? merged : bars;
-}
 
 function volumeHistogramData(bars: VectorBar[]): HistogramData<Time>[] {
   const out: HistogramData<Time>[] = [];
@@ -788,11 +776,23 @@ export function VectorChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Client backfill — merge SPY volume when SSR seed missed it (idempotent). */
+  /**
+   * SPY volume backfill — merges SPY 1m volume onto SPX bars (idempotent; the index has no
+   * native tape volume, see mergeSpyVolumeRows). Polls every SPY_VOLUME_BACKFILL_MS rather
+   * than running once at mount: /api/market/vector/spy-volume?ymd=... only ever returns
+   * CLOSED Polygon minute bars (the currently-forming bar has no row yet), so a mount-only
+   * fetch permanently misses the volume for every bar that closes AFTER that one call —
+   * confirmed live: the histogram silently stopped updating for the rest of the session
+   * after initial page load, contradicting the "live SPY volume" pane the page advertises.
+   * Each poll re-fetches the whole day fresh from Polygon (no caching in fetchSpyVolumeRows)
+   * and mergeSpyVolumeRows only touches bars with a newly-available positive volume, so
+   * repeated polling is safe/idempotent — this just picks up each newly-closed bar's volume
+   * as the session progresses, same cadence as spyVolumeForMinuteBar's own 55s server cache.
+   */
   useEffect(() => {
     if (!chartReady) return;
     let cancelled = false;
-    (async () => {
+    const backfill = async () => {
       try {
         const res = await fetch(
           `/api/market/vector/spy-volume?ymd=${encodeURIComponent(sessionYmd)}`
@@ -811,9 +811,12 @@ export function VectorChart({
       } catch {
         /* best-effort */
       }
-    })();
+    };
+    void backfill();
+    const interval = setInterval(backfill, SPY_VOLUME_BACKFILL_MS);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [chartReady, sessionYmd]);
 

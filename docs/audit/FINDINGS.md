@@ -8,6 +8,24 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P2 FOUND+FIXED 2026-07-07 — Vector's SPY volume histogram silently stops updating after page load (branch `fix/vector-spy-volume-stale-after-mount`)
+
+**Surface:** `/vector`'s SPY 1m volume histogram/overlay (the index has no native tape volume, so SPY volume is used as a proxy — see PR #666/#667/#671).
+
+**How it was found:** parallel background audit sweep of the newest, most rapidly-shipped feature (Vector), specifically checking timeframe resampling, replay correctness, and freshness labeling for regressions given how many PRs touched it today.
+
+**Root cause:** `VectorChart.tsx`'s SPY-volume backfill effect only ran once, at mount (`useEffect` dependency array `[chartReady, sessionYmd]`). It fetches `/api/market/vector/spy-volume?ymd=...`, which calls Polygon's minute aggregates — an endpoint that only ever returns *closed* bars (the currently-forming minute has no row yet). So the one-shot fetch could only ever backfill bars that had already closed by the moment the page loaded; every bar that closed afterward, for the rest of the session, never got a volume merged in — the histogram silently stopped updating, contradicting the "live SPY volume" the page advertises.
+
+**Evidence:** held an SSE connection open 70s across two 1-minute bar rollovers during active RTH — `candle.volume` was `MISSING` on every tick of the live/current bar for both observed bars, while a direct hit of the backfill endpoint for an already-closed bar from the same window did return its volume (38,200.6 shares) — confirming the gap is specifically "closes after mount," not "the data doesn't exist yet."
+
+**Fix:** poll the backfill endpoint every 60s (`SPY_VOLUME_BACKFILL_MS`, matching Polygon's one-new-bar-per-minute cadence) instead of fetching once. Safe to poll repeatedly: `fetchSpyVolumeRows` has no caching of its own (always re-reads fresh from Polygon), and `mergeSpyVolumeRows` only ever fills in a bar's volume when a row for it exists and is positive — it never clobbers an already-set value, so calling it again with an overlapping-but-growing row set is idempotent.
+
+**Fix rationale:** extracted `mergeSpyVolumeRows` into its own dependency-free module (`vector-spy-volume-merge.ts`), not into `vector-spy-volume.ts` alongside the Polygon-fetching functions — first attempt did put it there, and `npm run build` caught a real regression: `VectorChart.tsx` ("use client") importing from `vector-spy-volume.ts` pulled that file's `@/lib/providers/polygon` import, and transitively the whole server-only chain (`polygon.ts` → `polygon-rate-limiter.ts` → `api-tracked-fetch.ts` → `api-telemetry.ts` → `api-telemetry-persist.ts`, which has `import "server-only"`), into the client bundle and broke the build outright. The dependency-free extraction is what makes the function both safely client-importable and unit-testable — `VectorChart.tsx` itself still can't be imported under the plain Node test runner (established in the sibling replay/crosshair fix earlier today: `lightweight-charts`'s package exports aren't Node-ESM-resolvable outside Next's bundler).
+
+**Tests added:** `vector-spy-volume.test.ts` — 3 new cases covering the exact safety properties this fix depends on: fills in matching bars, idempotent under repeated calls with the same rows, and a later poll's newly-closed-bar row doesn't clobber an earlier poll's already-filled bar.
+
+**Verification:** `npx tsc --noEmit` clean. Full suite passing (3 new). `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
+
 ## 🟡 P2 FOUND+FIXED 2026-07-07 — Vector's replay/crosshair before the first wall sample leaked live wall state instead of "no data" (branch `fix/vector-replay-prefirst-sample-leak`)
 
 **Surface:** `/vector`'s replay scrubber and chart crosshair — hovering or scrubbing to a point early in the session, before the first wall sample was ever recorded.
