@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
-import { getNighthawkMetrics } from "@/lib/nighthawk/analytics";
+import { getNighthawkMetrics } from "@/features/nighthawk/lib/analytics";
 
 export const dynamic = "force-dynamic";
 

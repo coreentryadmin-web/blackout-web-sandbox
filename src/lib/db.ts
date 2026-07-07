@@ -2567,7 +2567,7 @@ export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<void> {
   );
 }
 
-function mapPlayOutcomeRow(r: QueryResultRow): import("@/lib/spx-play-outcomes").PlayOutcomeRow {
+function mapPlayOutcomeRow(r: QueryResultRow): import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeRow {
   return {
     id: Number(r.id),
     open_play_id: Number(r.open_play_id),
@@ -2587,7 +2587,7 @@ function mapPlayOutcomeRow(r: QueryResultRow): import("@/lib/spx-play-outcomes")
     pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
     outcome: String(r.outcome) as "open" | "win" | "loss" | "breakeven",
     exit_action:
-      r.exit_action != null ? (String(r.exit_action) as import("@/lib/spx-play-outcomes").PlayExitAction) : null,
+      r.exit_action != null ? (String(r.exit_action) as import("@/features/spx/lib/spx-play-outcomes").PlayExitAction) : null,
     headline: String(r.headline),
     opened_at: new Date(String(r.opened_at)).toISOString(),
     closed_at: r.closed_at != null ? new Date(String(r.closed_at)).toISOString() : null,
@@ -2772,7 +2772,7 @@ export async function deleteUserJournalEntry(userId: string, openPlayId: number)
 }
 
 export async function fetchClosedPlayOutcomes(limit = 500): Promise<
-  import("@/lib/spx-play-outcomes").PlayOutcomeRow[]
+  import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeRow[]
 > {
   await ensureSchema();
   const res = await (await getPool()).query(
@@ -2791,7 +2791,7 @@ export async function fetchClosedPlayOutcomes(limit = 500): Promise<
 }
 
 export async function fetchRecentPlayOutcomeRows(limit = 50): Promise<
-  import("@/lib/spx-play-outcomes").PlayOutcomeRow[]
+  import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeRow[]
 > {
   await ensureSchema();
   const res = await (await getPool()).query(

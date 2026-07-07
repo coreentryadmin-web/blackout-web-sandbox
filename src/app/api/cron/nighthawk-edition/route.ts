@@ -1,11 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse, after } from "next/server";
 import { requireDatabaseInProduction, fetchNighthawkJob, failStaleNighthawkJobs } from "@/lib/db";
-import { buildEveningEdition, serializeBuildError } from "@/lib/nighthawk/edition-builder";
-import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
+import { buildEveningEdition, serializeBuildError } from "@/features/nighthawk/lib/edition-builder";
+import { isWeekdayEt, etNowParts, nextTradingDayEt, todayEt } from "@/features/nighthawk/lib/session";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 
 const CRON_KEY = "nighthawk-playbook";
 

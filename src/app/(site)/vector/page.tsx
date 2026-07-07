@@ -18,7 +18,7 @@ import {
   type WallHistorySample,
 } from "@/features/vector";
 import { isEtCashRth } from "@/lib/et-market-hours";
-import { todayEt } from "@/lib/nighthawk/session";
+import { todayEt } from "@/features/nighthawk/lib/session";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const metadata: Metadata = {

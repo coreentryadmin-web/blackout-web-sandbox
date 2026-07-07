@@ -472,7 +472,7 @@ async function checkPipelineHops(ctx: Ctx): Promise<CheckResult[]> {
     let deskSpot: number | null = null;
     let gexSpot: number | null = null;
     try {
-      const { loadMergedSpxDesk } = await import("@/lib/spx-desk-loader");
+      const { loadMergedSpxDesk } = await import("@/features/spx/lib/spx-desk-loader");
       const { merged } = await loadMergedSpxDesk();
       deskSpot = merged?.available && merged.price > 0 ? merged.price : null;
     } catch {

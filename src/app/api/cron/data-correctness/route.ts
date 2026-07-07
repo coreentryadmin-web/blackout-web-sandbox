@@ -29,9 +29,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import {
   runFullCorrectness,
   runHeatmapCorrectness,

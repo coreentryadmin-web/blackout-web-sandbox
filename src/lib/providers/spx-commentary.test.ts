@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, describe, test, mock } from "node:test";
-import type { SpxDeskPayload } from "./spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 // Regression: generateSpxCommentary()'s post-generation grounding-guard failure path
 // (spx-commentary.ts ~line 597) used to `return null` on a hallucinated Live Desk AI read
@@ -80,10 +80,10 @@ function fakeDesk(): SpxDeskPayload {
 }
 
 describe("spx-commentary: grounding-failure audit trail", () => {
-  let generateSpxCommentary: typeof import("./spx-commentary").generateSpxCommentary;
+  let generateSpxCommentary: typeof import("../../features/spx/lib/spx-commentary").generateSpxCommentary;
 
   before(async () => {
-    ({ generateSpxCommentary } = await import("./spx-commentary"));
+    ({ generateSpxCommentary } = await import("../../features/spx/lib/spx-commentary"));
   });
 
   beforeEach(() => {

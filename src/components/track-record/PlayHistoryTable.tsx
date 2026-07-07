@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { entryRangeMid } from "@/lib/nighthawk/entry-range";
+import { entryRangeMid } from "@/features/nighthawk/lib/entry-range";
 
 type SpxPlayRow = {
   id: number;

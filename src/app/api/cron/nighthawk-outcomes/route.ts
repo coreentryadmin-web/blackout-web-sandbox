@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
-import { resolvePendingNighthawkOutcomes } from "@/lib/nighthawk/play-outcomes";
-import { inEtWindow } from "@/lib/nighthawk/et-window";
+import { resolvePendingNighthawkOutcomes } from "@/features/nighthawk/lib/play-outcomes";
+import { inEtWindow } from "@/features/nighthawk/lib/et-window";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 

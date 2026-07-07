@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
-import { runDayTradeAgent } from "@/lib/nighthawk/agents";
-import { getAgentConfig } from "@/lib/nighthawk/agent-config";
-import { huntPlatformContext, runHuntScan } from "@/lib/nighthawk/hunt-builder";
-import type { HuntMode, HuntRequest, HuntResponse } from "@/lib/nighthawk/types";
+import { runDayTradeAgent } from "@/features/nighthawk/lib/agents";
+import { getAgentConfig } from "@/features/nighthawk/lib/agent-config";
+import { huntPlatformContext, runHuntScan } from "@/features/nighthawk/lib/hunt-builder";
+import type { HuntMode, HuntRequest, HuntResponse } from "@/features/nighthawk/lib/types";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import {
   huntActiveKey,
@@ -12,14 +12,14 @@ import {
   HUNT_SLOT_TTL_S,
   HUNT_ACQUIRE_LUA,
   shouldRejectHunt,
-} from "@/lib/nighthawk/hunt-concurrency";
+} from "@/features/nighthawk/lib/hunt-concurrency";
 import {
   HUNT_INFLIGHT_KEY,
   HUNT_INFLIGHT_ACQUIRE_LUA,
   huntGlobalMaxConcurrent,
   huntInflightTtlMs,
   huntInflightStaleCutoff,
-} from "@/lib/nighthawk/hunt-global-gate";
+} from "@/features/nighthawk/lib/hunt-global-gate";
 import { randomUUID } from "node:crypto";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { runWithUwHuntBudget } from "@/lib/providers/uw-hunt-budget";

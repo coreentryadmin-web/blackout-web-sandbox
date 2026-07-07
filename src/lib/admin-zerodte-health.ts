@@ -51,7 +51,7 @@
 import { dbConfigured, fetchZeroDteSetupLog, type ZeroDteSetupLogRow } from "@/lib/db";
 import { fetchZeroDteRejections, type ZeroDteRejectionRow } from "@/lib/zerodte/rejections";
 import { buildCronHealthSnapshot, type CronJobHealthStatus } from "@/lib/admin-cron-health";
-import { todayEt } from "@/lib/nighthawk/session";
+import { todayEt } from "@/features/nighthawk/lib/session";
 
 /** Generous vs. the throttled write volume rejections.ts documents (single digits
  *  to low tens of distinct tickers per day) — a page this size should cover a full

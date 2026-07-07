@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { fetchRecentSpxSignals } from "@/lib/providers/spx-signal-log";
+import { fetchRecentSpxSignals } from "@/features/spx/lib/spx-signal-log";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

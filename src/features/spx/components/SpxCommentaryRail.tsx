@@ -11,7 +11,7 @@ import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
-} from "@/lib/spx-commentary-offline-copy";
+} from "@/features/spx/lib/spx-commentary-offline-copy";
 import { flowStackSignature } from "@/lib/largo/flow-strike-stacks";
 
 const RETRY_ON_ERROR_MS = 30_000;

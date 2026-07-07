@@ -23,7 +23,7 @@ import {
   secondsUntilEtMidnight,
 } from "@/lib/ai-spend-ledger";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 
 // Per-process daily AI-spend tripwire. It survives Redis loss, so it is kept as the
 // FALLBACK alerter (used only when the cross-replica ledger below is unreachable). The

@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
-import type { MarketStatusLabel } from "@/lib/spx-market-session";
+import type { MarketStatusLabel } from "@/features/spx/lib/spx-market-session";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FreshnessChip, Kicker, type FreshnessStatus } from "@/components/ui";
 

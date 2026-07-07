@@ -10,8 +10,8 @@ import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import {
   generatePlayExplanation,
   resolveDossierContext,
-} from "@/lib/nighthawk/play-explainer";
-import type { PlaybookPlay, PlayExplainRequest, PlayExplainResponse } from "@/lib/nighthawk/types";
+} from "@/features/nighthawk/lib/play-explainer";
+import type { PlaybookPlay, PlayExplainRequest, PlayExplainResponse } from "@/features/nighthawk/lib/types";
 import { withServerCache } from "@/lib/server-cache";
 import { requireToolApi } from "@/lib/tool-access-server";
 

@@ -12,16 +12,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { computeSpxConfluence } from "@/lib/spx-signals";
-import { etMinutes, etClock } from "@/lib/spx-play-session-time";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { etMinutes, etClock } from "@/features/spx/lib/spx-play-session-time";
 import {
   initSpxSignalTables,
   insertObservation,
   getPendingOutcomes,
   updateOutcome,
-} from "@/lib/spx-signal-db";
+} from "@/features/spx/lib/spx-signal-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

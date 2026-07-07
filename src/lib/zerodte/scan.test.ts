@@ -53,14 +53,14 @@ mock.module("../db", {
   },
 });
 
-mock.module("../nighthawk/dossier", {
+mock.module("../../features/nighthawk/lib/dossier", {
   namedExports: {
     createDossierBuildCache: () => ({}),
     fetchTickerDossier: async () => null,
   },
 });
 
-mock.module("../nighthawk/session", {
+mock.module("../../features/nighthawk/lib/session", {
   namedExports: {
     todayEt: () => "2026-07-06",
     etNowParts: () => ({ hour: 11, minute: 30 }),

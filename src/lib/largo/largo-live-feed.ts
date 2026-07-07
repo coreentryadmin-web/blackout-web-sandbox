@@ -11,8 +11,8 @@ import { roundFloats } from "@/lib/round-floats";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { getActiveTradingHalts, isTradingHaltChannelStale, tideStore } from "@/lib/ws/uw-socket";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
-import { computeSpxConfluence } from "@/lib/spx-signals";
-import { loadLottoRecord } from "@/lib/spx-lotto-store";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { loadLottoRecord } from "@/features/spx/lib/spx-lotto-store";
 
 type FeedKey =
   | "market"

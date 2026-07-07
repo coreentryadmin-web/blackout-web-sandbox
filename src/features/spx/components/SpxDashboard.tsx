@@ -4,14 +4,14 @@ import React, { Suspense, useState } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import { useUser } from "@clerk/nextjs";
-import { useMergedDesk } from "@/hooks/useMergedDesk";
+import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { SpxSniperHeader } from "./SpxSniperHeader";
 import { SpxTradeAlerts } from "./SpxTradeAlerts";
 import { SpxGexMatrixHeatmap } from "./SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
-import { shouldShowHaltDegradedBanner } from "@/lib/spx-halt-banner";
+import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
 
 const SpxCommentaryRail = dynamic(
   () => import("./SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),

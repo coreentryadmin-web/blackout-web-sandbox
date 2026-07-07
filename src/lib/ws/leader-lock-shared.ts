@@ -37,7 +37,7 @@ const failClosedAlerted = new Set<string>();
 export function alertWsLeaderFailClosedOnce(socketLabel: string): void {
   if (failClosedAlerted.has(socketLabel)) return;
   failClosedAlerted.add(socketLabel);
-  void import("@/lib/spx-play-notify")
+  void import("@/features/spx/lib/spx-play-notify")
     .then(({ notifyOpsDiscord }) =>
       notifyOpsDiscord({
         title: `${socketLabel} WS leader lock DEGRADED — Redis unavailable, failing closed`,

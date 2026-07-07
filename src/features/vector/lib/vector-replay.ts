@@ -1,7 +1,7 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import type { VectorWallLens, WallHistorySample } from "./vector-wall-history";
 import { flipForLens, wallsForLens } from "./vector-wall-history";
-import { etClock, etMinutes } from "@/lib/spx-play-session-time";
+import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 
 export type VectorReplayBar = {
   time: number;

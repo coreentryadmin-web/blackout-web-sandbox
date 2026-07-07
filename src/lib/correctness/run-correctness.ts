@@ -14,7 +14,7 @@ import {
   type CheckResult,
   worstStatus,
 } from "@/lib/correctness/types";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
 // ---------------------------------------------------------------------------

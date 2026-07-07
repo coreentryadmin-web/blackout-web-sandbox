@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 // spx-signal-log.ts (the module under test) now also statically imports the
 // ecosystem shadow factor, whose fetchEcosystemContext -> getSpxPlayState chain
@@ -17,7 +17,7 @@ mock.module("server-only", { namedExports: {} });
 // realized-vs-implied-vol reading (Polygon primary, UW combined-endpoint fallback), hands
 // each to the pure compute*ShadowFactor functions (src/lib/spx-signals-shadow-skew.ts,
 // unit-tested on their own in spx-signals-shadow-skew.test.ts — left REAL here, not mocked,
-// so this test also exercises the real parsing helpers in @/lib/nighthawk/vol-metrics), and
+// so this test also exercises the real parsing helpers in @/features/nighthawk/lib/vol-metrics), and
 // persists each observation via insertShadowFactorObservation (src/lib/db.ts).
 //
 // Same DB-mocking convention as spx-signal-log-shadow.test.ts: insertShadowFactorObservation
@@ -84,7 +84,7 @@ mock.module("../flow-liveness", {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("../providers/spx-session", {
+mock.module("./spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
@@ -92,7 +92,7 @@ mock.module("../providers/spx-session", {
 
 // Lazy import (ESM caches the module under test after the first call) so the mocks above are
 // in place before spx-signal-log.ts's own top-level imports resolve.
-const mod = () => import("./spx-signal-log");
+const mod = () => import("../../features/spx/lib/spx-signal-log");
 
 function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return { available: true, price: 7420, ...overrides } as SpxDeskPayload;

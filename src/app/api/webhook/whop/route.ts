@@ -6,7 +6,7 @@ import {
   clearMembershipDunningGrace,
   markMembershipDunningGrace,
 } from "@/lib/whop-dunning";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import { recordApiCall } from "@/lib/api-telemetry";
 import { makeRedis } from "@/lib/make-redis";
 import { publishTierChanged } from "@/lib/tier-cache";

@@ -15,7 +15,7 @@ test("member /api/market/spx/play delegates to getSpxPlayState (single derivatio
 });
 
 test("getSpxPlayState owns the shared play-read cache (member + BIE + Largo)", () => {
-  const service = readFileSync(join(ROOT, "lib/platform/spx-service.ts"), "utf8");
+  const service = readFileSync(join(ROOT, "features/spx/lib/spx-service.ts"), "utf8");
   assert.match(service, /withServerCache\(`spx-play-read:\$\{date\}`/);
   assert.match(service, /playMemberReadCacheSec/);
   assert.doesNotMatch(service, /staleWhileRevalidate/);

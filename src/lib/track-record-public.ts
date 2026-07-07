@@ -1,5 +1,5 @@
-import { fetchPlayOutcomeStats } from "@/lib/spx-play-outcomes";
-import { computeAdaptiveGates } from "@/lib/spx-play-telemetry";
+import { fetchPlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
+import { computeAdaptiveGates } from "@/features/spx/lib/spx-play-telemetry";
 
 /**
  * Sanitized, PUBLIC, PII-free projection of the SPX play track record.

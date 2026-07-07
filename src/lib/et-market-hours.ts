@@ -2,9 +2,9 @@
  * US equity regular trading hours in America/New_York (weekdays 9:30 AM–4:00 PM ET,
  * honoring NYSE early-close half-days and full-day market holidays). Safe on server and client.
  */
-import { isTradingDayEt } from "@/lib/nighthawk/session";
-import { getEarlyCloseMinutes } from "@/lib/spx-play-session-guards";
-import { etClock, etMinutes } from "@/lib/spx-play-session-time";
+import { isTradingDayEt } from "@/features/nighthawk/lib/session";
+import { getEarlyCloseMinutes } from "@/features/spx/lib/spx-play-session-guards";
+import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import { todayEt } from "@/lib/et-date";
 
 /** Canonical cash RTH gate — used by UI polling, options WS, correctness, and cron health. */

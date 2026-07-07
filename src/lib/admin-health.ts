@@ -2,7 +2,7 @@ import { buildSpxAdminIssues } from "@/lib/admin-spx-issues";
 import { getProviderHealthSummary } from "@/lib/api-telemetry";
 import { buildMarketHealthSnapshot } from "@/lib/market-health";
 import { getAdminRouteErrors } from "@/lib/admin-route-errors";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
 import { getOptionsSocketStatus } from "@/lib/ws/options-socket";

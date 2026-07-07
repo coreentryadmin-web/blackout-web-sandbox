@@ -58,7 +58,7 @@ import {
 import { buildCronHealthSnapshot, type CronJobHealth } from "@/lib/admin-cron-health";
 import { peekFlowLivenessHeartbeat, type FlowLivenessPeek } from "@/lib/flow-liveness";
 import { fetchRecentErrorEvents } from "@/lib/error-sink";
-import { todayEt, formatEtDate } from "@/lib/nighthawk/session";
+import { todayEt, formatEtDate } from "@/features/nighthawk/lib/session";
 
 /** The two cron-registry.ts jobs that make up HELIX's flow pipeline (see cron-registry.ts). */
 const HELIX_CRON_KEYS = new Set(["flow-ingest", "market-regime-detector"]);

@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 // spx-signal-log.ts (the module under test) now also statically imports the
 // ecosystem shadow factor, whose fetchEcosystemContext -> getSpxPlayState chain
@@ -59,18 +59,20 @@ mock.module("../flow-liveness", {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("../providers/spx-session", {
+mock.module("./spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
 });
-mock.module("../providers/config", {
+mock.module("./config", {
   namedExports: {
     polygonConfigured: () => state.polygonConfigured,
   },
 });
-mock.module("../providers/polygon", {
+mock.module("./polygon", {
   namedExports: {
+    polygonRestBase: () => "https://api.polygon.io",
+    polygonRestApiKey: () => "test-key",
     fetchBenzingaCatalysts: async (ticker: string, limit: number) => {
       state.fetchCalls.push({ ticker, limit });
       return state.catalystsByTicker[ticker.toUpperCase()] ?? [];
@@ -81,7 +83,7 @@ mock.module("../providers/polygon", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("./spx-signal-log");
+const mod = () => import("../../features/spx/lib/spx-signal-log");
 
 function deskStub(leaders: Array<{ ticker: string; change_pct: number }> = [], overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return {

@@ -63,7 +63,7 @@ export async function register(): Promise<void> {
 
       // Lazy dynamic import so the notify module (and its deps) are never pulled into
       // the edge/client graph and only load on first failure.
-      void import("@/lib/spx-play-notify")
+      void import("@/features/spx/lib/spx-play-notify")
         .then(({ notifyOpsDiscord }) =>
           notifyOpsDiscord({
             title: "Unhandled promise rejection",

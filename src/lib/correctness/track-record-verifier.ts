@@ -8,7 +8,7 @@ import {
   worstStatus,
 } from "@/lib/correctness/types";
 import { fetchClosedPlayOutcomes, fetchPlayLifecycleCounts } from "@/lib/db";
-import { fetchPlayOutcomeStats, readPlayWriteFailures } from "@/lib/spx-play-outcomes";
+import { fetchPlayOutcomeStats, readPlayWriteFailures } from "@/features/spx/lib/spx-play-outcomes";
 import { buildPublicTrackRecord } from "@/lib/track-record-public";
 import { buildTrackRecordPagePayload, pageSpxMatchesPublic } from "@/lib/track-record-page";
 

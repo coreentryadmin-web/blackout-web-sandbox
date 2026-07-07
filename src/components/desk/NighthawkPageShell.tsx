@@ -3,7 +3,7 @@
 import { clsx } from "clsx";
 import { PageShell, PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
-import { NightHawkFeed } from "@/components/NightHawkFeed";
+import { NightHawkFeed } from "@/features/nighthawk/components/NightHawkFeed";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 
 /** /nighthawk page frame — segment-first on native shell. */

@@ -1,7 +1,7 @@
 import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
-import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/lib/spx-play-outcomes";
+import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
 import { buildPublicTrackRecord, formatPercent } from "@/lib/track-record-public";
-import { entryRangeMid } from "@/lib/nighthawk/entry-range";
+import { entryRangeMid } from "@/features/nighthawk/lib/entry-range";
 
 /** Shape returned by GET /api/track-record — shared with TrackRecordView. */
 export type TrackRecordPagePayload = {

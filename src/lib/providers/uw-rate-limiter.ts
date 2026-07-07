@@ -116,7 +116,7 @@ function alertRedisDegradedOnce(): void {
   // Only meaningful as a hard overshoot risk when we actually divide the budget (N>1). A single
   // replica on local pacing IS the whole cluster, so full MAX_RPS is correct and not an alert.
   if (REPLICA_COUNT <= 1) return;
-  void import("@/lib/spx-play-notify")
+  void import("@/features/spx/lib/spx-play-notify")
     .then(({ notifyOpsDiscord }) =>
       notifyOpsDiscord({
         title: "UW rate-limiter DEGRADED — Redis ceiling unavailable",

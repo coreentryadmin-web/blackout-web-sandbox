@@ -1,7 +1,7 @@
 import { before, describe, test, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { NighthawkPlayOutcomeRow } from "@/lib/db";
-import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
+import type { PlayOutcomeRow } from "@/features/spx/lib/spx-play-outcomes";
 
 // fetchPlayOutcomeStatsForWindow (spx-play-outcomes.ts) branches on dbConfigured()
 // — with no DATABASE_URL/DATABASE_PUBLIC_URL set, it silently reads an in-memory

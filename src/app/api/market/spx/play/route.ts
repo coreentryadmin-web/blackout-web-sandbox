@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
-import { getSpxPlayState } from "@/lib/platform/spx-service";
+import { getSpxPlayState } from "@/features/spx/lib/spx-service";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

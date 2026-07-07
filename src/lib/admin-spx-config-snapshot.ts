@@ -1,4 +1,4 @@
-import * as playConfig from "@/lib/spx-play-config";
+import * as playConfig from "@/features/spx/lib/spx-play-config";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { dbConfigured } from "@/lib/db";

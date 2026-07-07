@@ -56,7 +56,7 @@ let runLargoQuery: typeof import("./largo-terminal").runLargoQuery;
 let runLargoQueryStream: typeof import("./largo-terminal").runLargoQueryStream;
 
 // logBie() (largo-terminal.ts) fires the DB write as a detached
-// `void import("@/lib/db").then((m) => m.insertBieInteraction(row))` — deliberately
+// `void import("./db").then((m) => m.insertBieInteraction(row))` — deliberately
 // never awaited by its caller, so a slow/failed write can never delay or break the
 // member-visible answer. That means runLargoQuery/Stream's own returned promise
 // resolves before the detached write necessarily has landed. Poll instead of a

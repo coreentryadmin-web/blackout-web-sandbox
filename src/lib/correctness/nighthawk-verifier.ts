@@ -9,14 +9,14 @@ import {
   worstStatus,
 } from "@/lib/correctness/types";
 import { fetchLatestNighthawkEdition, fetchStagedDossiers } from "@/lib/db";
-import type { PlaybookPlay } from "@/lib/nighthawk/types";
+import type { PlaybookPlay } from "@/features/nighthawk/lib/types";
 import {
   parseOptionsContract,
   evaluatePlayAgainstChain,
   fetchEditionChains,
   type EditionChainData,
-} from "@/lib/nighthawk/option-chain-prompt";
-import { validatePlayGeometry } from "@/lib/nighthawk/play-constraints";
+} from "@/features/nighthawk/lib/option-chain-prompt";
+import { validatePlayGeometry } from "@/features/nighthawk/lib/play-constraints";
 
 // ---------------------------------------------------------------------------
 // NIGHT HAWK (evening plays scanner / published editions) data-correctness verifier — priority #4.

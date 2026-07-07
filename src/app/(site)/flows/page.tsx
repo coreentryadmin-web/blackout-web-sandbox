@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
-import { HelixPageShell } from "@/components/desk/HelixPageShell";
+import { HelixPageShell } from "@/features/helix/components/HelixPageShell";
 
 export const metadata: Metadata = {
   title: "HELIX · BlackOut",

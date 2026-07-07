@@ -57,14 +57,14 @@ mock.module("../db", {
 mock.module("../flow-liveness", {
   namedExports: { isFlowFrameFreshAnywhere: async () => true },
 });
-mock.module("../providers/spx-session", {
+mock.module("./spx-session", {
   namedExports: { todayEtYmd: () => "2026-07-04" },
 });
 
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve — same idiom every spx-signal-log-*.test.ts sibling uses.
-const mod = () => import("./spx-signal-log");
+const mod = () => import("../../features/spx/lib/spx-signal-log");
 
 type SnapInput = {
   phase: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { marketStatusLabel, type MarketStatusLabel } from "@/lib/spx-market-session";
+import { marketStatusLabel, type MarketStatusLabel } from "@/features/spx/lib/spx-market-session";
 
 /**
  * VITALS Phase 1 — the single cadence source ("one heartbeat").

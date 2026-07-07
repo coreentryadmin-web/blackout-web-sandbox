@@ -13,7 +13,7 @@ import {
   isTradingDayEt,
   isWeekdayEt,
   nextTradingDayEt,
-} from "@/lib/nighthawk/session";
+} from "@/features/nighthawk/lib/session";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import {
   isFlowIngestAlternateWriterSkip,

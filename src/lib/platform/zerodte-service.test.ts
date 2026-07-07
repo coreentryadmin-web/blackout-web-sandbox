@@ -99,7 +99,7 @@ test("livePnlPct: board ledger and Largo plays use identical rounding", async ()
       TTL: { NEWS: 60 },
     },
   });
-  mock.module("../nighthawk/session", {
+  mock.module("../../features/nighthawk/lib/session", {
     namedExports: {
       todayEt: () => "2026-07-07",
       etNowParts: () => ({ hour: 11, minute: 30 }),

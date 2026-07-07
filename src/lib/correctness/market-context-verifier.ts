@@ -8,7 +8,7 @@ import {
   rollUpMetricStatus,
   worstStatus,
 } from "@/lib/correctness/types";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 
 // ---------------------------------------------------------------------------
 // MARKET CONTEXT data-correctness verifier — priority surface #5.

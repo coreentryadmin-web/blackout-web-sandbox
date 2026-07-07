@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { clearAllSessionCache } from "@/lib/session-cache";
-import { clearPlayCache } from "@/hooks/useSpxPlay";
+import { clearPlayCache } from "@/features/spx/hooks/useSpxPlay";
 
 /** Clears blackout sessionStorage keys when Clerk session ends or account switches. */
 export function SessionCacheGuard() {

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
-import { runSpxIssuesSync } from "@/lib/spx-issues-sync";
+import { runSpxIssuesSync } from "@/features/spx/lib/spx-issues-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

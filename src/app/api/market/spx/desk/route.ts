@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { loadSpxDesk } from "@/lib/spx-desk-loader";
+import { loadSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { roundFloats } from "@/lib/round-floats";
 

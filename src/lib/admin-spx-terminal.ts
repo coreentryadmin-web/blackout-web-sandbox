@@ -1,7 +1,7 @@
 import type { SpxAdminIssuesPayload, SpxIssueSeverity } from "@/lib/admin-spx-issues";
 import type { AdminIncidentRow } from "@/lib/admin-incidents";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import type { SpxPlayPayload } from "@/lib/spx-play-engine";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 
 export type SpxTerminalLineKind = "critical" | "warning" | "info" | "api" | "pulse" | "ok";
 

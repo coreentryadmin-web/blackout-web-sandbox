@@ -1,11 +1,11 @@
 import { serverCache, TTL } from "@/lib/server-cache";
 import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 import { getLargoSpxLiveDesk } from "@/lib/largo/spx-desk-cache";
-import { computeSpxConfluence } from "@/lib/spx-signals";
-import { loadLottoRecord } from "@/lib/spx-lotto-store";
-import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
-import { fetchPositioningSummary } from "@/lib/nighthawk/positioning";
-import { fetchPlayOutcomeStatsForWindow } from "@/lib/spx-play-outcomes";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { loadLottoRecord } from "@/features/spx/lib/spx-lotto-store";
+import { loadPowerHourRecord } from "@/features/spx/lib/spx-power-hour-store";
+import { fetchPositioningSummary } from "@/features/nighthawk/lib/positioning";
+import { fetchPlayOutcomeStatsForWindow } from "@/features/spx/lib/spx-play-outcomes";
 import {
   fetchNighthawkOutcomeAnalytics,
   fetchNighthawkScoringHistory,
@@ -21,9 +21,9 @@ import {
   withStrikeStacks,
   type FlowAlertForStack,
 } from "@/lib/largo/flow-strike-stacks";
-import { isSpxTicker } from "@/lib/spx-desk-live";
+import { isSpxTicker } from "@/features/spx/lib/spx-desk-live";
 import { getPlatformSnapshot, marketPlatform } from "@/lib/platform";
-import { summarizeSpxDesk } from "@/lib/platform/spx-service";
+import { summarizeSpxDesk } from "@/features/spx/lib/spx-service";
 import { zeroDteRejectionsForLargo } from "@/lib/zerodte/rejections";
 import { gexRegimeEventsForLargo } from "@/lib/providers/gex-regime-events";
 import { flowAnomalyNearMissesForLargo } from "@/lib/platform/flow-anomaly-near-misses";
@@ -946,7 +946,7 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
     }
 
     case "get_market_regime": {
-      const { fetchPlatformIntelSnapshot } = await import("@/lib/nighthawk/platform-intel-snapshot");
+      const { fetchPlatformIntelSnapshot } = await import("@/features/nighthawk/lib/platform-intel-snapshot");
       return fetchPlatformIntelSnapshot();
     }
 

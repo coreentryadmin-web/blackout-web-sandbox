@@ -1,5 +1,5 @@
 import { recordCronJobRun } from "@/lib/db";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 
 export type CronRunPayload = {
   ok?: boolean;

@@ -3,7 +3,7 @@
  * Any product module can import `marketPlatform` to read another service's live or persisted state.
  */
 import type { PlatformServiceId, PlatformSnapshot } from "./types";
-import * as spx from "./spx-service";
+import * as spx from "@/features/spx/lib/spx-service";
 import * as flows from "./flow-service";
 import * as nighthawk from "./nighthawk-service";
 import * as zerodte from "./zerodte-service";

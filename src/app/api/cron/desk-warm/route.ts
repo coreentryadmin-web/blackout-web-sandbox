@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { loadBootstrapBundle, loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadBootstrapBundle, loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { isEtCashRth } from "@/lib/et-market-hours";
 

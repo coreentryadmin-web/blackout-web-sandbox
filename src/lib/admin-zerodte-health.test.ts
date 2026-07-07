@@ -126,7 +126,7 @@ mock.module("./admin-cron-health", {
     buildCronHealthSnapshot: async () => cronHealthImpl(),
   },
 });
-mock.module("./nighthawk/session", {
+mock.module("../features/nighthawk/lib/session", {
   namedExports: {
     todayEt: () => todayImpl(),
   },

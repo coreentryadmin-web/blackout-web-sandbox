@@ -1,5 +1,5 @@
 import type { UTCTimestamp } from "lightweight-charts";
-import { formatEtDate, previousTradingDayEt } from "@/lib/nighthawk/session";
+import { formatEtDate, previousTradingDayEt } from "@/features/nighthawk/lib/session";
 import { fetchIndexMinuteBars } from "@/lib/providers/polygon";
 import { fetchSpyVolumeByMinute } from "./vector-spy-volume";
 

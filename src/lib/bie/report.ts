@@ -5,7 +5,7 @@
 // reasoning can cite its own track record. Numbers only; no adjectives.
 
 import { dbConfigured, fetchBieInteractionStats, fetchZeroDteSetupLog } from "@/lib/db";
-import { todayEt } from "@/lib/nighthawk/session";
+import { todayEt } from "@/features/nighthawk/lib/session";
 import { storeKnowledge } from "./knowledge";
 
 export type BieDailyReport = {

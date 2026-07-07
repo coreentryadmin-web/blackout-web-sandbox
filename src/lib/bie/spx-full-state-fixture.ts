@@ -1,4 +1,4 @@
-import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 
 // Deliberately a plain `.ts` file, NOT `.test.ts` — tsconfig.json excludes
 // "**/*.test.ts" from `npx tsc --noEmit` (see the exclude list), so a fixture

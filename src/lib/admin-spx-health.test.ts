@@ -1,8 +1,8 @@
 import { before, test, mock } from "node:test";
 import assert from "node:assert/strict";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import type { SpxPlayPayload } from "@/lib/spx-play-payload";
-import type { SpxSignalLogRow } from "@/lib/providers/spx-signal-log";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
+import type { SpxSignalLogRow } from "@/features/spx/lib/spx-signal-log";
 
 // mock.module() must be registered before admin-spx-health.ts (and therefore
 // its dependency imports: spx-desk-loader, spx-evaluator, spx-play-technicals,
@@ -93,12 +93,12 @@ let flowLiveImpl: () => Promise<boolean> = async () => true;
 let signalsImpl: () => Promise<SpxSignalLogRow[]> = async () => [signalRow()];
 let playCalls: Array<{ desk: unknown; technicals: unknown }> = [];
 
-mock.module("./spx-desk-loader", {
+mock.module("../features/spx/lib/spx-desk-loader", {
   namedExports: {
     loadMergedSpxDesk: async () => deskImpl(),
   },
 });
-mock.module("./spx-evaluator", {
+mock.module("../features/spx/lib/spx-evaluator", {
   namedExports: {
     readSpxPlaySnapshot: async (desk: unknown, technicals: unknown) => {
       playCalls.push({ desk, technicals });
@@ -106,7 +106,7 @@ mock.module("./spx-evaluator", {
     },
   },
 });
-mock.module("./spx-play-technicals", {
+mock.module("../features/spx/lib/spx-play-technicals", {
   namedExports: {
     buildPlayTechnicals: async () => technicalsImpl(),
   },
@@ -116,7 +116,7 @@ mock.module("./flow-liveness", {
     isFlowFrameFreshAnywhere: async () => flowLiveImpl(),
   },
 });
-mock.module("./providers/spx-signal-log", {
+mock.module("../features/spx/lib/spx-signal-log", {
   namedExports: {
     fetchRecentSpxSignals: async () => signalsImpl(),
   },

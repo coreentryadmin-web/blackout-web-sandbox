@@ -1,5 +1,5 @@
-import type { NightHawkEdition } from "@/lib/nighthawk/types";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { FlowRow } from "@/lib/db";
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
 

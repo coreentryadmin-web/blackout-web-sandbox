@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { loadBootstrapBundle, type MergedSpxDeskBundle } from "@/lib/spx-desk-loader";
+import { loadBootstrapBundle, type MergedSpxDeskBundle } from "@/features/spx/lib/spx-desk-loader";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

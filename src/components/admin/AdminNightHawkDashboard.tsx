@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import type { NighthawkMetrics } from "@/lib/nighthawk/analytics";
-import type { NighthawkPublishPreview } from "@/lib/nighthawk/publish-preview";
-import type { NightHawkEdition } from "@/lib/nighthawk/types";
+import type { NighthawkMetrics } from "@/features/nighthawk/lib/analytics";
+import type { NighthawkPublishPreview } from "@/features/nighthawk/lib/publish-preview";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import {
   ActionButton,
   DataTable,

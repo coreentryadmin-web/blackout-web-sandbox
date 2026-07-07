@@ -1,7 +1,7 @@
 import { dbConfigured } from "@/lib/db";
 import { loadPlayEngineHeartbeat } from "@/lib/play-engine-heartbeat";
-import { loadOpenPlay, loadPlaySessionMeta } from "@/lib/spx-play-store";
-import { fetchRecentSpxSignals } from "@/lib/providers/spx-signal-log";
+import { loadOpenPlay, loadPlaySessionMeta } from "@/features/spx/lib/spx-play-store";
+import { fetchRecentSpxSignals } from "@/features/spx/lib/spx-signal-log";
 
 export async function getPlayEngineHealth() {
   const [openPlay, sessionMeta, recentSignals] = await Promise.all([

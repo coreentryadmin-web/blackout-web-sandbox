@@ -88,7 +88,7 @@ export async function probeWriterTargetFresh(jobKey: string): Promise<WriterTarg
       };
     }
     case "desk-warm": {
-      const { loadSpxDesk } = await import("@/lib/spx-desk-loader");
+      const { loadSpxDesk } = await import("@/features/spx/lib/spx-desk-loader");
       try {
         const desk = await loadSpxDesk();
         const ageMin = ageMinFromIso(desk.polled_at ?? desk.as_of);

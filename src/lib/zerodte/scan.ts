@@ -27,9 +27,9 @@ import {
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
 } from "@/lib/db";
-import { LEVERAGED_ETP_SET } from "@/lib/nighthawk/constants";
-import { createDossierBuildCache, fetchTickerDossier } from "@/lib/nighthawk/dossier";
-import { etNowParts, todayEt } from "@/lib/nighthawk/session";
+import { LEVERAGED_ETP_SET } from "@/features/nighthawk/lib/constants";
+import { createDossierBuildCache, fetchTickerDossier } from "@/features/nighthawk/lib/dossier";
+import { etNowParts, todayEt } from "@/features/nighthawk/lib/session";
 import { fetchAggBars } from "@/lib/providers/polygon-largo";
 import { fetchOptionsUnifiedSnapshot } from "@/lib/providers/options-snapshot";
 import { buildOcc } from "@/lib/ws/options-socket";

@@ -7,11 +7,11 @@ import {
   fetchNighthawkEditionByDate,
 } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
-import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
-import { convictionFromScore } from "@/lib/nighthawk/scorer";
-import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/lib/nighthawk/session";
+import { rowToNightHawkEdition } from "@/features/nighthawk/lib/edition-builder";
+import { convictionFromScore } from "@/features/nighthawk/lib/scorer";
+import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/features/nighthawk/lib/session";
 import { requireToolApi } from "@/lib/tool-access-server";
-import type { NightHawkEdition } from "@/lib/nighthawk/types";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

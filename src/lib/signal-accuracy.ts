@@ -1,4 +1,4 @@
-import { fetchPlayOutcomeStats } from "@/lib/spx-play-outcomes";
+import { fetchPlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
 import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
 import { isNighthawkOutcomeScoreable } from "@/lib/track-record-page";
 

@@ -179,30 +179,30 @@ scripts use stale paths; trust the directory tree.
 ## 6. The tools in depth — where to look per tool
 
 ### SPX Slayer / the desk
-- Engine: `src/lib/spx-play-engine.ts` (entry decision = confluence score + AI approval on the index).
+- Engine: `src/features/spx/lib/spx-play-engine.ts` (entry decision = confluence score + AI approval on the index).
   Plays open with an **index-plan fallback ticket** even when the option chain is thin — the chain is
   a sizing aid, not a gate. The "require chain" veto is **opt-in** via `SPX_OPTION_CHAIN_REQUIRED`
   (default false — leave it unset in prod or plays stop opening).
-- Config/tunables: `src/lib/spx-play-config.ts`.
-- Data: `src/lib/providers/spx-desk.ts`, `spx-session.ts`, `gamma-desk.ts`.
-- UI: `src/features/spx/components/`, shared desk primitives in `src/components/desk/`.
+- Config/tunables: `src/features/spx/lib/spx-play-config.ts`.
+- Data: `src/features/spx/lib/spx-desk.ts`, shared `src/lib/providers/spx-session.ts`, `gamma-desk.ts`.
+- UI + hooks: `src/features/spx/` (components, lib, hooks colocated).
 - Outcomes/track record: `api/market/spx/outcomes`, `api/track-record/`, `correctness/track-record-verifier.ts`.
 
 ### HELIX Flows
 - Ingest: `src/lib/ws/uw-socket.ts` (WS) + `api/cron/flow-ingest` + `providers/flow-ingest.ts`.
 - Processing: `flow-dedup.ts`, `flow-fanout.ts`, `flow-events.ts`, `flow-liveness.ts`, `flow-data-freshness.ts`.
-- Reader: `api/market/flows`. UI: `src/app/(site)/flows/`.
+- Reader: `api/market/flows`. UI: `src/features/helix/` (`/flows`).
 
 ### Heat Maps (GEX)
 - Source: `providers/gex-positioning.ts`, `polygon-options-gex.ts`, `gex-intraday-adjust.ts`, `gex-cross-validation.ts`.
 - Reader: `api/market/gex-positioning`, `api/market/gex-heatmap`. Contract: [HEATMAP_DATA_CONTRACT.md](HEATMAP_DATA_CONTRACT.md).
-- UI: `src/components/desk/GexHeatmap.tsx`.
+- UI: `src/features/thermal/` (`/heatmap`).
 
 ### Night Hawk
-- Logic: `src/lib/nighthawk/` (scanner, scorer, positioning, grounding). Edition generation runs via `api/cron/nighthawk-edition`.
+- Logic: `src/features/nighthawk/lib/` (scanner, scorer, positioning, grounding). Edition generation runs via `api/cron/nighthawk-edition`.
 - Crons: `nighthawk-edition` (generate), `nighthawk-morning-confirm`, `nighthawk-outcomes`.
 - Reader: `api/market/nighthawk/edition`. Grounding rules: [NIGHTHAWK_GROUNDING.md](NIGHTHAWK_GROUNDING.md).
-- **0DTE Command** (always-on scanner tab) shares the Night Hawk page — reader: `api/market/zerodte/board`, warm cron: `zerodte-warm`.
+- UI: `src/features/nighthawk/components/`. **0DTE Command** (always-on scanner tab) shares the Night Hawk page — reader: `api/market/zerodte/board`, warm cron: `zerodte-warm`.
 
 ### Night's Watch
 - Logic: `src/lib/nights-watch/` (position-context, position-detail, valuation). Cron: `nights-watch-warm`.
@@ -211,6 +211,7 @@ scripts use stale paths; trust the directory tree.
 
 ### Largo (AI analyst)
 - Agent + tools: `src/lib/largo/`. Provider: `providers/polygon-largo.ts`, `anthropic.ts`.
+- UI shell: `src/features/largo/` (`/terminal`).
 - Spend guardrails: `ai-spend-ledger.ts`, `ai-spend.ts` (cross-replica ledger; kill-switch is opt-in
   via `DAILY_AI_SPEND_KILL_USD`).
 

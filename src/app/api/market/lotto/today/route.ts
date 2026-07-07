@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { fetchLottoPlaysForDate } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { readSpxLottoSnapshot } from "@/lib/spx-lotto-engine";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { readSpxLottoSnapshot } from "@/features/spx/lib/spx-lotto-engine";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { roundFloats } from "@/lib/round-floats";
 

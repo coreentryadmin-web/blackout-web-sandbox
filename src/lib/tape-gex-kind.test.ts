@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recalcGexWallDistances } from "./spx-desk-merge";
+import { recalcGexWallDistances } from "@/features/spx/lib/spx-desk-merge";
 
 // recalcGexWallDistances is pure; spx-desk-merge.ts is client-safe and its @/ imports
 // resolve under tsx --test (tsconfig paths).

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
-import type { SpxDeskPulse } from "@/lib/providers/spx-desk";
+import type { SpxDeskPulse } from "@/features/spx/lib/spx-desk";
 import { computeVixTermStructure } from "@/lib/vix-term-utils";
 
 function indexPrice(snap?: { price: number } | null): number | null {

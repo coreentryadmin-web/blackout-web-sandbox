@@ -130,7 +130,7 @@ mock.module("./error-sink", {
     fetchRecentErrorEvents: async (_limit?: number) => recentErrorsImpl(),
   },
 });
-mock.module("./nighthawk/session", {
+mock.module("../features/nighthawk/lib/session", {
   namedExports: {
     todayEt: () => todayImpl(),
     // Deterministic regardless of wall-clock time: operates only on the Date

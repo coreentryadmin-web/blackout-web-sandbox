@@ -15,7 +15,7 @@ import { dbConfigured, dbQuery } from "@/lib/db";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
 import { countRecentErrorEvents } from "@/lib/error-sink";
 import { listOpenAdminIncidents } from "@/lib/admin-incidents";
-import { todayEt } from "@/lib/nighthawk/session";
+import { todayEt } from "@/features/nighthawk/lib/session";
 import { detectMissedAlertWindows } from "./missed-alerts";
 import { storeKnowledge } from "./knowledge";
 

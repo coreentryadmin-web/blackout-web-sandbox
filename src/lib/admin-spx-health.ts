@@ -31,15 +31,15 @@
 // itself must never take down the rest of AdminBieDashboard on a partial
 // failure (see this file's `errors` field and the panel's own fail-open
 // rendering in AdminBieDashboard.tsx).
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { readSpxPlaySnapshot } from "@/lib/spx-evaluator";
-import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
-import type { PlayTechnicals } from "@/lib/spx-play-technicals";
-import { deskAgeSec, isDeskStale } from "@/lib/spx-desk-stale";
-import { playGexStaleMaxSec } from "@/lib/spx-play-config";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { readSpxPlaySnapshot } from "@/features/spx/lib/spx-evaluator";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { deskAgeSec, isDeskStale } from "@/features/spx/lib/spx-desk-stale";
+import { playGexStaleMaxSec } from "@/features/spx/lib/spx-play-config";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
-import { fetchRecentSpxSignals, type SpxSignalLogRow } from "@/lib/providers/spx-signal-log";
-import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import { fetchRecentSpxSignals, type SpxSignalLogRow } from "@/features/spx/lib/spx-signal-log";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 
 export type SpxHealthPlaySummary = {
   available: boolean;

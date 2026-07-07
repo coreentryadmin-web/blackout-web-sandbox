@@ -1,11 +1,11 @@
 import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay, type FlowRow } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
-import { getSpxPlayState } from "@/lib/platform/spx-service";
+import { getSpxPlayState } from "@/features/spx/lib/spx-service";
 import { getFlowTapeSummary } from "@/lib/platform/flow-service";
 import { enrichFlowsWithGex, type GexProximityLabel } from "@/lib/flow-gex-enrichment";
 import { getGexPositioning, type GexPositioning } from "@/lib/providers/gex-positioning";
-import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 
 // BIE ecosystem-context query layer, v1 — "what does the rest of BlackOut

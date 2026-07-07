@@ -1335,7 +1335,7 @@ async function crossToolChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResult[]>
   // SPX-only: confirm the SPX desk (SPX Slayer) reads the same spot / King / flip as the matrix.
   if (root === "SPX") {
     try {
-      const { loadMergedSpxDesk } = await import("@/lib/spx-desk-loader");
+      const { loadMergedSpxDesk } = await import("@/features/spx/lib/spx-desk-loader");
       const { merged } = await loadMergedSpxDesk();
       if (merged?.available && merged.price > 0 && hm.spot > 0) {
         const sd = fractionalDiff(merged.price, hm.spot);

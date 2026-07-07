@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { buildCronHealthSnapshot } from "@/lib/admin-cron-health";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import { logCronRun } from "@/lib/cron-run";
 import { dispatchCronWarm, isDispatchableCron } from "@/lib/cron-dispatch";
 import { countRecentErrorEvents, classifyErrorSpike } from "@/lib/error-sink";

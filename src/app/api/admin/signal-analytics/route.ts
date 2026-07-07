@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { dbQuery } from "@/lib/db";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
-import { initSpxSignalTables } from "@/lib/spx-signal-db";
+import { initSpxSignalTables } from "@/features/spx/lib/spx-signal-db";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

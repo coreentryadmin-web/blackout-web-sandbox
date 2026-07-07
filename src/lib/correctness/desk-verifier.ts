@@ -10,7 +10,7 @@ import {
   worstStatus,
 } from "@/lib/correctness/types";
 import { kingFromStrikeTotals, odteGexScopeFromHeatmap, grossAbsFromStrikeTotals, grossAbsFromUwGexRows, isHairlineNetGammaSign, isNearGammaFlip, recomputeScopedGexLevels } from "@/lib/correctness/gex-odte-scope";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 
 // ---------------------------------------------------------------------------
 // SPX DESK (SPX Slayer) data-correctness verifier — priority surface #1.

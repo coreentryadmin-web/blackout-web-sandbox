@@ -1,5 +1,5 @@
 import type { SpxAdminIssue } from "@/lib/admin-spx-issues";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import { dbConfigured, dbQuery } from "@/lib/db";
 
 // BUG-06 fix (a): Use an insertion-order Map capped at MAX_SEEN entries so the

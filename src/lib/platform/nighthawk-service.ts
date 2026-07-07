@@ -1,6 +1,6 @@
 import { fetchLatestNighthawkEdition, fetchNighthawkEditionByDate } from "@/lib/db";
-import { rowToNightHawkEdition } from "@/lib/nighthawk/edition-builder";
-import type { NightHawkEdition } from "@/lib/nighthawk/types";
+import { rowToNightHawkEdition } from "@/features/nighthawk/lib/edition-builder";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import type { NightHawkEditionSummary } from "./types";
 
 export function summarizeNightHawkEdition(edition: NightHawkEdition | null): NightHawkEditionSummary {

@@ -9,10 +9,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
 import { requireDatabaseInProduction } from "@/lib/db";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { dbQuery } from "@/lib/db";
 import { deriveComposite } from "./derive-composite";
 import {

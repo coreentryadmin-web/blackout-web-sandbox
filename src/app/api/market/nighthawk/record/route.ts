@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { getNighthawkMetrics } from "@/lib/nighthawk/analytics";
+import { getNighthawkMetrics } from "@/features/nighthawk/lib/analytics";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;

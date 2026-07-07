@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 // ACTUAL compile-time regression net: see spx-full-state-fixture.ts's module
 // doc for the full rationale.
 import { SPX_FULL_STATE_FIXTURE } from "./spx-full-state-fixture";
-import type { SpxPlayPayload } from "@/lib/spx-play-payload";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 import type { FlowRow } from "@/lib/db";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
@@ -57,7 +57,7 @@ mock.module("../db", {
   },
 });
 
-mock.module("../platform/spx-service", {
+mock.module("../../features/spx/lib/spx-service", {
   namedExports: {
     getSpxPlayState: async () => {
       fullStateCalls++;

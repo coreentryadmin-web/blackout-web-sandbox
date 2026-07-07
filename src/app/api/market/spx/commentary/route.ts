@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireTierApi } from "@/lib/market-api-auth";
 import { anthropicConfigured } from "@/lib/providers/anthropic";
-import { generateSpxCommentary, type SpxCommentaryResult } from "@/lib/providers/spx-commentary";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { generateSpxCommentary, type SpxCommentaryResult } from "@/features/spx/lib/spx-commentary";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { serverCache } from "@/lib/server-cache";
 import { sharedCacheGet } from "@/lib/shared-cache";
 
@@ -65,10 +65,10 @@ export async function POST(req: NextRequest) {
       // platform (never contradicts an open position) and can calibrate conviction. All
       // read-only, fetched only on a cache miss (once per window); each falls back to null.
       const [openPlay, lotto, powerHour, outcomes] = await Promise.all([
-        import("@/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
-        import("@/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
-        import("@/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
-        import("@/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
+        import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
+        import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
+        import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
+        import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
       ]);
       const commentary = await generateSpxCommentary(desk, prevDesk, { openPlay, lotto, powerHour, outcomes });
       // Throw (don't return null) on failure so serverCache's refreshCache skips its

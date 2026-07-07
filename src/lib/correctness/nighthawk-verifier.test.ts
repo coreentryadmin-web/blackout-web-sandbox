@@ -2,14 +2,14 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 // nighthawk-verifier.ts's own top-level imports pull in "server-only" directly, plus @/lib/db
-// (which pulls in "pg") and @/lib/nighthawk/option-chain-prompt (which pulls in the Polygon/UW
+// (which pulls in "pg") and @/features/nighthawk/lib/option-chain-prompt (which pulls in the Polygon/UW
 // chain providers) — mock.module() needs the RELATIVE path from THIS FILE's own location for
 // every one of them (Node 20's tsx alias resolver does not run inside mock.module()'s specifier
 // resolution; a "@/..." specifier there crashes with ERR_MODULE_NOT_FOUND even though it works
 // under Node 22 — see docs/audit/FINDINGS.md and every sibling mock.module()-based test in this
 // repo, e.g. flows-verifier.test.ts).
 //
-// Deliberately does NOT mock @/lib/nighthawk/play-constraints (validatePlayGeometry) or any of
+// Deliberately does NOT mock @/features/nighthawk/lib/play-constraints (validatePlayGeometry) or any of
 // its leaf deps (./constants, ./entry-range, ./play-levels, ./types) — task #146's whole point is
 // that the NEW geometry-invariant check calls the REAL publish-gate function, so these tests must
 // exercise the real implementation, not a stand-in for it.
@@ -36,7 +36,7 @@ mock.module("../db", {
 // invariant, not the chain cross-check already covered elsewhere) — stub parseOptionsContract to
 // report "no parseable strike" for every play so that layer cleanly no-ops via its own existing
 // "not applicable this run" path, with zero fetch/parse machinery needed.
-mock.module("../nighthawk/option-chain-prompt", {
+mock.module("../../features/nighthawk/lib/option-chain-prompt", {
   namedExports: {
     parseOptionsContract: () => null,
     evaluatePlayAgainstChain: () => ({ verified: false, contradicted: false }),

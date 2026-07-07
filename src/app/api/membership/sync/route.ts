@@ -2,7 +2,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { syncWhopMembershipForEmail } from "@/lib/membership";
 import { acquireMembershipSyncSlot } from "@/lib/membership-sync-limit";
-import { notifyOpsDiscord } from "@/lib/spx-play-notify";
+import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 
 export async function POST() {
   const { userId } = await auth();

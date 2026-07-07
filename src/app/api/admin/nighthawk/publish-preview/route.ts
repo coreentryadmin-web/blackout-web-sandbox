@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
-import { getNighthawkPublishPreview } from "@/lib/nighthawk/publish-preview";
+import { getNighthawkPublishPreview } from "@/features/nighthawk/lib/publish-preview";
 import { normalizeIsoDateInput } from "@/lib/db";
 
 export const dynamic = "force-dynamic";

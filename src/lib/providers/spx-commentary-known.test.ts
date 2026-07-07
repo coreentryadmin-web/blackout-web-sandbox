@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import type { SpxDeskPayload } from "./spx-desk";
-import { knownCommentaryNumbers } from "./spx-commentary";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import { knownCommentaryNumbers } from "@/features/spx/lib/spx-commentary";
 
 describe("knownCommentaryNumbers", () => {
   test("does not overflow when desk includes multi-million flow premiums", () => {

@@ -2,7 +2,7 @@
  * Polygon/Massive WebSocket client for real-time index aggregates.
  */
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
-import { etMinutes, etClock } from "@/lib/spx-play-session-time";
+import { etMinutes, etClock } from "@/features/spx/lib/spx-play-session-time";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import {
   alertWsLeaderFailClosedOnce,

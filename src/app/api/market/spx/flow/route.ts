@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { loadSpxDeskFlow } from "@/lib/spx-desk-loader";
+import { loadSpxDeskFlow } from "@/features/spx/lib/spx-desk-loader";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const dynamic = "force-dynamic";

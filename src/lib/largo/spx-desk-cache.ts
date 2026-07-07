@@ -1,5 +1,5 @@
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 /** ISSUE-23: Cache entry with timestamp for TTL enforcement. */
 type BundleEntry = {

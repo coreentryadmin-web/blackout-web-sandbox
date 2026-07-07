@@ -2,23 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import type { SpxPlayPayload, SpxPlayAction } from "@/lib/spx-play-engine";
-import { useSpxPlay } from "@/hooks/useSpxPlay";
-import { useSpxLotto } from "@/hooks/useSpxLotto";
-import { useSpxPowerHour } from "@/hooks/useSpxPowerHour";
-import { useStablePlayConfirmations } from "@/hooks/useStablePlayConfirmations";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import type { SpxPlayPayload, SpxPlayAction } from "@/features/spx/lib/spx-play-engine";
+import { useSpxPlay } from "@/features/spx/hooks/useSpxPlay";
+import { useSpxLotto } from "@/features/spx/hooks/useSpxLotto";
+import { useSpxPowerHour } from "@/features/spx/hooks/useSpxPowerHour";
+import { useStablePlayConfirmations } from "@/features/spx/hooks/useStablePlayConfirmations";
 import { SpxSniperBackdrop } from "./SpxSniperBackdrop";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
-import type { LottoPlayPayload } from "@/lib/spx-lotto-engine";
-import type { PowerHourPlayPayload } from "@/lib/spx-power-hour-engine";
-import { isLottoPollWindow, isPowerHourWindow } from "@/lib/spx-play-session-guards";
+import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
+import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
+import { isLottoPollWindow, isPowerHourWindow } from "@/features/spx/lib/spx-play-session-guards";
 import {
   lottoPanelEmptyCopy,
   lottoPanelLoadingCopy,
   lottoPanelOffHoursCopy,
-} from "@/lib/spx-lotto-copy";
+} from "@/features/spx/lib/spx-lotto-copy";
 
 type Props = {
   desk?: SpxDeskPayload;

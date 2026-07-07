@@ -1,6 +1,6 @@
 import { before, describe, test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { formatEtDate } from "../../../../lib/nighthawk/session";
+import { formatEtDate } from "@/features/nighthawk/lib/session";
 
 // Task #173: /api/market/regime's GET had two bugs, both fixed here.
 //
@@ -44,7 +44,7 @@ mock.module("../../../../lib/market-api-auth", {
     isCronAuthorized: () => false,
   },
 });
-mock.module("../../../../lib/nighthawk/session", {
+mock.module("../../../../features/nighthawk/lib/session", {
   namedExports: {
     formatEtDate,
     mostRecentTradingDayEt: () => mockMostRecentTradingDay,

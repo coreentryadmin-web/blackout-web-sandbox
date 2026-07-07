@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { readSpxPowerHourSnapshot } from "@/lib/spx-power-hour-engine";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { readSpxPowerHourSnapshot } from "@/features/spx/lib/spx-power-hour-engine";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

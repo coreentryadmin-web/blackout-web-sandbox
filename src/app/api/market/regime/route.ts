@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { formatEtDate, mostRecentTradingDayEt } from "@/lib/nighthawk/session";
+import { formatEtDate, mostRecentTradingDayEt } from "@/features/nighthawk/lib/session";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import { roundFloats } from "@/lib/round-floats";
 

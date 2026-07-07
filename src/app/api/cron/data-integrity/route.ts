@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
 import { runDataIntegrityChecks } from "@/lib/data-integrity-checks";
 import { syncAdminIncidents } from "@/lib/admin-incidents";

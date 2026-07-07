@@ -1,25 +1,25 @@
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { fetchSpxAdminAnalytics, type SpxAdminAnalytics } from "@/lib/admin-spx-analytics";
 import { buildSpxConfigSnapshot } from "@/lib/admin-spx-config-snapshot";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
-import { type SpxPlayPayload } from "@/lib/spx-play-engine";
-import { evaluateSpxLotto } from "@/lib/spx-lotto-engine";
-import { evaluateSpxPowerHour } from "@/lib/spx-power-hour-engine";
-import { runLottoPowerHourLocked } from "@/lib/spx-lotto-powerhour-runner";
-import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
-import { loadWatchRecord } from "@/lib/spx-play-watch";
-import { loadPlaySessionMeta } from "@/lib/spx-play-store";
-import { loadLottoRecord } from "@/lib/spx-lotto-store";
-import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/features/spx/lib/spx-evaluator";
+import { type SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
+import { evaluateSpxLotto } from "@/features/spx/lib/spx-lotto-engine";
+import { evaluateSpxPowerHour } from "@/features/spx/lib/spx-power-hour-engine";
+import { runLottoPowerHourLocked } from "@/features/spx/lib/spx-lotto-powerhour-runner";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { loadWatchRecord } from "@/features/spx/lib/spx-play-watch";
+import { loadPlaySessionMeta } from "@/features/spx/lib/spx-play-store";
+import { loadLottoRecord } from "@/features/spx/lib/spx-lotto-store";
+import { loadPowerHourRecord } from "@/features/spx/lib/spx-power-hour-store";
 import { fetchLottoPlaysForDate } from "@/lib/db";
 import { todayEt } from "@/lib/et-date";
-import { computeSpxConfluence } from "@/lib/spx-signals";
-import { fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { fetchRecentPlayOutcomes } from "@/features/spx/lib/spx-play-outcomes";
 import { buildSpxAdminIssues, type SpxAdminIssuesPayload } from "@/lib/admin-spx-issues";
 import { buildSpxTerminalFeed, type SpxTerminalPayload } from "@/lib/admin-spx-terminal";
 import { syncAdminIncidents, listOpenAdminIncidents, type AdminIncidentRow } from "@/lib/admin-incidents";
-import { SPX_ISSUES_RESOLVE_SCOPE } from "@/lib/spx-issues-sync";
+import { SPX_ISSUES_RESOLVE_SCOPE } from "@/features/spx/lib/spx-issues-sync";
 import { getAdminRouteErrors } from "@/lib/admin-route-errors";
 
 export type DeskIntelSection = {
@@ -191,9 +191,9 @@ export async function fetchSpxAdminDashboard(options?: {
       // power-hour now use their read-only projections too; previously they called the
       // MUTATING evaluate*, silently advancing state and firing live subscriber Discord
       // alerts from the default admin dashboard view (audit P1).
-      const { readSpxPlaySnapshot } = await import("@/lib/spx-evaluator");
-      const { readSpxLottoSnapshot } = await import("@/lib/spx-lotto-engine");
-      const { readSpxPowerHourSnapshot } = await import("@/lib/spx-power-hour-engine");
+      const { readSpxPlaySnapshot } = await import("@/features/spx/lib/spx-evaluator");
+      const { readSpxLottoSnapshot } = await import("@/features/spx/lib/spx-lotto-engine");
+      const { readSpxPowerHourSnapshot } = await import("@/features/spx/lib/spx-power-hour-engine");
       const [snapshot, lottoTodayResult, powerHourResult] = await Promise.all([
         readSpxPlaySnapshot(merged, technicals),
         readSpxLottoSnapshot(),

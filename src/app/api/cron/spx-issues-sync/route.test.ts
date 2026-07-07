@@ -33,7 +33,7 @@ mock.module("../../../../lib/db", {
     requireDatabaseInProduction: () => null,
   },
 });
-mock.module("../../../../lib/spx-play-session-guards", {
+mock.module("../../../../features/spx/lib/spx-play-session-guards", {
   namedExports: {
     isSpxEngineCronWindow: () => cronWindowOpen,
   },
@@ -46,19 +46,19 @@ mock.module("../../../../lib/cron-run", {
   },
 });
 // Deep dependencies of runSpxIssuesSync (src/lib/spx-issues-sync.ts):
-mock.module("../../../../lib/spx-desk-loader", {
+mock.module("../../../../features/spx/lib/spx-desk-loader", {
   namedExports: {
     loadMergedSpxDesk: async () => ({
       merged: { price: 6300, market_open: true, vwap: null, pdh: null, pdl: null, hod: null, lod: null },
     }),
   },
 });
-mock.module("../../../../lib/spx-play-technicals", {
+mock.module("../../../../features/spx/lib/spx-play-technicals", {
   namedExports: {
     buildPlayTechnicals: async () => ({}),
   },
 });
-mock.module("../../../../lib/spx-evaluator", {
+mock.module("../../../../features/spx/lib/spx-evaluator", {
   namedExports: {
     readSpxPlaySnapshot: async () => ({ claude: null, gates: { passed: true, blocks: [], warnings: [] } }),
   },

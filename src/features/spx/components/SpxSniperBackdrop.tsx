@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { clsx } from "clsx";
-import type { SpxPlayAction } from "@/lib/spx-play-engine";
-import { SPX_SNIPER_BACKDROP, sniperActionTint } from "@/lib/spx-sniper-backdrops";
+import type { SpxPlayAction } from "@/features/spx/lib/spx-play-engine";
+import { SPX_SNIPER_BACKDROP, sniperActionTint } from "@/features/spx/lib/spx-sniper-backdrops";
 
 type Props = {
   action?: SpxPlayAction;

@@ -1,5 +1,5 @@
 import { dbQuery, dbConfigured } from "@/lib/db";
-import { INDEX_SET, LEVERAGED_ETP_SET } from "@/lib/nighthawk/constants";
+import { INDEX_SET, LEVERAGED_ETP_SET } from "@/features/nighthawk/lib/constants";
 
 // BIE "what's hot right now" — the leaderboard complement to
 // ecosystem-context.ts's per-ticker recent_flow: that answers "how much flow

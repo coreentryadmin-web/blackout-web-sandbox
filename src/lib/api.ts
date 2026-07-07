@@ -31,10 +31,10 @@ async function intelFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ── SPX ───────────────────────────────────────────────────────────────────────
 
-export type { SpxState } from "@/lib/spx-desk-state";
-export { emptySpxState, deskPayloadToSpxState } from "@/lib/spx-desk-state";
-import type { SpxState } from "@/lib/spx-desk-state";
-import { deskPayloadToSpxState, emptySpxState } from "@/lib/spx-desk-state";
+export type { SpxState } from "@/features/spx/lib/spx-desk-state";
+export { emptySpxState, deskPayloadToSpxState } from "@/features/spx/lib/spx-desk-state";
+import type { SpxState } from "@/features/spx/lib/spx-desk-state";
+import { deskPayloadToSpxState, emptySpxState } from "@/features/spx/lib/spx-desk-state";
 
 /** Fast Polygon-only quote — polled every 5s on dashboard */
 export async function fetchSpxIndices() {
@@ -53,8 +53,8 @@ export type SpxDeskLevel = {
   distance_pct: number | null;
 };
 
-export type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
+export type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 export type SpxCommentaryResult = {
   headline: string;
@@ -96,8 +96,8 @@ export const fetchSpxDesk = () => marketFetch<SpxDeskPayload>("/spx/desk");
 /** One-shot dashboard bundle — desk + flow + pulse + merged (+ SPX matrix server-side). */
 export type SpxBootstrapPayload = {
   desk: SpxDeskPayload;
-  flow: import("@/lib/providers/spx-desk").SpxDeskFlow | null;
-  pulse: import("@/lib/providers/spx-desk").SpxDeskPulse | null;
+  flow: import("@/features/spx/lib/spx-desk").SpxDeskFlow | null;
+  pulse: import("@/features/spx/lib/spx-desk").SpxDeskPulse | null;
   merged: SpxDeskPayload;
   gexHeatmap: import("@/lib/providers/polygon-options-gex").GexHeatmap | null;
 };
@@ -105,20 +105,20 @@ export type SpxBootstrapPayload = {
 export const fetchSpxBootstrap = () => marketFetch<SpxBootstrapPayload>("/spx/bootstrap");
 
 /** Fast Polygon pulse — price, session, internals, mega-caps (~2s). */
-export const fetchSpxDeskPulse = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskPulse>("/spx/pulse");
+export const fetchSpxDeskPulse = () => marketFetch<import("@/features/spx/lib/spx-desk").SpxDeskPulse>("/spx/pulse");
 
 /** UW flow lane — live tape, GEX walls, dark pool (~4s). */
-export const fetchSpxDeskFlow = () => marketFetch<import("@/lib/providers/spx-desk").SpxDeskFlow>("/spx/flow");
+export const fetchSpxDeskFlow = () => marketFetch<import("@/features/spx/lib/spx-desk").SpxDeskFlow>("/spx/flow");
 
 /** Server play engine — BUY / HOLD / TRIM / SELL with gates + Claude arbiter. */
-export const fetchSpxPlay = () => marketFetch<import("@/lib/spx-play-engine").SpxPlayPayload>("/spx/play");
+export const fetchSpxPlay = () => marketFetch<import("@/features/spx/lib/spx-play-engine").SpxPlayPayload>("/spx/play");
 
 /** Parallel pre-market lotto track — catalyst thesis, independent from desk plays. */
 export const fetchSpxLottoToday = () =>
   marketFetch<{
     available: boolean;
     as_of: string;
-    lotto: import("@/lib/spx-lotto-engine").LottoPlayPayload;
+    lotto: import("@/features/spx/lib/spx-lotto-engine").LottoPlayPayload;
     history: Array<{
       id: number;
       phase: string;
@@ -136,7 +136,7 @@ export const fetchSpxPowerHour = () =>
   marketFetch<{
     available: boolean;
     as_of: string;
-    power_hour: import("@/lib/spx-power-hour-engine").PowerHourPlayPayload;
+    power_hour: import("@/features/spx/lib/spx-power-hour-engine").PowerHourPlayPayload;
   }>("/spx/power-hour");
 
 /** Merged SPX Sniper desk — pulse + flow + full desk (single server merge). */
@@ -295,13 +295,13 @@ export interface NightHawkPlay {
   summary: string;
 }
 
-export type { NightHawkEdition, HuntMode, HuntRequest, HuntResponse, PlayExplainRequest, PlayExplainResponse } from "@/lib/nighthawk/types";
+export type { NightHawkEdition, HuntMode, HuntRequest, HuntResponse, PlayExplainRequest, PlayExplainResponse } from "@/features/nighthawk/lib/types";
 
 export const fetchNightHawkPlays = () =>
   intelFetch<{ plays: NightHawkPlay[] }>("/nighthawk/plays");
 
 export const fetchNightHawkEdition = () =>
-  marketFetch<import("@/lib/nighthawk/types").NightHawkEdition>("/nighthawk/edition");
+  marketFetch<import("@/features/nighthawk/lib/types").NightHawkEdition>("/nighthawk/edition");
 
 export const fetchNightHawkPlayStatus = (date?: string) =>
   fetch(
@@ -310,11 +310,11 @@ export const fetchNightHawkPlayStatus = (date?: string) =>
   )
     .then((res) => (res.ok ? res.json() : { available: false }))
     .catch(() => ({ available: false })) as Promise<
-    import("@/lib/nighthawk/types").NightHawkPlayStatusResponse
+    import("@/features/nighthawk/lib/types").NightHawkPlayStatusResponse
   >;
 
 export const fetchNightHawkRecord = (days = 30) =>
-  marketFetch<import("@/lib/nighthawk/types").NightHawkRecordResponse>(
+  marketFetch<import("@/features/nighthawk/lib/types").NightHawkRecordResponse>(
     `/nighthawk/record?days=${days}`
   ).catch(() => ({
     available: false,
@@ -327,16 +327,16 @@ export const fetchNightHawkRecord = (days = 30) =>
     by_conviction: [],
   }));
 
-export const postNightHawkHunt = (body: import("@/lib/nighthawk/types").HuntRequest) =>
-  marketFetch<import("@/lib/nighthawk/types").HuntResponse>("/nighthawk/hunt", {
+export const postNightHawkHunt = (body: import("@/features/nighthawk/lib/types").HuntRequest) =>
+  marketFetch<import("@/features/nighthawk/lib/types").HuntResponse>("/nighthawk/hunt", {
     method: "POST",
     body: JSON.stringify(body),
   });
 
 export const postNightHawkPlayExplain = (
-  body: import("@/lib/nighthawk/types").PlayExplainRequest
+  body: import("@/features/nighthawk/lib/types").PlayExplainRequest
 ) =>
-  marketFetch<import("@/lib/nighthawk/types").PlayExplainResponse>("/nighthawk/play-explain", {
+  marketFetch<import("@/features/nighthawk/lib/types").PlayExplainResponse>("/nighthawk/play-explain", {
     method: "POST",
     body: JSON.stringify(body),
   });

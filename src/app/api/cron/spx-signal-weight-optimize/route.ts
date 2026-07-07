@@ -16,7 +16,7 @@ import {
   initSpxSignalTables,
   insertWeightReport,
   type SignalWeightReport,
-} from "@/lib/spx-signal-db";
+} from "@/features/spx/lib/spx-signal-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

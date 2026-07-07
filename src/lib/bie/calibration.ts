@@ -36,9 +36,9 @@ import {
   THERMAL_ENGINE_TOOL_NAMES,
   ZERODTE_ENGINE_TOOL_NAMES,
 } from "@/lib/largo/tool-defs";
-import { todayEt } from "@/lib/nighthawk/session";
-import { gradeRank } from "@/lib/spx-play-config";
-import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
+import { todayEt } from "@/features/nighthawk/lib/session";
+import { gradeRank } from "@/features/spx/lib/spx-play-config";
+import type { PlayOutcomeRow } from "@/features/spx/lib/spx-play-outcomes";
 import { etMinutesOf } from "@/lib/zerodte/plan";
 import { storeKnowledge } from "./knowledge";
 

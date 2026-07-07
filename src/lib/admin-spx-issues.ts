@@ -1,5 +1,5 @@
-import type { SpxDeskPayload } from "@/lib/providers/spx-desk";
-import type { SpxPlayPayload } from "@/lib/spx-play-engine";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import { buildMarketHealthSnapshot } from "@/lib/market-health";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { isProductionRuntime, dbConfigured } from "@/lib/db";

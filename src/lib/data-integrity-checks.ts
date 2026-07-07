@@ -1,6 +1,6 @@
 import "server-only";
 
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import type { SpxAdminIssue } from "@/lib/admin-spx-issues";

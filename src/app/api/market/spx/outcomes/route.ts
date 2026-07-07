@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
-import { computeAdaptiveGates } from "@/lib/spx-play-telemetry";
+import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/features/spx/lib/spx-play-outcomes";
+import { computeAdaptiveGates } from "@/features/spx/lib/spx-play-telemetry";
 import { roundFloats } from "@/lib/round-floats";
 
 export const dynamic = "force-dynamic";

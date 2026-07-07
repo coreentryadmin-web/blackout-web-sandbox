@@ -9,6 +9,14 @@ import { serverCache, TTL } from "@/lib/server-cache";
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
 
+/** Shared REST base/key for option-chain helpers outside this module (SPX play/lotto tickets). */
+export function polygonRestBase(): string {
+  return BASE;
+}
+export function polygonRestApiKey(): string {
+  return KEY;
+}
+
 // The reactive circuit breaker (5 consecutive 429s → 60s pause, cluster pub/sub) now lives
 // in polygon-rate-limiter.ts and is applied inside polygonTrackedFetch, which ALSO smooths
 // every Polygon REST call through the permissive token bucket. polygonTrackedFetch throws

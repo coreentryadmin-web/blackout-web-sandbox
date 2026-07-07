@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePulse } from "@/lib/usePulse";
 import { clsx } from "clsx";
 import { fmtPremium } from "@/lib/api";
-import type { PlaybookPlay } from "@/lib/nighthawk/types";
+import type { PlaybookPlay } from "@/features/nighthawk/lib/types";
 
 export type FlowConviction = "strong" | "moderate" | "weak" | "none";
 

@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
 import type { SpxAdminDashboardPayload } from "@/lib/admin-spx-dashboard";
-import type { PlayOutcomeRow } from "@/lib/spx-play-outcomes";
+import type { PlayOutcomeRow } from "@/features/spx/lib/spx-play-outcomes";
 import type { JournalEntry } from "@/lib/journal/journal-core";
 import { JournalEditor } from "@/components/admin/JournalEditor";
 import { AdminSpxTerminal } from "@/components/admin/AdminSpxTerminal";

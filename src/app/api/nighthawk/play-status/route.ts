@@ -17,7 +17,7 @@ import { NextResponse } from "next/server";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { makeRedis } from "@/lib/make-redis";
-import { todayEt } from "@/lib/nighthawk/session";
+import { todayEt } from "@/features/nighthawk/lib/session";
 import type { MorningConfirmResult } from "@/app/api/cron/nighthawk-morning-confirm/route";
 
 export const runtime = "nodejs";

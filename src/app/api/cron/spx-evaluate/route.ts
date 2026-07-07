@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
-import { loadMergedSpxDesk } from "@/lib/spx-desk-loader";
-import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/lib/spx-evaluator";
-import { runLottoPowerHourLocked } from "@/lib/spx-lotto-powerhour-runner";
-import { buildPlayTechnicals } from "@/lib/spx-play-technicals";
-import { isSpxEngineCronWindow } from "@/lib/spx-play-session-guards";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { runSpxEvaluator, isSpxEvaluatorPlayResult } from "@/features/spx/lib/spx-evaluator";
+import { runLottoPowerHourLocked } from "@/features/spx/lib/spx-lotto-powerhour-runner";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { isSpxEngineCronWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
-import { warnIfPlayTimingMisconfigured } from "@/lib/spx-play-config";
+import { warnIfPlayTimingMisconfigured } from "@/features/spx/lib/spx-play-config";
 
 // Validate timing config on every cold start so Railway logs surface misconfiguration.
 warnIfPlayTimingMisconfigured();

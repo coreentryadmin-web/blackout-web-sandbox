@@ -1,8 +1,8 @@
 import { dbConfigured } from "@/lib/db";
-import { outcomeAdaptiveMinDays, outcomeAdaptiveMinTrades } from "@/lib/spx-play-config";
-import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/lib/spx-play-outcomes";
-import { computeAdaptiveGates } from "@/lib/spx-play-telemetry";
-import type { PlayOutcomeStats } from "@/lib/spx-play-outcomes";
+import { outcomeAdaptiveMinDays, outcomeAdaptiveMinTrades } from "@/features/spx/lib/spx-play-config";
+import { fetchPlayOutcomeStats, fetchRecentPlayOutcomes } from "@/features/spx/lib/spx-play-outcomes";
+import { computeAdaptiveGates } from "@/features/spx/lib/spx-play-telemetry";
+import type { PlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
 
 export type GradeBreakdown = {
   grade: string;
