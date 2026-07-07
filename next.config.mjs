@@ -76,6 +76,8 @@ const cpuCount = os.cpus()?.length || 1;
 
 const nextConfig = {
   poweredByHeader: false,
+  // ECS/Fargate Docker image — emits .next/standalone for multi-stage Dockerfile.
+  output: "standalone",
   experimental: {
     cpus: Math.max(1, cpuCount - 1),
   },

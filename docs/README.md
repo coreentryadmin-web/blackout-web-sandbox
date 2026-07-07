@@ -41,7 +41,7 @@ History: consolidated 2026-06-24. Older scattered audit piles were removed or mo
 | File | What it is |
 |---|---|
 | [`PGBOUNCER-SETUP.md`](PGBOUNCER-SETUP.md) | Postgres connection-pooling (PgBouncer) setup. |
-| [`ops/`](ops/) | Runbooks — RTH open, deploy validation, ops auto-fix, AWS prep. |
+| [`ops/`](ops/) | Runbooks — RTH open, deploy validation, ops auto-fix, [AWS migration](ops/AWS-MIGRATION-PLAN.md). |
 
 ### Archive (historical only)
 | File | What it is |

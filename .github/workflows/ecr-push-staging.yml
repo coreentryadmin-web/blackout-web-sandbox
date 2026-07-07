@@ -1,0 +1,60 @@
+# Build the standalone Docker image and push to ECR (staging).
+# Requires repo secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION.
+# Optional: ECR_REPOSITORY (default blackout-web), AWS_ACCOUNT_ID (inferred via STS).
+name: ECR push (staging)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "next.config.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "public/**"
+      - ".github/workflows/ecr-push-staging.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coreentryadmin-web/blackout-web'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${ECR_REPOSITORY:-blackout-web}"
+          if [ -z "${REGISTRY:-}" ]; then
+            echo "ECR login failed — set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION"
+            exit 1
+          fi
+          IMAGE="${REGISTRY}/${REPO}"
+          docker build -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
+          docker push "${IMAGE}:${IMAGE_TAG}"
+          docker push "${IMAGE}:staging"
+          echo "Pushed ${IMAGE}:${IMAGE_TAG} and :staging"

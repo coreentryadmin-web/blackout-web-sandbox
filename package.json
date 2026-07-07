@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "docker:build": "docker build -t blackout-web:local .",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "next lint",
     "lint:brand": "node scripts/check-brand.mjs",

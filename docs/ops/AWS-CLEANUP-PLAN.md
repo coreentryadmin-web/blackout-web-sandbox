@@ -43,10 +43,10 @@ For AWS: add `output: "standalone"` + `Dockerfile` (same Next app, containerized
 - [ ] Document env manifest for AWS Secrets Manager
 
 ### Phase 1 — AWS blockers (merge first)
-- [ ] `next.config.mjs`: `output: "standalone"`
-- [ ] `Dockerfile` + `.dockerignore`
-- [ ] GitHub Action: build image → push ECR (staging)
-- [ ] `docs/ops/AWS-MIGRATION-PLAN.md` cutover checklist
+- [x] `next.config.mjs`: `output: "standalone"`
+- [x] `Dockerfile` + `.dockerignore`
+- [x] GitHub Action: build image → push ECR (staging) — `ecr-push-staging.yml`
+- [x] `docs/ops/AWS-MIGRATION-PLAN.md` cutover checklist
 
 ### Phase 2 — Safe dead code (one PR per area) — **PR #1 in progress**
 - [x] Stale **grid** references (`ONBOARDING.md`, ios CSS `[data-ios-route="grid"]`, audit scripts)

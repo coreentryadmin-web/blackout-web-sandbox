@@ -1,0 +1,37 @@
+# Dependencies and build output
+node_modules
+.next
+out
+build
+
+# Local env and secrets — injected at runtime via ECS/Railway, never baked in
+.env
+.env.*
+!.env.example
+
+# Git / IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# CI / ops artifacts
+audit-output
+_logs_*.txt
+*.log
+
+# iOS shell (separate Codemagic build)
+apps/blackout-ios/node_modules
+apps/blackout-ios/ios
+
+# Infra clone (separate repo)
+blackout-infra
+blackout-ios
+
+# Railway cron TOMLs — not needed in the web image
+railway.*.toml
+
+# Docs archive (not runtime)
+docs/archive
