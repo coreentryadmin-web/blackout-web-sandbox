@@ -8,7 +8,6 @@ const isProtectedRoute = createRouteMatcher([
   "/heatmap(.*)",
   "/nighthawk(.*)",
   "/admin(.*)",
-  "/grid(.*)",
   "/account(.*)",
 ]);
 
@@ -97,7 +96,7 @@ export default clerkMiddleware(
 //
 //   PROTECTED by this middleware (Clerk redirect/401):
 //     • only the page routes in `isProtectedRoute` above
-//       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /grid, /admin)
+//       (/dashboard, /flows, /terminal, /heatmap, /nighthawk, /admin, /account)
 //
 //   BACKSTOP (mutation 401 if no auth signal):
 //     • POST/PUT/PATCH/DELETE on /api/* without a Clerk cookie or Bearer header

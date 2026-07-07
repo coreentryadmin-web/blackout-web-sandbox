@@ -14,7 +14,6 @@ const INSTRUMENTS = [
   { label: "BlackOut Thermal", href: "/heatmap" },
   { label: "Largo", href: "/terminal" },
   { label: "Night Hawk", href: "/nighthawk" },
-  { label: "BlackOut Grid", href: "/grid" },
 ];
 
 const PLATFORM = [

@@ -17,7 +17,6 @@ export type IosRouteKey =
   | "heatmap"
   | "largo"
   | "nighthawk"
-  | "grid"
   | "vector"
   | "account"
   | "faq"
@@ -109,7 +108,6 @@ export function getIosRouteKey(path: string): IosRouteKey {
   if (path.startsWith("/heatmap")) return "heatmap";
   if (path.startsWith("/terminal")) return "largo";
   if (path.startsWith("/nighthawk")) return "nighthawk";
-  if (path.startsWith("/grid")) return "grid";
   if (path.startsWith("/vector")) return "vector";
   if (path.startsWith("/account")) return "account";
   if (path.startsWith("/faq")) return "faq";

@@ -8,6 +8,22 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P2 FOUND+FIXED 2026-07-07 — Dead `/grid` link in the public marketing footer + incomplete Grid-removal cleanup (branch `fix/landing-footer-dead-grid-link`)
+
+**Surface:** `src/components/landing/LandingFooter.tsx` — mounted on the homepage, `/pricing`, and `/faq` (via `FaqPageShell`), i.e. every marketing page a logged-out visitor or prospect sees.
+
+**How it was found:** parallel background audit sweep of frontend routes/wiring (continuing task "frontend pages/subpages/buttons sweep").
+
+**Root cause:** the classic Grid page was fully removed in PR #648 (`40099f0`, "feat: remove classic Grid page and infrastructure"). `Nav.tsx`'s `FEATURE_LINKS` (main site nav) was updated correctly at the time, but `LandingFooter.tsx`'s separate, duplicate `INSTRUMENTS` link list still had `{ label: "BlackOut Grid", href: "/grid" }` — clicking it rendered Next's generic not-found page.
+
+**Blast radius (same root cause, two more inert stragglers found and fixed in the same PR):** `src/middleware.ts`'s `isProtectedRoute` matcher still listed `/grid(.*)`, forcing an auth redirect before a 404 that no longer needs protecting; `src/lib/ios-tool-routes.ts`'s `IosRouteKey` union still carried a `"grid"` member with a branch in `getIosRouteKey()` — confirmed dead even before this fix, since `"grid"` was never a key in `IOS_UTILITY_META` and so already silently fell through to `"other"` (no behavior change from removing it, just removing dead surface).
+
+**Fix:** removed the dead `INSTRUMENTS` entry; removed `/grid(.*)` from the middleware matcher (+ fixed its stale doc comment); removed the dead `"grid"` union member and its branch from `ios-tool-routes.ts`. Deliberately left alone: ~15 `[data-ios-route="grid"]` CSS rules across `ios-native-*.css` files — already-dead CSS from before this fix (nothing could ever set that attribute value once the `/grid` page was deleted), and cleaning it up belongs with the already-tracked iOS Phase 0e CSS-consolidation work, not bundled into an unrelated link fix.
+
+**Tests added:** `LandingFooter.test.ts` — statically validates every footer link resolves to a real route on disk (including Clerk's top-level catch-all `sign-in`/`sign-up`), plus an explicit regression assertion that `/grid` is never linked again. Verified the test fails when the dead entry is reintroduced.
+
+**Verification:** `npx tsc --noEmit` clean. Full suite 1787/1787 passing (4 new). `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
+
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — 0DTE Command's TRIM narrative tells a member to "bank it" on a play that already gave the double back and is deeply negative (branch `fix/zerodte-trim-narrative-negative-pnl`)
 
 **Surface:** `src/lib/zerodte/intel.ts`'s `buildIntelNote()` — the `TRIM` branch, consumed by `ZeroDteBoard.tsx`'s member-facing "BlackOut Intel" column and verbatim by Largo (`zeroDtePlaysForLargo()`, `src/lib/platform/zerodte-service.ts:161-171`).
