@@ -33,7 +33,6 @@ const API_PATHS = [
   "/api/market/flows?limit=30",
   "/api/market/nighthawk/edition",
   "/api/market/zerodte/board",
-  "/api/grid/bootstrap",
   "/api/public/track-record",
 ];
 
@@ -41,16 +40,13 @@ const PAGES = [
   { path: "/dashboard", label: "dashboard", ready: () => document.querySelectorAll(".spx-gex-matrix-table tbody tr").length >= 20 },
   { path: "/flows", label: "flows", ready: () => document.body.innerText.length > 500 },
   { path: "/heatmap", label: "heatmap", ready: () => document.querySelector(".gex-heatmap-panel") != null },
-  // /grid defaults to 0DTE Command; Market Grid (.grid-board) is lazy-mounted on tab switch.
   {
-    path: "/grid",
-    label: "grid",
+    path: "/nighthawk",
+    label: "nighthawk",
     ready: () =>
-      document.querySelector(".grid-board") != null ||
       /today'?s 0dte plays/i.test(document.body.innerText) ||
-      document.body.innerText.includes("Board temporarily degraded"),
+      document.body.innerText.length > 400,
   },
-  { path: "/nighthawk", label: "nighthawk", ready: () => document.body.innerText.length > 400 },
 ];
 
 const checks = [];

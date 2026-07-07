@@ -854,67 +854,6 @@ html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-market-cont
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   0DTE COMMAND — grid (native shell)
-   ═══════════════════════════════════════════════════════════════════════════ */
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-shell-native.page-shell {
-  padding-top: 0 !important;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-content-native {
-  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.35rem) !important;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-inner-native {
-  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem 0;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .page-shell > .px-2 {
-  padding-left: 0;
-  padding-right: 0;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .page-tool-header {
-  display: none;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs [role="tablist"] {
-  position: static;
-  top: auto;
-  z-index: auto;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  margin-bottom: 0.5rem;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board {
-  grid-template-columns: 1fr;
-  gap: 0.65rem;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board > .grid-card {
-  min-height: 200px;
-  animation: none;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .min-w-\[680px\] {
-  min-width: 36rem;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .overflow-x-auto {
-  -webkit-overflow-scrolling: touch;
-  border-radius: 12px;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs .mb-4.flex {
-  justify-content: stretch;
-  margin-bottom: 0.65rem;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs .mb-4.flex > * {
-  width: 100%;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    ACCOUNT
    ═══════════════════════════════════════════════════════════════════════════ */
 html.ios-app.ios-native-shell[data-ios-route="account"] .account-page-title-block {

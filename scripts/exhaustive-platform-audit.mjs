@@ -94,7 +94,6 @@ const PREMIUM_PAGES = [
   "/dashboard",
   "/flows",
   "/heatmap",
-  "/grid",
   "/nighthawk",
   "/terminal",
   "/account",
@@ -311,7 +310,6 @@ function classifyRoute(path) {
   if (path.startsWith("/api/webhook") || path.startsWith("/api/webhooks/")) return "webhook";
   if (
     path.startsWith("/api/market/") ||
-    path.startsWith("/api/grid/") ||
     path.startsWith("/api/account/") ||
     path.startsWith("/api/coaching/") ||
     path.startsWith("/api/signals/") ||

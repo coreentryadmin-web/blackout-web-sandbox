@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * 0DTE Command + Market Grid — all-day RTH audit orchestrator.
+ * 0DTE Command — all-day RTH audit orchestrator (classic Grid removed 2026-07-07).
  *
  * Usage:
  *   npm run validate:grid-rth
  *   node scripts/grid-rth-all-day-audit.mjs [--force] [--phase=verify|post-close]
  *
- * Requires: CRON_SECRET (grid panel probes + zerodte board + crons)
+ * Requires: CRON_SECRET (zerodte board + crons)
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -26,18 +26,6 @@ const BASE = (
 const CRON = process.env.CRON_SECRET || "";
 const OUT = join(process.cwd(), "audit-output");
 mkdirSync(OUT, { recursive: true });
-
-const GRID_PANELS = [
-  "bootstrap",
-  "analysts",
-  "catalysts",
-  "congress",
-  "dark-pool",
-  "earnings",
-  "economy",
-  "movers",
-  "sectors",
-];
 
 const checks = [];
 const rec = (name, status, detail) => {
@@ -89,36 +77,6 @@ function ageSec(asOf) {
   return Math.round((Date.now() - new Date(asOf).getTime()) / 1000);
 }
 
-async function auditGridPanels() {
-  if (!CRON) {
-    rec("grid:panels", "SKIP", "CRON_SECRET not set");
-    return;
-  }
-  let fails = 0;
-  for (const panel of GRID_PANELS) {
-    try {
-      const json = await fetchJson(`/api/grid/${panel}`);
-      if (json.error === "coming_soon") {
-        rec(`grid:${panel}`, "WARN", "launch gate locked for member path — cron should bypass after fix");
-        continue;
-      }
-      const bad = scanFinite(json).slice(0, 3);
-      if (bad.length) {
-        rec(`grid:${panel}`, "FAIL", bad.join("; "));
-        fails++;
-        continue;
-      }
-      const asOf = json.as_of ?? json.panels?.analysts?.as_of;
-      const age = ageSec(asOf);
-      rec(`grid:${panel}`, "PASS", age != null ? `as_of ${age}s` : "finite");
-    } catch (e) {
-      rec(`grid:${panel}`, "FAIL", e.message);
-      fails++;
-    }
-  }
-  if (fails === 0 && GRID_PANELS.length) rec("grid:all-panels", "PASS");
-}
-
 async function auditZeroDteBoard() {
   if (!CRON) return;
   try {
@@ -154,17 +112,17 @@ async function auditZeroDteBoard() {
 async function auditCrossTool() {
   if (!CRON) return;
   try {
-    const [bootstrap, gex, zb] = await Promise.all([
-      fetchJson("/api/grid/bootstrap"),
+    const [spxBoot, gex, zb] = await Promise.all([
+      fetchJson("/api/market/spx/bootstrap"),
       fetchJson("/api/market/gex-positioning?ticker=SPX"),
       fetchJson("/api/market/zerodte/board"),
     ]);
-    const bootSpot = bootstrap?.market?.pulse?.spx?.price ?? bootstrap?.market?.gexSpx?.spot;
+    const bootSpot = spxBoot?.market?.pulse?.spx?.price ?? spxBoot?.market?.gexSpx?.spot;
     const gexSpot = gex?.spot;
     if (Number.isFinite(bootSpot) && Number.isFinite(gexSpot) && !spotsAgree(bootSpot, gexSpot, gexSpot)) {
-      rec("integration:grid-gex-spot", "FAIL", `bootstrap ${bootSpot} vs gex ${gexSpot}`);
+      rec("integration:spx-gex-spot", "FAIL", `bootstrap ${bootSpot} vs gex ${gexSpot}`);
     } else if (Number.isFinite(gexSpot)) {
-      rec("integration:grid-gex-spot", "PASS", `spot ${gexSpot}`);
+      rec("integration:spx-gex-spot", "PASS", `spot ${gexSpot}`);
     }
     const flows = await fetchJson("/api/market/flows?limit=20");
     const count = flows?.flows?.length ?? flows?.alerts?.length ?? 0;
@@ -177,17 +135,17 @@ async function auditCrossTool() {
   }
 }
 
-async function auditGridWarmCron() {
+async function auditZerodteWarmCron() {
   if (!CRON) return;
   try {
-    const r = await fetch(`${BASE}/api/cron/grid-warm`, {
+    const r = await fetch(`${BASE}/api/cron/zerodte-warm`, {
       headers: { Authorization: `Bearer ${CRON}` },
     });
     const json = await r.json().catch(() => ({}));
-    if (r.ok || json.skipped) rec("cron:grid-warm", "PASS", json.skipped ? "skipped off-hours" : "ok");
-    else rec("cron:grid-warm", "WARN", `HTTP ${r.status}`);
+    if (r.ok || json.skipped) rec("cron:zerodte-warm", "PASS", json.skipped ? "skipped off-hours" : "ok");
+    else rec("cron:zerodte-warm", "WARN", `HTTP ${r.status}`);
   } catch (e) {
-    rec("cron:grid-warm", "FAIL", e.message);
+    rec("cron:zerodte-warm", "FAIL", e.message);
   }
 }
 
@@ -196,7 +154,7 @@ async function main() {
   const et = etParts(now);
   const ymd = todayEtYmd(now);
 
-  console.log(`\n=== 0DTE Grid all-day RTH audit ===`);
+  console.log(`\n=== 0DTE Command all-day RTH audit ===`);
   console.log(`Time: ${now.toISOString()} (${et.label})`);
   console.log(`Phase: ${PHASE}\n`);
 
@@ -214,10 +172,9 @@ async function main() {
 
   if (force || inRthOpenWindow(now)) run("npm run validate:rth-open", "infra:validate:rth-open");
 
-  await auditGridPanels();
   await auditZeroDteBoard();
   await auditCrossTool();
-  await auditGridWarmCron();
+  await auditZerodteWarmCron();
 
   run("npm run validate:zerodte-logic", "zerodte:logic-audit");
   run("npm run validate:zerodte-integration", "zerodte:cross-tool-integration");
@@ -267,7 +224,7 @@ async function main() {
     fails.forEach((f) => console.log(`  · ${f.name}: ${f.detail ?? ""}`));
     process.exit(1);
   }
-  console.log("GREEN — Grid/0DTE audit passed.\n");
+  console.log("GREEN — 0DTE Command audit passed.\n");
 }
 
 main().catch((e) => {

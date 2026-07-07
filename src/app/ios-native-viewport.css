@@ -136,8 +136,7 @@ html.ios-app.ios-native-shell[data-ios-route="dashboard"] .spx-commentary-viewpo
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-inner-native,
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .thermal-page-inner-native,
 html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main-native,
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-inner-native,
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-inner-native {
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-page-inner-native {
   flex: 1;
   min-height: var(--ios-viewport-h);
   display: flex;

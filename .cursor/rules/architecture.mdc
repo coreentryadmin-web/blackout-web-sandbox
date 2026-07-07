@@ -1,18 +1,18 @@
 ---
 description: BlackOut platform architecture, data flow, and hard guardrails — read before any change
-globs: blackout-web/src/**/*.{ts,tsx}
+globs: src/**/*.{ts,tsx}
 alwaysApply: true
 ---
 
 # BlackOut — orient before you change anything
 
-**Why we build (the goals every change serves):** `blackout-web/docs/NORTH_STAR.md` — prime
+**Why we build (the goals every change serves):** `docs/NORTH_STAR.md` — prime
 directive is *every number a user sees is real, live, and correct, or it isn't shown*; priority when
 goals conflict is **Truth > Reliability > Security > Correct-logic > everything else**.
-**Full map:** read `blackout-web/docs/ONBOARDING.md` (product, code geography, data pipeline, APIs,
-infra, "where to look"). **Current known bugs:** `blackout-web/docs/api-audit/OPEN-ISSUES.md`.
-Canonical repo is `blackout-platform/blackout-web` — `BO-AAI/` and any root `blackout-web/` are
-**stale, never edit them**.
+**Full map:** read `docs/ONBOARDING.md` (product, code geography, data pipeline, APIs,
+infra, "where to look"). **Current known bugs:** `docs/api-audit/OPEN-ISSUES.md`.
+Canonical repo is `coreentryadmin-web/blackout-web` — `BO-AAI/` and any root
+`blackout-web/` nested clone are **stale, never edit them**.
 
 ## Five hard rules (override everything)
 1. **No tech-stack disclosure on public surfaces** — marketing, in-app copy, API responses, metadata,
@@ -29,7 +29,7 @@ Canonical repo is `blackout-platform/blackout-web` — `BO-AAI/` and any root `b
 ## The data pipeline (internalize this)
 Providers (rate-limited; ONE WebSocket per key via Redis leader election) → **writers**
 (`ws/*-socket.ts` + `api/cron/*`) → **store** (Redis hot snapshots + Postgres durable rows) →
-**cache-reader APIs** (`api/market/*`, `api/grid/*`) → **UI** (`components/*`).
+**cache-reader APIs** (`api/market/*`) → **UI** (`components/*`).
 
 - **Cache-reader rule:** per-user/per-request endpoints MUST read the shared Redis/cron cache, never
   call the upstream provider per request (the flow provider is ~2 req/s cluster-wide). Wire new

@@ -66,10 +66,6 @@ html.ios-app.ios-native-shell[data-ios-route="nighthawk"] {
   --ios-accent: #ff2d55;
   --ios-accent-rgb: 255, 45, 85;
 }
-html.ios-app.ios-native-shell[data-ios-route="grid"] {
-  --ios-accent: #ffcc4d;
-  --ios-accent-rgb: 255, 204, 77;
-}
 html.ios-app.ios-native-shell[data-ios-route="account"],
 html.ios-app.ios-native-shell[data-ios-route="upgrade"],
 html.ios-app.ios-native-shell[data-ios-route="faq"],

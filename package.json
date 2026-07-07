@@ -55,8 +55,7 @@
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
     "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
     "probe:docs:uw": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs --uw-only",
-    "analyze:api": "node scripts/analyze-api-usage.mjs",
-    "nighthawk:run": "npx tsx scripts/nighthawk-worker.ts"
+    "analyze:api": "node scripts/analyze-api-usage.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

@@ -47,7 +47,6 @@ const TABS = [
   { href: "/heatmap", label: "BlackOut Thermal", code: "THM", route: "heatmap" },
   { href: "/terminal", label: "Largo", code: "LRG", route: "largo" },
   { href: "/nighthawk", label: "Night Hawk", code: "HWK", route: "nighthawk" },
-  { href: "/grid", label: "0DTE Command", code: "0DT", route: "grid" },
 ];
 
 async function shot(page, name) {

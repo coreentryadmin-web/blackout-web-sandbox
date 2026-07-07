@@ -8,7 +8,7 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟠 P1 FOUND+FIXING 2026-07-07 — Vector visible to all premium users (launch gate `defaultLaunched: true`) (branch `fix/vector-launch-gate-lock`)
+## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector visible to all premium users (launch gate `defaultLaunched: true`) (#678)
 
 **Surface:** `/vector`, `/api/market/vector/stream`, `/api/market/vector/spy-volume`.
 

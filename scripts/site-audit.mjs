@@ -60,14 +60,6 @@ const PUBLIC_APIS = [
   "/api/market/spx/commentary",
   "/api/market/spx/journal",
   "/api/market/gex-heatmap?ticker=SPY",
-  "/api/grid/sectors",
-  "/api/grid/movers",
-  "/api/grid/economy",
-  "/api/grid/earnings",
-  "/api/grid/catalysts",
-  "/api/grid/analysts",
-  "/api/grid/congress",
-  "/api/grid/dark-pool",
 ];
 
 const MALFORMED_PATTERNS = [

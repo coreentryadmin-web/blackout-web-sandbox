@@ -9,36 +9,44 @@ goes here — not scattered `.md` files at the repo root, not a second `audits/`
 > back app routes (e.g. `src/lib/api-provider-catalog.ts`) are **code**, not docs — they should be
 > regenerated from `BLACKOUT_API_REFERENCE.md`, not hand-edited.
 
-History: consolidated 2026-06-24. The earlier scattered audit piles (`AUDIT.md`, `audits/`,
-`complete-repo-bugs/`, `CURSOR_IMPL.md`) were stale/superseded by the audit below and were removed
-(recoverable from git history if ever needed).
+History: consolidated 2026-06-24. Older scattered audit piles were removed or moved to
+[`archive/2026-06/`](archive/2026-06/) (recoverable from git history if ever needed).
 
 ---
 
 ## Index
 
-### Audit (pre-launch, ~500→5,000 users)
+### Start here
 | File | What it is |
 |---|---|
-| [`BLACKOUT_FULL_AUDIT.md`](BLACKOUT_FULL_AUDIT.md) | **Master audit** (A–T): exec summary, architecture, inventories, consolidated security/scalability/bugs/UX, 50-item priority list, launch-readiness scorecard (68/100, GO-WITH-FIXES), 30/60/90 roadmap. |
-| [`BLACKOUT_AUDIT_EXTENSION.md`](BLACKOUT_AUDIT_EXTENSION.md) | Extension: UW/Polygon/Claude deep-dives, cost model @500/1k/5k, Railway/infra, feature→data-source matrix, Technology Utilization Score, multi-tier scalability, full named scorecard (overall 67/100, D+). |
-| [`audit/`](audit/) | **Full per-issue detail** per area (file path · code ref · why · severity · impact · fix · example): `00-RUNTIME-FINDINGS` (live-log evidence) + `01`–`17` (API, Frontend, Backend, DB/Redis, Cron, Auth, Tools, Security, Scalability, Product, UW, Polygon, Claude/cost, Infra, Features, Cost, Scale-tiers). |
+| [`ONBOARDING.md`](ONBOARDING.md) | **Engineering map** — product, code geography, data pipeline, APIs, crons, where to look. |
+| [`NORTH_STAR.md`](NORTH_STAR.md) | Product goals and priority order (Truth > Reliability > Security > …). |
+| [`audit/FINDINGS.md`](audit/FINDINGS.md) | Living issue log — severity, root cause, fix status. |
+| [`api-audit/OPEN-ISSUES.md`](api-audit/OPEN-ISSUES.md) | Current known open bugs from autonomous audits. |
 
 ### API (canonical, docs-grounded)
 | File | What it is |
 |---|---|
-| [`BLACKOUT_API_REFERENCE.md`](BLACKOUT_API_REFERENCE.md) | **Canonical API reference + rate-limit master plan.** Massive (Stocks/Options/Indices Advanced) + Unusual Whales, read line-by-line from the official docs: used/unused tables, utilization %, top missed-data opportunities, and the 8-rule rate-limit plan mapped to incidents RT-1/2/5. Supersedes `api-provider-catalog.ts` + the `/docs/*` pages (regenerate those from here). |
-| [`audit/API-DOCS/`](audit/API-DOCS/) | Per-surface doc-grounded detail: `massive-stocks`, `massive-options`, `massive-indices`, `uw-rest`, `websockets`. |
+| [`BLACKOUT_API_REFERENCE.md`](BLACKOUT_API_REFERENCE.md) | **Canonical API reference + rate-limit master plan.** |
+| [`audit/API-DOCS/`](audit/API-DOCS/) | Per-surface doc-grounded detail: Massive + UW REST/WS. |
 
 ### Features & systems
 | File | What it is |
 |---|---|
-| [`HEATMAP_DATA_CONTRACT.md`](HEATMAP_DATA_CONTRACT.md) | Canonical GEX/VEX dealer-positioning data contract — the one source every tool reads dealer positioning from. |
+| [`HEATMAP_DATA_CONTRACT.md`](HEATMAP_DATA_CONTRACT.md) | Canonical GEX/VEX dealer-positioning data contract. |
+| [`NIGHTHAWK_GROUNDING.md`](NIGHTHAWK_GROUNDING.md) | Night Hawk edition grounding rules. |
+| [`NIGHTS_WATCH.md`](NIGHTS_WATCH.md) | Night's Watch position manager. |
 
-### Infrastructure
+### Infrastructure & ops
 | File | What it is |
 |---|---|
-| [`PGBOUNCER-SETUP.md`](PGBOUNCER-SETUP.md) | Postgres connection-pooling (PgBouncer) setup — referenced by the audit's #1 scalability blocker. |
+| [`PGBOUNCER-SETUP.md`](PGBOUNCER-SETUP.md) | Postgres connection-pooling (PgBouncer) setup. |
+| [`ops/`](ops/) | Runbooks — RTH open, deploy validation, ops auto-fix, AWS prep. |
+
+### Archive (historical only)
+| File | What it is |
+|---|---|
+| [`archive/2026-06/`](archive/2026-06/) | Pre-launch master audits, CEO/CTO reports, June deep-dives — **not maintained**. |
 
 ---
 

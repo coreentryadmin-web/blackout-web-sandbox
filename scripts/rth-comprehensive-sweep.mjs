@@ -28,23 +28,12 @@ const PAGES = [
   { path: "/dashboard", label: "dashboard", liveWaitMs: 12000 },
   { path: "/flows", label: "flows", liveWaitMs: 8000 },
   { path: "/heatmap", label: "heatmap-matrix", liveWaitMs: 20000 },
-  { path: "/grid", label: "grid", liveWaitMs: 15000 },
-  { path: "/nighthawk", label: "nighthawk", liveWaitMs: 5000 },
+  { path: "/nighthawk", label: "nighthawk", liveWaitMs: 15000 },
   { path: "/terminal", label: "terminal", liveWaitMs: 5000 },
   { path: "/track-record", label: "track-record", liveWaitMs: 10000 },
 ];
 
-const GRID_APIS = [
-  "/api/grid/sectors",
-  "/api/grid/movers",
-  "/api/grid/economy",
-  "/api/grid/earnings",
-  "/api/grid/catalysts",
-  "/api/grid/analysts",
-  "/api/grid/congress",
-  "/api/grid/dark-pool",
-  "/api/grid/bootstrap",
-];
+const ZERODTE_APIS = ["/api/market/zerodte/board"];
 
 const MARKET_APIS = [
   "/api/market/spx/desk",
@@ -198,7 +187,7 @@ function freshAsOf(json, maxSec = 300) {
 }
 
 async function auditApis(app) {
-  for (const path of [...MARKET_APIS, ...GRID_APIS]) {
+  for (const path of [...MARKET_APIS, ...ZERODTE_APIS]) {
     let r = app(path);
     // Cold SPX matrix builds can exceed Cloudflare's ~100s origin timeout; one warm retry.
     if ((r.status === 0 || r.status === 524) && path.includes("gex-heatmap?ticker=SPX")) {

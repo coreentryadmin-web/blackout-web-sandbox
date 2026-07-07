@@ -7,11 +7,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
 
 const ROOTS = [
-  "src/components/grid",
   "src/components/landing",
   "src/components/auth",
   "src/components/upgrade",
-  "src/components/desk/EngineStatusBar.tsx",
   "src/components/desk/LargoThinkingState.tsx",
   "src/app/(site)",
 ];

@@ -45,7 +45,8 @@ product is a set of **tools** (each gated by subscription tier):
 | **Night Hawk** | Evening swing-play scanner — generates a nightly "edition" of ranked plays | `src/lib/nighthawk/` (38 files) |
 | **Night's Watch** | Per-user options *position manager* — tracks & values open positions live | `src/lib/nights-watch/`, `src/components/nights-watch/` |
 | **Largo** | AI analyst (chat/tool-using agent) grounded in all the platform's live data | `src/lib/largo/` (12 files) |
-| **The Grid** | Market-intelligence board: analysts, catalysts, congress, dark-pool, earnings, economy, movers, sectors | `src/app/(site)/grid/`, `src/app/api/grid/` |
+| **0DTE Command** | Always-on multi-ticker 0DTE scanner (tab on Night Hawk) | `src/lib/zerodte/`, `api/market/zerodte/board`, `api/cron/zerodte-warm` |
+| **Vector** | SPX structure chart with GEX/VEX walls and session replay | `src/components/vector/`, `api/market/vector/*` |
 
 ---
 
@@ -75,13 +76,13 @@ blackout-web/
 │   ├── app/
 │   │   ├── (site)/              # ALL user-facing pages (route group, shared shell)
 │   │   │   ├── layout.tsx       # ← the REAL app shell (NOT PlatformShell.tsx — that's DEAD)
-│   │   │   ├── dashboard/  flows/  heatmap/  nighthawk/  terminal/  grid/
+│   │   │   ├── dashboard/  flows/  heatmap/  nighthawk/  terminal/  vector/
 │   │   │   ├── track-record/  upgrade/  admin/
 │   │   │   └── learn/           # interactive docs per tool (getting-started, glossary, …)
 │   │   ├── api/                 # ~120 route handlers (see §5)
 │   │   ├── layout.tsx           # root layout
 │   │   └── globals.css
-│   ├── components/              # React UI, grouped by tool (desk/ spx/ nighthawk/ grid/ …)
+│   ├── components/              # React UI, grouped by tool (desk/ spx/ nighthawk/ vector/ …)
 │   │   └── ui/                  # shared primitives (FreshnessChip lives here)
 │   └── lib/                     # ALL business logic — the brain of the platform (see §4)
 ├── docs/                        # single source of truth for all docs (see §14)
@@ -130,7 +131,7 @@ Almost every bug and every new feature touches this flow. Internalize it:
   STORE:    Redis (hot snapshots, e.g. spx:pulse:snapshot)  +  Postgres (durable rows/outcomes)
             │
             ▼
-  READERS:  api/market/*, api/grid/*  →  these are CACHE-READERS, not provider-callers
+  READERS:  api/market/*  →  these are CACHE-READERS, not provider-callers
             │
             ▼
   UI:       components/* fetch the reader APIs, render with FreshnessChip for live state
@@ -160,10 +161,9 @@ Don't add a parallel GEX computation — converge on the shared reader.
 
 | Group | Routes | What's there |
 |---|---|---|
-| `market/` | 34 | The live data readers — `spx/pulse`, `spx/desk`, `spx/signals`, `flows`, `gex-positioning`, `gex-heatmap`, `nighthawk/edition`, `news`, `dark-pool`, `regime`, `indices`, `quote`, `largo` |
+| `market/` | 34+ | The live data readers — `spx/pulse`, `spx/desk`, `spx/signals`, `flows`, `gex-positioning`, `gex-heatmap`, `nighthawk/edition`, `zerodte/board`, `vector/*`, `news`, `dark-pool`, `regime`, `indices`, `quote`, `largo` |
 | `cron/` | 21 | Background jobs (see §10) — hit by Railway cron services via Bearer `CRON_SECRET` |
 | `admin/` | 20 | Admin dashboard data (health, cron-health, spx-analytics, route-errors, incidents) — admin-gated |
-| `grid/` | 8 | Grid panels — analysts, catalysts, congress, dark-pool, earnings, economy, movers, sectors |
 | `account/` | 5 | User account |
 | `signals/` | 3 | SPX signal feed |
 | `webhook(s)/` | 3 | Clerk webhooks (`webhooks/clerk` is canonical; `webhook/clerk` re-exports it) |
@@ -199,9 +199,10 @@ scripts use stale paths; trust the directory tree.
 - UI: `src/components/desk/GexHeatmap.tsx`.
 
 ### Night Hawk
-- Logic: `src/lib/nighthawk/` (scanner, scorer, positioning, grounding). Worker: `scripts/nighthawk-worker.ts`.
+- Logic: `src/lib/nighthawk/` (scanner, scorer, positioning, grounding). Edition generation runs via `api/cron/nighthawk-edition`.
 - Crons: `nighthawk-edition` (generate), `nighthawk-morning-confirm`, `nighthawk-outcomes`.
 - Reader: `api/market/nighthawk/edition`. Grounding rules: [NIGHTHAWK_GROUNDING.md](NIGHTHAWK_GROUNDING.md).
+- **0DTE Command** (always-on scanner tab) shares the Night Hawk page — reader: `api/market/zerodte/board`, warm cron: `zerodte-warm`.
 
 ### Night's Watch
 - Logic: `src/lib/nights-watch/` (position-context, position-detail, valuation). Cron: `nights-watch-warm`.
@@ -213,9 +214,9 @@ scripts use stale paths; trust the directory tree.
 - Spend guardrails: `ai-spend-ledger.ts`, `ai-spend.ts` (cross-replica ledger; kill-switch is opt-in
   via `DAILY_AI_SPEND_KILL_USD`).
 
-### The Grid
-- Panels: `api/grid/{analysts,catalysts,congress,dark-pool,earnings,economy,movers,sectors}`.
-- Provider: `providers/grid.ts`. Warm cron: `grid-warm`. UI: `src/app/(site)/grid/`.
+### Vector
+- Chart + replay: `src/components/vector/`, `src/lib/vector/`.
+- Readers: `api/market/vector/*`. Launch-gated like Largo (`LAUNCHED_TOOLS=vector`).
 
 ---
 
@@ -245,7 +246,7 @@ scripts use stale paths; trust the directory tree.
 `cron-staleness-watchdog`.
 
 Key jobs: `spx-evaluate` (desk heartbeat), `spx-signal-observe`, `flow-ingest`, `gex-eod-snapshot`,
-`heatmap-warm`, `grid-warm`, `nighthawk-edition`, `nights-watch-warm`, `market-regime-detector`,
+`heatmap-warm`, `zerodte-warm`, `nighthawk-edition`, `nights-watch-warm`, `market-regime-detector`,
 `data-correctness` (the auto-auditor), `data-integrity`, `uw-cache-refresh`, `membership-reconcile`,
 `db-cleanup`.
 

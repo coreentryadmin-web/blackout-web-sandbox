@@ -111,12 +111,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* Grid — two-up board on Pro Max when cards exist */
-  html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
   /* Largo — taller message well */
   html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-messages-scroll,
   html.ios-app.ios-native-shell[data-ios-route="largo"] .largo-page-main-native {

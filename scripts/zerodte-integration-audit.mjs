@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 0DTE Command cross-tool integration audit — Grid, HELIX, Night Hawk, SPX,
+ * 0DTE Command cross-tool integration audit — HELIX, Night Hawk, SPX,
  * Largo/BIE, Thermal/GEX, and ecosystem-context wiring.
  *
  * Usage:
@@ -45,9 +45,9 @@ async function auditCrossToolLive() {
     return;
   }
 
-  const [zb, boot, gex, flows, nh, mergedWrap] = await Promise.all([
+  const [zb, spxBoot, gex, flows, nh, mergedWrap] = await Promise.all([
     fetchJson("/api/market/zerodte/board"),
-    fetchJson("/api/grid/bootstrap"),
+    fetchJson("/api/market/spx/bootstrap"),
     fetchJson("/api/market/gex-positioning?ticker=SPX"),
     fetchJson("/api/market/flows?limit=30"),
     fetchJson("/api/market/nighthawk/edition"),
@@ -61,19 +61,17 @@ async function auditCrossToolLive() {
   }
   rec("integration:zerodte-board", "PASS", `setups=${zb.json.setups?.length ?? 0} ledger=${zb.json.ledger?.length ?? 0}`);
 
-  if (boot.status === 200 && boot.json.error !== "coming_soon") {
-    rec("integration:grid-bootstrap", "PASS");
-    const bootSpot = boot.json.market?.pulse?.spx?.price ?? boot.json.market?.gexSpx?.spot;
+  if (spxBoot.status === 200) {
+    rec("integration:spx-bootstrap", "PASS");
+    const bootSpot = spxBoot.json.market?.pulse?.spx?.price ?? spxBoot.json.market?.gexSpx?.spot;
     const gexSpot = gex.json?.spot;
     if (Number.isFinite(bootSpot) && Number.isFinite(gexSpot) && !spotsAgree(bootSpot, gexSpot, gexSpot)) {
-      rec("integration:grid-gex-spot", "FAIL", `bootstrap ${bootSpot} vs gex ${gexSpot}`);
+      rec("integration:spx-gex-spot", "FAIL", `bootstrap ${bootSpot} vs gex ${gexSpot}`);
     } else if (Number.isFinite(gexSpot)) {
-      rec("integration:grid-gex-spot", "PASS", `spot ${gexSpot}`);
+      rec("integration:spx-gex-spot", "PASS", `spot ${gexSpot}`);
     }
-  } else if (boot.json?.error === "coming_soon") {
-    rec("integration:grid-bootstrap", "FAIL", "403 coming_soon — cron bypass missing or not deployed");
   } else {
-    rec("integration:grid-bootstrap", "WARN", `HTTP ${boot.status}`);
+    rec("integration:spx-bootstrap", "WARN", `HTTP ${spxBoot.status}`);
   }
 
   const liveSpot = Number(mergedDesk?.price ?? mergedDesk?.spot);
@@ -109,13 +107,6 @@ async function auditCrossToolLive() {
     }
   }
   rec("integration:ledger-pnl", "PASS", `${zb.json.ledger?.length ?? 0} rows`);
-
-  for (const panel of ["movers", "sectors", "earnings"]) {
-    const p = await fetchJson(`/api/grid/${panel}`);
-    if (p.status === 200 && p.json.error !== "coming_soon") rec(`integration:grid-${panel}`, "PASS");
-    else if (p.json?.error === "coming_soon") rec(`integration:grid-${panel}`, "FAIL", "cron bypass");
-    else rec(`integration:grid-${panel}`, "WARN", `HTTP ${p.status}`);
-  }
 }
 
 async function main() {

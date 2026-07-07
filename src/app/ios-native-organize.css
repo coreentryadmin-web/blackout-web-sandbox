@@ -204,18 +204,3 @@ html.ios-app.ios-native-shell .ios-native-chip-active {
 html.ios-app.ios-native-shell .ios-native-chip:last-child {
   margin-right: var(--ios-space-2);
 }
-
-/* Grid — segment switcher instead of desktop tabs */
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs-native {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ios-content-gap);
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs-native-panel {
-  min-width: 0;
-}
-
-html.ios-app.ios-native-shell[data-ios-route="grid"] .grid-page-tabs [role="tablist"] {
-  display: none;
-}

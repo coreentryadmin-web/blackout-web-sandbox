@@ -7,6 +7,7 @@ const isProtectedRoute = createRouteMatcher([
   "/terminal(.*)",
   "/heatmap(.*)",
   "/nighthawk(.*)",
+  "/vector(.*)",
   "/admin(.*)",
   "/account(.*)",
 ]);

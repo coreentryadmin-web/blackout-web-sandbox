@@ -321,48 +321,25 @@ async function auditHeatmapMatrix() {
   if (!flags) ok("heatmap", "matrix", `${tickers.length} tickers × 4 lenses — all invariants passed`);
 }
 
-// ── 7. Grid endpoints ────────────────────────────────────────────────────────
-const GRID_ROUTES = [
-  "/api/grid/sectors",
-  "/api/grid/movers",
-  "/api/grid/economy",
-  "/api/grid/earnings",
-  "/api/grid/catalysts",
-  "/api/grid/analysts",
-  "/api/grid/congress",
-  "/api/grid/dark-pool",
-];
-
-async function auditGrid() {
+// ── 7. 0DTE Command board ────────────────────────────────────────────────────
+async function auditZeroDteBoard() {
   if (!CRON) return;
-  for (const path of GRID_ROUTES) {
-    const { status, json } = await getJson(path);
-    if (status === 403 && json.error === "coming_soon") {
-      ok("grid", path, "locked (coming_soon) — skip numeric audit");
-      continue;
-    }
-    if (status !== 200) {
-      fail("grid", path, `HTTP ${status}`);
-      continue;
-    }
-    if (json.available === false) {
-      ok("grid", path, "unavailable (no polygon key off-hours ok)");
-      continue;
-    }
-    const bad = scanFinite(json).slice(0, 3);
-    if (bad.length) fail("grid", path, bad.join("; "), "P1");
-    else ok("grid", path, "finite numbers ✓");
-
-    // Sector pct sanity
-    if (path.includes("sectors") && Array.isArray(json.sectors)) {
-      for (const s of json.sectors.slice(0, 11)) {
-        const chg = s.change_pct ?? s.pct;
-        if (chg != null && finite(chg) && Math.abs(chg) > 40) {
-          fail("grid", "sector-pct", `${s.name ?? s.sector}: ${chg}% (>40%/day)`, "P1");
-        }
-      }
-    }
+  const { status, json } = await getJson("/api/market/zerodte/board");
+  if (status === 403) {
+    ok("zerodte", "board", "tier/launch gated");
+    return;
   }
+  if (status !== 200) {
+    fail("zerodte", "board", `HTTP ${status}`);
+    return;
+  }
+  if (!json.available) {
+    ok("zerodte", "board", "unavailable this cycle");
+    return;
+  }
+  const bad = scanFinite(json).slice(0, 3);
+  if (bad.length) fail("zerodte", "board", bad.join("; "), "P1");
+  else ok("zerodte", "board", `setups=${json.setups?.length ?? 0} ledger=${json.ledger?.length ?? 0}`);
 }
 
 // ── 8. Night Hawk edition ────────────────────────────────────────────────────
@@ -500,7 +477,7 @@ await auditSpxDesk();
 await auditPlatformSnapshot();
 await auditFlows();
 await auditHeatmapMatrix();
-await auditGrid();
+await auditZeroDteBoard();
 await auditNightHawk();
 await auditPublicMarket();
 await auditAuthGates();

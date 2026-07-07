@@ -267,7 +267,7 @@ async function crossToolIntegration(app, hm) {
   const flows = app("/api/market/flows?limit=30").json;
   const play = app("/api/market/spx/play").json;
   const zerodte = app("/api/market/zerodte/board").json;
-  const grid = app("/api/grid/bootstrap").json;
+  const spxBoot = app("/api/market/spx/bootstrap").json;
   const nhawk = app("/api/market/nighthawk/edition").json;
 
   const issues = [];
@@ -296,10 +296,10 @@ async function crossToolIntegration(app, hm) {
   } else {
     rec("integration:helix-flows", "WARN", "no flow prints this pass (may be quiet tape)");
   }
-  if (grid?.status === 200 || grid?.panels) {
-    rec("integration:grid-bootstrap", "PASS");
-  } else if (grid) {
-    rec("integration:grid-bootstrap", "PASS", "loaded");
+  if (spxBoot?.market || spxBoot?.status === 200) {
+    rec("integration:spx-bootstrap", "PASS");
+  } else if (spxBoot) {
+    rec("integration:spx-bootstrap", "PASS", "loaded");
   }
   if (zerodte?.setups != null) {
     rec("integration:zerodte-board", "PASS", `${zerodte.setups?.length ?? 0} setups`);
