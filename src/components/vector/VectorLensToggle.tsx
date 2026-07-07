@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import type { VectorWallLens } from "@/lib/providers/vector-wall-history";
+import type { VectorTimeframeMinutes } from "@/lib/vector-bar-timeframes";
 
 type Props = {
   lens: VectorWallLens;
@@ -11,6 +12,7 @@ type Props = {
   gexAsOf?: number | null;
   vexAsOf?: number | null;
   liveSession?: boolean;
+  chartIntervalMinutes?: VectorTimeframeMinutes;
 };
 
 function formatLensAge(asOf: number | null | undefined, now: number | null): string | null {
@@ -28,6 +30,7 @@ export function VectorLensToggle({
   gexAsOf,
   vexAsOf,
   liveSession = false,
+  chartIntervalMinutes = 1,
 }: Props) {
   const [now, setNow] = useState<number | null>(null);
 
@@ -76,8 +79,8 @@ export function VectorLensToggle({
       })}
       <span className="font-mono text-[10px] text-sky-300">
         {lens === "gex"
-          ? `Gamma walls ~1s${gexAge != null ? ` (${gexAge} ago)` : ""} · beads every 15s`
-          : `Vanna walls ~8s${vexAge != null ? ` (${vexAge} ago)` : ""} · beads every 15s`}
+          ? `Gamma walls ~1s${gexAge != null ? ` (${gexAge} ago)` : ""} · beads every ${chartIntervalMinutes}m`
+          : `Vanna walls ~8s${vexAge != null ? ` (${vexAge} ago)` : ""} · beads every ${chartIntervalMinutes}m`}
       </span>
     </div>
   );

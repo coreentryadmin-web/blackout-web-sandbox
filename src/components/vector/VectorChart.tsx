@@ -40,6 +40,7 @@ import {
   widthForPct,
 } from "@/lib/providers/vector-wall-visual";
 import {
+  bucketWallHistoryForInterval,
   hasVexInHistory,
   liveTrailAnchorSec,
   mergeWallHistory,
@@ -318,10 +319,12 @@ function applyWallBeadMarkers(
   history: WallHistorySample[],
   side: "callWalls" | "putWalls",
   baseColor: string,
-  lens: VectorWallLens
+  lens: VectorWallLens,
+  intervalMinutes: VectorTimeframeMinutes
 ): void {
   if (!beadsPlugin) return;
-  const trails = trailsByStrike(history, side, lens);
+  const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
+  const trails = trailsByStrike(bucketed, side, lens);
   const active = pickActiveStrikes(trails);
   beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
 }
@@ -441,8 +444,8 @@ export function VectorChart({
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
         : wallHistoryRef.current;
-    applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens);
-    applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens);
+    applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
+    applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
     pinCandlesOnTop(series);
   }, []);
 
@@ -478,8 +481,8 @@ export function VectorChart({
 
       const visibleHistory = sliceHistoryToTime(history, cursorTime);
       const v = lensVisuals(activeLens);
-      applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens);
-      applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens);
+      applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
+      applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
       pinCandlesOnTop(series);
 
       const gexAt = wallsAtReplayTime(history, cursorTime, "gex") ?? initialWalls;
@@ -787,10 +790,13 @@ export function VectorChart({
     displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
     series.setData(display);
     chart?.timeScale().applyOptions({ secondsVisible: timeframe === 1 });
+    if (!replayMode) {
+      refreshTrails(lensRef.current);
+    }
     if (!replayMode && liveSession) {
       chart?.timeScale().scrollToRealTime();
     }
-  }, [timeframe, replayMode, liveSession]);
+  }, [timeframe, replayMode, liveSession, refreshTrails]);
 
   const handleLens = (next: VectorWallLens) => {
     if (next === "vex" && !vexAvailable) return;
@@ -818,6 +824,7 @@ export function VectorChart({
         gexAsOf={gexAsOf}
         vexAsOf={vexAsOf}
         liveSession={liveSession && !replayMode}
+        chartIntervalMinutes={timeframe}
       />
 
       <VectorWallEventTicker events={wallEvents} lens={lens} />

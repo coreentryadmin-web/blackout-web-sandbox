@@ -8,7 +8,13 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector wall bead magnitude glow (branch `fix/vector-bead-magnitude-glow`)
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector timeframe-linked wall beads (branch `fix/vector-tf-linked-beads`)
+
+**User request:** wall bead trails should resample with the chart interval (1m/3m/5m/15m), not show the same 15s-density nodes on every timeframe.
+
+**Fix:** `bucketWallHistoryForInterval()` — last wall reading per candle bucket (same alignment as `aggregateVectorBars`). Wired into `applyWallBeadMarkers`; timeframe change re-renders beads. Live axis wall labels stay current (~1s GEX / ~8s VEX).
+
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector wall bead magnitude glow (branch `fix/vector-bead-magnitude-glow`, PR #662)
 
 **Surface:** `/vector` wall bead trails.
 

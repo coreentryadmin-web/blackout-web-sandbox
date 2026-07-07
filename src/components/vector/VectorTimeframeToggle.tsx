@@ -42,7 +42,9 @@ export function VectorTimeframeToggle({ interval, onInterval, disabled = false }
         );
       })}
       <span className="font-mono text-[10px] text-sky-300">
-        {interval === 1 ? "Live ~1s tick" : `Built from 1m · live tick updates current ${interval}m bar`}
+        {interval === 1
+          ? "Live ~1s tick · wall beads every 1m"
+          : `Built from 1m · beads + walls bucketed to ${interval}m`}
       </span>
     </div>
   );

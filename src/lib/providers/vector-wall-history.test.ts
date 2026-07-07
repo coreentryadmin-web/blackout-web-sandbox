@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  bucketWallHistoryForInterval,
   liveTrailAnchorSec,
   mergeWallHistory,
   pickActiveStrikes,
@@ -211,4 +212,31 @@ test("trimHistoryForLiveTrails: drops samples older than the lookback window", (
 
 test("liveTrailAnchorSec: uses the later of wall history tail and last bar", () => {
   assert.equal(liveTrailAnchorSec([{ time: 500, walls: walls([6800], []) }], [100, 700]), 700);
+});
+
+test("bucketWallHistoryForInterval: 1m collapses 15s samples to one bead per minute", () => {
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 115, walls: walls([6805], [6700]) },
+    { time: 130, walls: walls([6810], [6700]) },
+    { time: 160, walls: walls([6815], [6705]) },
+  ];
+  const out = bucketWallHistoryForInterval(history, 1);
+  assert.deepEqual(out.map((s) => s.time), [60, 120]);
+  assert.equal(out[0]!.walls.callWalls[0]!.strike, 6805);
+  assert.equal(out[1]!.walls.callWalls[0]!.strike, 6815);
+});
+
+test("bucketWallHistoryForInterval: 5m aligns to five-minute candle buckets", () => {
+  const base = 300 * 60;
+  const history: WallHistorySample[] = [
+    { time: base + 15, walls: walls([6800], []) },
+    { time: base + 120, walls: walls([6810], []) },
+    { time: base + 300, walls: walls([6820], []) },
+    { time: base + 420, walls: walls([6830], []) },
+  ];
+  const out = bucketWallHistoryForInterval(history, 5);
+  assert.deepEqual(out.map((s) => s.time), [base, base + 300]);
+  assert.equal(out[0]!.walls.callWalls[0]!.strike, 6810);
+  assert.equal(out[1]!.walls.callWalls[0]!.strike, 6830);
 });

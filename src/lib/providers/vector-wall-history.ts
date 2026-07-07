@@ -1,4 +1,5 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
+import type { VectorTimeframeMinutes } from "@/lib/vector-bar-timeframes";
 
 /** Wall overlay lens — GEX from live dealer-gamma ladder; VEX from shared heatmap vanna totals. */
 export type VectorWallLens = "gex" | "vex";
@@ -140,6 +141,28 @@ export function trimHistoryForLiveTrails(
   const anchor = anchorSec ?? history[history.length - 1]!.time;
   const cutoff = anchor - lookbackSec;
   return history.filter((s) => s.time >= cutoff);
+}
+
+/**
+ * Resample the 15s wall-history trail to the active chart interval — one bead per candle
+ * bucket (last reading in each bucket wins, same alignment as aggregateVectorBars).
+ */
+export function bucketWallHistoryForInterval(
+  history: WallHistorySample[],
+  intervalMinutes: VectorTimeframeMinutes
+): WallHistorySample[] {
+  if (!history.length) return history;
+  const bucketSec = intervalMinutes * 60;
+  const map = new Map<number, WallHistorySample>();
+
+  for (const sample of history) {
+    const key = Math.floor(sample.time / bucketSec) * bucketSec;
+    map.set(key, { ...sample, time: key });
+  }
+
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, sample]) => sample);
 }
 
 /**
