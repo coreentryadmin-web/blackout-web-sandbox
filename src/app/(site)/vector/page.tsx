@@ -2,18 +2,18 @@ import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
 import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
-import { AtlasPageShell } from "@/components/atlas/AtlasPageShell";
-import type { AtlasBar } from "@/components/atlas/AtlasChart";
+import { VectorPageShell } from "@/components/vector/VectorPageShell";
+import type { VectorBar } from "@/components/vector/VectorChart";
 import { fetchIndexMinuteBars } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import type { UTCTimestamp } from "lightweight-charts";
 
 export const metadata: Metadata = {
-  title: "Atlas · BlackOut",
+  title: "Vector · BlackOut",
   description: "Live SPX price action with real-time dark-pool, flow, and GEX level overlays.",
 };
 
-async function readInitialBars(): Promise<AtlasBar[]> {
+async function readInitialBars(): Promise<VectorBar[]> {
   const today = todayEtYmd();
   const bars = await fetchIndexMinuteBars("I:SPX", today, today).catch(() => []);
   return bars
@@ -27,11 +27,11 @@ async function readInitialBars(): Promise<AtlasBar[]> {
     }));
 }
 
-export default async function AtlasPage() {
+export default async function VectorPage() {
   await requireTier("premium");
-  if (!(await canAccessTool("atlas"))) return <ComingSoon toolKey="atlas" />;
+  if (!(await canAccessTool("vector"))) return <ComingSoon toolKey="vector" />;
 
   const initialBars = await readInitialBars();
 
-  return <AtlasPageShell initialBars={initialBars} />;
+  return <VectorPageShell initialBars={initialBars} />;
 }

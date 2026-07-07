@@ -234,12 +234,12 @@ export const MARK_GEOMETRY: Record<MarkProduct, ReactNode> = {
     </g>
   ),
 
-  // === ATLAS (teal) — an ascending candlestick tape with a live focal print ===
-  // Static for now (no .bo-atlas keyframes exist yet in globals.css, unlike the other six —
+  // === VECTOR (teal) — an ascending candlestick tape with a live focal print ===
+  // Static for now (no .bo-vector keyframes exist yet in globals.css, unlike the other six —
   // the bo-node/bo-glowgrp classes below are inert without them, which renders a clean still
-  // frame rather than a broken half-animated one). Add matching keyframes when Atlas gets its
+  // frame rather than a broken half-animated one). Add matching keyframes when Vector gets its
   // own animation pass.
-  atlas: (
+  vector: (
     <>
       <line x1="10" y1="46" x2="54" y2="46" stroke="url(#bo-emerald-thread)" strokeWidth="0.7" />
       <g stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.85">

@@ -1,5 +1,5 @@
 import { DeskLoadingSkeleton } from "@/components/desk/DeskLoadingSkeleton";
 
-export default function AtlasLoading() {
+export default function VectorLoading() {
   return <DeskLoadingSkeleton />;
 }

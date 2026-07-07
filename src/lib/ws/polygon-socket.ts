@@ -10,6 +10,7 @@ import {
   wsLeaderShouldFailOpenWithoutRedis,
 } from "./leader-lock-shared";
 import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "./leader-lock-fencing";
+import { recordSpxTick } from "./spx-candle-store";
 export type PolygonAgg = {
   ev: "A" | "AM";
   sym: string;
@@ -429,6 +430,13 @@ async function connectIndices() {
                     : prev.change_pct,
                 updatedAt: Date.now(),
               };
+              // Vector live chart: feed the same SPX tick into the 1-minute candle aggregator.
+              // Uses the message's own timestamp (falls back to receipt time) so bars bucket by
+              // actual market time rather than however late this process got to handling it.
+              if (sym === "I:SPX") {
+                const tickAtMs = Number(msg.t);
+                recordSpxTick(val, Number.isFinite(tickAtMs) && tickAtMs > 0 ? tickAtMs : Date.now());
+              }
             }
           }
         }

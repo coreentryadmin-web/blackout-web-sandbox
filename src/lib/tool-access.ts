@@ -6,12 +6,12 @@
 // behind a padlock until its launch. The locked set remains env-overridable
 // (LAUNCHED_TOOLS) for additive unlocks — default-launched tools cannot be locked via env.
 
-export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "grid" | "atlas";
+export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "grid" | "vector";
 
 /** ProductMark sigil keys — kept inline (not imported) so this module stays alias-free + test-safe.
  *  Structurally identical to MarkProduct in components/marks/ProductMark.tsx, so a ToolMeta.product
  *  is directly assignable to <ProductMark product>. */
-export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "grid" | "atlas";
+export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "grid" | "vector";
 
 export type ToolMeta = {
   key: ToolKey;
@@ -34,9 +34,9 @@ export const TOOLS: readonly ToolMeta[] = [
   // 0DTE Command + Market Grid — both live with grid; 0DTE tab follows grid unless
   // LAUNCHED_0DTE=0 explicitly locks the scanner tab (see isZeroDteCommandLaunched).
   { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: true },
-  // Atlas — v1 ships behind a locked default so it can be staged/QA'd before a public
-  // launch date; flip live via LAUNCHED_TOOLS=atlas (or set defaultLaunched true at launch).
-  { key: "atlas", label: "Atlas", href: "/atlas", product: "atlas", defaultLaunched: false },
+  // Vector — v1 ships behind a locked default so it can be staged/QA'd before a public
+  // launch date; flip live via LAUNCHED_TOOLS=vector (or set defaultLaunched true at launch).
+  { key: "vector", label: "Vector", href: "/vector", product: "vector", defaultLaunched: false },
 ] as const;
 
 const TOOL_BY_KEY = new Map<ToolKey, ToolMeta>(TOOLS.map((t) => [t.key, t]));

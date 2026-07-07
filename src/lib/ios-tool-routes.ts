@@ -19,7 +19,7 @@ export type IosRouteKey =
   | "largo"
   | "nighthawk"
   | "grid"
-  | "atlas"
+  | "vector"
   | "account"
   | "faq"
   | "learn"
@@ -97,7 +97,7 @@ export const IOS_TOOLS: IosToolMeta[] = [
 ];
 
 const IOS_UTILITY_META: Record<
-  "account" | "faq" | "learn" | "upgrade" | "admin" | "atlas" | "other",
+  "account" | "faq" | "learn" | "upgrade" | "admin" | "vector" | "other",
   { title: string; accent: string }
 > = {
   account: { title: "Account", accent: "#7dd3fc" },
@@ -108,7 +108,7 @@ const IOS_UTILITY_META: Record<
   // Not a bottom-tab tool (see IOS_NATIVE_SHELL_PATH_PREFIXES below) — routed through the
   // utility-header branch so it still gets a proper title/accent without joining the
   // fixed 6-tool tab bar registry that iOS Phase 0d is consolidating.
-  atlas: { title: "Atlas", accent: "#2dd4bf" },
+  vector: { title: "Vector", accent: "#2dd4bf" },
   other: { title: "BlackOut", accent: "#00e676" },
 };
 
@@ -120,7 +120,7 @@ export function getIosRouteKey(path: string): IosRouteKey {
   if (path.startsWith("/terminal")) return "largo";
   if (path.startsWith("/nighthawk")) return "nighthawk";
   if (path.startsWith("/grid")) return "grid";
-  if (path.startsWith("/atlas")) return "atlas";
+  if (path.startsWith("/vector")) return "vector";
   if (path.startsWith("/account")) return "account";
   if (path.startsWith("/faq")) return "faq";
   if (path.startsWith("/learn")) return "learn";
@@ -181,7 +181,7 @@ export function getIosHeaderMeta(path: string): IosHeaderMeta {
     key === "learn" ||
     key === "upgrade" ||
     key === "admin" ||
-    key === "atlas" ||
+    key === "vector" ||
     key === "other"
       ? key
       : "other";
@@ -203,7 +203,7 @@ export const IOS_NATIVE_SHELL_PATH_PREFIXES = [
   "/terminal",
   "/nighthawk",
   "/grid",
-  "/atlas",
+  "/vector",
   "/account",
   "/faq",
   "/learn",

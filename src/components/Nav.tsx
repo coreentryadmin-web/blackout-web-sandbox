@@ -23,7 +23,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/terminal", label: "Largo", sub: "BlackOut Intelligence desk analyst", accent: "blue" },
   { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + Night's Watch positions", accent: "red" },
   { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
-  { href: "/atlas", label: "Atlas", sub: "Live SPX chart with real-time flow & GEX overlay", accent: "teal" },
+  { href: "/vector", label: "Vector", sub: "Live SPX chart with real-time flow & GEX overlay", accent: "teal" },
 ];
 
 /** Tool routes mount heavy client trees — disable RSC prefetch burst (503 under concurrent ?_rsc=). */

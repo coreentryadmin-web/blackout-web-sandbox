@@ -6,7 +6,7 @@ import { getLaunchStatusSnapshot, isToolLaunched, isZeroDteCommandLaunched, lock
 
 const E = (v?: string): NodeJS.ProcessEnv => ({ LAUNCHED_TOOLS: v } as NodeJS.ProcessEnv);
 
-test("defaults: all tools live except Largo and Atlas", () => {
+test("defaults: all tools live except Largo and Vector", () => {
   const env = {} as NodeJS.ProcessEnv;
   assert.equal(isToolLaunched("spx", env), true);
   assert.equal(isToolLaunched("flows", env), true);
@@ -14,8 +14,8 @@ test("defaults: all tools live except Largo and Atlas", () => {
   assert.equal(isToolLaunched("nighthawk", env), true);
   assert.equal(isToolLaunched("grid", env), true);
   assert.equal(isToolLaunched("largo", env), false);
-  assert.equal(isToolLaunched("atlas", env), false);
-  assert.deepEqual(lockedToolKeys(env), ["largo", "atlas"]);
+  assert.equal(isToolLaunched("vector", env), false);
+  assert.deepEqual(lockedToolKeys(env), ["largo", "vector"]);
   assert.equal(isZeroDteCommandLaunched(env), true);
 });
 
@@ -23,7 +23,7 @@ test("LAUNCHED_TOOLS is additive — can still unlock Largo without affecting de
   const env = E("largo");
   assert.equal(isToolLaunched("largo", env), true);
   assert.equal(isToolLaunched("heatmap", env), true);
-  assert.deepEqual(lockedToolKeys(env), ["atlas"]);
+  assert.deepEqual(lockedToolKeys(env), ["vector"]);
 });
 
 test("0DTE Command follows grid; LAUNCHED_0DTE=0 locks the tab even when grid is live", () => {
@@ -36,7 +36,7 @@ test("LAUNCHED_TOOLS parses CSV, trims, lowercases, ignores unknown keys", () =>
   const env = E("  Largo , bogus ");
   assert.equal(isToolLaunched("largo", env), true);
   assert.equal(isToolLaunched("grid", env), true);
-  assert.deepEqual(lockedToolKeys(env), ["atlas"]);
+  assert.deepEqual(lockedToolKeys(env), ["vector"]);
 });
 
 test("can never accidentally lock the default-live tools via env", () => {
@@ -66,14 +66,14 @@ test("getLaunchStatusSnapshot reflects env and default-live tools", () => {
   assert.equal(unset.launched_tools_env, null);
   assert.equal(unset.open_count, 5);
   assert.equal(unset.total_count, 7);
-  assert.deepEqual(unset.locked_keys, ["largo", "atlas"]);
+  assert.deepEqual(unset.locked_keys, ["largo", "vector"]);
   assert.equal(unset.tools.find((t) => t.key === "spx")?.launch_source, "default");
   assert.equal(unset.tools.find((t) => t.key === "heatmap")?.launch_source, "default");
   assert.equal(unset.tools.find((t) => t.key === "largo")?.launch_source, "locked");
-  assert.equal(unset.tools.find((t) => t.key === "atlas")?.launch_source, "locked");
+  assert.equal(unset.tools.find((t) => t.key === "vector")?.launch_source, "locked");
 
   const largoOnly = getLaunchStatusSnapshot(E("largo"));
   assert.equal(largoOnly.open_count, 6);
-  assert.deepEqual(largoOnly.locked_keys, ["atlas"]);
+  assert.deepEqual(largoOnly.locked_keys, ["vector"]);
   assert.equal(largoOnly.tools.find((t) => t.key === "largo")?.launch_source, "env");
 });
