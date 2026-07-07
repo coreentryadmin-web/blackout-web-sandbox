@@ -97,6 +97,8 @@ const CRON_BOOTSTRAP = [
   { key: "market-regime-detector", serviceName: "Market-Regime-Detector" },
   { key: "spx-issues-sync", serviceName: "SPX-Issues-Sync" },
   { key: "desk-warm", serviceName: "SPX-Desk-Warm" },
+  // Renamed from grid-warm when classic Grid was deleted (2026-07-07).
+  { key: "zerodte-warm", serviceName: "ZeroDTE-Warm-Cron" },
 ];
 
 function ensureCronService(serviceName, cronKey) {

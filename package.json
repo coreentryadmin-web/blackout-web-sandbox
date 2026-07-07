@@ -27,6 +27,7 @@
     "validate:cron": "node scripts/cron-audit-query.mjs",
     "railway:provision": "node scripts/railway-ops-provision.mjs",
     "railway:audit-apply": "node scripts/railway-audit-apply.mjs",
+    "railway:legacy-cron-cleanup": "node scripts/railway-legacy-cron-cleanup.mjs",
     "validate:railway-crons": "node scripts/validate-railway-cron-manifest.mjs",
     "validate:spx-bie": "node --import tsx --experimental-test-module-mocks scripts/audit/spx-bie-consistency-validator.mjs",
     "validate:spx-rth": "node scripts/spx-rth-all-day-audit.mjs",

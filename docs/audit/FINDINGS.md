@@ -8,9 +8,21 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-07 — Legacy Railway cron triggers crashed after route removals (grid-warm / nights-watch-warm / positions-expiry)
+
+**Surface:** Railway cron trigger services `Grid-Warm-Cron`, `Night's Watch-Warm-New`, `Positions-Expiry-Cron`; missing replacement `ZeroDTE-Warm-Cron`.
+
+**Root cause:** Product restructure 2026-07-07 deleted classic Grid + Night's Watch and renamed `grid-warm` → `zerodte-warm` in code (`/api/cron/zerodte-warm`, `railway.zerodte-warm.toml`), but Railway still had three legacy trigger services whose config-as-code pointed at **removed** TOMLs/routes (`railway.grid-warm.toml`, `railway.nights-watch-warm.toml`, `railway.positions-expiry.toml`). Every repo push re-triggered builds that logged only `scheduling build on Metal builder` then **FAILED**. `ZeroDTE-Warm-Cron` was never provisioned, so the 0DTE scanner cron had no Railway trigger (only in-app `rth-warm-leader` backup).
+
+**Evidence:** `railway service list --json` showed all three legacy services `CRASHED`; env config still had `startCommand: node scripts/hit-cron.mjs /api/cron/grid-warm` (404 — route deleted). `ZeroDTE-Warm-Cron` absent from service list pre-fix. Manual `node scripts/hit-cron.mjs /api/cron/zerodte-warm` → 200 after wiring.
+
+**Fix:** provision `ZeroDTE-Warm-Cron` + wire `railway.zerodte-warm.toml`; delete the three obsolete services; `node scripts/railway-audit-apply.mjs` (24/24 cron triggers in sync). Repeatable: `node scripts/railway-legacy-cron-cleanup.mjs`.
+
+**Status:** FIXED (branch `fix/railway-legacy-cron-cleanup`).
+
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — Railway deploy failures after root Dockerfile (#682) — move to `deploy/Dockerfile`
 
-**Surface:** `blackout-web` + legacy cron trigger services (`Grid-Warm-Cron`, `Night's Watch-Warm-New`, `Positions-Expiry-Cron`).
+**Surface:** `blackout-web` (primary); cron triggers also failed until Dockerfile moved (see entry above for legacy service cleanup).
 
 **Root cause:** PR #682 added `Dockerfile` at repo root for AWS/ECS. Railway auto-detects a root Dockerfile and **ignores** `railway.toml`'s `builder = "nixpacks"` + `startCommand = "next start -H 0.0.0.0 -p $PORT"`. Builds switched to multi-stage Docker (`CMD ["node", "server.js"]` standalone); deploy healthcheck failed while old Nixpacks replicas kept serving traffic. Cron trigger services (lightweight `echo` + `hit-cron.mjs`) also attempted full Docker builds and crashed.
 
@@ -18,7 +30,7 @@ in this file.
 
 **Fix:** `git mv Dockerfile → deploy/Dockerfile`; update ECR workflow + `npm run docker:build` to `-f deploy/Dockerfile`. Railway stays Nixpacks; ECS keeps standalone image path.
 
-**Status:** fix branch `fix/railway-dockerfile-path`.
+**Status:** MERGED (#685).
 
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector visible to all premium users (launch gate `defaultLaunched: true`) (#678)
 
