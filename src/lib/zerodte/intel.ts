@@ -123,6 +123,19 @@ export function buildIntelNote(input: {
   }
 
   if (status === "TRIM") {
+    // TRIM is sticky once a play's peak has ever cleared +100% (see derivePlayStatus in
+    // plan.ts) — intentional, so a play that doubled is never relabeled "stopped" on the
+    // way back down. But that means a play can sit in TRIM well after giving the double
+    // back, and the copy below used to always talk as if the double were still live and
+    // actionable right now ("bank it", "never let a double go red") even once livePnlPct
+    // had gone negative — actively misleading at the exact moment a member most needs an
+    // honest read. Branch on the real current P&L instead of assuming it's still +100%+.
+    if (livePnlPct != null && livePnlPct < 0) {
+      return {
+        action: "TRIM",
+        reason: `Already doubled and gave it back — sitting at ${livePnlPct.toFixed(0)}% now, past the +100% trim window. The bank-it moment already passed; this is a hold-or-cut call from here, not a fresh trim.`,
+      };
+    }
     return {
       action: "TRIM",
       reason: `Premium tagged +100% (target ${prem(target)}) — bank at least half here. The rest is house money: trail it to ${plan?.underlying_target != null ? `the ${plan.underlying_target} level` : "the 3:30 ET exit"}${toExit != null ? ` (${toExit}m left)` : ""}, never let a double go red.`,

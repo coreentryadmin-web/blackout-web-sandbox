@@ -869,6 +869,20 @@ test("intel: TRIM and stop-out SELL read like a desk, with the numbers", () => {
   assert.match(stopped.reason, /Stopped at −50%/);
 });
 
+test("intel: TRIM after the peak already reversed into a loss doesn't tell the member to 'bank it'", () => {
+  // TRIM is sticky once peak >= target (derivePlayStatus, plan.ts) so a play that doubled
+  // then fully round-tripped stays TRIM rather than getting relabeled a stop-out — but the
+  // narrative must stop claiming the double is still live once livePnlPct has actually gone
+  // negative. Matches the real production pattern: QQQ/SPXW peaked past +100% intraday then
+  // collapsed to -84.71%/-47.06% while still tagged TRIM.
+  const note = buildIntelNote({ status: "TRIM", setup: null, plan: null, entryPremium: 1.57, livePnlPct: -84.71, planOutcome: null, planPnlPct: null });
+  assert.equal(note.action, "TRIM");
+  assert.doesNotMatch(note.reason, /bank at least half/);
+  assert.doesNotMatch(note.reason, /never let a double go red/);
+  assert.match(note.reason, /gave it back/);
+  assert.match(note.reason, /-85%/);
+});
+
 // ── intraday edge layer ──────────────────────────────────────────────────────────
 
 import {
