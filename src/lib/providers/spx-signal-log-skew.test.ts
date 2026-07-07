@@ -98,13 +98,24 @@ function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return { available: true, price: 7420, ...overrides } as SpxDeskPayload;
 }
 
+// computeSkewShadowFactor/computeVolDivergenceShadowFactor (spx-signals-shadow-skew.ts) are
+// left REAL here (not mocked — see module doc above), and their staleness guard compares each
+// row's `date` against the REAL Date.now() (this test doesn't/can't inject `now` through
+// logSpxSkewShadowFactors, which has no clock-injection param). A hardcoded calendar date
+// there passes only until HISTORICAL_ROW_MAX_AGE_MS (5 days) elapses from whenever this was
+// written, then silently starts failing as "stale" — reproduced 2026-07-07 against a
+// "2026-07-02" fixture. Always derive the fixture date from the real clock instead.
+function recentDateStr(daysAgo: number): string {
+  return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function skewRow(overrides: Partial<Record<string, unknown>> = {}) {
-  return { date: "2026-07-02", ticker: "SPY", delta: 25, risk_reversal: "0.0663361729210146", ...overrides };
+  return { date: recentDateStr(1), ticker: "SPY", delta: 25, risk_reversal: "0.0663361729210146", ...overrides };
 }
 
 function realizedVolRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    date: "2026-07-02",
+    date: recentDateStr(1),
     implied_volatility: "0.131000",
     realized_volatility: "0.087404",
     ...overrides,

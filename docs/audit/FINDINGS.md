@@ -8,6 +8,20 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P1 FOUND+FIXED 2026-07-07 — CI broken on `main` for everyone: a test fixture date-rotted past its own 5-day freshness window (branch `fix/spx-skew-shadow-test-date-rot`)
+
+**Surface:** `src/lib/providers/spx-signal-log-skew.test.ts` — 2 of its 7 tests, run as part of every PR's `verify` CI check.
+
+**Root cause:** `computeSkewShadowFactor`/`computeVolDivergenceShadowFactor` (`src/lib/spx-signals-shadow-skew.ts`) reject any row older than `HISTORICAL_ROW_MAX_AGE_MS` (5 days) against the real `Date.now()` — the `now` param is injectable for their own dedicated unit tests, but the caller (`logSpxSkewShadowFactors` in `spx-signal-log.ts`) never threads one through. This test deliberately leaves those compute functions real/unmocked (to also exercise their parsing helpers), so it had no way to pin the clock. Its fixture rows hardcoded `date: "2026-07-02"`; by 2026-07-07 that's outside the 5-day window, so both fixtures started reading as stale and the two tests asserting `available:true` failed — a ticking time bomb, not a flaky test. Confirmed identical failure on `main` itself (`git diff origin/main` on the file = empty, reproduced running it alone against `main`), meaning **CI was broken for every open and future PR**, discovered while landing an unrelated PR (#638).
+
+**Fix:** derive the fixture dates from the real clock (`recentDateStr(1)` = yesterday) instead of a hardcoded calendar date, so the test stays valid indefinitely. No production code changed — the staleness check itself is correct, intentional behavior.
+
+**Evidence:** full suite 1811/1811 passing (was 1809/1811 on `main`). `npx tsc --noEmit` clean. `npx eslint` clean. `npm run build` clean.
+
+**Status:** FIXED — pushed.
+
+---
+
 ## 🔴 P0 FOUND+FIXED 2026-07-06 — Site-wide "everything is slow" outside cash RTH: every cache-warm cron (and its in-app backup) went fully dark 4:00 PM–9:30 AM ET + all weekend (branch `fix/off-hours-cache-warm-gap`)
 
 **Report:** user-reported *"the entire website was slow today .. everything .. navigating .. data coming .. entirely"* — flagged P0.
