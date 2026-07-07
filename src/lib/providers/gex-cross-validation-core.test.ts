@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   crossValidateGexLevels,
+  resolveNearTermExpiriesForCrossValidation,
   restFallbackAllowed,
   uwLevelsFromLadder,
   wallsFromStrikeTotals,
@@ -17,6 +18,49 @@ test("REST fallback is allowed when no scoping is requested (back-compat, no cur
 
 test("an empty nearTermExpiries array is treated as unscoped (REST allowed)", () => {
   assert.equal(restFallbackAllowed([]), true);
+});
+
+// Regression: two live call sites (gex-positioning.ts, gex-heatmap/route.ts) used
+// `heatmap.expiries.slice(0, 8)` instead of the authoritative `near_term_expiries` field.
+// On a thin-chain ticker (real near-term expiry count < 8), the post-far-merge, sorted
+// `expiries` array pads the slice with far-dated monthly/quarterly columns — reintroducing
+// the exact bug class resolveExpiryAxis() (polygon-options-gex.ts) was built to prevent.
+test("resolveNearTermExpiriesForCrossValidation prefers the authoritative near_term_expiries field", () => {
+  const hm = {
+    near_term_expiries: ["2026-07-10", "2026-07-17"],
+    expiries: ["2026-07-10", "2026-07-17", "2026-08-21", "2026-09-18"],
+  };
+  assert.deepEqual(resolveNearTermExpiriesForCrossValidation(hm), ["2026-07-10", "2026-07-17"]);
+});
+
+test("resolveNearTermExpiriesForCrossValidation: thin chain — near_term_expiries stays short, NOT padded to 8 with far-dated columns", () => {
+  // A thin single-name chain: only 2 real near-term (weekly) expiries exist, then 2
+  // far-dated monthlies got merged into `expiries` for the matrix's far-dated columns.
+  const hm = {
+    near_term_expiries: ["2026-07-10", "2026-07-17"],
+    expiries: ["2026-07-10", "2026-07-17", "2026-08-21", "2026-09-18"],
+  };
+  const result = resolveNearTermExpiriesForCrossValidation(hm);
+  assert.equal(result?.length, 2, "must NOT silently pad to 8 with the far-dated columns");
+  assert.ok(!result?.includes("2026-08-21"), "far-dated monthly must not leak into the near-term scope");
+});
+
+test("resolveNearTermExpiriesForCrossValidation: legacy cached heatmap (no near_term_expiries field) falls back to the slice", () => {
+  const hm = { expiries: Array.from({ length: 10 }, (_, i) => `2026-07-${10 + i}`) };
+  const result = resolveNearTermExpiriesForCrossValidation(hm);
+  assert.equal(result?.length, 8);
+  assert.deepEqual(result, hm.expiries.slice(0, 8));
+});
+
+test("resolveNearTermExpiriesForCrossValidation: empty near_term_expiries array falls back to the slice, not an empty scope", () => {
+  const hm = { near_term_expiries: [], expiries: Array.from({ length: 10 }, (_, i) => `2026-07-${10 + i}`) };
+  const result = resolveNearTermExpiriesForCrossValidation(hm);
+  assert.equal(result?.length, 8);
+});
+
+test("resolveNearTermExpiriesForCrossValidation: null/undefined heatmap returns undefined (unscoped)", () => {
+  assert.equal(resolveNearTermExpiriesForCrossValidation(null), undefined);
+  assert.equal(resolveNearTermExpiriesForCrossValidation(undefined), undefined);
 });
 
 test("wallsFromStrikeTotals picks max positive call and max negative put", () => {

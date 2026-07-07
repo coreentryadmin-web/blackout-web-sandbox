@@ -15,6 +15,28 @@ export function restFallbackAllowed(nearTermExpiries: readonly string[] | undefi
   return !(nearTermExpiries && nearTermExpiries.length > 0);
 }
 
+/**
+ * Scope a GexHeatmap-shaped object's expiries down to the near-term-only set that
+ * `call_wall`/`put_wall`/`flip` are actually computed from, for passing to
+ * `validateGexAgainstUW`. Prefer the authoritative `near_term_expiries` field (the
+ * pre-far-merge set the engine captured before far-dated monthly/quarterly columns were
+ * added — see `resolveExpiryAxis()` in polygon-options-gex.ts). `expiries.slice(0, N)`
+ * LOOKS equivalent but is not: on a ticker whose real near-term (daily/weekly) expiry
+ * count is below N, the post-merge sorted `expiries` array silently pads the slice with
+ * far-dated columns (they sort right after the real near dates) — reintroducing the exact
+ * bug class `resolveExpiryAxis()` was built to prevent for max_pain/GEX/VEX/DEX/CHARM. For
+ * any non-SPX/SPY/QQQ single-name ticker (most only have weekly+monthly options, no daily
+ * 0DTE), that's the common case, not an edge case. Falls back to the slice only for legacy
+ * cached heatmaps predating the `near_term_expiries` field.
+ */
+export function resolveNearTermExpiriesForCrossValidation(
+  hm: { near_term_expiries?: string[]; expiries?: string[] } | null | undefined,
+  legacySliceCount = 8
+): string[] | undefined {
+  if (hm?.near_term_expiries?.length) return hm.near_term_expiries;
+  return hm?.expiries?.slice(0, legacySliceCount);
+}
+
 /** Largest-positive (call) and largest-negative (put) wall strikes from per-strike totals. */
 export function wallsFromStrikeTotals(strikeTotals: Record<string, number>): {
   callWall: number | null;

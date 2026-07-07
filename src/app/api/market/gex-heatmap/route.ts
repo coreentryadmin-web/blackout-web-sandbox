@@ -7,6 +7,7 @@ import type {
   GexHeatmapOverlays,
 } from "@/lib/providers/polygon-options-gex";
 import { validateGexAgainstUW } from "@/lib/providers/gex-cross-validation";
+import { resolveNearTermExpiriesForCrossValidation } from "@/lib/providers/gex-cross-validation-core";
 import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
@@ -290,19 +291,18 @@ export async function GET(req: NextRequest) {
 
     // UW cross-validation (WS-first, REST cached) — preset tickers only; never blocks response.
     //
-    // heatmap.gex.call_wall/put_wall/flip are computed from Polygon's NEAR-TERM-ONLY expiries
-    // (polygon-options-gex.ts's NEAR_TERM_EXPIRY_COUNT=8 deliberately excludes far-dated
-    // monthly/quarterly OI). heatmap.expiries is that same near-term block followed by the
-    // far-dated columns (ascending, near dates always sort first) — slicing the first 8 scopes
-    // the UW oracle side to match, instead of summing every expiry UW has ever sent. This is the
-    // SAME fix gex-positioning.ts got in PR #223 — this call site was missed, so the SPX matrix's
-    // "UW oracle diverges Npt" banner (fed by THIS endpoint's cross_validation, not
-    // gex-positioning's) kept showing scope-mismatch-inflated divergence (confirmed live
-    // 2026-07-01: 200-600pt here vs. single-digit-to-low-double-digit on the already-fixed
-    // gex-positioning path for the same moment — see docs/audit/FINDINGS.md).
+    // heatmap.gex.call_wall/put_wall/flip are computed from Polygon's NEAR-TERM-ONLY expiries —
+    // scoping the UW oracle side to match is required. This is the SAME fix gex-positioning.ts
+    // got in PR #223 — this call site was missed, so the SPX matrix's "UW oracle diverges Npt"
+    // banner (fed by THIS endpoint's cross_validation, not gex-positioning's) kept showing
+    // scope-mismatch-inflated divergence (confirmed live 2026-07-01: 200-600pt here vs.
+    // single-digit-to-low-double-digit on the already-fixed gex-positioning path for the same
+    // moment — see docs/audit/FINDINGS.md). See resolveNearTermExpiriesForCrossValidation()'s
+    // doc comment for why this must read `heatmap.near_term_expiries`, not a bare
+    // `heatmap.expiries.slice(0, 8)`.
     let cross_validation = null;
     if (isHeatmapPreset(ticker) && heatmap.gex) {
-      const nearTermExpiries = heatmap.expiries?.slice(0, 8);
+      const nearTermExpiries = resolveNearTermExpiriesForCrossValidation(heatmap);
       cross_validation = await validateGexAgainstUW(
         ticker,
         {

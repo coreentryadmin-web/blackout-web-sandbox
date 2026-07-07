@@ -4,6 +4,7 @@ import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-option
 import { getGexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust";
 import type { GexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust-core";
 import { validateGexAgainstUW, type GexCrossValidationResult } from "@/lib/providers/gex-cross-validation";
+import { resolveNearTermExpiriesForCrossValidation } from "@/lib/providers/gex-cross-validation-core";
 import { fmtPremium } from "@/lib/fmt-money";
 
 // ---------------------------------------------------------------------------
@@ -179,15 +180,13 @@ export async function getGexPositioning(
   // Cross-validate primary key levels against UW REST strike ladder (best-effort, non-blocking).
   // Cached 60s — safe on every call without touching the 2 RPS UW REST budget.
   //
-  // base.call_wall/put_wall/flip are computed from Polygon's NEAR-TERM-ONLY expiries
-  // (polygon-options-gex.ts's NEAR_TERM_EXPIRY_COUNT=8 deliberately excludes far-dated
-  // monthly/quarterly OI). hm.expiries is that same near-term block followed by the
-  // far-dated columns (ascending, near dates always sort first) — slicing the first 8
-  // scopes the UW oracle side to match, instead of summing every expiry UW has ever
-  // sent. Without this the two sides compare different questions and can show
-  // hundreds of points of spurious "divergence" for SPX around monthly/quarterly OpEx
-  // (confirmed live 2026-07-01 — see docs/audit/FINDINGS.md).
-  const nearTermExpiries = hm?.expiries?.slice(0, 8);
+  // base.call_wall/put_wall/flip are computed from Polygon's NEAR-TERM-ONLY expiries —
+  // scoping the UW oracle side to match is required, or the two sides compare different
+  // questions and can show hundreds of points of spurious "divergence" for SPX around
+  // monthly/quarterly OpEx (confirmed live 2026-07-01 — see docs/audit/FINDINGS.md). See
+  // resolveNearTermExpiriesForCrossValidation()'s doc comment for why this must read
+  // `hm.near_term_expiries`, not a bare `hm.expiries.slice(0, 8)`.
+  const nearTermExpiries = resolveNearTermExpiriesForCrossValidation(hm);
   const crossValidation = await validateGexAgainstUW(
     root,
     {
