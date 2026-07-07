@@ -60,8 +60,8 @@ rec(
 );
 
 rec(
-  "static:grid-warm-runs-warmZeroDteBoard",
-  /warmZeroDteBoard/.test(read("src/app/api/cron/grid-warm/route.ts"))
+  "static:zerodte-warm-runs-warmZeroDteBoard",
+  /warmZeroDteBoard/.test(read("src/app/api/cron/zerodte-warm/route.ts"))
 );
 
 rec(

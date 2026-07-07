@@ -1,12 +1,18 @@
-// Cron: pre-warm the BlackOut Grid market-wide snapshots into Redis (`grid:*` keys).
-// Schedule: ~every 1-5 min during market hours (registered in cron-registry.ts as "grid-warm";
-// Railway wires the actual fire via railway.grid-warm.toml).
+// Cron: warm 0DTE Command's earnings-match cache + run its always-on scanner tick.
+// Schedule: ~every 1-5 min during market hours (registered in cron-registry.ts as
+// "zerodte-warm"; Railway wires the actual fire via railway.zerodte-warm.toml).
 //
-// THE POINT (cache-reader rule): the Grid's `/api/grid/*` routes ONLY read Redis snapshots — they
-// never fetch upstream per request. This warmer is the single cluster-wide writer, so N viewers
-// share ONE upstream pull per window at a fixed cost. Phase 0/1 warms the Analyst Actions feed
-// (market-wide Benzinga analyst channel); other Phase-0/1 panels reuse existing feeds (News via
-// /api/market/news, Flow via the HELIX stream, Pulse via the SPX desk payload) so they need no warm.
+// HISTORY (renamed 2026-07-07 when classic Grid was deleted): this route used to be
+// "grid-warm" and pre-warmed 8 classic-Grid market-wide panel snapshots (Analyst Actions,
+// Dark Pool, Congress, Economy, Sectors, Movers, Catalysts, Earnings) PLUS ran
+// warmZeroDteBoard() as a 9th, unrelated item tacked onto the same Promise.allSettled tick.
+// Classic Grid (the page, its 17 components, its 9 API routes) was deleted wholesale, but
+// warmZeroDteBoard() is 0DTE Command's OWN always-on scanner tick — every ~2-min run scans
+// the HELIX tape for fresh single-name 0DTE concentration and upserts the live session
+// ledger (zerodte_setup_log). Deleting this route outright would have silently killed that
+// scanner, so instead of deleting it, it's renamed and stripped down to ONLY the two things
+// 0DTE Command actually needs: its earnings-match cache warm (readGridEarnings() in
+// zerodte-service.ts flags setups reporting today/tomorrow) and the scanner tick itself.
 //
 // RTH-RESILIENCE (#90): market-hours cron services died mid-RTH before. This route self-skips off
 // the in-process ET gate (so the cron can fire on a wide UTC band and the route decides) and logs
@@ -15,16 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import {
-  warmGridAnalysts,
-  warmGridDarkPool,
-  warmGridEarnings,
-  warmGridCongress,
-  warmGridEconomy,
-  warmGridSectors,
-  warmGridMovers,
-  warmGridCatalysts,
-} from "@/lib/providers/grid";
+import { warmGridEarnings } from "@/lib/zerodte/earnings";
 import { warmZeroDteBoard } from "@/lib/zerodte/scan";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
@@ -45,20 +42,13 @@ export async function GET(req: NextRequest) {
       skipped: true,
       reason: "Outside cash RTH (weekday 9:30 AM–4:00 PM ET, excluding holidays/early-close) — use ?force=1 to override",
     };
-    await logCronRun("grid-warm", started, payload);
+    await logCronRun("zerodte-warm", started, payload);
     return NextResponse.json(payload);
   }
 
-  // Settle-all so one failing warm can't abort the rest as the Grid grows more panels.
+  // Settle-all so one failing warm can't abort the other.
   const results = await Promise.allSettled([
-    warmGridAnalysts(),
-    warmGridDarkPool(),
     warmGridEarnings(),
-    warmGridCongress(),
-    warmGridEconomy(),
-    warmGridSectors(),
-    warmGridMovers(),
-    warmGridCatalysts(),
     // 0DTE Command scanner — the always-on hunt. Every ~2-min tick scans the HELIX
     // tape for fresh single-name 0DTE concentration, enriches the top finds through
     // the Night Hawk dossier, and upserts the session ledger (zerodte_setup_log) so
@@ -74,16 +64,16 @@ export async function GET(req: NextRequest) {
   }
   const failed = results.filter((r) => r.status === "rejected").length;
   if (failed > 0) {
-    console.warn(`[cron/grid-warm] ${failed} snapshot warm(s) failed`);
+    console.warn(`[cron/zerodte-warm] ${failed} snapshot warm(s) failed`);
   }
 
   const allFailed = results.length > 0 && failed === results.length;
-  await logCronRun("grid-warm", started, {
+  await logCronRun("zerodte-warm", started, {
     ok: !allFailed,
     warmed,
     failed,
     total: results.length,
-    ...(failed > 0 ? { error: `${failed}/${results.length} grid snapshot warm(s) failed` } : {}),
+    ...(failed > 0 ? { error: `${failed}/${results.length} zerodte-warm snapshot warm(s) failed` } : {}),
   });
 
   return NextResponse.json({ ok: true, warmed, total: results.length });

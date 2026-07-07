@@ -112,5 +112,4 @@ export const CROSS = {
   largo: (desc: string) => ({ slug: "largo-ai" as const, description: desc }),
   hawk: (desc: string) => ({ slug: "night-hawk" as const, description: desc }),
   thermal: (desc: string) => ({ slug: "heat-maps" as const, description: desc }),
-  grid: (desc: string) => ({ slug: "blackout-grid" as const, description: desc }),
 };

@@ -138,11 +138,11 @@ async function main() {
           const grid15 = (
             await c.query(
               `SELECT COUNT(*)::int AS n FROM cron_job_runs
-               WHERE job_key = 'grid-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
+               WHERE job_key = 'zerodte-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
             )
           ).rows[0].n;
-          if (grid15 > 0) ok(`grid-warm ran in last 20m (${grid15} ok run(s))`);
-          else fail("grid-warm: no ok run in last 20m during RTH");
+          if (grid15 > 0) ok(`zerodte-warm ran in last 20m (${grid15} ok run(s))`);
+          else fail("zerodte-warm: no ok run in last 20m during RTH");
         }
 
         await c.end();

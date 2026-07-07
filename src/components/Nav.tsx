@@ -13,7 +13,7 @@ import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 import { getIosToolNavLabel } from "@/lib/ios-tool-routes";
 
-type Accent = "green" | "purple" | "orange" | "blue" | "red" | "gold" | "teal";
+type Accent = "green" | "purple" | "orange" | "blue" | "red" | "teal";
 type FeatureLink = { href: string; label: string; sub: string; accent: Accent };
 
 const FEATURE_LINKS: FeatureLink[] = [
@@ -22,7 +22,6 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/heatmap", label: "BlackOut Thermal", sub: "Dealer gamma & vanna map", accent: "orange" },
   { href: "/terminal", label: "Largo", sub: "BlackOut Intelligence desk analyst", accent: "blue" },
   { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + 0DTE Command", accent: "red" },
-  { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
   { href: "/vector", label: "Vector", sub: "Live SPX chart with real-time flow & GEX overlay", accent: "teal" },
 ];
 

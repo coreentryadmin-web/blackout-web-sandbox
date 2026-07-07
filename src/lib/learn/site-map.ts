@@ -11,7 +11,6 @@ export const TOOL_ROUTES: Record<
   "largo-ai": "/terminal",
   "night-hawk": "/nighthawk",
   "heat-maps": "/heatmap",
-  "blackout-grid": "/grid",
 };
 
 export const SITE_ROUTES = {
@@ -54,11 +53,6 @@ export const PRIMARY_NAV: LearnNavItem[] = [
     label: "Night Hawk",
     href: "/nighthawk",
     description: "Evening playbook plus 0DTE Command always-on scanner.",
-  },
-  {
-    label: "BlackOut Grid",
-    href: "/grid",
-    description: "News, catalysts, earnings, sectors, and macro intelligence board.",
   },
   {
     label: "Learn",

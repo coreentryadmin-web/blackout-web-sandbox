@@ -25,11 +25,10 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  // Launch gate — this route returns the SAME dealer-positioning the Heat Maps tool shows AND feeds
-  // the Grid's GEX Regime panel + Pulse chip. Allow either tool's launch (or admin), so a Grid user
-  // isn't blocked when only Heat Maps' flag is off. Internal consumers call getGexPositioning()
-  // directly, so nothing else is affected.
-  const locked = await requireAnyToolApi(["spx", "heatmap", "grid"]);
+  // Launch gate — this route returns the SAME dealer-positioning the Heat Maps tool shows. Allow
+  // either tool's launch (or admin). Internal consumers call getGexPositioning() directly, so
+  // nothing else is affected.
+  const locked = await requireAnyToolApi(["spx", "heatmap"]);
   if (locked) return locked;
 
   const ticker = (req.nextUrl.searchParams.get("ticker") || "SPY").toUpperCase();

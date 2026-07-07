@@ -57,7 +57,7 @@ export const gettingStartedGuide: LearnGuide = {
         {
           layer: "Surfaces",
           accent: "indigo",
-          items: ["SPX Slayer", "HELIX", "Thermal", "Night Hawk", "Largo", "Grid"],
+          items: ["SPX Slayer", "HELIX", "Thermal", "Night Hawk", "Largo"],
         },
       ],
     },
@@ -98,12 +98,6 @@ export const gettingStartedGuide: LearnGuide = {
           action: "Read the Evening Edition. Set bias and key GEX levels before the open.",
         },
         {
-          phase: "Pre-market",
-          time: "8:00 – 9:30 AM ET",
-          toolSlug: "blackout-grid",
-          action: "Scan catalysts, news, and overnight flow. Invalidate or confirm the Night Hawk thesis.",
-        },
-        {
           phase: "RTH open",
           time: "9:30 AM ET",
           toolSlug: "spx-slayer",
@@ -141,7 +135,6 @@ export const gettingStartedGuide: LearnGuide = {
         "largo-ai",
         "night-hawk",
         "heat-maps",
-        "blackout-grid",
         "glossary",
       ],
     },
@@ -153,7 +146,6 @@ export const gettingStartedGuide: LearnGuide = {
         "Layer tools — Night Hawk for bias, Slayer for execution, HELIX for confirmation, Thermal for structure.",
         "Cross-reference GEX walls across desks before sizing at a level.",
         "Use Largo for hard questions about live data, not for reassurance.",
-        "Check Grid for macro catalysts before the open.",
       ],
       donts: [
         "Don't treat any single desk as the full picture.",
@@ -184,7 +176,7 @@ export const gettingStartedGuide: LearnGuide = {
         },
         {
           q: "Does BlackOut support non-SPX underlyings?",
-          a: "The core engine is SPX / 0DTE-first. Grid provides broad-market context; HELIX may show related tickers for situational awareness.",
+          a: "The core engine is SPX / 0DTE-first. HELIX may show related tickers for situational awareness, and 0DTE Command (on Night Hawk) scans the broader market for single-name 0DTE setups.",
         },
         {
           q: "Where do I manage billing?",

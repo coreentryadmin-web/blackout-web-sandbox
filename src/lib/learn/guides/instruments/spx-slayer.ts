@@ -173,7 +173,6 @@ export const spxSlayerGuide = defineToolGuide({
     CROSS.helix("Raw flow tape behind the compressed flow bias signal."),
     CROSS.hawk("Evening playbook supplies pre-open structural context."),
     CROSS.largo("Structured Q&A on live desk state and GEX regime."),
-    CROSS.grid("Macro catalysts that can override intraday GEX mechanics."),
   ],
   dos: [
     "Use gamma flip as the primary regime switch.",

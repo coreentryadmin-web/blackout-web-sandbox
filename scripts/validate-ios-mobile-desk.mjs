@@ -225,13 +225,6 @@ const chipRail = readFileSync(join(root, "src/components/ios/IosNativeChipRail.t
 if (chipRail.includes("ios-native-chip-scroll")) ok("organize:IosNativeChipRail");
 else fail("organize:IosNativeChipRail", "expected IosNativeChipRail component");
 
-const gridTabs = readFileSync(join(root, "src/components/zerodte/GridPageTabs.tsx"), "utf8");
-if (gridTabs.includes("IosNativeSegment") && gridTabs.includes("grid-page-tabs-native")) {
-  ok("organize:grid-native-segment");
-} else {
-  fail("organize:grid-native-segment", "expected native segment on Grid");
-}
-
 const pageTransition = readFileSync(join(root, "src/components/ios/IosNativePageTransition.tsx"), "utf8");
 if (pageTransition.includes("getIosToolRouteIndex") && pageTransition.includes("AnimatePresence")) {
   ok("nav:direction-aware-page-transition");
@@ -295,7 +288,6 @@ if (largoShell.includes("useIosNativeShell") && largoShell.includes("!nativeShel
 
 const thermalShell = readFileSync(join(root, "src/components/desk/ThermalPageShell.tsx"), "utf8");
 const helixShell = readFileSync(join(root, "src/components/desk/HelixPageShell.tsx"), "utf8");
-const gridShell = readFileSync(join(root, "src/components/desk/GridPageShell.tsx"), "utf8");
 const nhShell = readFileSync(join(root, "src/components/desk/NighthawkPageShell.tsx"), "utf8");
 if (thermalShell.includes("useIosNativeShell") && thermalShell.includes("!nativeShell")) {
   ok("thermal:page-shell-native-gate");
@@ -304,7 +296,6 @@ if (thermalShell.includes("useIosNativeShell") && thermalShell.includes("!native
 }
 for (const [file, label] of [
   ["HelixPageShell", helixShell],
-  ["GridPageShell", gridShell],
   ["NighthawkPageShell", nhShell],
 ]) {
   const slug = file.replace("PageShell", "").toLowerCase();
@@ -316,12 +307,9 @@ for (const [file, label] of [
 }
 
 const flowsPage = readFileSync(join(root, "src/app/(site)/flows/page.tsx"), "utf8");
-const gridPage = readFileSync(join(root, "src/app/(site)/grid/page.tsx"), "utf8");
 const nhPage = readFileSync(join(root, "src/app/(site)/nighthawk/page.tsx"), "utf8");
 if (flowsPage.includes("HelixPageShell")) ok("flows:uses-helix-page-shell");
 else fail("flows:uses-helix-page-shell", "expected HelixPageShell");
-if (gridPage.includes("GridPageShell")) ok("grid:uses-grid-page-shell");
-else fail("grid:uses-grid-page-shell", "expected GridPageShell");
 if (nhPage.includes("NighthawkPageShell")) ok("nighthawk:uses-nighthawk-page-shell");
 else fail("nighthawk:uses-nighthawk-page-shell", "expected NighthawkPageShell");
 

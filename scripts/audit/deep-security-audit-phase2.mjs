@@ -357,7 +357,7 @@ async function main() {
       "/api/market/gex-heatmap?ticker=SPX';DROP TABLE users;--",
       "/api/market/ticker-search?q=' OR 1=1--",
       "/api/market/dark-pool/ticker?ticker=SPY\"",
-      "/api/grid/sectors?ticker=${7*7}",
+      "/api/market/gex-positioning?ticker=${7*7}",
     ];
     for (const path of payloads) {
       const r = await probe("GET", path, { cookie: premA.cookie, accept: "application/json" });

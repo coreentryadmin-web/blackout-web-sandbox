@@ -13,7 +13,7 @@ const TOOLS: OrbitTool[] = [
   { name: "A", href: "/a", mark: "spx", accent: "#0f0" },
   { name: "B", href: "/b", mark: "helix", accent: "#00f" },
   { name: "C", href: "/c", mark: "heatmap", accent: "#f00" },
-  { name: "D", href: "/d", mark: "grid", accent: "#ff0" },
+  { name: "D", href: "/d", mark: "vector", accent: "#ff0" },
   { name: "E", href: "/e", mark: "largo", accent: "#0ff" },
   { name: "F", href: "/f", mark: "nighthawk", accent: "#f0f" },
 ];

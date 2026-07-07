@@ -72,10 +72,10 @@ function rejectionRow(overrides: Partial<ZeroDteRejectionRow> = {}): ZeroDteReje
 
 function cronHealthStub(overrides: Partial<CronHealthPayload["jobs"][number]> = {}): CronHealthPayload {
   const gridWarmJob: CronHealthPayload["jobs"][number] = {
-    key: "grid-warm",
-    name: "BlackOut Grid Warm",
+    key: "zerodte-warm",
+    name: "0DTE Command Warm",
     kind: "http",
-    path: "/api/cron/grid-warm",
+    path: "/api/cron/zerodte-warm",
     schedule_label: "~Every 2 min (market hours)",
     description: "test",
     status: "healthy",
@@ -162,7 +162,7 @@ test("fetchZeroDteHealthSnapshot: happy path — distinct committed + rejected t
   assert.deepEqual(snap.errors, []);
 });
 
-test("fetchZeroDteHealthSnapshot: scan summary is sourced verbatim from buildCronHealthSnapshot's grid-warm job entry", async () => {
+test("fetchZeroDteHealthSnapshot: scan summary is sourced verbatim from buildCronHealthSnapshot's zerodte-warm job entry", async () => {
   resetMocks();
   cronHealthImpl = async () =>
     cronHealthStub({

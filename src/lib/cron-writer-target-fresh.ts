@@ -101,25 +101,29 @@ export async function probeWriterTargetFresh(jobKey: string): Promise<WriterTarg
         return { fresh: false, detail: "spx-desk cache cold" };
       }
     }
-    case "grid-warm": {
-      const { GRID_KEYS } = await import("@/lib/providers/grid");
+    case "zerodte-warm": {
+      // Renamed from "grid-warm" when classic Grid was deleted (2026-07-07). That cron used to
+      // warm 8 classic-Grid panels + this probe checked the Analyst Actions panel's cache key as
+      // a proxy for "the cron ran." The panel (and its cache key) are gone; the cron now warms
+      // 0DTE Command's earnings-match cache instead, so probe THAT key.
+      const { ZERODTE_EARNINGS_KEY } = await import("@/lib/zerodte/earnings");
       const { getUwCacheRedis } = await import("@/lib/providers/uw-shared-cache");
       const redis = await getUwCacheRedis();
       if (!redis) return null;
       try {
-        const raw = await redis.get(`uw_cache:${GRID_KEYS.analysts}`);
-        if (!raw) return { fresh: false, detail: "grid:analysts cache miss" };
+        const raw = await redis.get(`uw_cache:${ZERODTE_EARNINGS_KEY}`);
+        if (!raw) return { fresh: false, detail: "zerodte-earnings cache miss" };
         const parsed = JSON.parse(raw) as { as_of?: string };
         const ageMin = ageMinFromIso(parsed.as_of);
-        const ttl = await uwCacheRemainingTtlSec(GRID_KEYS.analysts);
+        const ttl = await uwCacheRemainingTtlSec(ZERODTE_EARNINGS_KEY);
         const fresh =
           (ageMin != null && ageMin <= 15) || (ttl != null && ttl > 0 && ttl <= 900);
         return {
           fresh,
-          detail: `grid:analysts asof ${ageMin != null ? `${ageMin.toFixed(1)}m` : "?"} ago${ttl != null ? `, ttl ${ttl}s` : ""}`,
+          detail: `zerodte-earnings asof ${ageMin != null ? `${ageMin.toFixed(1)}m` : "?"} ago${ttl != null ? `, ttl ${ttl}s` : ""}`,
         };
       } catch {
-        return { fresh: false, detail: "grid:analysts probe failed" };
+        return { fresh: false, detail: "zerodte-earnings probe failed" };
       }
     }
     case "uw-cache-refresh": {

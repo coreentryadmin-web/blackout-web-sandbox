@@ -24,7 +24,7 @@ function formatSessionLabel(ymd: string): string {
   });
 }
 
-/** /vector page frame — mirrors GridPageShell's PageShell/PageHeader/ProductMark structure. */
+/** /vector page frame — mirrors the other tool shells' (e.g. NighthawkPageShell) PageShell/PageHeader/ProductMark structure. */
 export function VectorPageShell({
   initialBars,
   initialWalls,

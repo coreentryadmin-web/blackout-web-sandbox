@@ -10,7 +10,7 @@ import { GET as flowIngestGet } from "@/app/api/cron/flow-ingest/route";
 import { GET as uwCacheRefreshGet } from "@/app/api/cron/uw-cache-refresh/route";
 import { GET as heatmapWarmGet } from "@/app/api/cron/heatmap-warm/route";
 import { GET as deskWarmGet } from "@/app/api/cron/desk-warm/route";
-import { GET as gridWarmGet } from "@/app/api/cron/grid-warm/route";
+import { GET as zerodteWarmGet } from "@/app/api/cron/zerodte-warm/route";
 import { GET as spxEvaluateGet } from "@/app/api/cron/spx-evaluate/route";
 import { GET as marketRegimeGet } from "@/app/api/cron/market-regime-detector/route";
 import { GET as spxSignalGet } from "@/app/api/cron/spx-signal-observe/route";
@@ -33,7 +33,7 @@ export const CRON_DISPATCH: Record<string, { handler: CronHandler; force: boolea
   "uw-cache-refresh": { handler: uwCacheRefreshGet, force: false },
   "heatmap-warm": { handler: heatmapWarmGet, force: true },
   "desk-warm": { handler: deskWarmGet, force: true },
-  "grid-warm": { handler: gridWarmGet, force: true },
+  "zerodte-warm": { handler: zerodteWarmGet, force: true },
   // RTH-critical crons — safe to re-trigger during an incident (idempotent read+evaluate)
   "spx-evaluate": { handler: spxEvaluateGet, force: false },
   "market-regime-detector": { handler: marketRegimeGet, force: false },

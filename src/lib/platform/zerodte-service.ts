@@ -8,7 +8,7 @@ import type { ZeroDteSetupLogRow } from "@/lib/db";
 import { fetchNighthawkEchoForTickers, type EcosystemNightHawkTake } from "@/lib/bie/ecosystem-context";
 import { etNowParts, isTradingDayEt, nextTradingDayEt, todayEt } from "@/lib/nighthawk/session";
 import { fetchBenzingaNews } from "@/lib/providers/polygon";
-import { readGridEarnings } from "@/lib/providers/grid";
+import { readGridEarnings } from "@/lib/zerodte/earnings";
 import { withServerCache, serverCache, TTL } from "@/lib/server-cache";
 import { roundFloats } from "@/lib/round-floats";
 import {

@@ -21,7 +21,7 @@ export async function canAccessTool(key: ToolKey): Promise<boolean> {
 export type DeskApiAuth = { userId: string | null; via: "cron" | "user" };
 
 /**
- * Launch gate for cache-reader desk routes. Cron bearer (ops audits, grid-warm probes) skips
+ * Launch gate for cache-reader desk routes. Cron bearer (ops audits, zerodte-warm probes) skips
  * the per-tool launch flag — same contract as zerodte board's cron bypass. Premium members
  * still hit requireToolApi when via === "user".
  */
@@ -52,7 +52,7 @@ export async function requireToolApi(key: ToolKey): Promise<Response | null> {
 /**
  * API gate for a shared surface reachable from MULTIPLE tools. Allowed if ANY of the
  * keys is launched (or the caller is an admin). Used by the canonical GEX positioning
- * route, which both Heat Maps and the Grid read — so a Grid user isn't blocked just
+ * route, which both SPX Slayer and Heat Maps read — so an SPX user isn't blocked just
  * because the Heat Maps launch flag is off.
  */
 export async function requireAnyToolApi(keys: ToolKey[]): Promise<Response | null> {

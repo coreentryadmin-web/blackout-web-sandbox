@@ -152,7 +152,7 @@ export const helixFlowsGuide = defineToolGuide({
     ],
   },
   usage: {
-    intro: "Dock beside SPX Slayer during RTH. Use Grid pre-market for catalyst context.",
+    intro: "Dock beside SPX Slayer during RTH.",
     steps: [
       { title: "Orient with tide + brief", body: "Read HelixTideBar and FlowBrief before touching filters." },
       { title: "Set premium floor", body: "Raise minimum premium in fast markets to reduce noise." },
@@ -164,7 +164,6 @@ export const helixFlowsGuide = defineToolGuide({
   crossLinks: [
     CROSS.spx("Engine consumes compressed flow bias from this tape."),
     CROSS.thermal("See where dealer gamma concentrates as flow hits strikes."),
-    CROSS.grid("Macro news that explains sudden flow spikes."),
     CROSS.hawk("Night Hawk Flow panel links edition plays to live tape."),
   ],
   dos: [

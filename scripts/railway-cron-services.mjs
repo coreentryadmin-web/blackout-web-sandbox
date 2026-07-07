@@ -11,7 +11,7 @@ export const CRON_SERVICE_NAMES = {
   "flow-ingest": "Flow-Ingest-Cron",
   "gex-alerts": "GEX-Alerts",
   "gex-eod-snapshot": "GEX-EOD-Snapshot",
-  "grid-warm": "Grid-Warm-Cron",
+  "zerodte-warm": "ZeroDTE-Warm-Cron",
   "heatmap-warm": "heatmap-warm",
   "desk-warm": "SPX-Desk-Warm",
   "largo-cleanup": "Largo-Chat-CleanUp",

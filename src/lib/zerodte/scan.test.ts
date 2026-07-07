@@ -111,7 +111,7 @@ mock.module("../providers/spx-session", {
 // scan.ts's last line re-exports zeroDtePlaysForLargo from zerodte-service.ts (a
 // deliberate circular import: zerodte-service.ts itself imports FROM scan.ts) —
 // zerodte-service.ts pulls in @/lib/bie/ecosystem-context, @/lib/providers/polygon,
-// @/lib/providers/grid, and @/lib/zerodte/intel, one of which transitively reaches
+// @/lib/zerodte/earnings, and @/lib/zerodte/intel, one of which transitively reaches
 // a "server-only" boundary. Not needed for anything this file tests, so mocked
 // wholesale to keep the import graph hermetic.
 mock.module("../platform/zerodte-service", {

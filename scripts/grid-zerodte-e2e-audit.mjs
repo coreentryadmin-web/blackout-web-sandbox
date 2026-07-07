@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /**
- * 0DTE Command + Market Grid — /grid E2E audit (API + Playwright when available).
+ * 0DTE Command E2E audit (API + Playwright when available).
+ *
+ * Classic Grid (the /grid page + its /api/grid/* routes) was deleted 2026-07-07 — this script
+ * used to audit BOTH classic Grid's APIs and 0DTE Command's API in one pass. It's kept (not
+ * deleted) because the 0DTE Command checks are still live and useful; only the classic-Grid-
+ * specific checks were removed. 0DTE Command now lives standalone on /nighthawk.
  *
  * Usage:
  *   node scripts/grid-zerodte-e2e-audit.mjs [--base=https://blackouttrades.com]
  *   npm run validate:grid-e2e
  *
  * Requires: CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
- * Optional: CRON_SECRET (cross-check cron vs member paths)
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -27,8 +31,7 @@ const BASE = (baseArg ? baseArg.slice("--base=".length) : "https://blackouttrade
 );
 const SECRET = process.env.CLERK_SECRET_KEY;
 const PUB = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "";
-const CRON = process.env.CRON_SECRET || "";
-const EMAIL = process.env.AUDIT_EMAIL || `grid-e2e-${Date.now()}@blackouttrades.com`;
+const EMAIL = process.env.AUDIT_EMAIL || `zerodte-e2e-${Date.now()}@blackouttrades.com`;
 const PHONE = process.env.AUDIT_PHONE || "+1415555" + String(Math.floor(Math.random() * 9000) + 1000);
 const API = "https://api.clerk.com/v1";
 const CJS = "5.57.0";
@@ -186,39 +189,13 @@ async function auditGridApis(app) {
     rec("e2e:zerodte-board-api", "FAIL", `HTTP ${zb.status}`);
   }
 
-  const boot = app("/api/grid/bootstrap");
-  if (boot.status === 200 && (boot.json?.panels || boot.json?.market)) {
-    rec("e2e:grid-bootstrap", "PASS");
-  } else if (boot.json?.error === "coming_soon") {
-    rec("e2e:grid-bootstrap", "WARN", "grid launch gate locked");
-  } else {
-    rec("e2e:grid-bootstrap", "FAIL", `HTTP ${boot.status}`);
-  }
-
-  for (const panel of ["movers", "sectors", "earnings"]) {
-    const r = app(`/api/grid/${panel}`);
-    if (r.status === 200) rec(`e2e:grid-${panel}`, "PASS");
-    else if (r.json?.error === "coming_soon") rec(`e2e:grid-${panel}`, "WARN", "launch gate");
-    else rec(`e2e:grid-${panel}`, "FAIL", `HTTP ${r.status}`);
-  }
+  // Classic Grid (the /grid page, its 17 components, its 9 /api/grid/* routes) was deleted
+  // 2026-07-07 — see docs/audit/FINDINGS.md. 0DTE Command now lives standalone on /nighthawk;
+  // its only API route (/api/market/zerodte/board, checked above) is unchanged.
 
   const flows = app("/api/market/flows?limit=20");
   const count = flows.json?.flows?.length ?? flows.json?.alerts?.length ?? 0;
   rec("e2e:helix-flows", count > 0 ? "PASS" : "WARN", `${count} prints`);
-
-  if (CRON) {
-    const cronBoot = await fetch(`${BASE}/api/grid/bootstrap`, {
-      headers: { Authorization: `Bearer ${CRON}`, Accept: "application/json" },
-    });
-    const cj = await cronBoot.json().catch(() => ({}));
-    if (cronBoot.ok && cj.error !== "coming_soon") {
-      rec("e2e:cron-grid-bypass", "PASS");
-    } else {
-      rec("e2e:cron-grid-bypass", "FAIL", cronBoot.status === 403 ? "403 coming_soon" : `HTTP ${cronBoot.status}`);
-    }
-  } else {
-    rec("e2e:cron-grid-bypass", "SKIP", "CRON_SECRET not set");
-  }
 }
 
 async function auditGridUi() {
@@ -239,39 +216,17 @@ async function auditGridUi() {
     const errs = [];
     page.on("pageerror", (e) => errs.push(e.message));
 
-    await page.goto(`${BASE}/grid`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    // /grid is gone — 0DTE Command absorbed into /nighthawk (see FINDINGS.md). This UI check is
+    // intentionally minimal (page loads, no console errors) rather than clicking tabs/search that
+    // belonged to the deleted classic-Grid UI — NightHawkFeed's own structure is out of scope here.
+    await page.goto(`${BASE}/nighthawk`, { waitUntil: "domcontentloaded", timeout: 90_000 });
     await page.waitForFunction(() => window.Clerk?.user?.id, { timeout: 60_000 }).catch(() => {});
 
     const title = await page.title();
-    if (/0DTE|Grid|BlackOut/i.test(title)) {
+    if (/Night ?Hawk|0DTE|BlackOut/i.test(title)) {
       rec("ui:page-load", "PASS", title.slice(0, 60));
     } else {
       rec("ui:page-load", "WARN", title.slice(0, 60));
-    }
-
-    const tabCommand = page.getByRole("tab", { name: /0DTE Command/i });
-    const tabClassic = page.getByRole("tab", { name: /Market Grid/i });
-    if (await tabCommand.isVisible().catch(() => false)) {
-      await tabCommand.click();
-      rec("ui:tab-0dte-command", "PASS");
-      const heat = page.getByText(/Warming up|Opening drive|Desk hot|Power hour|RTH/i).first();
-      if (await heat.isVisible({ timeout: 15_000 }).catch(() => false)) {
-        rec("ui:session-heat", "PASS");
-      } else {
-        rec("ui:session-heat", "WARN", "heat header not visible");
-      }
-      await tabClassic.click();
-      rec("ui:tab-market-grid", "PASS");
-    } else {
-      rec("ui:tabs", "WARN", "admin 0DTE tab not shown — grid-only mode");
-    }
-
-    const search = page.locator('input[type="search"], input[placeholder*="Search" i]').first();
-    if (await search.isVisible().catch(() => false)) {
-      await search.fill("SPY");
-      rec("ui:search-bar", "PASS");
-    } else {
-      rec("ui:search-bar", "WARN", "search not visible");
     }
 
     await page.waitForTimeout(3000);

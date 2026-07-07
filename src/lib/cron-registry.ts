@@ -12,7 +12,7 @@ export type CronJobDefinition = {
   market_hours_only?: boolean;
   description: string;
   /** True for crons that themselves produce a member-visible alert/signal/status badge when
-   *  they run — NOT cache warmers (grid-warm, heatmap-warm) and NOT
+   *  they run — NOT cache warmers (zerodte-warm, heatmap-warm) and NOT
    *  validators (data-correctness, data-integrity, provider-health-reconcile). Drives
    *  bie/missed-alerts.ts's outage detection — single source of truth so that list can't
    *  silently drift from the registry (was a hand-maintained duplicate list before). */
@@ -109,15 +109,15 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm SPX desk/flow/pulse cache lanes + SPX GEX matrix so dashboard polls are pure cache hits (no multi-second buildSpxDesk blocks)",
   },
   {
-    key: "grid-warm",
-    name: "BlackOut Grid Warm",
+    key: "zerodte-warm",
+    name: "0DTE Command Warm",
     kind: "http",
-    path: "/api/cron/grid-warm",
+    path: "/api/cron/zerodte-warm",
     schedule_label: "~Every 5 min (market hours; in-app leader fills sub-5m gaps)",
     stale_after_min: 15,
     weekdays_only: true,
     market_hours_only: true,
-    description: "Pre-warm the BlackOut Grid market-wide snapshots (Analyst Actions Benzinga channel) into Redis grid:* keys so /api/grid/* reads are pure cache hits (cache-reader rule)",
+    description: "Warms 0DTE Command's earnings-match cache (readGridEarnings, relocated from the deleted classic-Grid tool) and runs its always-on scanner tick (warmZeroDteBoard) so zerodte_setup_log stays current",
   },
   {
     key: "gex-eod-snapshot",

@@ -5,8 +5,8 @@ import type { CSSProperties } from "react";
 import { clsx } from "clsx";
 import { MARK_GEOMETRY } from "./geometry";
 
-/** The seven product sigils. */
-export type MarkProduct = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "grid" | "vector";
+/** The six product sigils. */
+export type MarkProduct = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "vector";
 
 /** Canonical accent per product (design language — switching product = switching one CSS var). */
 export const MARK_ACCENT: Record<MarkProduct, string> = {
@@ -15,7 +15,6 @@ export const MARK_ACCENT: Record<MarkProduct, string> = {
   heatmap: "#ff6b2b", // orange  — heat
   largo: "#22d3ee", // cyan    — Largo (canonical cyan #22d3ee)
   nighthawk: "#ff2d55", // red     — the hunt
-  grid: "#ffcc4d", // gold    — the market-intelligence command center
   vector: "#2dd4bf", // teal    — live chart + level overlay
 };
 
@@ -29,7 +28,6 @@ export const NAV_TO_MARK: Record<string, MarkProduct> = {
   orange: "heatmap",
   blue: "largo",
   red: "nighthawk",
-  gold: "grid",
   teal: "vector",
 };
 
@@ -39,7 +37,6 @@ const DEFAULT_TITLE: Record<MarkProduct, string> = {
   heatmap: "BlackOut Thermal",
   largo: "Largo",
   nighthawk: "Night Hawk",
-  grid: "BlackOut Grid",
   vector: "Vector",
 };
 

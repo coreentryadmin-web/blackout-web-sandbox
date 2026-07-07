@@ -379,7 +379,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     "flow-ingest",
     "heatmap-warm",
     "desk-warm",
-    "grid-warm",
+    "zerodte-warm",
     "uw-cache-refresh",
   ]);
   await Promise.all(

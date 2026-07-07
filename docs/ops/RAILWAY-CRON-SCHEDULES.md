@@ -27,7 +27,7 @@ are cheap no-ops — the wide UTC band avoids maintaining separate EDT/EST cron 
 | spx-evaluate | SPX-Engine-Evaluation | `*/5 11-21 * * 1-5` | SPX engine |
 | uw-cache-refresh | UW-Cache-Refresh-New | `*/2 11-21 * * 1-5` | UW REST cache warm |
 | heatmap-warm | heatmap-warm | `* 11-21 * * 1-5` | Thermal matrix warm |
-| grid-warm | Grid-Warm-Cron | `*/2 11-21 * * 1-5` | Grid panels warm |
+| zerodte-warm | ZeroDTE-Warm-Cron | `*/2 11-21 * * 1-5` | 0DTE Command earnings cache + scanner tick (renamed from grid-warm 2026-07-07 when classic Grid was deleted) |
 | gex-alerts | GEX-Alerts | `*/5 11-21 * * 1-5` | GEX push alerts |
 | data-integrity | Data-Integrity-Cron | `*/5 11-21 * * 1-5` | Data integrity verifier |
 | data-correctness | Data-Correctness-Cron | `0,30 11-21 * * 1-5` | :00/:30 each hour in band |

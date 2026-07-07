@@ -6,12 +6,12 @@
 // behind a padlock until its launch. The locked set remains env-overridable
 // (LAUNCHED_TOOLS) for additive unlocks — default-launched tools cannot be locked via env.
 
-export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "grid" | "vector";
+export type ToolKey = "spx" | "flows" | "heatmap" | "largo" | "nighthawk" | "vector";
 
 /** ProductMark sigil keys — kept inline (not imported) so this module stays alias-free + test-safe.
  *  Structurally identical to MarkProduct in components/marks/ProductMark.tsx, so a ToolMeta.product
  *  is directly assignable to <ProductMark product>. */
-export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "grid" | "vector";
+export type ToolSigil = "spx" | "helix" | "heatmap" | "largo" | "nighthawk" | "vector";
 
 export type ToolMeta = {
   key: ToolKey;
@@ -31,7 +31,6 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: true },
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: true },
-  { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: true },
   // Vector — v1 ships behind a locked default so it can be staged/QA'd before a public
   // launch date; flip live via LAUNCHED_TOOLS=vector (or set defaultLaunched true at launch).
   { key: "vector", label: "Vector", href: "/vector", product: "vector", defaultLaunched: false },

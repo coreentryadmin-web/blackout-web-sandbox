@@ -18,7 +18,6 @@ describe("isIosToolRoute", () => {
     assert.equal(isIosToolRoute("/heatmap"), true);
     assert.equal(isIosToolRoute("/terminal"), true);
     assert.equal(isIosToolRoute("/nighthawk/edition"), true);
-    assert.equal(isIosToolRoute("/grid"), true);
   });
 
   it("rejects marketing and auth paths", () => {
@@ -52,13 +51,13 @@ describe("isIosNativeShellRoute", () => {
 });
 
 describe("IOS_TOOLS metadata", () => {
-  it("defines six primary tools with accents and instrument codes", () => {
-    assert.equal(IOS_TOOLS.length, 6);
+  it("defines five primary tools with accents and instrument codes", () => {
+    assert.equal(IOS_TOOLS.length, 5);
     assert.ok(IOS_TOOLS.every((t) => t.accent.startsWith("#")));
     assert.ok(IOS_TOOLS.every((t) => t.code.length >= 2 && t.code.length <= 4));
     assert.deepEqual(
       IOS_TOOLS.map((t) => t.code),
-      ["SPX", "HLX", "THM", "LRG", "HWK", "0DT"]
+      ["SPX", "HLX", "THM", "LRG", "HWK"]
     );
   });
 
@@ -71,7 +70,7 @@ describe("IOS_TOOLS metadata", () => {
   it("returns tab order index for transitions", () => {
     assert.equal(getIosToolRouteIndex("/dashboard"), 0);
     assert.equal(getIosToolRouteIndex("/flows"), 1);
-    assert.equal(getIosToolRouteIndex("/grid"), 5);
+    assert.equal(getIosToolRouteIndex("/nighthawk"), 4);
     assert.equal(getIosToolRouteIndex("/account"), -1);
   });
 });

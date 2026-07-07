@@ -135,7 +135,6 @@ const SENSITIVE_GET = [
   ["/api/market/gex-heatmap?ticker=SPX", "premium"],
   ["/api/market/nighthawk/edition", "premium"],
   ["/api/market/zerodte/board", "admin"],
-  ["/api/grid/bootstrap", "admin"], // launch-locked → admin bypass
   ["/api/platform/intel", "premium"],
   ["/api/coaching/alerts", "premium"],
   ["/api/market/lotto/today", "premium"],
@@ -161,7 +160,7 @@ const CRON_GET = [
   "/api/cron/spx-evaluate",
   "/api/cron/socket-health",
   "/api/cron/flow-ingest",
-  "/api/cron/grid-warm",
+  "/api/cron/zerodte-warm",
   "/api/cron/nighthawk-edition",
   "/api/cron/membership-reconcile",
 ];

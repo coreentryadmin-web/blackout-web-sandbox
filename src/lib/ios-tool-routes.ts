@@ -7,7 +7,6 @@ export const IOS_TOOL_ROUTES = [
   "/heatmap",
   "/terminal",
   "/nighthawk",
-  "/grid",
 ] as const;
 
 export type IosToolRoute = (typeof IOS_TOOL_ROUTES)[number];
@@ -84,15 +83,6 @@ export const IOS_TOOLS: IosToolMeta[] = [
     accent: "#ff2d55",
     tagline: "Overnight playbook",
     code: "HWK",
-  },
-  {
-    href: "/grid",
-    label: "0DTE Command",
-    short: "0DTE",
-    mark: "grid",
-    accent: "#ffcc4d",
-    tagline: "Always-on hunter",
-    code: "0DT",
   },
 ];
 
@@ -202,7 +192,6 @@ export const IOS_NATIVE_SHELL_PATH_PREFIXES = [
   "/heatmap",
   "/terminal",
   "/nighthawk",
-  "/grid",
   "/vector",
   "/account",
   "/faq",

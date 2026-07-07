@@ -4190,7 +4190,6 @@ body::before {
   .nav-accent-orange { --accent: #ff6b2b; }
   .nav-accent-blue { --accent: #22d3ee; }
   .nav-accent-red { --accent: #ff2d55; }
-  .nav-accent-gold { --accent: #ffcc4d; }
   .nav-accent-teal { --accent: #2dd4bf; }
   .nav-mega-foot { @apply mt-4 pt-3 text-center; border-top: 1px solid rgba(255, 255, 255, 0.06); font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: #7dd3fc; }
 

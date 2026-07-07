@@ -108,7 +108,10 @@ export async function fetchZeroDteHealthSnapshot(): Promise<ZeroDteHealthSnapsho
   };
   try {
     const cronHealth = await buildCronHealthSnapshot();
-    const gridWarm = cronHealth.jobs.find((j) => j.key === "grid-warm");
+    // Renamed from "grid-warm" -> "zerodte-warm" when classic Grid was deleted (2026-07-07) —
+    // see cron-registry.ts. warmZeroDteBoard() still runs on the SAME cron, just under its new
+    // key, so this lookup must follow the rename or this panel's scan status goes dark.
+    const gridWarm = cronHealth.jobs.find((j) => j.key === "zerodte-warm");
     if (gridWarm) {
       scan = {
         last_scan_at: gridWarm.last_run_at,

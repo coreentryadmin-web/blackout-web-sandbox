@@ -7,7 +7,6 @@ export type LearnSlug =
   | "largo-ai"
   | "night-hawk"
   | "heat-maps"
-  | "blackout-grid"
   | "glossary";
 
 export type LearnNavItem = {
@@ -55,12 +54,6 @@ export const LEARN_NAV: LearnNavItem[] = [
     product: "heatmap",
     label: "Thermal",
     description: "GEX, VEX, DEX, and CHARM dealer positioning surfaces.",
-  },
-  {
-    slug: "blackout-grid",
-    product: "grid",
-    label: "BlackOut Grid",
-    description: "Market intelligence — news, flow, earnings, catalysts.",
   },
   {
     slug: "glossary",

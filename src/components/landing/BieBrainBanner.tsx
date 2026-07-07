@@ -21,7 +21,7 @@ import { BieOrbitTools, type OrbitTool } from "./BieOrbitTools";
  * Milestone 2 — The Verification Gate.
  * BIE isn't a generic "AI energy core" — its whole reason for existing is that it
  * checks things before they reach you, and sometimes says no. Milestone 1's field
- * (organic rings, ambient particles, six-product orbit) stays; the core is now a
+ * (organic rings, ambient particles, five-product orbit) stays; the core is now a
  * literal gate a signal must pass, and roughly 1 in 6 cycles is visibly rejected
  * rather than always resolving to a clean success. See docs/design/BIE-HERO-VISION.md.
  *
@@ -73,7 +73,6 @@ const FIELD_TOOLS: OrbitTool[] = [
   { name: "SPX Slayer", href: "/dashboard", mark: "spx", accent: MARK_ACCENT.spx },
   { name: "HELIX", href: "/flows", mark: "helix", accent: MARK_ACCENT.helix },
   { name: "BlackOut Thermal", href: "/heatmap", mark: "heatmap", accent: MARK_ACCENT.heatmap },
-  { name: "BlackOut Grid", href: "/grid", mark: "grid", accent: MARK_ACCENT.grid },
   { name: "Largo", href: "/terminal", mark: "largo", accent: MARK_ACCENT.largo },
   { name: "Night Hawk", href: "/nighthawk", mark: "nighthawk", accent: MARK_ACCENT.nighthawk },
 ];

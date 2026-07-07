@@ -58,7 +58,7 @@ export const nightHawkGuide = defineToolGuide({
       ],
       cadence: "Updates with edition payload",
       consume:
-        "Sets the macro tone for the recap. Sector leaders hint where flow may concentrate next session. Cross-check Grid sector heat at the open if rotation looks extreme.",
+        "Sets the macro tone for the recap. Sector leaders hint where flow may concentrate next session — cross-check against live sector performance at the open if rotation looks extreme.",
     },
     {
       name: "Market recap (collapsible)",
@@ -120,7 +120,7 @@ export const nightHawkGuide = defineToolGuide({
     intro: "Read after 4:30 PM ET. Validate at the open on Slayer — markets change overnight.",
     steps: [
       { title: "Read after close", body: "Bookmark edition cadence; expand recap once." },
-      { title: "Note invalidation", body: "Carry hard levels into pre-market Grid scan." },
+      { title: "Note invalidation", body: "Carry hard levels into the pre-market open." },
       { title: "Check morning badges", body: "Before 9:30, refresh for CONFIRMED vs INVALIDATED." },
       { title: "Validate at open", body: "Slayer flip and walls may disagree — Slayer wins for execution." },
       { title: "Check 0DTE Command", body: "See today's always-on scanner finds on the same page." },
@@ -128,7 +128,6 @@ export const nightHawkGuide = defineToolGuide({
   },
   crossLinks: [
     CROSS.spx("Live execution desk for RTH."),
-    CROSS.grid("Overnight catalysts that override the edition."),
     CROSS.helix("Night Hawk Flow panel on HELIX links edition to live tape."),
     CROSS.largo("Ask get_nighthawk_edition for structured Q&A on the board."),
   ],

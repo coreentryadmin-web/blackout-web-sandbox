@@ -91,7 +91,7 @@ test("livePnlPct: board ledger and Largo plays use identical rounding", async ()
     },
   });
   mock.module("../providers/polygon", { namedExports: { fetchBenzingaNews: async () => [] } });
-  mock.module("../providers/grid", { namedExports: { readGridEarnings: async () => null } });
+  mock.module("../zerodte/earnings", { namedExports: { readGridEarnings: async () => null } });
   mock.module("../server-cache", {
     namedExports: {
       withServerCache: async (_k: string, _ttl: number, fn: () => Promise<unknown>) => fn(),

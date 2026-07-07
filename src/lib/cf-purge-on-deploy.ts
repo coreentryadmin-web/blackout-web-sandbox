@@ -37,7 +37,6 @@ const MARKETING_PATHS = [
   "/learn/helix-flows",
   "/learn/largo-ai",
   "/learn/spx-slayer",
-  "/learn/blackout-grid",
   "/learn/heat-maps",
   "/learn/glossary",
   "/learn/getting-started",

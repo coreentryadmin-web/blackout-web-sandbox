@@ -1,5 +1,5 @@
-# Railway config for the BlackOut-Grid-Warm cron service.
-# Wire it up: service Settings -> Config-as-code -> set path to "railway.grid-warm.toml"
+# Railway config for the ZeroDTE-Warm-Cron service.
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.zerodte-warm.toml"
 # Requires CRON_SECRET on this service (same value as blackout-web).
 [build]
 builder = "nixpacks"
@@ -13,16 +13,16 @@ buildCommand = "echo 'cron trigger service: no app build needed'"
 # proven repo-relative-glob watchPatterns (a leading-slash "/**" matches NOTHING on Railway).
 watchPatterns = [
   "scripts/hit-cron.mjs",
-  "railway.grid-warm.toml",
+  "railway.zerodte-warm.toml",
   "nixpacks.toml",
 ]
 
 [deploy]
-startCommand = "node scripts/hit-cron.mjs /api/cron/grid-warm"
+startCommand = "node scripts/hit-cron.mjs /api/cron/zerodte-warm"
 # Every 5 min during the UTC band that covers RTH in BOTH EDT (UTC-4) and EST (UTC-5):
 # 11-21 UTC spans ~7AM-5PM ET. Railway's native cron floor is 5 minutes (*/2 was aspirational).
 # Sub-5m gaps are filled by the in-app rth-warm-leader (4 min heal threshold). The route's ET
-# gate self-skips pre-open / off-band minutes. The Grid snapshot's 10-min TTL covers brief gaps.
+# gate self-skips pre-open / off-band minutes. The earnings snapshot's 5-min TTL covers brief gaps.
 # NOTE: Railway must wire this — if cronSchedule was set in the dashboard UI, the dashboard value
 # overrides this TOML, so update it there too.
 cronSchedule = "*/5 11-21 * * 1-5"
