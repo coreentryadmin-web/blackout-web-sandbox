@@ -659,7 +659,8 @@ export function createPulseEventSource(
 
 export type VectorStreamCandle = { time: number; open: number; high: number; low: number; close: number };
 export type VectorWallLevel = { strike: number; pct: number };
-export type VectorWalls = { callWall: VectorWallLevel | null; putWall: VectorWallLevel | null };
+/** Ranked strongest-first per side, capped server-side (gex-wall-levels.ts's DEFAULT_WALL_NODES_PER_SIDE). */
+export type VectorWalls = { callWalls: VectorWallLevel[]; putWalls: VectorWallLevel[] };
 export type VectorStreamSnapshot = { candle: VectorStreamCandle | null; walls?: VectorWalls | null; t?: number };
 
 export function createVectorEventSource(

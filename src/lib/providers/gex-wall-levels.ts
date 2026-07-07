@@ -1,40 +1,56 @@
-import { strikeTotalsFromLadder, wallsFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
+import { strikeTotalsFromLadder } from "@/lib/providers/gex-cross-validation-core";
 
 /** One gamma-wall level for the Vector chart overlay: the strike plus its share of concentration. */
 export type GexWallLevel = { strike: number; pct: number };
 
 export type GexWalls = {
-  /** Largest-positive net-gamma strike (resistance) — same semantics as gex-positioning.ts's call_wall. */
-  callWall: GexWallLevel | null;
-  /** Largest-negative net-gamma strike (support) — same semantics as gex-positioning.ts's put_wall. */
-  putWall: GexWallLevel | null;
+  /** Positive net-gamma strikes (resistance), ranked strongest-first. [0], when present, is the
+   *  same strike gex-positioning.ts's call_wall would pick (largest-positive net-gamma strike) —
+   *  see gex-wall-levels.test.ts's cross-check against wallsFromStrikeTotals(). */
+  callWalls: GexWallLevel[];
+  /** Negative net-gamma strikes (support), ranked strongest-first — same relationship to
+   *  gex-positioning.ts's put_wall as callWalls[0] has to call_wall. */
+  putWalls: GexWallLevel[];
 };
+
+/** Matches Skylit's own "NODES" concept — how many ranked levels to show per side by default. */
+export const DEFAULT_WALL_NODES_PER_SIDE = 3;
 
 /**
  * Put/call gamma-wall levels for the Vector chart overlay, sized by each wall's share of total
- * |gamma| across the ladder. Reuses wallsFromStrikeTotals() (the same largest-positive /
- * largest-negative strike picker already used for UW cross-validation) so the Vector chart's
- * walls can never diverge from the Thermal/Grid GEX panels reading the same underlying ladder.
+ * |gamma| across the ladder and ranked strongest-first, capped at `maxPerSide` per side (top-1
+ * behavior is unchanged from before this was extended to multi-node: `callWalls[0]`/`putWalls[0]`
+ * are the exact same largest-positive/largest-negative strikes gex-positioning.ts's
+ * call_wall/put_wall would pick — same reason as before, so the Vector chart's #1 wall per side
+ * can never diverge from the Thermal/Grid GEX panels reading the same underlying ladder).
  */
-export function computeGexWalls(ladder: Map<number, number>): GexWalls {
-  if (ladder.size === 0) return { callWall: null, putWall: null };
+export function computeGexWalls(
+  ladder: Map<number, number>,
+  { maxPerSide = DEFAULT_WALL_NODES_PER_SIDE }: { maxPerSide?: number } = {}
+): GexWalls {
+  if (ladder.size === 0) return { callWalls: [], putWalls: [] };
 
   const strikeTotals = strikeTotalsFromLadder(ladder);
-  const { callWall, putWall } = wallsFromStrikeTotals(strikeTotals);
 
   let totalAbsGamma = 0;
   for (const g of Object.values(strikeTotals)) totalAbsGamma += Math.abs(g);
-  if (totalAbsGamma <= 0) return { callWall: null, putWall: null };
+  if (totalAbsGamma <= 0) return { callWalls: [], putWalls: [] };
+
+  const callWalls: GexWallLevel[] = [];
+  const putWalls: GexWallLevel[] = [];
+  for (const [strikeStr, g] of Object.entries(strikeTotals)) {
+    const strike = Number(strikeStr);
+    if (!Number.isFinite(strike) || !Number.isFinite(g) || g === 0) continue;
+    const pct = (Math.abs(g) / totalAbsGamma) * 100;
+    if (g > 0) callWalls.push({ strike, pct });
+    else putWalls.push({ strike, pct });
+  }
+  callWalls.sort((a, b) => b.pct - a.pct);
+  putWalls.sort((a, b) => b.pct - a.pct);
 
   return {
-    callWall:
-      callWall != null
-        ? { strike: callWall, pct: (Math.abs(strikeTotals[String(callWall)]) / totalAbsGamma) * 100 }
-        : null,
-    putWall:
-      putWall != null
-        ? { strike: putWall, pct: (Math.abs(strikeTotals[String(putWall)]) / totalAbsGamma) * 100 }
-        : null,
+    callWalls: callWalls.slice(0, maxPerSide),
+    putWalls: putWalls.slice(0, maxPerSide),
   };
 }
 

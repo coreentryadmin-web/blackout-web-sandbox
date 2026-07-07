@@ -30,36 +30,63 @@ type Props = {
 const PUT_WALL_COLOR = "#b26bff";
 const CALL_WALL_COLOR = "#ffd60a";
 
-/** Create/update/remove a persistent gamma-wall price line in place, rather than tearing down
- *  and recreating it every tick — a wall shifts strikes far less often than the 1s poll cadence,
- *  so this avoids a visible flicker on every tick where the wall hasn't actually moved. */
-function applyWallLine(
+function withAlpha(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Rank 0 (server-ranked strongest) renders at full color; each weaker rank fades, so the
+// dominant wall per side reads clearly while the others stay visible as secondary context —
+// same "hierarchy of nodes" idea as the reference product's multi-node display.
+const RANK_ALPHA = [1, 0.65, 0.42, 0.28, 0.2];
+function alphaForRank(rank: number): number {
+  return RANK_ALPHA[rank] ?? RANK_ALPHA[RANK_ALPHA.length - 1];
+}
+
+/**
+ * Reconcile a ranked array of wall levels (strongest-first, from the server) against a
+ * persisted array of price-line refs for one side (call or put): updates a rank's line in
+ * place where it still has a level (avoiding the flicker a full teardown/recreate would cause
+ * on every ~1s tick), creates a new line for a rank that just gained a level, and removes a
+ * rank's line once it no longer has one (e.g. the ladder thinned to fewer distinct strikes).
+ */
+function applyWallLines(
   series: ISeriesApi<"Candlestick">,
-  ref: React.MutableRefObject<IPriceLine | null>,
-  level: VectorWallLevel | null | undefined,
-  color: string,
+  linesRef: React.MutableRefObject<(IPriceLine | null)[]>,
+  levels: VectorWallLevel[] | undefined,
+  baseColor: string,
   label: string
 ): void {
-  if (!level) {
-    if (ref.current) {
-      series.removePriceLine(ref.current);
-      ref.current = null;
+  const list = levels ?? [];
+  const lines = linesRef.current;
+  const max = Math.max(list.length, lines.length);
+  for (let i = 0; i < max; i++) {
+    const level = list[i];
+    if (!level) {
+      if (lines[i]) {
+        series.removePriceLine(lines[i]!);
+        lines[i] = null;
+      }
+      continue;
     }
-    return;
+    const title = `${label} ${Math.round(level.strike)} — ${level.pct.toFixed(0)}%`;
+    const color = withAlpha(baseColor, alphaForRank(i));
+    if (lines[i]) {
+      lines[i]!.applyOptions({ price: level.strike, title, color });
+    } else {
+      lines[i] = series.createPriceLine({
+        price: level.strike,
+        color,
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title,
+      });
+    }
   }
-  const title = `${label} ${Math.round(level.strike)} — ${level.pct.toFixed(0)}%`;
-  if (ref.current) {
-    ref.current.applyOptions({ price: level.strike, title });
-  } else {
-    ref.current = series.createPriceLine({
-      price: level.strike,
-      color,
-      lineWidth: 2,
-      lineStyle: LineStyle.Solid,
-      axisLabelVisible: true,
-      title,
-    });
-  }
+  lines.length = list.length; // trailing slots beyond the new count were already removed above
 }
 
 /**
@@ -68,15 +95,16 @@ function applyWallLine(
  * once a second, and `series.update()` either refreshes that bar in place or appends a new
  * one — lightweight-charts' own semantics for "same time as last bar => update, later time
  * => append" do the bar-rollover handling for us, so no client-side bar-boundary logic needed.
- * Phase C adds the dealer gamma-wall overlay: put wall (support) and call wall (resistance)
- * rendered as persistent horizontal price lines that reposition/relabel as the wall shifts.
+ * Phase C adds the dealer gamma-wall overlay: put walls (support) and call walls (resistance),
+ * each a ranked top-N list from the server, rendered as persistent horizontal price lines
+ * (strongest per side at full color, weaker ranks fading) that reposition/relabel as they shift.
  */
 export function VectorChart({ initialBars }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const callWallLineRef = useRef<IPriceLine | null>(null);
-  const putWallLineRef = useRef<IPriceLine | null>(null);
+  const callWallLinesRef = useRef<(IPriceLine | null)[]>([]);
+  const putWallLinesRef = useRef<(IPriceLine | null)[]>([]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -116,8 +144,8 @@ export function VectorChart({ initialBars }: Props) {
       lastBarTime = snap.candle.time;
       seriesRef.current?.update(snap.candle as VectorBar);
       if (seriesRef.current) {
-        applyWallLine(seriesRef.current, callWallLineRef, snap.walls?.callWall, CALL_WALL_COLOR, "Call wall");
-        applyWallLine(seriesRef.current, putWallLineRef, snap.walls?.putWall, PUT_WALL_COLOR, "Put wall");
+        applyWallLines(seriesRef.current, callWallLinesRef, snap.walls?.callWalls, CALL_WALL_COLOR, "Call wall");
+        applyWallLines(seriesRef.current, putWallLinesRef, snap.walls?.putWalls, PUT_WALL_COLOR, "Put wall");
       }
     });
 
@@ -126,8 +154,8 @@ export function VectorChart({ initialBars }: Props) {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      callWallLineRef.current = null;
-      putWallLineRef.current = null;
+      callWallLinesRef.current = [];
+      putWallLinesRef.current = [];
     };
     // initialBars is only the seed for this mount — live updates land via seriesRef, not by
     // re-seeding/resubscribing on every parent render.
