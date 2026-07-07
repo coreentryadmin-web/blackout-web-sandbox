@@ -14,7 +14,7 @@ export type GexWalls = {
 };
 
 /** Matches Skylit's own "NODES" concept — how many ranked levels to show per side by default. */
-export const DEFAULT_WALL_NODES_PER_SIDE = 3;
+export const DEFAULT_WALL_NODES_PER_SIDE = 6;
 
 /**
  * Put/call gamma-wall levels for the Vector chart overlay, sized by each wall's share of total

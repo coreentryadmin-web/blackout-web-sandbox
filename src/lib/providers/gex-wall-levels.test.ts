@@ -52,16 +52,17 @@ test("computeGexWalls caps each side at maxPerSide, dropping the weakest strikes
   assert.deepEqual(callWalls.map((w) => w.strike), [6800, 6810, 6820]);
 });
 
-test("computeGexWalls defaults to 3 nodes per side when maxPerSide is omitted", () => {
+test("computeGexWalls defaults to 6 nodes per side when maxPerSide is omitted", () => {
   const ladder = new Map<number, number>([
-    [1, 5e9],
-    [2, 4e9],
-    [3, 3e9],
-    [4, 2e9],
-    [5, 1e9],
+    [1, 6e9],
+    [2, 5e9],
+    [3, 4e9],
+    [4, 3e9],
+    [5, 2e9],
+    [6, 1e9],
   ]);
   const { callWalls } = computeGexWalls(ladder);
-  assert.equal(callWalls.length, 3);
+  assert.equal(callWalls.length, 6);
 });
 
 test("computeGexWalls returns empty arrays for an empty ladder", () => {

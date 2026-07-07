@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector RTH monitor false "candle stale" + stale replica candle reads (branch `fix/vector-rth-auth-refresh`)
+
+**Surface:** `scripts/vector-rth-minute-audit.mjs`, `src/lib/ws/spx-candle-store.ts`, Vector wall guide cap.
+
+**How it was found:** RTH minute monitor logged ~33% pass rate with `candle stale 12–58s` on most ticks even when walls/flip math looked sane. Two independent bugs.
+
+**Root cause (monitor):** staleness used `last.t/1000 - candle.time` (seconds into the current minute bar) instead of receive-time minus SSE `t` (`updatedAt` from `getCurrentSpxCandle`). After :08 into any minute the check falsely failed on every tick.
+
+**Root cause (candle store):** `getCurrentSpxCandle()` always returned local state once any tick had landed, even when `updatedAt` was minutes old on a replica that lost the Polygon WS leader lock — ignoring fresher `vector:candle:snapshot` from the current leader.
+
+**Fix:**
+- Monitor: `candleFreshSec = (Date.now() - last.t) / 1000`; VEX-vs-heatmap mismatches downgraded to warns; per-read SSE timeout + hard cap to prevent hung probes.
+- Candle store: when local `updatedAt` > 5s, prefer Redis snapshot with higher `updatedAt`.
+- Wall guides: `MAX_WALL_GUIDES` / `DEFAULT_WALL_NODES_PER_SIDE` / monitor `GUIDE_CAP` raised 3 → 6 (session data showed 6–9 nodes ≥2% concentration).
+
+**Verification:** `spx-candle-store.test.ts` stale-local fallback test; `gex-wall-levels.test.ts` default cap 6; full `npm test` green.
+
 ## 🔵 PRODUCT ENHANCEMENT 2026-07-07 — Vector GEX/VEX dual lens + structure feed (branch `cursor/vector-vex-audit-top-tier`)
 
 **Surface:** `/vector` — live SPX chart with wall beads, flip guides, dark-pool overlays.

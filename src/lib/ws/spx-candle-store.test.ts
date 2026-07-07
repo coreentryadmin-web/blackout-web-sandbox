@@ -129,7 +129,7 @@ test("getCurrentSpxCandle: stays null when local state is empty and the Redis fa
   assert.deepEqual(getCurrentSpxCandle(), { current: null, updatedAt: 0 });
 });
 
-test("getCurrentSpxCandle: local state always wins over the Redis fallback once a tick has been recorded", async () => {
+test("getCurrentSpxCandle: fresh local state wins over the Redis fallback once a tick has been recorded", async () => {
   const { recordSpxTick, getCurrentSpxCandle, _resetSpxCandleStoreForTest } = await mod();
   _resetSpxCandleStoreForTest();
   sharedCache.getResult = { current: { time: 999, open: 9, high: 9, low: 9, close: 9 }, updatedAt: 1 };
@@ -140,6 +140,35 @@ test("getCurrentSpxCandle: local state always wins over the Redis fallback once 
 
   const { current } = getCurrentSpxCandle();
   assert.equal(current!.open, 6500); // the real local tick, never the stale fallback fixture
+});
+
+test("getCurrentSpxCandle: stale local state yields to a fresher cross-replica Redis snapshot", async () => {
+  const {
+    recordSpxTick,
+    getCurrentSpxCandle,
+    _resetSpxCandleStoreForTest,
+    _ageLocalCandleForTest,
+  } = await mod();
+  _resetSpxCandleStoreForTest();
+  state.sessionDate = "2026-07-08T3";
+  const atMs = Date.parse("2026-07-08T14:10:00.000Z");
+
+  recordSpxTick(6400, atMs);
+  assert.equal(getCurrentSpxCandle().current!.open, 6400);
+
+  const fresher = {
+    current: { time: Math.floor(atMs / 60_000) * 60, open: 6410, high: 6415, low: 6408, close: 6412 },
+    updatedAt: Date.now(),
+  };
+  sharedCache.getResult = fresher;
+  _ageLocalCandleForTest(10_000);
+
+  getCurrentSpxCandle();
+  await flushMicrotasks();
+
+  const snap = getCurrentSpxCandle();
+  assert.equal(snap.current!.close, 6412);
+  assert.equal(snap.updatedAt, fresher.updatedAt);
 });
 
 test("recordSpxTick: throttles the cross-replica Redis write instead of writing on every tick", async () => {

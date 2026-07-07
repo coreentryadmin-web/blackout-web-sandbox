@@ -35,7 +35,6 @@ import {
   hasVexInHistory,
   mergeWallHistory,
   pickActiveStrikes,
-  trailForFlipLevel,
   trailsByStrike,
   type VectorWallLens,
   type WallHistorySample,
@@ -65,7 +64,7 @@ const GAMMA_FLIP_COLOR = "#22d3ee";
 const VANNA_FLIP_COLOR = "#38bdf8";
 const DARK_POOL_COLOR = "#00d4ff";
 const REPLAY_STEP_MS = 350;
-const MAX_WALL_GUIDES = 3;
+const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
 
 type Props = {
@@ -134,7 +133,8 @@ function applyPriceGuides(
   guideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   levels: Array<{ strike: number; pct: number; label: string }>,
   baseColor: string,
-  maxGuides: number
+  maxGuides: number,
+  axisOnly = false
 ): void {
   for (let i = 0; i < maxGuides; i++) {
     const level = levels[i];
@@ -147,8 +147,8 @@ function applyPriceGuides(
       continue;
     }
     const title = `${level.label} ${Math.round(level.strike)} — ${level.pct.toFixed(0)}%`;
-    const color = withAlpha(baseColor, alphaForPct(level.pct) * 0.35);
-    const lineWidth = widthForPct(level.pct);
+    const color = withAlpha(baseColor, axisOnly ? 0.9 : alphaForPct(level.pct) * 0.35);
+    const lineWidth = axisOnly ? 1 : widthForPct(level.pct);
     if (guideRefs.current[i]) {
       guideRefs.current[i]!.applyOptions({
         price: level.strike,
@@ -156,6 +156,8 @@ function applyPriceGuides(
         color,
         lineWidth,
         lineStyle: LineStyle.Dashed,
+        lineVisible: !axisOnly,
+        axisLabelVisible: true,
       });
     } else {
       guideRefs.current[i] = series.createPriceLine({
@@ -163,6 +165,7 @@ function applyPriceGuides(
         color,
         lineWidth,
         lineStyle: LineStyle.Dashed,
+        lineVisible: !axisOnly,
         axisLabelVisible: true,
         title,
       });
@@ -202,7 +205,8 @@ function applyDarkPoolGuides(
     guideRefs,
     levels.slice(0, MAX_DP_GUIDES).map((l) => ({ strike: l.strike, pct: l.pct, label: "DP" })),
     DARK_POOL_COLOR,
-    MAX_DP_GUIDES
+    MAX_DP_GUIDES,
+    true
   );
 }
 
@@ -221,15 +225,24 @@ function applyFlipGuide(
     return;
   }
   const title = `${label} ${Math.round(flip)}`;
-  const lineColor = withAlpha(color, 0.45);
+  const lineColor = withAlpha(color, 0.9);
   if (lineRef.current) {
-    lineRef.current.applyOptions({ price: flip, title, color: lineColor, lineWidth: 2, lineStyle: LineStyle.Dashed });
+    lineRef.current.applyOptions({
+      price: flip,
+      title,
+      color: lineColor,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      lineVisible: false,
+      axisLabelVisible: true,
+    });
   } else {
     lineRef.current = series.createPriceLine({
       price: flip,
       color: lineColor,
-      lineWidth: 2,
+      lineWidth: 1,
       lineStyle: LineStyle.Dashed,
+      lineVisible: false,
       axisLabelVisible: true,
       title,
     });
@@ -299,39 +312,13 @@ function applyStrikeTrails(
 function applyFlipTrail(
   chart: IChartApi,
   candleSeries: ISeriesApi<"Candlestick">,
-  flipSeriesRef: React.MutableRefObject<ISeriesApi<"Line"> | null>,
-  history: WallHistorySample[],
-  lens: VectorWallLens
+  flipSeriesRef: React.MutableRefObject<ISeriesApi<"Line"> | null>
 ): void {
-  const points = trailForFlipLevel(history, lens);
-  const flipColor = lensVisuals(lens).flipColor;
-  if (!points.length) {
-    if (flipSeriesRef.current) {
-      chart.removeSeries(flipSeriesRef.current);
-      flipSeriesRef.current = null;
-    }
-    return;
+  // Flip is axis-label only — no bead trail across the chart pane.
+  if (flipSeriesRef.current) {
+    chart.removeSeries(flipSeriesRef.current);
+    flipSeriesRef.current = null;
   }
-  let flipSeries = flipSeriesRef.current;
-  if (!flipSeries) {
-    flipSeries = chart.addSeries(LineSeries, {
-      color: flipColor,
-      lineVisible: false,
-      pointMarkersVisible: true,
-      pointMarkersRadius: 3,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    flipSeries.setSeriesOrder(0);
-    flipSeriesRef.current = flipSeries;
-  }
-  const data: LineData<UTCTimestamp>[] = points.map((p) => ({
-    time: p.time as UTCTimestamp,
-    value: p.strike,
-    color: withAlpha(flipColor, 0.85),
-  }));
-  flipSeries.setData(data);
   pinCandlesOnTop(candleSeries);
 }
 
@@ -426,7 +413,7 @@ export function VectorChart({
     const v = lensVisuals(activeLens);
     applyStrikeTrails(chart, series, callStrikeSeriesRef.current, wallHistoryRef.current, "callWalls", v.callColor, activeLens);
     applyStrikeTrails(chart, series, putStrikeSeriesRef.current, wallHistoryRef.current, "putWalls", v.putColor, activeLens);
-    applyFlipTrail(chart, series, flipTrailSeriesRef, wallHistoryRef.current, activeLens);
+    applyFlipTrail(chart, series, flipTrailSeriesRef);
   }, []);
 
   const refreshOverlays = useCallback(
@@ -463,7 +450,7 @@ export function VectorChart({
       const v = lensVisuals(activeLens);
       applyStrikeTrails(chart, series, callStrikeSeriesRef.current, visibleHistory, "callWalls", v.callColor, activeLens);
       applyStrikeTrails(chart, series, putStrikeSeriesRef.current, visibleHistory, "putWalls", v.putColor, activeLens);
-      applyFlipTrail(chart, series, flipTrailSeriesRef, visibleHistory, activeLens);
+      applyFlipTrail(chart, series, flipTrailSeriesRef);
 
       const gexAt = wallsAtReplayTime(history, cursorTime, "gex") ?? initialWalls;
       const vexAt = wallsAtReplayTime(history, cursorTime, "vex") ?? initialVexWalls;

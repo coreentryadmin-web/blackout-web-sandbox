@@ -67,6 +67,8 @@ const REDIS_WRITE_THROTTLE_MS = 1_000;
 // connection on the SAME non-leader replica from each hitting Redis on their own 1s tick.
 const REDIS_READ_REFRESH_MS = 1_000;
 const REDIS_TTL_SEC = 30;
+/** When local state is older than this, prefer a fresher cross-replica Redis snapshot. */
+const LOCAL_STALE_MS = 5_000;
 
 let lastRedisWriteAt = 0;
 let fallbackCandle: CandleSnapshot | null = null;
@@ -128,13 +130,24 @@ export function recordSpxTick(price: number, atMs: number = Date.now()): void {
 
 /**
  * Read-only snapshot of the currently-forming bar, for the Vector SSE stream. Local state
- * wins whenever this process has ever recorded a tick (the leader, or a former leader that
- * failed over — local state is never worse than the Redis snapshot it itself last wrote).
- * Only falls back to the cross-replica Redis snapshot when local state has never been touched.
+ * wins when it is fresh (leader actively ticking). When local `updatedAt` is stale — e.g. this
+ * replica lost the Polygon WS leader lock but still holds yesterday's bar in memory — prefer
+ * the cross-replica Redis snapshot written by whichever replica is currently leader.
  */
 export function getCurrentSpxCandle(): CandleSnapshot {
-  if (state.current) return { current: state.current, updatedAt: state.updatedAt };
+  const local: CandleSnapshot | null = state.current
+    ? { current: state.current, updatedAt: state.updatedAt }
+    : null;
+
+  const localFresh = local != null && Date.now() - local.updatedAt <= LOCAL_STALE_MS;
+  if (localFresh) return local;
+
   refreshFallbackFromRedis();
+
+  if (local && fallbackCandle && fallbackCandle.updatedAt > local.updatedAt) {
+    return fallbackCandle;
+  }
+  if (local) return local;
   return fallbackCandle ?? { current: null, updatedAt: 0 };
 }
 
@@ -148,4 +161,9 @@ export function _resetSpxCandleStoreForTest(): void {
   fallbackCandle = null;
   fallbackFetchedAt = 0;
   fallbackInFlight = null;
+}
+
+/** Test-only: age local `updatedAt` to simulate a replica that lost the WS leader lock. */
+export function _ageLocalCandleForTest(byMs: number): void {
+  if (byMs > 0) state.updatedAt = Math.max(0, state.updatedAt - byMs);
 }

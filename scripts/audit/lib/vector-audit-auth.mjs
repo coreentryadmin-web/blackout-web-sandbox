@@ -117,23 +117,26 @@ export async function mintVectorAuditSession({
     })
   )?.jwt;
 
+  const refreshToken = () => {
+    tok = J(
+      curl({
+        method: "POST",
+        url: `${FAPI}/v1/client/sessions/${sid}/tokens?_clerk_js_version=${CJS}`,
+        headers: {
+          Origin: BASE,
+          Referer: `${BASE}/`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        jar: true,
+        saveJar: true,
+      })
+    )?.jwt;
+    return tok;
+  };
+
   const app = (path, opts = {}) => {
     for (let i = 0; i < 2; i++) {
-      if (!tok) {
-        tok = J(
-          curl({
-            method: "POST",
-            url: `${FAPI}/v1/client/sessions/${sid}/tokens?_clerk_js_version=${CJS}`,
-            headers: {
-              Origin: BASE,
-              Referer: `${BASE}/`,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            jar: true,
-            saveJar: true,
-          })
-        )?.jwt;
-      }
+      if (!tok) refreshToken();
       const r = curl({
         method: opts.method || "GET",
         url: `${BASE}${path}`,
@@ -158,6 +161,7 @@ export async function mintVectorAuditSession({
     email: EMAIL,
     clientUat,
     sessionToken: () => tok,
+    refreshToken,
     app,
     cleanup: () => {
       backend("DELETE", `/users/${userId}`);

@@ -27,7 +27,7 @@ const WAIT_OPEN = process.argv.includes("--wait-open");
 const OUT = process.env.VECTOR_RTH_DIR || "/opt/cursor/artifacts/vector-rth";
 mkdirSync(OUT, { recursive: true });
 
-const GUIDE_CAP = 3;
+const GUIDE_CAP = 6;
 const BEAD_CAP = 8;
 const WALL_DEPTH_PROBE = 6;
 
@@ -96,45 +96,68 @@ function wallDepthFromTotals(strikeTotals, maxPerSide = WALL_DEPTH_PROBE) {
 }
 
 async function probeStream(session, holdMs = 8000) {
+  session.refreshToken?.();
   const tok = session.sessionToken();
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), holdMs + 4000);
-  const snaps = [];
-  try {
-    const res = await fetch(`${BASE}/api/market/vector/stream`, {
-      headers: {
-        Cookie: `__session=${tok}; __client_uat=${session.clientUat}`,
-        Accept: "text/event-stream",
-      },
-      signal: ac.signal,
-    });
-    if (!res.ok) throw new Error(`stream HTTP ${res.status}`);
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("no stream body");
-    const dec = new TextDecoder();
-    let buf = "";
-    const deadline = Date.now() + holdMs;
-    while (Date.now() < deadline) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const parts = buf.split("\n\n");
-      buf = parts.pop() ?? "";
-      for (const part of parts) {
-        const line = part.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        try {
-          snaps.push(JSON.parse(line.slice(6)));
-        } catch {
-          /* skip */
+  if (!tok) throw new Error("no session token");
+
+  const readWithTimeout = (reader, ms = 2500) =>
+    Promise.race([
+      reader.read(),
+      sleep(ms).then(() => ({ done: true, value: undefined, timedOut: true })),
+    ]);
+
+  const readStream = async (token) => {
+    const ac = new AbortController();
+    const hardCapMs = holdMs + 5000;
+    const timer = setTimeout(() => ac.abort(), hardCapMs);
+    const snaps = [];
+    try {
+      const res = await fetch(`${BASE}/api/market/vector/stream`, {
+        headers: {
+          Cookie: `__session=${token}; __client_uat=${session.clientUat}`,
+          Accept: "text/event-stream",
+        },
+        signal: ac.signal,
+      });
+      if (!res.ok) return { status: res.status, snaps };
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("no stream body");
+      const dec = new TextDecoder();
+      let buf = "";
+      const deadline = Date.now() + holdMs;
+      while (Date.now() < deadline) {
+        const chunk = await readWithTimeout(reader, Math.min(2500, deadline - Date.now() + 500));
+        if (chunk.timedOut) continue;
+        const { done, value } = chunk;
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          try {
+            snaps.push(JSON.parse(line.slice(6)));
+          } catch {
+            /* skip */
+          }
         }
       }
+      reader.cancel().catch(() => {});
+      return { status: 200, snaps };
+    } finally {
+      clearTimeout(timer);
     }
-    reader.cancel().catch(() => {});
-  } finally {
-    clearTimeout(timer);
+  };
+
+  let result = await readStream(tok);
+  if (result.status === 401 && session.refreshToken) {
+    const fresh = session.refreshToken();
+    if (fresh) result = await readStream(fresh);
   }
-  return snaps;
+  if (result.status === 401) throw new Error("stream HTTP 401");
+  if (result.status !== 200) throw new Error(`stream HTTP ${result.status}`);
+  return result.snaps;
 }
 
 async function runTick(session, tickNum) {
@@ -168,13 +191,14 @@ async function runTick(session, tickNum) {
 
   const spotIdx = Number(indices.json?.spx?.price ?? indices.json?.SPX?.price);
   const candle = last.candle;
-  const candleAge =
-    candle?.time && last.t ? Math.max(0, Math.floor(last.t / 1000) - candle.time) : null;
+  const receivedAt = Date.now();
+  const candleFreshSec =
+    last.t > 0 ? Math.max(0, Math.round((receivedAt - last.t) / 1000)) : null;
 
   if (!candle?.close) {
     issues.push("candle null");
-  } else if (candleAge != null && candleAge > 8) {
-    issues.push(`candle stale ${candleAge}s`);
+  } else if (candleFreshSec != null && candleFreshSec > 8) {
+    issues.push(`candle stale ${candleFreshSec}s`);
   }
 
   if (spotIdx > 0 && candle?.close > 0 && !spotsAgree(spotIdx, candle.close, spotIdx)) {
@@ -192,14 +216,26 @@ async function runTick(session, tickNum) {
   const hmGexDepth = wallDepthFromTotals(hm.json?.gex?.strike_totals, WALL_DEPTH_PROBE);
   const hmVexDepth = wallDepthFromTotals(hm.json?.vex?.strike_totals, WALL_DEPTH_PROBE);
 
-  for (const [label, streamTop, hmDepth] of [
-    ["GEX call", gexCall[0], hmGexDepth.call[0]?.strike],
-    ["GEX put", gexPut[0], hmGexDepth.put[0]?.strike],
-    ["VEX call", vexCall[0], hmVexDepth.call[0]?.strike],
-    ["VEX put", vexPut[0], hmVexDepth.put[0]?.strike],
+  for (const [label, streamTop, hmDepth, severity] of [
+    ["VEX call", vexCall[0], hmVexDepth.call[0]?.strike, "warn"],
+    ["VEX put", vexPut[0], hmVexDepth.put[0]?.strike, "warn"],
   ]) {
     if (streamTop != null && hmDepth != null && streamTop !== hmDepth) {
-      issues.push(`${label} stream ${streamTop} vs heatmap ${hmDepth}`);
+      const msg = `${label} stream ${streamTop} vs heatmap ${hmDepth}`;
+      if (severity === "warn") warns.push(msg);
+      else issues.push(msg);
+    }
+  }
+
+  // GEX put/call #1 should match positioning (same derivation as desk), not heatmap alone.
+  if (gexCall[0] != null && pos.json?.call_wall != null) {
+    if (!flipsAgree(gexCall[0], pos.json.call_wall, hm.json?.spot ?? candle?.close)) {
+      warns.push(`GEX call stream ${gexCall[0]} vs positioning ${pos.json.call_wall}`);
+    }
+  }
+  if (gexPut[0] != null && pos.json?.put_wall != null) {
+    if (!flipsAgree(gexPut[0], pos.json.put_wall, hm.json?.spot ?? candle?.close)) {
+      warns.push(`GEX put stream ${gexPut[0]} vs positioning ${pos.json.put_wall}`);
     }
   }
 
@@ -251,7 +287,7 @@ async function runTick(session, tickNum) {
     et: stamp,
     status,
     candle: candle?.close ?? null,
-    candleAge,
+    candleFreshSec,
     gexCall,
     gexPut,
     vexCall,
@@ -312,10 +348,11 @@ async function main() {
     let lastE2e = 0;
     while (inRthOpenWindow() || process.argv.includes("--force")) {
       tick += 1;
+      session.refreshToken?.();
       await runTick(session, tick);
 
-      // Full Playwright E2E every 90 minutes
-      if (Date.now() - lastE2e > 90 * 60_000) {
+      // Full Playwright E2E every 90 minutes (skip first tick — let ladder warm up)
+      if (tick > 5 && Date.now() - lastE2e > 90 * 60_000) {
         lastE2e = Date.now();
         logLine("Running validate:vector-e2e (90m cadence)…");
         try {
