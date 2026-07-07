@@ -8,6 +8,14 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXING 2026-07-07 — Vector visible to all premium users (launch gate `defaultLaunched: true`) (branch `fix/vector-launch-gate-lock`)
+
+**Surface:** `/vector`, `/api/market/vector/stream`, `/api/market/vector/spy-volume`.
+
+**Root cause:** `tool-access.ts` set Vector `defaultLaunched: true`. `canAccessTool` / `requireToolApi` were wired but always passed for premium users.
+
+**Fix:** `defaultLaunched: false` (same as Largo). Admins bypass unchanged. Member unlock: `LAUNCHED_TOOLS=vector` on Railway.
+
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — GEX cross-validation's near-term expiry scoping silently included far-dated monthly/quarterly OI on any thin-chain (non-SPX/SPY/QQQ) ticker (branch `fix/gex-near-term-expiries-thin-chain`)
 
 **Surface:** `gex-positioning.ts`'s `getGexPositioning()` (feeds Night Hawk, Largo, Night's Watch, the standalone `/api/market/gex-positioning` route) and `/api/market/gex-heatmap`'s `cross_validation` block (feeds Thermal's "UW oracle diverges Npt" banner for preset tickers) — both compute a UW cross-validation scope meant to match Polygon's near-term-only walls/flip.
