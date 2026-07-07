@@ -8,7 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector TradingView-style timeframe filters (branch `feat/vector-timeframe-filters`)
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector wall bead magnitude glow (branch `fix/vector-bead-magnitude-glow`)
+
+**Surface:** `/vector` wall bead trails.
+
+**User report:** reference apps (Skylit/Atlas) show brighter/larger nodes when a wall is strong; our beads looked uniformly flat.
+
+**Root cause:** magnitude scaling existed (`alphaForPct` per point) but lightweight-charts `LineSeries` + `pointMarkersRadius` only supports **one radius per series** and per-point color on line markers is buggy (LWC #1662) — so visual weight could not vary bead-by-bead.
+
+**Fix:** migrate beads to `createSeriesMarkers` with per-marker `size` + `color` from each sample's `pct` share of |gamma|; dual halo+core markers for glow; wider alpha curve (`PCT_SATURATION` 12%, sqrt scaling).
+
+**Files:** `vector-wall-visual.ts`, `VectorChart.tsx`, tests.
+
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector TradingView-style timeframe filters (branch `feat/vector-timeframe-filters`, PR #661)
 
 **Surface:** `/vector` chart — candle interval selector.
 

@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   CandlestickSeries,
   ColorType,
-  LineSeries,
   LineStyle,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type LineData,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { VectorCrosshairLegend, type VectorCrosshairState } from "@/components/vector/VectorCrosshairLegend";
@@ -31,7 +33,12 @@ import {
   eventsFromWallHistory,
   type VectorWallEvent,
 } from "@/lib/providers/vector-wall-events";
-import { alphaForPct, radiusForPct, widthForPct } from "@/lib/providers/vector-wall-visual";
+import {
+  alphaForPct,
+  glowAlphaForPct,
+  markerSizeForPct,
+  widthForPct,
+} from "@/lib/providers/vector-wall-visual";
 import {
   hasVexInHistory,
   liveTrailAnchorSec,
@@ -39,6 +46,7 @@ import {
   pickActiveStrikes,
   trailsByStrike,
   trimHistoryForLiveTrails,
+  type StrikeTrailPoint,
   type VectorWallLens,
   type WallHistorySample,
 } from "@/lib/providers/vector-wall-history";
@@ -270,64 +278,52 @@ function applyWallsToSeries(
   applyWallGuides(series, putGuideRefs, walls.putWalls, v.putColor, v.putLabel);
 }
 
-function applyStrikeTrails(
-  chart: IChartApi,
-  candleSeries: ISeriesApi<"Candlestick">,
-  seriesByStrike: Map<number, ISeriesApi<"Line">>,
+function buildWallBeadMarkers(
+  trails: Map<number, StrikeTrailPoint[]>,
+  activeStrikes: number[],
+  baseColor: string
+): SeriesMarker<Time>[] {
+  const markers: SeriesMarker<Time>[] = [];
+  for (const strike of activeStrikes) {
+    const points = trails.get(strike);
+    if (!points) continue;
+    for (const p of points) {
+      const time = p.time as Time;
+      const size = markerSizeForPct(p.pct);
+      const coreAlpha = alphaForPct(p.pct);
+      // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
+      markers.push({
+        time,
+        position: "atPriceMiddle",
+        price: strike,
+        shape: "circle",
+        color: withAlpha(baseColor, glowAlphaForPct(p.pct)),
+        size: size * 2.2,
+      });
+      markers.push({
+        time,
+        position: "atPriceMiddle",
+        price: strike,
+        shape: "circle",
+        color: withAlpha(baseColor, coreAlpha),
+        size,
+      });
+    }
+  }
+  return markers;
+}
+
+function applyWallBeadMarkers(
+  beadsPlugin: ISeriesMarkersPluginApi<Time> | null,
   history: WallHistorySample[],
   side: "callWalls" | "putWalls",
   baseColor: string,
   lens: VectorWallLens
 ): void {
+  if (!beadsPlugin) return;
   const trails = trailsByStrike(history, side, lens);
-  const active = new Set(pickActiveStrikes(trails));
-
-  for (const [strike, trailSeries] of seriesByStrike) {
-    if (!active.has(strike)) {
-      chart.removeSeries(trailSeries);
-      seriesByStrike.delete(strike);
-    }
-  }
-
-  for (const strike of active) {
-    const points = trails.get(strike)!;
-    let trailSeries = seriesByStrike.get(strike);
-    if (!trailSeries) {
-      trailSeries = chart.addSeries(LineSeries, {
-        color: baseColor,
-        lineVisible: false,
-        pointMarkersVisible: true,
-        pointMarkersRadius: radiusForPct(0),
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-      });
-      trailSeries.setSeriesOrder(0);
-      seriesByStrike.set(strike, trailSeries);
-    }
-    const data: LineData<UTCTimestamp>[] = points.map((p) => ({
-      time: p.time as UTCTimestamp,
-      value: strike,
-      color: withAlpha(baseColor, alphaForPct(p.pct)),
-    }));
-    trailSeries.setData(data);
-    const latestPct = points[points.length - 1]?.pct ?? 0;
-    trailSeries.applyOptions({ pointMarkersRadius: radiusForPct(latestPct) });
-  }
-  pinCandlesOnTop(candleSeries);
-}
-
-function applyFlipTrail(
-  chart: IChartApi,
-  candleSeries: ISeriesApi<"Candlestick">,
-  flipSeriesRef: React.MutableRefObject<ISeriesApi<"Line"> | null>
-): void {
-  // Flip is axis-label only — no bead trail across the chart pane.
-  if (flipSeriesRef.current) {
-    chart.removeSeries(flipSeriesRef.current);
-    flipSeriesRef.current = null;
-  }
-  pinCandlesOnTop(candleSeries);
+  const active = pickActiveStrikes(trails);
+  beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
 }
 
 function upsertBar(bars: VectorBar[], candle: VectorBar): VectorBar[] {
@@ -374,9 +370,8 @@ export function VectorChart({
   const putGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
-  const callStrikeSeriesRef = useRef(new Map<number, ISeriesApi<"Line">>());
-  const putStrikeSeriesRef = useRef(new Map<number, ISeriesApi<"Line">>());
-  const flipTrailSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
   /** Canonical 1m session bars — SSE live ticks and Polygon seed write here only. */
   const minuteBarsRef = useRef<VectorBar[]>(initialBars);
@@ -435,9 +430,8 @@ export function VectorChart({
   }, [replayMode]);
 
   const refreshTrails = useCallback((activeLens: VectorWallLens) => {
-    const chart = chartRef.current;
     const series = seriesRef.current;
-    if (!chart || !series) return;
+    if (!series) return;
     const v = lensVisuals(activeLens);
     const history =
       liveSessionRef.current && !replayModeRef.current
@@ -447,9 +441,9 @@ export function VectorChart({
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
         : wallHistoryRef.current;
-    applyStrikeTrails(chart, series, callStrikeSeriesRef.current, history, "callWalls", v.callColor, activeLens);
-    applyStrikeTrails(chart, series, putStrikeSeriesRef.current, history, "putWalls", v.putColor, activeLens);
-    applyFlipTrail(chart, series, flipTrailSeriesRef);
+    applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens);
+    applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens);
+    pinCandlesOnTop(series);
   }, []);
 
   const refreshOverlays = useCallback(
@@ -484,9 +478,9 @@ export function VectorChart({
 
       const visibleHistory = sliceHistoryToTime(history, cursorTime);
       const v = lensVisuals(activeLens);
-      applyStrikeTrails(chart, series, callStrikeSeriesRef.current, visibleHistory, "callWalls", v.callColor, activeLens);
-      applyStrikeTrails(chart, series, putStrikeSeriesRef.current, visibleHistory, "putWalls", v.putColor, activeLens);
-      applyFlipTrail(chart, series, flipTrailSeriesRef);
+      applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens);
+      applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens);
+      pinCandlesOnTop(series);
 
       const gexAt = wallsAtReplayTime(history, cursorTime, "gex") ?? initialWalls;
       const vexAt = wallsAtReplayTime(history, cursorTime, "vex") ?? initialVexWalls;
@@ -649,6 +643,8 @@ export function VectorChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+    callBeadsRef.current = createSeriesMarkers(series, []);
+    putBeadsRef.current = createSeriesMarkers(series, []);
 
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
@@ -689,9 +685,8 @@ export function VectorChart({
       putGuideRefs.current = emptyGuideRefs();
       dpGuideRefs.current = [];
       flipGuideRef.current = null;
-      callStrikeSeriesRef.current.clear();
-      putStrikeSeriesRef.current.clear();
-      flipTrailSeriesRef.current = null;
+      callBeadsRef.current = null;
+      putBeadsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

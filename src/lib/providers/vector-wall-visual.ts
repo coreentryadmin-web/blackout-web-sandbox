@@ -1,22 +1,24 @@
 import type { LineWidth } from "lightweight-charts";
 
-const ALPHA_MIN = 0.25;
+const ALPHA_MIN = 0.12;
 const ALPHA_MAX = 1;
 const WIDTH_MIN: LineWidth = 1;
 const WIDTH_MAX: LineWidth = 4;
 /** Slightly larger beads — reference product reads chunky on mobile, not pinpoints. */
 const RADIUS_MIN = 2;
-const RADIUS_MAX = 5;
+const RADIUS_MAX = 6;
+/** createSeriesMarkers `size` — per-bead, unlike LineSeries pointMarkersRadius (series-wide). */
+const MARKER_SIZE_MIN = 0.55;
+const MARKER_SIZE_MAX = 2.35;
 
-/** A wall at/above this share of total |gamma| renders at full visual weight (alpha 1, width 4).
- *  Picked from observed live ladders (screenshotted single-strike walls run ~3-10%, occasionally
- *  higher) — 20% is comfortably above what a normal session produces, so saturation is reserved
- *  for a genuinely dominant strike rather than being hit on every ordinary tick. */
-const PCT_SATURATION = 20;
+/** A wall at/above this share of total |gamma| renders at full visual weight (alpha 1, max size).
+ *  Tuned below the old 20% ceiling so dominant walls pop without every top strike saturating. */
+const PCT_SATURATION = 12;
 
 function magnitudeT(pct: number): number {
   if (!Number.isFinite(pct) || pct <= 0) return 0;
-  return Math.min(1, pct / PCT_SATURATION);
+  // Sqrt curve — mid-tier walls read visibly weaker than the session king.
+  return Math.pow(Math.min(1, pct / PCT_SATURATION), 0.55);
 }
 
 /** Node opacity scaled by the wall's CURRENT share of total |gamma| — not its rank slot — so a
@@ -34,11 +36,17 @@ export function widthForPct(pct: number): LineWidth {
   return Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, raw)) as LineWidth;
 }
 
-/** Historical trail dot radius, scaled the same way — unlike lineWidth/color this isn't
- *  per-point in lightweight-charts (pointMarkersRadius is a series-level option), so it's
- *  reapplied to the whole trail series each tick and reflects that rank's CURRENT magnitude,
- *  not each individual historical point's own. Per-point color (see VectorChart.tsx) is what
- *  actually varies point-by-point across the trail. */
+/** Historical trail dot radius, scaled the same way — legacy LineSeries fallback only. */
 export function radiusForPct(pct: number): number {
   return RADIUS_MIN + magnitudeT(pct) * (RADIUS_MAX - RADIUS_MIN);
+}
+
+/** Per-bead marker size for createSeriesMarkers — each dot can be its own weight (Skylit-style). */
+export function markerSizeForPct(pct: number): number {
+  return MARKER_SIZE_MIN + magnitudeT(pct) * (MARKER_SIZE_MAX - MARKER_SIZE_MIN);
+}
+
+/** Halo opacity multiplier for the outer glow ring drawn behind each bead. */
+export function glowAlphaForPct(pct: number): number {
+  return alphaForPct(pct) * (0.22 + magnitudeT(pct) * 0.18);
 }
