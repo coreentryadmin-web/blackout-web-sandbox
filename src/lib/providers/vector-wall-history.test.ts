@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  liveTrailAnchorSec,
   mergeWallHistory,
   pickActiveStrikes,
   recordWallSample,
@@ -10,6 +11,8 @@ import {
   trailForFlipLevel,
   trailForGammaFlip,
   trailForRank,
+  trimHistoryForLiveTrails,
+  LIVE_TRAIL_LOOKBACK_SEC,
   hasVexInHistory,
   type WallHistorySample,
 } from "./vector-wall-history";
@@ -193,4 +196,19 @@ test("trailsByStrike: vex lens reads vexWalls rows", () => {
   const vexTrails = trailsByStrike(history, "callWalls", "vex");
   assert.equal(vexTrails.size, 1);
   assert.deepEqual(vexTrails.get(6820)?.map((p) => p.time), [100, 160]);
+});
+
+test("trimHistoryForLiveTrails: drops samples older than the lookback window", () => {
+  const anchor = 10_000;
+  const history: WallHistorySample[] = [
+    { time: anchor - LIVE_TRAIL_LOOKBACK_SEC - 60, walls: walls([6700], []) },
+    { time: anchor - 120, walls: walls([6800], []) },
+    { time: anchor, walls: walls([6810], []) },
+  ];
+  const trimmed = trimHistoryForLiveTrails(history, LIVE_TRAIL_LOOKBACK_SEC, anchor);
+  assert.deepEqual(trimmed.map((s) => s.time), [anchor - 120, anchor]);
+});
+
+test("liveTrailAnchorSec: uses the later of wall history tail and last bar", () => {
+  assert.equal(liveTrailAnchorSec([{ time: 500, walls: walls([6800], []) }], [100, 700]), 700);
 });

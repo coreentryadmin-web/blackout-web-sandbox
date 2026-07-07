@@ -8,6 +8,16 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P2 FOUND+FIXING 2026-07-07 — Vector stale wall lines + immortal bead trails (branch `fix/vector-trail-rolling-cleanup`)
+
+**Surface:** `VectorChart.tsx` wall guides + strike-keyed bead trails.
+
+**User report:** horizontal wall lines persist across the full chart history; old beads at migrated strikes never disappear as time advances.
+
+**Root cause:** (1) call/put wall guides still used `lineVisible: true` (full-pane dashed lines) unlike flip/DP axis-only guides; (2) `refreshTrails` fed the entire session `wallHistory` into `trailsByStrike`, so every strike that ever ranked kept its horizontal bead row for the whole day.
+
+**Fix:** wall guides → axis labels only; live trails trimmed to `LIVE_TRAIL_LOOKBACK_SEC` (45m) anchored to the latest bar/sample so migrated strikes fall off dynamically. Replay still uses `sliceHistoryToTime` (unchanged).
+
 ## 🟡 P2 FOUND+FIXED 2026-07-07 — Vector stream float artifacts + honesty UX (branch `fix/vector-proposed-polish`)
 
 **Surface:** `/vector` SSE payload, `FreshnessChip`, lens toggle, structure feed.

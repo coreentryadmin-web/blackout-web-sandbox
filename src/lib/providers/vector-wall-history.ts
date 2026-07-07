@@ -35,6 +35,9 @@ const MAX_HISTORY = 1920;
 /** Max simultaneous strike-keyed bead rows per side on the chart (reference shows ~4–6). */
 export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
 
+/** Live session: only render wall beads within this many seconds of the chart's leading edge. */
+export const LIVE_TRAIL_LOOKBACK_SEC = 45 * 60;
+
 /**
  * Append a wall reading into the session's history, keyed by the trail bucket time (15s by
  * default — see vector-wall-sample.ts). Replaces in place when the bucket is unchanged so
@@ -112,6 +115,31 @@ export function pickActiveStrikes(
     .sort((a, b) => strikeTrailWeight(b[1]) - strikeTrailWeight(a[1]))
     .slice(0, maxStrikes)
     .map(([strike]) => strike);
+}
+
+/** Anchor live trail trimming to the latest candle or wall sample — not wall-clock alone. */
+export function liveTrailAnchorSec(
+  history: WallHistorySample[],
+  barTimes: number[] = []
+): number {
+  const historyTail = history[history.length - 1]?.time ?? 0;
+  const barTail = barTimes.length ? barTimes[barTimes.length - 1]! : 0;
+  return Math.max(historyTail, barTail) || Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Drop wall-history samples older than the live lookback window so migrated strikes do not
+ * leave stale horizontal bead rows across the chart all session.
+ */
+export function trimHistoryForLiveTrails(
+  history: WallHistorySample[],
+  lookbackSec: number = LIVE_TRAIL_LOOKBACK_SEC,
+  anchorSec?: number
+): WallHistorySample[] {
+  if (!history.length) return history;
+  const anchor = anchorSec ?? history[history.length - 1]!.time;
+  const cutoff = anchor - lookbackSec;
+  return history.filter((s) => s.time >= cutoff);
 }
 
 /**

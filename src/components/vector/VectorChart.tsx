@@ -33,9 +33,11 @@ import {
 import { alphaForPct, radiusForPct, widthForPct } from "@/lib/providers/vector-wall-visual";
 import {
   hasVexInHistory,
+  liveTrailAnchorSec,
   mergeWallHistory,
   pickActiveStrikes,
   trailsByStrike,
+  trimHistoryForLiveTrails,
   type VectorWallLens,
   type WallHistorySample,
 } from "@/lib/providers/vector-wall-history";
@@ -185,7 +187,8 @@ function applyWallGuides(
     guideRefs,
     levels.slice(0, MAX_WALL_GUIDES).map((l) => ({ ...l, label })),
     baseColor,
-    MAX_WALL_GUIDES
+    MAX_WALL_GUIDES,
+    true
   );
 }
 
@@ -413,8 +416,16 @@ export function VectorChart({
     const series = seriesRef.current;
     if (!chart || !series) return;
     const v = lensVisuals(activeLens);
-    applyStrikeTrails(chart, series, callStrikeSeriesRef.current, wallHistoryRef.current, "callWalls", v.callColor, activeLens);
-    applyStrikeTrails(chart, series, putStrikeSeriesRef.current, wallHistoryRef.current, "putWalls", v.putColor, activeLens);
+    const history =
+      liveSessionRef.current && !replayModeRef.current
+        ? trimHistoryForLiveTrails(
+            wallHistoryRef.current,
+            undefined,
+            liveTrailAnchorSec(wallHistoryRef.current, barsRef.current.map((b) => b.time))
+          )
+        : wallHistoryRef.current;
+    applyStrikeTrails(chart, series, callStrikeSeriesRef.current, history, "callWalls", v.callColor, activeLens);
+    applyStrikeTrails(chart, series, putStrikeSeriesRef.current, history, "putWalls", v.putColor, activeLens);
     applyFlipTrail(chart, series, flipTrailSeriesRef);
   }, []);
 
