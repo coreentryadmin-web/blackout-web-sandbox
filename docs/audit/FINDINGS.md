@@ -8,6 +8,29 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector's live SPX candle serves data up to 15.8 minutes stale, unlabeled, on zombie replicas (branch `fix/vector-stale-candle-zombie-replica`)
+
+**Surface:** `/vector`'s live SSE stream (`/api/market/vector/stream`) and the chart's current-bar price — the headline live SPX number on the page.
+
+**How it was found:** parallel background audit sweep of cross-tool live data consistency. 10 fresh SSE connections fired in quick succession against `https://blackouttrades.com/api/market/vector/stream` returned wildly different candle ages *simultaneously*, confirming different backend replicas serve genuinely different, uninvalidated state:
+- conn@18:45:47.498Z → `candle.time=18:30:00Z, close=7517.13` — **947.5s (15.8 min) stale**
+- conn@18:45:44.940Z → `candle.time=18:38:00Z, close=7516.15` — **464.9s (7.7 min) stale**
+- conn@18:45:48.455Z → `candle.time=18:45:00Z, close=7512.95` — fresh (normal within-bar age)
+
+At the same moment, `/api/market/indices` (18:46:29.425Z) showed the real SPX price at **7512.77** — the 15.8-min-stale candle's 7517.13 was off by ~4.4 points, presented on the chart with no staleness signal.
+
+**Root cause:** `getCurrentSpxCandle()` (`src/lib/ws/spx-candle-store.ts`) already had a `LOCAL_STALE_MS` (5s) gate from an earlier fix today (`0c51096`, the sibling `candle: null` cross-replica fallback) deciding *when* to attempt a cross-replica Redis lookup — but no ceiling on what it was allowed to actually *return*. A replica that loses the Polygon WS leader lock keeps `state.current` frozen forever (`recordSpxTick()` simply stops firing on it — nothing ever clears the frozen value). If the fleet-wide Redis snapshot also has nothing strictly newer than that frozen local value (leader outage, a quiet stretch, or this replica's own Redis reads just missing), the function fell through to `if (local) return local;` and confidently served the frozen bar as "the current candle," no matter how old. `spx-candle-store.test.ts`'s own pre-fix test suite asserted "local state always wins... once a tick has been recorded" with no staleness ceiling on that assertion — exactly the loophole.
+
+**This is an incomplete fix, not a fresh bug:** the earlier `0c51096` fix correctly closed the *null*-local case (a replica that never ticked). It left the *stale-non-null* case (a "zombie" replica that ticked once, then lost leadership) wide open, and it was live in prod at the time of this audit.
+
+**Fix:** added `MAX_CANDLE_AGE_MS` (60s) as an absolute ceiling at the read boundary in `getCurrentSpxCandle()` — whichever of local/fallback is freshest, if it's still older than 60s, the function returns `current: null` rather than the stale value. Deliberately a backstop at the single read boundary rather than chasing every path that could leave a stale cached value lying around (e.g. the Redis fallback's own `fallbackCandle` never being cleared on a miss) — more robust to still-undiscovered variants of the same root problem. Confirmed safe: the client (`VectorChart.tsx`) already no-ops correctly when `candle` is falsy in the SSE payload, so this fails safe (chart just doesn't update that tick) rather than failing loud or showing a wrong number. 60s is generous relative to normal leader-lock renewal (seconds, not minutes) while still catching genuine fleet-wide gaps.
+
+**Deliberately NOT changed / left as follow-up:** `VectorChart.tsx` surfacing candle age/staleness to the member as a visible indicator (the SSE payload already carries `t: updatedAt`, unused client-side for this). The server fix alone already closes the "materially wrong price shown as live" risk; a client-side staleness UI is a separate, additive enhancement.
+
+**Tests added:** `spx-candle-store.test.ts` — new case simulating a zombie replica (ticked once, aged 15 minutes, no fresher Redis fallback) asserting `current` is `null`, not the stale bar. Also repaired an existing test fixture (`updatedAt: 12345`, an arbitrary ~1970 epoch value) to a realistic recent timestamp so it isn't itself caught by the new ceiling.
+
+**Verification:** `npx tsc --noEmit` clean. Full suite 1785/1785 passing (1 new). `npm run build` clean. `git diff main -- src/lib/spx-signals.ts` empty.
+
 ## 🟡 P2 FOUND+FIXED 2026-07-07 — Dead `/grid` link in the public marketing footer + incomplete Grid-removal cleanup (branch `fix/landing-footer-dead-grid-link`)
 
 **Surface:** `src/components/landing/LandingFooter.tsx` — mounted on the homepage, `/pricing`, and `/faq` (via `FaqPageShell`), i.e. every marketing page a logged-out visitor or prospect sees.

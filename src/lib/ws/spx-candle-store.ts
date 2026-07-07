@@ -71,6 +71,22 @@ const REDIS_READ_REFRESH_MS = 1_000;
 const REDIS_TTL_SEC = 30;
 /** When local state is older than this, prefer a fresher cross-replica Redis snapshot. */
 const LOCAL_STALE_MS = 5_000;
+/**
+ * Absolute ceiling: never present a candle as live once BOTH local state and the Redis
+ * fallback are older than this. Without this, a replica that lost the Polygon WS leader
+ * lock keeps `state.current` frozen forever (it's a leftover write, never invalidated),
+ * and if the fleet-wide Redis snapshot also has nothing fresher (leader outage, or this
+ * replica's own reads keep missing), getCurrentSpxCandle() had no upper bound and would
+ * confidently return that frozen value as "the current candle" no matter how old.
+ * Confirmed live in prod: 10 concurrent SSE connections returned candles up to 15.8
+ * minutes stale (some replicas fresh, others frozen), off by ~4.4 SPX points from the
+ * real price — a materially wrong number presented with no staleness signal, on what's
+ * meant to be a live chart. Mirrors the same pattern already used by
+ * /api/market/quote/route.ts's WS_STALE_MS gate, which refuses stale local state outright
+ * rather than serving it indefinitely. 60s is generous relative to normal leader-lock
+ * renewal (seconds, not minutes) while still catching genuine fleet-wide gaps.
+ */
+const MAX_CANDLE_AGE_MS = 60_000;
 
 let lastRedisWriteAt = 0;
 let fallbackCandle: CandleSnapshot | null = null;
@@ -146,11 +162,17 @@ export function getCurrentSpxCandle(): CandleSnapshot {
 
   refreshFallbackFromRedis();
 
-  if (local && fallbackCandle && fallbackCandle.updatedAt > local.updatedAt) {
-    return fallbackCandle;
+  const best: CandleSnapshot | null =
+    local && fallbackCandle && fallbackCandle.updatedAt > local.updatedAt ? fallbackCandle : local ?? fallbackCandle;
+
+  if (!best) return { current: null, updatedAt: 0 };
+  if (Date.now() - best.updatedAt > MAX_CANDLE_AGE_MS) {
+    // Best available candle (local or fallback) is still too old to trust — refuse to
+    // present it as live. Keep updatedAt so a caller can tell "no live data" from
+    // "genuinely never ticked" if that's ever useful for diagnostics.
+    return { current: null, updatedAt: best.updatedAt };
   }
-  if (local) return local;
-  return fallbackCandle ?? { current: null, updatedAt: 0 };
+  return best;
 }
 
 /** Test-only: reset all module state (local + fallback-cache bookkeeping). Not used in production. */

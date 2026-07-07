@@ -105,7 +105,9 @@ test("recordSpxTick: a new ET session date resets the aggregator (no stale prior
 test("getCurrentSpxCandle: falls back to the cross-replica Redis snapshot when local state has never ticked (non-leader replica)", async () => {
   const { getCurrentSpxCandle, _resetSpxCandleStoreForTest } = await mod();
   _resetSpxCandleStoreForTest();
-  const fallback = { current: { time: 1000, open: 1, high: 2, low: 1, close: 2 }, updatedAt: 12345 };
+  // updatedAt must be realistically recent (not an arbitrary fixture epoch) — it now has to
+  // clear the MAX_CANDLE_AGE_MS staleness ceiling like any other candle would in production.
+  const fallback = { current: { time: 1000, open: 1, high: 2, low: 1, close: 2 }, updatedAt: Date.now() - 2_000 };
   sharedCache.getResult = fallback;
 
   // First read: local state is empty, so it returns null synchronously while the Redis
@@ -169,6 +171,36 @@ test("getCurrentSpxCandle: stale local state yields to a fresher cross-replica R
   const snap = getCurrentSpxCandle();
   assert.equal(snap.current!.close, 6412);
   assert.equal(snap.updatedAt, fresher.updatedAt);
+});
+
+test("getCurrentSpxCandle: refuses to present a candle once even the freshest available state is far too old (zombie replica, no fresher fallback)", async () => {
+  // Matches the live production repro: a replica that lost the Polygon WS leader lock
+  // keeps its last-ticked bar in memory forever (recordSpxTick never fires again on it),
+  // and if the Redis cross-replica snapshot has nothing fresher either (fleet-wide leader
+  // gap), getCurrentSpxCandle() used to have no upper bound and would confidently return
+  // the frozen local value — observed live serving candles up to 15.8 minutes stale, off
+  // by ~4.4 SPX points, with zero staleness signal to the client.
+  const {
+    recordSpxTick,
+    getCurrentSpxCandle,
+    _resetSpxCandleStoreForTest,
+    _ageLocalCandleForTest,
+  } = await mod();
+  _resetSpxCandleStoreForTest();
+  state.sessionDate = "2026-07-08T4";
+  const atMs = Date.parse("2026-07-08T14:20:00.000Z");
+
+  recordSpxTick(6400, atMs);
+  assert.equal(getCurrentSpxCandle().current!.open, 6400);
+
+  sharedCache.getResult = null; // nothing fresher anywhere in the fleet
+  _ageLocalCandleForTest(15 * 60_000); // 15 minutes — well past the staleness ceiling
+
+  getCurrentSpxCandle();
+  await flushMicrotasks();
+
+  const snap = getCurrentSpxCandle();
+  assert.equal(snap.current, null, "must not present a 15-minute-old candle as live");
 });
 
 test("recordSpxTick: throttles the cross-replica Redis write instead of writing on every tick", async () => {
