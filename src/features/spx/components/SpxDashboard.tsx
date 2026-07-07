@@ -7,14 +7,14 @@ import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
-import { SpxSniperHeader } from "@/components/desk/SpxSniperHeader";
-import { SpxTradeAlerts } from "@/components/desk/SpxTradeAlerts";
-import { SpxGexMatrixHeatmap } from "@/components/desk/SpxGexMatrixHeatmap";
+import { SpxSniperHeader } from "./SpxSniperHeader";
+import { SpxTradeAlerts } from "./SpxTradeAlerts";
+import { SpxGexMatrixHeatmap } from "./SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/lib/spx-halt-banner";
 
 const SpxCommentaryRail = dynamic(
-  () => import("@/components/desk/SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
+  () => import("./SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
   {
     loading: () => <div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />,
   }

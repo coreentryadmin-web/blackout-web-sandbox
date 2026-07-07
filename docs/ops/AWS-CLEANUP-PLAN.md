@@ -65,6 +65,7 @@ For AWS: add `output: "standalone"` + `Dockerfile` (same Next app, containerized
 Current layout is tool-oriented (`components/desk`, `features/vector`, `lib/nighthawk`). **Do not** move everything at once.
 
 - [x] Vector → `src/features/vector/` (components + lib + barrel export)
+- [x] SPX Slayer UI → `src/features/spx/components/` (lib stays in `src/lib/spx-*` for now)
 - `src/lib/providers/*` — keep (data layer)
 - `src/lib/ws/*` — keep (sockets)
 - Align page shells: `*PageShell.tsx` under `components/<tool>/`

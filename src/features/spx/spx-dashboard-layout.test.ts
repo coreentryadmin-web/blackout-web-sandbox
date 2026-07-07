@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 /** SPX Slayer left rail is matrix-only — no Benzinga scroll, live tape, or interval-flow panels. */
 test("SpxDashboard keeps matrix-only left rail (no Benzinga / tape / order-flow panels)", () => {
-  const src = readFileSync(join(process.cwd(), "src/components/SpxDashboard.tsx"), "utf8");
+  const src = readFileSync(join(process.cwd(), "src/features/spx/components/SpxDashboard.tsx"), "utf8");
 
   const banned = [
     "BenzingaNewsTicker",

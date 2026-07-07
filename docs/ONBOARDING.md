@@ -185,7 +185,7 @@ scripts use stale paths; trust the directory tree.
   (default false — leave it unset in prod or plays stop opening).
 - Config/tunables: `src/lib/spx-play-config.ts`.
 - Data: `src/lib/providers/spx-desk.ts`, `spx-session.ts`, `gamma-desk.ts`.
-- UI: `src/components/desk/`, `src/components/spx/`.
+- UI: `src/features/spx/components/`, shared desk primitives in `src/components/desk/`.
 - Outcomes/track record: `api/market/spx/outcomes`, `api/track-record/`, `correctness/track-record-verifier.ts`.
 
 ### HELIX Flows

@@ -8,7 +8,7 @@ import { useSpxPlay } from "@/hooks/useSpxPlay";
 import { useSpxLotto } from "@/hooks/useSpxLotto";
 import { useSpxPowerHour } from "@/hooks/useSpxPowerHour";
 import { useStablePlayConfirmations } from "@/hooks/useStablePlayConfirmations";
-import { SpxSniperBackdrop } from "@/components/desk/SpxSniperBackdrop";
+import { SpxSniperBackdrop } from "./SpxSniperBackdrop";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import type { LottoPlayPayload } from "@/lib/spx-lotto-engine";

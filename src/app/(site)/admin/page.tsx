@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { AdminAnalyticsDashboard } from "@/components/admin/AdminAnalyticsDashboard";
 import { AdminLaunchStatusPanel } from "@/components/admin/AdminLaunchStatusPanel";
-import { SignalAnalyticsPanel } from "@/components/spx/SignalAnalyticsPanel";
+import { SignalAnalyticsPanel } from "@/features/spx";
 
 export const revalidate = 0;
 
