@@ -233,4 +233,29 @@ export const MARK_GEOMETRY: Record<MarkProduct, ReactNode> = {
       </g>
     </g>
   ),
+
+  // === ATLAS (teal) — an ascending candlestick tape with a live focal print ===
+  // Static for now (no .bo-atlas keyframes exist yet in globals.css, unlike the other six —
+  // the bo-node/bo-glowgrp classes below are inert without them, which renders a clean still
+  // frame rather than a broken half-animated one). Add matching keyframes when Atlas gets its
+  // own animation pass.
+  atlas: (
+    <>
+      <line x1="10" y1="46" x2="54" y2="46" stroke="url(#bo-emerald-thread)" strokeWidth="0.7" />
+      <g stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.85">
+        <line x1="18" y1="30" x2="18" y2="42" />
+        <line x1="32" y1="20" x2="32" y2="46" />
+        <line x1="46" y1="9" x2="46" y2="34" />
+      </g>
+      <g fill="url(#bo-accent-linear)">
+        <rect x="14" y="33" width="8" height="10" rx="1.5" opacity="0.7" />
+        <rect x="28" y="24" width="8" height="16" rx="1.5" opacity="0.85" />
+        <rect x="42" y="14" width="8" height="14" rx="1.5" />
+      </g>
+      <g className="bo-node" filter="url(#bo-glow)">
+        <circle cx="46" cy="11" r="6" fill="url(#bo-accent-radial)" className="bo-glowgrp" />
+        <circle cx="46" cy="11" r="2" fill="currentColor" className="bo-node-core" />
+      </g>
+    </>
+  ),
 };
