@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXING 2026-07-07 — SPX Slayer hero EMA/SMA labels overlap values on desktop
+
+**Surface:** `/dashboard` — `SpxSniperHeader` EMA/SMA metric blocks (desktop ≥1024px).
+
+**Root cause:** `.spx-hero-metric-row` used `flex justify-between` inside `.spx-hero-metric-block` (`min-w-[108px] flex-1`). When the hero row compresses (price + three blocks sharing one flex row), label and value collided and read as one number — e.g. label `200` + value `6,943.05` rendered as `2006,943.05`; `20` + `7,453.31` as `207,453.31`.
+
+**Evidence:** Production desktop screenshot 1920×1080 (signed-in session): EMA 20/50/200 and SMA 50/200 showed million-scale garbage while API `/api/market/spx/merged` returned correct ~7.4k values.
+
+**Fix:** Grid two-column metric rows (`label | value` with `text-right` + `min-w-0`); bump block `min-w` to 128px. Night Hawk `PlaybookPlayRow` `Date.now()` in render → post-mount clock (React #418 on `/nighthawk`).
+
+**Status:** FIX PR open (`fix/desktop-hero-metric-overlap`).
+
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — Legacy Railway cron triggers crashed after route removals (grid-warm / nights-watch-warm / positions-expiry)
 
 **Surface:** Railway cron trigger services `Grid-Warm-Cron`, `Night's Watch-Warm-New`, `Positions-Expiry-Cron`; missing replacement `ZeroDTE-Warm-Cron`.

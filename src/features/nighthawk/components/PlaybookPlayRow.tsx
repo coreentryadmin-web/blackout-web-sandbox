@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import type { PlaybookPlay, PlayMorningStatus } from "@/features/nighthawk/lib/types";
 import { formatPremiumCapLabel } from "@/features/nighthawk/lib/play-constraints";
@@ -55,7 +56,14 @@ export function PlaybookPlayRow({
   const dir = play?.direction?.toUpperCase() ?? "";
   const isBull = dir.includes("BULL") || dir === "LONG" || dir.includes("CALL");
   const isBear = dir.includes("BEAR") || dir === "SHORT" || dir.includes("PUT");
-  const morningConfirmStale = isMorningConfirmStale(morningConfirmCheckedAt, Date.now());
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const morningConfirmStale =
+    nowMs != null && isMorningConfirmStale(morningConfirmCheckedAt, nowMs);
   const morningConfirmTitle = morningConfirm
     ? morningConfirmCheckedAt
       ? `${morningConfirm.reason} — checked ${formatCheckedAtEt(morningConfirmCheckedAt)}${
