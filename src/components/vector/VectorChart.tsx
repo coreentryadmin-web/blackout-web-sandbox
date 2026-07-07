@@ -164,10 +164,6 @@ function pinCandlesOnTop(candleSeries: ISeriesApi<"Candlestick">): void {
 const VOLUME_UP = "rgba(0, 230, 118, 0.72)";
 const VOLUME_DOWN = "rgba(255, 45, 85, 0.72)";
 
-function barsNeedSpyVolume(bars: VectorBar[]): boolean {
-  return bars.length > 0 && !bars.some((b) => b.volume != null && b.volume > 0);
-}
-
 function mergeSpyVolumeRows(
   bars: VectorBar[],
   rows: Array<{ time: number; volume: number }>
@@ -732,20 +728,20 @@ export function VectorChart({
       lastValueVisible: true,
     }, 0);
 
+    // TradingView-style volume strip — overlay on pane 0 (LWC documented pattern).
     const volumeSeries = chart.addSeries(
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
+        priceScaleId: "",
         lastValueVisible: false,
         priceLineVisible: false,
       },
-      1
+      0
     );
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.2, bottom: 0.02 },
+      scaleMargins: { top: 0.72, bottom: 0 },
     });
-    chart.panes()[0]?.setStretchFactor(3);
-    chart.panes()[1]?.setStretchFactor(1);
 
     const initialDisplay = displayBarsFromMinute(initialBars, 1);
     applyDisplayBars(series, volumeSeries, initialDisplay);
@@ -820,13 +816,12 @@ export function VectorChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Client backfill when SSR seed missed SPY volume (rate-limit / transient Polygon blip). */
+  /** Client backfill — merge SPY volume when SSR seed missed it (idempotent). */
   useEffect(() => {
     if (!chartReady) return;
     let cancelled = false;
     (async () => {
       try {
-        if (!barsNeedSpyVolume(minuteBarsRef.current)) return;
         const res = await fetch(
           `/api/market/vector/spy-volume?ymd=${encodeURIComponent(sessionYmd)}`
         );
@@ -848,7 +843,7 @@ export function VectorChart({
     return () => {
       cancelled = true;
     };
-  }, [chartReady, sessionYmd, initialBars.length]);
+  }, [chartReady, sessionYmd]);
 
   useEffect(() => {
     if (!replayMode || !playing || timelineRef.current.length === 0) {
