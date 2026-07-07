@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordWallSample, trailForRank, type WallHistorySample } from "./vector-wall-history";
+import { recordWallSample, seedWallHistoryForDisplay, mergeWallHistory, trailForRank, type WallHistorySample } from "./vector-wall-history";
 import type { GexWalls } from "./gex-wall-levels";
 
 function walls(callStrikes: number[], putStrikes: number[]): GexWalls {
@@ -59,4 +59,42 @@ test("trailForRank: omits bars where that rank didn't exist, instead of insertin
 
 test("trailForRank: returns an empty trail for an empty history", () => {
   assert.deepEqual(trailForRank([], "putWalls", 0), []);
+});
+
+test("seedWallHistoryForDisplay: seeds one honest dot at the last bar when history is empty", () => {
+  const w = walls([6800], [6700]);
+  const seeded = seedWallHistoryForDisplay([], [100, 160, 220], w);
+  assert.equal(seeded.length, 1);
+  assert.equal(seeded[0].time, 220);
+  assert.deepEqual(seeded[0].walls, w);
+});
+
+test("seedWallHistoryForDisplay: leaves existing history untouched", () => {
+  const existing = recordWallSample([], { time: 100, walls: walls([6800], [6700]) });
+  const seeded = seedWallHistoryForDisplay(existing, [100, 160], walls([6810], [6700]));
+  assert.equal(seeded, existing);
+});
+
+test("seedWallHistoryForDisplay: no-op without walls or bars", () => {
+  assert.deepEqual(seedWallHistoryForDisplay([], [], walls([6800], [6700])), []);
+  assert.deepEqual(seedWallHistoryForDisplay([], [100], null), []);
+});
+
+test("mergeWallHistory: prefers the longer remote tail on connect", () => {
+  const local = [{ time: 100, walls: walls([6800], [6700]) }];
+  const remote = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+  ];
+  assert.deepEqual(mergeWallHistory(local, remote), remote);
+});
+
+test("mergeWallHistory: keeps local when it is already longer", () => {
+  const local = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+    { time: 220, walls: walls([6820], [6700]) },
+  ];
+  const remote = [{ time: 100, walls: walls([6800], [6700]) }];
+  assert.deepEqual(mergeWallHistory(local, remote), local);
 });

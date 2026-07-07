@@ -16,7 +16,12 @@ import {
 import { createVectorEventSource, type VectorWallLevel, type VectorWalls } from "@/lib/api";
 import { DEFAULT_WALL_NODES_PER_SIDE } from "@/lib/providers/gex-wall-levels";
 import { alphaForPct, radiusForPct, widthForPct } from "@/lib/providers/vector-wall-visual";
-import { recordWallSample, trailForRank, type WallHistorySample } from "@/lib/providers/vector-wall-history";
+import {
+  mergeWallHistory,
+  recordWallSample,
+  trailForRank,
+  type WallHistorySample,
+} from "@/lib/providers/vector-wall-history";
 
 export type VectorBar = {
   time: UTCTimestamp;
@@ -186,7 +191,19 @@ export function VectorChart({ initialBars, initialWalls, initialWallHistory, liv
     seriesRef.current = series;
 
     let lastBarTime = initialBars.length ? initialBars[initialBars.length - 1].time : 0;
+    const refreshWallTrails = () => {
+      applyWallTrail(callTrailSeriesRef.current, wallHistoryRef.current, "callWalls", CALL_WALL_COLOR);
+      applyWallTrail(putTrailSeriesRef.current, wallHistoryRef.current, "putWalls", PUT_WALL_COLOR);
+    };
+
     const conn = createVectorEventSource((snap) => {
+      if (snap.wallHistory?.length) {
+        const merged = mergeWallHistory(wallHistoryRef.current, snap.wallHistory);
+        if (merged !== wallHistoryRef.current) {
+          wallHistoryRef.current = merged;
+          refreshWallTrails();
+        }
+      }
       if (snap.candle && snap.candle.time >= lastBarTime) {
         lastBarTime = snap.candle.time;
         seriesRef.current?.update(snap.candle as VectorBar);
@@ -202,8 +219,7 @@ export function VectorChart({ initialBars, initialWalls, initialWallHistory, liv
           time: snap.candle.time,
           walls: snap.walls,
         });
-        applyWallTrail(callTrailSeriesRef.current, wallHistoryRef.current, "callWalls", CALL_WALL_COLOR);
-        applyWallTrail(putTrailSeriesRef.current, wallHistoryRef.current, "putWalls", PUT_WALL_COLOR);
+        refreshWallTrails();
       }
     });
 

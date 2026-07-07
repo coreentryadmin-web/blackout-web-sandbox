@@ -38,3 +38,30 @@ export function trailForRank(
   }
   return points;
 }
+
+/**
+ * When no per-bar history exists yet (fresh deploy / first page load off-hours), seed ONE
+ * honest sample at the last visible candle bar with the current wall ladder — dots land at
+ * session close on the right edge of the chart instead of a trail-less void. Does not invent
+ * historical points across earlier bars (no GEX time-series source for backfill).
+ */
+export function seedWallHistoryForDisplay(
+  history: WallHistorySample[],
+  barTimes: number[],
+  walls: GexWalls | null | undefined
+): WallHistorySample[] {
+  if (history.length > 0 || !walls || barTimes.length === 0) return history;
+  const lastTime = barTimes[barTimes.length - 1]!;
+  if (!Number.isFinite(lastTime)) return history;
+  return recordWallSample([], { time: lastTime, walls });
+}
+
+/** Merge server-observed history into the client buffer — longer server tail wins. */
+export function mergeWallHistory(
+  local: WallHistorySample[],
+  remote: WallHistorySample[] | null | undefined
+): WallHistorySample[] {
+  if (!remote?.length) return local;
+  if (!local.length || remote.length > local.length) return remote;
+  return local;
+}

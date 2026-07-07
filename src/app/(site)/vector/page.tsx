@@ -5,6 +5,7 @@ import { ComingSoon } from "@/components/ComingSoon";
 import { VectorPageShell } from "@/components/vector/VectorPageShell";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import { todayEt } from "@/lib/nighthawk/session";
+import { seedWallHistoryForDisplay } from "@/lib/providers/vector-wall-history";
 import { fetchVectorSeedBars } from "@/lib/vector-seed-bars";
 import { getVectorGexWalls, getVectorWallHistory } from "@/lib/vector-snapshot";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
@@ -25,7 +26,11 @@ export default async function VectorPage() {
   ]);
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
-  const initialWallHistory = getVectorWallHistory();
+  const initialWallHistory = seedWallHistoryForDisplay(
+    getVectorWallHistory(),
+    bars.map((b) => b.time),
+    walls,
+  );
 
   return (
     <VectorPageShell

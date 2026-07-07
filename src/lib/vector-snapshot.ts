@@ -59,6 +59,8 @@ export type VectorStreamPayload = {
   candle: ReturnType<typeof getCurrentSpxCandle>["current"];
   walls: GexWalls | null;
   t: number;
+  /** Replica-local trail tail so mid-session reloads / SSE connect inherit observed history. */
+  wallHistory: WallHistorySample[];
 };
 
 // Per-bar wall-level history for the client's historical trail (VectorChart.tsx) — a record of
@@ -80,7 +82,7 @@ export function buildVectorStreamPayload(): VectorStreamPayload {
   if (current && walls) {
     wallHistory = recordWallSample(wallHistory, { time: current.time, walls });
   }
-  return { candle: current, walls, t: updatedAt };
+  return { candle: current, walls, t: updatedAt, wallHistory };
 }
 
 /** Test-only reset of module caches. */

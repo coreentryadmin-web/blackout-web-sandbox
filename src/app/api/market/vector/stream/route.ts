@@ -55,8 +55,8 @@ export async function GET(req: NextRequest) {
           return;
         }
         try {
-          const { candle, walls, t } = buildVectorStreamPayload();
-          const data = JSON.stringify({ candle, walls, t });
+          const { candle, walls, t, wallHistory } = buildVectorStreamPayload();
+          const data = JSON.stringify({ candle, walls, t, wallHistory });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         } catch {
           cleanup();

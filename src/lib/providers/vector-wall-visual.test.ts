@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { alphaForPct, radiusForPct, widthForPct } from "./vector-wall-visual";
 
 test("alphaForPct: a 0% wall gets the visual floor, not fully invisible", () => {
-  assert.equal(alphaForPct(0), 0.2);
+  assert.equal(alphaForPct(0), 0.25);
 });
 
 test("alphaForPct: a wall at or above the saturation point (20%) gets full opacity", () => {
@@ -12,7 +12,7 @@ test("alphaForPct: a wall at or above the saturation point (20%) gets full opaci
 });
 
 test("alphaForPct: scales monotonically with magnitude between the floor and saturation", () => {
-  assert.ok(Math.abs(alphaForPct(10) - 0.6) < 1e-9); // 0.2 + (10/20) * 0.8
+  assert.ok(Math.abs(alphaForPct(10) - 0.625) < 1e-9); // 0.25 + (10/20) * 0.75
   assert.ok(alphaForPct(5) < alphaForPct(10));
   assert.ok(alphaForPct(10) < alphaForPct(15));
 });
@@ -27,8 +27,8 @@ test("alphaForPct: two walls close in magnitude look nearly identical, unlike ra
 });
 
 test("alphaForPct: treats non-finite/negative input as zero magnitude", () => {
-  assert.equal(alphaForPct(NaN), 0.2);
-  assert.equal(alphaForPct(-5), 0.2);
+  assert.equal(alphaForPct(NaN), 0.25);
+  assert.equal(alphaForPct(-5), 0.25);
 });
 
 test("widthForPct: stays within lightweight-charts' 1-4 LineWidth union across the full range", () => {
@@ -47,9 +47,9 @@ test("widthForPct: a near-zero wall renders at min thickness", () => {
   assert.equal(widthForPct(0), 1);
 });
 
-test("radiusForPct: stays within the 1.5-4px trail-dot range and scales monotonically", () => {
-  assert.equal(radiusForPct(0), 1.5);
-  assert.equal(radiusForPct(20), 4);
+test("radiusForPct: stays within the 2-5px trail-dot range and scales monotonically", () => {
+  assert.equal(radiusForPct(0), 2);
+  assert.equal(radiusForPct(20), 5);
   assert.ok(radiusForPct(5) < radiusForPct(10));
   assert.ok(radiusForPct(10) < radiusForPct(15));
 });

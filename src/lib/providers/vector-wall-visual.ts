@@ -1,11 +1,12 @@
 import type { LineWidth } from "lightweight-charts";
 
-const ALPHA_MIN = 0.2;
+const ALPHA_MIN = 0.25;
 const ALPHA_MAX = 1;
 const WIDTH_MIN: LineWidth = 1;
 const WIDTH_MAX: LineWidth = 4;
-const RADIUS_MIN = 1.5;
-const RADIUS_MAX = 4;
+/** Slightly larger beads — reference product reads chunky on mobile, not pinpoints. */
+const RADIUS_MIN = 2;
+const RADIUS_MAX = 5;
 
 /** A wall at/above this share of total |gamma| renders at full visual weight (alpha 1, width 4).
  *  Picked from observed live ladders (screenshotted single-strike walls run ~3-10%, occasionally
