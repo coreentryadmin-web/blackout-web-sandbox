@@ -8,7 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟡 P2 FOUND+FIXING 2026-07-07 — Vector stale wall lines + immortal bead trails (branch `fix/vector-trail-rolling-cleanup`)
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector TradingView-style timeframe filters (branch `feat/vector-timeframe-filters`)
+
+**Surface:** `/vector` chart — candle interval selector.
+
+**User request:** add standard intervals **1m / 3m / 5m / 15m** like TradingView.
+
+**Approach:** keep canonical **1m** bars from Polygon seed + live SSE (`minuteBarsRef`); aggregate client-side via `aggregateVectorBars()` for display. Live ticks upsert the current 1m bar then update the active aggregated bar in place. Replay still scrubs 1m `sessionBars`; timeframe toggle disabled during replay.
+
+**Files:** `src/lib/vector-bar-timeframes.ts` (+ tests), `VectorTimeframeToggle.tsx`, `VectorChart.tsx`, `VectorPageShell.tsx`, `scripts/vector-e2e-audit.mjs` (clicks each TF).
+
+**Verification:** `vector-bar-timeframes.test.ts` (3 cases); tsc + full `npm test` green.
+
+## 🟡 P2 FOUND+FIXED 2026-07-07 — Vector stale wall lines + immortal bead trails (branch `fix/vector-trail-rolling-cleanup`, PR #660)
 
 **Surface:** `VectorChart.tsx` wall guides + strike-keyed bead trails.
 

@@ -47,7 +47,7 @@ export function VectorPageShell({
   const [streamUpdatedAt, setStreamUpdatedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const subtitle = liveSession
-    ? "SPX ~1s on the axis · GEX/VEX wall beads · flip + dark-pool guides."
+    ? "SPX live chart · 1m/3m/5m/15m · GEX/VEX wall beads · flip + dark-pool guides."
     : `Showing ${sessionLabel} session — scrub replay to watch GEX and VEX walls form through the day.`;
 
   useEffect(() => {

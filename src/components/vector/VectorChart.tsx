@@ -16,6 +16,7 @@ import {
 import { VectorCrosshairLegend, type VectorCrosshairState } from "@/components/vector/VectorCrosshairLegend";
 import { VectorLensToggle } from "@/components/vector/VectorLensToggle";
 import { VectorReplayControls } from "@/components/vector/VectorReplayControls";
+import { VectorTimeframeToggle } from "@/components/vector/VectorTimeframeToggle";
 import { VectorWallEventTicker } from "@/components/vector/VectorWallEventTicker";
 import {
   createVectorEventSource,
@@ -49,6 +50,10 @@ import {
   sliceHistoryToTime,
   wallsAtReplayTime,
 } from "@/lib/vector-replay";
+import {
+  aggregateVectorBars,
+  type VectorTimeframeMinutes,
+} from "@/lib/vector-bar-timeframes";
 
 export type VectorBar = {
   time: UTCTimestamp;
@@ -340,6 +345,16 @@ function emptyGuideRefs(): (IPriceLine | null)[] {
   return Array.from({ length: MAX_WALL_GUIDES }, () => null);
 }
 
+function displayBarsFromMinute(
+  minuteBars: VectorBar[],
+  intervalMinutes: VectorTimeframeMinutes,
+  cursorTime?: number
+): VectorBar[] {
+  const base =
+    cursorTime != null ? (sliceBarsToTime(minuteBars, cursorTime) as VectorBar[]) : minuteBars;
+  return aggregateVectorBars(base, intervalMinutes) as VectorBar[];
+}
+
 export function VectorChart({
   initialBars,
   initialWalls,
@@ -363,7 +378,10 @@ export function VectorChart({
   const putStrikeSeriesRef = useRef(new Map<number, ISeriesApi<"Line">>());
   const flipTrailSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
-  const barsRef = useRef<VectorBar[]>(initialBars);
+  /** Canonical 1m session bars — SSE live ticks and Polygon seed write here only. */
+  const minuteBarsRef = useRef<VectorBar[]>(initialBars);
+  const displayBarTimeRef = useRef<number>(0);
+  const timeframeRef = useRef<VectorTimeframeMinutes>(1);
   const gammaFlipRef = useRef<number | null>(initialGammaFlip);
   const vexFlipRef = useRef<number | null>(initialVexFlip);
   const darkPoolRef = useRef<VectorDarkPoolLevel[]>(initialDarkPoolLevels);
@@ -398,6 +416,11 @@ export function VectorChart({
   );
   const [gexAsOf, setGexAsOf] = useState<number | null>(null);
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
+  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
+
+  useEffect(() => {
+    timeframeRef.current = timeframe;
+  }, [timeframe]);
 
   useEffect(() => {
     lensRef.current = lens;
@@ -421,7 +444,7 @@ export function VectorChart({
         ? trimHistoryForLiveTrails(
             wallHistoryRef.current,
             undefined,
-            liveTrailAnchorSec(wallHistoryRef.current, barsRef.current.map((b) => b.time))
+            liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
         : wallHistoryRef.current;
     applyStrikeTrails(chart, series, callStrikeSeriesRef.current, history, "callWalls", v.callColor, activeLens);
@@ -456,7 +479,7 @@ export function VectorChart({
       const series = seriesRef.current;
       if (!chart || !series) return;
 
-      const visibleBars = sliceBarsToTime(bars, cursorTime) as VectorBar[];
+      const visibleBars = displayBarsFromMinute(bars, timeframeRef.current, cursorTime);
       series.setData(visibleBars);
 
       const visibleHistory = sliceHistoryToTime(history, cursorTime);
@@ -485,7 +508,9 @@ export function VectorChart({
     if (!liveSessionRef.current) return;
     connRef.current?.close();
 
-    let lastBarTime = barsRef.current.length ? barsRef.current[barsRef.current.length - 1]!.time : 0;
+    let lastMinuteBarTime = minuteBarsRef.current.length
+      ? minuteBarsRef.current[minuteBarsRef.current.length - 1]!.time
+      : 0;
     let newBarOpened = false;
 
     connRef.current = createVectorEventSource((snap) => {
@@ -542,9 +567,9 @@ export function VectorChart({
         }
       }
 
-      if (snap.candle && snap.candle.time >= lastBarTime) {
-        newBarOpened = snap.candle.time > lastBarTime;
-        lastBarTime = snap.candle.time;
+      if (snap.candle && snap.candle.time >= lastMinuteBarTime) {
+        newBarOpened = snap.candle.time > lastMinuteBarTime;
+        lastMinuteBarTime = snap.candle.time;
         const curSpot = snap.candle.close;
         const prevSpot = spotRef.current;
         for (const active of ["gex", "vex"] as const) {
@@ -561,12 +586,17 @@ export function VectorChart({
           }
         }
         spotRef.current = curSpot;
-        const nextBars = upsertBar(barsRef.current, snap.candle as VectorBar);
-        barsRef.current = nextBars;
-        setSessionBars(nextBars);
-        seriesRef.current?.update(snap.candle as VectorBar);
-        if (newBarOpened && chartRef.current) {
-          chartRef.current.timeScale().scrollToRealTime();
+        minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
+        setSessionBars(minuteBarsRef.current);
+        const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
+        const lastDisplay = displayBars[displayBars.length - 1];
+        if (lastDisplay) {
+          const openedDisplayBar = lastDisplay.time > displayBarTimeRef.current;
+          displayBarTimeRef.current = lastDisplay.time;
+          seriesRef.current?.update(lastDisplay);
+          if ((newBarOpened || openedDisplayBar) && chartRef.current) {
+            chartRef.current.timeScale().scrollToRealTime();
+          }
         }
       }
 
@@ -613,7 +643,8 @@ export function VectorChart({
       lastValueVisible: true,
     });
 
-    series.setData(initialBars);
+    series.setData(displayBarsFromMinute(initialBars, 1));
+    displayBarTimeRef.current = initialBars[initialBars.length - 1]?.time ?? 0;
     if (initialBars.length) chart.timeScale().fitContent();
 
     chartRef.current = chart;
@@ -678,7 +709,7 @@ export function VectorChart({
           return idx;
         }
         const t = timelineRef.current[next]!;
-        applyFrame(t, barsRef.current, wallHistoryRef.current, lensRef.current);
+        applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
         return next;
       });
     }, REPLAY_STEP_MS / Math.max(0.25, replaySpeed));
@@ -697,7 +728,7 @@ export function VectorChart({
     setPlaying(false);
     setCursorIndex(0);
     if (replayTimeline.length > 0) {
-      applyFrame(replayTimeline[0]!, barsRef.current, wallHistoryRef.current, lens);
+      applyFrame(replayTimeline[0]!, minuteBarsRef.current, wallHistoryRef.current, lens);
     }
   };
 
@@ -705,9 +736,11 @@ export function VectorChart({
     stopReplayTimer();
     setReplayMode(false);
     setPlaying(false);
-    const bars = barsRef.current;
+    const bars = minuteBarsRef.current;
+    const display = displayBarsFromMinute(bars, timeframeRef.current);
+    displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+    seriesRef.current?.setData(display);
     const history = wallHistoryRef.current;
-    seriesRef.current?.setData(bars);
     refreshTrails(lens);
     const tail = history[history.length - 1]?.time ?? 0;
     refreshOverlays(
@@ -731,7 +764,7 @@ export function VectorChart({
     setPlaying(false);
     setCursorIndex(index);
     const t = timelineRef.current[index];
-    if (t != null) applyFrame(t, barsRef.current, wallHistoryRef.current, lens);
+    if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lens);
   };
 
   const stepCount = replayMode ? timelineRef.current.length : replayTimeline.length;
@@ -751,6 +784,19 @@ export function VectorChart({
     );
   }, [lens, replayMode, refreshTrails, refreshOverlays]);
 
+  useEffect(() => {
+    const series = seriesRef.current;
+    const chart = chartRef.current;
+    if (!series) return;
+    const display = displayBarsFromMinute(minuteBarsRef.current, timeframe);
+    displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+    series.setData(display);
+    chart?.timeScale().applyOptions({ secondsVisible: timeframe === 1 });
+    if (!replayMode && liveSession) {
+      chart?.timeScale().scrollToRealTime();
+    }
+  }, [timeframe, replayMode, liveSession]);
+
   const handleLens = (next: VectorWallLens) => {
     if (next === "vex" && !vexAvailable) return;
     setLens(next);
@@ -763,6 +809,12 @@ export function VectorChart({
           No SPX session bars available yet — wall beads, flip, and dark-pool levels load when data is present.
         </p>
       )}
+
+      <VectorTimeframeToggle
+        interval={timeframe}
+        onInterval={setTimeframe}
+        disabled={replayMode}
+      />
 
       <VectorLensToggle
         lens={lens}

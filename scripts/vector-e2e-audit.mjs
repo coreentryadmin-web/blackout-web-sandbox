@@ -378,6 +378,15 @@ async function browserVector(session) {
       await gexBtn.click();
     }
 
+    // Timeframe selector (1m / 3m / 5m / 15m)
+    const tfGroup = page.getByRole("group", { name: "Chart timeframe" });
+    await tfGroup.waitFor({ state: "visible", timeout: 15_000 });
+    for (const m of ["3", "5", "15", "1"]) {
+      const btn = tfGroup.getByRole("button", { name: `${m}m`, exact: true });
+      await btn.click();
+      rec(`ui:click-tf-${m}m`, "PASS");
+    }
+
     // Structure feed visible
     const feed = page.getByLabel("Wall structure events");
     if (await feed.isVisible()) {
