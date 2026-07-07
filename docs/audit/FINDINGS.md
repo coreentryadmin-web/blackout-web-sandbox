@@ -8,7 +8,15 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector timeframe-linked wall beads (branch `fix/vector-tf-linked-beads`)
+## 🟡 P2 FOUND+FIXED 2026-07-07 — Vector chart yanks viewport every new minute bar (branch `fix/vector-chart-no-autoscroll`)
+
+**User report:** chart recenters / jumps every minute; must reposition after panning.
+
+**Root cause:** `scrollToRealTime()` on every `newBarOpened` (each 1m bar) — resets default scroll even when member panned back to study structure.
+
+**Fix:** remove per-bar `scrollToRealTime`; rely on `shiftVisibleRangeOnNewBar` when last bar is visible; gate timeframe-change scroll with `maybeScrollToLive()` (`scrollPosition() <= 2` bars).
+
+## 🟢 P3 ENHANCEMENT 2026-07-07 — Vector timeframe-linked wall beads (branch `fix/vector-tf-linked-beads`, PR #663)
 
 **User request:** wall bead trails should resample with the chart interval (1m/3m/5m/15m), not show the same 15s-density nodes on every timeframe.
 

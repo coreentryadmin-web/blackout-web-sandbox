@@ -82,6 +82,19 @@ const DARK_POOL_COLOR = "#00d4ff";
 const REPLAY_STEP_MS = 350;
 const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
+/** If the viewport is within this many bars of the live edge, new bars may follow (TradingView-style). */
+const LIVE_FOLLOW_THRESHOLD_BARS = 2;
+
+function chartIsFollowingLive(chart: IChartApi): boolean {
+  const pos = chart.timeScale().scrollPosition();
+  return Number.isFinite(pos) && pos <= LIVE_FOLLOW_THRESHOLD_BARS;
+}
+
+/** Avoid yanking pan/zoom when the member scrolled back to study structure. */
+function maybeScrollToLive(chart: IChartApi | null): void {
+  if (!chart || !chartIsFollowingLive(chart)) return;
+  chart.timeScale().scrollToRealTime();
+}
 
 type Props = {
   initialBars: VectorBar[];
@@ -508,7 +521,6 @@ export function VectorChart({
     let lastMinuteBarTime = minuteBarsRef.current.length
       ? minuteBarsRef.current[minuteBarsRef.current.length - 1]!.time
       : 0;
-    let newBarOpened = false;
 
     connRef.current = createVectorEventSource((snap) => {
       if (replayModeRef.current) return;
@@ -565,7 +577,6 @@ export function VectorChart({
       }
 
       if (snap.candle && snap.candle.time >= lastMinuteBarTime) {
-        newBarOpened = snap.candle.time > lastMinuteBarTime;
         lastMinuteBarTime = snap.candle.time;
         const curSpot = snap.candle.close;
         const prevSpot = spotRef.current;
@@ -588,12 +599,8 @@ export function VectorChart({
         const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
         const lastDisplay = displayBars[displayBars.length - 1];
         if (lastDisplay) {
-          const openedDisplayBar = lastDisplay.time > displayBarTimeRef.current;
           displayBarTimeRef.current = lastDisplay.time;
           seriesRef.current?.update(lastDisplay);
-          if ((newBarOpened || openedDisplayBar) && chartRef.current) {
-            chartRef.current.timeScale().scrollToRealTime();
-          }
         }
       }
 
@@ -622,7 +629,12 @@ export function VectorChart({
         vertLines: { color: "rgba(255,255,255,0.06)" },
         horzLines: { color: "rgba(255,255,255,0.06)" },
       },
-      timeScale: { timeVisible: true, secondsVisible: true },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: true,
+        // Subtle live follow when the last bar is visible — do not call scrollToRealTime on every new bar.
+        shiftVisibleRangeOnNewBar: true,
+      },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.12)" },
       crosshair: {
         vertLine: { color: "rgba(34, 211, 238, 0.35)", width: 1, style: LineStyle.Dashed },
@@ -794,7 +806,7 @@ export function VectorChart({
       refreshTrails(lensRef.current);
     }
     if (!replayMode && liveSession) {
-      chart?.timeScale().scrollToRealTime();
+      maybeScrollToLive(chart);
     }
   }, [timeframe, replayMode, liveSession, refreshTrails]);
 
