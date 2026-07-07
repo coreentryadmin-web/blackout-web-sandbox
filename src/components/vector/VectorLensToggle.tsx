@@ -26,6 +26,8 @@ export function VectorLensToggle({ lens, vexAvailable, onLens }: Props) {
             type="button"
             disabled={disabled}
             onClick={() => onLens(key)}
+            aria-pressed={active}
+            data-testid={`vector-lens-${key}`}
             className={clsx(
               "font-mono text-[10px] font-bold uppercase tracking-[0.18em] rounded-lg border px-3 py-1.5 transition-colors",
               active && key === "gex" && "border-[#ffd60a]/70 bg-[#ffd60a]/15 text-[#ffd60a]",

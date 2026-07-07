@@ -47,7 +47,11 @@ let darkPoolInFlight: Promise<void> | null = null;
 function refreshWallScope(): void {
   const now = Date.now();
   if (now - wallScope.fetchedAt < WALL_SCOPE_REFRESH_MS || wallScopeInFlight) return;
-  wallScopeInFlight = fetchGexHeatmap("SPX")
+  wallScopeInFlight = runWallScopeFetch();
+}
+
+function runWallScopeFetch(): Promise<void> {
+  return fetchGexHeatmap("SPX")
     .then((hm) => {
       wallScope = nextWallScope(wallScope, Date.now(), hm);
       if (hm?.gex?.strike_totals && Object.keys(hm.gex.strike_totals).length > 0) {
@@ -66,6 +70,19 @@ function refreshWallScope(): void {
     .finally(() => {
       wallScopeInFlight = null;
     });
+}
+
+/** SSR / first paint — await heatmap scope so VEX walls are not null on cold start. */
+export async function primeVectorWallScope(): Promise<void> {
+  const now = Date.now();
+  if (
+    now - wallScope.fetchedAt < WALL_SCOPE_REFRESH_MS &&
+    (fallbackStrikeTotals || fallbackVexStrikeTotals)
+  ) {
+    return;
+  }
+  if (!wallScopeInFlight) wallScopeInFlight = runWallScopeFetch();
+  await wallScopeInFlight;
 }
 
 function refreshDarkPoolLevels(): void {

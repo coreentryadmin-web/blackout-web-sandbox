@@ -30,6 +30,7 @@
     "validate:spx-bie": "node --import tsx --experimental-test-module-mocks scripts/audit/spx-bie-consistency-validator.mjs",
     "validate:spx-rth": "node scripts/spx-rth-all-day-audit.mjs",
     "validate:spx-e2e": "node scripts/spx-dashboard-e2e-audit.mjs",
+    "validate:vector-e2e": "node scripts/vector-e2e-audit.mjs",
     "validate:member-dashboard": "node scripts/member-dashboard-live-check.mjs",
     "validate:site-latency": "node scripts/site-latency-audit.mjs",
     "validate:grid-rth": "node scripts/grid-rth-all-day-audit.mjs",

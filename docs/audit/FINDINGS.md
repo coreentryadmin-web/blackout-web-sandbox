@@ -23,6 +23,8 @@ in this file.
 
 **Verification:** 28 vector unit tests (wall history, replay, wall events). `npx tsc --noEmit` clean.
 
+**Follow-up (same overnight pass, PR pending):** `validate:vector-e2e` Playwright suite; Vector launch gate `defaultLaunched: true`; replay control `aria-label`s (fix /Play/i matching "Replay session"); `primeVectorWallScope()` SSR await so VEX toggle is not disabled on cold heatmap; live `setVexAvailable` when SSE delivers vanna walls.
+
 ## 🟠 P1 FOUND+FIXED 2026-07-07 — Vector's live candle never updates on ~4/5 of replicas (leader-only, no cross-replica fallback) (branch `fix/spx-candle-store-cross-replica-fallback`)
 
 **Surface:** `src/lib/ws/spx-candle-store.ts` — feeds the Vector chart's live current-bar update via `/api/market/vector/stream`.

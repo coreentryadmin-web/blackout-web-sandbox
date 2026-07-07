@@ -15,6 +15,7 @@ import {
   getVectorVexFlip,
   getVectorVexWalls,
   getVectorWallHistory,
+  primeVectorWallScope,
 } from "@/lib/vector-snapshot";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
@@ -28,6 +29,7 @@ export default async function VectorPage() {
   if (!(await canAccessTool("vector"))) return <ComingSoon toolKey="vector" />;
 
   ensureDataSockets();
+  await primeVectorWallScope();
   const [{ bars, sessionYmd }, walls, vexWalls, gammaFlip, vexFlip, darkPoolLevels] =
     await Promise.all([
       fetchVectorSeedBars(),

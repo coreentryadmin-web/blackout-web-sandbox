@@ -401,9 +401,11 @@ export function VectorChart({
     ...eventsFromWallHistory(initialWallHistory, "gex"),
     ...eventsFromWallHistory(initialWallHistory, "vex"),
   ]);
-  const vexAvailable =
-    Boolean(initialVexWalls?.callWalls?.length || initialVexWalls?.putWalls?.length) ||
-    hasVexInHistory(initialWallHistory);
+  const [vexAvailable, setVexAvailable] = useState(
+    () =>
+      Boolean(initialVexWalls?.callWalls?.length || initialVexWalls?.putWalls?.length) ||
+      hasVexInHistory(initialWallHistory)
+  );
 
   useEffect(() => {
     lensRef.current = lens;
@@ -506,6 +508,7 @@ export function VectorChart({
           }
           wallHistoryRef.current = merged;
           setSessionHistory(merged);
+          if (hasVexInHistory(merged)) setVexAvailable(true);
           refreshTrails(lensRef.current);
         }
       }
@@ -528,6 +531,9 @@ export function VectorChart({
       }
       if (snap.vexWalls) {
         vexWallsRef.current = snap.vexWalls;
+        if (snap.vexWalls.callWalls?.length || snap.vexWalls.putWalls?.length) {
+          setVexAvailable(true);
+        }
       }
 
       if (snap.candle && snap.candle.time >= lastBarTime) {

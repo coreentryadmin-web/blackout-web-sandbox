@@ -43,6 +43,8 @@ export function VectorReplayControls({
         type="button"
         onClick={onToggleReplay}
         disabled={!canReplay && !replayMode}
+        data-testid="vector-replay-toggle"
+        aria-label={replayMode ? "Exit replay" : "Replay session"}
         className={clsx(
           "font-mono text-[10px] font-semibold rounded-lg border px-3 py-[5px] transition-all",
           replayMode
@@ -58,6 +60,8 @@ export function VectorReplayControls({
           <button
             type="button"
             onClick={onTogglePlay}
+            aria-label={playing ? "Pause replay" : "Play replay"}
+            data-testid="vector-replay-play"
             className="font-mono text-[10px] font-semibold rounded-lg border border-white/15 px-2.5 py-[5px] text-sky-300"
           >
             {playing ? "⏸ Pause" : "▶ Play"}
@@ -87,6 +91,8 @@ export function VectorReplayControls({
                 key={s}
                 type="button"
                 onClick={() => onSpeed(s)}
+                aria-label={`Replay speed ${s}x`}
+                data-testid={`vector-replay-speed-${s}`}
                 className={clsx(
                   "font-mono text-[10px] rounded-md border px-2 py-0.5",
                   speed === s
