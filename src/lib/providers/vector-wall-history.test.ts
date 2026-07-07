@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordWallSample, seedWallHistoryForDisplay, mergeWallHistory, trailForRank, type WallHistorySample } from "./vector-wall-history";
+import {
+  mergeWallHistory,
+  pickActiveStrikes,
+  recordWallSample,
+  seedWallHistoryForDisplay,
+  strikeTrailWeight,
+  trailsByStrike,
+  trailForRank,
+  type WallHistorySample,
+} from "./vector-wall-history";
 import type { GexWalls } from "./gex-wall-levels";
 
 function walls(callStrikes: number[], putStrikes: number[]): GexWalls {
@@ -80,21 +89,46 @@ test("seedWallHistoryForDisplay: no-op without walls or bars", () => {
   assert.deepEqual(seedWallHistoryForDisplay([], [100], null), []);
 });
 
-test("mergeWallHistory: prefers the longer remote tail on connect", () => {
-  const local = [{ time: 100, walls: walls([6800], [6700]) }];
-  const remote = [
-    { time: 100, walls: walls([6800], [6700]) },
-    { time: 160, walls: walls([6810], [6700]) },
+test("trailsByStrike: groups horizontal bead rows per strike — migration splits into two rows", () => {
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], []) },
+    { time: 160, walls: walls([6800], []) },
+    { time: 220, walls: walls([6810], []) },
   ];
-  assert.deepEqual(mergeWallHistory(local, remote), remote);
+  const callTrails = trailsByStrike(history, "callWalls");
+  assert.equal(callTrails.size, 2);
+  assert.deepEqual(callTrails.get(6800)?.map((p) => p.time), [100, 160]);
+  assert.deepEqual(callTrails.get(6810)?.map((p) => p.time), [220]);
 });
 
-test("mergeWallHistory: keeps local when it is already longer", () => {
+test("pickActiveStrikes: keeps the heaviest cumulative rows when capped", () => {
+  const trails = new Map([
+    [6800, [{ time: 100, pct: 3 }, { time: 160, pct: 3 }]],
+    [6810, [{ time: 100, pct: 9 }]],
+    [6820, [{ time: 100, pct: 2 }]],
+  ]);
+  assert.deepEqual(pickActiveStrikes(trails, 2), [6810, 6800]);
+  assert.equal(strikeTrailWeight(trails.get(6800)!), 6);
+});
+
+test("mergeWallHistory: unions by bar time so Redis + replica tails combine", () => {
+  const local = [{ time: 100, walls: walls([6800], [6700]) }];
+  const remote = [
+    { time: 100, walls: walls([6805], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+  ];
+  const merged = mergeWallHistory(local, remote);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].walls.callWalls[0].strike, 6805);
+  assert.equal(merged[1].time, 160);
+});
+
+test("mergeWallHistory: keeps local-only bars when remote is shorter", () => {
   const local = [
     { time: 100, walls: walls([6800], [6700]) },
     { time: 160, walls: walls([6810], [6700]) },
     { time: 220, walls: walls([6820], [6700]) },
   ];
   const remote = [{ time: 100, walls: walls([6800], [6700]) }];
-  assert.deepEqual(mergeWallHistory(local, remote), local);
+  assert.equal(mergeWallHistory(local, remote).length, 3);
 });

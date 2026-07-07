@@ -5,7 +5,8 @@ import { ComingSoon } from "@/components/ComingSoon";
 import { VectorPageShell } from "@/components/vector/VectorPageShell";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import { todayEt } from "@/lib/nighthawk/session";
-import { seedWallHistoryForDisplay } from "@/lib/providers/vector-wall-history";
+import { mergeWallHistory, seedWallHistoryForDisplay } from "@/lib/providers/vector-wall-history";
+import { loadSessionWallHistory } from "@/lib/providers/vector-wall-persist";
 import { fetchVectorSeedBars } from "@/lib/vector-seed-bars";
 import { getVectorGexWalls, getVectorWallHistory } from "@/lib/vector-snapshot";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
@@ -24,10 +25,13 @@ export default async function VectorPage() {
     fetchVectorSeedBars(),
     Promise.resolve(getVectorGexWalls()),
   ]);
+  const persistedHistory = await loadSessionWallHistory(sessionYmd).catch(
+    () => [] as import("@/lib/providers/vector-wall-history").WallHistorySample[]
+  );
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
   const initialWallHistory = seedWallHistoryForDisplay(
-    getVectorWallHistory(),
+    mergeWallHistory(getVectorWallHistory(), persistedHistory),
     bars.map((b) => b.time),
     walls,
   );
