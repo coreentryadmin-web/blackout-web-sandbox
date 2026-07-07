@@ -181,7 +181,7 @@ async function auditGridApis(app) {
   if (zb.status === 200 && zb.json?.available) {
     rec("e2e:zerodte-board-api", "PASS", `${zb.json.setups?.length ?? 0} setups · ledger ${zb.json.ledger?.length ?? 0}`);
   } else if (zb.status === 403) {
-    rec("e2e:zerodte-board-api", "WARN", "403 — admin-only until LAUNCHED_0DTE=1");
+    rec("e2e:zerodte-board-api", "WARN", "403 — follows Night Hawk's launch gate (requireToolApi('nighthawk'))");
   } else {
     rec("e2e:zerodte-board-api", "FAIL", `HTTP ${zb.status}`);
   }

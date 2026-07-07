@@ -276,7 +276,6 @@ html.ios-app.ios-native-shell .spx-commentary-rail-desk,
 html.ios-app.ios-native-shell .flow-panel,
 html.ios-app.ios-native-shell .desk-panel,
 html.ios-app.ios-native-shell .nighthawk-playbook,
-html.ios-app.ios-native-shell .nighthawk-watch,
 html.ios-app.ios-native-shell .grid-card,
 html.ios-app.ios-native-shell .gex-heatmap-panel-native,
 html.ios-app.ios-native-shell .spx-sniper-command,
@@ -295,7 +294,6 @@ html.ios-app.ios-native-shell .spx-sniper-command-native {
 html.ios-app.ios-native-shell .spx-sniper-panel-header,
 html.ios-app.ios-native-shell .flow-panel-header,
 html.ios-app.ios-native-shell .nighthawk-playbook-header,
-html.ios-app.ios-native-shell .nighthawk-watch-header,
 html.ios-app.ios-native-shell .grid-card-head {
   border-bottom: 1px solid var(--cmd-edge) !important;
   background: linear-gradient(

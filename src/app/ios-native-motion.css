@@ -50,7 +50,6 @@ html.ios-app.ios-native-shell .spx-sniper-panel,
 html.ios-app.ios-native-shell .spx-odte-matrix-panel,
 html.ios-app.ios-native-shell .flow-panel,
 html.ios-app.ios-native-shell .nighthawk-playbook,
-html.ios-app.ios-native-shell .nighthawk-watch,
 html.ios-app.ios-native-shell .grid-card,
 html.ios-app.ios-native-shell .gex-heatmap-panel-native {
   animation: ios-module-enter 0.26s var(--ios-motion-spring) both;

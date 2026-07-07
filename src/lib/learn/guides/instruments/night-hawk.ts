@@ -8,13 +8,13 @@ export const nightHawkGuide = defineToolGuide({
     "Evening playbook and pre-market confirmation — tomorrow's SPX setups, GEX context, and invalidation levels published after the close.",
   overview: [
     "Night Hawk publishes the Evening Edition: market recap, catalyst scan, GEX positioning, ranked play ideas, and hard invalidation levels for the next session.",
-    "Route `/nighthawk` hosts two products side-by-side: PlaybookBoard (left) for the edition and Night's Watch (right) for position management. This chapter covers the playbook; Night's Watch has its own guide.",
+    "Route `/nighthawk` hosts two products side-by-side: PlaybookBoard (left) for the edition and 0DTE Command (right) for the always-on intraday scanner. This chapter covers the playbook; 0DTE Command has its own guide.",
     "It is asynchronous preparation — not a live execution desk. SPX Slayer takes over at the open. Morning confirm cron updates CONFIRMED / DEGRADED / INVALIDATED badges on each play.",
   ],
   layout: {
     title: "Desk layout",
     paragraphs: [
-      "Two-column layout: PlaybookBoard on the left (~60%), NightsWatchPanel on the right (~40%). PlayDetailModal overlays when you select a ranked play.",
+      "Two-column layout: PlaybookBoard on the left (~40%), ZeroDteBoard (0DTE Command) on the right (~60%). PlayDetailModal overlays when you select a ranked play.",
       "Edition data refreshes on a slower cadence than Slayer — expect 120s SWR on edition, 60s on play-status, 300s on track record.",
       "If tonight's board is not published yet, stale/prior edition copy appears with explicit notice — read the freshness badges before trading old levels.",
     ],
@@ -113,7 +113,7 @@ export const nightHawkGuide = defineToolGuide({
       { title: "Edition blocks", body: "Structured document: recap, context bar, five ranked rows, record strip." },
       { title: "Morning confirm", body: "CONFIRMED / DEGRADED / INVALIDATED badges reflect pre-open revalidation." },
       { title: "Carry logic", body: "Plays may persist across sessions until close or invalidation." },
-      { title: "Shared route", body: "/nighthawk also hosts Night's Watch — playbook left, positions right." },
+      { title: "Shared route", body: "/nighthawk also hosts 0DTE Command — playbook left, always-on scanner right." },
     ],
   },
   usage: {
@@ -123,13 +123,12 @@ export const nightHawkGuide = defineToolGuide({
       { title: "Note invalidation", body: "Carry hard levels into pre-market Grid scan." },
       { title: "Check morning badges", body: "Before 9:30, refresh for CONFIRMED vs INVALIDATED." },
       { title: "Validate at open", body: "Slayer flip and walls may disagree — Slayer wins for execution." },
-      { title: "Log if you trade", body: "Enter positions in Night's Watch on the same page." },
+      { title: "Check 0DTE Command", body: "See today's always-on scanner finds on the same page." },
     ],
   },
   crossLinks: [
     CROSS.spx("Live execution desk for RTH."),
     CROSS.grid("Overnight catalysts that override the edition."),
-    CROSS.watch("Track plays opened from Night Hawk ideas — same /nighthawk route."),
     CROSS.helix("Night Hawk Flow panel on HELIX links edition to live tape."),
     CROSS.largo("Ask get_nighthawk_edition for structured Q&A on the board."),
   ],
@@ -147,6 +146,6 @@ export const nightHawkGuide = defineToolGuide({
   faq: [
     { q: "Night Hawk vs SPX Slayer?", a: "Night Hawk = evening publication + morning confirm; Slayer = live RTH engine with 3s play poll." },
     { q: "When is the edition published?", a: "After cash close via cron; empty slots show until complete (~evening ET)." },
-    { q: "Why is Night's Watch on the same page?", a: "Single workflow: read playbook, manage book without route changes." },
+    { q: "Why is 0DTE Command on the same page?", a: "Single workflow: read the evening playbook and the always-on scanner without route changes." },
   ],
 });

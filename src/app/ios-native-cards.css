@@ -79,8 +79,7 @@ html.ios-app.ios-native-shell [data-freshness="offline"] {
 
 html.ios-app.ios-native-shell .flow-panel,
 html.ios-app.ios-native-shell .grid-card,
-html.ios-app.ios-native-shell .nighthawk-playbook,
-html.ios-app.ios-native-shell .nighthawk-watch {
+html.ios-app.ios-native-shell .nighthawk-playbook {
   border-left-width: 2px;
   border-left-style: solid;
   border-left-color: color-mix(in srgb, var(--ios-accent) 35%, transparent);

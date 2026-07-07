@@ -20,7 +20,7 @@ const SUPPORTED = DISPATCHABLE_CRONS;
  * the SAME admin gate as the rest of /api/admin (requireAdminApi → 401/403); CRON_SECRET is
  * never required from the caller — we attach it server-side to the synthetic cron request.
  *
- * POST body: { name: string }  e.g. "nights-watch-warm" | "flow-ingest" | "uw-cache-refresh" | "heatmap-warm"
+ * POST body: { name: string }  e.g. "grid-warm" | "flow-ingest" | "uw-cache-refresh" | "heatmap-warm"
  * Returns:   { ok, name, ranAt, durationMs, status, result }
  */
 export async function POST(req: NextRequest) {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
-import { canAccessTool, canAccessZeroDteCommand } from "@/lib/tool-access-server";
+import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
 import { GridPageShell } from "@/components/desk/GridPageShell";
 
@@ -14,7 +14,5 @@ export default async function GridPage() {
   await requireTier("premium");
   if (!(await canAccessTool("grid"))) return <ComingSoon toolKey="grid" />;
 
-  const showZeroDteCommand = await canAccessZeroDteCommand();
-
-  return <GridPageShell showZeroDteCommand={showZeroDteCommand} />;
+  return <GridPageShell />;
 }

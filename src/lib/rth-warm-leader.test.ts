@@ -4,16 +4,6 @@ import { rthWriterOverdue } from "./rth-warm-leader-logic";
 
 const now = Date.parse("2026-07-02T15:00:00.000Z");
 
-test("rthWriterOverdue: nights-watch-warm overdue after 3m", () => {
-  const last = new Date(now - 3 * 60_000).toISOString();
-  assert.equal(rthWriterOverdue("nights-watch-warm", last, "ok", null, now), true);
-});
-
-test("rthWriterOverdue: nights-watch-warm fresh at 1m", () => {
-  const last = new Date(now - 60_000).toISOString();
-  assert.equal(rthWriterOverdue("nights-watch-warm", last, "ok", null, now), false);
-});
-
 test("rthWriterOverdue: desk-warm overdue after 100s (90s heal threshold)", () => {
   const last = new Date(now - 100_000).toISOString();
   assert.equal(rthWriterOverdue("desk-warm", last, "ok", null, now), true);

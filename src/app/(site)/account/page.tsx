@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { UserProfile } from "@clerk/nextjs";
+import { PersonalAlertsSettings } from "@/components/account/PersonalAlertsSettings";
 
 export const metadata: Metadata = {
   title: "Account · BlackOut",
@@ -47,6 +48,14 @@ export default function AccountPage() {
           </p>
         </div>
         <UserProfile appearance={CLERK_APPEARANCE} />
+
+        <div className="account-page-alerts-block mt-8 rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <h2 className="font-syne text-lg font-bold text-white">Personal Play Alerts</h2>
+          <p className="font-mono text-[11px] text-sky-300/60 mt-1 mb-4 uppercase tracking-[0.1em]">
+            Discord webhook · Night Hawk plays
+          </p>
+          <PersonalAlertsSettings />
+        </div>
       </div>
     </main>
   );

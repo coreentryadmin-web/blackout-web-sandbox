@@ -2,7 +2,7 @@
 
 A continuous verifier that checks **the numbers the platform shows are correct**. ONE
 `/api/cron/data-correctness` run now audits **every numeric surface on the platform** — Heat Maps,
-the SPX desk, HELIX flows, Night's Watch, Night Hawk, market context, the track record, Largo, and the
+the SPX desk, HELIX flows, Night Hawk, market context, the track record, Largo, and the
 **data layer itself** (Postgres + Redis + pipeline-hop + writer-cron integrity) — into a single
 rolled-up scorecard. Heat Maps (the GEX / VEX / DEX / CHARM matrix) was the first target; the same
 six-layer model and scorecard schema now carry the rest.
@@ -20,7 +20,6 @@ number *right*?" — not just "do two surfaces agree?".
   - Heat Maps — `src/lib/correctness/heatmap-verifier.ts`
   - SPX desk — `src/lib/correctness/desk-verifier.ts`
   - HELIX flows — `src/lib/correctness/flows-verifier.ts`
-  - Night's Watch — `src/lib/correctness/nights-watch-verifier.ts`
   - Night Hawk — `src/lib/correctness/nighthawk-verifier.ts`
   - Market context — `src/lib/correctness/market-context-verifier.ts`
   - Track record — `src/lib/correctness/track-record-verifier.ts`
@@ -68,14 +67,6 @@ never a false green). "2nd source needed" is what would promote a gap to confirm
 | call% / put% | derivation == float share, bounded [0,100] | consistency-only | — |
 | Recency ordering | recency view derivable + monotone, none future-dated | consistency-only | — (the `order:"recent"` param is the on-main change) |
 | Freshness | newest event ≤ 30m RTH | asserted (RTH) | — |
-
-### Night's Watch — `nights-watch-verifier.ts`
-| Metric | Method | Status today | 2nd source needed |
-|---|---|---|---|
-| Unrealized P&L, current value, pnl% | (mark−entry)×100×qty×side recomputed; diffed vs enrichPosition | consistency-only (formula confirmed) | — (formula is exact) |
-| Breakeven, DTE, distance | independent re-derivation vs enrichPosition | consistency-only (formula confirmed) | — |
-| Strike present in chain | held contract matched in shared chain cache | **chain-confirmed** | — |
-| Mark / Δ / Θ / IV values | sane + trace to real chain contract | consistency-only (chain-confirmed, values not oracle'd) | a 2nd options-pricing source |
 
 ### Night Hawk — `nighthawk-verifier.ts`
 | Metric | Method | Status today | 2nd source needed |
@@ -137,7 +128,7 @@ checks are **market-hours aware** — expected after-hours/weekend quiet SKIPS, 
 | **Redis — gex-heatmap TTL** | raw Redis TTL present + bounded (1–600s); no-expiry/absurd TTL flagged (stale-as-live) | **FLAG** | pass / FLAG / consistency-only (miss) |
 | **Pipeline hop — SPX spot** | gex-positioning cache spot == SPX desk spot within 0.5% (the two hops feed the website the same number) | **FLAG** | consistency-only / FLAG |
 | **Pipeline hop — edition** | `fetchNighthawkEditionByDate(latest.edition_for)` reproduces the latest row (the website's served-by-date path; the #77 DATE-cast class) | **FLAG** | consistency-only / FLAG |
-| **Writer crons** | flow-ingest, uw-cache-refresh, nights-watch-warm, heatmap-warm, nighthawk-playbook, nighthawk-outcomes: last run not failed; not stale-during-RTH (#90 silent death) | **FLAG** (failed / RTH-stale) | pass / FLAG / consistency-only (off-window) |
+| **Writer crons** | flow-ingest, uw-cache-refresh, heatmap-warm, nighthawk-playbook, nighthawk-outcomes: last run not failed; not stale-during-RTH (#90 silent death) | **FLAG** (failed / RTH-stale) | pass / FLAG / consistency-only (off-window) |
 
 **FLAG-capable vs consistency-only:** the PG freshness/row-count/garbage checks, Redis presence/TTL/
 sanity checks, and writer failed/RTH-stale checks all emit a real **FLAG** (and report PASS when they
@@ -268,7 +259,6 @@ admin tile or report can render a false "verified" badge.
 | `CORRECTNESS_TICKERS` | CSV ticker set for Heat Maps (default `SPX,SPY,QQQ,NVDA`, capped at 10) |
 | `CORRECTNESS_SHADOW_RAW=0` | disable raw-chain / MA / breadth shadow recomputes everywhere (pure cache-reader) |
 | `CORRECTNESS_UW_ORACLE=0` | disable the UW cross-provider GEX oracle (Heat Maps + desk King/sign become consistency-only) |
-| `CORRECTNESS_NW_SAMPLE` | Night's Watch: max distinct (ticker,expiry) chains to chain-confirm (default 12, ≤40) |
 | `CORRECTNESS_NIGHTHAWK_CHAIN=0` | disable Night Hawk live chain-confirm (strikes stay dossier-grounded only) |
 | `CORRECTNESS_NIGHTHAWK_SAMPLE` | Night Hawk: max plays to chain-confirm (default 3, ≤8) |
 | `CORRECTNESS_DATA_INTEGRITY=0` | disable the whole data-layer + pipeline-integrity surface (PG/Redis/hop/writers) |

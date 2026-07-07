@@ -8,6 +8,61 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔵 PRODUCT RESTRUCTURE 2026-07-07 — Night's Watch removed; 0DTE Command moved from Grid into Night Hawk (branch `feat/nighthawk-absorbs-0dte-remove-nights-watch`)
+
+**Not a bug fix** — a deliberate, site-owner-directed product change, logged here for the same reason
+every consequential change gets logged: so the diff's reasoning survives a skim of the PR.
+
+**What changed:** Night's Watch (the per-user manually-logged options-position tracker embedded in
+the `/nighthawk` page, next to the Playbook) is removed entirely — UI, API routes, `user_positions`
+DB table, correctness verifier, Largo tool (`get_my_positions`), BIE calibration cohort, cron warmer.
+0DTE Command (previously a tab inside `/grid`, alongside the classic "Market Grid" board) now occupies
+the layout slot Night's Watch vacates on `/nighthawk`; its independent `LAUNCHED_0DTE` kill-switch was
+retired in favor of following Night Hawk's single `nighthawk` tool-access gate. `/grid` itself still
+exists for now (classic Market Grid board only, no more 0DTE tab) — full Grid removal is a deliberate
+follow-up PR, not done here, so 0DTE has a working new home before its old one disappears.
+
+**Site owner's confirmed decisions (asked before executing, not assumed):**
+1. Grid's 12 non-0DTE panels (news/flow/analysts/GEX/movers/earnings/dark-pool/congress/macro/
+   catalysts/sector-heat) will be deleted with no replacement in the follow-up Grid-removal PR.
+2. `user_positions` is hard-dropped, not exported — `src/lib/migrations/006_drop_user_positions.sql`
+   (`DROP TABLE IF EXISTS user_positions;`) is added but **not executed by this PR**; applying it via
+   `/api/admin/run-migration` is a manual post-deploy step.
+3. 0DTE Command's separate `LAUNCHED_0DTE` toggle is retired — it now inherits Night Hawk's one gate.
+4. `PersonalAlertsSettings.tsx` (Discord webhook alert settings — unrelated to positions, but misfiled
+   inside the `nights-watch/` folder) was relocated to `src/components/account/` and mounted on
+   `/account`, not deleted along with the rest.
+
+**Blast radius, wider than the initial scoping pass found:** an architecture-mapping pass before
+writing any code correctly found the primary surface (panel/API/DB/Largo-tool/BIE-cohort/cron), but
+implementation turned up a second layer the mapping pass missed: `src/lib/largo/run-tool.ts`'s actual
+`get_my_positions` dispatcher body (tool-defs.ts only held the schema), Largo's runtime system-prompt/
+live-feed/hook references to the tool, a second Night's-Watch-only BIE query function
+(`fetchNightsWatchToolCallingBieInteractions`, far from the main `db.ts` block), two more crons
+(`positions-expiry`, plus their Railway `.toml` trigger configs) not in the original inventory, and
+several Learn-guide cross-links that hardcoded the now-deleted `nights-watch` slug (would have failed
+`tsc` otherwise). All resolved in the same PR — see the PR body for the full file list.
+
+**Known follow-up, deliberately not fixed here (flagged, not silently missed):** `src/lib/ws/
+options-socket.ts`'s live-options-mark WS engine (leader election, connection pool, watchdog) and a
+companion per-OCC warm-snapshot cache in `src/lib/providers/options-snapshot.ts` (Redis key prefix
+literally `nw:optsnap:`) both now have **zero remaining callers anywhere in the app** — confirmed via
+`grep -rl` for their exported functions (`getLiveOptionMark`/`getLiveOptionMarkSync`,
+`setOptionSnapshots`/`getOptionSnapshot`) turning up nothing outside their own defining/test files.
+Both appear to have existed exclusively to serve Night's Watch's live position marks. Left running in
+this PR rather than unilaterally gutting shared-looking WS infra beyond what was asked; `options-
+socket.ts`'s `reconcileOptionSubscriptions()` also directly queries `user_positions` via raw SQL
+(not through the now-removed `db.ts` exports) — non-fatal (try/caught) but will start logging a
+warning every reconcile tick once migration 006 is actually applied. Worth a dedicated follow-up to
+decide whether to delete both subsystems outright.
+
+**Verification:** `npx tsc --noEmit` clean. Full suite 1709/1709 passing (down from 1816 on `main` —
+the difference is entirely deleted Night's-Watch-specific test files, not lost coverage of anything
+still shipping). `npx eslint` on every touched file — one pre-existing warning in `FlowAlertStream.tsx`
+(confirmed present on `main` too, not introduced here). `npm run build` clean; confirmed `/nighthawk`
+and `/grid` both still build, `/api/account/positions*` and `/learn/nights-watch` no longer do.
+Independently re-ran every check myself rather than trusting the implementing agent's self-report.
+
 ## 🟡 P1 FOUND+FIXED 2026-07-07 — CI broken on `main` for everyone: a test fixture date-rotted past its own 5-day freshness window (branch `fix/spx-skew-shadow-test-date-rot`)
 
 **Surface:** `src/lib/providers/spx-signal-log-skew.test.ts` — 2 of its 7 tests, run as part of every PR's `verify` CI check.

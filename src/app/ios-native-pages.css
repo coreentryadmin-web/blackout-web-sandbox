@@ -82,7 +82,6 @@ html.ios-app.ios-native-shell .spx-odte-matrix-panel,
 html.ios-app.ios-native-shell .spx-commentary-rail-desk,
 html.ios-app.ios-native-shell .flow-panel,
 html.ios-app.ios-native-shell .nighthawk-playbook,
-html.ios-app.ios-native-shell .nighthawk-watch,
 html.ios-app.ios-native-shell .grid-card,
 html.ios-app.ios-native-shell .largo-terminal-fullpage {
   border-radius: var(--ios-panel-radius);
@@ -804,13 +803,11 @@ html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-layout {
   gap: var(--ios-content-gap);
 }
 
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-kicker,
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-watch-kicker {
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-kicker {
   display: none;
 }
 
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-title,
-html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-watch-title {
+html.ios-app.ios-native-shell[data-ios-route="nighthawk"] .nighthawk-playbook-title {
   font-size: 1.05rem;
 }
 

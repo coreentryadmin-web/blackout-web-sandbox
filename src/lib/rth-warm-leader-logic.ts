@@ -2,7 +2,6 @@ import { isFlowIngestAlternateWriterSkip } from "@/lib/cron-writer-target-fresh"
 
 /** Expected max gap (minutes) before we proactively re-warm during RTH. */
 export const RTH_WRITER_HEAL_AFTER_MIN: Record<string, number> = {
-  "nights-watch-warm": 2,
   "heatmap-warm": 2,
   /** 1.5 = 90s — tighter than other warmers; desk cold-build blocks are the top UX pain point. */
   "desk-warm": 1.5,

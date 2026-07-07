@@ -23,7 +23,6 @@ import {
   fetchHelixToolCallingBieInteractions,
   fetchMarketContextToolCallingBieInteractions,
   fetchNighthawkToolCallingBieInteractions,
-  fetchNightsWatchToolCallingBieInteractions,
   fetchSpxToolCallingBieInteractions,
   fetchThermalToolCallingBieInteractions,
   fetchZeroDteSetupLogRange,
@@ -33,7 +32,6 @@ import {
   HELIX_ENGINE_TOOL_NAMES,
   MARKET_ENGINE_TOOL_NAMES,
   NIGHTHAWK_ENGINE_TOOL_NAMES,
-  NIGHTS_WATCH_ENGINE_TOOL_NAMES,
   SPX_ENGINE_TOOL_NAMES,
   THERMAL_ENGINE_TOOL_NAMES,
   ZERODTE_ENGINE_TOOL_NAMES,
@@ -130,16 +128,6 @@ export type CalibrationReport = {
    *  this report. See computeMarketContextToolCallCalibration below for the
    *  cohort definition and metrics. */
   market_context_tool_calls: MarketContextToolCallCalibrationReport | null;
-  /** Task #163 — the same cohort idea as spx_tool_calls above, applied to Night's
-   *  Watch (the signed-in user's own per-position Hold/Trim/Sell verdict engine)
-   *  instead of SPX Slayer: Largo's own answer-quality cohort for turns that
-   *  touched get_my_positions. Same attach-after-compute, fail-open, additive
-   *  pattern as every other slice on this report. See
-   *  computeNightsWatchToolCallCalibration below for the cohort definition and
-   *  metrics, and its doc comment for why router_matched_n is honestly 0 for now
-   *  (there is no deterministic BIE router intent for Night's Watch, the same
-   *  gap task #144 documented for Night Hawk). */
-  nights_watch_tool_calls: NightsWatchToolCallCalibrationReport | null;
 };
 
 // ── SPX Slayer's own closed-play calibration (additive, parallel to the 0DTE pass) ──
@@ -261,7 +249,7 @@ export function computeCalibration(
     by_spike: bySpike,
     recommendations: recs,
     // Attached by runBieCalibration once it has computed the SPX/HELIX/Thermal/
-    // Night Hawk/0DTE/market-context/Night's-Watch-tool-calling passes too — this
+    // Night Hawk/0DTE/market-context-tool-calling passes too — this
     // pure function only ever sees 0DTE-setup-log rows, so it never has data to
     // report for any of the additive slices below.
     spx_slayer: null,
@@ -271,7 +259,6 @@ export function computeCalibration(
     nighthawk_tool_calls: null,
     zerodte_tool_calls: null,
     market_context_tool_calls: null,
-    nights_watch_tool_calls: null,
   };
 }
 
@@ -1144,151 +1131,6 @@ export function computeMarketContextToolCallCalibration(
   };
 }
 
-// ── Task #163: Night's-Watch-tool-calling cohort within bie_interactions
-// (additive, a sixth pass alongside the 0DTE, SPX-Slayer-outcomes, and
-// SPX/HELIX/Thermal/Night-Hawk/0DTE-Command-tool-calling passes above) ──
-//
-// Night's Watch (the signed-in user's own per-position options book, `/account`'s
-// positions panel) already has its own data-correctness verifier
-// (src/lib/correctness/nights-watch-verifier.ts, priority correctness surface
-// #3, registered in run-correctness.ts) that shadow-recomputes P&L/breakeven/DTE
-// from scratch and chain-cross-confirms held contracts against the shared chain
-// cache — but that verifier only proves the VALUATION FORMULA is correct. Before
-// this, calibration.ts had no way to measure whether Largo's ANSWERS about that
-// same engine state (the deterministic Hold/Trim/Sell verdict, a proprietary
-// derived judgment analogous to SPX Slayer's grade/action) were actually GOOD
-// answers — the identical gap task #112 closed for SPX Slayer, never yet
-// extended to this product. This slice tracks that cohort continuously, same
-// evidence-gating philosophy (n≥10/bucket) as every other pass on this report.
-
-/** Slim projection of a bie_interactions row — identical shape to
- *  NighthawkToolCallInputRow above (same source table, same columns needed).
- *  Kept as its own named type rather than reused so a caller can never pass one
- *  product's rows into the other's compute function by an accidental structural
- *  match. */
-export type NightsWatchToolCallInputRow = {
-  tools_used: string[];
-  /** "claude_fallback", a router intent name, or null if a row predates task
-   *  #103's intent_bucket column. Carried through for shape-parity with the
-   *  other cohort row types and so a future router intent (see
-   *  isNightsWatchToolCallingRow's comment below) doesn't need a type change —
-   *  but it plays no role in THIS cohort's membership test today. */
-  intent_bucket: string | null;
-  answer_source: string;
-  claims_total: number | null;
-  claims_verified: number | null;
-  latency_ms: number | null;
-};
-
-export type NightsWatchToolCallCalibrationReport = {
-  window: { since: string; through: string };
-  /** Rows in the cohort — see isNightsWatchToolCallingRow for the membership test. */
-  n: number;
-  /** Same raw-count convention as SpxToolCallCalibrationReport. router_matched_n
-   *  is honestly always 0 today — see isNightsWatchToolCallingRow's doc comment
-   *  for why: there is no deterministic BIE router intent for Night's-Watch/"my
-   *  positions" questions at all, so no bie_interactions row can ever carry a
-   *  Night's-Watch-flavored router match. This is a faithful reflection of the
-   *  current router coverage, not a bug — do not "fix" it by fabricating a
-   *  match. */
-  claude_fallback_n: number;
-  router_matched_n: number;
-  /** router_matched_n / n — see the field's twin on SpxToolCallCalibrationReport.
-   *  Will read 0 (not null) whenever n > 0, for the same reason router_matched_n
-   *  does, until a real router intent exists. null only when n = 0. */
-  router_match_rate_pct: number | null;
-  /** Aggregate sum(claims_verified)/sum(claims_total) across cohort rows that
-   *  actually carried numeric claims (claims_total > 0) — same weighting
-   *  rationale as SpxToolCallCalibrationReport's field. null when no cohort row
-   *  had any graded claims yet. */
-  grounding_pass_rate_pct: number | null;
-  avg_latency_ms: number | null;
-  /** Same evidence-gating philosophy as the other passes — empty until n≥10. */
-  recommendations: string[];
-};
-
-/** Cohort membership: does this bie_interactions row represent a Largo turn
- *  that touched Night's Watch's own live-engine state? Unlike
- *  isSpxToolCallingRow above, this is tools_used-ONLY — there is no
- *  `|| row.intent_bucket === "..."` clause, and that's deliberate, not a gap
- *  waiting to be filled in (the same asymmetry isNighthawkToolCallingRow
- *  documents for Night Hawk). classifyBieIntent (bie/router.ts) recognizes
- *  exactly 4 deterministic intents (zerodte_plays, ticker_play_state,
- *  spx_structure, market_context); none of them ever route a Night's-Watch/"my
- *  positions" question. MY_POSITIONS_RE (largo/intent-keywords.ts) exists and
- *  looks like it could play the same role SPX_STRUCTURE_RE plays for the SPX
- *  cohort, but it does a completely different job: it only decides which TOOL
- *  BUNDLE Largo has on hand for a question (getToolsForIntent, tool-defs.ts) —
- *  it is never consulted by classifyBieIntent's deterministic answer path, so
- *  it can never cause a bie_interactions row to carry a Night's-Watch-flavored
- *  intent_bucket. Concretely: a "what should I do with my NVDA calls" question
- *  ALWAYS falls through to Claude tool-calling today, so router_matched_n on
- *  this cohort will legitimately read 0 — an honest reflection of the current
- *  router's coverage, not a bug to paper over by inventing a fake OR-clause
- *  here. If a future task adds a real deterministic Night's Watch router
- *  intent, add the matching OR-clause then (mirroring isSpxToolCallingRow), not
- *  before. */
-function isNightsWatchToolCallingRow(row: NightsWatchToolCallInputRow): boolean {
-  return row.tools_used.some((t) => (NIGHTS_WATCH_ENGINE_TOOL_NAMES as readonly string[]).includes(t));
-}
-
-/** Pure assembly — feed it bie_interactions-shaped rows (any cohort mix), get
- *  the Night's-Watch-tool-calling slice's sample count, router-vs-Claude split,
- *  grounding pass rate, and latency. Same bucket math as
- *  computeSpxToolCallCalibration above — literally the same shape of report,
- *  scoped to a different tool-name list. Never touches nights-watch-verifier.ts
- *  or any live valuation/verdict computation — read-only reporting over
- *  already-logged turns. */
-export function computeNightsWatchToolCallCalibration(
-  rows: NightsWatchToolCallInputRow[],
-  window: { since: string; through: string }
-): NightsWatchToolCallCalibrationReport {
-  const cohort = rows.filter(isNightsWatchToolCallingRow);
-  const n = cohort.length;
-
-  const claudeFallbackN = cohort.filter((r) => r.answer_source === "claude").length;
-  const routerMatchedN = cohort.filter((r) => r.answer_source === "bie-router").length;
-  const routerMatchRatePct = n > 0 ? Math.round((routerMatchedN / n) * 1000) / 10 : null;
-
-  // Only rows that actually carried numeric claims count toward the grounding
-  // ratio — same rationale as computeSpxToolCallCalibration above.
-  const graded = cohort.filter((r) => (r.claims_total ?? 0) > 0);
-  const totalClaims = graded.reduce((s, r) => s + (r.claims_total ?? 0), 0);
-  const verifiedClaims = graded.reduce((s, r) => s + (r.claims_verified ?? 0), 0);
-  const groundingPassRatePct = totalClaims > 0 ? Math.round((verifiedClaims / totalClaims) * 1000) / 10 : null;
-
-  const latencies = cohort.map((r) => r.latency_ms).filter((l): l is number => l != null);
-  const avgLatencyMs = latencies.length
-    ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
-    : null;
-
-  const recs: string[] = [];
-  if (n >= MIN_EVIDENCE && groundingPassRatePct != null && groundingPassRatePct < 70) {
-    recs.push(
-      `Night's-Watch-tool-calling Largo turns show only ${groundingPassRatePct}% claim grounding over ${n} turns — since grounding checks numbers, not answer quality, this is worth a manual read of a few transcripts to see whether the per-position valuation/verdict outputs are being misread or just under-verified.`
-    );
-  }
-  // Deliberately NO low-router-match-rate recommendation here (unlike the SPX
-  // pass): router_matched_n is structurally always 0 until a Night's Watch
-  // router intent exists (see isNightsWatchToolCallingRow above), so a "widen
-  // router coverage" recommendation would fire on every single report forever
-  // and teach a human reader to ignore this section's recommendations
-  // entirely — it would never be evidence of anything actionable, just a
-  // permanent, known fact restated. Once a real router intent exists, this can
-  // mirror the SPX pass's second recommendation.
-
-  return {
-    window,
-    n,
-    claude_fallback_n: claudeFallbackN,
-    router_matched_n: routerMatchedN,
-    router_match_rate_pct: routerMatchRatePct,
-    grounding_pass_rate_pct: groundingPassRatePct,
-    avg_latency_ms: avgLatencyMs,
-    recommendations: recs,
-  };
-}
-
 export function formatCalibration(r: CalibrationReport): string {
   const bucket = (b: CalibrationBucket) =>
     `- ${b.label}: ${b.n} plays, ${b.wins}W/${b.losses}L${b.win_rate_pct != null ? ` (${b.win_rate_pct}%)` : ""}${b.avg_pnl_pct != null ? `, avg ${b.avg_pnl_pct >= 0 ? "+" : ""}${b.avg_pnl_pct}%` : ""}`;
@@ -1327,8 +1169,6 @@ export function formatCalibration(r: CalibrationReport): string {
   // Task #161 — market_context is the last of BIE's 4 deterministic router
   // intents to get its own tool-calling cohort section.
   if (r.market_context_tool_calls) sections.push(`---`, ``, formatMarketContextToolCallCalibration(r.market_context_tool_calls));
-  if (r.nights_watch_tool_calls)
-    sections.push(`---`, ``, formatNightsWatchToolCallCalibration(r.nights_watch_tool_calls));
   return sections.join("\n");
 }
 
@@ -1441,31 +1281,6 @@ export function formatMarketContextToolCallCalibration(r: MarketContextToolCallC
     r.recommendations.length
       ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
       : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} market-context-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
-  ].join("\n");
-}
-
-/** SPX Slayer's own closed-play pass — same rolling window as the 0DTE pass above,
- *  fed by the SAME fetcher spx-play-telemetry.ts's live gate loop uses
- *  (fetchClosedPlayOutcomes), but consumed here for reporting only. Failure is
- *  isolated to this helper (never throws) so a problem on SPX Slayer's side can
- *  never take down the 0DTE half of the report. */
-
-export function formatNightsWatchToolCallCalibration(r: NightsWatchToolCallCalibrationReport): string {
-  return [
-    `Night's-Watch-tool-calling Largo turns — ${r.window.since} → ${r.window.through} (${r.n} turns touched Night's Watch's own engine state)`,
-    ``,
-    `Grounding pass rate: ${r.grounding_pass_rate_pct != null ? `${r.grounding_pass_rate_pct}%` : "no graded claims yet"}`,
-    // Same line shape as formatSpxToolCallCalibration — router_matched_n will read
-    // 0 here today (see isNightsWatchToolCallingRow's doc comment: no
-    // deterministic router intent exists for Night's Watch yet), and that 0 is
-    // left to print as-is rather than special-cased away, since it's the honest,
-    // current state of router coverage for this product, not an error condition
-    // to hide.
-    `Answered by: ${r.claude_fallback_n} Claude tool-calling turn(s), ${r.router_matched_n} deterministic router match(es)${r.router_match_rate_pct != null ? ` (${r.router_match_rate_pct}% router-matched)` : ""}`,
-    ``,
-    r.recommendations.length
-      ? `Recommendations (evidence-cited, report-first — a human ships the change):\n${r.recommendations.map((x) => `- ${x}`).join("\n")}`
-      : `Recommendations: none yet — fewer than ${MIN_EVIDENCE} Night's-Watch-tool-calling turns in this window. The harness waits for evidence; it never tunes on noise.`,
   ].join("\n");
 }
 
@@ -1675,34 +1490,6 @@ async function computeMarketContextToolCallCalibrationFromDb(
   }
 }
 
-/** Task #163's Night's-Watch-tool-calling pass — same rolling window as the other
- *  passes above, fed by fetchNightsWatchToolCallingBieInteractions (which does the
- *  cohort filtering at the SQL layer — see its doc comment in db.ts for why it's
- *  tools_used-only, unlike the SPX/0DTE-Command versions). Same fail-open
- *  contract as computeSpxToolCallCalibrationFromDb above, so a problem here can
- *  never take down the rest of the report. */
-async function computeNightsWatchToolCallCalibrationFromDb(
-  since: string,
-  through: string
-): Promise<NightsWatchToolCallCalibrationReport | null> {
-  try {
-    const rows = await fetchNightsWatchToolCallingBieInteractions(since, NIGHTS_WATCH_ENGINE_TOOL_NAMES);
-    return computeNightsWatchToolCallCalibration(
-      rows.map((r) => ({
-        tools_used: r.tools_used,
-        intent_bucket: r.intent_bucket,
-        answer_source: r.answer_source,
-        claims_total: r.claims_total,
-        claims_verified: r.claims_verified,
-        latency_ms: r.latency_ms,
-      })),
-      { since, through }
-    );
-  } catch {
-    return null;
-  }
-}
-
 /** Build the rolling-window calibration report, persist it into the knowledge
  *  store, and return it. Runs on the daily cron tick; safe ad hoc. */
 export async function runBieCalibration(days = 14): Promise<CalibrationReport | null> {
@@ -1758,10 +1545,6 @@ export async function runBieCalibration(days = 14): Promise<CalibrationReport | 
     // touching spx_signals.ts or any live gate/threshold/action. market_context is
     // the last of BIE's 4 deterministic router intents to get this treatment.
     report.market_context_tool_calls = await computeMarketContextToolCallCalibrationFromDb(since, through);
-    // Task #163: attach the Night's-Watch-tool-calling answer-quality cohort too —
-    // a SIXTH, independent read-only pass over bie_interactions, never touching
-    // nights-watch-verifier.ts or any live valuation/verdict computation.
-    report.nights_watch_tool_calls = await computeNightsWatchToolCallCalibrationFromDb(since, through);
     await storeKnowledge("self_eval", `bie:calibration:${through}`, formatCalibration(report)).catch(() => 0);
     return report;
   } catch {

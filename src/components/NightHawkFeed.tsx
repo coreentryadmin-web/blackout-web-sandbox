@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { clsx } from "clsx";
 import { fetchNightHawkEdition, fetchNightHawkPlayStatus, fetchNightHawkRecord } from "@/lib/api";
 import type { PlaybookPlay, PlayMorningStatus } from "@/lib/nighthawk/types";
-import { NightsWatchPanel } from "@/components/nights-watch/NightsWatchPanel";
+import { ZeroDteBoard } from "@/components/zerodte/ZeroDteBoard";
 import { PlayDetailModal } from "@/components/nighthawk/PlayDetailModal";
 import { PlaybookBoard } from "@/components/nighthawk/PlaybookBoard";
 import { useState } from "react";
@@ -14,7 +14,7 @@ import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 export function NightHawkFeed() {
   const [selectedPlay, setSelectedPlay] = useState<PlaybookPlay | null>(null);
   const nativeShell = useIosNativeShell();
-  const [iosView, setIosView] = useState<"playbook" | "watch">("playbook");
+  const [iosView, setIosView] = useState<"playbook" | "zerodte">("playbook");
 
   const { data: edition, error: editionError, isLoading: editionLoading } = useSWR("nighthawk-edition", fetchNightHawkEdition, {
     refreshInterval: 120_000,
@@ -49,7 +49,7 @@ export function NightHawkFeed() {
           className="ios-native-desk-segment mb-2"
           segments={[
             { id: "playbook", label: "Playbook" },
-            { id: "watch", label: "Night's Watch" },
+            { id: "zerodte", label: "0DTE Command" },
           ]}
         />
       )}
@@ -77,13 +77,13 @@ export function NightHawkFeed() {
           />
         </div>
         <div
-          key={nativeShell ? iosView : "watch"}
+          key={nativeShell ? iosView : "zerodte"}
           className={clsx(
-            nativeShell && iosView !== "watch" && "ios-native-panel-hidden",
-            nativeShell && iosView === "watch" && "ios-native-panel-visible"
+            nativeShell && iosView !== "zerodte" && "ios-native-panel-hidden",
+            nativeShell && iosView === "zerodte" && "ios-native-panel-visible"
           )}
         >
-          <NightsWatchPanel />
+          <ZeroDteBoard />
         </div>
       </div>
 

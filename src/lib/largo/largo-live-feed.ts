@@ -144,12 +144,6 @@ export async function captureLargoLiveFeed(
   // when no edition exists — safe to call unconditionally.
   jobs.push({ key: "nighthawk", promise: tool("get_nighthawk_edition") });
 
-  // Always pre-fetch open positions so Largo knows what the user holds without needing
-  // an explicit tool call (P0 cross-tool access — my_positions always injected).
-  if (userId) {
-    jobs.push({ key: "my_positions", promise: tool("get_my_positions", { status: "open" }) });
-  }
-
   const settled = await Promise.all(jobs.map(async (j) => ({ key: j.key, data: await j.promise })));
   const feed: LargoLiveFeed = {};
   for (const row of settled) feed[row.key] = row.data;

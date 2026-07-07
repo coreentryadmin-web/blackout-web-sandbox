@@ -80,12 +80,12 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
     cta: "Open Night Hawk",
   },
   {
-    id: "nights-watch",
-    kicker: "Position manager",
-    title: "Night's Watch",
-    body: "Once you're in a trade, Night's Watch tracks it for you — live valuation on your options positions and a plain-English verdict on whether the structure still backs the trade or it's time to step out. You'll find it on the Night Hawk page.",
+    id: "zerodte",
+    kicker: "Always-on scanner",
+    title: "0DTE Command",
+    body: "Right alongside the evening playbook, 0DTE Command hunts the tape all session for fresh single-name 0DTE plays — cross-checked against the full evidence stack and tracked on a graded ledger. You'll find it on the Night Hawk page.",
     href: "/nighthawk",
-    cta: "Open Night's Watch",
+    cta: "Open 0DTE Command",
   },
   {
     id: "finish",

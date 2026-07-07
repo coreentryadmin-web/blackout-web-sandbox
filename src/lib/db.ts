@@ -818,39 +818,6 @@ async function runMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_user_journal_user_play
     ON user_journal(user_id, open_play_id);
   `);
-  // Night's Watch: per-user saved option positions. Isolated table, no FK into and
-  // no mutation of any money-path table. Every query is scoped by user_id (Clerk).
-  await p.query(`
-    CREATE TABLE IF NOT EXISTS user_positions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      ticker TEXT NOT NULL,
-      option_type TEXT NOT NULL CHECK (option_type IN ('call', 'put')),
-      strike NUMERIC NOT NULL,
-      expiry DATE NOT NULL,
-      side TEXT NOT NULL DEFAULT 'long' CHECK (side IN ('long', 'short')),
-      contracts INTEGER NOT NULL,
-      entry_premium NUMERIC NOT NULL,
-      entry_date DATE NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
-      exit_premium NUMERIC,
-      notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      closed_at TIMESTAMPTZ
-    );
-  `);
-  await p.query(`
-    CREATE INDEX IF NOT EXISTS idx_user_positions_user_status
-    ON user_positions(user_id, status);
-  `);
-  // Supports the per-user positions list (getUserPositions):
-  // WHERE user_id = $1 [AND status = $2] ORDER BY created_at DESC.
-  // Perf-only; does not change query results.
-  await p.query(`
-    CREATE INDEX IF NOT EXISTS idx_user_positions_user_created
-    ON user_positions(user_id, created_at DESC);
-  `);
   // Clerk webhook user provisioning table — clerk_user_id is the Clerk sub ("user_xxx").
   // Provisioned on user.created, updated on user.updated. whop_user_id + tier are written
   // by the Whop webhook (or manually by admin) after the Clerk record already exists.
@@ -1335,11 +1302,10 @@ export async function deleteUserDataForClerkId(clerkUserId: string): Promise<{
   users: number;
   largo_sessions: number;
   user_journal: number;
-  user_positions: number;
   push_subscriptions: number;
 }> {
   if (!clerkUserId) {
-    return { users: 0, largo_sessions: 0, user_journal: 0, user_positions: 0, push_subscriptions: 0 };
+    return { users: 0, largo_sessions: 0, user_journal: 0, push_subscriptions: 0 };
   }
   await ensureSchema();
   const client = await (await getPool()).connect();
@@ -1351,10 +1317,6 @@ export async function deleteUserDataForClerkId(clerkUserId: string): Promise<{
     );
     const journal = await client.query(
       `DELETE FROM user_journal WHERE user_id = $1`,
-      [clerkUserId]
-    );
-    const positions = await client.query(
-      `DELETE FROM user_positions WHERE user_id = $1`,
       [clerkUserId]
     );
     let pushDeleted = 0;
@@ -1376,7 +1338,6 @@ export async function deleteUserDataForClerkId(clerkUserId: string): Promise<{
       users: users.rowCount ?? 0,
       largo_sessions: largo.rowCount ?? 0,
       user_journal: journal.rowCount ?? 0,
-      user_positions: positions.rowCount ?? 0,
       push_subscriptions: pushDeleted,
     };
   } catch (err) {
@@ -2808,316 +2769,6 @@ export async function deleteUserJournalEntry(userId: string, openPlayId: number)
     `DELETE FROM user_journal WHERE user_id = $1 AND open_play_id = $2`,
     [userId, openPlayId]
   );
-}
-
-// --- Night's Watch: per-user saved option positions (user_positions) ----------
-
-export type UserPositionRow = {
-  id: number;
-  ticker: string;
-  option_type: "call" | "put";
-  strike: number;
-  expiry: string; // YYYY-MM-DD
-  side: "long" | "short";
-  contracts: number;
-  entry_premium: number;
-  entry_date: string; // YYYY-MM-DD
-  status: "open" | "closed";
-  exit_premium: number | null;
-  notes: string | null;
-  created_at: string; // ISO
-  updated_at: string; // ISO
-  closed_at: string | null; // ISO
-};
-
-export type UserPositionInput = {
-  ticker: string;
-  option_type: "call" | "put";
-  strike: number;
-  expiry: string; // YYYY-MM-DD
-  side: "long" | "short";
-  contracts: number;
-  entry_premium: number;
-  entry_date: string; // YYYY-MM-DD
-  notes: string | null;
-};
-
-/** Fields a PATCH may update. All optional; user_id/id are never patchable. */
-export type UserPositionPatch = Partial<{
-  ticker: string;
-  option_type: "call" | "put";
-  strike: number;
-  expiry: string;
-  side: "long" | "short";
-  contracts: number;
-  entry_premium: number;
-  entry_date: string;
-  notes: string | null;
-}>;
-
-/** YYYY-MM-DD from a pg DATE column (node-postgres returns DATE as a JS Date at midnight UTC). */
-function ymdOf(value: unknown): string {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    // DATE has no timezone — read UTC Y-M-D (same as isoDateString) so OCC/expiry keys never
-    // shift on replicas whose local tz is America/New_York.
-    return value.toISOString().slice(0, 10);
-  }
-  const s = String(value ?? "");
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  return s.slice(0, 10);
-}
-
-function mapUserPositionRow(r: QueryResultRow): UserPositionRow {
-  return {
-    id: Number(r.id),
-    ticker: String(r.ticker),
-    option_type: r.option_type === "put" ? "put" : "call",
-    strike: Number(r.strike),
-    expiry: ymdOf(r.expiry),
-    side: r.side === "short" ? "short" : "long",
-    contracts: Number(r.contracts),
-    entry_premium: Number(r.entry_premium),
-    entry_date: ymdOf(r.entry_date),
-    status: r.status === "closed" ? "closed" : "open",
-    exit_premium: r.exit_premium == null ? null : Number(r.exit_premium),
-    notes: r.notes == null ? null : String(r.notes),
-    created_at: new Date(String(r.created_at)).toISOString(),
-    updated_at: new Date(String(r.updated_at)).toISOString(),
-    closed_at: r.closed_at == null ? null : new Date(String(r.closed_at)).toISOString(),
-  };
-}
-
-/** List a user's positions, newest first. Optionally filter by status. */
-export async function listUserPositions(
-  userId: string,
-  status?: "open" | "closed"
-): Promise<UserPositionRow[]> {
-  await ensureSchema();
-  const res = status
-    ? await (await getPool()).query(
-        `SELECT * FROM user_positions WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC`,
-        [userId, status]
-      )
-    : await (await getPool()).query(
-        `SELECT * FROM user_positions WHERE user_id = $1 ORDER BY created_at DESC`,
-        [userId]
-      );
-  return res.rows.map(mapUserPositionRow);
-}
-
-/**
- * Recently-CLOSED positions for a user, newest-settled first, BOUNDED so the list can
- * never grow without limit: only positions closed within the last `withinDays` days
- * AND at most `limit` of them. This powers the "CLOSED · SETTLED" group on the Night's
- * Watch panel (realized P&L) — open positions are listed separately via listUserPositions.
- * Ordered by closed_at DESC (falling back to updated_at for any legacy row missing a
- * closed_at) so the freshest settlements surface first.
- */
-export async function listRecentClosedUserPositions(
-  userId: string,
-  { withinDays = 7, limit = 20 }: { withinDays?: number; limit?: number } = {}
-): Promise<UserPositionRow[]> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `SELECT * FROM user_positions
-      WHERE user_id = $1
-        AND status = 'closed'
-        AND COALESCE(closed_at, updated_at) >= NOW() - ($2 || ' days')::interval
-      ORDER BY COALESCE(closed_at, updated_at) DESC
-      LIMIT $3`,
-    [userId, String(withinDays), limit]
-  );
-  return res.rows.map(mapUserPositionRow);
-}
-
-/**
- * DISTINCT (ticker, expiry) across ALL users' OPEN positions — the batching key the
- * Night's Watch warm cron iterates so each shared chain is pre-fetched exactly once
- * (getNwChain dedups per (ticker, expiry)). NOT user-scoped on purpose: this is a
- * server-side cache warmer, never exposed to a user. expiry is normalized to YYYY-MM-DD
- * via ymdOf so it matches nwChainKey/getNwChain's expiry.slice(0, 10) contract.
- */
-export async function listDistinctOpenPositionChains(): Promise<
-  Array<{ ticker: string; expiry: string }>
-> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `SELECT DISTINCT ticker, expiry FROM user_positions WHERE status = 'open'`
-  );
-  return res.rows.map((r) => ({ ticker: String(r.ticker), expiry: ymdOf(r.expiry) }));
-}
-
-/**
- * DISTINCT (ticker, expiry, strike, option_type) across ALL users' OPEN positions — the
- * per-CONTRACT key the Night's Watch warm cron iterates so each held contract is fetched
- * exactly once via the Massive unified snapshot (batched ≤250/call). Mirrors the same
- * source the options-socket reconciler enumerates. NOT user-scoped on purpose: a server-side
- * cache warmer, never exposed to a user. expiry is normalized to YYYY-MM-DD via ymdOf so it
- * matches buildOcc's expiry contract.
- */
-export async function listDistinctOpenPositionContracts(): Promise<
-  Array<{ ticker: string; expiry: string; strike: number; option_type: "call" | "put" }>
-> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `SELECT DISTINCT ticker, expiry, strike, option_type
-       FROM user_positions
-      WHERE status = 'open'`
-  );
-  return res.rows.map((r) => ({
-    ticker: String(r.ticker),
-    expiry: ymdOf(r.expiry),
-    strike: Number(r.strike),
-    option_type: String(r.option_type) === "put" ? "put" : "call",
-  }));
-}
-
-/** All open positions cluster-wide (cron reconciliation — not user-scoped). */
-export async function listAllOpenUserPositions(): Promise<UserPositionRow[]> {
-  await ensureSchema();
-  const res = await (await getPool()).query(`SELECT * FROM user_positions WHERE status = 'open'`);
-  return res.rows.map(mapUserPositionRow);
-}
-
-/** Close one open position by id (cron reconciliation — not user-scoped). */
-export async function closeOpenPositionById(id: number, note: string): Promise<boolean> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `UPDATE user_positions
-       SET status = 'closed',
-           exit_premium = 0,
-           closed_at = NOW(),
-           updated_at = NOW(),
-           notes = COALESCE(notes || E'\\n', '') || $2
-     WHERE id = $1 AND status = 'open'`,
-    [id, note]
-  );
-  return (res.rowCount ?? 0) > 0;
-}
-
-/** Create a new open position for a user. */
-export async function createUserPosition(
-  userId: string,
-  input: UserPositionInput
-): Promise<UserPositionRow> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `
-    INSERT INTO user_positions
-      (user_id, ticker, option_type, strike, expiry, side, contracts, entry_premium, entry_date, notes)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    RETURNING *
-    `,
-    [
-      userId,
-      input.ticker,
-      input.option_type,
-      input.strike,
-      input.expiry,
-      input.side,
-      input.contracts,
-      input.entry_premium,
-      input.entry_date,
-      input.notes,
-    ]
-  );
-  return mapUserPositionRow(res.rows[0]!);
-}
-
-/**
- * Patch editable fields of a user's position. Builds a dynamic SET from the
- * provided keys only; always bumps updated_at. Returns null if no row matched
- * (wrong user or unknown id) or nothing to update.
- */
-export async function updateUserPosition(
-  userId: string,
-  id: number,
-  patch: UserPositionPatch
-): Promise<UserPositionRow | null> {
-  await ensureSchema();
-  const allowed: Array<keyof UserPositionPatch> = [
-    "ticker",
-    "option_type",
-    "strike",
-    "expiry",
-    "side",
-    "contracts",
-    "entry_premium",
-    "entry_date",
-    "notes",
-  ];
-  const sets: string[] = [];
-  const values: unknown[] = [];
-  for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(patch, key)) {
-      values.push(patch[key]);
-      sets.push(`${key} = $${values.length}`);
-    }
-  }
-  if (!sets.length) {
-    // Nothing to change — return the current OPEN row (still user-scoped). A settled
-    // (closed) position is immutable, so it does not match here.
-    const cur = await (await getPool()).query(
-      `SELECT * FROM user_positions WHERE user_id = $1 AND id = $2 AND status = 'open'`,
-      [userId, id]
-    );
-    return cur.rows[0] ? mapUserPositionRow(cur.rows[0]) : null;
-  }
-  sets.push(`updated_at = NOW()`);
-  values.push(userId);
-  const userIdx = values.length;
-  values.push(id);
-  const idIdx = values.length;
-  // `AND status = 'open'` makes settled positions immutable at the SQL layer — editing a
-  // closed row matches nothing and returns null.
-  const res = await (await getPool()).query(
-    `UPDATE user_positions SET ${sets.join(", ")} WHERE user_id = $${userIdx} AND id = $${idIdx} AND status = 'open' RETURNING *`,
-    values
-  );
-  return res.rows[0] ? mapUserPositionRow(res.rows[0]) : null;
-}
-
-/** Close a user's open position with an exit premium. Returns null if no match. */
-export async function closeUserPosition(
-  userId: string,
-  id: number,
-  exitPremium: number
-): Promise<UserPositionRow | null> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `
-    UPDATE user_positions
-    SET status = 'closed', exit_premium = $3, closed_at = NOW(), updated_at = NOW()
-    WHERE user_id = $1 AND id = $2 AND status = 'open'
-    RETURNING *
-    `,
-    [userId, id, exitPremium]
-  );
-  return res.rows[0] ? mapUserPositionRow(res.rows[0]) : null;
-}
-
-/**
- * Existence probe regardless of status — lets the PATCH route distinguish 404 (no such
- * row) from 409 (row exists but is settled/closed, so the immutable-status SQL guard
- * matched nothing).
- */
-export async function userPositionExists(userId: string, id: number): Promise<boolean> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `SELECT 1 FROM user_positions WHERE user_id = $1 AND id = $2 LIMIT 1`,
-    [userId, id]
-  );
-  return (res.rowCount ?? 0) > 0;
-}
-
-/** Delete a user's position. Returns true if a row was removed. */
-export async function deleteUserPosition(userId: string, id: number): Promise<boolean> {
-  await ensureSchema();
-  const res = await (await getPool()).query(
-    `DELETE FROM user_positions WHERE user_id = $1 AND id = $2`,
-    [userId, id]
-  );
-  return (res.rowCount ?? 0) > 0;
 }
 
 export async function fetchClosedPlayOutcomes(limit = 500): Promise<
@@ -4822,64 +4473,6 @@ export async function fetchMarketContextToolCallingBieInteractions(
   }));
 }
 
-/** Task #163 — the Night's Watch analogue of fetchSpxToolCallingBieInteractions
- *  above: raw bie_interactions rows for "how good are Largo's answers
- *  specifically when Night's Watch's own tools were involved" (src/lib/bie/
- *  calibration.ts's computeNightsWatchToolCallCalibration).
- *
- *  Deliberately ASYMMETRIC vs. the SPX/0DTE-Command versions above (and
- *  matching the Night Hawk version's asymmetry instead): membership here is
- *  tools_used-ONLY — there is no `OR intent_bucket = '...'` clause. That's not
- *  an oversight: classifyBieIntent (bie/router.ts) recognizes exactly 4
- *  deterministic intents (zerodte_plays, ticker_play_state, spx_structure,
- *  market_context) and NONE of them route a Night's-Watch/"my positions"
- *  question — there is no router path that ever answers one deterministically.
- *  MY_POSITIONS_RE (largo/intent-keywords.ts) looks similar in spirit to the
- *  SPX_STRUCTURE_RE the router uses, but it does a completely different job:
- *  it only decides which TOOL BUNDLE Largo has on hand for a question
- *  (getToolsForIntent, tool-defs.ts) — it never feeds classifyBieIntent's
- *  answer path, so it can never produce a bie_interactions row whose
- *  intent_bucket is anything Night's-Watch-flavored. Adding a fake OR-clause
- *  here would just always evaluate false — dead SQL dressed up as a UNION,
- *  exactly the kind of thing a future reader might "fix" by fabricating a
- *  match. If a future task ever adds a real deterministic Night's Watch router
- *  intent, THIS is the query (and computeNightsWatchToolCallCalibration's
- *  cohort test below) that should grow the matching OR-clause. */
-export async function fetchNightsWatchToolCallingBieInteractions(
-  sinceDate: string,
-  nightsWatchEngineToolNames: string[],
-  limit = 3000
-): Promise<
-  Array<{
-    tools_used: string[];
-    intent_bucket: string | null;
-    answer_source: string;
-    claims_total: number | null;
-    claims_verified: number | null;
-    latency_ms: number | null;
-    created_at: string;
-  }>
-> {
-  await ensureSchema();
-  const res = await (await getPool()).query<QueryResultRow>(
-    `SELECT tools_used, intent_bucket, answer_source, claims_total, claims_verified, latency_ms, created_at
-     FROM bie_interactions
-     WHERE created_at >= $1::date
-       AND tools_used ?| $2::text[]
-     ORDER BY created_at DESC
-     LIMIT $3`,
-    [sinceDate, nightsWatchEngineToolNames, limit]
-  );
-  return res.rows.map((r) => ({
-    tools_used: Array.isArray(r.tools_used) ? (r.tools_used as string[]) : [],
-    intent_bucket: r.intent_bucket != null ? String(r.intent_bucket) : null,
-    answer_source: String(r.answer_source),
-    claims_total: r.claims_total != null ? Number(r.claims_total) : null,
-    claims_verified: r.claims_verified != null ? Number(r.claims_verified) : null,
-    latency_ms: r.latency_ms != null ? Number(r.latency_ms) : null,
-    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-  }));
-}
 export async function updateZeroDtePlanOutcome(
   sessionDate: string,
   ticker: string,

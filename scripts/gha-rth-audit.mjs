@@ -94,11 +94,11 @@ async function postgresRthChecks() {
 
       const stale = await q(
         `SELECT job_key, status, started_at FROM cron_job_runs
-         WHERE job_key IN ('heatmap-warm','flow-ingest','nights-watch-warm')
+         WHERE job_key IN ('heatmap-warm','flow-ingest')
          AND started_at > NOW() - INTERVAL '30 minutes'
          AND status = 'ok'`
       );
-      if (stale.length >= 2) ok(`Writer crons active (${stale.map((r) => r.job_key).join(", ")})`);
+      if (stale.length >= 1) ok(`Writer crons active (${stale.map((r) => r.job_key).join(", ")})`);
       else fail(`Writer crons thin in last 30m — only ${stale.length} ok runs`);
     }
 

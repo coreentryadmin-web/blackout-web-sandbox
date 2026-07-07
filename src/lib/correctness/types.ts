@@ -5,7 +5,7 @@ import "server-only";
 //
 // This is the EXTENSIBLE contract for the layered verifier. Heat Maps (GEX/VEX/
 // DEX/CHARM) is the first surface; the same shape is meant to carry desk, flows,
-// Night's Watch, and Night Hawk checks later WITHOUT changing the scorecard schema.
+// and Night Hawk checks later WITHOUT changing the scorecard schema.
 //
 // HONESTY PRINCIPLE (load-bearing): a metric is "independently-confirmed" ONLY when a
 // SECOND independent source agreed within tolerance. With one source we can prove

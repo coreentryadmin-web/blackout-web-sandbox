@@ -4,7 +4,6 @@ import {
   FUNDAMENTAL_RE,
   GEX_POSITIONING_RE,
   matchesIntent,
-  MY_POSITIONS_RE,
   NEWS_TOOLS_RE,
   NIGHTHAWK_RE,
   PREDICTIONS_RE,
@@ -408,10 +407,6 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 
   t("get_power_hour", "Current Power Hour (2:45–3:15 PM ET) play (read-only record): phase, direction, strike, levels, status."),
 
-  t("get_my_positions",
-    "Night's Watch — the signed-in user's OWN open option positions with live P&L, key Greeks, days-to-expiry, and the deterministic Hold/Trim/Sell verdict (+reasons). Use this whenever the user asks about 'my positions', 'my trades', 'my book', or 'what should I do with my <TICKER> calls/puts'. Returns only THIS user's positions.",
-    { status: { type: "string", enum: ["open", "closed", "all"], description: "Default open." } }),
-
   t("get_catalysts", "Benzinga catalyst pipeline for a ticker — FDA, guidance, M&A, earnings, upgrades, and other event-driven catalysts from confirmed Benzinga channels.", {
     ...T,
     limit: { type: "integer", default: 8 },
@@ -592,10 +587,6 @@ export const TOOL_GROUPS = {
     // lives right alongside it here rather than in BIE_TOOL_NAMES (which is
     // reserved for the BIE-authored cross-instrument snapshot family).
     "get_flow_anomaly_near_misses",
-  ],
-  my_book: [
-    // Night's Watch — the signed-in user's OWN saved positions (per-user scoped).
-    "get_my_positions",
   ],
   screener: [
     "get_screener",
@@ -873,58 +864,6 @@ export const ZERODTE_ENGINE_TOOL_NAMES = ["get_zerodte_plays", "get_zerodte_reje
 // other *_ENGINE_TOOL_NAMES list is — see tool-defs.test.ts for the assertion that
 // keeps this list a verified subset of TOOL_GROUPS.vol_analysis.
 export const MARKET_ENGINE_TOOL_NAMES = ["get_market_context"];
-// Task #163 — the cohort-membership test for "did this Largo turn touch Night's
-// Watch's OWN live-engine state" (BIE's self-eval loop, calibration.ts) — the
-// same-shaped analogue of SPX_ENGINE_TOOL_NAMES above, for Night's Watch (the
-// signed-in user's own per-position Hold/Trim/Sell verdict engine, `/account`'s
-// positions panel) instead of SPX Slayer. This is exactly the surface
-// nights-watch-verifier.ts (src/lib/correctness/nights-watch-verifier.ts,
-// priority correctness surface #3) already shadow-recomputes and chain-confirms
-// — that verifier proves the VALUATION FORMULA is correct; this cohort measures
-// whether Largo's ANSWERS about it are actually good, the same gap task #112
-// closed for SPX Slayer.
-//
-// Verified against run-tool.ts's "get_my_positions" case body, not guessed from
-// naming: it calls getEnrichedPositionsForUser(userId, statusArg)
-// (src/lib/nights-watch/enrichment.ts), which reads the user's saved positions
-// and re-derives each one's live valuation plus the deterministic Hold/Trim/Sell
-// verdict (src/lib/nights-watch/verdict.ts) — a proprietary derived judgment
-// analogous to SPX Slayer's grade/action that SPX_ENGINE_TOOL_NAMES's cohort
-// tracks answer quality for.
-//
-// Unlike SPX_ENGINE_TOOL_NAMES, this is NOT a narrowing of a larger routing
-// bundle: TOOL_GROUPS.my_book contains exactly this one tool (the per-user
-// position tool getToolsForIntent surfaces on a Night's-Watch-flavored question
-// via MY_POSITIONS_RE — see getToolsForIntent below), so there is nothing
-// generic to exclude; this list is simply that one tool. Kept as an explicit
-// literal list (not `TOOL_GROUPS.my_book` itself) for the same drift-resistance
-// reason SPX_ENGINE_TOOL_NAMES is: this cohort tracks "did Largo read Night's
-// Watch's own engine state" and must not silently widen if TOOL_GROUPS.my_book
-// gains an unrelated tool later — see tool-defs.test.ts for the assertion that
-// keeps this list a verified subset of TOOL_GROUPS.my_book.
-//
-// buildPositionDetail() (src/lib/nights-watch/position-detail.ts) is a
-// deliberately EXCLUDED near-miss, not an oversight: it recomputes the same
-// verdict with richer per-position context for the account panel's click→detail
-// modal, but it is wired directly to a plain Next.js API route
-// (src/app/api/account/positions/[id]/detail/route.ts), NOT to a Largo tool —
-// grepping largo/tool-defs.ts and largo/run-tool.ts for
-// "position_detail"/"positionDetail" turns up nothing, confirming no such tool
-// exists to add here. If a future task ever exposes it to Largo, add it here then.
-//
-// Cohort test (calibration.ts's isNightsWatchToolCallingRow) is tools_used-ONLY,
-// no `OR intent_bucket = '...'` clause — the same asymmetry as
-// NIGHTHAWK_ENGINE_TOOL_NAMES above, for the identical reason: classifyBieIntent
-// (src/lib/bie/router.ts) recognizes exactly 4 deterministic intents
-// (zerodte_plays, ticker_play_state, spx_structure, market_context) and none of
-// them ever route a Night's-Watch/"my positions" question. MY_POSITIONS_RE
-// (largo/intent-keywords.ts) plays the same role NIGHTHAWK_RE plays for Night
-// Hawk — it only decides which TOOL BUNDLE Largo has on hand
-// (getToolsForIntent), and is never consulted by classifyBieIntent's answer
-// path — so it can never cause a bie_interactions row to carry a
-// Night's-Watch-flavored intent_bucket. See isNightsWatchToolCallingRow's own
-// doc comment in calibration.ts for the full reasoning.
-export const NIGHTS_WATCH_ENGINE_TOOL_NAMES = ["get_my_positions"];
 
 const CORE_TOOLS = [
   "get_market_context",
@@ -998,12 +937,6 @@ export function getToolsForIntent(question: string): string[] {
   }
   if (matchesIntent(lower, PREDICTIONS_RE)) {
     for (const n of [...TOOL_GROUPS.fundamental, "get_predictions_consensus"]) names.add(n);
-  }
-  // Night's Watch — "my positions / my book / what do I do with my NVDA calls".
-  // Surfaces the per-user position tool plus the desk/stock context Largo needs to
-  // reason about those holdings.
-  if (matchesIntent(lower, MY_POSITIONS_RE)) {
-    for (const n of [...TOOL_GROUPS.my_book, ...TOOL_GROUPS.stock_analysis]) names.add(n);
   }
 
   if (mentionsTicker(question)) {

@@ -33,7 +33,7 @@ import { isEtCashRth } from "@/lib/et-market-hours";
 //      read vs the latest-edition read (same row two ways). Reconcile where cheap; else
 //      note consistency-only.
 //   4. WRITER-CRON HEALTH — from cron_job_runs / admin-cron-health, confirm the critical
-//      WRITERS that populate PG/Redis (flow-ingest, uw-cache-refresh, nights-watch-warm,
+//      WRITERS that populate PG/Redis (flow-ingest, uw-cache-refresh,
 //      heatmap-warm, the nighthawk crons) ran recently + succeeded. A dead writer = stale
 //      downstream data, so this FLAGs an overdue writer DURING its window.
 //
@@ -321,36 +321,6 @@ async function checkPostgres(ctx: Ctx): Promise<CheckResult[]> {
     }
   }
 
-  // ── user_positions — Night's Watch saved positions. Empty is LEGITIMATE (pre-users), so this is a
-  //    structural garbage check only (never a freshness/empty FLAG). ──
-  {
-    const row = await dbProbe<{ total: string; bad: string }>(
-      `SELECT COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE NOT (contracts > 0) OR NOT (entry_premium >= 0) OR strike IS NULL)::int AS bad
-       FROM user_positions`
-    );
-    if (row && Number(row.total) > 0) {
-      const bad = Number(row.bad);
-      checks.push(
-        mk(
-          "sanity-bound",
-          "pg_user_positions",
-          bad === 0 ? "pass" : "flag",
-          bad === 0
-            ? `user_positions: all ${Number(row.total)} rows have positive contracts, non-negative entry_premium, a strike (clean position math inputs).`
-            : `user_positions has ${bad} row(s) with non-positive contracts / negative entry_premium / null strike — corrupt inputs to the P&L math.`,
-          { id: "pg-up-garbage", actual: bad, expected: 0 }
-        )
-      );
-    } else {
-      checks.push(
-        mk("sanity-bound", "pg_user_positions", "skipped", "user_positions empty/absent — no saved positions to sanity-check (legitimate pre-users).", {
-          id: "pg-up-empty",
-        })
-      );
-    }
-  }
-
   return checks;
 }
 
@@ -606,7 +576,6 @@ async function checkPipelineHops(ctx: Ctx): Promise<CheckResult[]> {
 const CRITICAL_WRITERS = new Set([
   "flow-ingest", // → flow_alerts (PG) + live feed
   "uw-cache-refresh", // → uw_cache:* (Redis)
-  "nights-watch-warm", // → shared option-chain cache (Redis)
   "heatmap-warm", // → gex-heatmap:* (Redis)
   "nighthawk-playbook", // → nighthawk_editions (PG)
   "nighthawk-outcomes", // → nighthawk_play_outcomes (PG)

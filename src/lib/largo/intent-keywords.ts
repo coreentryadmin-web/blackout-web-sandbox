@@ -228,10 +228,6 @@ export const FUNDAMENTAL_RE = /\b(fundamental|financial|insider|congress|analyst
 
 export const PREDICTIONS_RE = /\b(predictions|prediction market|smart money|whales|insiders|consensus)\b/;
 
-/** Night's Watch — the user asking about their OWN saved positions/book. */
-export const MY_POSITIONS_RE =
-  /\b(my|i'm holding|im holding|i am holding|i hold|i own|i bought)\b.*\b(position|positions|trade|trades|book|call|calls|put|puts|contract|contracts|holding|holdings)\b|\b(night'?s watch)\b/;
-
 export function matchesIntent(text: string, pattern: RegExp): boolean {
   return pattern.test(text.toLowerCase());
 }

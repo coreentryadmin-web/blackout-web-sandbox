@@ -33,7 +33,6 @@ History: consolidated 2026-06-24. The earlier scattered audit piles (`AUDIT.md`,
 ### Features & systems
 | File | What it is |
 |---|---|
-| [`NIGHTS_WATCH.md`](NIGHTS_WATCH.md) | Night's Watch (per-user options position manager) — design, data flow, scaling rules, phase status. |
 | [`HEATMAP_DATA_CONTRACT.md`](HEATMAP_DATA_CONTRACT.md) | Canonical GEX/VEX dealer-positioning data contract — the one source every tool reads dealer positioning from. |
 
 ### Infrastructure

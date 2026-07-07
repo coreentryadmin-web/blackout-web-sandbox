@@ -7,7 +7,6 @@ export type LearnSlug =
   | "largo-ai"
   | "night-hawk"
   | "heat-maps"
-  | "nights-watch"
   | "blackout-grid"
   | "glossary";
 
@@ -56,12 +55,6 @@ export const LEARN_NAV: LearnNavItem[] = [
     product: "heatmap",
     label: "Thermal",
     description: "GEX, VEX, DEX, and CHARM dealer positioning surfaces.",
-  },
-  {
-    slug: "nights-watch",
-    product: "nighthawk",
-    label: "Night's Watch",
-    description: "Personal position manager with live P&L and Greeks.",
   },
   {
     slug: "blackout-grid",

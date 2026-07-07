@@ -24,7 +24,7 @@ test("detectMissedAlertWindows: flags a failed alert-producing cron even if not 
 });
 
 test("detectMissedAlertWindows: ignores a cache-warming cron even if it is market_hours_stale", () => {
-  // Regression: grid-warm/heatmap-warm/nights-watch-warm are market-hours-only cache
+  // Regression: grid-warm/heatmap-warm are market-hours-only cache
   // warmers, not alert producers -- their downtime degrades latency, it does not mean
   // a real setup went unevaluated.
   const jobs = [job({ key: "grid-warm", status: "stale", status_label: "No run in 20m", market_hours_stale: true })];

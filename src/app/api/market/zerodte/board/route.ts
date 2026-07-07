@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { getZeroDteBoardPayload } from "@/lib/platform/zerodte-service";
-import { requireZeroDteCommandApi } from "@/lib/tool-access-server";
+import { requireToolApi } from "@/lib/tool-access-server";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +16,10 @@ export async function GET(req: NextRequest) {
   if (authResult instanceof Response) return authResult;
 
   if (authResult.via === "user") {
-    const zeroDteDenied = await requireZeroDteCommandApi();
-    if (zeroDteDenied) return zeroDteDenied;
+    // 0DTE Command now lives on /nighthawk and follows Night Hawk's single launch
+    // gate — its own LAUNCHED_0DTE kill-switch was retired (see tool-access.ts).
+    const nighthawkDenied = await requireToolApi("nighthawk");
+    if (nighthawkDenied) return nighthawkDenied;
   }
 
   const dbDenied = requireDatabaseInProduction();

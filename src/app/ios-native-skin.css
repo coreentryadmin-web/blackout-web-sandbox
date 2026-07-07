@@ -154,7 +154,6 @@ html.ios-app.ios-native-shell .flow-panel,
 html.ios-app.ios-native-shell .desk-panel,
 html.ios-app.ios-native-shell section[class*="Panel"],
 html.ios-app.ios-native-shell .nighthawk-playbook,
-html.ios-app.ios-native-shell .nighthawk-watch,
 html.ios-app.ios-native-shell .grid-card,
 html.ios-app.ios-native-shell .largo-terminal-fullpage:not(.largo-terminal-native),
 html.ios-app.ios-native-shell .cl-card,
@@ -176,7 +175,6 @@ html.ios-app.ios-native-shell .spx-sniper-panel-header,
 html.ios-app.ios-native-shell .spx-trade-alerts-header,
 html.ios-app.ios-native-shell .flow-panel-header,
 html.ios-app.ios-native-shell .nighthawk-playbook-header,
-html.ios-app.ios-native-shell .nighthawk-watch-header,
 html.ios-app.ios-native-shell .grid-card-head {
   border-bottom-color: var(--ios-border) !important;
   background: linear-gradient(180deg, var(--ios-accent-muted) 0%, transparent 100%);

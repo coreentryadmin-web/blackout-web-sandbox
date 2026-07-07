@@ -143,15 +143,6 @@ async function main() {
           ).rows[0].n;
           if (grid15 > 0) ok(`grid-warm ran in last 20m (${grid15} ok run(s))`);
           else fail("grid-warm: no ok run in last 20m during RTH");
-
-          const nw15 = (
-            await c.query(
-              `SELECT COUNT(*)::int AS n FROM cron_job_runs
-               WHERE job_key = 'nights-watch-warm' AND started_at > NOW() - INTERVAL '20 minutes' AND status = 'ok'`
-            )
-          ).rows[0].n;
-          if (nw15 > 0) ok(`nights-watch-warm ran in last 20m (${nw15} ok run(s))`);
-          else fail("nights-watch-warm: no ok run in last 20m during RTH");
         }
 
         await c.end();

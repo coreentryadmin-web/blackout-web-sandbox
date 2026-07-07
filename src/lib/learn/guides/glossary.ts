@@ -25,7 +25,6 @@ const CATEGORIES = [
     terms: [
       { term: "Evening Edition", def: "Night Hawk nightly publication for the next session." },
       { term: "SCANNING", def: "SPX Slayer engine state — gates not aligned." },
-      { term: "Verdict", def: "Night's Watch guidance: HOLD, TRIM, SELL, or WATCH." },
       { term: "RTH", def: "Regular Trading Hours, 9:30 AM – 4:00 PM ET." },
     ],
   },

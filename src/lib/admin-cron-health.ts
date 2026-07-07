@@ -189,7 +189,7 @@ function evaluateJob(
   const ageMin = (Date.now() - new Date(last.started_at).getTime()) / 60_000;
   const { effective: staleThreshold, multiplier: staleMultiplier } = effectiveStaleMinutes(job);
 
-  // Market-hours-only crons (flow-ingest, spx-evaluate, nights-watch-warm, gex-alerts, …)
+  // Market-hours-only crons (flow-ingest, spx-evaluate, heatmap-warm, gex-alerts, …)
   // intentionally skip off-window. Once the market is closed they CANNOT log a fresh run,
   // so age inevitably exceeds the threshold — flagging them STALE is a false alarm. While
   // off-window, suppress the stale flag as long as the last logged run was a legitimate skip
@@ -380,7 +380,6 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     "heatmap-warm",
     "desk-warm",
     "grid-warm",
-    "nights-watch-warm",
     "uw-cache-refresh",
   ]);
   await Promise.all(

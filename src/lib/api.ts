@@ -655,32 +655,6 @@ export function createPulseEventSource(
   );
 }
 
-// ── Night's Watch position stream (per-user SSE) ─────────────────────────────
-
-export type NwPositionStreamPayload =
-  | { positions: Record<string, unknown>[] }
-  | { heartbeat: true };
-
-export function createPositionEventSource(
-  onMessage: (payload: { positions: Record<string, unknown>[] }) => void,
-  hooks?: { onOpen?: () => void; onClose?: () => void }
-): ReconnectingEventSource | null {
-  if (typeof window === "undefined") return null;
-  return createReconnectingEventSource(
-    "/api/account/positions/stream",
-    (raw) => {
-      try {
-        const data = JSON.parse(raw) as NwPositionStreamPayload;
-        if ("heartbeat" in data) return; // skip heartbeat ticks
-        if ("positions" in data) onMessage(data as { positions: Record<string, unknown>[] });
-      } catch {
-        /* ignore */
-      }
-    },
-    hooks
-  );
-}
-
 // ── Vector live SPX candle stream ──────────────────────────────────────────────
 
 export type VectorStreamCandle = { time: number; open: number; high: number; low: number; close: number };

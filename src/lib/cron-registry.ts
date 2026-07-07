@@ -12,7 +12,7 @@ export type CronJobDefinition = {
   market_hours_only?: boolean;
   description: string;
   /** True for crons that themselves produce a member-visible alert/signal/status badge when
-   *  they run — NOT cache warmers (grid-warm, heatmap-warm, nights-watch-warm) and NOT
+   *  they run — NOT cache warmers (grid-warm, heatmap-warm) and NOT
    *  validators (data-correctness, data-integrity, provider-health-reconcile). Drives
    *  bie/missed-alerts.ts's outage detection — single source of truth so that list can't
    *  silently drift from the registry (was a hand-maintained duplicate list before). */
@@ -85,17 +85,6 @@ export const CRON_JOBS: CronJobDefinition[] = [
     stale_after_min: 10,
     market_hours_only: true,
     description: "Pre-warm Redis cache for UW market-wide + index-ticker signals to stay under 120/min plan cap",
-  },
-  {
-    key: "nights-watch-warm",
-    name: "Night's Watch Warm",
-    kind: "http",
-    path: "/api/cron/nights-watch-warm",
-    schedule_label: "~Every 5 min (market hours; in-app leader fills sub-5m gaps)",
-    stale_after_min: 10,
-    weekdays_only: true,
-    market_hours_only: true,
-    description: "Pre-warm shared option-chain cache for all open user positions so Night's Watch GETs are pure cache hits",
   },
   {
     key: "heatmap-warm",
@@ -282,16 +271,6 @@ export const CRON_JOBS: CronJobDefinition[] = [
     market_hours_only: true,
     description:
       "Derives composite market regime (GEX/vol/trend/flow) from the SPX desk + HELIX flows and writes to market_regime + flow_anomalies tables — feeds FlowAnomalyBanner and Night Hawk morning confirm",
-  },
-  {
-    key: "positions-expiry",
-    name: "Positions Expiry",
-    kind: "http",
-    path: "/api/cron/positions-expiry",
-    schedule_label: "Daily 5:30 PM ET",
-    stale_after_min: 36 * 60,
-    weekdays_only: true,
-    description: "Auto-closes user_positions where expiry < today and status = open — prevents expired contracts from cluttering Night's Watch",
   },
   {
     key: "alert-outcome-sync",

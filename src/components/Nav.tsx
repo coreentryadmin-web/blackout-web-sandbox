@@ -21,7 +21,7 @@ const FEATURE_LINKS: FeatureLink[] = [
   { href: "/flows", label: "HELIX", sub: "Institutional options flow", accent: "purple" },
   { href: "/heatmap", label: "BlackOut Thermal", sub: "Dealer gamma & vanna map", accent: "orange" },
   { href: "/terminal", label: "Largo", sub: "BlackOut Intelligence desk analyst", accent: "blue" },
-  { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + Night's Watch positions", accent: "red" },
+  { href: "/nighthawk", label: "Night Hawk", sub: "Playbook + 0DTE Command", accent: "red" },
   { href: "/grid", label: "0DTE Command", sub: "Always-on 0DTE play hunter", accent: "gold" },
   { href: "/vector", label: "Vector", sub: "Live SPX chart with real-time flow & GEX overlay", accent: "teal" },
 ];

@@ -5,7 +5,6 @@ import { computeSpxConfluence } from "@/lib/spx-signals";
 import { loadLottoRecord } from "@/lib/spx-lotto-store";
 import { loadPowerHourRecord } from "@/lib/spx-power-hour-store";
 import { fetchPositioningSummary } from "@/lib/nighthawk/positioning";
-import { getEnrichedPositionsForUser } from "@/lib/nights-watch/enrichment";
 import { fetchPlayOutcomeStatsForWindow } from "@/lib/spx-play-outcomes";
 import {
   fetchNighthawkOutcomeAnalytics,
@@ -1416,72 +1415,6 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       // Read-only current record — does NOT re-run the (mutating) power-hour evaluator.
       const rec = await loadPowerHourRecord();
       return rec ?? { available: false, note: "No power-hour record for today yet." };
-    }
-
-    case "get_my_positions": {
-      // Night's Watch — the signed-in user's OWN positions. SECURITY: ownership is the
-      // TRUSTED dispatcher `userId` (Clerk auth() server-side); `status` is the ONLY
-      // value read from model-controlled `input`. We never read userId/owner/email
-      // from `input`. Reuses the SAME cached chain/desk layers (no new per-user upstream).
-      // Fail closed: never query the literal "default" bucket (the dispatcher default)
-      // — an unscoped caller must get an error, not a guess at another user's scope.
-      if (!userId || userId === "default") {
-        return { error: "get_my_positions requires an authenticated user scope." };
-      }
-      const rawStatus = String(input.status ?? "open").toLowerCase();
-      const statusArg: "open" | "closed" | undefined =
-        rawStatus === "closed" ? "closed" : rawStatus === "all" ? undefined : "open";
-
-      const enriched = await getEnrichedPositionsForUser(userId, statusArg);
-
-      if (enriched.length === 0) {
-        return {
-          count: 0,
-          positions: [],
-          note: "No positions on record — the user hasn't added any to Night's Watch.",
-        };
-      }
-
-      // COMPACT, token-friendly projection — never the raw heavy objects. NEVER
-      // fabricate P&L: when valuation_status !== "live" the live fields are null/"—"
-      // exactly as enrichPosition produced them.
-      const positions = enriched.map((p) => {
-        const v = p.valuation;
-        const live = p.valuation_status === "live" && v != null;
-        return {
-          ticker: p.ticker,
-          type: p.option_type,
-          strike: p.strike,
-          expiry: p.expiry,
-          side: p.side,
-          contracts: p.contracts,
-          entry_premium: p.entry_premium,
-          status: p.status,
-          valuation_status: p.valuation_status,
-          mark: live ? round(v.mark, 4) : null,
-          underlying: live ? round(v.underlyingPrice, 2) : null,
-          current_value: live ? round(p.current_value, 2) : null,
-          pnl: live ? round(p.unrealized_pnl, 2) : null,
-          pnl_pct: live ? round(p.pnl_pct, 1) : null,
-          // Realized (settled) P&L for a CLOSED leg — independent of any live mark, so it is
-          // reported whenever the position is closed with an exit on record (never fabricated:
-          // round() passes null through). Open positions report null here.
-          realized_pnl: p.status === "closed" ? round(p.realized_pnl, 2) : null,
-          realized_pnl_pct: p.status === "closed" ? round(p.realized_pnl_pct, 1) : null,
-          dte: p.dte,
-          breakeven: round(p.breakeven, 2),
-          delta: live ? round(v.delta, 3) : null,
-          theta: live ? round(v.theta, 4) : null,
-          iv: live ? round(v.iv, 4) : null,
-          verdict: {
-            action: p.verdict.action,
-            confidence: p.verdict.confidence,
-            reasons: p.verdict.reasons,
-          },
-        };
-      });
-
-      return { count: positions.length, as_of: new Date().toISOString(), positions };
     }
 
     case "get_catalysts": {

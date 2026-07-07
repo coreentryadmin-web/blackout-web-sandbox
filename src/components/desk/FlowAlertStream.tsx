@@ -5,11 +5,22 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { fmtPremium } from "@/lib/api";
-import { daysToExpiry } from "@/lib/nights-watch/valuation";
 import { Panel, Skeleton, EmptyState } from "@/components/ui";
 
 const WHALE_PREMIUM = 1_000_000;
 const RENDER_LIMIT = 150; // Bug 8: cap per-render to prevent browser freeze on large datasets
+
+/** Days from today (ET calendar date) to expiry (YYYY-MM-DD). Floors at 0.
+ *  Inlined here (previously imported from the now-deleted Night's Watch
+ *  valuation module, which this HELIX flow-tape component never had anything
+ *  to do with beyond borrowing this one pure date helper). */
+function daysToExpiry(expiry: string, now: Date = new Date()): number {
+  const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+  const todayMs = Date.parse(`${todayEt}T00:00:00Z`);
+  const expMs = Date.parse(`${expiry.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(todayMs) || !Number.isFinite(expMs)) return 0;
+  return Math.max(0, Math.round((expMs - todayMs) / 86_400_000));
+}
 
 function timeAgo(iso: string): string {
   if (!iso) return "—";

@@ -31,7 +31,6 @@ const JOB_ICONS: Record<string, string> = {
 const RUNNABLE_CRONS = new Set([
   "flow-ingest",
   "uw-cache-refresh",
-  "nights-watch-warm",
   "heatmap-warm",
 ]);
 

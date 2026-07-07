@@ -8,7 +8,6 @@ import { NextRequest } from "next/server";
 // leaving process.env.
 import { GET as flowIngestGet } from "@/app/api/cron/flow-ingest/route";
 import { GET as uwCacheRefreshGet } from "@/app/api/cron/uw-cache-refresh/route";
-import { GET as nightsWatchWarmGet } from "@/app/api/cron/nights-watch-warm/route";
 import { GET as heatmapWarmGet } from "@/app/api/cron/heatmap-warm/route";
 import { GET as deskWarmGet } from "@/app/api/cron/desk-warm/route";
 import { GET as gridWarmGet } from "@/app/api/cron/grid-warm/route";
@@ -32,7 +31,6 @@ export type CronHandler = (req: NextRequest) => Promise<Response>;
 export const CRON_DISPATCH: Record<string, { handler: CronHandler; force: boolean }> = {
   "flow-ingest": { handler: flowIngestGet, force: false },
   "uw-cache-refresh": { handler: uwCacheRefreshGet, force: false },
-  "nights-watch-warm": { handler: nightsWatchWarmGet, force: true },
   "heatmap-warm": { handler: heatmapWarmGet, force: true },
   "desk-warm": { handler: deskWarmGet, force: true },
   "grid-warm": { handler: gridWarmGet, force: true },

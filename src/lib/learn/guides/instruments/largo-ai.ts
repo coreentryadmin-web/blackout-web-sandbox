@@ -83,7 +83,7 @@ export const largoAiGuide = defineToolGuide({
       shows: [
         "Rotating status phrases",
         "Pipeline node visualization",
-        "Active tool labels (e.g. SPX desk, GEX map, HELIX flow tape, your positions)",
+        "Active tool labels (e.g. SPX desk, GEX map, HELIX flow tape, Night Hawk)",
       ],
       cadence: "Live during streaming until response completes",
       consume:
@@ -94,12 +94,12 @@ export const largoAiGuide = defineToolGuide({
       location: "Footer of each assistant bubble",
       purpose: "Audit trail of live data sources consulted for that answer.",
       shows: [
-        "Human-readable labels: live desk feed, SPX desk, confluence engine, GEX map, HELIX flow tape, Night Hawk, your positions, etc.",
-        "Maps to ~70+ backend tools in LARGO_TOOL_DEFS grouped by SPX desk, flow, vol/macro, news, platform, my book",
+        "Human-readable labels: live desk feed, SPX desk, confluence engine, GEX map, HELIX flow tape, Night Hawk, etc.",
+        "Maps to ~70+ backend tools in LARGO_TOOL_DEFS grouped by SPX desk, flow, vol/macro, news, platform",
       ],
       cadence: "Set once per completed response",
       consume:
-        "If chips include get_nighthawk_edition, cross-check PlaybookBoard. get_my_positions ties to Night's Watch. Missing expected tools is a signal to ask a narrower follow-up. Never treat an answer about live levels as current without a structure or GEX tool in the trace.",
+        "If chips include get_nighthawk_edition, cross-check PlaybookBoard. Missing expected tools is a signal to ask a narrower follow-up. Never treat an answer about live levels as current without a structure or GEX tool in the trace.",
       tip: "Full tool catalog lives in platform routing — UI shows a curated label subset for readability.",
     },
   ],
@@ -128,7 +128,6 @@ export const largoAiGuide = defineToolGuide({
     CROSS.spx("Shares live desk state Largo references via get_spx_structure and get_spx_play."),
     CROSS.helix("Flow context tool calls mirror HELIX tape themes."),
     CROSS.thermal("get_gex and positioning tools return surface detail beyond scalar walls."),
-    CROSS.watch("get_my_positions reads your Night's Watch book."),
     CROSS.hawk("get_nighthawk_edition pulls Evening Edition context."),
   ],
   dos: [
@@ -146,6 +145,5 @@ export const largoAiGuide = defineToolGuide({
   faq: [
     { q: "Does Largo work off-hours?", a: "Yes, but data may be last RTH snapshot — check tool chips and any staleness notes in the answer." },
     { q: "Largo vs SPX commentary rail?", a: "Rail pushes periodic desk narrative; Largo pulls on your questions with explicit tool traces." },
-    { q: "Can Largo see my positions?", a: "Yes via get_my_positions when signed in — same book as Night's Watch." },
   ],
 });

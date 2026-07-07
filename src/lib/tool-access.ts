@@ -31,8 +31,6 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: true },
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: true },
-  // 0DTE Command + Market Grid — both live with grid; 0DTE tab follows grid unless
-  // LAUNCHED_0DTE=0 explicitly locks the scanner tab (see isZeroDteCommandLaunched).
   { key: "grid", label: "0DTE Command", href: "/grid", product: "grid", defaultLaunched: true },
   // Vector — v1 ships behind a locked default so it can be staged/QA'd before a public
   // launch date; flip live via LAUNCHED_TOOLS=vector (or set defaultLaunched true at launch).
@@ -66,14 +64,6 @@ export function isToolLaunched(key: ToolKey, env: NodeJS.ProcessEnv = process.en
   const meta = TOOL_BY_KEY.get(key);
   if (!meta) return false;
   return meta.defaultLaunched || envLaunchedKeys(env).has(key);
-}
-
-/** 0DTE Command tab on /grid — follows grid launch; override with LAUNCHED_0DTE=1/0. */
-export function isZeroDteCommandLaunched(env: NodeJS.ProcessEnv = process.env): boolean {
-  const explicit = String(env.LAUNCHED_0DTE ?? "").trim();
-  if (explicit === "0") return false;
-  if (explicit === "1") return true;
-  return isToolLaunched("grid", env);
 }
 
 /** All currently-locked (non-launched) tool keys — drives the nav padlocks. */

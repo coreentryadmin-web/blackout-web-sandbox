@@ -7,12 +7,8 @@ import { GridPageTabs } from "@/components/zerodte/GridPageTabs";
 import { GridTickerProvider } from "@/lib/grid/grid-ticker-context";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 
-type Props = {
-  showZeroDteCommand: boolean;
-};
-
-/** /grid page frame — tabs-first on native shell. */
-export function GridPageShell({ showZeroDteCommand }: Props) {
+/** /grid page frame — the classic Market Grid board (0DTE Command moved to /nighthawk). */
+export function GridPageShell() {
   const nativeShell = useIosNativeShell();
 
   return (
@@ -32,18 +28,14 @@ export function GridPageShell({ showZeroDteCommand }: Props) {
         <GridTickerProvider>
           {!nativeShell && (
             <PageHeader
-              kicker={showZeroDteCommand ? "Always-on 0DTE hunter" : "Cross-market recon"}
-              title={showZeroDteCommand ? "0DTE Command" : "Market Grid"}
-              subtitle={
-                showZeroDteCommand
-                  ? "Runs all session finding new 0DTE plays — fresh names only, every find logged and graded."
-                  : "Unified news, flow, movers, macro, and dealer positioning — one ticker-scoped command surface."
-              }
+              kicker="Cross-market recon"
+              title="Market Grid"
+              subtitle="Unified news, flow, movers, macro, and dealer positioning — one ticker-scoped command surface."
               badge={<ProductMark product="grid" size={44} />}
             />
           )}
           <div className={clsx(nativeShell ? "mt-0" : "mt-5")}>
-            <GridPageTabs showZeroDteCommand={showZeroDteCommand} />
+            <GridPageTabs />
           </div>
         </GridTickerProvider>
       </div>

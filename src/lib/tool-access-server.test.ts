@@ -6,7 +6,6 @@ test("requireToolApiForDeskCaller: cron skips launch gate; user hits coming_soon
   mock.module("./tool-access", {
     namedExports: {
       isToolLaunched: () => false,
-      isZeroDteCommandLaunched: () => false,
     },
   });
   mock.module("./admin-access", {

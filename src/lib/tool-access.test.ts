@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getLaunchStatusSnapshot, isToolLaunched, isZeroDteCommandLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
+import { getLaunchStatusSnapshot, isToolLaunched, lockedToolKeys, toolKeyForHref, TOOLS } from "./tool-access";
 
 // Pure unit tests for launch gating. Alias-free, runnable via `tsx --test` — no Clerk, no Next.
 
@@ -16,7 +16,6 @@ test("defaults: all tools live except Largo and Vector", () => {
   assert.equal(isToolLaunched("largo", env), false);
   assert.equal(isToolLaunched("vector", env), false);
   assert.deepEqual(lockedToolKeys(env), ["largo", "vector"]);
-  assert.equal(isZeroDteCommandLaunched(env), true);
 });
 
 test("LAUNCHED_TOOLS is additive — can still unlock Largo without affecting defaults", () => {
@@ -24,12 +23,6 @@ test("LAUNCHED_TOOLS is additive — can still unlock Largo without affecting de
   assert.equal(isToolLaunched("largo", env), true);
   assert.equal(isToolLaunched("heatmap", env), true);
   assert.deepEqual(lockedToolKeys(env), ["vector"]);
-});
-
-test("0DTE Command follows grid; LAUNCHED_0DTE=0 locks the tab even when grid is live", () => {
-  assert.equal(isZeroDteCommandLaunched({} as NodeJS.ProcessEnv), true);
-  assert.equal(isZeroDteCommandLaunched({ LAUNCHED_0DTE: "0" } as NodeJS.ProcessEnv), false);
-  assert.equal(isZeroDteCommandLaunched({ LAUNCHED_0DTE: "1" } as NodeJS.ProcessEnv), true);
 });
 
 test("LAUNCHED_TOOLS parses CSV, trims, lowercases, ignores unknown keys", () => {

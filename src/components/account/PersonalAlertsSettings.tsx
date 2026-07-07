@@ -130,7 +130,7 @@ export function PersonalAlertsSettings() {
   return (
     <div className="flex flex-col gap-3">
       <p className="font-mono text-[11px] leading-relaxed text-sky-300/90">
-        Route Night&apos;s Watch play alerts to your own Discord channel. Your webhook stays
+        Route your personal play alerts to your own Discord channel. Your webhook stays
         server-side — we only show a redacted host here.
       </p>
 

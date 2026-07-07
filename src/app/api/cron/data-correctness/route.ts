@@ -4,7 +4,6 @@
 //   • Heat Maps (GEX/VEX/DEX/CHARM) — the original layered per-ticker verifier
 //   • SPX desk      — spot vs the real index, MAs from daily bars, IV rank, GEX, dark pool
 //   • HELIX flows   — premium faithfulness + recompute call/put%/net/totals + Σ invariants + recency
-//   • Night's Watch — P&L / mark / Δ/Θ/IV / DTE / breakeven recompute + chain-confirmation
 //   • Night Hawk    — latest published edition re-audited vs its dossier snapshot + chain-confirm
 //   • Market context— SPX/VIX vs a 2nd source; breadth recomputed from constituents
 //   • Track record  — wins/losses/scratch/hit-rate recomputed from the graded-outcomes ledger
@@ -21,7 +20,7 @@
 // consistency-only coverage gaps. Persists the run via logCronRun and emits a markdown scorecard to
 // docs/auto/data-correctness-<date>.md (best-effort; skipped silently on a read-only FS).
 //
-// ?surface=heatmap runs ONLY the Heat Maps (GEX/VEX/DEX/CHARM) verifier instead of the full 8-surface
+// ?surface=heatmap runs ONLY the Heat Maps (GEX/VEX/DEX/CHARM) verifier instead of the full 7-surface
 // platform sweep — the full sweep's sequential per-surface upstream calls can run long enough during
 // RTH to trip an edge gateway timeout (~100s, well inside the route's own maxDuration=120) and return
 // a bodyless 524; this gives a fast, targeted path to the one surface most worth re-checking on demand.

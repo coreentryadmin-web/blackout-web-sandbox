@@ -3,7 +3,6 @@ import "server-only";
 import { verifyHeatmapTicker } from "@/lib/correctness/heatmap-verifier";
 import { verifyDesk } from "@/lib/correctness/desk-verifier";
 import { verifyFlows } from "@/lib/correctness/flows-verifier";
-import { verifyNightsWatch } from "@/lib/correctness/nights-watch-verifier";
 import { verifyNightHawk } from "@/lib/correctness/nighthawk-verifier";
 import { verifyMarketContext } from "@/lib/correctness/market-context-verifier";
 import { verifyTrackRecord } from "@/lib/correctness/track-record-verifier";
@@ -208,7 +207,6 @@ export async function runFullCorrectness(
   const surfaces: Array<[string, string, () => Promise<TickerScore>]> = [
     ["desk", "SPX", () => verifyDesk(marketOpen)],
     ["flows", "FLOWS", () => verifyFlows(marketOpen)],
-    ["nights-watch", "NW", () => verifyNightsWatch(marketOpen)],
     ["nighthawk", "NIGHTHAWK", () => verifyNightHawk(marketOpen)],
     ["market-context", "MARKET", () => verifyMarketContext(marketOpen)],
     ["track-record", "TRACKREC", () => verifyTrackRecord(marketOpen)],
@@ -226,10 +224,10 @@ export async function runFullCorrectness(
   const note =
     "FULL-PLATFORM sweep. INDEPENDENTLY CONFIRMED when a 2nd source agrees: Heat Maps + SPX-desk GEX " +
     "King/net-sign (UW oracle), desk spot (Polygon I:SPX), market-context SPX/VIX (2nd index snapshot), " +
-    "and chain-confirmed Night-Hawk strikes/premiums + Night's-Watch held strikes (live option chain). " +
+    "and chain-confirmed Night-Hawk strikes/premiums (live option chain). " +
     "Track-record W/L/scratch/hit-rate is CONFIRMED-AGAINST-LEDGER (recompute == served == invariant). " +
     "CONSISTENCY-ONLY (coverage gaps, single source): HELIX flow aggregates (UW sole provider), MAs / " +
-    "GEX magnitude / walls / flip, NW mark+greek VALUES (no 2nd pricing oracle), sector %, NH dossier " +
+    "GEX magnitude / walls / flip, sector %, NH dossier " +
     "cross-checks. Largo numeric-grounding is SCAFFOLDED — coverage gap pending answer+tool-result " +
     "logging. DATA-LAYER integrity (PG freshness/row-count/garbage-rate, Redis presence/TTL/sanity, " +
     "writer-cron liveness) is asserted as PASS where it holds — an independent second VIEW of the " +

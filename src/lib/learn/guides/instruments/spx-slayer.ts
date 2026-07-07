@@ -160,7 +160,7 @@ export const spxSlayerGuide = defineToolGuide({
       },
       {
         title: "Execute with discipline",
-        body: "Honor stop and target from the play card. Log the position in Night's Watch immediately.",
+        body: "Honor stop and target from the play card. Journal the entry immediately.",
       },
       {
         title: "Confirm with flow",
@@ -173,7 +173,6 @@ export const spxSlayerGuide = defineToolGuide({
     CROSS.helix("Raw flow tape behind the compressed flow bias signal."),
     CROSS.hawk("Evening playbook supplies pre-open structural context."),
     CROSS.largo("Structured Q&A on live desk state and GEX regime."),
-    CROSS.watch("Live P&L and exit tracking after you enter a play."),
     CROSS.grid("Macro catalysts that can override intraday GEX mechanics."),
   ],
   dos: [

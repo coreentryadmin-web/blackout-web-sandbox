@@ -57,7 +57,7 @@ export const gettingStartedGuide: LearnGuide = {
         {
           layer: "Surfaces",
           accent: "indigo",
-          items: ["SPX Slayer", "HELIX", "Thermal", "Night Hawk", "Largo", "Grid", "Night's Watch"],
+          items: ["SPX Slayer", "HELIX", "Thermal", "Night Hawk", "Largo", "Grid"],
         },
       ],
     },
@@ -124,8 +124,8 @@ export const gettingStartedGuide: LearnGuide = {
         {
           phase: "Management",
           time: "Continuous",
-          toolSlug: "nights-watch",
-          action: "Log positions in Night's Watch for live P&L, Greeks, and exit guidance.",
+          toolSlug: "night-hawk",
+          action: "Check 0DTE Command on /nighthawk for fresh always-on scanner finds.",
         },
       ],
     },
@@ -141,7 +141,6 @@ export const gettingStartedGuide: LearnGuide = {
         "largo-ai",
         "night-hawk",
         "heat-maps",
-        "nights-watch",
         "blackout-grid",
         "glossary",
       ],
@@ -154,7 +153,6 @@ export const gettingStartedGuide: LearnGuide = {
         "Layer tools — Night Hawk for bias, Slayer for execution, HELIX for confirmation, Thermal for structure.",
         "Cross-reference GEX walls across desks before sizing at a level.",
         "Use Largo for hard questions about live data, not for reassurance.",
-        "Log every position in Night's Watch immediately after entry.",
         "Check Grid for macro catalysts before the open.",
       ],
       donts: [

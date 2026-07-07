@@ -5386,8 +5386,8 @@ body::before {
 
   @media (min-width: 1024px) {
     .nighthawk-layout {
-      /* Phase 4 redesign: Tomorrow's Playbook ~40% · Night's Watch ~60%.
-         Night's Watch is now the primary surface (live P&L + verdicts), so it
+      /* Tomorrow's Playbook ~40% · 0DTE Command ~60%.
+         0DTE Command is the primary surface (the always-on live scanner), so it
          takes the larger column; the playbook (a vertical list of 5 slots)
          reads cleanly at 40%. */
       grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
