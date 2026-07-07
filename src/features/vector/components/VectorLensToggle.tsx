@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import type { VectorWallLens } from "@/lib/providers/vector-wall-history";
+import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 
 type Props = {
   lens: VectorWallLens;

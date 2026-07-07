@@ -2,21 +2,23 @@ import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
 import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
-import { VectorPageShell } from "@/components/vector/VectorPageShell";
-import { isEtCashRth } from "@/lib/et-market-hours";
-import { todayEt } from "@/lib/nighthawk/session";
-import { mergeWallHistory, seedWallHistoryForDisplay } from "@/lib/providers/vector-wall-history";
-import { loadSessionWallHistory } from "@/lib/providers/vector-wall-persist";
-import { fetchVectorSeedBars } from "@/lib/vector-seed-bars";
 import {
+  VectorPageShell,
+  fetchVectorSeedBars,
   getVectorDarkPoolLevels,
   getVectorGammaFlip,
   getVectorGexWalls,
   getVectorVexFlip,
   getVectorVexWalls,
   getVectorWallHistory,
+  loadSessionWallHistory,
+  mergeWallHistory,
   primeVectorWallScope,
-} from "@/lib/vector-snapshot";
+  seedWallHistoryForDisplay,
+  type WallHistorySample,
+} from "@/features/vector";
+import { isEtCashRth } from "@/lib/et-market-hours";
+import { todayEt } from "@/lib/nighthawk/session";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const metadata: Metadata = {
@@ -40,7 +42,7 @@ export default async function VectorPage() {
       Promise.resolve(getVectorDarkPoolLevels()),
     ]);
   const persistedHistory = await loadSessionWallHistory(sessionYmd).catch(
-    () => [] as import("@/lib/providers/vector-wall-history").WallHistorySample[]
+    () => [] as WallHistorySample[]
   );
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();

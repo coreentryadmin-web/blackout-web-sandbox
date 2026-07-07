@@ -686,7 +686,7 @@ export type VectorStreamSnapshot = {
   /** VEX wall ladder as-of (epoch ms). */
   vexAsOf?: number;
   sessionYmd?: string;
-  wallHistory?: import("@/lib/providers/vector-wall-history").WallHistorySample[];
+  wallHistory?: import("@/features/vector").WallHistorySample[];
 };
 
 export function createVectorEventSource(

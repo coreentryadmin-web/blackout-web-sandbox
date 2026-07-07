@@ -1,11 +1,28 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { PageShell, PageHeader, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
-import { VectorChart, type VectorBar } from "@/components/vector/VectorChart";
+import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
-import type { WallHistorySample } from "@/lib/providers/vector-wall-history";
+import type { WallHistorySample } from "@/features/vector/lib/vector-wall-history";
+
+const VectorChart = dynamic(
+  () => import("@/features/vector/components/VectorChart").then((m) => m.VectorChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex min-h-[min(72vh,640px)] items-center justify-center rounded-xl border border-cyan-500/20 bg-black/40 text-sm text-cyan-300"
+        role="status"
+        aria-live="polite"
+      >
+        Loading chart…
+      </div>
+    ),
+  }
+);
 
 const CANDLE_STALE_MS = 10_000;
 
@@ -31,7 +48,7 @@ function formatSessionLabel(ymd: string): string {
   });
 }
 
-/** /vector page frame — mirrors the other tool shells' (e.g. NighthawkPageShell) PageShell/PageHeader/ProductMark structure. */
+/** /vector page frame — mirrors the other tool shells' PageShell/PageHeader/ProductMark structure. */
 export function VectorPageShell({
   initialBars,
   initialWalls,

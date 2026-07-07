@@ -9,7 +9,7 @@ import {
   isPresetTimeframe,
   normalizeVectorIntervalMinutes,
   type VectorTimeframeMinutes,
-} from "@/lib/vector-bar-timeframes";
+} from "@/features/vector/lib/vector-bar-timeframes";
 
 const CUSTOM_VALUE = "custom";
 

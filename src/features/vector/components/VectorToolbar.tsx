@@ -1,10 +1,10 @@
 "use client";
 
-import { VectorLensToggle } from "@/components/vector/VectorLensToggle";
-import { VectorReplayControls } from "@/components/vector/VectorReplayControls";
-import { VectorTimeframeSelect } from "@/components/vector/VectorTimeframeSelect";
-import type { VectorWallLens } from "@/lib/providers/vector-wall-history";
-import type { VectorTimeframeMinutes } from "@/lib/vector-bar-timeframes";
+import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle";
+import { VectorReplayControls } from "@/features/vector/components/VectorReplayControls";
+import { VectorTimeframeSelect } from "@/features/vector/components/VectorTimeframeSelect";
+import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
+import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 
 type Props = {
   interval: VectorTimeframeMinutes;

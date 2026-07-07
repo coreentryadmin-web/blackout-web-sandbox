@@ -5,7 +5,7 @@ import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import {
   darkPoolLevelsFromSnapshot,
   type VectorDarkPoolLevel,
-} from "@/lib/providers/vector-dark-pool-levels";
+} from "./vector-dark-pool-levels";
 import {
   computeGexWalls,
   mapFromStrikeTotalsRecord,
@@ -14,12 +14,12 @@ import {
   type WallScopeState,
 } from "@/lib/providers/gex-wall-levels";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import { persistWallSampleDebounced } from "@/lib/providers/vector-wall-persist";
-import { bucketWallSampleTime } from "@/lib/providers/vector-wall-sample";
-import { recordWallSample, type WallHistorySample } from "@/lib/providers/vector-wall-history";
+import { persistWallSampleDebounced } from "./vector-wall-persist";
+import { bucketWallSampleTime } from "./vector-wall-sample";
+import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { roundFloats } from "@/lib/round-floats";
-import { spyVolumeForMinuteBar } from "@/lib/vector-spy-volume";
+import { spyVolumeForMinuteBar } from "./vector-spy-volume";
 
 const WALL_SCOPE_REFRESH_MS = 15_000;
 const DARK_POOL_REFRESH_MS = 60_000;

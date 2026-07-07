@@ -10,9 +10,9 @@ import {
   timelineIndexAtOrBeforeEtClock,
   wallsAtCrosshairTime,
   wallsAtReplayTime,
-} from "@/lib/vector-replay";
+} from "@/features/vector/lib/vector-replay";
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
-import type { WallHistorySample } from "@/lib/providers/vector-wall-history";
+import type { WallHistorySample } from "@/features/vector/lib/vector-wall-history";
 
 function walls(call: number, put: number): GexWalls {
   return {

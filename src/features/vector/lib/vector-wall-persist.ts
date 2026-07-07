@@ -1,5 +1,5 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { recordWallSample, type WallHistorySample } from "@/lib/providers/vector-wall-history";
+import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 
 const KEY_PREFIX = "vector:wall-history";
 /** Keep through the next session for off-hours review + replay groundwork. */

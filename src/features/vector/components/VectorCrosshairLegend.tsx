@@ -1,7 +1,7 @@
 "use client";
 
 import type { VectorDarkPoolLevel, VectorWallLevel } from "@/lib/api";
-import type { VectorWallLens } from "@/lib/providers/vector-wall-history";
+import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 
 export type VectorCrosshairState = {
   time: string;

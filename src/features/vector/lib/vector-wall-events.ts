@@ -4,7 +4,7 @@ import {
   wallsForLens,
   type VectorWallLens,
   type WallHistorySample,
-} from "@/lib/providers/vector-wall-history";
+} from "./vector-wall-history";
 
 export type VectorWallEventKind =
   | "call_wall_shift"

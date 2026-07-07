@@ -57,14 +57,14 @@ For AWS: add `output: "standalone"` + `Dockerfile` (same Next app, containerized
 - [ ] Duplicate fetch paths already flagged in `FINDINGS.md` — fix remaining only with tests
 
 ### Phase 3 — Client bundle diet (speed PRs)
-- [ ] Dynamic `import()` for `lightweight-charts` on Vector
+- [x] Dynamic `import()` for Vector chart (`VectorPageShell` → `VectorChart` code-split)
 - [ ] Ensure Largo/Anthropic code never in desk/vector client chunks
 - [ ] Review `@/` imports from client components into server-only chains
 
 ### Phase 4 — Folder structure (gradual, not big-bang)
-Current layout is already tool-oriented (`components/desk`, `components/vector`, `lib/nighthawk`). **Do not** move everything at once.
+Current layout is tool-oriented (`components/desk`, `features/vector`, `lib/nighthawk`). **Do not** move everything at once.
 
-Allowed moves (one tool per PR):
+- [x] Vector → `src/features/vector/` (components + lib + barrel export)
 - `src/lib/providers/*` — keep (data layer)
 - `src/lib/ws/*` — keep (sockets)
 - Align page shells: `*PageShell.tsx` under `components/<tool>/`

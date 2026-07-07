@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { roundFloats } from "./round-floats";
+import { roundFloats } from "@/lib/round-floats";
 
 test("vector stream payload shape rounds SPX candle OHLC and flip levels at the wire boundary", () => {
   const rounded = roundFloats({

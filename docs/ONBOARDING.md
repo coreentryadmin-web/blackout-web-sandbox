@@ -46,7 +46,7 @@ product is a set of **tools** (each gated by subscription tier):
 | **Night's Watch** | Per-user options *position manager* — tracks & values open positions live | `src/lib/nights-watch/`, `src/components/nights-watch/` |
 | **Largo** | AI analyst (chat/tool-using agent) grounded in all the platform's live data | `src/lib/largo/` (12 files) |
 | **0DTE Command** | Always-on multi-ticker 0DTE scanner (tab on Night Hawk) | `src/lib/zerodte/`, `api/market/zerodte/board`, `api/cron/zerodte-warm` |
-| **Vector** | SPX structure chart with GEX/VEX walls and session replay | `src/components/vector/`, `api/market/vector/*` |
+| **Vector** | SPX structure chart with GEX/VEX walls and session replay | `src/features/vector/`, `api/market/vector/*` |
 
 ---
 
@@ -215,7 +215,7 @@ scripts use stale paths; trust the directory tree.
   via `DAILY_AI_SPEND_KILL_USD`).
 
 ### Vector
-- Chart + replay: `src/components/vector/`, `src/lib/vector/`.
+- Chart + replay: `src/features/vector/` (components + lib colocated).
 - Readers: `api/market/vector/*`. Launch-gated like Largo (`LAUNCHED_TOOLS=vector`).
 
 ---

@@ -1,5 +1,5 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
-import type { VectorTimeframeMinutes } from "@/lib/vector-bar-timeframes";
+import type { VectorTimeframeMinutes } from "./vector-bar-timeframes";
 
 /** Wall overlay lens — GEX from live dealer-gamma ladder; VEX from shared heatmap vanna totals. */
 export type VectorWallLens = "gex" | "vex";

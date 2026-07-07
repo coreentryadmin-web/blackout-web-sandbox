@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { buildVectorStreamPayload } from "@/lib/vector-snapshot";
+import { buildVectorStreamPayload } from "@/features/vector";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 

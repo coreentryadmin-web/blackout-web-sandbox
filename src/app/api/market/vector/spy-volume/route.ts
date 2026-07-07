@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { fetchSpyVolumeRows } from "@/lib/vector-spy-volume";
+import { fetchSpyVolumeRows } from "@/features/vector";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

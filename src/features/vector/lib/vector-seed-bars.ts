@@ -1,7 +1,7 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import { formatEtDate, previousTradingDayEt } from "@/lib/nighthawk/session";
 import { fetchIndexMinuteBars } from "@/lib/providers/polygon";
-import { fetchSpyVolumeByMinute } from "@/lib/vector-spy-volume";
+import { fetchSpyVolumeByMinute } from "./vector-spy-volume";
 
 export type VectorSeedBar = {
   time: UTCTimestamp;

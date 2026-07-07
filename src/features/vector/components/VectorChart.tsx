@@ -17,9 +17,9 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { VectorCrosshairLegend, type VectorCrosshairState } from "@/components/vector/VectorCrosshairLegend";
-import { VectorToolbar } from "@/components/vector/VectorToolbar";
-import { VectorWallEventTicker } from "@/components/vector/VectorWallEventTicker";
+import { VectorCrosshairLegend, type VectorCrosshairState } from "@/features/vector/components/VectorCrosshairLegend";
+import { VectorToolbar } from "@/features/vector/components/VectorToolbar";
+import { VectorWallEventTicker } from "@/features/vector/components/VectorWallEventTicker";
 import {
   createVectorEventSource,
   type VectorDarkPoolLevel,
@@ -32,13 +32,13 @@ import {
   diffVectorWallSample,
   eventsFromWallHistory,
   type VectorWallEvent,
-} from "@/lib/providers/vector-wall-events";
+} from "@/features/vector/lib/vector-wall-events";
 import {
   alphaForPct,
   glowAlphaForPct,
   markerSizeForPct,
   widthForPct,
-} from "@/lib/providers/vector-wall-visual";
+} from "@/features/vector/lib/vector-wall-visual";
 import {
   bucketWallHistoryForInterval,
   hasVexInHistory,
@@ -50,7 +50,7 @@ import {
   type StrikeTrailPoint,
   type VectorWallLens,
   type WallHistorySample,
-} from "@/lib/providers/vector-wall-history";
+} from "@/features/vector/lib/vector-wall-history";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -65,12 +65,12 @@ import {
   wallsAtCrosshairTime,
   wallsAtReplayTime,
   wallsForActiveLens,
-} from "@/lib/vector-replay";
+} from "@/features/vector/lib/vector-replay";
 import {
   aggregateVectorBars,
   type VectorTimeframeMinutes,
-} from "@/lib/vector-bar-timeframes";
-import { mergeSpyVolumeRows } from "@/lib/vector-spy-volume-merge";
+} from "@/features/vector/lib/vector-bar-timeframes";
+import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
 
 export type VectorBar = {
   time: UTCTimestamp;

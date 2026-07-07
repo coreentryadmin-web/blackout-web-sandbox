@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import type { VectorWallEvent, VectorWallEventKind } from "@/lib/providers/vector-wall-events";
-import type { VectorWallLens } from "@/lib/providers/vector-wall-history";
-import { formatReplayClock } from "@/lib/vector-replay";
+import type { VectorWallEvent, VectorWallEventKind } from "@/features/vector/lib/vector-wall-events";
+import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
+import { formatReplayClock } from "@/features/vector/lib/vector-replay";
 
 type Props = {
   events: VectorWallEvent[];
