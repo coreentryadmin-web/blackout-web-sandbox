@@ -684,7 +684,9 @@ export function createPositionEventSource(
 // ── Vector live SPX candle stream ──────────────────────────────────────────────
 
 export type VectorStreamCandle = { time: number; open: number; high: number; low: number; close: number };
-export type VectorStreamSnapshot = { candle: VectorStreamCandle | null; t?: number };
+export type VectorWallLevel = { strike: number; pct: number };
+export type VectorWalls = { callWall: VectorWallLevel | null; putWall: VectorWallLevel | null };
+export type VectorStreamSnapshot = { candle: VectorStreamCandle | null; walls?: VectorWalls | null; t?: number };
 
 export function createVectorEventSource(
   onMessage: (snap: VectorStreamSnapshot) => void,
