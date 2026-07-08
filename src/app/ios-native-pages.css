@@ -342,13 +342,13 @@ html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll {
 }
 
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll table {
-  min-width: 32rem;
-  font-size: 12px;
+  min-width: 28rem;
+  font-size: 11px;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll th,
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll td {
-  padding: 0.45rem 0.4rem;
+  padding: 0.25rem 0.3rem;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="heatmap"] .gex-matrix-scroll th:first-child,

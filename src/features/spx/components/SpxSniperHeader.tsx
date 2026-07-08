@@ -8,6 +8,7 @@ import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
 import type { MarketStatusLabel } from "@/features/spx/lib/spx-market-session";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FreshnessChip, Kicker, type FreshnessStatus } from "@/components/ui";
+import { GEX_KING_NODE_HELP, gexKingDualLabel } from "@/lib/gex-king-node-labels";
 
 type Props = {
   desk?: SpxDeskPayload;
@@ -175,6 +176,12 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
                         value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
                         tone="magenta"
                       />
+                      <StatPill
+                        label={gexKingDualLabel("near-term")}
+                        value={showValues && desk?.gex_king != null ? fmtPrice(desk.gex_king) : "—"}
+                        tone="gold"
+                        title={GEX_KING_NODE_HELP}
+                      />
                       <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
                       <StatPill
                         label="IV Rank"
@@ -263,7 +270,7 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
                 </span>
               )}
             </div>
-            <div className="grid w-full min-w-[200px] grid-cols-2 gap-2 sm:grid-cols-4 xl:w-auto">
+            <div className="grid w-full min-w-[200px] grid-cols-2 gap-2 sm:grid-cols-3 xl:w-auto xl:grid-cols-5">
               <StatPill
                 label="Regime"
                 value={showValues ? (desk?.regime ?? "—") : "—"}
@@ -274,6 +281,12 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
                 label="γ Flip"
                 value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
                 tone="magenta"
+              />
+              <StatPill
+                label={gexKingDualLabel("near-term")}
+                value={showValues && desk?.gex_king != null ? fmtPrice(desk.gex_king) : "—"}
+                tone="gold"
+                title={GEX_KING_NODE_HELP}
               />
               <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
               <StatPill
@@ -385,14 +398,19 @@ function StatPill({
   value,
   tone = "neutral",
   capitalize: cap,
+  title,
 }: {
   label: string;
   value: string;
   tone?: string;
   capitalize?: boolean;
+  title?: string;
 }) {
   return (
-    <div className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}>
+    <div
+      className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}
+      title={title}
+    >
       <p className="spx-hero-stat-label">{label}</p>
       {/* Same flash-on-update recipe as the hero price (key change -> fresh initial->animate
           pop), scaled down for pill size. No `exit` prop — the old value unmounts instantly,

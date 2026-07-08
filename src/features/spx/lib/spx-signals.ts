@@ -347,9 +347,9 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
     if (Math.abs(dist) <= 25) {
       score += w;
       factors.push({
-        label: "GEX anchor",
+        label: "King node · GEX anchor",
         weight: w,
-        detail: `${dist >= 0 ? "Above" : "Below"} anchor strike ${desk.gex_king.toFixed(0)}`,
+        detail: `${dist >= 0 ? "Above" : "Below"} king/anchor ${desk.gex_king.toFixed(0)}`,
       });
     }
   }

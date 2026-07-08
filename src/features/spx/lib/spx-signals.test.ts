@@ -9,7 +9,7 @@ import { computeSpxConfluence } from "./spx-signals";
 // a new DB table, and one new fire-and-forget call site in spx-play-engine.ts
 // — but ZERO lines in THIS file (spx-signals.ts, the pure confluence engine
 // that gates real-money 0DTE BUY_CALL/BUY_PUT recommendations). `git diff
-// main -- src/features/spx/lib/spx-signals.ts` for that PR is empty.
+// main -- src/lib/spx-signals.ts` for that PR is empty.
 //
 // This test is the belt-and-suspenders proof that matters more than the diff:
 // it feeds computeSpxConfluence() a fixture desk exercising ~20 of the ~21
@@ -188,7 +188,7 @@ const GOLDEN = {
     { label: "Market tide", weight: 10, detail: "bullish broad flow" },
     { label: "TICK", weight: 8, detail: "NYSE TICK +250" },
     { label: "NOPE", weight: 7, detail: "NOPE +0.80" },
-    { label: "GEX anchor", weight: 6, detail: "Above anchor strike 7415" },
+    { label: "King node · GEX anchor", weight: 6, detail: "Above king/anchor 7415" },
     { label: "TRIN", weight: 6, detail: "TRIN 0.80 — broad buying" },
     { label: "Mega-caps", weight: 6, detail: "Leadership avg +1.00%" },
     { label: "Net prem", weight: 6, detail: "SPY net prem accelerating" },

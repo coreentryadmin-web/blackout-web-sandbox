@@ -24,6 +24,7 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
+import { GEX_KING_NODE_HELP, gexKingDualLabel } from "@/lib/gex-king-node-labels";
 import {
   readGexHeatmapSessionCache,
   writeGexHeatmapSessionCache,
@@ -378,7 +379,9 @@ export function SpxGexMatrixHeatmap({
         {flipDiffers && deskGammaFlip != null && (
           <p className="font-mono text-[9px] leading-snug text-cyan-400">
             Header γ flip {fmtHeatmapStrike(deskGammaFlip)} uses 8-expiry aggregate.
-            {deskGexKing != null ? ` King ${fmtHeatmapStrike(deskGexKing)}.` : ""}
+            {deskGexKing != null
+              ? ` ${gexKingDualLabel("near-term")} ${fmtHeatmapStrike(deskGexKing)}.`
+              : ""}
           </p>
         )}
         {!isTrueZeroDte && columnExpiry && (
@@ -506,7 +509,7 @@ export function SpxGexMatrixHeatmap({
                           }}
                           title={
                             isColumnKing
-                              ? `King node for ${fmtHeatmapExpiry(e)}${
+                              ? `${gexKingDualLabel()} for ${fmtHeatmapExpiry(e)}${
                                   overlaySpot > 0
                                     ? ` — ${Math.round(Math.abs(strike - overlaySpot))}pt from spot`
                                     : ""
@@ -575,7 +578,7 @@ export function SpxGexMatrixHeatmap({
         <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>
         {columnKings.size > 0 && (
           <span>
-            · <span className="text-amber-400">★Npt</span> = that day&apos;s King node, N points
+            · <span className="text-amber-400">★Npt</span> = per-day {gexKingDualLabel()}, N points
             from spot (close = live pin candidate; far = structural OI wall, not a live anchor)
           </span>
         )}
