@@ -113,6 +113,7 @@ async function main() {
   }
 
   const dbUrl = secret.DATABASE_URL?.trim();
+  let pgOk = false;
   if (dbUrl) {
     try {
       const c = createAuditClient(dbUrl);
@@ -154,11 +155,40 @@ async function main() {
       else fail(`data-correctness latest: ${latest?.status ?? "?"}`);
 
       await c.end();
+      pgOk = true;
     } catch (e) {
-      fail(`Postgres RTH checks: ${e.message}`);
+      console.log(`  ⚠ Postgres unreachable from monitor host (${e.message}) — cron API fallback`);
     }
   } else {
     fail("DATABASE_URL missing in staging secret");
+  }
+
+  if (!pgOk) {
+    try {
+      const dcRes = await fetchRetry(
+        `${BASE}/api/cron/data-correctness?force=1`,
+        { headers: { Authorization: `Bearer ${cron}` } },
+        { retries: 3, timeoutMs: 120_000 }
+      );
+      const dcBody = await dcRes.json();
+      if (dcRes.status === 200 && (dcBody.flags?.length ?? 0) === 0) ok("data-correctness cron ok (VPC fallback)");
+      else fail(`data-correctness cron: HTTP ${dcRes.status} flags=${dcBody.flags?.length ?? "?"}`);
+    } catch (e) {
+      fail(`data-correctness cron fallback: ${e.message}`);
+    }
+
+    if (tradingDay && et.mins >= 9 * 60 + 30) {
+      try {
+        const regimeRes = await fetchRetry(`${BASE}/api/market/regime`, {}, { retries: 2, timeoutMs: 30_000 });
+        const regimeBody = await regimeRes.json();
+        if (regimeRes.status === 200 && regimeBody.regime) ok(`market_regime live (VPC fallback: ${regimeBody.regime})`);
+        else fail(`market_regime API: HTTP ${regimeRes.status}`);
+      } catch (e) {
+        fail(`market_regime API fallback: ${e.message}`);
+      }
+    } else if (tradingDay) {
+      console.log("  ⚠ spx-evaluate / flow-ingest — check after 09:30 ET (VPC-only writers)");
+    }
   }
 
   console.log("\n3. Live sockets + SPX play");
