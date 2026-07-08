@@ -22,6 +22,7 @@
     "validate:staging-vector-e2e": "node scripts/vector-e2e-audit.mjs --base=https://staging.blackouttrades.com",
     "validate:latency-compare": "node scripts/compare-latency-envs.mjs",
     "validate:data-parity": "node scripts/staging-prod-data-parity.mjs",
+    "validate:largo-latency": "node scripts/largo-latency-compare.mjs",
     "validate:deploy-wait": "node scripts/gha-wait-deploy.mjs",
     "validate:rth-open": "node scripts/rth-open-check.mjs",
     "validate:rth-sweep": "node scripts/rth-comprehensive-sweep.mjs",
