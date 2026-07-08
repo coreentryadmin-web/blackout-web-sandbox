@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
+import { useCompactDeskPanels } from "@/hooks/useCompactDeskPanels";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
@@ -62,6 +63,7 @@ export function SpxDashboard() {
   const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
   const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
   const nativeShell = useIosNativeShell();
+  const compactPanels = useCompactDeskPanels(nativeShell);
   const [iosPanel, setIosPanel] = useState<"plays" | "matrix" | "intel">("plays");
 
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
@@ -141,7 +143,7 @@ export function SpxDashboard() {
         <SpxSniperHeader desk={desk} live={live} nativeShell={nativeShell} />
       </SpxPanelErrorBoundary>
 
-      {nativeShell && (
+      {compactPanels && (
         <IosNativeSegment
           value={iosPanel}
           onChange={setIosPanel}
@@ -159,15 +161,15 @@ export function SpxDashboard() {
       {/* Left rail: GEX matrix only — no Benzinga scroll, live tape, or interval-flow stack. */}
       <div
         className="spx-sniper-triple"
-        data-ios-panel={nativeShell ? iosPanel : undefined}
+        data-ios-panel={compactPanels ? iosPanel : undefined}
       >
         <SpxPanelErrorBoundary>
           <aside
-            key={nativeShell ? iosPanel : "matrix"}
+            key={compactPanels ? iosPanel : "matrix"}
             className={clsx(
               "spx-sniper-left-rail spx-left-matrix",
-              nativeShell && iosPanel !== "matrix" && "ios-native-panel-hidden",
-              nativeShell && iosPanel === "matrix" && "ios-native-panel-visible"
+              compactPanels && iosPanel !== "matrix" && "ios-native-panel-hidden",
+              compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
             <SpxGexMatrixHeatmap
@@ -183,24 +185,30 @@ export function SpxDashboard() {
 
         <SpxPanelErrorBoundary>
           <div
-            key={nativeShell ? iosPanel : "plays"}
+            key={compactPanels ? iosPanel : "plays"}
             className={clsx(
               "spx-sniper-chart-col spx-center-stack",
-              nativeShell && iosPanel !== "plays" && "ios-native-panel-hidden",
-              nativeShell && iosPanel === "plays" && "ios-native-panel-visible"
+              compactPanels && iosPanel !== "plays" && "ios-native-panel-hidden",
+              compactPanels && iosPanel === "plays" && "ios-native-panel-visible"
             )}
           >
-            <SpxTradeAlerts desk={desk} live={live} refreshing={refreshing} sessionActive={sessionActive} />
+            <SpxTradeAlerts
+              desk={desk}
+              live={live}
+              refreshing={refreshing}
+              sessionActive={sessionActive}
+              compactLayout={compactPanels}
+            />
           </div>
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
           <Suspense fallback={<div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />}>
             <div
-              key={nativeShell ? iosPanel : "intel"}
+              key={compactPanels ? iosPanel : "intel"}
               className={clsx(
-                nativeShell && iosPanel !== "intel" && "ios-native-panel-hidden",
-                nativeShell && iosPanel === "intel" && "ios-native-panel-visible"
+                compactPanels && iosPanel !== "intel" && "ios-native-panel-hidden",
+                compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
               )}
             >
               <SpxCommentaryRail desk={desk} live={live} />

@@ -50,12 +50,17 @@ export const GATE_BLOCK = {
 } as const;
 
 /** Grade-scaled mixed-tape hard block — A setups tolerate one extra soft counter-trend signal. */
-function mixedTapeBlockThreshold(grade: string): number {
+export function mixedTapeBlockThreshold(grade: string, absScore?: number): number {
   const base = playWeightedConflictBlockMin();
   const rank = gradeRank(grade);
-  if (rank >= gradeRank("A")) return base + 1;
-  if (rank >= gradeRank("B")) return base;
-  return Math.max(3, base - 1);
+  let threshold =
+    rank >= gradeRank("A") ? base + 1 : rank >= gradeRank("B") ? base : Math.max(3, base - 1);
+  // Strong B conviction (|score| ≥ 58) tolerates one extra soft counter — Jul 7–8 audit showed
+  // mixed-tape blocking valid directional leans on choppy but one-sided days.
+  if (absScore != null && absScore >= 58 && rank >= gradeRank("B")) {
+    threshold += 1;
+  }
+  return threshold;
 }
 
 function maxWeightedForEntryMode(grade: string, mode: "full" | "starter"): number {
@@ -178,7 +183,7 @@ export function evaluatePlayGates(
   }
 
   const mixedTapeMsg = `${GATE_BLOCK.MIXED_TAPE} — too many conflicting signals for clean entry`;
-  if (confluence.weighted_conflicts >= mixedTapeBlockThreshold(confluence.grade)) {
+  if (confluence.weighted_conflicts >= mixedTapeBlockThreshold(confluence.grade, abs)) {
     if (buyIntent) {
       blocks.push(mixedTapeMsg);
     } else {
