@@ -41,6 +41,7 @@ import {
   playTrailingStopTrailWindowPts,
 } from "@/features/spx/lib/spx-play-config";
 import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
+import { enrichPlayPayload } from "@/features/spx/lib/spx-play-context";
 import { deskAgeSec, isDeskStale } from "@/features/spx/lib/spx-desk-stale";
 import {
   closeOpenPlay,
@@ -1105,7 +1106,8 @@ export async function evaluateSpxPlay(
       })
     );
   }
-  return payload;
+  const session = await loadPlaySessionMeta();
+  return enrichPlayPayload(payload, desk, session);
 }
 
 async function evaluateSpxPlayCore(

@@ -9,6 +9,7 @@ import { useSpxLotto } from "@/features/spx/hooks/useSpxLotto";
 import { useSpxPowerHour } from "@/features/spx/hooks/useSpxPowerHour";
 import { useStablePlayConfirmations } from "@/features/spx/hooks/useStablePlayConfirmations";
 import { SpxSniperBackdrop } from "./SpxSniperBackdrop";
+import { SpxPlayHeroStrip } from "./SpxPlayHeroStrip";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
@@ -25,6 +26,7 @@ type Props = {
   live?: boolean;
   refreshing?: boolean;
   sessionActive?: boolean;
+  compactLayout?: boolean;
 };
 
 function playDeskAlert(type: "buy" | "watch") {
@@ -309,7 +311,18 @@ function PowerHourPlayBlock({
   return null;
 }
 
-export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }: Props) {
+function previewKicker(action: SpxPlayAction, committed: boolean): string | null {
+  if (action === "WATCHING") return "SETUP PREVIEW — not a committed entry";
+  if (action === "SCANNING") return "SCANNING — engine standing down";
+  if (action === "BUY" && !committed) return "SIGNAL PREVIEW — awaiting commit";
+  return null;
+}
+
+function copyContractLabel(label: string) {
+  void navigator.clipboard?.writeText(label).catch(() => {});
+}
+
+export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, compactLayout = false }: Props) {
   const { play, playRefreshing } = useSpxPlay(sessionActive);
   const { lotto, lottoLoading, lottoRefreshing } = useSpxLotto();
   const { powerHour, powerHourLoading, powerHourRefreshing } = useSpxPowerHour();
@@ -365,11 +378,18 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     >
       <SpxSniperBackdrop action={play?.action} />
       <div className="spx-sniper-panel-content">
-      <header className="spx-trade-alerts-header">
-        <div className="min-w-0">
-          <Kicker className="mb-1">PLAY ENGINE</Kicker>
-          <h3 className="t-label text-[15px] uppercase leading-tight text-white">Trade Alerts</h3>
-        </div>
+      <header
+        className={clsx(
+          "spx-trade-alerts-header",
+          compactLayout && "spx-trade-alerts-header-minimal"
+        )}
+      >
+        {!compactLayout && (
+          <div className="min-w-0">
+            <Kicker className="mb-1">PLAY ENGINE</Kicker>
+            <h3 className="t-label text-[15px] uppercase leading-tight text-white">Trade Alerts</h3>
+          </div>
+        )}
         <Badge tone={live ? "bull" : "neutral"} dot={live} className="shrink-0">
           {live ? "LIVE" : "OFFLINE"}
         </Badge>
@@ -400,11 +420,23 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
+                {previewKicker(play.action, play.signal_committed) && (
+                  <p className="spx-trade-preview-kicker">
+                    {previewKicker(play.action, play.signal_committed)}
+                  </p>
+                )}
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
                 {play.action === "BUY" && !play.signal_committed && !play.open_play && (
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-300">
                     Signal only — awaiting engine commit
                   </p>
+                )}
+                {play.desk_context && (
+                  <SpxPlayHeroStrip
+                    ctx={play.desk_context}
+                    action={play.action}
+                    compact={compactLayout}
+                  />
                 )}
                 <p className="spx-trade-alert-headline">{play.headline}</p>
                 {play.option_ticket && play.action === "BUY" && (
@@ -413,6 +445,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     {play.option_ticket.delta != null
                       ? ` · Δ ${Math.abs(play.option_ticket.delta).toFixed(2)}`
                       : ""}
+                    <button
+                      type="button"
+                      className="spx-trade-copy-contract ml-2"
+                      onClick={() => copyContractLabel(play.option_ticket!.contract_label)}
+                    >
+                      Copy
+                    </button>
                   </p>
                 )}
                 <p
@@ -444,10 +483,14 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
               </div>
             </div>
 
-            {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
+            {play.levels.entry != null &&
+              play.action !== "SCANNING" &&
+              (play.action !== "WATCHING" || play.watch?.active) && (
               <div className="spx-trade-alert-levels mt-5 grid grid-cols-3 gap-4">
                 <div>
-                  <p className="spx-trade-alert-score-label">Entry</p>
+                  <p className="spx-trade-alert-score-label">
+                    {play.action === "WATCHING" ? "Plan entry" : "Entry"}
+                  </p>
                   <p className={clsx("spx-level-value", scoreClass(play.action, play.score))}>
                     {fmtPrice(play.levels.entry)}
                   </p>
@@ -478,9 +521,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 Claude {play.claude.source} · {play.claude.verdict}
               </p>
             )}
-            {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
+            {play.levels.entry != null &&
+              play.action !== "SCANNING" &&
+              (play.action !== "WATCHING" || play.watch?.active) && (
               <p className="font-mono text-[10px] text-sky-300/60 mt-3">
-                Educational. Not advice. Every trade is your own decision.
+                {play.action === "WATCHING"
+                  ? "Proposed levels — promote checklist must clear before BUY."
+                  : "Educational. Not advice. Every trade is your own decision."}
               </p>
             )}
           </div>
@@ -535,7 +582,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                           minute: "2-digit",
                         })
                       : "—"}{" "}
-                    · {confirmationLayer.watch.reason}
+                    · {confirmationLayer.watch.promote_ready ? "Promote ready" : confirmationLayer.watch.reason}
                   </p>
                 )}
                 {confirmationLayer.telemetry?.adaptive_active && (
