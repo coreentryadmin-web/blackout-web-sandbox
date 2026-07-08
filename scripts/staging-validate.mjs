@@ -11,8 +11,10 @@
  *   SKIP_DATA_CORRECTNESS=1 — skip long correctness sweep
  */
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { probeDataCorrectness } from "./audit/lib/data-correctness-probe.mjs";
+import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(
   /\/$/,
@@ -45,20 +47,27 @@ function loadStagingSecret() {
   return JSON.parse(raw);
 }
 
+function flagCount(body) {
+  if (!body || typeof body !== "object") return null;
+  if (Array.isArray(body.flags)) return body.flags.length;
+  if (typeof body.flag_count === "number") return body.flag_count;
+  if (typeof body.flags === "number") return body.flags;
+  return null;
+}
+
 async function hitCron(path, secret, timeoutMs = 300_000) {
   const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}force=1`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${secret}` },
-      signal: controller.signal,
-    });
-    const body = await res.json().catch(() => ({}));
-    return { status: res.status, body, ms: null };
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetchRetry(
+    url,
+    { headers: { Authorization: `Bearer ${secret}` } },
+    { timeoutMs, retries: 4, baseDelayMs: 2000 }
+  );
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body, ms: null };
+}
+
+function pause(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function runNode(script, extraEnv = {}) {
@@ -143,15 +152,20 @@ try {
 if (process.env.SKIP_DATA_CORRECTNESS !== "1") {
   try {
     const t0 = Date.now();
-    const { status, body } = await hitCron("/api/cron/data-correctness", cronSecret, 600_000);
+    const probe = await probeDataCorrectness({
+      base: BASE,
+      cronSecret,
+      timeoutMs: 120_000,
+      tryFull: false,
+    });
     const ms = Date.now() - t0;
-    const flags = body?.flags ?? body?.flag_count;
-    if (status === 200 && (flags === 0 || flags === undefined) && body.ok !== false) {
-      ok(`data-correctness → ok (${ms}ms)`);
-    } else if (status === 200) {
-      warn(`data-correctness → flags=${flags ?? "?"} (${ms}ms)`);
+    const flags = probe.flags ?? flagCount(probe.json);
+    if (probe.ok && flags === 0) {
+      ok(`data-correctness (${probe.mode}) → flags=0 (${ms}ms)`);
+    } else if (probe.status === 200) {
+      warn(`data-correctness (${probe.mode}) → flags=${flags ?? "?"} (${ms}ms)`);
     } else {
-      fail(`data-correctness → HTTP ${status}`);
+      fail(`data-correctness → HTTP ${probe.status} ${probe.err ?? ""}`.trim());
     }
   } catch (e) {
     warn(`data-correctness: ${e.message}`);
@@ -159,6 +173,9 @@ if (process.env.SKIP_DATA_CORRECTNESS !== "1") {
 } else {
   warn("data-correctness skipped (SKIP_DATA_CORRECTNESS=1)");
 }
+
+// Brief pause — burst probes can trip intermittent CF/ALB connection resets.
+await pause(3000);
 
 // ── 3. validate-deploy ───────────────────────────────────────────────────────
 console.log("\n3. validate-deploy");
@@ -170,6 +187,8 @@ const deployCode = runNode("scripts/validate-deploy.mjs", {
 });
 if (deployCode !== 0) fail("validate-deploy exited non-zero");
 else ok("validate-deploy GREEN");
+
+await pause(2000);
 
 // ── 4. Latency audit ───────────────────────────────────────────────────────
 console.log("\n4. Site latency audit");

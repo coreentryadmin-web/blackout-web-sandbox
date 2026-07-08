@@ -4,6 +4,7 @@
  * This runs the heatmap surface (GEX oracle + cross-tool) under the timeout, then
  * optionally records that the full sweep was skipped.
  */
+import { fetchRetry } from "./fetch-retry.mjs";
 export async function probeDataCorrectness({
   base,
   cronSecret,
@@ -40,10 +41,8 @@ export async function probeDataCorrectness({
 }
 
 async function fetchWithTimeout(url, headers, timeoutMs) {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { headers, signal: ac.signal });
+    const r = await fetchRetry(url, { headers }, { retries: 4, baseDelayMs: 1500, timeoutMs });
     const text = await r.text();
     let json = null;
     try {
@@ -58,7 +57,5 @@ async function fetchWithTimeout(url, headers, timeoutMs) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { status: 0, json: null, err: msg };
-  } finally {
-    clearTimeout(timer);
   }
 }

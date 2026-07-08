@@ -11,6 +11,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import { mintIosPlaywrightSession, onboardingInitScript } from "./audit/lib/ios-playwright-auth.mjs";
+import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 
 const args = process.argv.slice(2);
 const API_ONLY = args.includes("--api-only") || process.env.SITE_LATENCY_API_ONLY === "1";
@@ -95,6 +96,10 @@ function grade(ms) {
   return "FAIL";
 }
 
+async function fetchApi(url, headers) {
+  return fetchRetry(url, { headers }, { retries: IS_STAGING ? 4 : 2, baseDelayMs: 1200, timeoutMs: 90_000 });
+}
+
 async function stagingForceWarmCrons() {
   if (!IS_STAGING || process.env.STAGING_CRON_WARM !== "1") return;
   const secret = process.env.CRON_SECRET?.trim();
@@ -108,9 +113,7 @@ async function stagingForceWarmCrons() {
   for (const path of paths) {
     const t0 = performance.now();
     try {
-      const res = await fetch(`${BASE}${path}`, {
-        headers: { Authorization: `Bearer ${secret}` },
-      });
+      const res = await fetchApi(`${BASE}${path}`, { Authorization: `Bearer ${secret}` });
       await res.text();
       const ms = Math.round(performance.now() - t0);
       console.log(`  warmed ${path.split("?")[0]} → HTTP ${res.status} (${ms}ms)`);
@@ -152,7 +155,7 @@ async function main() {
   for (const path of WARM_PATHS) {
     const t0 = performance.now();
     try {
-      const res = await fetch(`${BASE}${path}`, { headers: apiHeaders });
+      const res = await fetchApi(`${BASE}${path}`, apiHeaders);
       await res.text();
       const ms = Math.round(performance.now() - t0);
       rec(`prewarm:${path.split("?")[0]}`, grade(ms), `HTTP ${res.status}`, ms);
@@ -166,7 +169,7 @@ async function main() {
     for (let pass = 1; pass <= 2; pass++) {
       const t0 = performance.now();
       try {
-        const res = await fetch(`${BASE}${path}`, { headers: apiHeaders });
+        const res = await fetchApi(`${BASE}${path}`, apiHeaders);
         await res.text();
         const ms = Math.round(performance.now() - t0);
         const label = pass === 1 ? `api:${path.split("?")[0]}` : `api:${path.split("?")[0]}:warm`;

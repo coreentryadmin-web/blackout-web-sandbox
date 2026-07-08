@@ -17,6 +17,7 @@ import { execSync } from "node:child_process";
 import { spawnSync } from "node:child_process";
 import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
+import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 
 const BASE = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
 const IS_STAGING = BASE.includes("staging.");
@@ -126,7 +127,8 @@ async function resolveSentryTestIssues(token, issues) {
 }
 
 async function fetchJson(path, opts = {}) {
-  const res = await fetch(`${BASE}${path}`, opts);
+  const retries = IS_STAGING ? 4 : 1;
+  const res = await fetchRetry(`${BASE}${path}`, opts, { retries, baseDelayMs: 1500, timeoutMs: 60_000 });
   const text = await res.text();
   let body;
   try {
@@ -205,9 +207,11 @@ if (cronSecret) {
   for (const warmPath of warmPaths) {
     try {
       const t0 = Date.now();
-      const warmRes = await fetch(`${BASE}${warmPath}`, {
-        headers: { Authorization: `Bearer ${cronSecret}` },
-      });
+      const warmRes = await fetchRetry(
+        `${BASE}${warmPath}`,
+        { headers: { Authorization: `Bearer ${cronSecret}` } },
+        { retries: IS_STAGING ? 4 : 2, baseDelayMs: 1500, timeoutMs: 300_000 }
+      );
       const warmBody = await warmRes.json().catch(() => ({}));
       const warmMs = Date.now() - t0;
       const label = warmPath.split("?")[0].replace("/api/cron/", "");
