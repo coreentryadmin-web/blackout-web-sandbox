@@ -15,6 +15,8 @@ import { logCronRun } from "@/lib/cron-run";
 import { loadBootstrapBundle, loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { prefetchSpxDeskEnrichment } from "@/features/spx/lib/spx-desk";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
+import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
+import { seedUwCacheFromWsStores } from "@/lib/uw-ws-cache-bridge";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
@@ -44,6 +46,13 @@ export async function GET(req: NextRequest) {
     fetchGexHeatmap("SPX"),
     loadBootstrapBundle(),
   ]);
+
+  try {
+    const redis = await getUwCacheRedis();
+    if (redis) await seedUwCacheFromWsStores(redis);
+  } catch {
+    /* non-fatal */
+  }
 
   const deskOk = mergedResult.status === "fulfilled";
   const gexOk = gexResult.status === "fulfilled";
