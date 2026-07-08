@@ -22,7 +22,7 @@ For AWS: `output: "standalone"` + `deploy/Dockerfile` (same Next app, containeri
 - [x] `npm run build` — route bundle sizes recorded on sandbox
 - [ ] `scripts/site-latency-audit.mjs` on staging (post-ECS)
 - [x] Dead routes inventoried (grid, nights-watch removed)
-- [ ] Document env manifest for AWS Secrets Manager (manual Railway export)
+- [x] Document env manifest for AWS Secrets Manager (`docs/ops/AWS-SECRETS-MANIFEST.md`)
 
 ### Phase 1 — AWS blockers
 - [x] `next.config.mjs`: `output: "standalone"`
@@ -58,8 +58,10 @@ For AWS: `output: "standalone"` + `deploy/Dockerfile` (same Next app, containeri
 
 ### Phase 5 — Infra (`blackout-infra`)
 - [x] Staging: VPC + ECR
-- [ ] RDS + RDS Proxy + ElastiCache
-- [ ] ECS 1 task → validate → scale
+- [x] RDS + RDS Proxy + ElastiCache (Terraform modules)
+- [x] ECS + ALB + Secrets Manager (Terraform modules)
+- [x] EventBridge crons → Lambda (24 jobs)
+- [ ] `terraform apply` on AWS account (needs credentials)
 - [ ] Cloudflare origin → ALB
 
 ---

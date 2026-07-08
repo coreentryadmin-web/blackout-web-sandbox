@@ -1,8 +1,10 @@
 # AWS migration plan — blackout-web on ECS Fargate
 
-**Status:** Phase 1 (containerize) in progress. Prod stays on **Railway** until staging ECS is green.
+**Status:** Phase 2 (staging stack) Terraform ready in `blackout-infra`. Prod stays on **Railway** until staging ECS is green.
 
-**Infra repo:** [blackout-infra](https://github.com/coreentryadmin-web/blackout-infra) (VPC, ECR — RDS/ECS/ALB next)
+**Infra repo:** [blackout-infra](https://github.com/coreentryadmin-web/blackout-infra) — VPC, ECR, RDS, Redis, ECS, ALB, EventBridge crons
+
+**Secrets manifest:** `docs/ops/AWS-SECRETS-MANIFEST.md`
 
 **CDN:** Keep **Cloudflare** in front; point origin to ALB (do not add CloudFront).
 
@@ -15,19 +17,21 @@
 | Standalone output | `output: "standalone"` in `next.config.mjs` | ✅ |
 | Docker image | `deploy/Dockerfile` + `.dockerignore` (not repo root — Railway stays Nixpacks) | ✅ |
 | CI → ECR | `.github/workflows/ecr-push-staging.yml` | ✅ |
-| Local smoke | `docker build` + `docker run` → `/api/health` | manual |
+| Local smoke | `docker build` + `docker run` → `/api/health` | ✅ (`blackout-infra/scripts/docker-smoke.sh`) |
 
 **Secrets:** never in the image. Inject at runtime via ECS task definition / Secrets Manager (same keys as Railway `blackout-web`).
 
 ---
 
-## Phase 2 — Staging stack (`blackout-infra`)
+## Phase 2 — Staging stack (`blackout-infra`) ✅ Terraform ready
 
-1. **RDS Postgres** + **ElastiCache Redis** (same region as ECS, `us-east-1`)
+1. **RDS Postgres** + **RDS Proxy** + **ElastiCache Redis** (private subnets)
 2. **ALB** + target group → ECS service (health: `/api/ready`, 90s start)
 3. **ECS Fargate** — 1 task staging, env from Secrets Manager
-4. **Crons** — keep HTTP-trigger pattern: EventBridge → Lambda or ECS scheduled task → `GET /api/cron/*` with `CRON_SECRET` (same as Railway TOMLs)
-5. Smoke: `npm run validate:deploy` against staging URL
+4. **Crons** — EventBridge → Lambda → `GET /api/cron/*` with `CRON_SECRET` (24 jobs synced from Railway TOMLs)
+5. Smoke: `npm run validate:deploy` against staging ALB URL
+
+**Apply:** `blackout-infra` → `terraform apply -var-file=environments/staging.tfvars`
 
 ---
 
