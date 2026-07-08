@@ -11,7 +11,6 @@
  *   SKIP_DATA_CORRECTNESS=1 — skip long correctness sweep
  */
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(
@@ -173,10 +172,19 @@ else ok("validate-deploy GREEN");
 
 // ── 4. Latency audit ───────────────────────────────────────────────────────
 console.log("\n4. Site latency audit");
-const latCode = runNode("scripts/site-latency-audit.mjs", {
-  CRON_SECRET: cronSecret,
-  STAGING_CRON_WARM: "1",
-});
+const latCode = spawnSync(
+  "node",
+  ["scripts/site-latency-audit.mjs", `--base=${BASE}`, "--api-only"],
+  {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CRON_SECRET: cronSecret,
+      STAGING_CRON_WARM: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  }
+).status ?? 1;
 if (latCode !== 0) fail("site-latency-audit exited non-zero");
 else ok("site-latency-audit GREEN");
 
