@@ -1,23 +1,24 @@
 export const dynamic = "force-static";
 
-import { HeroSection } from "@/components/landing/HeroSection";
-import { FeaturesGrid } from "@/components/landing/FeaturesGrid";
-import { EdgeSection } from "@/components/landing/EdgeSection";
-import { LandingFooter } from "@/components/landing/LandingFooter";
-import { LandingHashRedirect } from "@/components/landing/LandingHashRedirect";
-import { IosAppDeskRedirect } from "@/components/IosAppDeskRedirect";
+import { StaticLandingHero } from "@/components/landing/StaticLandingHero";
+import { StaticBieSection } from "@/components/landing/StaticBieSection";
+import { StaticEdgeSection } from "@/components/landing/StaticEdgeSection";
+import { StaticLandingFooter } from "@/components/landing/StaticLandingFooter";
+
+/** Legacy hash anchors + iOS app desk skip — inline only (no Clerk / client bundle). */
+const LANDING_REDIRECT_SCRIPT =
+  "try{var h=location.hash.slice(1);if(h==='faq')location.replace('/faq');else if(h==='pricing')location.replace('/pricing');else if(document.documentElement.classList.contains('ios-app'))location.replace('/dashboard')}catch(e){}";
 
 export default function LandingPage() {
   return (
-    <div className="landing-page min-h-screen void-bg text-white overflow-x-hidden">
-      <IosAppDeskRedirect />
-      <LandingHashRedirect />
+    <div className="landing-page min-h-screen void-bg text-white">
+      <script dangerouslySetInnerHTML={{ __html: LANDING_REDIRECT_SCRIPT }} />
       <main id="main">
-        <HeroSection />
-        <FeaturesGrid />
-        <EdgeSection />
+        <StaticLandingHero />
+        <StaticBieSection />
+        <StaticEdgeSection />
       </main>
-      <LandingFooter />
+      <StaticLandingFooter />
     </div>
   );
 }
