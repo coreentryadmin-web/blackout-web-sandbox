@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { clerkMiddlewareAuthOptions } from "@/lib/clerk-env";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -94,9 +95,7 @@ export default clerkMiddleware(
 
     return withStagingNoEdgeCache(NextResponse.next());
   },
-  {
-    clockSkewInMs: 10_000,
-  }
+  clerkMiddlewareAuthOptions()
 );
 
 // ---------------------------------------------------------------------------
@@ -150,6 +149,10 @@ export const config = {
     // Also explicitly match API/tRPC routes.
     {
       source: "/(api|trpc)(.*)",
+      missing: [{ type: "header", key: "upgrade", value: "websocket" }],
+    },
+    {
+      source: "/__clerk/(.*)",
       missing: [{ type: "header", key: "upgrade", value: "websocket" }],
     },
   ],

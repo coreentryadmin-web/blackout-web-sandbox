@@ -9,13 +9,21 @@ import { PwaRegister } from "@/components/PwaRegister";
 import { IosViewportLock } from "@/components/ios/IosViewportLock";
 import { IosKeyboardRoot } from "@/hooks/useIosKeyboardInset";
 import { SharedSigilDefs } from "@/components/marks/SharedSigilDefs";
-import { clerkAllowedRedirectOrigins } from "@/lib/clerk-env";
+import {
+  clerkAllowedRedirectOrigins,
+  clerkSatelliteProviderProps,
+} from "@/lib/clerk-env";
 
 /** Clerk + motion + desk client shell — NOT loaded on the public marketing homepage. */
 export function AppShellProviders({ children }: { children: React.ReactNode }) {
   const allowedRedirectOrigins = clerkAllowedRedirectOrigins();
+  const satellite = clerkSatelliteProviderProps();
   return (
-    <ClerkProvider dynamic {...(allowedRedirectOrigins ? { allowedRedirectOrigins } : {})}>
+    <ClerkProvider
+      dynamic
+      {...satellite}
+      {...(allowedRedirectOrigins ? { allowedRedirectOrigins } : {})}
+    >
       <MotionProvider>
         <SharedSigilDefs />
         <SessionCacheGuard />
