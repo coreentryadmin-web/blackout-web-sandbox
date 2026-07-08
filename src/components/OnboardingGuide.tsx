@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { clsx } from "clsx";
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { Modal } from "@/components/ui";
 import {
   ONBOARDING_STEPS,
@@ -27,7 +27,7 @@ type View = "tour" | "glossary";
  * via the ONBOARDING_OPEN_EVENT window event (see OnboardingTrigger).
  */
 export function OnboardingGuide() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useAppAuth();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("tour");
   const [step, setStep] = useState(0);

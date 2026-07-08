@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 
 export function SyncMembershipButton() {
   const router = useRouter();
-  const { session } = useSession();
+  const { isSignedIn } = useAppAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -29,7 +29,6 @@ export function SyncMembershipButton() {
       // "Access granted" success state to non-paying users. Branch on the actual tier instead.
       if (data.tier === "premium") {
         setMessage(`Access granted — ${String(data.tier).toUpperCase()}. Floor is open.`);
-        await session?.reload();
         router.refresh();
       } else {
         setMessage("No active Premium membership found. If you already paid, allow a minute for Whop to sync, then try again — or contact support.");

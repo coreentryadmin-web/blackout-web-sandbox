@@ -1,5 +1,7 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { parseTier, type Tier } from "@/lib/tiers";
+import { isCognitoAuth } from "@/lib/auth-provider";
+import { getUserProfile } from "@/lib/user-directory";
 
 /**
  * Short-lived per-user tier cache SHARED by both auth gates:
@@ -127,6 +129,12 @@ export async function resolveUserTier(userId: string): Promise<Tier> {
     return cached.tier;
   }
   try {
+    if (isCognitoAuth()) {
+      const profile = await getUserProfile(userId);
+      const tier = profile?.tier ?? "free";
+      setTierCache(userId, tier);
+      return tier;
+    }
     const user = await (await clerkClient()).users.getUser(userId);
     const tier = parseTier(user.publicMetadata?.tier);
     setTierCache(userId, tier);

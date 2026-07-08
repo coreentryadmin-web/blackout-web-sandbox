@@ -55,13 +55,12 @@ jobs:
           fi
           IMAGE="${REGISTRY}/${REPO}"
           docker build -f deploy/Dockerfile \
-            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            --build-arg AUTH_PROVIDER="cognito" \
+            --build-arg NEXT_PUBLIC_AUTH_PROVIDER="cognito" \
+            --build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID="${{ secrets.COGNITO_USER_POOL_ID }}" \
+            --build-arg NEXT_PUBLIC_COGNITO_CLIENT_ID="${{ secrets.COGNITO_CLIENT_ID }}" \
+            --build-arg NEXT_PUBLIC_COGNITO_DOMAIN="${{ secrets.COGNITO_DOMAIN }}" \
             --build-arg NEXT_PUBLIC_SITE_URL="https://staging.blackouttrades.com" \
-            --build-arg NEXT_PUBLIC_CLERK_ALLOWED_REDIRECT_ORIGINS="https://staging.blackouttrades.com" \
-            --build-arg NEXT_PUBLIC_CLERK_IS_SATELLITE="true" \
-            --build-arg NEXT_PUBLIC_CLERK_PROXY_URL="https://staging.blackouttrades.com/__clerk" \
-            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL="https://blackouttrades.com/sign-in" \
-            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL="https://blackouttrades.com/sign-up" \
             --build-arg GITHUB_SHA="${{ github.sha }}" \
             -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
           docker push "${IMAGE}:${IMAGE_TAG}"

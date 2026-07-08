@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { clearAllSessionCache } from "@/lib/session-cache";
 import { clearPlayCache } from "@/features/spx/hooks/useSpxPlay";
 
 /** Clears blackout sessionStorage keys when Clerk session ends or account switches. */
 export function SessionCacheGuard() {
-  const { isSignedIn, isLoaded, userId } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAppAuth();
   const wasSignedIn = useRef(false);
   const lastUserId = useRef<string | null>(null);
 
