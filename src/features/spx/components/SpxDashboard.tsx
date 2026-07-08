@@ -8,10 +8,22 @@ import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { SpxSniperHeader } from "./SpxSniperHeader";
-import { SpxTradeAlerts } from "./SpxTradeAlerts";
-import { SpxGexMatrixHeatmap } from "./SpxGexMatrixHeatmap";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
+
+const SpxGexMatrixHeatmap = dynamic(
+  () => import("./SpxGexMatrixHeatmap").then((m) => ({ default: m.SpxGexMatrixHeatmap })),
+  {
+    loading: () => <div className="spx-desk-skeleton min-h-[320px]" aria-busy="true" />,
+  }
+);
+
+const SpxTradeAlerts = dynamic(
+  () => import("./SpxTradeAlerts").then((m) => ({ default: m.SpxTradeAlerts })),
+  {
+    loading: () => <div className="spx-desk-skeleton min-h-[200px]" aria-busy="true" />,
+  }
+);
 
 const SpxCommentaryRail = dynamic(
   () => import("./SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
