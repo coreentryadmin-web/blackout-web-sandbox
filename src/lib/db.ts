@@ -83,7 +83,9 @@ function connectionViaPooler(connectionString: string): boolean {
       host.includes("pgbouncer") ||
       host.includes("pooler") ||
       host.includes("proxy.rlwy") ||
-      host.includes("-pool.")
+      host.includes("-pool.") ||
+      // AWS RDS Proxy: {name}.proxy-{id}.{region}.rds.amazonaws.com
+      host.includes(".proxy-")
     );
   } catch {
     return false;
