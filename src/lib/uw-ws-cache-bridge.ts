@@ -2,14 +2,16 @@
  * Seed Redis uw_cache:* from in-process UW WebSocket stores when channels are fresh.
  * Keeps the 2-RPS REST budget for paths the multiplex socket already delivers.
  */
+import type { DarkPoolSnapshot } from "@/lib/providers/unusual-whales";
 import type { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import {
   aggregateFlowPerStrikeRows,
   aggregateOptionTradesToStrikeRows,
   type NetPremTick,
 } from "@/lib/providers/unusual-whales";
-import { UW_CACHE_TTL, UW_KEYS, uwCacheSet } from "@/lib/providers/uw-shared-cache";
+import { UW_CACHE_TTL, UW_KEYS, uwCacheRead, uwCacheSet } from "@/lib/providers/uw-shared-cache";
 import {
+  darkPoolStore,
   getNetPremTicksForTicker,
   isUwChannelFresh,
   optionTradesStore,
@@ -38,6 +40,13 @@ export async function seedUwCacheFromWsStores(
     skipped_ws.push("market_tide");
   }
 
+  if (isUwChannelFresh("off_lit_trades", 120_000) && darkPoolStore.updatedAt > 0 && darkPoolStore.data) {
+    await uwCacheSet(redis, UW_KEYS.darkPoolRecent(), UW_CACHE_TTL.darkPoolRecent, darkPoolStore.data);
+    await uwCacheSet(redis, UW_KEYS.darkPoolTicker("SPX"), UW_CACHE_TTL.darkPoolTicker, darkPoolStore.data);
+    seeded += 1;
+    skipped_ws.push("off_lit_trades");
+  }
+
   if (isUwChannelFresh("net_flow", 120_000)) {
     for (const ticker of ["SPX", "SPY", "QQQ", "IWM"] as const) {
       const ticks: NetPremTick[] = getNetPremTicksForTicker(ticker);
@@ -59,6 +68,26 @@ export async function seedUwCacheFromWsStores(
   }
 
   return { seeded, skipped_ws };
+}
+
+/** Cross-replica read: Redis snapshot seeded by the UW WS leader (no REST). */
+export async function readUwDeskLaneFromRedis<T>(key: string): Promise<T | null> {
+  return uwCacheRead<T>(key);
+}
+
+export async function readUwMarketTideFromRedis(): Promise<{
+  call_premium: number;
+  put_premium: number;
+  net: number;
+  bias: string;
+} | null> {
+  return readUwDeskLaneFromRedis(UW_KEYS.marketTide());
+}
+
+export async function readUwDarkPoolFromRedis(ticker = "SPX"): Promise<DarkPoolSnapshot | null> {
+  const tickerSnap = await readUwDeskLaneFromRedis<DarkPoolSnapshot>(UW_KEYS.darkPoolTicker(ticker));
+  if (tickerSnap?.prints?.length) return tickerSnap;
+  return readUwDeskLaneFromRedis<DarkPoolSnapshot>(UW_KEYS.darkPoolRecent());
 }
 
 export function shouldSkipUwCacheRefreshTask(

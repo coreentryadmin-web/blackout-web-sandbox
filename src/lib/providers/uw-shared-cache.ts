@@ -109,6 +109,19 @@ export async function uwCacheGet<T>(
   return pending
 }
 
+/** Read Redis uw_cache without calling upstream — cross-replica WS snapshot lane. */
+export async function uwCacheRead<T>(key: string): Promise<T | null> {
+  const redis = await getUwCacheRedis()
+  if (!redis) return null
+  try {
+    const cached = await redis.get(CACHE_PREFIX + key)
+    if (!cached) return null
+    return JSON.parse(cached) as T
+  } catch {
+    return null
+  }
+}
+
 // Force-refresh a cache key (used by the cron refresher)
 export async function uwCacheSet<T>(
   redis: RedisClient | null,

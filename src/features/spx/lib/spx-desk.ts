@@ -332,6 +332,13 @@ async function resolveMarketTide(): Promise<Awaited<ReturnType<typeof fetchUwMar
   } catch {
     /* WS optional */
   }
+  try {
+    const { readUwMarketTideFromRedis } = await import("@/lib/uw-ws-cache-bridge");
+    const redisTide = await readUwMarketTideFromRedis();
+    if (redisTide) return redisTide;
+  } catch {
+    /* Redis optional */
+  }
   return fetchUwMarketTide().catch(() => null);
 }
 
@@ -372,6 +379,13 @@ async function resolveDarkPool(
     }
   } catch {
     /* WS optional */
+  }
+  try {
+    const { readUwDarkPoolFromRedis } = await import("@/lib/uw-ws-cache-bridge");
+    const redisDp = await readUwDarkPoolFromRedis(ticker);
+    if (redisDp?.prints?.length) return redisDp;
+  } catch {
+    /* Redis optional */
   }
   if (cachedDarkPool.key === key && now - cachedDarkPool.fetchedAt < DARK_POOL_CACHE_MS) {
     return cachedDarkPool.data;
@@ -922,21 +936,42 @@ async function fetchSpxDeskFlowAlertsWithDb(limit = 32): Promise<SpxFlowBrief[]>
 }
 
 async function _fetchSpxDeskFlowAlertsWithDbInner(limit = 32): Promise<SpxFlowBrief[]> {
-  // DB (local, fast) and UW REST run in parallel — never serialize a slow UW round-trip
-  // ahead of Postgres. The tape must be RECENCY-ordered (not premium-ordered): premium sort
-  // was returning ancient whale prints and making flow_data_age_ms read 20m+ stale during RTH.
-  const [fromUw, fromDbRows] = await Promise.all([
-    fetchSpxDeskFlowAlerts(limit).catch(() => [] as SpxFlowBrief[]),
-    dbConfigured()
-      ? fetchRecentFlows({
-          limit,
-          min_premium: spxTapeMinPremium(),
-          order: "recent",
-          since_hours: 4,
-        }).catch(() => [])
-      : Promise.resolve([]),
-  ]);
+  const dbRowsPromise = dbConfigured()
+    ? fetchRecentFlows({
+        limit,
+        min_premium: spxTapeMinPremium(),
+        order: "recent",
+        since_hours: 4,
+      }).catch(() => [])
+    : Promise.resolve([]);
 
+  // DB-first: Postgres HELIX tape is local/fast — skip UW REST when we already have prints.
+  const fromDbRows = await dbRowsPromise;
+  if (dbConfigured() && fromDbRows.length >= Math.min(8, limit)) {
+    const spxDb = fromDbRows
+      .filter((f) => {
+        const t = f.ticker.toUpperCase();
+        return t === "SPX" || t === "SPXW";
+      })
+      .map((f) => ({
+        ticker: f.ticker,
+        premium: f.premium,
+        option_type: f.option_type,
+        strike: f.strike,
+        expiry: f.expiry,
+        direction: f.direction,
+        alerted_at: f.alerted_at,
+        alert_rule: null,
+        trade_count: null,
+        has_sweep: false,
+      }));
+    if (spxDb.length) {
+      lastGoodSpxFlowBriefs = spxDb.slice(0, limit);
+      return lastGoodSpxFlowBriefs;
+    }
+  }
+
+  const fromUw = await fetchSpxDeskFlowAlerts(limit).catch(() => [] as SpxFlowBrief[]);
   if (!dbConfigured()) return fromUw;
 
   try {
@@ -1052,6 +1087,13 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
 
   const { ensureDataSockets } = await import("@/lib/ws/init-data-sockets");
   ensureDataSockets();
+  void import("@/lib/uw-ws-cache-bridge")
+    .then(async ({ seedUwCacheFromWsStores }) => {
+      const { getUwCacheRedis } = await import("@/lib/providers/uw-shared-cache");
+      const redis = await getUwCacheRedis();
+      if (redis) await seedUwCacheFromWsStores(redis);
+    })
+    .catch(() => {});
 
   const today = todayEtYmd();
   const fromWeek = priorEtYmd(10);
@@ -1118,33 +1160,31 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
 
   const flowRaceMs = deskFlowRaceMs();
 
-  // PERF: overlap GEX, UW batch-1, flow tape, and macro/gap reads (max wall time, not sum).
-  // UW batch-2 (greek-by-expiry, mag7, macro indicators) is deferred — ~4s saved on cold path.
+  // PERF: overlap GEX, WS/Redis UW lanes (no rate limiter), flow tape, and macro/gap reads.
+  // UW REST pool runs only for nope + optional max-pain/IV fallbacks after GEX lands.
   const [
     [canonicalGex, polygonIvRank],
-    uwExclusive,
+    uwWsLanes,
     freshFlowsRaw,
     [macroEventsResolved, gapSnap, [dailyMarket, priorCloses]],
   ] = await Promise.all([
     Promise.all([resolveCanonicalDeskGex(price), fetchVixIvRankPercentile()]),
     uwConfigured()
-      ? runUwPooled([
-          () => resolveMarketTide(),
-          () =>
-            fetchUwNope("SPX")
-              .catch(() => null)
-              .then((r) => r ?? fetchUwNope("SPY").catch(() => null)),
-          () => resolveFlow0dte("SPX"),
-          () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
-          () => fetchUwMaxPain("SPX").catch(() => null),
-          () => fetchUwIvRank("SPX").catch(() => null),
+      ? Promise.all([
+          resolveMarketTide(),
+          resolveFlow0dte("SPX"),
+          resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
         ])
-      : Promise.resolve([null, null, null, null, null, null] as const),
+      : Promise.resolve([null, null, null] as const),
     uwConfigured()
       ? Promise.race([
-          fetchSpxDeskFlowAlertsWithDb(32),
-          new Promise<SpxFlowBrief[]>((resolve) => setTimeout(() => resolve([]), flowRaceMs)),
-        ]).catch(() => [] as SpxFlowBrief[])
+          lastGoodSpxFlowBriefs.length
+            ? Promise.resolve(lastGoodSpxFlowBriefs)
+            : fetchSpxDeskFlowAlertsWithDb(32),
+          new Promise<SpxFlowBrief[]>((resolve) =>
+            setTimeout(() => resolve(lastGoodSpxFlowBriefs), flowRaceMs)
+          ),
+        ]).catch(() => lastGoodSpxFlowBriefs)
       : Promise.resolve([] as SpxFlowBrief[]),
     Promise.all([
       mergeMacroEventsToday({ headlines: newsHeadlines }),
@@ -1160,7 +1200,26 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     ]),
   ]);
 
-  const [uwTide, uwNope, uwFlow, darkPool, uwMaxPain, uwIv] = uwExclusive;
+  const [uwTide, uwFlow, darkPool] = uwWsLanes;
+  const needMaxPain = canonicalGex.max_pain == null;
+  const needIv = polygonIvRank == null;
+  const uwRestTasks: Array<() => Promise<unknown>> = [
+    () =>
+      fetchUwNope("SPX")
+        .catch(() => null)
+        .then((r) => r ?? fetchUwNope("SPY").catch(() => null)),
+  ];
+  if (needMaxPain) uwRestTasks.push(() => fetchUwMaxPain("SPX").catch(() => null));
+  if (needIv) uwRestTasks.push(() => fetchUwIvRank("SPX").catch(() => null));
+  const uwRest = uwConfigured() ? await runUwPooled(uwRestTasks) : [];
+  let uwRestIdx = 0;
+  const uwNope = (uwConfigured() ? uwRest[uwRestIdx++] : null) as Awaited<
+    ReturnType<typeof fetchUwNope>
+  > | null;
+  const uwMaxPain = needMaxPain ? (uwRest[uwRestIdx++] as number | null) : null;
+  const uwIv = needIv ? (uwRest[uwRestIdx++] as number | null) : null;
+  const uwExclusive = [uwTide, uwNope, uwFlow, darkPool, uwMaxPain, uwIv] as const;
+
   let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
 
   const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
