@@ -68,7 +68,21 @@ function stagingDbUrl() {
 }
 
 function loadCrons() {
-  const prod = process.env.CRON_SECRET?.trim();
+  const prodRes = spawnSync(
+    "railway",
+    [
+      "variables",
+      "--service",
+      "blackout-web",
+      "--environment",
+      "production",
+      "--project",
+      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
+      "--json",
+    ],
+    { encoding: "utf8", env: process.env }
+  );
+  const prod = prodRes.status === 0 ? JSON.parse(prodRes.stdout).CRON_SECRET?.trim() : process.env.CRON_SECRET?.trim();
   const stagingRaw = execSync(
     'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
     { encoding: "utf8" }
