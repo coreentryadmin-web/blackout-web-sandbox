@@ -20,6 +20,10 @@ import {
   lottoPanelLoadingCopy,
   lottoPanelOffHoursCopy,
 } from "@/features/spx/lib/spx-lotto-copy";
+import {
+  satelliteConflictsMain,
+  satelliteConflictLabel,
+} from "@/features/spx/lib/spx-play-satellite-conflict";
 
 type Props = {
   desk?: SpxDeskPayload;
@@ -151,10 +155,12 @@ function LottoPlayBlock({
   lotto,
   lottoLoading,
   lottoRefreshing,
+  conflictLabel,
 }: {
   lotto: LottoPlayPayload | null;
   lottoLoading: boolean;
   lottoRefreshing: boolean;
+  conflictLabel?: string | null;
 }) {
   const inWindow = isLottoPollWindow();
 
@@ -168,7 +174,12 @@ function LottoPlayBlock({
           lotto.phase === "INVALID" && "spx-lotto-play-block-invalid"
         )}
       >
-        <p className="spx-lotto-play-kicker">{lotto.status_label}</p>
+        <p className="spx-lotto-play-kicker">
+          {lotto.status_label}
+          {conflictLabel && (
+            <span className="spx-satellite-conflict-badge"> · {conflictLabel}</span>
+          )}
+        </p>
         <p className="spx-lotto-play-headline">{lotto.headline}</p>
         {lotto.thesis && lotto.thesis !== lotto.headline && (
           <p className="spx-lotto-play-thesis">{lotto.thesis}</p>
@@ -244,10 +255,12 @@ function PowerHourPlayBlock({
   powerHour,
   powerHourLoading,
   powerHourRefreshing,
+  conflictLabel,
 }: {
   powerHour: PowerHourPlayPayload | null;
   powerHourLoading: boolean;
   powerHourRefreshing: boolean;
+  conflictLabel?: string | null;
 }) {
   const inWindow = isPowerHourWindow();
   const showDock =
@@ -265,7 +278,12 @@ function PowerHourPlayBlock({
           powerHour.phase === "HOLD" && "spx-lotto-play-block-ready"
         )}
       >
-        <p className="spx-lotto-play-kicker">Power hour · {powerHour.phase}</p>
+        <p className="spx-lotto-play-kicker">
+          Power hour · {powerHour.phase}
+          {conflictLabel && (
+            <span className="spx-satellite-conflict-badge"> · {conflictLabel}</span>
+          )}
+        </p>
         <p className="spx-lotto-play-headline">{powerHour.headline}</p>
         {powerHour.thesis && powerHour.thesis !== powerHour.headline && (
           <p className="spx-lotto-play-thesis">{powerHour.thesis}</p>
@@ -369,6 +387,25 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, c
       play?.action === "SCANNING" ||
       (!play && playRefreshing));
 
+  const lottoConflict =
+    play &&
+    lotto?.direction &&
+    play.direction &&
+    satelliteConflictsMain(play, { direction: lotto.direction, phase: lotto.phase })
+      ? satelliteConflictLabel(lotto.direction, play.direction)
+      : null;
+  const powerConflict =
+    play &&
+    powerHour?.direction &&
+    play.direction &&
+    satelliteConflictsMain(play, { direction: powerHour.direction, phase: powerHour.phase })
+      ? satelliteConflictLabel(powerHour.direction, play.direction)
+      : null;
+  const satelliteConflictNote =
+    lottoConflict || powerConflict
+      ? `${powerConflict ?? lottoConflict} — size down or wait for alignment`
+      : null;
+
   return (
     <section
       className={clsx(
@@ -471,6 +508,9 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, c
                     {play.watch?.active ? " · WATCH active" : ""}
                     {play.watch?.promote_ready ? " · promote ready" : ""}
                   </p>
+                )}
+                {satelliteConflictNote && (
+                  <p className="spx-satellite-conflict-line">{satelliteConflictNote}</p>
                 )}
               </div>
               <div className="spx-trade-alert-score-block text-right shrink-0">
@@ -712,11 +752,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, c
           lotto={lotto}
           lottoLoading={lottoLoading}
           lottoRefreshing={lottoRefreshing}
+          conflictLabel={lottoConflict}
         />
         <PowerHourPlayBlock
           powerHour={powerHour}
           powerHourLoading={powerHourLoading}
           powerHourRefreshing={powerHourRefreshing}
+          conflictLabel={powerConflict}
         />
       </div>
       </div>

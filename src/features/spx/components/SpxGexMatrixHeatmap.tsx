@@ -28,6 +28,8 @@ import {
   readGexHeatmapSessionCache,
   writeGexHeatmapSessionCache,
 } from "@/lib/gex-heatmap-session-cache";
+import { SpxMatrixTapeStrip } from "./SpxMatrixTapeStrip";
+import type { SpxTapeItem } from "@/features/spx/lib/spx-desk";
 
 const MATRIX_POLL_RTH_MS = 8_000;
 const MATRIX_POLL_OFF_MS = 20_000;
@@ -80,6 +82,13 @@ function fmtAsofSeconds(iso: string | undefined): string | null {
   });
 }
 
+type OpeningRange = {
+  high: number;
+  low: number;
+  break: "above" | "below" | "inside" | null;
+  forming: boolean;
+};
+
 type DeskProps = {
   live?: boolean;
   /** When true (RTH or premarket), matrix polls at 8s; off-session uses 20s. */
@@ -88,7 +97,19 @@ type DeskProps = {
   deskGammaFlip?: number | null;
   deskGexKing?: number | null;
   gexStale?: boolean;
+  openingRange?: OpeningRange | null;
+  unifiedTape?: SpxTapeItem[];
+  flow0dteNet?: number | null;
+  flow0dteCallPrem?: number | null;
+  flow0dtePutPrem?: number | null;
 };
+
+function nearestStrike(axis: number[], price: number): number | null {
+  if (!(price > 0) || axis.length === 0) return null;
+  return axis.reduce((best, s) =>
+    Math.abs(s - price) < Math.abs(best - price) ? s : best
+  );
+}
 
 export function SpxGexMatrixHeatmap({
   live: deskLive,
@@ -97,6 +118,11 @@ export function SpxGexMatrixHeatmap({
   deskGammaFlip,
   deskGexKing,
   gexStale,
+  openingRange,
+  unifiedTape,
+  flow0dteNet,
+  flow0dteCallPrem,
+  flow0dtePutPrem,
 }: DeskProps) {
   const [lens, setLens] = useState<GexHeatmapLens>("gex");
   const pollMs = useDeskSessionPollIntervalMs(
@@ -210,10 +236,17 @@ export function SpxGexMatrixHeatmap({
 
   const spotStrike = useMemo(() => {
     if (!(overlaySpot > 0) || strikesAxis.length === 0) return null;
-    return strikesAxis.reduce((best, s) =>
-      Math.abs(s - overlaySpot) < Math.abs(best - overlaySpot) ? s : best
-    );
+    return nearestStrike(strikesAxis, overlaySpot);
   }, [strikesAxis, overlaySpot]);
+
+  const orHighStrike = useMemo(
+    () => (openingRange?.high != null ? nearestStrike(strikesAxis, openingRange.high) : null),
+    [openingRange?.high, strikesAxis]
+  );
+  const orLowStrike = useMemo(
+    () => (openingRange?.low != null ? nearestStrike(strikesAxis, openingRange.low) : null),
+    [openingRange?.low, strikesAxis]
+  );
 
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   const spotRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -328,6 +361,19 @@ export function SpxGexMatrixHeatmap({
               {hasData ? fmtHeatmapMoneySigned(odteLevels.netTotal) : "—"}
             </div>
           </div>
+          {openingRange && (
+            <div className="col-span-2">
+              <span className="text-sky-300 uppercase tracking-wider">
+                Opening range {openingRange.forming ? "(forming)" : ""}
+              </span>
+              <div className="text-sm font-bold tabular-nums text-amber-200/95">
+                {fmtHeatmapStrike(openingRange.low)} – {fmtHeatmapStrike(openingRange.high)}
+                {openingRange.break && !openingRange.forming
+                  ? ` · ${openingRange.break} OR`
+                  : ""}
+              </div>
+            </div>
+          )}
         </div>
         {flipDiffers && deskGammaFlip != null && (
           <p className="font-mono text-[9px] leading-snug text-cyan-400">
@@ -386,6 +432,8 @@ export function SpxGexMatrixHeatmap({
             <tbody>
               {strikesAxis.map((strike) => {
                 const isSpotRow = spotStrike === strike;
+                const isOrHigh = orHighStrike === strike;
+                const isOrLow = orLowStrike === strike;
                 const rowCells = cells[String(strike)] ?? {};
                 const rowTotal = block?.strike_totals?.[String(strike)] ?? 0;
                 const isKing =
@@ -404,6 +452,8 @@ export function SpxGexMatrixHeatmap({
                     className={clsx(
                       "border-b border-white/[0.04]",
                       isSpotRow && "spx-gex-matrix-spot-row",
+                      isOrHigh && "spx-gex-matrix-or-high",
+                      isOrLow && "spx-gex-matrix-or-low",
                       isKing && "spx-odte-matrix-row--anchor",
                       isCallWall && "spx-odte-matrix-row--max-pos",
                       isPutWall && "spx-odte-matrix-row--max-neg"
@@ -416,6 +466,12 @@ export function SpxGexMatrixHeatmap({
                       )}
                     >
                       {fmtHeatmapStrike(strike)}
+                      {isOrHigh && openingRange && (
+                        <span className="block text-[8px] font-normal text-amber-300/90">OR-H</span>
+                      )}
+                      {isOrLow && openingRange && (
+                        <span className="block text-[8px] font-normal text-amber-300/90">OR-L</span>
+                      )}
                       {isSpotRow && overlaySpot > 0 && Math.abs(strike - overlaySpot) >= 0.5 && (
                         <span className="block text-[8px] font-normal text-cyan-400/80">
                           ← {fmtPrice(overlaySpot)}
@@ -507,6 +563,13 @@ export function SpxGexMatrixHeatmap({
             </tbody>
           </table>
         </div>
+
+        <SpxMatrixTapeStrip
+          seed={unifiedTape}
+          flow0dteNet={flow0dteNet}
+          flowCallPrem={flow0dteCallPrem}
+          flowPutPrem={flow0dtePutPrem}
+        />
 
       <div className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-cyan-400">
         <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>

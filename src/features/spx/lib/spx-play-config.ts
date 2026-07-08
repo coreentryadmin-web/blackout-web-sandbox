@@ -90,6 +90,14 @@ export function playTrimMfePts(): number {
   return num(process.env.SPX_PLAY_TRIM_MFE_PTS, 12);
 }
 
+/** VIX-indexed trim arm — low-VIX days move less; trim earlier to lock partial gains. */
+export function playDynamicTrimMfePts(vix?: number | null): number {
+  if (process.env.SPX_PLAY_TRIM_MFE_PTS) return playTrimMfePts();
+  if (vix != null && vix > 22) return 14;
+  if (vix != null && vix > 16) return 12;
+  return 10;
+}
+
 export function playThesisBreakScore(): number {
   return num(process.env.SPX_PLAY_THESIS_BREAK_SCORE, 40);
 }
