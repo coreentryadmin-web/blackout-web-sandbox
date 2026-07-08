@@ -48,6 +48,25 @@ export function clerkPrimarySignUpUrl(): string {
   return raw || "/sign-up";
 }
 
+/** Where to send the user after auth on primary when they started on staging. */
+export function clerkStagingReturnOrigin(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://staging.blackouttrades.com").replace(/\/+$/, "");
+}
+
+/**
+ * Satellite staging cannot run embedded SignIn/OAuth — Clerk blocks "operation on satellite domain".
+ * Redirect to primary sign-in/sign-up with redirect_url back to staging.
+ */
+export function clerkSatelliteAuthRedirect(
+  mode: "sign-in" | "sign-up",
+  returnPath = "/dashboard"
+): string | null {
+  if (!clerkIsSatellite() || !isStagingDeploy()) return null;
+  const base = mode === "sign-in" ? clerkPrimarySignInUrl() : clerkPrimarySignUpUrl();
+  const returnTo = `${clerkStagingReturnOrigin()}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}`;
+  return `${base}?redirect_url=${encodeURIComponent(returnTo)}`;
+}
+
 export function clerkAllowedRedirectOrigins(): string[] | undefined {
   const raw = process.env.NEXT_PUBLIC_CLERK_ALLOWED_REDIRECT_ORIGINS?.trim();
   if (raw) {
