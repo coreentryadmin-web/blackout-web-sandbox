@@ -5,6 +5,7 @@ import { clerkAppearance } from "@/lib/clerk-theme";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { AuthFailureObserver } from "@/components/auth/AuthFailureObserver";
 import { clerkSatelliteAuthRedirect } from "@/lib/clerk-env";
+import { clerkStagingReturnPath } from "@/lib/clerk-redirect-url";
 
 export const metadata: Metadata = {
   title: "Sign in · BlackOut",
@@ -17,7 +18,7 @@ type Props = {
 
 export default async function SignInPage({ searchParams }: Props) {
   const sp = await searchParams;
-  const returnPath = sp.redirect_url?.startsWith("/") ? sp.redirect_url : "/dashboard";
+  const returnPath = clerkStagingReturnPath(sp.redirect_url);
   const satelliteRedirect = clerkSatelliteAuthRedirect("sign-in", returnPath);
   if (satelliteRedirect) {
     redirect(satelliteRedirect);
