@@ -89,7 +89,19 @@ async function main() {
     try {
       await postgresItems(dbUrl);
     } catch (e) {
-      add("P0", "postgres", "staging:db", "Staging Postgres audit failed", e.message);
+      const msg = e.message ?? String(e);
+      // Staging RDS is VPC-private — Cloud Agent / laptop psql hits ECONNRESET.
+      if (/ECONNRESET|ENOTFOUND|timeout|closed the connection/i.test(msg)) {
+        add(
+          "P2",
+          "postgres",
+          "staging:db:vpc-private",
+          "Staging Postgres not reachable off-VPC (expected)",
+          `${msg.split("\n")[0]} — use blackout-infra/scripts/compare-staging-prod-postgres.mjs or cron health APIs`
+        );
+      } else {
+        add("P0", "postgres", "staging:db", "Staging Postgres audit failed", msg);
+      }
     }
   }
   await liveItems(cron);
