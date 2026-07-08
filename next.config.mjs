@@ -67,6 +67,13 @@ if (railwayHostname) {
 }
 
 import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isCognitoBuild =
+  (process.env.AUTH_PROVIDER ?? process.env.NEXT_PUBLIC_AUTH_PROVIDER ?? "").toLowerCase() ===
+  "cognito";
 
 // P3: os.cpus() can return an empty array (and is unreliable in constrained
 // containers / cgroup-limited environments), so reading .length directly is
@@ -154,6 +161,12 @@ const nextConfig = {
   // (This replaced a `webpackIgnore: true` hack that left an unresolvable
   //  import("@/lib/shared-cache") in the server runtime -> ERR_MODULE_NOT_FOUND.)
   webpack: (config, { isServer, nextRuntime }) => {
+    if (isCognitoBuild) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "@/middleware-clerk": path.resolve(__dirname, "src/middleware-clerk.stub.ts"),
+      };
+    }
     if (!isServer) {
       // ioredis is server-only (pulled lazily by shared-cache for cross-instance
       // Redis sticky state, guarded by process.env.REDIS_URL). It must never enter

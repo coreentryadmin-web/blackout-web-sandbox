@@ -1,10 +1,6 @@
+import type { NextRequest } from "next/server";
 import { isCognitoAuth } from "@/lib/auth-provider";
-import clerkMiddleware from "@/middleware-clerk";
 import cognitoMiddleware from "@/middleware-cognito";
-
-const handler = isCognitoAuth() ? cognitoMiddleware : clerkMiddleware;
-
-export default handler;
 
 /** Inline only — Next.js cannot analyze re-exported middleware config. */
 export const config = {
@@ -24,3 +20,15 @@ export const config = {
     },
   ],
 };
+
+type MiddlewareFn = (req: NextRequest, event?: unknown) => Response | Promise<Response>;
+
+function loadClerkMiddleware(): MiddlewareFn {
+  // Lazy require — omitted from Cognito production bundles when AUTH_PROVIDER is inlined at build.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("@/middleware-clerk").default as MiddlewareFn;
+}
+
+const handler: MiddlewareFn = isCognitoAuth() ? cognitoMiddleware : loadClerkMiddleware();
+
+export default handler;
