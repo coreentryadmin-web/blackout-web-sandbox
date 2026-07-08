@@ -48,6 +48,9 @@ const WARM_PATHS = [
   "/api/market/spx/desk",
   "/api/market/gex-heatmap?ticker=SPX",
   "/api/market/gex-heatmap?ticker=SPY",
+  "/api/market/zerodte/board",
+  "/api/market/flows?limit=30",
+  "/api/market/nighthawk/edition",
 ];
 
 const PAGES = [

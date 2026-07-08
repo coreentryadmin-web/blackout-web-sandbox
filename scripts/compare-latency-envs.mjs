@@ -54,6 +54,19 @@ function loadStagingCron() {
 
 async function runEnv(label, base, cronSecret) {
   console.log(`\n=== ${label} (${base}) ===\n`);
+  // Seed once (3 ECS replicas / multi-instance → first measured hit may still be cold).
+  for (const path of PATHS) {
+    try {
+      const res = await fetchRetry(
+        `${base}${path}`,
+        { headers: { Authorization: `Bearer ${cronSecret}`, Accept: "application/json" } },
+        { retries: 2, baseDelayMs: 800, timeoutMs: 90_000 }
+      );
+      await res.text();
+    } catch {
+      /* seed best-effort */
+    }
+  }
   const rows = [];
   for (const path of PATHS) {
     const r = await probe(base, cronSecret, path);
