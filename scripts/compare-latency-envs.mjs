@@ -52,8 +52,30 @@ function loadStagingCron() {
   return JSON.parse(raw).CRON_SECRET?.trim();
 }
 
+async function warmCaches(base, cronSecret) {
+  const paths = [
+    "/api/cron/desk-warm?force=1",
+    "/api/cron/heatmap-warm?force=1",
+    "/api/cron/zerodte-warm?force=1",
+  ];
+  console.log("  (warming caches via cron…)");
+  for (const path of paths) {
+    try {
+      const res = await fetchRetry(
+        `${base}${path}`,
+        { headers: { Authorization: `Bearer ${cronSecret}`, Accept: "application/json" } },
+        { retries: 3, baseDelayMs: 1200, timeoutMs: 180_000 }
+      );
+      await res.text();
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 async function runEnv(label, base, cronSecret) {
   console.log(`\n=== ${label} (${base}) ===\n`);
+  await warmCaches(base, cronSecret);
   // Seed once (3 ECS replicas / multi-instance → first measured hit may still be cold).
   for (const path of PATHS) {
     try {
@@ -65,6 +87,22 @@ async function runEnv(label, base, cronSecret) {
       await res.text();
     } catch {
       /* seed best-effort */
+    }
+  }
+  // Extra seeds for heatmap presets (multi-replica in-memory + Redis fill).
+  const heatmapPaths = PATHS.filter((p) => p.includes("gex-heatmap"));
+  for (let i = 0; i < 2; i++) {
+    for (const path of heatmapPaths) {
+      try {
+        const res = await fetchRetry(
+          `${base}${path}`,
+          { headers: { Authorization: `Bearer ${cronSecret}`, Accept: "application/json" } },
+          { retries: 2, baseDelayMs: 600, timeoutMs: 90_000 }
+        );
+        await res.text();
+      } catch {
+        /* seed best-effort */
+      }
     }
   }
   const rows = [];
