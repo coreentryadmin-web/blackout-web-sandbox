@@ -25,13 +25,13 @@ export function StaticLandingHero() {
             >
               Start trading
             </Link>
-            <Link
-              href="/#features"
-              prefetch={false}
-              className="landing-btn-ghost inline-flex min-w-[200px] items-center justify-center border border-white/20 px-8 py-3 font-syne text-sm font-bold uppercase tracking-[0.2em] text-white"
-            >
-              Explore platform
-            </Link>
+          <Link
+            href="/sign-in"
+            prefetch={false}
+            className="landing-btn-ghost hide-in-ios-app inline-flex min-w-[200px] items-center justify-center border border-white/20 px-8 py-3 font-syne text-sm font-bold uppercase tracking-[0.2em] text-white"
+          >
+            Sign in
+          </Link>
           </div>
           <ul className="mkt-cred-strip mkt-cred-strip-left">
             {["Professional-grade feeds", "Recorded at generation time", "Your broker, your trigger"].map((t) => (
