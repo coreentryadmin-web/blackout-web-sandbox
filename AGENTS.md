@@ -68,6 +68,18 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   `https://blackouttrades.com/sign-in?__clerk_ticket=<token>`, then **DELETE the test user afterward**
   (`DELETE /v1/users/{id}`) — it is a real user on the prod Clerk instance.
 
+### Staging auth (Clerk satellite — ECS)
+- **Staging uses production Clerk keys** on `staging.blackouttrades.com` → must run as a **satellite**
+  of `blackouttrades.com` (not just `allowedRedirectOrigins`). Config lives in `src/lib/clerk-env.ts`.
+- Clerk Dashboard: `staging.blackouttrades.com` is registered as satellite with FAPI **proxy**
+  `https://staging.blackouttrades.com/__clerk` (no separate `clerk.staging` CNAME required).
+- Staging build bakes `NEXT_PUBLIC_CLERK_IS_SATELLITE=true`, `NEXT_PUBLIC_CLERK_PROXY_URL`, and absolute
+  primary sign-in/sign-up URLs (`https://blackouttrades.com/sign-in`). Middleware enables `frontendApiProxy`.
+- **Primary prod app** (`blackout-web` on Railway) must set `allowedRedirectOrigins` including staging so
+  post-auth redirect back to staging works (`clerkAllowedRedirectOrigins()` in prod `layout.tsx`).
+- OAuth / new sign-ups complete on **primary** (`blackouttrades.com`) then sync back to staging; embedded
+  `/sign-in` on staging still renders for identifier entry but satellite handshake uses the proxy path.
+
 ### Premium tool launch gate (LAUNCHED_TOOLS)
 - Non-admin premium users only see tools where `isToolLaunched()` is true (SPX Slayer + HELIX by default;
   others need `LAUNCHED_TOOLS=heatmap,nighthawk,largo,grid` on Railway `blackout-web`).
