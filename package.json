@@ -21,6 +21,7 @@
     "validate:staging-live": "node scripts/staging-live-check.mjs",
     "validate:staging-cto": "node scripts/staging-cto-audit.mjs",
     "validate:staging-homepage": "node scripts/staging-homepage-profile.mjs",
+    "validate:staging-site-e2e": "node scripts/staging-site-e2e.mjs",
     "validate:staging-monitor": "node scripts/staging-continuous-monitor.mjs",
     "validate:staging-monitor:once": "node scripts/staging-continuous-monitor.mjs --once",
     "validate:staging-cron-watch": "node scripts/staging-cron-watch.mjs",
