@@ -1,5 +1,7 @@
 /** Night Hawk — playbook UI + edition/hunt server logic. */
+export { NighthawkPageShell } from "./components/NighthawkPageShell";
 export { NightHawkFeed } from "./components/NightHawkFeed";
+export { ZeroDteBoard } from "./components/ZeroDteBoard";
 export { PlaybookBoard } from "./components/PlaybookBoard";
 export { PlayDetailModal } from "./components/PlayDetailModal";
 

@@ -32,7 +32,7 @@ function inferWasLoss(row) {
 
 async function main() {
   const { classifyOutcome, computePlayOutcomeStats } = await import(
-    "../src/lib/spx-play-outcomes.ts"
+    "../src/features/spx/lib/spx-play-outcomes.ts"
   );
 
   const dbUrl = await resolveDbUrl();

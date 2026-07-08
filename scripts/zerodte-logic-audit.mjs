@@ -34,7 +34,7 @@ function runTests() {
   const files = [
     "src/lib/zerodte/board.test.ts",
     "src/lib/zerodte/rejections.test.ts",
-    "src/components/zerodte/ZeroDteBoard.test.ts",
+    "src/features/nighthawk/components/ZeroDteBoard.test.ts",
   ];
   const r = spawnSync(
     `npx tsx --import tsx --experimental-test-module-mocks --test ${files.join(" ")}`,

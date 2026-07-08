@@ -10,7 +10,7 @@ const ROOTS = [
   "src/components/landing",
   "src/components/auth",
   "src/components/upgrade",
-  "src/components/desk/LargoThinkingState.tsx",
+  "src/features/largo/components/LargoThinkingState.tsx",
   "src/app/(site)",
 ];
 const EXTS = new Set([".tsx", ".ts", ".jsx", ".js", ".mdx"]);

@@ -1,7 +1,7 @@
 export const dynamic = "force-static";
 
 import type { Metadata } from "next";
-import { UpgradePageShell } from "@/components/desk/UpgradePageShell";
+import { UpgradePageShell } from "@/components/upgrade/UpgradePageShell";
 
 export const metadata: Metadata = {
   title: "Upgrade · BlackOut",

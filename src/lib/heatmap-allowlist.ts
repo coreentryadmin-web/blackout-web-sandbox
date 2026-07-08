@@ -24,7 +24,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The ~11 heatmap preset chips surfaced in the UI (src/components/desk/GexHeatmap.tsx
+ * The ~11 heatmap preset chips surfaced in the UI (src/features/thermal/components/GexHeatmap.tsx
  * `PRESET_TICKERS`). Kept in sync MANUALLY — these are the names the warm cron batches
  * and the only symbols whose UW overlays are pre-warmed. SPX index options resolve to
  * I:SPX upstream but the user-facing ticker key is "SPX".

@@ -11,7 +11,7 @@ import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 // throw away a hallucinated read." This test forces the grounding check to fail
 // deterministically and asserts the new audit-log write is attempted with the right shape.
 //
-// mock.module() idiom follows src/lib/nighthawk/play-critic.test.ts and
+// mock.module() idiom follows src/features/nighthawk/lib/play-critic.test.ts and
 // src/app/api/platform/intel/route.test.ts: bare specifiers resolve relative to THIS file,
 // not through the "@/" tsconfig alias spx-commentary.ts itself uses, and each mocked module
 // is set up once at import time (ESM caches on first import) with mutable state read at
@@ -21,14 +21,14 @@ let mockRaw: string | null = null;
 let mockGrounded = true;
 let mockUngroundedValue: number | null = null;
 
-mock.module("./anthropic", {
+mock.module("../../../lib/providers/anthropic", {
   namedExports: {
     anthropicText: async () => mockRaw,
     COMMENTARY_MODEL: "claude-haiku-mock",
   },
 });
 
-mock.module("../grounding-guard", {
+mock.module("../../../lib/grounding-guard", {
   namedExports: {
     augmentKnownCommentaryNumbers: (known: number[]) => known,
     knownCommentaryNumbers: () => [],
@@ -55,7 +55,7 @@ type AuditLogRow = {
 let auditLogCalls: AuditLogRow[] = [];
 let dbIsConfigured = true;
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => dbIsConfigured,
     insertAlertAuditLog: async (row: AuditLogRow) => {
@@ -80,10 +80,10 @@ function fakeDesk(): SpxDeskPayload {
 }
 
 describe("spx-commentary: grounding-failure audit trail", () => {
-  let generateSpxCommentary: typeof import("../../features/spx/lib/spx-commentary").generateSpxCommentary;
+  let generateSpxCommentary: typeof import("./spx-commentary").generateSpxCommentary;
 
   before(async () => {
-    ({ generateSpxCommentary } = await import("../../features/spx/lib/spx-commentary"));
+    ({ generateSpxCommentary } = await import("./spx-commentary"));
   });
 
   beforeEach(() => {

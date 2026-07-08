@@ -5,7 +5,7 @@ test("loadSpxDesk, loadSpxDeskPulse, and loadSpxDeskFlow share one cache lane ea
   let deskCount = 0;
   let pulseCount = 0;
   let flowCount = 0;
-  mock.module("../../features/spx/lib/spx-desk", {
+  mock.module("./spx-desk", {
     namedExports: {
       buildSpxDesk: async () => ({ marker: ++deskCount }),
       buildSpxDeskFlow: async () => ({ marker: ++flowCount }),
@@ -14,19 +14,19 @@ test("loadSpxDesk, loadSpxDeskPulse, and loadSpxDeskFlow share one cache lane ea
   });
   // A fixed, test-only session date so this test's cache entries can never collide with a
   // real "today" key used elsewhere in the process.
-  mock.module("../providers/spx-session", {
+  mock.module("../../../lib/providers/spx-session", {
     namedExports: {
       todayEtYmd: () => "2099-01-01",
     },
   });
-  mock.module("../../features/spx/lib/spx-desk-merge", {
+  mock.module("./spx-desk-merge", {
     namedExports: {
       mergeDeskLayers: (desk: unknown) => desk,
     },
   });
 
   const { loadSpxDesk, loadSpxDeskPulse, loadSpxDeskFlow, loadMergedSpxDesk } =
-    await import("../../features/spx/lib/spx-desk-loader");
+    await import("./spx-desk-loader");
 
   const fromStandaloneDesk = await loadSpxDesk();
   const fromStandalonePulse = await loadSpxDeskPulse();

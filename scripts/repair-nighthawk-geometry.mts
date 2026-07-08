@@ -5,9 +5,9 @@
  * Usage: npx tsx scripts/repair-nighthawk-geometry.mts [--dry-run] [--edition YYYY-MM-DD]
  */
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
-import { validatePlayGeometry } from "../src/lib/nighthawk/play-constraints.ts";
-import { buildDirectionalStockLevels, parsePlayLevels } from "../src/lib/nighthawk/play-levels.ts";
-import type { PlaybookPlay } from "../src/lib/nighthawk/types.ts";
+import { validatePlayGeometry } from "../src/features/nighthawk/lib/play-constraints.ts";
+import { buildDirectionalStockLevels, parsePlayLevels } from "../src/features/nighthawk/lib/play-levels.ts";
+import type { PlaybookPlay } from "../src/features/nighthawk/lib/types.ts";
 
 function isoDateOnly(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);

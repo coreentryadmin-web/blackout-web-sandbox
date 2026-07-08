@@ -13,8 +13,8 @@ mock.module("server-only", { namedExports: {} });
 
 // logSpxEcosystemShadowFactors (this file's module under test) is the sibling
 // fire-and-forget wiring to logSpxShadowFactors, called from evaluateSpxPlay
-// right after it (src/lib/spx-play-engine.ts). It delegates the actual
-// scoring to computeEcosystemShadowFactors (src/lib/spx-signals-shadow-ecosystem.ts,
+// right after it (src/features/spx/lib/spx-play-engine.ts). It delegates the actual
+// scoring to computeEcosystemShadowFactors (src/features/spx/lib/spx-signals-shadow-ecosystem.ts,
 // unit-tested on its own in spx-signals-shadow-ecosystem.test.ts) and persists
 // each observation via insertShadowFactorObservation (src/lib/db.ts) — same
 // generic table logSpxShadowFactors already writes into (factor_name is the
@@ -44,7 +44,7 @@ function resetState() {
   state.inserted = [];
 }
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => state.dbConfigured,
     // The pre-existing flow_anomalies-shadow query path (dbQuery) is unused by
@@ -57,17 +57,17 @@ mock.module("../db", {
     },
   },
 });
-mock.module("../flow-liveness", {
+mock.module("../../../lib/flow-liveness", {
   namedExports: {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("./spx-session", {
+mock.module("../../../lib/providers/spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
 });
-mock.module("../../features/spx/lib/spx-signals-shadow-ecosystem", {
+mock.module("./spx-signals-shadow-ecosystem", {
   namedExports: {
     computeEcosystemShadowFactors: async (desk: unknown, direction: unknown) => {
       state.ecosystemCalls.push({ desk, direction });
@@ -79,7 +79,7 @@ mock.module("../../features/spx/lib/spx-signals-shadow-ecosystem", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("../../features/spx/lib/spx-signal-log");
+const mod = () => import("./spx-signal-log");
 
 function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return { available: true, price: 7420, ...overrides } as SpxDeskPayload;

@@ -20,7 +20,7 @@ import {
   NEW_PLAY_CUTOFF_ET_MINUTES,
   PLAN_RULES,
 } from "../src/lib/zerodte/plan";
-import { mergePlays } from "../src/components/zerodte/ZeroDteBoard";
+import { mergePlays } from "../src/features/nighthawk/components/ZeroDteBoard";
 
 type Check = { name: string; status: "PASS" | "FAIL"; detail?: string };
 const checks: Check[] = [];

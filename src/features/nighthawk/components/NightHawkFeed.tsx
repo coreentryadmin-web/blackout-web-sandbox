@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { clsx } from "clsx";
 import { fetchNightHawkEdition, fetchNightHawkPlayStatus, fetchNightHawkRecord } from "@/lib/api";
 import type { PlaybookPlay, PlayMorningStatus } from "@/features/nighthawk/lib/types";
-import { ZeroDteBoard } from "@/components/zerodte/ZeroDteBoard";
+import { ZeroDteBoard } from "@/features/nighthawk/components/ZeroDteBoard";
 import { PlayDetailModal } from "@/features/nighthawk/components/PlayDetailModal";
 import { PlaybookBoard } from "@/features/nighthawk/components/PlaybookBoard";
 import { useState } from "react";

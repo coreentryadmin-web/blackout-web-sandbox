@@ -13,9 +13,9 @@ mock.module("server-only", { namedExports: {} });
 
 // logSpxShadowFactors (this file's module under test) is the fire-and-forget
 // wiring called from evaluateSpxPlay right after the real computeSpxConfluence()
-// (src/lib/spx-play-engine.ts) — it fetches recent flow_anomalies rows + the
+// (src/features/spx/lib/spx-play-engine.ts) — it fetches recent flow_anomalies rows + the
 // cluster flow-liveness flag, hands them to the pure computeShadowFactors()
-// (src/lib/spx-signals-shadow.ts, unit-tested on its own in
+// (src/features/spx/lib/spx-signals-shadow.ts, unit-tested on its own in
 // spx-signals-shadow.test.ts), and persists each observation via
 // insertShadowFactorObservation (src/lib/db.ts).
 //
@@ -55,7 +55,7 @@ function resetState() {
   state.inserted = [];
 }
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => state.dbConfigured,
     dbQuery: async (sql: string, params: unknown[]) => {
@@ -67,12 +67,12 @@ mock.module("../db", {
     },
   },
 });
-mock.module("../flow-liveness", {
+mock.module("../../../lib/flow-liveness", {
   namedExports: {
     isFlowFrameFreshAnywhere: async () => state.flowFeedFresh,
   },
 });
-mock.module("./spx-session", {
+mock.module("../../../lib/providers/spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
@@ -81,7 +81,7 @@ mock.module("./spx-session", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("../../features/spx/lib/spx-signal-log");
+const mod = () => import("./spx-signal-log");
 
 function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return { available: true, price: 7420, ...overrides } as SpxDeskPayload;

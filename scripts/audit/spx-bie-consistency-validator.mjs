@@ -230,7 +230,7 @@ function staticInvariantChecks() {
     ecosystemSrc = readSrc("src/lib/bie/ecosystem-context.ts");
     runToolSrc = readSrc("src/lib/largo/run-tool.ts");
     platformIndexSrc = readSrc("src/lib/platform/index.ts");
-    evaluatorSrc = readSrc("src/lib/spx-evaluator.ts");
+    evaluatorSrc = readSrc("src/features/spx/lib/spx-evaluator.ts");
     routeSrc = readSrc("src/app/api/market/spx/play/route.ts");
     spxServiceSrc = readSrc("src/lib/platform/spx-service.ts");
   } catch (e) {

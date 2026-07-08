@@ -10,26 +10,26 @@ import {
 } from "@/lib/api";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { getSector } from "@/lib/sector-map";
-import { FlowAlertStream } from "@/components/desk/FlowAlertStream";
-import { FlowBrief } from "@/components/desk/FlowBrief";
-import { NetPremiumLeaderboard } from "@/components/desk/NetPremiumLeaderboard";
-import { StrikeStackDetector } from "@/components/desk/StrikeStackDetector";
+import { FlowAlertStream } from "@/features/helix/components/FlowAlertStream";
+import { FlowBrief } from "@/features/helix/components/FlowBrief";
+import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
+import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
 import dynamic from "next/dynamic";
 // Code-split: recharts lives only inside FlowMomentumChart, so lazy-load it
 // (ssr:false) to keep recharts out of the initial /flows client chunk. The
 // chart already renders client-side once >=2 samples exist, so deferring it is
 // behavior-identical; the loading placeholder matches its 72px container.
 const FlowMomentumChart = dynamic(
-  () => import("@/components/desk/FlowMomentumChart").then((m) => m.FlowMomentumChart),
+  () => import("@/features/helix/components/FlowMomentumChart").then((m) => m.FlowMomentumChart),
   { ssr: false, loading: () => <div className="flow-panel"><div className="flow-panel-header"><span className="flow-panel-title">Cumulative Net Prem (running)</span></div><div className="px-1 pt-2 pb-1"><div className="h-[72px]"><Skeleton width="100%" height={72} rounded="md" /></div></div></div> },
 );
-import { DarkPoolPanel } from "@/components/desk/DarkPoolPanel";
-import { TickerDrawer } from "@/components/desk/TickerDrawer";
-import { SplitFlowRadar, type SplitFlowEntry } from "@/components/desk/SplitFlowRadar";
-import { VelocityRadar, type VelocityEntry } from "@/components/desk/VelocityRadar";
-import { SectorFlowPanel, type SectorFlowEntry } from "@/components/desk/SectorFlowPanel";
-import { NightHawkFlowPanel, type NightHawkPlayWithFlow } from "@/components/desk/NightHawkFlowPanel";
-import { WatchlistBar } from "@/components/desk/WatchlistBar";
+import { DarkPoolPanel } from "@/features/helix/components/DarkPoolPanel";
+import { TickerDrawer } from "@/features/helix/components/TickerDrawer";
+import { SplitFlowRadar, type SplitFlowEntry } from "@/features/helix/components/SplitFlowRadar";
+import { VelocityRadar, type VelocityEntry } from "@/features/helix/components/VelocityRadar";
+import { SectorFlowPanel, type SectorFlowEntry } from "@/features/helix/components/SectorFlowPanel";
+import { NightHawkFlowPanel, type NightHawkPlayWithFlow } from "@/features/helix/components/NightHawkFlowPanel";
+import { WatchlistBar } from "@/features/helix/components/WatchlistBar";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui";
 import type { NightHawkEdition } from "@/features/nighthawk/lib/types";

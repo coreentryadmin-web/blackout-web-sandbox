@@ -13,7 +13,7 @@ mock.module("server-only", { namedExports: {} });
 
 // logSpxPrecedentsShadowFactor (this file's module under test) is the
 // fire-and-forget wiring called from evaluateSpxPlay right after the real
-// computeSpxConfluence() (src/lib/spx-play-engine.ts), sibling to
+// computeSpxConfluence() (src/features/spx/lib/spx-play-engine.ts), sibling to
 // logSpxShadowFactors covered in spx-signal-log-shadow.test.ts. It calls
 // BIE's findSimilarPrecedents (src/lib/bie/precedent-search.ts) directly with
 // a deterministically-built query (buildPrecedentSearchQuery), hands the
@@ -47,7 +47,7 @@ function resetState() {
   state.inserted = [];
 }
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => state.dbConfigured,
     dbQuery: async () => ({ rows: [], rowCount: 0 }),
@@ -59,22 +59,22 @@ mock.module("../db", {
     },
   },
 });
-mock.module("../flow-liveness", {
+mock.module("../../../lib/flow-liveness", {
   namedExports: {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("./spx-session", {
+mock.module("../../../lib/providers/spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
 });
-mock.module("../bie/embeddings", {
+mock.module("../../../lib/bie/embeddings", {
   namedExports: {
     bieEmbeddingsConfigured: () => state.embeddingsConfigured,
   },
 });
-mock.module("../bie/precedent-search", {
+mock.module("../../../lib/bie/precedent-search", {
   namedExports: {
     findSimilarPrecedents: async (query: string, k: number) => {
       state.searchCalls.push({ query, k });
@@ -86,7 +86,7 @@ mock.module("../bie/precedent-search", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("../../features/spx/lib/spx-signal-log");
+const mod = () => import("./spx-signal-log");
 
 function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return { available: true, price: 7420, gamma_regime: "unknown", ...overrides } as SpxDeskPayload;

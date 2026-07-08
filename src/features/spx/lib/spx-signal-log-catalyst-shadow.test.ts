@@ -13,11 +13,11 @@ mock.module("server-only", { namedExports: {} });
 
 // logMegaCapCatalystShadowFactors (this file's module under test) is the
 // fire-and-forget wiring called from evaluateSpxPlay right after the real
-// computeSpxConfluence() (src/lib/spx-play-engine.ts), sibling to
+// computeSpxConfluence() (src/features/spx/lib/spx-play-engine.ts), sibling to
 // logSpxShadowFactors covered in spx-signal-log-shadow.test.ts. It fetches
 // Benzinga catalysts per mega-cap leader ticker (fetchBenzingaCatalysts,
 // src/lib/providers/polygon.ts), hands them to the pure
-// computeCatalystShadowFactors (src/lib/spx-signals-shadow-catalysts.ts,
+// computeCatalystShadowFactors (src/features/spx/lib/spx-signals-shadow-catalysts.ts,
 // unit-tested on its own), and persists each observation via
 // insertShadowFactorObservation (src/lib/db.ts).
 //
@@ -42,7 +42,7 @@ function resetState() {
   state.inserted = [];
 }
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => state.dbConfigured,
     dbQuery: async () => ({ rows: [], rowCount: 0 }),
@@ -54,22 +54,22 @@ mock.module("../db", {
     },
   },
 });
-mock.module("../flow-liveness", {
+mock.module("../../../lib/flow-liveness", {
   namedExports: {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("./spx-session", {
+mock.module("../../../lib/providers/spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
 });
-mock.module("./config", {
+mock.module("../../../lib/providers/config", {
   namedExports: {
     polygonConfigured: () => state.polygonConfigured,
   },
 });
-mock.module("./polygon", {
+mock.module("../../../lib/providers/polygon", {
   namedExports: {
     polygonRestBase: () => "https://api.polygon.io",
     polygonRestApiKey: () => "test-key",
@@ -83,7 +83,7 @@ mock.module("./polygon", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("../../features/spx/lib/spx-signal-log");
+const mod = () => import("./spx-signal-log");
 
 function deskStub(leaders: Array<{ ticker: string; change_pct: number }> = [], overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return {

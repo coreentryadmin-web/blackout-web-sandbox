@@ -9,7 +9,7 @@ import { usePulse } from "@/lib/usePulse";
 // recharts stays out of DarkPoolPanel's static client graph while the rest of
 // the panel (framer-motion markup) still SSR-renders unchanged.
 const DarkPoolSpark = dynamic(
-  () => import("@/components/desk/DarkPoolSpark").then((m) => m.DarkPoolSpark),
+  () => import("@/features/helix/components/DarkPoolSpark").then((m) => m.DarkPoolSpark),
   { ssr: false, loading: () => null },
 );
 import { clsx } from "clsx";

@@ -9,7 +9,7 @@ import { computeSpxConfluence } from "./spx-signals";
 // a new DB table, and one new fire-and-forget call site in spx-play-engine.ts
 // — but ZERO lines in THIS file (spx-signals.ts, the pure confluence engine
 // that gates real-money 0DTE BUY_CALL/BUY_PUT recommendations). `git diff
-// main -- src/lib/spx-signals.ts` for that PR is empty.
+// main -- src/features/spx/lib/spx-signals.ts` for that PR is empty.
 //
 // This test is the belt-and-suspenders proof that matters more than the diff:
 // it feeds computeSpxConfluence() a fixture desk exercising ~20 of the ~21

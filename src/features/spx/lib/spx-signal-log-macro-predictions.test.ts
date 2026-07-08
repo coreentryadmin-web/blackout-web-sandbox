@@ -14,7 +14,7 @@ mock.module("server-only", { namedExports: {} });
 
 // logSpxMacroPredictionsShadowFactor (this file's module under test) is the
 // fire-and-forget wiring called from evaluateSpxPlay right after the real
-// computeSpxConfluence() (src/lib/spx-play-engine.ts), sibling to
+// computeSpxConfluence() (src/features/spx/lib/spx-play-engine.ts), sibling to
 // logSpxShadowFactors (see spx-signal-log-shadow.test.ts for that one). It
 // decides whether a macro hard-block window is active/near (pure —
 // resolveMacroWindowState, unit-tested on its own in
@@ -65,7 +65,7 @@ function signal(overrides: Partial<PredictionConsensusSignal> = {}): PredictionC
   };
 }
 
-mock.module("../db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => state.dbConfigured,
     insertShadowFactorObservation: async (row: InsertedRow) => {
@@ -73,22 +73,22 @@ mock.module("../db", {
     },
   },
 });
-mock.module("../flow-liveness", {
+mock.module("../../../lib/flow-liveness", {
   namedExports: {
     isFlowFrameFreshAnywhere: async () => true,
   },
 });
-mock.module("./spx-session", {
+mock.module("../../../lib/providers/spx-session", {
   namedExports: {
     todayEtYmd: () => "2026-07-04",
   },
 });
-mock.module("./config", {
+mock.module("../../../lib/providers/config", {
   namedExports: {
     uwConfigured: () => state.uwConfigured,
   },
 });
-mock.module("./unusual-whales", {
+mock.module("../../../lib/providers/unusual-whales", {
   namedExports: {
     fetchUwPredictionsConsensus: async () => {
       state.consensusCalls += 1;
@@ -106,7 +106,7 @@ mock.module("./unusual-whales", {
 // Lazy import (ESM caches the module under test after the first call) so the
 // mocks above are in place before spx-signal-log.ts's own top-level imports
 // resolve.
-const mod = () => import("../../features/spx/lib/spx-signal-log");
+const mod = () => import("./spx-signal-log");
 
 function deskStub(macroEvents: SpxDeskPayload["macro_events"] = []): SpxDeskPayload {
   return { available: true, price: 7420, macro_events: macroEvents } as SpxDeskPayload;

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
 import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
-import { NighthawkPageShell } from "@/components/desk/NighthawkPageShell";
+import { NighthawkPageShell } from "@/features/nighthawk/components/NighthawkPageShell";
 
 export const metadata: Metadata = {
   title: "Night Hawk · BlackOut",
