@@ -6,6 +6,7 @@ import {
   clerkMiddlewareAuthOptions,
   clerkPrimarySignInUrl,
   clerkProxyUrl,
+  clerkSatelliteAuthRedirect,
   clerkSatelliteProviderProps,
 } from "./clerk-env";
 
@@ -73,6 +74,25 @@ test("clerkIsSatellite: auto-detects staging deploy", () => {
     process.env.NEXT_PUBLIC_SITE_URL = prevSite;
     if (prevSat === undefined) delete process.env.NEXT_PUBLIC_CLERK_IS_SATELLITE;
     else process.env.NEXT_PUBLIC_CLERK_IS_SATELLITE = prevSat;
+  }
+});
+
+test("clerkSatelliteAuthRedirect: sends staging users to primary sign-in", () => {
+  const prevSite = process.env.NEXT_PUBLIC_SITE_URL;
+  try {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://staging.blackouttrades.com";
+    assert.equal(
+      clerkSatelliteAuthRedirect("sign-in", "/dashboard"),
+      "https://blackouttrades.com/sign-in?redirect_url=https%3A%2F%2Fstaging.blackouttrades.com%2Fdashboard"
+    );
+    assert.equal(
+      clerkSatelliteAuthRedirect("sign-up", "/spx"),
+      "https://blackouttrades.com/sign-up?redirect_url=https%3A%2F%2Fstaging.blackouttrades.com%2Fspx"
+    );
+    process.env.NEXT_PUBLIC_SITE_URL = "https://blackouttrades.com";
+    assert.equal(clerkSatelliteAuthRedirect("sign-in", "/dashboard"), null);
+  } finally {
+    process.env.NEXT_PUBLIC_SITE_URL = prevSite;
   }
 });
 
