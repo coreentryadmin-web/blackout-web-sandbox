@@ -3,6 +3,8 @@
  * NEXT_PUBLIC_* is inlined at Docker build time; runtime ECS env does not reach client bundles.
  */
 
+import { clerkStagingReturnPath } from "@/lib/clerk-redirect-url";
+
 const PRIMARY_ORIGIN = "https://blackouttrades.com";
 
 export function isStagingDeploy(): boolean {
@@ -63,7 +65,8 @@ export function clerkSatelliteAuthRedirect(
 ): string | null {
   if (!clerkIsSatellite() || !isStagingDeploy()) return null;
   const base = mode === "sign-in" ? clerkPrimarySignInUrl() : clerkPrimarySignUpUrl();
-  const returnTo = `${clerkStagingReturnOrigin()}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}`;
+  const path = clerkStagingReturnPath(returnPath);
+  const returnTo = `${clerkStagingReturnOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
   return `${base}?redirect_url=${encodeURIComponent(returnTo)}`;
 }
 
