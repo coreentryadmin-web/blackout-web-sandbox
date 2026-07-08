@@ -37,7 +37,24 @@ export function StaticPricingCompare() {
           who already pay for edge.
         </p>
 
-        <div className="mkt-compare-wrap mt-10">
+        <div className="mkt-compare-cards mt-10">
+          <div className="mkt-compare-card mkt-compare-card-primary">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-bull">BlackOut</p>
+            <p className="mt-2 font-anton text-4xl text-white">
+              $199<span className="font-syne text-base font-semibold text-sky-300">/mo</span>
+            </p>
+            <p className="mt-1 text-sm text-sky-300">All six modules · one membership</p>
+          </div>
+          <div className="mkt-compare-card">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-sky-300/80">Typical stack</p>
+            <p className="mt-2 font-anton text-4xl text-white/70">
+              $300+<span className="font-syne text-base font-semibold text-sky-300/60">/mo</span>
+            </p>
+            <p className="mt-1 text-sm text-sky-300/70">Flow + gamma + chat · stitched together</p>
+          </div>
+        </div>
+
+        <div className="mkt-compare-wrap mt-6">
           <table className="mkt-compare-table">
             <thead>
               <tr>
