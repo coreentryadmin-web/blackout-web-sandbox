@@ -152,6 +152,15 @@ async function main() {
   }
 
   console.log("--- Pre-warm (desk-warm lane proxies) ---");
+  // Seed each path once (3 ECS replicas → first measured hit may still be cold).
+  for (const path of WARM_PATHS) {
+    try {
+      const res = await fetchApi(`${BASE}${path}`, apiHeaders);
+      await res.text();
+    } catch {
+      /* seed best-effort */
+    }
+  }
   for (const path of WARM_PATHS) {
     const t0 = performance.now();
     try {
