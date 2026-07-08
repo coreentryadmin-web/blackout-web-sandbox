@@ -109,16 +109,19 @@ const nextConfig = {
     // rule owns /embed/* exclusively. Net effect: framing stays denied app-wide and
     // is relaxed only for the public embed cards.
     return [
+      // Staging: hash-named /_next/static/* and /_next/image are safe to edge-cache
+      // (new deploy = new hashes). no-store only on HTML/document routes so landing
+      // pages don't re-fetch 48 JS/CSS chunks from ECS on every visit.
       ...(isStagingSite
         ? [
             {
-              source: "/_next/static/:path*",
-              headers: stagingEdgeBypass,
+              source: "/_next/:path*",
+              headers: securityHeaders,
             },
           ]
         : []),
       {
-        source: "/((?!embed/).*)",
+        source: "/((?!embed/|_next/).*)",
         headers: isStagingSite ? [...securityHeaders, ...stagingEdgeBypass] : securityHeaders,
       },
       {

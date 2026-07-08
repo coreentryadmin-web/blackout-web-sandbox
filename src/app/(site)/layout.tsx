@@ -7,6 +7,21 @@ import { MarketSessionProvider } from "@/components/platform/MarketSessionProvid
 import { MarketPulseLayer } from "@/components/platform/MarketPulseLayer";
 import { isAdminUser } from "@/lib/admin-access";
 import { lockedToolKeys, type ToolKey } from "@/lib/tool-access";
+import { AppShellProviders } from "@/components/providers/AppShellProviders";
+import "../desk-app.css";
+import "../ios-native.css";
+import "../ios-native-pages.css";
+import "../ios-native-nav.css";
+import "../ios-native-skin.css";
+import "../ios-native-motion.css";
+import "../ios-native-command.css";
+import "../ios-native-iphone16.css";
+import "../ios-native-viewport.css";
+import "../ios-native-input-lock.css";
+import "../ios-native-tokens.css";
+import "../ios-native-organize.css";
+import "../ios-native-tab-rail.css";
+import "../ios-native-cards.css";
 
 /**
  * Transparent route group — does NOT affect URLs. Hoists the shared <Nav />
@@ -29,7 +44,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <>
+    <AppShellProviders>
       {/* VITALS Phase 1 — one shared market-cadence heartbeat behind all in-app
           content. Mounted ONCE here in the real shared (site) layout that wraps
           every product page. MarketPulseLayer is a fixed, pointer-events-none,
@@ -43,6 +58,6 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <IosAppChrome lockedTools={lockedTools} />
       <IosAppTabBar lockedTools={lockedTools} />
       <IosNativePageTransition>{children}</IosNativePageTransition>
-    </>
+    </AppShellProviders>
   );
 }

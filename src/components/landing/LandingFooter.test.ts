@@ -16,6 +16,7 @@ import { join } from "node:path";
 const FOOTER_PATH = join(__dirname, "LandingFooter.tsx");
 const APP_DIR = join(__dirname, "..", "..", "app");
 const SITE_APP_DIR = join(APP_DIR, "(site)");
+const MARKETING_APP_DIR = join(APP_DIR, "(marketing)");
 
 // Clerk's sign-in/sign-up live directly under src/app/ (outside the (site) route group)
 // as catch-all segments, e.g. src/app/sign-in/[[...sign-in]]/page.tsx.
@@ -36,7 +37,9 @@ function extractHrefs(source: string, arrayName: string): string[] {
 function routeExists(href: string): boolean {
   // Strip query/hash and leading slash; ignore external/mailto/anchor-only links.
   const path = href.split(/[?#]/)[0].replace(/^\//, "");
-  if (path === "") return existsSync(join(SITE_APP_DIR, "page.tsx"));
+  if (path === "") {
+    return existsSync(join(MARKETING_APP_DIR, "page.tsx")) || existsSync(join(SITE_APP_DIR, "page.tsx"));
+  }
   if (existsSync(join(SITE_APP_DIR, path, "page.tsx"))) return true;
   // Fall back to a top-level src/app/<path>/ route (e.g. Clerk's sign-in/sign-up).
   return hasCatchAllRoute(join(APP_DIR, path)) || existsSync(join(APP_DIR, path, "page.tsx"));
