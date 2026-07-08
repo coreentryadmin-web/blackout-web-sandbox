@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Syne, JetBrains_Mono, Inter } from "next/font/google";
+import { Anton, Syne, Inter } from "next/font/google";
 import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
 
@@ -21,13 +21,6 @@ const inter = Inter({
   display: "swap",
   variable: "--font-inter",
 });
-const jetbrainsMono = JetBrains_Mono({
-  weight: ["400", "500"],
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-jetbrains",
-});
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
   title: `${SITE.name} — ${SITE.tagline}`,
@@ -59,7 +52,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${anton.variable} ${syne.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${anton.variable} ${syne.variable} ${inter.variable}`}>
       <head>
         <script
           dangerouslySetInnerHTML={{

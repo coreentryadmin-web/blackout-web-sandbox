@@ -1,6 +1,11 @@
 import { AppShellProviders } from "@/components/providers/AppShellProviders";
+import { jetbrainsMono } from "@/lib/fonts-mono";
 import "../globals.css";
 
 export default function SignUpLayout({ children }: { children: React.ReactNode }) {
-  return <AppShellProviders>{children}</AppShellProviders>;
+  return (
+    <div className={jetbrainsMono.variable}>
+      <AppShellProviders>{children}</AppShellProviders>
+    </div>
+  );
 }
