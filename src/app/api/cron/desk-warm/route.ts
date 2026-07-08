@@ -17,7 +17,7 @@ import { prefetchSpxDeskEnrichment } from "@/features/spx/lib/spx-desk";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { seedUwCacheFromWsStores } from "@/lib/uw-ws-cache-bridge";
-import { isEtCashRth } from "@/lib/et-market-hours";
+import { shouldRunCacheWarmer } from "@/lib/cache-warmer-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,20 +30,20 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get("force") === "1";
-  if (!force && !isEtCashRth()) {
+  if (!shouldRunCacheWarmer(force)) {
     const payload = {
       ok: true,
       skipped: true,
       reason:
-        "Outside cash RTH (weekday 9:30 AM–4:00 PM ET, excluding holidays/early-close) — use ?force=1 to override",
+        "Outside extended warm window (weekday 4:00 AM–8:00 PM ET) — use ?force=1 or set CACHE_WARM_ALWAYS=1",
     };
     await logCronRun("desk-warm", started, payload);
     return NextResponse.json(payload);
   }
 
-  const [mergedResult, gexResult, bootstrapResult] = await Promise.allSettled([
+  const [mergedResult, gexResults, bootstrapResult] = await Promise.allSettled([
     loadMergedSpxDesk(),
-    fetchGexHeatmap("SPX"),
+    Promise.allSettled(["SPX", "SPY"].map((t) => fetchGexHeatmap(t))),
     loadBootstrapBundle(),
   ]);
 
@@ -55,7 +55,9 @@ export async function GET(req: NextRequest) {
   }
 
   const deskOk = mergedResult.status === "fulfilled";
-  const gexOk = gexResult.status === "fulfilled";
+  const gexOk =
+    gexResults.status === "fulfilled" &&
+    gexResults.value.some((r) => r.status === "fulfilled");
   const bootstrapOk = bootstrapResult.status === "fulfilled";
 
   let enrichOk = false;
@@ -78,8 +80,8 @@ export async function GET(req: NextRequest) {
   }
   if (!gexOk) {
     console.warn(
-      "[cron/desk-warm] fetchGexHeatmap(SPX) failed:",
-      gexResult.status === "rejected" ? gexResult.reason : "unknown"
+      "[cron/desk-warm] fetchGexHeatmap(SPX/SPY) failed:",
+      gexResults.status === "rejected" ? gexResults.reason : "all tickers failed"
     );
   }
 

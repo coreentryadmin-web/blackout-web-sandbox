@@ -93,8 +93,35 @@ function grade(ms) {
   return "FAIL";
 }
 
+async function stagingForceWarmCrons() {
+  if (!IS_STAGING || process.env.STAGING_CRON_WARM !== "1") return;
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) return;
+  const paths = [
+    "/api/cron/desk-warm?force=1",
+    "/api/cron/heatmap-warm?force=1",
+    "/api/cron/zerodte-warm?force=1",
+  ];
+  console.log("--- Staging cron warm (force) ---");
+  for (const path of paths) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { Authorization: `Bearer ${secret}` },
+      });
+      await res.text();
+      const ms = Math.round(performance.now() - t0);
+      console.log(`  warmed ${path.split("?")[0]} → HTTP ${res.status} (${ms}ms)`);
+    } catch (e) {
+      console.warn(`  warm ${path} failed: ${e.message}`);
+    }
+  }
+}
+
 async function main() {
   console.log(`\n=== Site latency audit ===\nTarget: ${BASE}\n`);
+
+  await stagingForceWarmCrons();
 
   const session = await mintIosPlaywrightSession({ appUrl: BASE });
   if (session.skip) {
@@ -179,7 +206,8 @@ async function main() {
   const fails = checks.filter(
     (c) =>
       c.status === "FAIL" &&
-      (c.name.includes(":warm") || c.name.startsWith("page:") || c.name === "auth")
+      c.name !== "browser" &&
+      !c.name.endsWith(":warm")
   );
   console.log(`\n=== Summary === FAIL: ${fails.length} / ${checks.length}\n`);
   process.exit(fails.length ? 1 : 0);

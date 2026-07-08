@@ -1,0 +1,203 @@
+#!/usr/bin/env node
+/**
+ * Staging full validation — warm caches, data correctness, deploy smoke, latency.
+ *
+ * Usage:
+ *   node scripts/staging-validate.mjs
+ *
+ * Env (optional overrides):
+ *   STAGING_BASE_URL — default https://staging.blackouttrades.com
+ *   STAGING_SECRET_NAME — default blackout-staging/app/env
+ *   SKIP_DATA_CORRECTNESS=1 — skip long correctness sweep
+ */
+import { execSync, spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(
+  /\/$/,
+  ""
+);
+const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
+const OUT = join(process.cwd(), "audit-output");
+mkdirSync(OUT, { recursive: true });
+
+const failures = [];
+const warnings = [];
+
+function ok(msg) {
+  console.log(`  ✓ ${msg}`);
+}
+function warn(msg) {
+  warnings.push(msg);
+  console.log(`  ⚠ ${msg}`);
+}
+function fail(msg) {
+  failures.push(msg);
+  console.log(`  ✗ ${msg}`);
+}
+
+function loadStagingSecret() {
+  const raw = execSync(
+    `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
+    { encoding: "utf8" }
+  );
+  return JSON.parse(raw);
+}
+
+async function hitCron(path, secret, timeoutMs = 300_000) {
+  const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}force=1`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${secret}` },
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => ({}));
+    return { status: res.status, body, ms: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function runNode(script, extraEnv = {}) {
+  const env = {
+    ...process.env,
+    CRON_TARGET_BASE_URL: BASE,
+    SKIP_RAILWAY: "1",
+    ...extraEnv,
+  };
+  const res = spawnSync("node", [script], {
+    encoding: "utf8",
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
+  return res.status ?? 1;
+}
+
+console.log("\n=== Staging full validation ===\n");
+console.log(`Target: ${BASE}`);
+console.log(`Secret: ${SECRET_NAME}\n`);
+
+let secret;
+try {
+  secret = loadStagingSecret();
+  ok(`Loaded ${Object.keys(secret).length} keys from Secrets Manager`);
+} catch (e) {
+  fail(`Secrets load failed: ${e.message}`);
+  process.exit(1);
+}
+
+const cronSecret = secret.CRON_SECRET?.trim();
+if (!cronSecret) {
+  fail("CRON_SECRET missing in staging secret");
+  process.exit(1);
+}
+
+// ── 0. Ensure staging always-warm + replica count ───────────────────────────
+console.log("\n0. Staging env posture");
+if (secret.CACHE_WARM_ALWAYS === "1") ok("CACHE_WARM_ALWAYS=1");
+else warn("CACHE_WARM_ALWAYS not set — warmers skip outside extended ET hours");
+
+if (String(secret.REPLICA_COUNT) === "3") ok("REPLICA_COUNT=3");
+else warn(`REPLICA_COUNT=${secret.REPLICA_COUNT ?? "unset"} (expected 3 for ECS)`);
+
+// ── 1. Force cache warmers ───────────────────────────────────────────────────
+console.log("\n1. Cache warmers (force=1)");
+const warmers = [
+  ["/api/cron/desk-warm", 300_000],
+  ["/api/cron/heatmap-warm", 180_000],
+  ["/api/cron/zerodte-warm", 120_000],
+];
+
+for (const [path, timeout] of warmers) {
+  const t0 = Date.now();
+  try {
+    const { status, body } = await hitCron(path, cronSecret, timeout);
+    const ms = Date.now() - t0;
+    if (status === 200 && body.ok !== false) {
+      ok(`${path} → ${status} (${ms}ms)`);
+    } else if (status === 200 && body.skipped) {
+      warn(`${path} skipped: ${body.reason ?? "off-hours"}`);
+    } else {
+      fail(`${path} → HTTP ${status} (${ms}ms)`);
+    }
+  } catch (e) {
+    fail(`${path} failed: ${e.message}`);
+  }
+}
+
+// ── 2. Seed regime + data correctness ───────────────────────────────────────
+console.log("\n2. Data plane");
+try {
+  const { status, body } = await hitCron("/api/cron/market-regime-detector", cronSecret, 120_000);
+  if (status === 200) ok(`market-regime-detector → ${status}`);
+  else warn(`market-regime-detector → HTTP ${status}`);
+} catch (e) {
+  warn(`market-regime-detector: ${e.message}`);
+}
+
+if (process.env.SKIP_DATA_CORRECTNESS !== "1") {
+  try {
+    const t0 = Date.now();
+    const { status, body } = await hitCron("/api/cron/data-correctness", cronSecret, 600_000);
+    const ms = Date.now() - t0;
+    const flags = body?.flags ?? body?.flag_count;
+    if (status === 200 && (flags === 0 || flags === undefined) && body.ok !== false) {
+      ok(`data-correctness → ok (${ms}ms)`);
+    } else if (status === 200) {
+      warn(`data-correctness → flags=${flags ?? "?"} (${ms}ms)`);
+    } else {
+      fail(`data-correctness → HTTP ${status}`);
+    }
+  } catch (e) {
+    warn(`data-correctness: ${e.message}`);
+  }
+} else {
+  warn("data-correctness skipped (SKIP_DATA_CORRECTNESS=1)");
+}
+
+// ── 3. validate-deploy ───────────────────────────────────────────────────────
+console.log("\n3. validate-deploy");
+const deployCode = runNode("scripts/validate-deploy.mjs", {
+  CRON_SECRET: cronSecret,
+  DATABASE_URL: secret.DATABASE_URL,
+  DATABASE_PUBLIC_URL: secret.DATABASE_URL,
+  REPLICA_COUNT: secret.REPLICA_COUNT ?? "3",
+});
+if (deployCode !== 0) fail("validate-deploy exited non-zero");
+else ok("validate-deploy GREEN");
+
+// ── 4. Latency audit ───────────────────────────────────────────────────────
+console.log("\n4. Site latency audit");
+const latCode = runNode("scripts/site-latency-audit.mjs", {
+  CRON_SECRET: cronSecret,
+  STAGING_CRON_WARM: "1",
+});
+if (latCode !== 0) fail("site-latency-audit exited non-zero");
+else ok("site-latency-audit GREEN");
+
+const summary = {
+  ts: new Date().toISOString(),
+  base: BASE,
+  failures,
+  warnings,
+};
+const reportPath = join(OUT, `staging-full-validate-${Date.now()}.json`);
+writeFileSync(reportPath, JSON.stringify(summary, null, 2));
+console.log(`\nReport: ${reportPath}`);
+
+console.log("\n=== Summary ===");
+if (warnings.length) {
+  console.log(`Warnings (${warnings.length}):`);
+  warnings.forEach((w) => console.log(`  · ${w}`));
+}
+if (failures.length) {
+  console.log(`\nFAILED (${failures.length}):`);
+  failures.forEach((f) => console.log(`  · ${f}`));
+  process.exit(1);
+}
+console.log("\nGREEN — staging validation passed.\n");

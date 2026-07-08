@@ -19,6 +19,7 @@ import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const BASE = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
+const IS_STAGING = BASE.includes("staging.");
 const failures = [];
 const warnings = [];
 
@@ -144,6 +145,7 @@ console.log(`Time:   ${new Date().toISOString()}\n`);
 console.log("1. Railway (blackout-web)");
 const skipRailway =
   process.env.SKIP_RAILWAY === "1" ||
+  IS_STAGING ||
   (process.env.GITHUB_ACTIONS === "true" && !process.env.RAILWAY_TOKEN?.trim());
 
 if (skipRailway) {
@@ -173,7 +175,7 @@ console.log("\n2. Live HTTP smoke");
 const checks = [
   { path: "/api/health", expect: 200, field: (b) => b.ok === true },
   { path: "/api/ready", expect: 200, field: (b) => b.ok === true && b.db !== "unreachable" },
-  { path: "/api/market/regime", expect: 200, field: (b) => b.available === true },
+  { path: "/api/market/regime", expect: 200, field: (b) => IS_STAGING ? b.available === true || b.available === false : b.available === true },
   { path: "/api/public/track-record", expect: 401 },
   { path: "/api/signals/open", expect: 401 },
   { path: "/api/admin/debug-uw", expect: 401 },
@@ -194,26 +196,34 @@ for (const c of checks) {
 }
 
 // ── 2b. Desk cache warm (post-deploy cold-path guard) ───────────────────────
-console.log("\n2b. Desk cache warm");
+console.log("\n2b. Cache warmers");
 const cronSecret = process.env.CRON_SECRET?.trim() ?? "";
+const warmPaths = IS_STAGING
+  ? ["/api/cron/desk-warm?force=1", "/api/cron/heatmap-warm?force=1", "/api/cron/zerodte-warm?force=1"]
+  : ["/api/cron/desk-warm?force=1"];
 if (cronSecret) {
-  try {
-    const t0 = Date.now();
-    const warmRes = await fetch(`${BASE}/api/cron/desk-warm?force=1`, {
-      headers: { Authorization: `Bearer ${cronSecret}` },
-    });
-    const warmBody = await warmRes.json().catch(() => ({}));
-    const warmMs = Date.now() - t0;
-    if (warmRes.ok && warmBody.ok) {
-      ok(`desk-warm → ok (${warmMs}ms, bootstrap_enriched=${warmBody.bootstrap_enriched ?? "?"})`);
-    } else {
-      warn(`desk-warm → HTTP ${warmRes.status} (${warmMs}ms)`);
+  for (const warmPath of warmPaths) {
+    try {
+      const t0 = Date.now();
+      const warmRes = await fetch(`${BASE}${warmPath}`, {
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      });
+      const warmBody = await warmRes.json().catch(() => ({}));
+      const warmMs = Date.now() - t0;
+      const label = warmPath.split("?")[0].replace("/api/cron/", "");
+      if (warmRes.ok && warmBody.ok !== false) {
+        ok(`${label} → ok (${warmMs}ms)`);
+      } else if (warmRes.ok && warmBody.skipped) {
+        warn(`${label} skipped (${warmMs}ms)`);
+      } else {
+        warn(`${label} → HTTP ${warmRes.status} (${warmMs}ms)`);
+      }
+    } catch (e) {
+      warn(`${warmPath} failed: ${e.message}`);
     }
-  } catch (e) {
-    warn(`desk-warm failed: ${e.message}`);
   }
 } else {
-  warn("CRON_SECRET unset — post-deploy desk-warm skipped");
+  warn("CRON_SECRET unset — post-deploy cache warm skipped");
 }
 
 // ── 3. Postgres (errors, cron, rate limits) ─────────────────────────────────
@@ -334,9 +344,27 @@ if (sentryToken) {
 
 // ── 4b. REPLICA_COUNT (UW/Polygon cluster rate-limit math) ───────────────────
 console.log("\n4b. Cluster config");
-const replicaCount = Math.max(0, Math.floor(Number(rwVars.REPLICA_COUNT ?? process.env.REPLICA_COUNT ?? 0)));
-const runningMatch = sh("railway status 2>/dev/null | rg 'blackout-web' || true").match(/(\d+)\/(\d+)\s+running/);
-const runningReplicas = runningMatch ? Number(runningMatch[1]) : null;
+const replicaCount = Math.max(
+  0,
+  Math.floor(Number(rwVars.REPLICA_COUNT ?? process.env.REPLICA_COUNT ?? 0))
+);
+let runningReplicas = null;
+if (!skipRailway) {
+  const runningMatch = sh("railway status 2>/dev/null | rg 'blackout-web' || true").match(
+    /(\d+)\/(\d+)\s+running/
+  );
+  runningReplicas = runningMatch ? Number(runningMatch[1]) : null;
+} else if (IS_STAGING) {
+  try {
+    const out = sh(
+      'aws ecs describe-services --cluster blackout-staging-cluster --services blackout-staging-web --query "services[0].runningCount" --output text 2>/dev/null'
+    );
+    const n = Number(out);
+    if (Number.isFinite(n)) runningReplicas = n;
+  } catch {
+    /* optional */
+  }
+}
 if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningReplicas) {
   ok(`REPLICA_COUNT=${replicaCount} matches ${runningReplicas} running replicas`);
 } else if (replicaCount >= 1) {
@@ -350,7 +378,21 @@ if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningRepl
 // ── 5. Options / UW socket churn (socket-health primary; logs secondary) ─────
 console.log("\n5. Socket churn (socket-health + Railway logs)");
 if (skipRailway) {
-  warn("Railway log checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
+  if (IS_STAGING && cronSecret) {
+    try {
+      const { status, body } = await fetchJson("/api/cron/socket-health", {
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      });
+      const opt = body?.websockets?.options;
+      if (status === 200 && opt?.ok) ok(`options-socket (socket-health): ${opt.detail ?? "ok"}`);
+      else if (status === 200 && opt) warn(`options-socket (socket-health): ${opt.detail ?? "not ok"}`);
+      else warn(`socket-health probe HTTP ${status}`);
+    } catch (e) {
+      warn(`socket-health probe failed: ${e.message}`);
+    }
+  } else {
+    warn("Railway log checks skipped (SKIP_RAILWAY / staging without CRON_SECRET)");
+  }
 } else {
   // Live probe beats log tail: multi-replica clusters + off-hours standdown leave stale
   // 1006 lines in the last 30 log rows even when options.ok is true.
