@@ -253,7 +253,7 @@ function buildLevels(input: {
     // Anchor = argmax|net_gex|; it's often the PUT wall (support) and may sit below spot,
     // so it carries no directional meaning — mark it neutral (sky/gold) to match the
     // Heatmap ANCHOR node + Dealer Desk gold treatment, not unconditional resistance/red (#80).
-    level("GEX Anchor", input.gex_king, p, "neutral"),
+    level("King node · GEX anchor", input.gex_king, p, "neutral"),
     level("Max Pain", input.max_pain, p, "neutral"),
     level("γ Flip", input.gamma_flip, p, "neutral"),
     level("EMA 20", input.ema20, p, "neutral"),

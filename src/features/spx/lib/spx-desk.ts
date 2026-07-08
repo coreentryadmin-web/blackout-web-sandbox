@@ -853,7 +853,7 @@ function buildLevels(input: {
   const items: SpxDeskLevel[] = [
     level("HOD", input.hod, p, "resistance"),
     level("PDH", input.pdh, p, "resistance"),
-    level("GEX Anchor", input.gex_king, p, "resistance"),
+    level("King node · GEX anchor", input.gex_king, p, "resistance"),
     level("Max Pain", input.max_pain, p, "neutral"),
     level("γ Flip", input.gamma_flip, p, "neutral"),
     level("EMA 20", input.ema20, p, "neutral"),
