@@ -8124,6 +8124,70 @@ body::before {
     @apply min-w-0;
   }
 
+  .spx-gex-matrix-spot-row {
+    box-shadow: inset 0 1px 0 rgba(34, 211, 238, 0.35), inset 0 -1px 0 rgba(34, 211, 238, 0.2);
+  }
+
+  .spx-gex-matrix-or-high {
+    box-shadow: inset 0 1px 0 rgba(251, 191, 36, 0.28);
+  }
+
+  .spx-gex-matrix-or-low {
+    box-shadow: inset 0 -1px 0 rgba(251, 191, 36, 0.28);
+  }
+
+  .spx-matrix-tape-strip {
+    @apply mx-1 mb-2 shrink-0 rounded border border-white/8 bg-black/30 p-2;
+  }
+
+  .spx-matrix-tape-skew {
+    @apply mb-1.5 flex flex-wrap items-center gap-2;
+  }
+
+  .spx-matrix-tape-skew-badge {
+    @apply font-mono text-[9px] font-bold uppercase tracking-wider text-sky-300/80;
+  }
+
+  .spx-matrix-tape-skew-badge--bull {
+    @apply text-emerald-300;
+  }
+
+  .spx-matrix-tape-skew-badge--bear {
+    @apply text-rose-300;
+  }
+
+  .spx-matrix-tape-net {
+    @apply font-mono text-[9px] tabular-nums text-cyan-200/80;
+  }
+
+  .spx-matrix-tape-chips {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .spx-matrix-tape-chip {
+    @apply rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9px] text-sky-200/90;
+  }
+
+  .spx-matrix-tape-chip--call {
+    @apply border-emerald-400/25 text-emerald-200/90;
+  }
+
+  .spx-matrix-tape-chip--put {
+    @apply border-rose-400/25 text-rose-200/90;
+  }
+
+  .spx-matrix-tape-empty {
+    @apply font-mono text-[9px] text-sky-300/50;
+  }
+
+  .spx-satellite-conflict-badge {
+    @apply text-amber-300/95 normal-case tracking-normal;
+  }
+
+  .spx-satellite-conflict-line {
+    @apply mt-2 font-mono text-[10px] text-amber-300/90;
+  }
+
   .spx-trade-copy-contract {
     @apply font-mono text-[9px] uppercase tracking-wide text-cyan-300/80 underline-offset-2 hover:text-cyan-200 hover:underline;
   }

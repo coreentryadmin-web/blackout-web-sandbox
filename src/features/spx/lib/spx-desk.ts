@@ -26,6 +26,8 @@ import {
   type GexStrikeLevel,
   type GexWall,
 } from "@/lib/providers/gamma-desk";
+import { computeIntradayRead } from "@/lib/zerodte/intraday";
+import { etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import {
   computeVixTermStructure,
   fetchBenzingaNews,
@@ -660,6 +662,13 @@ export type SpxDeskPayload = {
   dark_pool: DarkPoolSnapshot | null;
   spx_flows: SpxFlowBrief[];
   unified_tape: SpxTapeItem[];
+  /** First 30-min RTH range (9:30–10:00 ET) from minute bars — matrix OR overlay. */
+  opening_range?: {
+    high: number;
+    low: number;
+    break: "above" | "below" | "inside" | null;
+    forming: boolean;
+  } | null;
   /** UW Repeated Hits + same-strike multi-alert stacks on SPX flow. */
   strike_stacks: FlowStrikeStack[];
   net_prem_ticks: NetPremTick[];
@@ -1091,6 +1100,7 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     dark_pool: null,
     spx_flows: [],
     unified_tape: [],
+    opening_range: null,
     strike_stacks: [],
     net_prem_ticks: [],
     vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
@@ -1174,6 +1184,21 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const spxFeed = getIndexFeedFreshness(SPX);
 
   const session = sessionStatsFromMinuteBars(minuteBars);
+  const intraday = computeIntradayRead(
+    minuteBars
+      .filter((b) => Number.isFinite(b.t))
+      .map((b) => ({ t: b.t!, h: b.h, l: b.l, c: b.c, v: b.v }))
+  );
+  const etMinsNow = etMinutes(new Date());
+  const opening_range =
+    intraday.or_high != null && intraday.or_low != null
+      ? {
+          high: intraday.or_high,
+          low: intraday.or_low,
+          break: intraday.or_break,
+          forming: etMinsNow >= 9 * 60 + 30 && etMinsNow < 10 * 60,
+        }
+      : null;
   const prior = priorDayFromDailyBars(dailyBars);
   const newsHeadlines: DeskNewsHeadline[] = (newsRaw ?? [])
     .map((a) => ({
@@ -1384,6 +1409,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     lit_dark_ratio: computeLitDarkRatio(),
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
+    opening_range,
     strike_stacks: computeFlowStrikeStacks(spxFlows),
     net_prem_ticks: netPremTicks,
     vix_term: {

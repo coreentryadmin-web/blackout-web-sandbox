@@ -179,6 +179,11 @@ export function SpxDashboard() {
               deskGammaFlip={desk?.gamma_flip ?? null}
               deskGexKing={desk?.gex_king ?? null}
               gexStale={desk?.gex_stale}
+              openingRange={desk?.opening_range ?? null}
+              unifiedTape={desk?.unified_tape}
+              flow0dteNet={desk?.flow_0dte_net}
+              flow0dteCallPrem={desk?.flow_0dte_call_premium}
+              flow0dtePutPrem={desk?.flow_0dte_put_premium}
             />
           </aside>
         </SpxPanelErrorBoundary>

@@ -28,10 +28,10 @@ import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/fea
 import {
   gradeRank,
   playDynamicTrailWindowPts,
+  playDynamicTrimMfePts,
   playFullMinScore,
   playIdealTargetPts,
   playOptionChainRequired,
-  playTrimMfePts,
   playGexStaleMaxSec,
   playTrimProgressPct,
   playWatchMinScore,
@@ -219,7 +219,7 @@ async function evaluateOpenPlay(
   const trimZone =
     !deskStale &&
     !row.trim_done &&
-    mfe >= playTrimMfePts() &&
+    mfe >= playDynamicTrimMfePts(desk.vix) &&
     target != null &&
     progress >= playTrimProgressPct();
 
