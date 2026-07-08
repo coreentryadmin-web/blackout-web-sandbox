@@ -59,12 +59,30 @@ const AUTH_PAGES = [
 ];
 
 const NAV_LINKS = [
-  { name: /SPX|Slayer|dashboard/i, path: "/dashboard" },
-  { name: /HELIX|flows/i, path: "/flows" },
-  { name: /Thermal|heatmap/i, path: "/heatmap" },
-  { name: /Largo|terminal/i, path: "/terminal" },
-  { name: /Night Hawk|nighthawk/i, path: "/nighthawk" },
+  { href: "/dashboard" },
+  { href: "/flows" },
+  { href: "/heatmap" },
+  { href: "/terminal" },
+  { href: "/nighthawk" },
 ];
+
+async function clickNav(page, { href }) {
+  const link = page.locator(`a[href="${href}"], a[href^="${href}/"]`).first();
+  if (!(await link.isVisible().catch(() => false))) {
+    rec(`nav:${href}`, "WARN", "link not visible");
+    return;
+  }
+  await link.click();
+  try {
+    await page.waitForURL((url) => url.pathname === href || url.pathname.startsWith(`${href}/`), {
+      timeout: 30_000,
+    });
+    rec(`nav:${href}`, "PASS", page.url());
+    await shot(page, `nav-${href.replace(/\//g, "") || "root"}`);
+  } catch {
+    rec(`nav:${href}`, "FAIL", `stuck at ${page.url()}`);
+  }
+}
 
 async function shot(page, name) {
   const safe = name.replace(/[^a-z0-9_-]+/gi, "-");
@@ -124,24 +142,6 @@ async function visitPage(page, { path, mustMatch, label }, authed = false) {
 
   await shot(page, `page-${label}`);
   page.off("console", onConsole);
-}
-
-async function clickNav(page, { name, path }) {
-  const link = page.getByRole("link", { name }).first();
-  if (!(await link.isVisible().catch(() => false))) {
-    rec(`nav:${path}`, "WARN", "link not visible");
-    return;
-  }
-  await link.click();
-  try {
-    await page.waitForURL((url) => url.pathname === path || url.pathname.startsWith(`${path}/`), {
-      timeout: 30_000,
-    });
-    rec(`nav:${path}`, "PASS", page.url());
-    await shot(page, `nav-${path.replace(/\//g, "")}`);
-  } catch {
-    rec(`nav:${path}`, "FAIL", `stuck at ${page.url()}`);
-  }
 }
 
 async function exerciseDashboard(page) {

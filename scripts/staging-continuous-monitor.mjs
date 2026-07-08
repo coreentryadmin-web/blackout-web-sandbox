@@ -60,6 +60,7 @@ async function cycleOnce() {
 
   if (cycle % 2 === 0) {
     steps.push(["latency", "node", ["scripts/latency-burst-audit.mjs", "--rounds=3"]]);
+    steps.push(["staging-vs-prod", "node", ["scripts/staging-prod-latency-watch.mjs", "--once"]]);
   }
   if (cycle % 3 === 0 || phase === "open") {
     steps.push(["rth", "node", ["scripts/staging-rth-check.mjs", "--force"]]);
