@@ -343,10 +343,17 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
   const panelRefreshing = (refreshing || playRefreshing) && play && play.action !== "SCANNING";
 
+  const showGateStatus =
+    play != null &&
+    (play.gates.blocks.length > 0 ||
+      play.gates.warnings.length > 0 ||
+      Boolean(play.gates.play_idea));
+
   const showConfirmationPanel =
     Boolean(confirmationLayer) &&
     (play?.action === "WATCHING" ||
       play?.action === "BUY" ||
+      play?.action === "SCANNING" ||
       (!play && playRefreshing));
 
   return (
@@ -417,9 +424,10 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 >
                   {play.thesis}
                 </p>
-                {play.grade && play.action !== "SCANNING" && (
+                {play.grade && play.grade !== "D" && (
                   <p className="spx-trade-grade-line">
                     Grade {play.grade}
+                    {play.direction ? ` · ${play.direction}` : ""}
                     {play.open_play ? ` · open ${play.open_play.direction}` : ""}
                     {play.watch?.active ? " · WATCH active" : ""}
                     {play.watch?.promote_ready ? " · promote ready" : ""}
@@ -484,6 +492,12 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                   playRefreshing && "spx-trade-confirmations-refreshing"
                 )}
               >
+                {play?.action === "SCANNING" && showGateStatus && (
+                  <p className="spx-trade-confirmations-title text-sky-300/90">
+                    Engine standing down — gate status
+                  </p>
+                )}
+                {confirmationLayer.confirmations.checks.length > 0 && (
                 <p className="spx-trade-confirmations-title">
                   Confirmations {confirmationLayer.confirmations.passed_count}/
                   {confirmationLayer.confirmations.total}
@@ -493,6 +507,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     </span>
                   )}
                 </p>
+                )}
                 {confirmationLayer.confirmations.checks.map((c) => (
                   <p
                     key={c.label}

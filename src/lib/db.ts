@@ -2492,6 +2492,27 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
   };
 }
 
+/** Today's committed play counts — hydrates session meta after deploy/restart. */
+export async function fetchTodaySpxSessionCounts(
+  sessionDate: string
+): Promise<{ entries: number; losses: number }> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      (SELECT COUNT(*)::int FROM spx_open_play WHERE session_date = $1::date) AS entries,
+      (SELECT COUNT(*)::int FROM spx_play_outcomes
+        WHERE session_date = $1::date AND outcome = 'loss') AS losses
+    `,
+    [sessionDate]
+  );
+  const r = res.rows[0];
+  return {
+    entries: Number(r?.entries ?? 0),
+    losses: Number(r?.losses ?? 0),
+  };
+}
+
 export async function insertOpenSpxPlay(
   row: {
     session_date: string;

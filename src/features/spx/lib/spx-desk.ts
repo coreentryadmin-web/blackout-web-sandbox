@@ -582,6 +582,14 @@ export type SpxFlowBrief = {
   has_sweep: boolean;
 };
 
+/** Honest flow age for desk payloads — caps sparse-tape age when cluster WS is live. */
+function deskFlowDataAgeMs(flows: SpxFlowBrief[], flowClusterLive: boolean): number | null {
+  markFlowDataFromBriefs(flows);
+  let age = resolveFlowDataAgeMs(flows);
+  if (flowClusterLive && age != null && age > 120_000) age = 120_000;
+  return age;
+}
+
 export type SpxTapeItem = {
   kind: "flow" | "darkpool";
   side: "call" | "put" | "neutral";
@@ -1279,7 +1287,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const spxFlows: SpxFlowBrief[] = freshFlowsRaw.length ? freshFlowsRaw : lastGoodSpxFlowBriefs;
   if (freshFlowsRaw.length) lastGoodSpxFlowBriefs = freshFlowsRaw;
   const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
-  markFlowDataFromBriefs(spxFlows);
+  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
   const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
@@ -1385,7 +1393,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
       detail: vixTerm.detail,
     },
     data_quality: dataQuality,
-    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_data_age_ms: flowDataAgeMs,
     flow_cluster_live: flowClusterLive,
     price_age_ms: spxFeed.ageMs,
     feed_stalled: spxFeed.stalled === true,
@@ -1694,7 +1702,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
   const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
-  markFlowDataFromBriefs(spxFlows);
+  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
   const strike_stacks = computeFlowStrikeStacks(spxFlows);
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
@@ -1730,7 +1738,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     flow_0dte_call_premium: uwFlow?.call_premium ?? null,
     flow_0dte_put_premium: uwFlow?.put_premium ?? null,
     flow_0dte_net: uwFlow?.net ?? null,
-    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_data_age_ms: flowDataAgeMs,
     flow_cluster_live: flowClusterLive,
     gex_age_ms: canonicalGex.gex_age_ms,
     gex_stale: canonicalGex.gex_stale,

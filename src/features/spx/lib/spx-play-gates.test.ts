@@ -301,3 +301,26 @@ test("evaluatePlayGates: failed confirmations block entry", () => {
   assert.match(result.blocks.join(" "), /3m MTF/i);
   assert.equal(result.entry_mode, "none");
 });
+
+test("evaluatePlayGates: session loss cap blocks BUY", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    { ...emptySession, session_losses_today: 3 },
+    passingConfirmations
+  );
+  assert.match(result.blocks.join(" "), /Session loss cap/i);
+});
+
+test("evaluatePlayGates: cold BUY path requires A-grade and min score", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence({ grade: "B", score: 70 }),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy", cold_buy_path: true }
+  );
+  assert.match(result.blocks.join(" "), /grade A or better/i);
+});
