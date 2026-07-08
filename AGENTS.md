@@ -2,6 +2,11 @@
 
 ## Cursor Cloud specific instructions
 
+**This repo (`blackout-web-sandbox`, branch `blackout-web-sandbox`) is the AWS staging app.**
+Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
+explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
+ECS `blackout-staging-web` at `https://staging.blackouttrades.com`.
+
 BLACKOUT (`blackout-web`) is a single **Next.js 15 (App Router) / TypeScript** app with an iOS
 Capacitor shell at **`apps/blackout-ios/`** (one repo — no separate `blackout-ios` GitHub repo).
 The ~20 `railway.*.toml` files at the repo root are production cron *trigger* services that just call
