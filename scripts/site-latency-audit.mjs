@@ -13,7 +13,7 @@ import { chromium } from "playwright";
 import { mintIosPlaywrightSession, onboardingInitScript } from "./audit/lib/ios-playwright-auth.mjs";
 
 const args = process.argv.slice(2);
-const API_ONLY = args.includes("--api-only");
+const API_ONLY = args.includes("--api-only") || process.env.SITE_LATENCY_API_ONLY === "1";
 const BASE = (
   args.find((a) => a.startsWith("--base="))?.slice(7) ??
   process.env.CRON_TARGET_BASE_URL ??
@@ -46,6 +46,7 @@ const WARM_PATHS = [
   "/api/market/spx/bootstrap",
   "/api/market/spx/desk",
   "/api/market/gex-heatmap?ticker=SPX",
+  "/api/market/gex-heatmap?ticker=SPY",
 ];
 
 const PAGES = [

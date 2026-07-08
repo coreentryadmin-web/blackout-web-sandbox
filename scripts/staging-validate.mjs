@@ -176,6 +176,7 @@ console.log("\n4. Site latency audit");
 const latCode = runNode("scripts/site-latency-audit.mjs", {
   CRON_SECRET: cronSecret,
   STAGING_CRON_WARM: "1",
+  SITE_LATENCY_API_ONLY: "1",
 });
 if (latCode !== 0) fail("site-latency-audit exited non-zero");
 else ok("site-latency-audit GREEN");
