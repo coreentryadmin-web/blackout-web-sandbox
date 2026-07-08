@@ -21,7 +21,17 @@ export type AppAuthState = {
   signOut: () => void;
 };
 
+const unloaded: AppAuthState = {
+  isLoaded: false,
+  isSignedIn: false,
+  userId: null,
+  email: null,
+  tier: null,
+  signOut: () => {},
+};
+
 const CognitoAuthContext = createContext<AppAuthState | null>(null);
+const ClerkAuthContext = createContext<AppAuthState | null>(null);
 
 function CognitoAuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Omit<AppAuthState, "signOut">>({
@@ -39,8 +49,6 @@ function CognitoAuthProvider({ children }: { children: ReactNode }) {
         signedIn?: boolean;
         userId?: string | null;
         email?: string | null;
-        firstName?: string | null;
-        lastName?: string | null;
         tier?: string | null;
       };
       setState({
@@ -63,46 +71,50 @@ function CognitoAuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/api/auth/cognito/logout";
   }, []);
 
-  const value = useMemo<AppAuthState>(
-    () => ({ ...state, signOut }),
-    [state, signOut]
-  );
+  const value = useMemo<AppAuthState>(() => ({ ...state, signOut }), [state, signOut]);
 
   return <CognitoAuthContext.Provider value={value}>{children}</CognitoAuthContext.Provider>;
 }
 
-export function useAppAuth(): AppAuthState {
-  const cognitoCtx = useContext(CognitoAuthContext);
-
-  if (isClientCognitoAuth()) {
-    if (!cognitoCtx) {
-      return {
-        isLoaded: false,
-        isSignedIn: false,
-        userId: null,
-        email: null,
-        tier: null,
-        signOut: () => {
-          window.location.href = "/api/auth/cognito/logout";
-        },
-      };
-    }
-    return cognitoCtx;
-  }
-
+/** Must render under ClerkProvider — hooks live here, not in useAppAuth. */
+function ClerkAuthBridge({ children }: { children: ReactNode }) {
   const clerk = useClerkAuth();
   const { user } = useClerkUser();
   const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier ?? null;
-  return {
-    isLoaded: clerk.isLoaded,
-    isSignedIn: Boolean(clerk.isSignedIn),
-    userId: clerk.userId ?? null,
-    email: user?.primaryEmailAddress?.emailAddress ?? null,
-    tier,
-    signOut: () => {
-      void clerk.signOut?.();
-    },
-  };
+
+  const value = useMemo<AppAuthState>(
+    () => ({
+      isLoaded: clerk.isLoaded,
+      isSignedIn: Boolean(clerk.isSignedIn),
+      userId: clerk.userId ?? null,
+      email: user?.primaryEmailAddress?.emailAddress ?? null,
+      tier,
+      signOut: () => {
+        void clerk.signOut?.();
+      },
+    }),
+    [clerk.isLoaded, clerk.isSignedIn, clerk.userId, clerk.signOut, user, tier]
+  );
+
+  return <ClerkAuthContext.Provider value={value}>{children}</ClerkAuthContext.Provider>;
 }
 
-export { CognitoAuthProvider };
+export function useAppAuth(): AppAuthState {
+  const cognitoCtx = useContext(CognitoAuthContext);
+  const clerkCtx = useContext(ClerkAuthContext);
+
+  if (isClientCognitoAuth()) {
+    return (
+      cognitoCtx ?? {
+        ...unloaded,
+        signOut: () => {
+          window.location.href = "/api/auth/cognito/logout";
+        },
+      }
+    );
+  }
+
+  return clerkCtx ?? unloaded;
+}
+
+export { CognitoAuthProvider, ClerkAuthBridge };

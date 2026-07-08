@@ -14,7 +14,7 @@ import {
   clerkSatelliteProviderProps,
 } from "@/lib/clerk-env";
 import { isClientCognitoAuth } from "@/lib/auth-provider";
-import { CognitoAuthProvider } from "@/lib/auth-client";
+import { CognitoAuthProvider, ClerkAuthBridge } from "@/lib/auth-client";
 
 function DeskShell({ children }: { children: React.ReactNode }) {
   return (
@@ -49,7 +49,9 @@ export function AppShellProviders({ children }: { children: React.ReactNode }) {
       {...satellite}
       {...(allowedRedirectOrigins ? { allowedRedirectOrigins } : {})}
     >
-      <DeskShell>{children}</DeskShell>
+      <ClerkAuthBridge>
+        <DeskShell>{children}</DeskShell>
+      </ClerkAuthBridge>
     </ClerkProvider>
   );
 }
