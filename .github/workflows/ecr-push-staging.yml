@@ -6,7 +6,7 @@ name: ECR push (staging)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [blackout-web-sandbox]
     paths:
       - "deploy/Dockerfile"
       - ".dockerignore"
@@ -27,7 +27,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    if: github.repository == 'coreentryadmin-web/blackout-web'
+    if: github.repository == 'coreentryadmin-web/blackout-web-sandbox'
     steps:
       - uses: actions/checkout@v7
 
@@ -54,7 +54,10 @@ jobs:
             exit 1
           fi
           IMAGE="${REGISTRY}/${REPO}"
-          docker build -f deploy/Dockerfile -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
+          docker build -f deploy/Dockerfile \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="https://staging.blackouttrades.com" \
+            -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
           docker push "${IMAGE}:${IMAGE_TAG}"
           docker push "${IMAGE}:staging"
           echo "Pushed ${IMAGE}:${IMAGE_TAG} and :staging"

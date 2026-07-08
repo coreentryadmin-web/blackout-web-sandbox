@@ -15,12 +15,20 @@ export function marketDataConfigured(): boolean {
   return polygonConfigured() || uwConfigured();
 }
 
-/** Full SPX desk cache (UW + Polygon). Default 10s — matches client full-desk poll. */
+/** Full SPX desk cache (UW + Polygon). Default 20s — SWR serves stale while revalidating. */
 export function deskCacheTtlMs(): number {
   const raw = process.env.SPX_DESK_CACHE_SEC?.trim();
-  const sec = raw ? Number(raw) : 10;
-  if (!Number.isFinite(sec) || sec < 0) return 10_000;
+  const sec = raw ? Number(raw) : 20;
+  if (!Number.isFinite(sec) || sec < 0) return 20_000;
   return Math.round(sec * 1000);
+}
+
+/** Hard cap on UW flow-alerts fetch during cold desk build (sticky tape covers gaps). */
+export function deskFlowRaceMs(): number {
+  const raw = process.env.SPX_DESK_FLOW_RACE_MS?.trim();
+  const ms = raw ? Number(raw) : 2500;
+  if (!Number.isFinite(ms) || ms < 500) return 2500;
+  return Math.round(ms);
 }
 
 /** Fast Polygon pulse cache (price, session, internals). Default 1s. */

@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { loadBootstrapBundle, loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { prefetchSpxDeskEnrichment } from "@/features/spx/lib/spx-desk";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
@@ -48,6 +49,18 @@ export async function GET(req: NextRequest) {
   const gexOk = gexResult.status === "fulfilled";
   const bootstrapOk = bootstrapResult.status === "fulfilled";
 
+  let enrichOk = false;
+  let bootstrapEnrichedOk = bootstrapOk;
+  try {
+    await prefetchSpxDeskEnrichment();
+    enrichOk = true;
+    await loadBootstrapBundle();
+    bootstrapEnrichedOk = true;
+  } catch {
+    enrichOk = false;
+    bootstrapEnrichedOk = false;
+  }
+
   if (!deskOk) {
     console.warn(
       "[cron/desk-warm] loadMergedSpxDesk failed:",
@@ -67,6 +80,8 @@ export async function GET(req: NextRequest) {
     desk: deskOk,
     gex: gexOk,
     bootstrap: bootstrapOk,
+    enrich: enrichOk,
+    bootstrap_enriched: bootstrapEnrichedOk,
     ...(allFailed ? { error: "desk, gex, and bootstrap warm all failed" } : {}),
   });
 
@@ -75,5 +90,7 @@ export async function GET(req: NextRequest) {
     desk: deskOk,
     gex: gexOk,
     bootstrap: bootstrapOk,
+    enrich: enrichOk,
+    bootstrap_enriched: bootstrapEnrichedOk,
   });
 }

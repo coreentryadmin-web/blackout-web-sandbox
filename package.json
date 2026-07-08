@@ -36,6 +36,7 @@
     "validate:vector-rth": "node scripts/vector-rth-minute-audit.mjs --wait-open",
     "validate:member-dashboard": "node scripts/member-dashboard-live-check.mjs",
     "validate:site-latency": "node scripts/site-latency-audit.mjs",
+    "validate:spx-bootstrap-profile": "node scripts/spx-bootstrap-cold-profile.mjs",
     "validate:grid-rth": "node scripts/grid-rth-all-day-audit.mjs",
     "validate:grid-e2e": "node scripts/grid-zerodte-e2e-audit.mjs",
     "validate:ios-config": "node apps/blackout-ios/scripts/validate-config.mjs",

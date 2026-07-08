@@ -193,6 +193,29 @@ for (const c of checks) {
   }
 }
 
+// ── 2b. Desk cache warm (post-deploy cold-path guard) ───────────────────────
+console.log("\n2b. Desk cache warm");
+const cronSecret = process.env.CRON_SECRET?.trim() ?? "";
+if (cronSecret) {
+  try {
+    const t0 = Date.now();
+    const warmRes = await fetch(`${BASE}/api/cron/desk-warm?force=1`, {
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    });
+    const warmBody = await warmRes.json().catch(() => ({}));
+    const warmMs = Date.now() - t0;
+    if (warmRes.ok && warmBody.ok) {
+      ok(`desk-warm → ok (${warmMs}ms, bootstrap_enriched=${warmBody.bootstrap_enriched ?? "?"})`);
+    } else {
+      warn(`desk-warm → HTTP ${warmRes.status} (${warmMs}ms)`);
+    }
+  } catch (e) {
+    warn(`desk-warm failed: ${e.message}`);
+  }
+} else {
+  warn("CRON_SECRET unset — post-deploy desk-warm skipped");
+}
+
 // ── 3. Postgres (errors, cron, rate limits) ─────────────────────────────────
 console.log("\n3. Postgres / error sink / API telemetry");
 const dbUrl = resolveAuditDbUrl();
