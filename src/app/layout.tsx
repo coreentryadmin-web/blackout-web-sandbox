@@ -14,19 +14,6 @@ import { PwaRegister } from "@/components/PwaRegister";
 import { IosViewportLock } from "@/components/ios/IosViewportLock";
 import { IosKeyboardRoot } from "@/hooks/useIosKeyboardInset";
 import "./globals.css";
-import "./ios-native.css";
-import "./ios-native-pages.css";
-import "./ios-native-nav.css";
-import "./ios-native-skin.css";
-import "./ios-native-motion.css";
-import "./ios-native-command.css";
-import "./ios-native-iphone16.css";
-import "./ios-native-viewport.css";
-import "./ios-native-input-lock.css";
-import "./ios-native-tokens.css";
-import "./ios-native-organize.css";
-import "./ios-native-tab-rail.css";
-import "./ios-native-cards.css";
 
 // Self-hosted via next/font (no render-blocking @import, no FOUT/CLS). Variable
 // names MUST match tailwind.config fontFamily tokens (--font-anton/-syne/
