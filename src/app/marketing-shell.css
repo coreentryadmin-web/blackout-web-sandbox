@@ -564,6 +564,40 @@
   flex-direction: column;
   gap: 0.5rem;
 }
+.mkt-module-preview-body--shot {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: #040407;
+}
+.mkt-module-preview-live {
+  margin-left: auto;
+  color: rgba(0, 230, 118, 0.75);
+}
+.mkt-module-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: top center;
+}
+.mkt-module-shot-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 55%,
+    rgba(4, 4, 7, 0.35) 85%,
+    rgba(4, 4, 7, 0.55) 100%
+  );
+  border-radius: 0 0 1rem 1rem;
+}
+.mkt-module-shot-fallback {
+  min-height: 220px;
+  background: rgba(255, 255, 255, 0.04);
+}
 .mkt-module-preview-line {
   height: 6px;
   border-radius: 3px;
