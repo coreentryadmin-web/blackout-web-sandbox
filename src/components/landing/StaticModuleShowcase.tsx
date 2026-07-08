@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
+import { ModulePreviewMock } from "./ModulePreviewMock";
 
 const MODULES = [
   {
@@ -86,7 +88,7 @@ export function StaticModuleShowcase() {
   const defaultId = MODULES[0].id;
 
   return (
-    <section id="features" className="mkt-section">
+    <section id="features" className="mkt-section mkt-section-alt">
       <div className="mkt-section-inner">
         <p className="mkt-kicker">
           <span className="mkt-kicker-dot" aria-hidden />
@@ -143,40 +145,37 @@ export function StaticModuleShowcase() {
                       <li key={b}>{b}</li>
                     ))}
                   </ul>
-                  <div className="mkt-module-stat" style={{ borderColor: `${m.accent}44` }}>
-                    <span className="font-anton text-3xl" style={{ color: m.accent }}>
-                      {m.stat.k}
-                    </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-sky-300">
-                      {m.stat.v}
-                    </span>
-                  </div>
-                </div>
-                <div className="mkt-module-preview mkt-card" style={{ borderColor: `${m.accent}33` }}>
-                  <div className="mkt-module-preview-bar">
-                    <span className="mkt-module-preview-dot" style={{ background: m.accent }} />
-                    <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/60">
-                      {m.label}
-                    </span>
-                  </div>
-                  <div className="mkt-module-preview-body">
-                    <div className="mkt-module-preview-line" style={{ width: "72%", background: `${m.accent}55` }} />
-                    <div className="mkt-module-preview-line" style={{ width: "88%" }} />
-                    <div className="mkt-module-preview-line" style={{ width: "54%" }} />
-                    <div className="mkt-module-preview-grid">
-                      {Array.from({ length: 12 }).map((_, i) => (
-                        <span
-                          key={i}
-                          className="mkt-module-preview-cell"
-                          style={{
-                            opacity: 0.35 + (i % 5) * 0.12,
-                            background: i % 3 === 0 ? `${m.accent}33` : "rgba(255,255,255,0.06)",
-                          }}
-                        />
-                      ))}
+                  <div className="mkt-module-foot">
+                    <div className="mkt-module-stat" style={{ borderColor: `${m.accent}44` }}>
+                      <span className="font-anton text-3xl" style={{ color: m.accent }}>
+                        {m.stat.k}
+                      </span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-sky-300">
+                        {m.stat.v}
+                      </span>
                     </div>
+                    <Link
+                    href={
+                      m.id === "spx"
+                        ? "/dashboard"
+                        : m.id === "helix"
+                          ? "/flows"
+                          : m.id === "thermal"
+                            ? "/heatmap"
+                            : m.id === "largo"
+                              ? "/terminal"
+                              : m.id === "hawk"
+                                ? "/nighthawk"
+                                : "/vector"
+                    }
+                    prefetch={false}
+                    className="mkt-module-link font-syne text-sm font-bold uppercase tracking-[0.16em] text-bull no-underline"
+                  >
+                    Open {m.label} →
+                    </Link>
                   </div>
                 </div>
+                <ModulePreviewMock moduleId={m.id} label={m.label} accent={m.accent} />
               </article>
             ))}
           </div>

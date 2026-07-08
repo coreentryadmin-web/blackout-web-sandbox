@@ -16,24 +16,31 @@ const LEVEL_COLOR: Record<string, string> = {
   alert: "#00e676",
 };
 
-/** CSS-only desk terminal mock — no client bundle. */
+/** CSS-only desk terminal mock — split layout on desktop. */
 export function StaticTerminalDemo() {
   return (
-    <section id="desk" className="mkt-section border-b-0">
-      <div className="mkt-section-inner">
-        <p className="mkt-kicker">
-          <span className="mkt-kicker-dot" aria-hidden />
-          Live desk
-        </p>
-        <h2 className="mt-3 font-anton text-4xl text-white md:text-5xl">
-          STRUCTURE IN <span className="mkt-gradient-text">REAL TIME.</span>
-        </h2>
-        <p className="mkt-lede !mx-0 !mt-4 !max-w-2xl !text-left !text-sm md:!text-base">
-          What you see on the marketing page is what the desk feels like — dense, timestamped, and gated before
-          it hits your broker.
-        </p>
+    <section id="desk" className="mkt-section mkt-section-alt border-b-0">
+      <div className="mkt-section-inner mkt-terminal-layout">
+        <div className="mkt-terminal-copy">
+          <p className="mkt-kicker">
+            <span className="mkt-kicker-dot" aria-hidden />
+            Live desk
+          </p>
+          <h2 className="mt-3 font-anton text-4xl text-white md:text-5xl">
+            STRUCTURE IN <span className="mkt-gradient-text">REAL TIME.</span>
+          </h2>
+          <p className="mkt-lede !mx-0 !mt-4 !max-w-xl !text-left !text-sm md:!text-base">
+            Dense, timestamped, and gated before it reaches your broker. Every line is tied to the same live
+            feeds powering SPX Slayer, HELIX, and Largo.
+          </p>
+          <ul className="mkt-terminal-points">
+            <li>Verification gate on every alert</li>
+            <li>Cross-tool context in one log</li>
+            <li>No chat box — desk-native output</li>
+          </ul>
+        </div>
 
-        <div className="mkt-terminal mt-10" aria-label="Example desk log (illustrative)">
+        <div className="mkt-terminal" aria-label="Example desk log (illustrative)">
           <div className="mkt-terminal-chrome">
             <span className="mkt-terminal-dot mkt-terminal-dot-red" />
             <span className="mkt-terminal-dot mkt-terminal-dot-amber" />
@@ -58,6 +65,7 @@ export function StaticTerminalDemo() {
               ))}
             </ul>
             <div className="mkt-terminal-cursor" aria-hidden />
+            <div className="mkt-terminal-fade" aria-hidden />
           </div>
         </div>
       </div>
