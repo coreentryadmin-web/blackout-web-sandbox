@@ -7,6 +7,18 @@ export const IMAGES = {
   authBg: "/images/hero-banner.png",
 } as const;
 
+/** Live desk screenshots for marketing module showcase (webp, ~1200px wide). */
+export const MARKETING_MODULE_IMAGES = {
+  spx: "/images/marketing/spx.webp",
+  helix: "/images/marketing/helix.webp",
+  thermal: "/images/marketing/thermal.webp",
+  largo: "/images/marketing/largo.webp",
+  hawk: "/images/marketing/hawk.webp",
+  vector: "/images/marketing/vector.webp",
+} as const;
+
+export type MarketingModuleId = keyof typeof MARKETING_MODULE_IMAGES;
+
 export const IMAGE_FILES = [
   { path: "public/images/hero-banner.png", label: "BlackOut Trading Community (hero)" },
   { path: "public/images/hero-command-desk.jpg", label: "Landing hero — operator command desk (cinematic background)" },

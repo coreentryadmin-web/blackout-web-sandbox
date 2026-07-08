@@ -22,6 +22,7 @@
     "validate:staging-cto": "node scripts/staging-cto-audit.mjs",
     "validate:staging-homepage": "node scripts/staging-homepage-profile.mjs",
     "validate:staging-site-e2e": "node scripts/staging-site-e2e.mjs",
+    "capture:marketing-modules": "node scripts/capture-marketing-module-shots.mjs",
     "validate:staging-latency-watch": "node scripts/staging-prod-latency-watch.mjs",
     "validate:staging-monitor": "node scripts/staging-continuous-monitor.mjs",
     "validate:staging-monitor:once": "node scripts/staging-continuous-monitor.mjs --once",

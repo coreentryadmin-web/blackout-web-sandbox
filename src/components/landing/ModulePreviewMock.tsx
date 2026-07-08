@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { MARKETING_MODULE_IMAGES, type MarketingModuleId } from "@/lib/images";
 
 type Props = {
   moduleId: string;
@@ -6,117 +7,48 @@ type Props = {
   accent: string;
 };
 
-/** Per-module CSS mock — replaces generic placeholder blocks. */
+const ALT: Record<MarketingModuleId, string> = {
+  spx: "SPX Slayer — live 0DTE gamma matrix and dealer positioning desk",
+  helix: "HELIX — institutional options flow tape with anomaly alerts",
+  thermal: "BlackOut Thermal — dealer gamma heatmap across strikes and expiries",
+  largo: "Largo — AI desk analyst grounded in live platform data",
+  hawk: "Night Hawk — graded swing playbook and evening scanner",
+  vector: "Vector — cross-ticker flow and gamma universe scan",
+};
+
+/** Real desk screenshot in a chrome frame — falls back to CSS mock if asset missing. */
 export function ModulePreviewMock({ moduleId, label, accent }: Props) {
   const style = { "--mkt-accent": accent } as CSSProperties;
+  const imageId = moduleId as MarketingModuleId;
+  const src = MARKETING_MODULE_IMAGES[imageId];
 
   return (
-    <div className={`mkt-module-preview mkt-card mkt-preview-${moduleId}`} style={{ borderColor: `${accent}33`, ...style }}>
+    <div
+      className={`mkt-module-preview mkt-card mkt-preview-${moduleId}`}
+      style={{ borderColor: `${accent}33`, ...style }}
+    >
       <div className="mkt-module-preview-bar">
         <span className="mkt-module-preview-dot" style={{ background: accent }} />
         <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-white/60">{label}</span>
+        <span className="mkt-module-preview-live font-mono text-[10px] uppercase tracking-[0.2em]">Live desk</span>
       </div>
-      <div className="mkt-module-preview-body mkt-preview-body">
-        {moduleId === "spx" && <SpxPreview />}
-        {moduleId === "helix" && <HelixPreview accent={accent} />}
-        {moduleId === "thermal" && <ThermalPreview accent={accent} />}
-        {moduleId === "largo" && <LargoPreview accent={accent} />}
-        {moduleId === "hawk" && <HawkPreview accent={accent} />}
-        {moduleId === "vector" && <VectorPreview accent={accent} />}
+      <div className="mkt-module-preview-body mkt-module-preview-body--shot">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- static marketing shell; no next/image bundle
+          <img
+            src={src}
+            alt={ALT[imageId] ?? `${label} preview`}
+            className="mkt-module-shot"
+            width={1200}
+            height={675}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <div className="mkt-module-shot-fallback" aria-hidden />
+        )}
+        <div className="mkt-module-shot-glow" aria-hidden />
       </div>
-    </div>
-  );
-}
-
-function SpxPreview() {
-  return (
-    <div className="mkt-preview-spx">
-      <div className="mkt-preview-spx-spot">SPX 6,028 · spot row</div>
-      <div className="mkt-preview-matrix">
-        {Array.from({ length: 20 }).map((_, i) => (
-          <span key={i} className="mkt-preview-matrix-cell" data-hot={i % 7 === 3 || i === 11 ? "1" : undefined} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HelixPreview({ accent }: { accent: string }) {
-  const rows = [
-    { sym: "SPXW", strike: "6030C", prem: "$1.2M", side: "bull" },
-    { sym: "SPY", strike: "598P", prem: "$840K", side: "bear" },
-    { sym: "QQQ", strike: "520C", prem: "$620K", side: "bull" },
-    { sym: "IWM", strike: "210P", prem: "$310K", side: "bear" },
-  ];
-  return (
-    <ul className="mkt-preview-tape">
-      {rows.map((r) => (
-        <li key={r.strike} className={`mkt-preview-tape-row mkt-preview-tape-${r.side}`}>
-          <span>{r.sym}</span>
-          <span>{r.strike}</span>
-          <span style={{ color: accent }}>{r.prem}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ThermalPreview({ accent }: { accent: string }) {
-  return (
-    <div className="mkt-preview-heatmap">
-      {Array.from({ length: 24 }).map((_, i) => (
-        <span
-          key={i}
-          className="mkt-preview-heat-cell"
-          style={{
-            background: `color-mix(in srgb, ${accent} ${12 + (i % 6) * 14}%, transparent)`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function LargoPreview({ accent }: { accent: string }) {
-  return (
-    <div className="mkt-preview-largo">
-      <p className="mkt-preview-largo-q">Where is invalidation on this 6030 call sweep?</p>
-      <p className="mkt-preview-largo-a" style={{ borderColor: `${accent}44` }}>
-        <span style={{ color: accent }}>Largo</span> · Hold above 6022 gamma shelf. Target 6040 cluster. Size
-        down if charm flips under 6025.
-      </p>
-    </div>
-  );
-}
-
-function HawkPreview({ accent }: { accent: string }) {
-  return (
-    <div className="mkt-preview-hawk">
-      <div className="mkt-preview-grade" style={{ borderColor: `${accent}55`, color: accent }}>
-        B+
-      </div>
-      <ul className="mkt-preview-hawk-log">
-        <li>Playbook · NVDA swing · structure aligned</li>
-        <li>Invalidation · 118.40 · logged at trigger</li>
-        <li>Result · pending · transparent ledger</li>
-      </ul>
-    </div>
-  );
-}
-
-function VectorPreview({ accent }: { accent: string }) {
-  return (
-    <div className="mkt-preview-vector">
-      <div className="mkt-preview-radar">
-        <span className="mkt-preview-radar-ring" />
-        <span className="mkt-preview-radar-ring mkt-preview-radar-ring-2" />
-        <span className="mkt-preview-radar-blip" style={{ background: accent }} />
-      </div>
-      <ul className="mkt-preview-vector-list">
-        <li>SPX · flow rank #1</li>
-        <li>NVDA · gamma shift</li>
-        <li>QQQ · anomaly score ↑</li>
-      </ul>
     </div>
   );
 }
