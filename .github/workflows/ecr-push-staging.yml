@@ -6,7 +6,7 @@ name: ECR push (staging)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [blackout-web-sandbox]
     paths:
       - "deploy/Dockerfile"
       - ".dockerignore"
@@ -27,12 +27,12 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    if: github.repository == 'coreentryadmin-web/blackout-web'
+    if: github.repository == 'coreentryadmin-web/blackout-web-sandbox'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -54,7 +54,16 @@ jobs:
             exit 1
           fi
           IMAGE="${REGISTRY}/${REPO}"
-          docker build -f deploy/Dockerfile -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
+          docker build -f deploy/Dockerfile \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="https://staging.blackouttrades.com" \
+            --build-arg NEXT_PUBLIC_CLERK_ALLOWED_REDIRECT_ORIGINS="https://staging.blackouttrades.com" \
+            --build-arg NEXT_PUBLIC_CLERK_IS_SATELLITE="true" \
+            --build-arg NEXT_PUBLIC_CLERK_PROXY_URL="https://staging.blackouttrades.com/__clerk" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL="https://blackouttrades.com/sign-in" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL="https://blackouttrades.com/sign-up" \
+            --build-arg GITHUB_SHA="${{ github.sha }}" \
+            -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
           docker push "${IMAGE}:${IMAGE_TAG}"
           docker push "${IMAGE}:staging"
           echo "Pushed ${IMAGE}:${IMAGE_TAG} and :staging"

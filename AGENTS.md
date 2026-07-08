@@ -2,6 +2,11 @@
 
 ## Cursor Cloud specific instructions
 
+**This repo (`blackout-web-sandbox`, branch `blackout-web-sandbox`) is the AWS staging app.**
+Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
+explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
+ECS `blackout-staging-web` at `https://staging.blackouttrades.com`.
+
 BLACKOUT (`blackout-web`) is a single **Next.js 15 (App Router) / TypeScript** app with an iOS
 Capacitor shell at **`apps/blackout-ios/`** (one repo — no separate `blackout-ios` GitHub repo).
 The ~20 `railway.*.toml` files at the repo root are production cron *trigger* services that just call
@@ -63,6 +68,18 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   `https://blackouttrades.com/sign-in?__clerk_ticket=<token>`, then **DELETE the test user afterward**
   (`DELETE /v1/users/{id}`) — it is a real user on the prod Clerk instance.
 
+### Staging auth (Clerk satellite — ECS)
+- **Staging uses production Clerk keys** on `staging.blackouttrades.com` → must run as a **satellite**
+  of `blackouttrades.com` (not just `allowedRedirectOrigins`). Config lives in `src/lib/clerk-env.ts`.
+- Clerk Dashboard: `staging.blackouttrades.com` is registered as satellite with FAPI **proxy**
+  `https://staging.blackouttrades.com/__clerk` (no separate `clerk.staging` CNAME required).
+- Staging build bakes `NEXT_PUBLIC_CLERK_IS_SATELLITE=true`, `NEXT_PUBLIC_CLERK_PROXY_URL`, and absolute
+  primary sign-in/sign-up URLs (`https://blackouttrades.com/sign-in`). Middleware enables `frontendApiProxy`.
+- **Primary prod app** (`blackout-web` on Railway) must set `allowedRedirectOrigins` including staging so
+  post-auth redirect back to staging works (`clerkAllowedRedirectOrigins()` in prod `layout.tsx`).
+- OAuth / new sign-ups complete on **primary** (`blackouttrades.com`) then sync back to staging; embedded
+  `/sign-in` on staging still renders for identifier entry but satellite handshake uses the proxy path.
+
 ### Premium tool launch gate (LAUNCHED_TOOLS)
 - Non-admin premium users only see tools where `isToolLaunched()` is true (SPX Slayer + HELIX by default;
   others need `LAUNCHED_TOOLS=heatmap,nighthawk,largo,grid` on Railway `blackout-web`).
@@ -117,6 +134,23 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   non-`/embed` paths) whose value mirrors `baseCsp` in `next.config.mjs`. To change prod security
   headers, edit the Cloudflare Transform Rules (dash: Rules → Transform Rules → Modify Response
   Header, or the Rulesets API) — keep the code's `baseCsp` in sync as the source of truth for the value.
+
+### Postgres (staging RDS — prod snapshot + live ingest)
+- Staging RDS holds a **point-in-time Postgres copy** from Railway prod (see `blackout-infra/scripts/migrate-railway-postgres-to-staging-rds.mjs`). Re-sync weekly or before big tests.
+- **New live data** (UW flows, SPX plays, etc.) lands on staging independently via the same WS + crons — not streamed from prod. Staging uses **`UW_MAX_RPS=1`** and narrowed `UW_WS_*_TICKERS` so prod keeps the UW budget.
+- `PG_STATEMENT_TIMEOUT_MS=0` required for RDS Proxy (`apply-staging-env-overrides.mjs` in blackout-infra).
+
+### Staging validation commands
+| Command | When |
+|---------|------|
+| `npm run validate:staging` | Full harness (warm, deploy, latency) |
+| `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
+| `npm run validate:staging-live` | Cron + Clerk admin/member probes |
+| `npm run validate:latency-compare` | Staging vs prod latency |
+| `npm run ops:collect:staging` | Staging ops action items (no Railway) |
+| `npm run validate:staging-vector-e2e` | Vector Playwright against staging |
+
+Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint checks. GHA: `staging-validate.yml`, `staging-rth-check.yml` (weekdays).
 
 ### Postgres (optional, for persistence testing)
 - The app runs fine without a DB (`/api/health` returns `db: "skipped"`). Postgres is only needed to

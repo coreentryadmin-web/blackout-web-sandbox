@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireTier } from "@/lib/auth-access";
 import { SpxDashboard } from "@/features/spx";
-import { DeskShell } from "@/components/desk/DeskShell";
+import { DeskShell } from "@/components/layout/DeskShell";
 
 export const revalidate = 0;
 

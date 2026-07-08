@@ -12,7 +12,7 @@ import { mintClerkPremiumSession } from "./audit/lib/prod-clerk-session.mjs";
 
 const root = process.cwd();
 const css = readFileSync(join(root, "src/app/globals.css"), "utf8");
-const header = readFileSync(join(root, "src/components/desk/SpxSniperHeader.tsx"), "utf8");
+const header = readFileSync(join(root, "src/features/spx/components/SpxSniperHeader.tsx"), "utf8");
 
 const checks = [];
 const ok = (name, detail = "") => {
@@ -272,23 +272,23 @@ if (flowFeed.includes("iosView") && flowFeed.includes("helix-ios-toolbar")) {
   fail("helix:ios-view-switcher", "expected tape/analytics switcher");
 }
 
-const nhFeed = readFileSync(join(root, "src/components/NightHawkFeed.tsx"), "utf8");
+const nhFeed = readFileSync(join(root, "src/features/nighthawk/components/NightHawkFeed.tsx"), "utf8");
 if (nhFeed.includes("iosView") && nhFeed.includes("playbook")) {
   ok("nighthawk:ios-view-switcher");
 } else {
   fail("nighthawk:ios-view-switcher", "expected playbook/watch switcher");
 }
 
-const largoShell = readFileSync(join(root, "src/components/desk/LargoPageShell.tsx"), "utf8");
+const largoShell = readFileSync(join(root, "src/features/largo/components/LargoPageShell.tsx"), "utf8");
 if (largoShell.includes("useIosNativeShell") && largoShell.includes("!nativeShell")) {
   ok("largo:page-shell-native-gate");
 } else {
   fail("largo:page-shell-native-gate", "expected LargoPageShell to hide web header on native");
 }
 
-const thermalShell = readFileSync(join(root, "src/components/desk/ThermalPageShell.tsx"), "utf8");
-const helixShell = readFileSync(join(root, "src/components/desk/HelixPageShell.tsx"), "utf8");
-const nhShell = readFileSync(join(root, "src/components/desk/NighthawkPageShell.tsx"), "utf8");
+const thermalShell = readFileSync(join(root, "src/features/thermal/components/ThermalPageShell.tsx"), "utf8");
+const helixShell = readFileSync(join(root, "src/features/helix/components/HelixPageShell.tsx"), "utf8");
+const nhShell = readFileSync(join(root, "src/features/nighthawk/components/NighthawkPageShell.tsx"), "utf8");
 if (thermalShell.includes("useIosNativeShell") && thermalShell.includes("!nativeShell")) {
   ok("thermal:page-shell-native-gate");
 } else {
@@ -341,7 +341,7 @@ if (learnHub.includes("useIosNativeShell") && learnHub.includes("learn-hub-nativ
   fail("learn:hub-native-gate", "expected LearnHub compact native mode");
 }
 
-const gexHeatmap = readFileSync(join(root, "src/components/desk/GexHeatmap.tsx"), "utf8");
+const gexHeatmap = readFileSync(join(root, "src/features/thermal/components/GexHeatmap.tsx"), "utf8");
 if (gexHeatmap.includes("nativeShell={nativeShell}") && gexHeatmap.includes("gex-ticker-native-sheet")) {
   ok("thermal:native-ticker-sheet");
 } else {
@@ -353,18 +353,18 @@ if (gexHeatmap.includes("resetIosViewport") && gexHeatmap.includes("gex-ticker-s
   fail("thermal:keyboard-viewport-reset", "expected resetIosViewport on Thermal ticker sheet");
 }
 
-const largoTerm = readFileSync(join(root, "src/components/desk/LargoTerminal.tsx"), "utf8");
+const largoTerm = readFileSync(join(root, "src/features/largo/components/LargoTerminal.tsx"), "utf8");
 if (largoTerm.includes("useIosKeyboardInset")) {
   ok("largo:keyboard-inset-hook");
 } else {
   fail("largo:keyboard-inset-hook", "expected useIosKeyboardInset in LargoTerminal");
 }
 
-const largoPage = readFileSync(join(root, "src/components/desk/LargoPageShell.tsx"), "utf8");
+const largoPage = readFileSync(join(root, "src/features/largo/components/LargoPageShell.tsx"), "utf8");
 if (largoPage.includes("LargoNativeTerminal")) ok("largo:native-terminal-component");
 else fail("largo:native-terminal-component", "expected LargoNativeTerminal in LargoPageShell");
 
-const largoNative = readFileSync(join(root, "src/components/desk/LargoNativeTerminal.tsx"), "utf8");
+const largoNative = readFileSync(join(root, "src/features/largo/components/LargoNativeTerminal.tsx"), "utf8");
 if (largoNative.includes("largo-native-desk") && largoNative.includes("useLargoChat")) {
   ok("largo:mobile-only-desk");
 } else {
@@ -440,7 +440,7 @@ for (const [needle, label] of iphone16Needles) {
   else fail(`iphone16-css:${label}`, `missing ${needle}`);
 }
 
-const spxHeader = readFileSync(join(root, "src/components/desk/SpxSniperHeader.tsx"), "utf8");
+const spxHeader = readFileSync(join(root, "src/features/spx/components/SpxSniperHeader.tsx"), "utf8");
 if (spxHeader.includes("nativeShell") && spxHeader.includes("spx-sniper-command-native")) {
   ok("spx:compact-native-header");
 } else {
@@ -485,7 +485,7 @@ if (!dashboard.includes('<main id="main">')) {
   fail("dashboard:no-nested-main", "duplicate id=main breaks skip link");
 }
 
-const flowStream = readFileSync(join(root, "src/components/desk/FlowAlertStream.tsx"), "utf8");
+const flowStream = readFileSync(join(root, "src/features/helix/components/FlowAlertStream.tsx"), "utf8");
 if (flowStream.includes("flow-scroll-max") && !flowStream.includes("100vh - 210px")) {
   ok("helix:flow-tape-viewport");
 } else {

@@ -23,7 +23,8 @@ import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { warmGridEarnings } from "@/lib/zerodte/earnings";
 import { warmZeroDteBoard } from "@/lib/zerodte/scan";
-import { isEtCashRth } from "@/lib/et-market-hours";
+import { getZeroDteBoardPayload } from "@/lib/platform/zerodte-service";
+import { shouldRunCacheWarmer } from "@/lib/cache-warmer-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,11 +37,12 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get("force") === "1";
-  if (!force && !isEtCashRth()) {
+  if (!shouldRunCacheWarmer(force)) {
     const payload = {
       ok: true,
       skipped: true,
-      reason: "Outside cash RTH (weekday 9:30 AM–4:00 PM ET, excluding holidays/early-close) — use ?force=1 to override",
+      reason:
+        "Outside extended warm window (weekday 4:00 AM–8:00 PM ET) — use ?force=1 or set CACHE_WARM_ALWAYS=1",
     };
     await logCronRun("zerodte-warm", started, payload);
     return NextResponse.json(payload);
@@ -49,11 +51,8 @@ export async function GET(req: NextRequest) {
   // Settle-all so one failing warm can't abort the other.
   const results = await Promise.allSettled([
     warmGridEarnings(),
-    // 0DTE Command scanner — the always-on hunt. Every ~2-min tick scans the HELIX
-    // tape for fresh single-name 0DTE concentration, enriches the top finds through
-    // the Night Hawk dossier, and upserts the session ledger (zerodte_setup_log) so
-    // the board's "flagged today" record accumulates whether or not anyone is looking.
     warmZeroDteBoard(),
+    getZeroDteBoardPayload(),
   ]);
 
   let warmed = 0;

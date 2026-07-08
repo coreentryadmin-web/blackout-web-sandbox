@@ -39,14 +39,14 @@ product is a set of **tools** (each gated by subscription tier):
 
 | Tool | What it does | Primary code |
 |---|---|---|
-| **SPX Slayer** (the "desk") | Live SPX 0DTE trade desk — confluence scoring, AI-approved play entries, levels, signals | `src/components/desk/`, `src/lib/spx-play-engine.ts` |
-| **HELIX Flows** | Real-time options order-flow tape (unusual/large premium sweeps & blocks) | `src/lib/flow-*.ts`, `src/lib/ws/uw-socket.ts` |
-| **Heat Maps** | GEX/VEX/DEX/CHARM dealer-positioning heatmaps (gamma walls, flip points) | `src/components/desk/GexHeatmap.tsx`, `src/lib/providers/gex-*.ts` |
-| **Night Hawk** | Evening swing-play scanner — generates a nightly "edition" of ranked plays | `src/lib/nighthawk/` (38 files) |
-| **Night's Watch** | Per-user options *position manager* — tracks & values open positions live | `src/lib/nights-watch/`, `src/components/nights-watch/` |
-| **Largo** | AI analyst (chat/tool-using agent) grounded in all the platform's live data | `src/lib/largo/` (12 files) |
-| **0DTE Command** | Always-on multi-ticker 0DTE scanner (tab on Night Hawk) | `src/lib/zerodte/`, `api/market/zerodte/board`, `api/cron/zerodte-warm` |
-| **Vector** | SPX structure chart with GEX/VEX walls and session replay | `src/features/vector/`, `api/market/vector/*` |
+| **SPX Slayer** (the "desk") | Live SPX 0DTE trade desk — confluence scoring, AI-approved play entries, levels, signals | `src/features/spx/` (`/dashboard`) |
+| **HELIX Flows** | Real-time options order-flow tape (unusual/large premium sweeps & blocks) | `src/features/helix/` (`/flows`) |
+| **BlackOut Thermal** | GEX/VEX/DEX/CHARM dealer-positioning heatmaps (gamma walls, flip points) | `src/features/thermal/` (`/heatmap`) |
+| **Night Hawk** | Evening swing-play scanner + **0DTE Command** tab (always-on multi-ticker 0DTE) | `src/features/nighthawk/` (`/nighthawk`) |
+| **Largo** | AI analyst (chat/tool-using agent) grounded in all the platform's live data | `src/features/largo/` (`/terminal`) |
+| **Vector** | SPX structure chart with GEX/VEX walls and session replay | `src/features/vector/` (`/vector`) |
+
+**Removed (2026-07):** Classic **Grid** page and **Night's Watch** position manager — 0DTE lives on Night Hawk; do not resurrect `/grid` or `nights-watch-*` crons.
 
 ---
 
@@ -73,47 +73,45 @@ product is a set of **tools** (each gated by subscription tier):
 blackout-web/
 ├── src/
 │   ├── middleware.ts            # Clerk auth + route protection (look here for "why am I 401")
+│   ├── features/                # Tool modules (UI + server logic colocated)
+│   │   ├── spx/                 # SPX Slayer — desk, play engine, matrix
+│   │   ├── helix/               # HELIX flow tape
+│   │   ├── thermal/             # BlackOut Thermal (GEX heatmap)
+│   │   ├── nighthawk/           # Night Hawk + 0DTE Command
+│   │   ├── largo/               # Largo AI terminal
+│   │   └── vector/              # Vector chart
 │   ├── app/
 │   │   ├── (site)/              # ALL user-facing pages (route group, shared shell)
 │   │   │   ├── layout.tsx       # ← the REAL app shell (NOT PlatformShell.tsx — that's DEAD)
 │   │   │   ├── dashboard/  flows/  heatmap/  nighthawk/  terminal/  vector/
 │   │   │   ├── track-record/  upgrade/  admin/
-│   │   │   └── learn/           # interactive docs per tool (getting-started, glossary, …)
+│   │   │   └── learn/
 │   │   ├── api/                 # ~120 route handlers (see §5)
 │   │   ├── layout.tsx           # root layout
 │   │   └── globals.css
-│   ├── components/              # React UI, grouped by tool (desk/ spx/ nighthawk/ vector/ …)
-│   │   └── ui/                  # shared primitives (FreshnessChip lives here)
-│   └── lib/                     # ALL business logic — the brain of the platform (see §4)
-├── docs/                        # single source of truth for all docs (see §14)
-│   └── api-audit/               # autonomous auditor output + OPEN-ISSUES.md
-├── scripts/                     # cron workers, doc generators, brand linter
-├── railway.<service>.toml       # one file per background/cron service (see §10)
-├── .cursor/rules/               # Cursor AI rules (auto-loaded)
-├── next.config.mjs              # headers, redirects, image config
-└── DESIGN_BENCHMARK.md          # the UI bar
+│   ├── components/              # Shared UI (layout/, ui/, ios/, admin/, …)
+│   └── lib/                     # Cross-cutting business logic (see §4)
 ```
 
-**`src/lib/` is where the real work is.** Key files & subdirs:
+**AWS sandbox:** experimental work lives on repo `blackout-web-sandbox`, branch `blackout-web-sandbox`. Prod repo `blackout-web` `main` only gets cherry-picked hotfixes.
+
+**`src/features/*/lib/` is where tool logic lives.** Cross-cutting infra stays in `src/lib/`:
 
 | Path | Responsibility |
 |---|---|
-| `db.ts` | Postgres pool (note the idle-error handler at `:113` — do not remove) + query helpers |
-| `make-redis.ts` | Redis client factory (`family:0` IPv6 fix + reconnect — do not remove) |
-| `spx-play-engine.ts` | The SPX desk decision engine — confluence → AI approval → open/evaluate play |
-| `spx-play-config.ts` | All SPX desk tunables (env-overridable flags & thresholds) |
+| `db.ts` | Postgres pool (idle-error handler at `:113` — do not remove) |
+| `make-redis.ts` | Redis client factory (`family:0` + reconnect — do not remove) |
+| `features/spx/lib/spx-play-engine.ts` | SPX desk decision engine |
+| `features/spx/lib/spx-play-config.ts` | SPX desk tunables |
 | `middleware.ts` (in `app/`) | Auth gating |
-| `market-api-auth.ts`, `tool-access.ts`, `tool-access-server.ts` | Tier/launch gating (see §8) |
-| `membership.ts`, `whop-checkout.ts`, `tier-cache.ts` | Billing & entitlements |
-| `providers/` (38) | Every external data source adapter (`polygon.ts`, `unusual-whales.ts`, `gex-positioning.ts`, `spx-desk.ts`, rate limiters, cross-validation) |
-| `ws/` (12) | WebSocket clients & leader-election (`polygon-socket.ts`, `uw-socket.ts`, `options-socket.ts`, `init-data-sockets.ts`) |
-| `nighthawk/` (38) | Night Hawk scanner, scorer, edition generation, grounding |
-| `nights-watch/` (12) | Position manager valuation & context |
-| `largo/` (12) | AI analyst agent + tools |
-| `correctness/` (11) | The data-correctness verifiers (the auto-auditor's engine) |
-| `flow-*.ts` | HELIX flow ingest, dedup, fanout, freshness, liveness |
-| `api-telemetry*.ts`, `api-tracked-fetch.ts` | Provider call tracking & rate quotas |
-| `admin-*.ts` | The admin dashboard's data layer |
+| `market-api-auth.ts`, `tool-access.ts` | Tier/launch gating (see §8) |
+| `providers/` | External data adapters (polygon, unusual-whales, gex-positioning, …) |
+| `ws/` | WebSocket clients & leader-election |
+| `largo/` | Largo agent orchestration (tools call feature libs) |
+| `zerodte/` | 0DTE scanner engine (UI in `features/nighthawk/`) |
+| `correctness/` | Data-correctness verifiers |
+| `flow-*.ts` | HELIX flow ingest, dedup, fanout |
+| `admin-*.ts` | Admin dashboard data layer |
 
 ---
 
@@ -198,16 +196,11 @@ scripts use stale paths; trust the directory tree.
 - Reader: `api/market/gex-positioning`, `api/market/gex-heatmap`. Contract: [HEATMAP_DATA_CONTRACT.md](HEATMAP_DATA_CONTRACT.md).
 - UI: `src/features/thermal/` (`/heatmap`).
 
-### Night Hawk
+### Night Hawk (+ 0DTE Command)
 - Logic: `src/features/nighthawk/lib/` (scanner, scorer, positioning, grounding). Edition generation runs via `api/cron/nighthawk-edition`.
-- Crons: `nighthawk-edition` (generate), `nighthawk-morning-confirm`, `nighthawk-outcomes`.
-- Reader: `api/market/nighthawk/edition`. Grounding rules: [NIGHTHAWK_GROUNDING.md](NIGHTHAWK_GROUNDING.md).
-- UI: `src/features/nighthawk/components/`. **0DTE Command** (always-on scanner tab) shares the Night Hawk page — reader: `api/market/zerodte/board`, warm cron: `zerodte-warm`.
-
-### Night's Watch
-- Logic: `src/lib/nights-watch/` (position-context, position-detail, valuation). Cron: `nights-watch-warm`.
-- UI: `src/components/nights-watch/`. Doc: [NIGHTS_WATCH.md](NIGHTS_WATCH.md).
-- **Valuation must be a cache-reader** to scale per-user — see §4a.
+- Crons: `nighthawk-edition`, `nighthawk-morning-confirm`, `nighthawk-outcomes`, `zerodte-warm`.
+- Reader: `api/market/nighthawk/edition`, `api/market/zerodte/board`. Grounding: [NIGHTHAWK_GROUNDING.md](NIGHTHAWK_GROUNDING.md).
+- UI: `src/features/nighthawk/components/` (`/nighthawk` — Playbook + 0DTE Command tabs).
 
 ### Largo (AI analyst)
 - Agent + tools: `src/lib/largo/`. Provider: `providers/polygon-largo.ts`, `anthropic.ts`.
@@ -247,7 +240,7 @@ scripts use stale paths; trust the directory tree.
 `cron-staleness-watchdog`.
 
 Key jobs: `spx-evaluate` (desk heartbeat), `spx-signal-observe`, `flow-ingest`, `gex-eod-snapshot`,
-`heatmap-warm`, `zerodte-warm`, `nighthawk-edition`, `nights-watch-warm`, `market-regime-detector`,
+`heatmap-warm`, `zerodte-warm`, `nighthawk-edition`, `market-regime-detector`,
 `data-correctness` (the auto-auditor), `data-integrity`, `uw-cache-refresh`, `membership-reconcile`,
 `db-cleanup`.
 
@@ -294,7 +287,7 @@ been seen with code present but service unprovisioned → its writer never runs.
 | I want to… | Look here |
 |---|---|
 | Understand current known bugs | `docs/api-audit/OPEN-ISSUES.md` |
-| Change how an SPX play opens/scores | `src/lib/spx-play-engine.ts` + `spx-play-config.ts` |
+| Change how an SPX play opens/scores | `src/features/spx/lib/spx-play-engine.ts` + `spx-play-config.ts` |
 | Fix "endpoint returns 401" | `src/middleware.ts` + `market-api-auth.ts`/`tool-access.ts` (likely correct auth-gating) |
 | Add/repair a data feed | `src/lib/providers/<source>.ts` + the matching `ws/*-socket.ts` |
 | Make a feature live for users | wire it to the **cache-reader** (`api/market/*`), respect §4a |

@@ -39,7 +39,7 @@ test("BIE composers read zeroDtePlaysForLargo from shared scan module", () => {
 test("zeroDtePlaysForLargo shares the fresh-find cutoff gate with ZeroDteBoard.tsx (resolveFreshFindStatus)", () => {
   const service = readFileSync(join(ROOT, "lib/platform/zerodte-service.ts"), "utf8");
   assert.match(service, /resolveFreshFindStatus/);
-  const boardComponent = readFileSync(join(ROOT, "components/zerodte/ZeroDteBoard.tsx"), "utf8");
+  const boardComponent = readFileSync(join(ROOT, "features/nighthawk/components/ZeroDteBoard.tsx"), "utf8");
   assert.match(boardComponent, /resolveFreshFindStatus/);
 });
 

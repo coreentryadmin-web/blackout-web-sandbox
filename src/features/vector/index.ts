@@ -7,6 +7,7 @@ export { VectorPageShell } from "./components/VectorPageShell";
 export type { VectorBar } from "./components/VectorChart";
 
 export { fetchVectorSeedBars } from "./lib/vector-seed-bars";
+export { normalizeVectorTicker, VECTOR_DEFAULT_TICKER } from "./lib/vector-ticker";
 export {
   buildVectorStreamPayload,
   getVectorDarkPoolLevels,
@@ -17,6 +18,13 @@ export {
   getVectorWallHistory,
   primeVectorWallScope,
 } from "./lib/vector-snapshot";
+export {
+  loadVectorUniverseSnapshot,
+  refreshVectorUniverseSnapshot,
+  type VectorUniverseRow,
+  type VectorUniverseSnapshot,
+} from "./lib/vector-universe";
+export { buildCoachingAlerts } from "./lib/vector-coaching";
 export { fetchSpyVolumeRows } from "./lib/vector-spy-volume";
 export {
   mergeWallHistory,

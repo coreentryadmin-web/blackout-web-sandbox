@@ -1,5 +1,6 @@
 import {
   dbConfigured,
+  fetchTodaySpxSessionCounts,
   getMeta,
   setMeta,
 } from "@/lib/db";
@@ -35,6 +36,8 @@ export type PlaySessionMeta = {
   last_sell_was_loss: boolean;
   last_direction: SpxPlayDirection | null;
   last_stop_at: number | null;
+  session_entries_today?: number;
+  session_losses_today?: number;
   // C5: date boundary — prevents stale session data from bleeding across calendar days.
   session_date?: string;
   version?: number;
@@ -51,6 +54,8 @@ const MEMORY_SESSION: PlaySessionMeta = {
   last_sell_was_loss: false,
   last_direction: null,
   last_stop_at: null,
+  session_entries_today: 0,
+  session_losses_today: 0,
 };
 
 async function setMetaWithRetry(key: string, value: string, attempts = 3): Promise<void> {
@@ -71,6 +76,47 @@ async function setMetaWithRetry(key: string, value: string, attempts = 3): Promi
   throw lastErr instanceof Error ? lastErr : new Error("Failed to persist session meta");
 }
 
+/** After deploy/restart, meta counters may lag the ledger — reconcile from DB once per load. */
+async function hydrateSessionCountersFromDb(meta: PlaySessionMeta): Promise<PlaySessionMeta> {
+  const stripVersion = (m: PlaySessionMeta): PlaySessionMeta => {
+    const { version: _v, ...rest } = m;
+    void _v;
+    return rest;
+  };
+
+  if (!dbConfigured()) return stripVersion(meta);
+
+  try {
+    const today = todayEt();
+    const { entries, losses } = await fetchTodaySpxSessionCounts(today);
+    const entriesToday = Math.max(meta.session_entries_today ?? 0, entries);
+    const lossesToday = Math.max(meta.session_losses_today ?? 0, losses);
+
+    if (
+      entriesToday === (meta.session_entries_today ?? 0) &&
+      lossesToday === (meta.session_losses_today ?? 0)
+    ) {
+      return stripVersion(meta);
+    }
+
+    const patched: PlaySessionMeta = {
+      ...meta,
+      session_entries_today: entriesToday,
+      session_losses_today: lossesToday,
+      session_date: today,
+      version: (meta.version ?? 0) + 1,
+    };
+    Object.assign(MEMORY_SESSION, patched);
+    void setMetaWithRetry(SESSION_META_KEY, JSON.stringify(patched)).catch((err) =>
+      console.warn("[spx-play-store] hydrate session counters persist failed:", err)
+    );
+    return stripVersion(patched);
+  } catch (err) {
+    console.warn("[spx-play-store] hydrateSessionCountersFromDb failed:", err);
+    return stripVersion(meta);
+  }
+}
+
 export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
   if (!dbConfigured()) return { ...MEMORY_SESSION };
   const raw = await getMeta(SESSION_META_KEY);
@@ -88,6 +134,9 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
         last_sell_was_loss: false,
         last_direction: openRow.direction,
         last_stop_at: null,
+        session_entries_today: 1,
+        session_losses_today: 0,
+        session_date: todayEt(),
         version: 1,
       };
       Object.assign(MEMORY_SESSION, recovered);
@@ -103,7 +152,7 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       void _version;
       return memFields;
     }
-    return { last_buy_at: null, last_sell_at: null, last_sell_was_loss: false, last_direction: null, last_stop_at: null };
+    return { last_buy_at: null, last_sell_at: null, last_sell_was_loss: false, last_direction: null, last_stop_at: null, session_entries_today: 0, session_losses_today: 0 };
   }
   try {
     const p = JSON.parse(raw) as PlaySessionMeta;
@@ -113,6 +162,8 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       last_sell_was_loss: Boolean(p.last_sell_was_loss),
       last_direction: p.last_direction ?? null,
       last_stop_at: p.last_stop_at ?? null,
+      session_entries_today: p.session_entries_today ?? 0,
+      session_losses_today: p.session_losses_today ?? 0,
       session_date: p.session_date,
       version: typeof p.version === "number" ? p.version : 0,
     };
@@ -126,6 +177,9 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       meta.last_sell_was_loss = false;
       meta.last_direction = null;
       meta.last_stop_at = null;
+      meta.session_entries_today = 0;
+      meta.session_losses_today = 0;
+      meta.session_date = todayEt();
     }
 
     // Recovery: if meta was persisted but last_buy_at is null while an open
@@ -148,7 +202,7 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
     }
 
     Object.assign(MEMORY_SESSION, meta);
-    return meta;
+    return await hydrateSessionCountersFromDb(meta);
   } catch (err) {
     // P1: do not swallow a transient DB/parse failure into a clean default —
     // that would wipe cooldown / re-entry lock state mid-session. Prefer the
@@ -162,6 +216,9 @@ export async function loadPlaySessionMeta(): Promise<PlaySessionMeta> {
       m.last_sell_was_loss = false;
       m.last_direction = null;
       m.last_stop_at = null;
+      m.session_entries_today = 0;
+      m.session_losses_today = 0;
+      m.session_date = todayEt();
     }
     return m;
   }
@@ -174,6 +231,8 @@ function maxTimestamp(a: number | null, b: number | null): number | null {
 }
 
 function mergeSessionMeta(existing: PlaySessionMeta, incoming: PlaySessionMeta): PlaySessionMeta {
+  const today = todayEt();
+  const sameDay = existing.session_date === today && incoming.session_date === today;
   return {
     last_buy_at: maxTimestamp(existing.last_buy_at, incoming.last_buy_at),
     last_sell_at: maxTimestamp(existing.last_sell_at, incoming.last_sell_at),
@@ -183,8 +242,13 @@ function mergeSessionMeta(existing: PlaySessionMeta, incoming: PlaySessionMeta):
         ? incoming.last_sell_was_loss
         : existing.last_sell_was_loss,
     last_direction: incoming.last_direction ?? existing.last_direction,
-    // C5: always carry today's date forward so the reader can detect stale data.
-    session_date: todayEt(),
+    session_entries_today: sameDay
+      ? Math.max(existing.session_entries_today ?? 0, incoming.session_entries_today ?? 0)
+      : incoming.session_entries_today ?? 0,
+    session_losses_today: sameDay
+      ? Math.max(existing.session_losses_today ?? 0, incoming.session_losses_today ?? 0)
+      : incoming.session_losses_today ?? 0,
+    session_date: today,
   };
 }
 
@@ -329,6 +393,9 @@ export async function closeOpenPlay(
     last_sell_at: Date.now(),
     last_sell_was_loss: outcome.was_loss,
     last_direction: outcome.direction,
+    session_entries_today: meta.session_entries_today ?? 0,
+    session_losses_today:
+      (meta.session_losses_today ?? 0) + (outcome.was_loss ? 1 : 0),
     // TRAIL exits do NOT trigger the 15-min stop cooldown by design — a trailing stop
     // on a +8pt or +15pt MFE trade is a protected exit from a winning setup, not the
     // chop/structure-break scenario the cooldown guards against. Exception: if the trail
@@ -406,5 +473,7 @@ export async function recordBuy(direction: SpxPlayDirection): Promise<void> {
     last_buy_at: Date.now(),
     last_direction: direction,
     last_sell_was_loss: false,
+    session_entries_today: (meta.session_entries_today ?? 0) + 1,
+    session_date: todayEt(),
   });
 }

@@ -1,0 +1,55 @@
+/* Marketing-only styles — loaded on (marketing) routes without full globals.css */
+
+@keyframes landing-shimmer-sweep {
+  0% { transform: translateX(-120%) skewX(-12deg); }
+  100% { transform: translateX(220%) skewX(-12deg); }
+}
+
+.landing-btn-primary {
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.landing-btn-primary:hover {
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.5);
+}
+
+.landing-btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.35) 50%, transparent 60%);
+  transform: translateX(-120%) skewX(-12deg);
+  pointer-events: none;
+}
+
+.landing-btn-primary:hover::after {
+  animation: landing-shimmer-sweep 0.75s ease;
+}
+
+.landing-btn-ghost {
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.landing-btn-ghost::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #00e676;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s ease;
+  z-index: -1;
+}
+
+.landing-btn-ghost:hover {
+  color: #000 !important;
+  border-color: #00e676 !important;
+}
+
+.landing-btn-ghost:hover::before {
+  transform: scaleX(1);
+}

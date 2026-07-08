@@ -37,10 +37,19 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
     if (open) iosHapticImpact("Light");
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
-        <>
+        <div className="ios-native-menu-overlay" role="presentation">
           <motion.button
             type="button"
             className="ios-native-menu-scrim"
@@ -132,7 +141,7 @@ export function IosNativeMenu({ open, onClose, lockedTools = [], showAdmin }: Pr
               <PushNotificationToggle />
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

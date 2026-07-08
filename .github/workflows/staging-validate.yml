@@ -1,0 +1,52 @@
+# Staging validation — weekdays + after ECR deploy
+name: Staging validate
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "35 13 * * 1-5"
+  push:
+    branches: [blackout-web-sandbox]
+    paths:
+      - "scripts/staging-*.mjs"
+      - "scripts/compare-latency-envs.mjs"
+      - "scripts/site-latency-audit.mjs"
+      - "scripts/validate-deploy.mjs"
+      - ".github/workflows/staging-validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    if: github.repository == 'coreentryadmin-web/blackout-web-sandbox'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Staging full validation
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: npm run validate:staging
+
+      - name: Staging live check
+        run: npm run validate:staging-live
+
+      - name: Latency compare (staging vs prod)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: npm run validate:latency-compare

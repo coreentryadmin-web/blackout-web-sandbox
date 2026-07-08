@@ -149,7 +149,9 @@ export async function buildSpxAdminIssues(input: {
 
   const polygonWs = health.websockets.polygon_indices;
   if (polygonConfigured()) {
-    if (!polygonWs.authenticated) {
+    const polygonClusterLive = polygonWs.cluster_live === true;
+    const polygonFollowerHealthy = !polygonWs.is_leader && polygonClusterLive;
+    if (!polygonWs.authenticated && !polygonFollowerHealthy) {
       push(issues, {
         severity: marketOpen ? "warning" : "info",
         category: "websocket",
@@ -165,10 +167,11 @@ export async function buildSpxAdminIssues(input: {
     // index feed (SPX/VIX/VIX9D/VIX3M) at price<=0 during RTH stays a `warning`.
     const PROXY_BACKED_INTERNALS = new Set(["I:TICK", "I:TRIN", "I:ADD"]);
     for (const sym of polygonWs.symbols) {
+      const neverTicked = sym.ageMs == null;
+      if (polygonFollowerHealthy && sym.sym === "I:SPX") continue;
       // ageMs === null means the symbol has NEVER ticked this process — at least as
       // stale as any timed age, so it must still trip the check (previously it
       // "worked" only via the bogus Date.now()-0 ≈ 56-year age, now fixed at source).
-      const neverTicked = sym.ageMs == null;
       if (marketOpen && sym.price <= 0 && (neverTicked || sym.ageMs! > 30_000)) {
         const proxyBacked = PROXY_BACKED_INTERNALS.has(sym.sym);
         const ageLabel = neverTicked ? "never ticked" : `${Math.round(sym.ageMs! / 1000)}s`;
@@ -186,6 +189,7 @@ export async function buildSpxAdminIssues(input: {
     // even though the last price was non-zero (the symbol loop above only
     // catches price<=0). Freshest age across symbols is the liveness signal.
     if (marketOpen) {
+      if (!polygonFollowerHealthy) {
       const polygonFreshestAgeMs = freshestFeedAgeMs(
         polygonWs.symbols.map((s) => s.ageMs)
       );
@@ -209,6 +213,7 @@ export async function buildSpxAdminIssues(input: {
           detail: `No index bar for ${Math.round((polygonFreshestAgeMs ?? 0) / 1000)}s`,
         });
       }
+      }
     }
   }
 
@@ -229,6 +234,8 @@ export async function buildSpxAdminIssues(input: {
             ? `Channels: ${authFailedChannels.join(", ")} — check UW_API_KEY`
             : "401 on connect — check UW_API_KEY",
       });
+    } else if (uwWs.cluster_live && !uwWs.is_leader) {
+      /* Follower replica — UW multiplex is leader-only; cluster heartbeat proves delivery. */
     } else {
       for (const [ch, row] of Object.entries(uwWs.channels)) {
         if (row.auth_failed) {

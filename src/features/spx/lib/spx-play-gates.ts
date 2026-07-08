@@ -9,6 +9,7 @@ import {
   playBuyCooldownAplusBypass,
   playBuyCooldownSec,
   playCooldownAfterStopMin,
+  playColdBuyMinScore,
   playFullMinScore,
   playGexStaleMaxSec,
   playMinAgreeingFactors,
@@ -17,6 +18,8 @@ import {
   playOnlyFullEntry,
   playOpeningRangeMinutes,
   playReentryLockSec,
+  playSessionMaxEntries,
+  playSessionMaxLosses,
   playStarterMinScore,
   playWatchMinScore,
   playWeightedConflictBlockMin,
@@ -121,9 +124,11 @@ export function evaluatePlayGates(
     last_sell_was_loss: boolean;
     last_direction: "long" | "short" | null;
     last_stop_at: number | null;
+    session_entries_today?: number;
+    session_losses_today?: number;
   },
   confirmations?: PlayConfirmationResult | null,
-  opts?: { min_score_boost?: number; entry_intent?: "buy" | "watch" }
+  opts?: { min_score_boost?: number; entry_intent?: "buy" | "watch"; cold_buy_path?: boolean }
 ): PlayGateResult {
   const blocks: string[] = [];
   const warnings: string[] = [];
@@ -199,6 +204,24 @@ export function evaluatePlayGates(
 
   if (buyIntent && isPastNoEntryCutoff()) {
     blocks.push(`After ${noEntryCutoffLabel()} — no new 0DTE entries`);
+  }
+
+  const entriesToday = session.session_entries_today ?? 0;
+  const lossesToday = session.session_losses_today ?? 0;
+  if (buyIntent && entriesToday >= playSessionMaxEntries()) {
+    blocks.push(`Session entry cap (${playSessionMaxEntries()} plays today — quality over quantity)`);
+  }
+  if (buyIntent && lossesToday >= playSessionMaxLosses()) {
+    blocks.push(`Session loss cap (${playSessionMaxLosses()} losses today — stand down)`);
+  }
+
+  if (buyIntent && opts?.cold_buy_path && abs < playColdBuyMinScore()) {
+    blocks.push(
+      `Cold BUY needs score ≥${playColdBuyMinScore()} (have ${abs}) — WATCH→ENTRY path preferred`
+    );
+  }
+  if (buyIntent && opts?.cold_buy_path && gradeRank(confluence.grade) < gradeRank("A")) {
+    blocks.push("Cold BUY requires grade A or better — B setups need WATCH→ENTRY");
   }
 
   const etMins = etMinutes(new Date());

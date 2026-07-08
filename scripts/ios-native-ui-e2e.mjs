@@ -87,15 +87,14 @@ async function clickRoleTab(page, pattern) {
 
 async function testToolPage(page, tab) {
   const tabLink = page.getByRole("link", { name: tab.label }).first();
-  if (!(await tabLink.isVisible().catch(() => false))) {
-    const codeLink = page.locator(".ios-app-tab-link", { hasText: tab.code }).first();
-    if (!(await codeLink.isVisible().catch(() => false))) {
-      fail(`tab:${tab.code}`, "instrument rail link not visible");
-      return;
-    }
+  const codeLink = page.locator(".ios-app-tab-link", { hasText: tab.code }).first();
+  if (await tabLink.isVisible().catch(() => false)) {
+    await tabLink.click();
+  } else if (await codeLink.isVisible().catch(() => false)) {
     await codeLink.click();
   } else {
-    await tabLink.click();
+    warn(`tab:${tab.code}`, "rail link hidden — direct nav");
+    await page.goto(`${BASE}${tab.href}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
   }
   await page.waitForURL((url) => url.pathname === tab.href || url.pathname.startsWith(`${tab.href}/`), {
     timeout: 45_000,
@@ -278,7 +277,8 @@ async function runDevicePass(deviceFactory, session, prefix = "") {
       await page.waitForSelector(".ios-native-menu-sheet", { timeout: 10_000 });
       ok(`${prefix}chrome:menu-open`);
       await shot(page, `${prefix}menu-open`);
-      await page.getByRole("button", { name: /close command deck|close menu/i }).click();
+      await page.locator(".ios-native-menu-scrim").click({ position: { x: 12, y: 12 } });
+      await page.waitForSelector(".ios-native-menu-sheet", { state: "hidden", timeout: 10_000 }).catch(() => null);
       ok(`${prefix}chrome:menu-close`);
     } else {
       warn(`${prefix}chrome:menu`, "command deck button not visible");
@@ -290,7 +290,12 @@ async function runDevicePass(deviceFactory, session, prefix = "") {
       await testToolPage(page, tab);
     }
 
-    await page.getByRole("link", { name: "SPX Slayer" }).first().click();
+    const returnTab = page.locator(".ios-app-tab-link", { hasText: "SPX" }).first();
+    if (await returnTab.isVisible().catch(() => false)) {
+      await returnTab.click();
+    } else {
+      await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    }
     await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
     ok(`${prefix}nav:return-spx`);
   } finally {

@@ -14,6 +14,64 @@ export function computeDegradedLocalRps(globalMaxRps: number, replicaCount: numb
   return Math.max(0.1, globalMaxRps / Math.max(1, Math.floor(replicaCount)));
 }
 
+/** Per-replica in-flight cap when the Redis cluster semaphore is unavailable. */
+export function computeDegradedLocalConcurrency(
+  globalMaxConcurrency: number,
+  replicaCount: number
+): number {
+  return Math.max(1, Math.floor(globalMaxConcurrency / Math.max(1, Math.floor(replicaCount))));
+}
+
+export const REDIS_CONCURRENCY_ACQUIRE_LUA = `
+local current = tonumber(redis.call('GET', KEYS[1])) or 0
+local limit = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+if current >= limit then
+  return 0
+end
+local next = redis.call('INCR', KEYS[1])
+if next == 1 then
+  redis.call('EXPIRE', KEYS[1], ttl)
+end
+return 1
+`;
+
+export const REDIS_CONCURRENCY_RELEASE_LUA = `
+local current = tonumber(redis.call('GET', KEYS[1])) or 0
+if current > 0 then
+  redis.call('DECR', KEYS[1])
+end
+return 1
+`;
+
+/** Cluster-wide in-flight REST cap (UW Advanced hard limit is 3 concurrent). */
+export async function acquireRedisConcurrencySlot(
+  client: RateLimiterRedisClient,
+  key: string,
+  globalMaxConcurrency: number,
+  leaseTtlSec = 120
+): Promise<boolean> {
+  const allowed = await client.eval(
+    REDIS_CONCURRENCY_ACQUIRE_LUA,
+    1,
+    key,
+    globalMaxConcurrency,
+    leaseTtlSec
+  );
+  return allowed === 1;
+}
+
+export async function releaseRedisConcurrencySlot(
+  client: RateLimiterRedisClient,
+  key: string
+): Promise<void> {
+  try {
+    await client.eval(REDIS_CONCURRENCY_RELEASE_LUA, 1, key);
+  } catch {
+    /* non-fatal — lease TTL clears stale counts */
+  }
+}
+
 export type RateLimiterRedisClient = {
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;

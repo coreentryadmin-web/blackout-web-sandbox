@@ -1,12 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageShell, PageHeader, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import type { WallHistorySample } from "@/features/vector/lib/vector-wall-history";
+import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
+import { VectorScanner } from "@/features/vector/components/VectorScanner";
+import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
 const VectorChart = dynamic(
   () => import("@/features/vector/components/VectorChart").then((m) => m.VectorChart),
@@ -27,6 +31,7 @@ const VectorChart = dynamic(
 const CANDLE_STALE_MS = 10_000;
 
 type Props = {
+  ticker: string;
   initialBars: VectorBar[];
   initialWalls: VectorWalls | null;
   initialVexWalls: VectorWalls | null;
@@ -48,8 +53,9 @@ function formatSessionLabel(ymd: string): string {
   });
 }
 
-/** /vector page frame — mirrors the other tool shells' PageShell/PageHeader/ProductMark structure. */
+/** /vector page frame — multi-ticker chart + universe scanner. */
 export function VectorPageShell({
+  ticker,
   initialBars,
   initialWalls,
   initialVexWalls,
@@ -60,9 +66,11 @@ export function VectorPageShell({
   sessionYmd,
   liveSession,
 }: Props) {
+  const router = useRouter();
   const sessionLabel = formatSessionLabel(sessionYmd);
   const [streamUpdatedAt, setStreamUpdatedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
+  const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
 
   useEffect(() => {
     if (!liveSession) return;
@@ -83,23 +91,38 @@ export function VectorPageShell({
         ? "stale"
         : "live";
 
+  const kicker =
+    activeTicker === "SPX" ? "Live SPX chart" : `Live ${activeTicker} chart`;
+
   return (
     <PageShell fullBleed className="vector-page-shell">
       <div className="px-2 sm:px-4 xl:px-6">
         <PageHeader
-          kicker="Live SPX chart"
+          kicker={kicker}
           title="Vector"
           badge={<ProductMark product="vector" size={40} animated={false} />}
           actions={
-            <FreshnessChip
-              status={freshnessStatus}
-              asOf={liveSession && streamUpdatedAt ? new Date(streamUpdatedAt) : null}
-              label={liveSession ? "Live session" : `${sessionLabel} close`}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              <VectorTickerSelect ticker={activeTicker} />
+              <FreshnessChip
+                status={freshnessStatus}
+                asOf={liveSession && streamUpdatedAt ? new Date(streamUpdatedAt) : null}
+                label={liveSession ? "Live session" : `${sessionLabel} close`}
+              />
+            </div>
           }
         />
+        <div className="mt-3 mb-4">
+          <VectorScanner
+            activeTicker={activeTicker}
+            onSelect={(t) =>
+              router.push(t === VECTOR_DEFAULT_TICKER ? "/vector" : `/vector?ticker=${encodeURIComponent(t)}`)
+            }
+          />
+        </div>
         <div className="mt-2">
           <VectorChart
+            ticker={activeTicker}
             initialBars={initialBars}
             initialWalls={initialWalls}
             initialVexWalls={initialVexWalls}

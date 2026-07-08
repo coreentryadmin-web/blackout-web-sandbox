@@ -40,7 +40,7 @@ import {
   playTrailingStopTrailMfePts,
   playTrailingStopTrailWindowPts,
 } from "@/features/spx/lib/spx-play-config";
-import { evaluateThesisBreak } from "@/features/spx/lib/spx-play-thesis";
+import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
 import { deskAgeSec, isDeskStale } from "@/features/spx/lib/spx-desk-stale";
 import {
   closeOpenPlay,
@@ -201,7 +201,10 @@ async function evaluateOpenPlay(
   const targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
 
   const entryScore = row.entry_score ?? confluence.score;
-  const thesisEval = evaluateThesisBreak(dir, confluence.score, entryScore);
+  const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
+    mfePts: mfe,
+    openedAtMs: new Date(row.opened_at).getTime(),
+  });
   const thesisBreak = thesisEval.broken;
 
   const totalRun =
@@ -579,10 +582,6 @@ async function evaluateFlatPlay(
       ? evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score)
       : null;
 
-  const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
-    min_score_boost: adaptive.global_min_score_boost,
-    entry_intent: "buy",
-  });
   const gatesWatch = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "watch",
@@ -630,6 +629,12 @@ async function evaluateFlatPlay(
       promoteReason = `WATCH→ENTRY needs score ≥${promoteMin} (telemetry +${adaptive.promote_min_score_boost})`;
     }
   }
+
+  const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
+    min_score_boost: adaptive.global_min_score_boost,
+    entry_intent: "buy",
+    cold_buy_path: !promoteEligible,
+  });
 
   const watchState = {
     active: Boolean(activeWatch),
@@ -704,7 +709,7 @@ async function evaluateFlatPlay(
           !(
             b.includes(GATE_BLOCK.MIXED_TAPE) &&
             confirmations.passed &&
-            gradeRank(confluence.grade) >= gradeRank("B")
+            gradeRank(confluence.grade) >= gradeRank("A")
           ) &&
           // Post-loss same-direction re-entry lock must survive WATCH->ENTRY promotion.
           // Only strip REENTRY_LOCK when the prior exit was NOT a loss (in which case

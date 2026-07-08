@@ -11,17 +11,21 @@ export function spxStrikeFromDarkPoolPrint(strike: number): number | null {
   return Math.round(strike * 10);
 }
 
-/** Top institutional dark-pool strike levels for the SPX chart (SPY tape → SPX scale). */
+/** Top institutional dark-pool strike levels for the chart overlay. */
 export function darkPoolLevelsFromSnapshot(
-  snapshot: DarkPoolSnapshot | null | undefined
+  snapshot: DarkPoolSnapshot | null | undefined,
+  opts: { scale?: "native" | "spx-from-spy" } = {}
 ): VectorDarkPoolLevel[] {
+  const scale = opts.scale ?? "spx-from-spy";
   if (!snapshot?.prints?.length) return [];
 
   const byStrike = new Map<number, number>();
   for (const print of snapshot.prints) {
-    const strike = spxStrikeFromDarkPoolPrint(print.strike);
+    const strike =
+      scale === "spx-from-spy" ? spxStrikeFromDarkPoolPrint(print.strike) : Math.round(print.strike);
     const premium = Number(print.premium);
-    if (strike == null || !Number.isFinite(premium) || premium <= 0) continue;
+    if (strike == null || !Number.isFinite(strike) || strike <= 0) continue;
+    if (!Number.isFinite(premium) || premium <= 0) continue;
     byStrike.set(strike, (byStrike.get(strike) ?? 0) + premium);
   }
 

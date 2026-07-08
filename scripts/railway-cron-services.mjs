@@ -27,6 +27,9 @@ export const CRON_SERVICE_NAMES = {
   "spx-signal-observe": "SPX-Signal-Observe",
   "spx-signal-weight-optimize": "SPX-Signal-Weight-Optimize",
   "uw-cache-refresh": "UW-Cache-Refresh-New",
+  "vector-universe-snapshot": "Vector-Universe-Snapshot",
+  "vector-dark-pool-warm": "Vector-Dark-Pool-Warm",
+  "coaching-alerts": "Coaching-Alerts",
 };
 
 /** All cron job keys that have a railway.<key>.toml in the repo. */

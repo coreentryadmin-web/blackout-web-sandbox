@@ -74,6 +74,18 @@ import os from "os";
 // Math.max(1, ...-1) clamp so we never produce NaN or a value < 1.
 const cpuCount = os.cpus()?.length || 1;
 
+const isStagingSite = (process.env.NEXT_PUBLIC_SITE_URL ?? "").includes("staging.");
+const stagingEdgeBypass = [
+  { key: "CDN-Cache-Control", value: "no-store" },
+  { key: "Cloudflare-CDN-Cache-Control", value: "no-store" },
+  { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate, max-age=0" },
+];
+/** Hash-named build assets — edge-cache 1y on staging (purge on deploy via CF_PURGE_DEPLOY_ID). */
+const stagingStaticCache = [
+  { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+  { key: "CDN-Cache-Control", value: "public, max-age=31536000" },
+];
+
 const nextConfig = {
   poweredByHeader: false,
   // ECS/Fargate Docker image — emits .next/standalone for multi-stage Dockerfile.
@@ -102,9 +114,28 @@ const nextConfig = {
     // rule owns /embed/* exclusively. Net effect: framing stays denied app-wide and
     // is relaxed only for the public embed cards.
     return [
+      // Staging: hash-named /_next/static/* and /_next/image are safe to edge-cache
+      // (new deploy = new hashes). no-store only on HTML/document routes so landing
+      // pages don't re-fetch 48 JS/CSS chunks from ECS on every visit.
+      ...(isStagingSite
+        ? [
+            {
+              source: "/_next/static/:path*",
+              headers: [...securityHeaders, ...stagingStaticCache],
+            },
+            {
+              source: "/_next/image",
+              headers: [...securityHeaders, ...stagingStaticCache],
+            },
+            {
+              source: "/_next/:path*",
+              headers: securityHeaders,
+            },
+          ]
+        : []),
       {
-        source: "/((?!embed/).*)",
-        headers: securityHeaders,
+        source: "/((?!embed/|_next/).*)",
+        headers: isStagingSite ? [...securityHeaders, ...stagingEdgeBypass] : securityHeaders,
       },
       {
         source: "/embed/:path*",

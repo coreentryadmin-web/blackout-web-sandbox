@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { clerkMiddlewareAuthOptions } from "@/lib/clerk-env";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -31,6 +32,20 @@ const isPublicTelemetryRoute = createRouteMatcher(["/api/telemetry/client-error"
 
 // Methods that mutate server state (i.e., not safe reads).
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+const IS_STAGING =
+  (process.env.NEXT_PUBLIC_SITE_URL ?? "").includes("staging.") ||
+  process.env.SENTRY_ENVIRONMENT === "staging";
+
+function withStagingNoEdgeCache(res: NextResponse): NextResponse {
+  if (!IS_STAGING) return res;
+  // Cloudflare rule #1 caches /_next/static for 1y — a deploy mismatch 404 gets poisoned
+  // at the edge as text/plain and bricks the whole UI. Staging must never edge-cache.
+  res.headers.set("CDN-Cache-Control", "no-store");
+  res.headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+  res.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
+  return res;
+}
 
 export default clerkMiddleware(
   async (auth, req) => {
@@ -72,19 +87,15 @@ export default clerkMiddleware(
         req.cookies.has("__session") || req.cookies.has("__client_uat");
 
       if (!hasBearerToken && !hasClerkCookie) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 401 }
+        return withStagingNoEdgeCache(
+          NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         );
       }
     }
+
+    return withStagingNoEdgeCache(NextResponse.next());
   },
-  {
-    // Tolerate small server/client clock drift so a still-valid ~60s session JWT isn't
-    // treated as expired on a soft (RSC) navigation → false /sign-in bounce. Belt-and-
-    // suspenders alongside NTP-synced replicas (Clerk default tolerance is 5000ms).
-    clockSkewInMs: 10_000,
-  }
+  clerkMiddlewareAuthOptions()
 );
 
 // ---------------------------------------------------------------------------
@@ -138,6 +149,10 @@ export const config = {
     // Also explicitly match API/tRPC routes.
     {
       source: "/(api|trpc)(.*)",
+      missing: [{ type: "header", key: "upgrade", value: "websocket" }],
+    },
+    {
+      source: "/__clerk/(.*)",
       missing: [{ type: "header", key: "upgrade", value: "websocket" }],
     },
   ],

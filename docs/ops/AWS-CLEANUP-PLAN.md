@@ -1,108 +1,86 @@
 # AWS prep + codebase cleanup plan
 
-**Branch:** `feat/aws-prep` (long-lived; merge to `main` in small PRs — do not big-bang)
+**Sandbox repo:** `coreentryadmin-web/blackout-web-sandbox` → branch `blackout-web-sandbox`
+
+**Prod repo:** `coreentryadmin-web/blackout-web` → `main` (Railway only — cherry-pick when ready)
 
 **Infra repo:** [blackout-infra](https://github.com/coreentryadmin-web/blackout-infra) (Terraform VPC/ECR → RDS/ECS later)
-
-**Prod stays on `main` + Railway** until staging ECS is green and we cut over.
 
 ---
 
 ## Do NOT rewrite the framework
 
-**Keep Next.js 15 (App Router).** Next.js *is* React. Moving to “plain React” (e.g. Vite SPA) would:
+**Keep Next.js 15 (App Router).** Speed comes from bundle size, caching, and infra — not ejecting Next.
 
-- Require a **separate backend** for ~120 `/api/*` routes, crons, WebSockets, Clerk middleware
-- Lose SSR/streaming where useful
-- Be **months** of work with **no guaranteed speed gain**
-
-Speed comes from **bundle size, caching, and infra** — not ejecting Next.
-
-For AWS: add `output: "standalone"` + `Dockerfile` (same Next app, containerized).
+For AWS: `output: "standalone"` + `deploy/Dockerfile` (same Next app, containerized).
 
 ---
 
-## What “cleanup” actually fixes
+## Phased execution
 
-| Work | Runtime speed | Maintainability |
-|------|---------------|-----------------|
-| Delete files **never imported** | ~none | good |
-| Remove dead **imports** in client trees | **high** | good |
-| Code-split heavy routes (Vector, desk, Thermal) | **high** | good |
-| Folder renames (cosmetic) | none | good if gradual |
-| AWS + 5 Fargate tasks | under load | ops |
+### Phase 0 — Measure
+- [x] `npm run build` — route bundle sizes recorded on sandbox
+- [ ] `scripts/site-latency-audit.mjs` on staging (post-ECS)
+- [x] Dead routes inventoried (grid, nights-watch removed)
+- [x] Document env manifest for AWS Secrets Manager (`docs/ops/AWS-SECRETS-MANIFEST.md`)
 
----
-
-## Phased execution (merge order)
-
-### Phase 0 — Measure (no deletes)
-- [ ] `npm run build` → note route bundle sizes from `.next` output
-- [ ] `scripts/site-latency-audit.mjs` on prod routes
-- [ ] Inventory dead routes (grid deleted, middleware matchers, ios `grid` CSS)
-- [ ] Document env manifest for AWS Secrets Manager
-
-### Phase 1 — AWS blockers (merge first)
+### Phase 1 — AWS blockers
 - [x] `next.config.mjs`: `output: "standalone"`
-- [x] `Dockerfile` + `.dockerignore`
-- [x] GitHub Action: build image → push ECR (staging) — `ecr-push-staging.yml`
-- [x] `docs/ops/AWS-MIGRATION-PLAN.md` cutover checklist
+- [x] `deploy/Dockerfile` + `.dockerignore` (not repo root — Railway stays Nixpacks)
+- [x] GitHub Action: ECR push (`ecr-push-staging.yml`)
+- [x] `docs/ops/AWS-MIGRATION-PLAN.md`
 
-### Phase 2 — Safe dead code (one PR per area) — **PR #1 in progress**
-- [x] Stale **grid** references (`ONBOARDING.md`, ios CSS `[data-ios-route="grid"]`, audit scripts)
-- [x] Delete orphan components (~40 files, ~9k LOC) — desk panels, dead embeds, landing chrome
-- [x] Archive June 2026 audit pile → `docs/archive/2026-06/`; delete `docs/auto/` SDLC logs
-- [x] `scripts/nighthawk-worker.ts` deleted (edition runs via `api/cron/nighthawk-edition`)
-- [x] `/vector` added to middleware protected routes
-- [ ] Duplicate fetch paths already flagged in `FINDINGS.md` — fix remaining only with tests
+### Phase 2 — Safe dead code
+- [x] Stale grid / nights-watch references
+- [x] Orphan components deleted (~40 files)
+- [x] Audit pile archived
+- [x] `/vector` middleware protected
+- [x] Dead CSS purged (`.grid-*`, `.nighthawk-watch-*`, agent sidebar) from `globals.css`
+- [ ] Remaining duplicate fetch paths in FINDINGS.md (fix with tests as found)
 
-### Phase 3 — Client bundle diet (speed PRs)
-- [x] Dynamic `import()` for Vector chart (`VectorPageShell` → `VectorChart` code-split)
-- [ ] Ensure Largo/Anthropic code never in desk/vector client chunks
-- [ ] Review `@/` imports from client components into server-only chains
+### Phase 3 — Client bundle diet
+- [x] Vector chart code-split
+- [x] Thermal GexHeatmap `ssr:false`
+- [ ] Audit Largo/Anthropic imports in client trees (ongoing guard)
+- [x] Tailwind `content` includes `./src/features/**` (P0 — CSS purge fix)
 
-### Phase 4 — Folder structure (gradual, not big-bang)
-Current layout is tool-oriented (`components/desk`, `features/vector`, `lib/nighthawk`). **Do not** move everything at once.
-
-- [x] Vector → `src/features/vector/` (components + lib + barrel export)
-- [x] SPX Slayer UI → `src/features/spx/components/` (lib stays in `src/lib/spx-*` for now)
-- `src/lib/providers/*` — keep (data layer)
-- `src/lib/ws/*` — keep (sockets)
-- Align page shells: `*PageShell.tsx` under `components/<tool>/`
+### Phase 4 — Folder structure ✅ (sandbox)
+- [x] `src/features/{spx,helix,thermal,nighthawk,largo,vector}/`
+- [x] PageShells under `features/*/components/`
+- [x] HELIX flow panels moved from `components/desk/` → `features/helix/components/`
+- [x] Thermal gex-heatmap helpers → `features/thermal/lib/gex-heatmap/`
+- [x] ZeroDteBoard → `features/nighthawk/components/`
+- [x] Shared chrome: `components/layout/`, `components/upgrade/`
+- [x] SPX tests colocated under `features/spx/lib/`
+- [x] `components/desk/` directory removed
+- [x] Scripts updated for new paths (`validate-ios-mobile-desk`, audit scripts)
+- [x] `docs/ONBOARDING.md` refreshed
 
 ### Phase 5 — Infra (`blackout-infra`)
-- [ ] Staging: VPC + ECR (done in repo)
-- [ ] RDS + RDS Proxy + ElastiCache
-- [ ] ECS 1 task → validate → scale to 5
+- [x] Staging: VPC + ECR
+- [x] RDS + RDS Proxy + ElastiCache (Terraform modules)
+- [x] ECS + ALB + Secrets Manager (Terraform modules)
+- [x] EventBridge crons → Lambda (24 jobs)
+- [ ] `terraform apply` on AWS account (needs credentials)
 - [ ] Cloudflare origin → ALB
 
 ---
 
 ## Branch policy
 
-| Branch | Purpose |
-|--------|---------|
-| `main` | Production (Railway) |
-| `feat/aws-prep` | AWS + cleanup PRs target here first, then merge to `main` |
-| `blackout-infra` | Terraform only |
+| Repo / branch | Purpose |
+|---------------|---------|
+| **`blackout-web` → `main`** | Production (Railway). Hotfixes only. |
+| **`blackout-web-sandbox` → `blackout-web-sandbox`** | All AWS/cleanup/refactor work. |
+| **`blackout-infra`** | Terraform only |
 
-**Never** maintain a second full app copy — it will diverge.
+Cherry-pick proven sandbox commits to prod `main` — never auto-merge sandbox → prod.
 
 ---
 
-## PR rules (each cleanup PR)
+## PR rules (sandbox)
 
-1. One concern per PR (grid dead code OR Dockerfile OR one route code-split)
+1. One concern per commit/PR when possible
 2. `npx tsc --noEmit` + `npm test` + `npm run build`
 3. Log material findings in `docs/audit/FINDINGS.md`
-4. Auto-merge when CI green
-
----
-
-## Explicit non-goals (this pass)
-
-- Rewriting Next → Vite/CRA
-- Replacing Clerk with Cognito
-- Replacing Cloudflare with CloudFront
-- Moving every file “into correct folders” in one diff
-- Deleting `scripts/audit/*` or `docs/*` bulk (not runtime trash)
+4. **Do not** open PRs to prod unless explicitly a hotfix

@@ -1,0 +1,181 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== iOS app (App Store compliance) =====
+   When the site runs INSIDE the iOS app, <html> gets the `ios-app` class (set by an
+   early inline script in layout.tsx, keyed off the "BlackOutiOSApp" user-agent token).
+   Apple guideline 3.1.1 forbids pricing / external-purchase links inside the app, so:
+     - `.hide-in-ios-app`  → visible on web, hidden in the iOS app
+     - `.show-in-ios-app`  → hidden on web, shown only in the iOS app
+   Purchasing happens on the website (Whop); the app is sign-in only. */
+html.ios-app .hide-in-ios-app { display: none !important; }
+.show-in-ios-app { display: none; }
+html.ios-app .show-in-ios-app { display: revert; }
+/* Google/Apple OAuth in WKWebView hits Clerk authorization_invalid (cookie/state).
+   Email + one-time code works; hide social providers in the iOS shell only. */
+html.ios-app .cl-socialButtons,
+html.ios-app .cl-socialButtonsRoot,
+html.ios-app .cl-dividerRow {
+  display: none !important;
+}
+
+:root {
+  /* Fonts are provided by next/font (see layout.tsx) as
+     --font-anton / --font-syne / --font-jetbrains / --font-inter. */
+  --color-green: #00e676;
+  --color-red: #ff2d55;
+  --color-purple: #bf5fff;
+  --color-cyan: #22d3ee;
+  --color-gold: #ffd23f;
+  --color-ember: #ff6b2b;
+  --color-void: #040407;
+  /* Signature brand gradient (emerald → mint → sky) used across the marketing surface. */
+  --grad-brand: linear-gradient(90deg, #00e676, #34d399 55%, #7dd3fc);
+
+  /* ── Layout tokens ──────────────────────────────────────────────────────
+     Canonical spacing/width ramp for the centered content rail. Authors must
+     consume these (via .content-rail) instead of hardcoding px-6 / max-w-7xl
+     so the page-padding ramp and rail width stay in one place.
+     --content-max mirrors Tailwind's max-w-7xl (80rem) — the desktop rail width.
+     --page-pad-x ramps from a tight mobile gutter up to the desktop value;
+     the desktop step (1.5rem == px-6) preserves the existing look at ≥768px. */
+  --content-max: 80rem;      /* desktop rail max-width (== Tailwind max-w-7xl) */
+  --page-pad-x: 1rem;        /* mobile gutter (base) */
+  /* Top offset for in-app page content (PageShell paddingTop). Must clear the fixed
+     nav banner (76px at rest). 88px clears it with ~12px of breathing room so a page's
+     kicker/header never tucks under the nav. (Was 104px when a 26px SPX/VIX index ribbon
+     stacked below the nav; the ribbon was removed.) */
+  --nav-offset: 88px;
+
+  /* ── VITALS motion tokens — "The One Clock" ─────────────────────────────
+     Canonical, globally-available motion vocabulary for the VITALS motion
+     system. Additive token plumbing only — no animation is wired here.
+     The four signature easings mirror the sigil-block definitions
+     (globals.css ~10925) verbatim so authors can reach for them anywhere. */
+  --ease-snap: cubic-bezier(.34,1.56,.64,1);
+  --ease-draw: cubic-bezier(.22,1,.36,1);
+  --ease-breath: cubic-bezier(.4,0,.6,1);
+  --ease-sweep: cubic-bezier(.65,0,.35,1);
+
+  /* Tempo scale. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --dur-ambient: 6s;
+
+  /* Market-pulse cadence defaults (consumed by Phase 1). */
+  --pulse-period: 6s;
+  --pulse-peak: 1;
+  --pulse-dim: 0.7;
+  --pulse-period-slow: 80s;
+
+  /* ── Semantic AA-safe text tokens ───────────────────────────────────────
+     Display bear #ff2d55 measures ~4.0:1 on the void bg — below the 4.5:1 AA
+     floor for normal text. Most bearish numbers (header % change, structure
+     values, GEX dist/net, level distances, P&L) are SMALL text, so the
+     downside half of the desk was sub-AA while bull green (#00e676, ~11:1)
+     was fine. --bear-text lifts the small-number red to ~5.0:1; --bull-text
+     mirrors it (green already clears AA). Keep #ff2d55 / --bear ONLY for
+     large display text (score/headline, which clears the 3:1 large bar) and
+     glows/borders. */
+  --bear-text: #ff5c78;
+  --bull-text: #00e676;
+  /* Canonical directional display tokens — large/headline text + glows/borders
+     (the AA-safe small-number variants are --bull-text / --bear-text above).
+     Defines the previously-undefined var(--bull) referenced by
+     .largo-spx-live-label, which was silently inheriting instead of rendering
+     emerald. */
+  --bull: #00e676;
+  --bear: #ff2d55;
+
+  /* ── Readable secondary text ────────────────────────────────────────────
+     Secondary copy (feature-card descriptions, sublabels, notes, microcopy)
+     was consistently set near the readability floor (white/45–/55, which on
+     the void bg reads AS the banned grey). --text-secondary is a brighter,
+     blue-tinted neutral that clears WCAG AA on #040407 (~9:1) without being
+     grey. Authors: use text-secondary for muted-but-readable body/sublabels;
+     reserve text-mute (#9fb4d4) for the very quietest non-trust labels. */
+  --text-secondary: #b9c7d6;
+}
+
+/* Page-padding ramp: nudge the gutter up at the sm tier, then lock to the
+   desktop value (1.5rem == px-6) from md+ so the rail looks identical to the
+   old flat px-6 at the common desktop breakpoints — just tokenized. */
+@media (min-width: 640px) {
+  :root { --page-pad-x: 1.25rem; }
+}
+@media (min-width: 768px) {
+  :root { --page-pad-x: 1.5rem; }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Browser autofill repaints inputs white/yellow and IGNORES background-color, which hides our light
+   input text on the dark theme — most visibly the Clerk sign-up/sign-in EMAIL field (white text on the
+   autofill-white box = invisible). The inset box-shadow is the only reliable override of the autofill
+   fill; pair it with -webkit-text-fill-color so an autofilled value stays readable, and a long
+   transition defers Chrome's repaint. App-wide on purpose: every input sits on the dark surface. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #f4f6fb !important;
+  caret-color: #f4f6fb !important;
+  -webkit-box-shadow: 0 0 0 1000px #0a0d14 inset !important;
+  box-shadow: 0 0 0 1000px #0a0d14 inset !important;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+
+html { scroll-behavior: smooth; }
+
+/* a11y: honor reduced-motion (tames the pervasive pulsing/scrolling animation) and give
+   keyboard users a visible focus ring site-wide (WCAG 2.3.3 + 2.4.7). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Collapse the tempo tokens too, so JS reads of the duration vars also see
+     the reduced value (the !important rules above only tame CSS-driven motion). */
+  :root {
+    --dur-fast: 0.001ms;
+    --dur-base: 0.001ms;
+    --dur-slow: 0.001ms;
+  }
+}
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+body {
+  background: #040407;
+  color: #f0f0f8;
+  font-family: var(--font-syne), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.void-bg {
+  background-color: #040407;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -5%, rgba(0, 230, 118, 0.13), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 0% 50%, rgba(191, 95, 255, 0.09), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 100% 60%, rgba(255, 45, 85, 0.07), transparent 55%);
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #08080e; }
+::-webkit-scrollbar-thumb { background: linear-gradient(#00e676, #bf5fff, #22d3ee); border-radius: 3px; }
+
+::selection { background: rgba(0, 230, 118, 0.35); color: #fff; }
+
+.font-display { font-family: var(--font-anton), sans-serif; }
+.font-anton { font-family: var(--font-anton), sans-serif; }
+.font-syne { font-family: var(--font-syne), sans-serif; }
+.font-mono { font-family: var(--font-jetbrains), monospace; }

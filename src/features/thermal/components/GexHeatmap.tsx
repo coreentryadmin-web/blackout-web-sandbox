@@ -15,8 +15,8 @@ import {
   TabPanels,
   TabPanel,
 } from "@/components/ui";
-import { AnchorGlyph, PanelLabel } from "@/components/desk/gex-heatmap/primitives";
-import { shiftPercentForStrike } from "@/components/desk/gex-heatmap/shift-math";
+import { AnchorGlyph, PanelLabel } from "@/features/thermal/lib/gex-heatmap/primitives";
+import { shiftPercentForStrike } from "@/features/thermal/lib/gex-heatmap/shift-math";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 import { resetIosViewport } from "@/hooks/useIosKeyboardInset";

@@ -15,8 +15,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
-import { heatmapPresetTickers } from "@/lib/heatmap-allowlist";
-import { isEtCashRth } from "@/lib/et-market-hours";
+import { vectorWarmTickers } from "@/lib/heatmap-allowlist";
+import { shouldRunCacheWarmer } from "@/lib/cache-warmer-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,17 +29,18 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get("force") === "1";
-  if (!force && !isEtCashRth()) {
+  if (!shouldRunCacheWarmer(force)) {
     const payload = {
       ok: true,
       skipped: true,
-      reason: "Outside cash RTH (weekday 9:30 AM–4:00 PM ET, excluding holidays/early-close) — use ?force=1 to override",
+      reason:
+        "Outside extended warm window (weekday 4:00 AM–8:00 PM ET) — use ?force=1 or set CACHE_WARM_ALWAYS=1",
     };
     await logCronRun("heatmap-warm", started, payload);
     return NextResponse.json(payload);
   }
 
-  const tickers = heatmapPresetTickers();
+  const tickers = vectorWarmTickers();
 
   // fetchGexHeatmap dedups per ticker via the matrix cache + single-flight guard, so warming each
   // once is enough. Settle-all so one failing underlying can't abort the rest. A null result

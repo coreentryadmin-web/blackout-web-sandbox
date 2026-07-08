@@ -1195,6 +1195,110 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_flow_anomaly_near_misses_ticker
       ON flow_anomaly_near_misses (ticker, observed_at DESC);
   `);
+
+  // God-tier tables (004_god_tier_features.sql) — inlined for ECS standalone cold starts.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS market_regime (
+      id BIGSERIAL PRIMARY KEY,
+      captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      gex_regime TEXT NOT NULL,
+      vol_regime TEXT NOT NULL,
+      trend_regime TEXT NOT NULL,
+      flow_regime TEXT NOT NULL,
+      composite TEXT NOT NULL,
+      playbook TEXT,
+      net_gex NUMERIC,
+      iv_percentile NUMERIC,
+      above_vwap BOOLEAN,
+      flow_ratio NUMERIC,
+      raw JSONB
+    );
+    CREATE INDEX IF NOT EXISTS market_regime_captured_at_idx ON market_regime(captured_at DESC);
+
+    CREATE TABLE IF NOT EXISTS flow_anomalies (
+      id BIGSERIAL PRIMARY KEY,
+      detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      anomaly_type TEXT NOT NULL,
+      ticker TEXT,
+      detail TEXT NOT NULL,
+      premium NUMERIC,
+      direction TEXT,
+      severity TEXT NOT NULL,
+      raw JSONB
+    );
+    CREATE INDEX IF NOT EXISTS flow_anomalies_detected_at_idx ON flow_anomalies(detected_at DESC);
+    CREATE INDEX IF NOT EXISTS flow_anomalies_severity_idx ON flow_anomalies(severity, detected_at DESC);
+
+    CREATE TABLE IF NOT EXISTS coaching_alerts (
+      id BIGSERIAL PRIMARY KEY,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      trigger_type TEXT NOT NULL,
+      alert_text TEXT NOT NULL,
+      urgency TEXT NOT NULL,
+      spx_price NUMERIC,
+      call_wall NUMERIC,
+      put_wall NUMERIC,
+      vwap NUMERIC,
+      for_longs BOOLEAN DEFAULT true,
+      for_shorts BOOLEAN DEFAULT false,
+      raw JSONB
+    );
+    CREATE INDEX IF NOT EXISTS coaching_alerts_generated_at_idx ON coaching_alerts(generated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS platform_briefs (
+      id BIGSERIAL PRIMARY KEY,
+      published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      brief_date DATE NOT NULL,
+      brief_type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      spx_price NUMERIC,
+      call_wall NUMERIC,
+      put_wall NUMERIC,
+      king_strike NUMERIC,
+      net_gex NUMERIC,
+      gex_bias TEXT,
+      metadata JSONB,
+      UNIQUE(brief_date, brief_type)
+    );
+    CREATE INDEX IF NOT EXISTS platform_briefs_date_type_idx ON platform_briefs(brief_date DESC, brief_type);
+
+    CREATE TABLE IF NOT EXISTS signal_events (
+      id BIGSERIAL PRIMARY KEY,
+      fired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      signal_source TEXT NOT NULL,
+      signal_type TEXT NOT NULL,
+      grade TEXT,
+      spx_price NUMERIC,
+      call_wall NUMERIC,
+      put_wall NUMERIC,
+      confluence_score NUMERIC,
+      ticker TEXT,
+      strike NUMERIC,
+      expiry TEXT,
+      option_type TEXT,
+      entry_mark NUMERIC,
+      metadata JSONB
+    );
+    CREATE INDEX IF NOT EXISTS signal_events_fired_at_idx ON signal_events(fired_at DESC);
+    CREATE INDEX IF NOT EXISTS signal_events_source_idx ON signal_events(signal_source, fired_at DESC);
+
+    CREATE TABLE IF NOT EXISTS signal_outcomes (
+      id BIGSERIAL PRIMARY KEY,
+      signal_event_id BIGINT REFERENCES signal_events(id) ON DELETE CASCADE,
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      checkpoint TEXT NOT NULL,
+      price_at_checkpoint NUMERIC,
+      price_change NUMERIC,
+      direction_correct BOOLEAN,
+      pnl_pct NUMERIC,
+      outcome TEXT
+    );
+    CREATE INDEX IF NOT EXISTS signal_outcomes_event_idx ON signal_outcomes(signal_event_id, checkpoint);
+  `);
+  await p.query(`
+    ALTER TABLE largo_messages
+    ADD COLUMN IF NOT EXISTS tool_results JSONB;
+  `);
   } finally {
     // Release the advisory lock + return the dedicated connection to the pool.
     try { await lockClient.query(`SELECT pg_advisory_unlock($1)`, [MIGRATION_LOCK_ID]); } catch { /* ignore */ }
@@ -2385,6 +2489,27 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
     option_type: r.option_type != null ? String(r.option_type) : null,
     option_label: r.option_label != null ? String(r.option_label) : null,
     option_premium: r.option_premium != null ? String(r.option_premium) : null,
+  };
+}
+
+/** Today's committed play counts — hydrates session meta after deploy/restart. */
+export async function fetchTodaySpxSessionCounts(
+  sessionDate: string
+): Promise<{ entries: number; losses: number }> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      (SELECT COUNT(*)::int FROM spx_open_play WHERE session_date = $1::date) AS entries,
+      (SELECT COUNT(*)::int FROM spx_play_outcomes
+        WHERE session_date = $1::date AND outcome = 'loss') AS losses
+    `,
+    [sessionDate]
+  );
+  const r = res.rows[0];
+  return {
+    entries: Number(r?.entries ?? 0),
+    losses: Number(r?.losses ?? 0),
   };
 }
 

@@ -24,7 +24,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The ~11 heatmap preset chips surfaced in the UI (src/components/desk/GexHeatmap.tsx
+ * The ~11 heatmap preset chips surfaced in the UI (src/features/thermal/components/GexHeatmap.tsx
  * `PRESET_TICKERS`). Kept in sync MANUALLY — these are the names the warm cron batches
  * and the only symbols whose UW overlays are pre-warmed. SPX index options resolve to
  * I:SPX upstream but the user-facing ticker key is "SPX".
@@ -82,6 +82,16 @@ export function isHeatmapOverlayAllowed(ticker: string): boolean {
 /** The preset tickers as a plain array (warm-cron batch source). */
 export function heatmapPresetTickers(): string[] {
   return [...HEATMAP_PRESET_TICKERS];
+}
+
+/** Full overlay allowlist — Vector universe + dark-pool warm batch (~21 names). */
+export function vectorUniverseTickers(): string[] {
+  return [...ALLOWLIST];
+}
+
+/** Tickers warmed by heatmap-warm + vector-universe snapshot (presets + extra liquid). */
+export function vectorWarmTickers(): string[] {
+  return vectorUniverseTickers();
 }
 
 /** True when `ticker` is one of the ~11 warm presets (the fast-move + warm-cron set). */

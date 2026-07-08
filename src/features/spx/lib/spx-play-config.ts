@@ -62,9 +62,9 @@ export function playBuyCooldownSec(): number {
   return num(process.env.SPX_PLAY_BUY_COOLDOWN_SEC, 600);
 }
 
-/** A+ setups alert on buy cooldown but do not block entry (default on). */
+/** A+ setups alert on buy cooldown but do not block entry. Default off — Jul 6 A+ re-fired after loss. */
 export function playBuyCooldownAplusBypass(): boolean {
-  return flag(process.env.SPX_PLAY_BUY_COOLDOWN_APLUS_BYPASS, true);
+  return flag(process.env.SPX_PLAY_BUY_COOLDOWN_APLUS_BYPASS, false);
 }
 
 export function playReentryLockSec(): number {
@@ -95,7 +95,41 @@ export function playThesisBreakScore(): number {
 }
 
 export function playThesisBreakDropPts(): number {
-  return num(process.env.SPX_PLAY_THESIS_BREAK_DROP_PTS, 12);
+  // Was 12 — track record showed 9/13 losses via THESIS with MFE=0: score whipsaw on
+  // mixed tape exited before structure (stop) could decide. 18 gives more room.
+  return num(process.env.SPX_PLAY_THESIS_BREAK_DROP_PTS, 18);
+}
+
+/**
+ * Minimum MFE (SPX pts) before a score-*drop* thesis break can fire. Floor breaks
+ * (absolute adverse confluence) still exit immediately. Prevents hair-trigger flats
+ * when the tape never moved in favor (11/13 historical losses had MFE=0).
+ */
+export function playThesisBreakMinMfePts(): number {
+  return num(process.env.SPX_PLAY_THESIS_BREAK_MIN_MFE_PTS, 2);
+}
+
+/** Minimum seconds in-trade before score-drop thesis break (floor still immediate). */
+export function playThesisBreakMinHoldSec(): number {
+  return num(process.env.SPX_PLAY_THESIS_BREAK_MIN_HOLD_SEC, 180);
+}
+
+/**
+ * Minimum |score| for cold BUY (no prior WATCH). WATCH→ENTRY promote bypasses this.
+ * Cold path win rate was 17% vs 38% promote — default 68 keeps B-grade cold entries out.
+ */
+export function playColdBuyMinScore(): number {
+  return num(process.env.SPX_PLAY_COLD_BUY_MIN_SCORE, 68);
+}
+
+/** Max closed losses per ET session before new BUY entries block (WATCH ok). */
+export function playSessionMaxLosses(): number {
+  return num(process.env.SPX_PLAY_SESSION_MAX_LOSSES, 3);
+}
+
+/** Max entries per ET session before new BUY blocks (Jul 6 churn: 7 plays / 4 losses). */
+export function playSessionMaxEntries(): number {
+  return num(process.env.SPX_PLAY_SESSION_MAX_ENTRIES, 5);
 }
 
 export function playNoEntryAfterEtHour(): number {
@@ -424,16 +458,17 @@ export function playOptionChainRequired(): boolean {
 }
 
 export function outcomeAdaptiveMinTrades(): number {
-  return num(process.env.SPX_OUTCOME_MIN_TRADES, 30);
+  // Was 30 — ledger had 19 closes; adaptive never armed at 32% WR. 15 activates self-tightening.
+  return num(process.env.SPX_OUTCOME_MIN_TRADES, 15);
 }
 
 export function outcomeAdaptiveMinDays(): number {
-  return num(process.env.SPX_OUTCOME_MIN_DAYS, 30);
+  return num(process.env.SPX_OUTCOME_MIN_DAYS, 8);
 }
 
 /** Minimum closed trades per entry path before path-split telemetry adjusts promote gates. */
 export function outcomeAdaptiveMinPathTrades(): number {
-  return num(process.env.SPX_OUTCOME_MIN_PATH_TRADES, 10);
+  return num(process.env.SPX_OUTCOME_MIN_PATH_TRADES, 5);
 }
 
 export function outcomeMinWinRate(): number {
