@@ -1,3 +1,10 @@
+/** Cognito pool IDs are `{region}_{suffix}` — derive region when AWS_REGION is unset. */
+export function cognitoRegionFromPoolId(userPoolId: string): string | null {
+  const idx = userPoolId.indexOf("_");
+  if (idx <= 0) return null;
+  return userPoolId.slice(0, idx);
+}
+
 export type CognitoConfig = {
   region: string;
   userPoolId: string;
