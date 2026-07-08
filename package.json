@@ -16,6 +16,7 @@
     "lint:css": "stylelint \"src/**/*.css\"",
     "test": "node --import tsx --experimental-test-module-mocks --test \"src/**/*.test.ts\"",
     "validate:deploy": "node scripts/validate-deploy.mjs",
+    "validate:staging": "node scripts/staging-validate.mjs",
     "validate:deploy-wait": "node scripts/gha-wait-deploy.mjs",
     "validate:rth-open": "node scripts/rth-open-check.mjs",
     "validate:rth-sweep": "node scripts/rth-comprehensive-sweep.mjs",
