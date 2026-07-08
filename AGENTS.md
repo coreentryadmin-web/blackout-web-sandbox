@@ -123,6 +123,23 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   headers, edit the Cloudflare Transform Rules (dash: Rules → Transform Rules → Modify Response
   Header, or the Rulesets API) — keep the code's `baseCsp` in sync as the source of truth for the value.
 
+### Postgres (staging RDS — prod snapshot + live ingest)
+- Staging RDS holds a **point-in-time Postgres copy** from Railway prod (see `blackout-infra/scripts/migrate-railway-postgres-to-staging-rds.mjs`). Re-sync weekly or before big tests.
+- **New live data** (UW flows, SPX plays, etc.) lands on staging independently via the same WS + crons — not streamed from prod. Staging uses **`UW_MAX_RPS=1`** and narrowed `UW_WS_*_TICKERS` so prod keeps the UW budget.
+- `PG_STATEMENT_TIMEOUT_MS=0` required for RDS Proxy (`apply-staging-env-overrides.mjs` in blackout-infra).
+
+### Staging validation commands
+| Command | When |
+|---------|------|
+| `npm run validate:staging` | Full harness (warm, deploy, latency) |
+| `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
+| `npm run validate:staging-live` | Cron + Clerk admin/member probes |
+| `npm run validate:latency-compare` | Staging vs prod latency |
+| `npm run ops:collect:staging` | Staging ops action items (no Railway) |
+| `npm run validate:staging-vector-e2e` | Vector Playwright against staging |
+
+Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint checks. GHA: `staging-validate.yml`, `staging-rth-check.yml` (weekdays).
+
 ### Postgres (optional, for persistence testing)
 - The app runs fine without a DB (`/api/health` returns `db: "skipped"`). Postgres is only needed to
   exercise persistence (flows, SPX plays, nighthawk, positions, telemetry, etc.).

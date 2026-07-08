@@ -15,6 +15,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { probeDataCorrectness } from "./audit/lib/data-correctness-probe.mjs";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
+import { stagingPostDeployWarm } from "./staging-post-deploy-warm.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(
   /\/$/,
@@ -123,6 +124,15 @@ else warn("CACHE_WARM_ALWAYS not set — warmers skip outside extended ET hours"
 if (String(secret.REPLICA_COUNT) === "3") ok("REPLICA_COUNT=3");
 else warn(`REPLICA_COUNT=${secret.REPLICA_COUNT ?? "unset"} (expected 3 for ECS)`);
 
+if (secret.UW_MAX_RPS === "1") ok("UW_MAX_RPS=1 (staging quota isolation)");
+else warn(`UW_MAX_RPS=${secret.UW_MAX_RPS ?? "unset"} — set 1 so prod keeps UW budget`);
+
+if (secret.UW_WS_OPTION_TRADES_TICKERS) ok(`UW_WS_OPTION_TRADES_TICKERS=${secret.UW_WS_OPTION_TRADES_TICKERS}`);
+else warn("UW_WS_OPTION_TRADES_TICKERS unset — using app defaults");
+
+if (secret.PG_STATEMENT_TIMEOUT_MS === "0") ok("PG_STATEMENT_TIMEOUT_MS=0 (RDS Proxy safe)");
+else warn(`PG_STATEMENT_TIMEOUT_MS=${secret.PG_STATEMENT_TIMEOUT_MS ?? "unset"} — use 0 for RDS Proxy`);
+
 // ── 1. Force cache warmers ───────────────────────────────────────────────────
 console.log("\n1. Cache warmers (force=1)");
 const warmers = [
@@ -197,17 +207,23 @@ const deployCode = runNode("scripts/validate-deploy.mjs", {
 if (deployCode !== 0) fail("validate-deploy exited non-zero");
 else ok("validate-deploy GREEN");
 
+console.log("\n3b. Post-deploy cache warm");
+const warm = await stagingPostDeployWarm({ base: BASE, cronSecret });
+if (warm.ok) ok("post-deploy warm GREEN");
+else fail(`post-deploy warm incomplete: ${JSON.stringify(warm.results?.filter((r) => !r.ok) ?? warm)}`);
+
 await pause(2000);
 
 // ── 4. Latency audit ───────────────────────────────────────────────────────
 console.log("\n4. Site latency audit");
+const apiOnly = process.env.STAGING_VALIDATE_BROWSER !== "1";
 const latCode = runNode("scripts/site-latency-audit.mjs", {
   CRON_SECRET: cronSecret,
   STAGING_CRON_WARM: "1",
-  SITE_LATENCY_API_ONLY: "1",
+  SITE_LATENCY_API_ONLY: apiOnly ? "1" : "0",
 });
 if (latCode !== 0) fail("site-latency-audit exited non-zero");
-else ok("site-latency-audit GREEN");
+else ok(`site-latency-audit GREEN${apiOnly ? " (api-only)" : " (browser)"}`);
 
 const summary = {
   ts: new Date().toISOString(),

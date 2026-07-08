@@ -89,10 +89,11 @@ async function runEnv(label, base, cronSecret) {
       /* seed best-effort */
     }
   }
-  // Extra seeds for heatmap presets (multi-replica in-memory + Redis fill).
+  // Extra seeds for heatmap + ready (multi-replica cold starts).
   const heatmapPaths = PATHS.filter((p) => p.includes("gex-heatmap"));
+  const readyPaths = ["/api/health", "/api/ready"];
   for (let i = 0; i < 2; i++) {
-    for (const path of heatmapPaths) {
+    for (const path of [...readyPaths, ...heatmapPaths]) {
       try {
         const res = await fetchRetry(
           `${base}${path}`,

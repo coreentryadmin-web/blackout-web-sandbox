@@ -95,12 +95,17 @@ async function main() {
     "/api/market/spx/flow",
     "/api/market/spx/signals",
     "/api/market/spx/outcomes",
-    "/api/market/spx/commentary",
     "/api/market/spx/merged",
     "/api/market/spx/power-hour",
   ]) {
     await probe("spx", p, { headers: cronH }, (s) => s === 200);
   }
+  await probe(
+    "spx",
+    "/api/market/spx/commentary",
+    { method: "POST", headers: { ...cronH, "Content-Type": "application/json" }, body: "{}" },
+    (s) => s === 401 || s === 403
+  );
 
   console.log("\n--- HELIX / flows ---");
   await probe("flows", "/api/market/flows?limit=20", { headers: cronH }, (s) => s === 200);
@@ -122,8 +127,10 @@ async function main() {
   await probe("context", "/api/market/indices", { headers: cronH }, (s) => s === 200);
   await probe("context", "/api/market/news?ticker=SPX", { headers: cronH }, (s) => s === 200);
   await probe("context", "/api/market/dark-pool?ticker=SPX", { headers: cronH }, (s) => s === 200);
-  await probe("context", "/api/market/anomalies?ticker=SPX", { headers: cronH }, (s) => s === 200);
   await probe("context", "/api/market/platform/snapshot", { headers: cronH }, (s) => s === 200);
+
+  console.log("\n--- Cron-only member routes ---");
+  await probe("cron", "/api/signals/open", { headers: cronH }, (s) => s === 200);
 
   console.log("\n--- Vector (launch-gated) ---");
   await probe("vector", "/api/market/vector/universe", { headers: cronH }, (s) => s === 200 || s === 403);
@@ -155,7 +162,13 @@ async function main() {
 
     console.log("\n--- Premium member APIs ---");
     await probe("member", "/api/track-record", { headers: cookieH }, (s) => s === 200);
-    await probe("member", "/api/signals/open", { headers: cookieH }, (s) => s === 200);
+    await probe("member", "/api/market/anomalies?ticker=SPX", { headers: cookieH }, (s) => s === 200);
+    await probe(
+      "member",
+      "/api/market/spx/commentary",
+      { method: "POST", headers: { ...cookieH, "Content-Type": "application/json" }, body: "{}" },
+      (s) => s === 200 || s === 503
+    );
     await probe("member", "/api/nighthawk/play-status", { headers: cookieH }, (s) => s === 200 || s === 404);
 
     console.log("\n--- Largo ---");
