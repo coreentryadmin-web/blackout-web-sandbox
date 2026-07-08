@@ -8070,7 +8070,7 @@ body::before {
   }
 
   .spx-play-hero-strip {
-    @apply my-3 grid gap-2 rounded border border-white/8 bg-black/25 p-2.5;
+    @apply my-3 grid gap-2 rounded border border-white/10 bg-black/25 p-2.5;
     grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   }
 
@@ -8137,7 +8137,7 @@ body::before {
   }
 
   .spx-matrix-tape-strip {
-    @apply mx-1 mb-2 shrink-0 rounded border border-white/8 bg-black/30 p-2;
+    @apply mx-1 mb-2 shrink-0 rounded border border-white/10 bg-black/30 p-2;
   }
 
   .spx-matrix-tape-skew {
