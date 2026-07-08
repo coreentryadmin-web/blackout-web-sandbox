@@ -40,3 +40,11 @@ test("computeDegradedLocalRps divides the global budget across replicas — exac
   assert.equal(computeDegradedLocalRps(2, 0), 2, "floor(0) must clamp the divisor to 1");
   assert.equal(computeDegradedLocalRps(2, 1000), 0.1, "absurd replica count clamps to the starvation floor");
 });
+
+test("computeDegradedLocalConcurrency divides in-flight budget across replicas", async () => {
+  const { computeDegradedLocalConcurrency } = await import("./uw-rate-limiter");
+  assert.equal(computeDegradedLocalConcurrency(2, 1), 2);
+  assert.equal(computeDegradedLocalConcurrency(2, 2), 1);
+  assert.equal(computeDegradedLocalConcurrency(2, 3), 1);
+  assert.equal(computeDegradedLocalConcurrency(3, 3), 1);
+});
