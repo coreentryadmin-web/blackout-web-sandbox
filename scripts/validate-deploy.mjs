@@ -230,7 +230,9 @@ if (cronSecret) {
 console.log("\n3. Postgres / error sink / API telemetry");
 const dbUrl = resolveAuditDbUrl();
 
-if (dbUrl) {
+if (IS_STAGING && dbUrl) {
+  warn("Staging Postgres checks run on ECS only (RDS is private) — use cron_job_runs via /api/cron/*");
+} else if (dbUrl) {
   try {
     const client = createAuditClient(dbUrl);
     await client.connect();
@@ -287,7 +289,11 @@ if (dbUrl) {
 
     await client.end();
   } catch (e) {
-    fail(`Postgres query failed: ${e.message}`);
+    if (IS_STAGING && /ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout|ECONNREFUSED/i.test(e.message)) {
+      warn(`Postgres unreachable from this host (private RDS) — skipping DB checks: ${e.message}`);
+    } else {
+      fail(`Postgres query failed: ${e.message}`);
+    }
   }
 } else {
   warn("DATABASE_PUBLIC_URL not set — skipping Postgres checks");
@@ -346,7 +352,14 @@ if (sentryToken) {
 console.log("\n4b. Cluster config");
 const replicaCount = Math.max(
   0,
-  Math.floor(Number(rwVars.REPLICA_COUNT ?? process.env.REPLICA_COUNT ?? 0))
+  Math.floor(
+    Number(
+      (IS_STAGING ? process.env.REPLICA_COUNT : null) ??
+        rwVars.REPLICA_COUNT ??
+        process.env.REPLICA_COUNT ??
+        0
+    )
+  )
 );
 let runningReplicas = null;
 if (!skipRailway) {

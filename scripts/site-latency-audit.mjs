@@ -14,10 +14,11 @@ import { mintIosPlaywrightSession, onboardingInitScript } from "./audit/lib/ios-
 
 const args = process.argv.slice(2);
 const API_ONLY = args.includes("--api-only");
-const BASE = (args.find((a) => a.startsWith("--base="))?.slice(7) ?? "https://blackouttrades.com").replace(
-  /\/$/,
-  ""
-);
+const BASE = (
+  args.find((a) => a.startsWith("--base="))?.slice(7) ??
+  process.env.CRON_TARGET_BASE_URL ??
+  "https://blackouttrades.com"
+).replace(/\/$/, "");
 const IS_STAGING = BASE.includes("staging.");
 const OUT = join(process.cwd(), "audit-output");
 mkdirSync(OUT, { recursive: true });
