@@ -61,9 +61,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
-    "@clerk/nextjs": "^7.5.12",
+    "@clerk/nextjs": "^7.5.14",
     "@clerk/types": "^4.101.25",
-    "@sentry/nextjs": "^10.63.0",
+    "@sentry/nextjs": "^10.64.0",
     "@types/web-push": "^3.6.4",
     "@whop/sdk": "0.0.40",
     "clsx": "^2.1.1",
