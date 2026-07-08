@@ -137,6 +137,7 @@ async function main() {
 
   let apiHeaders = { Accept: "application/json" };
   let cleanup = null;
+  let browserCookies = null;
 
   if (useCronAuth) {
     apiHeaders.Authorization = `Bearer ${cronSecret}`;
@@ -148,6 +149,7 @@ async function main() {
       process.exit(1);
     }
     cleanup = session.cleanup;
+    browserCookies = session.cookies;
     const cookieHeader = session.cookies
       .filter((c) => c.name === "__session" || c.name === "__client_uat")
       .map((c) => `${c.name}=${c.value}`)
@@ -198,7 +200,7 @@ async function main() {
     const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
     const context = await browser.newContext();
     await context.addInitScript(onboardingInitScript());
-    await context.addCookies(session.cookies);
+    if (browserCookies?.length) await context.addCookies(browserCookies);
 
     for (const page of PAGES) {
       const p = await context.newPage();
