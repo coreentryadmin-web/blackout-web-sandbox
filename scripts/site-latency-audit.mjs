@@ -46,6 +46,7 @@ const API_PATHS = [
 const WARM_PATHS = [
   "/api/market/spx/bootstrap",
   "/api/market/spx/desk",
+  "/api/market/spx/play",
   "/api/market/gex-heatmap?ticker=SPX",
   "/api/market/gex-heatmap?ticker=SPY",
   "/api/market/zerodte/board",
