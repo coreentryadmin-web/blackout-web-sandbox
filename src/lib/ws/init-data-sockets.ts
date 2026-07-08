@@ -63,6 +63,9 @@ export function ensureDataSockets() {
   void import("@/lib/cf-purge-on-deploy")
     .then(({ maybePurgeCloudflareOnDeploy }) => maybePurgeCloudflareOnDeploy())
     .catch((err) => console.warn("[init-data-sockets] cf-purge skipped (non-fatal):", err));
+  void import("@/lib/staging-boot-warm")
+    .then(({ ensureStagingBootWarm }) => ensureStagingBootWarm())
+    .catch((err) => console.warn("[init-data-sockets] staging-boot-warm skipped (non-fatal):", err));
   // Night's Watch live option marks — env-gated + isolated. A strict no-op unless
   // OPTIONS_WS_ENABLED is set, so it can never destabilize the uw/polygon sockets
   // or the REST snapshot fallback. Wrapped so an init throw can't break the others.

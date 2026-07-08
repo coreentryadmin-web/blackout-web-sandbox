@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Anton, Syne, JetBrains_Mono, Inter } from "next/font/google";
 import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
-import "./globals.css";
 
 const anton = Anton({
   weight: "400",

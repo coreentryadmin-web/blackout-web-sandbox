@@ -1,7 +1,7 @@
 /**
- * Public marketing surface — no app Nav, market pulse, or iOS desk chrome.
- * marketing.css adds landing CTA styles (core bundle still from root globals).
+ * Public marketing surface — lean CSS only (~8KB base + CTA styles, not full globals).
  */
+import "../marketing-base.css";
 import "../marketing.css";
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {

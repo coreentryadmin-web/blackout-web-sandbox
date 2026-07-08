@@ -125,7 +125,8 @@ if (String(secret.REPLICA_COUNT) === "3") ok("REPLICA_COUNT=3");
 else warn(`REPLICA_COUNT=${secret.REPLICA_COUNT ?? "unset"} (expected 3 for ECS)`);
 
 if (secret.UW_MAX_RPS === "1") ok("UW_MAX_RPS=1 (staging quota isolation)");
-else warn(`UW_MAX_RPS=${secret.UW_MAX_RPS ?? "unset"} — set 1 so prod keeps UW budget`);
+else if (secret.UW_MAX_RPS === "2") ok("UW_MAX_RPS=2 (staging beast — isolated from prod)");
+else warn(`UW_MAX_RPS=${secret.UW_MAX_RPS ?? "unset"} — set 1 or 2 for staging`);
 
 if (secret.UW_WS_OPTION_TRADES_TICKERS) ok(`UW_WS_OPTION_TRADES_TICKERS=${secret.UW_WS_OPTION_TRADES_TICKERS}`);
 else warn("UW_WS_OPTION_TRADES_TICKERS unset — using app defaults");

@@ -149,12 +149,19 @@ async function runCycle(secrets) {
   console.log(`\n── Latency watch cycle ${cycle} (${et.label}) ──\n`);
 
   // Warm staging caches once per cycle
-  for (const p of ["/api/cron/desk-warm?force=1", "/api/cron/heatmap-warm?force=1"]) {
+  for (const p of ["/api/cron/desk-warm?force=1", "/api/cron/heatmap-warm?force=1", "/api/cron/zerodte-warm?force=1"]) {
     try {
       await fetchRetry(`${STAGING}${p}`, {
         headers: { Authorization: `Bearer ${secrets.stagingCron}` },
       }, { retries: 1, timeoutMs: 120_000 });
     } catch { /* best-effort */ }
+  }
+  for (let round = 0; round < 3; round++) {
+    for (const path of API_PATHS) {
+      try {
+        await probeApi(STAGING, secrets.stagingCron, path);
+      } catch { /* seed */ }
+    }
   }
 
   for (const path of API_PATHS) {

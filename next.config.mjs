@@ -80,6 +80,11 @@ const stagingEdgeBypass = [
   { key: "Cloudflare-CDN-Cache-Control", value: "no-store" },
   { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate, max-age=0" },
 ];
+/** Hash-named build assets — edge-cache 1y on staging (purge on deploy via CF_PURGE_DEPLOY_ID). */
+const stagingStaticCache = [
+  { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+  { key: "CDN-Cache-Control", value: "public, max-age=31536000" },
+];
 
 const nextConfig = {
   poweredByHeader: false,
@@ -114,6 +119,14 @@ const nextConfig = {
       // pages don't re-fetch 48 JS/CSS chunks from ECS on every visit.
       ...(isStagingSite
         ? [
+            {
+              source: "/_next/static/:path*",
+              headers: [...securityHeaders, ...stagingStaticCache],
+            },
+            {
+              source: "/_next/image",
+              headers: [...securityHeaders, ...stagingStaticCache],
+            },
             {
               source: "/_next/:path*",
               headers: securityHeaders,
