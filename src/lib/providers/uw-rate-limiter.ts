@@ -4,13 +4,16 @@ import { tryClaimHuntUwCall, UwHuntBudgetExhaustedError } from "./uw-hunt-budget
 import {
   rateLimiterEnvNumber,
   computeDegradedLocalRps,
+  computeDegradedLocalConcurrency,
   type RateLimiterRedisClient,
   acquireSlidingWindowRedisSlot,
+  acquireRedisConcurrencySlot,
+  releaseRedisConcurrencySlot,
   ensureProviderBreakerSubscription,
   type BreakerSubscriptionState,
 } from "./provider-rate-limiter-shared";
 
-export { computeDegradedLocalRps } from "./provider-rate-limiter-shared";
+export { computeDegradedLocalRps, computeDegradedLocalConcurrency } from "./provider-rate-limiter-shared";
 
 const envNumber = rateLimiterEnvNumber;
 
@@ -33,7 +36,14 @@ const REPLICA_COUNT = Math.max(1, Math.floor(envNumber("REPLICA_COUNT", 1)));
  * REPLICA_COUNT from total starvation; for realistic N (≤~20) the cluster cap stays exact.
  */
 const DEGRADED_LOCAL_RPS = computeDegradedLocalRps(GLOBAL_MAX_RPS, REPLICA_COUNT);
+/** UW Advanced hard limit: 3 concurrent REST calls per API key cluster-wide. */
+const GLOBAL_MAX_CONCURRENCY = Math.max(1, Math.floor(envNumber("UW_GLOBAL_MAX_CONCURRENCY", 2)));
+const DEGRADED_LOCAL_CONCURRENCY = computeDegradedLocalConcurrency(
+  GLOBAL_MAX_CONCURRENCY,
+  REPLICA_COUNT
+);
 const MAX_CONCURRENCY = Math.max(1, Math.floor(envNumber("UW_MAX_CONCURRENCY", 3)));
+const UW_CONCURRENCY_REDIS_KEY = "blackout:uw:concurrency";
 const MIN_SPACING_MS = Math.max(0, Math.floor(envNumber("UW_MIN_SPACING_MS", 300)));
 const CIRCUIT_429_THRESHOLD = Math.max(3, Math.floor(envNumber("UW_CIRCUIT_429_THRESHOLD", 8)));
 const CIRCUIT_PAUSE_MS = Math.max(10_000, Math.floor(envNumber("UW_CIRCUIT_PAUSE_MS", 45_000)));
@@ -44,6 +54,7 @@ let tokens = MAX_RPS;
 let lastRefillMs = Date.now();
 let lastStartMs = 0;
 let inFlight = 0;
+let redisConcurrencyHeld = false;
 
 let circuitOpenUntil = 0;
 let recent429Timestamps: number[] = [];
@@ -179,6 +190,11 @@ function effectiveMaxRps(): number {
   return redisGlobalActive() ? MAX_RPS : DEGRADED_LOCAL_RPS;
 }
 
+/** Per-replica in-flight cap — Redis semaphore is the cluster gate when healthy. */
+function effectiveMaxConcurrency(): number {
+  return redisGlobalActive() ? MAX_CONCURRENCY : DEGRADED_LOCAL_CONCURRENCY;
+}
+
 function refillTokens(): void {
   const now = Date.now();
   const elapsedSec = (now - lastRefillMs) / 1000;
@@ -197,6 +213,33 @@ function waitMsForToken(): number {
   const rate = effectiveMaxRps();
   const deficit = 1 - tokens;
   return Math.max(25, Math.ceil((deficit / rate) * 1000));
+}
+
+async function acquireGlobalRedisConcurrencySlot(): Promise<boolean> {
+  const client = await getSharedRedis();
+  if (!client) return true;
+
+  try {
+    return await acquireRedisConcurrencySlot(
+      client,
+      UW_CONCURRENCY_REDIS_KEY,
+      GLOBAL_MAX_CONCURRENCY
+    );
+  } catch {
+    sharedRedisFailedAt = Date.now();
+    alertRedisDegradedOnce();
+    const dead = sharedRedis;
+    sharedRedis = null;
+    try {
+      dead?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    console.warn(
+      `[uw] Redis concurrency semaphore unavailable — degraded to ${DEGRADED_LOCAL_CONCURRENCY} in-flight per replica (REPLICA_COUNT=${REPLICA_COUNT}).`
+    );
+    return true;
+  }
 }
 
 async function acquireGlobalRedisSlot(): Promise<boolean> {
@@ -244,9 +287,10 @@ async function waitMinSpacing(): Promise<void> {
 }
 
 async function acquireLocalSlot(): Promise<void> {
+  const concurrencyCap = effectiveMaxConcurrency();
   for (;;) {
     refillTokens();
-    if (inFlight < MAX_CONCURRENCY && tokens >= 1) {
+    if (inFlight < concurrencyCap && tokens >= 1) {
       // Reserve the slot synchronously BEFORE pacing so no concurrent acquirer can
       // observe the un-consumed token/concurrency across the await and overshoot MAX_RPS.
       tokens -= 1;
@@ -261,7 +305,7 @@ async function acquireLocalSlot(): Promise<void> {
       }
       return;
     }
-    const delay = inFlight >= MAX_CONCURRENCY ? 50 : waitMsForToken();
+    const delay = inFlight >= concurrencyCap ? 50 : waitMsForToken();
     await new Promise((r) => setTimeout(r, delay));
   }
 }
@@ -271,11 +315,17 @@ async function acquireSlot(): Promise<void> {
   await waitForCircuit();
   if (process.env.REDIS_URL?.trim()) {
     for (;;) {
-      if (await acquireGlobalRedisSlot()) {
-        await acquireLocalSlot();
-        return;
+      if (!(await acquireGlobalRedisSlot())) {
+        await new Promise((r) => setTimeout(r, 40));
+        continue;
       }
-      await new Promise((r) => setTimeout(r, 40));
+      if (!(await acquireGlobalRedisConcurrencySlot())) {
+        await new Promise((r) => setTimeout(r, 40));
+        continue;
+      }
+      redisConcurrencyHeld = true;
+      await acquireLocalSlot();
+      return;
     }
   }
   await acquireLocalSlot();
@@ -283,6 +333,14 @@ async function acquireSlot(): Promise<void> {
 
 function releaseSlot(): void {
   inFlight = Math.max(0, inFlight - 1);
+  if (!redisConcurrencyHeld) return;
+  redisConcurrencyHeld = false;
+  void getSharedRedis()
+    .then((client) => {
+      if (!client) return;
+      return releaseRedisConcurrencySlot(client, UW_CONCURRENCY_REDIS_KEY);
+    })
+    .catch(() => {});
 }
 
 function maybeFlushRateLimitSummary(now: number): void {
@@ -430,6 +488,8 @@ export function uwRateLimiterStats(): {
   globalMaxRps: number;
   replicaCount: number;
   degradedLocalRps: number;
+  globalMaxConcurrency: number;
+  degradedLocalConcurrency: number;
   maxConcurrency: number;
   minSpacingMs: number;
   inFlight: number;
@@ -449,6 +509,8 @@ export function uwRateLimiterStats(): {
     globalMaxRps: GLOBAL_MAX_RPS,
     replicaCount: REPLICA_COUNT,
     degradedLocalRps: DEGRADED_LOCAL_RPS,
+    globalMaxConcurrency: GLOBAL_MAX_CONCURRENCY,
+    degradedLocalConcurrency: DEGRADED_LOCAL_CONCURRENCY,
     maxConcurrency: MAX_CONCURRENCY,
     minSpacingMs: MIN_SPACING_MS,
     inFlight,

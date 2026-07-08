@@ -213,17 +213,17 @@ let lastGoodDeskEnrichment: DeskEnrichmentSticky | null = null;
 let deskEnrichmentInFlight: Promise<void> | null = null;
 
 async function fetchDeskEnrichmentFields(today: string): Promise<DeskEnrichmentSticky> {
-  const [greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks, mag7Rows, macroIndicators] =
+  const netPremTicks = await resolveNetPremTicksForDesk("SPY");
+  const [greekExpRows, flowByExpiry, netFlowByExpiry, mag7Rows, macroIndicators] =
     uwConfigured()
       ? await runUwPooled([
           () => fetchUwGreekExposureExpiry("SPX").catch(() => []),
           () => fetchUwFlowPerExpiry("SPX", 12).catch(() => []),
           () => fetchUwNetFlowExpiry(20).catch(() => []),
-          () => fetchUwNetPremTicks("SPY").catch(() => []),
           () => fetchUwGroupGreekFlow("mag7").catch(() => []),
           () => fetchUwMacroIndicators().catch(() => []),
         ])
-      : [[], [], [], [], [], []];
+      : [[], [], [], [], []];
 
   return {
     fetchedAt: Date.now(),
@@ -233,10 +233,33 @@ async function fetchDeskEnrichmentFields(today: string): Promise<DeskEnrichmentS
     ),
     flow_by_expiry: flowByExpiry as Record<string, unknown>[],
     net_flow_by_expiry: netFlowByExpiry as Record<string, unknown>[],
-    net_prem_ticks: netPremTicks as NetPremTick[],
+    net_prem_ticks: netPremTicks,
     mag7_greek_flow: summarizeGroupGreekFlow("mag7", mag7Rows as Record<string, unknown>[]),
     macro_indicators: macroIndicators as UwMacroIndicatorSnapshot[],
   };
+}
+
+/** WS → Redis → REST for net prem ticks (net_flow channel). */
+async function resolveNetPremTicksForDesk(ticker = "SPY"): Promise<NetPremTick[]> {
+  try {
+    const { getNetPremTicksForTicker, isUwChannelFresh } = await import("@/lib/ws/uw-socket");
+    if (isUwChannelFresh("net_flow", 120_000)) {
+      const ticks = getNetPremTicksForTicker(ticker);
+      if (ticks.length) return ticks;
+    }
+  } catch {
+    /* WS optional */
+  }
+  try {
+    const { readUwDeskLaneFromRedis } = await import("@/lib/uw-ws-cache-bridge");
+    const { UW_KEYS } = await import("@/lib/providers/uw-shared-cache");
+    const redisTicks = await readUwDeskLaneFromRedis<NetPremTick[]>(UW_KEYS.netPremTicks(ticker));
+    if (redisTicks?.length) return redisTicks;
+  } catch {
+    /* Redis optional */
+  }
+  if (!uwConfigured()) return [];
+  return fetchUwNetPremTicks(ticker).catch(() => []);
 }
 
 function scheduleDeskEnrichmentRefresh(today: string): void {
