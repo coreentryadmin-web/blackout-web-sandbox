@@ -2,6 +2,19 @@
 
 ## Cursor Cloud specific instructions
 
+### HARD RULE — staging only (user mandate)
+
+**Work in THIS repo only:** `coreentryadmin-web/blackout-web-sandbox` → branch **`blackout-web-sandbox`**.
+
+| Do NOT | Do |
+|--------|-----|
+| Push branches to `coreentryadmin-web/blackout-web` | Push to `blackout-web-sandbox` |
+| Open/merge PRs to `blackout-web` `main` (Railway prod) | PR → `blackout-web-sandbox` only |
+| Auto-merge anything on the production repo | Deploy via ECR staging workflow after sandbox merge |
+
+Unless the user **explicitly** says “ship to production / Railway / main”, treat every task as
+**staging.blackouttrades.com only**. UI, auth, SPX, Thermal — all of it.
+
 **This repo (`blackout-web-sandbox`, branch `blackout-web-sandbox`) is the AWS staging app.**
 Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
 explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
