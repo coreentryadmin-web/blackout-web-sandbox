@@ -8,6 +8,7 @@ import { getDatabasePoolStats, pingDatabase, databaseConnectionMode } from "@/li
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
+import { readPolygonClusterHealth } from "@/lib/ws/socket-cluster-health";
 import { getRedisPubSubStatus } from "@/lib/redis-pubsub";
 import { flushTelemetryToRedis, readCrossInstanceTelemetry } from "@/lib/api-telemetry-redis";
 import { getPlayEngineHealth } from "@/lib/play-engine-health";
@@ -33,6 +34,7 @@ export async function buildMarketHealthSnapshot() {
   };
 
   const polygonWs = getIndexStoreStatus();
+  const polygonCluster = await readPolygonClusterHealth(polygonWs.is_leader);
   const uwWs = getUwSocketHealth();
   const flowBridge = getFlowEventsBridgeStatus();
 
@@ -55,7 +57,11 @@ export async function buildMarketHealthSnapshot() {
       pool,
     },
     websockets: {
-      polygon_indices: polygonWs,
+      polygon_indices: {
+        ...polygonWs,
+        cluster_live: polygonCluster.cluster_live,
+        cluster_spx_age_ms: polygonCluster.cluster_spx_age_ms,
+      },
       unusual_whales: uwWs,
     },
     flow_events: flowBridge,

@@ -9,6 +9,7 @@ import { isAdminUser } from "@/lib/admin-access";
 import { lockedToolKeys, type ToolKey } from "@/lib/tool-access";
 import { AppShellProviders } from "@/components/providers/AppShellProviders";
 import { jetbrainsMono } from "@/lib/fonts-mono";
+import { inter } from "@/lib/fonts-sans";
 import "../globals.css";
 import "../desk-app.css";
 import "../ios-native.css";
@@ -46,7 +47,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <div className={jetbrainsMono.variable}>
+    <div className={`${jetbrainsMono.variable} ${inter.variable}`}>
     <AppShellProviders>
       {/* VITALS Phase 1 — one shared market-cadence heartbeat behind all in-app
           content. Mounted ONCE here in the real shared (site) layout that wraps
