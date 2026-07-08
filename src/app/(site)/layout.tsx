@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth-server";
 import { Nav } from "@/components/Nav";
 import { IosAppChrome } from "@/components/ios/IosAppChrome";
 import { IosNativePageTransition } from "@/components/ios/IosNativePageTransition";

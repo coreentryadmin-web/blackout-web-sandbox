@@ -3,7 +3,7 @@
 import React, { Suspense, useState } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { useCompactDeskPanels } from "@/hooks/useCompactDeskPanels";
@@ -59,8 +59,7 @@ class SpxPanelErrorBoundary extends React.Component<
 }
 
 export function SpxDashboard() {
-  const { isLoaded, user } = useUser();
-  const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
+  const { isLoaded, tier } = useAppAuth();
   const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
   const nativeShell = useIosNativeShell();
   const compactPanels = useCompactDeskPanels(nativeShell);

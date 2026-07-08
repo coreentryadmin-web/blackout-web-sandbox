@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { timingSafeEqual } from "crypto";
 import { tierAtLeast, type Tier } from "@/lib/tiers";
 import { resolveUserTier, TierUnavailableError } from "@/lib/tier-cache";
+import { auth } from "@/lib/auth-server";
 
 export function isCronAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
