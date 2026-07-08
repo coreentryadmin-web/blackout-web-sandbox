@@ -32,7 +32,7 @@ function sleep(ms) {
  * @param {{ retries?: number, baseDelayMs?: number, timeoutMs?: number }} [opts]
  */
 export async function fetchRetry(url, init = {}, opts = {}) {
-  const retries = opts.retries ?? Number(process.env.FETCH_RETRIES ?? 4) || 4;
+  const retries = opts.retries ?? (Number(process.env.FETCH_RETRIES ?? 4) || 4);
   const baseDelayMs = opts.baseDelayMs ?? 1500;
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
