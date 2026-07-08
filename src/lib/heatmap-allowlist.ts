@@ -84,6 +84,16 @@ export function heatmapPresetTickers(): string[] {
   return [...HEATMAP_PRESET_TICKERS];
 }
 
+/** Full overlay allowlist — Vector universe + dark-pool warm batch (~21 names). */
+export function vectorUniverseTickers(): string[] {
+  return [...ALLOWLIST];
+}
+
+/** Tickers warmed by heatmap-warm + vector-universe snapshot (presets + extra liquid). */
+export function vectorWarmTickers(): string[] {
+  return vectorUniverseTickers();
+}
+
 /** True when `ticker` is one of the ~11 warm presets (the fast-move + warm-cron set). */
 export function isHeatmapPreset(ticker: string): boolean {
   const root = String(ticker ?? "").trim().toUpperCase();

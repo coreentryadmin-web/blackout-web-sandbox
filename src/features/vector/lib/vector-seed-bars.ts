@@ -1,7 +1,13 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import { formatEtDate, previousTradingDayEt } from "@/features/nighthawk/lib/session";
-import { fetchIndexMinuteBars } from "@/lib/providers/polygon";
+import { fetchIndexMinuteBars, fetchStockMinuteBars } from "@/lib/providers/polygon";
 import { fetchSpyVolumeByMinute } from "./vector-spy-volume";
+import {
+  isVectorIndexTicker,
+  normalizeVectorTicker,
+  vectorPolygonMinuteSymbol,
+  VECTOR_DEFAULT_TICKER,
+} from "./vector-ticker";
 
 export type VectorSeedBar = {
   time: UTCTimestamp;
@@ -9,7 +15,7 @@ export type VectorSeedBar = {
   high: number;
   low: number;
   close: number;
-  /** SPY 1m share volume aligned to this bar (standard SPX proxy). */
+  /** SPY 1m share volume aligned to SPX bars only. Stocks use native volume. */
   volume?: number;
 };
 
@@ -20,7 +26,7 @@ function mapMinuteBars(bars: AggBar[], volumeByTime?: Map<number, number>): Vect
     .filter((b) => typeof b.t === "number" && b.o > 0)
     .map((b) => {
       const time = Math.floor((b.t as number) / 1000) as UTCTimestamp;
-      const volume = volumeByTime?.get(time);
+      const volume = volumeByTime?.get(time) ?? (b.v != null && b.v > 0 ? b.v : undefined);
       return {
         time,
         open: b.o,
@@ -34,29 +40,44 @@ function mapMinuteBars(bars: AggBar[], volumeByTime?: Map<number, number>): Vect
 
 /**
  * Seed bars for the Vector chart: today's session first, then walk back through prior
- * trading days until Polygon returns data. Off-hours / pre-market on a new calendar day
- * therefore still paints the last completed session instead of a blank canvas.
+ * trading days until Polygon returns data.
  */
 export async function fetchVectorSeedBars(
+  ticker: string = VECTOR_DEFAULT_TICKER,
   now = new Date(),
-  fetchBars: typeof fetchIndexMinuteBars = fetchIndexMinuteBars,
+  fetchIndex: typeof fetchIndexMinuteBars = fetchIndexMinuteBars,
+  fetchStock: typeof fetchStockMinuteBars = fetchStockMinuteBars,
   fetchSpyVolume: (ymd: string) => Promise<Map<number, number>> = fetchSpyVolumeByMinute
 ): Promise<{
   bars: VectorSeedBar[];
   sessionYmd: string;
+  ticker: string;
 }> {
+  const t = normalizeVectorTicker(ticker);
   const today = formatEtDate(now);
   let ymd = today;
+  const polySym = vectorPolygonMinuteSymbol(t);
+  const useIndex = isVectorIndexTicker(t);
+
   for (let i = 0; i < 12; i++) {
-    const spxBars = await fetchBars("I:SPX", ymd, ymd).catch(() => []);
-    if (!spxBars.length) {
+    const rawBars = useIndex
+      ? await fetchIndex(polySym, ymd, ymd).catch(() => [])
+      : await fetchStock(t, ymd, ymd).catch(() => []);
+
+    if (!rawBars.length) {
       ymd = previousTradingDayEt(ymd);
       continue;
     }
-    const spyVolume = await fetchSpyVolume(ymd);
-    const mapped = mapMinuteBars(spxBars, spyVolume);
-    if (mapped.length > 0) return { bars: mapped, sessionYmd: ymd };
+
+    let volumeByTime: Map<number, number> | undefined;
+    if (t === "SPX") {
+      volumeByTime = await fetchSpyVolume(ymd);
+    }
+
+    const mapped = mapMinuteBars(rawBars, volumeByTime);
+    if (mapped.length > 0) return { bars: mapped, sessionYmd: ymd, ticker: t };
     ymd = previousTradingDayEt(ymd);
   }
-  return { bars: [], sessionYmd: today };
+
+  return { bars: [], sessionYmd: today, ticker: t };
 }

@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
-import { heatmapPresetTickers } from "@/lib/heatmap-allowlist";
+import { vectorWarmTickers } from "@/lib/heatmap-allowlist";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
-  const tickers = heatmapPresetTickers();
+  const tickers = vectorWarmTickers();
 
   // fetchGexHeatmap dedups per ticker via the matrix cache + single-flight guard, so warming each
   // once is enough. Settle-all so one failing underlying can't abort the rest. A null result

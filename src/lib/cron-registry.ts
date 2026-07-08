@@ -282,6 +282,43 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description:
       "Grades historical alert_audit_log rows by copying each row's already-computed outcome from its origin table (zerodte_setup_log/nighthawk_play_outcomes/spx_play_outcomes) — feeds BIE precedent search (get_similar_precedents), which was a complete no-op before this cron existed",
   },
+  {
+    key: "vector-universe-snapshot",
+    name: "Vector Universe Snapshot",
+    kind: "http",
+    path: "/api/cron/vector-universe-snapshot",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Batch-build compact GEX wall summary rows for the Vector scanner (~21 liquid tickers) into Redis — keeps market-wide Vector reads cache-only",
+  },
+  {
+    key: "vector-dark-pool-warm",
+    name: "Vector Dark Pool Warm",
+    kind: "http",
+    path: "/api/cron/vector-dark-pool-warm",
+    schedule_label: "~Every 10 min (market hours)",
+    stale_after_min: 20,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Pre-warm UW dark-pool levels per overlay-allowlist ticker into Redis so Vector SSE never hits UW REST on the hot path",
+  },
+  {
+    key: "coaching-alerts",
+    name: "Coaching Alerts",
+    kind: "http",
+    path: "/api/cron/coaching-alerts",
+    schedule_label: "~Every 10 min (market hours)",
+    stale_after_min: 20,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Write SPX coaching alerts (VWAP / gamma walls / posture) to coaching_alerts — replaces the never-shipped position-coaching-monitor cron",
+    produces_member_alert: true,
+  },
 ];
 
 export const CRON_JOB_BY_KEY = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j])) as Record<

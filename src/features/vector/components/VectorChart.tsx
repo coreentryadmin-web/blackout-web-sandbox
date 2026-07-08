@@ -110,6 +110,7 @@ function maybeScrollToLive(chart: IChartApi | null): void {
 }
 
 type Props = {
+  ticker: string;
   initialBars: VectorBar[];
   initialWalls: VectorWalls | null;
   initialVexWalls: VectorWalls | null;
@@ -396,6 +397,7 @@ function displayBarsFromMinute(
 }
 
 export function VectorChart({
+  ticker,
   initialBars,
   initialWalls,
   initialVexWalls,
@@ -559,7 +561,7 @@ export function VectorChart({
       ? minuteBarsRef.current[minuteBarsRef.current.length - 1]!.time
       : 0;
 
-    connRef.current = createVectorEventSource((snap) => {
+    connRef.current = createVectorEventSource(ticker, (snap) => {
       if (replayModeRef.current) return;
       if (snap.sessionYmd && snap.sessionYmd !== sessionYmd) return;
       if (!liveSessionRef.current) return;
@@ -651,7 +653,7 @@ export function VectorChart({
         darkPoolRef.current
       );
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -792,7 +794,7 @@ export function VectorChart({
    * as the session progresses, same cadence as spyVolumeForMinuteBar's own 55s server cache.
    */
   useEffect(() => {
-    if (!chartReady) return;
+    if (!chartReady || ticker !== "SPX") return;
     let cancelled = false;
     const backfill = async () => {
       try {
@@ -820,7 +822,7 @@ export function VectorChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [chartReady, sessionYmd]);
+  }, [chartReady, sessionYmd, ticker]);
 
   useEffect(() => {
     if (!replayMode || !playing || timelineRef.current.length === 0) {

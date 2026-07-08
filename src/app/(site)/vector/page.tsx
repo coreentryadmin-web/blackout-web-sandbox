@@ -13,6 +13,7 @@ import {
   getVectorWallHistory,
   loadSessionWallHistory,
   mergeWallHistory,
+  normalizeVectorTicker,
   primeVectorWallScope,
   seedWallHistoryForDisplay,
   type WallHistorySample,
@@ -23,31 +24,38 @@ import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const metadata: Metadata = {
   title: "Vector · BlackOut",
-  description: "Live SPX price action with GEX/VEX wall beads, flip levels, and dark-pool overlays.",
+  description: "Live price action with GEX/VEX wall beads, flip levels, and dark-pool overlays.",
 };
 
-export default async function VectorPage() {
+type PageProps = {
+  searchParams: Promise<{ ticker?: string }>;
+};
+
+export default async function VectorPage({ searchParams }: PageProps) {
   await requireTier("premium");
   if (!(await canAccessTool("vector"))) return <ComingSoon toolKey="vector" />;
 
+  const { ticker: rawTicker } = await searchParams;
+  const ticker = normalizeVectorTicker(rawTicker);
+
   ensureDataSockets();
-  await primeVectorWallScope();
+  await primeVectorWallScope(ticker);
   const [{ bars, sessionYmd }, walls, vexWalls, gammaFlip, vexFlip, darkPoolLevels] =
     await Promise.all([
-      fetchVectorSeedBars(),
-      Promise.resolve(getVectorGexWalls()),
-      Promise.resolve(getVectorVexWalls()),
-      getVectorGammaFlip(),
-      Promise.resolve(getVectorVexFlip()),
-      Promise.resolve(getVectorDarkPoolLevels()),
+      fetchVectorSeedBars(ticker),
+      Promise.resolve(getVectorGexWalls(ticker)),
+      Promise.resolve(getVectorVexWalls(ticker)),
+      getVectorGammaFlip(ticker),
+      Promise.resolve(getVectorVexFlip(ticker)),
+      getVectorDarkPoolLevels(ticker),
     ]);
-  const persistedHistory = await loadSessionWallHistory(sessionYmd).catch(
+  const persistedHistory = await loadSessionWallHistory(sessionYmd, ticker).catch(
     () => [] as WallHistorySample[]
   );
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
   const initialWallHistory = seedWallHistoryForDisplay(
-    mergeWallHistory(getVectorWallHistory(), persistedHistory),
+    mergeWallHistory(getVectorWallHistory(ticker), persistedHistory),
     bars.map((b) => b.time),
     walls,
     gammaFlip,
@@ -57,6 +65,7 @@ export default async function VectorPage() {
 
   return (
     <VectorPageShell
+      ticker={ticker}
       initialBars={bars}
       initialWalls={walls}
       initialVexWalls={vexWalls}

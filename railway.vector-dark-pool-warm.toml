@@ -1,0 +1,15 @@
+# Railway config for Vector-Dark-Pool-Warm cron.
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+watchPatterns = [
+  "scripts/hit-cron.mjs",
+  "railway.vector-dark-pool-warm.toml",
+  "nixpacks.toml",
+]
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/vector-dark-pool-warm"
+cronSchedule = "*/10 11-21 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1

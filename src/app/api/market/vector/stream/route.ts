@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { buildVectorStreamPayload } from "@/features/vector";
+import { buildVectorStreamPayload, normalizeVectorTicker } from "@/features/vector";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
 
   const locked = await requireToolApi("vector");
   if (locked) return locked;
+
+  const ticker = normalizeVectorTicker(req.nextUrl.searchParams.get("ticker"));
 
   if (activeStreams >= MAX_STREAMS) {
     return new NextResponse("Too many active streams — try again shortly", { status: 503 });
@@ -58,22 +60,10 @@ export async function GET(req: NextRequest) {
           }
           return;
         }
-        void buildVectorStreamPayload()
-          .then(({ candle, walls, vexWalls, gammaFlip, vexFlip, darkPoolLevels, t, gexAsOf, vexAsOf, wallHistory, sessionYmd }) => {
+        void buildVectorStreamPayload(ticker)
+          .then((payload) => {
             if (closed) return;
-            const data = JSON.stringify({
-              candle,
-              walls,
-              vexWalls,
-              gammaFlip,
-              vexFlip,
-              darkPoolLevels,
-              t,
-              gexAsOf,
-              vexAsOf,
-              wallHistory,
-              sessionYmd,
-            });
+            const data = JSON.stringify(payload);
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           })
           .catch(() => {

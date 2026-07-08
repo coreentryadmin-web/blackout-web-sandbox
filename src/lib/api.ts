@@ -673,6 +673,7 @@ export type VectorWalls = { callWalls: VectorWallLevel[]; putWalls: VectorWallLe
 export type VectorDarkPoolLevel = { strike: number; premium: number; pct: number };
 
 export type VectorStreamSnapshot = {
+  ticker?: string;
   candle: VectorStreamCandle | null;
   walls?: VectorWalls | null;
   vexWalls?: VectorWalls | null;
@@ -689,13 +690,26 @@ export type VectorStreamSnapshot = {
   wallHistory?: import("@/features/vector").WallHistorySample[];
 };
 
+let activeVectorStream: ReconnectingEventSource | null = null;
+let activeVectorStreamTicker: string | null = null;
+
 export function createVectorEventSource(
+  ticker: string,
   onMessage: (snap: VectorStreamSnapshot) => void,
   hooks?: { onOpen?: () => void; onClose?: () => void }
 ): ReconnectingEventSource | null {
   if (typeof window === "undefined") return null;
-  return createReconnectingEventSource(
-    "/api/market/vector/stream",
+  const t = (ticker || "SPX").trim().toUpperCase();
+  const url = `/api/market/vector/stream?ticker=${encodeURIComponent(t)}`;
+
+  if (activeVectorStream && activeVectorStreamTicker !== t) {
+    activeVectorStream.close();
+    activeVectorStream = null;
+    activeVectorStreamTicker = null;
+  }
+
+  const es = createReconnectingEventSource(
+    url,
     (raw) => {
       try {
         const data = JSON.parse(raw) as VectorStreamSnapshot;
@@ -715,8 +729,21 @@ export function createVectorEventSource(
         /* ignore */
       }
     },
-    hooks
+    {
+      onOpen: hooks?.onOpen,
+      onClose: () => {
+        if (activeVectorStream === es) {
+          activeVectorStream = null;
+          activeVectorStreamTicker = null;
+        }
+        hooks?.onClose?.();
+      },
+    }
   );
+
+  activeVectorStream = es;
+  activeVectorStreamTicker = t;
+  return es;
 }
 
 // Removed deprecated createFlowSocket() — it was never called and was the only
