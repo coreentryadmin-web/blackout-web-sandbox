@@ -9,6 +9,7 @@ import { OnboardingGuide } from "@/components/OnboardingGuide";
 import { MotionProvider } from "@/components/MotionProvider";
 import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
+import { clerkAllowedRedirectOrigins, clerkFrontendApiHost } from "@/lib/clerk-env";
 import { PwaRegister } from "@/components/PwaRegister";
 import { IosViewportLock } from "@/components/ios/IosViewportLock";
 import { IosKeyboardRoot } from "@/hooks/useIosKeyboardInset";
@@ -97,6 +98,9 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const clerkFapi = clerkFrontendApiHost();
+  const allowedRedirectOrigins = clerkAllowedRedirectOrigins();
+
   return (
     <html
       lang="en"
@@ -107,8 +111,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             chunks start loading during HTML parse instead of after hydration — this is what was
             tripping Clerk's "Component renderer did not mount within 10s" watchdog on cold loads.
             Resource hints are behavior-neutral (no-op if unused). */}
-        <link rel="preconnect" href="https://clerk.blackouttrades.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="https://clerk.blackouttrades.com" />
+        <link rel="preconnect" href={clerkFapi} crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href={clerkFapi} />
         {/* In-app detection: the iOS app shell (Capacitor) appends "BlackOutiOSApp" to the
             WKWebView user-agent. When present, flag <html> so CSS can hide all pricing /
             purchase UI (App Store guideline 3.1.1 — no external-purchase links in-app).
@@ -132,7 +136,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             per-request (dynamic) auth rendering with `dynamic` — preserving the v5 behavior the
             client nav (useAuth) relies on. v7 also carries the RSC-handshake fix for the soft-nav
             sign-in bounce and clears the GHSA-w24r-5266-9c3c auth-bypass CVE. */}
-        <ClerkProvider dynamic>
+        <ClerkProvider dynamic {...(allowedRedirectOrigins ? { allowedRedirectOrigins } : {})}>
           <MotionProvider>
             <SessionCacheGuard />
             <ClientErrorReporter />

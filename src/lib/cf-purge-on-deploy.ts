@@ -48,6 +48,8 @@ function deployId(): string | null {
   // deployment id. A manual override is supported for non-Railway hosts.
   return (
     process.env.CF_PURGE_DEPLOY_ID?.trim() ||
+    process.env.GITHUB_SHA?.trim() ||
+    process.env.CODEBUILD_RESOLVED_SOURCE_VERSION?.trim() ||
     process.env.RAILWAY_GIT_COMMIT_SHA?.trim() ||
     process.env.RAILWAY_DEPLOYMENT_ID?.trim() ||
     null
@@ -134,6 +136,12 @@ export async function maybePurgeCloudflareOnDeploy(): Promise<void> {
   if (!(await claimPurge(id))) return; // another replica owns this deploy's purge
 
   const files = MARKETING_PATHS.map((p) => `${origin}${p}`);
+  const prefixes = [`${origin}/_next/static`];
+  const body: { files: string[]; prefixes?: string[]; hosts?: string[] } = { files, prefixes };
+  // Staging: also purge the whole host so stale HTML/chunk 404s cannot brick the UI after deploy.
+  if (origin.includes("staging.")) {
+    body.hosts = [new URL(origin).host];
+  }
   try {
     const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`, {
       method: "POST",
@@ -141,14 +149,14 @@ export async function maybePurgeCloudflareOnDeploy(): Promise<void> {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ files }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       console.warn(`[cf-purge-on-deploy] purge failed: ${res.status} ${text.slice(0, 300)}`);
       return;
     }
-    console.log(`[cf-purge-on-deploy] purged ${files.length} marketing URLs for deploy ${id}`);
+    console.log(`[cf-purge-on-deploy] purged ${files.length} URLs + ${prefixes.length} prefix(es) for deploy ${id}`);
   } catch (err) {
     console.warn("[cf-purge-on-deploy] purge request error:", err);
   }
