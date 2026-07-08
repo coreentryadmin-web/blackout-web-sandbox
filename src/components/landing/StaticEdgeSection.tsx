@@ -1,24 +1,7 @@
-const GRAD = "linear-gradient(90deg,#00e676,#34d399 55%,#7dd3fc)";
-
 const STEPS = [
-  {
-    n: "01",
-    title: "Read the structure",
-    accent: "#00e676",
-    desc: "Live SPX, options flow, dealer gamma and dark-pool prints on one surface.",
-  },
-  {
-    n: "02",
-    title: "Score the setup",
-    accent: "#22d3ee",
-    desc: "Graded reads and Largo surface the setup, strike, and invalidation.",
-  },
-  {
-    n: "03",
-    title: "Execute on your broker",
-    accent: "#bf5fff",
-    desc: "We surface structure before price moves. You trade where you already execute.",
-  },
+  { n: "01", title: "Read the structure", accent: "#00e676", desc: "Live SPX, options flow, dealer gamma and dark-pool prints on one surface." },
+  { n: "02", title: "Score the setup", accent: "#22d3ee", desc: "Graded reads and Largo surface the setup, strike, and invalidation." },
+  { n: "03", title: "Execute on your broker", accent: "#bf5fff", desc: "We surface structure before price moves. You trade where you already execute." },
 ];
 
 const PILLARS = [
@@ -30,22 +13,18 @@ const PILLARS = [
 
 export function StaticEdgeSection() {
   return (
-    <section id="edge" className="px-4 py-16 md:px-8 md:py-20">
-      <div className="mx-auto max-w-6xl">
-        <p className="font-mono text-[10px] uppercase tracking-[0.5em] text-cyan-400">How it works</p>
-        <h2 className="font-anton text-4xl leading-none text-white md:text-6xl">
-          READ. SCORE.{" "}
-          <span style={{ background: GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
-            EXECUTE.
-          </span>
+    <section id="edge" className="mkt-section border-b-0">
+      <div className="mkt-section-inner">
+        <p className="mkt-kicker">
+          <span className="mkt-kicker-dot" aria-hidden />
+          How it works
+        </p>
+        <h2 className="mt-3 font-anton text-4xl leading-none text-white md:text-6xl">
+          READ. SCORE. <span className="mkt-gradient-text">EXECUTE.</span>
         </h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
+        <div className="mkt-steps">
           {STEPS.map((s) => (
-            <div
-              key={s.n}
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
-              style={{ borderColor: `${s.accent}33` }}
-            >
+            <div key={s.n} className="mkt-card" style={{ borderColor: `${s.accent}33` }}>
               <span className="font-mono text-sm font-bold" style={{ color: s.accent }}>
                 {s.n}
               </span>
@@ -54,9 +33,9 @@ export function StaticEdgeSection() {
             </div>
           ))}
         </div>
-        <div className="mt-16 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mkt-pillars">
           {PILLARS.map((p) => (
-            <div key={p.claim} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div key={p.claim} className="mkt-card">
               <span className="mb-3 inline-block h-2 w-2 rounded-full" style={{ background: p.c }} />
               <h4 className="font-syne text-base font-bold text-white">{p.claim}</h4>
               <p className="mt-2 text-xs leading-relaxed text-sky-300/80">{p.proof}</p>

@@ -3,6 +3,7 @@
  */
 import "../marketing-base.css";
 import "../marketing.css";
+import "../marketing-shell.css";
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return children;
