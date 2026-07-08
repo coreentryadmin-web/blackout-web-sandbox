@@ -80,13 +80,15 @@ Current layout is tool-oriented (`components/desk`, `features/vector`, `lib/nigh
 
 ## Branch policy
 
-| Branch | Purpose |
-|--------|---------|
-| `main` | Production (Railway) |
-| `feat/aws-prep` | AWS + cleanup PRs target here first, then merge to `main` |
-| `blackout-infra` | Terraform only |
+| Repo / branch | Purpose |
+|---------------|---------|
+| **`coreentryadmin-web/blackout-web` → `main`** | Production (Railway). Hotfixes + deliberate releases only. Auto-deploys. |
+| **`coreentryadmin-web/blackout-web-sandbox` → `blackout-web-sandbox`** | AWS migration, cleanup, refactors, experiments. **Does not deploy prod.** |
+| **`blackout-infra`** | Terraform only |
 
-**Never** maintain a second full app copy — it will diverge.
+**Workflow:** All AWS/cleanup agent work targets the **sandbox repo** on branch `blackout-web-sandbox`. Cherry-pick or open a small PR to `blackout-web` `main` only when a change is proven and intentionally ready for prod.
+
+**Never** maintain a second full app copy outside git — the sandbox repo is a fork snapshot synced from `main` at cutover time.
 
 ---
 
