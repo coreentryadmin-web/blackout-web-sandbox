@@ -57,6 +57,7 @@ jobs:
           docker build -f deploy/Dockerfile \
             --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             --build-arg NEXT_PUBLIC_SITE_URL="https://staging.blackouttrades.com" \
+            --build-arg GITHUB_SHA="${{ github.sha }}" \
             -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:staging" .
           docker push "${IMAGE}:${IMAGE_TAG}"
           docker push "${IMAGE}:staging"
