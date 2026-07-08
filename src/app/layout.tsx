@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Syne, Inter } from "next/font/google";
+import { Anton, Syne } from "next/font/google";
 import { IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
 
@@ -14,12 +14,6 @@ const syne = Syne({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-syne",
-});
-const inter = Inter({
-  weight: ["400", "500", "600"],
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
 });
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -52,8 +46,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${anton.variable} ${syne.variable} ${inter.variable}`}>
+    <html lang="en" className={`${anton.variable} ${syne.variable}`}>
       <head>
+        <link rel="preconnect" href={SITE.url} />
+        <link rel="dns-prefetch" href={SITE.url} />
         <script
           dangerouslySetInnerHTML={{
             __html:

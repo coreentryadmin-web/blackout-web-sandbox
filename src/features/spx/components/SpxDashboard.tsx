@@ -7,9 +7,15 @@ import { useUser } from "@clerk/nextjs";
 import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
-import { SpxSniperHeader } from "./SpxSniperHeader";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
+
+const SpxSniperHeader = dynamic(
+  () => import("./SpxSniperHeader").then((m) => ({ default: m.SpxSniperHeader })),
+  {
+    loading: () => <div className="spx-desk-skeleton min-h-[72px]" aria-busy="true" />,
+  }
+);
 
 const SpxGexMatrixHeatmap = dynamic(
   () => import("./SpxGexMatrixHeatmap").then((m) => ({ default: m.SpxGexMatrixHeatmap })),

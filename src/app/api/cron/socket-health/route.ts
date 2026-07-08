@@ -6,6 +6,12 @@ import { getIndexStoreStatus } from "@/lib/ws/polygon-socket";
 import { getUwSocketHealth } from "@/lib/ws/uw-socket";
 import { getOptionsSocketStatus, inOptionsMarketHours } from "@/lib/ws/options-socket";
 import { getStocksSocketStatus } from "@/lib/ws/stocks-socket";
+import {
+  buildUwClusterHealth,
+  evaluatePolygonClusterOk,
+  evaluateUwClusterOk,
+  readPolygonClusterHealth,
+} from "@/lib/ws/socket-cluster-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +19,9 @@ export const dynamic = "force-dynamic";
 /**
  * Cron-accessible WebSocket health probe — boots lazy sockets and returns live
  * cluster-local status. Used by RTH validation instead of brittle Railway log grep.
+ *
+ * Multi-replica note: only one task holds each WS leader lock. Followers report
+ * CLOSED locally but are healthy when the Redis cluster heartbeat is fresh.
  */
 export async function GET(req: NextRequest) {
   const started = Date.now();
@@ -62,7 +71,6 @@ export async function GET(req: NextRequest) {
       if (!rth) {
         luld_detail = "enabled, off-hours — auth not required";
       } else if (!luld.is_leader) {
-        // Mirror options-socket: only the cluster leader opens the LULD feed; followers are healthy.
         luld_detail = "enabled, follower — cluster leader maintains LULD feed";
       } else if (luld.authenticated && luld.ws_state === "open") {
         luld_detail = `live (${luld.tickers.join(", ")})`;
@@ -72,13 +80,33 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const polygonLocal = getIndexStoreStatus();
+    const uwLocal = getUwSocketHealth();
+    const uwCluster = buildUwClusterHealth({
+      is_leader: uwLocal.is_leader,
+      cluster_last_message_at: uwLocal.cluster_last_message_at,
+    });
+    const polygonCluster = await readPolygonClusterHealth(polygonLocal.is_leader);
+    const uwEval = evaluateUwClusterOk(uwCluster, rth);
+    const polygonEval = evaluatePolygonClusterOk(polygonCluster, rth);
+
     payload = {
-      ok: options_ok && luld_ok,
+      ok: options_ok && luld_ok && uwEval.ok && polygonEval.ok,
       as_of: new Date().toISOString(),
       market_hours: rth,
       websockets: {
-        polygon_indices: getIndexStoreStatus(),
-        unusual_whales: getUwSocketHealth(),
+        polygon_indices: {
+          ...polygonLocal,
+          cluster: polygonCluster,
+          ok: polygonEval.ok,
+          detail: polygonEval.detail,
+        },
+        unusual_whales: {
+          ...uwLocal,
+          cluster: uwCluster,
+          ok: uwEval.ok,
+          detail: uwEval.detail,
+        },
         options: {
           ...options,
           authenticated_shards: authenticatedShards,

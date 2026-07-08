@@ -1258,9 +1258,16 @@ export function getUwSocketHealth() {
     last_message_age_ms[ch] = at ? now - at : null;
   }
 
+  const clusterAt = effectiveFreshestUwMessageAt();
+  const clusterAge = clusterAt != null ? now - clusterAt : null;
+
   return {
     configured: Boolean(UW_API_KEY),
     initialized: uwSocketInitialized,
+    is_leader: uwIsLeader,
+    cluster_last_message_at: clusterAt,
+    cluster_last_message_age_ms: clusterAge,
+    cluster_live: clusterAge != null && clusterAge <= 120_000,
     auth_failed: authFailedChannels.length > 0,
     auth_failed_channels: authFailedChannels,
     channels,

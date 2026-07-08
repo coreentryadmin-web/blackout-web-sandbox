@@ -554,6 +554,7 @@ export function getIndexFeedFreshness(
 
 export function getIndexStoreStatus() {
   return {
+    is_leader: indicesIsLeader,
     authenticated: indicesAuthenticated,
     wsState: indicesWs ? ["CONNECTING", "OPEN", "CLOSING", "CLOSED"][indicesWs.readyState] : "NOT_CREATED",
     consecutiveFailures: indicesConsecutiveFailures,
