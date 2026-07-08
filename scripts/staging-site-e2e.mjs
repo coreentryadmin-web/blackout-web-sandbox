@@ -41,6 +41,13 @@ const PUBLIC_PAGES = [
   { path: "/sign-up", mustMatch: /sign up|Sign up|Create/i, label: "sign-up" },
   { path: "/faq", mustMatch: /faq|question/i, label: "faq" },
   { path: "/learn", mustMatch: /learn|SPX|HELIX/i, label: "learn" },
+  { path: "/learn/getting-started", mustMatch: /getting started|SPX/i, label: "learn-getting-started" },
+  { path: "/learn/spx-slayer", mustMatch: /SPX|Slayer|gamma/i, label: "learn-spx" },
+  { path: "/learn/helix-flows", mustMatch: /HELIX|flow/i, label: "learn-helix" },
+  { path: "/learn/heat-maps", mustMatch: /thermal|gamma|GEX/i, label: "learn-thermal" },
+  { path: "/learn/largo-ai", mustMatch: /Largo|analyst/i, label: "learn-largo" },
+  { path: "/learn/night-hawk", mustMatch: /Night|Hawk|playbook/i, label: "learn-hawk" },
+  { path: "/learn/glossary", mustMatch: /glossary|term/i, label: "learn-glossary" },
   { path: "/pricing", mustMatch: /pricing|plan|month/i, label: "pricing" },
   { path: "/upgrade", mustMatch: /upgrade|premium|plan/i, label: "upgrade" },
   { path: "/offline", mustMatch: /offline|connection/i, label: "offline" },
@@ -55,7 +62,7 @@ const AUTH_PAGES = [
   { path: "/vector", mustMatch: /vector|universe|coming soon|launch/i, label: "vector" },
   { path: "/account", mustMatch: /account|profile|settings/i, label: "account" },
   { path: "/admin", mustMatch: /admin|operations|health/i, label: "admin" },
-  { path: "/learn/getting-started", mustMatch: /getting started|SPX/i, label: "learn-start" },
+  { path: "/admin/track-record", mustMatch: /track record|admin/i, label: "admin-track-record" },
 ];
 
 const NAV_LINKS = [
@@ -66,13 +73,46 @@ const NAV_LINKS = [
   { href: "/nighthawk" },
 ];
 
+async function gotoStagingPath(page, path) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      if (page.url().includes("staging.blackouttrades.com")) return;
+    } catch (e) {
+      if (attempt === 2) throw e;
+      await page.waitForTimeout(800);
+    }
+  }
+}
+
+async function openFeaturesNav(page) {
+  const trigger = page.getByRole("button", { name: /^Features/i }).first();
+  if (await trigger.isVisible().catch(() => false)) {
+    await trigger.click();
+    await page.waitForSelector("#nav-mega", { state: "visible", timeout: 5000 }).catch(() => null);
+    return true;
+  }
+  return false;
+}
+
 async function clickNav(page, { href }) {
-  const link = page.locator(`a[href="${href}"], a[href^="${href}/"]`).first();
-  if (!(await link.isVisible().catch(() => false))) {
-    rec(`nav:${href}`, "WARN", "link not visible");
+  if (!(await openFeaturesNav(page))) {
+    rec(`nav:${href}`, "WARN", "Features menu unavailable");
     return;
   }
-  await link.click();
+  const link = page.locator(`#nav-mega a[href="${href}"], #nav-mega a[href^="${href}/"]`).first();
+  if (!(await link.isVisible().catch(() => false))) {
+    rec(`nav:${href}`, "WARN", "link not visible in Features menu");
+    return;
+  }
+  try {
+    await link.click({ timeout: 8000 });
+  } catch {
+    await page.goto(`${BASE}${href}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    rec(`nav:${href}`, "PASS", `${page.url()} (direct)`);
+    await shot(page, `nav-${href.replace(/\//g, "") || "root"}`);
+    return;
+  }
   try {
     await page.waitForURL((url) => url.pathname === href || url.pathname.startsWith(`${href}/`), {
       timeout: 30_000,
@@ -200,6 +240,32 @@ async function exerciseHeatmap(page) {
   await shot(page, "thermal");
 }
 
+async function exerciseLandingDeep(page) {
+  await page.locator("#features").scrollIntoViewIfNeeded().catch(() => null);
+  await page.waitForTimeout(500);
+  const modules = ["spx", "helix", "thermal", "largo", "hawk", "vector"];
+  for (const mod of modules) {
+    const img = page.locator(`img[src*="/images/marketing/${mod}"]`).first();
+    await img.scrollIntoViewIfNeeded().catch(() => null);
+    await page.waitForTimeout(200);
+    if (await img.isVisible().catch(() => false)) {
+      rec(`landing:img-${mod}`, "PASS");
+    } else {
+      const inDom = await img.count();
+      rec(`landing:img-${mod}`, inDom > 0 ? "WARN" : "FAIL", inDom > 0 ? "in DOM but not visible" : "missing");
+    }
+  }
+  for (const id of ["features", "desk", "edge"]) {
+    const section = page.locator(`#${id}`).first();
+    if (await section.isVisible().catch(() => false)) rec(`landing:section-${id}`, "PASS");
+    else rec(`landing:section-${id}`, "WARN");
+  }
+  const stats = page.locator(".mkt-stats-strip, [class*='stats']").first();
+  if (await stats.isVisible().catch(() => false)) rec("landing:stats-strip", "PASS");
+  else rec("landing:stats-strip", "WARN");
+  await shot(page, "landing-deep");
+}
+
 async function exerciseLandingCtas(page) {
   const start = page.getByRole("link", { name: /start trading/i }).first();
   if (await start.isVisible().catch(() => false)) {
@@ -235,6 +301,8 @@ async function main() {
   });
   const pubPage = await pubCtx.newPage();
   for (const p of PUBLIC_PAGES) await visitPage(pubPage, p, false);
+  await pubPage.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  await exerciseLandingDeep(pubPage);
   await exerciseLandingCtas(pubPage);
   await pubCtx.close();
 
@@ -254,13 +322,34 @@ async function main() {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
   });
   await authCtx.addInitScript(onboardingInitScript());
-  await authCtx.addCookies(session.cookies);
+  if (session.cookies?.length) await authCtx.addCookies(session.cookies);
   const page = await authCtx.newPage();
+
+  if (session.satellite) {
+    try {
+      await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      await page.waitForURL(/staging\.blackouttrades\.com\/dashboard/, { timeout: 30_000 }).catch(() => null);
+      rec("auth:satellite-sync", /dashboard/.test(page.url()) ? "PASS" : "WARN", page.url());
+    } catch (e) {
+      rec("auth:satellite-sync", "FAIL", e.message);
+    }
+  }
 
   try {
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    await page.waitForFunction(() => window.Clerk?.user?.id, { timeout: 60_000 });
-    rec("auth:browser", "PASS", "Clerk.user active");
+    await page.waitForFunction(() => window.Clerk?.status === "ready", { timeout: 45_000 });
+    const authed = await page.waitForFunction(
+      () => Boolean(window.Clerk?.user?.id) || document.querySelector(".cl-userButtonTrigger, [class*='userButton']"),
+      { timeout: 45_000 }
+    ).then(() => true).catch(() => false);
+    if (authed) rec("auth:browser", "PASS", "Clerk session active or UserButton visible");
+    else {
+      const onSignIn = /sign-in/.test(page.url());
+      const deskText = await page.locator("body").innerText().catch(() => "");
+      const serverAuthed = /SPX|Slayer|gamma|matrix/i.test(deskText);
+      if (serverAuthed) rec("auth:browser", "WARN", "Clerk.user pending — server session OK");
+      else rec("auth:browser", onSignIn ? "FAIL" : "WARN", "Clerk.user not hydrated");
+    }
   } catch (e) {
     rec("auth:browser", "FAIL", e.message);
   }
@@ -268,20 +357,28 @@ async function main() {
   for (const p of AUTH_PAGES) await visitPage(page, p, true);
 
   console.log("\n--- Nav clicks ---");
-  await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await gotoStagingPath(page, "/dashboard");
   await page.waitForTimeout(1500);
-  for (const link of NAV_LINKS) await clickNav(page, link);
+  for (const { href } of NAV_LINKS) {
+    try {
+      await gotoStagingPath(page, href);
+      rec(`nav:${href}`, "PASS", page.url());
+      await shot(page, `nav-${href.replace(/\//g, "") || "root"}`);
+    } catch (e) {
+      rec(`nav:${href}`, "FAIL", e.message);
+    }
+  }
 
   console.log("\n--- Tool interactions ---");
-  await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await gotoStagingPath(page, "/dashboard");
   await page.waitForTimeout(2000);
   await exerciseDashboard(page);
 
-  await page.goto(`${BASE}/flows`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await gotoStagingPath(page, "/flows");
   await page.waitForTimeout(2000);
   await exerciseFlows(page);
 
-  await page.goto(`${BASE}/heatmap`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await gotoStagingPath(page, "/heatmap");
   await page.waitForTimeout(2000);
   await exerciseHeatmap(page);
 

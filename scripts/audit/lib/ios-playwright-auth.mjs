@@ -8,6 +8,17 @@ const CJS = "5.57.0";
 const ONBOARDING_KEY = "blackout:onboarding:v";
 const ONBOARDING_DONE = "2";
 
+const PRIMARY_ORIGIN = "https://blackouttrades.com";
+
+function isStagingSatellite(appUrl) {
+  try {
+    return new URL(appUrl).hostname.includes("staging.");
+  } catch {
+    return false;
+  }
+}
+
+/** Primary Clerk FAPI — ticket exchange always uses the primary domain, not satellite proxy. */
 function fapiHost(publishableKey) {
   try {
     const decoded = Buffer.from(publishableKey.replace(/^pk_(live|test)_/, ""), "base64")
@@ -64,6 +75,8 @@ export async function mintIosPlaywrightSession({ appUrl }) {
 
   const email = process.env.AUDIT_EMAIL || `ios-ui-e2e-${Date.now()}@blackouttrades.com`;
   const phone = process.env.AUDIT_PHONE || `+1415555${String(Math.floor(Math.random() * 9000) + 1000)}`;
+  const satellite = isStagingSatellite(appUrl);
+  const authOrigin = satellite ? PRIMARY_ORIGIN : appUrl;
   const fapi = fapiHost(publishableKey);
   const API = "https://api.clerk.com/v1";
   const backend = (method, path, body) =>
@@ -106,8 +119,8 @@ export async function mintIosPlaywrightSession({ appUrl }) {
     const signInRes = await fetch(`${fapi}/v1/client/sign_ins?_clerk_js_version=${CJS}`, {
       method: "POST",
       headers: {
-        Origin: appUrl,
-        Referer: `${appUrl}/`,
+        Origin: authOrigin,
+        Referer: `${authOrigin}/`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({ strategy: "ticket", ticket }),
@@ -122,13 +135,66 @@ export async function mintIosPlaywrightSession({ appUrl }) {
       };
     }
 
+    if (satellite) {
+      const clientUat = Math.floor(Date.now() / 1000);
+      const signInCookieHeader = signInRaw.map((h) => h.split(";")[0]).join("; ");
+      const mintRes = await fetch(`${fapi}/v1/client/sessions/${sessionId}/tokens?_clerk_js_version=${CJS}`, {
+        method: "POST",
+        headers: {
+          Origin: authOrigin,
+          Referer: `${authOrigin}/`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: signInCookieHeader,
+        },
+      });
+      const mintRaw = collectRawSetCookies(mintRes);
+      const jwt = (await mintRes.json().catch(() => null))?.jwt;
+      if (!jwt) return { skip: true, reason: "session token mint failed (satellite)" };
+
+      const cookieDomain = new URL(appUrl).hostname;
+      const cookies = [
+        ...playwrightCookiesFromSetCookie(signInRaw, cookieDomain),
+        ...playwrightCookiesFromSetCookie(mintRaw, cookieDomain),
+        {
+          name: "__session",
+          value: jwt,
+          domain: cookieDomain,
+          path: "/",
+          secure: true,
+          sameSite: "Lax",
+          httpOnly: true,
+        },
+        {
+          name: "__client_uat",
+          value: String(clientUat),
+          domain: cookieDomain,
+          path: "/",
+          secure: true,
+          sameSite: "Lax",
+        },
+      ];
+
+      return {
+        skip: false,
+        satellite: true,
+        cookies,
+        cleanup: async () => {
+          try {
+            await backend("DELETE", `/users/${userId}`);
+          } catch {
+            /* best-effort */
+          }
+        },
+      };
+    }
+
     const clientUat = Math.floor(Date.now() / 1000);
     const signInCookieHeader = signInRaw.map((h) => h.split(";")[0]).join("; ");
     const mintRes = await fetch(`${fapi}/v1/client/sessions/${sessionId}/tokens?_clerk_js_version=${CJS}`, {
       method: "POST",
       headers: {
-        Origin: appUrl,
-        Referer: `${appUrl}/`,
+        Origin: authOrigin,
+        Referer: `${authOrigin}/`,
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: signInCookieHeader,
       },
