@@ -39,12 +39,21 @@ function fail(msg) {
   console.log(`  ✗ ${msg}`);
 }
 
-function loadStagingSecret() {
-  const raw = execSync(
-    `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
-    { encoding: "utf8" }
-  );
-  return JSON.parse(raw);
+function loadStagingSecret(attempt = 0) {
+  try {
+    const raw = execSync(
+      `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
+      { encoding: "utf8" }
+    );
+    return JSON.parse(raw);
+  } catch (e) {
+    if (attempt < 4) {
+      const delay = 2000 * (attempt + 1);
+      execSync(`sleep ${Math.ceil(delay / 1000)}`);
+      return loadStagingSecret(attempt + 1);
+    }
+    throw e;
+  }
 }
 
 function flagCount(body) {
