@@ -31,9 +31,12 @@ function FooterLink({ href, children, className }: { href: string; children: Rea
 
 export function StaticLandingFooter() {
   return (
-    <footer className="relative border-t border-white/10 px-4 py-14 md:px-8">
+    <footer className="mkt-footer relative z-10 px-4 md:px-8">
+      <p className="mkt-footer-wm" aria-hidden>
+        BLACKOUT
+      </p>
       <div className="relative z-10 mx-auto grid max-w-6xl gap-10 md:grid-cols-4">
-        <div className="md:col-span-1">
+        <div>
           <p className="font-anton text-2xl text-white">BLACKOUT</p>
           <p className="mt-2 text-sm text-sky-300">{SITE.tagline}</p>
         </div>
@@ -42,7 +45,7 @@ export function StaticLandingFooter() {
           <ul className="flex flex-col gap-2">
             {INSTRUMENTS.map((it) => (
               <li key={it.href}>
-                <FooterLink href={it.href} className="text-sm text-white/75 hover:text-white">
+                <FooterLink href={it.href} className="text-sm text-white/75 no-underline hover:text-white">
                   {it.label}
                 </FooterLink>
               </li>
@@ -54,7 +57,7 @@ export function StaticLandingFooter() {
           <ul className="flex flex-col gap-2">
             {PLATFORM.map((it) => (
               <li key={it.href} className={it.iosHide ? "hide-in-ios-app" : undefined}>
-                <FooterLink href={it.href} className="text-sm text-white/75 hover:text-white">
+                <FooterLink href={it.href} className="text-sm text-white/75 no-underline hover:text-white">
                   {it.label}
                 </FooterLink>
               </li>
@@ -62,10 +65,10 @@ export function StaticLandingFooter() {
           </ul>
         </div>
         <div className="flex flex-col gap-3">
-          <FooterLink href="/sign-in" className="nav-signin font-syne text-sm">
+          <FooterLink href="/sign-in" className="nav-signin">
             Sign in
           </FooterLink>
-          <FooterLink href="/sign-up" className="nav-join font-syne text-sm">
+          <FooterLink href="/sign-up" className="nav-join">
             Get started
           </FooterLink>
           <p className="mt-4 text-xs text-sky-300/70">© {YEAR} {SITE.legalName}</p>
