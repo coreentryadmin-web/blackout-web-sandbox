@@ -125,22 +125,34 @@ async function main() {
 
   await stagingForceWarmCrons();
 
-  const session = await mintIosPlaywrightSession({ appUrl: BASE });
-  if (session.skip) {
-    rec("auth", "FAIL", session.reason);
-    process.exit(1);
-  }
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const useCronAuth = IS_STAGING && API_ONLY && cronSecret;
 
-  const cookieHeader = session.cookies
-    .filter((c) => c.name === "__session" || c.name === "__client_uat")
-    .map((c) => `${c.name}=${c.value}`)
-    .join("; ");
+  let apiHeaders = { Accept: "application/json" };
+  let cleanup = null;
+
+  if (useCronAuth) {
+    apiHeaders.Authorization = `Bearer ${cronSecret}`;
+    rec("auth", "PASS", "cron bearer (staging api-only)");
+  } else {
+    const session = await mintIosPlaywrightSession({ appUrl: BASE });
+    if (session.skip) {
+      rec("auth", "FAIL", session.reason);
+      process.exit(1);
+    }
+    cleanup = session.cleanup;
+    const cookieHeader = session.cookies
+      .filter((c) => c.name === "__session" || c.name === "__client_uat")
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
+    apiHeaders.Cookie = cookieHeader;
+  }
 
   console.log("--- Pre-warm (desk-warm lane proxies) ---");
   for (const path of WARM_PATHS) {
     const t0 = performance.now();
     try {
-      const res = await fetch(`${BASE}${path}`, { headers: { Cookie: cookieHeader, Accept: "application/json" } });
+      const res = await fetch(`${BASE}${path}`, { headers: apiHeaders });
       await res.text();
       const ms = Math.round(performance.now() - t0);
       rec(`prewarm:${path.split("?")[0]}`, grade(ms), `HTTP ${res.status}`, ms);
@@ -154,7 +166,7 @@ async function main() {
     for (let pass = 1; pass <= 2; pass++) {
       const t0 = performance.now();
       try {
-        const res = await fetch(`${BASE}${path}`, { headers: { Cookie: cookieHeader, Accept: "application/json" } });
+        const res = await fetch(`${BASE}${path}`, { headers: apiHeaders });
         await res.text();
         const ms = Math.round(performance.now() - t0);
         const label = pass === 1 ? `api:${path.split("?")[0]}` : `api:${path.split("?")[0]}:warm`;
@@ -199,7 +211,7 @@ async function main() {
     rec("browser", "SKIP", "--api-only");
   }
 
-  await session.cleanup?.();
+  await cleanup?.();
 
   const reportPath = join(OUT, `site-latency-${Date.now()}.json`);
   writeFileSync(reportPath, JSON.stringify({ ts: new Date().toISOString(), base: BASE, checks }, null, 2));

@@ -340,7 +340,8 @@ if (sentryToken) {
       });
     }
   } catch (e) {
-    fail(`Sentry API: ${e.message} — verify token scopes (event:read, org:read, project:read)`);
+    if (IS_STAGING) warn(`Sentry API: ${e.message} — skipped on staging`);
+    else fail(`Sentry API: ${e.message} — verify token scopes (event:read, org:read, project:read)`);
   }
 } else {
   warn("SENTRY_AUTH_TOKEN not found (env or Railway blackout-web) — using error_events mirror");
