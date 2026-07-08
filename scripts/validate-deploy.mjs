@@ -287,11 +287,7 @@ if (dbUrl) {
 
     await client.end();
   } catch (e) {
-    if (IS_STAGING && /ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout/i.test(e.message)) {
-      warn(`Postgres unreachable from this host (private RDS) — skipping DB checks: ${e.message}`);
-    } else {
-      fail(`Postgres query failed: ${e.message}`);
-    }
+    fail(`Postgres query failed: ${e.message}`);
   }
 } else {
   warn("DATABASE_PUBLIC_URL not set — skipping Postgres checks");
@@ -350,14 +346,7 @@ if (sentryToken) {
 console.log("\n4b. Cluster config");
 const replicaCount = Math.max(
   0,
-  Math.floor(
-    Number(
-      (IS_STAGING ? process.env.REPLICA_COUNT : null) ??
-        rwVars.REPLICA_COUNT ??
-        process.env.REPLICA_COUNT ??
-        0
-    )
-  )
+  Math.floor(Number(rwVars.REPLICA_COUNT ?? process.env.REPLICA_COUNT ?? 0))
 );
 let runningReplicas = null;
 if (!skipRailway) {
