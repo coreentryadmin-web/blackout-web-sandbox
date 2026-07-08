@@ -20,8 +20,10 @@ export type VectorLiveCandle = {
 
 type LiveCache = { candle: VectorLiveCandle | null; updatedAt: number; fetchedAt: number };
 
-const LIVE_CACHE_MS = 5_000;
+/** 1s shared cache — Vector hub ticks at 1 Hz so stocks stay fresh without per-connection REST. */
+const LIVE_CACHE_MS = 1_000;
 const liveByTicker = new Map<string, LiveCache>();
+const inflightByTicker = new Map<string, Promise<VectorLiveCandle | null>>();
 
 function barFromAgg(b: { t?: number; o: number; h: number; l: number; c: number; v?: number }): VectorLiveCandle | null {
   if (typeof b.t !== "number" || b.o <= 0) return null;
@@ -69,13 +71,21 @@ export async function getVectorLiveCandle(ticker: string = VECTOR_DEFAULT_TICKER
     return { current: cached.candle, updatedAt: cached.updatedAt };
   }
 
-  const candle = await fetchLatestMinuteBar(t);
+  let inflight = inflightByTicker.get(t);
+  if (!inflight) {
+    inflight = fetchLatestMinuteBar(t).finally(() => {
+      inflightByTicker.delete(t);
+    });
+    inflightByTicker.set(t, inflight);
+  }
+  const candle = await inflight;
   const updatedAt = candle ? candle.time * 1000 : 0;
-  liveByTicker.set(t, { candle, updatedAt, fetchedAt: now });
+  liveByTicker.set(t, { candle, updatedAt, fetchedAt: Date.now() });
   return { current: candle, updatedAt };
 }
 
 /** Test-only reset. */
 export function _resetVectorLiveCandleForTest(): void {
   liveByTicker.clear();
+  inflightByTicker.clear();
 }

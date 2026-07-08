@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { buildVectorStreamPayload, normalizeVectorTicker } from "@/features/vector";
+import { normalizeVectorTicker } from "@/features/vector";
+import {
+  acquireVectorStreamConnection,
+  attachVectorStreamSubscriber,
+  detachVectorStreamSubscriber,
+  getVectorStreamFrame,
+  releaseVectorStreamConnection,
+  vectorStreamConnectionCount,
+} from "@/features/vector/lib/vector-stream-hub";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
 
@@ -9,8 +17,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TICK_MS = 1_000;
-
-let activeStreams = 0;
 const MAX_STREAMS = Number(process.env.SSE_MAX_STREAMS ?? 2000);
 
 export async function GET(req: NextRequest) {
@@ -22,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const ticker = normalizeVectorTicker(req.nextUrl.searchParams.get("ticker"));
 
-  if (activeStreams >= MAX_STREAMS) {
+  if (vectorStreamConnectionCount() >= MAX_STREAMS) {
     return new NextResponse("Too many active streams — try again shortly", { status: 503 });
   }
 
@@ -36,7 +42,10 @@ export async function GET(req: NextRequest) {
   const cleanup = () => {
     if (closed) return;
     closed = true;
-    if (counted) activeStreams = Math.max(0, activeStreams - 1);
+    if (counted) {
+      releaseVectorStreamConnection();
+      detachVectorStreamSubscriber(ticker);
+    }
     if (interval) {
       clearInterval(interval);
       interval = null;
@@ -60,23 +69,22 @@ export async function GET(req: NextRequest) {
           }
           return;
         }
-        void buildVectorStreamPayload(ticker)
-          .then((payload) => {
-            if (closed) return;
-            const data = JSON.stringify(payload);
-            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-          })
-          .catch(() => {
-            cleanup();
-            try {
-              controller.close();
-            } catch {
-              /* already closed */
-            }
-          });
+        const frame = getVectorStreamFrame(ticker);
+        if (!frame) return;
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          cleanup();
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
       };
 
-      activeStreams++;
+      acquireVectorStreamConnection();
+      attachVectorStreamSubscriber(ticker);
       counted = true;
       req.signal.addEventListener("abort", cleanup);
 
