@@ -8,6 +8,7 @@ import { MarketPulseLayer } from "@/components/platform/MarketPulseLayer";
 import { isAdminUser } from "@/lib/admin-access";
 import { lockedToolKeys, type ToolKey } from "@/lib/tool-access";
 import { AppShellProviders } from "@/components/providers/AppShellProviders";
+import "../globals.css";
 import "../desk-app.css";
 import "../ios-native.css";
 import "../ios-native-pages.css";
