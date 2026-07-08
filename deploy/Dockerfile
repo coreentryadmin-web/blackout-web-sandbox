@@ -47,6 +47,8 @@ ENV NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL
 ENV NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL
 ENV GITHUB_SHA=$GITHUB_SHA
 ENV CF_PURGE_DEPLOY_ID=$GITHUB_SHA
+# Cognito staging: swap middleware entry so @clerk/nextjs never enters the edge bundle.
+RUN if [ "$AUTH_PROVIDER" = "cognito" ]; then cp src/middleware.entry.cognito.ts src/middleware.ts; fi
 RUN npm run build
 
 FROM base AS runner
