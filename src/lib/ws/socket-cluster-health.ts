@@ -1,4 +1,4 @@
-import { sharedCacheGet } from "@/lib/shared-cache";
+import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { INDEX_FEED_STALL_MS } from "@/lib/ws/polygon-socket";
 import { UW_SOCKET_STALL_MS } from "@/lib/ws/uw-socket-stall";
 
@@ -48,7 +48,9 @@ export async function readPolygonClusterHealth(
   let detail = "no cluster snapshot";
 
   try {
-    const snap = await sharedCacheGet<IndexSnapshot>(POLYGON_SNAPSHOT_KEY);
+    const redis = await getUwCacheRedis();
+    const raw = redis ? await redis.get(POLYGON_SNAPSHOT_KEY) : null;
+    const snap = raw ? (JSON.parse(raw) as IndexSnapshot) : null;
     const spx = snap?.["I:SPX"];
     if (spx && typeof spx.updatedAt === "number" && spx.updatedAt > 0) {
       updatedAt = spx.updatedAt;
