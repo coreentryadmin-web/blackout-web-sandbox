@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { cognitoAuthorizeUrl, cognitoConfig } from "@/lib/cognito-config";
+import { cognitoAuthorizeUrl, cognitoConfig, publicSiteUrl } from "@/lib/cognito-config";
 import {
   cognitoHasSessionCookie,
   getCognitoSessionFromRequest,
@@ -46,7 +46,7 @@ export default async function middleware(req: NextRequest) {
   if (isProtectedPath(path) && !isAuthExemptPath(path)) {
     const session = await getCognitoSessionFromRequest(req);
     if (!session) {
-      const signIn = new URL("/sign-in", req.url);
+      const signIn = publicSiteUrl("/sign-in");
       signIn.searchParams.set("redirect_url", `${path}${req.nextUrl.search}`);
       return withStagingNoEdgeCache(NextResponse.redirect(signIn));
     }

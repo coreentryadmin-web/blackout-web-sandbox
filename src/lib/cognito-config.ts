@@ -22,7 +22,7 @@ export function cognitoConfig(): CognitoConfig | null {
 
   const region = cognitoRegionFromPoolId(userPoolId) || process.env.AWS_REGION?.trim() || "";
   if (!region) return null;
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const siteUrl = resolvePublicSiteUrl();
 
   return {
     region,
@@ -32,6 +32,21 @@ export function cognitoConfig(): CognitoConfig | null {
     domain,
     siteUrl,
   };
+}
+
+/** Public origin for OAuth redirects — never use container bind address (0.0.0.0). */
+export function resolvePublicSiteUrl(): string {
+  const raw = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/$/, "");
+  if (raw && !/0\.0\.0\.0|127\.0\.0\.1|localhost/i.test(raw)) return raw;
+  if ((process.env.SENTRY_ENVIRONMENT ?? "") === "staging") {
+    return "https://staging.blackouttrades.com";
+  }
+  return "https://blackouttrades.com";
+}
+
+export function publicSiteUrl(path = ""): URL {
+  const base = resolvePublicSiteUrl();
+  return new URL(path.startsWith("/") ? path : `/${path}`, base);
 }
 
 export function cognitoIssuer(cfg: CognitoConfig): string {

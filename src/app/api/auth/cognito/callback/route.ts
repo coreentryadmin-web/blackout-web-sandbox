@@ -5,6 +5,7 @@ import {
   cognitoConfig,
   cognitoRedirectUri,
   cognitoTokenEndpoint,
+  publicSiteUrl,
 } from "@/lib/cognito-config";
 import {
   COGNITO_ID_COOKIE,
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   if (!code) {
     const err = req.nextUrl.searchParams.get("error_description") ?? "Missing code";
-    return NextResponse.redirect(new URL(`/sign-in?error=${encodeURIComponent(err)}`, req.url));
+    return NextResponse.redirect(publicSiteUrl(`/sign-in?error=${encodeURIComponent(err)}`));
   }
 
   const body = new URLSearchParams({
@@ -70,9 +71,7 @@ export async function GET(req: NextRequest) {
   if (!tokenRes.ok) {
     const detail = await tokenRes.text();
     console.error("[cognito/callback] token exchange failed:", tokenRes.status, detail);
-    return NextResponse.redirect(
-      new URL(`/sign-in?error=${encodeURIComponent("Sign-in failed")}`, req.url)
-    );
+    return NextResponse.redirect(publicSiteUrl(`/sign-in?error=${encodeURIComponent("Sign-in failed")}`));
   }
 
   const tokens = (await tokenRes.json()) as {
@@ -84,9 +83,7 @@ export async function GET(req: NextRequest) {
   const idToken = tokens.id_token ?? "";
   const claims = await verifyCognitoIdToken(idToken, cfg);
   if (!claims?.sub) {
-    return NextResponse.redirect(
-      new URL(`/sign-in?error=${encodeURIComponent("Invalid token")}`, req.url)
-    );
+    return NextResponse.redirect(publicSiteUrl(`/sign-in?error=${encodeURIComponent("Invalid token")}`));
   }
 
   await ensureCognitoUserProvisioned(
@@ -97,7 +94,7 @@ export async function GET(req: NextRequest) {
   );
 
   const maxAge = tokens.expires_in ?? 3600;
-  const res = NextResponse.redirect(new URL(returnPath, req.url));
+  const res = NextResponse.redirect(publicSiteUrl(returnPath));
   res.cookies.set(COGNITO_ID_COOKIE, idToken, cognitoCookieOptions(maxAge));
   if (tokens.refresh_token) {
     res.cookies.set(COGNITO_REFRESH_COOKIE, tokens.refresh_token, cognitoCookieOptions(30 * 86400));
