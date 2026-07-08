@@ -17,9 +17,19 @@ export type PlayConfirmationLayer = {
 };
 
 function layerFromPlay(play: SpxPlayPayload): PlayConfirmationLayer | null {
-  if (!play.confirmations?.checks?.length) return null;
+  const hasConfirmations = Boolean(play.confirmations?.checks?.length);
+  const hasGates =
+    play.gates.blocks.length > 0 ||
+    play.gates.warnings.length > 0 ||
+    Boolean(play.gates.play_idea);
+  if (!hasConfirmations && !hasGates) return null;
   return {
-    confirmations: play.confirmations,
+    confirmations: play.confirmations ?? {
+      passed: false,
+      passed_count: 0,
+      total: 0,
+      checks: [],
+    },
     technicals: play.technicals,
     gates: {
       blocks: play.gates.blocks,
@@ -48,10 +58,16 @@ export function useStablePlayConfirmations(play: SpxPlayPayload | null | undefin
       writeSessionCache(LAYER_CACHE_KEY, next);
       return;
     }
-    // Play reset to SCANNING without confirmations — drop stale WATCH/BUY checks.
-    if (play.action === "SCANNING") {
-      stableRef.current = null;
-      clearSessionCacheKey(LAYER_CACHE_KEY);
+    // Play reset to SCANNING without confirmations — drop stale WATCH/BUY checks only.
+    if (play.action === "SCANNING" && !play.confirmations?.checks?.length) {
+      const hasGates =
+        play.gates.blocks.length > 0 ||
+        play.gates.warnings.length > 0 ||
+        Boolean(play.gates.play_idea);
+      if (!hasGates) {
+        stableRef.current = null;
+        clearSessionCacheKey(LAYER_CACHE_KEY);
+      }
     }
   }, [play]);
 

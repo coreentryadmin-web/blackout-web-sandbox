@@ -286,11 +286,11 @@ export function evaluatePlayConfirmations(
         // price is at 5600 is irrelevant and should not satisfy the GEX confirmation.
         (desk.gamma_regime !== "amplification" || desk.above_gamma_flip) &&
         (desk.gex_walls?.some((w) => w.kind === "support" && w.strike >= price - 10) ?? false)
-      : // Require a GEX resistance wall AT OR ABOVE current price for shorts.
-        // The old check (strike >= price - 10) incorrectly allowed a resistance wall
-        // 9 pts below price, which is a broken level providing no cap on upside.
+      : // Resistance within 10 pts above price caps upside for shorts (symmetric to long support).
         (desk.gamma_regime !== "amplification" || !desk.above_gamma_flip) &&
-        (desk.gex_walls?.some((w) => w.kind === "resistance" && w.strike >= price) ?? false);
+        (desk.gex_walls?.some(
+          (w) => w.kind === "resistance" && w.strike >= price - 2 && w.strike <= price + 12
+        ) ?? false);
   checks.push({
     label: "Dealer GEX",
     required: false,

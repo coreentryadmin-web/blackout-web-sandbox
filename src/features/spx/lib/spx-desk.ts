@@ -26,6 +26,8 @@ import {
   type GexStrikeLevel,
   type GexWall,
 } from "@/lib/providers/gamma-desk";
+import { computeIntradayRead } from "@/lib/zerodte/intraday";
+import { etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import {
   computeVixTermStructure,
   fetchBenzingaNews,
@@ -582,6 +584,14 @@ export type SpxFlowBrief = {
   has_sweep: boolean;
 };
 
+/** Honest flow age for desk payloads — caps sparse-tape age when cluster WS is live. */
+function deskFlowDataAgeMs(flows: SpxFlowBrief[], flowClusterLive: boolean): number | null {
+  markFlowDataFromBriefs(flows);
+  let age = resolveFlowDataAgeMs(flows);
+  if (flowClusterLive && age != null && age > 120_000) age = 120_000;
+  return age;
+}
+
 export type SpxTapeItem = {
   kind: "flow" | "darkpool";
   side: "call" | "put" | "neutral";
@@ -652,6 +662,13 @@ export type SpxDeskPayload = {
   dark_pool: DarkPoolSnapshot | null;
   spx_flows: SpxFlowBrief[];
   unified_tape: SpxTapeItem[];
+  /** First 30-min RTH range (9:30–10:00 ET) from minute bars — matrix OR overlay. */
+  opening_range?: {
+    high: number;
+    low: number;
+    break: "above" | "below" | "inside" | null;
+    forming: boolean;
+  } | null;
   /** UW Repeated Hits + same-strike multi-alert stacks on SPX flow. */
   strike_stacks: FlowStrikeStack[];
   net_prem_ticks: NetPremTick[];
@@ -1083,6 +1100,7 @@ function emptyPayload(asOf: string): SpxDeskPayload {
     dark_pool: null,
     spx_flows: [],
     unified_tape: [],
+    opening_range: null,
     strike_stacks: [],
     net_prem_ticks: [],
     vix_term: { vix9d: null, vix3m: null, structure: "unknown", detail: "" },
@@ -1166,6 +1184,21 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const spxFeed = getIndexFeedFreshness(SPX);
 
   const session = sessionStatsFromMinuteBars(minuteBars);
+  const intraday = computeIntradayRead(
+    minuteBars
+      .filter((b) => Number.isFinite(b.t))
+      .map((b) => ({ t: b.t!, h: b.h, l: b.l, c: b.c, v: b.v }))
+  );
+  const etMinsNow = etMinutes(new Date());
+  const opening_range =
+    intraday.or_high != null && intraday.or_low != null
+      ? {
+          high: intraday.or_high,
+          low: intraday.or_low,
+          break: intraday.or_break,
+          forming: etMinsNow >= 9 * 60 + 30 && etMinsNow < 10 * 60,
+        }
+      : null;
   const prior = priorDayFromDailyBars(dailyBars);
   const newsHeadlines: DeskNewsHeadline[] = (newsRaw ?? [])
     .map((a) => ({
@@ -1279,7 +1312,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const spxFlows: SpxFlowBrief[] = freshFlowsRaw.length ? freshFlowsRaw : lastGoodSpxFlowBriefs;
   if (freshFlowsRaw.length) lastGoodSpxFlowBriefs = freshFlowsRaw;
   const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
-  markFlowDataFromBriefs(spxFlows);
+  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
   const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
@@ -1376,6 +1409,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     lit_dark_ratio: computeLitDarkRatio(),
     spx_flows: spxFlows,
     unified_tape: unifiedTape,
+    opening_range,
     strike_stacks: computeFlowStrikeStacks(spxFlows),
     net_prem_ticks: netPremTicks,
     vix_term: {
@@ -1385,7 +1419,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
       detail: vixTerm.detail,
     },
     data_quality: dataQuality,
-    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_data_age_ms: flowDataAgeMs,
     flow_cluster_live: flowClusterLive,
     price_age_ms: spxFeed.ageMs,
     feed_stalled: spxFeed.stalled === true,
@@ -1694,7 +1728,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
   if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
   const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
-  markFlowDataFromBriefs(spxFlows);
+  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
   const strike_stacks = computeFlowStrikeStacks(spxFlows);
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
@@ -1730,7 +1764,7 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     flow_0dte_call_premium: uwFlow?.call_premium ?? null,
     flow_0dte_put_premium: uwFlow?.put_premium ?? null,
     flow_0dte_net: uwFlow?.net ?? null,
-    flow_data_age_ms: resolveFlowDataAgeMs(spxFlows),
+    flow_data_age_ms: flowDataAgeMs,
     flow_cluster_live: flowClusterLive,
     gex_age_ms: canonicalGex.gex_age_ms,
     gex_stale: canonicalGex.gex_stale,

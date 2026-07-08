@@ -16,6 +16,7 @@ import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/fea
 import type { MtfHybrid } from "@/features/spx/lib/spx-play-mtf";
 import type { loadAdaptivePlayGates } from "@/features/spx/lib/spx-play-telemetry";
 import type { OptionTicket } from "@/features/spx/lib/spx-play-options";
+import type { SpxPlayDeskContext } from "@/features/spx/lib/spx-play-context";
 
 export type SpxPlayPayload = {
   available: boolean;
@@ -93,7 +94,11 @@ export type SpxPlayPayload = {
    */
   signal_committed: boolean;
   as_of: string;
+  /** Live desk/session context for hero UI — conflict gauge, session budget, structure chips. */
+  desk_context?: SpxPlayDeskContext;
 };
+
+export type { SpxPlayDeskContext } from "@/features/spx/lib/spx-play-context";
 
 export function pnlPts(direction: SpxPlayDirection, entry: number, exit: number): number {
   return direction === "long" ? exit - entry : entry - exit;

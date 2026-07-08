@@ -9,6 +9,7 @@ import { useSpxLotto } from "@/features/spx/hooks/useSpxLotto";
 import { useSpxPowerHour } from "@/features/spx/hooks/useSpxPowerHour";
 import { useStablePlayConfirmations } from "@/features/spx/hooks/useStablePlayConfirmations";
 import { SpxSniperBackdrop } from "./SpxSniperBackdrop";
+import { SpxPlayHeroStrip } from "./SpxPlayHeroStrip";
 import { Badge, Kicker } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
@@ -19,12 +20,17 @@ import {
   lottoPanelLoadingCopy,
   lottoPanelOffHoursCopy,
 } from "@/features/spx/lib/spx-lotto-copy";
+import {
+  satelliteConflictsMain,
+  satelliteConflictLabel,
+} from "@/features/spx/lib/spx-play-satellite-conflict";
 
 type Props = {
   desk?: SpxDeskPayload;
   live?: boolean;
   refreshing?: boolean;
   sessionActive?: boolean;
+  compactLayout?: boolean;
 };
 
 function playDeskAlert(type: "buy" | "watch") {
@@ -149,10 +155,12 @@ function LottoPlayBlock({
   lotto,
   lottoLoading,
   lottoRefreshing,
+  conflictLabel,
 }: {
   lotto: LottoPlayPayload | null;
   lottoLoading: boolean;
   lottoRefreshing: boolean;
+  conflictLabel?: string | null;
 }) {
   const inWindow = isLottoPollWindow();
 
@@ -166,7 +174,12 @@ function LottoPlayBlock({
           lotto.phase === "INVALID" && "spx-lotto-play-block-invalid"
         )}
       >
-        <p className="spx-lotto-play-kicker">{lotto.status_label}</p>
+        <p className="spx-lotto-play-kicker">
+          {lotto.status_label}
+          {conflictLabel && (
+            <span className="spx-satellite-conflict-badge"> · {conflictLabel}</span>
+          )}
+        </p>
         <p className="spx-lotto-play-headline">{lotto.headline}</p>
         {lotto.thesis && lotto.thesis !== lotto.headline && (
           <p className="spx-lotto-play-thesis">{lotto.thesis}</p>
@@ -242,10 +255,12 @@ function PowerHourPlayBlock({
   powerHour,
   powerHourLoading,
   powerHourRefreshing,
+  conflictLabel,
 }: {
   powerHour: PowerHourPlayPayload | null;
   powerHourLoading: boolean;
   powerHourRefreshing: boolean;
+  conflictLabel?: string | null;
 }) {
   const inWindow = isPowerHourWindow();
   const showDock =
@@ -263,7 +278,12 @@ function PowerHourPlayBlock({
           powerHour.phase === "HOLD" && "spx-lotto-play-block-ready"
         )}
       >
-        <p className="spx-lotto-play-kicker">Power hour · {powerHour.phase}</p>
+        <p className="spx-lotto-play-kicker">
+          Power hour · {powerHour.phase}
+          {conflictLabel && (
+            <span className="spx-satellite-conflict-badge"> · {conflictLabel}</span>
+          )}
+        </p>
         <p className="spx-lotto-play-headline">{powerHour.headline}</p>
         {powerHour.thesis && powerHour.thesis !== powerHour.headline && (
           <p className="spx-lotto-play-thesis">{powerHour.thesis}</p>
@@ -309,7 +329,18 @@ function PowerHourPlayBlock({
   return null;
 }
 
-export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }: Props) {
+function previewKicker(action: SpxPlayAction, committed: boolean): string | null {
+  if (action === "WATCHING") return "SETUP PREVIEW — not a committed entry";
+  if (action === "SCANNING") return "SCANNING — engine standing down";
+  if (action === "BUY" && !committed) return "SIGNAL PREVIEW — awaiting commit";
+  return null;
+}
+
+function copyContractLabel(label: string) {
+  void navigator.clipboard?.writeText(label).catch(() => {});
+}
+
+export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, compactLayout = false }: Props) {
   const { play, playRefreshing } = useSpxPlay(sessionActive);
   const { lotto, lottoLoading, lottoRefreshing } = useSpxLotto();
   const { powerHour, powerHourLoading, powerHourRefreshing } = useSpxPowerHour();
@@ -343,11 +374,37 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
 
   const panelRefreshing = (refreshing || playRefreshing) && play && play.action !== "SCANNING";
 
+  const showGateStatus =
+    play != null &&
+    (play.gates.blocks.length > 0 ||
+      play.gates.warnings.length > 0 ||
+      Boolean(play.gates.play_idea));
+
   const showConfirmationPanel =
     Boolean(confirmationLayer) &&
     (play?.action === "WATCHING" ||
       play?.action === "BUY" ||
+      play?.action === "SCANNING" ||
       (!play && playRefreshing));
+
+  const lottoConflict =
+    play &&
+    lotto?.direction &&
+    play.direction &&
+    satelliteConflictsMain(play, { direction: lotto.direction, phase: lotto.phase })
+      ? satelliteConflictLabel(lotto.direction, play.direction)
+      : null;
+  const powerConflict =
+    play &&
+    powerHour?.direction &&
+    play.direction &&
+    satelliteConflictsMain(play, { direction: powerHour.direction, phase: powerHour.phase })
+      ? satelliteConflictLabel(powerHour.direction, play.direction)
+      : null;
+  const satelliteConflictNote =
+    lottoConflict || powerConflict
+      ? `${powerConflict ?? lottoConflict} — size down or wait for alignment`
+      : null;
 
   return (
     <section
@@ -358,11 +415,18 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
     >
       <SpxSniperBackdrop action={play?.action} />
       <div className="spx-sniper-panel-content">
-      <header className="spx-trade-alerts-header">
-        <div className="min-w-0">
-          <Kicker className="mb-1">PLAY ENGINE</Kicker>
-          <h3 className="t-label text-[15px] uppercase leading-tight text-white">Trade Alerts</h3>
-        </div>
+      <header
+        className={clsx(
+          "spx-trade-alerts-header",
+          compactLayout && "spx-trade-alerts-header-minimal"
+        )}
+      >
+        {!compactLayout && (
+          <div className="min-w-0">
+            <Kicker className="mb-1">PLAY ENGINE</Kicker>
+            <h3 className="t-label text-[15px] uppercase leading-tight text-white">Trade Alerts</h3>
+          </div>
+        )}
         <Badge tone={live ? "bull" : "neutral"} dot={live} className="shrink-0">
           {live ? "LIVE" : "OFFLINE"}
         </Badge>
@@ -393,11 +457,23 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
+                {previewKicker(play.action, play.signal_committed) && (
+                  <p className="spx-trade-preview-kicker">
+                    {previewKicker(play.action, play.signal_committed)}
+                  </p>
+                )}
                 <p className="spx-trade-alert-action">{actionLabel(play.action, play.direction)}</p>
                 {play.action === "BUY" && !play.signal_committed && !play.open_play && (
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-300">
                     Signal only — awaiting engine commit
                   </p>
+                )}
+                {play.desk_context && (
+                  <SpxPlayHeroStrip
+                    ctx={play.desk_context}
+                    action={play.action}
+                    compact={compactLayout}
+                  />
                 )}
                 <p className="spx-trade-alert-headline">{play.headline}</p>
                 {play.option_ticket && play.action === "BUY" && (
@@ -406,6 +482,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     {play.option_ticket.delta != null
                       ? ` · Δ ${Math.abs(play.option_ticket.delta).toFixed(2)}`
                       : ""}
+                    <button
+                      type="button"
+                      className="spx-trade-copy-contract ml-2"
+                      onClick={() => copyContractLabel(play.option_ticket!.contract_label)}
+                    >
+                      Copy
+                    </button>
                   </p>
                 )}
                 <p
@@ -417,13 +500,17 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 >
                   {play.thesis}
                 </p>
-                {play.grade && play.action !== "SCANNING" && (
+                {play.grade && play.grade !== "D" && (
                   <p className="spx-trade-grade-line">
                     Grade {play.grade}
+                    {play.direction ? ` · ${play.direction}` : ""}
                     {play.open_play ? ` · open ${play.open_play.direction}` : ""}
                     {play.watch?.active ? " · WATCH active" : ""}
                     {play.watch?.promote_ready ? " · promote ready" : ""}
                   </p>
+                )}
+                {satelliteConflictNote && (
+                  <p className="spx-satellite-conflict-line">{satelliteConflictNote}</p>
                 )}
               </div>
               <div className="spx-trade-alert-score-block text-right shrink-0">
@@ -436,10 +523,14 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
               </div>
             </div>
 
-            {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
+            {play.levels.entry != null &&
+              play.action !== "SCANNING" &&
+              (play.action !== "WATCHING" || play.watch?.active) && (
               <div className="spx-trade-alert-levels mt-5 grid grid-cols-3 gap-4">
                 <div>
-                  <p className="spx-trade-alert-score-label">Entry</p>
+                  <p className="spx-trade-alert-score-label">
+                    {play.action === "WATCHING" ? "Plan entry" : "Entry"}
+                  </p>
                   <p className={clsx("spx-level-value", scoreClass(play.action, play.score))}>
                     {fmtPrice(play.levels.entry)}
                   </p>
@@ -470,9 +561,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                 Claude {play.claude.source} · {play.claude.verdict}
               </p>
             )}
-            {play.levels.entry != null && play.action !== "SCANNING" && play.action !== "WATCHING" && (
+            {play.levels.entry != null &&
+              play.action !== "SCANNING" &&
+              (play.action !== "WATCHING" || play.watch?.active) && (
               <p className="font-mono text-[10px] text-sky-300/60 mt-3">
-                Educational. Not advice. Every trade is your own decision.
+                {play.action === "WATCHING"
+                  ? "Proposed levels — promote checklist must clear before BUY."
+                  : "Educational. Not advice. Every trade is your own decision."}
               </p>
             )}
           </div>
@@ -484,6 +579,12 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                   playRefreshing && "spx-trade-confirmations-refreshing"
                 )}
               >
+                {play?.action === "SCANNING" && showGateStatus && (
+                  <p className="spx-trade-confirmations-title text-sky-300/90">
+                    Engine standing down — gate status
+                  </p>
+                )}
+                {confirmationLayer.confirmations.checks.length > 0 && (
                 <p className="spx-trade-confirmations-title">
                   Confirmations {confirmationLayer.confirmations.passed_count}/
                   {confirmationLayer.confirmations.total}
@@ -493,6 +594,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                     </span>
                   )}
                 </p>
+                )}
                 {confirmationLayer.confirmations.checks.map((c) => (
                   <p
                     key={c.label}
@@ -520,7 +622,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
                           minute: "2-digit",
                         })
                       : "—"}{" "}
-                    · {confirmationLayer.watch.reason}
+                    · {confirmationLayer.watch.promote_ready ? "Promote ready" : confirmationLayer.watch.reason}
                   </p>
                 )}
                 {confirmationLayer.telemetry?.adaptive_active && (
@@ -650,11 +752,13 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true }:
           lotto={lotto}
           lottoLoading={lottoLoading}
           lottoRefreshing={lottoRefreshing}
+          conflictLabel={lottoConflict}
         />
         <PowerHourPlayBlock
           powerHour={powerHour}
           powerHourLoading={powerHourLoading}
           powerHourRefreshing={powerHourRefreshing}
+          conflictLabel={powerConflict}
         />
       </div>
       </div>

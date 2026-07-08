@@ -1,4 +1,9 @@
-import { playThesisBreakDropPts, playThesisBreakScore } from "@/features/spx/lib/spx-play-config";
+import {
+  playThesisBreakDropPts,
+  playThesisBreakMinHoldSec,
+  playThesisBreakMinMfePts,
+  playThesisBreakScore,
+} from "@/features/spx/lib/spx-play-config";
 import type { SpxPlayDirection } from "@/features/spx/lib/spx-signals";
 
 export type ThesisBreakDetail = {
@@ -9,6 +14,13 @@ export type ThesisBreakDetail = {
   trigger: "drop" | "floor" | null;
 };
 
+/** Optional open-play context for score-drop deferral (floor breaks stay immediate). */
+export type ThesisBreakContext = {
+  mfePts: number;
+  openedAtMs: number;
+  nowMs?: number;
+};
+
 /**
  * Thesis break uses OR logic (either condition flattens):
  *
@@ -16,10 +28,6 @@ export type ThesisBreakDetail = {
  * SHORT: score >= entry + effectiveDrop  OR  score >= +floor
  *
  * effectiveDrop = max(dropPts, |entryScore| * 0.25)
- * This prevents hair-trigger thesis breaks on low-confidence entries (e.g. score -50)
- * where a flat dropPts=12 would only allow a 12pt reversal before breaking the thesis.
- * With the 25% floor, a -50 entry requires a 12.5pt reversal minimum (capped by dropPts
- * if dropPts is already larger than 25% of entryScore).
  */
 export function evaluateThesisBreak(
   direction: SpxPlayDirection,
@@ -29,8 +37,6 @@ export function evaluateThesisBreak(
 ): ThesisBreakDetail {
   const dropPts = opts?.dropPts ?? playThesisBreakDropPts();
   const floor = opts?.floor ?? playThesisBreakScore();
-  // Effective drop: at least 25% of the entry score magnitude so low-confidence
-  // entries aren't killed by a small noise reversal.
   const effectiveDrop = Math.max(dropPts, Math.abs(entryScore) * 0.25);
 
   if (direction === "long") {
@@ -52,4 +58,30 @@ export function evaluateThesisBreak(
   const threshold = dropBroken ? dropThreshold : floorBroken ? floorThreshold : dropThreshold;
   const trigger = !broken ? null : dropBroken ? "drop" : "floor";
   return { broken, threshold, trigger };
+}
+
+/**
+ * Open-play thesis evaluation: floor breaks fire immediately; score-drop breaks defer until
+ * the trade has earned min MFE and min hold time (mixed-tape score noise otherwise flat at scratch).
+ */
+export function evaluateOpenThesisBreak(
+  direction: SpxPlayDirection,
+  score: number,
+  entryScore: number,
+  ctx: ThesisBreakContext,
+  opts?: { dropPts?: number; floor?: number }
+): ThesisBreakDetail {
+  const raw = evaluateThesisBreak(direction, score, entryScore, opts);
+  if (!raw.broken || raw.trigger === "floor") return raw;
+
+  const nowMs = ctx.nowMs ?? Date.now();
+  const holdSec = (nowMs - ctx.openedAtMs) / 1000;
+  const minMfe = playThesisBreakMinMfePts();
+  const minHold = playThesisBreakMinHoldSec();
+
+  if (ctx.mfePts < minMfe || holdSec < minHold) {
+    return { broken: false, threshold: raw.threshold, trigger: null };
+  }
+
+  return raw;
 }

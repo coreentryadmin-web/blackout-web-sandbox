@@ -9,6 +9,7 @@ import {
   playBuyCooldownAplusBypass,
   playBuyCooldownSec,
   playCooldownAfterStopMin,
+  playColdBuyMinScore,
   playFullMinScore,
   playGexStaleMaxSec,
   playMinAgreeingFactors,
@@ -17,6 +18,8 @@ import {
   playOnlyFullEntry,
   playOpeningRangeMinutes,
   playReentryLockSec,
+  playSessionMaxEntries,
+  playSessionMaxLosses,
   playStarterMinScore,
   playWatchMinScore,
   playWeightedConflictBlockMin,
@@ -47,12 +50,17 @@ export const GATE_BLOCK = {
 } as const;
 
 /** Grade-scaled mixed-tape hard block — A setups tolerate one extra soft counter-trend signal. */
-function mixedTapeBlockThreshold(grade: string): number {
+export function mixedTapeBlockThreshold(grade: string, absScore?: number): number {
   const base = playWeightedConflictBlockMin();
   const rank = gradeRank(grade);
-  if (rank >= gradeRank("A")) return base + 1;
-  if (rank >= gradeRank("B")) return base;
-  return Math.max(3, base - 1);
+  let threshold =
+    rank >= gradeRank("A") ? base + 1 : rank >= gradeRank("B") ? base : Math.max(3, base - 1);
+  // Strong B conviction (|score| ≥ 58) tolerates one extra soft counter — Jul 7–8 audit showed
+  // mixed-tape blocking valid directional leans on choppy but one-sided days.
+  if (absScore != null && absScore >= 58 && rank >= gradeRank("B")) {
+    threshold += 1;
+  }
+  return threshold;
 }
 
 function maxWeightedForEntryMode(grade: string, mode: "full" | "starter"): number {
@@ -121,9 +129,11 @@ export function evaluatePlayGates(
     last_sell_was_loss: boolean;
     last_direction: "long" | "short" | null;
     last_stop_at: number | null;
+    session_entries_today?: number;
+    session_losses_today?: number;
   },
   confirmations?: PlayConfirmationResult | null,
-  opts?: { min_score_boost?: number; entry_intent?: "buy" | "watch" }
+  opts?: { min_score_boost?: number; entry_intent?: "buy" | "watch"; cold_buy_path?: boolean }
 ): PlayGateResult {
   const blocks: string[] = [];
   const warnings: string[] = [];
@@ -173,7 +183,7 @@ export function evaluatePlayGates(
   }
 
   const mixedTapeMsg = `${GATE_BLOCK.MIXED_TAPE} — too many conflicting signals for clean entry`;
-  if (confluence.weighted_conflicts >= mixedTapeBlockThreshold(confluence.grade)) {
+  if (confluence.weighted_conflicts >= mixedTapeBlockThreshold(confluence.grade, abs)) {
     if (buyIntent) {
       blocks.push(mixedTapeMsg);
     } else {
@@ -199,6 +209,24 @@ export function evaluatePlayGates(
 
   if (buyIntent && isPastNoEntryCutoff()) {
     blocks.push(`After ${noEntryCutoffLabel()} — no new 0DTE entries`);
+  }
+
+  const entriesToday = session.session_entries_today ?? 0;
+  const lossesToday = session.session_losses_today ?? 0;
+  if (buyIntent && entriesToday >= playSessionMaxEntries()) {
+    blocks.push(`Session entry cap (${playSessionMaxEntries()} plays today — quality over quantity)`);
+  }
+  if (buyIntent && lossesToday >= playSessionMaxLosses()) {
+    blocks.push(`Session loss cap (${playSessionMaxLosses()} losses today — stand down)`);
+  }
+
+  if (buyIntent && opts?.cold_buy_path && abs < playColdBuyMinScore()) {
+    blocks.push(
+      `Cold BUY needs score ≥${playColdBuyMinScore()} (have ${abs}) — WATCH→ENTRY path preferred`
+    );
+  }
+  if (buyIntent && opts?.cold_buy_path && gradeRank(confluence.grade) < gradeRank("A")) {
+    blocks.push("Cold BUY requires grade A or better — B setups need WATCH→ENTRY");
   }
 
   const etMins = etMinutes(new Date());
