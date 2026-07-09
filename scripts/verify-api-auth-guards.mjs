@@ -27,6 +27,10 @@ const PUBLIC_ROUTE_ALLOWLIST = new Set([
   // Same reasoning: a visitor on /sign-in isn't authenticated yet by definition,
   // so this can't require a guard helper. Same protections as the route above.
   "src/app/api/telemetry/auth-failure/route.ts",
+  // Cognito Hosted UI OAuth — redirects only; session cookies set on callback.
+  "src/app/api/auth/cognito/login/route.ts",
+  "src/app/api/auth/cognito/logout/route.ts",
+  "src/app/api/auth/cognito/callback/route.ts",
 ]);
 
 const GUARD_PATTERNS = [
