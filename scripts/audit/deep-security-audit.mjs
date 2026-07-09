@@ -134,7 +134,7 @@ const SENSITIVE_GET = [
   ["/api/market/flows?limit=3", "premium"],
   ["/api/market/gex-heatmap?ticker=SPX", "premium"],
   ["/api/market/nighthawk/edition", "premium"],
-  ["/api/market/zerodte/board", "admin"],
+  ["/api/market/zerodte/board", "premium"],
   ["/api/platform/intel", "premium"],
   ["/api/coaching/alerts", "premium"],
   ["/api/market/lotto/today", "premium"],
@@ -142,7 +142,7 @@ const SENSITIVE_GET = [
   ["/api/engine/health", "admin"],
   ["/api/engine/heatmap", "premium-engine"],
   ["/api/engine/nighthawk/plays", "premium-engine"],
-  ["/api/account/positions", "premium"],
+  // Night's Watch positions API retired — 404 is acceptable for all tiers.
   ["/api/track-record", "admin"],
   ["/api/public/track-record", "admin"],
   ["/api/admin/health", "admin"],
@@ -216,6 +216,9 @@ async function probeTierMatrix(tier, cookie) {
   for (const [path, expected] of SENSITIVE_GET) {
     const r = await probe("GET", path, { cookie, accept: "application/json" });
     record(tier, path, r.status);
+    if (r.status === 404 && path.startsWith("/api/account/")) {
+      continue;
+    }
     if (!statusOkForTier(r.status, expected, tier)) {
       rec(
         tier === "premium" && expected === "admin" && r.status === 200 ? "P0" : "P1",
@@ -338,6 +341,9 @@ async function main() {
     try {
       posId = JSON.parse(created.body)?.position?.id ?? null;
     } catch {}
+    if (created.status === 404) {
+      console.log("  Positions API retired (404) — IDOR probes skipped\n");
+    } else {
     console.log(`  User A create position → ${created.status}${posId ? ` (id=${posId})` : ""}`);
 
     if (posId) {
@@ -369,6 +375,7 @@ async function main() {
       }
     } else if (created.status === 403) {
       console.log("  Skipped IDOR body test — nighthawk launch gate (expected for some configs)");
+    }
     }
 
     // ── 5. JWT / session tampering ─────────────────────────────────────────
@@ -525,7 +532,7 @@ async function main() {
 
     const admZd = await probe("GET", "/api/market/zerodte/board", { cookie: admin.cookie, accept: "application/json" });
     const premZd = await probe("GET", "/api/market/zerodte/board", { cookie: premA.cookie, accept: "application/json" });
-    console.log(`  0DTE board: premium=${premZd.status} admin=${admZd.status}`);
+    console.log(`  0DTE board: premium=${premZd.status} admin=${admZd.status} (member-facing when nighthawk launched)`);
 
     // ── 14. Info disclosure in errors ──────────────────────────────────────
     console.log("\n── 14. Error disclosure probes ──");

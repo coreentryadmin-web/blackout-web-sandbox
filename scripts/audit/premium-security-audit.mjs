@@ -196,9 +196,6 @@ async function main() {
       });
       classifyAccess("premium", p, r.status, label);
       console.log(`  ${r.status} ${method} ${p} (${label})`);
-      if (p === "/api/market/zerodte/board" && r.status === 200) {
-        rec("P0", "zerodte-premium-leak", "Premium user can read 0DTE board API", `HTTP ${r.status}`);
-      }
       if (p.startsWith("/api/admin/") && r.status === 200) {
         rec("P0", "admin-api-leak-" + p, "Premium user reached admin API", p);
       }
@@ -289,10 +286,10 @@ async function main() {
     const admZd = await probe("GET", "/api/market/zerodte/board", { cookie: adm.cookie, accept: "application/json" });
     console.log(`\n--- 0DTE board gate ---`);
     console.log(`  Premium: ${premZd.status} | Admin: ${admZd.status}`);
-    if (premZd.status === 403 && admZd.status === 200) {
-      console.log("  ✓ Admin-only gate working");
-    } else if (premZd.status === 200) {
-      rec("P1", "zerodte-not-gated", "Premium can still read 0DTE board", `HTTP ${premZd.status}`);
+    if (premZd.status === 200 || admZd.status === 200) {
+      console.log("  ✓ Premium member access (nighthawk launch gate + tier)");
+    } else if (premZd.status === 403) {
+      console.log("  ✓ Launch gate blocked premium (nighthawk not launched for user)");
     }
 
     const premGrid = await probe("GET", "/grid", { cookie: prem.cookie, accept: "text/html" });

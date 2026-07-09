@@ -8,6 +8,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 import { mintClerkPremiumSession } from "./audit/lib/prod-clerk-session.mjs";
+import { mintAppSession } from "./audit/lib/app-session.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(/\/$/, "");
 const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
@@ -65,6 +66,9 @@ async function main() {
 
   process.env.CLERK_SECRET_KEY = secret.CLERK_SECRET_KEY;
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = secret.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (secret.AUTH_PROVIDER === "cognito") {
+    process.env.COGNITO_AUDIT_PASSWORD = process.env.COGNITO_AUDIT_PASSWORD ?? secret.COGNITO_AUDIT_PASSWORD;
+  }
 
   const posture = {
     CACHE_WARM_ALWAYS: secret.CACHE_WARM_ALWAYS ?? null,
@@ -140,12 +144,12 @@ async function main() {
     s === 200 && b?.ok !== false && !(b?.flags?.length > 0)
   );
 
-  console.log("\n--- Clerk admin/premium session ---");
-  const session = await mintClerkPremiumSession({ appUrl: BASE });
+  console.log("\n--- Authenticated admin/premium session ---");
+  const session = await mintAppSession({ appUrl: BASE });
   if (session.skip) {
-    row("auth", "clerk", "SKIP", session.reason);
+    row("auth", session.provider ?? "session", "SKIP", session.reason);
   } else {
-    row("auth", "clerk", "PASS", "admin/premium session minted");
+    row("auth", session.provider ?? "session", "PASS", `${session.provider ?? "session"} admin/premium session minted`);
     const cookieH = { Cookie: session.cookieHeader, Accept: "application/json" };
 
     console.log("\n--- Admin APIs ---");
