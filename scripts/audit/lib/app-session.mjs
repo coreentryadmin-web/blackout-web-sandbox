@@ -2,6 +2,7 @@
  * Mint an authenticated session for audit probes — Clerk (prod) or Cognito (staging).
  */
 import { execSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mintClerkPremiumSession } from "./prod-clerk-session.mjs";
 
 const STAGING_SECRET = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
@@ -20,16 +21,24 @@ function cognitoRegion(poolId, fallback) {
 }
 
 /** Admin-initiated auth — returns id token for bo_cognito_id cookie. */
-export async function mintCognitoSession({ appUrl, email, password, poolId, clientId, region }) {
+export async function mintCognitoSession({ appUrl, email, password, poolId, clientId, clientSecret, region }) {
   if (!email || !password || !poolId || !clientId) {
     return { skip: true, reason: "Cognito credentials or pool config missing" };
   }
   const regionFlag = region ? ` --region "${region}"` : "";
+  const secretHash =
+    clientSecret?.trim()
+      ? createHmac("sha256", clientSecret.trim())
+          .update(`${email}${clientId}`)
+          .digest("base64")
+      : "";
+  const authParams = `USERNAME="${email}",PASSWORD="${password}"` +
+    (secretHash ? `,SECRET_HASH="${secretHash}"` : "");
   try {
     const out = execSync(
       `aws cognito-idp admin-initiate-auth --user-pool-id "${poolId}" --client-id "${clientId}" ` +
         `--auth-flow ADMIN_NO_SRP_AUTH ` +
-        `--auth-parameters USERNAME="${email}",PASSWORD="${password}"` +
+        `--auth-parameters ${authParams}` +
         regionFlag +
         ` --output json`,
       { encoding: "utf8" }
@@ -75,6 +84,7 @@ export async function mintAppSession({ appUrl }) {
           password,
           poolId: secret.COGNITO_USER_POOL_ID,
           clientId: secret.COGNITO_CLIENT_ID,
+          clientSecret: secret.COGNITO_CLIENT_SECRET,
           region: cognitoRegion(secret.COGNITO_USER_POOL_ID, secret.AWS_REGION),
         });
       }
