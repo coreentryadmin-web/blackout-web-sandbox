@@ -43,16 +43,18 @@ export async function ensureCognitoUserProvisioned(
   firstName: string | null,
   lastName: string | null
 ): Promise<void> {
+  const tier = isAdminEmail(email) ? "premium" : null;
   try {
     await dbQuery(
-      `INSERT INTO users (clerk_user_id, email, first_name, last_name)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (clerk_user_id, email, first_name, last_name, tier)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (clerk_user_id) DO UPDATE
          SET email = COALESCE(EXCLUDED.email, users.email),
              first_name = COALESCE(EXCLUDED.first_name, users.first_name),
              last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+             tier = COALESCE(EXCLUDED.tier, users.tier),
              updated_at = NOW()`,
-      [userId, email, firstName, lastName]
+      [userId, email, firstName, lastName, tier]
     );
   } catch (err) {
     console.warn("[user-directory] Cognito user upsert failed:", err);
@@ -73,6 +75,14 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       typeof claims?.["custom:tier"] === "string" ? claims["custom:tier"] : null;
     const roleFromClaim =
       typeof claims?.["custom:role"] === "string" ? claims["custom:role"] : null;
+    // Cognito custom attrs (role/tier) are on the user pool but often absent from the
+    // Hosted UI id_token (openid/email/profile only). Fall back to ADMIN_EMAILS + DB tier.
+    let role = roleFromClaim;
+    let tier = parseTier(row?.tier ?? tierFromClaim);
+    if (isAdminEmail(email) || String(role ?? "").toLowerCase() === "admin") {
+      role = "admin";
+      tier = "premium";
+    }
     return {
       userId,
       email,
@@ -82,8 +92,8 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       lastName:
         row?.last_name ??
         (typeof claims?.family_name === "string" ? claims.family_name : null),
-      tier: parseTier(row?.tier ?? tierFromClaim),
-      role: roleFromClaim,
+      tier,
+      role,
     };
   }
 
