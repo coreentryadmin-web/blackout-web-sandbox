@@ -13,25 +13,25 @@ let mockBrief: {
 let mockGrounded = true;
 let mockUngroundedValue: number | null = null;
 
-mock.module("@/lib/bie/spx-desk-brief", {
+mock.module("../../../lib/bie/spx-desk-brief", {
   namedExports: {
     composeSpxDeskBrief: () => mockBrief,
   },
 });
 
-mock.module("@/lib/bie/load-spx-brief-intel", {
+mock.module("../../../lib/bie/load-spx-brief-intel", {
   namedExports: {
     loadSpxBriefIntel: async () => ({ positioning: null, intelLines: [] }),
   },
 });
 
-mock.module("@/lib/bie/embeddings", {
+mock.module("../../../lib/bie/embeddings", {
   namedExports: {
     bieEmbeddingsConfigured: () => false,
   },
 });
 
-mock.module("@/lib/grounding-guard", {
+mock.module("../../../lib/grounding-guard", {
   namedExports: {
     augmentKnownCommentaryNumbers: (known: number[]) => known,
     knownCommentaryNumbers: () => [],
@@ -58,7 +58,7 @@ type AuditLogRow = {
 let auditLogCalls: AuditLogRow[] = [];
 let dbIsConfigured = true;
 
-mock.module("@/lib/db", {
+mock.module("../../../lib/db", {
   namedExports: {
     dbConfigured: () => dbIsConfigured,
     insertAlertAuditLog: async (row: AuditLogRow) => {
