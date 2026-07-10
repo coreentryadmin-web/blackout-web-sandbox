@@ -8,6 +8,7 @@ import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 import { largoEnabled } from "@/lib/largo-env";
+import { isStagingBieMode } from "@/lib/ai-env";
 import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
@@ -266,6 +267,11 @@ export function SpxCommentaryRail({
           <span className="font-syne text-base tracking-[0.12em] text-purple-light block font-bold">
             Largo
           </span>
+          {isStagingBieMode() && (
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/90">
+              BlackOut Intelligence
+            </span>
+          )}
         </div>
         {live && (
           <button
