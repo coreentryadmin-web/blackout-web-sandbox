@@ -237,3 +237,50 @@ test("evaluatePlayGates: degraded feed blocks event playbook on live gate", () =
   });
   assert.equal(vwap.blocks.some((b) => b.includes("degraded feed")), false);
 });
+
+test("evaluatePlayGates: returns blocks_by_category buckets", () => {
+  const desk = {
+    available: true,
+    market_open: false,
+    price: 6000,
+    polled_at: new Date().toISOString(),
+    gex_walls: [{ strike: 5990, net_gex: 1 }],
+    regime: "bullish",
+    gex_age_ms: 1000,
+    flow_data_age_ms: 30_000,
+    flow_cluster_live: true,
+    macro_events: [],
+    vix: 18,
+  } as SpxDeskPayload;
+
+  const confluence = {
+    score: 55,
+    grade: "A",
+    bias: "bullish",
+    direction: "long",
+    confidence: 0.8,
+    weighted_conflicts: 1,
+    factors: [],
+    levels: { stop: 5985, target: 6025 },
+  } as SpxConfluence;
+
+  const result = evaluatePlayGates(
+    desk,
+    confluence,
+    {
+      last_buy_at: null,
+      last_sell_at: null,
+      last_sell_was_loss: false,
+      last_direction: null,
+      last_stop_at: null,
+    },
+    {
+      passed: true,
+      passed_count: 4,
+      total: 4,
+      checks: [],
+    },
+    { entry_intent: "buy", playbook_primary_id: "PB-04", playbook_primary_direction: "long" }
+  );
+  assert.ok(result.blocks_by_category.operational.length > 0);
+});

@@ -6,6 +6,7 @@ import type {
   SpxSignalFactor,
 } from "@/features/spx/lib/spx-signals";
 import type { PlayGateResult } from "@/features/spx/lib/spx-play-gates";
+import { emptyCategorizedGateBlocks } from "@/features/spx/lib/playbook-gate-categories";
 import { isBeforeCashOpen, isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-play-lotto";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
@@ -40,6 +41,7 @@ export type SpxPlayPayload = {
   gates: {
     passed: boolean;
     blocks: string[];
+    blocks_by_category?: PlayGateResult["blocks_by_category"];
     warnings: string[];
     entry_mode: string;
     play_idea: string | null;
@@ -137,6 +139,7 @@ export function intelGates(
     // Largo get_spx_play) never carries repeated gate lines. Display-only: the
     // pass/fail decision is computed from the raw blocks in evaluatePlayGates.
     blocks: Array.from(new Set(humanizeGateBlocks(gates.blocks, desk, confluence))),
+    blocks_by_category: gates.blocks_by_category,
     warnings: gates.warnings,
     entry_mode: gates.entry_mode,
     play_idea,
@@ -180,7 +183,14 @@ export function scanningPayload(
     idle_message: idle,
     factors: confluence?.factors ?? [],
     levels: confluence?.levels ?? { entry: null, stop: null, target: null, invalidation: "" },
-    gates: gates ?? { passed: false, blocks: [], warnings: [], entry_mode: "none", play_idea: null },
+    gates: gates ?? {
+      passed: false,
+      blocks: [],
+      blocks_by_category: emptyCategorizedGateBlocks(),
+      warnings: [],
+      entry_mode: "none",
+      play_idea: null,
+    },
     claude: null,
     open_play: null,
     confirmations: null,

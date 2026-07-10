@@ -24,8 +24,9 @@ Tracks ChatGPT + Claude external-review recommendations against staging (`blacko
 |------|--------|-------|
 | Data-quality degraded mode (event/breakout PBs) | ✅ Shipped | `playbook-data-quality.ts` blocks PB-03,05,09,13,14 on live gate |
 | PB-02 flow materiality threshold | ✅ Shipped | `PLAYBOOK_FLOW_MATERIALITY_MIN` default 100k |
-| Option execution simulator (spread/slippage) | 🟡 Stub | `playbook-option-sim.ts` — wire to outcomes next |
-| Gate category split (operational/risk/validity/quality) | ⏳ Planned | Documented in FULL-SPEC §6; code still flat `blocks[]` |
+| Option execution simulator (spread/slippage) | ✅ Shipped | `execution_sim` on `option_ticket` at BUY open |
+| Gate category split (operational/risk/validity/quality) | ✅ Shipped | `blocks_by_category` on `PlayGateResult` + API payload |
+| PB-14 OR break memory | ✅ Shipped | `playbook-break-memory.ts` + platform_meta persistence |
 
 ## P2 — Production discipline
 
@@ -40,7 +41,7 @@ Tracks ChatGPT + Claude external-review recommendations against staging (`blacko
 | Item | Status | Notes |
 |------|--------|-------|
 | Typed registry → doc matrices | ⏳ Planned | Prevent E2E/registry drift |
-| PB-14 break memory | ⏳ Blocked | Needs durable state before live allowlist |
+| PB-14 live allowlist expansion | ⏳ Blocked | Memory shipped; still shadow-only until evidence tiers |
 | Expand beyond 14 playbooks | ❌ Frozen | Per decision log |
 
 ---

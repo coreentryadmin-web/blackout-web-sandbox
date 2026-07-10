@@ -34,6 +34,10 @@ import {
   isDegradedForLivePlaybook,
   playbookDataQualityFlags,
 } from "@/features/spx/lib/playbook-data-quality";
+import {
+  categorizeGateBlocks,
+  type CategorizedGateBlocks,
+} from "@/features/spx/lib/playbook-gate-categories";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -41,6 +45,7 @@ import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-ma
 export type PlayGateResult = {
   passed: boolean;
   blocks: string[];
+  blocks_by_category: CategorizedGateBlocks;
   warnings: string[];
   entry_mode: "none" | "starter" | "full";
   play_idea: string | null;
@@ -437,5 +442,12 @@ export function evaluatePlayGates(
     dir != null;
   const play_idea = buildPlayIdeaIntel(desk, confluence);
 
-  return { passed, blocks, warnings, entry_mode, play_idea };
+  return {
+    passed,
+    blocks,
+    blocks_by_category: categorizeGateBlocks(blocks),
+    warnings,
+    entry_mode,
+    play_idea,
+  };
 }

@@ -50,9 +50,18 @@ async function main() {
   if (!Array.isArray(body?.playbook_shadow?.verdicts) || body.playbook_shadow.verdicts.length < 14) {
     failures.push(`expected 14 verdicts, got ${body?.playbook_shadow?.verdicts?.length ?? 0}`);
   }
+  if (!body?.playbook_shadow?.pipeline_audit) {
+    failures.push("playbook_shadow.pipeline_audit missing");
+  }
 
   const fired = (body?.playbook_shadow?.verdicts ?? []).filter((v) => v.trigger_fired);
+  const audit = body?.playbook_shadow?.pipeline_audit;
   console.log(`action=${body?.action} score=${body?.score} primary=${body?.playbook_shadow?.primary_playbook_id ?? "none"}`);
+  if (audit) {
+    console.log(
+      `pipeline_audit eligible_long=${audit.eligible_long} eligible_short=${audit.eligible_short} triggered_short=${audit.triggered_short}`
+    );
+  }
   for (const v of body?.playbook_shadow?.verdicts ?? []) {
     console.log(`  ${v.playbook_id} fired=${v.trigger_fired} eligible=${v.regime_eligible} primary=${v.primary}`);
   }

@@ -51,6 +51,8 @@ export type OptionTicket = {
   premium_range: string;
   blocked: boolean;
   block_reason: string | null;
+  /** Cost-adjusted fill model — set when a play opens (playbook evidence layer). */
+  execution_sim?: import("@/features/spx/lib/playbook-option-sim").PlaybookOptionExecutionSim | null;
 };
 
 let ticketCache: { at: number; spot: number; dir: string; grade: string; ticket: OptionTicket } | null = null;

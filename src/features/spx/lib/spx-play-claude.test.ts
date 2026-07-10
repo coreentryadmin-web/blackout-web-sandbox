@@ -10,6 +10,7 @@ import type { SpxDeskPayload } from "./spx-desk";
 import type { SpxConfluence } from "./spx-signals";
 import type { PlayTechnicals } from "./spx-play-technicals";
 import type { PlayGateResult } from "./spx-play-gates";
+import { emptyCategorizedGateBlocks } from "./playbook-gate-categories";
 import type { PlayConfirmationResult } from "./spx-play-confirmations";
 
 let mockPrecedentChunks: { chunk: string; similarity: number }[] = [];
@@ -66,7 +67,15 @@ function fakeTechnicals(overrides: Partial<PlayTechnicals> = {}): PlayTechnicals
 }
 
 function fakeGates(overrides: Partial<PlayGateResult> = {}): PlayGateResult {
-  return { passed: true, blocks: [], warnings: [], entry_mode: "full", play_idea: null, ...overrides };
+  return {
+    passed: true,
+    blocks: [],
+    blocks_by_category: emptyCategorizedGateBlocks(),
+    warnings: [],
+    entry_mode: "full",
+    play_idea: null,
+    ...overrides,
+  };
 }
 
 function fakeConfirmations(overrides: Partial<PlayConfirmationResult> = {}): PlayConfirmationResult {
