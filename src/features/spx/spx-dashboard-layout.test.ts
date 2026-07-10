@@ -34,6 +34,8 @@ test("SpxDashboard mounts quad desk without legacy side panels", () => {
   assert.match(src, /spx-left-commentary/);
   assert.match(src, /SpxGexMatrixHeatmap/);
   assert.match(src, /spx-left-matrix/);
+  assert.match(src, /spx-matrix-column-spot/);
+  assert.match(src, /SpxLiveSpotPrice/);
   assert.match(src, /SpxTradeAlerts/);
   assert.match(src, /spx-sniper-triple--desk-v2/);
 });
