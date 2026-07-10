@@ -166,6 +166,9 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 
 Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint checks. GHA: `staging-validate.yml`, `staging-rth-check.yml` (weekdays).
 
+After `ecr-push-staging.yml` merges to `blackout-web-sandbox`, roll ECS so tasks pick up `:staging`:
+`aws ecs update-service --cluster blackout-staging-cluster --service blackout-staging-web --force-new-deployment`
+
 ### Postgres (optional, for persistence testing)
 - The app runs fine without a DB (`/api/health` returns `db: "skipped"`). Postgres is only needed to
   exercise persistence (flows, SPX plays, nighthawk, positions, telemetry, etc.).
