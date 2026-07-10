@@ -7,6 +7,20 @@ import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { SpxConfluence, SpxConfluenceGrade } from "@/features/spx/lib/spx-signals";
 import { formatFlowStrikeStackLine } from "@/lib/largo/flow-strike-stacks";
 import { fmtPremium } from "@/lib/fmt-money";
+import {
+  type SpxDeskBriefIntel,
+  breadthBriefLine,
+  chartBriefLine,
+  crossCheckBriefLine,
+  dealersBriefLine,
+  edgesBriefLine,
+  expiryBriefLine,
+  mag7BriefLine,
+  positioningDeltaSnippets,
+  signalsBriefLine,
+  volBriefLine,
+  wallsBriefLine,
+} from "@/lib/bie/spx-desk-intel";
 
 export type SpxDeskBriefResult = {
   headline: string;
@@ -41,6 +55,8 @@ export type SpxDeskBriefCross = {
     total_closed: number;
   } | null;
   precedentDetail?: string | null;
+  /** Full matrix greeks + heatmap levels (GEX/VEX/DEX/CHARM). */
+  intel?: SpxDeskBriefIntel;
 };
 
 function fmt(n: number | null | undefined, d = 2): string {
@@ -395,12 +411,23 @@ export function composeSpxDeskBrief(
   const pin = desk.gex_king ?? desk.max_pain;
 
   const why = buildWhy(confluence, desk, support, resistance, pin);
+  const signals = signalsBriefLine(confluence);
 
   const internals = internalsLine(desk);
   const internalsLineOut = internals ? `INTERNALS  ${internals}` : null;
 
   const deltaText = deltaLine(delta);
-  const deltaSince = deltaText ? `Δ SINCE LAST  ${deltaText}` : null;
+  const intelDeltas = positioningDeltaSnippets(cross?.intel?.prevPositioning, cross?.intel?.positioning);
+  const intelEdgeSnippet =
+    cross?.intel?.intelLines?.length
+      ? cross.intel.intelLines.slice(0, 2).join(" · ")
+      : null;
+  const mergedDelta = [deltaText, intelDeltas.length ? intelDeltas.join(" · ") : null, intelEdgeSnippet].filter(
+    Boolean
+  );
+  const deltaSince = mergedDelta.length
+    ? `Δ SINCE LAST  ${mergedDelta.join(" · ")}`
+    : null;
 
   const levelParts: string[] = [];
   if (resistance && resistance.strike >= price) {
@@ -476,9 +503,24 @@ export function composeSpxDeskBrief(
   const flipLevel = stop ?? desk.gamma_flip ?? desk.vwap;
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
 
-  const bodyLines = [why, internalsLineOut, deltaSince, levels, setup, risk, next, flips].filter(
-    Boolean
-  ) as string[];
+  const bodyLines = [why, signals, internalsLineOut, deltaSince, levels].filter(Boolean) as string[];
+
+  const dealers = dealersBriefLine(cross?.intel);
+  if (dealers) bodyLines.push(dealers);
+
+  const walls = wallsBriefLine(cross?.intel, price);
+  if (walls) bodyLines.push(walls);
+
+  const crosschk = crossCheckBriefLine(cross?.intel);
+  if (crosschk) bodyLines.push(crosschk);
+
+  const chart = chartBriefLine(desk);
+  if (chart) bodyLines.push(chart);
+
+  const expiry = expiryBriefLine(desk);
+  if (expiry) bodyLines.push(expiry);
+
+  bodyLines.push(setup, risk, next, flips);
 
   const engine = engineLine(cross);
   if (engine) bodyLines.push(engine);
@@ -491,6 +533,18 @@ export function composeSpxDeskBrief(
 
   const tide = tideLine(desk);
   if (tide) bodyLines.push(tide);
+
+  const vol = volBriefLine(desk);
+  if (vol) bodyLines.push(vol);
+
+  const breadth = breadthBriefLine(desk);
+  if (breadth) bodyLines.push(breadth);
+
+  const mag7 = mag7BriefLine(desk);
+  if (mag7) bodyLines.push(mag7);
+
+  const edges = edgesBriefLine(cross?.intel);
+  if (edges && !deltaSince) bodyLines.push(edges);
 
   const flowSkew = flow0dteSkew(desk);
   const flow = flowLine(desk);

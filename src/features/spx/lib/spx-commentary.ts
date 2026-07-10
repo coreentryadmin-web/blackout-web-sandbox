@@ -1,6 +1,11 @@
 import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { knownIntelNumbers } from "@/lib/bie/spx-desk-intel";
+import type { SpxBriefIntelPrev } from "@/lib/bie/load-spx-brief-intel";
+import { heatmapToIntelSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import type { GexPositioning } from "@/lib/providers/gex-positioning";
+import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
 import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
 import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
 import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
@@ -543,6 +548,11 @@ function logUngroundedCommentary(
   });
 }
 
+export type SpxCommentaryIntelCache = {
+  positioning: GexPositioning | null;
+  heatmapSlice: IntelHeatmapSlice | null;
+};
+
 export async function generateSpxCommentary(
   desk: SpxDeskPayload,
   previous?: Partial<SpxDeskPayload> | null,
@@ -551,8 +561,10 @@ export async function generateSpxCommentary(
     lotto?: import("@/features/spx/lib/spx-lotto-store").LottoRecord | null;
     powerHour?: import("@/features/spx/lib/spx-power-hour-store").PowerHourRecord | null;
     outcomes?: import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeStats | null;
+    /** Prior 5-min window intel for matrix + material-edge diffs. */
+    intelPrev?: SpxBriefIntelPrev | null;
   }
-): Promise<SpxCommentaryResult | null> {
+): Promise<{ commentary: SpxCommentaryResult; intelCache: SpxCommentaryIntelCache } | null> {
   const delta = computeDelta(desk, previous);
   const ctx = deskContext(desk);
   const ctxRec = ctx as Record<string, unknown>;
@@ -621,6 +633,14 @@ export async function generateSpxCommentary(
 
   const sessionPhase = spxSessionPhase(desk.as_of);
 
+  const intelPrev: SpxBriefIntelPrev = {
+    desk: (previous as SpxDeskPayload | null) ?? cross?.intelPrev?.desk ?? null,
+    positioning: cross?.intelPrev?.positioning ?? null,
+    heatmapSlice: cross?.intelPrev?.heatmapSlice ?? null,
+  };
+  const { loadSpxBriefIntel } = await import("@/lib/bie/load-spx-brief-intel");
+  const intel = await loadSpxBriefIntel(desk, intelPrev);
+
   let precedentDetail: string | null = null;
   if (bieEmbeddingsConfigured() && dbConfigured()) {
     try {
@@ -634,7 +654,8 @@ export async function generateSpxCommentary(
       if (hits.length >= MIN_TOTAL_PRECEDENTS) {
         const targets = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "target").length;
         const stops = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "stop").length;
-        precedentDetail = `${hits.length} similar setups — ${targets} hit target, ${stops} hit stop (BIE corpus)`;
+        const targetRate = Math.round((targets / hits.length) * 100);
+        precedentDetail = `${hits.length} similar setups — {{${targetRate}}}% hit target ({{${targets}}}T/{{${stops}}}S, BIE corpus)`;
       }
     } catch {
       /* precedent color is optional */
@@ -647,9 +668,13 @@ export async function generateSpxCommentary(
     powerHour: ph && ph.phase !== "NONE" ? ph : null,
     outcomes: oc && oc.total_closed > 0 ? oc : null,
     precedentDetail,
+    intel,
   });
 
-  const known = knownCommentaryNumbers(desk, ctxRec);
+  const known = [
+    ...knownCommentaryNumbers(desk, ctxRec),
+    ...knownIntelNumbers(intel),
+  ];
   const grounding = checkCommentaryGrounded(`${parsed.headline}\n${parsed.body}`, known);
   if (!grounding.grounded) {
     console.warn(
@@ -658,5 +683,11 @@ export async function generateSpxCommentary(
     logUngroundedCommentary(desk, ctx, parsed, grounding);
     return null;
   }
-  return parsed;
+  return {
+    commentary: parsed,
+    intelCache: {
+      positioning: intel.positioning,
+      heatmapSlice: heatmapToIntelSlice(intel.heatmap),
+    },
+  };
 }

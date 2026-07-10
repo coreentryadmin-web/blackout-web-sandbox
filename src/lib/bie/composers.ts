@@ -10,6 +10,7 @@ import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
 import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
+import { loadSpxBriefIntel } from "@/lib/bie/load-spx-brief-intel";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
@@ -103,11 +104,12 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
   const confluence = computeSpxConfluence(desk);
   if (!confluence) return null;
 
-  const [openPlay, lotto, powerHour, outcomes] = await Promise.all([
+  const [openPlay, lotto, powerHour, outcomes, intel] = await Promise.all([
     import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
     import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
     import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
     import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
+    loadSpxBriefIntel(desk, null),
   ]);
 
   const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
@@ -115,11 +117,12 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
     lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
     powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
     outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
+    intel,
   });
   const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body].join("\n");
   return {
     answer,
-    context: { desk, confluence, brief, openPlay, lotto, powerHour, outcomes },
+    context: { desk, confluence, brief, openPlay, lotto, powerHour, outcomes, intel },
   };
 }
 

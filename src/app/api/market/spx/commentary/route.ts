@@ -4,6 +4,8 @@ import { requireTierApi } from "@/lib/market-api-auth";
 import { generateSpxCommentary, type SpxCommentaryResult } from "@/features/spx/lib/spx-commentary";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import { serverCache } from "@/lib/server-cache";
 import { sharedCacheGet } from "@/lib/shared-cache";
 
@@ -16,7 +18,9 @@ const COMMENTARY_TTL_MS = 5 * 60 * 1000;
 
 type CommentaryCache = {
   commentary: SpxCommentaryResult;
-  desk: SpxDeskPayload; // retained so next window can compute delta against it
+  desk: SpxDeskPayload;
+  positioning: GexPositioning | null;
+  heatmapSlice: IntelHeatmapSlice | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -35,9 +39,13 @@ export async function POST(req: NextRequest) {
     // Read previous window's cached desk from Redis for delta computation.
     // Direct Redis read — no side effects, no write.
     let prevDesk: SpxDeskPayload | null = null;
+    let prevPositioning: GexPositioning | null = null;
+    let prevHeatmapSlice: IntelHeatmapSlice | null = null;
     try {
       const prev = await sharedCacheGet<CommentaryCache>(prevKey);
       prevDesk = prev?.desk ?? null;
+      prevPositioning = prev?.positioning ?? null;
+      prevHeatmapSlice = prev?.heatmapSlice ?? null;
     } catch {
       // Redis unavailable or key expired — no delta this window
     }
@@ -58,12 +66,24 @@ export async function POST(req: NextRequest) {
         import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
         import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
       ]);
-      const commentary = await generateSpxCommentary(desk, prevDesk, { openPlay, lotto, powerHour, outcomes });
-      // Throw (don't return null) on failure so serverCache's refreshCache skips its
-      // .then store/Redis write and rethrows to us — nothing is negatively cached and
-      // the next request retries immediately instead of being poisoned for the window.
-      if (!commentary) throw new Error("spx-commentary: generation returned null");
-      return { commentary, desk };
+      const generated = await generateSpxCommentary(desk, prevDesk, {
+        openPlay,
+        lotto,
+        powerHour,
+        outcomes,
+        intelPrev: {
+          desk: prevDesk,
+          positioning: prevPositioning,
+          heatmapSlice: prevHeatmapSlice,
+        },
+      });
+      if (!generated) throw new Error("spx-commentary: generation returned null");
+      return {
+        commentary: generated.commentary,
+        desk,
+        positioning: generated.intelCache.positioning,
+        heatmapSlice: generated.intelCache.heatmapSlice,
+      };
     });
 
     return NextResponse.json({

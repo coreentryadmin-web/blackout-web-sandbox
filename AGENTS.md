@@ -13,6 +13,12 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 `/api/cron/*`; they are not separate apps and are not needed locally. Commands live in `package.json`
 (`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`) and CI is `.github/workflows/ci.yml`.
 
+### BIE Live Desk AI (replaces Claude on `/api/market/spx/commentary`)
+
+- **Deterministic brief** via `composeSpxDeskBrief()` — SIGNALS, DEALERS (GEX/VEX/DEX/CHARM), WALLS, CHART, cross-tool ENGINE/LOTTO/POWER HOUR, material **INTEL edges** (same `spx-odte-intel-feed` as Playbook terminal), Voyage precedent, UW **CROSSCHK**.
+- **Intel loader** `loadSpxBriefIntel()` reads shared `getGexPositioning("SPX")` + heatmap cache (zero extra UW RPS). Commentary cache stores `positioning` + `heatmapSlice` per 5-min window for matrix diffs.
+- **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first.
+
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
 - **SPX Slayer left rail:** `SpxGexMatrixHeatmap` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**). Bootstrap seeds matrix SWR via `/api/market/spx/bootstrap`.

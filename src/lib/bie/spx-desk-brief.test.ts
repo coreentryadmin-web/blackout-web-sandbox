@@ -43,6 +43,7 @@ describe("composeSpxDeskBrief", () => {
 
     assert.match(result.headline, /LONG|CHOP|NO-EDGE|SHORT/);
     assert.ok(result.body.includes("WHY"));
+    assert.ok(result.body.includes("SIGNALS"));
     assert.ok(result.body.includes("LEVELS"));
     assert.ok(result.body.includes("SETUP"));
     assert.ok(result.body.includes("RISK"));

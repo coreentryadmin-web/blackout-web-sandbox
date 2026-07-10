@@ -19,6 +19,12 @@ mock.module("../../../lib/bie/spx-desk-brief", {
   },
 });
 
+mock.module("../../../lib/bie/load-spx-brief-intel", {
+  namedExports: {
+    loadSpxBriefIntel: async () => ({ positioning: null, intelLines: [] }),
+  },
+});
+
 mock.module("../../../lib/bie/embeddings", {
   namedExports: {
     bieEmbeddingsConfigured: () => false,
@@ -113,7 +119,7 @@ describe("spx-commentary: BIE brief + grounding audit trail", () => {
     const result = await generateSpxCommentary(fakeDesk(), null);
 
     assert.notEqual(result, null);
-    assert.equal(result?.headline, "LONG {{5900}} above VWAP");
+    assert.equal(result?.commentary.headline, "LONG {{5900}} above VWAP");
     assert.equal(auditLogCalls.length, 0);
   });
 
