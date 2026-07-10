@@ -172,7 +172,8 @@ Format per playbook: **Preconditions** (arm) → **Trigger** (fire) →
   (`feed_stalled | halt_channel_stale | active_halts`) suppresses.
 - **Invalidation:** re-entry inside OR.
 - **Target/Stop:** 1× OR width extension; wall beyond / OR mid.
-- **Window:** 09:35–10:30.
+- **Window (registry):** 09:35–10:30 ET matcher eligibility.
+- **Effective BUY window:** ~09:50–10:30 ET (OR 20m + gate A11).
 
 ### PB-04 Gamma Pin Fade — *implemented* **[EV]**
 - **Pre:** `gamma_regime="mean_revert"` AND spot between a resistance wall above
@@ -354,10 +355,9 @@ Sizing ladder (uses existing `entry_mode` full/starter):
 - Every tick: `logPlaybookShadowMatch` → one row per registry playbook
   (`playbook_pb_XX_match`, direction, detail, primary flag). *Shipped.*
 - Every open: `playbook_id` on `spx_open_play` + `spx_play_outcomes`. *Shipped.*
-- Promotion rule: a playbook may default-on in the live gate only when it has
-  **≥10 closed outcomes** with `playbook_id` set AND win rate ≥ 45% AND
-  avg pnl > 0 (both from `spx_play_outcomes`). Until then it exists in shadow
-  and behind `PLAYBOOK_LIVE_GATE=1` staging tests only.
+- Promotion rule: a playbook may enter **limited-live** only per progressive tiers in
+  `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md` (replaces the deprecated n=10 / WR≥45% rule).
+  Until then: shadow + staging lab research only; initial allowlist PB-01/02/03/04/14 (+ PB-08 when qualified).
 - Weekly re-run of `PLAYBOOK-EVIDENCE-BASE.md` SQL after each RTH week.
 
 ---
@@ -374,4 +374,6 @@ Sizing ladder (uses existing `entry_mode` full/starter):
 | 5 | State machine (`playbook-state.ts`) | next |
 | 6 | Playbook checklist replaces global soup in UI | after state machine |
 | 7 | Watch key = PB instance | open |
-| 8 | Evidence-gated live-gate default per playbook | ≥10 outcomes each |
+| 8 | Evidence-gated limited-live per playbook | Progressive tiers (see EXTERNAL-REVIEW) |
+
+**Deprecated:** n=10 / WR≥45% promotion — too weak for 0DTE (external review 2026-07-10).

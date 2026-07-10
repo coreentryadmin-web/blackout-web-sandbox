@@ -58,7 +58,7 @@ evidence, not statistical proof. Re-run after each RTH week.
 - `spx_confluence_shadow_observations` (567k rows) has rich factor shadows but
   no outcome join key — join via `session_date` + `observed_at`→`opened_at`
   proximity when sample grows.
-- 19 outcomes is too small to rank playbooks; MIN_EVIDENCE=10 *per playbook*
+- 19 outcomes is too small to rank playbooks; use progressive tiers in `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md` (deprecated: MIN_EVIDENCE=10 per playbook).
   before any live-gate default flips.
 
 ## Re-run

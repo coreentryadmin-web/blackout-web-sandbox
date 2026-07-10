@@ -74,13 +74,15 @@ flowchart TD
   G1 -->|fail| BLOCK[No new BUY<br/>may still WATCH]
   G1 -->|pass| R
   R --> E --> M --> P
-  P -->|preconditions met| S1
-  P -->|trigger fired| S2
-  S2 -->|gates pass| S3 --> S4 --> S5
-  S1 --> W
-  S3 --> O
-  P --> C
+    P -->|preconditions met| S1
+    P -->|trigger fired| S2
+    S2 -->|gates pass| S3 --> S4 --> S5
+    S1 --> W
+    S3 --> O
+    P --> C
 ```
+
+**Primary selection:** explicit `PRIMARY_PRIORITY` in `playbook-shadow-matcher.ts` (FULL-SPEC §5) — not registry array order.
 
 **Decision rule (target):**
 
