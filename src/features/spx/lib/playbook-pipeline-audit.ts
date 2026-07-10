@@ -1,5 +1,9 @@
 import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
-import { playbookDef, type PlaybookId } from "@/features/spx/lib/playbook-registry";
+import {
+  playbookDef,
+  type PlaybookId,
+  type PlaybookSetupFamily,
+} from "@/features/spx/lib/playbook-registry";
 
 /** Short-side / long-side funnel counts per review §5 (ChatGPT + Claude). */
 export type PlaybookPipelineAudit = {
@@ -13,7 +17,31 @@ export type PlaybookPipelineAudit = {
   blocked_short: number;
   opened_long: number;
   opened_short: number;
+  family_audit: PlaybookFamilyAudit;
 };
+
+export type PlaybookFamilyBucket = {
+  eligible: number;
+  armed: number;
+  triggered: number;
+};
+
+export type PlaybookFamilyAudit = Record<PlaybookSetupFamily, PlaybookFamilyBucket>;
+
+const EMPTY_FAMILY_BUCKET = (): PlaybookFamilyBucket => ({
+  eligible: 0,
+  armed: 0,
+  triggered: 0,
+});
+
+export function emptyPlaybookFamilyAudit(): PlaybookFamilyAudit {
+  return {
+    trend_continuation: EMPTY_FAMILY_BUCKET(),
+    mean_reversion: EMPTY_FAMILY_BUCKET(),
+    reversal_failure: EMPTY_FAMILY_BUCKET(),
+    flow_event: EMPTY_FAMILY_BUCKET(),
+  };
+}
 
 function isEligible(v: PlaybookMatchVerdict): boolean {
   return v.regime_eligible && v.session_window_open;
@@ -32,7 +60,16 @@ function directionBuckets(
 }
 
 function bump(audit: PlaybookPipelineAudit, field: keyof PlaybookPipelineAudit): void {
-  audit[field] += 1;
+  if (field === "family_audit") return;
+  (audit[field] as number) += 1;
+}
+
+function bumpFamily(
+  familyAudit: PlaybookFamilyAudit,
+  family: PlaybookSetupFamily,
+  field: keyof PlaybookFamilyBucket
+): void {
+  familyAudit[family][field] += 1;
 }
 
 /** Aggregate verdicts into directional pipeline counts (shadow telemetry). */
@@ -57,11 +94,16 @@ export function computePlaybookPipelineAudit(
     blocked_short: 0,
     opened_long: 0,
     opened_short: 0,
+    family_audit: emptyPlaybookFamilyAudit(),
   };
 
   for (const v of verdicts) {
+    const family = playbookDef(v.playbook_id).setup_family;
     if (!isEligible(v)) continue;
     const buckets = directionBuckets(v.playbook_id, v.direction);
+    bumpFamily(audit.family_audit, family, "eligible");
+    if (v.precondition_match) bumpFamily(audit.family_audit, family, "armed");
+    if (v.trigger_fired) bumpFamily(audit.family_audit, family, "triggered");
     for (const side of buckets) {
       bump(audit, side === "long" ? "eligible_long" : "eligible_short");
       if (v.precondition_match) bump(audit, side === "long" ? "armed_long" : "armed_short");

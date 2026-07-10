@@ -40,3 +40,18 @@ test("computePlaybookPipelineAudit: gate block increments blocked_*", () => {
   assert.equal(audit.blocked_short, 1);
   assert.equal(audit.blocked_long, 0);
 });
+
+test("computePlaybookPipelineAudit: family_audit rolls up PB-02 mean reversion", () => {
+  const audit = computePlaybookPipelineAudit([
+    verdict({
+      playbook_id: "PB-02",
+      precondition_match: true,
+      trigger_fired: true,
+      direction: "short",
+    }),
+  ]);
+  assert.equal(audit.family_audit.mean_reversion.eligible, 1);
+  assert.equal(audit.family_audit.mean_reversion.armed, 1);
+  assert.equal(audit.family_audit.mean_reversion.triggered, 1);
+  assert.equal(audit.family_audit.trend_continuation.triggered, 0);
+});

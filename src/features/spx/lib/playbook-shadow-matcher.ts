@@ -24,6 +24,7 @@ import {
 } from "@/features/spx/lib/playbook-break-memory";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import { playMtfBufferPts, playStructureProximityPts, playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
+import { pickPrimaryPlaybook } from "@/features/spx/lib/playbook-primary-rank";
 
 export type PlaybookDirectionVerdict = "long" | "short" | null;
 
@@ -41,24 +42,6 @@ export type PlaybookShadowMatchResult = {
   verdicts: PlaybookMatchVerdict[];
   primary_playbook_id: PlaybookId | null;
 };
-
-/** Explicit primary priority — FULL-SPEC §5 (event/structure beats generic patterns). */
-const PRIMARY_PRIORITY: readonly PlaybookId[] = [
-  "PB-09",
-  "PB-13",
-  "PB-14",
-  "PB-03",
-  "PB-05",
-  "PB-06",
-  "PB-04",
-  "PB-07",
-  "PB-08",
-  "PB-01",
-  "PB-02",
-  "PB-10",
-  "PB-11",
-  "PB-12",
-];
 
 function isWithinSessionWindow(window: PlaybookSessionWindow, etMins: number): boolean {
   const start = etClock(window.startEtHour, window.startEtMin);
@@ -96,16 +79,6 @@ function netPremDecelerating(ticks: { net: number }[]): boolean {
   const b = Math.abs(ticks[ticks.length - 2].net);
   const c = Math.abs(ticks[ticks.length - 1].net);
   return c < b && b < a;
-}
-
-function pickPrimaryPlaybook(verdicts: PlaybookMatchVerdict[]): PlaybookId | null {
-  const fired = new Set(
-    verdicts.filter((v) => v.trigger_fired && v.regime_eligible).map((v) => v.playbook_id)
-  );
-  for (const id of PRIMARY_PRIORITY) {
-    if (fired.has(id)) return id;
-  }
-  return null;
 }
 
 function matchPb01(

@@ -32,7 +32,9 @@ import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { isUnknownPlaybookRegime } from "@/features/spx/lib/playbook-regime-router";
 import {
   isDegradedForLivePlaybook,
+  liveDataQualityMode,
   playbookDataQualityFlags,
+  shouldFailClosedLiveOnDataQuality,
 } from "@/features/spx/lib/playbook-data-quality";
 import {
   categorizeGateBlocks,
@@ -192,7 +194,12 @@ export function evaluatePlayGates(
       blocks.push("Unknown EMA regime — playbook live gate fail-closed");
     } else {
       const dq = playbookDataQualityFlags(desk);
-      if (isDegradedForLivePlaybook(pbId, dq)) {
+      const dqMode = liveDataQualityMode(dq);
+      if (shouldFailClosedLiveOnDataQuality(dqMode)) {
+        blocks.push(
+          `Severe data quality (${dqMode}) — live playbook gate fail-closed (halt=${dq.halt_channel_stale}, desk=${dq.desk_stale}, gex=${dq.gex_missing})`
+        );
+      } else if (isDegradedForLivePlaybook(pbId, dq)) {
         blocks.push(
           `Playbook ${pbId} blocked — degraded feed (halt stale=${dq.halt_channel_stale}, desk stale=${dq.desk_stale})`
         );

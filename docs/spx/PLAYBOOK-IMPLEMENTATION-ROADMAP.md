@@ -1,5 +1,7 @@
 # SPX Playbook — Implementation Roadmap
 
+**→ See `PLAYBOOK-ARCHITECTURE-STATUS.md` for the single source of truth (architecture, families, per-PB matrix, fixed vs open).**
+
 Tracks ChatGPT + Claude external-review recommendations against staging (`blackout-web-sandbox`).
 
 **Last updated:** 2026-07-10
@@ -34,7 +36,10 @@ Tracks ChatGPT + Claude external-review recommendations against staging (`blacko
 |------|--------|-------|
 | Playbook-specific exit management | ⏳ Planned | Legacy engine exits still own open plays |
 | Session risk governor | 🟡 Partial | `playSessionMaxEntries` / `playSessionMaxLosses` exist |
-| Evidence-aware primary ranking | ⏳ Planned | Static `PRIMARY_PRIORITY` tie-break only |
+| Evidence-aware primary ranking | ✅ Shipped | `playbook-primary-rank.ts` — FULL-SPEC order minus PB-09 |
+| `setup_family` on registry | ✅ Shipped | Four families + `family_audit` on pipeline |
+| State machine invalidation | ✅ Shipped | `resolvePlaybookLifecycleState` |
+| Severe data quality fail-closed | ✅ Shipped | `liveDataQualityMode` in gate A17 |
 
 ## P3 — Catalog hygiene
 

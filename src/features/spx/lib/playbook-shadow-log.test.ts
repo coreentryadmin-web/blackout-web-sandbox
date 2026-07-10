@@ -4,6 +4,9 @@ import { playbookShadowStateKey } from "./playbook-shadow-log";
 import type { PlaybookShadowPanel } from "./playbook-shadow-panel";
 
 import type { PlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
+import { emptyPlaybookFamilyAudit } from "./playbook-pipeline-audit";
+
+import { emptyPlaybookFamilyAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 
 const EMPTY_AUDIT: PlaybookPipelineAudit = {
   eligible_long: 0,
@@ -16,6 +19,7 @@ const EMPTY_AUDIT: PlaybookPipelineAudit = {
   blocked_short: 0,
   opened_long: 0,
   opened_short: 0,
+  family_audit: emptyPlaybookFamilyAudit(),
 };
 
 test("playbookShadowStateKey: primary + fired set", () => {
