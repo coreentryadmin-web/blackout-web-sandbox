@@ -20,8 +20,47 @@ function cognitoRegion(poolId, fallback) {
   return fallback || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "";
 }
 
+function cognitoSh(cmd) {
+  return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+}
+
+/** Create a disposable premium/admin Cognito user for audit probes. */
+function provisionCognitoAuditUser({ poolId, region, email, password }) {
+  const regionFlag = region ? ` --region "${region}"` : "";
+  try {
+    cognitoSh(
+      `aws cognito-idp admin-create-user --user-pool-id "${poolId}" --username "${email}" ` +
+        `--message-action SUPPRESS ` +
+        `--user-attributes ` +
+        `Name=email,Value="${email}" ` +
+        `Name=email_verified,Value=true ` +
+        `Name=custom:role,Value=admin ` +
+        `Name=custom:tier,Value=premium` +
+        regionFlag
+    );
+  } catch (e) {
+    const msg = String(e.stderr ?? e.message ?? e);
+    if (!/UsernameExistsException|already exists/i.test(msg)) throw e;
+    cognitoSh(
+      `aws cognito-idp admin-update-user-attributes --user-pool-id "${poolId}" --username "${email}" ` +
+        `--user-attributes Name=custom:role,Value=admin Name=custom:tier,Value=premium` +
+        regionFlag
+    );
+  }
+  cognitoSh(
+    `aws cognito-idp admin-set-user-password --user-pool-id "${poolId}" --username "${email}" ` +
+      `--password "${password}" --permanent` +
+      regionFlag
+  );
+}
+
+function deleteCognitoAuditUser({ poolId, region, email }) {
+  const regionFlag = region ? ` --region "${region}"` : "";
+  cognitoSh(`aws cognito-idp admin-delete-user --user-pool-id "${poolId}" --username "${email}"${regionFlag}`);
+}
+
 /** Admin-initiated auth — returns id token for bo_cognito_id cookie. */
-export async function mintCognitoSession({ appUrl, email, password, poolId, clientId, clientSecret, region }) {
+export async function mintCognitoSession({ appUrl, email, password, poolId, clientId, clientSecret, region, cleanup }) {
   if (!email || !password || !poolId || !clientId) {
     return { skip: true, reason: "Cognito credentials or pool config missing" };
   }
@@ -55,11 +94,58 @@ export async function mintCognitoSession({ appUrl, email, password, poolId, clie
       skip: false,
       provider: "cognito",
       cookieHeader: parts.join("; "),
-      cleanup: async () => {},
+      cleanup: cleanup ?? (async () => {}),
     };
   } catch (e) {
     return { skip: true, reason: `Cognito auth failed: ${e.message || e}` };
   }
+}
+
+async function mintStagingCognitoSession(secret) {
+  const poolId = secret.COGNITO_USER_POOL_ID;
+  const clientId = secret.COGNITO_CLIENT_ID;
+  const clientSecret = secret.COGNITO_CLIENT_SECRET;
+  const region = cognitoRegion(poolId, secret.AWS_REGION);
+  const base = { poolId, clientId, clientSecret, region, appUrl: "" };
+
+  const staticEmail =
+    process.env.COGNITO_AUDIT_EMAIL ?? process.env.COGNITO_E2E_EMAIL ?? "admin@blackouttrades.com";
+  const staticPassword =
+    process.env.COGNITO_AUDIT_PASSWORD ??
+    process.env.COGNITO_E2E_PASSWORD ??
+    secret.COGNITO_AUDIT_PASSWORD ??
+    secret.STAGING_COGNITO_SHARED_PASSWORD;
+
+  if (staticPassword) {
+    const session = await mintCognitoSession({
+      ...base,
+      email: staticEmail,
+      password: staticPassword,
+    });
+    if (!session.skip) return session;
+  }
+
+  const email = process.env.COGNITO_AUDIT_EMAIL ?? `bie-audit-${Date.now()}@blackouttrades.com`;
+  const password = process.env.COGNITO_AUDIT_PASSWORD ?? `BieAudit!${String(Date.now()).slice(-8)}`;
+  try {
+    provisionCognitoAuditUser({ poolId, region, email, password });
+  } catch (e) {
+    return { skip: true, reason: `Cognito audit user provision failed: ${e.message || e}` };
+  }
+  const session = await mintCognitoSession({
+    ...base,
+    email,
+    password,
+    cleanup: async () => {
+      try {
+        deleteCognitoAuditUser({ poolId, region, email });
+      } catch {
+        /* best-effort */
+      }
+    },
+  });
+  if (!session.skip) session.provisioned = true;
+  return session;
 }
 
 /**
@@ -73,20 +159,9 @@ export async function mintAppSession({ appUrl }) {
       const secret = loadStagingSecret();
       const provider = secret.AUTH_PROVIDER ?? secret.NEXT_PUBLIC_AUTH_PROVIDER ?? "clerk";
       if (provider === "cognito") {
-        const email = process.env.COGNITO_AUDIT_EMAIL ?? process.env.COGNITO_E2E_EMAIL ?? "admin@blackouttrades.com";
-        const password = process.env.COGNITO_AUDIT_PASSWORD ?? process.env.COGNITO_E2E_PASSWORD;
-        if (!password) {
-          return { skip: true, reason: "COGNITO_AUDIT_PASSWORD unset — set for staging session probes" };
-        }
-        return mintCognitoSession({
-          appUrl,
-          email,
-          password,
-          poolId: secret.COGNITO_USER_POOL_ID,
-          clientId: secret.COGNITO_CLIENT_ID,
-          clientSecret: secret.COGNITO_CLIENT_SECRET,
-          region: cognitoRegion(secret.COGNITO_USER_POOL_ID, secret.AWS_REGION),
-        });
+        const session = await mintStagingCognitoSession(secret);
+        if (!session.skip) session.appUrl = appUrl;
+        return session;
       }
     } catch (e) {
       return { skip: true, reason: `staging secret load failed: ${e.message}` };

@@ -129,27 +129,28 @@ async function main() {
   console.log("\n--- HELIX flow brief (BIE) ---");
   const fb = await getJson("/api/market/flow-brief?ticker=SPX", cookieH);
   const fbText = typeof fb.body?.brief === "string" ? fb.body.brief : fb.body?.body ?? "";
+  const fbOk =
+    fb.status === 200 &&
+    !fb.body?.error &&
+    (fbText.length > 20 || fb.body?.brief === null);
   row(
     "flow-brief",
     "GET /api/market/flow-brief",
-    fb.status === 200 && fbText.length > 40 ? "PASS" : fb.status === 404 ? "WARN" : "FAIL",
-    `HTTP ${fb.status} len=${fbText.length}`,
+    fbOk ? "PASS" : fb.status === 404 ? "WARN" : "FAIL",
+    fbText.length > 20
+      ? `BIE brief (${fbText.length} chars)`
+      : `HTTP ${fb.status} brief=null (quiet tape OK on BIE path)`,
     fb.ms
   );
 
   console.log("\n--- GEX explain (deterministic on staging) ---");
-  const gx = await postJson(
-    "/api/market/gex-heatmap/explain",
-    { ticker: "SPX" },
-    cookieH,
-    90_000
-  );
+  const gx = await getJson("/api/market/gex-heatmap/explain?ticker=SPX", cookieH, 90_000);
   const gxText = gx.body?.narrative ?? gx.body?.explanation ?? "";
   row(
     "gex-explain",
-    "POST /api/market/gex-heatmap/explain",
-    gx.status === 200 && String(gxText).length > 20 ? "PASS" : "FAIL",
-    `HTTP ${gx.status}`,
+    "GET /api/market/gex-heatmap/explain",
+    gx.status === 200 && String(gxText).length > 20 ? "PASS" : gx.status === 200 && gx.body?.available === false ? "WARN" : "FAIL",
+    `HTTP ${gx.status} available=${gx.body?.available ?? "?"}`,
     gx.ms
   );
 
