@@ -24,7 +24,9 @@ import {
   playWatchMinScore,
   playWeightedConflictBlockMin,
   playbookLiveGateEnabled,
+  playbookLiveAllowlist,
   playbookStagingLabEnabled,
+  isPlaybookLiveAllowlisted,
 } from "@/features/spx/lib/spx-play-config";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
@@ -172,6 +174,10 @@ export function evaluatePlayGates(
       blocks.push(
         `No playbook trigger — playbook live gate requires a fired primary (staging lab=${playbookStagingLabEnabled()})`
       );
+    } else if (!isPlaybookLiveAllowlisted(pbId)) {
+      const allowlist = playbookLiveAllowlist();
+      const listed = allowlist ? [...allowlist].join(", ") : "none";
+      blocks.push(`Playbook ${pbId} not in live allowlist (${listed})`);
     } else if (stagingLab) {
       warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
     }

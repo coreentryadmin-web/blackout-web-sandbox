@@ -1,4 +1,5 @@
 /** Play engine thresholds — quality over quantity. */
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { isStagingDeploy } from "@/lib/clerk-env";
 
 function num(env: string | undefined, fallback: number): number {
@@ -407,6 +408,66 @@ export function playbookStagingLabEnabled(): boolean {
 export function playbookLiveGateEnabled(): boolean {
   if (playbookStagingLabEnabled()) return true;
   return flag(process.env.PLAYBOOK_LIVE_GATE, false);
+}
+
+/** Default staging launch set — PB-14 joins after state machine ships. */
+export const PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING: readonly PlaybookId[] = [
+  "PB-01",
+  "PB-02",
+  "PB-03",
+  "PB-04",
+];
+
+const VALID_PLAYBOOK_IDS = new Set<PlaybookId>([
+  "PB-01",
+  "PB-02",
+  "PB-03",
+  "PB-04",
+  "PB-05",
+  "PB-06",
+  "PB-07",
+  "PB-08",
+  "PB-09",
+  "PB-10",
+  "PB-11",
+  "PB-12",
+  "PB-13",
+  "PB-14",
+]);
+
+/**
+ * Parse `PLAYBOOK_LIVE_ALLOWLIST` (comma-separated PB ids).
+ * - `*` or `all` → null (no filter — escape hatch for research)
+ * - unset on staging → PB-01…04 default
+ * - unset on prod → null until explicitly configured
+ */
+export function parsePlaybookLiveAllowlist(
+  raw: string | undefined,
+  stagingDeploy: boolean
+): ReadonlySet<PlaybookId> | null {
+  const trimmed = raw?.trim();
+  if (trimmed) {
+    if (trimmed === "*" || trimmed.toLowerCase() === "all") return null;
+    const ids = trimmed
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((id): id is PlaybookId => VALID_PLAYBOOK_IDS.has(id as PlaybookId));
+    return ids.length ? new Set(ids) : null;
+  }
+  if (stagingDeploy) return new Set(PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING);
+  return null;
+}
+
+/** When non-null, gate A17 only permits BUY for these primary playbook ids. */
+export function playbookLiveAllowlist(): ReadonlySet<PlaybookId> | null {
+  return parsePlaybookLiveAllowlist(process.env.PLAYBOOK_LIVE_ALLOWLIST, isStagingDeploy());
+}
+
+export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): boolean {
+  if (!id) return false;
+  const allowlist = playbookLiveAllowlist();
+  if (allowlist == null) return true;
+  return allowlist.has(id);
 }
 
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */

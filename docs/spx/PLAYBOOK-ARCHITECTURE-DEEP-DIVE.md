@@ -617,7 +617,7 @@ See `PLAYBOOK-FULL-SPEC-v2.md` §1. Highlights:
 
 ### C. Staging build (playbook lab is implicit)
 
-Staging images always bake `NEXT_PUBLIC_SITE_URL=https://staging.blackouttrades.com` — that alone enables playbook lab. Optional ECS keys (`PLAYBOOK_LIVE_GATE`, `STAGING_PLAYBOOK_LAB`) in infra are redundant documentation; code does not read them for the on/off decision on staging.
+Staging images bake `NEXT_PUBLIC_SITE_URL=https://staging.blackouttrades.com` — that enables playbook lab. **`PLAYBOOK_LIVE_ALLOWLIST`** defaults to PB-01,02,03,04 on staging (override with env or `*` to disable).
 
 ### D. Validation commands
 

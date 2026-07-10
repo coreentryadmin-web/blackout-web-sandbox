@@ -67,7 +67,7 @@ Win rate alone is insufficient — track **expectancy, profit factor, MAE/MFE ta
 
 **Shadow-only:** PB-05, PB-07, PB-09, PB-10, PB-11, PB-12, PB-13 (PB-11 session-range bug fixed 2026-07-10 → rolling 30m).
 
-*Implementation follow-up:* `PLAYBOOK_LIVE_ALLOWLIST` env (staging + prod) to enforce this at gate A17 — not yet coded; policy documented now.
+*Implementation:* `PLAYBOOK_LIVE_ALLOWLIST` in `spx-play-config.ts` + gate A17 in `spx-play-gates.ts`. Staging defaults to **PB-01–04** when unset; set `*` to disable filter for research.
 
 ### 3. Unknown regime — fail closed for **live entry only**
 
@@ -189,7 +189,7 @@ Independent spot-check of ChatGPT review against sandbox source. **All four prim
 
 ### Deploy path (Claude addendum — policy clarified)
 
-Sandbox `blackout-web-sandbox` → ECR `blackout-web:staging` → `blackout-staging-cluster` is **intentional** (staging repo *is* staging). `playbookLiveGateEnabled()` hardwired on staging URL is **research posture**, not prod capital deployment. Prod remains legacy BUY until per-PB limited-live tiers. Risk to manage: **starter-size staging opens** on MVP matchers — mitigated by future `PLAYBOOK_LIVE_ALLOWLIST` (PB-01–04) + session risk governor.
+Sandbox `blackout-web-sandbox` → ECR `blackout-web:staging` → `blackout-staging-cluster` is **intentional** (staging repo *is* staging). `playbookLiveGateEnabled()` hardwired on staging URL is **research posture**, not prod capital deployment. Prod remains legacy BUY until per-PB limited-live tiers. Risk to manage: **starter-size staging opens** on non-allowlisted PBs — **mitigated** by `PLAYBOOK_LIVE_ALLOWLIST` (default PB-01–04 on staging; gate A17 enforced).
 
 ### Matcher fixes shipped (this branch)
 
