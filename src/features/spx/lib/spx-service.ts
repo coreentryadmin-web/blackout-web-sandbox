@@ -10,6 +10,7 @@ import { fetchRecentSpxSnapshots } from "@/features/spx/lib/spx-signal-log";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/features/spx/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { playMemberReadCacheSec } from "@/features/spx/lib/spx-play-config";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { withServerCache } from "@/lib/server-cache";
@@ -83,7 +84,11 @@ async function evaluateSpxPlayState() {
     hod: merged.hod,
     lod: merged.lod,
   });
-  return readSpxPlaySnapshot(merged, technicals);
+  const play = await readSpxPlaySnapshot(merged, technicals);
+  return {
+    ...play,
+    playbook_shadow: buildPlaybookShadowPanel(merged, technicals),
+  };
 }
 
 /**
