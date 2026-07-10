@@ -46,6 +46,13 @@ const TICKER_ECOSYSTEM_RE =
 const SPX_WHY_RE =
   /\bwhy\b.*\b(spx|s&p|es|gamma|gex|vwap|dealers?|flip|slayer|market|tape)\b|\b(spx|s&p|slayer)\b.*\bwhy\b/i;
 
+/** SPX-scoped "explain" — synthesis desk read on staging BIE (not open-ended teach). */
+const SPX_EXPLAIN_RE =
+  /\bexplain\b.*\b(spx|s&p|es|slayer)\b|\b(spx|s&p|es|slayer)\b.*\bexplain\b/i;
+
+const MARKET_CONTEXT_LOOSE_RE =
+  /\b(market (doing|look(ing)?|context|overview|backdrop|regime)|how.?s the market|what.?s the market|market tape|tape today)\b/i;
+
 /** Questions with these shapes need REASONING, not lookup — always Claude (unless SPX_WHY_RE). */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
@@ -74,6 +81,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // Length guard: long/compound questions carry nuance a lookup can't honor.
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
   if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
+  if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
@@ -85,7 +93,9 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
 
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
   if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
-  if (MARKET_CONTEXT_RE.test(q)) return { intent: "market_context", ticker: null };
+  if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
 
   // Any known ticker (not just today's ledger) + an open-ended "what's going
   // on" ask — routes to the same cross-instrument snapshot get_ecosystem_context
@@ -104,6 +114,36 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
   if (q.length > 200 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return false;
   if (REASONING_RE.test(q)) return false;
   return /\b(spx|s&p|es|slayer|sniper|0dte|gamma|gex|dealer)\b/i.test(q);
+}
+
+/**
+ * Staging BIE-only last resort — when the strict router misses, still return a
+ * useful deterministic route instead of throwing. Never used when Claude is on.
+ */
+export function classifyBieStagingFallback(question: string): BieRoute {
+  const q = question.trim();
+  if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
+  if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  const ticker = extractKnownTicker(q);
+  if (ticker && PLAY_STATE_RE.test(q)) {
+    return { intent: "ticker_ecosystem", ticker };
+  }
+  if (TICKER_ECOSYSTEM_RE.test(q) && ticker) {
+    return { intent: "ticker_ecosystem", ticker };
+  }
+  if (/\b(spx|s&p|gamma|gex|vwap|slayer|0dte|dealer|flip)\b/i.test(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (/\b(market|vix|spy|qqq|breadth|regime|tape|flow|anomal)/i.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  if (ticker) return { intent: "ticker_ecosystem", ticker };
+  return { intent: "market_context", ticker: null };
 }
 
 /** Normalizes the router's decision into a queryable "bucket" for the

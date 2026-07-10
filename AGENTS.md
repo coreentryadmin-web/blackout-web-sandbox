@@ -18,8 +18,9 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 - **Deterministic brief** via `composeSpxDeskBrief()` — SIGNALS, DEALERS (GEX/VEX/DEX/CHARM), WALLS, CHART, NIGHT HAWK, cross-tool ENGINE/LOTTO/POWER HOUR, material **INTEL edges** (same `spx-odte-intel-feed` as Playbook terminal), Voyage precedent, UW **CROSSCHK**.
 - **Unified data plane** `loadBiePlatformContext()` (`src/lib/bie/platform-context.ts`) — one parallel fan-out across SPX desk, matrix intel, Night Hawk (RDS), HELIX tape, market-regime snapshot, play-engine cross-state, and `bie_knowledge` retrieval (Voyage embeddings in RDS). BIE does **not** open raw Redis/SQL; it uses the same platform service readers dashboards and Largo tools use (those readers already sit on ElastiCache + RDS).
 - **Intel loader** `loadSpxBriefIntel()` reads shared `getGexPositioning("SPX")` + heatmap cache + NH edition diffs (zero extra UW RPS). Commentary cache stores `positioning` + `heatmapSlice` + `nighthawk` per 5-min window for matrix/NH diffs.
-- **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first.
+- **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first. `classifyBieStagingFallback()` + market-context last resort so Largo never hard-errors on staging.
 - **Kill Claude spend path:** SPX commentary + play approval + flow-brief + GEX explain + Largo router hits are BIE-first. Remaining Claude: Largo fallback (non-SPX reasoning), NH edition synthesis, play critic/explainer, Haiku follow-ups.
+- **Staging proof:** `npm run validate:staging-bie` — probes commentary (THESIS), flow-brief, gex-explain, Largo (`source=blackout-intelligence`); does not touch prod.
 - **Synthesis layer** `synthesizeSpxDeskIntel()` — THESIS, MECHANIC (γ/vanna/δ/charm), ALIGNMENT (engine/NH/lotto vs read), FRICTION (opposing factors), watch triggers. SPX-scoped "why" questions route to `spx_desk_read` instead of Claude.
 - **Latency:** `getCachedBiePlatformContext()` (8s desk / 20s market SWR) + Largo answer cache (12s) + commentary 5-min shared window. Cold path parallelizes desk/matrix/cross; Voyage precedent capped at 1.5s (optional).
 
@@ -156,6 +157,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 | Command | When |
 |---------|------|
 | `npm run validate:staging` | Full harness (warm, deploy, latency) |
+| `npm run validate:staging-bie` | BIE-only intelligence layer (commentary, Largo, flow-brief, gex-explain) |
 | `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
 | `npm run validate:staging-live` | Cron + Clerk admin/member probes |
 | `npm run validate:latency-compare` | Staging vs prod latency |

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyBieIntent, bieFollowups, bieIntentBucket, isSpxDeskFallbackQuestion } from "./router";
+import {
+  classifyBieIntent,
+  classifyBieStagingFallback,
+  bieFollowups,
+  bieIntentBucket,
+  isSpxDeskFallbackQuestion,
+} from "./router";
 import { extractNumericClaims, collectContextNumbers, verifyClaims } from "./verifier";
 
 const LEDGER = new Set(["NVDA", "TSLA"]);
@@ -44,10 +50,29 @@ test("router: SPX-scoped why routes to synthesis desk read (BIE), not Claude", (
   assert.equal(classifyBieIntent("SPX why are dealers short gamma", LEDGER)?.intent, "spx_desk_read");
 });
 
+test("router: SPX-scoped explain routes to synthesis desk read (staging BIE)", () => {
+  assert.equal(classifyBieIntent("explain SPX gamma flip", LEDGER)?.intent, "spx_desk_read");
+  assert.equal(classifyBieIntent("SPX gex explain", LEDGER)?.intent, "spx_desk_read");
+});
+
+test("router: loose market context phrases route without exact match", () => {
+  assert.equal(classifyBieIntent("how's the market tape today", LEDGER)?.intent, "market_context");
+  assert.equal(classifyBieIntent("market backdrop right now", LEDGER)?.intent, "market_context");
+});
+
+test("router: classifyBieStagingFallback never leaves Largo without a route", () => {
+  assert.equal(classifyBieStagingFallback("random question about hedging flows").intent, "market_context");
+  assert.equal(classifyBieStagingFallback("tell me something").intent, "market_context");
+  assert.equal(classifyBieStagingFallback("SPX gamma").intent, "spx_desk_read");
+  assert.equal(classifyBieStagingFallback("what's going on with NVDA").intent, "ticker_ecosystem");
+  assert.equal(classifyBieStagingFallback("what's going on with NVDA").ticker, "NVDA");
+});
+
 test("router: reasoning-shaped questions NEVER route — Claude keeps them", () => {
   assert.equal(classifyBieIntent("Why did the NVDA play stop out?", LEDGER), null);
   assert.equal(classifyBieIntent("Should I hold my TSLA play into the close?", LEDGER), null);
-  assert.equal(classifyBieIntent("Explain the SPX gamma flip and what it means for tomorrow", LEDGER), null);
+  // SPX-scoped explain is BIE on staging; open-ended teach still falls through.
+  assert.equal(classifyBieIntent("Explain how gamma hedging works in general", LEDGER), null);
   // Long/compound questions carry nuance a lookup can't honor.
   assert.equal(
     classifyBieIntent(

@@ -8,12 +8,12 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { claudeEnabled, largoAvailable } from "@/lib/ai-env";
+import { claudeEnabled, isStagingBieMode, largoAvailable } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { bieFollowups, bieIntentBucket, classifyBieIntent, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
+import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer } from "@/lib/bie/composers";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -266,6 +266,23 @@ async function tryBieRoute(
           route: { intent: "spx_desk_read", ticker: "SPX" },
           answer: composed.answer,
           context: composed.context,
+        };
+      }
+    }
+
+    // Staging BIE-only: never return null — always compose a deterministic answer.
+    if (!route && isStagingBieMode()) {
+      const fallback = classifyBieStagingFallback(question);
+      const composed = await composeBieAnswer(fallback);
+      if (composed) {
+        return { route: fallback, answer: composed.answer, context: composed.context };
+      }
+      const lastResort = await composeBieAnswer({ intent: "market_context", ticker: null });
+      if (lastResort) {
+        return {
+          route: { intent: "market_context", ticker: null },
+          answer: lastResort.answer,
+          context: lastResort.context,
         };
       }
     }

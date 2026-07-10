@@ -16,3 +16,8 @@ export function claudeEnabled(): boolean {
 export function largoAvailable(): boolean {
   return claudeEnabled() || isStagingDeploy();
 }
+
+/** Staging deploy with default BIE-only policy (STAGING_CLAUDE≠1). */
+export function isStagingBieMode(): boolean {
+  return isStagingDeploy() && process.env.STAGING_CLAUDE !== "1";
+}
