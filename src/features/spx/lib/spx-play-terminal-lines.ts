@@ -309,20 +309,20 @@ export function buildPlaybookTerminalLines(
       lines.push({
         icon: "dim",
         tone: "dim",
-        text: "PB-01/02/03 awaiting technicals…",
+        text: "All 14 PB rules — awaiting first poll…",
         indent: 1,
       });
     } else {
       lines.push({
         icon: "dim",
         tone: "dim",
-        text: "Session closed — no live shadow state this load.",
+        text: "Session closed — no live playbook state this load.",
         indent: 1,
       });
       lines.push({
         icon: "dim",
         tone: "dim",
-        text: "Catalog (shadow-only — does not gate trades):",
+        text: live ? "Catalog (live gate on staging):" : "Catalog (shadow — does not gate trades):",
         indent: 1,
       });
       for (const pb of PLAYBOOK_REGISTRY) {
@@ -337,12 +337,21 @@ export function buildPlaybookTerminalLines(
     return lines;
   }
 
-  lines.push({
-    icon: "dim",
-    tone: "dim",
-    text: "Informational only — does not gate BUY/WATCH/HOLD.",
-    indent: 1,
-  });
+  if (!live) {
+    lines.push({
+      icon: "dim",
+      tone: "dim",
+      text: "Informational only — does not gate BUY/WATCH/HOLD.",
+      indent: 1,
+    });
+  } else {
+    lines.push({
+      icon: "pulse",
+      tone: "accent",
+      text: "Live gate — primary PB must FIRE before BUY on staging.",
+      indent: 1,
+    });
+  }
 
   const primary = panel.verdicts.find((v) => v.primary) ?? null;
   if (panel.primary_playbook_id || primary) {

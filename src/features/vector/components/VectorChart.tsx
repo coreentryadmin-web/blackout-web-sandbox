@@ -19,7 +19,6 @@ import {
 } from "lightweight-charts";
 import { VectorCrosshairLegend, type VectorCrosshairState } from "@/features/vector/components/VectorCrosshairLegend";
 import { VectorToolbar } from "@/features/vector/components/VectorToolbar";
-import { VectorWallEventTicker } from "@/features/vector/components/VectorWallEventTicker";
 import {
   createVectorEventSource,
   type VectorDarkPoolLevel,
@@ -121,6 +120,8 @@ type Props = {
   sessionYmd: string;
   liveSession: boolean;
   onFreshness?: (updatedAt: number) => void;
+  onWallEventsChange?: (events: VectorWallEvent[]) => void;
+  onLensChange?: (lens: VectorWallLens) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -408,6 +409,8 @@ export function VectorChart({
   sessionYmd,
   liveSession,
   onFreshness,
+  onWallEventsChange,
+  onLensChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -461,6 +464,21 @@ export function VectorChart({
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
   const [chartReady, setChartReady] = useState(false);
+
+  useEffect(() => {
+    onWallEventsChange?.(wallEvents);
+  }, [wallEvents, onWallEventsChange]);
+
+  useEffect(() => {
+    onLensChange?.(lens);
+  }, [lens, onLensChange]);
+
+  useEffect(() => {
+    setWallEvents([
+      ...eventsFromWallHistory(initialWallHistory, "gex"),
+      ...eventsFromWallHistory(initialWallHistory, "vex"),
+    ]);
+  }, [ticker, initialWallHistory]);
 
   useEffect(() => {
     timeframeRef.current = timeframe;
@@ -1038,8 +1056,6 @@ export function VectorChart({
         onJumpClose={jumpReplayClose}
         onToggleLoop={() => setReplayLoop((v) => !v)}
       />
-
-      <VectorWallEventTicker events={wallEvents} lens={lens} />
 
       <div className="relative">
         <VectorCrosshairLegend state={crosshair} />

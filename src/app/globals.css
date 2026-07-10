@@ -8420,6 +8420,38 @@ body::before {
     @apply hidden;
   }
 
+  .vector-chart-terminal-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  @media (min-width: 1280px) {
+    .vector-chart-terminal-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    }
+  }
+
+  .vector-chart-terminal-chart {
+    @apply min-w-0;
+  }
+
+  .vector-desk-terminal {
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508] p-1.5;
+    min-height: min(72vh, 640px);
+  }
+
+  .vector-desk-terminal.spx-play-terminal-window {
+    @apply flex-1 min-h-0;
+  }
+
+  @media (min-width: 1280px) {
+    .vector-desk-terminal {
+      min-height: calc(100vh - 200px);
+    }
+  }
+
   .spx-desk-session-strip--compact {
     @apply py-1.5 px-2;
   }

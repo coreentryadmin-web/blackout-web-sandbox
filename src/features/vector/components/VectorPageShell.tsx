@@ -7,9 +7,11 @@ import { PageShell, PageHeader, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
-import type { WallHistorySample } from "@/features/vector/lib/vector-wall-history";
+import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
+import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
+import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
 const VectorChart = dynamic(
@@ -69,6 +71,8 @@ export function VectorPageShell({
   const router = useRouter();
   const sessionLabel = formatSessionLabel(sessionYmd);
   const [streamUpdatedAt, setStreamUpdatedAt] = useState<number | null>(null);
+  const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>([]);
+  const [lens, setLens] = useState<VectorWallLens>("gex");
   const [now, setNow] = useState<number | null>(null);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
 
@@ -120,19 +124,30 @@ export function VectorPageShell({
             }
           />
         </div>
-        <div className="mt-2">
-          <VectorChart
+        <div className="mt-2 vector-chart-terminal-grid">
+          <div className="vector-chart-terminal-chart min-w-0">
+            <VectorChart
+              ticker={activeTicker}
+              initialBars={initialBars}
+              initialWalls={initialWalls}
+              initialVexWalls={initialVexWalls}
+              initialWallHistory={initialWallHistory}
+              initialGammaFlip={initialGammaFlip}
+              initialVexFlip={initialVexFlip}
+              initialDarkPoolLevels={initialDarkPoolLevels}
+              sessionYmd={sessionYmd}
+              liveSession={liveSession}
+              onFreshness={liveSession ? setStreamUpdatedAt : undefined}
+              onWallEventsChange={setWallEvents}
+              onLensChange={setLens}
+            />
+          </div>
+          <VectorDeskTerminal
             ticker={activeTicker}
-            initialBars={initialBars}
-            initialWalls={initialWalls}
-            initialVexWalls={initialVexWalls}
-            initialWallHistory={initialWallHistory}
-            initialGammaFlip={initialGammaFlip}
-            initialVexFlip={initialVexFlip}
-            initialDarkPoolLevels={initialDarkPoolLevels}
-            sessionYmd={sessionYmd}
+            lens={lens}
+            wallEvents={wallEvents}
             liveSession={liveSession}
-            onFreshness={liveSession ? setStreamUpdatedAt : undefined}
+            streamUpdatedAt={streamUpdatedAt}
           />
         </div>
       </div>
