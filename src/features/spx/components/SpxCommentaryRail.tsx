@@ -8,7 +8,7 @@ import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 import { largoEnabled } from "@/lib/largo-env";
-import { isStagingBieMode } from "@/lib/ai-env";
+import { isStagingDeploy } from "@/lib/clerk-env";
 import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
@@ -267,7 +267,7 @@ export function SpxCommentaryRail({
           <span className="font-syne text-base tracking-[0.12em] text-purple-light block font-bold">
             Largo
           </span>
-          {isStagingBieMode() && (
+          {isStagingDeploy() && (
             <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/90">
               BlackOut Intelligence
             </span>
@@ -295,15 +295,7 @@ export function SpxCommentaryRail({
       </div>
 
       <div className={clsx("spx-commentary-viewport", railCollapsed && "hidden")}>
-        {!largoEnabled() ? (
-          <div className="spx-commentary-offline-hero spx-commentary-offline-hero-neutral">
-            <p className="spx-commentary-offline-kicker">Production only</p>
-            <h2 className="spx-commentary-offline-headline">Largo is disabled on staging</h2>
-            <p className="spx-commentary-offline-body">
-              Staging validates playbooks, matrix, and trade alerts without Anthropic spend. Use production for live desk commentary.
-            </p>
-          </div>
-        ) : !live ? (
+        {!live ? (
           <div
             className={clsx(
               "spx-commentary-offline-hero",
