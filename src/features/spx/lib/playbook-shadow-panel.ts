@@ -2,6 +2,7 @@ import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import { PLAYBOOK_REGISTRY, type PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
+import { computePlaybookPipelineAudit, type PlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 import { playbookLiveGateEnabled } from "@/features/spx/lib/spx-play-config";
 
 export type PlaybookShadowVerdictSummary = {
@@ -20,6 +21,7 @@ export type PlaybookShadowPanel = {
   mode: "shadow" | "live";
   primary_playbook_id: PlaybookId | null;
   verdicts: PlaybookShadowVerdictSummary[];
+  pipeline_audit: PlaybookPipelineAudit;
 };
 
 const NAME_BY_ID = Object.fromEntries(
@@ -37,6 +39,7 @@ export function buildPlaybookShadowPanel(
   return {
     mode: playbookLiveGateEnabled() ? "live" : "shadow",
     primary_playbook_id,
+    pipeline_audit: computePlaybookPipelineAudit(verdicts),
     verdicts: verdicts.map((v) => ({
       playbook_id: v.playbook_id,
       name: NAME_BY_ID[v.playbook_id] ?? v.playbook_id,

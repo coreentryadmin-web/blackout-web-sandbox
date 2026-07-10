@@ -96,3 +96,8 @@ export function isPlaybookEligible(
 ): boolean {
   return eligiblePlaybookIds(desk, now).includes(id);
 }
+
+/** True when EMA regime label is missing/unrecognized — live BUY should fail-closed. */
+export function isUnknownPlaybookRegime(desk: SpxDeskPayload, now: number = Date.now()): boolean {
+  return classifyPlaybookRegime(desk, now) === "unknown";
+}

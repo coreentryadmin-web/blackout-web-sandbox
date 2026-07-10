@@ -87,10 +87,27 @@ async function evaluateSpxPlayState() {
   });
   const play = await readSpxPlaySnapshot(merged, technicals);
   const playbook_shadow = buildPlaybookShadowPanel(merged, technicals);
-  void maybeLogPlaybookShadowMatch(merged, playbook_shadow, {
-    action: play.action,
-    score: play.score,
-  }).catch((err) => {
+  const primaryVerdict = playbook_shadow?.verdicts.find((v) => v.primary && v.trigger_fired);
+  void maybeLogPlaybookShadowMatch(
+    merged,
+    playbook_shadow,
+    {
+      action: play.action,
+      score: play.score,
+    },
+    {
+      technicals,
+      gate_blocks: play.gates.blocks,
+      primary_direction:
+        primaryVerdict?.direction === "long" || primaryVerdict?.direction === "short"
+          ? primaryVerdict.direction
+          : null,
+      opened_direction:
+        play.phase === "OPEN" && play.open_play?.direction
+          ? play.open_play.direction
+          : null,
+    }
+  ).catch((err) => {
     console.warn("[spx-playbook-shadow]", err instanceof Error ? err.message : err);
   });
   return {
