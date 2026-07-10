@@ -7535,219 +7535,6 @@ body::before {
       linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.88) 45%, rgba(0, 0, 0, 0.94) 100%);
   }
 
-  .spx-sniper-desk {
-    @apply space-y-3 w-full max-w-none;
-  }
-
-  .spx-sniper-desk-loading {
-    @apply w-full;
-  }
-
-  .spx-desk-skeleton {
-    @apply relative w-full overflow-hidden;
-    min-height: min(78vh, 720px);
-    background: #08080e;
-    border: 1px solid rgba(0, 230, 118, 0.12);
-  }
-
-  .spx-desk-skeleton::after {
-    content: "";
-    @apply absolute inset-y-0 z-[1] pointer-events-none;
-    left: -40%;
-    width: 40%;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(0, 230, 118, 0.06) 35%,
-      rgba(0, 230, 118, 0.16) 50%,
-      rgba(0, 230, 118, 0.06) 65%,
-      transparent 100%
-    );
-    animation: spx-desk-skeleton-sweep 1.6s ease-in-out infinite;
-  }
-
-  @keyframes spx-desk-skeleton-sweep {
-    0% { transform: translateX(0); opacity: 0.55; }
-    50% { opacity: 1; }
-    100% { transform: translateX(350%); opacity: 0.55; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .spx-desk-skeleton::after { animation: none; opacity: 0.5; }
-  }
-
-  .spx-sniper-header {
-    @apply relative overflow-hidden border border-bull/35 bg-black/55 backdrop-blur-md px-5 py-5 md:px-8;
-    box-shadow: 0 0 60px rgba(0, 230, 118, 0.1), inset 0 0 40px rgba(0, 230, 118, 0.04);
-  }
-
-  .spx-sniper-command {
-    @apply relative overflow-hidden rounded-2xl border border-bull/35 bg-void-deep/90 backdrop-blur-md px-5 py-5 md:px-7 md:py-6;
-    box-shadow:
-      0 0 60px rgba(0, 230, 118, 0.14),
-      inset 0 0 48px rgba(0, 230, 118, 0.04);
-  }
-
-  .spx-sniper-command-grid {
-    @apply absolute inset-0 opacity-[0.14] pointer-events-none z-0;
-    background:
-      linear-gradient(rgba(0, 230, 118, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 230, 118, 0.08) 1px, transparent 1px);
-    background-size: 36px 36px;
-  }
-
-  .spx-sniper-command-scan {
-    @apply absolute inset-x-0 h-px top-0 z-[1];
-    background: linear-gradient(90deg, transparent, rgba(0, 230, 118, 0.85), transparent);
-    animation: desk-scan 5s linear infinite;
-  }
-
-  .spx-sniper-command-glow {
-    @apply absolute pointer-events-none rounded-full blur-3xl z-0;
-    width: 38%;
-    height: 55%;
-    top: 18%;
-    left: 32%;
-    background: radial-gradient(circle, rgba(0, 230, 118, 0.22) 0%, transparent 70%);
-    animation: spx-command-pulse 4s ease-in-out infinite;
-  }
-
-  @keyframes spx-command-pulse {
-    0%, 100% { opacity: 0.15; transform: scale(1); }
-    50% { opacity: 0.28; transform: scale(1.04); }
-  }
-
-  .spx-hero-tagline {
-    @apply text-sky-200;
-    text-shadow: 0 0 20px rgba(0, 0, 0, 0.9);
-  }
-
-  .spx-hero-desk-tick {
-    @apply text-sky-300;
-    text-shadow: 0 0 12px rgba(0, 0, 0, 0.85);
-  }
-
-  .spx-hero-stat-pill {
-    @apply rounded-lg border bg-void-deep/95 px-3 py-2 min-w-[76px];
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.07),
-      0 2px 8px rgba(0, 0, 0, 0.45);
-  }
-
-  .spx-hero-stat-label {
-    @apply text-[10px] font-mono font-medium uppercase tracking-[0.2em] text-sky-300 mb-1;
-  }
-
-  .spx-hero-stat-value {
-    @apply text-sm font-mono font-semibold tabular-nums truncate leading-none;
-  }
-
-  .spx-hero-metric-blocks {
-    @apply flex flex-wrap items-stretch gap-2 lg:gap-2.5 min-w-0 flex-1;
-  }
-
-  .spx-hero-metric-block {
-    @apply rounded-lg border bg-void-deep/95 px-3 py-2.5 min-w-[128px] flex-1;
-    flex-shrink: 1;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 2px 10px rgba(0, 0, 0, 0.5);
-  }
-
-  .spx-hero-metric-block-title {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-sky-300 mb-2;
-  }
-
-  .spx-hero-metric-block-body {
-    @apply flex flex-col gap-1.5;
-  }
-
-  .spx-hero-metric-pair {
-    @apply grid grid-cols-2 gap-x-3 gap-y-1.5;
-  }
-
-  .spx-hero-metric-row {
-    /* Grid (not flex justify-between) — on a squeezed hero block, label + value
-       overlapped and read as one number (e.g. EMA label "200" + "6,943" → "2006,943"). */
-    @apply grid items-baseline gap-x-2;
-    grid-template-columns: minmax(1.75rem, auto) minmax(0, 1fr);
-  }
-
-  .spx-hero-metric-row-compact {
-    @apply flex flex-col items-start gap-0.5;
-    display: flex;
-  }
-
-  .spx-hero-metric-row-label {
-    @apply shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-400;
-  }
-
-  .spx-hero-metric-row-value {
-    @apply min-w-0 text-right font-mono text-sm font-semibold tabular-nums leading-none;
-  }
-
-  .spx-hero-metric-row-compact .spx-hero-metric-row-value {
-    @apply text-[13px];
-  }
-
-  .spx-command-live {
-    @apply inline-flex items-center gap-1.5 rounded-full font-mono text-[10px] tracking-[0.22em] uppercase text-sky-300 px-3 py-1.5 border border-sky-300/25 bg-void-deep/90;
-  }
-
-  .spx-command-live-on {
-    @apply text-bull border-bull/45 bg-bull/[0.06];
-  }
-
-  .spx-sniper-command .spx-sniper-title {
-    @apply font-anton text-4xl md:text-6xl leading-none tracking-wide uppercase;
-  }
-
-  .spx-stat-pill-dark {
-    @apply border bg-black/45 backdrop-blur-sm px-2.5 py-1.5;
-  }
-
-  .spx-stat-pill-glow {
-    box-shadow: inset 0 0 20px rgba(191, 95, 255, 0.1);
-  }
-
-  .spx-sniper-header-inner {
-    @apply relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4;
-  }
-
-  .spx-sniper-title {
-    @apply font-anton text-5xl md:text-7xl leading-none tracking-wide uppercase;
-  }
-
-  .spx-sniper-header-scan {
-    @apply absolute inset-x-0 h-px top-0;
-    background: linear-gradient(90deg, transparent, rgba(0, 230, 118, 0.7), transparent);
-    animation: desk-scan 5s linear infinite;
-  }
-
-  .spx-sniper-hero {
-    @apply relative overflow-hidden border border-bull/25 bg-black/50 backdrop-blur-md px-5 py-6 md:px-8;
-  }
-
-  .spx-sniper-hero-grid {
-    @apply absolute inset-0 opacity-25 pointer-events-none;
-    background:
-      linear-gradient(rgba(0, 230, 118, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 230, 118, 0.07) 1px, transparent 1px);
-    background-size: 36px 36px;
-  }
-
-  .spx-stat-pill {
-    @apply rounded-lg border border-white/10 bg-black/40 px-3 py-2 backdrop-blur-sm;
-  }
-
-  .spx-sniper-main {
-    @apply grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-4 items-stretch;
-  }
-
-  .spx-sniper-split {
-    @apply grid grid-cols-1 xl:grid-cols-[1fr_420px] 2xl:grid-cols-[1fr_460px] gap-4 items-stretch min-h-[720px];
-  }
-
   .spx-sniper-desk.spx-sniper-desk-fill {
     @apply space-y-0;
   }
@@ -8606,360 +8393,422 @@ body::before {
   .spx-desk-session-strip--compact .spx-desk-session-strip-body {
     @apply text-[10px] leading-snug;
   }
-  /* Mobile web segment switcher — same panel hide/show as iOS native shell */
-  @media (max-width: 767px) {
-    .spx-sniper-triple[data-ios-panel] .ios-native-panel-hidden {
-      display: none !important;
-    }
+
+  .spx-sniper-triple .spx-chart-frame {
+    @apply flex-1;
   }
 
-  .spx-sniper-right-rail {
-    @apply flex flex-col gap-3 min-h-0 xl:max-h-[calc(100vh-220px)];
-  }
-
-  .spx-structure-grid {
-    @apply grid grid-cols-1 gap-2 shrink-0;
-  }
-
-  .spx-structure-left-rail {
-    @apply flex flex-col gap-3 h-full flex-1 min-h-0;
-  }
-
-  .spx-structure-left-rail .spx-structure-card-large {
-    @apply flex-1 flex flex-col min-h-0;
-  }
-
-  .spx-structure-left-rail .spx-structure-card-body {
-    @apply flex-1 flex flex-col justify-evenly px-4 py-3 space-y-0 overflow-visible max-h-none;
-  }
-
-  .spx-structure-left-rail .spx-structure-label {
-    @apply text-[11px] tracking-[0.18em] text-sky-300;
-  }
-
-  .spx-structure-left-rail .spx-structure-value {
-    @apply text-base font-semibold;
-  }
-
-  .spx-structure-left-rail .spx-structure-row {
-    @apply py-2 px-2 rounded;
-  }
-
-  .spx-structure-left-rail .spx-structure-level {
-    @apply py-2 px-2 text-[11px];
-  }
-
-  .spx-structure-left-rail .spx-structure-dist {
-    @apply text-[10px];
-  }
-
-  .spx-structure-left-rail .spx-structure-card-header {
-    @apply px-4 py-3;
-  }
-
-  .spx-structure-left-rail .spx-structure-divider {
-    @apply my-2;
-  }
-
-  .spx-structure-card {
-    @apply flex flex-col border bg-black/60 backdrop-blur-md overflow-hidden;
-  }
-
-  .spx-structure-card-header {
-    @apply flex items-center gap-2 px-3 py-2 border-b border-white/5;
-  }
-
-  .spx-structure-card-body {
-    /* No fixed max-h: the 0DTE level ladder (the most actionable rows) must be
-       visible without scrolling. Was max-h-[140px]/xl:max-h-[120px] which
-       buried the ladder below an overflow-y-auto scroll. */
-    @apply px-2 py-2 space-y-0.5;
-  }
-
-  .spx-structure-divider {
-    @apply my-1.5 border-t border-white/5;
-  }
-
-  .spx-structure-row {
-    @apply flex items-center justify-between gap-2 py-1 px-1.5 rounded-sm transition-colors;
-  }
-
-  .spx-structure-row-hot {
-    @apply bg-bull/5;
-  }
-
-  .spx-structure-label {
-    @apply text-[10px] font-mono uppercase tracking-wider text-cyan-400;
-  }
-
-  .spx-structure-value {
-    /* Decision data must be the largest type in the card: value (13px) > label
-       (10px) so the hierarchy is glanceable in <2s. Was text-[10px], the same
-       size as its label. */
-    @apply font-mono text-[13px] font-semibold tabular-nums;
-  }
-
-  .spx-structure-level {
-    @apply flex items-center gap-1.5 py-1 px-1.5 text-[10px] border-l-2 border-transparent;
-  }
-
-  .spx-structure-level-support { @apply border-l-bull/50; }
-  .spx-structure-level-resistance { @apply border-l-rose-500/50; }
-  .spx-structure-level-neutral { @apply border-l-purple/40; }
-
-  .spx-structure-dist {
-    @apply font-mono text-[10px] tabular-nums ml-auto;
-  }
-
-  .spx-stat-pill-hot {
-    box-shadow: inset 0 0 20px rgba(191, 95, 255, 0.12);
-  }
-
-  .spx-technicals-panel {
-    @apply flex flex-col border border-bull/25 bg-black/55 backdrop-blur-md min-h-[400px] xl:min-h-[640px] xl:max-h-[640px] overflow-hidden;
-  }
-
-  .spx-technicals-header {
-    @apply flex items-center gap-2 shrink-0 px-4 py-3 border-b border-white/10;
-  }
-
-  .spx-technicals-body {
-    @apply flex-1 overflow-y-auto px-3 py-3 space-y-4;
-  }
-
-  .spx-technicals-section-title {
-    @apply font-mono text-[10px] tracking-[0.35em] uppercase text-cyan-400 mb-2;
-  }
-
-  .spx-tech-row {
-    @apply flex items-center justify-between gap-2 py-1.5 px-2 border-l-2 border-transparent;
-  }
-
-  .spx-tech-row-support { @apply border-l-bull/40; }
-  .spx-tech-row-resistance { @apply border-l-bear/40; }
-
-  .spx-tech-label {
-    @apply text-[10px] font-mono uppercase tracking-wider text-sky-300;
-  }
-
-  .spx-tech-value {
-    @apply font-mono text-[11px] tabular-nums;
-  }
-
-  .spx-level-row {
-    @apply flex items-center gap-2 py-1.5 px-2 text-[10px] border-b border-white/[0.06];
-  }
-
-  .spx-level-label {
-    @apply font-mono uppercase tracking-wider text-cyan-400 w-20 shrink-0;
-  }
-
-  .spx-level-value {
-    @apply font-mono text-white tabular-nums flex-1;
-  }
-
-  .spx-level-dist {
-    @apply font-mono tabular-nums text-[10px];
-  }
-
-  .spx-level-support { @apply border-l-2 border-bull/30; }
-  .spx-level-resistance { @apply border-l-2 border-bear/30; }
-  .spx-level-neutral { @apply border-l-2 border-sky-300/25; }
-
-  .spx-sniper-chart-col {
-    @apply flex flex-col min-h-[640px] xl:min-h-[720px];
-  }
-
-  .spx-center-stack .spx-trade-alerts-panel {
+  .spx-sniper-triple .spx-chart-frame .embed-frame-body {
     @apply flex-1 min-h-0;
   }
 
-  .spx-sniper-panel-body {
-    @apply flex-1 min-h-0 overflow-y-auto flex flex-col;
+  .spx-sniper-triple .spx-chart-frame iframe {
+    @apply h-full w-full;
+    min-height: calc(100vh - 280px);
   }
 
-  .spx-lotto-dock {
-    @apply relative z-20 shrink-0 mt-auto pt-3 border-t border-gold/25;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(8, 6, 0, 0.92) 38%, rgba(4, 3, 0, 0.98) 100%);
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  .news-rail {
+    @apply flex flex-col border border-bull/25 bg-black/55 backdrop-blur-md min-h-[400px] xl:min-h-[640px] xl:max-h-[640px];
   }
 
-  .spx-lotto-dock .spx-lotto-play-block {
-    @apply mt-0 mb-0;
+  .news-rail-header {
+    @apply flex items-center gap-2 shrink-0 px-4 py-3 border-b border-white/10;
   }
 
-  .spx-trade-alerts-panel {
-    @apply flex flex-col h-full min-h-0 rounded-2xl border border-bull/25 backdrop-blur-md p-4 md:p-5;
+  .news-rail-viewport {
+    @apply flex-1 overflow-hidden relative;
+    mask-image: linear-gradient(180deg, transparent, black 8%, black 92%, transparent);
   }
 
-  .spx-sniper-panel.spx-trade-alerts-panel {
-    @apply bg-black/20;
+  .news-rail-track {
+    @apply flex flex-col gap-3 px-3 py-4;
+    animation: news-rail-scroll 140s linear infinite;
   }
 
-  .spx-sniper-panel {
-    @apply relative overflow-hidden;
+  .news-rail-track:hover {
+    animation-play-state: paused;
   }
 
-  .spx-sniper-panel-content {
-    @apply relative z-10 flex flex-col flex-1 min-h-0;
+  .news-rail-card {
+    @apply border border-white/10 bg-black/50 p-3 backdrop-blur-sm transition-colors;
   }
 
-  .spx-sniper-backdrop {
-    @apply absolute inset-0 z-0 pointer-events-none overflow-hidden;
+  .news-rail-card:hover {
+    @apply border-purple/40 bg-purple/5;
   }
 
-  .spx-sniper-backdrop-layer {
-    /* Holds a next/image fill child (object-cover); wrapper keeps the breathe
-       animation + opacity/filter treatment. */
-    @apply absolute inset-0;
-    opacity: 0.62;
-    filter: brightness(1.18) contrast(1.12) saturate(1.22);
-    animation: spx-sniper-backdrop-breathe 24s ease-in-out infinite alternate;
-    will-change: transform;
+  /* ── BlackOut Grid — market-intelligence command center ──────────────────── */
+  /* Masonry: desktop 4-col / tablet 2-col / mobile 1-col. Panels theme off --grid-accent. */
+  .grid-board {
+    @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-5;
+    grid-auto-rows: minmax(0, auto);
+  }
+  /* Use the full screen on ultra-wide displays. */
+  @media (min-width: 1920px) {
+    .grid-board { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  }
+  /* Staggered entrance — each card rises + fades in, sequenced down the board. */
+  .grid-board > .grid-card {
+    animation: grid-card-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .grid-board > .grid-card:nth-child(1) { animation-delay: 0ms; }
+  .grid-board > .grid-card:nth-child(2) { animation-delay: 60ms; }
+  .grid-board > .grid-card:nth-child(3) { animation-delay: 110ms; }
+  .grid-board > .grid-card:nth-child(4) { animation-delay: 160ms; }
+  .grid-board > .grid-card:nth-child(5) { animation-delay: 210ms; }
+  .grid-board > .grid-card:nth-child(6) { animation-delay: 260ms; }
+  .grid-board > .grid-card:nth-child(7) { animation-delay: 300ms; }
+  .grid-board > .grid-card:nth-child(8) { animation-delay: 340ms; }
+  .grid-board > .grid-card:nth-child(n + 9) { animation-delay: 380ms; }
+  @keyframes grid-card-in {
+    from { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.985); }
+    to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grid-board > .grid-card { animation: none; }
   }
 
-  @keyframes spx-sniper-backdrop-breathe {
+  .grid-card {
+    @apply relative flex flex-col rounded-2xl border bg-black/55 backdrop-blur-md overflow-hidden min-h-[280px];
+    border-color: color-mix(in srgb, var(--grid-accent) 28%, transparent);
+    box-shadow: inset 0 0 60px color-mix(in srgb, var(--grid-accent) 6%, transparent);
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease,
+      border-color 0.28s ease;
+  }
+  .grid-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--grid-accent) 60%, transparent);
+    box-shadow: inset 0 0 60px color-mix(in srgb, var(--grid-accent) 9%, transparent),
+      0 14px 40px -12px color-mix(in srgb, var(--grid-accent) 45%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--grid-accent) 22%, transparent);
+  }
+  .grid-card--collapsed {
+    @apply min-h-0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grid-card,
+    .grid-card:hover {
+      transition: none;
+      transform: none;
+    }
+  }
+  .grid-card::before {
+    content: "";
+    @apply absolute inset-x-0 top-0 h-[2px];
+    background: linear-gradient(90deg, transparent, var(--grid-accent), transparent);
+    opacity: 0.8;
+  }
+
+  .grid-card-head {
+    @apply flex items-center gap-2.5 shrink-0 px-4 py-3 border-b border-white/10;
+  }
+  .grid-card-accent-bar {
+    @apply inline-block h-3.5 w-[3px] rounded-full;
+    background: var(--grid-accent);
+    box-shadow: 0 0 8px var(--grid-accent);
+  }
+  .grid-card-kicker {
+    @apply font-mono text-[9px] font-bold uppercase tracking-[0.3em];
+    color: var(--grid-accent);
+  }
+  .grid-card-title {
+    @apply font-syne text-[15px] font-bold tracking-tight text-white;
+  }
+  .grid-card-head-spacer { @apply ml-auto; }
+  .grid-card-dot {
+    @apply inline-block h-2 w-2 rounded-full shrink-0;
+  }
+  .grid-card-dot-live {
+    background: var(--grid-accent);
+    box-shadow: 0 0 8px var(--grid-accent);
+    @apply animate-pulse motion-reduce:animate-none;
+  }
+  .grid-card-dot-idle { @apply bg-sky-300/30; }
+
+  .grid-card-body { @apply flex-1 overflow-hidden relative; }
+  .grid-card-foot {
+    @apply shrink-0 px-4 py-2 border-t border-white/10;
+  }
+  .grid-foot-note { @apply font-mono text-[10px] text-sky-300/60; }
+
+  /* ── Per-card controls (collapse / hide) ─────────────────────────────── */
+  .grid-card-ctrls { @apply flex items-center gap-1 ml-2; }
+  .grid-card-ctrl {
+    @apply inline-flex items-center justify-center h-7 w-7 rounded-md text-sky-200/75 text-[16px] leading-none border transition-colors;
+    border-color: rgba(125, 211, 252, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .grid-card-ctrl:hover {
+    color: var(--grid-accent);
+    border-color: color-mix(in srgb, var(--grid-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--grid-accent) 18%, transparent);
+  }
+  .grid-card-ctrl--close:hover { color: #ff5c78; border-color: rgba(255, 92, 120, 0.5); background: rgba(255, 92, 120, 0.18); }
+  .grid-card-chevron {
+    width: 9px; height: 9px; margin-top: -3px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 0.22s ease;
+  }
+  .grid-card-chevron--up { margin-top: 3px; transform: rotate(225deg); }
+
+  /* ── Board toolbar ───────────────────────────────────────────────────── */
+  .grid-toolbar { @apply flex items-center gap-3 mb-3 px-1; }
+  .grid-toolbar-label { @apply font-mono text-[11px] text-sky-300/70 tracking-wide; }
+  .grid-toolbar-count { @apply text-white font-bold; }
+  .grid-toolbar-spacer { @apply ml-auto; }
+
+  /* ── Panels menu ─────────────────────────────────────────────────────── */
+  .grid-menu { @apply relative; }
+  .grid-menu-btn {
+    @apply inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 font-mono text-[11px] font-semibold text-sky-100 bg-black/40 transition-colors;
+    border-color: rgba(125, 211, 252, 0.25);
+  }
+  .grid-menu-btn:hover, .grid-menu-btn--open {
+    border-color: rgba(125, 211, 252, 0.6);
+    background: rgba(125, 211, 252, 0.08);
+  }
+  .grid-menu-glyph {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 12px; height: 12px;
+  }
+  .grid-menu-glyph span { background: currentColor; border-radius: 1px; }
+  .grid-menu-badge {
+    @apply font-mono text-[9px] px-1.5 py-0.5 rounded-full text-cyan-300;
+    background: rgba(34, 211, 238, 0.14);
+  }
+  .grid-menu-pop {
+    @apply absolute right-0 mt-2 w-64 rounded-xl border p-2 z-50;
+    border-color: rgba(125, 211, 252, 0.22);
+    background: rgba(8, 10, 18, 0.96);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(125, 211, 252, 0.06);
+    animation: grid-menu-in 0.16s ease-out both;
+    transform-origin: top right;
+  }
+  @keyframes grid-menu-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .grid-menu-pop-head {
+    @apply flex items-center justify-between px-2 py-1 mb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-sky-300/60;
+  }
+  .grid-menu-reset {
+    @apply font-mono text-[10px] text-cyan-300/80 hover:text-white transition-colors normal-case tracking-normal;
+  }
+  .grid-menu-actions { @apply grid grid-cols-2 gap-1 mb-1; }
+  .grid-menu-actions button {
+    @apply rounded-md border px-2 py-1 font-mono text-[10px] text-sky-200/80 hover:text-white transition-colors;
+    border-color: rgba(125, 211, 252, 0.14);
+  }
+  .grid-menu-actions button:hover { background: rgba(125, 211, 252, 0.08); }
+  .grid-menu-list { @apply flex flex-col max-h-[300px] overflow-y-auto; }
+  .grid-menu-item {
+    @apply flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-left font-mono text-[11px] text-sky-100 transition-colors;
+  }
+  .grid-menu-item:hover { background: rgba(255, 255, 255, 0.05); }
+  .grid-menu-item--off { @apply text-sky-300/40; }
+  .grid-menu-check {
+    @apply inline-flex items-center justify-center h-4 w-4 rounded text-[9px] font-bold shrink-0 border;
+    border-color: rgba(125, 211, 252, 0.3); color: transparent;
+  }
+  .grid-menu-check--on {
+    background: #22d3ee; border-color: #22d3ee; color: #04121a;
+  }
+
+  /* ── Active-ticker banner ────────────────────────────────────────────── */
+  .grid-banner {
+    @apply flex items-center gap-3 px-3 py-2 mb-3 rounded-lg border;
+    border-color: rgba(34, 211, 238, 0.25); background: rgba(34, 211, 238, 0.05);
+  }
+  .grid-banner-dot { @apply h-1.5 w-1.5 rounded-full bg-cyan-400 shrink-0 animate-pulse motion-reduce:animate-none; }
+  .grid-banner-text { @apply font-mono text-[11px] text-cyan-400 tracking-wide; }
+  .grid-banner-ticker { @apply font-bold text-white; }
+  .grid-banner-sep { @apply text-cyan-400/50; }
+  .grid-banner-live { @apply text-sky-300/70; }
+  .grid-banner-clear { @apply ml-auto font-mono text-[10px] text-sky-400/60 hover:text-white transition-colors; }
+
+  .grid-empty {
+    @apply font-mono text-[11px] text-cyan-400 p-6 text-center;
+  }
+
+  /* Ticker filter mode: compact pill shown above panel content */
+  .grid-ticker-badge {
+    @apply font-mono text-[10px] text-cyan-400 tracking-wide px-2 py-1 mb-1 border-b border-cyan-400/15;
+  }
+
+  /* tone helpers (no grey — emerald/bear/sky/gold) */
+  .pulse-tone-emerald { color: #00e676; }
+  .pulse-tone-bear { color: #ff5c78; }
+  .pulse-tone-sky { color: #7dd3fc; }
+  .pulse-tone-gold { color: #ffcc4d; }
+
+  .grid-chip-btn {
+    @apply font-mono text-[10px] font-semibold px-2 py-[3px] rounded-md border border-white/15 text-sky-300 transition-colors;
+  }
+  .grid-chip-btn:hover { @apply text-white border-white/30; }
+  .spx-commentary-offline-hero {
+    @apply relative flex flex-col items-center justify-center text-center min-h-[320px] h-full px-6 py-10 overflow-hidden;
+  }
+
+  .spx-commentary-offline-hero::before {
+    content: "";
+    @apply pointer-events-none absolute inset-0 opacity-80;
+    background: radial-gradient(ellipse 70% 55% at 50% 20%, rgba(191, 95, 255, 0.22), transparent 70%);
+    animation: none;
+    opacity: 0.7;
+  }
+
+  @keyframes spx-commentary-offline-glow {
     from {
-      transform: scale(1.04);
+      opacity: 0.45;
+      transform: scale(1);
     }
     to {
-      transform: scale(1.14);
+      opacity: 0.95;
+      transform: scale(1.06);
     }
   }
 
-  .spx-sniper-backdrop-scrim {
-    @apply absolute inset-0;
-    background: linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.38) 0%,
-      rgba(0, 0, 0, 0.18) 42%,
-      rgba(0, 0, 0, 0.48) 100%
-    );
-    transition: background 1.2s ease;
+  .spx-commentary-offline-kicker {
+    @apply relative z-[1] font-syne text-xs md:text-sm font-bold uppercase tracking-[0.35em] mb-4;
+    color: #e9d5ff;
+    text-shadow: 0 0 24px rgba(192, 132, 252, 0.55);
   }
 
-  .spx-sniper-tint-scan {
-    background: linear-gradient(
-      180deg,
-      rgba(8, 12, 24, 0.42) 0%,
-      rgba(20, 10, 40, 0.12) 45%,
-      rgba(0, 0, 0, 0.5) 100%
-    );
+  .spx-commentary-offline-headline {
+    @apply relative z-[1] font-syne font-black uppercase leading-none mb-5;
+    font-size: clamp(2rem, 5.5vw, 3.25rem);
+    letter-spacing: 0.06em;
+    background: linear-gradient(135deg, #f5f3ff 0%, #d580ff 35%, #d580ff 55%, #f0abfc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 28px rgba(213, 128, 255, 0.45));
+    animation: none;
   }
 
-  .spx-sniper-tint-watch {
-    background: linear-gradient(
-      180deg,
-      rgba(30, 15, 0, 0.45) 0%,
-      rgba(120, 60, 0, 0.1) 40%,
-      rgba(0, 0, 0, 0.52) 100%
-    );
+  @keyframes spx-commentary-offline-shimmer {
+    from {
+      filter: drop-shadow(0 0 18px rgba(213, 128, 255, 0.35));
+    }
+    to {
+      filter: drop-shadow(0 0 36px rgba(244, 114, 182, 0.55));
+    }
   }
 
-  .spx-sniper-tint-buy {
-    background: linear-gradient(
-      180deg,
-      rgba(0, 20, 10, 0.4) 0%,
-      rgba(0, 120, 60, 0.08) 42%,
-      rgba(0, 0, 0, 0.5) 100%
-    );
+  .spx-commentary-offline-body {
+    @apply relative z-[1] max-w-md text-sm md:text-base leading-relaxed text-purple-100/90 mb-4;
   }
 
-  .spx-sniper-tint-sell {
-    background: linear-gradient(
-      180deg,
-      rgba(24, 0, 8, 0.45) 0%,
-      rgba(140, 0, 30, 0.1) 42%,
-      rgba(0, 0, 0, 0.55) 100%
-    );
+  .spx-commentary-offline-tagline {
+    @apply relative z-[1] font-mono text-[10px] md:text-xs uppercase tracking-[0.22em] text-fuchsia-300/75;
   }
 
-  .spx-sniper-tint-hold {
-    background: linear-gradient(
-      180deg,
-      rgba(20, 12, 0, 0.42) 0%,
-      rgba(180, 90, 0, 0.08) 42%,
-      rgba(0, 0, 0, 0.5) 100%
-    );
+  .spx-commentary-offline-hero-weekend .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #fef3c7 0%, #ffd23f 40%, #f472b6 75%, #d580ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
 
-  .spx-sniper-panel .spx-trade-alert-hero {
-    @apply bg-black/25 backdrop-blur-[2px];
+  .spx-commentary-offline-hero-premarket .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #22d3ee 0%, #22d3ee 40%, #d580ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
 
-  .spx-sniper-panel .spx-trade-confirmations {
-    @apply bg-black/30 backdrop-blur-[2px];
+  .spx-commentary-offline-hero-extended .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #fda4af 0%, #fb7185 35%, #d580ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
 
-  .spx-trade-alerts-header {
-    @apply flex items-center justify-between gap-3 pb-2 mb-3 border-b border-white/10 shrink-0;
+  .spx-commentary-offline-hero-closed .spx-commentary-offline-headline {
+    background: linear-gradient(135deg, #f4f6fb 0%, #7dd3fc 40%, #d580ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
 
-  .spx-trade-alerts-header-minimal {
-    @apply justify-end border-transparent pb-1 mb-2;
+  .spx-left-matrix {
+    @apply flex flex-col min-h-0 h-full overflow-hidden;
+    min-height: min(480px, calc(100dvh - 140px));
   }
 
-  .spx-trade-preview-kicker {
-    @apply mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-sky-300/85;
+  @media (min-width: 1280px) {
+    .spx-left-matrix {
+      min-height: 0;
+      max-height: 100%;
+    }
   }
 
-  .spx-play-hero-strip {
-    @apply my-3 grid gap-2 rounded border border-white/10 bg-black/25 p-2.5;
-    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  .spx-odte-matrix-panel {
+    @apply min-h-0 xl:h-full overflow-hidden;
   }
 
-  .spx-play-hero-strip--compact {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .spx-odte-matrix-body {
+    @apply min-h-0 overflow-hidden;
   }
 
-  .spx-play-ctx-label {
-    @apply block font-mono text-[9px] uppercase tracking-[0.14em] text-white/45;
+  .spx-gex-matrix-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 211, 252, 0.65) rgba(8, 8, 14, 0.85);
+    scrollbar-gutter: stable;
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: scroll;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .spx-play-ctx-value {
-    @apply font-mono text-[11px] text-white/90;
+  .spx-gex-matrix-scroll::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
   }
 
-  .spx-play-ctx-meter {
-    @apply col-span-full;
+  .spx-gex-matrix-scroll::-webkit-scrollbar-track {
+    background: rgba(8, 8, 14, 0.9);
+    border-radius: 4px;
   }
 
-  .spx-play-ctx-meter-head {
-    @apply mb-1 flex items-center justify-between gap-2;
+  .spx-gex-matrix-scroll::-webkit-scrollbar-thumb {
+    background: rgba(125, 211, 252, 0.55);
+    border-radius: 4px;
+    border: 1px solid rgba(8, 8, 14, 0.6);
   }
 
-  .spx-play-ctx-meter-track {
-    @apply h-1.5 overflow-hidden rounded-full bg-white/10;
+  .spx-gex-matrix-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(125, 211, 252, 0.8);
   }
 
-  .spx-play-ctx-meter-fill {
-    @apply h-full rounded-full transition-[width] duration-500 ease-out;
+  /* Scroll pad removed — centering is scrollTop-only so the ladder is never blank. */
+  .spx-gex-matrix-scroll-pad {
+    display: contents;
   }
 
-  .spx-play-ctx-meter--cool {
-    @apply bg-emerald-400/80;
+  .spx-gex-matrix-recenter {
+    @apply rounded border border-white/10 bg-black/40 px-2 py-0.5 transition-colors;
   }
 
-  .spx-play-ctx-meter--warm {
-    @apply bg-amber-400/85;
+  /* Pack expiry columns tight — table width follows content (no min-w-full stretch). */
+  .spx-gex-matrix-table {
+    width: max-content;
+    max-width: 100%;
   }
 
-  .spx-play-ctx-meter--hot {
-    @apply bg-orange-500/90;
+  .spx-gex-matrix-table .spx-gex-matrix-expiry-col {
+    width: 1%;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
   }
 
-  .spx-play-ctx-hint {
-    @apply mt-1 font-mono text-[9px] uppercase tracking-wide;
+  .spx-gex-matrix-table .spx-gex-matrix-net-col {
+    padding-left: 0.375rem;
+    padding-right: 0.5rem;
   }
 
-  .spx-play-ctx-budget,
-  .spx-play-ctx-time,
-  .spx-play-ctx-chip {
-    @apply min-w-0;
-  }
-
-  .spx-gex-matrix-spot-row {
-    box-shadow: inset 0 1px 0 rgba(34, 211, 238, 0.35), inset 0 -1px 0 rgba(34, 211, 238, 0.2);
+  .spx-gex-matrix-spot-row td {
+    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.55);
   }
 
   .spx-gex-matrix-or-high {

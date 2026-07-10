@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
-import Link from "next/link";
 import { Panel } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import { useDeskSessionPollIntervalMs } from "@/hooks/use-et-market-open";
@@ -24,12 +23,13 @@ import {
   heatmapCellTextStyle,
   type GexHeatmapLens,
 } from "@/lib/gex-heatmap-display";
-import { GEX_KING_NODE_HELP, gexKingDualLabel } from "@/lib/gex-king-node-labels";
+import { gexKingDualLabel } from "@/lib/gex-king-node-labels";
 import {
   readGexHeatmapSessionCache,
   writeGexHeatmapSessionCache,
 } from "@/lib/gex-heatmap-session-cache";
 import { SpxMatrixTapeStrip } from "./SpxMatrixTapeStrip";
+import { scrollRowIntoViewCenter } from "@/features/spx/lib/spx-matrix-scroll";
 import type { SpxTapeItem } from "@/features/spx/lib/spx-desk";
 
 const MATRIX_POLL_RTH_MS = 8_000;
@@ -249,27 +249,81 @@ export function SpxGexMatrixHeatmap({
     [openingRange?.low, strikesAxis]
   );
 
+  const hasData = Boolean(data?.available) && strikesAxis.length > 0 && displayExpiries.length > 0;
+
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   const spotRowRef = useRef<HTMLTableRowElement | null>(null);
+  const userPinnedScrollRef = useRef(false);
+  const lastCenteredStrikeRef = useRef<number | null>(null);
+
+  const centerSpotRow = (behavior: ScrollBehavior = "auto") => {
+    const box = scrollBoxRef.current;
+    const row = spotRowRef.current;
+    if (box == null || row == null) return;
+    // No vertical padding spacer — that hid the ladder in the narrow desk column.
+    // Center by scrollTop only so rows are always in the document flow from y=0.
+    if (behavior === "smooth") {
+      const scrollRect = box.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const target =
+        box.scrollTop +
+        (rowRect.top - scrollRect.top - (scrollRect.height - rowRect.height) / 2);
+      const max = Math.max(0, box.scrollHeight - box.clientHeight);
+      box.scrollTo({ top: Math.max(0, Math.min(target, max)), behavior: "smooth" });
+    } else {
+      scrollRowIntoViewCenter(box, row);
+    }
+  };
 
   useEffect(() => {
-    if (spotStrike == null) return;
+    const box = scrollBoxRef.current;
+    if (!box) return;
+    const markPinned = () => {
+      userPinnedScrollRef.current = true;
+    };
+    box.addEventListener("wheel", markPinned, { passive: true });
+    box.addEventListener("touchmove", markPinned, { passive: true });
+    box.addEventListener("pointerdown", markPinned, { passive: true });
+    return () => {
+      box.removeEventListener("wheel", markPinned);
+      box.removeEventListener("touchmove", markPinned);
+      box.removeEventListener("pointerdown", markPinned);
+    };
+  }, [hasData]);
+
+  useLayoutEffect(() => {
+    if (spotStrike == null || !hasData) return;
+
+    const strikeMoved = lastCenteredStrikeRef.current !== spotStrike;
+    if (strikeMoved) {
+      userPinnedScrollRef.current = false;
+      lastCenteredStrikeRef.current = spotStrike;
+    }
+    if (userPinnedScrollRef.current && !strikeMoved) return;
+
+    const run = () => centerSpotRow(strikeMoved ? "smooth" : "auto");
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        const box = scrollBoxRef.current;
-        const row = spotRowRef.current;
-        if (box == null || row == null) return;
-        box.scrollTop = row.offsetTop - box.clientHeight / 2 + row.clientHeight / 2;
-      });
+      raf2 = requestAnimationFrame(run);
     });
+    const t = window.setTimeout(run, 120);
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
+      window.clearTimeout(t);
     };
-  }, [spotStrike, data?.asof]);
+  }, [spotStrike, hasData, lens, strikesAxis.length, overlaySpot]);
 
-  const hasData = Boolean(data?.available) && strikesAxis.length > 0 && displayExpiries.length > 0;
+  useEffect(() => {
+    const box = scrollBoxRef.current;
+    if (!box || spotStrike == null) return;
+    const ro = new ResizeObserver(() => {
+      if (!userPinnedScrollRef.current) centerSpotRow("auto");
+    });
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [spotStrike, hasData]);
+
   const feedLive = Boolean(deskLive) && hasData && !error && !gexStale;
   const asofLabel = fmtAsofSeconds(data?.asof);
   const lensLabel = lens === "gex" ? "GEX" : "VEX";
@@ -296,7 +350,7 @@ export function SpxGexMatrixHeatmap({
         <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-sky-300">
           {isValidating && !isLoading && <span className="text-cyan-400">↻</span>}
           <span
-            className={clsx("badge-live-dot", feedLive ? "animate-pulse" : "opacity-40")}
+            className={clsx("badge-live-dot", feedLive ? "opacity-100" : "opacity-40")}
             aria-hidden
           />
           {gexStale && (
@@ -305,8 +359,8 @@ export function SpxGexMatrixHeatmap({
           {asofLabel ? <span>{asofLabel} ET</span> : null}
         </span>
       }
-      className="spx-odte-matrix-panel spx-gex-matrix-heatmap flex flex-1 min-h-0 flex-col"
-      bodyClassName="spx-odte-matrix-body !px-1 !py-2 flex flex-1 min-h-0 flex-col"
+      className="spx-odte-matrix-panel spx-gex-matrix-heatmap flex flex-1 min-h-0 flex-col overflow-hidden"
+      bodyClassName="spx-odte-matrix-body !px-1 !py-2 flex flex-1 min-h-0 flex-col overflow-hidden"
     >
       <div className="mb-2 shrink-0 space-y-2 px-1">
         <div
@@ -335,7 +389,7 @@ export function SpxGexMatrixHeatmap({
                 disabled={disabled}
                 onClick={() => setLens(key)}
                 className={clsx(
-                  "spx-odte-lens-toggle flex-1 rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition-colors",
+                  "spx-odte-lens-toggle flex-1 rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.18em]",
                   active && key === "gex" && "spx-odte-lens-toggle--gex-active",
                   active && key === "vex" && "spx-odte-lens-toggle--vex-active",
                   !active && "spx-odte-lens-toggle--idle",
@@ -412,10 +466,11 @@ export function SpxGexMatrixHeatmap({
         >
         <div
           ref={scrollBoxRef}
-          className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-auto overscroll-contain"
+          className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-auto overscroll-contain"
+          aria-label="SPX gamma matrix strike ladder"
         >
           <table
-            className="spx-gex-matrix-table w-max min-w-full border-collapse font-mono text-[12px] tabular-nums"
+            className="spx-gex-matrix-table w-max border-collapse font-mono text-[12px] tabular-nums"
             role="grid"
             aria-label="SPX dealer gamma matrix by strike and expiry"
           >
@@ -425,11 +480,16 @@ export function SpxGexMatrixHeatmap({
                   Strike
                 </th>
                 {displayExpiries.map((e) => (
-                  <th key={e} className="py-1.5 px-1 text-center font-semibold whitespace-nowrap">
+                  <th
+                    key={e}
+                    className="spx-gex-matrix-expiry-col py-1.5 px-1 text-center font-semibold whitespace-nowrap"
+                  >
                     {fmtHeatmapExpiry(e)}
                   </th>
                 ))}
-                <th className="py-1.5 pl-1 pr-2 text-right font-semibold whitespace-nowrap">Net</th>
+                <th className="spx-gex-matrix-net-col py-1.5 pl-1 pr-2 text-right font-semibold whitespace-nowrap">
+                  Net
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -498,7 +558,7 @@ export function SpxGexMatrixHeatmap({
                         <td
                           key={e}
                           className={clsx(
-                            "whitespace-nowrap px-1 py-1 text-center font-bold",
+                            "spx-gex-matrix-expiry-col whitespace-nowrap px-1 py-1 text-center font-bold",
                             has && val > 0 && "text-emerald-300",
                             has && val < 0 && "text-rose-300",
                             !has && "text-sky-300/25"
@@ -519,7 +579,8 @@ export function SpxGexMatrixHeatmap({
                         >
                           <span
                             className={clsx(
-                              (isColumnCallWall || isColumnPutWall) && "spx-gex-matrix-extreme-pop"
+                              isColumnCallWall && "text-emerald-200",
+                              isColumnPutWall && "text-rose-200"
                             )}
                           >
                             {fmtHeatmapMoneySigned(val, { showZero: true })}
@@ -544,7 +605,7 @@ export function SpxGexMatrixHeatmap({
                     })}
                     <td
                       className={clsx(
-                        "whitespace-nowrap py-1 pl-1 pr-2 text-right font-bold",
+                        "spx-gex-matrix-net-col whitespace-nowrap py-1 pl-1 pr-2 text-right font-bold",
                         rowTotal > 0 && "text-emerald-300",
                         rowTotal < 0 && "text-rose-300",
                         rowTotal === 0 && "text-sky-300/25"
@@ -573,23 +634,16 @@ export function SpxGexMatrixHeatmap({
           flowCallPrem={flow0dteCallPrem}
           flowPutPrem={flow0dtePutPrem}
         />
-
-      <div className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-cyan-400">
-        <span>{strikesAxis.length} strikes · ±6% SPX band · {displayExpiries.length} expiries</span>
-        {columnKings.size > 0 && (
-          <span>
-            · <span className="text-amber-400">★Npt</span> = per-day {gexKingDualLabel()}, N points
-            from spot (close = live pin candidate; far = structural OI wall, not a live anchor)
-          </span>
-        )}
-        {columnExtremeWalls.size > 0 && (
-          <span>· pulsing cell = that day&apos;s highest +/- gamma</span>
-        )}
-        <span>· refresh {Math.round(pollMs / 1000)}s</span>
-        <Link href="/heatmap" className="text-sky-400/90 hover:text-sky-300 underline-offset-2 hover:underline">
-          Full Thermal →
-        </Link>
-      </div>
+        <button
+          type="button"
+          className="spx-gex-matrix-recenter mt-1 shrink-0 self-center font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/80 hover:text-cyan-300"
+          onClick={() => {
+            userPinnedScrollRef.current = false;
+            centerSpotRow("smooth");
+          }}
+        >
+          Recenter on spot
+        </button>
         </div>
       )}
     </Panel>

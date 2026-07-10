@@ -1,13 +1,13 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 
 const BODY_PREVIEW_LINES = 12;
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
+import { largoEnabled } from "@/lib/largo-env";
 import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
@@ -142,7 +142,7 @@ export function SpxCommentaryRail({
   // array (which would write up to 50KB on every 15-30s state update).
 
   const pullCommentary = useCallback(async (force = false) => {
-    if (!live || !desk?.available || inFlightRef.current) return;
+    if (!largoEnabled() || !live || !desk?.available || inFlightRef.current) return;
 
     const prev = prevRef.current;
     if (!force && !shouldRefresh(desk, prev, lastFetchRef.current)) return;
@@ -181,6 +181,12 @@ export function SpxCommentaryRail({
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Commentary unavailable";
       nextRefreshMsRef.current = null;
+      // Advance the throttle clock on FAILURE too. It previously only advanced on
+      // success, so while the server was erroring, every desk tick re-entered
+      // shouldRefresh with a stale lastFetchRef and fired another POST — a
+      // sub-second retry storm per client (2026-07-10 incident). With the clock
+      // advanced, retries are bounded by MIN_INTERVAL_MS + the 30s error schedule.
+      lastFetchRef.current = Date.now();
       setError(msg);
     } finally {
       setLoading(false);
@@ -203,7 +209,7 @@ export function SpxCommentaryRail({
   }, [live, entries.length]);
 
   useEffect(() => {
-    if (!desk?.available || !live) return;
+    if (!largoEnabled() || !desk?.available || !live) return;
     if (hydratedRef.current && entries.length > 0) {
       pullCommentary(false);
       return;
@@ -212,7 +218,7 @@ export function SpxCommentaryRail({
   }, [live, desk?.available, desk?.price, desk?.gamma_flip, desk?.gex_king, desk?.regime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!desk?.available || !live) return;
+    if (!largoEnabled() || !desk?.available || !live) return;
 
     cancelledRef.current = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,13 +258,13 @@ export function SpxCommentaryRail({
       )}
     >
       <div className="spx-commentary-header">
-        <span className={clsx("badge-live-dot", live && "animate-pulse")} />
+        <span className={clsx("badge-live-dot", live && "opacity-100")} />
         <div className="min-w-0">
           <p className="t-kicker text-purple-light/80 mb-0.5">
             {live ? "Live commentary" : "Commentary standby"}
           </p>
           <span className="font-syne text-base tracking-[0.12em] text-purple-light block font-bold">
-            {live ? "Largo" : "Largo · offline"}
+            Largo
           </span>
         </div>
         {live && (
@@ -276,14 +282,22 @@ export function SpxCommentaryRail({
           </button>
         )}
         {loading && (
-          <span className="ml-auto font-mono text-[10px] text-cyan-400 animate-pulse">
+          <span className="ml-auto font-mono text-[10px] text-cyan-400">
             Reading…
           </span>
         )}
       </div>
 
       <div className={clsx("spx-commentary-viewport", railCollapsed && "hidden")}>
-        {!live ? (
+        {!largoEnabled() ? (
+          <div className="spx-commentary-offline-hero spx-commentary-offline-hero-neutral">
+            <p className="spx-commentary-offline-kicker">Production only</p>
+            <h2 className="spx-commentary-offline-headline">Largo is disabled on staging</h2>
+            <p className="spx-commentary-offline-body">
+              Staging validates playbooks, matrix, and trade alerts without Anthropic spend. Use production for live desk commentary.
+            </p>
+          </div>
+        ) : !live ? (
           <div
             className={clsx(
               "spx-commentary-offline-hero",
@@ -300,19 +314,16 @@ export function SpxCommentaryRail({
             {error.includes("ANTHROPIC") ? "Intel feed offline — reconnecting" : error}
           </p>
         ) : entries.length === 0 ? (
-          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center animate-pulse">
+          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center">
             Largo, standing by for live tape…
           </p>
         ) : (
           <div className="spx-commentary-feed">
-            <AnimatePresence initial={false}>
-              {entries.map((entry, idx) => (
-                <motion.article
-                  key={entry.id}
-                  initial={{ opacity: 0, y: -12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={clsx("spx-commentary-card", idx === 0 && "spx-commentary-card-featured")}
-                >
+            {entries.map((entry, idx) => (
+              <article
+                key={entry.id}
+                className={clsx("spx-commentary-card", idx === 0 && "spx-commentary-card-featured")}
+              >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <span
                       className={clsx(
@@ -362,9 +373,8 @@ export function SpxCommentaryRail({
                       </ul>
                     </div>
                   )}
-                </motion.article>
+                </article>
               ))}
-            </AnimatePresence>
           </div>
         )}
       </div>

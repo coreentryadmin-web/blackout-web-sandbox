@@ -1,14 +1,10 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
-import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
-import type { MarketStatusLabel } from "@/features/spx/lib/spx-market-session";
+import { fmtPremium, fmtPrice } from "@/lib/api";
 import { ProductMark } from "@/components/marks/ProductMark";
-import { FreshnessChip, Kicker, type FreshnessStatus } from "@/components/ui";
-import { GEX_KING_NODE_HELP, gexKingDualLabel } from "@/lib/gex-king-node-labels";
+import { SpxLiveSpotPrice, priceVsLevel, PriceLevelIndicator } from "./SpxLiveSpotPrice";
 
 type Props = {
   desk?: SpxDeskPayload;
@@ -17,288 +13,124 @@ type Props = {
   nativeShell?: boolean;
 };
 
-function resolveFreshness(
-  live: boolean | undefined,
-  feedStalled: boolean,
-  isStale: boolean,
-  asOf: Date | null
-): { status: FreshnessStatus; asOf: Date | null } {
-  if (!live) return { status: "offline", asOf };
-  if (feedStalled) return { status: "stale", asOf };
-  if (isStale) return { status: "stale", asOf };
-  return { status: "live", asOf };
-}
-
 export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
-  const [nativeStatsOpen, setNativeStatsOpen] = useState(false);
   const hasQuote = Boolean(desk?.available && (desk?.price ?? 0) > 0);
-  /** Show grounded desk numbers whenever we have a quote — even when session is closed. */
   const showValues = Boolean(live || hasQuote);
-  const bull = (desk?.spx_change_pct ?? 0) >= 0;
+  const spot = desk?.price ?? null;
 
-  const polledAtMs = desk?.polled_at
-    ? new Date(desk.polled_at).getTime()
-    : desk?.as_of
-      ? new Date(desk.as_of).getTime()
-      : 0;
-  const [nowMs, setNowMs] = useState(0);
-  useEffect(() => {
-    setNowMs(Date.now());
-    const id = setInterval(() => setNowMs(Date.now()), 10_000);
-    return () => clearInterval(id);
-  }, []);
-  const isStale = Boolean(live && polledAtMs > 0 && nowMs - polledAtMs > 90_000);
-  const feedStalled = Boolean(live && desk?.feed_stalled);
-  const asOfRaw = desk?.polled_at ?? desk?.as_of;
-  const asOf = asOfRaw ? new Date(asOfRaw) : null;
-  const freshness = resolveFreshness(live, feedStalled, isStale, asOf);
+  const topStatsRow = (
+    <DeskTopStatsRow desk={desk} showValues={showValues} spot={spot} live={live} />
+  );
 
   return (
     <header
       className={clsx(
         "spx-sniper-command border-b border-white/[0.06]",
-        nativeShell ? "spx-sniper-command-native pb-3" : "pb-6"
+        nativeShell ? "spx-sniper-command-native pb-2" : "pb-1.5"
       )}
     >
-      {/* Ambient background layers — fully authored/animated in globals.css (grid pattern,
-          scan-line sweep, pulsing glow) but were never mounted anywhere in the component
-          tree until now. All three are `position: absolute` with z-0/z-[1]; per CSS stacking
-          rules, positioned descendants (even at z-index 0) paint AFTER non-positioned in-flow
-          content within the same stacking context — so without `relative z-10` below, these
-          would render OVER the header's actual content instead of behind it. */}
       <div className="spx-sniper-command-grid" aria-hidden />
-      <div className="spx-sniper-command-scan" aria-hidden />
-      <div className="spx-sniper-command-glow" aria-hidden />
-      <div
-        className={clsx(
-          "relative z-10 flex flex-col gap-4",
-          !nativeShell && "xl:flex-row xl:items-start xl:justify-between xl:gap-6"
-        )}
-      >
-        <div
-          className={clsx(
-            "flex min-w-0 flex-1 flex-col gap-4",
-            !nativeShell && "lg:flex-row lg:items-end lg:gap-6"
-          )}
-        >
-          {!nativeShell && (
-            <div className="spx-sniper-identity shrink-0 flex items-start gap-3">
-              <ProductMark product="spx" size={44} title="SPX Slayer" className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <Kicker className="mb-1.5">SPX · 0DTE desk</Kicker>
-                <h1 className="font-syne text-2xl font-bold tracking-tight text-white md:text-3xl">
-                  SPX Slayer
-                </h1>
-                <p className="spx-hero-tagline-sub mt-1 font-mono text-[11px] tracking-[0.08em] text-secondary">
-                  GEX structure · dealer positioning · session levels
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="min-w-0 flex-1">
-            {nativeShell && (
-              <div className="spx-sniper-native-meta mb-2 flex flex-wrap items-center gap-2">
-                <MarketStatusPill label={desk?.market_label} />
-                <FreshnessChip status={freshness.status} asOf={freshness.asOf} />
-                {live && desk?.gex_stale && (
-                  <span className="rounded border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber-200">
-                    GEX stale
-                  </span>
-                )}
-              </div>
-            )}
-            <AnimatePresence mode="popLayout">
-              <motion.p
-                key={`${desk?.price ?? 0}-${asOfRaw ?? ""}`}
-                initial={{ opacity: 0.35, scale: 1.1 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                className={clsx(
-                  "spx-hero-price t-num text-6xl font-semibold leading-none drop-shadow-[0_0_18px_currentColor] sm:text-7xl md:text-8xl",
-                  bull ? "text-bull" : "text-bear-text"
-                )}
-              >
-                {showValues ? fmtPrice(desk?.price ?? null, 2) : "—"}
-              </motion.p>
-            </AnimatePresence>
-            {!live && hasQuote && (
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300">
-                Last session snapshot · not live
+      <div className="relative z-10 spx-sniper-command-band">
+        {!nativeShell ? (
+          <div className="spx-sniper-identity spx-sniper-identity-top shrink-0 flex items-center gap-2.5">
+            <ProductMark product="spx" size={34} title="SPX Slayer" className="shrink-0" animated={false} />
+            <div className="min-w-0 leading-tight">
+              <h1 className="font-syne text-lg font-bold tracking-tight text-white md:text-xl">
+                SPX Slayer
+              </h1>
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-secondary">
+                SPX · 0DTE desk
               </p>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-3">
-              <span
-                className={clsx(
-                  "t-num text-base font-semibold md:text-lg",
-                  bull ? "text-bull" : "text-bear-text"
-                )}
-              >
-                {showValues ? fmtPct(desk?.spx_change_pct ?? null) : "—"}
-              </span>
-              <StatPill
-                label="VIX"
-                value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
-                tone="orange"
-              />
-              <StatPill
-                label="VWAP"
-                value={showValues ? fmtPrice(desk?.vwap ?? null) : "—"}
-                tone={desk?.above_vwap ? "bull" : "bear"}
-              />
-              <StatPill
-                label="GEX"
-                value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
-                tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
-              />
-            </div>
-            {nativeShell ? (
-              <>
-                <button
-                  type="button"
-                  className="spx-native-stats-toggle"
-                  aria-expanded={nativeStatsOpen}
-                  onClick={() => setNativeStatsOpen((v) => !v)}
-                >
-                  {nativeStatsOpen ? "Hide desk stats" : "Show desk stats"}
-                </button>
-                {nativeStatsOpen ? (
-                  <div className="spx-native-stats-panel">
-                    <div className="spx-sniper-native-levels grid w-full grid-cols-2 gap-2">
-                      <StatPill
-                        label="Regime"
-                        value={showValues ? (desk?.regime ?? "—") : "—"}
-                        tone="violet"
-                        capitalize
-                      />
-                      <StatPill
-                        label="γ Flip"
-                        value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
-                        tone="magenta"
-                      />
-                      <StatPill
-                        label={gexKingDualLabel("near-term")}
-                        value={showValues && desk?.gex_king != null ? fmtPrice(desk.gex_king) : "—"}
-                        tone="gold"
-                        title={GEX_KING_NODE_HELP}
-                      />
-                      <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
-                      <StatPill
-                        label="IV Rank"
-                        value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
-                        tone="gold"
-                      />
-                    </div>
-                    <div className="spx-hero-metric-blocks">
-                      <MetricBlock title="EMA" tone="orange">
-                        <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
-                        <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" />
-                        <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" />
-                      </MetricBlock>
-                      <MetricBlock title="SMA" tone="violet">
-                        <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" />
-                        <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" />
-                      </MetricBlock>
-                      <MetricBlock title="Session" tone="bull">
-                        <div className="spx-hero-metric-pair">
-                          <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact />
-                          <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact />
-                        </div>
-                        <div className="spx-hero-metric-pair">
-                          <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact />
-                          <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact />
-                        </div>
-                      </MetricBlock>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-          <div className="spx-hero-metric-blocks">
-            <MetricBlock title="EMA" tone="orange">
-              <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" />
-              <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" />
-              <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" />
-            </MetricBlock>
-            <MetricBlock title="SMA" tone="violet">
-              <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" />
-              <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" />
-            </MetricBlock>
-            <MetricBlock title="Session" tone="bull">
-              <div className="spx-hero-metric-pair">
-                <MetricRow
-                  label="HOD"
-                  value={showValues ? fmtPrice(desk?.hod ?? null) : "—"}
-                  tone="resistance"
-                  compact
-                />
-                <MetricRow
-                  label="PDH"
-                  value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"}
-                  tone="resistance"
-                  compact
-                />
-              </div>
-              <div className="spx-hero-metric-pair">
-                <MetricRow
-                  label="LOD"
-                  value={showValues ? fmtPrice(desk?.lod ?? null) : "—"}
-                  tone="support"
-                  compact
-                />
-                <MetricRow
-                  label="PDL"
-                  value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"}
-                  tone="support"
-                  compact
-                />
-              </div>
-            </MetricBlock>
-          </div>
-            )}
-          </div>
-        </div>
-
-        {!nativeShell && (
-          <div className="flex shrink-0 flex-col items-start gap-3 xl:items-end">
-            <div className="flex flex-wrap items-center gap-2">
-              <MarketStatusPill label={desk?.market_label} />
-              <FreshnessChip status={freshness.status} asOf={freshness.asOf} />
-              {live && desk?.gex_stale && (
-                <span className="rounded border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber-200">
-                  GEX stale
-                </span>
-              )}
-            </div>
-            <div className="grid w-full min-w-[200px] grid-cols-2 gap-2 sm:grid-cols-3 xl:w-auto xl:grid-cols-5">
-              <StatPill
-                label="Regime"
-                value={showValues ? (desk?.regime ?? "—") : "—"}
-                tone="violet"
-                capitalize
-              />
-              <StatPill
-                label="γ Flip"
-                value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
-                tone="magenta"
-              />
-              <StatPill
-                label={gexKingDualLabel("near-term")}
-                value={showValues && desk?.gex_king != null ? fmtPrice(desk.gex_king) : "—"}
-                tone="gold"
-                title={GEX_KING_NODE_HELP}
-              />
-              <StatPill label="Max Pain" value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"} tone="cyan" />
-              <StatPill
-                label="IV Rank"
-                value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
-                tone="gold"
-              />
             </div>
           </div>
-        )}
+        ) : null}
+        <div className="spx-sniper-command-stats w-full min-w-0">{topStatsRow}</div>
+        {nativeShell ? <SpxLiveSpotPrice desk={desk} live={live} size="hero" /> : null}
       </div>
     </header>
+  );
+}
+
+function DeskTopStatsRow({
+  desk,
+  showValues,
+  spot,
+  live,
+}: {
+  desk?: SpxDeskPayload;
+  showValues: boolean;
+  spot: number | null;
+  live?: boolean;
+}) {
+  return (
+    <div className="spx-desk-top-stats spx-desk-top-stats--compact">
+      <StatPill
+        label="VIX"
+        value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
+        tone="orange"
+      />
+      <StatPill
+        label="VWAP"
+        value={showValues ? fmtPrice(desk?.vwap ?? null) : "—"}
+        tone={desk?.above_vwap ? "bull" : "bear"}
+        level={desk?.vwap ?? null}
+        spot={spot}
+      />
+      <StatPill
+        label="GEX"
+        value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
+        tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
+      />
+      <StatPill
+        label="Regime"
+        value={showValues ? (desk?.regime ?? "—") : "—"}
+        tone="violet"
+        capitalize
+      />
+      <StatPill
+        label="γ Flip"
+        value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
+        tone="magenta"
+        level={desk?.gamma_flip ?? null}
+        spot={spot}
+      />
+      <StatPill
+        label="Max Pain"
+        value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"}
+        tone="cyan"
+        level={desk?.max_pain ?? null}
+        spot={spot}
+      />
+      <StatPill
+        label="IV Rank"
+        value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
+        tone="gold"
+      />
+      <MetricBlock title="EMA" tone="orange">
+        <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" level={desk?.ema20 ?? null} spot={spot} />
+        <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" level={desk?.ema50 ?? null} spot={spot} />
+        <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" level={desk?.ema200 ?? null} spot={spot} />
+      </MetricBlock>
+      <MetricBlock title="SMA" tone="violet">
+        <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" level={desk?.sma50 ?? null} spot={spot} />
+        <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" level={desk?.sma200 ?? null} spot={spot} />
+      </MetricBlock>
+      <MetricBlock title="Session" tone="bull">
+        <div className="spx-hero-metric-pair">
+          <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact level={desk?.hod ?? null} spot={spot} />
+          <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact level={desk?.pdh ?? null} spot={spot} />
+        </div>
+        <div className="spx-hero-metric-pair">
+          <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact level={desk?.lod ?? null} spot={spot} />
+          <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact level={desk?.pdl ?? null} spot={spot} />
+        </div>
+      </MetricBlock>
+      {live && desk?.gex_stale && (
+        <span className="spx-hero-stat-pill border-amber-400/35 bg-amber-400/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200 self-stretch flex items-center">
+          GEX stale
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -334,27 +166,6 @@ const BLOCK_BORDER: Record<string, string> = {
   violet: "border-violet-500/40",
 };
 
-const MARKET_PILL: Record<MarketStatusLabel, string> = {
-  "RTH OPEN": "border-emerald-500/50 bg-emerald-500/10 text-emerald-300",
-  "PRE-MARKET": "border-gold/50 bg-gold/10 text-gold",
-  EXTENDED: "border-orange-500/50 bg-orange-500/10 text-orange-200",
-  CLOSED: "border-white/10 bg-white/[0.03] text-secondary",
-};
-
-function MarketStatusPill({ label }: { label?: string }) {
-  const key = (label ?? "CLOSED") as MarketStatusLabel;
-  return (
-    <span
-      className={clsx(
-        "rounded border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em]",
-        MARKET_PILL[key] ?? MARKET_PILL.CLOSED
-      )}
-    >
-      {label ?? "—"}
-    </span>
-  );
-}
-
 function MetricBlock({
   title,
   tone = "bull",
@@ -377,17 +188,25 @@ function MetricRow({
   value,
   tone = "neutral",
   compact,
+  spot,
+  level,
 }: {
   label: string;
   value: string;
   tone?: string;
   compact?: boolean;
+  spot?: number | null;
+  level?: number | null;
 }) {
+  const direction = priceVsLevel(spot, level);
   return (
     <div className={clsx("spx-hero-metric-row", compact && "spx-hero-metric-row-compact")}>
       <span className="spx-hero-metric-row-label">{label}</span>
-      <span className={clsx("spx-hero-metric-row-value t-num", VALUE_TONE[tone] ?? VALUE_TONE.neutral)}>
-        {value}
+      <span className="spx-hero-metric-row-value-wrap">
+        <PriceLevelIndicator direction={direction} />
+        <span className={clsx("spx-hero-metric-row-value t-num", VALUE_TONE[tone] ?? VALUE_TONE.neutral)}>
+          {value}
+        </span>
       </span>
     </div>
   );
@@ -398,38 +217,32 @@ function StatPill({
   value,
   tone = "neutral",
   capitalize: cap,
-  title,
+  spot,
+  level,
 }: {
   label: string;
   value: string;
   tone?: string;
   capitalize?: boolean;
-  title?: string;
+  spot?: number | null;
+  level?: number | null;
 }) {
+  const direction = priceVsLevel(spot, level);
   return (
-    <div
-      className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}
-      title={title}
-    >
+    <div className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}>
       <p className="spx-hero-stat-label">{label}</p>
-      {/* Same flash-on-update recipe as the hero price (key change -> fresh initial->animate
-          pop), scaled down for pill size. No `exit` prop — the old value unmounts instantly,
-          the new one flashes in, matching the hero price's established pattern exactly. */}
-      <AnimatePresence mode="popLayout">
-        <motion.p
-          key={value}
-          initial={{ opacity: 0.4, scale: 1.08 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+      <div className="spx-hero-stat-value-row">
+        {level != null && <PriceLevelIndicator direction={direction} />}
+        <p
           className={clsx(
-            "spx-hero-stat-value t-num drop-shadow-[0_0_6px_currentColor]",
+            "spx-hero-stat-value t-num",
             cap && "capitalize",
             VALUE_TONE[tone] ?? VALUE_TONE.neutral
           )}
         >
           {value}
-        </motion.p>
-      </AnimatePresence>
+        </p>
+      </div>
     </div>
   );
 }
