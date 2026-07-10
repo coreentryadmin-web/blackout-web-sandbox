@@ -411,6 +411,24 @@ test("PB-08: no trigger outside power hour even with dominant flow + break", () 
 });
 
 // ---------------------------------------------------------------------------
+// Registry coverage
+// ---------------------------------------------------------------------------
+
+test("matchPlaybooksShadow returns one verdict per registry playbook (14)", () => {
+  const desk = deskStub();
+  const technicals = technicalsStub();
+  const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);
+  assert.equal(result.verdicts.length, 14);
+  assert.deepEqual(
+    result.verdicts.map((v) => v.playbook_id),
+    [
+      "PB-01", "PB-02", "PB-03", "PB-04", "PB-05", "PB-06", "PB-07", "PB-08",
+      "PB-09", "PB-10", "PB-11", "PB-12", "PB-13", "PB-14",
+    ]
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Primary-pick logic
 // ---------------------------------------------------------------------------
 
@@ -433,25 +451,39 @@ test("primary_playbook_id: the single triggered playbook when exactly one fires"
   assert.equal(result.primary_playbook_id, "PB-01");
 });
 
-test("primary_playbook_id: deterministic registry-order tie-break when 2+ playbooks trigger simultaneously", () => {
-  // Overlap regime where both PB-01 and PB-02 are eligible: neutral.
-  // vwap_lost + bearish flow simultaneously satisfies PB-01's short mirror (flow !== "bullish")
-  // AND PB-02's reject trigger (flow === "bearish") on the same tick, inside both windows.
+test("primary_playbook_id: priority-order tie-break when 2+ playbooks trigger simultaneously", () => {
+  // PB-03 ORB long + PB-01 long on same tick — PB-03 wins per FULL-SPEC priority.
   const desk = deskStub({
-    above_vwap: false,
+    above_vwap: true,
     vwap: 7380,
-    price: 7377,
-    hod: 7400,
+    price: 7410,
+    hod: 7410,
     lod: 7370,
-    flow_0dte_net: -400_000,
-    regime: "neutral",
+    flow_0dte_net: 500_000,
+    regime: "bullish",
+    gamma_regime: "amplification",
+    above_gamma_flip: true,
   });
   const technicals = technicalsStub({
-    breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: false, vwap_lost: true },
+    or_defined: true,
+    or_high: 7405,
+    or_low: 7375,
+    or_minutes: 20,
+    breakout: {
+      pdh_break: false,
+      pdl_break: false,
+      hod_break: false,
+      lod_break: false,
+      vwap_reclaim: true,
+      vwap_lost: false,
+    },
+    m3_consecutive_closes_above_vwap: 2,
+    minutes_below_vwap: 20,
+    ema9_curling_toward_vwap: true,
   });
-  const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);
+  const result = matchPlaybooksShadow(desk, technicals, Date.parse("2026-07-09T14:15:00.000Z")); // 10:15 ET
   const triggered = result.verdicts.filter((v) => v.trigger_fired).map((v) => v.playbook_id);
-  assert.deepEqual(triggered, ["PB-01", "PB-02"]);
-  // Registry order is PB-01, PB-02, PB-03 — PB-01 wins the deterministic tie-break.
-  assert.equal(result.primary_playbook_id, "PB-01");
+  assert.ok(triggered.includes("PB-01"));
+  assert.ok(triggered.includes("PB-03"));
+  assert.equal(result.primary_playbook_id, "PB-03");
 });
