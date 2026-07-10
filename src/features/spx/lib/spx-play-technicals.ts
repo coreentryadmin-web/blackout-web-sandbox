@@ -29,6 +29,9 @@ export type PlaybookBarMetrics = {
   m1_ema9: number | null;
   /** |ema9 − vwap| shrinking vs ~3 m3 bars ago. */
   ema9_curling_toward_vwap: boolean | null;
+  /** Trailing 30m high/low from m1 bars (PB-11); null when insufficient bars. */
+  rolling_30m_high: number | null;
+  rolling_30m_low: number | null;
 };
 
 export const EMPTY_PLAYBOOK_BAR_METRICS: PlaybookBarMetrics = {
@@ -42,6 +45,8 @@ export const EMPTY_PLAYBOOK_BAR_METRICS: PlaybookBarMetrics = {
   m3_consecutive_closes_below_vwap: 0,
   m1_ema9: null,
   ema9_curling_toward_vwap: null,
+  rolling_30m_high: null,
+  rolling_30m_low: null,
 };
 
 export type PlayTechnicals = {
@@ -133,6 +138,26 @@ function emaFromCloses(closes: number[], period: number): number | null {
     val = closes[i] * k + val * (1 - k);
   }
   return val;
+}
+
+/** Trailing N-minute range from m1 bars (PB-11 chop scalp). */
+export function rollingRangeFromBars(
+  bars: Bar[],
+  windowMinutes: number
+): Pick<PlaybookBarMetrics, "rolling_30m_high" | "rolling_30m_low"> {
+  if (!bars.length || windowMinutes <= 0) {
+    return { rolling_30m_high: null, rolling_30m_low: null };
+  }
+  const lastT = bars[bars.length - 1].t;
+  const cutoff = lastT - windowMinutes * 60_000;
+  const window = bars.filter((b) => b.t >= cutoff);
+  if (window.length < 3) {
+    return { rolling_30m_high: null, rolling_30m_low: null };
+  }
+  return {
+    rolling_30m_high: Math.max(...window.map((b) => b.h)),
+    rolling_30m_low: Math.min(...window.map((b) => b.l)),
+  };
 }
 
 /** Pure — exported for unit tests. */
@@ -284,6 +309,7 @@ export async function buildPlayTechnicals(
   const nowEtMins = etMinutes(new Date(now));
   const or = openingRangeFromBars(norm, orMinutes, nowEtMins);
   const streaks = vwapSideStreaks(norm, vwap);
+  const rolling30 = rollingRangeFromBars(norm, 30);
   const m3Above = consecutiveClosesVsLevel(m3, vwap, "above", buf);
   const m3Below = consecutiveClosesVsLevel(m3, vwap, "below", buf);
   const m1Ema9 = emaFromCloses(
@@ -348,6 +374,7 @@ export async function buildPlayTechnicals(
     m3_consecutive_closes_below_vwap: m3Below,
     m1_ema9: m1Ema9,
     ema9_curling_toward_vwap: ema9Curl,
+    ...rolling30,
   };
 
   cached = { at: now, data: result };

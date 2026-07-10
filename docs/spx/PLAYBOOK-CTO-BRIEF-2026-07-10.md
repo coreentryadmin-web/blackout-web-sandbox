@@ -51,5 +51,5 @@ Desk + Technicals → matchPlaybooksShadow() → playbook_shadow (API + UI)
 ## Recommendation (CEO/CTO)
 
 - **This week:** Let shadow telemetry accumulate on staging RTH; compare shadow primary vs legacy BUY/WATCH.
-- **Before prod gate:** Research → staging → limited-live tiers; initial allowlist PB-01/02/03/04/14.
+- **Before prod gate:** Progressive tiers; launch four PB-01–04; PB-14 after state machine.
 - **Member messaging:** Playbook tab shows `mode: shadow` on prod; staging lab is internal validation.

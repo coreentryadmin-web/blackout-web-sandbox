@@ -50,19 +50,22 @@ Win rate alone is insufficient — track **expectancy, profit factor, MAE/MFE ta
 
 ### 2. Initial serious validation set — shrink live surface
 
-**Staging lab / future prod allowlist (first wave):**
+**Prerequisite:** persistent state machine must ship before any playbook in this list gates live BUY.
+
+**Staging lab / future prod allowlist (first wave — four only until state machine + PB-14 memory):**
 
 | PB | Rationale |
 |----|-----------|
 | PB-01 | VWAP Reclaim — core trend/recovery |
 | PB-02 | VWAP Reject — **short-side audit** counterpart |
-| PB-03 | ORB — opening structure (effective window ~09:50–10:30, see doc fixes) |
+| PB-03 | ORB — effective BUY window ~09:50–10:30 |
 | PB-04 | Gamma Pin Fade — strongest evidence-backed hypothesis |
-| PB-14 | Failed Breakout — promising; requires state machine before live |
+
+**After state machine ships:** add **PB-14** Failed Breakout (requires break memory).
 
 **Sixth when prospective n sufficient:** PB-08 Power Hour.
 
-**Shadow-only until NEEDS-FIELD or evidence closed:** PB-05, PB-07, PB-09, PB-10, PB-11, PB-12, PB-13.
+**Shadow-only:** PB-05, PB-07, PB-09, PB-10, PB-11, PB-12, PB-13 (PB-11 session-range bug fixed 2026-07-10 → rolling 30m).
 
 *Implementation follow-up:* `PLAYBOOK_LIVE_ALLOWLIST` env (staging + prod) to enforce this at gate A17 — not yet coded; policy documented now.
 
@@ -164,6 +167,34 @@ See `PLAYBOOK-FULL-SPEC-v2.md` §3 PB-03 note, `PLAYBOOK-ARCHITECTURE-DEEP-DIVE.
 | Staging shadow + lab | ✅ always on |
 | Expand playbook catalog | ❌ freeze at 14 |
 | Next engineering focus | State machine + telemetry + short audit + option sim |
+
+---
+
+## Claude meta-review (2026-07-10) — code-verified claims
+
+Independent spot-check of ChatGPT review against sandbox source. **All four primary claims confirmed.**
+
+| Claim | Verdict | Code / fix |
+|-------|---------|------------|
+| PB-03 effective window ~09:50–10:30 | ✅ | `or_defined` at 9:30+20m; gate A11; registry 9:35 is matcher-only |
+| E2E registry-order vs `PRIMARY_PRIORITY` | ✅ stale E2E | Trust `playbook-shadow-matcher.ts` `PRIMARY_PRIORITY` |
+| PB-11 session HOD/LOD corrupts midday range | ✅ **bug** | **Fixed:** `rolling_30m_high/low` from m1 bars |
+| Unknown regime fail-open for live | ✅ policy gap | Shadow stay open; live fail-closed (target) |
+| PB-01 `|| above_vwap===false` voids 15m rule | ✅ **bug** | **Fixed:** require `minutes_below_vwap >= 15` only |
+
+### Claude pushback (accepted)
+
+1. **PB-14 in launch five vs state machine first** — resolved: launch allowlist is **PB-01–04 only** until state machine ships; PB-14 joins after.
+2. **50–75 sample timeline** — at ~5–8 total plays/week across all PBs, rare windows (e.g. PB-07) may need **months to a year**, not weeks. Set expectations accordingly in stakeholder comms.
+
+### Deploy path (Claude addendum — policy clarified)
+
+Sandbox `blackout-web-sandbox` → ECR `blackout-web:staging` → `blackout-staging-cluster` is **intentional** (staging repo *is* staging). `playbookLiveGateEnabled()` hardwired on staging URL is **research posture**, not prod capital deployment. Prod remains legacy BUY until per-PB limited-live tiers. Risk to manage: **starter-size staging opens** on MVP matchers — mitigated by future `PLAYBOOK_LIVE_ALLOWLIST` (PB-01–04) + session risk governor.
+
+### Matcher fixes shipped (this branch)
+
+- `rollingRangeFromBars()` + PB-11 uses 30m window
+- PB-01 precondition: strict 15m VWAP side streak (no instant `above_vwap` OR)
 
 ---
 
