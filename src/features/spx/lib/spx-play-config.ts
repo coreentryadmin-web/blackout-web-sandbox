@@ -470,6 +470,11 @@ export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): bo
   return allowlist.has(id);
 }
 
+/** Minimum |0DTE net flow| for playbook trigger materiality (PB-02 v2). */
+export function playbookFlowMaterialityMin(): number {
+  return num(process.env.PLAYBOOK_FLOW_MATERIALITY_MIN, 100_000);
+}
+
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */
 export function playMemberReadCacheSec(): number {
   return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 2);

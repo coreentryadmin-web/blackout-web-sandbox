@@ -51,6 +51,8 @@ test("buildPlaybookShadowPanel returns all registry verdicts in shadow mode", ()
   assert.ok(panel);
   assert.equal(panel!.mode, "shadow");
   assert.equal(panel!.verdicts.length, 14);
+  assert.ok(panel!.pipeline_audit);
+  assert.equal(typeof panel!.pipeline_audit.eligible_long, "number");
   assert.equal(panel!.verdicts[0]?.playbook_id, "PB-01");
   assert.equal(panel!.verdicts[0]?.name, "VWAP Reclaim");
   assert.equal(panel!.verdicts[3]?.playbook_id, "PB-04");

@@ -196,6 +196,19 @@ Sandbox `blackout-web-sandbox` → ECR `blackout-web:staging` → `blackout-stag
 - `rollingRangeFromBars()` + PB-11 uses 30m window
 - PB-01 precondition: strict 15m VWAP side streak (no instant `above_vwap` OR)
 
+### Implementation batch (2026-07-10, PR pending)
+
+| Item | Status |
+|------|--------|
+| State machine + `spx_playbook_instances` | ✅ |
+| Feature snapshot on shadow observations | ✅ |
+| Pipeline audit (long/short funnel + blocked/opened) | ✅ |
+| Unknown regime fail-closed live BUY | ✅ |
+| Degraded feed block for event/breakout PBs | ✅ |
+| PB-02 flow materiality (`PLAYBOOK_FLOW_MATERIALITY_MIN`) | ✅ |
+| Option sim stub (`playbook-option-sim.ts`) | 🟡 stub |
+| Roadmap tracker | `PLAYBOOK-IMPLEMENTATION-ROADMAP.md` |
+
 ---
 
 *Review captured 2026-07-10. Revisit after each RTH week when `spx_playbook_shadow_observations` sample grows.*

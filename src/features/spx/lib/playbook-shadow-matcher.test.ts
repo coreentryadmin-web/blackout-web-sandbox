@@ -200,6 +200,23 @@ test("PB-02: does not trigger when session window is closed", () => {
   assert.equal(pb02.trigger_fired, false);
 });
 
+test("PB-02: thin bearish flow does not trigger — materiality threshold", () => {
+  const desk = deskStub({
+    above_vwap: false,
+    vwap: 7380,
+    price: 7377,
+    flow_0dte_net: -50_000,
+    regime: "weak",
+  });
+  const technicals = technicalsStub({
+    breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: false, vwap_lost: true },
+  });
+  const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);
+  const pb02 = result.verdicts.find((v) => v.playbook_id === "PB-02")!;
+  assert.equal(pb02.trigger_fired, false);
+  assert.match(pb02.detail, /material=false/);
+});
+
 test("PB-02: bearish flow required — vwap_lost alone (neutral/missing flow) does not trigger", () => {
   const desk = deskStub({
     above_vwap: false,

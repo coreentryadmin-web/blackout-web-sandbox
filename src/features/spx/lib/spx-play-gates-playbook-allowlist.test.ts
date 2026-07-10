@@ -123,3 +123,117 @@ test("evaluatePlayGates: gate A17 blocks primary not in live allowlist", () => {
     false
   );
 });
+
+test("evaluatePlayGates: unknown regime blocks live playbook BUY", () => {
+  const desk = {
+    available: true,
+    market_open: true,
+    price: 6000,
+    polled_at: new Date().toISOString(),
+    gex_walls: [{ strike: 5990, net_gex: 1 }],
+    regime: "unknown",
+    gex_age_ms: 1000,
+    flow_data_age_ms: 30_000,
+    flow_cluster_live: true,
+    macro_events: [],
+    vix: 18,
+  } as SpxDeskPayload;
+
+  const confluence = {
+    score: 55,
+    grade: "A",
+    bias: "bullish",
+    direction: "long",
+    confidence: 0.8,
+    weighted_conflicts: 1,
+    factors: [
+      { label: "GEX", weight: 2, detail: "above flip" },
+      { label: "Flow", weight: 1, detail: "calls" },
+      { label: "VWAP", weight: 1, detail: "above" },
+    ],
+    levels: { stop: 5985, target: 6025 },
+  } as SpxConfluence;
+
+  const session = {
+    last_buy_at: null,
+    last_sell_at: null,
+    last_sell_was_loss: false,
+    last_direction: null,
+    last_stop_at: null,
+  };
+
+  const confirmations = {
+    passed: true,
+    passed_count: 4,
+    total: 4,
+    checks: [{ label: "VWAP", required: true, passed: true, detail: "above" }],
+  };
+
+  const result = evaluatePlayGates(desk, confluence, session, confirmations, {
+    entry_intent: "buy",
+    playbook_primary_id: "PB-04",
+    playbook_primary_direction: "long",
+  });
+  assert.match(result.blocks.join(" "), /Unknown EMA regime/i);
+});
+
+test("evaluatePlayGates: degraded feed blocks event playbook on live gate", () => {
+  const desk = {
+    available: true,
+    market_open: true,
+    price: 6000,
+    polled_at: new Date().toISOString(),
+    gex_walls: [{ strike: 5990, net_gex: 1 }],
+    regime: "bullish",
+    halt_channel_stale: true,
+    gex_age_ms: 1000,
+    flow_data_age_ms: 30_000,
+    flow_cluster_live: true,
+    macro_events: [],
+    vix: 18,
+  } as SpxDeskPayload;
+
+  const confluence = {
+    score: 55,
+    grade: "A",
+    bias: "bullish",
+    direction: "long",
+    confidence: 0.8,
+    weighted_conflicts: 1,
+    factors: [
+      { label: "GEX", weight: 2, detail: "above flip" },
+      { label: "Flow", weight: 1, detail: "calls" },
+      { label: "VWAP", weight: 1, detail: "above" },
+    ],
+    levels: { stop: 5985, target: 6025 },
+  } as SpxConfluence;
+
+  const session = {
+    last_buy_at: null,
+    last_sell_at: null,
+    last_sell_was_loss: false,
+    last_direction: null,
+    last_stop_at: null,
+  };
+
+  const confirmations = {
+    passed: true,
+    passed_count: 4,
+    total: 4,
+    checks: [{ label: "VWAP", required: true, passed: true, detail: "above" }],
+  };
+
+  const orb = evaluatePlayGates(desk, confluence, session, confirmations, {
+    entry_intent: "buy",
+    playbook_primary_id: "PB-03",
+    playbook_primary_direction: "long",
+  });
+  assert.match(orb.blocks.join(" "), /degraded feed/i);
+
+  const vwap = evaluatePlayGates(desk, confluence, session, confirmations, {
+    entry_intent: "buy",
+    playbook_primary_id: "PB-01",
+    playbook_primary_direction: "long",
+  });
+  assert.equal(vwap.blocks.some((b) => b.includes("degraded feed")), false);
+});

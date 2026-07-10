@@ -18,7 +18,7 @@ import {
 } from "@/features/spx/lib/playbook-registry";
 import { isPlaybookEligible } from "@/features/spx/lib/playbook-regime-router";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
-import { playMtfBufferPts, playStructureProximityPts } from "@/features/spx/lib/spx-play-config";
+import { playMtfBufferPts, playStructureProximityPts, playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
 
 export type PlaybookDirectionVerdict = "long" | "short" | null;
 
@@ -67,6 +67,12 @@ function flowDirection(desk: SpxDeskPayload): "bullish" | "bearish" | "neutral" 
   if (net > 0) return "bullish";
   if (net < 0) return "bearish";
   return "neutral";
+}
+
+function flowMaterialBearish(desk: SpxDeskPayload): boolean {
+  const net = desk.flow_0dte_net;
+  if (net == null) return false;
+  return net <= -playbookFlowMaterialityMin();
 }
 
 function netPremAccelerating(
@@ -205,10 +211,11 @@ function matchPb02(
     distanceFromVwap <= playStructureProximityPts();
   const rallyContext = technicals.minutes_above_vwap >= 2 || nearBandFromBelow;
   const flow = flowDirection(desk);
+  const flowMaterialShort = flowMaterialBearish(desk);
   const rejectClose =
     technicals.breakout.vwap_lost === true || technicals.m3_consecutive_closes_below_vwap >= 1;
   const triggerFired =
-    regimeEligible && windowOpen && rejectClose && flow === "bearish" && nearBandFromBelow;
+    regimeEligible && windowOpen && rejectClose && flowMaterialShort && nearBandFromBelow;
 
   return {
     playbook_id: def.id,
@@ -220,8 +227,8 @@ function matchPb02(
     detail: !regimeEligible
       ? `Regime ineligible for PB-02 (desk.regime=${desk.regime})`
       : triggerFired
-        ? `VWAP reject: price ${desk.price} lost vwap ${vwap}, flow ${flow}`
-        : `No VWAP rejection (near_band=${nearBandFromBelow}, flow=${flow ?? "unknown"})`,
+        ? `VWAP reject: price ${desk.price} lost vwap ${vwap}, flow ${flow} (material)`
+        : `No VWAP rejection (near_band=${nearBandFromBelow}, flow=${flow ?? "unknown"}, material=${flowMaterialShort})`,
   };
 }
 

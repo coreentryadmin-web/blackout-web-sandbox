@@ -1043,6 +1043,26 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_primary
       ON spx_playbook_shadow_observations (primary_playbook_id, observed_at DESC);
 
+    ALTER TABLE spx_playbook_shadow_observations
+      ADD COLUMN IF NOT EXISTS pipeline_audit JSONB,
+      ADD COLUMN IF NOT EXISTS feature_snapshot JSONB,
+      ADD COLUMN IF NOT EXISTS instance_transitions JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+    CREATE TABLE IF NOT EXISTS spx_playbook_instances (
+      instance_id       TEXT PRIMARY KEY,
+      session_date      DATE NOT NULL,
+      playbook_id       TEXT NOT NULL,
+      direction         TEXT,
+      state             TEXT NOT NULL,
+      armed_at          TIMESTAMPTZ,
+      triggered_at      TIMESTAMPTZ,
+      feature_snapshot  JSONB,
+      detail            TEXT,
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instances_session
+      ON spx_playbook_instances (session_date, playbook_id);
+
     -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
     -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
     -- (src/lib/nighthawk/scorer.ts) computes a FULL breakdown for every ticker the nightly hunt
@@ -2111,15 +2131,19 @@ export async function insertPlaybookShadowObservation(row: {
   engine_action: string;
   engine_score: number;
   verdicts: unknown;
+  pipeline_audit?: unknown;
+  feature_snapshot?: unknown;
+  instance_transitions?: unknown;
 }): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(
     `
     INSERT INTO spx_playbook_shadow_observations (
       session_date, primary_playbook_id, regime, gamma_regime,
-      price_at_observation, engine_action, engine_score, verdicts
+      price_at_observation, engine_action, engine_score, verdicts,
+      pipeline_audit, feature_snapshot, instance_transitions
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb)
     `,
     [
       row.session_date,
@@ -2130,8 +2154,78 @@ export async function insertPlaybookShadowObservation(row: {
       row.engine_action,
       row.engine_score,
       JSON.stringify(row.verdicts ?? []),
+      row.pipeline_audit != null ? JSON.stringify(row.pipeline_audit) : null,
+      row.feature_snapshot != null ? JSON.stringify(row.feature_snapshot) : null,
+      JSON.stringify(row.instance_transitions ?? []),
     ]
   );
+}
+
+export async function loadPlaybookInstanceStates(
+  sessionDate: string
+): Promise<Array<{ instance_id: string; state: "idle" | "armed" | "triggered" | "invalidated" }>> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT instance_id, state
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+    `,
+    [sessionDate]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    state: String(r.state) as "idle" | "armed" | "triggered" | "invalidated",
+  }));
+}
+
+export async function upsertPlaybookInstances(
+  sessionDate: string,
+  rows: Array<{
+    instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
+    state: "idle" | "armed" | "triggered" | "invalidated";
+    feature_snapshot: unknown;
+    detail: string;
+  }>
+): Promise<void> {
+  if (!rows.length) return;
+  await ensureSchema();
+  const pool = await getPool();
+  for (const row of rows) {
+    await pool.query(
+      `
+      INSERT INTO spx_playbook_instances (
+        instance_id, session_date, playbook_id, direction, state,
+        armed_at, triggered_at, feature_snapshot, detail, updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,
+        CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'triggered' THEN NOW() ELSE NULL END,
+        $6::jsonb, $7, NOW())
+      ON CONFLICT (instance_id) DO UPDATE SET
+        direction = EXCLUDED.direction,
+        state = EXCLUDED.state,
+        armed_at = COALESCE(spx_playbook_instances.armed_at,
+          CASE WHEN EXCLUDED.state = 'armed' THEN NOW() ELSE NULL END),
+        triggered_at = COALESCE(spx_playbook_instances.triggered_at,
+          CASE WHEN EXCLUDED.state = 'triggered' THEN NOW() ELSE NULL END),
+        feature_snapshot = EXCLUDED.feature_snapshot,
+        detail = EXCLUDED.detail,
+        updated_at = NOW()
+      `,
+      [
+        row.instance_id,
+        sessionDate,
+        row.playbook_id,
+        row.direction,
+        row.state,
+        JSON.stringify(row.feature_snapshot),
+        row.detail,
+      ]
+    );
+  }
 }
 
 export async function fetchPlaybookShadowObservationsForSession(

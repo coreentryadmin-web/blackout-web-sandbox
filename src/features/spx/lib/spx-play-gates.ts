@@ -29,6 +29,11 @@ import {
   isPlaybookLiveAllowlisted,
 } from "@/features/spx/lib/spx-play-config";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
+import { isUnknownPlaybookRegime } from "@/features/spx/lib/playbook-regime-router";
+import {
+  isDegradedForLivePlaybook,
+  playbookDataQualityFlags,
+} from "@/features/spx/lib/playbook-data-quality";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -178,8 +183,17 @@ export function evaluatePlayGates(
       const allowlist = playbookLiveAllowlist();
       const listed = allowlist ? [...allowlist].join(", ") : "none";
       blocks.push(`Playbook ${pbId} not in live allowlist (${listed})`);
-    } else if (stagingLab) {
-      warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
+    } else if (isUnknownPlaybookRegime(desk)) {
+      blocks.push("Unknown EMA regime — playbook live gate fail-closed");
+    } else {
+      const dq = playbookDataQualityFlags(desk);
+      if (isDegradedForLivePlaybook(pbId, dq)) {
+        blocks.push(
+          `Playbook ${pbId} blocked — degraded feed (halt stale=${dq.halt_channel_stale}, desk stale=${dq.desk_stale})`
+        );
+      } else if (stagingLab) {
+        warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
+      }
     }
   }
 
