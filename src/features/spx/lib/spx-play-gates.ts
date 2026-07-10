@@ -38,7 +38,9 @@ import {
 } from "@/features/spx/lib/playbook-data-quality";
 import {
   categorizeGateBlocks,
+  firstGateBlockCategory,
   type CategorizedGateBlocks,
+  type GateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
@@ -48,6 +50,8 @@ export type PlayGateResult = {
   passed: boolean;
   blocks: string[];
   blocks_by_category: CategorizedGateBlocks;
+  /** First failing gate layer (operational → playbook_validity → risk → quality). */
+  first_block_category: GateBlockCategory | null;
   warnings: string[];
   entry_mode: "none" | "starter" | "full";
   play_idea: string | null;
@@ -453,6 +457,7 @@ export function evaluatePlayGates(
     passed,
     blocks,
     blocks_by_category: categorizeGateBlocks(blocks),
+    first_block_category: firstGateBlockCategory(blocks),
     warnings,
     entry_mode,
     play_idea,

@@ -103,6 +103,8 @@ async function evaluateSpxPlayState() {
     {
       technicals,
       gate_blocks: play.gates.blocks,
+      first_block_category: play.gates.first_block_category,
+      primary_playbook_id: playbook_shadow?.primary_playbook_id ?? null,
       primary_direction:
         primaryVerdict?.direction === "long" || primaryVerdict?.direction === "short"
           ? primaryVerdict.direction
@@ -111,6 +113,7 @@ async function evaluateSpxPlayState() {
         play.phase === "OPEN" && play.open_play?.direction
           ? play.open_play.direction
           : null,
+      option_contract_candidate: play.option_ticket ?? null,
     }
   ).catch((err) => {
     console.warn("[spx-playbook-shadow]", err instanceof Error ? err.message : err);

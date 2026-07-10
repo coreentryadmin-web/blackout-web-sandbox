@@ -4,8 +4,6 @@ import { playbookShadowStateKey } from "./playbook-shadow-log";
 import type { PlaybookShadowPanel } from "./playbook-shadow-panel";
 
 import type { PlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
-import { emptyPlaybookFamilyAudit } from "./playbook-pipeline-audit";
-
 import { emptyPlaybookFamilyAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 
 const EMPTY_AUDIT: PlaybookPipelineAudit = {

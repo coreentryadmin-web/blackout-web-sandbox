@@ -1,34 +1,51 @@
 import {
   dbConfigured,
   getMeta,
+  insertPlaybookInstanceEvents,
   insertPlaybookShadowObservation,
   loadPlaybookInstanceStates,
+  loadTriggeredPlaybookInstances,
+  patchPlaybookInstanceBlocked,
+  patchPlaybookInstanceOpened,
   setMeta,
+  updatePlaybookInstanceCounterfactual,
   upsertPlaybookInstances,
 } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { buildPlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
+import {
+  buildBlockedPrimaryEvent,
+  buildTransitionEvents,
+  computeCounterfactualExcursion,
+} from "@/features/spx/lib/playbook-instance-events";
 import { computePlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import {
   collectPlaybookInstanceTransitions,
+  playbookInstanceId,
   type PlaybookLifecycleState,
 } from "@/features/spx/lib/playbook-state";
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 
 const CURSOR_KEY = "spx_playbook_shadow_cursor";
+const BLOCKED_CURSOR_KEY = "spx_playbook_blocked_cursor";
 
-/** State key for throttle — primary + which playbooks fired this tick. */
-export function playbookShadowStateKey(panel: PlaybookShadowPanel): string {
+/** State key for throttle — primary + fired set + gate block fingerprint. */
+export function playbookShadowStateKey(
+  panel: PlaybookShadowPanel,
+  gateBlocks?: readonly string[]
+): string {
   const fired = panel.verdicts
     .filter((v) => v.trigger_fired)
     .map((v) => `${v.playbook_id}:${v.direction}`)
     .sort()
     .join(",");
-  return `${panel.primary_playbook_id ?? "none"}|${fired}`;
+  const blocks = gateBlocks?.length ? `|blocks:${gateBlocks.length}` : "";
+  return `${panel.primary_playbook_id ?? "none"}|${fired}${blocks}`;
 }
 
 export type PlaybookShadowLogOpts = {
@@ -36,11 +53,14 @@ export type PlaybookShadowLogOpts = {
   gate_blocks?: readonly string[];
   primary_direction?: "long" | "short" | null;
   opened_direction?: "long" | "short" | null;
+  primary_playbook_id?: PlaybookId | null;
+  option_contract_candidate?: unknown;
+  first_block_category?: string | null;
 };
 
 /**
- * Phase 1 telemetry — logs playbook shadow transitions without affecting BUY.
- * Throttled via platform_meta cursor (same idiom as maybeLogSpxEngineSnapshot).
+ * Phase 1+ telemetry — logs playbook shadow transitions, blocked primaries, and
+ * counterfactual MFE/MAE without affecting BUY.
  */
 export async function maybeLogPlaybookShadowMatch(
   desk: SpxDeskPayload,
@@ -50,9 +70,10 @@ export async function maybeLogPlaybookShadowMatch(
 ): Promise<void> {
   if (!dbConfigured() || !panel) return;
 
-  const key = playbookShadowStateKey(panel);
+  const gateBlocks = opts?.gate_blocks ?? [];
+  const key = playbookShadowStateKey(panel, gateBlocks);
   const prev = await getMeta(CURSOR_KEY);
-  if (prev === key) return;
+  const stateChanged = prev !== key;
 
   const sessionDate = todayEtYmd();
   const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, opts?.technicals, false);
@@ -72,7 +93,7 @@ export async function maybeLogPlaybookShadowMatch(
 
   const featureSnapshot = buildPlaybookFeatureSnapshot(desk, opts?.technicals);
   const pipelineAudit = computePlaybookPipelineAudit(rawVerdicts, {
-    gate_blocks: opts?.gate_blocks,
+    gate_blocks: gateBlocks,
     primary_direction: opts?.primary_direction ?? null,
     opened_direction: opts?.opened_direction ?? null,
   });
@@ -87,6 +108,13 @@ export async function maybeLogPlaybookShadowMatch(
     prevMap
   );
 
+  const primaryId =
+    opts?.primary_playbook_id ?? panel.primary_playbook_id ?? null;
+  const primaryBlocked =
+    primaryId != null &&
+    gateBlocks.length > 0 &&
+    rawVerdicts.some((v) => v.playbook_id === primaryId && v.trigger_fired);
+
   if (transitions.length > 0) {
     await upsertPlaybookInstances(
       sessionDate,
@@ -97,9 +125,124 @@ export async function maybeLogPlaybookShadowMatch(
         state: t.to_state,
         feature_snapshot: featureSnapshot,
         detail: t.detail,
+        trigger_price:
+          t.to_state === "triggered" && desk.price != null ? desk.price : null,
+        reason_invalidated: t.to_state === "invalidated" ? t.detail : null,
       }))
     );
+
+    const eventRows = buildTransitionEvents(
+      sessionDate,
+      transitions,
+      featureSnapshot,
+      engine.action,
+      desk.price ?? null
+    );
+    if (eventRows.length) {
+      await insertPlaybookInstanceEvents(
+        eventRows.map((e) => ({
+          session_date: e.session_date,
+          instance_id: e.instance_id,
+          playbook_id: e.playbook_id,
+          event_type: e.event_type,
+          direction: e.direction,
+          price_at_event: e.price_at_event,
+          reason: e.reason,
+          gate_blocks: e.gate_blocks,
+          feature_snapshot: e.feature_snapshot,
+          engine_action: e.engine_action,
+          executable: e.executable,
+          counterfactual_mfe_pts: e.counterfactual_mfe_pts,
+          counterfactual_mae_pts: e.counterfactual_mae_pts,
+        }))
+      );
+    }
   }
+
+  if (primaryBlocked && primaryId) {
+    const instanceId = playbookInstanceId(sessionDate, primaryId);
+    const blockKey = `${instanceId}|${gateBlocks.join("||")}`;
+    const prevBlocked = await getMeta(BLOCKED_CURSOR_KEY);
+    if (prevBlocked !== blockKey) {
+      const blockedEvent = buildBlockedPrimaryEvent({
+        session_date: sessionDate,
+        instance_id: instanceId,
+        playbook_id: primaryId,
+        direction: opts?.primary_direction ?? null,
+        price: desk.price ?? null,
+        gate_blocks: gateBlocks,
+        snapshot: featureSnapshot,
+        engine_action: engine.action,
+      });
+      await insertPlaybookInstanceEvents([
+        {
+          session_date: blockedEvent.session_date,
+          instance_id: blockedEvent.instance_id,
+          playbook_id: blockedEvent.playbook_id,
+          event_type: blockedEvent.event_type,
+          direction: blockedEvent.direction,
+          price_at_event: blockedEvent.price_at_event,
+          reason: blockedEvent.reason,
+          gate_blocks: blockedEvent.gate_blocks,
+          feature_snapshot: blockedEvent.feature_snapshot,
+          engine_action: blockedEvent.engine_action,
+          executable: blockedEvent.executable,
+          counterfactual_mfe_pts: blockedEvent.counterfactual_mfe_pts,
+          counterfactual_mae_pts: blockedEvent.counterfactual_mae_pts,
+        },
+      ]);
+      await patchPlaybookInstanceBlocked({
+        instance_id: instanceId,
+        reason_blocked: gateBlocks.join("; "),
+        executable: false,
+      });
+      await setMeta(BLOCKED_CURSOR_KEY, blockKey);
+    }
+  }
+
+  if (opts?.opened_direction && primaryId) {
+    await patchPlaybookInstanceOpened({
+      instance_id: playbookInstanceId(sessionDate, primaryId),
+      option_contract_candidate: opts.option_contract_candidate ?? null,
+      executable: true,
+    });
+    await insertPlaybookInstanceEvents([
+      {
+        session_date: sessionDate,
+        instance_id: playbookInstanceId(sessionDate, primaryId),
+        playbook_id: primaryId,
+        event_type: "opened",
+        direction: opts.opened_direction,
+        price_at_event: desk.price ?? null,
+        reason: "engine open",
+        gate_blocks: null,
+        feature_snapshot: featureSnapshot,
+        engine_action: engine.action,
+        executable: true,
+        counterfactual_mfe_pts: null,
+        counterfactual_mae_pts: null,
+      },
+    ]);
+  }
+
+  if (desk.price != null) {
+    const triggered = await loadTriggeredPlaybookInstances(sessionDate);
+    for (const row of triggered) {
+      if (row.direction == null || row.trigger_price == null) continue;
+      const { mfe_pts, mae_pts } = computeCounterfactualExcursion(
+        row.direction,
+        row.trigger_price,
+        desk.price,
+        row.counterfactual_mfe_pts,
+        row.counterfactual_mae_pts
+      );
+      if (mfe_pts > row.counterfactual_mfe_pts || mae_pts > row.counterfactual_mae_pts) {
+        await updatePlaybookInstanceCounterfactual(row.instance_id, mfe_pts, mae_pts);
+      }
+    }
+  }
+
+  if (!stateChanged) return;
 
   await insertPlaybookShadowObservation({
     session_date: sessionDate,
@@ -113,6 +256,8 @@ export async function maybeLogPlaybookShadowMatch(
     pipeline_audit: pipelineAudit,
     feature_snapshot: featureSnapshot,
     instance_transitions: transitions,
+    gate_blocks: gateBlocks.length ? gateBlocks : null,
+    first_block_category: opts?.first_block_category ?? null,
   });
   await setMeta(CURSOR_KEY, key);
 
