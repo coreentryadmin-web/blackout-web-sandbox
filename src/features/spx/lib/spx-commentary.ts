@@ -551,6 +551,7 @@ function logUngroundedCommentary(
 export type SpxCommentaryIntelCache = {
   positioning: GexPositioning | null;
   heatmapSlice: IntelHeatmapSlice | null;
+  nighthawk: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
 };
 
 export async function generateSpxCommentary(
@@ -563,6 +564,8 @@ export async function generateSpxCommentary(
     outcomes?: import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeStats | null;
     /** Prior 5-min window intel for matrix + material-edge diffs. */
     intelPrev?: SpxBriefIntelPrev | null;
+    nighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
+    prevNighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
   }
 ): Promise<{ commentary: SpxCommentaryResult; intelCache: SpxCommentaryIntelCache } | null> {
   const delta = computeDelta(desk, previous);
@@ -637,9 +640,16 @@ export async function generateSpxCommentary(
     desk: (previous as SpxDeskPayload | null) ?? cross?.intelPrev?.desk ?? null,
     positioning: cross?.intelPrev?.positioning ?? null,
     heatmapSlice: cross?.intelPrev?.heatmapSlice ?? null,
+    prevNighthawk: cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null,
+    nighthawk: cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
   };
   const { loadSpxBriefIntel } = await import("@/lib/bie/load-spx-brief-intel");
-  const intel = await loadSpxBriefIntel(desk, intelPrev);
+  const intel = await loadSpxBriefIntel(
+    desk,
+    intelPrev,
+    cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
+    cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null
+  );
 
   let precedentDetail: string | null = null;
   if (bieEmbeddingsConfigured() && dbConfigured()) {
@@ -688,6 +698,7 @@ export async function generateSpxCommentary(
     intelCache: {
       positioning: intel.positioning,
       heatmapSlice: heatmapToIntelSlice(intel.heatmap),
+      nighthawk: intel.nighthawk ?? null,
     },
   };
 }

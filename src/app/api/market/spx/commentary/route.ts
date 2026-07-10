@@ -4,6 +4,7 @@ import { requireTierApi } from "@/lib/market-api-auth";
 import { generateSpxCommentary, type SpxCommentaryResult } from "@/features/spx/lib/spx-commentary";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import { serverCache } from "@/lib/server-cache";
@@ -21,6 +22,7 @@ type CommentaryCache = {
   desk: SpxDeskPayload;
   positioning: GexPositioning | null;
   heatmapSlice: IntelHeatmapSlice | null;
+  nighthawk: NightHawkEdition | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -41,11 +43,13 @@ export async function POST(req: NextRequest) {
     let prevDesk: SpxDeskPayload | null = null;
     let prevPositioning: GexPositioning | null = null;
     let prevHeatmapSlice: IntelHeatmapSlice | null = null;
+    let prevNighthawk: NightHawkEdition | null = null;
     try {
       const prev = await sharedCacheGet<CommentaryCache>(prevKey);
       prevDesk = prev?.desk ?? null;
       prevPositioning = prev?.positioning ?? null;
       prevHeatmapSlice = prev?.heatmapSlice ?? null;
+      prevNighthawk = prev?.nighthawk ?? null;
     } catch {
       // Redis unavailable or key expired — no delta this window
     }
@@ -60,21 +64,28 @@ export async function POST(req: NextRequest) {
       // lotto, power-hour) + recent win-rate so its read aligns with the rest of the
       // platform (never contradicts an open position) and can calibrate conviction. All
       // read-only, fetched only on a cache miss (once per window); each falls back to null.
-      const [openPlay, lotto, powerHour, outcomes] = await Promise.all([
+      const [openPlay, lotto, powerHour, outcomes, nighthawk] = await Promise.all([
         import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
         import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
         import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
         import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
+        import("@/lib/platform/nighthawk-service")
+          .then((m) => m.getLatestNightHawkEdition())
+          .catch(() => null),
       ]);
       const generated = await generateSpxCommentary(desk, prevDesk, {
         openPlay,
         lotto,
         powerHour,
         outcomes,
+        nighthawk,
+        prevNighthawk,
         intelPrev: {
           desk: prevDesk,
           positioning: prevPositioning,
           heatmapSlice: prevHeatmapSlice,
+          prevNighthawk,
+          nighthawk,
         },
       });
       if (!generated) throw new Error("spx-commentary: generation returned null");
@@ -83,6 +94,7 @@ export async function POST(req: NextRequest) {
         desk,
         positioning: generated.intelCache.positioning,
         heatmapSlice: generated.intelCache.heatmapSlice,
+        nighthawk: generated.intelCache.nighthawk,
       };
     });
 

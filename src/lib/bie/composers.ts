@@ -6,11 +6,11 @@
 
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
-import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
 import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
-import { loadSpxBriefIntel } from "@/lib/bie/load-spx-brief-intel";
+import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
+import { loadBiePlatformContext } from "@/lib/bie/platform-context";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
@@ -99,30 +99,38 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
 }
 
 async function composeSpxDeskRead(): Promise<BieComposed | null> {
-  const { merged: desk } = await loadMergedSpxDesk();
-  if (!desk.available || desk.price == null || desk.price <= 0) return null;
+  const platform = await loadBiePlatformContext({
+    scope: "desk",
+    knowledgeQuery: "SPX gamma GEX dealer positioning live desk",
+  });
+  const desk = platform.desk;
+  if (!desk) return null;
   const confluence = computeSpxConfluence(desk);
   if (!confluence) return null;
 
-  const [openPlay, lotto, powerHour, outcomes, intel] = await Promise.all([
-    import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
-    import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
-    import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
-    import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
-    loadSpxBriefIntel(desk, null),
-  ]);
+  const { openPlay, lotto, powerHour, outcomes } = platform.cross;
 
   const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
     openPlay: openPlay && openPlay.status === "open" ? openPlay : null,
     lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
     powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
     outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
-    intel,
+    intel: platform.intel ?? undefined,
   });
-  const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body].join("\n");
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  const answer = [
+    `**SPX Live Desk read**`,
+    "",
+    `**${brief.headline}**`,
+    "",
+    brief.body,
+    knowledge ? `\n\n${knowledge}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return {
     answer,
-    context: { desk, confluence, brief, openPlay, lotto, powerHour, outcomes, intel },
+    context: { desk, confluence, brief, platform },
   };
 }
 
@@ -153,6 +161,10 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
+  const platform = await loadBiePlatformContext({
+    scope: "market",
+    knowledgeQuery: "market regime breadth VIX session context",
+  });
   const raw = (await runLargoTool("get_market_context", {})) as Record<string, unknown> | null;
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const parts: string[] = [];
@@ -168,9 +180,41 @@ async function composeMarketContext(): Promise<BieComposed | null> {
     "market_label",
   ]);
   if (top) parts.push(top);
+
+  const regime = platform.regime;
+  if (regime) {
+    const regimeSec = scalarSection("HELIX regime detector", regime, [
+      "regime_label",
+      "risk_tone",
+      "session_phase",
+      "critical_anomalies",
+      "flow_anomaly_count",
+      "as_of",
+    ]);
+    if (regimeSec) parts.push(regimeSec);
+  }
+
+  const snap = platform.snapshot;
+  if (snap.spx) {
+    parts.push(
+      `**SPX desk summary:** ${fmt(snap.spx.price)} (${fmt(snap.spx.change_pct)}%) · γflip ${fmt(snap.spx.gamma_flip, 0)} · γ ${snap.spx.gamma_regime ?? "—"}`
+    );
+  }
+  if (snap.flows) {
+    const tops = (snap.flows.top_tickers ?? []).slice(0, 4).map((t) => t.ticker).join(", ");
+    parts.push(
+      `**HELIX tape:** ${snap.flows.count} prints · $${fmt(snap.flows.total_premium, 0)} premium · top: ${tops || "—"}`
+    );
+  }
+  if (snap.nighthawk?.available) {
+    parts.push(
+      `**Night Hawk:** ${snap.nighthawk.play_count} plays · ${snap.nighthawk.recap_headline ?? snap.nighthawk.edition_for ?? "edition live"}`
+    );
+  }
+
   // Nested one-level scalars (e.g. indices objects) — printed defensively.
   for (const [k, v] of Object.entries(raw)) {
-    if (parts.length >= 3) break;
+    if (parts.length >= 6) break;
     if (v && typeof v === "object" && !Array.isArray(v)) {
       const sec = scalarSection(k.replace(/_/g, " "), v as Record<string, unknown>, [
         "price",
@@ -182,10 +226,12 @@ async function composeMarketContext(): Promise<BieComposed | null> {
       if (sec) parts.push(sec);
     }
   }
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  if (knowledge) parts.push(knowledge);
   if (parts.length === 0) return null;
   return {
-    answer: `${parts.join("\n\n")}\n\n_Live platform read. For interpretation or a trade thesis, ask the follow-up — that's where deeper reasoning kicks in._`,
-    context: raw,
+    answer: `${parts.join("\n\n")}\n\n_Live platform read — SPX desk, HELIX tape, Night Hawk, regime detector, and desk knowledge. Zero Claude cost._`,
+    context: { market_context: raw, platform },
   };
 }
 

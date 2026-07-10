@@ -4,6 +4,7 @@ import type { SpxConfluence } from "@/features/spx/lib/spx-signals";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import {
   dealersBriefLine,
+  nighthawkBriefLine,
   signalsBriefLine,
   wallsBriefLine,
   knownIntelNumbers,
@@ -93,5 +94,37 @@ describe("spx-desk-intel formatters", () => {
     const nums = knownIntelNumbers({ positioning: fakePositioning() });
     assert.ok(nums.includes(5910));
     assert.ok(nums.includes(5890));
+  });
+
+  test("nighthawkBriefLine surfaces SPX play from edition", () => {
+    const line = nighthawkBriefLine({
+      positioning: null,
+      nighthawk: {
+        available: true,
+        edition_for: "2026-07-09",
+        published_at: "2026-07-10T12:00:00.000Z",
+        recap_headline: null,
+        recap_summary: null,
+        plays: [
+          {
+            rank: 1,
+            ticker: "SPX",
+            direction: "long",
+            conviction: "high",
+            play_type: "index",
+            thesis: "test",
+            key_signal: "test",
+            entry_range: "5900",
+            target: "5920",
+            stop: "5888",
+            options_play: "call",
+            score: 88,
+          },
+        ],
+      },
+    });
+    assert.ok(line?.includes("NIGHT HAWK"));
+    assert.ok(line?.includes("SPX"));
+    assert.ok(line?.includes("5920"));
   });
 });

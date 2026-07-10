@@ -16,6 +16,7 @@ import {
   edgesBriefLine,
   expiryBriefLine,
   mag7BriefLine,
+  nighthawkBriefLine,
   positioningDeltaSnippets,
   signalsBriefLine,
   volBriefLine,
@@ -542,6 +543,9 @@ export function composeSpxDeskBrief(
 
   const mag7 = mag7BriefLine(desk);
   if (mag7) bodyLines.push(mag7);
+
+  const nh = nighthawkBriefLine(cross?.intel);
+  if (nh) bodyLines.push(nh);
 
   const edges = edgesBriefLine(cross?.intel);
   if (edges && !deltaSince) bodyLines.push(edges);

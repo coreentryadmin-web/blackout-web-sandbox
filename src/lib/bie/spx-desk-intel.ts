@@ -5,6 +5,7 @@
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { SpxConfluence } from "@/features/spx/lib/spx-signals";
 import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import type { GexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { fmtPremium } from "@/lib/fmt-money";
@@ -16,6 +17,8 @@ export type SpxDeskBriefIntel = {
   prevHeatmapSlice?: IntelHeatmapSlice | null;
   /** Material desk/heatmap edges (same engine as Playbook terminal). */
   intelLines?: string[];
+  nighthawk?: NightHawkEdition | null;
+  prevNighthawk?: NightHawkEdition | null;
 };
 
 function n(n: number | null | undefined, d = 2): string {
@@ -73,6 +76,19 @@ export function knownIntelNumbers(intel: SpxDeskBriefIntel | undefined): number[
   add(levels.vexFlip);
   add(levels.dexZero);
   add(levels.charmZero);
+
+  const nh = intel?.nighthawk;
+  if (nh?.available) {
+    for (const p of nh.plays ?? []) {
+      const strike = parseFloat(String(p.entry_range ?? "").replace(/[^\d.]/g, ""));
+      if (Number.isFinite(strike)) add(strike);
+      const tgt = parseFloat(String(p.target ?? "").replace(/[^\d.]/g, ""));
+      if (Number.isFinite(tgt)) add(tgt);
+      const stp = parseFloat(String(p.stop ?? "").replace(/[^\d.]/g, ""));
+      if (Number.isFinite(stp)) add(stp);
+      if (p.score != null) add(p.score);
+    }
+  }
 
   return Array.from(raw);
 }
@@ -296,4 +312,33 @@ export function crossCheckBriefLine(intel: SpxDeskBriefIntel | undefined): strin
   if (!cv.flipMatch) mismatches.push("γflip");
   if (!mismatches.length) return null;
   return `CROSSCHK  Matrix vs UW diverge {{${cv.divergence.toFixed(0)}}}pt — ${mismatches.join(" · ")} mismatch`;
+}
+
+/** Night Hawk overnight edition — SPX play first when present. */
+export function nighthawkBriefLine(intel: SpxDeskBriefIntel | undefined): string | null {
+  const nh = intel?.nighthawk;
+  if (!nh?.available || nh.stale) return null;
+
+  if (nh.recap_only) {
+    const head = nh.recap_headline ?? nh.edition_for ?? "recap";
+    return `NIGHT HAWK  Recap · {{${head.slice(0, 72)}}}`;
+  }
+
+  const spx = nh.plays.find((p) => /^(SPX|SPXW)$/i.test(p.ticker));
+  const top = spx ?? nh.plays[0];
+  if (!top) {
+    return nh.edition_for
+      ? `NIGHT HAWK  Edition {{${nh.edition_for}}} · no ranked plays`
+      : null;
+  }
+
+  const dir = top.direction.toUpperCase();
+  const bits = [
+    `NIGHT HAWK  #${top.rank} {{${top.ticker}}} {{${dir}}} · {{${top.conviction}}}`,
+    top.target ? `tgt {{${top.target}}}` : null,
+    top.stop ? `stop {{${top.stop}}}` : null,
+    top.score != null ? `score {{${top.score}}}` : null,
+    nh.edition_for ? `ed {{${nh.edition_for}}}` : null,
+  ].filter(Boolean);
+  return bits.join(" · ");
 }
