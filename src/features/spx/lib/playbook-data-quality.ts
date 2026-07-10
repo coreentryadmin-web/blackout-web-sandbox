@@ -17,6 +17,21 @@ export type PlaybookDataQualityFlags = {
   gex_missing: boolean;
 };
 
+/** Live posture derived from feed flags — drives per-PB blocks and global severe veto. */
+export type LiveDataQualityMode = "normal" | "degraded" | "severe";
+
+export function liveDataQualityMode(flags: PlaybookDataQualityFlags): LiveDataQualityMode {
+  const issues = [flags.halt_channel_stale, flags.desk_stale, flags.gex_missing].filter(Boolean).length;
+  if (issues >= 2) return "severe";
+  if (issues >= 1) return "degraded";
+  return "normal";
+}
+
+/** Fail-closed on live BUY when multiple feed dimensions are degraded simultaneously. */
+export function shouldFailClosedLiveOnDataQuality(mode: LiveDataQualityMode): boolean {
+  return mode === "severe";
+}
+
 export function playbookDataQualityFlags(desk: SpxDeskPayload): PlaybookDataQualityFlags {
   const polledAt = desk.polled_at ?? desk.as_of;
   const ageSec =

@@ -26,6 +26,24 @@ export function verdictLifecycleState(v: PlaybookMatchVerdict): PlaybookLifecycl
   return "idle";
 }
 
+/** Resolve next state with invalidation when a setup loses precondition mid-session. */
+export function resolvePlaybookLifecycleState(
+  prev: PlaybookLifecycleState,
+  v: PlaybookMatchVerdict
+): PlaybookLifecycleState {
+  const naive = verdictLifecycleState(v);
+  if (naive === "armed" && prev === "triggered") return "invalidated";
+  if (
+    naive === "idle" &&
+    (prev === "armed" || prev === "triggered") &&
+    v.session_window_open &&
+    v.regime_eligible
+  ) {
+    return "invalidated";
+  }
+  return naive;
+}
+
 /** Detect state transitions vs prior in-memory/DB snapshot for telemetry persistence. */
 export function collectPlaybookInstanceTransitions(
   sessionDate: string,
@@ -37,8 +55,8 @@ export function collectPlaybookInstanceTransitions(
 
   for (const v of verdicts) {
     const instanceId = playbookInstanceId(sessionDate, v.playbook_id);
-    const toState = verdictLifecycleState(v);
     const fromState = prevByInstance.get(instanceId) ?? "idle";
+    const toState = resolvePlaybookLifecycleState(fromState, v);
 
     nextByInstance.set(instanceId, toState);
 

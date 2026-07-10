@@ -29,6 +29,16 @@ export type PlaybookId =
 
 export type PlaybookDirection = "long" | "short" | "either";
 
+/** Four setup families — validate family edge before per-PB label splits. */
+export type PlaybookSetupFamily =
+  | "trend_continuation"
+  | "mean_reversion"
+  | "reversal_failure"
+  | "flow_event";
+
+/** Matcher fidelity — high = recent review hardening; mvp = shadow-only approximations. */
+export type PlaybookFidelity = "mvp" | "high";
+
 /** Typical session window from the design doc, in ET hour/minute — half-open [start, end). */
 export type PlaybookSessionWindow = {
   startEtHour: number;
@@ -41,6 +51,8 @@ export type PlaybookDefinition = {
   id: PlaybookId;
   name: string;
   direction: PlaybookDirection;
+  setup_family: PlaybookSetupFamily;
+  fidelity: PlaybookFidelity;
   regimeTags: string;
   preconditions: string;
   trigger: string;
@@ -53,6 +65,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-01",
     name: "VWAP Reclaim",
     direction: "either",
+    setup_family: "reversal_failure",
+    fidelity: "high",
     regimeTags: "Trend / recovery after flush",
     preconditions:
       "Price below VWAP ≥15m, then reclaims with volume; EMA9 curling toward VWAP.",
@@ -64,6 +78,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-02",
     name: "VWAP Reject",
     direction: "short",
+    setup_family: "mean_reversion",
+    fidelity: "high",
     regimeTags: "Weak trend / distribution",
     preconditions: "Rally into VWAP from below; repeated rejections at VWAP band.",
     trigger: "3m close rejection wick + negative net flow spike.",
@@ -74,6 +90,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-03",
     name: "Opening Range Breakout",
     direction: "either",
+    setup_family: "trend_continuation",
+    fidelity: "high",
     regimeTags: "Opening drive",
     preconditions: "First 15–30m range defined; GEX not pinning inside range.",
     trigger: "Break of OR high/low with flow confirmation; spot clears flip level.",
@@ -84,6 +102,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-04",
     name: "Gamma Pin Fade",
     direction: "either",
+    setup_family: "mean_reversion",
+    fidelity: "mvp",
     regimeTags: "High pin / low vol midday",
     preconditions: "Spot between major walls; charm decay elevated; low ATR.",
     trigger: "Touch of wall + rejection; confluence on mean-reversion factors.",
@@ -94,6 +114,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-05",
     name: "Wall Break Continuation",
     direction: "either",
+    setup_family: "trend_continuation",
+    fidelity: "mvp",
     regimeTags: "Trend / vol expansion",
     preconditions: "Price compressed under call or put wall; rising VEX magnitude.",
     trigger: "Close through wall + rising premium flow same direction.",
@@ -104,6 +126,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-06",
     name: "Flip Level Ride",
     direction: "either",
+    setup_family: "trend_continuation",
+    fidelity: "mvp",
     regimeTags: "Trend",
     preconditions: "Spot oscillating at gamma flip; regime trending.",
     trigger: "Decisive break of flip with EMA9/21 stack aligned.",
@@ -114,6 +138,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-07",
     name: "Max Pain Gravitation",
     direction: "either",
+    setup_family: "mean_reversion",
+    fidelity: "mvp",
     regimeTags: "Expiry / pin",
     preconditions: "Spot >0.3% from max pain; time >14:00; charm elevated.",
     trigger: "Momentum stall toward pain; decreasing realized vol.",
@@ -124,6 +150,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-08",
     name: "Power Hour Momentum",
     direction: "either",
+    setup_family: "trend_continuation",
+    fidelity: "mvp",
     regimeTags: "Power hour",
     preconditions: "15:00–16:00; net flow dominant one side 10m+.",
     trigger: "Break of 30m micro-range with accelerating prints.",
@@ -134,6 +162,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-09",
     name: "HELIX Flow Surge",
     direction: "either",
+    setup_family: "flow_event",
+    fidelity: "mvp",
     regimeTags: "Any with premium spike",
     preconditions: "HELIX alert tier ≥ threshold; ticker SPX/SPXW.",
     trigger: "Desk direction aligns within 2 play polls; spot near strike cluster.",
@@ -144,6 +174,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-10",
     name: "EMA Stack Pullback",
     direction: "either",
+    setup_family: "trend_continuation",
+    fidelity: "mvp",
     regimeTags: "Trend",
     preconditions: "EMA9 > EMA21 > SMA50 (bull) or inverse; pullback to EMA9/21.",
     trigger: "Bounce candle + positive flow on 3m.",
@@ -154,6 +186,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-11",
     name: "Range Chop Scalp",
     direction: "either",
+    setup_family: "mean_reversion",
+    fidelity: "high",
     regimeTags: "Chop / low trend score",
     preconditions: "Regime chop; defined 30m range; no breakout.",
     trigger: "Fade at range edge with rejection wick.",
@@ -164,6 +198,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-12",
     name: "Lotto Reversal",
     direction: "either",
+    setup_family: "reversal_failure",
+    fidelity: "mvp",
     regimeTags: "Extreme extension",
     preconditions: "Rapid extension >0.5% in 15m; RSI stretch; near wall.",
     trigger: "Reversal candle + flow exhaustion signal.",
@@ -174,6 +210,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-13",
     name: "Gap Fade",
     direction: "either",
+    setup_family: "reversal_failure",
+    fidelity: "mvp",
     regimeTags: "Opening gap",
     preconditions: "Open gap ≥0.3% from prior close.",
     trigger: "First 15m fails to extend gap; m3 close back toward prior close.",
@@ -184,6 +222,8 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
     id: "PB-14",
     name: "Failed Breakout Reversal",
     direction: "either",
+    setup_family: "reversal_failure",
+    fidelity: "high",
     regimeTags: "Opening drive / reversal",
     preconditions: "OR break occurred; price re-enters opening range.",
     trigger: "Re-entry inside OR + cross OR mid with flow flip to reversal side.",
