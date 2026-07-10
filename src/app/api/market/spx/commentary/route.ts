@@ -7,6 +7,8 @@ import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { serverCache } from "@/lib/server-cache";
 import { sharedCacheGet } from "@/lib/shared-cache";
 
@@ -100,6 +102,23 @@ export async function POST(req: NextRequest) {
           prevNighthawk,
           nighthawk,
         },
+        playbookShadow: await (async () => {
+          const technicals = await buildPlayTechnicals(desk.price, {
+            vwap: desk.vwap,
+            pdh: desk.pdh,
+            pdl: desk.pdl,
+            hod: desk.hod,
+            lod: desk.lod,
+          });
+          const panel = buildPlaybookShadowPanel(desk, technicals);
+          if (!panel) return null;
+          const primary = panel.verdicts.find((v) => v.primary) ?? null;
+          return {
+            primary_playbook_id: panel.primary_playbook_id,
+            primary_name: primary?.name ?? null,
+            fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,
+          };
+        })(),
       });
       if (!generated) throw new Error("spx-commentary: generation returned null");
       return {

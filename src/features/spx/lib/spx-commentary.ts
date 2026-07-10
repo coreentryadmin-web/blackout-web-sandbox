@@ -568,6 +568,11 @@ export async function generateSpxCommentary(
     prevNighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
     /** Pre-fetched matrix rows — skips duplicate provider calls on commentary cold path. */
     intelPrefetch?: SpxBriefIntelPrefetch;
+    playbookShadow?: {
+      primary_playbook_id: string | null;
+      primary_name: string | null;
+      fired_count: number;
+    } | null;
   }
 ): Promise<{ commentary: SpxCommentaryResult; intelCache: SpxCommentaryIntelCache } | null> {
   const delta = computeDelta(desk, previous);
@@ -691,6 +696,7 @@ export async function generateSpxCommentary(
     outcomes: oc && oc.total_closed > 0 ? oc : null,
     precedentDetail,
     intel,
+    playbookShadow: cross?.playbookShadow ?? null,
   });
 
   const known = [
