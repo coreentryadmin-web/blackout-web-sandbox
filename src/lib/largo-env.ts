@@ -1,9 +1,9 @@
-import { isStagingDeploy } from "@/lib/clerk-env";
+import { largoAvailable } from "@/lib/ai-env";
 
 /**
- * Largo desk AI (terminal chat + SPX commentary rail) is production-only.
- * Staging validates playbooks, matrix, and engine paths without Anthropic spend.
+ * Largo desk surfaces (SPX commentary rail, terminal API).
+ * Production: Claude when configured. Staging: BIE-only (zero Anthropic) — see ai-env.
  */
 export function largoEnabled(): boolean {
-  return !isStagingDeploy();
+  return largoAvailable();
 }
