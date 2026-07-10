@@ -20,9 +20,14 @@ This document consolidates architecture, implementation status, per-playbook fid
 8. [Open gaps & phase plan](#8-open-gaps--phase-plan)
 9. [Gates, flags, and live allowlist](#9-gates-flags-and-live-allowlist)
 10. [Telemetry & evidence promotion](#10-telemetry--evidence-promotion)
-11. [Code map](#11-code-map)
-12. [Validation commands](#12-validation-commands)
-13. [Related docs](#13-related-docs)
+11. [External assessment scores](#11-external-assessment-scores)
+12. [Data & research requirements](#12-data--research-requirements)
+13. [Instance schema — 20 required fields](#13-instance-schema--20-required-fields)
+14. [Expectancy metrics (not win rate alone)](#14-expectancy-metrics-not-win-rate-alone)
+15. [Hard constants — OOS validation bands](#15-hard-constants--oos-validation-bands)
+16. [Code map](#16-code-map)
+17. [Validation commands](#17-validation-commands)
+18. [Related docs](#18-related-docs)
 
 ---
 
@@ -34,11 +39,13 @@ This document consolidates architecture, implementation status, per-playbook fid
 | **Staging deploy** | Playbook lab **hardwired** via `isStagingDeploy()` — live gate always on |
 | **Live allowlist** | PB-01, PB-02, PB-03, PB-04 only (`PLAYBOOK_LIVE_ALLOWLIST`) |
 | **Prod Railway** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
-| **Primary selection** | Family-grouped priority; **PB-09 (HELIX) never primary** — flow modifier only |
+| **Primary selection** | FULL-SPEC §5 order minus PB-09 (HELIX modifier only) |
 | **State machine** | Per-instance transitions with **invalidation**; still tick-recomputed matchers |
 | **Evidence** | n=19 prod outcomes mined; autonomous prod BUY frozen until tier thresholds |
 
-**Bottom line:** Staging is the evidence lab. Four families validate edge before per-PB label splits. PB-09 demoted. Unknown regime and severe data quality fail-closed on live BUY. MVP matchers stay shadow-only until promotion tiers met.
+**Bottom line:** Staging is the evidence lab. Architecture is promising; **trading edge remains unproven**. Do not confuse explainability with profitability. Four families validate edge before per-PB label splits. PB-09 demoted. Unknown regime and severe data quality fail-closed on live BUY. MVP matchers stay shadow-only until promotion tiers met.
+
+> **Critical takeaway:** Do not interpret the sophistication of the architecture as evidence that the strategy works. The architecture enables falsifiable hypotheses; profitability requires clean prospective evidence, execution realism, and risk controls.
 
 ---
 
@@ -306,7 +313,156 @@ Every ~2s play poll on staging:
 
 ---
 
-## 11. Code map
+## 11. External assessment scores
+
+Independent review (2026-07-10) — aligned with repo policy:
+
+| Dimension | Score | Assessment |
+|-----------|-------|------------|
+| **Architecture** | 8/10 | Layered model, shadow rollout, named setups, state-machine direction, telemetry path are strong |
+| **Strategy specification** | 6/10 | Thoughtful rules, but static thresholds, weak proxies, incomplete fields, overlapping playbooks |
+| **Evidence quality** | 2/10 | n=19 prod trades, all long, negative avg P&L, no playbook-specific prospective sample |
+| **Production readiness** | 3/10 | Appropriate for shadow/staging; not trusted autonomous 0DTE generation |
+| **Potential** | 8/10 | Could become serious if next work is prospective evidence + execution realism + risk controls |
+
+---
+
+## 12. Data & research requirements
+
+ChatGPT research checklist (2026-07-10). **Policy already matches** several items; implementation gaps below.
+
+### 12.1 Capture every eligible setup — not only opens
+
+**Requirement:** Log armed, triggered, blocked, and invalidated setups so gate impact on expectancy can be measured.
+
+| Capability | Status |
+|------------|--------|
+| Shadow observations on state change | ✅ `maybeLogPlaybookShadowMatch` (throttled) |
+| Per-PB verdicts every observation | ✅ `verdicts` JSONB |
+| `pipeline_audit` funnel (long/short + family) | ✅ Shipped |
+| `blocked_*` when gates veto primary | 🟡 Partial — only when engine evaluates BUY with `gate_blocks` passed in |
+| Per-instance row for **non-primary** armed setups | ❌ One instance per PB per day, but no `reason_blocked` / `executable` flag |
+| Counterfactual path for blocked triggers | ❌ Not logged |
+
+**Next:** Emit one durable row per `(instance_id, transition)` including blocked-primary events even when action ≠ BUY.
+
+### 12.2 Freeze feature values at decision time
+
+**Requirement:** Gamma walls, max pain, regime, flow, derived levels must be **timestamped and immutable** at arm/trigger/block — no look-ahead relabeling.
+
+| Field | Status |
+|-------|--------|
+| `PlaybookFeatureSnapshot` at observation | ✅ `captured_at` + desk slice |
+| Snapshot on instance arm/trigger | ✅ Upsert writes `feature_snapshot` |
+| Full GEX wall geometry frozen | ❌ Only `gex_wall_count` today |
+| Max pain / king strike frozen | ❌ Not in snapshot |
+| Per-transition snapshot (not overwritten) | ❌ Instance row overwrites latest snapshot |
+
+**Next:** Append-only `spx_playbook_instance_events` with immutable snapshot per transition.
+
+### 12.3 Separate hypothesis generation from validation
+
+**Requirement:** The n=19 prod outcomes that **motivated** the playbook redesign are **training only** — never used to validate new rules.
+
+| Rule | Status |
+|------|--------|
+| `PLAYBOOK-EVIDENCE-BASE.md` documents n=19 as motivation | ✅ |
+| PB-04, PB-08, all non-allowlist PBs | Must validate **prospectively** from post-design sessions only |
+| Promotion tiers require new sample sizes | ✅ Research ≥30 triggers; staging ≥50–75 |
+| Automated firewall excluding pre-2026-07-07 outcomes from promotion SQL | ❌ Manual discipline only |
+
+**Next:** `scripts/playbook-evidence-report.mjs` with `TRAIN_CUTOFF_DATE` and OOS-only promotion queries.
+
+### 12.4 Evaluate gates — blocked vs non-opened
+
+**Requirement:** Without blocked-setup logging, cannot tell if safety gates improve or hurt expectancy.
+
+| Signal | Status |
+|--------|--------|
+| `blocks_by_category` on gate result | ✅ Labels only |
+| `pipeline_audit.blocked_long/short` | 🟡 When opts passed |
+| Per-playbook block reason on primary candidate | ❌ |
+| Shadow log when primary fired but gates blocked | ❌ Not always persisted |
+
+---
+
+## 13. Instance schema — 20 required fields
+
+Target row per playbook instance (research contract):
+
+| # | Field | Status | Where today |
+|---|-------|--------|-------------|
+| 1 | `session_date` | ✅ | `spx_playbook_instances` |
+| 2 | `playbook_id` | ✅ | same |
+| 3 | `instance_id` | ✅ | `{session}:{playbook_id}` |
+| 4 | `armed_at` | ✅ | COALESCE on first armed |
+| 5 | `triggered_at` | ✅ | COALESCE on first triggered |
+| 6 | `invalidated_at` | ❌ | State exists; **no column** |
+| 7 | `opened_at` | ❌ | Only on `spx_open_play` join |
+| 8 | `closed_at` | ❌ | Only on `spx_play_outcomes` join |
+| 9 | `direction` | ✅ | instance row |
+| 10 | regime snapshot | 🟡 | `feature_snapshot.regime` + obs row |
+| 11 | input feature snapshot | 🟡 | Partial `PlaybookFeatureSnapshot` |
+| 12 | data-quality flags | 🟡 | `halt_channel_stale` only in snapshot |
+| 13 | reason armed | 🟡 | `detail` string |
+| 14 | reason triggered | 🟡 | `detail` on trigger transition |
+| 15 | reason blocked | ❌ | Not persisted per instance |
+| 16 | reason invalidated | ❌ | Transition logged in JSONB only |
+| 17 | underlying entry reference | ❌ | No spot/level at open on instance |
+| 18 | option contract candidate | 🟡 | `execution_sim` on open play only |
+| 19 | counterfactual MFE/MAE | ❌ | Not tracked for non-opens |
+| 20 | actual outcome | 🟡 | `spx_play_outcomes` when opened |
+
+**Coverage today: ~9/20 complete, ~6/20 partial, ~5/20 missing.**
+
+---
+
+## 14. Expectancy metrics (not win rate alone)
+
+Per playbook (and per family), compute from **prospective OOS sample only**:
+
+| Metric | Status |
+|--------|--------|
+| armed / triggered / executable counts | 🟡 Funnel in `pipeline_audit`; no SQL report |
+| win rate | 🟡 `spx_play_outcomes` when opened |
+| mean & median return | ❌ No playbook report script |
+| profit factor | ❌ |
+| expectancy | ❌ |
+| downside deviation | ❌ |
+| median MAE / MFE | ❌ |
+| MFE capture % | ❌ |
+| tail loss | ❌ |
+| time in trade | 🟡 On outcomes table generally |
+| results after cost assumptions | 🟡 `execution_sim` stub at open |
+| performance by VIX / gamma regime | ❌ |
+
+> A 40% win-rate system can be excellent. A 60% win-rate system can lose money. Promotion decisions must use expectancy and cost-adjusted returns, not win rate alone.
+
+**Next:** `npm run playbook:evidence-report` aggregating instance events + outcomes + `execution_sim`.
+
+---
+
+## 15. Hard constants — OOS validation bands
+
+Several thresholds are **documented but lightly motivated**. Do **not** optimize each independently on n=19. Use **stability bands** — a real edge should survive 8↔12 pts proximity, not disappear at small moves.
+
+| Constant | Default | Env override | Validation band (proposed) |
+|----------|---------|--------------|----------------------------|
+| Wall proximity | 10 pts | `SPX_PLAY_STRUCTURE_PROX_PTS` | 8–12 |
+| MTF breakout buffer | 1 pt | `SPX_PLAY_MTF_BUFFER_PTS` | 0.5–2 |
+| Wall stop offset | 3 pts | code | 2–4 |
+| HELIX stop | 5 pts | code | 4–6 |
+| Gap threshold (PB-13) | 0.3% | matcher | 0.25–0.35% |
+| Range chop (PB-11) | 0.35% | matcher | 0.30–0.40% |
+| RSI stretch (PB-12) | 72/28 | matcher | 70–74 / 26–30 |
+| VWAP duration (PB-01) | 15 min | matcher | 12–18 min |
+| Flow materiality (PB-02) | 100k | `PLAYBOOK_FLOW_MATERIALITY_MIN` | 75k–150k |
+
+**Next:** Parameter sweep harness on **OOS shadow instances only** (post 2026-07-10), report sensitivity not optimum.
+
+---
+
+## 16. Code map
 
 | Module | Role |
 |--------|------|
@@ -328,7 +484,7 @@ Every ~2s play poll on staging:
 
 ---
 
-## 12. Validation commands
+## 17. Validation commands
 
 ```bash
 # Local
@@ -349,7 +505,7 @@ Expected staging playbook validate:
 
 ---
 
-## 13. Related docs
+## 18. Related docs
 
 | Doc | Use when |
 |-----|----------|
