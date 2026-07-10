@@ -1,6 +1,7 @@
 # SPX Slayer — Playbook End-to-End Foundation
 
-**Status:** Target architecture designed; **hybrid on staging** (all 14 matchers live in shadow/lab).  
+**Status:** Target architecture designed; **hybrid on staging** (14 shadow matchers; full fidelity on PB-01–04, 08).  
+**Staging policy:** playbook live gate **always on** when `isStagingDeploy()` — not env-toggleable.  
 **Narrative deep dive:** `docs/spx/PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md`  
 **Rule-level spec:** `docs/spx/PLAYBOOK-FULL-SPEC-v2.md`  
 **This file:** flowcharts + build vs gap map for agents and RTH validation.
@@ -11,7 +12,7 @@
 
 | Layer | Designed? | Built? | Notes |
 |-------|-----------|--------|-------|
-| Named playbooks PB-01…14 | Yes | Yes (shadow + ARM UI + matchers) | Registry + matcher; MVP fallbacks for NEEDS-FIELD |
+| Named playbooks PB-01…14 | Yes | Yes (shadow matchers all 14; full fidelity 01–04, 08) | Registry + matcher |
 | Regime Router | Yes | Yes (MVP) | `playbook-regime-router.ts` |
 | Matcher (preconditions / trigger) | Yes | Yes (bar-fidelity MVP) | OR / VWAP streaks / EMA9 |
 | Safety gates (halt, stale, session…) | Yes (as-built) | Yes | Still global AND |

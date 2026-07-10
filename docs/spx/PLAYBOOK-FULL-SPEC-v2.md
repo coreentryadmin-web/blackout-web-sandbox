@@ -133,7 +133,7 @@ Eligibility matrix (× = eligible):
 | 13 Gap Fade | × | | | | | | × |
 | 14 Failed Break | × | × | × | × | × | × | × |
 
-*(Rows 05–07, 09–14: full matchers on staging with MVP fallbacks where NEEDS-FIELD.)*
+*(Rows 05–07, 09–14: MVP matchers on staging — FULL-SPEC §3 `*spec*` = simplified pre, not absent code.)*
 
 The gamma-specific pin check (PB-04/07) lives in the **matcher** via
 `gamma_regime`, not the router — the router's EMA regime and the dealer gamma
@@ -366,10 +366,10 @@ Sizing ladder (uses existing `entry_mode` full/starter):
 
 | Phase | Content | Status |
 |-------|---------|--------|
-| 1 | Shadow matcher PB-01…14 | live (staging) |
+| 1 | Shadow matcher PB-01…14 (MVP for 05–07, 09–14) | live (staging) |
 | 2 | ARM UI + fidelity + regime router | live (staging) |
-| 2b | Evidence PBs 04/08 | live (staging) |
-| 3 | `PLAYBOOK_LIVE_GATE` / staging lab BUY gate | shipped (staging lab on; prod default off) |
+| 2b | Full-fidelity matchers PB-04/08 | live (staging) |
+| 3 | Playbook live gate on staging | **always on** (`isStagingDeploy()`); prod needs `PLAYBOOK_LIVE_GATE=1` |
 | 4 | `playbook_id` telemetry | shipped |
 | 5 | State machine (`playbook-state.ts`) | next |
 | 6 | Playbook checklist replaces global soup in UI | after state machine |

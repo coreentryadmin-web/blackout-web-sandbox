@@ -4,7 +4,7 @@
 
 ## Executive summary
 
-**Named playbooks are live on staging** in shadow + **playbook lab** mode: all **14 setups (PB-01…PB-14)** evaluate every play poll, surface in the Playbook terminal tab, Largo BIE line, and kanban ARM hints. On staging, `STAGING_PLAYBOOK_LAB=1` (default) enables **playbook live gate** — BUY requires a fired primary playbook + aligned direction (starter sizing, advisory confirmations). **Prod** still uses legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` is set.
+**Named playbooks are live on staging** in shadow + **playbook lab** mode: all **14 setups (PB-01…PB-14)** evaluate every play poll. **Playbook-gated BUY is always on staging** — hardwired via `isStagingDeploy()` (staging URL at Docker build), not an env default. BUY requires a fired primary playbook + aligned direction (starter sizing). **Prod** uses legacy confluence BUY until `PLAYBOOK_LIVE_GATE=1` is set explicitly.
 
 **Jul 10, 2026 session:** bullish tape, **mean-revert gamma**. Morning **PB-01 VWAP Reclaim** armed; afternoon **PB-04 Gamma Pin Fade** at resistance (~7575). Engine stayed flat on prod-style gates; playbooks and BIE agreed — informational setups, no forced bad entry inside the pin.
 

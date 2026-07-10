@@ -43,7 +43,7 @@ The **playbook architecture** replaces “score alone” with **named, auditable
 
 - All **14 playbooks** evaluate every play poll via `matchPlaybooksShadow()`.
 - The **Playbook terminal tab** shows live verdicts (ARM/TRIGGER per PB).
-- The **legacy confluence engine** still owns BUY on prod; staging runs **playbook lab** (`STAGING_PLAYBOOK_LAB=1` default) which enables `playbookLiveGateEnabled()` and requires a fired primary playbook for BUY.
+- The **legacy confluence engine** still owns BUY on prod. **Staging always runs playbook lab** — `playbookStagingLabEnabled()` is hardwired to `isStagingDeploy()` (staging URL at Docker build). No env toggle. BUY requires a fired primary playbook + aligned direction (starter sizing).
 - **Telemetry** logs shadow transitions and `playbook_id` on opens for evidence.
 
 **Target end state:** playbook-first E2E — state machine, per-playbook checklist UI, watch keys tied to playbook instances, evidence-gated promotion per PB.
@@ -333,6 +333,22 @@ Known mutual exclusions:
 
 **Cap at 14:** breadth without per-PB evidence = untested rules gating real money. New patterns must merge/replace an existing PB.
 
+### 6.6 Matcher fidelity tiers (reconciles FULL-SPEC §3 vs §8)
+
+| Tier | Playbooks | Meaning |
+|------|-----------|---------------|
+| **Shadow matcher** | PB-01…14 | `matchPlaybooksShadow()` runs every poll; Playbook tab + telemetry |
+| **Full-spec fidelity** | PB-01–04, PB-08 | Evidence-backed; matcher matches FULL-SPEC without `[NEEDS-FIELD]` gaps |
+| **MVP matcher** | PB-05–07, 09–14 | Matcher shipped with simplified preconditions (FULL-SPEC §3 `*spec*`) |
+
+§3 `*implemented*` vs `*spec*` describes **rule fidelity**, not whether code exists. All 14 have matcher functions; only 01–04 and 08 are promotion-grade for evidence gating.
+
+### 6.7 Staging policy — playbook lab always on
+
+**By design, not a footgun:** `staging.blackouttrades.com` exists to prove playbook-gated BUY before prod. `playbookStagingLabEnabled()` returns true whenever `NEXT_PUBLIC_SITE_URL` contains `staging.` (baked in `ecr-push-staging.yml`). There is no `STAGING_PLAYBOOK_LAB=0` off switch — staging without playbook lab would duplicate prod and waste the environment.
+
+Prod enables the same gate only via explicit `PLAYBOOK_LIVE_GATE=1`.
+
 ### 6.5 Per-playbook rule format (see FULL-SPEC for field-level detail)
 
 Each PB follows:
@@ -419,9 +435,9 @@ In `evaluatePlayGates()` when `buyIntent && playbookLiveGateEnabled()`:
 
 | Env | Where | Effect |
 |-----|-------|--------|
-| `PLAYBOOK_LIVE_GATE=1` | any | Forces live gate on |
-| `STAGING_PLAYBOOK_LAB=1` (default on staging) | staging | Enables lab + live gate via `playbookLiveGateEnabled()` |
-| Both unset / lab=0 | prod default | Shadow only — BUY uses legacy score path |
+| `isStagingDeploy()` (staging URL at build) | staging | **Always** playbook lab + live gate — hardwired |
+| `PLAYBOOK_LIVE_GATE=1` | prod (explicit) | Forces live gate on prod |
+| Neither | prod default | Shadow only — legacy score path for BUY |
 
 ### 7.5 Telemetry
 
@@ -592,15 +608,9 @@ See `PLAYBOOK-FULL-SPEC-v2.md` §1. Highlights:
 | `recovery` / `weak` / `neutral` | `desk.regime` |
 | `unknown` | missing — fail-open (all PBs eligible) |
 
-### C. Key env vars (staging)
+### C. Staging build (playbook lab is implicit)
 
-```bash
-STAGING_PLAYBOOK_LAB=1          # default — enables playbook live gate on staging
-PLAYBOOK_LIVE_GATE=1            # force on any deploy
-SPX_PLAY_MEMBER_READ_CACHE_SEC=2
-SPX_CHAIN_QUOTE_TTL_MS=4000
-SPX_GEX_HEATMAP_CACHE_SEC=6
-```
+Staging images always bake `NEXT_PUBLIC_SITE_URL=https://staging.blackouttrades.com` — that alone enables playbook lab. Optional ECS keys (`PLAYBOOK_LIVE_GATE`, `STAGING_PLAYBOOK_LAB`) in infra are redundant documentation; code does not read them for the on/off decision on staging.
 
 ### D. Validation commands
 

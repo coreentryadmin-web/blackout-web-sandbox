@@ -393,20 +393,20 @@ export function playTechnicalsCacheSec(): number {
 
 /**
  * Staging-only playbook lab — relaxed starter entries when a primary playbook fires
- * and direction aligns. Default on for `isStagingDeploy()`; set `STAGING_PLAYBOOK_LAB=0` to disable.
+ * and direction aligns. Always on when `isStagingDeploy()` (staging URL baked at build).
+ * Not env-toggleable: staging exists to exercise playbook-gated BUY before prod.
  */
 export function playbookStagingLabEnabled(): boolean {
-  if (!isStagingDeploy()) return false;
-  return flag(process.env.STAGING_PLAYBOOK_LAB, true);
+  return isStagingDeploy();
 }
 
 /**
  * Phase 3 playbook live gate — when true, BUY requires `primary_playbook_id` from the matcher.
- * Auto-enabled on staging when playbook lab is on (`PLAYBOOK_LIVE_GATE=1` also forces on anywhere).
+ * Always on staging (via playbook lab). Prod: set `PLAYBOOK_LIVE_GATE=1` explicitly.
  */
 export function playbookLiveGateEnabled(): boolean {
-  if (flag(process.env.PLAYBOOK_LIVE_GATE, false)) return true;
-  return playbookStagingLabEnabled();
+  if (playbookStagingLabEnabled()) return true;
+  return flag(process.env.PLAYBOOK_LIVE_GATE, false);
 }
 
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */
