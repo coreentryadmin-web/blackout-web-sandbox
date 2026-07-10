@@ -19,7 +19,9 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 - **Unified data plane** `loadBiePlatformContext()` (`src/lib/bie/platform-context.ts`) — one parallel fan-out across SPX desk, matrix intel, Night Hawk (RDS), HELIX tape, market-regime snapshot, play-engine cross-state, and `bie_knowledge` retrieval (Voyage embeddings in RDS). BIE does **not** open raw Redis/SQL; it uses the same platform service readers dashboards and Largo tools use (those readers already sit on ElastiCache + RDS).
 - **Intel loader** `loadSpxBriefIntel()` reads shared `getGexPositioning("SPX")` + heatmap cache + NH edition diffs (zero extra UW RPS). Commentary cache stores `positioning` + `heatmapSlice` + `nighthawk` per 5-min window for matrix/NH diffs.
 - **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first.
-- **Kill Claude spend path:** SPX commentary + play approval + flow-brief + GEX explain + Largo router hits are BIE-first. Remaining Claude: Largo fallback (reasoning questions), NH edition synthesis, play critic/explainer, Haiku follow-ups — migrate these to BIE composers + `searchKnowledge` over time.
+- **Kill Claude spend path:** SPX commentary + play approval + flow-brief + GEX explain + Largo router hits are BIE-first. Remaining Claude: Largo fallback (non-SPX reasoning), NH edition synthesis, play critic/explainer, Haiku follow-ups.
+- **Synthesis layer** `synthesizeSpxDeskIntel()` — THESIS, MECHANIC (γ/vanna/δ/charm), ALIGNMENT (engine/NH/lotto vs read), FRICTION (opposing factors), watch triggers. SPX-scoped "why" questions route to `spx_desk_read` instead of Claude.
+- **Latency:** `getCachedBiePlatformContext()` (8s desk / 20s market SWR) + Largo answer cache (12s) + commentary 5-min shared window. Cold path parallelizes desk/matrix/cross; Voyage precedent capped at 1.5s (optional).
 
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.

@@ -10,7 +10,12 @@ import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
 import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
 import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
-import { loadBiePlatformContext } from "@/lib/bie/platform-context";
+import {
+  BIE_LARGO_ANSWER_TTL_MS,
+  getCachedBiePlatformContext,
+  largoAnswerCacheKey,
+} from "@/lib/bie/platform-cache";
+import { withServerCache } from "@/lib/server-cache";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
@@ -99,10 +104,7 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
 }
 
 async function composeSpxDeskRead(): Promise<BieComposed | null> {
-  const platform = await loadBiePlatformContext({
-    scope: "desk",
-    knowledgeQuery: "SPX gamma GEX dealer positioning live desk",
-  });
+  const platform = await getCachedBiePlatformContext({ scope: "desk" });
   const desk = platform.desk;
   if (!desk) return null;
   const confluence = computeSpxConfluence(desk);
@@ -118,14 +120,7 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
     intel: platform.intel ?? undefined,
   });
   const knowledge = formatKnowledgeFootnotes(platform.knowledge);
-  const answer = [
-    `**SPX Live Desk read**`,
-    "",
-    `**${brief.headline}**`,
-    "",
-    brief.body,
-    knowledge ? `\n\n${knowledge}` : "",
-  ]
+  const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
     .filter(Boolean)
     .join("\n");
   return {
@@ -161,11 +156,10 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
-  const platform = await loadBiePlatformContext({
-    scope: "market",
-    knowledgeQuery: "market regime breadth VIX session context",
-  });
-  const raw = (await runLargoTool("get_market_context", {})) as Record<string, unknown> | null;
+  const [platform, raw] = await Promise.all([
+    getCachedBiePlatformContext({ scope: "market", flowLimit: 24 }),
+    runLargoTool("get_market_context", {}) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const parts: string[] = [];
   const top = scalarSection("Market context (live)", raw, [
@@ -279,6 +273,16 @@ async function composeTickerEcosystem(ticker: string): Promise<BieComposed | nul
 
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
 export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
+  const cacheKey = largoAnswerCacheKey(route.intent, route.ticker);
+  return withServerCache<BieComposed | null>(
+    cacheKey,
+    BIE_LARGO_ANSWER_TTL_MS,
+    () => composeBieAnswerUncached(route),
+    { staleWhileRevalidate: true }
+  );
+}
+
+async function composeBieAnswerUncached(route: BieRoute): Promise<BieComposed | null> {
   try {
     switch (route.intent) {
       case "zerodte_plays":

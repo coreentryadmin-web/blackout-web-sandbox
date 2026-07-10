@@ -42,6 +42,8 @@ describe("composeSpxDeskBrief", () => {
     );
 
     assert.match(result.headline, /LONG|CHOP|NO-EDGE|SHORT/);
+    assert.ok(result.body.includes("THESIS"));
+    assert.ok(result.body.includes("MECHANIC"));
     assert.ok(result.body.includes("WHY"));
     assert.ok(result.body.includes("SIGNALS"));
     assert.ok(result.body.includes("LEVELS"));
@@ -50,7 +52,7 @@ describe("composeSpxDeskBrief", () => {
     assert.ok(result.body.includes("NEXT 5M"));
     assert.ok(result.body.includes("FLIPS IT"));
     assert.match(result.headline, /\{\{[\d,.\-+ ]+\}\}/);
-    assert.deepEqual(result.watch, []);
+    assert.ok(result.watch.length >= 1);
     assert.deepEqual(result.changed, []);
     assert.ok(["bullish", "bearish", "neutral"].includes(result.bias));
   });

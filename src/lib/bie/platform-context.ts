@@ -4,12 +4,17 @@ import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
 import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
 import { getPlatformSnapshot, type PlatformSnapshot } from "@/lib/platform";
-import { loadSpxBriefIntel, type SpxBriefIntelPrev } from "@/lib/bie/load-spx-brief-intel";
+import {
+  loadSpxBriefIntel,
+  type SpxBriefIntelPrefetch,
+  type SpxBriefIntelPrev,
+} from "@/lib/bie/load-spx-brief-intel";
 import type { SpxDeskBriefIntel } from "@/lib/bie/spx-desk-intel";
 import { searchKnowledge, type RetrievedChunk } from "@/lib/bie/knowledge";
 import { getLatestNightHawkEdition } from "@/lib/platform/nighthawk-service";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
+import { getGexPositioning } from "@/lib/providers/gex-positioning";
+import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 
 export { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
 
@@ -22,27 +27,19 @@ export type BieCrossEngineState = {
 
 export type BiePlatformContext = {
   as_of: string;
-  /** Cross-service snapshot — SPX summary, HELIX tape, Night Hawk (same readers as Largo tools). */
   snapshot: PlatformSnapshot;
-  /** Full merged SPX desk when scope includes desk (UW + Polygon + WS caches). */
   desk: SpxDeskPayload | null;
-  /** Matrix greeks, heatmap walls, material intel edges. */
   intel: SpxDeskBriefIntel | null;
-  /** Latest Night Hawk edition from RDS (full plays, not summary-only). */
   nighthawk: NightHawkEdition | null;
-  /** HELIX market-regime detector snapshot from RDS (via get_market_regime tool reader). */
   regime: Record<string, unknown> | null;
-  /** SPX play engine cross-state from RDS. */
   cross: BieCrossEngineState;
-  /** Voyage-retrieved desk knowledge chunks (playbooks, findings, precedents) — no Claude. */
   knowledge: RetrievedChunk[];
 };
 
 export type LoadBiePlatformContextOpts = {
-  /** desk = full SPX desk + intel; market = snapshot + regime only; full = everything. */
   scope?: "desk" | "market" | "full";
   intelPrev?: SpxBriefIntelPrev | null;
-  /** When set, runs searchKnowledge() against bie_knowledge (RDS embeddings). */
+  /** Off by default on hot paths — Voyage embed adds 200–800ms. Enable only when needed. */
   knowledgeQuery?: string | null;
   flowLimit?: number;
 };
@@ -57,20 +54,110 @@ async function loadCrossEngineState(): Promise<BieCrossEngineState> {
   return { openPlay, lotto, powerHour, outcomes };
 }
 
+function emptySnapshot(as_of: string): PlatformSnapshot {
+  return { as_of };
+}
+
+/** Desk-only fast path — one parallel batch, no snapshot/regime/knowledge. */
+async function loadDeskPlatformContext(
+  as_of: string,
+  intelPrev?: SpxBriefIntelPrev | null
+): Promise<BiePlatformContext> {
+  const [deskResult, nighthawk, cross, positioning, heatmap] = await Promise.all([
+    loadMergedSpxDesk().catch(() => ({ merged: null as SpxDeskPayload | null })),
+    getLatestNightHawkEdition().catch(() => null),
+    loadCrossEngineState(),
+    getGexPositioning("SPX", { includeIntradayAdjusted: true }).catch(() => null),
+    fetchGexHeatmap("SPX").catch(() => null),
+  ]);
+
+  const desk =
+    deskResult.merged?.available && deskResult.merged.price != null && deskResult.merged.price > 0
+      ? deskResult.merged
+      : null;
+
+  const prefetch: SpxBriefIntelPrefetch = { positioning, heatmap };
+  let intel: SpxDeskBriefIntel | null = null;
+  if (desk) {
+    intel = await loadSpxBriefIntel(
+      desk,
+      {
+        desk: intelPrev?.desk ?? null,
+        positioning: intelPrev?.positioning ?? null,
+        heatmapSlice: intelPrev?.heatmapSlice ?? null,
+        prevNighthawk: intelPrev?.prevNighthawk ?? null,
+        nighthawk: intelPrev?.nighthawk ?? nighthawk,
+      },
+      nighthawk,
+      intelPrev?.prevNighthawk ?? null,
+      prefetch
+    );
+  }
+
+  return {
+    as_of,
+    snapshot: emptySnapshot(as_of),
+    desk,
+    intel,
+    nighthawk,
+    regime: null,
+    cross,
+    knowledge: [],
+  };
+}
+
+/** Market-only fast path — snapshot + regime in parallel; no full desk merge. */
+async function loadMarketPlatformContext(
+  as_of: string,
+  flowLimit: number
+): Promise<BiePlatformContext> {
+  const [snapshot, regime, cross] = await Promise.all([
+    getPlatformSnapshot({
+      include: ["spx", "flows", "nighthawk"],
+      flowLimit,
+      fullEdition: false,
+    }),
+    runLargoTool("get_market_regime", {}).catch(() => null) as Promise<Record<string, unknown> | null>,
+    loadCrossEngineState(),
+  ]);
+
+  const regimeClean =
+    regime && typeof regime === "object" && !(regime as { error?: unknown }).error ? regime : null;
+
+  return {
+    as_of,
+    snapshot,
+    desk: null,
+    intel: null,
+    nighthawk: null,
+    regime: regimeClean,
+    cross,
+    knowledge: [],
+  };
+}
+
 /**
- * Unified BIE data plane — one parallel fan-out across every platform service.
- *
- * Does NOT open raw Redis or ad-hoc SQL. Each field routes through the same
- * service modules dashboards and Largo tools use (those modules already sit on
- * RDS + ElastiCache shared-cache keys). Commentary / Largo composers call this
- * once per cache miss instead of re-implementing partial loaders.
+ * Unified BIE data plane — scope-aware parallel fan-out.
+ * `desk` scope avoids duplicate snapshot/regime/Voyage work (hot Largo path).
  */
 export async function loadBiePlatformContext(
   opts: LoadBiePlatformContextOpts = {}
 ): Promise<BiePlatformContext> {
   const scope = opts.scope ?? "full";
   const as_of = new Date().toISOString();
-  const needDesk = scope === "desk" || scope === "full";
+
+  if (scope === "desk") {
+    return loadDeskPlatformContext(as_of, opts.intelPrev);
+  }
+
+  if (scope === "market" && !opts.knowledgeQuery?.trim()) {
+    return loadMarketPlatformContext(as_of, opts.flowLimit ?? 24);
+  }
+
+  const needDesk = scope === "full";
+  const knowledgePromise = opts.knowledgeQuery?.trim()
+    ? searchKnowledge(opts.knowledgeQuery.trim(), 3).catch(() => [])
+    : Promise.resolve([] as RetrievedChunk[]);
 
   const [
     snapshot,
@@ -91,9 +178,7 @@ export async function loadBiePlatformContext(
     getLatestNightHawkEdition().catch(() => null),
     runLargoTool("get_market_regime", {}).catch(() => null) as Promise<Record<string, unknown> | null>,
     loadCrossEngineState(),
-    opts.knowledgeQuery?.trim()
-      ? searchKnowledge(opts.knowledgeQuery.trim(), 3).catch(() => [])
-      : Promise.resolve([] as RetrievedChunk[]),
+    knowledgePromise,
   ]);
 
   const desk =
@@ -109,7 +194,7 @@ export async function loadBiePlatformContext(
       heatmapSlice: opts.intelPrev?.heatmapSlice ?? null,
       prevNighthawk: opts.intelPrev?.prevNighthawk ?? null,
       nighthawk: opts.intelPrev?.nighthawk ?? nighthawk,
-    });
+    }, nighthawk, opts.intelPrev?.prevNighthawk ?? null);
   }
 
   const regimeClean =

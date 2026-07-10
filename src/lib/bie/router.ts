@@ -42,7 +42,11 @@ const PLAY_STATE_RE = /\b(play|position|status|doing|hold|trim|exit|sell|still (
 const TICKER_ECOSYSTEM_RE =
   /\bwhat'?s? (going on|happening) (with|on)\b|\bwhat'?s? the (word|story|deal|latest) (with|on)\b|\bany (info|news|flow|activity) on\b|\banything (on|about)\b/i;
 
-/** Questions with these shapes need REASONING, not lookup — always Claude. */
+/** SPX-scoped "why" — BIE synthesis answers these; generic why → Claude. */
+const SPX_WHY_RE =
+  /\bwhy\b.*\b(spx|s&p|es|gamma|gex|vwap|dealers?|flip|slayer|market|tape)\b|\b(spx|s&p|slayer)\b.*\bwhy\b/i;
+
+/** Questions with these shapes need REASONING, not lookup — always Claude (unless SPX_WHY_RE). */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
 
@@ -69,6 +73,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const q = question.trim();
   // Length guard: long/compound questions carry nuance a lookup can't honor.
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
+  if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };

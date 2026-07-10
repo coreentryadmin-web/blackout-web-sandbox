@@ -2,7 +2,7 @@ import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
 import { knownIntelNumbers } from "@/lib/bie/spx-desk-intel";
-import type { SpxBriefIntelPrev } from "@/lib/bie/load-spx-brief-intel";
+import type { SpxBriefIntelPrefetch, SpxBriefIntelPrev } from "@/lib/bie/load-spx-brief-intel";
 import { heatmapToIntelSlice } from "@/features/spx/lib/spx-odte-intel-feed";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
@@ -566,6 +566,8 @@ export async function generateSpxCommentary(
     intelPrev?: SpxBriefIntelPrev | null;
     nighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
     prevNighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
+    /** Pre-fetched matrix rows — skips duplicate provider calls on commentary cold path. */
+    intelPrefetch?: SpxBriefIntelPrefetch;
   }
 ): Promise<{ commentary: SpxCommentaryResult; intelCache: SpxCommentaryIntelCache } | null> {
   const delta = computeDelta(desk, previous);
@@ -644,15 +646,10 @@ export async function generateSpxCommentary(
     nighthawk: cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
   };
   const { loadSpxBriefIntel } = await import("@/lib/bie/load-spx-brief-intel");
-  const intel = await loadSpxBriefIntel(
-    desk,
-    intelPrev,
-    cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
-    cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null
-  );
 
-  let precedentDetail: string | null = null;
-  if (bieEmbeddingsConfigured() && dbConfigured()) {
+  const precedentPromise = (async (): Promise<string | null> => {
+    if (!bieEmbeddingsConfigured() || !dbConfigured()) return null;
+    const budgetMs = 1_500;
     try {
       const query = buildPrecedentSearchQuery(
         desk,
@@ -660,17 +657,32 @@ export async function generateSpxCommentary(
         confluence.grade,
         confluence.score
       );
-      const hits = await findSimilarPrecedents(query, PRECEDENT_SEARCH_K);
-      if (hits.length >= MIN_TOTAL_PRECEDENTS) {
-        const targets = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "target").length;
-        const stops = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "stop").length;
-        const targetRate = Math.round((targets / hits.length) * 100);
-        precedentDetail = `${hits.length} similar setups — {{${targetRate}}}% hit target ({{${targets}}}T/{{${stops}}}S, BIE corpus)`;
-      }
+      const hits = await Promise.race([
+        findSimilarPrecedents(query, PRECEDENT_SEARCH_K),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("precedent_timeout")), budgetMs)
+        ),
+      ]);
+      if (hits.length < MIN_TOTAL_PRECEDENTS) return null;
+      const targets = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "target").length;
+      const stops = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "stop").length;
+      const targetRate = Math.round((targets / hits.length) * 100);
+      return `${hits.length} similar setups — {{${targetRate}}}% hit target ({{${targets}}}T/{{${stops}}}S, BIE corpus)`;
     } catch {
-      /* precedent color is optional */
+      return null;
     }
-  }
+  })();
+
+  const [intel, precedentDetail] = await Promise.all([
+    loadSpxBriefIntel(
+      desk,
+      intelPrev,
+      cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
+      cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null,
+      cross?.intelPrefetch
+    ),
+    precedentPromise,
+  ]);
 
   const parsed = composeSpxDeskBrief(desk, confluence, delta, sessionPhase, {
     openPlay: op && op.status === "open" ? op : null,

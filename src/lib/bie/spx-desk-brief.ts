@@ -22,6 +22,7 @@ import {
   volBriefLine,
   wallsBriefLine,
 } from "@/lib/bie/spx-desk-intel";
+import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
 
 export type SpxDeskBriefResult = {
   headline: string;
@@ -412,6 +413,7 @@ export function composeSpxDeskBrief(
   const pin = desk.gex_king ?? desk.max_pain;
 
   const why = buildWhy(confluence, desk, support, resistance, pin);
+  const synthesis = synthesizeSpxDeskIntel(desk, confluence, sessionPhase, cross);
   const signals = signalsBriefLine(confluence);
 
   const internals = internalsLine(desk);
@@ -504,7 +506,17 @@ export function composeSpxDeskBrief(
   const flipLevel = stop ?? desk.gamma_flip ?? desk.vwap;
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
 
-  const bodyLines = [why, signals, internalsLineOut, deltaSince, levels].filter(Boolean) as string[];
+  const bodyLines = [
+    synthesis.thesis,
+    synthesis.mechanic,
+    why,
+    signals,
+    synthesis.alignment,
+    synthesis.friction,
+    internalsLineOut,
+    deltaSince,
+    levels,
+  ].filter(Boolean) as string[];
 
   const dealers = dealersBriefLine(cross?.intel);
   if (dealers) bodyLines.push(dealers);
@@ -586,7 +598,7 @@ export function composeSpxDeskBrief(
     headline,
     bias,
     body: bodyLines.join("\n"),
-    watch: [],
+    watch: synthesis.watch,
     changed: [],
     as_of: new Date().toISOString(),
   };

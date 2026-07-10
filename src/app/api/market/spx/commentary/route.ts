@@ -55,16 +55,17 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await serverCache<CommentaryCache>(cacheKey, COMMENTARY_TTL_MS, async () => {
-      const { merged: desk } = await loadMergedSpxDesk();
-      if (!desk.available || !(desk.price != null && desk.price > 0)) {
-        throw new Error("spx-commentary: desk unavailable");
-      }
-
-      // Cross-tool access: give the desk AI the platform's OWN engine state (open play,
-      // lotto, power-hour) + recent win-rate so its read aligns with the rest of the
-      // platform (never contradicts an open position) and can calibrate conviction. All
-      // read-only, fetched only on a cache miss (once per window); each falls back to null.
-      const [openPlay, lotto, powerHour, outcomes, nighthawk] = await Promise.all([
+      const [
+        deskResult,
+        openPlay,
+        lotto,
+        powerHour,
+        outcomes,
+        nighthawk,
+        positioning,
+        heatmap,
+      ] = await Promise.all([
+        loadMergedSpxDesk(),
         import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
         import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
         import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
@@ -72,7 +73,18 @@ export async function POST(req: NextRequest) {
         import("@/lib/platform/nighthawk-service")
           .then((m) => m.getLatestNightHawkEdition())
           .catch(() => null),
+        import("@/lib/providers/gex-positioning")
+          .then((m) => m.getGexPositioning("SPX", { includeIntradayAdjusted: true }))
+          .catch(() => null),
+        import("@/lib/providers/polygon-options-gex")
+          .then((m) => m.fetchGexHeatmap("SPX"))
+          .catch(() => null),
       ]);
+      const desk = deskResult.merged;
+      if (!desk.available || !(desk.price != null && desk.price > 0)) {
+        throw new Error("spx-commentary: desk unavailable");
+      }
+
       const generated = await generateSpxCommentary(desk, prevDesk, {
         openPlay,
         lotto,
@@ -80,6 +92,7 @@ export async function POST(req: NextRequest) {
         outcomes,
         nighthawk,
         prevNighthawk,
+        intelPrefetch: { positioning, heatmap },
         intelPrev: {
           desk: prevDesk,
           positioning: prevPositioning,

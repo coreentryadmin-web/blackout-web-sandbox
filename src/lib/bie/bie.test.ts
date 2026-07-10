@@ -38,6 +38,12 @@ test("router: isSpxDeskFallbackQuestion catches loose SPX asks without reasoning
   assert.equal(isSpxDeskFallbackQuestion("why did SPX dump"), false);
 });
 
+test("router: SPX-scoped why routes to synthesis desk read (BIE), not Claude", () => {
+  assert.equal(classifyBieIntent("why is SPX below vwap", LEDGER)?.intent, "spx_desk_read");
+  assert.equal(classifyBieIntent("why did SPX dump", LEDGER)?.intent, "spx_desk_read");
+  assert.equal(classifyBieIntent("SPX why are dealers short gamma", LEDGER)?.intent, "spx_desk_read");
+});
+
 test("router: reasoning-shaped questions NEVER route — Claude keeps them", () => {
   assert.equal(classifyBieIntent("Why did the NVDA play stop out?", LEDGER), null);
   assert.equal(classifyBieIntent("Should I hold my TSLA play into the close?", LEDGER), null);

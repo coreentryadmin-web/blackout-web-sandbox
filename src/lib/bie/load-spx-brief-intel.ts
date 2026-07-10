@@ -12,6 +12,11 @@ import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 
+export type SpxBriefIntelPrefetch = {
+  positioning?: GexPositioning | null;
+  heatmap?: Awaited<ReturnType<typeof fetchGexHeatmap>> | null;
+};
+
 export type SpxBriefIntelPrev = {
   desk?: SpxDeskPayload | null;
   positioning?: GexPositioning | null;
@@ -28,14 +33,19 @@ export async function loadSpxBriefIntel(
   desk: SpxDeskPayload,
   prev?: SpxBriefIntelPrev | null,
   nighthawk?: NightHawkEdition | null,
-  prevNighthawk?: NightHawkEdition | null
+  prevNighthawk?: NightHawkEdition | null,
+  prefetch?: SpxBriefIntelPrefetch
 ): Promise<SpxDeskBriefIntel> {
   const nh = nighthawk ?? prev?.nighthawk ?? null;
   const prevNh = prevNighthawk ?? prev?.prevNighthawk ?? null;
 
   const [positioning, heatmap] = await Promise.all([
-    getGexPositioning("SPX", { includeIntradayAdjusted: true }).catch(() => null),
-    fetchGexHeatmap("SPX").catch(() => null),
+    prefetch?.positioning !== undefined
+      ? Promise.resolve(prefetch.positioning)
+      : getGexPositioning("SPX", { includeIntradayAdjusted: true }).catch(() => null),
+    prefetch?.heatmap !== undefined
+      ? Promise.resolve(prefetch.heatmap)
+      : fetchGexHeatmap("SPX").catch(() => null),
   ]);
 
   const heatmapSlice = heatmapToIntelSlice(heatmap);
