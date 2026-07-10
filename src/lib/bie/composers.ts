@@ -102,11 +102,24 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
   if (!desk.available || desk.price == null || desk.price <= 0) return null;
   const confluence = computeSpxConfluence(desk);
   if (!confluence) return null;
-  const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of));
+
+  const [openPlay, lotto, powerHour, outcomes] = await Promise.all([
+    import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
+    import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
+    import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
+    import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
+  ]);
+
+  const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
+    openPlay: openPlay && openPlay.status === "open" ? openPlay : null,
+    lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
+    powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
+    outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
+  });
   const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body].join("\n");
   return {
     answer,
-    context: { desk, confluence, brief },
+    context: { desk, confluence, brief, openPlay, lotto, powerHour, outcomes },
   };
 }
 

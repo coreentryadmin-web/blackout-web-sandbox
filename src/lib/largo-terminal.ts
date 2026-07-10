@@ -13,7 +13,7 @@ import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { bieFollowups, bieIntentBucket, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
+import { bieFollowups, bieIntentBucket, classifyBieIntent, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer } from "@/lib/bie/composers";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -253,10 +253,24 @@ async function tryBieRoute(
   try {
     const ledger = await readZeroDteLedger().catch(() => []);
     const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
-    if (!route) return null;
-    const composed = await composeBieAnswer(route);
-    if (!composed) return null;
-    return { route, answer: composed.answer, context: composed.context };
+    if (route) {
+      const composed = await composeBieAnswer(route);
+      if (composed) return { route, answer: composed.answer, context: composed.context };
+    }
+
+    // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
+    if (!route && isSpxDeskFallbackQuestion(question)) {
+      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" });
+      if (composed) {
+        return {
+          route: { intent: "spx_desk_read", ticker: "SPX" },
+          answer: composed.answer,
+          context: composed.context,
+        };
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }

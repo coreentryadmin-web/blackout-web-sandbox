@@ -213,6 +213,145 @@ function liveEngineConflict(cross: SpxDeskBriefCross | undefined, bias: SpxConfl
   return null;
 }
 
+function engineLine(cross: SpxDeskBriefCross | undefined): string | null {
+  const op = cross?.openPlay;
+  if (!op || op.status !== "open") return null;
+  const dir = op.direction === "long" ? "LONG" : "SHORT";
+  const parts = [
+    `ENGINE  Live {{${dir}}} from ${n(op.entry_price, 0)}`,
+    op.stop != null ? `stop ${n(op.stop, 0)}` : null,
+    op.target != null ? `target ${n(op.target, 0)}` : null,
+    op.grade ? `grade {{${op.grade}}}` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function lottoLine(cross: SpxDeskBriefCross | undefined): string | null {
+  const lp = cross?.lotto;
+  if (!lp || lp.phase === "NONE" || lp.phase === "INVALID") return null;
+  const dir = lp.direction === "long" ? "CALL" : "PUT";
+  const strike = lp.strike != null ? n(lp.strike, 0) : "{{—}}";
+  return `LOTTO  {{${lp.phase}}} — ${dir} ${strike} — align read with lotto engine before sizing`;
+}
+
+function powerHourLine(cross: SpxDeskBriefCross | undefined): string | null {
+  const ph = cross?.powerHour;
+  if (!ph || ph.phase === "NONE") return null;
+  const dir = ph.direction === "long" ? "CALL" : "PUT";
+  const strike = ph.strike != null ? n(ph.strike, 0) : "{{—}}";
+  return `POWER HOUR  {{${ph.phase}}} — ${dir} ${strike} — closing momentum lane`;
+}
+
+function tideLine(desk: SpxDeskPayload): string | null {
+  const bias = desk.tide_bias;
+  if (!bias || bias === "neutral") return null;
+  const net = desk.tide_net;
+  const netPart =
+    net != null && Math.abs(net) > 100_000 ? ` net ${fmtPremium(net)}` : "";
+  return `TIDE  {{${bias}}} broad flow${netPart}`;
+}
+
+function flow0dteSkew(desk: SpxDeskPayload): string | null {
+  const call = desk.flow_0dte_call_premium;
+  const put = desk.flow_0dte_put_premium;
+  if (call == null && put == null && desk.flow_0dte_net == null) return null;
+  const pcr =
+    call != null && call > 0 && put != null ? put / call : null;
+  const net = desk.flow_0dte_net;
+  const skew =
+    net != null && net > 150_000
+      ? "call-led"
+      : net != null && net < -150_000
+        ? "put-led"
+        : pcr != null && pcr > 1.1
+          ? "put-skew"
+          : pcr != null && pcr < 0.9
+            ? "call-skew"
+            : "mixed";
+  const parts: string[] = [`0DTE {{${skew}}}`];
+  if (pcr != null && Number.isFinite(pcr)) parts.push(`PCR ${n(pcr, 2)}`);
+  if (net != null && Math.abs(net) > 50_000) parts.push(`net ${fmtPremium(net)}`);
+  return parts.join(" · ");
+}
+
+function sessionExtremeLevels(desk: SpxDeskPayload, price: number): string[] {
+  const extras: string[] = [];
+  if (desk.hod != null && desk.hod >= price - 1) {
+    extras.push(`HOD ${n(desk.hod, 0)} (${signedPts(desk.hod - price)}, session high)`);
+  }
+  if (desk.lod != null && desk.lod <= price + 1) {
+    extras.push(`LOD ${n(desk.lod, 0)} (${signedPts(desk.lod - price)}, session low)`);
+  }
+  if (desk.pdh != null && Math.abs(desk.pdh - price) <= 35) {
+    extras.push(`PDH ${n(desk.pdh, 0)} (${signedPts(desk.pdh - price)}, prior-day high)`);
+  }
+  if (desk.pdl != null && Math.abs(desk.pdl - price) <= 35) {
+    extras.push(`PDL ${n(desk.pdl, 0)} (${signedPts(desk.pdl - price)}, prior-day low)`);
+  }
+  return extras;
+}
+
+function phaseSetupNote(sessionPhase: string, grade: SpxConfluenceGrade): string | null {
+  if (sessionPhase === "final-30") return "final-30 — no new 0DTE unless already in";
+  if (sessionPhase === "opening-range" && gradeRank(grade) >= 3) {
+    return "opening vol — no chase, wait range break + confirm";
+  }
+  if (sessionPhase === "midday-grind" && gradeRank(grade) < 4) {
+    return "midday chop — theta bleeds, lighter size or flat";
+  }
+  if (sessionPhase === "power-hour") return "power hour — squeeze risk at γflip";
+  return null;
+}
+
+function phaseRiskNote(
+  sessionPhase: string,
+  grade: SpxConfluenceGrade,
+  vix: number | null | undefined
+): string | null {
+  const notes: string[] = [];
+  if (sessionPhase === "opening-range") notes.push("opening-range — cut size until range sets");
+  if (sessionPhase === "final-30") notes.push("final-30 sit-out unless already in a trade");
+  if (sessionPhase === "midday-grind" && gradeRank(grade) < 4) {
+    notes.push("midday grind — forcing it bleeds accounts");
+  }
+  if (vix != null && vix > 20) notes.push(`VIX ${n(vix, 1)} elevated — defined-risk only`);
+  return notes.length ? notes.join("; ") : null;
+}
+
+function buildWhy(
+  confluence: SpxConfluence,
+  desk: SpxDeskPayload,
+  support: ReturnType<typeof nearestWall>,
+  resistance: ReturnType<typeof nearestWall>,
+  pin: number | null | undefined
+): string {
+  const factors = topFactors(confluence, 2);
+  const factorDetails = topFactorDetails(confluence, 3);
+  const gammaWord = desk.above_gamma_flip ? "above" : "below";
+  const parts: string[] = [];
+
+  if (factors) parts.push(`${factors} align`);
+  if (desk.gamma_flip != null) {
+    const mechanic = desk.above_gamma_flip
+      ? "dealers buy dips (cushion)"
+      : "dealers sell dips (fuel)";
+    parts.push(
+      `${gammaWord} γflip ${n(desk.gamma_flip, 0)} — ${mechanic}`
+    );
+  }
+  if (!desk.above_gamma_flip && support && desk.price! > support.strike) {
+    parts.push(`drops feed toward ${n(support.strike, 0)} air if ${n(support.strike, 0)} cracks`);
+  } else if (desk.above_gamma_flip && pin != null) {
+    parts.push(`pullbacks bought back toward pin ${n(pin, 0)}`);
+  } else if (resistance && desk.price! < resistance.strike) {
+    parts.push(`caps near ${n(resistance.strike, 0)} call wall`);
+  }
+
+  const core = parts.join("; ") || factorDetails || "Mixed tape — no single dealer mechanic dominates";
+  const gloss = factorDetails && factors ? ` · ${factorDetails}` : "";
+  return `WHY  ${core}${gloss}.`;
+}
+
 /** Deterministic Live Desk AI brief — same SpxCommentaryResult shape the rail expects. */
 export function composeSpxDeskBrief(
   desk: SpxDeskPayload,
@@ -253,23 +392,9 @@ export function composeSpxDeskBrief(
   const support = nearestWall(desk.gex_walls, "support", price);
   const resistance = nearestWall(desk.gex_walls, "resistance", price);
   const factors = topFactors(confluence, 2);
-  const factorDetails = topFactorDetails(confluence, 3);
-  const gammaWord = desk.above_gamma_flip ? "above" : "below";
   const pin = desk.gex_king ?? desk.max_pain;
 
-  const whyParts: string[] = [];
-  if (factors) whyParts.push(`${factors} align`);
-  if (desk.gamma_flip != null) {
-    whyParts.push(
-      `${gammaWord} γflip ${n(desk.gamma_flip, 0)} — ${desk.above_gamma_flip ? "dealers buy dips" : "dealers sell dips"}`
-    );
-  }
-  if (support && price > support.strike) {
-    whyParts.push(`air toward ${n(support.strike, 0)} if ${n(support.strike, 0)} cracks`);
-  } else if (resistance && price < resistance.strike) {
-    whyParts.push(`caps near ${n(resistance.strike, 0)} call wall`);
-  }
-  const why = `WHY  ${whyParts.join("; ") || factorDetails || "Mixed tape — no single dealer mechanic dominates"}.`;
+  const why = buildWhy(confluence, desk, support, resistance, pin);
 
   const internals = internalsLine(desk);
   const internalsLineOut = internals ? `INTERNALS  ${internals}` : null;
@@ -292,22 +417,33 @@ export function composeSpxDeskBrief(
     );
   }
   if (pin != null && Math.abs(pin - price) <= 25) {
-    levelParts.push(`pin ${n(pin, 0)}`);
+    levelParts.push(`pin ${n(pin, 0)} (price magnet)`);
+  }
+  for (const extra of sessionExtremeLevels(desk, price).slice(0, 2)) {
+    levelParts.push(extra);
   }
   const levels = `LEVELS  ${levelParts.join(" · ") || `${n(price, 0)} spot only`}`;
 
   let setup: string;
   const { stop, target } = confluence.levels;
-  if (gradeRank(grade) >= 4 && confluence.action === "BUY_CALL") {
+  const phaseNote = phaseSetupNote(sessionPhase, grade);
+
+  if (sessionPhase === "final-30" && gradeRank(grade) < 4) {
+    setup = `SETUP  No new 0DTE — final-30 manage-open-only; flat until tomorrow unless already in`;
+  } else if (gradeRank(grade) >= 4 && confluence.action === "BUY_CALL") {
     setup = `SETUP  Long / trigger reclaim ${n(desk.vwap ?? desk.gamma_flip, 0)} / stop ${n(stop, 0)} / target ${n(target, 0)} / edge ${factors}`;
   } else if (gradeRank(grade) >= 4 && confluence.action === "BUY_PUT") {
     setup = `SETUP  Short / trigger reject ${n(desk.vwap ?? desk.gamma_flip, 0)} / stop ${n(stop, 0)} / target ${n(target, 0)} / edge ${factors}`;
   } else if (grade === "B" && confluence.direction) {
     const trigger = confluence.direction === "long" ? desk.vwap ?? desk.gamma_flip : desk.vwap ?? desk.gamma_flip;
     setup = `SETUP  If ${n(trigger, 0)} ${confluence.direction === "long" ? "reclaims" : "rejects"} then ${confluence.direction} toward ${n(target, 0)}`;
+  } else if (sessionPhase === "midday-grind") {
+    setup = `SETUP  No clean setup — midday chop, grade {{${grade}}}; flat until VWAP+γflip agree`;
   } else {
     setup = `SETUP  No clean setup — grade {{${grade}}} signals split; flat until VWAP+γflip agree`;
   }
+
+  if (phaseNote) setup += ` (${phaseNote})`;
 
   const conflict = liveEngineConflict(cross, bias);
   if (conflict) setup += ` (${conflict})`;
@@ -324,14 +460,18 @@ export function composeSpxDeskBrief(
       : ivRank != null && ivRank < 30
         ? "single long OK"
         : "defined-risk only";
-  const risk = `RISK  Size {{${size}}} — {{${grade}}}; IV rank ${ivRank != null ? n(ivRank, 0) : "{{—}}"} → ${structure}; max loss = premium paid; phase {{${sessionPhase}}}.${staleNote}`;
+  const phaseRisk = phaseRiskNote(sessionPhase, grade, desk.vix);
+  const riskTail = phaseRisk ? ` ${phaseRisk}.` : "";
+  const risk = `RISK  Size {{${size}}} — {{${grade}}}; IV rank ${ivRank != null ? n(ivRank, 0) : "{{—}}"} → ${structure}; max loss = premium paid; phase {{${sessionPhase}}}.${riskTail}${staleNote}`;
 
   const next =
-    desk.above_gamma_flip && support
-      ? `NEXT 5M  pos-γ pin toward ${n(pin ?? support.strike, 0)} — fade extensions`
-      : !desk.above_gamma_flip && resistance
-        ? `NEXT 5M  neg-γ expansion risk into ${n(resistance.strike, 0)} air if ${n(support?.strike ?? desk.lod, 0)} fails`
-        : `NEXT 5M  ${gammaTag(desk)} — watch ${n(desk.gamma_flip ?? price, 0)} and TICK`;
+    sessionPhase === "power-hour" && !desk.above_gamma_flip && resistance
+      ? `NEXT 5M  power-hour neg-γ squeeze risk into ${n(resistance.strike, 0)} if ${n(support?.strike ?? desk.lod, 0)} fails`
+      : desk.above_gamma_flip && support
+        ? `NEXT 5M  pos-γ pin toward ${n(pin ?? support.strike, 0)} — fade extensions`
+        : !desk.above_gamma_flip && resistance
+          ? `NEXT 5M  neg-γ expansion into ${n(resistance.strike, 0)} air if ${n(support?.strike ?? desk.lod, 0)} fails`
+          : `NEXT 5M  ${gammaTag(desk)} — watch ${n(desk.gamma_flip ?? price, 0)} and TICK`;
 
   const flipLevel = stop ?? desk.gamma_flip ?? desk.vwap;
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
@@ -340,8 +480,26 @@ export function composeSpxDeskBrief(
     Boolean
   ) as string[];
 
+  const engine = engineLine(cross);
+  if (engine) bodyLines.push(engine);
+
+  const lotto = lottoLine(cross);
+  if (lotto) bodyLines.push(lotto);
+
+  const powerHour = powerHourLine(cross);
+  if (powerHour) bodyLines.push(powerHour);
+
+  const tide = tideLine(desk);
+  if (tide) bodyLines.push(tide);
+
+  const flowSkew = flow0dteSkew(desk);
   const flow = flowLine(desk);
-  if (flow) bodyLines.push(`FLOW  ${flow} — confirms ${bias === "bullish" ? "bid" : bias === "bearish" ? "offer" : "two-way"} tone`);
+  if (flow || flowSkew) {
+    const flowBody = [flowSkew, flow].filter(Boolean).join(" · ");
+    bodyLines.push(
+      `FLOW  ${flowBody} — confirms ${bias === "bullish" ? "bid" : bias === "bearish" ? "offer" : "two-way"} tone`
+    );
+  }
 
   const news = newsLine(desk);
   if (news) bodyLines.push(`NEWS  {{${news}}}`);

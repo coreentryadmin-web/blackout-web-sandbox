@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyBieIntent, bieFollowups, bieIntentBucket } from "./router";
+import { classifyBieIntent, bieFollowups, bieIntentBucket, isSpxDeskFallbackQuestion } from "./router";
 import { extractNumericClaims, collectContextNumbers, verifyClaims } from "./verifier";
 
 const LEDGER = new Set(["NVDA", "TSLA"]);
@@ -25,6 +25,17 @@ test("router: SPX structure and market context route", () => {
   assert.equal(classifyBieIntent("SPX levels and walls right now", LEDGER)?.intent, "spx_structure");
   assert.equal(classifyBieIntent("where is the SPX gamma flip", LEDGER)?.intent, "spx_structure");
   assert.equal(classifyBieIntent("What's the market doing?", LEDGER)?.intent, "market_context");
+});
+
+test("router: SPX desk read and channel commentary route", () => {
+  assert.equal(classifyBieIntent("What's the SPX setup right now?", LEDGER)?.intent, "spx_desk_read");
+  assert.equal(classifyBieIntent("SPX desk read", LEDGER)?.intent, "spx_desk_read");
+  assert.equal(classifyBieIntent("commentary on SPX channel", LEDGER)?.intent, "spx_desk_read");
+});
+
+test("router: isSpxDeskFallbackQuestion catches loose SPX asks without reasoning shape", () => {
+  assert.equal(isSpxDeskFallbackQuestion("tell me about SPX gamma today"), true);
+  assert.equal(isSpxDeskFallbackQuestion("why did SPX dump"), false);
 });
 
 test("router: reasoning-shaped questions NEVER route — Claude keeps them", () => {
@@ -62,7 +73,7 @@ test("router: 'what does X think' phrasing stays with Claude (REASONING_RE wins,
 });
 
 test("router: every intent has follow-up chips (no LLM on the router path)", () => {
-  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "market_context", "ticker_ecosystem"] as const) {
+  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "spx_desk_read", "market_context", "ticker_ecosystem"] as const) {
     assert.ok(bieFollowups(intent).length === 3);
   }
 });

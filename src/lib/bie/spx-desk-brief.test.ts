@@ -72,4 +72,56 @@ describe("composeSpxDeskBrief", () => {
       assert.match(result.headline, /NO-EDGE|CHOP/);
     }
   });
+
+  test("cross-tool ENGINE and LOTTO lines when live engine state present", () => {
+    const desk = fakeDesk();
+    const confluence = computeSpxConfluence(desk);
+    assert.ok(confluence);
+
+    const result = composeSpxDeskBrief(desk, confluence!, [], "mid-morning", {
+      openPlay: {
+        status: "open",
+        direction: "long",
+        entry_price: 5895,
+        stop: 5888,
+        target: 5920,
+        grade: "A",
+      },
+      lotto: {
+        phase: "WATCH",
+        direction: "long",
+        strike: 5925,
+      },
+      powerHour: {
+        phase: "WATCH",
+        direction: "short",
+        strike: 5880,
+      },
+    });
+
+    assert.ok(result.body.includes("ENGINE"));
+    assert.ok(result.body.includes("LOTTO"));
+    assert.ok(result.body.includes("POWER HOUR"));
+  });
+
+  test("final-30 phase blocks new 0DTE setup language", () => {
+    const desk = fakeDesk();
+    const confluence = computeSpxConfluence(desk);
+    assert.ok(confluence);
+
+    const result = composeSpxDeskBrief(desk, confluence!, [], "final-30");
+    assert.ok(result.body.includes("final-30") || result.body.includes("No new 0DTE"));
+  });
+
+  test("LEVELS include session extremes when near spot", () => {
+    const desk = fakeDesk();
+    desk.hod = 5902;
+    desk.pdh = 5910;
+    const confluence = computeSpxConfluence(desk);
+    assert.ok(confluence);
+
+    const result = composeSpxDeskBrief(desk, confluence!, [], "afternoon");
+    assert.ok(result.body.includes("LEVELS"));
+    assert.match(result.body, /HOD|PDH/);
+  });
 });

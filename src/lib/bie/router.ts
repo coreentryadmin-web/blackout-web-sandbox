@@ -28,7 +28,7 @@ const SPX_STRUCTURE_RE =
   /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain)\b[^?]*\bspx\b/i;
 
 const SPX_DESK_READ_RE =
-  /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk)\b|\blive desk\b.*\bspx\b/i;
+  /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer|channel|commentary|brief)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk|doing)\b|\blive desk\b.*\bspx\b|\bspx channel\b|\bcommentary on spx\b/i;
 
 const MARKET_CONTEXT_RE =
   /^(what('| i)s (the )?market (doing|look(ing)? like|context|structure)( (right )?now| today)?\??|market (context|overview|check)( please)?\??|how('| i)s the market( (right )?now| today| looking)?\??)$/i;
@@ -78,8 +78,8 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const hit = caps.map((c) => c.replace(/^\$/, "")).find((c) => ledgerTickers.has(c));
   if (hit && PLAY_STATE_RE.test(q)) return { intent: "ticker_play_state", ticker: hit };
 
-  if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
+  if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (MARKET_CONTEXT_RE.test(q)) return { intent: "market_context", ticker: null };
 
   // Any known ticker (not just today's ledger) + an open-ended "what's going
@@ -91,6 +91,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
 
   return null;
+}
+
+/** Loose SPX mention — BIE-only Largo uses this when the router misses but the ask is still desk-shaped. */
+export function isSpxDeskFallbackQuestion(question: string): boolean {
+  const q = question.trim();
+  if (q.length > 200 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return false;
+  if (REASONING_RE.test(q)) return false;
+  return /\b(spx|s&p|es|slayer|sniper|0dte|gamma|gex|dealer)\b/i.test(q);
 }
 
 /** Normalizes the router's decision into a queryable "bucket" for the
