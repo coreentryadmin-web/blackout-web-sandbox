@@ -651,7 +651,8 @@ export async function generateSpxCommentary(
     prevNighthawk: cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null,
     nighthawk: cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
   };
-  const { loadSpxBriefIntel } = await import("@/lib/bie/load-spx-brief-intel");
+
+  const { loadSpxBriefIntel } = await import("../../../lib/bie/load-spx-brief-intel");
 
   const precedentPromise = (async (): Promise<string | null> => {
     if (!bieEmbeddingsConfigured() || !dbConfigured()) return null;

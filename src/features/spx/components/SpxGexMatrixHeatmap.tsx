@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { Panel } from "@/components/ui";
 import { fmtPrice } from "@/lib/api";
 import { useDeskSessionPollIntervalMs } from "@/hooks/use-et-market-open";
+import { SPX_MATRIX_POLL_OFF_MS, SPX_MATRIX_POLL_RTH_MS } from "@/features/spx/lib/spx-desk-poll-ms";
 import {
   recomputeScopedGexLevels,
   resolveOdteExpiry,
@@ -32,8 +33,8 @@ import { SpxMatrixTapeStrip } from "./SpxMatrixTapeStrip";
 import { scrollRowIntoViewCenter } from "@/features/spx/lib/spx-matrix-scroll";
 import type { SpxTapeItem } from "@/features/spx/lib/spx-desk";
 
-const MATRIX_POLL_RTH_MS = 8_000;
-const MATRIX_POLL_OFF_MS = 20_000;
+const MATRIX_POLL_RTH_MS = SPX_MATRIX_POLL_RTH_MS;
+const MATRIX_POLL_OFF_MS = SPX_MATRIX_POLL_OFF_MS;
 /** Near-term columns shown in the compact rail (matches competitor density). */
 const MAX_EXPIRY_COLS = 6;
 

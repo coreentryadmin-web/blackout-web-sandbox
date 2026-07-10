@@ -242,3 +242,84 @@ export async function buildOptionTicket(
   ticketCache = { at: now, spot, dir: direction, grade, ticket };
   return ticket;
 }
+
+export type OdteContractQuote = {
+  strike: number;
+  option_type: "call" | "put";
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  spread_pct: number | null;
+  /** Mid for chip `@ 5.2`, or bid–ask band when spread is wide */
+  premium_display: string;
+  delta: number | null;
+  as_of: number;
+};
+
+const quoteCache = new Map<string, { at: number; quote: OdteContractQuote }>();
+const QUOTE_TTL_MS = Number(process.env.SPX_CHAIN_QUOTE_TTL_MS ?? 5_000);
+
+async function fetchContractsAtStrike(
+  strike: number,
+  expiry: string
+): Promise<ChainContract[]> {
+  const params = new URLSearchParams({
+    expiration_date: expiry,
+    "strike_price.gte": String(strike),
+    "strike_price.lte": String(strike),
+    limit: "50",
+    apiKey: KEY,
+  });
+  const page = await fetchChainUrl(`/v3/snapshot/options/${CHAIN_UNDERLYING}?${params}`);
+  return page?.results ?? [];
+}
+
+/** Live 0DTE mark for a held SPXW strike — used on Open desk chips + play terminal. */
+export async function quoteSpxOdteContract(
+  strike: number,
+  option_type: "call" | "put",
+  expiry = todayEtYmd()
+): Promise<OdteContractQuote | null> {
+  if (!polygonConfigured() || !Number.isFinite(strike) || strike <= 0) return null;
+
+  const key = `${expiry}:${option_type}:${Math.round(strike)}`;
+  const cached = quoteCache.get(key);
+  if (cached && Date.now() - cached.at < QUOTE_TTL_MS) return cached.quote;
+
+  const contracts = await fetchContractsAtStrike(Math.round(strike), expiry);
+  const match = contracts.find((c) => {
+    const s = Number(c.details?.strike_price);
+    const type = String(c.details?.contract_type ?? "").toLowerCase();
+    return Number.isFinite(s) && Math.round(s) === Math.round(strike) && type === option_type;
+  });
+  if (!match) return null;
+
+  const bid = Number(match.last_quote?.bid ?? 0) || null;
+  const ask = Number(match.last_quote?.ask ?? 0) || null;
+  const mid =
+    bid != null && ask != null && bid > 0 && ask > 0
+      ? (bid + ask) / 2
+      : ask ?? bid;
+  if (mid == null || mid <= 0) return null;
+
+  const spread_pct =
+    bid != null && ask != null && mid > 0 ? ((ask - bid) / mid) * 100 : null;
+  const premium_display =
+    bid != null && ask != null && bid > 0 && ask > 0
+      ? mid.toFixed(2)
+      : `${(bid ?? mid).toFixed(2)}–${(ask ?? mid).toFixed(2)}`;
+
+  const quote: OdteContractQuote = {
+    strike: Math.round(strike),
+    option_type,
+    bid,
+    ask,
+    mid,
+    spread_pct,
+    premium_display,
+    delta: Number(match.greeks?.delta ?? 0) || null,
+    as_of: Date.now(),
+  };
+  quoteCache.set(key, { at: quote.as_of, quote });
+  return quote;
+}

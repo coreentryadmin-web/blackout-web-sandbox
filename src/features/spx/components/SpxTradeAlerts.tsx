@@ -7,9 +7,10 @@ import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import { useSpxPlay } from "@/features/spx/hooks/useSpxPlay";
 import { useSpxLotto } from "@/features/spx/hooks/useSpxLotto";
 import { useSpxPowerHour } from "@/features/spx/hooks/useSpxPowerHour";
+import { useStablePlayConfirmations } from "@/features/spx/hooks/useStablePlayConfirmations";
 import { SpxLiveSpotPrice } from "./SpxLiveSpotPrice";
 import { SpxTradeAlertsPanels } from "./SpxTradeAlertsPanels";
-import { SpxDeskTerminal } from "./SpxDeskTerminal";
+import { SpxDeskTerminal, type DeskTerminalTab } from "./SpxDeskTerminal";
 import { buildTradeAlertPlays } from "@/features/spx/lib/spx-trade-alert-plays";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 
@@ -106,9 +107,11 @@ export function SpxTradeAlerts({ desk, live, sessionActive = true, iosHidden = f
   const { play } = useSpxPlay(sessionActive);
   const { lotto } = useSpxLotto();
   const { powerHour } = useSpxPowerHour();
+  const confirmationLayer = useStablePlayConfirmations(play);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [pinnedStructure, setPinnedStructure] = useState<SpxPlayPayload | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [terminalTab, setTerminalTab] = useState<DeskTerminalTab>("playbook");
   const lastIdRef = useRef<string>("");
   const prevActionRef = useRef<string | null>(null);
 
@@ -122,6 +125,8 @@ export function SpxTradeAlerts({ desk, live, sessionActive = true, iosHidden = f
       playDeskAlert("buy");
     } else if (action === "WATCHING" && prev === "SCANNING") {
       playDeskAlert("watch");
+    } else if (action === "TRIM" && prev !== "TRIM") {
+      setTerminalTab("play");
     }
   }, [play?.action, play?.signal_committed]);
 
@@ -191,9 +196,22 @@ export function SpxTradeAlerts({ desk, live, sessionActive = true, iosHidden = f
   }, [selectedId, allPlays, tradePanels.open, tradePanels.watch, tradePanels.closed]);
 
   const displayPlay = pinnedStructure ?? play;
+  const selected = allPlays.find((p) => p.id === selectedId) ?? null;
+
+  const historyThesis = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of history) m.set(row.id, row.thesis);
+    if (play?.action === "SELL") m.set("structure-sell", play.thesis);
+    if (lotto?.phase === "SELL" || lotto?.phase === "INVALID") m.set("lotto-closed", lotto.thesis);
+    if (powerHour?.phase === "SELL") m.set("power-closed", powerHour.thesis ?? "");
+    return m;
+  }, [history, play, lotto, powerHour]);
+
+  const closedThesis = selected ? historyThesis.get(selected.id) : undefined;
 
   const selectPlay = (id: string) => {
     setSelectedId(id);
+    setTerminalTab("play");
   };
 
   return (
@@ -253,7 +271,16 @@ export function SpxTradeAlerts({ desk, live, sessionActive = true, iosHidden = f
         className={clsx("spx-sniper-terminal-col", iosHidden && "ios-native-panel-hidden")}
       >
         <SpxDeskTerminal
+          activeTab={terminalTab}
+          onTabChange={setTerminalTab}
+          selected={selected}
+          play={displayPlay}
+          lotto={lotto}
+          powerHour={powerHour}
           playbookPanel={playbookPanel}
+          desk={desk}
+          confirmationLayer={confirmationLayer}
+          closedThesis={closedThesis}
           sessionLive={sessionLive}
           live={sessionLive}
           asOf={play?.as_of ?? desk?.polled_at ?? null}

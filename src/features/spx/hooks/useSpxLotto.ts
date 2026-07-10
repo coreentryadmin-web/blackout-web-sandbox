@@ -4,9 +4,10 @@ import useSWR from "swr";
 import { useEffect } from "react";
 import { fetchSpxLottoToday } from "@/lib/api";
 import { isLottoPollWindow } from "@/features/spx/lib/spx-play-session-guards";
+import { SPX_LOTTO_OPEN_POLL_MS, SPX_LOTTO_PREMARKET_POLL_MS } from "@/features/spx/lib/spx-desk-poll-ms";
 
-const LOTTO_PREMARKET_MS = 60_000;
-const LOTTO_OPEN_MS = 10_000;
+const LOTTO_PREMARKET_MS = SPX_LOTTO_PREMARKET_POLL_MS;
+const LOTTO_OPEN_MS = SPX_LOTTO_OPEN_POLL_MS;
 
 /** Poll interval during the lotto poll window; 0 outside it (still fetches once on mount). */
 export function lottoPollIntervalMs(): number {

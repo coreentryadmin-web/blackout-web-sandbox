@@ -3,7 +3,7 @@ import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
 import type { PlayConfirmationLayer } from "@/features/spx/hooks/useStablePlayConfirmations";
-import type { TradeAlertPlay } from "@/features/spx/lib/spx-trade-alert-plays";
+import type { TradeAlertPlay, TradeStageId } from "@/features/spx/lib/spx-trade-alert-plays";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { PLAYBOOK_REGISTRY, type PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { playbookLiveGateEnabled } from "@/features/spx/lib/spx-play-config";
@@ -43,6 +43,108 @@ function section(title: string): PlayTerminalLine {
   return { icon: "section", tone: "accent", text: title };
 }
 
+function stageGlyph(stage: TradeStageId, active: boolean, done: boolean): PlayTerminalLine["icon"] {
+  if (active) return stage === "sell" ? "sell" : stage === "trim" ? "trim" : "pulse";
+  if (done) return "ok";
+  return "dim";
+}
+
+function stageTone(active: boolean, warn?: boolean): PlayTerminalLine["tone"] {
+  if (warn) return "warn";
+  if (active) return "accent";
+  return "dim";
+}
+
+function runwayDetail(
+  stage: TradeStageId,
+  active: boolean,
+  selected: TradeAlertPlay,
+  play: SpxPlayPayload | null,
+  lotto: LottoPlayPayload | null,
+  powerHour: PowerHourPlayPayload | null
+): string {
+  if (stage === "hold") {
+    if (active) {
+      if (selected.chip.kind === "structure" && play?.action === "HOLD") {
+        return "Active — defending position; watch invalidation + MFE";
+      }
+      if (selected.chip.kind === "power" && powerHour?.phase === "HOLD") {
+        return `Active — power hour hold${powerHour.pnl_pts != null ? ` (${powerHour.pnl_pts >= 0 ? "+" : ""}${powerHour.pnl_pts.toFixed(1)} pts)` : ""}`;
+      }
+      if (selected.chip.kind === "lotto" && lotto?.phase === "HOLD") {
+        return "Active — lotto runner; trail catalyst + flow";
+      }
+      return "Active — let the thesis work";
+    }
+    return "Entry filled — manage risk to stop";
+  }
+
+  if (stage === "trim") {
+    if (active) {
+      if (play?.action === "TRIM") return "Active now — scale partial; protect open profits";
+      if (selected.trimDone) return "Done — trim logged; remainder on trailing plan";
+      return "Armed — MFE in trim zone; watch for scale signal";
+    }
+    if (selected.trimDone) return "Completed";
+    const mfe = play?.open_play?.mfe_pts;
+    return mfe && mfe > 0 ? `Next — lock gains (MFE +${mfe.toFixed(1)} pts)` : "Next — partial take when extension confirms";
+  }
+
+  if (selected.chip.column === "closed") return "Closed — session log only";
+  if (active) {
+    if (play?.action === "SELL" || lotto?.phase === "SELL" || powerHour?.phase === "SELL") {
+      return "Active — exit in progress / logged";
+    }
+    if (play?.levels.invalidation) return `Plan — exit if invalidation hits (${play.levels.invalidation})`;
+    return "Plan — full exit at target or hard stop";
+  }
+  return "Final — close remainder on stop, target, or thesis break";
+}
+
+function tradeRunwayLines(
+  selected: TradeAlertPlay,
+  play: SpxPlayPayload | null,
+  lotto: LottoPlayPayload | null,
+  powerHour: PowerHourPlayPayload | null
+): PlayTerminalLine[] {
+  const lines: PlayTerminalLine[] = [section("TRADE RUNWAY")];
+  const active = selected.activeStage;
+
+  for (const stage of selected.stages) {
+    const isActive = stage === active && selected.chip.column !== "closed";
+    const done =
+      (stage === "trim" && selected.trimDone) ||
+      (stage === "sell" && selected.chip.column === "closed");
+    const label = stage.toUpperCase();
+    const detail = runwayDetail(stage, isActive, selected, play, lotto, powerHour);
+    lines.push({
+      icon: stageGlyph(stage, isActive, done),
+      tone: stageTone(isActive, stage === "sell" && isActive),
+      text: `${label}${isActive ? " ★" : done ? " ✓" : ""} — ${detail}`,
+      indent: 1,
+    });
+  }
+
+  return lines;
+}
+
+function contractHeadline(
+  selected: TradeAlertPlay,
+  play: SpxPlayPayload | null,
+  lotto: LottoPlayPayload | null,
+  powerHour: PowerHourPlayPayload | null
+): PlayTerminalLine | null {
+  const label = selected.chip.label;
+  if (!label || label === "—") return null;
+  let status = "live";
+  if (selected.chip.column === "watch") status = "watching";
+  if (selected.chip.column === "closed") status = "closed";
+  if (selected.chip.kind === "structure" && play) status = play.action.toLowerCase();
+  if (selected.chip.kind === "lotto" && lotto) status = lotto.phase.toLowerCase();
+  if (selected.chip.kind === "power" && powerHour) status = powerHour.phase.toLowerCase();
+  return { icon: "prompt", tone: "accent", text: `${label} — ${status}`, indent: 0 };
+}
+
 function structureSectionTitle(play: SpxPlayPayload): string {
   switch (play.action) {
     case "TRIM":
@@ -71,6 +173,20 @@ function structureLines(
   lines.push({ icon: "dim", tone: "dim", text: play.headline, indent: 1 });
   if (play.thesis) {
     lines.push({ icon: "prompt", tone: "neutral", text: play.thesis, indent: 1 });
+  }
+
+  const ticket = play.option_ticket;
+  if (ticket?.mid != null && ticket.mid > 0) {
+    const spread =
+      ticket.bid != null && ticket.ask != null
+        ? ` · bid ${ticket.bid.toFixed(2)} / ask ${ticket.ask.toFixed(2)}`
+        : "";
+    lines.push({
+      icon: "level",
+      tone: "accent",
+      text: `Live chain · ${ticket.contract_label} @ ${ticket.mid.toFixed(2)}${spread}`,
+      indent: 1,
+    });
   }
 
   if (desk?.vwap != null && desk.price > 0) {
@@ -171,6 +287,26 @@ function structureLines(
   return lines;
 }
 
+function liveChainLine(input: {
+  contractLabel: string | null;
+  mid: number | null | undefined;
+  bid?: number | null;
+  ask?: number | null;
+}): PlayTerminalLine | null {
+  const { contractLabel, mid, bid, ask } = input;
+  if (!contractLabel || mid == null || mid <= 0) return null;
+  const spread =
+    bid != null && ask != null && bid > 0 && ask > 0
+      ? ` · bid ${bid.toFixed(2)} / ask ${ask.toFixed(2)}`
+      : "";
+  return {
+    icon: "level",
+    tone: "accent",
+    text: `Live chain · ${contractLabel} @ ${mid.toFixed(2)}${spread}`,
+    indent: 1,
+  };
+}
+
 function lottoLines(lotto: LottoPlayPayload): PlayTerminalLine[] {
   const lines: PlayTerminalLine[] = [];
   const title =
@@ -178,6 +314,13 @@ function lottoLines(lotto: LottoPlayPayload): PlayTerminalLine[] {
   lines.push(section(title));
   lines.push({ icon: "dim", tone: "dim", text: lotto.headline, indent: 1 });
   if (lotto.thesis) lines.push({ icon: "prompt", tone: "neutral", text: lotto.thesis, indent: 1 });
+  const chain = liveChainLine({
+    contractLabel: lotto.contract_label,
+    mid: lotto.option_mid,
+    bid: lotto.option_bid,
+    ask: lotto.option_ask,
+  });
+  if (chain) lines.push(chain);
   if (lotto.catalyst_summary) {
     lines.push({ icon: "news", tone: "accent", text: `Catalyst: ${lotto.catalyst_summary}`, indent: 1 });
   }
@@ -200,6 +343,13 @@ function powerLines(power: PowerHourPlayPayload): PlayTerminalLine[] {
   lines.push(section(title));
   lines.push({ icon: "dim", tone: "dim", text: power.headline, indent: 1 });
   if (power.thesis) lines.push({ icon: "prompt", tone: "neutral", text: power.thesis, indent: 1 });
+  const chain = liveChainLine({
+    contractLabel: power.contract_label,
+    mid: power.option_mid,
+    bid: power.option_bid,
+    ask: power.option_ask,
+  });
+  if (chain) lines.push(chain);
   if (power.pnl_pts != null) {
     lines.push({
       icon: "level",
@@ -229,18 +379,22 @@ export function buildPlayTerminalLines(input: {
     ];
   }
 
+  const head = contractHeadline(selected, play, lotto, powerHour);
+  const runway = tradeRunwayLines(selected, play, lotto, powerHour);
+  const prefix = head ? [head, ...runway] : runway;
+
   if (selected.chip.kind === "structure" && play) {
     const lines = structureLines(play, desk, confirmationLayer);
     if (selected.chip.column === "closed" && closedThesis) {
       lines.push(section("SESSION WRAP"));
       lines.push({ icon: "dim", tone: "dim", text: closedThesis, indent: 1 });
     }
-    return lines;
+    return [...prefix, ...lines];
   }
-  if (selected.chip.kind === "lotto" && lotto) return lottoLines(lotto);
-  if (selected.chip.kind === "power" && powerHour) return powerLines(powerHour);
+  if (selected.chip.kind === "lotto" && lotto) return [...prefix, ...lottoLines(lotto)];
+  if (selected.chip.kind === "power" && powerHour) return [...prefix, ...powerLines(powerHour)];
 
-  return [{ icon: "dim", tone: "dim", text: "No live feed for this play." }];
+  return [...prefix, { icon: "dim", tone: "dim", text: "No live feed for this play." }];
 }
 
 export function playTerminalTitle(selected: TradeAlertPlay | null): string {

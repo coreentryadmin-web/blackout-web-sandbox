@@ -36,6 +36,13 @@ function TerminalLine({ line }: { line: PlayTerminalLine }) {
   );
 }
 
+export type PlayTerminalTab = {
+  id: string;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+};
+
 export type PlayTerminalWindowProps = {
   title: string;
   host?: string;
@@ -45,6 +52,8 @@ export type PlayTerminalWindowProps = {
   asOf?: string | null;
   ariaLabel?: string;
   className?: string;
+  tabs?: PlayTerminalTab[];
+  tabPanelLabel?: string;
 };
 
 /** Shared macOS-style terminal chrome (SPX desk + Vector side panel). */
@@ -57,6 +66,8 @@ export function PlayTerminalWindow({
   asOf,
   ariaLabel = "Desk terminal",
   className,
+  tabs,
+  tabPanelLabel,
 }: PlayTerminalWindowProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -64,7 +75,7 @@ export function PlayTerminalWindow({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [lines, asOf]);
+  }, [lines, asOf, tabs?.find((t) => t.selected)?.id]);
 
   const timeLabel = asOf
     ? new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })
@@ -85,7 +96,30 @@ export function PlayTerminalWindow({
         </div>
       </div>
 
-      <div ref={scrollRef} className="spx-play-terminal-body" role="log" aria-live="polite">
+      {tabs && tabs.length > 0 && (
+        <div className="spx-play-terminal-tabs" role="tablist" aria-label="Terminal views">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.selected}
+              className={clsx("spx-play-terminal-tab", tab.selected && "spx-play-terminal-tab--active")}
+              onClick={tab.onSelect}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div
+        ref={scrollRef}
+        className="spx-play-terminal-body"
+        role={tabs?.length ? "tabpanel" : "log"}
+        aria-live={tabs?.length ? undefined : "polite"}
+        aria-label={tabPanelLabel ?? ariaLabel}
+      >
         <div className="spx-play-terminal-prompt-line">
           <span className="spx-play-terminal-user">member</span>
           <span className="spx-play-terminal-at">@</span>
