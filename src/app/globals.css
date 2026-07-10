@@ -7844,8 +7844,17 @@ body::before {
 
   @media (min-width: 1024px) {
     .spx-sniper-triple.spx-sniper-triple--desk-v2 {
-      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.95fr) minmax(0, 0.9fr);
+      /* Four equal rails: Largo | Matrix | Plays | Terminal */
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       grid-template-areas: "largo matrix plays terminal";
+    }
+
+    .spx-sniper-triple--desk-v2 > * {
+      @apply border-r border-white/[0.06];
+    }
+
+    .spx-sniper-triple--desk-v2 > *:last-child {
+      @apply border-r-0;
     }
   }
 
@@ -7863,6 +7872,19 @@ body::before {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .spx-matrix-column-spot {
+    @apply px-1 pt-0.5 shrink-0;
+  }
+
+  .spx-matrix-column-spot .spx-live-spot-price-panel {
+    @apply border-b border-white/[0.06] pb-2 mb-0;
+  }
+
+  .spx-matrix-column-spot .spx-hero-price {
+    @apply text-4xl sm:text-5xl leading-none;
+    text-shadow: 0 0 22px rgba(0, 230, 118, 0.35);
   }
 
   .spx-sniper-triple--desk-v2 .spx-left-matrix .spx-odte-matrix-panel,

@@ -31,6 +31,11 @@ const SpxCommentaryRail = dynamic(
   { loading: () => null }
 );
 
+const SpxLiveSpotPrice = dynamic(
+  () => import("./SpxLiveSpotPrice").then((m) => ({ default: m.SpxLiveSpotPrice })),
+  { loading: () => null }
+);
+
 class SpxPanelErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -181,6 +186,11 @@ export function SpxDashboard() {
               compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
+            {(!compactPanels || iosPanel === "matrix") && (
+              <div className="spx-matrix-column-spot shrink-0" aria-label="SPX live spot">
+                <SpxLiveSpotPrice desk={desk} live={live} size="panel" />
+              </div>
+            )}
             <SpxGexMatrixHeatmap
               live={live}
               sessionActive={sessionActive}
