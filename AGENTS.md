@@ -3,6 +3,14 @@
 ## Cursor Cloud specific instructions
 
 **This repo (`blackout-web-sandbox`, branch `blackout-web-sandbox`) is the AWS staging app.**
+
+### Branch policy (standing — user 2026-07-10)
+
+**Never touch `main`.** Do not push, merge, open PRs to, checkout for commits, or deploy from
+`main` in this repo or `coreentryadmin-web/blackout-web`. All agent work lands on
+**`blackout-web-sandbox`** only → ECS staging. Prod/Railway `main` changes require an explicit
+user request in that session.
+
 Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
 explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
 ECS `blackout-staging-web` at `https://staging.blackouttrades.com`.
@@ -180,19 +188,19 @@ After `ecr-push-staging.yml` merges to `blackout-web-sandbox`, roll ECS so tasks
     `DATABASE_SSL=0` (SSL auto-disables for localhost anyway). The `blackout` DB and `postgres`
     password were created during setup.
 
-### Merge policy (standing — confirmed 2026-07-06)
+### Merge policy (standing — user 2026-07-10)
 
-**Auto-merge every verified PR into `main`** once local checks and required CI (`verify`) are green.
-Do not ask the user for merge approval. Workflow:
+**Never merge to `main`.** Open PRs only to **`blackout-web-sandbox`**. After CI is green, auto-merge
+into `blackout-web-sandbox` (not `main`). Workflow:
 
-1. Branch (`fix/*` or `cursor/*`) → commit → push → open PR to `main`
+1. Branch (`fix/*` or `cursor/*`) → commit → push → open PR to **`blackout-web-sandbox`**
 2. Run local verification (tsc/test as applicable)
-3. Enable auto-merge: `gh pr merge <n> --auto --squash --delete-branch` (or wait for
-   `.github/workflows/automerge.yml` on `cursor/*` branches)
-4. Poll Railway deploy → `npm run validate:deploy`
+3. Enable auto-merge into `blackout-web-sandbox`: `gh pr merge <n> --auto --squash --delete-branch`
+4. Poll ECS staging deploy → `npm run validate:staging` (or `validate:staging-bie`)
 
-Full policy + exceptions: **`CLAUDE.md`** § Merge authorization. `FINDINGS.md` entries merge with
-their fix PR in the same session.
+Do not ask the user for merge approval on staging. Do **not** enable auto-merge to `main`.
+
+Full policy + exceptions: **`CLAUDE.md`** § Merge authorization (staging-only unless user overrides).
 
 ### Autonomous RTH resume (Cloud Agent — do NOT wait for user)
 
@@ -202,11 +210,13 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 
 1. Read and execute `docs/ops/RTH-OPEN-RUNBOOK.md` **before** other work.
 2. Run `npm run validate:rth-open` (wraps `validate:deploy` + RTH session checks).
-3. If anything fails → fix → branch → PR → **auto-merge to `main` once CI is green** → poll Railway deploy → re-run until GREEN.
+3. If anything fails → fix → branch → PR → **auto-merge to `blackout-web-sandbox` once CI is green**
+   → poll ECS staging deploy → re-run until GREEN. **Do not merge or push to `main`.**
 4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` in Railway logs.
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
 
 **SPX all-day agent (matrix + trade alerts + every button + cross-tool):** see **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`**. Auto-starts **6:30 AM PT** weekdays. Runs **`npm run validate:spx-rth`** + **`npm run validate:spx-e2e`**. Post-close fix **~1:05 PM PT**. Workflow: **`.github/workflows/spx-rth-all-day-agent.yml`**.
 
-Off-hours / weekends: RTH script skips automatically; still run `npm run validate:deploy` after pushes to `main`.
+Off-hours / weekends: RTH script skips automatically; still run `npm run validate:staging` after
+pushes to `blackout-web-sandbox` (not `main`).
