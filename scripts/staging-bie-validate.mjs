@@ -71,10 +71,13 @@ async function getJson(path, headers, timeoutMs = 60_000) {
 
 const LARGO_QUESTIONS = [
   { q: "What's the SPX setup right now?", expect: /THESIS|SPX Live Desk|LEVELS/i },
-  { q: "why is SPX below vwap", expect: /THESIS|MECHANIC/i },
+  { q: "why is SPX below vwap", expect: /CORRECTION|THESIS|MECHANIC/i },
   { q: "How are today's plays doing?", expect: /0DTE|plays/i },
   { q: "What's the market doing?", expect: /Market context|HELIX|SPX/i },
-  { q: "random question about hedging flows", expect: /Market context|HELIX|SPX|0DTE/i },
+  { q: "Should I buy NVDA calls into earnings?", expect: /VERDICT|ALIGNMENT|NVDA/i },
+  { q: "compare NVDA vs AMD", expect: /vs|Night Hawk|HELIX/i },
+  { q: "what would flip the SPX read", expect: /flip|invalidation|thesis dead/i },
+  { q: "any unusual flow right now", expect: /HELIX|flow|tape/i },
 ];
 
 async function main() {
@@ -132,7 +135,7 @@ async function main() {
   const fbOk =
     fb.status === 200 &&
     !fb.body?.error &&
-    (fbText.length > 20 || fb.body?.brief === null);
+    (fbText.length > 20 || fb.body?.brief === null || /quiet window|HELIX/i.test(fbText));
   row(
     "flow-brief",
     "GET /api/market/flow-brief",

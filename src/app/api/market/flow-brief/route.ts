@@ -8,6 +8,8 @@ import { fetchMarketFlowAlerts, fetchUwDarkPoolRecent } from "@/lib/providers/un
 import { uwConfigured } from "@/lib/providers/config";
 import type { FlowAlert } from "@/lib/api";
 import { composeFlowBrief } from "@/lib/bie/flow-brief";
+import { composeQuietFlowBrief } from "@/lib/bie/flow-tape-brief";
+import { getCachedBiePlatformContext } from "@/lib/bie/platform-cache";
 import { checkNumbersGrounded, extractNumbersFromText } from "@/lib/grounding-guard";
 
 export const dynamic = "force-dynamic";
@@ -148,10 +150,21 @@ export async function GET(req: NextRequest) {
     const result = await serverCache(cacheKey, BRIEF_TTL_MS, async () => {
       const { alerts, darkPrints } = await fetchSharedData();
       const prompt = buildPrompt(alerts, darkPrints);
-      if (!prompt) return null;
 
       const massiveCount = alerts.filter((a) => a.premium >= MASSIVE_FLOW).length +
                            darkPrints.filter((d) => d.premium >= MASSIVE_BLOCK).length;
+
+      if (!prompt) {
+        if (!claudeEnabled()) {
+          const platform = await getCachedBiePlatformContext({ scope: "market", flowLimit: 12 });
+          return {
+            brief: composeQuietFlowBrief(platform),
+            massive_signals: massiveCount,
+            generated_at: new Date().toISOString(),
+          };
+        }
+        return null;
+      }
 
       if (!claudeEnabled()) {
         const brief = composeFlowBrief(alerts, darkPrints);

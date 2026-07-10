@@ -9,16 +9,22 @@
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 
 export type BieIntent =
-  | "zerodte_plays" // "how are today's plays doing" / the 0DTE board
-  | "ticker_play_state" // "how's the NVDA play" — a name on today's ledger
-  | "spx_structure" // "SPX levels / walls / gamma flip"
-  | "spx_desk_read" // full Live Desk AI brief — same path as commentary rail
-  | "market_context" // "what's the market doing right now"
-  | "ticker_ecosystem"; // "what's going on with NVDA" — any known ticker, not just today's ledger
+  | "zerodte_plays"
+  | "ticker_play_state"
+  | "spx_structure"
+  | "spx_desk_read"
+  | "spx_invalidation"
+  | "market_context"
+  | "flow_tape"
+  | "ticker_ecosystem"
+  | "ticker_advice"
+  | "ticker_compare";
 
 export type BieRoute = {
   intent: BieIntent;
   ticker: string | null;
+  /** Second ticker for compare intent. */
+  ticker_b?: string | null;
 };
 
 const ZERODTE_RE =
@@ -30,37 +36,38 @@ const SPX_STRUCTURE_RE =
 const SPX_DESK_READ_RE =
   /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer|channel|commentary|brief)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk|doing)\b|\blive desk\b.*\bspx\b|\bspx channel\b|\bcommentary on spx\b/i;
 
+const SPX_INVALIDATION_RE =
+  /\b(invalidate|invalidat|kill|what (would|kills)|thesis dead|go flat)\b.*\b(spx|setup|read|play|slayer)\b|\b(spx|setup|play|slayer)\b.*\b(invalidate|kill|flip it|lose)\b|\bwhat would flip\b/i;
+
 const MARKET_CONTEXT_RE =
   /^(what('| i)s (the )?market (doing|look(ing)? like|context|structure)( (right )?now| today)?\??|market (context|overview|check)( please)?\??|how('| i)s the market( (right )?now| today| looking)?\??)$/i;
 
 const PLAY_STATE_RE = /\b(play|position|status|doing|hold|trim|exit|sell|still (valid|good|on))\b/i;
 
-// Deliberately excludes "think"/"opinion"/"take on this" phrasing that could
-// read as wanting reasoning, not a data dump — REASONING_RE below already
-// sends anything with "think" to Claude, so a branch built around it here
-// would be dead code anyway (REASONING_RE runs first).
 const TICKER_ECOSYSTEM_RE =
   /\bwhat'?s? (going on|happening) (with|on)\b|\bwhat'?s? the (word|story|deal|latest) (with|on)\b|\bany (info|news|flow|activity) on\b|\banything (on|about)\b/i;
 
-/** SPX-scoped "why" — BIE synthesis answers these; generic why → Claude. */
 const SPX_WHY_RE =
   /\bwhy\b.*\b(spx|s&p|es|gamma|gex|vwap|dealers?|flip|slayer|market|tape)\b|\b(spx|s&p|slayer)\b.*\bwhy\b/i;
 
-/** SPX-scoped "explain" — synthesis desk read on staging BIE (not open-ended teach). */
 const SPX_EXPLAIN_RE =
   /\bexplain\b.*\b(spx|s&p|es|slayer)\b|\b(spx|s&p|es|slayer)\b.*\bexplain\b/i;
 
 const MARKET_CONTEXT_LOOSE_RE =
   /\b(market (doing|look(ing)?|context|overview|backdrop|regime)|how.?s the market|what.?s the market|market tape|tape today)\b/i;
 
-/** Questions with these shapes need REASONING, not lookup — always Claude (unless SPX_WHY_RE). */
+const FLOW_TAPE_RE =
+  /\b(unusual flow|whale print|flow tape|any flow|big flow|hedging flows?|massive flow|lit flow)\b/i;
+
+const ADVICE_RE =
+  /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
+
+const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
+
+/** Questions with these shapes need REASONING, not lookup — Claude unless a narrower BIE branch matched first. */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
 
-/** A known ticker (curated whitelist) or an explicit $-prefixed symbol only —
- *  never "any capitalized 1-5 letter token," which mis-pins words like CALLS/
- *  HOLD/SETUP/BULL as tickers (the exact bug LARGO-9 fixed elsewhere; reusing
- *  the same KNOWN_TICKERS whitelist here instead of re-deriving a weaker check). */
 function extractKnownTicker(question: string): string | null {
   const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
   for (const m of matches) {
@@ -71,22 +78,47 @@ function extractKnownTicker(question: string): string | null {
   return null;
 }
 
-/**
- * Classify a question for deterministic answering. `ledgerTickers` = tickers on
- * today's 0DTE ledger (play-state questions only route for names we actually
- * track — anything else is a general ticker question and belongs to Claude).
- */
+/** Up to two known tickers for compare routing. */
+export function extractCompareTickers(question: string): [string, string] | null {
+  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
+  const found: string[] = [];
+  for (const m of matches) {
+    const hadDollar = m.startsWith("$");
+    const cand = m.replace(/^\$/, "");
+    if (hadDollar || KNOWN_TICKERS.has(cand)) {
+      if (!found.includes(cand)) found.push(cand);
+    }
+    if (found.length >= 2) break;
+  }
+  return found.length >= 2 ? [found[0]!, found[1]!] : null;
+}
+
 export function classifyBieIntent(question: string, ledgerTickers: Set<string>): BieRoute | null {
   const q = question.trim();
-  // Length guard: long/compound questions carry nuance a lookup can't honor.
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
+
   if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
+  if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
+
+  if (COMPARE_RE.test(q)) {
+    const pair = extractCompareTickers(q);
+    if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
+  }
+
+  if (ADVICE_RE.test(q)) {
+    const ticker = extractKnownTicker(q);
+    if (ticker) return { intent: "ticker_advice", ticker };
+  }
+
+  if (FLOW_TAPE_RE.test(q)) {
+    return { intent: "flow_tape", ticker: extractKnownTicker(q) };
+  }
+
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
 
-  // Ticker play-state: a ledger name + a state-flavored ask.
   const caps = q.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
   const hit = caps.map((c) => c.replace(/^\$/, "")).find((c) => ledgerTickers.has(c));
   if (hit && PLAY_STATE_RE.test(q)) return { intent: "ticker_play_state", ticker: hit };
@@ -97,9 +129,6 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "market_context", ticker: null };
   }
 
-  // Any known ticker (not just today's ledger) + an open-ended "what's going
-  // on" ask — routes to the same cross-instrument snapshot get_ecosystem_context
-  // already gives Claude as a tool, just without the LLM round trip.
   if (TICKER_ECOSYSTEM_RE.test(q)) {
     const ticker = extractKnownTicker(q);
     if (ticker) return { intent: "ticker_ecosystem", ticker };
@@ -108,55 +137,44 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   return null;
 }
 
-/** Loose SPX mention — BIE-only Largo uses this when the router misses but the ask is still desk-shaped. */
 export function isSpxDeskFallbackQuestion(question: string): boolean {
   const q = question.trim();
   if (q.length > 200 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return false;
-  if (REASONING_RE.test(q)) return false;
+  if (REASONING_RE.test(q) && !/\b(spx|s&p|gamma|gex|dealer)\b/i.test(q)) return false;
   return /\b(spx|s&p|es|slayer|sniper|0dte|gamma|gex|dealer)\b/i.test(q);
 }
 
-/**
- * Staging BIE-only last resort — when the strict router misses, still return a
- * useful deterministic route instead of throwing. Never used when Claude is on.
- */
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
+  if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
   if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
+  if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
   if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
     return { intent: "market_context", ticker: null };
   }
+  const pair = extractCompareTickers(q);
+  if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
   const ticker = extractKnownTicker(q);
-  if (ticker && PLAY_STATE_RE.test(q)) {
-    return { intent: "ticker_ecosystem", ticker };
-  }
-  if (TICKER_ECOSYSTEM_RE.test(q) && ticker) {
-    return { intent: "ticker_ecosystem", ticker };
-  }
+  if (ticker && ADVICE_RE.test(q)) return { intent: "ticker_advice", ticker };
+  if (ticker && PLAY_STATE_RE.test(q)) return { intent: "ticker_ecosystem", ticker };
+  if (TICKER_ECOSYSTEM_RE.test(q) && ticker) return { intent: "ticker_ecosystem", ticker };
   if (/\b(spx|s&p|gamma|gex|vwap|slayer|0dte|dealer|flip)\b/i.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
-  if (/\b(market|vix|spy|qqq|breadth|regime|tape|flow|anomal)/i.test(q)) {
+  if (/\b(market|vix|spy|qqq|breadth|regime|tape|anomal)/i.test(q)) {
     return { intent: "market_context", ticker: null };
   }
-  if (ticker) return { intent: "ticker_ecosystem", ticker };
+  if (ticker) return { intent: "ticker_advice", ticker };
   return { intent: "market_context", ticker: null };
 }
 
-/** Normalizes the router's decision into a queryable "bucket" for the
- *  bie_interactions ledger (task #103, groundwork for #112's self-eval loop):
- *  the real intent name when the router matched deterministically, or the
- *  explicit "claude_fallback" sentinel when the question fell through to
- *  Claude. Exported + pure so the null→sentinel mapping is unit-tested
- *  directly, without spinning up a full Largo turn. */
 export function bieIntentBucket(intent: BieIntent | null): string {
   return intent ?? "claude_fallback";
 }
 
-/** Static follow-up chips per intent — no Haiku call on the router path. */
 export function bieFollowups(intent: BieIntent): string[] {
   switch (intent) {
     case "zerodte_plays":
@@ -164,12 +182,20 @@ export function bieFollowups(intent: BieIntent): string[] {
     case "ticker_play_state":
       return ["Show all of today's plays", "What would invalidate this play?", "What's the SPX setup right now?"];
     case "spx_structure":
-      return ["How are today's plays doing?", "What's the full SPX desk read?", "Is this flow real or noise?"];
+      return ["What's the full SPX desk read?", "What would flip this read?", "How are today's plays doing?"];
     case "spx_desk_read":
       return ["Where are dealers positioned?", "What would flip this read?", "How are today's plays doing?"];
+    case "spx_invalidation":
+      return ["What's the full SPX desk read?", "How are today's plays doing?", "What's the market doing?"];
     case "market_context":
       return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
+    case "flow_tape":
+      return ["What's the SPX setup right now?", "What's going on with SPY?", "How are today's plays doing?"];
     case "ticker_ecosystem":
       return ["Is that confirmed by Night Hawk too?", "How are today's plays doing?", "What's the SPX setup right now?"];
+    case "ticker_advice":
+      return ["What's the SPX setup right now?", `Compare with another name`, "How are today's plays doing?"];
+    case "ticker_compare":
+      return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
   }
 }

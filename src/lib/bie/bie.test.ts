@@ -39,9 +39,10 @@ test("router: SPX desk read and channel commentary route", () => {
   assert.equal(classifyBieIntent("commentary on SPX channel", LEDGER)?.intent, "spx_desk_read");
 });
 
-test("router: isSpxDeskFallbackQuestion catches loose SPX asks without reasoning shape", () => {
+test("router: isSpxDeskFallbackQuestion catches loose SPX asks including SPX why", () => {
   assert.equal(isSpxDeskFallbackQuestion("tell me about SPX gamma today"), true);
-  assert.equal(isSpxDeskFallbackQuestion("why did SPX dump"), false);
+  assert.equal(isSpxDeskFallbackQuestion("why did SPX dump"), true);
+  assert.equal(isSpxDeskFallbackQuestion("should I buy bonds"), false);
 });
 
 test("router: SPX-scoped why routes to synthesis desk read (BIE), not Claude", () => {
@@ -61,16 +62,30 @@ test("router: loose market context phrases route without exact match", () => {
 });
 
 test("router: classifyBieStagingFallback never leaves Largo without a route", () => {
-  assert.equal(classifyBieStagingFallback("random question about hedging flows").intent, "market_context");
+  assert.equal(classifyBieStagingFallback("random question about hedging flows").intent, "flow_tape");
   assert.equal(classifyBieStagingFallback("tell me something").intent, "market_context");
   assert.equal(classifyBieStagingFallback("SPX gamma").intent, "spx_desk_read");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").intent, "ticker_ecosystem");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").ticker, "NVDA");
 });
 
-test("router: reasoning-shaped questions NEVER route — Claude keeps them", () => {
+test("router: ticker advice and compare route before generic reasoning", () => {
+  assert.equal(classifyBieIntent("Should I buy NVDA calls into earnings?", LEDGER)?.intent, "ticker_advice");
+  assert.equal(classifyBieIntent("Should I buy NVDA calls into earnings?", LEDGER)?.ticker, "NVDA");
+  const cmp = classifyBieIntent("compare NVDA vs AMD flow", LEDGER);
+  assert.equal(cmp?.intent, "ticker_compare");
+  assert.equal(cmp?.ticker, "NVDA");
+  assert.equal(cmp?.ticker_b, "AMD");
+});
+
+test("router: SPX invalidation and flow tape", () => {
+  assert.equal(classifyBieIntent("what would flip the SPX read", LEDGER)?.intent, "spx_invalidation");
+  assert.equal(classifyBieIntent("any unusual flow right now", LEDGER)?.intent, "flow_tape");
+});
+
+test("router: reasoning-shaped questions without ticker advice route fall through", () => {
   assert.equal(classifyBieIntent("Why did the NVDA play stop out?", LEDGER), null);
-  assert.equal(classifyBieIntent("Should I hold my TSLA play into the close?", LEDGER), null);
+  assert.equal(classifyBieIntent("Should I hold my TSLA play into the close?", LEDGER)?.intent, "ticker_advice");
   // SPX-scoped explain is BIE on staging; open-ended teach still falls through.
   assert.equal(classifyBieIntent("Explain how gamma hedging works in general", LEDGER), null);
   // Long/compound questions carry nuance a lookup can't honor.
@@ -104,7 +119,18 @@ test("router: 'what does X think' phrasing stays with Claude (REASONING_RE wins,
 });
 
 test("router: every intent has follow-up chips (no LLM on the router path)", () => {
-  for (const intent of ["zerodte_plays", "ticker_play_state", "spx_structure", "spx_desk_read", "market_context", "ticker_ecosystem"] as const) {
+  for (const intent of [
+    "zerodte_plays",
+    "ticker_play_state",
+    "spx_structure",
+    "spx_desk_read",
+    "spx_invalidation",
+    "market_context",
+    "flow_tape",
+    "ticker_ecosystem",
+    "ticker_advice",
+    "ticker_compare",
+  ] as const) {
     assert.ok(bieFollowups(intent).length === 3);
   }
 });
