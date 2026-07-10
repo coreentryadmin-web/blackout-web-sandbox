@@ -16,6 +16,10 @@ import {
   type SpxSignalFactor,
 } from "@/features/spx/lib/spx-signals";
 import { evaluatePlayGates, GATE_BLOCK, type PlayGateResult } from "@/features/spx/lib/spx-play-gates";
+import {
+  categorizeGateBlocks,
+  emptyCategorizedGateBlocks,
+} from "@/features/spx/lib/playbook-gate-categories";
 import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { forceExitCutoffLabel, isPastForceExitCutoff, isBeforeCashOpen, isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
@@ -76,6 +80,8 @@ import {
   watchSetupKey,
 } from "@/features/spx/lib/spx-play-watch";
 import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
+import { buildOptionExecutionSim } from "@/features/spx/lib/playbook-option-sim";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
 import {
@@ -573,7 +579,14 @@ async function evaluateOpenPlay(
       target: row.target,
       invalidation: confluence.levels.invalidation,
     },
-    gates: { passed: false, blocks: [], warnings: [], entry_mode: "none", play_idea: null },
+    gates: {
+      passed: false,
+      blocks: [],
+      blocks_by_category: emptyCategorizedGateBlocks(),
+      warnings: [],
+      entry_mode: "none",
+      play_idea: null,
+    },
     claude: null,
     open_play:
       action === "SELL"
@@ -631,7 +644,12 @@ async function evaluateFlatPlay(
       ? evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score)
       : null;
 
-  const playbookMatch = matchPlaybooksShadow(desk, technicals);
+  const sessionDate = todayEt();
+  const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, mutate);
+
+  const playbookMatch = matchPlaybooksShadow(desk, technicals, Date.now(), {
+    or_break_memory: orBreakMemory,
+  });
   const playbookPrimaryId: PlaybookId | null = playbookMatch.primary_playbook_id;
   const primaryVerdict = playbookPrimaryId
     ? playbookMatch.verdicts.find((v) => v.playbook_id === playbookPrimaryId)
@@ -890,7 +908,11 @@ async function evaluateFlatPlay(
   }
 
   const dir = confluence.direction;
-  const optionTicket = await buildOptionTicket(desk.price, dir, confluence.grade);
+  const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
+  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price);
+  const optionTicket: OptionTicket = executionSim
+    ? { ...optionTicketRaw, execution_sim: executionSim }
+    : optionTicketRaw;
 
   console.log('[spx-play-engine] optionTicket check:', {
     blocked: optionTicket.blocked,
@@ -908,6 +930,9 @@ async function evaluateFlatPlay(
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         passed: false,
         blocks: [optionTicket.block_reason ?? "Option chain unavailable"],
+        blocks_by_category: categorizeGateBlocks([
+          optionTicket.block_reason ?? "Option chain unavailable",
+        ]),
         warnings: entryGatesRaw.warnings,
         entry_mode: "none",
         play_idea: entryGatesView.play_idea,
@@ -934,8 +959,6 @@ async function evaluateFlatPlay(
       mutate
     );
   }
-
-  const sessionDate = todayEt();
 
   const entryPath = promoteEligible ? "watch_promote" : playbookLabActive ? "playbook_lab" : "cold_buy";
   const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : playbookLabActive ? `${playbookPrimaryId} · ` : "";
@@ -1104,6 +1127,7 @@ async function evaluateFlatPlay(
     gates: {
       passed: true,
       blocks: [],
+      blocks_by_category: emptyCategorizedGateBlocks(),
       warnings: entryGatesRaw.warnings,
       entry_mode: entryGatesRaw.entry_mode,
       play_idea: entryGatesView.play_idea,
@@ -1226,6 +1250,7 @@ async function evaluateSpxPlayCore(
       gates: {
         passed: false,
         blocks: ["Session closed"],
+        blocks_by_category: categorizeGateBlocks(["Session closed"]),
         warnings: [],
         entry_mode: "none",
         play_idea: playIdea,

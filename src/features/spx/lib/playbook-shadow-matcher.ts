@@ -17,6 +17,11 @@ import {
   type PlaybookSessionWindow,
 } from "@/features/spx/lib/playbook-registry";
 import { isPlaybookEligible } from "@/features/spx/lib/playbook-regime-router";
+import {
+  pb14LongBreakReady,
+  pb14ShortBreakReady,
+  type OrBreakMemory,
+} from "@/features/spx/lib/playbook-break-memory";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import { playMtfBufferPts, playStructureProximityPts, playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
 
@@ -973,12 +978,13 @@ function matchPb13(
   };
 }
 
-/** PB-14 MVP: re-entry inside OR + flow flip vs OR mid (no break memory). */
+/** PB-14: failed OR break then re-entry — requires session break memory. */
 function matchPb14(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
-  regimeEligible: boolean
+  regimeEligible: boolean,
+  breakMemory: OrBreakMemory | null | undefined
 ): PlaybookMatchVerdict {
   const def = playbookDef("PB-14");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
@@ -1004,18 +1010,21 @@ function matchPb14(
   const flow = flowDirection(desk);
   const m3 = technicals.m3_close ?? desk.price;
 
+  const longReady = breakMemory ? pb14LongBreakReady(breakMemory) : false;
+  const shortReady = breakMemory ? pb14ShortBreakReady(breakMemory) : false;
+
   const longTrigger =
     regimeEligible &&
     windowOpen &&
     insideOr &&
-    desk.price < orMid &&
+    longReady &&
     m3 > orMid &&
     flow === "bullish";
   const shortTrigger =
     regimeEligible &&
     windowOpen &&
     insideOr &&
-    desk.price > orMid &&
+    shortReady &&
     m3 < orMid &&
     flow === "bearish";
 
@@ -1024,10 +1033,10 @@ function matchPb14(
       playbook_id: def.id,
       session_window_open: true,
       regime_eligible: regimeEligible,
-      precondition_match: insideOr,
+      precondition_match: insideOr && (longReady || shortReady),
       trigger_fired: true,
       direction: longTrigger ? "long" : "short",
-      detail: `Failed-break reversal ${longTrigger ? "long" : "short"} vs OR mid ${orMid.toFixed(0)} (MVP re-entry)`,
+      detail: `Failed-break reversal ${longTrigger ? "long" : "short"} vs OR mid ${orMid.toFixed(0)} (break memory)`,
     };
   }
 
@@ -1038,16 +1047,26 @@ function matchPb14(
     precondition_match: insideOr,
     trigger_fired: false,
     direction: null,
-    detail: insideOr ? "Inside OR — awaiting mid cross + flow flip" : "Outside OR — no failed-break re-entry",
+    detail: insideOr
+      ? longReady || shortReady
+        ? "Inside OR — awaiting mid cross + flow flip"
+        : "Inside OR — awaiting prior OR break + re-entry"
+      : "Outside OR — no failed-break re-entry",
   };
 }
+
+export type PlaybookShadowMatchOpts = {
+  or_break_memory?: OrBreakMemory | null;
+};
 
 export function matchPlaybooksShadow(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
-  now: number = Date.now()
+  now: number = Date.now(),
+  opts?: PlaybookShadowMatchOpts
 ): PlaybookShadowMatchResult {
   const etMins = etMinutes(new Date(now));
+  const breakMemory = opts?.or_break_memory ?? null;
   const verdicts = PLAYBOOK_REGISTRY.map((pb) => {
     const eligible = isPlaybookEligible(pb.id, desk, now);
     switch (pb.id) {
@@ -1078,7 +1097,7 @@ export function matchPlaybooksShadow(
       case "PB-13":
         return matchPb13(desk, technicals, etMins, eligible);
       case "PB-14":
-        return matchPb14(desk, technicals, etMins, eligible);
+        return matchPb14(desk, technicals, etMins, eligible, breakMemory);
       default:
         throw new Error(`unhandled playbook ${pb.id}`);
     }

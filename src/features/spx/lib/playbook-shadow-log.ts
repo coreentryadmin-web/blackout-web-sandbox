@@ -10,6 +10,7 @@ import { todayEtYmd } from "@/lib/providers/spx-session";
 import { buildPlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
 import { computePlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import {
   collectPlaybookInstanceTransitions,
@@ -54,8 +55,11 @@ export async function maybeLogPlaybookShadowMatch(
   if (prev === key) return;
 
   const sessionDate = todayEtYmd();
+  const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, opts?.technicals, false);
   const rawVerdicts = opts?.technicals?.available
-    ? matchPlaybooksShadow(desk, opts.technicals).verdicts
+    ? matchPlaybooksShadow(desk, opts.technicals, Date.now(), {
+        or_break_memory: orBreakMemory,
+      }).verdicts
     : panel.verdicts.map((v) => ({
         playbook_id: v.playbook_id,
         session_window_open: v.session_window_open,

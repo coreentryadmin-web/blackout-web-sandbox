@@ -505,3 +505,56 @@ test("primary_playbook_id: priority-order tie-break when 2+ playbooks trigger si
   assert.ok(triggered.includes("PB-03"));
   assert.equal(result.primary_playbook_id, "PB-03");
 });
+
+test("PB-14: requires break memory — long after failed low break + re-entry", () => {
+  const desk = deskStub({
+    price: 7388,
+    flow_0dte_net: 300_000,
+    regime: "neutral",
+  });
+  const technicals = technicalsStub({
+    or_defined: true,
+    or_high: 7400,
+    or_low: 7370,
+    m3_close: 7389,
+    breakout: {
+      pdh_break: false,
+      pdl_break: false,
+      hod_break: false,
+      lod_break: false,
+      vwap_reclaim: false,
+      vwap_lost: false,
+    },
+  });
+  const memory = {
+    session_date: "2026-07-09",
+    or_high: 7400,
+    or_low: 7370,
+    broke_above_or_high: false,
+    broke_below_or_low: true,
+    reentered_after_high_break: false,
+    reentered_after_low_break: true,
+    updated_at: new Date().toISOString(),
+  };
+  const result = matchPlaybooksShadow(desk, technicals, OPENING_DRIVE_UTC, {
+    or_break_memory: memory,
+  });
+  const pb14 = result.verdicts.find((v) => v.playbook_id === "PB-14")!;
+  assert.equal(pb14.trigger_fired, true);
+  assert.equal(pb14.direction, "long");
+});
+
+test("PB-14: no trigger without prior OR break memory", () => {
+  const desk = deskStub({ price: 7388, flow_0dte_net: 300_000, regime: "neutral" });
+  const technicals = technicalsStub({
+    or_defined: true,
+    or_high: 7400,
+    or_low: 7370,
+    m3_close: 7389,
+  });
+  const result = matchPlaybooksShadow(desk, technicals, OPENING_DRIVE_UTC, {
+    or_break_memory: null,
+  });
+  const pb14 = result.verdicts.find((v) => v.playbook_id === "PB-14")!;
+  assert.equal(pb14.trigger_fired, false);
+});
