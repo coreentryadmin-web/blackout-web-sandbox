@@ -1,21 +1,21 @@
 /**
- * SPX Slayer — Playbook Shadow Matcher (Phase 1 shadow + Phase 3 live-gate input).
+ * SPX Slayer — Playbook Shadow Matcher (shadow + live-gate input).
  *
- * Pure, code-computable approximation of PB-01/PB-02/PB-03 against `SpxDeskPayload`
- * + `PlayTechnicals` (including bar-derived OR / VWAP streaks / EMA9 from
- * `spx-play-technicals.ts`). Caller passes `now` explicitly — fully unit-testable.
+ * Code-computable approximation of PB-01…PB-14 against `SpxDeskPayload` +
+ * `PlayTechnicals`. MVP fallbacks per `docs/spx/PLAYBOOK-FULL-SPEC-v2.md` where
+ * NEEDS-FIELD items are not yet on the desk.
  *
- * Default consumers are shadow-only (`logPlaybookShadowMatch`, `buildPlaybookShadowPanel`).
- * When `PLAYBOOK_LIVE_GATE=1`, `evaluatePlayGates` may require `primary_playbook_id`
- * for BUY — see `playbookLiveGateEnabled()` in `spx-play-config.ts`.
- *
- * Regime eligibility is applied via `playbook-regime-router.ts` before trigger
- * selection: ineligible playbooks still return a verdict (for UI/telemetry) but
- * cannot become `primary_playbook_id` or fire a live-gate trigger.
+ * Default consumers are shadow-only. Primary selection uses explicit priority order
+ * (§5 FULL-SPEC), not registry array order.
  */
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
-import { PLAYBOOK_REGISTRY, type PlaybookId, type PlaybookSessionWindow } from "@/features/spx/lib/playbook-registry";
+import {
+  PLAYBOOK_REGISTRY,
+  playbookDef,
+  type PlaybookId,
+  type PlaybookSessionWindow,
+} from "@/features/spx/lib/playbook-registry";
 import { isPlaybookEligible } from "@/features/spx/lib/playbook-regime-router";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import { playMtfBufferPts, playStructureProximityPts } from "@/features/spx/lib/spx-play-config";
@@ -25,7 +25,6 @@ export type PlaybookDirectionVerdict = "long" | "short" | null;
 export type PlaybookMatchVerdict = {
   playbook_id: PlaybookId;
   session_window_open: boolean;
-  /** False when regime router excludes this playbook for the current desk tick. */
   regime_eligible: boolean;
   precondition_match: boolean;
   trigger_fired: boolean;
@@ -35,9 +34,26 @@ export type PlaybookMatchVerdict = {
 
 export type PlaybookShadowMatchResult = {
   verdicts: PlaybookMatchVerdict[];
-  /** First registry-order eligible playbook whose `trigger_fired` is true, or null. */
   primary_playbook_id: PlaybookId | null;
 };
+
+/** Explicit primary priority — FULL-SPEC §5 (event/structure beats generic patterns). */
+const PRIMARY_PRIORITY: readonly PlaybookId[] = [
+  "PB-09",
+  "PB-13",
+  "PB-14",
+  "PB-03",
+  "PB-05",
+  "PB-06",
+  "PB-04",
+  "PB-07",
+  "PB-08",
+  "PB-01",
+  "PB-02",
+  "PB-10",
+  "PB-11",
+  "PB-12",
+];
 
 function isWithinSessionWindow(window: PlaybookSessionWindow, etMins: number): boolean {
   const start = etClock(window.startEtHour, window.startEtMin);
@@ -53,18 +69,41 @@ function flowDirection(desk: SpxDeskPayload): "bullish" | "bearish" | "neutral" 
   return "neutral";
 }
 
-/**
- * PB-01 VWAP Reclaim — uses bar streaks (≥15m below / ≥2× 3m closes) + EMA9 curl
- * when available; falls back to `breakout.vwap_reclaim` / `vwap_lost` for the
- * single-tick reclaim/loss edge.
- */
+function netPremAccelerating(
+  ticks: { net: number }[],
+  bullish: boolean
+): boolean {
+  if (ticks.length < 3) return false;
+  const last3 = ticks.slice(-3).map((t) => t.net);
+  if (bullish) return last3[2] > last3[1] && last3[1] > last3[0] && last3[2] > 0;
+  return last3[2] < last3[1] && last3[1] < last3[0] && last3[2] < 0;
+}
+
+function netPremDecelerating(ticks: { net: number }[]): boolean {
+  if (ticks.length < 3) return false;
+  const a = Math.abs(ticks[ticks.length - 3].net);
+  const b = Math.abs(ticks[ticks.length - 2].net);
+  const c = Math.abs(ticks[ticks.length - 1].net);
+  return c < b && b < a;
+}
+
+function pickPrimaryPlaybook(verdicts: PlaybookMatchVerdict[]): PlaybookId | null {
+  const fired = new Set(
+    verdicts.filter((v) => v.trigger_fired && v.regime_eligible).map((v) => v.playbook_id)
+  );
+  for (const id of PRIMARY_PRIORITY) {
+    if (fired.has(id)) return id;
+  }
+  return null;
+}
+
 function matchPb01(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
   regimeEligible: boolean
 ): PlaybookMatchVerdict {
-  const def = PLAYBOOK_REGISTRY[0];
+  const def = playbookDef("PB-01");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
   const dataAvailable = technicals.available && desk.vwap != null;
 
@@ -108,7 +147,7 @@ function matchPb01(
       precondition_match: longPrecondition,
       trigger_fired: true,
       direction: "long",
-      detail: `VWAP reclaim: below=${technicals.minutes_below_vwap}m m3_above=${technicals.m3_consecutive_closes_above_vwap} ema9=${technicals.m1_ema9?.toFixed(1) ?? "n/a"} curl=${technicals.ema9_curling_toward_vwap} flow=${flow ?? "unknown"}`,
+      detail: `VWAP reclaim: below=${technicals.minutes_below_vwap}m m3_above=${technicals.m3_consecutive_closes_above_vwap} flow=${flow ?? "unknown"}`,
     };
   }
   if (shortTrigger) {
@@ -119,7 +158,7 @@ function matchPb01(
       precondition_match: shortPrecondition,
       trigger_fired: true,
       direction: "short",
-      detail: `VWAP lost: above=${technicals.minutes_above_vwap}m m3_below=${technicals.m3_consecutive_closes_below_vwap} ema9=${technicals.m1_ema9?.toFixed(1) ?? "n/a"} curl=${technicals.ema9_curling_toward_vwap} flow=${flow ?? "unknown"}`,
+      detail: `VWAP lost: above=${technicals.minutes_above_vwap}m m3_below=${technicals.m3_consecutive_closes_below_vwap} flow=${flow ?? "unknown"}`,
     };
   }
 
@@ -132,20 +171,17 @@ function matchPb01(
     direction: null,
     detail: !regimeEligible
       ? `Regime ineligible for PB-01 (desk.regime=${desk.regime})`
-      : `No VWAP reclaim/loss (below=${technicals.minutes_below_vwap}m above=${technicals.minutes_above_vwap}m m3±=${technicals.m3_consecutive_closes_above_vwap}/${technicals.m3_consecutive_closes_below_vwap} flow=${flow ?? "unknown"})`,
+      : `No VWAP reclaim/loss (flow=${flow ?? "unknown"})`,
   };
 }
 
-/**
- * PB-02 VWAP Reject — proximity + streak context + bearish flow + vwap_lost / m3 below.
- */
 function matchPb02(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
   regimeEligible: boolean
 ): PlaybookMatchVerdict {
-  const def = PLAYBOOK_REGISTRY[1];
+  const def = playbookDef("PB-02");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
   const dataAvailable = technicals.available && desk.vwap != null && desk.price > 0;
 
@@ -184,22 +220,18 @@ function matchPb02(
     detail: !regimeEligible
       ? `Regime ineligible for PB-02 (desk.regime=${desk.regime})`
       : triggerFired
-        ? `VWAP reject: price ${desk.price} lost vwap ${vwap}, flow ${flow}, m3_below=${technicals.m3_consecutive_closes_below_vwap}`
-        : `No VWAP rejection (near_band=${nearBandFromBelow}, above_vwap=${desk.above_vwap}, flow=${flow ?? "unknown"})`,
+        ? `VWAP reject: price ${desk.price} lost vwap ${vwap}, flow ${flow}`
+        : `No VWAP rejection (near_band=${nearBandFromBelow}, flow=${flow ?? "unknown"})`,
   };
 }
 
-/**
- * PB-03 Opening Range Breakout — prefers true OR from minute bars (`or_high`/`or_low`);
- * falls back to HOD/LOD break flags only when OR is not yet defined (early window).
- */
 function matchPb03(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
   regimeEligible: boolean
 ): PlaybookMatchVerdict {
-  const def = PLAYBOOK_REGISTRY[2];
+  const def = playbookDef("PB-03");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
   const dataAvailable = technicals.available && (technicals.or_defined || (desk.hod != null && desk.lod != null));
 
@@ -236,23 +268,13 @@ function matchPb03(
   }
 
   const longTrigger =
-    regimeEligible &&
-    windowOpen &&
-    !feedDegraded &&
-    brokeHigh &&
-    desk.above_gamma_flip === true &&
-    flow !== "bearish";
+    regimeEligible && windowOpen && !feedDegraded && brokeHigh && desk.above_gamma_flip === true && flow !== "bearish";
   const shortTrigger =
-    regimeEligible &&
-    windowOpen &&
-    !feedDegraded &&
-    brokeLow &&
-    desk.above_gamma_flip === false &&
-    flow !== "bullish";
+    regimeEligible && windowOpen && !feedDegraded && brokeLow && desk.above_gamma_flip === false && flow !== "bullish";
 
   const orLabel = orReady
-    ? `OR ${technicals.or_low!.toFixed(0)}–${technicals.or_high!.toFixed(0)} (${technicals.or_minutes}m)`
-    : `OR proxy HOD/LOD (or_minutes=${technicals.or_minutes}, defined=${technicals.or_defined})`;
+    ? `OR ${technicals.or_low!.toFixed(0)}–${technicals.or_high!.toFixed(0)}`
+    : "OR proxy HOD/LOD";
 
   if (longTrigger) {
     return {
@@ -262,7 +284,7 @@ function matchPb03(
       precondition_match: preconditionMatch,
       trigger_fired: true,
       direction: "long",
-      detail: `ORB long: price ${desk.price} cleared ${orLabel}, flow ${flow ?? "unknown"}`,
+      detail: `ORB long: price ${desk.price} cleared ${orLabel}`,
     };
   }
   if (shortTrigger) {
@@ -273,7 +295,7 @@ function matchPb03(
       precondition_match: preconditionMatch,
       trigger_fired: true,
       direction: "short",
-      detail: `ORB short: price ${desk.price} broke ${orLabel}, flow ${flow ?? "unknown"}`,
+      detail: `ORB short: price ${desk.price} broke ${orLabel}`,
     };
   }
 
@@ -285,26 +307,20 @@ function matchPb03(
     trigger_fired: false,
     direction: null,
     detail: !regimeEligible
-      ? `Regime ineligible for PB-03 (desk.regime=${desk.regime})`
+      ? `Regime ineligible for PB-03`
       : feedDegraded
-        ? "Halt/feed degraded — ORB trigger suppressed per PB-03 invalidation clause"
-        : `No OR break (${orLabel}, gamma_regime=${desk.gamma_regime}, above_gamma_flip=${desk.above_gamma_flip})`,
+        ? "Halt/feed degraded — ORB suppressed"
+        : `No OR break (${orLabel})`,
   };
 }
 
-/**
- * PB-04 Gamma Pin Fade — EVIDENCE-BACKED (docs/spx/PLAYBOOK-EVIDENCE-BASE.md):
- * 18/19 logged prod plays entered while gamma_regime was `mean_revert` (dealer pin)
- * and net-lost fighting it with breakout-style longs. This playbook trades WITH the
- * pin: fade a wall touch back toward the interior when dealers dampen moves.
- */
 function matchPb04(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
   regimeEligible: boolean
 ): PlaybookMatchVerdict {
-  const def = PLAYBOOK_REGISTRY[3];
+  const def = playbookDef("PB-04");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
   const walls = desk.gex_walls ?? [];
   const dataAvailable = technicals.available && desk.price > 0 && walls.length > 0;
@@ -331,30 +347,15 @@ function matchPb04(
     .sort((a, b) => b.strike - a.strike)[0];
   const betweenWalls = resistanceAbove != null && supportBelow != null;
   const preconditionMatch = pinning && betweenWalls;
-
   const flow = flowDirection(desk);
-  // "Sustained breakout through wall" invalidation — suppress on live HOD/LOD break.
   const breakingOut = technicals.breakout.hod_break === true || technicals.breakout.lod_break === true;
-
-  const nearResistance =
-    resistanceAbove != null && resistanceAbove.strike - desk.price <= prox;
+  const nearResistance = resistanceAbove != null && resistanceAbove.strike - desk.price <= prox;
   const nearSupport = supportBelow != null && desk.price - supportBelow.strike <= prox;
 
   const shortTrigger =
-    regimeEligible &&
-    windowOpen &&
-    preconditionMatch &&
-    !breakingOut &&
-    nearResistance &&
-    flow !== "bullish";
+    regimeEligible && windowOpen && preconditionMatch && !breakingOut && nearResistance && flow !== "bullish";
   const longTrigger =
-    regimeEligible &&
-    windowOpen &&
-    preconditionMatch &&
-    !breakingOut &&
-    !nearResistance &&
-    nearSupport &&
-    flow !== "bearish";
+    regimeEligible && windowOpen && preconditionMatch && !breakingOut && !nearResistance && nearSupport && flow !== "bearish";
 
   if (shortTrigger || longTrigger) {
     const wall = shortTrigger ? resistanceAbove! : supportBelow!;
@@ -365,7 +366,7 @@ function matchPb04(
       precondition_match: true,
       trigger_fired: true,
       direction: shortTrigger ? "short" : "long",
-      detail: `Pin fade ${shortTrigger ? "off resistance" : "off support"} ${wall.strike} (spot ${desk.price}, γ=mean_revert, flow=${flow ?? "unknown"})`,
+      detail: `Pin fade ${shortTrigger ? "off resistance" : "off support"} ${wall.strike}`,
     };
   }
 
@@ -376,28 +377,226 @@ function matchPb04(
     precondition_match: preconditionMatch,
     trigger_fired: false,
     direction: null,
-    detail: !regimeEligible
-      ? `Regime ineligible for PB-04 (desk.regime=${desk.regime})`
-      : !pinning
-        ? `No gamma pin (gamma_regime=${desk.gamma_regime})`
-        : breakingOut
-          ? "Breakout through wall — pin fade invalidated"
-          : `Pinned between walls, awaiting wall touch (res=${resistanceAbove?.strike ?? "—"} sup=${supportBelow?.strike ?? "—"})`,
+    detail: !pinning ? `No gamma pin (${desk.gamma_regime})` : breakingOut ? "Breakout — pin fade invalidated" : "Pinned — awaiting wall touch",
   };
 }
 
-/**
- * PB-08 Power Hour Momentum — EVIDENCE-BACKED: 14:00+ ET was the only net-positive
- * hour band in the logged prod outcomes (avg +2.05 pts vs losses all morning).
- * Rides dominant late-day flow through a session-extreme break.
- */
+/** PB-05 MVP: simple wall proximity pre (no VEX streak NEEDS-FIELD). */
+function matchPb05(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-05");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const walls = desk.gex_walls ?? [];
+  const dataAvailable = technicals.available && desk.price > 0 && walls.length > 0;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "Walls or technicals unavailable — cannot evaluate PB-05",
+    };
+  }
+
+  const prox = playStructureProximityPts();
+  const buf = playMtfBufferPts();
+  const flow = flowDirection(desk);
+  const ticks = desk.net_prem_ticks ?? [];
+
+  const callWall = walls
+    .filter((w) => w.kind === "resistance")
+    .sort((a, b) => Math.abs(a.strike - desk.price) - Math.abs(b.strike - desk.price))[0];
+  const putWall = walls
+    .filter((w) => w.kind === "support")
+    .sort((a, b) => Math.abs(a.strike - desk.price) - Math.abs(b.strike - desk.price))[0];
+
+  const nearCall = callWall != null && Math.abs(desk.price - callWall.strike) <= prox;
+  const nearPut = putWall != null && Math.abs(desk.price - putWall.strike) <= prox;
+  const longPre = nearCall && desk.price <= (callWall?.strike ?? 0) + prox;
+  const shortPre = nearPut && desk.price >= (putWall?.strike ?? 0) - prox;
+
+  const longTrigger =
+    regimeEligible &&
+    windowOpen &&
+    callWall != null &&
+    longPre &&
+    desk.price > callWall.strike + buf &&
+    flow === "bullish" &&
+    netPremAccelerating(ticks, true);
+  const shortTrigger =
+    regimeEligible &&
+    windowOpen &&
+    putWall != null &&
+    shortPre &&
+    desk.price < putWall.strike - buf &&
+    flow === "bearish" &&
+    netPremAccelerating(ticks, false);
+
+  if (longTrigger || shortTrigger) {
+    const wall = longTrigger ? callWall! : putWall!;
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Wall break ${longTrigger ? "up" : "down"} through ${wall.strike} (MVP proximity pre)`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: longPre || shortPre,
+    trigger_fired: false,
+    direction: null,
+    detail: longPre || shortPre ? "Compressed at wall — awaiting m3 close through" : "No wall compression",
+  };
+}
+
+function matchPb06(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-06");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const flip = desk.gamma_flip;
+  const dataAvailable = technicals.available && desk.price > 0 && flip != null;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "γ flip or technicals unavailable — cannot evaluate PB-06",
+    };
+  }
+
+  const prox = playStructureProximityPts();
+  const buf = playMtfBufferPts();
+  const nearFlip = Math.abs(desk.price - flip) <= prox;
+  const ema9 = technicals.m1_ema9;
+
+  const longTrigger =
+    regimeEligible &&
+    windowOpen &&
+    nearFlip &&
+    desk.price > flip + buf &&
+    ema9 != null &&
+    ema9 > flip &&
+    (technicals.m5_trend === "up" || technicals.m5_trend === "flat");
+  const shortTrigger =
+    regimeEligible &&
+    windowOpen &&
+    nearFlip &&
+    desk.price < flip - buf &&
+    ema9 != null &&
+    ema9 < flip &&
+    (technicals.m5_trend === "down" || technicals.m5_trend === "flat");
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: nearFlip,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Flip ride ${longTrigger ? "above" : "below"} γ ${flip} (ema9=${ema9?.toFixed(1)})`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: nearFlip,
+    trigger_fired: false,
+    direction: null,
+    detail: nearFlip ? `Oscillating at γ flip ${flip}` : `Away from γ flip (${flip})`,
+  };
+}
+
+function matchPb07(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-07");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const pain = desk.max_pain;
+  const dataAvailable = technicals.available && desk.price > 0 && pain != null;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "Max pain or technicals unavailable — cannot evaluate PB-07",
+    };
+  }
+
+  const distPct = Math.abs(desk.price - pain) / desk.price;
+  const pinning = desk.gamma_regime === "mean_revert";
+  const preconditionMatch = distPct > 0.003 && pinning;
+  const flow = flowDirection(desk);
+  const towardPainLong = desk.price < pain && flow === "bullish";
+  const towardPainShort = desk.price > pain && flow === "bearish";
+  const stall = technicals.m5_trend === "flat";
+
+  const longTrigger = regimeEligible && windowOpen && preconditionMatch && stall && towardPainLong;
+  const shortTrigger = regimeEligible && windowOpen && preconditionMatch && stall && towardPainShort;
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Gravitation toward max pain ${pain} (dist ${(distPct * 100).toFixed(2)}%)`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: preconditionMatch,
+    trigger_fired: false,
+    direction: desk.price > pain ? "short" : desk.price < pain ? "long" : null,
+    detail: !preconditionMatch
+      ? `Too close to max pain or not pinned (dist=${(distPct * 100).toFixed(2)}%, γ=${desk.gamma_regime})`
+      : "Stall toward pain not confirmed",
+  };
+}
+
 function matchPb08(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   etMins: number,
   regimeEligible: boolean
 ): PlaybookMatchVerdict {
-  const def = PLAYBOOK_REGISTRY[4];
+  const def = playbookDef("PB-08");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
   const dataAvailable = technicals.available && desk.price > 0;
 
@@ -414,16 +613,10 @@ function matchPb08(
   }
 
   const flow = flowDirection(desk);
-  // "Net flow dominant one side 10m+" proxy: flow sign agrees with a sustained VWAP
-  // side streak (bar history) — both must point the same way.
   const bullDominant = flow === "bullish" && technicals.minutes_above_vwap >= 10;
   const bearDominant = flow === "bearish" && technicals.minutes_below_vwap >= 10;
-  const preconditionMatch = bullDominant || bearDominant;
-
-  const longTrigger =
-    regimeEligible && windowOpen && bullDominant && technicals.breakout.hod_break === true;
-  const shortTrigger =
-    regimeEligible && windowOpen && bearDominant && technicals.breakout.lod_break === true;
+  const longTrigger = regimeEligible && windowOpen && bullDominant && technicals.breakout.hod_break === true;
+  const shortTrigger = regimeEligible && windowOpen && bearDominant && technicals.breakout.lod_break === true;
 
   if (longTrigger || shortTrigger) {
     return {
@@ -433,7 +626,200 @@ function matchPb08(
       precondition_match: true,
       trigger_fired: true,
       direction: longTrigger ? "long" : "short",
-      detail: `Power hour ${longTrigger ? "HOD" : "LOD"} break with dominant ${flow} flow (vwap streak ${longTrigger ? technicals.minutes_above_vwap : technicals.minutes_below_vwap}m)`,
+      detail: `Power hour ${longTrigger ? "HOD" : "LOD"} break, dominant ${flow} flow`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: bullDominant || bearDominant,
+    trigger_fired: false,
+    direction: null,
+    detail: !windowOpen ? "Outside power hour" : `No dominant flow/break (flow=${flow ?? "unknown"})`,
+  };
+}
+
+function matchPb09(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean,
+  now: number
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-09");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const flows = desk.spx_flows ?? [];
+  const dataAvailable = technicals.available && desk.price > 0;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "Technicals unavailable — cannot evaluate PB-09",
+    };
+  }
+
+  const nowMs = now;
+  let bestSurge: (typeof flows)[0] | null = null;
+  for (const f of flows) {
+    const ticker = (f.ticker ?? "").toUpperCase();
+    if (ticker !== "SPX" && ticker !== "SPXW") continue;
+    if (!f.has_sweep || f.premium < 1_000_000) continue;
+    const alertedAt = f.alerted_at ? new Date(f.alerted_at).getTime() : 0;
+    if (!alertedAt || nowMs - alertedAt > 120_000) continue;
+    if (!bestSurge || f.premium > bestSurge.premium) bestSurge = f;
+  }
+
+  const preconditionMatch = bestSurge != null;
+  const flow = flowDirection(desk);
+  const optType = (bestSurge?.option_type ?? "").toUpperCase();
+  const surgeBull = optType.startsWith("C");
+  const surgeBear = optType.startsWith("P");
+  const strikeProx = bestSurge != null && Math.abs(desk.price - bestSurge.strike) <= 15;
+
+  const longTrigger =
+    regimeEligible && windowOpen && bestSurge != null && surgeBull && flow === "bullish" && strikeProx;
+  const shortTrigger =
+    regimeEligible && windowOpen && bestSurge != null && surgeBear && flow === "bearish" && strikeProx;
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `HELIX surge $${(bestSurge!.premium / 1e6).toFixed(1)}M @ ${bestSurge!.strike} strike prox=${Math.abs(desk.price - bestSurge!.strike).toFixed(0)}`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: preconditionMatch,
+    trigger_fired: false,
+    direction: surgeBull ? "long" : surgeBear ? "short" : null,
+    detail: bestSurge
+      ? `Surge armed — awaiting desk flow align + strike prox (flow=${flow ?? "unknown"})`
+      : "No HELIX-tier sweep in last 120s",
+  };
+}
+
+function matchPb10(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-10");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const ema9 = technicals.m1_ema9;
+  const ema20 = desk.ema20;
+  const sma50 = desk.sma50;
+  const dataAvailable = technicals.available && desk.price > 0 && ema9 != null && ema20 != null && sma50 != null;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "EMA stack or technicals unavailable — cannot evaluate PB-10",
+    };
+  }
+
+  const flow = flowDirection(desk);
+  const bullStack = ema9 > ema20 && ema20 > sma50;
+  const bearStack = ema9 < ema20 && ema20 < sma50;
+  const bullPullback = bullStack && Math.abs(desk.price - ema9) <= 3 && technicals.minutes_above_vwap >= 10;
+  const bearPullback = bearStack && Math.abs(desk.price - ema9) <= 3 && technicals.minutes_below_vwap >= 10;
+  const m3 = technicals.m3_close ?? desk.price;
+
+  const longTrigger =
+    regimeEligible && windowOpen && bullPullback && m3 > ema9 && flow === "bullish";
+  const shortTrigger =
+    regimeEligible && windowOpen && bearPullback && m3 < ema9 && flow === "bearish";
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `EMA stack pullback bounce (${longTrigger ? "bull" : "bear"} stack)`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: bullPullback || bearPullback,
+    trigger_fired: false,
+    direction: bullStack ? "long" : bearStack ? "short" : null,
+    detail: bullPullback || bearPullback ? "Pullback to EMA9 — awaiting bounce" : "No aligned EMA stack pullback",
+  };
+}
+
+function matchPb11(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-11");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const hod = desk.hod;
+  const lod = desk.lod;
+  const dataAvailable = technicals.available && desk.price > 0 && hod != null && lod != null;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "HOD/LOD unavailable — cannot evaluate PB-11",
+    };
+  }
+
+  const rangePct = (hod - lod) / desk.price;
+  const noBreakout = !technicals.breakout.hod_break && !technicals.breakout.lod_break;
+  const preconditionMatch = rangePct <= 0.0035 && noBreakout;
+  const edgeProx = 3;
+  const nearHod = hod - desk.price <= edgeProx;
+  const nearLod = desk.price - lod <= edgeProx;
+  const m3 = technicals.m3_close ?? desk.price;
+  const mid = (hod + lod) / 2;
+
+  const shortTrigger =
+    regimeEligible && windowOpen && preconditionMatch && nearHod && m3 < hod && m3 < mid;
+  const longTrigger =
+    regimeEligible && windowOpen && preconditionMatch && nearLod && m3 > lod && m3 > mid;
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Range fade off ${longTrigger ? "LOD" : "HOD"} (range ${rangePct.toFixed(3)}%)`,
     };
   }
 
@@ -444,39 +830,251 @@ function matchPb08(
     precondition_match: preconditionMatch,
     trigger_fired: false,
     direction: null,
-    detail: !regimeEligible
-      ? `Regime ineligible for PB-08 (desk.regime=${desk.regime})`
-      : !windowOpen
-        ? "Outside power hour (15:00–15:55 ET)"
-        : preconditionMatch
-          ? "Flow dominant — awaiting HOD/LOD break"
-          : `No dominant flow (flow=${flow ?? "unknown"}, streaks ${technicals.minutes_above_vwap}m↑/${technicals.minutes_below_vwap}m↓)`,
+    detail: preconditionMatch ? "Tight range — awaiting edge fade" : `Range too wide (${(rangePct * 100).toFixed(2)}%) or breakout active`,
   };
 }
 
-/**
- * Evaluate registry playbooks against desk/technicals and pick a deterministic primary.
- *
- * @param now injectable clock (ms epoch) for deterministic tests.
- */
+/** PB-12 MVP: session `spx_change_pct` proxy for 15m rolling change. */
+function matchPb12(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-12");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const walls = desk.gex_walls ?? [];
+  const dataAvailable = technicals.available && desk.price > 0;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "Technicals unavailable — cannot evaluate PB-12",
+    };
+  }
+
+  const prox = playStructureProximityPts();
+  const ext = Math.abs(desk.spx_change_pct) >= 0.5;
+  const rsi = technicals.m5_rsi;
+  const overbought = rsi != null && rsi >= 72;
+  const oversold = rsi != null && rsi <= 28;
+  const nearWall = walls.some((w) => Math.abs(w.strike - desk.price) <= prox);
+  const preconditionMatch = ext && (overbought || oversold) && nearWall;
+  const ticks = desk.net_prem_ticks ?? [];
+  const exhausted = netPremDecelerating(ticks);
+
+  const shortTrigger =
+    regimeEligible && windowOpen && preconditionMatch && overbought && exhausted && technicals.m5_trend !== "up";
+  const longTrigger =
+    regimeEligible && windowOpen && preconditionMatch && oversold && exhausted && technicals.m5_trend !== "down";
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Lotto reversal RSI=${rsi?.toFixed(0)} chg=${desk.spx_change_pct}% (MVP session chg proxy)`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: preconditionMatch,
+    trigger_fired: false,
+    direction: overbought ? "short" : oversold ? "long" : null,
+    detail: preconditionMatch ? "Extension + RSI stretch — awaiting exhaustion" : "No lotto extension setup",
+  };
+}
+
+function matchPb13(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-13");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const gap = desk.gap_pct;
+  const prior = desk.prior_close;
+  const dataAvailable = technicals.available && desk.price > 0 && gap != null && prior != null;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "Gap data unavailable — cannot evaluate PB-13",
+    };
+  }
+
+  const gapUp = gap >= 0.3;
+  const gapDown = gap <= -0.3;
+  const preconditionMatch = gapUp || gapDown;
+  const m3 = technicals.m3_close ?? desk.price;
+
+  const fadeShort =
+    gapUp &&
+    !technicals.breakout.hod_break &&
+    m3 < desk.price &&
+    m3 < prior + Math.abs(gap) * prior * 0.01 * 0.5;
+  const fadeLong =
+    gapDown &&
+    !technicals.breakout.lod_break &&
+    m3 > desk.price &&
+    m3 > prior - Math.abs(gap) * prior * 0.01 * 0.5;
+
+  const shortTrigger = regimeEligible && windowOpen && fadeShort;
+  const longTrigger = regimeEligible && windowOpen && fadeLong;
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: true,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Gap fade ${gap.toFixed(2)}% — fill toward prior ${prior}`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: preconditionMatch,
+    trigger_fired: false,
+    direction: gapUp ? "short" : gapDown ? "long" : null,
+    detail: preconditionMatch ? `Gap ${gap.toFixed(2)}% — awaiting failed extension` : "No meaningful open gap",
+  };
+}
+
+/** PB-14 MVP: re-entry inside OR + flow flip vs OR mid (no break memory). */
+function matchPb14(
+  desk: SpxDeskPayload,
+  technicals: PlayTechnicals,
+  etMins: number,
+  regimeEligible: boolean
+): PlaybookMatchVerdict {
+  const def = playbookDef("PB-14");
+  const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const orReady = technicals.or_defined && technicals.or_high != null && technicals.or_low != null;
+  const dataAvailable = technicals.available && desk.price > 0 && orReady;
+
+  if (!dataAvailable) {
+    return {
+      playbook_id: def.id,
+      session_window_open: windowOpen,
+      regime_eligible: regimeEligible,
+      precondition_match: false,
+      trigger_fired: false,
+      direction: null,
+      detail: "OR unavailable — cannot evaluate PB-14",
+    };
+  }
+
+  const orHigh = technicals.or_high as number;
+  const orLow = technicals.or_low as number;
+  const orMid = (orHigh + orLow) / 2;
+  const insideOr = desk.price >= orLow && desk.price <= orHigh;
+  const flow = flowDirection(desk);
+  const m3 = technicals.m3_close ?? desk.price;
+
+  const longTrigger =
+    regimeEligible &&
+    windowOpen &&
+    insideOr &&
+    desk.price < orMid &&
+    m3 > orMid &&
+    flow === "bullish";
+  const shortTrigger =
+    regimeEligible &&
+    windowOpen &&
+    insideOr &&
+    desk.price > orMid &&
+    m3 < orMid &&
+    flow === "bearish";
+
+  if (longTrigger || shortTrigger) {
+    return {
+      playbook_id: def.id,
+      session_window_open: true,
+      regime_eligible: regimeEligible,
+      precondition_match: insideOr,
+      trigger_fired: true,
+      direction: longTrigger ? "long" : "short",
+      detail: `Failed-break reversal ${longTrigger ? "long" : "short"} vs OR mid ${orMid.toFixed(0)} (MVP re-entry)`,
+    };
+  }
+
+  return {
+    playbook_id: def.id,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: insideOr,
+    trigger_fired: false,
+    direction: null,
+    detail: insideOr ? "Inside OR — awaiting mid cross + flow flip" : "Outside OR — no failed-break re-entry",
+  };
+}
+
 export function matchPlaybooksShadow(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
   now: number = Date.now()
 ): PlaybookShadowMatchResult {
   const etMins = etMinutes(new Date(now));
-  const verdicts = [
-    matchPb01(desk, technicals, etMins, isPlaybookEligible("PB-01", desk, now)),
-    matchPb02(desk, technicals, etMins, isPlaybookEligible("PB-02", desk, now)),
-    matchPb03(desk, technicals, etMins, isPlaybookEligible("PB-03", desk, now)),
-    matchPb04(desk, technicals, etMins, isPlaybookEligible("PB-04", desk, now)),
-    matchPb08(desk, technicals, etMins, isPlaybookEligible("PB-08", desk, now)),
-  ];
-
-  const primary = verdicts.find((v) => v.trigger_fired && v.regime_eligible);
+  const verdicts = PLAYBOOK_REGISTRY.map((pb) => {
+    const eligible = isPlaybookEligible(pb.id, desk, now);
+    switch (pb.id) {
+      case "PB-01":
+        return matchPb01(desk, technicals, etMins, eligible);
+      case "PB-02":
+        return matchPb02(desk, technicals, etMins, eligible);
+      case "PB-03":
+        return matchPb03(desk, technicals, etMins, eligible);
+      case "PB-04":
+        return matchPb04(desk, technicals, etMins, eligible);
+      case "PB-05":
+        return matchPb05(desk, technicals, etMins, eligible);
+      case "PB-06":
+        return matchPb06(desk, technicals, etMins, eligible);
+      case "PB-07":
+        return matchPb07(desk, technicals, etMins, eligible);
+      case "PB-08":
+        return matchPb08(desk, technicals, etMins, eligible);
+      case "PB-09":
+        return matchPb09(desk, technicals, etMins, eligible, now);
+      case "PB-10":
+        return matchPb10(desk, technicals, etMins, eligible);
+      case "PB-11":
+        return matchPb11(desk, technicals, etMins, eligible);
+      case "PB-12":
+        return matchPb12(desk, technicals, etMins, eligible);
+      case "PB-13":
+        return matchPb13(desk, technicals, etMins, eligible);
+      case "PB-14":
+        return matchPb14(desk, technicals, etMins, eligible);
+      default:
+        throw new Error(`unhandled playbook ${pb.id}`);
+    }
+  });
 
   return {
     verdicts,
-    primary_playbook_id: primary ? primary.playbook_id : null,
+    primary_playbook_id: pickPrimaryPlaybook(verdicts),
   };
 }

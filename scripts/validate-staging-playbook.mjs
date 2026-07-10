@@ -23,8 +23,8 @@ async function main() {
   const failures = [];
   if (res.status !== 200) failures.push(`play HTTP ${res.status}`);
   if (body?.playbook_shadow?.mode !== "shadow") failures.push("playbook_shadow.mode !== shadow");
-  if (!Array.isArray(body?.playbook_shadow?.verdicts) || body.playbook_shadow.verdicts.length < 5) {
-    failures.push(`expected 5 verdicts, got ${body?.playbook_shadow?.verdicts?.length ?? 0}`);
+  if (!Array.isArray(body?.playbook_shadow?.verdicts) || body.playbook_shadow.verdicts.length < 14) {
+    failures.push(`expected 14 verdicts, got ${body?.playbook_shadow?.verdicts?.length ?? 0}`);
   }
 
   const fired = (body?.playbook_shadow?.verdicts ?? []).filter((v) => v.trigger_fired);
