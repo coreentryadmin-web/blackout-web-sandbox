@@ -63,73 +63,77 @@ function DeskTopStatsRow({
   live?: boolean;
 }) {
   return (
-    <div className="spx-desk-top-stats spx-desk-top-stats--compact">
-      <StatPill
-        label="VIX"
-        value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
-        tone="orange"
-      />
-      <StatPill
-        label="VWAP"
-        value={showValues ? fmtPrice(desk?.vwap ?? null) : "—"}
-        tone={desk?.above_vwap ? "bull" : "bear"}
-        level={desk?.vwap ?? null}
-        spot={spot}
-      />
-      <StatPill
-        label="GEX"
-        value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
-        tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
-      />
-      <StatPill
-        label="Regime"
-        value={showValues ? (desk?.regime ?? "—") : "—"}
-        tone="violet"
-        capitalize
-      />
-      <StatPill
-        label="γ Flip"
-        value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
-        tone="magenta"
-        level={desk?.gamma_flip ?? null}
-        spot={spot}
-      />
-      <StatPill
-        label="Max Pain"
-        value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"}
-        tone="cyan"
-        level={desk?.max_pain ?? null}
-        spot={spot}
-      />
-      <StatPill
-        label="IV Rank"
-        value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
-        tone="gold"
-      />
-      <MetricBlock title="EMA" tone="orange">
-        <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" level={desk?.ema20 ?? null} spot={spot} />
-        <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" level={desk?.ema50 ?? null} spot={spot} />
-        <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" level={desk?.ema200 ?? null} spot={spot} />
-      </MetricBlock>
-      <MetricBlock title="SMA" tone="violet">
-        <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" level={desk?.sma50 ?? null} spot={spot} />
-        <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" level={desk?.sma200 ?? null} spot={spot} />
-      </MetricBlock>
-      <MetricBlock title="Session" tone="bull">
-        <div className="spx-hero-metric-pair">
-          <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact level={desk?.hod ?? null} spot={spot} />
-          <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact level={desk?.pdh ?? null} spot={spot} />
-        </div>
-        <div className="spx-hero-metric-pair">
-          <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact level={desk?.lod ?? null} spot={spot} />
-          <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact level={desk?.pdl ?? null} spot={spot} />
-        </div>
-      </MetricBlock>
-      {live && desk?.gex_stale && (
-        <span className="spx-hero-stat-pill border-amber-400/35 bg-amber-400/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200 self-stretch flex items-center">
-          GEX stale
-        </span>
-      )}
+    <div className="spx-desk-top-stats-stack">
+      <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--primary">
+        <StatPill
+          label="VIX"
+          value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
+          tone="orange"
+        />
+        <StatPill
+          label="VWAP"
+          value={showValues ? fmtPrice(desk?.vwap ?? null) : "—"}
+          tone={desk?.above_vwap ? "bull" : "bear"}
+          level={desk?.vwap ?? null}
+          spot={spot}
+        />
+        <StatPill
+          label="GEX"
+          value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
+          tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
+        />
+        <StatPill
+          label="Regime"
+          value={showValues ? (desk?.regime ?? "—") : "—"}
+          tone="violet"
+          capitalize
+        />
+        <StatPill
+          label="γ Flip"
+          value={showValues && desk?.gamma_flip ? fmtPrice(desk.gamma_flip) : "—"}
+          tone="magenta"
+          level={desk?.gamma_flip ?? null}
+          spot={spot}
+        />
+        <StatPill
+          label="Max Pain"
+          value={showValues ? fmtPrice(desk?.max_pain ?? null) : "—"}
+          tone="cyan"
+          level={desk?.max_pain ?? null}
+          spot={spot}
+        />
+        <StatPill
+          label="IV Rank"
+          value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
+          tone="gold"
+        />
+        {live && desk?.gex_stale && (
+          <span className="spx-hero-stat-pill border-amber-400/35 bg-amber-400/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200 self-stretch flex items-center">
+            GEX stale
+          </span>
+        )}
+      </div>
+      <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--secondary">
+        <MetricBlock title="EMA" tone="orange">
+          <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" level={desk?.ema20 ?? null} spot={spot} />
+          <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" level={desk?.ema50 ?? null} spot={spot} />
+          <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" level={desk?.ema200 ?? null} spot={spot} />
+        </MetricBlock>
+        <MetricBlock title="SMA" tone="violet">
+          <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" level={desk?.sma50 ?? null} spot={spot} />
+          <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" level={desk?.sma200 ?? null} spot={spot} />
+        </MetricBlock>
+        <MetricBlock title="Session" tone="bull">
+          <div className="spx-hero-metric-pair">
+            <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact level={desk?.hod ?? null} spot={spot} />
+            <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact level={desk?.pdh ?? null} spot={spot} />
+          </div>
+          <div className="spx-hero-metric-pair">
+            <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact level={desk?.lod ?? null} spot={spot} />
+            <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact level={desk?.pdl ?? null} spot={spot} />
+          </div>
+        </MetricBlock>
+      </div>
     </div>
   );
 }
