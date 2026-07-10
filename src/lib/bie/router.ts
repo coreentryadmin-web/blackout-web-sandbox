@@ -12,6 +12,7 @@ export type BieIntent =
   | "zerodte_plays" // "how are today's plays doing" / the 0DTE board
   | "ticker_play_state" // "how's the NVDA play" — a name on today's ledger
   | "spx_structure" // "SPX levels / walls / gamma flip"
+  | "spx_desk_read" // full Live Desk AI brief — same path as commentary rail
   | "market_context" // "what's the market doing right now"
   | "ticker_ecosystem"; // "what's going on with NVDA" — any known ticker, not just today's ledger
 
@@ -25,6 +26,9 @@ const ZERODTE_RE =
 
 const SPX_STRUCTURE_RE =
   /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain)\b[^?]*\bspx\b/i;
+
+const SPX_DESK_READ_RE =
+  /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk)\b|\blive desk\b.*\bspx\b/i;
 
 const MARKET_CONTEXT_RE =
   /^(what('| i)s (the )?market (doing|look(ing)? like|context|structure)( (right )?now| today)?\??|market (context|overview|check)( please)?\??|how('| i)s the market( (right )?now| today| looking)?\??)$/i;
@@ -74,6 +78,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const hit = caps.map((c) => c.replace(/^\$/, "")).find((c) => ledgerTickers.has(c));
   if (hit && PLAY_STATE_RE.test(q)) return { intent: "ticker_play_state", ticker: hit };
 
+  if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
   if (MARKET_CONTEXT_RE.test(q)) return { intent: "market_context", ticker: null };
 
@@ -106,7 +111,9 @@ export function bieFollowups(intent: BieIntent): string[] {
     case "ticker_play_state":
       return ["Show all of today's plays", "What would invalidate this play?", "What's the SPX setup right now?"];
     case "spx_structure":
-      return ["How are today's plays doing?", "Where are dealers positioned?", "Is this flow real or noise?"];
+      return ["How are today's plays doing?", "What's the full SPX desk read?", "Is this flow real or noise?"];
+    case "spx_desk_read":
+      return ["Where are dealers positioned?", "What would flip this read?", "How are today's plays doing?"];
     case "market_context":
       return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
     case "ticker_ecosystem":

@@ -1,6 +1,7 @@
 import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
 import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
 import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
 import {
@@ -618,19 +619,7 @@ export async function generateSpxCommentary(
     return null;
   }
 
-  // Determine session phase from as_of timestamp for time-context in the prompt
-  const asOfMs = desk.as_of ? new Date(desk.as_of).getTime() : Date.now();
-  const etHour = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getHours();
-  const etMin  = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getMinutes();
-  const etMins = etHour * 60 + etMin;
-  const sessionPhase =
-    etMins < 570  ? "pre-market"           // before 9:30
-    : etMins < 600  ? "opening-range"      // 9:30–10:00
-    : etMins < 660  ? "mid-morning"        // 10:00–11:00
-    : etMins < 780  ? "midday-grind"       // 11:00–13:00
-    : etMins < 870  ? "afternoon"          // 13:00–14:30
-    : etMins < 930  ? "power-hour"         // 14:30–15:30
-    :                 "final-30";          // 15:30–16:00
+  const sessionPhase = spxSessionPhase(desk.as_of);
 
   let precedentDetail: string | null = null;
   if (bieEmbeddingsConfigured() && dbConfigured()) {

@@ -6,6 +6,7 @@ import type {
   GexHeatmapOverlays,
 } from "@/lib/providers/polygon-options-gex";
 import { anthropicText, anthropicConfigured } from "@/lib/providers/anthropic";
+import { claudeEnabled } from "@/lib/ai-env";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { gexContextBlock, gexContextLine } from "@/lib/providers/gex-positioning";
 import { requireAnyToolApi } from "@/lib/tool-access-server";
@@ -196,15 +197,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid ticker" }, { status: 400, headers: noStore });
   }
 
-  // 1. Never fabricate when AI is unconfigured.
-  if (!anthropicConfigured()) {
-    return NextResponse.json(
-      { available: false, reason: "ai-unconfigured" },
-      { status: 200, headers: noStore }
-    );
-  }
+  // 1. BIE path when Claude is disabled (staging); prod still uses Claude when configured.
+  const useBieOnly = !claudeEnabled();
 
-  const cacheKey = `gex-explain:${ticker}`;
+  const cacheKey = `gex-explain:${ticker}${useBieOnly ? ":bie" : ""}`;
   const now = Date.now();
 
   // 2a. In-memory cache (co-located requests skip Redis + Claude).
@@ -253,36 +249,42 @@ export async function GET(req: NextRequest) {
     }
 
     const context = await buildContext(ticker, heatmap, overlays);
-    const prompt =
-      `Dealer positioning snapshot for ${ticker}:\n\n${context}\n\n` +
-      `Give the desk read now (3-5 sentences, market-structure analysis only).`;
 
-    const narrative = await anthropicText(prompt, 600, SYSTEM, { timeoutMs: 25_000, maxRetries: 1 });
-    if (!narrative || !narrative.trim()) {
-      // Model returned nothing usable — graceful, never fabricated.
+    let finalNarrative: string | null = null;
+    if (useBieOnly || !anthropicConfigured()) {
+      finalNarrative = (await gexContextLine(ticker).catch(() => null))?.trim() ?? null;
+    } else {
+      const prompt =
+        `Dealer positioning snapshot for ${ticker}:\n\n${context}\n\n` +
+        `Give the desk read now (3-5 sentences, market-structure analysis only).`;
+
+      const narrative = await anthropicText(prompt, 600, SYSTEM, { timeoutMs: 25_000, maxRetries: 1 });
+      if (!narrative || !narrative.trim()) {
+        return NextResponse.json(
+          { available: false, reason: "failed", ticker },
+          { status: 200, headers: noStore }
+        );
+      }
+
+      finalNarrative = narrative.trim();
+      if (!narrativeLevelsAreGrounded(finalNarrative, heatmap, overlays)) {
+        const deterministic = await gexContextLine(ticker).catch(() => null);
+        if (deterministic && deterministic.trim()) {
+          finalNarrative = deterministic.trim();
+        } else {
+          return NextResponse.json(
+            { available: false, reason: "ungrounded", ticker },
+            { status: 200, headers: noStore }
+          );
+        }
+      }
+    }
+
+    if (!finalNarrative) {
       return NextResponse.json(
         { available: false, reason: "failed", ticker },
         { status: 200, headers: noStore }
       );
-    }
-
-    // FABRICATION GUARD (#12): the SYSTEM prompt tells the model to ground every level in the data,
-    // but a prompt is not a contract. Cheaply verify that any price level the prose NAMES actually
-    // exists on the matrix; if any cited level is hallucinated, discard the narrative and serve the
-    // deterministic, provably-grounded one-liner instead of shipping a fabricated number to a paying
-    // desk. The deterministic line is itself built ONLY from the matrix, so it's always safe.
-    let finalNarrative = narrative.trim();
-    if (!narrativeLevelsAreGrounded(finalNarrative, heatmap, overlays)) {
-      const deterministic = await gexContextLine(ticker).catch(() => null);
-      if (deterministic && deterministic.trim()) {
-        finalNarrative = deterministic.trim();
-      } else {
-        // No safe fallback available → never ship the ungrounded read.
-        return NextResponse.json(
-          { available: false, reason: "ungrounded", ticker },
-          { status: 200, headers: noStore }
-        );
-      }
     }
 
     const asof = heatmap.asof ?? new Date().toISOString();

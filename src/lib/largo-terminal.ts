@@ -8,6 +8,7 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
+import { claudeEnabled, largoAvailable } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
@@ -77,7 +78,7 @@ export async function generateLargoFollowups(
   answer: string,
   tickerHint?: string | null
 ): Promise<string[]> {
-  if (!anthropicConfigured() || !answer.trim()) return [];
+  if (!claudeEnabled() || !answer.trim()) return [];
   const focus = tickerHint ? ` The current focus is ${tickerHint}.` : "";
   const prompt = `You generate follow-up questions for Largo, an institutional options/markets AI desk.${focus}
 
@@ -138,7 +139,7 @@ Session memory is in Postgres — honor follow-ups. Re-fetch via tools if you ne
 }
 
 export function largoConfigured(): boolean {
-  return anthropicConfigured();
+  return largoAvailable();
 }
 
 export function largoDataSources(): {
@@ -153,7 +154,7 @@ export function largoDataSources(): {
     uw: uwConfigured(),
     postgres: dbConfigured(),
     web_search: webSearchConfigured(),
-    anthropic: anthropicConfigured(),
+    anthropic: claudeEnabled(),
   };
 }
 
@@ -302,10 +303,6 @@ export async function runLargoQuery(
   followups: string[];
   verification: ClaimVerification;
 }> {
-  if (!anthropicConfigured()) {
-    throw new Error("ANTHROPIC_API_KEY not configured");
-  }
-
   const startedAt = Date.now();
   // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
   // maps onto platform truth — instant, free, traceable by construction.
@@ -351,6 +348,10 @@ export async function runLargoQuery(
       followups: bieFollowups(routed.route.intent),
       verification,
     };
+  }
+
+  if (!claudeEnabled()) {
+    throw new Error("Largo BIE-only mode — ask about SPX setup, market context, or today's 0DTE plays");
   }
 
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
@@ -465,14 +466,7 @@ export async function runLargoQueryStream(
   userId: string,
   onEvent: (event: LargoStreamEvent) => void
 ): Promise<void> {
-  if (!anthropicConfigured()) {
-    onEvent({ type: "error", message: "ANTHROPIC_API_KEY not configured" });
-    return;
-  }
-
   const startedAt = Date.now();
-  // Layer 3 first: deterministic BLACKOUT Intelligence answer — streamed as one
-  // token event + done, so the terminal renders it exactly like a model turn.
   const routed = await tryBieRoute(question);
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
@@ -510,6 +504,15 @@ export async function runLargoQueryStream(
     } catch {
       // client disconnected — turn already persisted
     }
+    return;
+  }
+
+  if (!claudeEnabled()) {
+    onEvent({
+      type: "error",
+      message:
+        "Largo BIE-only mode on staging — try: What's the SPX setup? · How are today's plays? · What is the market doing?",
+    });
     return;
   }
 

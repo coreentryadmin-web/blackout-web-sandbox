@@ -109,6 +109,47 @@ function topFactors(confluence: SpxConfluence, count = 2): string {
     .join(" + ");
 }
 
+function factorGloss(label: string): string {
+  const map: Record<string, string> = {
+    VWAP: "(session avg)",
+    "γ regime": "(dealer hedge)",
+    "GEX support": "(dealer bid)",
+    "GEX resistance": "(dealer offer)",
+    "0DTE flow": "(same-day bets)",
+    "Market tide": "(broad flow)",
+    TICK: "(NYSE breadth)",
+    TRIN: "(up/down volume)",
+    NOPE: "(net options pressure)",
+    "IV rank": "(option prices)",
+    "Live tape": "(institutional prints)",
+    "Strike stack": "(repeated hits)",
+    "News risk": "(headline skew)",
+  };
+  return map[label] ? ` ${map[label]}` : "";
+}
+
+function internalsLine(desk: SpxDeskPayload): string | null {
+  const parts: string[] = [];
+  if (desk.tick != null && Number.isFinite(desk.tick)) {
+    parts.push(`TICK ${desk.tick > 0 ? "+" : ""}${fmt(desk.tick, 0)}`);
+  }
+  if (desk.trin != null && Number.isFinite(desk.trin)) {
+    parts.push(`TRIN ${fmt(desk.trin, 2)}`);
+  }
+  if (desk.vix != null && Number.isFinite(desk.vix)) {
+    parts.push(`VIX ${n(desk.vix, 1)}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function topFactorDetails(confluence: SpxConfluence, count = 3): string {
+  return [...confluence.factors]
+    .sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight))
+    .slice(0, count)
+    .map((f) => `${f.label}${factorGloss(f.label)}: ${f.detail}`)
+    .join(" · ");
+}
+
 function flowLine(desk: SpxDeskPayload): string | null {
   const stack = desk.strike_stacks?.[0];
   if (stack) return formatFlowStrikeStackLine(stack);
@@ -212,6 +253,7 @@ export function composeSpxDeskBrief(
   const support = nearestWall(desk.gex_walls, "support", price);
   const resistance = nearestWall(desk.gex_walls, "resistance", price);
   const factors = topFactors(confluence, 2);
+  const factorDetails = topFactorDetails(confluence, 3);
   const gammaWord = desk.above_gamma_flip ? "above" : "below";
   const pin = desk.gex_king ?? desk.max_pain;
 
@@ -227,7 +269,10 @@ export function composeSpxDeskBrief(
   } else if (resistance && price < resistance.strike) {
     whyParts.push(`caps near ${n(resistance.strike, 0)} call wall`);
   }
-  const why = `WHY  ${whyParts.join("; ") || "Mixed tape — no single dealer mechanic dominates"}.`;
+  const why = `WHY  ${whyParts.join("; ") || factorDetails || "Mixed tape — no single dealer mechanic dominates"}.`;
+
+  const internals = internalsLine(desk);
+  const internalsLineOut = internals ? `INTERNALS  ${internals}` : null;
 
   const deltaText = deltaLine(delta);
   const deltaSince = deltaText ? `Δ SINCE LAST  ${deltaText}` : null;
@@ -291,7 +336,9 @@ export function composeSpxDeskBrief(
   const flipLevel = stop ?? desk.gamma_flip ?? desk.vwap;
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
 
-  const bodyLines = [why, deltaSince, levels, setup, risk, next, flips].filter(Boolean) as string[];
+  const bodyLines = [why, internalsLineOut, deltaSince, levels, setup, risk, next, flips].filter(
+    Boolean
+  ) as string[];
 
   const flow = flowLine(desk);
   if (flow) bodyLines.push(`FLOW  ${flow} — confirms ${bias === "bullish" ? "bid" : bias === "bearish" ? "offer" : "two-way"} tone`);

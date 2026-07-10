@@ -6,6 +6,10 @@
 
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
+import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
@@ -91,6 +95,19 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
     .filter(Boolean) as string[];
   if (rows.length === 0) return null;
   return [`**${title}**`, ...rows].join("\n");
+}
+
+async function composeSpxDeskRead(): Promise<BieComposed | null> {
+  const { merged: desk } = await loadMergedSpxDesk();
+  if (!desk.available || desk.price == null || desk.price <= 0) return null;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) return null;
+  const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of));
+  const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body].join("\n");
+  return {
+    answer,
+    context: { desk, confluence, brief },
+  };
 }
 
 async function composeSpxStructure(): Promise<BieComposed | null> {
@@ -208,6 +225,8 @@ export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | n
         return route.ticker ? await composeTickerPlayState(route.ticker) : null;
       case "spx_structure":
         return await composeSpxStructure();
+      case "spx_desk_read":
+        return await composeSpxDeskRead();
       case "market_context":
         return await composeMarketContext();
       case "ticker_ecosystem":
