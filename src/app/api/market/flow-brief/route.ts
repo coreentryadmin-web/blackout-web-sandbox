@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { claudeEnabled } from "@/lib/ai-env";
 import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { fetchMarketFlowAlerts, fetchUwDarkPoolRecent } from "@/lib/providers/unusual-whales";
 import { uwConfigured } from "@/lib/providers/config";
 import type { FlowAlert } from "@/lib/api";
+import { composeFlowBrief } from "@/lib/bie/flow-brief";
 import { checkNumbersGrounded, extractNumbersFromText } from "@/lib/grounding-guard";
 
 export const dynamic = "force-dynamic";
@@ -139,11 +141,6 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  if (!anthropicConfigured()) {
-    return NextResponse.json({ brief: null, reason: "Brief unavailable" });
-  }
-
-  // Time-window cache key — same for every user in the same 15-min slot
   const windowSlot = Math.floor(Date.now() / BRIEF_TTL_MS);
   const cacheKey   = `flow-brief:shared:v3:${windowSlot}`;
 
@@ -155,6 +152,15 @@ export async function GET(req: NextRequest) {
 
       const massiveCount = alerts.filter((a) => a.premium >= MASSIVE_FLOW).length +
                            darkPrints.filter((d) => d.premium >= MASSIVE_BLOCK).length;
+
+      if (!claudeEnabled()) {
+        const brief = composeFlowBrief(alerts, darkPrints);
+        return {
+          brief,
+          massive_signals: massiveCount,
+          generated_at: new Date().toISOString(),
+        };
+      }
 
       const brief = await anthropicText(
         prompt,

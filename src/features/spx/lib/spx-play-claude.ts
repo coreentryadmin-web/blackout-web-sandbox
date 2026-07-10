@@ -1,19 +1,28 @@
-import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
 import type { SpxConfluence } from "@/features/spx/lib/spx-signals";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayGateResult } from "@/features/spx/lib/spx-play-gates";
 import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirmations";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
-import { todayEt } from "@/lib/et-date";
 import {
   gradeRank,
   playClaudeCachePriceStepPts,
   playClaudeCacheSec,
-  playClaudeDailyMaxCalls,
   playClaudeGateEnabled,
 } from "@/features/spx/lib/spx-play-config";
 import { dbConfigured, getMeta, setMeta, insertAlertAuditLog } from "@/lib/db";
-import { checkNumbersGrounded } from "@/lib/grounding-guard";
+import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
+import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
+import {
+  buildPrecedentSearchQuery,
+  parsePrecedentDirection,
+  parsePrecedentOutcome,
+  PRECEDENT_SEARCH_K,
+  MIN_TOTAL_PRECEDENTS,
+  type PrecedentHit,
+} from "@/features/spx/lib/spx-signals-shadow-precedents";
+
+/** Same floor as spx-signals-shadow-precedents MIN_USABLE_FOR_TIERED_WEIGHT (not exported). */
+const MIN_USABLE_PRECEDENTS = 2;
 
 export type ClaudePlayVerdict = {
   verdict: "APPROVE_BUY" | "VETO";
@@ -21,17 +30,13 @@ export type ClaudePlayVerdict = {
   headline: string;
   thesis: string;
   approved: boolean;
-  source: "claude" | "mechanical" | "cache";
-  /** true when Claude's direction differs from confluence.direction. */
+  /** bie = Voyage precedent search; mechanical = deterministic gate; cache = prior tick */
+  source: "bie" | "mechanical" | "cache";
   direction_mismatch?: boolean;
 };
 
-const CACHE_KEY = "spx_claude_play_cache";
-const BUDGET_KEY = "spx_claude_play_daily_budget";
+const CACHE_KEY = "spx_bie_play_cache";
 const memoryCache = new Map<string, { at: number; verdict: ClaudePlayVerdict }>();
-
-type ClaudeDailyBudget = { date: string; calls: number };
-let memoryBudget: ClaudeDailyBudget | null = null;
 
 function cacheKey(desk: SpxDeskPayload, c: SpxConfluence): string {
   const step = Math.max(0.5, playClaudeCachePriceStepPts());
@@ -39,41 +44,8 @@ function cacheKey(desk: SpxDeskPayload, c: SpxConfluence): string {
   return `${c.direction}|${c.grade}|${Math.round(c.score)}|${bucketedPrice.toFixed(1)}`;
 }
 
-async function readDailyBudget(): Promise<ClaudeDailyBudget> {
-  const today = todayEt();
-  if (memoryBudget?.date === today) return memoryBudget;
-
-  if (dbConfigured()) {
-    const raw = await getMeta(BUDGET_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as ClaudeDailyBudget;
-        if (parsed.date === today) {
-          memoryBudget = { date: today, calls: parsed.calls ?? 0 };
-          return memoryBudget;
-        }
-      } catch {
-        /* fresh day */
-      }
-    }
-  }
-
-  memoryBudget = { date: today, calls: 0 };
-  return memoryBudget;
-}
-
-async function incrementDailyBudget(): Promise<void> {
-  const budget = await readDailyBudget();
-  const next = { date: budget.date, calls: budget.calls + 1 };
-  memoryBudget = next;
-  if (dbConfigured()) {
-    await setMeta(BUDGET_KEY, JSON.stringify(next));
-  }
-}
-
-async function claudeBudgetExceeded(): Promise<boolean> {
-  const budget = await readDailyBudget();
-  return budget.calls >= playClaudeDailyMaxCalls();
+function bieSearchAvailable(): boolean {
+  return dbConfigured() && bieEmbeddingsConfigured();
 }
 
 async function readCache(key: string): Promise<ClaudePlayVerdict | null> {
@@ -129,9 +101,7 @@ async function writeCache(key: string, verdict: ClaudePlayVerdict): Promise<void
   await setMeta(CACHE_KEY, JSON.stringify({ version: 2, slots }));
 }
 
-/** Every price level fed into the Claude prompt (src/lib/spx-play-claude.ts prompt body) —
- *  the ONLY numbers a grounded thesis should cite as a price/level. Built fresh from the
- *  same desk/confluence/technicals args the prompt was built from — never fabricated. */
+/** Price levels on the desk card — used only by tests / future grounding helpers. */
 export function knownPlayLevels(
   desk: SpxDeskPayload,
   confluence: SpxConfluence,
@@ -161,9 +131,6 @@ export function knownPlayLevels(
   return Array.from(levels);
 }
 
-/** Best-effort audit-log write for a fresh (non-cached) Claude-gate verdict — the pipeline
- *  previously had zero durable record of the verdict that gated a real-money 0DTE entry.
- *  Fire-and-forget: an audit-log failure must never block or alter the trading decision. */
 function logPlayVerdict(
   desk: SpxDeskPayload,
   confluence: SpxConfluence,
@@ -172,19 +139,19 @@ function logPlayVerdict(
 ): void {
   if (!dbConfigured()) return;
   insertAlertAuditLog({
-    alert_type: "spx_claude_play",
-    source_table: "spx_claude_play_verdict",
+    alert_type: "spx_bie_play",
+    source_table: "spx_bie_play_verdict",
     source_key: { price: desk.price, direction: confluence.direction, at: desk.as_of },
     ticker: "SPX",
     direction: verdict.direction,
     confidence_score: confluence.score,
     confidence_label: confluence.grade,
     trigger_reason: note ?? verdict.headline,
-    decision_trace: [{ check: "claude_verdict", passed: verdict.approved, value: verdict.verdict }],
+    decision_trace: [{ check: "bie_verdict", passed: verdict.approved, value: verdict.verdict }],
     input_snapshot: null,
     final_output: { verdict: verdict.verdict, confidence: confluence.score, thesis: verdict.thesis },
   }).catch((err) => {
-    console.error("[spx-play-claude] audit-log write failed (non-blocking):", err);
+    console.error("[spx-play-bie] audit-log write failed (non-blocking):", err);
   });
 }
 
@@ -214,6 +181,49 @@ function mechanicalVerdict(
   };
 }
 
+function tallyPrecedentHits(
+  precedents: PrecedentHit[],
+  confluenceDirection: "long" | "short"
+): { total: number; forCount: number; againstCount: number; usable: number } {
+  const confluenceBullish = confluenceDirection === "long";
+  let forCount = 0;
+  let againstCount = 0;
+  for (const p of precedents) {
+    const dir = parsePrecedentDirection(p.chunk);
+    if (dir === "neutral") continue;
+    const sameDirection = (dir === "bullish") === confluenceBullish;
+    if (!sameDirection) continue;
+    const outcome = parsePrecedentOutcome(p.chunk);
+    if (outcome === "target") forCount += 1;
+    else if (outcome === "stop") againstCount += 1;
+  }
+  return {
+    total: precedents.length,
+    forCount,
+    againstCount,
+    usable: forCount + againstCount,
+  };
+}
+
+function failClosedVerdict(
+  c: SpxConfluence,
+  headline: string,
+  thesis: string
+): ClaudePlayVerdict {
+  return {
+    verdict: "VETO",
+    direction: c.direction,
+    headline,
+    thesis,
+    approved: false,
+    source: "mechanical",
+  };
+}
+
+/**
+ * Trade-alert approval for the right-rail play card — uses BIE precedent search
+ * (Voyage embeddings + cosine match) instead of Anthropic.
+ */
 export async function evaluateClaudePlayApproval(
   desk: SpxDeskPayload,
   confluence: SpxConfluence,
@@ -222,6 +232,8 @@ export async function evaluateClaudePlayApproval(
   technicals: PlayTechnicals,
   options?: { forceClaude?: boolean }
 ): Promise<ClaudePlayVerdict> {
+  void technicals;
+  void options?.forceClaude;
   if (!gates.passed || !confluence.direction) {
     return mechanicalVerdict(confluence, gates, confirmations);
   }
@@ -230,219 +242,109 @@ export async function evaluateClaudePlayApproval(
   const cached = await readCache(key);
   if (cached) return cached;
 
-  const forceClaude = options?.forceClaude === true;
+  const requireBie = playClaudeGateEnabled();
+  const mech = mechanicalVerdict(confluence, gates, confirmations);
 
-  if (!anthropicConfigured()) {
-    if (forceClaude || playClaudeGateEnabled()) {
-      return {
-        verdict: "VETO",
-        direction: confluence.direction,
-        headline: "Claude gate blocked — API not configured",
-        thesis: "SPX_CLAUDE_GATE requires Anthropic — entry blocked (fail-closed).",
-        approved: false,
-        source: "mechanical",
-      };
-    }
-    const mech = mechanicalVerdict(confluence, gates, confirmations);
-    await writeCache(key, mech);
-    return mech;
-  }
-
-  if (!playClaudeGateEnabled() && !forceClaude) {
-    const mech = mechanicalVerdict(confluence, gates, confirmations);
-    await writeCache(key, mech);
-    return mech;
-  }
-
-  if (await claudeBudgetExceeded()) {
-    if (playClaudeGateEnabled() || forceClaude) {
-      return {
-        verdict: "VETO",
-        direction: confluence.direction,
-        headline: "Claude daily cap — entry blocked",
-        thesis: `Daily Claude budget (${playClaudeDailyMaxCalls()}) reached. Fail-closed while gate is enabled.`,
-        approved: false,
-        source: "mechanical",
-      };
-    }
-    const mech = mechanicalVerdict(
-      confluence,
-      gates,
-      confirmations,
-      `(Claude daily cap ${playClaudeDailyMaxCalls()} reached — mechanical fallback)`
-    );
-    await writeCache(key, mech);
-    return mech;
-  }
-
-  const supports = (desk.levels ?? []).filter((l) => l.kind === "support").slice(0, 4);
-  const resistances = (desk.levels ?? []).filter((l) => l.kind === "resistance").slice(0, 4);
-
-  const prompt = `You are the SPX 0DTE quality arbiter for BlackOut Ops. We want FEW, HIGH-QUALITY plays — veto aggressively.
-
-APPROVE_BUY only if ALL are true:
-- Grade A or A+ confluence
-- 3m AND 5m timeframe align with direction
-- Clear support/resistance or breakout context
-- Flow, tide, and news do NOT oppose the trade
-- Risk/reward to stop and target is sensible for 0DTE
-
-Default to VETO when anything is mixed.
-
-PRICE & STRUCTURE:
-${JSON.stringify({
-  price: desk.price,
-  vwap: desk.vwap,
-  above_vwap: desk.above_vwap,
-  hod: desk.hod,
-  lod: desk.lod,
-  pdh: desk.pdh,
-  pdl: desk.pdl,
-  regime: desk.regime,
-  nearest_support: supports,
-  nearest_resistance: resistances,
-})}
-
-DEALER / GEX:
-${JSON.stringify({
-  gamma_flip: desk.gamma_flip,
-  gamma_regime: desk.gamma_regime,
-  gex_king: desk.gex_king,
-  max_pain: desk.max_pain,
-  gex_walls: desk.gex_walls?.slice(0, 8),
-})}
-
-FLOW & TAPE:
-${JSON.stringify({
-  flow_0dte_net: desk.flow_0dte_net,
-  tide_bias: desk.tide_bias,
-  dark_pool: desk.dark_pool?.bias,
-  spx_flows: desk.spx_flows?.slice(0, 6),
-  live_tape: desk.unified_tape?.slice(0, 6),
-  nope: desk.nope,
-})}
-
-MULTI-TIMEFRAME (Polygon 1m bars):
-${JSON.stringify({
-  m3_close: technicals.m3_close,
-  m5_close: technicals.m5_close,
-  m5_ema20: technicals.m5_ema20,
-  m5_rsi: technicals.m5_rsi,
-  m5_trend: technicals.m5_trend,
-  breakout: technicals.breakout,
-  mtf: technicals.mtf,
-})}
-
-NEWS & MACRO:
-${JSON.stringify({
-  headlines: desk.news_headlines?.slice(0, 5),
-  macro: desk.macro_events?.slice(0, 3),
-  vix: desk.vix,
-  iv_rank: desk.uw_iv_rank,
-})}
-
-CONFLUENCE:
-${JSON.stringify({
-  score: confluence.score,
-  grade: confluence.grade,
-  direction: confluence.direction,
-  conflicts: confluence.conflicts,
-  agreeing: confluence.agreeing,
-  factors: confluence.factors.slice(0, 12),
-  levels: confluence.levels,
-})}
-
-CONFIRMATION CHECKLIST (${confirmations.passed_count}/${confirmations.total}):
-${JSON.stringify(confirmations.checks)}
-
-Respond ONLY valid JSON (verdict must be exactly "APPROVE_BUY" or "VETO"):
-{
-  "verdict": "APPROVE_BUY" | "VETO",
-  "direction": "long" | "short" | null,
-  "headline": "max 12 words — specific level or catalyst",
-  "thesis": "2 sentences — cite MTF + S/R + flow + news"
-}`;
-
-  // temperature:0 — schema-constrained JSON extraction (verdict/direction/headline/thesis),
-  // not prose; deterministic output avoids wasted retries on malformed JSON.
-  const raw = await anthropicText(prompt, 500, undefined, { timeoutMs: 20_000, maxRetries: 1, temperature: 0 });
-  if (!raw) {
-    if (playClaudeGateEnabled() || forceClaude) {
-      return {
-        verdict: "VETO",
-        direction: confluence.direction,
-        headline: "Claude unavailable — entry blocked",
-        thesis: "Anthropic API did not respond. Fail-closed while SPX_CLAUDE_GATE is enabled.",
-        approved: false,
-        source: "mechanical",
-      };
-    }
-    const mech = mechanicalVerdict(confluence, gates, confirmations);
-    await writeCache(key, mech);
-    return mech;
-  }
-
-  try {
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    // Only charge the daily budget after a successful JSON parse — a malformed
-    // response should not consume budget.
-    await incrementDailyBudget();
-    const verdict = String(parsed.verdict ?? "VETO") as ClaudePlayVerdict["verdict"];
-    const direction =
-      parsed.direction === "long" || parsed.direction === "short"
-        ? parsed.direction
-        : confluence.direction;
-    const confluenceDirection = confluence.direction;
-    const direction_mismatch =
-      parsed.direction != null &&
-      confluenceDirection != null &&
-      parsed.direction !== confluenceDirection
-        ? true
-        : undefined;
-    const result: ClaudePlayVerdict = {
-      verdict: verdict === "APPROVE_BUY" ? "APPROVE_BUY" : "VETO",
-      direction,
-      headline: String(parsed.headline ?? "Play review"),
-      thesis: String(parsed.thesis ?? ""),
-      approved: verdict === "APPROVE_BUY",
-      source: "claude",
-      ...(direction_mismatch !== undefined && { direction_mismatch }),
-    };
-
-    // FABRICATION GUARD: Claude's free-text headline AND thesis both ship verbatim onto the
-    // real-money 0DTE play card with no check that the levels they cite are real — verify
-    // BOTH against the SAME price data fed into the prompt (mirrors gex-heatmap/explain's
-    // narrativeLevelsAreGrounded, and matches spx-commentary.ts's headline+body join — the
-    // headline is just as capable of citing a hallucinated level as the thesis and ships in
-    // the exact same place on the card). Previously only `result.thesis` was checked here, so
-    // a fabricated number in the 12-word headline reached members completely unchecked while
-    // the thesis right next to it was protected. An ungrounded headline OR thesis means
-    // Claude's own reasoning can't be trusted, so the whole verdict (not just the prose) falls
-    // back to the deterministic mechanical gate, never a fabricated AI approval/veto.
-    const known = knownPlayLevels(desk, confluence, technicals);
-    const grounding = checkNumbersGrounded(`${result.headline} ${result.thesis}`, known);
-    if (!grounding.grounded) {
-      console.warn(
-        `[spx-play-claude] ungrounded level ${grounding.ungroundedValue} in Claude headline/thesis — falling back to mechanical verdict.`
-      );
-      const mech = mechanicalVerdict(
+  if (!bieSearchAvailable()) {
+    if (requireBie) {
+      return failClosedVerdict(
         confluence,
-        gates,
-        confirmations,
-        `(Claude verdict cited an unverified level — mechanical fallback)`
+        "BIE gate blocked — Voyage/DB not configured",
+        "SPX_CLAUDE_GATE requires BIE precedent search (VOYAGE_API_KEY + DATABASE_URL)."
       );
-      logPlayVerdict(desk, confluence, mech, "ungrounded_claude_verdict");
-      await writeCache(key, mech);
-      return mech;
     }
+    await writeCache(key, mech);
+    return mech;
+  }
 
+  const query = buildPrecedentSearchQuery(
+    desk,
+    confluence.direction,
+    confluence.grade,
+    confluence.score
+  );
+
+  let hits: PrecedentHit[] = [];
+  try {
+    const chunks = await findSimilarPrecedents(query, PRECEDENT_SEARCH_K);
+    hits = chunks.map((c) => ({ chunk: c.chunk, similarity: c.similarity }));
+  } catch (err) {
+    console.warn("[spx-play-bie] precedent search failed:", err);
+    if (requireBie) {
+      return failClosedVerdict(
+        confluence,
+        "BIE search failed — entry blocked",
+        "Voyage precedent search errored. Fail-closed while SPX_CLAUDE_GATE is enabled."
+      );
+    }
+    await writeCache(key, mech);
+    return mech;
+  }
+
+  const tally = tallyPrecedentHits(hits, confluence.direction);
+
+  if (tally.total < MIN_TOTAL_PRECEDENTS) {
+    const note = `BIE: only ${tally.total}/${MIN_TOTAL_PRECEDENTS} similar precedents — corpus still thin.`;
+    if (requireBie) {
+      return failClosedVerdict(confluence, "BIE corpus too thin — entry blocked", note);
+    }
+    const fallback = mechanicalVerdict(confluence, gates, confirmations, note);
+    await writeCache(key, fallback);
+    return fallback;
+  }
+
+  if (tally.usable < MIN_USABLE_PRECEDENTS) {
+    const note = `BIE: ${tally.total} precedents returned but none cleanly resolved target/stop for this direction.`;
+    if (requireBie) {
+      return failClosedVerdict(confluence, "BIE precedents inconclusive — entry blocked", note);
+    }
+    const fallback = mechanicalVerdict(confluence, gates, confirmations, note);
+    await writeCache(key, fallback);
+    return fallback;
+  }
+
+  const net = tally.forCount - tally.againstCount;
+  const dirLabel = confluence.direction === "long" ? "CALL" : "PUT";
+
+  if (net < 0) {
+    const result: ClaudePlayVerdict = {
+      verdict: "VETO",
+      direction: confluence.direction,
+      headline: `BIE veto — ${tally.againstCount}/${tally.usable} similar setups stopped`,
+      thesis: `Voyage precedent search: ${tally.forCount} hit target vs ${tally.againstCount} stopped on same-direction SPX setups (${tally.total} total matches).`,
+      approved: false,
+      source: "bie",
+    };
     logPlayVerdict(desk, confluence, result);
     await writeCache(key, result);
     return result;
-  } catch {
-    const mech = mechanicalVerdict(confluence, gates, confirmations);
+  }
+
+  if (!mech.approved) {
     await writeCache(key, mech);
     return mech;
   }
+
+  if (net === 0) {
+    const neutral = mechanicalVerdict(
+      confluence,
+      gates,
+      confirmations,
+      "BIE precedents split evenly — mechanical bar only."
+    );
+    await writeCache(key, neutral);
+    return neutral;
+  }
+
+  const result: ClaudePlayVerdict = {
+    verdict: "APPROVE_BUY",
+    direction: confluence.direction,
+    headline: `${confluence.grade} ${dirLabel} — BIE ${tally.forCount}/${tally.usable} precedents hit target`,
+    thesis: `Voyage precedent match: ${tally.forCount}/${tally.usable} similar ${confluence.direction} setups resolved target (${tally.againstCount} stopped). ${confirmations.passed_count}/${confirmations.total} confirmations · score ${confluence.score}.`,
+    approved: true,
+    source: "bie",
+  };
+  logPlayVerdict(desk, confluence, result);
+  await writeCache(key, result);
+  return result;
 }

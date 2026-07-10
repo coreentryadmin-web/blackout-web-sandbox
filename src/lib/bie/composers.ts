@@ -6,6 +6,16 @@
 
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
+import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
+import {
+  BIE_LARGO_ANSWER_TTL_MS,
+  getCachedBiePlatformContext,
+  largoAnswerCacheKey,
+} from "@/lib/bie/platform-cache";
+import { withServerCache } from "@/lib/server-cache";
 import type { BieRoute } from "./router";
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
@@ -93,6 +103,32 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
   return [`**${title}**`, ...rows].join("\n");
 }
 
+async function composeSpxDeskRead(): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "desk" });
+  const desk = platform.desk;
+  if (!desk) return null;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) return null;
+
+  const { openPlay, lotto, powerHour, outcomes } = platform.cross;
+
+  const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
+    openPlay: openPlay && openPlay.status === "open" ? openPlay : null,
+    lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
+    powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
+    outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
+    intel: platform.intel ?? undefined,
+  });
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
+    .filter(Boolean)
+    .join("\n");
+  return {
+    answer,
+    context: { desk, confluence, brief, platform },
+  };
+}
+
 async function composeSpxStructure(): Promise<BieComposed | null> {
   const raw = (await runLargoTool("get_spx_structure", {})) as Record<string, unknown> | null;
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
@@ -120,7 +156,10 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
-  const raw = (await runLargoTool("get_market_context", {})) as Record<string, unknown> | null;
+  const [platform, raw] = await Promise.all([
+    getCachedBiePlatformContext({ scope: "market", flowLimit: 24 }),
+    runLargoTool("get_market_context", {}) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const parts: string[] = [];
   const top = scalarSection("Market context (live)", raw, [
@@ -135,9 +174,41 @@ async function composeMarketContext(): Promise<BieComposed | null> {
     "market_label",
   ]);
   if (top) parts.push(top);
+
+  const regime = platform.regime;
+  if (regime) {
+    const regimeSec = scalarSection("HELIX regime detector", regime, [
+      "regime_label",
+      "risk_tone",
+      "session_phase",
+      "critical_anomalies",
+      "flow_anomaly_count",
+      "as_of",
+    ]);
+    if (regimeSec) parts.push(regimeSec);
+  }
+
+  const snap = platform.snapshot;
+  if (snap.spx) {
+    parts.push(
+      `**SPX desk summary:** ${fmt(snap.spx.price)} (${fmt(snap.spx.change_pct)}%) · γflip ${fmt(snap.spx.gamma_flip, 0)} · γ ${snap.spx.gamma_regime ?? "—"}`
+    );
+  }
+  if (snap.flows) {
+    const tops = (snap.flows.top_tickers ?? []).slice(0, 4).map((t) => t.ticker).join(", ");
+    parts.push(
+      `**HELIX tape:** ${snap.flows.count} prints · $${fmt(snap.flows.total_premium, 0)} premium · top: ${tops || "—"}`
+    );
+  }
+  if (snap.nighthawk?.available) {
+    parts.push(
+      `**Night Hawk:** ${snap.nighthawk.play_count} plays · ${snap.nighthawk.recap_headline ?? snap.nighthawk.edition_for ?? "edition live"}`
+    );
+  }
+
   // Nested one-level scalars (e.g. indices objects) — printed defensively.
   for (const [k, v] of Object.entries(raw)) {
-    if (parts.length >= 3) break;
+    if (parts.length >= 6) break;
     if (v && typeof v === "object" && !Array.isArray(v)) {
       const sec = scalarSection(k.replace(/_/g, " "), v as Record<string, unknown>, [
         "price",
@@ -149,10 +220,12 @@ async function composeMarketContext(): Promise<BieComposed | null> {
       if (sec) parts.push(sec);
     }
   }
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  if (knowledge) parts.push(knowledge);
   if (parts.length === 0) return null;
   return {
-    answer: `${parts.join("\n\n")}\n\n_Live platform read. For interpretation or a trade thesis, ask the follow-up — that's where deeper reasoning kicks in._`,
-    context: raw,
+    answer: `${parts.join("\n\n")}\n\n_Live platform read — SPX desk, HELIX tape, Night Hawk, regime detector, and desk knowledge. Zero Claude cost._`,
+    context: { market_context: raw, platform },
   };
 }
 
@@ -200,6 +273,16 @@ async function composeTickerEcosystem(ticker: string): Promise<BieComposed | nul
 
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
 export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
+  const cacheKey = largoAnswerCacheKey(route.intent, route.ticker);
+  return withServerCache<BieComposed | null>(
+    cacheKey,
+    BIE_LARGO_ANSWER_TTL_MS,
+    () => composeBieAnswerUncached(route),
+    { staleWhileRevalidate: true }
+  );
+}
+
+async function composeBieAnswerUncached(route: BieRoute): Promise<BieComposed | null> {
   try {
     switch (route.intent) {
       case "zerodte_plays":
@@ -208,6 +291,8 @@ export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | n
         return route.ticker ? await composeTickerPlayState(route.ticker) : null;
       case "spx_structure":
         return await composeSpxStructure();
+      case "spx_desk_read":
+        return await composeSpxDeskRead();
       case "market_context":
         return await composeMarketContext();
       case "ticker_ecosystem":

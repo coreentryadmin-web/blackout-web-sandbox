@@ -8,11 +8,12 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
+import { claudeEnabled, isStagingBieMode, largoAvailable } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { bieFollowups, bieIntentBucket, classifyBieIntent, type BieRoute } from "@/lib/bie/router";
+import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer } from "@/lib/bie/composers";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -77,7 +78,7 @@ export async function generateLargoFollowups(
   answer: string,
   tickerHint?: string | null
 ): Promise<string[]> {
-  if (!anthropicConfigured() || !answer.trim()) return [];
+  if (!claudeEnabled() || !answer.trim()) return [];
   const focus = tickerHint ? ` The current focus is ${tickerHint}.` : "";
   const prompt = `You generate follow-up questions for Largo, an institutional options/markets AI desk.${focus}
 
@@ -138,7 +139,7 @@ Session memory is in Postgres — honor follow-ups. Re-fetch via tools if you ne
 }
 
 export function largoConfigured(): boolean {
-  return anthropicConfigured();
+  return largoAvailable();
 }
 
 export function largoDataSources(): {
@@ -153,7 +154,7 @@ export function largoDataSources(): {
     uw: uwConfigured(),
     postgres: dbConfigured(),
     web_search: webSearchConfigured(),
-    anthropic: anthropicConfigured(),
+    anthropic: claudeEnabled(),
   };
 }
 
@@ -252,10 +253,41 @@ async function tryBieRoute(
   try {
     const ledger = await readZeroDteLedger().catch(() => []);
     const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
-    if (!route) return null;
-    const composed = await composeBieAnswer(route);
-    if (!composed) return null;
-    return { route, answer: composed.answer, context: composed.context };
+    if (route) {
+      const composed = await composeBieAnswer(route);
+      if (composed) return { route, answer: composed.answer, context: composed.context };
+    }
+
+    // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
+    if (!route && isSpxDeskFallbackQuestion(question)) {
+      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" });
+      if (composed) {
+        return {
+          route: { intent: "spx_desk_read", ticker: "SPX" },
+          answer: composed.answer,
+          context: composed.context,
+        };
+      }
+    }
+
+    // Staging BIE-only: never return null — always compose a deterministic answer.
+    if (!route && isStagingBieMode()) {
+      const fallback = classifyBieStagingFallback(question);
+      const composed = await composeBieAnswer(fallback);
+      if (composed) {
+        return { route: fallback, answer: composed.answer, context: composed.context };
+      }
+      const lastResort = await composeBieAnswer({ intent: "market_context", ticker: null });
+      if (lastResort) {
+        return {
+          route: { intent: "market_context", ticker: null },
+          answer: lastResort.answer,
+          context: lastResort.context,
+        };
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -302,10 +334,6 @@ export async function runLargoQuery(
   followups: string[];
   verification: ClaimVerification;
 }> {
-  if (!anthropicConfigured()) {
-    throw new Error("ANTHROPIC_API_KEY not configured");
-  }
-
   const startedAt = Date.now();
   // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
   // maps onto platform truth — instant, free, traceable by construction.
@@ -351,6 +379,10 @@ export async function runLargoQuery(
       followups: bieFollowups(routed.route.intent),
       verification,
     };
+  }
+
+  if (!claudeEnabled()) {
+    throw new Error("Largo BIE-only mode — ask about SPX setup, market context, or today's 0DTE plays");
   }
 
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
@@ -465,14 +497,7 @@ export async function runLargoQueryStream(
   userId: string,
   onEvent: (event: LargoStreamEvent) => void
 ): Promise<void> {
-  if (!anthropicConfigured()) {
-    onEvent({ type: "error", message: "ANTHROPIC_API_KEY not configured" });
-    return;
-  }
-
   const startedAt = Date.now();
-  // Layer 3 first: deterministic BLACKOUT Intelligence answer — streamed as one
-  // token event + done, so the terminal renders it exactly like a model turn.
   const routed = await tryBieRoute(question);
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
@@ -510,6 +535,15 @@ export async function runLargoQueryStream(
     } catch {
       // client disconnected — turn already persisted
     }
+    return;
+  }
+
+  if (!claudeEnabled()) {
+    onEvent({
+      type: "error",
+      message:
+        "Largo BIE-only mode on staging — try: What's the SPX setup? · How are today's plays? · What is the market doing?",
+    });
     return;
   }
 

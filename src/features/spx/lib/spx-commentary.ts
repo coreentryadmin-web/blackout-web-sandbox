@@ -1,6 +1,20 @@
-import { anthropicText, COMMENTARY_MODEL } from "@/lib/providers/anthropic";
 import type { SpxDeskPayload } from "./spx-desk";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { knownIntelNumbers } from "@/lib/bie/spx-desk-intel";
+import type { SpxBriefIntelPrefetch, SpxBriefIntelPrev } from "@/lib/bie/load-spx-brief-intel";
+import { heatmapToIntelSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import type { GexPositioning } from "@/lib/providers/gex-positioning";
+import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
+import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
+import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
+import {
+  buildPrecedentSearchQuery,
+  MIN_TOTAL_PRECEDENTS,
+  parsePrecedentOutcome,
+  PRECEDENT_SEARCH_K,
+} from "@/features/spx/lib/spx-signals-shadow-precedents";
 import {
   formatFlowStrikeStackLine,
   flowStackSignature,
@@ -359,40 +373,6 @@ function deskContext(desk: SpxDeskPayload): Record<string, unknown> {
   };
 }
 
-function parseCommentaryJson(raw: string): SpxCommentaryResult | null {
-  try {
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    const bias = String(parsed.bias ?? "neutral").toLowerCase();
-    const validBias =
-      bias === "bullish" || bias === "bearish" ? bias : ("neutral" as const);
-
-    return {
-      headline: String(parsed.headline ?? "Desk update"),
-      bias: validBias,
-      body: String(parsed.body ?? ""),
-      watch: Array.isArray(parsed.watch) ? parsed.watch.map(String).slice(0, 6) : [],
-      changed: Array.isArray(parsed.changed) ? parsed.changed.map(String).slice(0, 6) : [],
-      as_of: new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-const COMMENTARY_OUTPUT_SCHEMA = {
-  type: "object",
-  properties: {
-    headline: { type: "string" },
-    bias: { type: "string", enum: ["bullish", "bearish", "neutral"] },
-    body: { type: "string" },
-    watch: { type: "array", items: { type: "string" } },
-    changed: { type: "array", items: { type: "string" } },
-  },
-  required: ["headline", "bias", "body", "watch", "changed"],
-  additionalProperties: false,
-} as const;
-
 function sectionHasData(section: unknown): boolean {
   if (section == null) return false;
   if (typeof section !== "object") return false;
@@ -568,6 +548,12 @@ function logUngroundedCommentary(
   });
 }
 
+export type SpxCommentaryIntelCache = {
+  positioning: GexPositioning | null;
+  heatmapSlice: IntelHeatmapSlice | null;
+  nighthawk: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
+};
+
 export async function generateSpxCommentary(
   desk: SpxDeskPayload,
   previous?: Partial<SpxDeskPayload> | null,
@@ -576,8 +562,14 @@ export async function generateSpxCommentary(
     lotto?: import("@/features/spx/lib/spx-lotto-store").LottoRecord | null;
     powerHour?: import("@/features/spx/lib/spx-power-hour-store").PowerHourRecord | null;
     outcomes?: import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeStats | null;
+    /** Prior 5-min window intel for matrix + material-edge diffs. */
+    intelPrev?: SpxBriefIntelPrev | null;
+    nighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
+    prevNighthawk?: import("@/features/nighthawk/lib/types").NightHawkEdition | null;
+    /** Pre-fetched matrix rows — skips duplicate provider calls on commentary cold path. */
+    intelPrefetch?: SpxBriefIntelPrefetch;
   }
-): Promise<SpxCommentaryResult | null> {
+): Promise<{ commentary: SpxCommentaryResult; intelCache: SpxCommentaryIntelCache } | null> {
   const delta = computeDelta(desk, previous);
   const ctx = deskContext(desk);
   const ctxRec = ctx as Record<string, unknown>;
@@ -634,120 +626,91 @@ export async function generateSpxCommentary(
 
   const dataCheck = validateDeskData(ctx);
   if (dataCheck.ok === false) {
-    console.warn("[spx-commentary] skipping Claude call:", dataCheck.reason);
+    console.warn("[spx-commentary] skipping BIE brief:", dataCheck.reason);
     return null;
   }
 
-  // Determine session phase from as_of timestamp for time-context in the prompt
-  const asOfMs = desk.as_of ? new Date(desk.as_of).getTime() : Date.now();
-  const etHour = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getHours();
-  const etMin  = new Date(new Date(asOfMs).toLocaleString("en-US", { timeZone: "America/New_York" })).getMinutes();
-  const etMins = etHour * 60 + etMin;
-  const sessionPhase =
-    etMins < 570  ? "pre-market"           // before 9:30
-    : etMins < 600  ? "opening-range"      // 9:30–10:00
-    : etMins < 660  ? "mid-morning"        // 10:00–11:00
-    : etMins < 780  ? "midday-grind"       // 11:00–13:00
-    : etMins < 870  ? "afternoon"          // 13:00–14:30
-    : etMins < 930  ? "power-hour"         // 14:30–15:30
-    :                 "final-30";          // 15:30–16:00
-
-  const prompt = `You are the head trader AND head educator on BlackOut SPX-Sniper — a real-money 0DTE SPX desk. MOST READERS ARE NEW TO OPTIONS. Write the LIVE DESK AI read so a beginner finishes it knowing WHAT is happening, WHY (the dealer mechanic behind it), HOW to trade it, and HOW NOT to blow up — while a 25yr pro still reads the whole thing in ~20 seconds. Teaching, not a textbook. No hype, no disclaimers ("not advice"), no hedging ("could/might/monitor closely").
-
-SESSION PHASE: ${sessionPhase} (ET). Tailor the call to the phase:
-- opening-range: vol highest, don't chase, wait for the range break + confirmation
-- mid-morning: best setups — VWAP reclaim/reject + GEX-wall reaction
-- midday-grind: low vol, theta bleeds — lighter size or no trade
-- afternoon/power-hour: momentum + squeeze risk at the gamma flip
-- final-30: no new 0DTE unless already in
-
-ACCURACY: every number/strike/premium comes from the JSON below or WHAT CHANGED. Never invent. Skip anything null/empty. SPX prices to .00; premiums like ${fmtPremium(1_500_000)}.
-
-DATA AVAILABLE (use only what is populated): data_freshness (feed_stalled, gex_stale, gex_age_ms); confluence (grade A+/A/B/C/D, action, factors); price_action (price, change_pct, above_vwap, vwap, hod/lod, pdh/pdl); moving_averages; support_resistance_levels (nearest_support/resistance); dealer_gex (gex_net, gamma_flip, above_gamma_flip, gex_king, max_pain, gamma_regime); gex_walls_0dte (strikes + net_gex); flow_0dte (call/put/net premium); spx_option_flows (sweeps/blocks); live_tape; strike_stacks; dark_pool (bias, pcr, prints); market_tide; nope; volatility (VIX, IV rank, term); internals (TICK/TRIN/ADD); market_breadth; macro_calendar_today; news_headlines; mega_cap_stocks; net_premium_velocity.
-
-CURRENT DESK SNAPSHOT (JSON):
-${JSON.stringify(ctx)}
-
-WHAT CHANGED SINCE LAST DESK READ:
-${delta.map((d) => `- ${d}`).join("\n")}
-
-TEACH INSIDE THE LINE, NEVER AROUND IT — every line states the fact AND teaches the mechanic in the SAME breath; the decode rides along as a 2-3 word clause, it never gets its own sentence or line:
-1. DECODE jargon inline (2-3 words, in parens) the FIRST time a term appears per read, then use it bare: γflip (dealer trend line), VWAP (session avg price), put-skew (more put than call bets), theta (time-decay), pin (price magnet), GEX wall (dealer defense), neg-γ (dealers amplify moves), pos-γ (dealers fade/pin), debit spread (capped-risk pair), IV rank (how pricey options are), max pain (strike most options expire worthless). Don't re-decode the same term twice in one read.
-2. ANSWER THE SILENT "SO WHAT?" — never a number without its consequence in 3-5 words. NOT "VIX {{14}}" but "VIX {{14}} (calm — small moves)". NOT "R {{6025}}" but "R {{6025}} (call wall — caps upside)".
-3. PLAIN VERBS over slang: "dealers buy dips" not "positive dealer gamma hedging flow".
-4. The gloss is a CLAUSE, not a sentence; if it won't fit, cut a lower-signal word — never add a line.
-5. NUMBERS ALWAYS in {{...}} (incl. glossed thresholds like IV rank, VIX); teaching words/labels stay OUTSIDE braces; verbatim news headlines go INSIDE {{...}}.
-DON'T: glossary lines, disclaimers, lecturing ("the gamma flip is a level where..."), or explaining a term not used this read. Teach by LABELING the mechanic, not by lecturing about it.
-
-Respond with ONLY valid JSON (no markdown fences, no trailing commas):
-{
-  "headline": "READ — the thesis in one breath, <=24 words. Bias verb (LONG / SHORT / FADE / CHOP / NO-EDGE) from confluence.action, then {{grade}} glossed once '(several signals agree)', then {{price}} {{change_pct}} anchored to {{signed pts vs VWAP}} and {{gamma_flip}}, closed with the regime word tagged once — 'neg-γ (trend fuel)' or 'pos-γ (dips bought)'. Grade C/D => NO-EDGE + why in 3 words. This IS the headline — numbers in {{}}.",
-  "bias": "bullish" | "bearish" | "neutral",
-  "body": "Newline-separated labeled lines, ONE line per label, tight (~one breath, <=32 words), numbers/news in {{}}, each line starting with its UPPERCASE label + TWO spaces. ORDER EXACTLY: WHY, then 'Δ SINCE LAST' (only if something moved), LEVELS, SETUP, RISK, NEXT 5M, FLIPS IT, then FLOW and NEWS (only if real signal). ALWAYS include WHY, LEVELS, SETUP, RISK, NEXT 5M, FLIPS IT.\\nWHY  the dealer-hedging mechanic CAUSING the bias (the lesson that repeats every session). Name the 2 strongest confluence.factors + translate the gamma mechanic, tied to ONE level already shown. neg-γ: 'below γflip dealers sell dips (fuel), so drops feed themselves toward {{level}}.' pos-γ: 'above γflip dealers buy dips (cushion), pullbacks bought back to {{pin}}.' Explain the FORCE, never restate the SETUP trigger. e.g. 'WHY  Below VWAP (session avg) + put-skew {{1.4}} (more put bets) agree; below γflip dealers sell dips, so drops feed themselves toward {{6004}}.'\\nΔ SINCE LAST  max 2 items that MOVED vs last read, lead with any sign flip carrying its meaning: 'GEX {{pos->neg}} (cushion -> fuel)', 'lost VWAP {{6017->6011}}', 'grade {{C+->B+}} (sellers took control)'. Omit entirely if nothing material moved — no filler.\\nLEVELS  nearest resistance above + support below with SIGNED {{pt distance}}; tag each level's role in 2-3 words the first time — 'call wall (caps upside)', 'γwall (dealer support)', 'pin (price magnet)', 'PDH (prior-day high)'. Mark the GEX-wall level ({{strike}} {{net_gex}}) — net_gex is ALREADY $-formatted (e.g. -$3.6M); quote it VERBATIM, never change its unit or invent a magnitude; add {{pin}}=gex_king/max_pain only if between spot and a level. e.g. 'LEVELS  R {{6018}} (+{{7}}, γflip) · {{6031}} (+{{20}}, call wall — caps upside) · S {{6004}} (-{{7}}, γwall {{-$2.1M}} — dealer support) · pin {{6005}}'\\nSETUP  the trade in plain parts, gated by confluence.grade. Grade >=A: Direction / Trigger ({{level}} + the confirm as cause+effect, e.g. 'reject {{6017}} = sellers still own it') / Stop {{level}} / Target {{level}} / Edge (top 2 confluence.factors). Grade B: conditional 'If {{X}} then …'. Grade C/D or midday-grind: 'No clean setup — signals split, forcing it bleeds accounts; flat until {{condition}}.' Put NO sizing/IV here — that lives in RISK.\\nRISK  the blow-up guardrail, SIZE then STRUCTURE. SIZE by grade: A/A+ up to {{1}} unit, B {{half}}, C/D {{0}} (don't force it); cut more if VIX>{{20}} or phase is opening-range/final-30. STRUCTURE by IV rank: {{>50}} (options pricey) -> debit spread (capped-risk pair) so theta/IV-crush can't gut you; {{<30}} (cheap) -> a single long call/put is fine; ALWAYS 'max loss = the {{$X}} you pay, nothing more.' Add a SIT-OUT clause ONLY when hostile (grade C/D, midday chop, final-30, VIX spike with no clean level, or a macro event within ~{{15m}}): one reason + the single thing that re-opens it. e.g. 'RISK  Size {{half}} — B not A; IV rank {{62}} (options pricey) -> debit put spread, max loss = the {{$1.40}} you pay; exit AT the FLIPS level, never add to a loser — theta (time-decay) accelerates into close.'\\nNEXT 5M  behavior in plain terms FIRST, then the path, for the next ~5 min from gamma_regime + net_premium_velocity + internals + tide. pos-γ near a wall: 'expect a pin (price stuck) / fade toward {{gex_king|max_pain}}'. neg-γ below flip: 'expect expansion (fast trend) into the {{level}} air-pocket (no-support gap) if {{level}} cracks; weak TICK confirms sellers.'\\nFLIPS IT  the ONE reading that voids the thesis = YOUR STOP (say the word 'stop'). EXACTLY one, with a {{number}} + the consequence. e.g. 'FLIPS IT  Reclaim {{6017}} (VWAP+γflip back) = thesis dead, this is your stop — go flat.'\\nFLOW  single strongest of: 0DTE skew {{%}} net {{$}}, a {{sweep}} ({{strike}} {{$}}), a building stack (summary verbatim), hard dark-pool {{bias/pcr}}, or {{NOPE}} extreme — add one clause on why it matters to DIRECTION ('confirms the short, not a fade'). Omit if routine.\\nNEWS  one crisp MATERIAL catalyst only: SPX-relevant headline (Trump/Fed/geopolitics/regime, quoted verbatim inside {{}}), an imminent macro event before next read with {{time}} + why it matters ('vol can spike, be flat before'), a big {{VIX}} move, or a mega-cap {{ticker move}} dragging the index. Omit if nothing material.",
-  "watch": [],
-  "changed": []
-}
-
-Hard rules:
-- bias (bullish/bearish/neutral) drives the badge; justify by confluence grade, flow skew, OR price vs VWAP+γflip. Map headline verb: LONG=bullish, SHORT=bearish, FADE/CHOP/NO-EDGE=neutral.
-- Null/empty section -> skip. strike_stacks empty -> no stack language.
-- watch and changed MUST be empty arrays — everything lives in headline + body.
-- Every number + every verbatim headline wrapped in {{...}}; teaching words/labels stay outside. No prose paragraphs, one line per label.
-- live_spx_play / lotto_play / power_hour_play (if present) are the platform's OWN live positions — your READ + SETUP MUST ALIGN with them, or explicitly flag the conflict (e.g. "engine still long X — countertrend"). NEVER hand the trader the opposite side of an open desk position without calling out that it contradicts the live engine.
-- recent_play_outcomes (if present) is the desk's own realized win-rate — you MAY use it to calibrate conviction ("desk's been hot/cold lately"), but never fabricate numbers or over-promise.
-- When data_freshness.gex_stale or data_freshness.feed_stalled is true, dealer GEX levels are STALE or the index feed is FROZEN — say so plainly in RISK (do not cite walls/flip as live); prefer NO-EDGE or lighter size until structure refreshes.
-- ALWAYS show WHY, LEVELS, SETUP, RISK, NEXT 5M, FLIPS IT. Δ/FLOW/NEWS only when they carry signal. Still ~a 20-second read.`;
-
-  const raw = await anthropicText(prompt, 1550, undefined, {
-    model: COMMENTARY_MODEL,
-    // temperature:0 — output_config json_schema extraction; deterministic output avoids
-    // nondeterminism + wasted retries on schema-constrained output (was silently default 0.3).
-    temperature: 0,
-    output_config: {
-      format: {
-        type: "json_schema",
-        schema: COMMENTARY_OUTPUT_SCHEMA,
-      },
-    },
-    // A large structured generation can brush past the client's 20s default → "Request
-    // timed out" → Live Desk AI stuck. Give it 45s and a single retry (server-cached, so
-    // the extra latency is invisible to users — it just needs to complete once,
-    // then every session reads the server cache for the rest of the 5-min window).
-    timeoutMs: 45_000,
-    maxRetries: 1,
-  });
-  if (!raw) return null;
-
-  const parsed = parseCommentaryJson(raw);
-  // changed[] and watch[] stay empty by design — the Δ SINCE LAST line lives in body,
-  // and SETUP + FLIPS IT replace the old watch list. Keeps the rail crisp.
-  if (parsed) {
-    // FABRICATION GUARD: this flagship "Live Desk AI" read is cluster-cached and served to
-    // every connected user with no prior check that its cited numbers are real, unlike the
-    // sibling gex-heatmap/explain route. Ground the headline + body against every number
-    // actually present in the SAME ctx JSON the prompt was built from (walked recursively —
-    // ctx is too large/nested to hand-enumerate every legitimate field without risking a
-    // missed one and a false-positive block). Returning null here (not a fallback narrative)
-    // means the route's serverCache treats this exactly like a generation failure: nothing is
-    // cached, the caller gets a retryable 502.
-    const known = knownCommentaryNumbers(desk, ctxRec);
-    const grounding = checkCommentaryGrounded(`${parsed.headline}\n${parsed.body}`, known);
-    if (!grounding.grounded) {
-      console.warn(
-        `[spx-commentary] ungrounded value ${grounding.ungroundedValue} in generated commentary — discarding (never cached).`
-      );
-      // Durable trace of the discard (see logUngroundedCommentary's doc comment) — this used
-      // to be silently thrown away with nothing but the console.warn above, unlike the
-      // sibling spx-play-claude.ts, which has logged every verdict (pass or fail) since
-      // task #78. Fire-and-forget: never awaited, never blocks this return.
-      logUngroundedCommentary(desk, ctx, parsed, grounding);
-      return null;
-    }
-    return parsed;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) {
+    console.warn("[spx-commentary] skipping BIE brief: no confluence");
+    return null;
   }
 
-  // JSON parse failure — same contract as ungrounded output: never cache, never serve raw
-  // model text (audit C2: raw fallback bypassed the fabrication guard).
-  console.warn("[spx-commentary] JSON parse failed — discarding (never cached).");
-  return null;
+  const sessionPhase = spxSessionPhase(desk.as_of);
+
+  const intelPrev: SpxBriefIntelPrev = {
+    desk: (previous as SpxDeskPayload | null) ?? cross?.intelPrev?.desk ?? null,
+    positioning: cross?.intelPrev?.positioning ?? null,
+    heatmapSlice: cross?.intelPrev?.heatmapSlice ?? null,
+    prevNighthawk: cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null,
+    nighthawk: cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
+  };
+  const { loadSpxBriefIntel } = await import("@/lib/bie/load-spx-brief-intel");
+
+  const precedentPromise = (async (): Promise<string | null> => {
+    if (!bieEmbeddingsConfigured() || !dbConfigured()) return null;
+    const budgetMs = 1_500;
+    try {
+      const query = buildPrecedentSearchQuery(
+        desk,
+        confluence.direction,
+        confluence.grade,
+        confluence.score
+      );
+      const hits = await Promise.race([
+        findSimilarPrecedents(query, PRECEDENT_SEARCH_K),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("precedent_timeout")), budgetMs)
+        ),
+      ]);
+      if (hits.length < MIN_TOTAL_PRECEDENTS) return null;
+      const targets = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "target").length;
+      const stops = hits.filter((h) => parsePrecedentOutcome(h.chunk) === "stop").length;
+      const targetRate = Math.round((targets / hits.length) * 100);
+      return `${hits.length} similar setups — {{${targetRate}}}% hit target ({{${targets}}}T/{{${stops}}}S, BIE corpus)`;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [intel, precedentDetail] = await Promise.all([
+    loadSpxBriefIntel(
+      desk,
+      intelPrev,
+      cross?.nighthawk ?? cross?.intelPrev?.nighthawk ?? null,
+      cross?.prevNighthawk ?? cross?.intelPrev?.prevNighthawk ?? null,
+      cross?.intelPrefetch
+    ),
+    precedentPromise,
+  ]);
+
+  const parsed = composeSpxDeskBrief(desk, confluence, delta, sessionPhase, {
+    openPlay: op && op.status === "open" ? op : null,
+    lotto: lp && lp.phase !== "NONE" && lp.phase !== "INVALID" ? lp : null,
+    powerHour: ph && ph.phase !== "NONE" ? ph : null,
+    outcomes: oc && oc.total_closed > 0 ? oc : null,
+    precedentDetail,
+    intel,
+  });
+
+  const known = [
+    ...knownCommentaryNumbers(desk, ctxRec),
+    ...knownIntelNumbers(intel),
+  ];
+  const grounding = checkCommentaryGrounded(`${parsed.headline}\n${parsed.body}`, known);
+  if (!grounding.grounded) {
+    console.warn(
+      `[spx-commentary] ungrounded value ${grounding.ungroundedValue} in BIE desk brief — discarding (never cached).`
+    );
+    logUngroundedCommentary(desk, ctx, parsed, grounding);
+    return null;
+  }
+  return {
+    commentary: parsed,
+    intelCache: {
+      positioning: intel.positioning,
+      heatmapSlice: heatmapToIntelSlice(intel.heatmap),
+      nighthawk: intel.nighthawk ?? null,
+    },
+  };
 }

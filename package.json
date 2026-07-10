@@ -28,6 +28,7 @@
     "validate:staging-monitor:once": "node scripts/staging-continuous-monitor.mjs --once",
     "validate:staging-cron-watch": "node scripts/staging-cron-watch.mjs",
     "validate:staging-cron-watch:once": "node scripts/staging-cron-watch.mjs --once",
+    "validate:staging-bie": "node scripts/staging-bie-validate.mjs",
     "validate:staging-vector-e2e": "node scripts/vector-e2e-audit.mjs --base=https://staging.blackouttrades.com",
     "validate:latency-compare": "node scripts/compare-latency-envs.mjs",
     "validate:data-parity": "node scripts/staging-prod-data-parity.mjs",

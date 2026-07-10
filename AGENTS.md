@@ -13,9 +13,22 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 `/api/cron/*`; they are not separate apps and are not needed locally. Commands live in `package.json`
 (`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`) and CI is `.github/workflows/ci.yml`.
 
+### BIE Live Desk AI (replaces Claude on `/api/market/spx/commentary`)
+
+- **Deterministic brief** via `composeSpxDeskBrief()` — SIGNALS, DEALERS (GEX/VEX/DEX/CHARM), WALLS, CHART, NIGHT HAWK, cross-tool ENGINE/LOTTO/POWER HOUR, material **INTEL edges** (same `spx-odte-intel-feed` as Playbook terminal), Voyage precedent, UW **CROSSCHK**.
+- **Unified data plane** `loadBiePlatformContext()` (`src/lib/bie/platform-context.ts`) — one parallel fan-out across SPX desk, matrix intel, Night Hawk (RDS), HELIX tape, market-regime snapshot, play-engine cross-state, and `bie_knowledge` retrieval (Voyage embeddings in RDS). BIE does **not** open raw Redis/SQL; it uses the same platform service readers dashboards and Largo tools use (those readers already sit on ElastiCache + RDS).
+- **Intel loader** `loadSpxBriefIntel()` reads shared `getGexPositioning("SPX")` + heatmap cache + NH edition diffs (zero extra UW RPS). Commentary cache stores `positioning` + `heatmapSlice` + `nighthawk` per 5-min window for matrix/NH diffs.
+- **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first. `classifyBieStagingFallback()` + market-context last resort so Largo never hard-errors on staging.
+- **Kill Claude spend path:** SPX commentary + play approval + flow-brief + GEX explain + Largo router hits are BIE-first. Remaining Claude: Largo fallback (non-SPX reasoning), NH edition synthesis, play critic/explainer, Haiku follow-ups.
+- **Staging proof:** `npm run validate:staging-bie` — probes commentary (THESIS), flow-brief, gex-explain, Largo (`source=blackout-intelligence`); does not touch prod.
+- **Synthesis layer** `synthesizeSpxDeskIntel()` — THESIS, MECHANIC (γ/vanna/δ/charm), ALIGNMENT (engine/NH/lotto vs read), FRICTION (opposing factors), watch triggers. SPX-scoped "why" questions route to `spx_desk_read` instead of Claude.
+- **Latency:** `getCachedBiePlatformContext()` (8s desk / 20s market SWR) + Largo answer cache (12s) + commentary 5-min shared window. Cold path parallelizes desk/matrix/cross; Voyage precedent capped at 1.5s (optional).
+
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
 - **SPX Slayer left rail:** `SpxGexMatrixHeatmap` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**). Bootstrap seeds matrix SWR via `/api/market/spx/bootstrap`.
+- **Live Desk AI + play approval (BIE, no Claude):** `POST /api/market/spx/commentary` composes via `src/lib/bie/spx-desk-brief.ts` (desk + `computeSpxConfluence`, optional Voyage precedents). Right-rail play gate uses `findSimilarPrecedents` in `spx-play-claude.ts` — **zero Anthropic** on these SPX paths; Largo Terminal remains the only Claude surface.
+- **Staging = BIE-only by default:** `src/lib/ai-env.ts` — when `NEXT_PUBLIC_SITE_URL` contains `staging.`, `claudeEnabled()` is false and `anthropicText` / `anthropicToolLoop` no-op. Largo still works via BIE router (`spx_desk_read`, `spx_structure`, `market_context`, etc.). Override with `STAGING_CLAUDE=1` for A/B tests.
 - **BlackOut Thermal (`/heatmap`):** full `GexHeatmap.tsx` matrix shares **`src/lib/gex-heatmap-display.ts`** cell format/color scale with the SPX rail (GEX/VEX/DEX/CHARM lenses). Both surfaces read `cross_validation` from `/api/market/gex-heatmap` when preset tickers diverge from UW.
 - The WebSocket market-data managers are **not** a separate process — they boot lazily inside the Node
   server on the first `/api/market/*` request (`src/lib/ws/init-data-sockets.ts`).
@@ -144,6 +157,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 | Command | When |
 |---------|------|
 | `npm run validate:staging` | Full harness (warm, deploy, latency) |
+| `npm run validate:staging-bie` | BIE-only intelligence layer (commentary, Largo, flow-brief, gex-explain) |
 | `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
 | `npm run validate:staging-live` | Cron + Clerk admin/member probes |
 | `npm run validate:latency-compare` | Staging vs prod latency |

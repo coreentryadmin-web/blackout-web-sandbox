@@ -304,11 +304,11 @@ export async function buildSpxAdminIssues(input: {
   }
 
   if (play) {
-    if (play.claude?.verdict === "VETO" && play.claude.source === "claude") {
+    if (play.claude?.verdict === "VETO" && play.claude.source === "bie") {
       push(issues, {
         severity: "info",
         category: "play",
-        title: "Claude veto active",
+        title: "BIE veto active",
         detail: play.claude.thesis,
       });
     }

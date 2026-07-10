@@ -1,39 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireTierApi } from "@/lib/market-api-auth";
-import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { generateSpxCommentary, type SpxCommentaryResult } from "@/features/spx/lib/spx-commentary";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
+import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
+import type { IntelHeatmapSlice } from "@/features/spx/lib/spx-odte-intel-feed";
+import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import { serverCache } from "@/lib/server-cache";
 import { sharedCacheGet } from "@/lib/shared-cache";
 
 export const dynamic = "force-dynamic";
 
-// All users see the same SPX market data — one Claude call per 5-minute window
-// serves every connected session. First request in the window triggers the call;
-// all others get the cached result instantly with zero additional cost.
-//
-// serverCache(cacheKey, COMMENTARY_TTL_MS) is the SOLE throttle/spend control for
-// commentary: because the cache key is shared across all sessions and keyed by the
-// 5-minute window slot, at most one Anthropic call happens per window platform-wide
-// regardless of how many users/requests arrive. (A separate per-user interval/daily-cap
-// module, src/lib/spx-commentary-limits.ts, was never wired in and has been removed —
-// the shared-window cache already bounds spend more tightly than a per-user cap would.)
+// All users see the same SPX market data — one BIE desk brief per 5-minute window
+// serves every connected session. First request in the window triggers composition;
+// all others get the cached result instantly with zero LLM cost.
 const COMMENTARY_TTL_MS = 5 * 60 * 1000;
 
 type CommentaryCache = {
   commentary: SpxCommentaryResult;
-  desk: SpxDeskPayload; // retained so next window can compute delta against it
+  desk: SpxDeskPayload;
+  positioning: GexPositioning | null;
+  heatmapSlice: IntelHeatmapSlice | null;
+  nighthawk: NightHawkEdition | null;
 };
 
 export async function POST(req: NextRequest) {
   const authResult = await requireTierApi("premium");
   if (authResult instanceof Response) return authResult;
-
-  if (!anthropicConfigured()) {
-    return NextResponse.json({ error: "Commentary unavailable" }, { status: 503 });
-  }
 
   // Body is optional — generation always uses the server-side merged desk.
   void req.json().catch(() => null);
@@ -47,35 +41,74 @@ export async function POST(req: NextRequest) {
     // Read previous window's cached desk from Redis for delta computation.
     // Direct Redis read — no side effects, no write.
     let prevDesk: SpxDeskPayload | null = null;
+    let prevPositioning: GexPositioning | null = null;
+    let prevHeatmapSlice: IntelHeatmapSlice | null = null;
+    let prevNighthawk: NightHawkEdition | null = null;
     try {
       const prev = await sharedCacheGet<CommentaryCache>(prevKey);
       prevDesk = prev?.desk ?? null;
+      prevPositioning = prev?.positioning ?? null;
+      prevHeatmapSlice = prev?.heatmapSlice ?? null;
+      prevNighthawk = prev?.nighthawk ?? null;
     } catch {
       // Redis unavailable or key expired — no delta this window
     }
 
     const result = await serverCache<CommentaryCache>(cacheKey, COMMENTARY_TTL_MS, async () => {
-      const { merged: desk } = await loadMergedSpxDesk();
-      if (!desk.available || !(desk.price != null && desk.price > 0)) {
-        throw new Error("spx-commentary: desk unavailable");
-      }
-
-      // Cross-tool access: give the desk AI the platform's OWN engine state (open play,
-      // lotto, power-hour) + recent win-rate so its read aligns with the rest of the
-      // platform (never contradicts an open position) and can calibrate conviction. All
-      // read-only, fetched only on a cache miss (once per window); each falls back to null.
-      const [openPlay, lotto, powerHour, outcomes] = await Promise.all([
+      const [
+        deskResult,
+        openPlay,
+        lotto,
+        powerHour,
+        outcomes,
+        nighthawk,
+        positioning,
+        heatmap,
+      ] = await Promise.all([
+        loadMergedSpxDesk(),
         import("@/features/spx/lib/spx-play-store").then((m) => m.loadOpenPlay()).catch(() => null),
         import("@/features/spx/lib/spx-lotto-store").then((m) => m.loadLottoRecord()).catch(() => null),
         import("@/features/spx/lib/spx-power-hour-store").then((m) => m.loadPowerHourRecord()).catch(() => null),
         import("@/features/spx/lib/spx-play-outcomes").then((m) => m.fetchPlayOutcomeStats()).catch(() => null),
+        import("@/lib/platform/nighthawk-service")
+          .then((m) => m.getLatestNightHawkEdition())
+          .catch(() => null),
+        import("@/lib/providers/gex-positioning")
+          .then((m) => m.getGexPositioning("SPX", { includeIntradayAdjusted: true }))
+          .catch(() => null),
+        import("@/lib/providers/polygon-options-gex")
+          .then((m) => m.fetchGexHeatmap("SPX"))
+          .catch(() => null),
       ]);
-      const commentary = await generateSpxCommentary(desk, prevDesk, { openPlay, lotto, powerHour, outcomes });
-      // Throw (don't return null) on failure so serverCache's refreshCache skips its
-      // .then store/Redis write and rethrows to us — nothing is negatively cached and
-      // the next request retries immediately instead of being poisoned for the window.
-      if (!commentary) throw new Error("spx-commentary: generation returned null");
-      return { commentary, desk };
+      const desk = deskResult.merged;
+      if (!desk.available || !(desk.price != null && desk.price > 0)) {
+        throw new Error("spx-commentary: desk unavailable");
+      }
+
+      const generated = await generateSpxCommentary(desk, prevDesk, {
+        openPlay,
+        lotto,
+        powerHour,
+        outcomes,
+        nighthawk,
+        prevNighthawk,
+        intelPrefetch: { positioning, heatmap },
+        intelPrev: {
+          desk: prevDesk,
+          positioning: prevPositioning,
+          heatmapSlice: prevHeatmapSlice,
+          prevNighthawk,
+          nighthawk,
+        },
+      });
+      if (!generated) throw new Error("spx-commentary: generation returned null");
+      return {
+        commentary: generated.commentary,
+        desk,
+        positioning: generated.intelCache.positioning,
+        heatmapSlice: generated.intelCache.heatmapSlice,
+        nighthawk: generated.intelCache.nighthawk,
+      };
     });
 
     return NextResponse.json({

@@ -12,6 +12,7 @@ export type BieIntent =
   | "zerodte_plays" // "how are today's plays doing" / the 0DTE board
   | "ticker_play_state" // "how's the NVDA play" — a name on today's ledger
   | "spx_structure" // "SPX levels / walls / gamma flip"
+  | "spx_desk_read" // full Live Desk AI brief — same path as commentary rail
   | "market_context" // "what's the market doing right now"
   | "ticker_ecosystem"; // "what's going on with NVDA" — any known ticker, not just today's ledger
 
@@ -26,6 +27,9 @@ const ZERODTE_RE =
 const SPX_STRUCTURE_RE =
   /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain)\b[^?]*\bspx\b/i;
 
+const SPX_DESK_READ_RE =
+  /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer|channel|commentary|brief)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk|doing)\b|\blive desk\b.*\bspx\b|\bspx channel\b|\bcommentary on spx\b/i;
+
 const MARKET_CONTEXT_RE =
   /^(what('| i)s (the )?market (doing|look(ing)? like|context|structure)( (right )?now| today)?\??|market (context|overview|check)( please)?\??|how('| i)s the market( (right )?now| today| looking)?\??)$/i;
 
@@ -38,7 +42,18 @@ const PLAY_STATE_RE = /\b(play|position|status|doing|hold|trim|exit|sell|still (
 const TICKER_ECOSYSTEM_RE =
   /\bwhat'?s? (going on|happening) (with|on)\b|\bwhat'?s? the (word|story|deal|latest) (with|on)\b|\bany (info|news|flow|activity) on\b|\banything (on|about)\b/i;
 
-/** Questions with these shapes need REASONING, not lookup — always Claude. */
+/** SPX-scoped "why" — BIE synthesis answers these; generic why → Claude. */
+const SPX_WHY_RE =
+  /\bwhy\b.*\b(spx|s&p|es|gamma|gex|vwap|dealers?|flip|slayer|market|tape)\b|\b(spx|s&p|slayer)\b.*\bwhy\b/i;
+
+/** SPX-scoped "explain" — synthesis desk read on staging BIE (not open-ended teach). */
+const SPX_EXPLAIN_RE =
+  /\bexplain\b.*\b(spx|s&p|es|slayer)\b|\b(spx|s&p|es|slayer)\b.*\bexplain\b/i;
+
+const MARKET_CONTEXT_LOOSE_RE =
+  /\b(market (doing|look(ing)?|context|overview|backdrop|regime)|how.?s the market|what.?s the market|market tape|tape today)\b/i;
+
+/** Questions with these shapes need REASONING, not lookup — always Claude (unless SPX_WHY_RE). */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
 
@@ -65,6 +80,8 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const q = question.trim();
   // Length guard: long/compound questions carry nuance a lookup can't honor.
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
+  if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
+  if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
@@ -75,7 +92,10 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   if (hit && PLAY_STATE_RE.test(q)) return { intent: "ticker_play_state", ticker: hit };
 
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
-  if (MARKET_CONTEXT_RE.test(q)) return { intent: "market_context", ticker: null };
+  if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
+  if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
 
   // Any known ticker (not just today's ledger) + an open-ended "what's going
   // on" ask — routes to the same cross-instrument snapshot get_ecosystem_context
@@ -86,6 +106,44 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
 
   return null;
+}
+
+/** Loose SPX mention — BIE-only Largo uses this when the router misses but the ask is still desk-shaped. */
+export function isSpxDeskFallbackQuestion(question: string): boolean {
+  const q = question.trim();
+  if (q.length > 200 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return false;
+  if (REASONING_RE.test(q)) return false;
+  return /\b(spx|s&p|es|slayer|sniper|0dte|gamma|gex|dealer)\b/i.test(q);
+}
+
+/**
+ * Staging BIE-only last resort — when the strict router misses, still return a
+ * useful deterministic route instead of throwing. Never used when Claude is on.
+ */
+export function classifyBieStagingFallback(question: string): BieRoute {
+  const q = question.trim();
+  if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
+  if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  const ticker = extractKnownTicker(q);
+  if (ticker && PLAY_STATE_RE.test(q)) {
+    return { intent: "ticker_ecosystem", ticker };
+  }
+  if (TICKER_ECOSYSTEM_RE.test(q) && ticker) {
+    return { intent: "ticker_ecosystem", ticker };
+  }
+  if (/\b(spx|s&p|gamma|gex|vwap|slayer|0dte|dealer|flip)\b/i.test(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (/\b(market|vix|spy|qqq|breadth|regime|tape|flow|anomal)/i.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  if (ticker) return { intent: "ticker_ecosystem", ticker };
+  return { intent: "market_context", ticker: null };
 }
 
 /** Normalizes the router's decision into a queryable "bucket" for the
@@ -106,7 +164,9 @@ export function bieFollowups(intent: BieIntent): string[] {
     case "ticker_play_state":
       return ["Show all of today's plays", "What would invalidate this play?", "What's the SPX setup right now?"];
     case "spx_structure":
-      return ["How are today's plays doing?", "Where are dealers positioned?", "Is this flow real or noise?"];
+      return ["How are today's plays doing?", "What's the full SPX desk read?", "Is this flow real or noise?"];
+    case "spx_desk_read":
+      return ["Where are dealers positioned?", "What would flip this read?", "How are today's plays doing?"];
     case "market_context":
       return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
     case "ticker_ecosystem":
