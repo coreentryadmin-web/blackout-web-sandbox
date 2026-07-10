@@ -57,14 +57,14 @@ test("buildPlaybookTerminalLines: empty panel shows awaiting copy when session l
   const lines = buildPlaybookTerminalLines(null, true);
   const text = lines.map((l) => l.text).join("\n");
   assert.match(text, /PLAYBOOK · SHADOW \(live\)/);
-  assert.match(text, /awaiting technicals/i);
+  assert.match(text, /All 14 PB rules/);
 });
 
 test("buildPlaybookTerminalLines: empty AH shows honest copy + catalog", () => {
   const lines = buildPlaybookTerminalLines(null, false);
   const text = lines.map((l) => l.text).join("\n");
   assert.match(text, /session closed/i);
-  assert.match(text, /no live shadow state/i);
+  assert.match(text, /no live playbook state/i);
   assert.match(text, /PB-01 VWAP Reclaim/);
   assert.match(text, /PB-02 VWAP Reject/);
   assert.match(text, /PB-03 Opening Range Breakout/);
