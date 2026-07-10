@@ -2,6 +2,7 @@ import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
 import { buildPlayKanbanChips, type PlayKanbanChip } from "@/features/spx/lib/spx-play-kanban-chips";
+import { formatSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 
 export type TradeStageId = "hold" | "trim" | "sell";
 
@@ -17,16 +18,13 @@ export type TradeAlertPlay = {
 type HistoryRow = SpxPlayPayload & { id: string };
 
 function structureStrikeLabel(play: SpxPlayPayload): string {
-  const fromTicket = play.option_ticket?.contract_label ?? play.open_play?.option_label;
-  if (fromTicket) {
-    const m = fromTicket.match(/(\d{3,5})\s*([CP])/i);
-    if (m) return `${m[1]} ${m[2]!.toUpperCase()}`;
-    return fromTicket;
-  }
-  const strike = play.levels.entry ?? play.open_play?.entry_price;
-  if (strike == null) return "STR";
-  const side = play.direction === "short" ? "P" : "C";
-  return `${Math.round(strike)} ${side}`;
+  return formatSpxContractLabel(
+    play.option_ticket?.contract_label ?? play.open_play?.option_label,
+    {
+      strike: play.levels.entry ?? play.open_play?.entry_price ?? 0,
+      direction: play.direction,
+    }
+  );
 }
 
 function structureActiveStage(play: SpxPlayPayload): TradeStageId {

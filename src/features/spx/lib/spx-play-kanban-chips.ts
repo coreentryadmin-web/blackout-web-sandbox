@@ -1,6 +1,7 @@
 import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
+import { formatSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 
 export type PlayKanbanKind = "structure" | "lotto" | "power";
 export type PlayKanbanColumn = "open" | "watch" | "closed";
@@ -22,35 +23,32 @@ function filterMatches(kind: PlayKanbanKind, filter: PlayKanbanFilter): boolean 
 }
 
 function structureStrikeChip(play: SpxPlayPayload): string | null {
-  const fromTicket = play.option_ticket?.contract_label;
-  if (fromTicket) return fromTicket;
-  const fromOpen = play.open_play?.option_label;
-  if (fromOpen) {
-    const m = fromOpen.match(/(\d{3,5})\s*([CP])/i);
-    if (m) return `${m[1]}${m[2]!.toUpperCase()}`;
-  }
+  const raw =
+    play.option_ticket?.contract_label ??
+    play.open_play?.option_label ??
+    null;
   const strike = play.levels.entry ?? play.open_play?.entry_price;
-  if (strike == null) return null;
-  const rounded = Math.round(strike);
-  const side = play.direction === "short" ? "P" : "C";
-  return `${rounded}${side}`;
+  const formatted = formatSpxContractLabel(raw, {
+    strike: strike ?? 0,
+    direction: play.direction,
+  });
+  if (formatted === "—" && strike == null) return null;
+  return formatted;
 }
 
 function lottoChipLabel(lotto: LottoPlayPayload): string {
-  if (lotto.contract_label) return lotto.contract_label;
-  if (lotto.strike != null) {
-    return `${Math.round(lotto.strike)}${lotto.direction === "long" ? "C" : "P"}`;
-  }
-  return lotto.phase;
+  return formatSpxContractLabel(lotto.contract_label, {
+    strike: lotto.strike ?? 0,
+    direction: lotto.direction,
+  });
 }
 
 function powerChipLabel(power: PowerHourPlayPayload): string {
-  if (power.contract_label) {
-    const m = power.contract_label.match(/(\d{3,5})\s*([CP])/i);
-    if (m) return `${m[1]}${m[2]!.toUpperCase()}`;
-    const tail = power.contract_label.split(" ").pop();
-    if (tail) return tail;
-  }
+  const formatted = formatSpxContractLabel(power.contract_label, {
+    strike: power.strike ?? 0,
+    direction: power.direction,
+  });
+  if (formatted !== "—") return formatted;
   return power.phase;
 }
 
@@ -117,10 +115,10 @@ export function buildPlayKanbanChips(input: {
         });
       }
     } else if (structureWatch) {
-      const base = structureStrikeChip(play) ?? `G${play.grade}`;
+      const base = structureStrikeChip(play) ?? `Grade ${play.grade}`;
       const pb = play.playbook_shadow?.verdicts.find((v) => v.primary);
       const pbTag = pb ? ` · ${pb.playbook_id}` : "";
-      const label = `${base.startsWith("G") ? base : `W${base}`}${pbTag}`;
+      const label = `${base}${pbTag}`;
       watch.push({
         id: "structure-watch",
         column: "watch",
@@ -229,16 +227,16 @@ export function buildPlayKanbanChips(input: {
 
   if (play && filterMatches("structure", filter) && history.length > 1) {
     for (const row of history.slice(1, 8)) {
-      const label =
-        row.open_play?.option_label?.match(/(\d{3,5}[CP])/i)?.[1] ??
-        (row.levels.entry != null
-          ? `${Math.round(row.levels.entry)}${row.direction === "short" ? "P" : "C"}`
-          : row.action.slice(0, 4));
+      const label = formatSpxContractLabel(row.open_play?.option_label, {
+        strike: row.levels.entry ?? row.open_play?.entry_price ?? 0,
+        direction: row.direction,
+      });
+      const fallback = label !== "—" ? label : row.action.slice(0, 4);
       closed.push({
         id: row.id,
         column: "closed",
         kind: "structure",
-        label: String(label),
+        label: fallback,
         prefix: "STR",
         tone: "closed",
       });
