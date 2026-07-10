@@ -1010,6 +1010,27 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_engine_snapshots_observed_at
       ON spx_engine_snapshots (observed_at DESC);
 
+    -- SPX named-playbook shadow observations (Phase 1 evidence — PB-01..08).
+    -- Logs what the playbook matcher WOULD have flagged as primary/fired WITHOUT
+    -- gating BUY. Throttled at the caller (state-transition cursor) so we get one
+    -- row per meaningful playbook shift, not every member poll tick.
+    CREATE TABLE IF NOT EXISTS spx_playbook_shadow_observations (
+      id                   BIGSERIAL PRIMARY KEY,
+      observed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date         DATE NOT NULL,
+      primary_playbook_id  TEXT,
+      regime               TEXT,
+      gamma_regime         TEXT,
+      price_at_observation NUMERIC,
+      engine_action        TEXT NOT NULL,
+      engine_score         INTEGER NOT NULL,
+      verdicts             JSONB NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_at
+      ON spx_playbook_shadow_observations (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_primary
+      ON spx_playbook_shadow_observations (primary_playbook_id, observed_at DESC);
+
     -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
     -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
     -- (src/lib/nighthawk/scorer.ts) computes a FULL breakdown for every ticker the nightly hunt
@@ -2066,6 +2087,70 @@ export async function fetchRecentSpxEngineSnapshots(limit = 50): Promise<
     thesis: String(r.thesis),
     as_of: r.as_of != null ? String(r.as_of) : null,
   }));
+}
+
+/** Persists one throttled playbook-shadow state transition (Phase 1 evidence). */
+export async function insertPlaybookShadowObservation(row: {
+  session_date: string;
+  primary_playbook_id: string | null;
+  regime: string | null;
+  gamma_regime: string | null;
+  price_at_observation: number | null;
+  engine_action: string;
+  engine_score: number;
+  verdicts: unknown;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO spx_playbook_shadow_observations (
+      session_date, primary_playbook_id, regime, gamma_regime,
+      price_at_observation, engine_action, engine_score, verdicts
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+    `,
+    [
+      row.session_date,
+      row.primary_playbook_id,
+      row.regime,
+      row.gamma_regime,
+      row.price_at_observation,
+      row.engine_action,
+      row.engine_score,
+      JSON.stringify(row.verdicts ?? []),
+    ]
+  );
+}
+
+export async function fetchPlaybookShadowObservationsForSession(
+  sessionDate: string,
+  limit = 200
+): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    primary_playbook_id: string | null;
+    regime: string | null;
+    gamma_regime: string | null;
+    price_at_observation: number | null;
+    engine_action: string;
+    engine_score: number;
+    verdicts: unknown;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, observed_at, primary_playbook_id, regime, gamma_regime,
+           price_at_observation, engine_action, engine_score, verdicts
+    FROM spx_playbook_shadow_observations
+    WHERE session_date = $1
+    ORDER BY observed_at DESC
+    LIMIT $2
+    `,
+    [sessionDate, limit]
+  );
+  return res.rows;
 }
 
 /**

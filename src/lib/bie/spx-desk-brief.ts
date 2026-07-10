@@ -58,6 +58,12 @@ export type SpxDeskBriefCross = {
     total_closed: number;
   } | null;
   precedentDetail?: string | null;
+  /** Named playbook shadow (PB-01..08) — informational, does not gate engine. */
+  playbookShadow?: {
+    primary_playbook_id: string | null;
+    primary_name: string | null;
+    fired_count: number;
+  } | null;
   /** Full matrix greeks + heatmap levels (GEX/VEX/DEX/CHARM). */
   intel?: SpxDeskBriefIntel;
 };
@@ -480,6 +486,14 @@ export function composeSpxDeskBrief(
   const conflict = liveEngineConflict(cross, bias);
   if (conflict) setup += ` (${conflict})`;
 
+  const pb = cross?.playbookShadow;
+  const playbookLine =
+    pb?.primary_playbook_id && pb.primary_name
+      ? `PLAYBOOK  Shadow {{${pb.primary_playbook_id}}} {{${pb.primary_name}}} fired (${pb.fired_count} active) — informational, does not gate engine`
+      : pb && pb.fired_count === 0
+        ? "PLAYBOOK  Shadow — no named setup fired this window"
+        : null;
+
   const ivRank = desk.uw_iv_rank;
   const size = sizeLabel(grade);
   const staleNote =
@@ -519,6 +533,7 @@ export function composeSpxDeskBrief(
     internalsLineOut,
     deltaSince,
     levels,
+    playbookLine,
   ].filter(Boolean) as string[];
 
   const dealers = dealersBriefLine(cross?.intel);

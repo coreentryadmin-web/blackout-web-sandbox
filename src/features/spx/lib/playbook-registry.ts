@@ -1,25 +1,8 @@
 /**
  * SPX Slayer — Playbook Registry, Phase 1 (SHADOW MODE ONLY).
  *
- * Static, typed catalog of the first 3 named playbooks out of the 12 described in
- * `docs/spx/SPX-Slayer-Playbook-Design-v1.docx` Section 6 ("The Twelve Playbooks (Full
- * Catalog)"). This is pure DATA — no evaluation/matching logic lives here (that's
- * `playbook-shadow-matcher.ts`, a sibling file in this directory).
- *
- * WHY 3, NOT 12: the design doc's own Section 12 ("Migration Roadmap (Shadow → Live)")
- * defines "Phase 1 — Shadow: Matcher runs alongside legacy engine; log would-be
- * playbook_id without changing BUY" as the first migration step, and Section 14
- * ("Validation Checklist for Other AIs") explicitly asks reviewers to weigh in on
- * "Are twelve playbooks too many for 0DTE SPX?" and "Suggested priority order for
- * Phase 1-3 implementation" before a full 12-playbook rollout. Starting this narrow
- * (the 3 highest-frequency, most code-computable setups: a reclaim, a reject, and an
- * opening-range breakout) is the proven-safe incremental pattern this codebase already
- * uses for every other SPX Slayer shadow addition — see
- * `spx-signals-shadow.ts` (flow_anomalies, the first shadow factor, landed alone before
- * 4 more followed one PR at a time) and `spx-signals-shadow-skew.ts`'s own module doc,
- * which cites the same "prove it in isolation first" rationale. Playbooks PB-04 through
- * PB-12 are catalogued in the design doc but deliberately NOT added here — a future,
- * separately-reviewed PR extends this array once PB-01/02/03 have shadow evidence.
+ * Static catalog of five evidence-backed playbooks (PB-01, 02, 03, 04, 08) from
+ * `docs/spx/SPX-Slayer-Playbook-Design-v1.docx` Section 6 ("The Twelve Playbooks").
  *
  * SOURCE OF TRUTH: every `preconditions`/`trigger`/`invalidation`/`sessionWindow` string
  * below is copied VERBATIM from the design doc's Section 6 PB-01/PB-02/PB-03 entries

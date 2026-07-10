@@ -11,6 +11,7 @@ import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/features/spx/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
+import { maybeLogPlaybookShadowMatch } from "@/features/spx/lib/playbook-shadow-log";
 import { playMemberReadCacheSec } from "@/features/spx/lib/spx-play-config";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { withServerCache } from "@/lib/server-cache";
@@ -85,9 +86,16 @@ async function evaluateSpxPlayState() {
     lod: merged.lod,
   });
   const play = await readSpxPlaySnapshot(merged, technicals);
+  const playbook_shadow = buildPlaybookShadowPanel(merged, technicals);
+  void maybeLogPlaybookShadowMatch(merged, playbook_shadow, {
+    action: play.action,
+    score: play.score,
+  }).catch((err) => {
+    console.warn("[spx-playbook-shadow]", err instanceof Error ? err.message : err);
+  });
   return {
     ...play,
-    playbook_shadow: buildPlaybookShadowPanel(merged, technicals),
+    playbook_shadow,
   };
 }
 
