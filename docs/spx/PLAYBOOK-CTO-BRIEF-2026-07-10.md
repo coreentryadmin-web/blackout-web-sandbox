@@ -1,48 +1,55 @@
 # SPX Playbook — CTO Brief (2026-07-10 RTH)
 
+> **Full architecture narrative:** see `PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md` (old model, evidence, 14 rules, implementation, trade logic).
+
 ## Executive summary
 
-**Named playbooks are live in shadow mode** on staging: five setups (PB-01, 02, 03, 04, 08) evaluate every play poll, surface in the Largo column (BIE), Playbook terminal tab, and kanban ARM hints — but **do not gate BUY**. The legacy confluence engine remains authoritative (today: SCANNING ~score 34, NO-EDGE BIE brief).
+**Named playbooks are live on staging** in shadow + **playbook lab** mode: all **14 setups (PB-01…PB-14)** evaluate every play poll. **Playbook-gated BUY is always on staging** — hardwired via `isStagingDeploy()` (staging URL at Docker build), not an env default. BUY requires a fired primary playbook + aligned direction (starter sizing). **Prod** uses legacy confluence BUY until `PLAYBOOK_LIVE_GATE=1` is set explicitly.
 
-**Today's session (Jul 10, 2026)** was a bullish tape with **mean-revert gamma** — the environment PB-04 was added to exploit. Morning saw **PB-01 VWAP Reclaim** fire; afternoon rotated to **PB-04 Gamma Pin Fade** at resistance (~7575) with spot ~7571. Engine correctly stayed flat (no A-grade confluence). Playbooks and BIE agreed: informational setups, no forced entry.
+**Jul 10, 2026 session:** bullish tape, **mean-revert gamma**. Morning **PB-01 VWAP Reclaim** armed; afternoon **PB-04 Gamma Pin Fade** at resistance (~7575). Engine stayed flat on prod-style gates; playbooks and BIE agreed — informational setups, no forced bad entry inside the pin.
 
-## What shipped today (this branch)
+## What shipped (staging branch)
 
 | Deliverable | Why |
 |-------------|-----|
-| `spx_playbook_shadow_observations` table | Phase 1 evidence — durable log of primary/fired transitions |
-| `maybeLogPlaybookShadowMatch()` | Throttled telemetry on every play read (state-transition cursor) |
-| BIE commentary `PLAYBOOK` line | Largo brief names active shadow setup (e.g. PB-04 Gamma Pin Fade) |
-| `npm run validate:staging-playbook` | Automated proof shadow panel on staging |
+| `playbook-registry.ts` PB-01…14 | Named setup catalog |
+| `playbook-shadow-matcher.ts` | All 14 matchers + primary priority |
+| `playbook-regime-router.ts` | Regime eligibility matrix |
+| `spx_playbook_shadow_observations` | Evidence — shadow transitions |
+| Playbook + Play terminal tabs | PB catalog vs trade runway (HOLD/TRIM/SELL) |
+| Live open chips `7400C @ 5.2` | Polygon chain quotes on kanban |
+| `npm run validate:staging-playbook` | Automated shadow panel proof |
+| `npm run validate:staging-desk-live` | 14 verdicts + desk/matrix coherence |
 
 ## Architecture (current)
 
 ```
 Desk + Technicals → matchPlaybooksShadow() → playbook_shadow (API + UI)
-                  ↘ evaluateSpxPlay()      → BUY/WATCH/SCAN (unchanged)
+                  ↘ evaluateSpxPlay()      → BUY/WATCH/SCAN (legacy + optional live gate)
 ```
 
-**Phase 2 (done):** ARM UI, kanban tags, Playbook terminal tab.  
-**Phase 1 gap (closed today):** telemetry was documented but never wired — now fixed.  
-**Phase 3 (not started):** `PLAYBOOK_LIVE_GATE=1` — BUY requires `primary_playbook_id` + engine agreement.
+**Phase 2:** ARM UI, kanban tags, Playbook terminal — done.  
+**Phase 3:** `PLAYBOOK_LIVE_GATE` / staging lab — shipped on staging; prod default off.  
+**Phase 5+:** State machine, per-PB checklist UI, watch keys — next.
 
-## Today's playbook timeline (observed live)
+## Documentation map
 
-| Window (ET) | Primary | Engine | Read |
-|-------------|---------|--------|------|
-| Open / reclaim | PB-01 VWAP Reclaim | SCANNING | Bullish regime; reclaim fired; score too low for BUY |
-| Midday pin | PB-04 Gamma Pin Fade | SCANNING | mean_revert γ; fade at wall; matches evidence-base thesis |
-| Power hour | PB-08 (window only) | — | Not yet 15:00 ET at last probe |
+| File | Contents |
+|------|----------|
+| `PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md` | **Start here** — migration story, model, ideas, code paths, trade logic |
+| `PLAYBOOK-FULL-SPEC-v2.md` | Per-PB rules, gates A1–A17, priority, sizing target |
+| `PLAYBOOK-EVIDENCE-BASE.md` | Prod outcome mining (n=19) — why PB-04/08 exist |
+| `PLAYBOOK-E2E-FOUNDATION.md` | Mermaid E2E + phased rollout |
 
 ## Gaps still open (priority)
 
-1. **Outcome correlation** — after today’s telemetry lands, join `spx_playbook_shadow_observations` ↔ `spx_play_outcomes` for win-rate by `playbook_id`.
-2. **Phase 3 live gate** — env `PLAYBOOK_LIVE_GATE=1` + `evaluatePlayGates` hook (only after n≥10 shadow days per playbook).
-3. **Remaining catalog** — PB-05–07, PB-09–12 not registered (design doc not in repo).
-4. **Staging RTH noise** — `validate:staging-rth` still flags play warm latency + data-correctness cron (infra, not playbook).
+1. **Outcome correlation** — join `spx_playbook_shadow_observations` ↔ `spx_play_outcomes` for win-rate by `playbook_id`.
+2. **Prod live gate** — only after ≥10 shadow days per PB with acceptable hit rate; keep prod off until then.
+3. **State machine** — durable IDLE→ARMED→TRIGGERED→OPEN (today: stateless recompute per tick).
+4. **Per-PB checklist UI** — replace global confluence soup when primary is ARMED.
 
 ## Recommendation (CEO/CTO)
 
-- **This week:** Let shadow telemetry accumulate; do **not** flip live gate until Jul 10+ week shows PB-01/04 hit rate vs flat engine.
-- **Next merge:** Phase 3 behind flag on staging only; A/B vs shadow-only for one RTH week.
-- **Member messaging:** Playbook tab already says “informational only” — keep until live gate is proven.
+- **This week:** Let shadow telemetry accumulate on staging RTH; compare shadow primary vs legacy BUY/WATCH.
+- **Before prod gate:** Evidence table per PB (MIN_EVIDENCE=10, WR≥45%, avg pnl>0).
+- **Member messaging:** Playbook tab shows `mode: shadow` on prod; staging lab is internal validation.
