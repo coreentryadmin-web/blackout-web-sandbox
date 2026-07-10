@@ -21,13 +21,14 @@ This document consolidates architecture, implementation status, per-playbook fid
 9. [Gates, flags, and live allowlist](#9-gates-flags-and-live-allowlist)
 10. [Telemetry & evidence promotion](#10-telemetry--evidence-promotion)
 11. [External assessment scores](#11-external-assessment-scores)
-12. [Data & research requirements](#12-data--research-requirements)
-13. [Instance schema — 20 required fields](#13-instance-schema--20-required-fields)
-14. [Expectancy metrics (not win rate alone)](#14-expectancy-metrics-not-win-rate-alone)
-15. [Hard constants — OOS validation bands](#15-hard-constants--oos-validation-bands)
-16. [Code map](#16-code-map)
-17. [Validation commands](#17-validation-commands)
-18. [Related docs](#18-related-docs)
+12. [ChatGPT Findings Addendum](#12-chatgpt-findings-addendum)
+13. [Data & research requirements](#13-data--research-requirements)
+14. [Instance schema — 20 required fields](#14-instance-schema--20-required-fields)
+15. [Expectancy metrics (not win rate alone)](#15-expectancy-metrics-not-win-rate-alone)
+16. [Hard constants — OOS validation bands](#16-hard-constants--oos-validation-bands)
+17. [Code map](#17-code-map)
+18. [Validation commands](#18-validation-commands)
+19. [Related docs](#19-related-docs)
 
 ---
 
@@ -338,9 +339,78 @@ Independent review (2026-07-10) — aligned with repo policy:
 | **Production readiness** | 3/10 | Appropriate for shadow/staging; not trusted autonomous 0DTE generation |
 | **Potential** | 8/10 | Could become serious if next work is prospective evidence + execution realism + risk controls |
 
+### ChatGPT addendum scorecard (post #67)
+
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| **Engineering** | 8.5/10 | Signal engine → structural framework; telemetry + shadow path strong |
+| **Research framework** | 9/10 | Instance events, OOS firewall, evidence report, blocked-setup logging |
+| **Strategy maturity** | 5/10 | Rules exist; static thresholds, MVP matchers, edge unproven |
+| **Production readiness** | 4/10 | Shadow/staging appropriate; not autonomous prod |
+
+> Treat as a **research platform** until robust prospective evidence demonstrates durable expectancy.
+
 ---
 
-## 12. Data & research requirements
+## 12. ChatGPT Findings Addendum
+
+**Source:** ChatGPT review of `PLAYBOOK-ARCHITECTURE-STATUS.md` (2026-07-10).  
+**Verdict:** Architecture improved significantly — engineering direction is strong; **trading edge is not statistically proven**.
+
+### Major improvements (agreed + shipped)
+
+| Finding | Repo status |
+|---------|-------------|
+| Four playbook families reduce complexity | ✅ `setup_family` on registry + `family_audit` |
+| PB-09 (HELIX) demoted — confirmation/modifier, not primary | ✅ `playbook-primary-rank.ts` |
+| Unknown regime fail-closed on live BUY | ✅ Gate A17 |
+| Immutable telemetry + shadow deployment | ✅ `spx_playbook_instance_events` + append-only snapshots |
+| Staging limited to PB-01–PB-04 | ✅ `PLAYBOOK_LIVE_ALLOWLIST` |
+
+### Remaining concerns (honest)
+
+| Priority | Item | Status |
+|----------|------|--------|
+| **P0** | Full persistent state machine (not tick-recomputed) | 🟡 Stub + events; armed duration / ordering TBD |
+| **P0** | Option-level execution modelling | 🟡 `execution_sim` stub at open; full spread/slippage model TBD |
+| **P1** | Playbook-specific exits | ❌ Legacy engine owns exits |
+| **P1** | Volatility-aware thresholds (not static pts) | ❌ Bands documented; normalization TBD |
+| **P1** | Session-level risk governor expansion | 🟡 `playSessionMaxEntries` / `playSessionMaxLosses` partial |
+
+### Research methodology (agreed policy)
+
+1. Gather **larger prospective samples** (OOS from 2026-07-10+) — infrastructure ready, data accumulating  
+2. **Separate hypothesis generation from validation** — n=19 = training only; `playbook:evidence-report` enforces OOS  
+3. **Validate parameters out-of-sample** — `playbook:param-sweep` stability bands; no n=19 tuning  
+4. Optimize for **expectancy**, not win rate — report script includes profit factor / expectancy  
+
+### Production readiness statement
+
+Appropriate for **shadow testing and staged validation** on `staging.blackouttrades.com`.  
+**Not** ready for fully autonomous production trading until execution modelling, durable state semantics, and broader prospective evidence are complete.
+
+**Staging deploy note:** ECR push does not roll ECS automatically — after merges, run:
+
+```bash
+aws ecs update-service --cluster blackout-staging-cluster \
+  --service blackout-staging-web --force-new-deployment
+```
+
+### Recommended roadmap (ChatGPT order)
+
+| Step | Item | Status |
+|------|------|--------|
+| 1 | Persistent state machine | 🟡 In progress |
+| 2 | Option execution simulator | 🟡 Stub shipped |
+| 3 | Playbook-specific exits | ⏳ Planned |
+| 4 | Session risk governor | 🟡 Partial |
+| 5 | Prospective evidence collection | ✅ Infra live; need RTH sessions |
+| 6 | Threshold normalization (VIX/OR-aware) | ⏳ Planned |
+| 7 | Expand playbooks beyond PB-01–04 | ❌ Blocked until evidence tiers |
+
+---
+
+## 13. Data & research requirements
 
 ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted.
 
@@ -384,7 +454,7 @@ ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted
 
 ---
 
-## 13. Instance schema — 20 required fields
+## 14. Instance schema
 
 Target row per playbook instance (research contract):
 
@@ -415,7 +485,7 @@ Target row per playbook instance (research contract):
 
 ---
 
-## 14. Expectancy metrics (not win rate alone)
+## 15. Expectancy metrics
 
 Per playbook (and per family), compute from **prospective OOS sample only**:
 
@@ -440,7 +510,7 @@ npm run playbook:param-sweep
 
 ---
 
-## 15. Hard constants — OOS validation bands
+## 16. Hard constants
 
 Several thresholds are **documented but lightly motivated**. Do **not** optimize each independently on n=19. Use **stability bands** — a real edge should survive 8↔12 pts proximity, not disappear at small moves.
 
@@ -460,7 +530,7 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 
 ---
 
-## 16. Code map
+## 17. Code map
 
 | Module | Role |
 |--------|------|
@@ -485,7 +555,7 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 
 ---
 
-## 17. Validation commands
+## 18. Validation commands
 
 ```bash
 # Local
@@ -508,7 +578,7 @@ Expected staging playbook validate:
 
 ---
 
-## 18. Related docs
+## 19. Related docs
 
 | Doc | Use when |
 |-----|----------|
@@ -522,4 +592,4 @@ Expected staging playbook validate:
 
 ---
 
-*Last updated:* 2026-07-10 (research infra PR)
+*Last updated:* 2026-07-10 (ChatGPT Findings Addendum + ECS deploy note)
