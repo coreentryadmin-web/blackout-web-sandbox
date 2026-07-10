@@ -28,6 +28,7 @@ export type OpenPlayRow = {
   option_type?: string | null;
   option_label?: string | null;
   option_premium?: string | null;
+  playbook_id?: string | null;
 };
 
 export type PlaySessionMeta = {
@@ -358,6 +359,7 @@ export async function openPlay(
         mtf: outcome.mtf,
         claude: outcome.claude,
         option_ticket: outcome.option_ticket,
+        playbook_id: outcome.playbook_id ?? null,
       }
     : undefined;
   const { id, created } = await insertOpenSpxPlay(full, outcomePayload);

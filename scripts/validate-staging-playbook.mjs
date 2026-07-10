@@ -22,7 +22,7 @@ async function main() {
 
   const failures = [];
   if (res.status !== 200) failures.push(`play HTTP ${res.status}`);
-  if (body?.playbook_shadow?.mode !== "shadow") failures.push("playbook_shadow.mode !== shadow");
+  if (body?.playbook_shadow?.mode !== "live") failures.push("playbook_shadow.mode !== live on staging");
   if (!Array.isArray(body?.playbook_shadow?.verdicts) || body.playbook_shadow.verdicts.length < 14) {
     failures.push(`expected 14 verdicts, got ${body?.playbook_shadow?.verdicts?.length ?? 0}`);
   }

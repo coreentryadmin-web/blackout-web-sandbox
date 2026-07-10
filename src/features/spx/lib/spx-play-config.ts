@@ -1,4 +1,5 @@
 /** Play engine thresholds — quality over quantity. */
+import { isStagingDeploy } from "@/lib/clerk-env";
 
 function num(env: string | undefined, fallback: number): number {
   const n = Number(env?.trim());
@@ -388,6 +389,24 @@ export function playMinConfirmationsRequired(): number {
 
 export function playTechnicalsCacheSec(): number {
   return num(process.env.SPX_PLAY_TECHNICALS_CACHE_SEC, 30);
+}
+
+/**
+ * Staging-only playbook lab — relaxed starter entries when a primary playbook fires
+ * and direction aligns. Default on for `isStagingDeploy()`; set `STAGING_PLAYBOOK_LAB=0` to disable.
+ */
+export function playbookStagingLabEnabled(): boolean {
+  if (!isStagingDeploy()) return false;
+  return flag(process.env.STAGING_PLAYBOOK_LAB, true);
+}
+
+/**
+ * Phase 3 playbook live gate — when true, BUY requires `primary_playbook_id` from the matcher.
+ * Auto-enabled on staging when playbook lab is on (`PLAYBOOK_LIVE_GATE=1` also forces on anywhere).
+ */
+export function playbookLiveGateEnabled(): boolean {
+  if (flag(process.env.PLAYBOOK_LIVE_GATE, false)) return true;
+  return playbookStagingLabEnabled();
 }
 
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */

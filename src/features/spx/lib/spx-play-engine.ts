@@ -16,6 +16,8 @@ import {
   type SpxSignalFactor,
 } from "@/features/spx/lib/spx-signals";
 import { evaluatePlayGates, GATE_BLOCK, type PlayGateResult } from "@/features/spx/lib/spx-play-gates";
+import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { forceExitCutoffLabel, isPastForceExitCutoff, isBeforeCashOpen, isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-play-lotto";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
@@ -39,6 +41,7 @@ import {
   playTrailingStopBreakevenMfePts,
   playTrailingStopTrailMfePts,
   playTrailingStopTrailWindowPts,
+  playbookStagingLabEnabled,
 } from "@/features/spx/lib/spx-play-config";
 import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
 import { enrichPlayPayload } from "@/features/spx/lib/spx-play-context";
@@ -583,9 +586,26 @@ async function evaluateFlatPlay(
       ? evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score)
       : null;
 
+  const playbookMatch = matchPlaybooksShadow(desk, technicals);
+  const playbookPrimaryId: PlaybookId | null = playbookMatch.primary_playbook_id;
+  const primaryVerdict = playbookPrimaryId
+    ? playbookMatch.verdicts.find((v) => v.playbook_id === playbookPrimaryId)
+    : null;
+  const playbookPrimaryDirection = primaryVerdict?.direction ?? null;
+  const playbookLabActive =
+    playbookStagingLabEnabled() &&
+    playbookPrimaryId != null &&
+    playbookPrimaryDirection != null &&
+    direction === playbookPrimaryDirection;
+  const gatePlaybookOpts = {
+    playbook_primary_id: playbookPrimaryId,
+    playbook_primary_direction: playbookPrimaryDirection,
+  };
+
   const gatesWatch = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "watch",
+    ...gatePlaybookOpts,
   });
   const gatesView = intelGates(desk, confluence, gatesWatch);
   const abs = Math.abs(confluence.score);
@@ -634,7 +654,8 @@ async function evaluateFlatPlay(
   const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "buy",
-    cold_buy_path: !promoteEligible,
+    cold_buy_path: !promoteEligible && !playbookLabActive,
+    ...gatePlaybookOpts,
   });
 
   const watchState = {
@@ -871,8 +892,8 @@ async function evaluateFlatPlay(
 
   const sessionDate = todayEt();
 
-  const entryPath = promoteEligible ? "watch_promote" : "cold_buy";
-  const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : "";
+  const entryPath = promoteEligible ? "watch_promote" : playbookLabActive ? "playbook_lab" : "cold_buy";
+  const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : playbookLabActive ? `${playbookPrimaryId} · ` : "";
   const contractHeadline = optionTicket.contract_label
     ? `${promotePrefix}Buy ${optionTicket.contract_label} @ ${optionTicket.premium_range}`
     : `${promotePrefix}${claude.headline}`;
@@ -939,6 +960,7 @@ async function evaluateFlatPlay(
       option_type: optionTicket.option_type,
       option_label: optionTicket.contract_label,
       option_premium: optionTicket.premium_range,
+      playbook_id: playbookPrimaryId,
     },
     {
       session_date: sessionDate,
@@ -957,6 +979,7 @@ async function evaluateFlatPlay(
       claude,
       option_ticket: optionTicket,
       opened_at: openedAt,
+      playbook_id: playbookPrimaryId,
     }
   );
 

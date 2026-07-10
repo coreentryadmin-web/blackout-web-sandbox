@@ -569,6 +569,7 @@ export async function generateSpxCommentary(
     /** Pre-fetched matrix rows — skips duplicate provider calls on commentary cold path. */
     intelPrefetch?: SpxBriefIntelPrefetch;
     playbookShadow?: {
+      mode?: "shadow" | "live";
       primary_playbook_id: string | null;
       primary_name: string | null;
       fired_count: number;

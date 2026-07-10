@@ -360,6 +360,18 @@ async function runMigrations(): Promise<void> {
     ADD COLUMN IF NOT EXISTS entry_score INT;
   `);
   await p.query(`
+    ALTER TABLE spx_open_play
+    ADD COLUMN IF NOT EXISTS playbook_id TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS playbook_id TEXT;
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_playbook
+    ON spx_play_outcomes(playbook_id, outcome);
+  `);
+  await p.query(`
     CREATE TABLE IF NOT EXISTS spx_play_outcomes (
       id BIGSERIAL PRIMARY KEY,
       open_play_id BIGINT NOT NULL,
@@ -2541,13 +2553,14 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
   option_type?: string | null;
   option_label?: string | null;
   option_premium?: string | null;
+  playbook_id?: string | null;
 } | null> {
   await ensureSchema();
   const res = await (await getPool()).query(
     `
     SELECT id, session_date, direction, entry_price, entry_score, stop, target, grade, headline,
            trim_done, mfe_pts, mae_pts, opened_at, status,
-           option_strike, option_type, option_label, option_premium
+           option_strike, option_type, option_label, option_premium, playbook_id
     FROM spx_open_play
     WHERE session_date = $1::date AND status = 'open'
     ORDER BY opened_at DESC
@@ -2576,6 +2589,7 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
     option_type: r.option_type != null ? String(r.option_type) : null,
     option_label: r.option_label != null ? String(r.option_label) : null,
     option_premium: r.option_premium != null ? String(r.option_premium) : null,
+    playbook_id: r.playbook_id != null ? String(r.playbook_id) : null,
   };
 }
 
@@ -2615,6 +2629,7 @@ export async function insertOpenSpxPlay(
     option_type?: string | null;
     option_label?: string | null;
     option_premium?: string | null;
+    playbook_id?: string | null;
   },
   outcome?: {
     entry_path: string;
@@ -2625,6 +2640,7 @@ export async function insertOpenSpxPlay(
     mtf: unknown;
     claude: unknown;
     option_ticket: unknown;
+    playbook_id?: string | null;
   }
 ): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
@@ -2653,9 +2669,9 @@ export async function insertOpenSpxPlay(
         `
     INSERT INTO spx_open_play (
       session_date, direction, entry_price, entry_score, stop, target, grade, headline, opened_at, status,
-      option_strike, option_type, option_label, option_premium
+      option_strike, option_type, option_label, option_premium, playbook_id
     )
-    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11,$12,$13)
+    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11,$12,$13,$14)
     RETURNING id
     `,
         [
@@ -2672,6 +2688,7 @@ export async function insertOpenSpxPlay(
           row.option_type ?? null,
           row.option_label ?? null,
           row.option_premium ?? null,
+          row.playbook_id ?? null,
         ]
       );
       const openId = Number(res.rows[0]?.id ?? 0);
@@ -2681,9 +2698,9 @@ export async function insertOpenSpxPlay(
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome
+      option_ticket, opened_at, outcome, playbook_id
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open')
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -2705,6 +2722,7 @@ export async function insertOpenSpxPlay(
             JSON.stringify(outcome.claude ?? null),
             JSON.stringify(outcome.option_ticket ?? null),
             row.opened_at,
+            outcome.playbook_id ?? row.playbook_id ?? null,
           ]
         );
         if (!outcomeRes.rows[0]?.id) {
