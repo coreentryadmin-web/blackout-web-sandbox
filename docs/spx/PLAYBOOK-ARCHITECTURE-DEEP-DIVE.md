@@ -10,6 +10,7 @@
 | `PLAYBOOK-FULL-SPEC-v2.md` | Machine-readable rules for PB-01…14, gates A1–A17, regime matrix |
 | `PLAYBOOK-EVIDENCE-BASE.md` | Prod outcome mining — why we changed the model |
 | `PLAYBOOK-E2E-FOUNDATION.md` | Mermaid flows, phased rollout, build-vs-gap |
+| `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md` | ChatGPT review — official response, promotion tiers, build order |
 | `PLAYBOOK-CTO-BRIEF-2026-07-10.md` | Executive RTH snapshot (keep in sync after big merges) |
 
 ---
@@ -555,17 +556,23 @@ Member messaging in shadow mode: playbook panel `mode: "shadow"` — information
 | 5 | Durable state machine | 🔲 next |
 | 6 | PB checklist replaces global soup in UI | 🔲 |
 | 7 | Watch key = playbook instance | 🔲 |
-| 8 | Per-PB evidence promotion (≥10 outcomes, WR≥45%, avg pnl>0) | 🔲 |
+| 8 | Per-PB evidence promotion (progressive tiers) | 🔲 |
+
+See `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md` for research → staging → limited-live criteria (replaces n=10 / WR≥45%).
 
 ### 10.2 Promotion rule (per playbook)
 
-A playbook may default-on in live gate only when:
+Progressive tiers — **not** n=10 / WR≥45%:
 
-- ≥10 closed outcomes with that `playbook_id`
-- Win rate ≥ 45%
-- Average pnl > 0
+| Tier | Minimum bar |
+|------|-------------|
+| Research-qualified | ≥30 triggers, ≥20 simulated trades, multi-regime days |
+| Staging-qualified | ≥50–75 prospective trades, cost-adjusted positive expectancy |
+| Limited-live (prod) | Min-size + session risk governor + option quote reconciliation |
 
-Until then: shadow observe + staging lab only.
+Initial live allowlist when gating expands: **PB-01, 02, 03, 04, 14** (+ PB-08 when qualified). PB-05–07, 09–13 remain shadow-only.
+
+Full response to external review: `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md`.
 
 ### 10.3 Weekly ops
 

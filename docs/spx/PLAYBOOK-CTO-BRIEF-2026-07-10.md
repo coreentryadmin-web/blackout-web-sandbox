@@ -44,12 +44,12 @@ Desk + Technicals → matchPlaybooksShadow() → playbook_shadow (API + UI)
 ## Gaps still open (priority)
 
 1. **Outcome correlation** — join `spx_playbook_shadow_observations` ↔ `spx_play_outcomes` for win-rate by `playbook_id`.
-2. **Prod live gate** — only after ≥10 shadow days per PB with acceptable hit rate; keep prod off until then.
+2. **Prod live gate** — progressive tiers per `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md`; not n=10.
 3. **State machine** — durable IDLE→ARMED→TRIGGERED→OPEN (today: stateless recompute per tick).
 4. **Per-PB checklist UI** — replace global confluence soup when primary is ARMED.
 
 ## Recommendation (CEO/CTO)
 
 - **This week:** Let shadow telemetry accumulate on staging RTH; compare shadow primary vs legacy BUY/WATCH.
-- **Before prod gate:** Evidence table per PB (MIN_EVIDENCE=10, WR≥45%, avg pnl>0).
+- **Before prod gate:** Research → staging → limited-live tiers; initial allowlist PB-01/02/03/04/14.
 - **Member messaging:** Playbook tab shows `mode: shadow` on prod; staging lab is internal validation.
