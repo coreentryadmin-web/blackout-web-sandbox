@@ -7,9 +7,11 @@
  *   npm run validate:staging-desk-live
  *   STAGING_BASE_URL=https://staging.blackouttrades.com node scripts/validate-staging-desk-live.mjs
  */
+import { execSync } from "node:child_process";
 import { mintAppSession } from "./audit/lib/app-session.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(/\/$/, "");
+const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
 const POLL_GAP_MS = Number(process.env.DESK_LIVE_POLL_GAP_MS ?? 5_000);
 const MAX_AS_OF_AGE_SEC = Number(process.env.DESK_LIVE_MAX_AS_OF_SEC ?? 120);
 
@@ -65,13 +67,38 @@ function asOfAgeSec(asOf) {
   return Math.round((Date.now() - t) / 1000);
 }
 
-async function fetchJson(path, cookie) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { Accept: "application/json", Cookie: cookie },
-    cache: "no-store",
-  });
+async function fetchJson(path, auth) {
+  const headers = { Accept: "application/json", "Cache-Control": "no-cache" };
+  if (auth.bearer) headers.Authorization = `Bearer ${auth.bearer}`;
+  if (auth.cookie) headers.Cookie = auth.cookie;
+  const res = await fetch(`${BASE}${path}`, { headers, cache: "no-store" });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body };
+}
+
+function loadStagingSecret() {
+  const raw = execSync(
+    `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
+    { encoding: "utf8" }
+  );
+  return JSON.parse(raw);
+}
+
+async function resolveAuth() {
+  const secret = loadStagingSecret();
+  const cron = secret.CRON_SECRET?.trim();
+  if (cron) {
+    return { mode: "cron", bearer: cron, cookie: null, cleanup: null };
+  }
+
+  const session = await mintAppSession({ appUrl: BASE });
+  if (session.skip) return { mode: "skip", reason: session.reason };
+
+  const cookie =
+    session.cookieHeader ??
+    session.cookies?.map((c) => `${c.name}=${c.value}`).join("; ") ??
+    "";
+  return { mode: session.provider ?? "user", bearer: null, cookie, cleanup: session.cleanup ?? null };
 }
 
 function checkPlayPayload(play, desk, tag) {
@@ -165,19 +192,19 @@ async function main() {
   console.log(`Target: ${BASE}`);
   console.log(`Dual-poll gap: ${POLL_GAP_MS}ms\n`);
 
-  const session = await mintAppSession({ appUrl: BASE });
-  if (session.skip) {
-    console.log(`SKIP: ${session.reason}`);
+  const auth = await resolveAuth();
+  if (auth.mode === "skip") {
+    console.log(`SKIP: ${auth.reason}`);
     process.exit(0);
   }
-
-  const cookie = session.cookies?.map((c) => `${c.name}=${c.value}`).join("; ") ?? "";
+  console.log(`Auth: ${auth.mode}\n`);
 
   const snap1 = {
-    play: await fetchJson("/api/market/spx/play", cookie),
-    desk: await fetchJson("/api/market/spx/desk", cookie),
-    lotto: await fetchJson("/api/market/lotto/today", cookie),
-    power: await fetchJson("/api/market/spx/power-hour", cookie),
+    play: await fetchJson("/api/market/spx/play", auth),
+    desk: await fetchJson("/api/market/spx/desk", auth),
+    lotto: await fetchJson("/api/market/lotto/today", auth),
+    power: await fetchJson("/api/market/spx/power-hour", auth),
+    matrix: await fetchJson("/api/market/gex-heatmap?ticker=SPX", auth),
   };
 
   if (snap1.play.status !== 200) fail(`poll-1: /api/market/spx/play HTTP ${snap1.play.status}`);
@@ -190,10 +217,11 @@ async function main() {
   await sleep(POLL_GAP_MS);
 
   const snap2 = {
-    play: await fetchJson("/api/market/spx/play", cookie),
-    desk: await fetchJson("/api/market/spx/desk", cookie),
-    lotto: await fetchJson("/api/market/lotto/today", cookie),
-    power: await fetchJson("/api/market/spx/power-hour", cookie),
+    play: await fetchJson("/api/market/spx/play", auth),
+    desk: await fetchJson("/api/market/spx/desk", auth),
+    lotto: await fetchJson("/api/market/lotto/today", auth),
+    power: await fetchJson("/api/market/spx/power-hour", auth),
+    matrix: await fetchJson("/api/market/gex-heatmap?ticker=SPX", auth),
   };
 
   if (snap2.play.status !== 200) fail(`poll-2: /api/market/spx/play HTTP ${snap2.play.status}`);
@@ -208,7 +236,17 @@ async function main() {
     p1.action !== p2.action ||
     p1.score !== p2.score ||
     p1.open_play?.option_premium !== p2.open_play?.option_premium ||
-    snap1.desk.body?.price !== snap2.desk.body?.price;
+    snap1.desk.body?.price !== snap2.desk.body?.price ||
+    snap1.matrix.body?.spot !== snap2.matrix.body?.spot;
+
+  if (snap1.matrix.status === 200 && snap1.matrix.body?.spot > 0 && snap1.desk.body?.price > 0) {
+    const delta = Math.abs(snap1.matrix.body.spot - snap1.desk.body.price);
+    if (delta > 2) {
+      warn(`poll-1: matrix spot ${snap1.matrix.body.spot} vs desk ${snap1.desk.body.price} (Δ${delta.toFixed(1)})`);
+    } else {
+      pass(`poll-1: matrix spot matches desk (Δ${delta.toFixed(2)} pts)`);
+    }
+  }
 
   if (changed) {
     pass(`dual-poll: payload moved (as_of ${p1.as_of} → ${p2.as_of}, action ${p1.action} → ${p2.action})`);
@@ -216,7 +254,7 @@ async function main() {
     warn("dual-poll: no visible delta — cache window or off-hours flat market");
   }
 
-  if (session.cleanup) await session.cleanup();
+  if (auth.cleanup) await auth.cleanup();
 
   console.log(`\nSummary: ${failures.length} fail, ${warnings.length} warn\n`);
   if (failures.length) {

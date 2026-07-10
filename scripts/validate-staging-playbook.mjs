@@ -2,22 +2,46 @@
 /**
  * Staging playbook shadow validation — proves named playbooks surface on /api/market/spx/play.
  */
+import { execSync } from "node:child_process";
 import { mintAppSession } from "./audit/lib/app-session.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(/\/$/, "");
+const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
+
+function loadStagingSecret() {
+  const raw = execSync(
+    `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
+    { encoding: "utf8" }
+  );
+  return JSON.parse(raw);
+}
+
+async function resolveAuth() {
+  const secret = loadStagingSecret();
+  const cron = secret.CRON_SECRET?.trim();
+  if (cron) return { bearer: cron, cookie: null, cleanup: null };
+
+  const session = await mintAppSession({ appUrl: BASE });
+  if (session.skip) return { skip: true, reason: session.reason };
+  const cookie =
+    session.cookieHeader ??
+    session.cookies?.map((c) => `${c.name}=${c.value}`).join("; ") ??
+    "";
+  return { bearer: null, cookie, cleanup: session.cleanup ?? null };
+}
 
 async function main() {
-  const session = await mintAppSession({ appUrl: BASE });
-  if (session.skip) {
-    console.error("SKIP:", session.reason);
+  const auth = await resolveAuth();
+  if (auth.skip) {
+    console.error("SKIP:", auth.reason);
     process.exit(0);
   }
 
-  const cookie = session.cookies?.map((c) => `${c.name}=${c.value}`).join("; ") ?? "";
-  const res = await fetch(`${BASE}/api/market/spx/play`, {
-    headers: { Accept: "application/json", Cookie: cookie },
-    cache: "no-store",
-  });
+  const headers = { Accept: "application/json" };
+  if (auth.bearer) headers.Authorization = `Bearer ${auth.bearer}`;
+  if (auth.cookie) headers.Cookie = auth.cookie;
+
+  const res = await fetch(`${BASE}/api/market/spx/play`, { headers, cache: "no-store" });
   const body = await res.json().catch(() => ({}));
 
   const failures = [];
@@ -34,7 +58,7 @@ async function main() {
   }
   console.log(`fired_count=${fired.length}`);
 
-  if (session.cleanup) await session.cleanup();
+  if (auth.cleanup) await auth.cleanup();
 
   if (failures.length) {
     console.error("FAIL:", failures.join("; "));
