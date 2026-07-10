@@ -254,13 +254,13 @@ async function tryBieRoute(
     const ledger = await readZeroDteLedger().catch(() => []);
     const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
     if (route) {
-      const composed = await composeBieAnswer(route);
+      const composed = await composeBieAnswer(route, { question });
       if (composed) return { route, answer: composed.answer, context: composed.context };
     }
 
     // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
     if (!route && isSpxDeskFallbackQuestion(question)) {
-      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" });
+      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" }, { question });
       if (composed) {
         return {
           route: { intent: "spx_desk_read", ticker: "SPX" },
@@ -273,7 +273,7 @@ async function tryBieRoute(
     // Staging BIE-only: never return null — always compose a deterministic answer.
     if (!route && isStagingBieMode()) {
       const fallback = classifyBieStagingFallback(question);
-      const composed = await composeBieAnswer(fallback);
+      const composed = await composeBieAnswer(fallback, { question });
       if (composed) {
         return { route: fallback, answer: composed.answer, context: composed.context };
       }

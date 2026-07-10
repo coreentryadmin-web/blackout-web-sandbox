@@ -10,6 +10,12 @@ import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
 import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
 import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
 import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
+import { formatEcosystemNarrative } from "@/lib/bie/ecosystem-narrative";
+import { synthesizeTickerVerdict, formatTickerVerdictMarkdown } from "@/lib/bie/ticker-verdict";
+import { composeTickerCompare } from "@/lib/bie/ticker-compare";
+import { composeSpxInvalidationLines } from "@/lib/bie/spx-invalidation";
+import { composeFlowTapeAnswer, composeQuietFlowBrief } from "@/lib/bie/flow-tape-brief";
+import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
 import {
   BIE_LARGO_ANSWER_TTL_MS,
   getCachedBiePlatformContext,
@@ -17,6 +23,9 @@ import {
 } from "@/lib/bie/platform-cache";
 import { withServerCache } from "@/lib/server-cache";
 import type { BieRoute } from "./router";
+
+/** Optional member question — premise correction + advice routing context. */
+export type ComposeBieOpts = { question?: string };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
 export type BieComposed = { answer: string; context: unknown };
@@ -103,7 +112,7 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
   return [`**${title}**`, ...rows].join("\n");
 }
 
-async function composeSpxDeskRead(): Promise<BieComposed | null> {
+async function composeSpxDeskRead(question?: string): Promise<BieComposed | null> {
   const platform = await getCachedBiePlatformContext({ scope: "desk" });
   const desk = platform.desk;
   if (!desk) return null;
@@ -118,7 +127,7 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
     powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
     outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
     intel: platform.intel ?? undefined,
-  });
+  }, question);
   const knowledge = formatKnowledgeFootnotes(platform.knowledge);
   const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
     .filter(Boolean)
@@ -129,8 +138,25 @@ async function composeSpxDeskRead(): Promise<BieComposed | null> {
   };
 }
 
+async function composeSpxInvalidation(): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "desk" });
+  const desk = platform.desk;
+  if (!desk) return null;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) return null;
+  const cross = {
+    openPlay: platform.cross.openPlay,
+    intel: platform.intel ?? undefined,
+  };
+  const lines = composeSpxInvalidationLines(desk, confluence, cross);
+  return { answer: lines.join("\n"), context: { desk, confluence, cross } };
+}
+
 async function composeSpxStructure(): Promise<BieComposed | null> {
-  const raw = (await runLargoTool("get_spx_structure", {})) as Record<string, unknown> | null;
+  const [platform, raw] = await Promise.all([
+    getCachedBiePlatformContext({ scope: "desk" }),
+    runLargoTool("get_spx_structure", {}) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const section = scalarSection("SPX structure (live desk)", raw, [
     "price",
@@ -149,10 +175,26 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
     "pdl",
   ]);
   if (!section) return null;
-  return {
-    answer: `${section}\n\n_Direct read of the SPX desk — the same numbers SPX Slayer renders. Ask a follow-up if you want the reasoning behind any level._`,
-    context: raw,
-  };
+
+  const parts = [section];
+  const desk = platform.desk;
+  if (desk) {
+    const confluence = computeSpxConfluence(desk);
+    if (confluence) {
+      const synthesis = synthesizeSpxDeskIntel(
+        desk,
+        confluence,
+        spxSessionPhase(desk.as_of),
+        { intel: platform.intel ?? undefined, openPlay: platform.cross.openPlay ?? undefined }
+      );
+      parts.push("", synthesis.mechanic ?? "");
+      if (synthesis.watch.length) {
+        parts.push("", "**Watch**", ...synthesis.watch.slice(0, 3).map((w) => `- ${w}`));
+      }
+    }
+  }
+  parts.push("", "_Mini structure read — ask **What's the SPX setup right now?** for full THESIS/ALIGNMENT._");
+  return { answer: parts.join("\n"), context: { raw, desk: platform.desk } };
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
@@ -232,57 +274,43 @@ async function composeMarketContext(): Promise<BieComposed | null> {
 async function composeTickerEcosystem(ticker: string): Promise<BieComposed | null> {
   const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
   const ctx = await fetchEcosystemContext(ticker);
-  const lines: string[] = [`**${ctx.ticker} — cross-instrument snapshot**`, ""];
-  let any = false;
+  const narrative = formatEcosystemNarrative(ctx);
+  return {
+    answer: `${narrative}\n\n_Ask a follow-up for SPX desk context or a structured verdict on ${ticker}._`,
+    context: ctx,
+  };
+}
 
-  if (ctx.zerodte_today) {
-    any = true;
-    const z = ctx.zerodte_today;
-    lines.push(
-      `- **0DTE Command today:** ${z.direction}, score ${fmt(z.score)}${z.conviction ? `, ${z.conviction} conviction` : ""}${z.status ? ` (${z.status})` : ""}`
-    );
-  }
-  if (ctx.nighthawk_recent) {
-    any = true;
-    const n = ctx.nighthawk_recent;
-    lines.push(
-      `- **Night Hawk (${n.edition_for}):** ${n.direction}, ${n.conviction} conviction${n.score != null ? `, score ${fmt(n.score)}` : ""} — outcome: ${n.outcome}`
-    );
-  }
-  if (ctx.recent_flow) {
-    any = true;
-    const f = ctx.recent_flow;
-    lines.push(
-      `- **HELIX flow (last ${f.window_hours}h):** ${f.print_count} prints — $${fmt(f.call_premium, 0)} call premium, $${fmt(f.put_premium, 0)} put premium${f.unknown_premium > 0 ? `, $${fmt(f.unknown_premium, 0)} unclassified` : ""}`
-    );
-  }
-  if (ctx.recent_anomalies.length > 0) {
-    any = true;
-    lines.push(`- **Flow anomalies (24h):** ${ctx.recent_anomalies.map((a) => `${a.anomaly_type} (${a.severity})`).join(", ")}`);
-  }
-  if (!any) {
-    lines.push(
-      ctx.flow_feed_fresh
-        ? "Nothing notable on the desk for this name right now — no 0DTE flag, no recent Night Hawk take, no unusual flow."
-        : "_The live flow pipeline isn't reporting fresh data right now, so this may be incomplete — not necessarily quiet, just unconfirmed._"
-    );
-  }
-  lines.push("", "_Cross-instrument read — the same signal Largo's tools compose from. Ask a follow-up for the reasoning behind any of this._");
-  return { answer: lines.join("\n"), context: ctx };
+async function composeTickerAdvice(ticker: string, question: string): Promise<BieComposed | null> {
+  const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
+  const ctx = await fetchEcosystemContext(ticker);
+  const verdict = await synthesizeTickerVerdict(ctx, question);
+  return {
+    answer: formatTickerVerdictMarkdown(verdict),
+    context: { ecosystem: ctx, verdict },
+  };
+}
+
+async function composeFlowTape(ticker: string | null): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "market", flowLimit: 40 });
+  return {
+    answer: composeFlowTapeAnswer(platform, ticker),
+    context: platform,
+  };
 }
 
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
-export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
-  const cacheKey = largoAnswerCacheKey(route.intent, route.ticker);
+export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
+  const cacheKey = largoAnswerCacheKey(route.intent, route.ticker, route.ticker_b, opts?.question);
   return withServerCache<BieComposed | null>(
     cacheKey,
     BIE_LARGO_ANSWER_TTL_MS,
-    () => composeBieAnswerUncached(route),
+    () => composeBieAnswerUncached(route, opts),
     { staleWhileRevalidate: true }
   );
 }
 
-async function composeBieAnswerUncached(route: BieRoute): Promise<BieComposed | null> {
+async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
   try {
     switch (route.intent) {
       case "zerodte_plays":
@@ -292,11 +320,25 @@ async function composeBieAnswerUncached(route: BieRoute): Promise<BieComposed | 
       case "spx_structure":
         return await composeSpxStructure();
       case "spx_desk_read":
-        return await composeSpxDeskRead();
+        return await composeSpxDeskRead(opts?.question);
+      case "spx_invalidation":
+        return await composeSpxInvalidation();
       case "market_context":
         return await composeMarketContext();
+      case "flow_tape":
+        return await composeFlowTape(route.ticker);
       case "ticker_ecosystem":
         return route.ticker ? await composeTickerEcosystem(route.ticker) : null;
+      case "ticker_advice":
+        return route.ticker && opts?.question
+          ? await composeTickerAdvice(route.ticker, opts.question)
+          : route.ticker
+            ? await composeTickerAdvice(route.ticker, `structure on ${route.ticker}`)
+            : null;
+      case "ticker_compare":
+        return route.ticker && route.ticker_b
+          ? await composeTickerCompare(route.ticker, route.ticker_b)
+          : null;
       default:
         return null;
     }

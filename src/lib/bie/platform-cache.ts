@@ -49,6 +49,17 @@ export async function getCachedBiePlatformContext(
   );
 }
 
-export function largoAnswerCacheKey(intent: string, ticker: string | null): string {
-  return `bie:largo:${intent}:${ticker ?? "na"}`;
+export function largoAnswerCacheKey(
+  intent: string,
+  ticker: string | null,
+  tickerB?: string | null,
+  question?: string
+): string {
+  const q = question?.trim();
+  const qSlug =
+    q && (intent === "spx_desk_read" || intent === "spx_invalidation" || intent === "ticker_advice")
+      ? createHash("sha256").update(q.slice(0, 120)).digest("hex").slice(0, 8)
+      : "na";
+  const b = tickerB ? `:${tickerB}` : "";
+  return `bie:largo:${intent}:${ticker ?? "na"}${b}:${qSlug}`;
 }

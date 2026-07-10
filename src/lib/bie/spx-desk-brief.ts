@@ -22,6 +22,7 @@ import {
   volBriefLine,
   wallsBriefLine,
 } from "@/lib/bie/spx-desk-intel";
+import { detectPremiseCorrections } from "@/lib/bie/spx-premise";
 import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
 
 export type SpxDeskBriefResult = {
@@ -376,7 +377,8 @@ export function composeSpxDeskBrief(
   confluence: SpxConfluence,
   delta: string[],
   sessionPhase: string,
-  cross?: SpxDeskBriefCross
+  cross?: SpxDeskBriefCross,
+  question?: string
 ): SpxDeskBriefResult {
   const price = desk.price!;
   const grade = confluence.grade;
@@ -507,6 +509,7 @@ export function composeSpxDeskBrief(
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
 
   const bodyLines = [
+    ...detectPremiseCorrections(question ?? "", desk),
     synthesis.thesis,
     synthesis.mechanic,
     why,
