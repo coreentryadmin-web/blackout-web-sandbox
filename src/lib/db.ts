@@ -1046,7 +1046,9 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE spx_playbook_shadow_observations
       ADD COLUMN IF NOT EXISTS pipeline_audit JSONB,
       ADD COLUMN IF NOT EXISTS feature_snapshot JSONB,
-      ADD COLUMN IF NOT EXISTS instance_transitions JSONB NOT NULL DEFAULT '[]'::jsonb;
+      ADD COLUMN IF NOT EXISTS instance_transitions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS gate_blocks JSONB,
+      ADD COLUMN IF NOT EXISTS first_block_category TEXT;
 
     CREATE TABLE IF NOT EXISTS spx_playbook_instances (
       instance_id       TEXT PRIMARY KEY,
@@ -1062,6 +1064,40 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_spx_playbook_instances_session
       ON spx_playbook_instances (session_date, playbook_id);
+
+    ALTER TABLE spx_playbook_instances
+      ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS reason_blocked TEXT,
+      ADD COLUMN IF NOT EXISTS reason_invalidated TEXT,
+      ADD COLUMN IF NOT EXISTS executable BOOLEAN,
+      ADD COLUMN IF NOT EXISTS trigger_price NUMERIC,
+      ADD COLUMN IF NOT EXISTS counterfactual_mfe_pts NUMERIC DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS counterfactual_mae_pts NUMERIC DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB;
+
+    CREATE TABLE IF NOT EXISTS spx_playbook_instance_events (
+      id                   BIGSERIAL PRIMARY KEY,
+      observed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date         DATE NOT NULL,
+      instance_id          TEXT NOT NULL,
+      playbook_id          TEXT NOT NULL,
+      event_type           TEXT NOT NULL,
+      direction            TEXT,
+      price_at_event       NUMERIC,
+      reason               TEXT,
+      gate_blocks          JSONB,
+      feature_snapshot     JSONB NOT NULL,
+      engine_action        TEXT,
+      executable           BOOLEAN,
+      counterfactual_mfe_pts NUMERIC,
+      counterfactual_mae_pts NUMERIC
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instance_events_session
+      ON spx_playbook_instance_events (session_date, playbook_id, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instance_events_instance
+      ON spx_playbook_instance_events (instance_id, observed_at DESC);
 
     -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
     -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
@@ -2134,6 +2170,8 @@ export async function insertPlaybookShadowObservation(row: {
   pipeline_audit?: unknown;
   feature_snapshot?: unknown;
   instance_transitions?: unknown;
+  gate_blocks?: unknown;
+  first_block_category?: string | null;
 }): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(
@@ -2141,9 +2179,10 @@ export async function insertPlaybookShadowObservation(row: {
     INSERT INTO spx_playbook_shadow_observations (
       session_date, primary_playbook_id, regime, gamma_regime,
       price_at_observation, engine_action, engine_score, verdicts,
-      pipeline_audit, feature_snapshot, instance_transitions
+      pipeline_audit, feature_snapshot, instance_transitions,
+      gate_blocks, first_block_category
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13)
     `,
     [
       row.session_date,
@@ -2157,6 +2196,8 @@ export async function insertPlaybookShadowObservation(row: {
       row.pipeline_audit != null ? JSON.stringify(row.pipeline_audit) : null,
       row.feature_snapshot != null ? JSON.stringify(row.feature_snapshot) : null,
       JSON.stringify(row.instance_transitions ?? []),
+      row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
+      row.first_block_category ?? null,
     ]
   );
 }
@@ -2188,6 +2229,8 @@ export async function upsertPlaybookInstances(
     state: "idle" | "armed" | "triggered" | "invalidated";
     feature_snapshot: unknown;
     detail: string;
+    trigger_price?: number | null;
+    reason_invalidated?: string | null;
   }>
 ): Promise<void> {
   if (!rows.length) return;
@@ -2198,12 +2241,15 @@ export async function upsertPlaybookInstances(
       `
       INSERT INTO spx_playbook_instances (
         instance_id, session_date, playbook_id, direction, state,
-        armed_at, triggered_at, feature_snapshot, detail, updated_at
+        armed_at, triggered_at, invalidated_at, feature_snapshot, detail,
+        trigger_price, reason_invalidated, updated_at
       )
       VALUES ($1,$2,$3,$4,$5,
         CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'triggered' THEN NOW() ELSE NULL END,
-        $6::jsonb, $7, NOW())
+        CASE WHEN $5 = 'invalidated' THEN NOW() ELSE NULL END,
+        $6::jsonb, $7,
+        $8, $9, NOW())
       ON CONFLICT (instance_id) DO UPDATE SET
         direction = EXCLUDED.direction,
         state = EXCLUDED.state,
@@ -2211,8 +2257,12 @@ export async function upsertPlaybookInstances(
           CASE WHEN EXCLUDED.state = 'armed' THEN NOW() ELSE NULL END),
         triggered_at = COALESCE(spx_playbook_instances.triggered_at,
           CASE WHEN EXCLUDED.state = 'triggered' THEN NOW() ELSE NULL END),
+        invalidated_at = COALESCE(spx_playbook_instances.invalidated_at,
+          CASE WHEN EXCLUDED.state = 'invalidated' THEN NOW() ELSE NULL END),
         feature_snapshot = EXCLUDED.feature_snapshot,
         detail = EXCLUDED.detail,
+        trigger_price = COALESCE(spx_playbook_instances.trigger_price, EXCLUDED.trigger_price),
+        reason_invalidated = COALESCE(EXCLUDED.reason_invalidated, spx_playbook_instances.reason_invalidated),
         updated_at = NOW()
       `,
       [
@@ -2223,9 +2273,251 @@ export async function upsertPlaybookInstances(
         row.state,
         JSON.stringify(row.feature_snapshot),
         row.detail,
+        row.trigger_price ?? null,
+        row.reason_invalidated ?? null,
       ]
     );
   }
+}
+
+export async function insertPlaybookInstanceEvents(
+  rows: Array<{
+    session_date: string;
+    instance_id: string;
+    playbook_id: string;
+    event_type: string;
+    direction: "long" | "short" | null;
+    price_at_event: number | null;
+    reason: string | null;
+    gate_blocks: string[] | null;
+    feature_snapshot: unknown;
+    engine_action: string | null;
+    executable: boolean | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+  }>
+): Promise<void> {
+  if (!rows.length) return;
+  await ensureSchema();
+  const pool = await getPool();
+  for (const row of rows) {
+    await pool.query(
+      `
+      INSERT INTO spx_playbook_instance_events (
+        session_date, instance_id, playbook_id, event_type, direction,
+        price_at_event, reason, gate_blocks, feature_snapshot, engine_action,
+        executable, counterfactual_mfe_pts, counterfactual_mae_pts
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13)
+      `,
+      [
+        row.session_date,
+        row.instance_id,
+        row.playbook_id,
+        row.event_type,
+        row.direction,
+        row.price_at_event,
+        row.reason,
+        row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
+        JSON.stringify(row.feature_snapshot),
+        row.engine_action,
+        row.executable,
+        row.counterfactual_mfe_pts,
+        row.counterfactual_mae_pts,
+      ]
+    );
+  }
+}
+
+export async function patchPlaybookInstanceBlocked(input: {
+  instance_id: string;
+  reason_blocked: string;
+  executable: boolean;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET reason_blocked = $2, executable = $3, updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [input.instance_id, input.reason_blocked, input.executable]
+  );
+}
+
+export async function patchPlaybookInstanceOpened(input: {
+  instance_id: string;
+  opened_at?: string;
+  option_contract_candidate?: unknown;
+  executable?: boolean;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET opened_at = COALESCE($2::timestamptz, NOW()),
+        option_contract_candidate = COALESCE($3::jsonb, option_contract_candidate),
+        executable = COALESCE($4, executable, true),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [
+      input.instance_id,
+      input.opened_at ?? null,
+      input.option_contract_candidate != null ? JSON.stringify(input.option_contract_candidate) : null,
+      input.executable ?? true,
+    ]
+  );
+}
+
+export async function loadTriggeredPlaybookInstances(sessionDate: string): Promise<
+  Array<{
+    instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
+    trigger_price: number | null;
+    counterfactual_mfe_pts: number;
+    counterfactual_mae_pts: number;
+    opened_at: string | null;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT instance_id, playbook_id, direction, trigger_price,
+           COALESCE(counterfactual_mfe_pts, 0) AS counterfactual_mfe_pts,
+           COALESCE(counterfactual_mae_pts, 0) AS counterfactual_mae_pts,
+           opened_at
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+      AND state IN ('triggered', 'invalidated')
+      AND triggered_at IS NOT NULL
+      AND opened_at IS NULL
+    `,
+    [sessionDate]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    playbook_id: String(r.playbook_id),
+    direction:
+      r.direction === "long" || r.direction === "short"
+        ? r.direction
+        : null,
+    trigger_price: r.trigger_price != null ? Number(r.trigger_price) : null,
+    counterfactual_mfe_pts: Number(r.counterfactual_mfe_pts ?? 0),
+    counterfactual_mae_pts: Number(r.counterfactual_mae_pts ?? 0),
+    opened_at: r.opened_at != null ? String(r.opened_at) : null,
+  }));
+}
+
+export async function updatePlaybookInstanceCounterfactual(
+  instanceId: string,
+  mfePts: number,
+  maePts: number
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_mfe_pts = GREATEST(COALESCE(counterfactual_mfe_pts, 0), $2),
+        counterfactual_mae_pts = GREATEST(COALESCE(counterfactual_mae_pts, 0), $3),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, mfePts, maePts]
+  );
+}
+
+export async function fetchPlaybookEvidenceRows(opts?: {
+  oos_only?: boolean;
+  since_date?: string;
+}): Promise<
+  Array<{
+    instance_id: string;
+    session_date: string;
+    playbook_id: string;
+    direction: string | null;
+    state: string;
+    armed_at: string | null;
+    triggered_at: string | null;
+    invalidated_at: string | null;
+    opened_at: string | null;
+    executable: boolean | null;
+    reason_blocked: string | null;
+    trigger_price: number | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+    pnl_pts: number | null;
+    mfe_pts: number | null;
+    mae_pts: number | null;
+    outcome: string | null;
+    gamma_regime: string | null;
+    blocked_events: number;
+  }>
+> {
+  await ensureSchema();
+  const oosOnly = opts?.oos_only !== false;
+  const since = opts?.since_date ?? "2026-07-10";
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      i.instance_id,
+      i.session_date::text,
+      i.playbook_id,
+      i.direction,
+      i.state,
+      i.armed_at,
+      i.triggered_at,
+      i.invalidated_at,
+      i.opened_at,
+      i.executable,
+      i.reason_blocked,
+      i.trigger_price,
+      i.counterfactual_mfe_pts,
+      i.counterfactual_mae_pts,
+      o.pnl_pts,
+      o.mfe_pts,
+      o.mae_pts,
+      o.outcome,
+      (i.feature_snapshot->>'gamma_regime') AS gamma_regime,
+      (
+        SELECT COUNT(*)::int FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'blocked'
+      ) AS blocked_events
+    FROM spx_playbook_instances i
+    LEFT JOIN spx_play_outcomes o
+      ON o.playbook_id = i.playbook_id
+     AND o.session_date = i.session_date
+     AND o.outcome <> 'open'
+    WHERE ($1::boolean = false OR i.session_date >= $2::date)
+    ORDER BY i.session_date DESC, i.playbook_id
+    `,
+    [oosOnly, since]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    session_date: String(r.session_date),
+    playbook_id: String(r.playbook_id),
+    direction: r.direction != null ? String(r.direction) : null,
+    state: String(r.state),
+    armed_at: r.armed_at != null ? String(r.armed_at) : null,
+    triggered_at: r.triggered_at != null ? String(r.triggered_at) : null,
+    invalidated_at: r.invalidated_at != null ? String(r.invalidated_at) : null,
+    opened_at: r.opened_at != null ? String(r.opened_at) : null,
+    executable: r.executable != null ? Boolean(r.executable) : null,
+    reason_blocked: r.reason_blocked != null ? String(r.reason_blocked) : null,
+    trigger_price: r.trigger_price != null ? Number(r.trigger_price) : null,
+    counterfactual_mfe_pts:
+      r.counterfactual_mfe_pts != null ? Number(r.counterfactual_mfe_pts) : null,
+    counterfactual_mae_pts:
+      r.counterfactual_mae_pts != null ? Number(r.counterfactual_mae_pts) : null,
+    pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+    mfe_pts: r.mfe_pts != null ? Number(r.mfe_pts) : null,
+    mae_pts: r.mae_pts != null ? Number(r.mae_pts) : null,
+    outcome: r.outcome != null ? String(r.outcome) : null,
+    gamma_regime: r.gamma_regime != null ? String(r.gamma_regime) : null,
+    blocked_events: Number(r.blocked_events ?? 0),
+  }));
 }
 
 export async function fetchPlaybookShadowObservationsForSession(

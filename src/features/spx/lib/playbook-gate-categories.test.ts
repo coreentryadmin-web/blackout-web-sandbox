@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyGateBlock, categorizeGateBlocks } from "./playbook-gate-categories";
+import { classifyGateBlock, categorizeGateBlocks, firstGateBlockCategory } from "./playbook-gate-categories";
 
 test("classifyGateBlock: playbook validity", () => {
   assert.equal(classifyGateBlock("Playbook PB-03 not in live allowlist"), "playbook_validity");
@@ -21,4 +21,11 @@ test("categorizeGateBlocks: buckets all blocks", () => {
   assert.equal(cats.operational.length, 1);
   assert.equal(cats.risk.length, 1);
   assert.equal(cats.quality.length, 1);
+});
+
+test("firstGateBlockCategory: operational before quality", () => {
+  assert.equal(
+    firstGateBlockCategory(["Opening range — no BUY", "Grade B below minimum"]),
+    "operational"
+  );
 });

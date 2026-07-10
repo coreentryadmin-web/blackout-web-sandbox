@@ -42,6 +42,7 @@ export function classifyGateBlock(message: string): GateBlockCategory {
       /No playbook trigger/i,
       /Unknown EMA regime/i,
       /degraded feed/i,
+      /Severe data quality/i,
       /Playbook lab/i,
     ])
   ) {
@@ -80,4 +81,21 @@ export function categorizeGateBlocks(blocks: readonly string[]): CategorizedGate
 
 export function emptyCategorizedGateBlocks(): CategorizedGateBlocks {
   return { ...EMPTY, operational: [], risk: [], playbook_validity: [], quality: [] };
+}
+
+const GATE_LAYER_ORDER: readonly GateBlockCategory[] = [
+  "operational",
+  "playbook_validity",
+  "risk",
+  "quality",
+];
+
+/** First failing layer for layered gate evaluation telemetry. */
+export function firstGateBlockCategory(blocks: readonly string[]): GateBlockCategory | null {
+  if (!blocks.length) return null;
+  const categorized = categorizeGateBlocks(blocks);
+  for (const layer of GATE_LAYER_ORDER) {
+    if (categorized[layer].length > 0) return layer;
+  }
+  return classifyGateBlock(blocks[0]);
 }

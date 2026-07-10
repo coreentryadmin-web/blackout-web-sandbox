@@ -42,6 +42,7 @@ export type SpxPlayPayload = {
     passed: boolean;
     blocks: string[];
     blocks_by_category?: PlayGateResult["blocks_by_category"];
+    first_block_category?: PlayGateResult["first_block_category"];
     warnings: string[];
     entry_mode: string;
     play_idea: string | null;
@@ -140,6 +141,7 @@ export function intelGates(
     // pass/fail decision is computed from the raw blocks in evaluatePlayGates.
     blocks: Array.from(new Set(humanizeGateBlocks(gates.blocks, desk, confluence))),
     blocks_by_category: gates.blocks_by_category,
+    first_block_category: gates.first_block_category,
     warnings: gates.warnings,
     entry_mode: gates.entry_mode,
     play_idea,
@@ -187,6 +189,7 @@ export function scanningPayload(
       passed: false,
       blocks: [],
       blocks_by_category: emptyCategorizedGateBlocks(),
+      first_block_category: null,
       warnings: [],
       entry_mode: "none",
       play_idea: null,

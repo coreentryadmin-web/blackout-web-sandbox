@@ -19,6 +19,7 @@ import { evaluatePlayGates, GATE_BLOCK, type PlayGateResult } from "@/features/s
 import {
   categorizeGateBlocks,
   emptyCategorizedGateBlocks,
+  firstGateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
 import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
@@ -583,6 +584,7 @@ async function evaluateOpenPlay(
       passed: false,
       blocks: [],
       blocks_by_category: emptyCategorizedGateBlocks(),
+      first_block_category: null,
       warnings: [],
       entry_mode: "none",
       play_idea: null,
@@ -1128,6 +1130,7 @@ async function evaluateFlatPlay(
       passed: true,
       blocks: [],
       blocks_by_category: emptyCategorizedGateBlocks(),
+      first_block_category: null,
       warnings: entryGatesRaw.warnings,
       entry_mode: entryGatesRaw.entry_mode,
       play_idea: entryGatesView.play_idea,
@@ -1251,6 +1254,7 @@ async function evaluateSpxPlayCore(
         passed: false,
         blocks: ["Session closed"],
         blocks_by_category: categorizeGateBlocks(["Session closed"]),
+        first_block_category: firstGateBlockCategory(["Session closed"]),
         warnings: [],
         entry_mode: "none",
         play_idea: playIdea,

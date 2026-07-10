@@ -1,5 +1,16 @@
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import {
+  liveDataQualityMode,
+  playbookDataQualityFlags,
+  type LiveDataQualityMode,
+} from "@/features/spx/lib/playbook-data-quality";
+
+export type PlaybookGexWallSnapshot = {
+  strike: number;
+  gex: number;
+  wall_type: string;
+};
 
 /** Immutable feature slice at observation time — avoids look-ahead in research joins. */
 export type PlaybookFeatureSnapshot = {
@@ -8,12 +19,18 @@ export type PlaybookFeatureSnapshot = {
   regime: string | null;
   gamma_regime: string | null;
   gamma_flip: number | null;
+  gex_king: number | null;
+  max_pain: number | null;
   flow_0dte_net: number | null;
   gex_wall_count: number;
+  gex_walls: PlaybookGexWallSnapshot[];
   hod: number | null;
   lod: number | null;
   vix: number | null;
   halt_channel_stale: boolean;
+  desk_stale: boolean;
+  gex_missing: boolean;
+  data_quality_mode: LiveDataQualityMode;
   gex_age_ms: number | null;
   flow_data_age_ms: number | null;
   or_defined: boolean;
@@ -30,18 +47,31 @@ export function buildPlaybookFeatureSnapshot(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals | null | undefined
 ): PlaybookFeatureSnapshot {
+  const dq = playbookDataQualityFlags(desk);
+  const walls = (desk.gex_walls ?? []).slice(0, 8).map((w) => ({
+    strike: w.strike,
+    gex: w.net_gex,
+    wall_type: w.kind,
+  }));
+
   return {
     price: desk.price,
     vwap: desk.vwap ?? null,
     regime: desk.regime ?? null,
     gamma_regime: desk.gamma_regime ?? null,
     gamma_flip: desk.gamma_flip ?? null,
+    gex_king: desk.gex_king ?? null,
+    max_pain: desk.max_pain ?? null,
     flow_0dte_net: desk.flow_0dte_net ?? null,
     gex_wall_count: desk.gex_walls?.length ?? 0,
+    gex_walls: walls,
     hod: desk.hod ?? null,
     lod: desk.lod ?? null,
     vix: desk.vix ?? null,
-    halt_channel_stale: desk.halt_channel_stale === true,
+    halt_channel_stale: dq.halt_channel_stale,
+    desk_stale: dq.desk_stale,
+    gex_missing: dq.gex_missing,
+    data_quality_mode: liveDataQualityMode(dq),
     gex_age_ms: desk.gex_age_ms ?? null,
     flow_data_age_ms: desk.flow_data_age_ms ?? null,
     or_defined: technicals?.or_defined ?? false,

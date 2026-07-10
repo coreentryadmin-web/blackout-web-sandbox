@@ -213,7 +213,8 @@ Every ~2s play poll on staging:
 | **#62** | `PLAYBOOK_LIVE_ALLOWLIST` enforced at gate A17 |
 | **#63** | State machine stub, pipeline audit, feature snapshot, unknown regime fail-closed, degraded feed PB blocks, PB-02 flow materiality, option sim stub |
 | **#64** | Gate `blocks_by_category`, `execution_sim` on open, PB-14 OR break memory, validate `pipeline_audit` |
-| **This branch** | `setup_family` + `fidelity` on registry; `playbook-primary-rank` (PB-09 demoted); `family_audit` rollup; invalidation transitions; `liveDataQualityMode` severe fail-closed; this doc |
+| **#66** | Research requirements + assessment scores in status doc |
+| **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
 
 ---
 
@@ -231,20 +232,32 @@ Every ~2s play poll on staging:
 - [x] Invalidation state transitions
 - [x] Severe data quality global fail-closed
 
-### P1 — In progress / next
+### P1 — Research infrastructure (shipped)
 
 | Item | Status | Detail |
 |------|--------|--------|
-| Evidence-aware primary ranking | 🟡 Partial | Family priority + candidate score; no historical win-rate weight yet |
-| Layered gate evaluation (4 layers) | ⏳ Planned | Categories are labels only today |
-| Armed duration / blocked-while-armed | ⏳ Planned | Tick-recomputed ARM is optimistic |
-| Precondition → trigger ordering guard | ⏳ Planned | Can fire trigger same tick as arm |
-| Global live size reduction on `degraded` | ⏳ Planned | Only per-PB blocks today |
-| PB-03 VIX/OR-normalized buffer | ⏳ Planned | Static `playMtfBufferPts()` |
-| PB-02 z-score / persistence | ⏳ Planned | Materiality threshold only |
-| PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
+| `spx_playbook_instance_events` append-only | ✅ Shipped | Immutable snapshot per armed/triggered/invalidated/blocked/opened |
+| Blocked-primary persistence | ✅ Shipped | `reason_blocked`, `executable=false`, blocked events |
+| Counterfactual MFE/MAE | ✅ Shipped | Running max on triggered-not-opened instances |
+| Expanded feature snapshot | ✅ Shipped | GEX walls, max pain, king, data_quality_mode |
+| `first_block_category` on gates | ✅ Shipped | Layered gate telemetry |
+| `npm run playbook:evidence-report` | ✅ Shipped | OOS-only SQL metrics |
+| `npm run playbook:param-sweep` | ✅ Shipped | Stability bands, no in-sample tune |
+| OOS train firewall in code | ✅ Shipped | `playbook-evidence-config.ts` |
+
+### P1 — Still open
+
+| Item | Status | Detail |
+|------|--------|--------|
+| Evidence-aware primary ranking (historical edge weight) | 🟡 Partial | Priority list only; no win-rate weight |
+| Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
+| Armed duration / blocked-while-armed ordering | ⏳ Planned | Tick-recomputed ARM |
 | Playbook-specific exits | ⏳ Planned | Legacy engine owns exits |
-| Merge lotto/power-hour into PB-08/12 | ⏳ Decision | Parallel engines still exist |
+| PB-03 VIX/OR-normalized buffer | ⏳ Planned | Static `playMtfBufferPts()` |
+| PB-02 z-score / persistence | ⏳ Planned | Materiality only |
+| PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
+| MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |
+| Prospective OOS sample size | ⏳ Accumulating | Scripts ready; need RTH sessions on staging |
 
 ### P2 — Production discipline
 
@@ -329,60 +342,45 @@ Independent review (2026-07-10) — aligned with repo policy:
 
 ## 12. Data & research requirements
 
-ChatGPT research checklist (2026-07-10). **Policy already matches** several items; implementation gaps below.
+ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted.
 
 ### 12.1 Capture every eligible setup — not only opens
 
-**Requirement:** Log armed, triggered, blocked, and invalidated setups so gate impact on expectancy can be measured.
-
 | Capability | Status |
 |------------|--------|
-| Shadow observations on state change | ✅ `maybeLogPlaybookShadowMatch` (throttled) |
+| Shadow observations on state change | ✅ `maybeLogPlaybookShadowMatch` |
 | Per-PB verdicts every observation | ✅ `verdicts` JSONB |
-| `pipeline_audit` funnel (long/short + family) | ✅ Shipped |
-| `blocked_*` when gates veto primary | 🟡 Partial — only when engine evaluates BUY with `gate_blocks` passed in |
-| Per-instance row for **non-primary** armed setups | ❌ One instance per PB per day, but no `reason_blocked` / `executable` flag |
-| Counterfactual path for blocked triggers | ❌ Not logged |
-
-**Next:** Emit one durable row per `(instance_id, transition)` including blocked-primary events even when action ≠ BUY.
+| `pipeline_audit` funnel (long/short + family) | ✅ |
+| `blocked_*` when gates veto primary | ✅ `pipeline_audit` + instance `reason_blocked` |
+| Per-instance transitions | ✅ `spx_playbook_instance_events` |
+| Counterfactual MFE/MAE for non-opens | ✅ `counterfactual_*_pts` on instance row |
 
 ### 12.2 Freeze feature values at decision time
 
-**Requirement:** Gamma walls, max pain, regime, flow, derived levels must be **timestamped and immutable** at arm/trigger/block — no look-ahead relabeling.
-
 | Field | Status |
 |-------|--------|
-| `PlaybookFeatureSnapshot` at observation | ✅ `captured_at` + desk slice |
-| Snapshot on instance arm/trigger | ✅ Upsert writes `feature_snapshot` |
-| Full GEX wall geometry frozen | ❌ Only `gex_wall_count` today |
-| Max pain / king strike frozen | ❌ Not in snapshot |
-| Per-transition snapshot (not overwritten) | ❌ Instance row overwrites latest snapshot |
-
-**Next:** Append-only `spx_playbook_instance_events` with immutable snapshot per transition.
+| `PlaybookFeatureSnapshot` + `captured_at` | ✅ |
+| GEX walls (top 8), max pain, gex_king | ✅ In snapshot |
+| data_quality_mode + desk/halt/gex flags | ✅ |
+| Per-transition immutable snapshot | ✅ Append-only `spx_playbook_instance_events` |
+| Instance row latest snapshot | 🟡 Overwritten on update (events are source of truth) |
 
 ### 12.3 Separate hypothesis generation from validation
 
-**Requirement:** The n=19 prod outcomes that **motivated** the playbook redesign are **training only** — never used to validate new rules.
-
 | Rule | Status |
 |------|--------|
-| `PLAYBOOK-EVIDENCE-BASE.md` documents n=19 as motivation | ✅ |
-| PB-04, PB-08, all non-allowlist PBs | Must validate **prospectively** from post-design sessions only |
-| Promotion tiers require new sample sizes | ✅ Research ≥30 triggers; staging ≥50–75 |
-| Automated firewall excluding pre-2026-07-07 outcomes from promotion SQL | ❌ Manual discipline only |
-
-**Next:** `scripts/playbook-evidence-report.mjs` with `TRAIN_CUTOFF_DATE` and OOS-only promotion queries.
+| n=19 = training/motivation only | ✅ Documented + `PLAYBOOK_TRAIN_CUTOFF_DATE` |
+| OOS evidence from `2026-07-10+` | ✅ `PLAYBOOK_OOS_START_DATE` + evidence report SQL |
+| Promotion tiers | ✅ Unchanged |
 
 ### 12.4 Evaluate gates — blocked vs non-opened
 
-**Requirement:** Without blocked-setup logging, cannot tell if safety gates improve or hurt expectancy.
-
 | Signal | Status |
 |--------|--------|
-| `blocks_by_category` on gate result | ✅ Labels only |
-| `pipeline_audit.blocked_long/short` | 🟡 When opts passed |
-| Per-playbook block reason on primary candidate | ❌ |
-| Shadow log when primary fired but gates blocked | ❌ Not always persisted |
+| `blocks_by_category` | ✅ |
+| `first_block_category` | ✅ First failing layer |
+| `gate_blocks` on shadow observations | ✅ |
+| Blocked event per primary+fired+gate veto | ✅ Deduped via `spx_playbook_blocked_cursor` |
 
 ---
 
@@ -397,23 +395,23 @@ Target row per playbook instance (research contract):
 | 3 | `instance_id` | ✅ | `{session}:{playbook_id}` |
 | 4 | `armed_at` | ✅ | COALESCE on first armed |
 | 5 | `triggered_at` | ✅ | COALESCE on first triggered |
-| 6 | `invalidated_at` | ❌ | State exists; **no column** |
-| 7 | `opened_at` | ❌ | Only on `spx_open_play` join |
-| 8 | `closed_at` | ❌ | Only on `spx_play_outcomes` join |
+| 6 | `invalidated_at` | ✅ | Set on invalidated transition |
+| 7 | `opened_at` | ✅ | Patched on engine open |
+| 8 | `closed_at` | 🟡 | Join `spx_play_outcomes` |
 | 9 | `direction` | ✅ | instance row |
-| 10 | regime snapshot | 🟡 | `feature_snapshot.regime` + obs row |
-| 11 | input feature snapshot | 🟡 | Partial `PlaybookFeatureSnapshot` |
-| 12 | data-quality flags | 🟡 | `halt_channel_stale` only in snapshot |
-| 13 | reason armed | 🟡 | `detail` string |
-| 14 | reason triggered | 🟡 | `detail` on trigger transition |
-| 15 | reason blocked | ❌ | Not persisted per instance |
-| 16 | reason invalidated | ❌ | Transition logged in JSONB only |
-| 17 | underlying entry reference | ❌ | No spot/level at open on instance |
-| 18 | option contract candidate | 🟡 | `execution_sim` on open play only |
-| 19 | counterfactual MFE/MAE | ❌ | Not tracked for non-opens |
-| 20 | actual outcome | 🟡 | `spx_play_outcomes` when opened |
+| 10 | regime snapshot | ✅ | `feature_snapshot` + events |
+| 11 | input feature snapshot | ✅ | Full snapshot on each event |
+| 12 | data-quality flags | ✅ | `data_quality_mode`, halt, desk, gex |
+| 13 | reason armed | ✅ | event `reason` + `detail` |
+| 14 | reason triggered | ✅ | event `reason` |
+| 15 | reason blocked | ✅ | `reason_blocked` + blocked events |
+| 16 | reason invalidated | ✅ | `reason_invalidated` |
+| 17 | underlying entry reference | ✅ | `trigger_price` + `price_at_event` |
+| 18 | option contract candidate | ✅ | `option_contract_candidate` on open |
+| 19 | counterfactual MFE/MAE | ✅ | Instance row + blocked path |
+| 20 | actual outcome | 🟡 | `spx_play_outcomes` join when opened |
 
-**Coverage today: ~9/20 complete, ~6/20 partial, ~5/20 missing.**
+**Coverage today: ~17/20 complete, ~2/20 partial (closed_at join, outcome when no open).**
 
 ---
 
@@ -423,22 +421,22 @@ Per playbook (and per family), compute from **prospective OOS sample only**:
 
 | Metric | Status |
 |--------|--------|
-| armed / triggered / executable counts | 🟡 Funnel in `pipeline_audit`; no SQL report |
-| win rate | 🟡 `spx_play_outcomes` when opened |
-| mean & median return | ❌ No playbook report script |
-| profit factor | ❌ |
-| expectancy | ❌ |
-| downside deviation | ❌ |
-| median MAE / MFE | ❌ |
-| MFE capture % | ❌ |
-| tail loss | ❌ |
-| time in trade | 🟡 On outcomes table generally |
-| results after cost assumptions | 🟡 `execution_sim` stub at open |
-| performance by VIX / gamma regime | ❌ |
+| armed / triggered / executable counts | ✅ `playbook:evidence-report` |
+| win rate, mean/median return | ✅ Report script (OOS SQL) |
+| profit factor, expectancy | ✅ Report script |
+| median MAE / MFE (closed) | ✅ Report script |
+| median counterfactual MFE/MAE | ✅ Report script |
+| MFE capture %, tail loss, downside deviation | ⏳ Needs more closed OOS trades |
+| time in trade | 🟡 On outcomes table |
+| results after cost assumptions | 🟡 `execution_sim` at open |
+| performance by VIX / gamma regime | ⏳ Extend report SQL |
 
-> A 40% win-rate system can be excellent. A 60% win-rate system can lose money. Promotion decisions must use expectancy and cost-adjusted returns, not win rate alone.
+> A 40% win-rate system can be excellent. A 60% win-rate system can lose money.
 
-**Next:** `npm run playbook:evidence-report` aggregating instance events + outcomes + `execution_sim`.
+```bash
+npm run playbook:evidence-report
+npm run playbook:param-sweep
+```
 
 ---
 
@@ -458,7 +456,7 @@ Several thresholds are **documented but lightly motivated**. Do **not** optimize
 | VWAP duration (PB-01) | 15 min | matcher | 12–18 min |
 | Flow materiality (PB-02) | 100k | `PLAYBOOK_FLOW_MATERIALITY_MIN` | 75k–150k |
 
-**Next:** Parameter sweep harness on **OOS shadow instances only** (post 2026-07-10), report sensitivity not optimum.
+Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. **Do not** optimize each constant on n=19; sweep validates configured values sit inside bands. Full replay sensitivity needs accumulated OOS instance events.
 
 ---
 
@@ -480,7 +478,10 @@ Several thresholds are **documented but lightly motivated**. Do **not** optimize
 | `playbook-gate-categories.ts` | Gate block category labels |
 | `spx-play-gates.ts` | A1–A17 including playbook live gate |
 | `spx-play-engine.ts` | `evaluateSpxPlay` integration |
-| `spx-play-config.ts` | Flags, allowlist, flow materiality min |
+| `playbook-evidence-config.ts` | OOS/train cutoffs + param bands |
+| `playbook-instance-events.ts` | Event builders + counterfactual math |
+| `scripts/playbook-evidence-report.mjs` | OOS expectancy SQL report |
+| `scripts/playbook-param-sweep.mjs` | Parameter stability bands |
 
 ---
 
@@ -494,6 +495,8 @@ npm run lint:brand
 
 # Staging (after ECS deploy)
 npm run validate:staging-playbook
+npm run playbook:evidence-report
+npm run playbook:param-sweep
 ```
 
 Expected staging playbook validate:
@@ -519,4 +522,4 @@ Expected staging playbook validate:
 
 ---
 
-*Maintainers: update this file when merging playbook PRs to `blackout-web-sandbox`. Run `validate:staging-playbook` after ECS deploy.*
+*Last updated:* 2026-07-10 (research infra PR)
