@@ -3,9 +3,9 @@ import { describe, it } from "node:test";
 import { playMemberReadCacheSec } from "./spx-play-config";
 
 describe("playMemberReadCacheSec", () => {
-  it("defaults to 3 seconds for member play read collapse", () => {
+  it("defaults to 2 seconds for member play read collapse", () => {
     delete process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC;
-    assert.equal(playMemberReadCacheSec(), 3);
+    assert.equal(playMemberReadCacheSec(), 2);
   });
 
   it("reads SPX_PLAY_MEMBER_READ_CACHE_SEC override", () => {

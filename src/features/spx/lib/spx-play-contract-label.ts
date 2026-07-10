@@ -63,3 +63,37 @@ export function formatSpxContractLabel(
 
   return raw?.trim() || "—";
 }
+
+/** Desk chip copy — e.g. `7400C @ 5.2` */
+export function formatPremiumAt(premium: string | null | undefined): string | null {
+  if (!premium?.trim() || premium.trim() === "—") return null;
+  const s = premium.trim().replace(/^~?\$/, "");
+  const range = s.match(/(\d+(?:\.\d+)?)\s*[-\u2013]\s*(\d+(?:\.\d+)?)/);
+  if (range) {
+    const a = Number(range[1]);
+    const b = Number(range[2]);
+    if (Number.isFinite(a) && Number.isFinite(b)) return ((a + b) / 2).toFixed(1);
+  }
+  const single = s.match(/(\d+(?:\.\d+)?)/);
+  if (single) return Number(single[1]).toFixed(1);
+  return null;
+}
+
+export function formatSpxContractChipLabel(
+  raw: string | null | undefined,
+  fallback?: { strike: number; direction?: string | null },
+  premium?: string | null
+): string {
+  const parsed = raw ? parseSpxContractLabel(raw) : null;
+  let compact: string | null = null;
+  if (parsed) {
+    compact = `${parsed.strike}${parsed.side === "call" ? "C" : "P"}`;
+  } else if (fallback && validStrike(Math.round(fallback.strike))) {
+    compact = `${Math.round(fallback.strike)}${fallback.direction === "short" ? "P" : "C"}`;
+  }
+
+  const prem = formatPremiumAt(premium);
+  if (compact && prem) return `${compact} @ ${prem}`;
+  if (compact) return compact;
+  return formatSpxContractLabel(raw, fallback);
+}

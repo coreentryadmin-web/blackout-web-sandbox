@@ -411,7 +411,7 @@ export function playbookLiveGateEnabled(): boolean {
 
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */
 export function playMemberReadCacheSec(): number {
-  return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 3);
+  return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 2);
 }
 
 export function gradeRank(grade: string): number {

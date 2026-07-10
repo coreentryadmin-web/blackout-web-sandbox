@@ -28,7 +28,7 @@ test("buildPlayKanbanChips: structure open uses contract label in open column", 
     structureWatch: false,
   });
   assert.equal(cols.open.length, 1);
-  assert.equal(cols.open[0]?.label, "7550 Call");
+  assert.equal(cols.open[0]?.label, "7550C @ 5.0");
   assert.equal(cols.open[0]?.kind, "structure");
 });
 
@@ -43,7 +43,7 @@ test("buildPlayKanbanChips: watch column when structure armed", () => {
     structureWatch: true,
   });
   assert.equal(cols.watch.length, 1);
-  assert.match(cols.watch[0]?.label ?? "", /7550 Call/);
+  assert.match(cols.watch[0]?.label ?? "", /7550C @ 5\.0/);
 });
 
 test("buildPlayKanbanChips: off-hours structure lands in closed column", () => {
@@ -59,7 +59,7 @@ test("buildPlayKanbanChips: off-hours structure lands in closed column", () => {
   });
   assert.equal(cols.open.length, 0);
   assert.equal(cols.closed.length, 1);
-  assert.equal(cols.closed[0]?.label, "7550 Call");
+  assert.equal(cols.closed[0]?.label, "7550C @ 5.0");
   assert.equal(cols.closed[0]?.id, "structure-session");
 });
 
@@ -72,7 +72,7 @@ test("buildPlayKanbanChips: off-hours lotto HOLD lands in closed column", () => 
       direction: "long",
       strike: 7560,
       contract_label: "7560C",
-      premium_estimate: "0.15",
+      premium_estimate: "0.18",
       entry_zone: 7550,
       entry_trigger: "8pt confirm",
       target_price: 7585,
@@ -91,6 +91,9 @@ test("buildPlayKanbanChips: off-hours lotto HOLD lands in closed column", () => 
       sizing_note: "",
       spread_pct: null,
       open_anchor_price: null,
+      option_bid: null,
+      option_ask: null,
+      option_mid: null,
     },
     powerHour: null,
     history: [],
@@ -102,7 +105,7 @@ test("buildPlayKanbanChips: off-hours lotto HOLD lands in closed column", () => 
   assert.equal(cols.open.length, 0);
   assert.equal(cols.closed.length, 1);
   assert.equal(cols.closed[0]?.id, "lotto-session");
-  assert.equal(cols.closed[0]?.label, "7560 Call");
+  assert.equal(cols.closed[0]?.label, "7560C @ 0.2");
 });
 
 test("buildPlayKanbanChips: power hour open uses strike from SPXW label (not expiry date)", () => {
@@ -114,6 +117,7 @@ test("buildPlayKanbanChips: power hour open uses strike from SPXW label (not exp
       direction: "long",
       strike: 6071,
       contract_label: "SPXW 260710 C6071",
+      premium_estimate: "~$0.30",
       headline: "Power hour",
       thesis: "Test",
       status_message: "hold",
@@ -130,5 +134,5 @@ test("buildPlayKanbanChips: power hour open uses strike from SPXW label (not exp
     structureOpen: false,
     structureWatch: false,
   });
-  assert.equal(cols.open[0]?.label, "6071 Call");
+  assert.equal(cols.open[0]?.label, "6071C @ 0.3");
 });

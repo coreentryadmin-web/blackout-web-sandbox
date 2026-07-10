@@ -75,7 +75,8 @@ import {
   recordWatch,
   watchSetupKey,
 } from "@/features/spx/lib/spx-play-watch";
-import { buildOptionTicket, type OptionTicket } from "@/features/spx/lib/spx-play-options";
+import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
+import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
 import {
   effectiveFullMinScore,
@@ -489,9 +490,70 @@ async function evaluateOpenPlay(
   }
 
   const optionLabel = row.option_label;
-  if (optionLabel && row.option_premium) {
-    thesis = `${optionLabel} @ ${row.option_premium} · ${thesis}`;
+  let optionPremium = row.option_premium;
+  let liveTicket: OptionTicket | null = null;
+
+  if (action !== "SELL" && optionLabel) {
+    const parsed = parseSpxContractLabel(optionLabel);
+    const strike = row.option_strike ?? parsed?.strike;
+    const optType: "call" | "put" =
+      row.option_type === "put"
+        ? "put"
+        : row.option_type === "call"
+          ? "call"
+          : dir === "short"
+            ? "put"
+            : "call";
+    if (strike) {
+      try {
+        const q = await quoteSpxOdteContract(strike, optType);
+        if (q) {
+          optionPremium = q.premium_display;
+          liveTicket = {
+            underlying: "SPXW",
+            strike: q.strike,
+            option_type: q.option_type,
+            contract_label: optionLabel,
+            ticker: null,
+            bid: q.bid,
+            ask: q.ask,
+            mid: q.mid,
+            spread_pct: q.spread_pct,
+            delta: q.delta,
+            open_interest: null,
+            premium_range: q.premium_display,
+            blocked: false,
+            block_reason: null,
+          };
+        }
+      } catch {
+        /* chain quote is best-effort — fall back to stored premium */
+      }
+    }
   }
+
+  if (optionLabel && optionPremium) {
+    thesis = `${optionLabel} @ ${optionPremium} · ${thesis}`;
+  }
+
+  const storedTicket: OptionTicket | null = optionLabel
+    ? {
+        underlying: "SPXW",
+        strike: row.option_strike ?? 0,
+        option_type: row.option_type === "put" ? "put" : "call",
+        contract_label: optionLabel,
+        ticker: null,
+        bid: null,
+        ask: null,
+        mid: null,
+        spread_pct: null,
+        delta: null,
+        open_interest: null,
+        premium_range: optionPremium ?? row.option_premium ?? "—",
+        blocked: false,
+        block_reason: null,
+      }
+    : null;
 
   return {
     available: true,
@@ -527,29 +589,12 @@ async function evaluateOpenPlay(
             mfe_pts: mfe,
             trim_done: row.trim_done || action === "TRIM",
             option_label: row.option_label,
-            option_premium: row.option_premium,
+            option_premium: optionPremium ?? row.option_premium,
           },
     confirmations,
     technicals: technicalsSummary(technicals, mtf),
     mtf,
-    option_ticket: optionLabel
-      ? {
-          underlying: "SPXW",
-          strike: row.option_strike ?? 0,
-          option_type: row.option_type === "put" ? "put" : "call",
-          contract_label: optionLabel,
-          ticker: null,
-          bid: null,
-          ask: null,
-          mid: null,
-          spread_pct: null,
-          delta: null,
-          open_interest: null,
-          premium_range: row.option_premium ?? "—",
-          blocked: false,
-          block_reason: null,
-        }
-      : null,
+    option_ticket: liveTicket ?? storedTicket,
     watch: null,
     telemetry,
     lotto_play: null,

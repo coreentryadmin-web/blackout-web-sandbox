@@ -48,6 +48,8 @@ test("buildPlayTerminalLines: structure HOLD includes VWAP and WHY HOLD", () => 
 
   const text = lines.map((l) => l.text).join("\n");
   assert.match(text, /WHY HOLD/);
+  assert.match(text, /TRADE RUNWAY/);
+  assert.match(text, /HOLD ★/);
   assert.match(text, /Below VWAP/);
   assert.match(text, /0DTE flow/);
   assert.match(text, /Gamma/);
@@ -123,4 +125,36 @@ test("buildPlaybookTerminalLines: verdicts render named status + arming hints", 
   assert.match(text, /PB-03 IDLE · Opening Range Breakout/);
   assert.match(text, /Window closed/);
   assert.match(text, /does not gate/);
+});
+
+test("buildPlayTerminalLines: lotto HOLD shows live chain when option_mid set", () => {
+  const lines = buildPlayTerminalLines({
+    selected: {
+      id: "lotto-open",
+      chip: { id: "lotto-open", column: "open", kind: "lotto", label: "7560C @ 0.2", prefix: "LOT", tone: "lotto" },
+      stages: ["hold", "trim", "sell"],
+      activeStage: "hold",
+      trimDone: false,
+    },
+    play: null,
+    lotto: {
+      phase: "HOLD",
+      status_label: "HOLD",
+      direction: "long",
+      strike: 7560,
+      contract_label: "7560C",
+      premium_estimate: "0.18",
+      headline: "Lotto hold",
+      thesis: "Runner",
+      status_message: "open",
+      catalysts: [],
+      option_bid: 0.17,
+      option_ask: 0.19,
+      option_mid: 0.18,
+    } as never,
+    powerHour: null,
+    confirmationLayer: null,
+  });
+  const text = lines.map((l) => l.text).join("\n");
+  assert.match(text, /Live chain · 7560C @ 0\.18/);
 });
