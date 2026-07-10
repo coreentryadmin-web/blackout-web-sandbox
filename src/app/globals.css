@@ -7748,20 +7748,436 @@ body::before {
     @apply grid grid-cols-1 xl:grid-cols-[1fr_420px] 2xl:grid-cols-[1fr_460px] gap-4 items-stretch min-h-[720px];
   }
 
+  .spx-sniper-desk.spx-sniper-desk-fill {
+    @apply space-y-0;
+  }
+
+  .spx-sniper-desk-fill {
+    @apply flex flex-1 flex-col min-h-0 w-full gap-0;
+  }
+
+  .spx-sniper-command-band {
+    @apply flex flex-col gap-1.5;
+  }
+
+  @media (min-width: 1024px) {
+    .spx-sniper-desk-fill .spx-sniper-command-band {
+      @apply flex-row items-center gap-3;
+    }
+
+    .spx-sniper-desk-fill .spx-sniper-command-stats {
+      @apply flex-1 min-w-0;
+    }
+  }
+
+  .spx-sniper-desk-fill .spx-sniper-command {
+    @apply shrink-0 rounded-xl px-3 py-1.5 md:px-4 md:py-1.5;
+    box-shadow:
+      0 0 40px rgba(0, 230, 118, 0.1),
+      inset 0 0 32px rgba(0, 230, 118, 0.03);
+  }
+
+  @media (min-width: 1024px) {
+    .spx-sniper-desk-fill .spx-sniper-command {
+      @apply py-1.5;
+    }
+  }
+
+  .spx-sniper-desk-fill .spx-sniper-triple {
+    @apply flex-1 min-h-0 gap-1;
+    min-height: 0;
+  }
+
+  /* Compact desk — tighter stats, panel chrome, matrix cells, column gutters */
+  .spx-sniper-desk-fill .spx-desk-top-stats--compact {
+    gap: 0.25rem;
+  }
+
+  .spx-sniper-desk-fill .spx-hero-stat-pill {
+    @apply px-2 py-1;
+  }
+
+  .spx-sniper-desk-fill .spx-hero-metric-block {
+    @apply px-1.5 py-1;
+  }
+
+  .spx-sniper-desk-fill .spx-hero-stat-label {
+    @apply mb-0.5 text-[9px];
+  }
+
+  .spx-sniper-desk-fill .spx-hero-stat-value {
+    @apply text-xs;
+  }
+
+  .spx-sniper-desk-fill .desk-panel > div.border-b.border-white\/10 {
+    @apply gap-2 px-3 py-2 md:px-3;
+  }
+
+  .spx-sniper-desk-fill .desk-panel > div.border-b .t-label {
+    @apply text-[13px];
+  }
+
+  .spx-sniper-desk-fill .spx-trade-alerts-panel {
+    @apply p-3 md:p-3;
+  }
+
+  .spx-sniper-desk-fill .spx-trade-alerts-stack {
+    @apply gap-2;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-header {
+    @apply px-3 py-2;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-feed {
+    @apply gap-2 p-2;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-card {
+    @apply p-2.5;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-card-featured {
+    @apply p-3;
+  }
+
+  .spx-sniper-desk-fill .spx-sniper-left-rail,
+  .spx-sniper-desk-fill .spx-sniper-chart-col,
+  .spx-sniper-desk-fill .spx-sniper-intel-col {
+    @apply min-h-0 h-full;
+  }
+
+  .spx-sniper-desk-fill .spx-sniper-chart-col {
+    min-height: 0;
+  }
+
+  .spx-sniper-desk-fill .spx-left-matrix {
+    min-height: 0;
+    max-height: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .spx-sniper-desk-fill .spx-odte-matrix-panel {
+    @apply min-h-0 h-full overflow-hidden;
+  }
+
+  .spx-gex-matrix-heatmap.desk-panel {
+    @apply flex flex-col min-h-0 overflow-hidden;
+  }
+
+  .spx-gex-matrix-heatmap.desk-panel > div:last-child {
+    @apply flex flex-1 flex-col min-h-0 overflow-hidden;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-rail-desk {
+    @apply min-h-0 h-full flex flex-col;
+  }
+
+  .spx-sniper-desk-fill .spx-commentary-rail {
+    @apply flex-1 min-h-0 h-full;
+  }
+
+  .spx-sniper-desk-fill .spx-trade-alerts-panel {
+    @apply h-full min-h-0;
+  }
+
+  .spx-sniper-desk-loading {
+    @apply w-full;
+  }
+
+  .spx-desk-placeholder {
+    @apply w-full;
+    min-height: min(78vh, 720px);
+    background: #08080e;
+    border: 1px solid rgba(0, 230, 118, 0.12);
+  }
+
+  .spx-sniper-command {
+    @apply relative overflow-hidden rounded-2xl border border-bull/35 bg-void-deep/90 backdrop-blur-md px-5 py-5 md:px-7 md:py-6;
+    box-shadow:
+      0 0 60px rgba(0, 230, 118, 0.14),
+      inset 0 0 48px rgba(0, 230, 118, 0.04);
+  }
+
+  .spx-sniper-command-grid {
+    @apply absolute inset-0 opacity-[0.14] pointer-events-none z-0;
+    background:
+      linear-gradient(rgba(0, 230, 118, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 230, 118, 0.08) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  @keyframes spx-command-pulse {
+    0%, 100% { opacity: 0.15; transform: scale(1); }
+    50% { opacity: 0.28; transform: scale(1.04); }
+  }
+
+  .spx-hero-stat-pill {
+    @apply rounded-lg border bg-void-deep/95 px-2.5 py-1.5 min-w-0 w-auto shrink-0;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 2px 8px rgba(0, 0, 0, 0.45);
+  }
+
+  .spx-hero-stat-value-row {
+    @apply flex items-center justify-end gap-1;
+  }
+
+  .spx-desk-top-stats {
+    @apply flex flex-wrap items-stretch justify-end gap-2 min-w-0;
+  }
+
+  .spx-desk-top-stats--compact {
+    @apply justify-start lg:justify-end;
+    gap: 0.375rem;
+  }
+
+  .spx-sniper-command .spx-desk-top-stats--compact {
+    @apply justify-start xl:justify-end;
+  }
+
+  @media (min-width: 1024px) {
+    .spx-sniper-command {
+      @apply py-4;
+    }
+  }
+
+  .spx-price-level-indicator {
+    @apply font-mono text-[9px] leading-none shrink-0;
+  }
+
+  .spx-price-level-indicator-up {
+    @apply text-bull;
+  }
+
+  .spx-price-level-indicator-down {
+    @apply text-bear-text;
+  }
+
+  .spx-price-level-indicator-flat {
+    @apply text-secondary opacity-50;
+  }
+
+  .spx-live-spot-price-panel {
+    @apply border-b border-white/[0.06] pb-4 mb-1;
+  }
+
+  .spx-play-engine-spot .spx-hero-price {
+    text-shadow: 0 0 22px rgba(0, 230, 118, 0.35);
+  }
+
+  .spx-hero-stat-label {
+    @apply text-[10px] font-mono font-medium uppercase tracking-[0.2em] text-sky-300 mb-1;
+  }
+
+  .spx-hero-stat-value {
+    @apply text-sm font-mono font-semibold tabular-nums truncate leading-none;
+  }
+
+  .spx-hero-metric-block {
+    @apply rounded-lg border bg-void-deep/95 px-2 py-2 w-auto shrink-0;
+    flex: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 2px 10px rgba(0, 0, 0, 0.5);
+  }
+
+  .spx-hero-metric-block-title {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-300 mb-1.5;
+  }
+
+  .spx-hero-metric-block-body {
+    @apply flex flex-col gap-1;
+  }
+
+  .spx-hero-metric-pair {
+    @apply grid grid-cols-2 gap-x-2 gap-y-1;
+  }
+
+  .spx-hero-metric-row {
+    @apply grid items-center gap-x-1;
+    grid-template-columns: auto auto;
+    width: fit-content;
+  }
+
+  .spx-hero-metric-row-compact {
+    display: grid;
+    grid-template-columns: auto auto;
+    @apply items-center gap-x-1;
+    width: fit-content;
+  }
+
+  .spx-hero-metric-row-label {
+    @apply shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-400;
+  }
+
+  .spx-hero-metric-row-value-wrap {
+    @apply inline-flex items-center justify-end gap-0.5;
+  }
+
+  .spx-hero-metric-row-value {
+    @apply font-mono text-xs font-semibold tabular-nums leading-none;
+  }
+
+  .spx-hero-metric-row-compact .spx-hero-metric-row-value {
+    @apply text-xs;
+  }
+
+  .spx-sniper-command .spx-sniper-title {
+    @apply font-anton text-4xl md:text-6xl leading-none tracking-wide uppercase;
+  }
+
   .spx-sniper-triple {
     @apply grid grid-cols-1 gap-3 items-stretch w-full max-w-none;
-    @apply lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.6fr)];
-    /* Matrix (left rail) widened from 22vw/20vw and Play Engine (center, 1fr)
-       shrinks by the same amount, since 1fr absorbs whatever the fixed rails
-       don't take — this is the lever for "bigger matrix, smaller play engine"
-       rather than adding a third size to the center column. */
-    @apply xl:grid-cols-[minmax(340px,30vw)_minmax(0,1fr)_minmax(380px,26vw)];
-    @apply 2xl:grid-cols-[minmax(380px,28vw)_minmax(0,1fr)_minmax(420px,27vw)];
-    min-height: calc(100vh - 240px);
+    /* Two-up (lg): matrix scrolls internally — bias width to Trade Alerts / Play Engine */
+    @apply lg:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.85fr)];
+    /* Three-up (xl+): narrower matrix + commentary rails → wider center (Trade Alerts) */
+    @apply xl:grid-cols-[minmax(300px,24vw)_minmax(420px,1fr)_minmax(320px,22vw)];
+    @apply 2xl:grid-cols-[minmax(320px,22vw)_minmax(460px,1fr)_minmax(340px,21vw)];
+    min-height: calc(100dvh - var(--nav-offset) - 6.75rem);
+  }
+
+  /* Member desk v2: Largo | matrix | plays (stacked) | terminal — locked grid areas */
+  .spx-sniper-triple.spx-sniper-triple--desk-v2 {
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 1024px) {
+    .spx-sniper-triple.spx-sniper-triple--desk-v2 {
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.95fr) minmax(0, 0.9fr);
+      grid-template-areas: "largo matrix plays terminal";
+    }
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-left-commentary {
+    @apply flex flex-col min-h-0 h-full min-w-0;
+    grid-area: largo;
+    order: unset;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-left-matrix {
+    grid-area: matrix;
+    order: unset;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-left-matrix .spx-odte-matrix-panel,
+  .spx-sniper-triple--desk-v2 .spx-left-matrix .spx-gex-matrix-heatmap {
+    flex: 1 1 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-gex-matrix-scroll {
+    flex: 1 1 0;
+    min-height: 16rem;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-sniper-plays-col {
+    @apply min-w-0;
+    grid-area: plays;
+    order: unset;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-sniper-terminal-col {
+    @apply min-w-0;
+    grid-area: terminal;
+    order: unset;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-commentary-rail-desk {
+    @apply min-h-0 h-full flex-1;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-commentary-rail {
+    @apply min-h-0 h-full;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-commentary-viewport {
+    @apply min-h-0;
+  }
+
+  /* Plays column = three horizontal bands (open / watch / closed), not side-by-side cols */
+  .spx-sniper-triple--desk-v2 .spx-trade-alerts-panels--stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 0.375rem;
+    overflow: hidden;
+    grid-template-columns: unset;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-trade-alerts-panels--stack .spx-trade-alerts-panel-col {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-trade-alerts-header,
+  .spx-sniper-triple--desk-v2 .spx-desk-session-strip--compact,
+  .spx-sniper-triple--desk-v2 .spx-trade-educational-note--plays {
+    display: none;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-trade-alerts-panel {
+    @apply p-2 md:p-2;
+  }
+
+  .spx-sniper-triple--desk-v2 .spx-trade-alerts-stack--plays {
+    @apply gap-0;
+  }
+
+  .spx-sniper-plays-col {
+    @apply flex flex-col min-h-0 min-w-0 h-full overflow-hidden;
+  }
+
+  .spx-sniper-terminal-col {
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508] p-1.5;
+  }
+
+  .spx-sniper-terminal-col .spx-play-terminal-window {
+    @apply flex-1 min-h-0 h-full;
+  }
+
+  .spx-trade-alerts-stack--plays {
+    @apply flex flex-1 flex-col min-h-0 overflow-hidden gap-2;
+  }
+
+  .spx-trade-alerts-panels--stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 0.375rem;
+    overflow: hidden;
+  }
+
+  .spx-trade-alerts-panels--stack .spx-trade-alerts-panel-col {
+    flex: 1 1 0;
+    min-height: 4.5rem;
+    max-height: 34%;
+  }
+
+  .spx-trade-alerts-panels--stack .spx-trade-alerts-panel-col--open {
+    max-height: 38%;
+  }
+
+  .spx-trade-educational-note--plays {
+    @apply shrink-0;
   }
 
   .spx-sniper-left-rail {
-    @apply flex flex-col min-h-0 h-full order-2 lg:order-1 xl:order-1 xl:pr-0;
+    @apply flex flex-col min-h-0 h-full xl:pr-0;
+  }
+
+  .spx-sniper-triple:not(.spx-sniper-triple--desk-v2) .spx-sniper-left-rail {
+    @apply order-2 lg:order-1 xl:order-1;
   }
 
   .spx-sniper-triple .spx-sniper-chart-col {
@@ -7769,9 +8185,427 @@ body::before {
   }
 
   .spx-sniper-triple .spx-commentary-rail-desk {
+    @apply min-h-0 flex flex-col h-full;
+  }
+
+  .spx-sniper-triple:not(.spx-sniper-triple--desk-v2) .spx-commentary-rail-desk {
     @apply order-3 lg:order-3 lg:col-span-2 xl:order-3 xl:col-span-1 xl:pl-0;
   }
 
+  .spx-sniper-chart-col {
+    @apply flex flex-col min-h-0 xl:min-h-0;
+  }
+
+  .spx-center-stack .spx-trade-alerts-panel {
+    @apply flex-1 min-h-0;
+  }
+
+  .spx-sniper-panel-body {
+    @apply flex-1 min-h-0 overflow-y-auto flex flex-col;
+  }
+
+  .spx-trade-alerts-panel {
+    @apply flex flex-col h-full min-h-0 rounded-2xl border border-white/10 bg-black p-4 md:p-5;
+  }
+
+  .spx-sniper-panel.spx-trade-alerts-panel {
+    @apply bg-black;
+  }
+
+  .spx-sniper-panel {
+    @apply relative overflow-hidden;
+  }
+
+  .spx-sniper-panel-content {
+    @apply relative z-10 flex flex-col flex-1 min-h-0;
+  }
+
+  .spx-trade-alerts-stack {
+    @apply flex flex-col gap-3 min-h-0;
+  }
+
+  .spx-trade-educational-note {
+    @apply font-mono text-[10px] text-sky-300/50;
+  }
+
+  .spx-trade-alerts-header {
+    @apply flex items-center gap-3 pb-2 mb-2 border-b border-white/[0.08] shrink-0;
+  }
+
+  .spx-trade-alerts-v3 .spx-trade-alerts-title {
+    @apply font-mono text-sm font-bold uppercase tracking-[0.12em] text-white leading-tight;
+  }
+
+  .spx-trade-alerts-v3 .spx-trade-alerts-subtitle {
+    @apply mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300/80;
+  }
+
+  .spx-trade-alerts-v3 .spx-trade-alerts-subtitle-muted {
+    @apply text-amber-300/80;
+  }
+
+  .spx-trade-alerts-v3 .spx-trade-alerts-spot {
+    @apply mb-0 shrink-0;
+  }
+
+  .spx-trade-alerts-v3 .spx-trade-alerts-stack {
+    @apply flex flex-col gap-2 min-h-0 flex-1 overflow-hidden;
+  }
+
+  .spx-trade-alerts-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.9fr) minmax(0, 0.75fr);
+    gap: 0.5rem;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @media (max-width: 1023px) {
+    .spx-trade-alerts-panels {
+      grid-template-columns: 1fr;
+      overflow-y: auto;
+    }
+  }
+
+  .spx-trade-alerts-panel-col {
+    @apply flex flex-col min-h-0 rounded-xl border border-white/10 bg-[#050508] overflow-hidden;
+  }
+
+  .spx-trade-alerts-panel-col--open {
+    box-shadow: inset 0 0 0 1px rgba(0, 230, 118, 0.12);
+  }
+
+  .spx-trade-alerts-panel-col-head {
+    @apply flex items-center justify-between gap-2 border-b border-white/[0.08] px-2.5 py-1.5 shrink-0;
+  }
+
+  .spx-trade-alerts-panel-col-head h4 {
+    @apply font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-sky-300;
+  }
+
+  .spx-trade-alerts-panel-count {
+    @apply font-mono text-[9px] tabular-nums text-sky-300/60;
+  }
+
+  .spx-trade-alerts-panel-col-body {
+    @apply flex flex-1 flex-col gap-2 min-h-0 overflow-y-auto p-2;
+  }
+
+  .spx-trade-alerts-panel-empty {
+    @apply py-4 text-center font-mono text-[10px] text-sky-300/45;
+  }
+
+  
+  .spx-trade-alerts-shell {
+    @apply flex flex-1 flex-col gap-2 min-h-0 overflow-hidden;
+  }
+
+  .spx-trade-alerts-panels--select {
+    flex: 0 0 auto;
+    max-height: 38%;
+    min-height: 7.5rem;
+  }
+
+  .spx-play-select-row {
+    @apply flex w-full flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-md border border-transparent bg-black/30 px-2 py-1.5 text-left transition-colors hover:border-white/15 hover:bg-black/50;
+  }
+
+  .spx-desk-session-strip {
+    @apply flex items-start gap-2 shrink-0 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-2.5 py-2;
+  }
+
+  .spx-desk-session-strip-dot {
+    @apply mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-400/70;
+  }
+
+  .spx-desk-session-strip-body {
+    @apply font-mono text-[10px] leading-snug text-sky-300/85;
+  }
+
+  .spx-desk-closed-time {
+    @apply text-amber-200/90 font-semibold;
+  }
+
+  /* ── SPX live commentary rail ── */
+  .spx-commentary-rail {
+    @apply flex flex-col rounded-2xl border border-purple/30 bg-black/55 backdrop-blur-md overflow-hidden flex-1 min-h-[280px];
+    box-shadow: inset 0 0 50px rgba(191, 95, 255, 0.06);
+  }
+
+  .spx-commentary-rail-full {
+    @apply xl:min-h-0 xl:h-full xl:max-h-[calc(100vh-240px)];
+  }
+
+  .spx-commentary-rail-desk {
+    @apply min-h-0 flex flex-col h-full;
+  }
+
+  .spx-commentary-header {
+    @apply flex items-center gap-3 shrink-0 px-5 py-4 border-b border-purple/20 bg-purple/5;
+  }
+
+  .spx-commentary-viewport {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .spx-commentary-feed {
+    @apply flex flex-col gap-4 p-4;
+  }
+
+  .spx-commentary-card {
+    @apply border border-purple/25 bg-black/50 p-4 backdrop-blur-sm;
+  }
+
+  .spx-commentary-card-featured {
+    @apply border-purple/45 bg-purple/[0.08] p-5;
+    box-shadow: inset 0 0 60px rgba(191, 95, 255, 0.08);
+  }
+
+  .spx-commentary-bias {
+    @apply text-[10px] font-syne uppercase tracking-[0.15em] px-2.5 py-1 border font-bold;
+  }
+
+  .spx-bias-bull { @apply border-bull/40 text-bull bg-bull/10; }
+  .spx-bias-bear { @apply border-bear/40 text-bear bg-bear/10; }
+  .spx-bias-neutral { @apply border-sky-300/30 text-sky-300; }
+
+  .spx-commentary-changed {
+    @apply space-y-0.5 list-none;
+  }
+
+  .spx-commentary-changed li {
+    @apply font-mono text-[11px] text-bull/90 pl-3 border-l-2 border-bull/30 leading-relaxed;
+  }
+
+  .spx-commentary-body {
+    @apply text-sm leading-relaxed space-y-2;
+    color: #ffd23f;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  .spx-ai-line {
+    @apply leading-relaxed;
+  }
+
+  .spx-ai-label {
+    @apply font-mono text-[15px] font-bold uppercase tracking-wide mr-2;
+    color: #ffffff;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .spx-ai-key {
+    color: inherit;
+    font-weight: 700;
+  }
+
+  .spx-ai-headline {
+    color: #ffd23f;
+  }
+
+  .spx-ai-headline-bull {
+    color: #00e676;
+    text-shadow: 0 0 9px rgba(0, 230, 118, 0.40), 0 0 2px rgba(0, 230, 118, 0.70);
+  }
+
+  .spx-ai-headline-bear {
+    color: #ff4d6d;
+    text-shadow: 0 0 9px rgba(255, 77, 109, 0.40), 0 0 2px rgba(255, 77, 109, 0.70);
+  }
+
+  .spx-ai-headline-neutral {
+    color: #38bdf8;
+    text-shadow: 0 0 9px rgba(56, 189, 248, 0.40), 0 0 2px rgba(56, 189, 248, 0.70);
+  }
+
+  .spx-commentary-watch {
+    @apply space-y-1 list-none;
+  }
+
+  .spx-commentary-watch li {
+    @apply font-mono text-xs text-purple-light/95 leading-relaxed;
+  }
+
+  .spx-commentary-rail-standby {
+    box-shadow:
+      inset 0 0 80px rgba(191, 95, 255, 0.08),
+      0 0 40px rgba(88, 28, 135, 0.15);
+  }
+.spx-play-select-row--selected {
+    @apply border-cyan-400/35 bg-cyan-400/[0.08] ring-1 ring-cyan-400/20;
+  }
+
+  .spx-play-select-kind {
+    @apply font-mono text-[7px] uppercase tracking-wider text-sky-300/55;
+  }
+
+  .spx-play-select-label {
+    @apply font-mono text-xs font-bold tabular-nums text-white;
+  }
+
+  .spx-play-select-sub {
+    @apply ml-auto font-mono text-[8px] uppercase tracking-wider text-sky-300/60;
+  }
+
+  .spx-play-terminal-window {
+    @apply flex flex-1 flex-col min-h-0 overflow-hidden rounded-xl border border-white/10;
+    background: linear-gradient(180deg, #2b2b2e 0%, #1c1c1e 12%, #141416 100%);
+    box-shadow:
+      0 18px 50px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .spx-play-terminal-titlebar {
+    @apply flex items-center gap-2 shrink-0 border-b border-black/50 px-3 py-2;
+    background: linear-gradient(180deg, #3a3a3c 0%, #2c2c2e 100%);
+  }
+
+  .spx-play-terminal-traffic {
+    @apply flex items-center gap-1.5 shrink-0;
+  }
+
+  .spx-play-terminal-dot {
+    @apply h-2.5 w-2.5 rounded-full;
+  }
+
+  .spx-play-terminal-dot--close {
+    background: #ff5f57;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  }
+
+  .spx-play-terminal-dot--min {
+    background: #febc2e;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  }
+
+  .spx-play-terminal-dot--max {
+    background: #28c840;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  }
+
+  .spx-play-terminal-title {
+    @apply flex-1 truncate text-center font-sans text-[11px] font-medium text-white/85;
+  }
+
+  .spx-play-terminal-titlebar-meta {
+    @apply flex shrink-0 items-center gap-2 font-mono text-[9px] uppercase tracking-wider;
+  }
+
+  .spx-play-terminal-live {
+    @apply text-emerald-400;
+  }
+
+  .spx-play-terminal-clock {
+    @apply text-white/45 tabular-nums;
+  }
+
+  .spx-play-terminal-tabs {
+    @apply flex shrink-0 items-end gap-0.5 border-b border-black/60 px-2 pt-1;
+    background: linear-gradient(180deg, #252527 0%, #1e1e20 100%);
+  }
+
+  .spx-play-terminal-tab {
+    @apply relative -mb-px rounded-t-md border border-transparent px-3 py-1.5 font-sans text-[10px] font-medium text-white/50;
+    background: transparent;
+  }
+
+  .spx-play-terminal-tab:hover {
+    @apply text-white/75;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .spx-play-terminal-tab--active {
+    @apply border-white/10 border-b-transparent text-white/90;
+    background: #0d0d0f;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .spx-play-terminal-body {
+    @apply flex-1 min-h-0 overflow-y-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed;
+    background: #0d0d0f;
+    color: #c8facc;
+  }
+
+  .spx-play-terminal-prompt-line {
+    @apply mb-2 text-[10px] text-white/40;
+  }
+
+  .spx-play-terminal-user {
+    @apply text-emerald-300;
+  }
+
+  .spx-play-terminal-host {
+    @apply text-sky-300/80;
+  }
+
+  .spx-play-terminal-cmd {
+    @apply text-white/70;
+  }
+
+  .spx-play-terminal-line {
+    @apply flex gap-2 py-0.5;
+  }
+
+  .spx-play-terminal-line--bull .spx-play-terminal-text {
+    @apply text-emerald-300;
+  }
+
+  .spx-play-terminal-line--bear .spx-play-terminal-text {
+    @apply text-rose-300;
+  }
+
+  .spx-play-terminal-line--accent .spx-play-terminal-text {
+    @apply text-cyan-200;
+  }
+
+  .spx-play-terminal-line--warn .spx-play-terminal-text {
+    @apply text-amber-200;
+  }
+
+  .spx-play-terminal-line--dim .spx-play-terminal-text {
+    @apply text-white/45;
+  }
+
+  .spx-play-terminal-line--neutral .spx-play-terminal-text {
+    @apply text-[#c8facc];
+  }
+
+  .spx-play-terminal-glyph {
+    @apply w-4 shrink-0 text-center text-[10px] leading-relaxed;
+  }
+
+  .spx-play-terminal-glyph--ok {
+    @apply text-emerald-400;
+  }
+
+  .spx-play-terminal-glyph--no {
+    @apply text-rose-400;
+  }
+
+  .spx-play-terminal-glyph--section {
+    @apply text-cyan-300 font-bold;
+  }
+
+  .spx-play-terminal-glyph--vwap {
+    @apply text-sky-300;
+  }
+
+  .spx-play-terminal-glyph--flow {
+    @apply text-amber-300;
+  }
+
+  .spx-play-terminal-cursor-line {
+    @apply hidden;
+  }
+
+  .spx-desk-session-strip--compact {
+    @apply py-1.5 px-2;
+  }
+
+  .spx-desk-session-strip--compact .spx-desk-session-strip-body {
+    @apply text-[10px] leading-snug;
+  }
   /* Mobile web segment switcher — same panel hide/show as iOS native shell */
   @media (max-width: 767px) {
     .spx-sniper-triple[data-ios-panel] .ios-native-panel-hidden {
