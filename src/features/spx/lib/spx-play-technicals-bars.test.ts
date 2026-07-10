@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   consecutiveClosesVsLevel,
   openingRangeFromBars,
+  rollingRangeFromBars,
   vwapSideStreaks,
 } from "./spx-play-technicals";
 
@@ -48,6 +49,19 @@ test("vwapSideStreaks: trailing minutes below/above", () => {
   const s = vwapSideStreaks(bars, 7382);
   assert.equal(s.minutes_below_vwap, 2); // 7380, 7375
   assert.equal(s.minutes_above_vwap, 0);
+});
+
+test("rollingRangeFromBars: uses trailing window not session extremes", () => {
+  const bars = [
+    etBar(9, 35, 7450, 7455, 7445),
+    etBar(10, 0, 7400, 7402, 7398),
+    etBar(10, 15, 7395, 7397, 7393),
+    etBar(10, 29, 7392, 7394, 7390),
+    etBar(10, 30, 7391, 7393, 7389),
+  ];
+  const r = rollingRangeFromBars(bars, 30);
+  assert.equal(r.rolling_30m_high, 7402);
+  assert.equal(r.rolling_30m_low, 7389);
 });
 
 test("consecutiveClosesVsLevel: counts trailing m3 closes", () => {

@@ -570,7 +570,7 @@ Progressive tiers — **not** n=10 / WR≥45%:
 | Staging-qualified | ≥50–75 prospective trades, cost-adjusted positive expectancy |
 | Limited-live (prod) | Min-size + session risk governor + option quote reconciliation |
 
-Initial live allowlist when gating expands: **PB-01, 02, 03, 04, 14** (+ PB-08 when qualified). PB-05–07, 09–13 remain shadow-only.
+Initial live allowlist when gating expands: **PB-01, 02, 03, 04** only until state machine ships; then **PB-14**. PB-05–07, 09–13 remain shadow-only.
 
 Full response to external review: `PLAYBOOK-EXTERNAL-REVIEW-2026-07-10.md`.
 

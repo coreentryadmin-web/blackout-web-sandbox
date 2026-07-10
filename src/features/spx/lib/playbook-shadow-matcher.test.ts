@@ -122,6 +122,7 @@ const OPENING_DRIVE_UTC = Date.parse("2026-07-09T14:00:00.000Z");
 test("PB-01: triggers long when preconditions + trigger both true, inside session window", () => {
   const desk = deskStub({ above_vwap: false, vwap: 7380, price: 7383, flow_0dte_net: 500_000 });
   const technicals = technicalsStub({
+    minutes_below_vwap: 15,
     m3_close: 7383,
     breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: true, vwap_lost: false },
   });

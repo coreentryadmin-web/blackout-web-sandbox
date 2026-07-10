@@ -120,8 +120,8 @@ function matchPb01(
   }
 
   const flow = flowDirection(desk);
-  const belowLongEnough = technicals.minutes_below_vwap >= 15 || desk.above_vwap === false;
-  const aboveLongEnough = technicals.minutes_above_vwap >= 15 || desk.above_vwap === true;
+  const belowLongEnough = technicals.minutes_below_vwap >= 15;
+  const aboveLongEnough = technicals.minutes_above_vwap >= 15;
   const emaCurlOk = technicals.ema9_curling_toward_vwap !== false;
   const m3Above = technicals.m3_consecutive_closes_above_vwap >= 2;
   const m3Below = technicals.m3_consecutive_closes_below_vwap >= 2;
@@ -781,9 +781,10 @@ function matchPb11(
 ): PlaybookMatchVerdict {
   const def = playbookDef("PB-11");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
-  const hod = desk.hod;
-  const lod = desk.lod;
-  const dataAvailable = technicals.available && desk.price > 0 && hod != null && lod != null;
+  const rangeHigh = technicals.rolling_30m_high ?? desk.hod;
+  const rangeLow = technicals.rolling_30m_low ?? desk.lod;
+  const usingRolling = technicals.rolling_30m_high != null && technicals.rolling_30m_low != null;
+  const dataAvailable = technicals.available && desk.price > 0 && rangeHigh != null && rangeLow != null;
 
   if (!dataAvailable) {
     return {
@@ -793,23 +794,24 @@ function matchPb11(
       precondition_match: false,
       trigger_fired: false,
       direction: null,
-      detail: "HOD/LOD unavailable — cannot evaluate PB-11",
+      detail: "Range high/low unavailable — cannot evaluate PB-11",
     };
   }
 
-  const rangePct = (hod - lod) / desk.price;
+  const rangePct = (rangeHigh - rangeLow) / desk.price;
   const noBreakout = !technicals.breakout.hod_break && !technicals.breakout.lod_break;
   const preconditionMatch = rangePct <= 0.0035 && noBreakout;
   const edgeProx = 3;
-  const nearHod = hod - desk.price <= edgeProx;
-  const nearLod = desk.price - lod <= edgeProx;
+  const nearHigh = rangeHigh - desk.price <= edgeProx;
+  const nearLow = desk.price - rangeLow <= edgeProx;
   const m3 = technicals.m3_close ?? desk.price;
-  const mid = (hod + lod) / 2;
+  const mid = (rangeHigh + rangeLow) / 2;
+  const rangeTag = usingRolling ? "30m" : "session";
 
   const shortTrigger =
-    regimeEligible && windowOpen && preconditionMatch && nearHod && m3 < hod && m3 < mid;
+    regimeEligible && windowOpen && preconditionMatch && nearHigh && m3 < rangeHigh && m3 < mid;
   const longTrigger =
-    regimeEligible && windowOpen && preconditionMatch && nearLod && m3 > lod && m3 > mid;
+    regimeEligible && windowOpen && preconditionMatch && nearLow && m3 > rangeLow && m3 > mid;
 
   if (longTrigger || shortTrigger) {
     return {
@@ -819,7 +821,7 @@ function matchPb11(
       precondition_match: true,
       trigger_fired: true,
       direction: longTrigger ? "long" : "short",
-      detail: `Range fade off ${longTrigger ? "LOD" : "HOD"} (range ${rangePct.toFixed(3)}%)`,
+      detail: `Range fade (${rangeTag}) off ${longTrigger ? "low" : "high"} — ${(rangePct * 100).toFixed(2)}%`,
     };
   }
 
@@ -830,7 +832,9 @@ function matchPb11(
     precondition_match: preconditionMatch,
     trigger_fired: false,
     direction: null,
-    detail: preconditionMatch ? "Tight range — awaiting edge fade" : `Range too wide (${(rangePct * 100).toFixed(2)}%) or breakout active`,
+    detail: preconditionMatch
+      ? `Tight ${rangeTag} range — awaiting edge fade`
+      : `Range too wide (${rangeTag} ${(rangePct * 100).toFixed(2)}%) or breakout active`,
   };
 }
 
