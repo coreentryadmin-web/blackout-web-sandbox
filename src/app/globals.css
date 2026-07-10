@@ -7715,6 +7715,18 @@ body::before {
     @apply flex flex-wrap items-stretch justify-end gap-2 min-w-0;
   }
 
+  .spx-desk-top-stats-stack {
+    @apply flex w-full min-w-0 flex-col gap-1;
+  }
+
+  .spx-desk-top-stats--primary {
+    @apply justify-start xl:justify-end;
+  }
+
+  .spx-desk-top-stats--secondary {
+    @apply justify-end;
+  }
+
   .spx-desk-top-stats--compact {
     @apply justify-start lg:justify-end;
     gap: 0.375rem;
