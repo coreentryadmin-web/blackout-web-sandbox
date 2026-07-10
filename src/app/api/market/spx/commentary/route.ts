@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireTierApi } from "@/lib/market-api-auth";
-import { anthropicConfigured } from "@/lib/providers/anthropic";
 import { generateSpxCommentary, type SpxCommentaryResult } from "@/features/spx/lib/spx-commentary";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { loadMergedSpxDesk } from "@/features/spx/lib/spx-desk-loader";
@@ -10,16 +9,9 @@ import { sharedCacheGet } from "@/lib/shared-cache";
 
 export const dynamic = "force-dynamic";
 
-// All users see the same SPX market data — one Claude call per 5-minute window
-// serves every connected session. First request in the window triggers the call;
-// all others get the cached result instantly with zero additional cost.
-//
-// serverCache(cacheKey, COMMENTARY_TTL_MS) is the SOLE throttle/spend control for
-// commentary: because the cache key is shared across all sessions and keyed by the
-// 5-minute window slot, at most one Anthropic call happens per window platform-wide
-// regardless of how many users/requests arrive. (A separate per-user interval/daily-cap
-// module, src/lib/spx-commentary-limits.ts, was never wired in and has been removed —
-// the shared-window cache already bounds spend more tightly than a per-user cap would.)
+// All users see the same SPX market data — one BIE desk brief per 5-minute window
+// serves every connected session. First request in the window triggers composition;
+// all others get the cached result instantly with zero LLM cost.
 const COMMENTARY_TTL_MS = 5 * 60 * 1000;
 
 type CommentaryCache = {
@@ -30,10 +22,6 @@ type CommentaryCache = {
 export async function POST(req: NextRequest) {
   const authResult = await requireTierApi("premium");
   if (authResult instanceof Response) return authResult;
-
-  if (!anthropicConfigured()) {
-    return NextResponse.json({ error: "Commentary unavailable" }, { status: 503 });
-  }
 
   // Body is optional — generation always uses the server-side merged desk.
   void req.json().catch(() => null);

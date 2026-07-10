@@ -558,7 +558,7 @@ export function SpxTradeAlerts({ desk, live, refreshing, sessionActive = true, c
 
             {play.claude && play.action === "BUY" && (
               <p className="font-mono text-[10px] text-emerald-300/70 mt-2">
-                Claude {play.claude.source} · {play.claude.verdict}
+                BIE {play.claude.source} · {play.claude.verdict}
               </p>
             )}
             {play.levels.entry != null &&
