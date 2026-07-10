@@ -6,7 +6,7 @@ import type { MtfHybrid } from "@/features/spx/lib/spx-play-mtf";
 import type { OptionTicket } from "@/features/spx/lib/spx-play-options";
 import type { SpxPlayDirection, SpxSignalFactor } from "@/features/spx/lib/spx-signals";
 
-export type PlayEntryPath = "cold_buy" | "watch_promote";
+export type PlayEntryPath = "cold_buy" | "watch_promote" | "playbook_lab";
 
 export type PlayEntrySnapshot = {
   open_play_id: number;
@@ -26,6 +26,7 @@ export type PlayEntrySnapshot = {
   claude: ClaudePlayVerdict | null;
   option_ticket: OptionTicket | null;
   opened_at: string;
+  playbook_id?: string | null;
 };
 
 export type PlayExitAction = "STOP" | "TARGET" | "THESIS" | "SESSION" | "THETA" | "TRAIL" | "UNKNOWN";

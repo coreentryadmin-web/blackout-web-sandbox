@@ -114,6 +114,7 @@ export async function POST(req: NextRequest) {
           if (!panel) return null;
           const primary = panel.verdicts.find((v) => v.primary) ?? null;
           return {
+            mode: panel.mode,
             primary_playbook_id: panel.primary_playbook_id,
             primary_name: primary?.name ?? null,
             fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,

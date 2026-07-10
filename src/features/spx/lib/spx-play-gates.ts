@@ -23,7 +23,10 @@ import {
   playStarterMinScore,
   playWatchMinScore,
   playWeightedConflictBlockMin,
+  playbookLiveGateEnabled,
+  playbookStagingLabEnabled,
 } from "@/features/spx/lib/spx-play-config";
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -133,7 +136,15 @@ export function evaluatePlayGates(
     session_losses_today?: number;
   },
   confirmations?: PlayConfirmationResult | null,
-  opts?: { min_score_boost?: number; entry_intent?: "buy" | "watch"; cold_buy_path?: boolean }
+  opts?: {
+    min_score_boost?: number;
+    entry_intent?: "buy" | "watch";
+    cold_buy_path?: boolean;
+    /** When PLAYBOOK_LIVE_GATE=1, BUY requires this primary playbook id. */
+    playbook_primary_id?: PlaybookId | null;
+    /** Direction from the fired primary verdict — used for staging lab alignment. */
+    playbook_primary_direction?: "long" | "short" | null;
+  }
 ): PlayGateResult {
   const blocks: string[] = [];
   const warnings: string[] = [];
@@ -144,9 +155,26 @@ export function evaluatePlayGates(
   // from bias to keep a single authoritative source for play direction.
   const dir = confluence.direction;
   const buyIntent = opts?.entry_intent !== "watch";
+  const stagingLab =
+    buyIntent &&
+    playbookStagingLabEnabled() &&
+    opts?.playbook_primary_id != null &&
+    opts?.playbook_primary_direction != null &&
+    dir === opts.playbook_primary_direction;
 
   if (!desk.market_open) {
     blocks.push("Session closed — no new entries");
+  }
+
+  if (buyIntent && playbookLiveGateEnabled()) {
+    const pbId = opts?.playbook_primary_id ?? null;
+    if (!pbId) {
+      blocks.push(
+        `No playbook trigger — playbook live gate requires a fired primary (staging lab=${playbookStagingLabEnabled()})`
+      );
+    } else if (stagingLab) {
+      warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
+    }
   }
 
   // Stale halt feed → fail-OPEN (allow play to proceed) with a warning so the operator
@@ -220,12 +248,12 @@ export function evaluatePlayGates(
     blocks.push(`Session loss cap (${playSessionMaxLosses()} losses today — stand down)`);
   }
 
-  if (buyIntent && opts?.cold_buy_path && abs < playColdBuyMinScore()) {
+  if (buyIntent && opts?.cold_buy_path && !stagingLab && abs < playColdBuyMinScore()) {
     blocks.push(
       `Cold BUY needs score ≥${playColdBuyMinScore()} (have ${abs}) — WATCH→ENTRY path preferred`
     );
   }
-  if (buyIntent && opts?.cold_buy_path && gradeRank(confluence.grade) < gradeRank("A")) {
+  if (buyIntent && opts?.cold_buy_path && !stagingLab && gradeRank(confluence.grade) < gradeRank("A")) {
     blocks.push("Cold BUY requires grade A or better — B setups need WATCH→ENTRY");
   }
 
@@ -262,6 +290,17 @@ export function evaluatePlayGates(
   if (playOnlyFullEntry() && entry_mode === "starter") {
     entry_mode = "none";
     warnings.push("Starter size disabled — full A/A+ only");
+  }
+
+  if (
+    stagingLab &&
+    entry_mode === "none" &&
+    abs >= playWatchMinScore() &&
+    gradeRank(confluence.grade) >= gradeRank("B") &&
+    confluence.weighted_conflicts <= starterConflictMax
+  ) {
+    entry_mode = "starter";
+    warnings.push(`Staging playbook lab — starter entry on ${opts?.playbook_primary_id}`);
   }
 
   const now = Date.now();
@@ -351,7 +390,7 @@ export function evaluatePlayGates(
   }
 
   if (confirmations) {
-    if (!confirmations.passed) {
+    if (!stagingLab && !confirmations.passed) {
       const failed = confirmations.checks.filter((c) => c.required && !c.passed);
       for (const f of failed.slice(0, 3)) {
         blocks.push(`${f.label}: ${f.detail}`);
@@ -362,6 +401,10 @@ export function evaluatePlayGates(
         );
       }
       entry_mode = "none";
+    } else if (stagingLab && !confirmations.passed) {
+      warnings.push(
+        `Staging playbook lab — confirmations advisory (${confirmations.passed_count}/${confirmations.total})`
+      );
     }
   } else {
     blocks.push("Technicals / confirmations unavailable");

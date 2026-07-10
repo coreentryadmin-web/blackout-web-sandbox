@@ -58,8 +58,9 @@ export type SpxDeskBriefCross = {
     total_closed: number;
   } | null;
   precedentDetail?: string | null;
-  /** Named playbook shadow (PB-01..08) — informational, does not gate engine. */
+  /** Named playbook shadow/live panel — live mode gates BUY on staging. */
   playbookShadow?: {
+    mode?: "shadow" | "live";
     primary_playbook_id: string | null;
     primary_name: string | null;
     fired_count: number;
@@ -489,7 +490,9 @@ export function composeSpxDeskBrief(
   const pb = cross?.playbookShadow;
   const playbookLine =
     pb?.primary_playbook_id && pb.primary_name
-      ? `PLAYBOOK  Shadow {{${pb.primary_playbook_id}}} {{${pb.primary_name}}} fired (${pb.fired_count} active) — informational, does not gate engine`
+      ? pb.mode === "live"
+        ? `PLAYBOOK  LIVE {{${pb.primary_playbook_id}}} {{${pb.primary_name}}} fired (${pb.fired_count} active) — gates BUY on staging`
+        : `PLAYBOOK  Shadow {{${pb.primary_playbook_id}}} {{${pb.primary_name}}} fired (${pb.fired_count} active) — informational, does not gate engine`
       : pb && pb.fired_count === 0
         ? "PLAYBOOK  Shadow — no named setup fired this window"
         : null;

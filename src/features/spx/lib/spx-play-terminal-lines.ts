@@ -6,6 +6,7 @@ import type { PlayConfirmationLayer } from "@/features/spx/hooks/useStablePlayCo
 import type { TradeAlertPlay } from "@/features/spx/lib/spx-trade-alert-plays";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { PLAYBOOK_REGISTRY, type PlaybookId } from "@/features/spx/lib/playbook-registry";
+import { playbookLiveGateEnabled } from "@/features/spx/lib/spx-play-config";
 import { fmtPrice } from "@/lib/api";
 
 export type PlayTerminalIcon =
@@ -290,10 +291,17 @@ export function buildPlaybookTerminalLines(
   sessionLive: boolean
 ): PlayTerminalLine[] {
   const lines: PlayTerminalLine[] = [];
+  const live = playbookLiveGateEnabled();
   lines.push({
     icon: "section",
     tone: "accent",
-    text: sessionLive ? "PLAYBOOK · SHADOW (live)" : "PLAYBOOK · SHADOW (session closed)",
+    text: sessionLive
+      ? live
+        ? "PLAYBOOK · LIVE (gates BUY on staging)"
+        : "PLAYBOOK · SHADOW (live)"
+      : live
+        ? "PLAYBOOK · LIVE (session closed)"
+        : "PLAYBOOK · SHADOW (session closed)",
   });
 
   if (!panel?.verdicts.length) {
