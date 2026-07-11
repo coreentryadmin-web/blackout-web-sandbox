@@ -94,6 +94,36 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+    // Sandboxed agent environments force egress through an HTTPS proxy that
+    // resets Chromium's TLS handshake while accepting Node's. Fulfill all
+    // browser requests via Playwright's Node-side request context instead —
+    // it honors HTTPS_PROXY and shares the browser context's cookie jar, so
+    // the Hosted-UI login round-trip still works. maxRedirects: 0 hands 3xx
+    // back to the browser so it follows redirects natively.
+    await ctx.route("**/*", async (route) => {
+      const req = route.request();
+      try {
+        const resp = await ctx.request.fetch(req, { maxRedirects: 0 });
+        const status = resp.status();
+        const loc = resp.headers()["location"];
+        if (req.isNavigationRequest() && status >= 300 && status < 400 && loc) {
+          // A fulfilled 3xx escapes the interceptor when Chromium follows it —
+          // translate to a JS navigation so the next hop is intercepted too.
+          const abs = new URL(loc, req.url()).href;
+          await route.fulfill({
+            status: 200,
+            contentType: "text/html",
+            body: `<script>location.replace(${JSON.stringify(abs)})</script>`,
+          });
+          return;
+        }
+        await route.fulfill({ response: resp });
+      } catch {
+        await route.abort();
+      }
+    });
+  }
   const page = await ctx.newPage();
 
   try {
@@ -111,9 +141,13 @@ async function main() {
     await shot(page, "01-hosted-ui");
 
     console.log("\n--- Hosted UI login ---");
-    await page.fill('input[name="username"], input[type="email"]', email);
-    await page.fill('input[name="password"], input[type="password"]', password);
-    await page.click('input[name="signInSubmitButton"], button[type="submit"], input[type="submit"]');
+    // Cognito's classic Hosted UI renders duplicate desktop/mobile forms; target visible ones.
+    await page.locator('input[name="username"]:visible, input[type="email"]:visible').first().fill(email);
+    await page.locator('input[name="password"]:visible, input[type="password"]:visible').first().fill(password);
+    await page
+      .locator('input[name="signInSubmitButton"]:visible, button[type="submit"]:visible, input[type="submit"]:visible')
+      .first()
+      .click();
     await page.waitForURL((u) => u.href.startsWith(STAGING), { timeout: 90_000 });
     rec("login:callback", "PASS", page.url());
 
