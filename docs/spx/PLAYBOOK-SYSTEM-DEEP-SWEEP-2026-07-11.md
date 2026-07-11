@@ -125,7 +125,7 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 4 | **FIXED** | Playbook in `crossToolAlignment` + `liveEngineConflict`; `primary_direction` threaded |
 | 5 | **FIXED** | Commentary playbook fetch try/catch |
 | 6 | **FIXED** | `closeOpenPlay` uses post-commit `savePlaySessionMeta` (BUG-07); row-count check |
-| 7 | **PARTIAL** | Audit trail on fail-closed + mechanical fallbacks; `SPX_CLAUDE_GATE` default still unset |
+| 7 | **FIXED** | `SPX_CLAUDE_GATE` on by default on staging; prod opt-in via env |
 | 8 | **FIXED** | `logPlayVerdict` on fail-closed + BIE fallback paths |
 | 9 | **FIXED** | Allow-list (#104) + three `deleteOlderThan` tasks in `cron/db-cleanup/route.ts` (catch-up PR) |
 | 10–11 | **FIXED** | `classifyOutcome` unified (#104) + `playCloseWasLoss` wired in `spx-play-engine.ts` (catch-up PR) |
@@ -141,16 +141,16 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 21–23 | **FIXED** | Desk `roundDeskNum`; IV rank #22; `useMergedDesk` `deskLaneFailed` |
 | 24–25 | **FIXED** | Bar h/l validation; technicals cache returns fresh `price` |
 | 26 | **FIXED** | `SPX_CLAUDE_DAILY_MAX_CALLS` wired with meta-backed counter |
-| 27 | **OPEN** | alert-outcome-sync fuzzy join (documented residual) |
+| 27 | **FIXED** | Ambiguity-safe play-outcome join + grade filter; `spx_claude_play` alert_type aligned |
 | 28 | **FIXED** | `topGexWalls` trims to `limit` when anchors overflow |
 | 29 | **FIXED** | `rsi()` already returns null on flat window (verified) |
 | 30 | **FIXED** | `strikeTotalsToLevels` validates `net` finiteness |
-| 31–32 | **DEFERRED** | UW REST push-order contract; flow spot=0 edge |
+| 31–32 | **FIXED** | Labeled UW REST supplemental fetch; flow lane skips GEX at spot=0 |
 | 33 | **FIXED** | Invalidation staleness note |
 | 34 | **FIXED** | spx-signal-observe docblock |
 | 35 | **FIXED** | Staggered cron TOMLs (+2 / +4 min) |
 | 36–37 | **FIXED** | Promotion query LIMIT 50k; admin date validation → 400 |
-| 38 | **OPEN** | No DB FK on playbook instance refs (schema change deferred) |
+| 38 | **FIXED** | FK on playbook instance refs (orphan cleanup + CASCADE/SET NULL) |
 | 4 (Largo) | **FIXED** | `composeSpxDeskRead` threads `playbookShadow` |
 | 7 | **PARTIAL** | `SPX_CLAUDE_GATE` default off by design (staging research) |
 | Q4 | **FIXED — confirmed independent** | Production DB re-read in resolver (#105); `playbook-match-resolver.test.ts` locks independence (catch-up PR) |

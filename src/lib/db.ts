@@ -1114,6 +1114,39 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_playbook_instance_events_instance
       ON spx_playbook_instance_events (instance_id, observed_at DESC);
 
+    -- #38: orphan cleanup then FK — application-level refs become enforced at the DB layer.
+    DELETE FROM spx_playbook_instance_events e
+      WHERE NOT EXISTS (
+        SELECT 1 FROM spx_playbook_instances i WHERE i.instance_id = e.instance_id
+      );
+    UPDATE spx_play_outcomes o
+      SET playbook_instance_id = NULL
+      WHERE o.playbook_instance_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM spx_playbook_instances i WHERE i.instance_id = o.playbook_instance_id
+        );
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_spx_playbook_instance_events_instance'
+      ) THEN
+        ALTER TABLE spx_playbook_instance_events
+          ADD CONSTRAINT fk_spx_playbook_instance_events_instance
+          FOREIGN KEY (instance_id) REFERENCES spx_playbook_instances(instance_id)
+          ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_spx_play_outcomes_playbook_instance'
+      ) THEN
+        ALTER TABLE spx_play_outcomes
+          ADD CONSTRAINT fk_spx_play_outcomes_playbook_instance
+          FOREIGN KEY (playbook_instance_id) REFERENCES spx_playbook_instances(instance_id)
+          ON DELETE SET NULL;
+      END IF;
+    END $$;
+
     -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
     -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
     -- (src/lib/nighthawk/scorer.ts) computes a FULL breakdown for every ticker the nightly hunt
@@ -4593,6 +4626,9 @@ export type UngradedAlertAuditRow = {
   source_table: string;
   source_key: Record<string, unknown>;
   fired_at: string;
+  /** SPX verdict grade at fire time — tightens play-outcome join when set. */
+  confidence_label: string | null;
+  direction: string | null;
 };
 
 /**
@@ -4612,7 +4648,7 @@ export async function fetchUngradedAlertAuditRows(
   const cappedMinutes = Math.min(Math.max(minAgeMinutes, 1), 60 * 24 * 30);
   const cappedLimit = Math.min(Math.max(limit, 1), 2000);
   const res = await dbQuery<QueryResultRow>(
-    `SELECT id, alert_type, source_table, source_key, fired_at
+    `SELECT id, alert_type, source_table, source_key, fired_at, confidence_label, direction
      FROM alert_audit_log
      WHERE outcome IS NULL
        AND alert_type <> 'nighthawk_rejected'
@@ -4627,6 +4663,8 @@ export async function fetchUngradedAlertAuditRows(
     source_table: String(r.source_table),
     source_key: (r.source_key as Record<string, unknown>) ?? {},
     fired_at: new Date(String(r.fired_at)).toISOString(),
+    confidence_label: r.confidence_label != null ? String(r.confidence_label) : null,
+    direction: r.direction != null ? String(r.direction) : null,
   }));
 }
 
@@ -4706,29 +4744,35 @@ export async function fetchNighthawkOutcomeForAudit(
  * same `direction`), moments after the verdict is logged — so (direction, price) match
  * exactly and `opened_at` always lands shortly after the audit row's `fired_at`. This looks
  * up the nearest such play within a generous 30-minute window and only matches CLOSED rows
- * (`outcome <> 'open'`). A price tolerance (not exact equality) absorbs any NUMERIC
- * round-trip formatting difference between the JSONB-serialized verdict price and the
- * column value. If nothing matches, the row simply stays ungraded — a missed match is safe
- * (leaves a row for next run); this function is written so it can never return the WRONG
- * play's outcome (tight price+direction+time constraints, always LIMIT 1 ordered by nearest
- * open time to the verdict).
+ * (`outcome NOT IN ('open','superseded')`). When more than one play matches the same
+ * direction+price window, returns null (ambiguous — safe no-grade) rather than picking the wrong
+ * play. Optional `grade` tightens the match when the audit row captured the verdict grade.
  */
 export async function fetchSpxClaudePlayOutcomeForAudit(
   direction: string,
   price: number,
-  firedAt: string
+  firedAt: string,
+  grade?: string | null
 ): Promise<{ outcome: string } | null> {
   if (!Number.isFinite(price)) return null;
   const res = await dbQuery<QueryResultRow>(
-    `SELECT outcome FROM spx_play_outcomes
-     WHERE direction = $1
-       AND ABS(entry_price - $2::numeric) < 0.01
-       AND outcome <> 'open'
-       AND opened_at >= $3::timestamptz
-       AND opened_at <= $3::timestamptz + interval '30 minutes'
-     ORDER BY opened_at ASC
+    `WITH candidates AS (
+       SELECT outcome,
+              ABS(EXTRACT(EPOCH FROM (opened_at - $3::timestamptz))) AS delta_sec
+       FROM spx_play_outcomes
+       WHERE direction = $1
+         AND ABS(entry_price - $2::numeric) < 0.01
+         AND outcome NOT IN ('open', 'superseded')
+         AND opened_at >= $3::timestamptz - interval '2 minutes'
+         AND opened_at <= $3::timestamptz + interval '30 minutes'
+         AND ($4::text IS NULL OR grade = $4)
+     )
+     SELECT outcome
+     FROM candidates
+     WHERE (SELECT COUNT(*)::int FROM candidates) = 1
+     ORDER BY delta_sec ASC
      LIMIT 1`,
-    [direction, price, firedAt]
+    [direction, price, firedAt, grade ?? null]
   );
   const row = res.rows[0];
   return row ? { outcome: String(row.outcome) } : null;
