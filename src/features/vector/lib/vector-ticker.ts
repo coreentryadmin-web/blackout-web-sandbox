@@ -18,6 +18,24 @@ export function normalizeVectorTicker(raw: string | null | undefined): string {
   return t;
 }
 
+/**
+ * True when a raw symbol is a well-formed ticker Vector will serve on demand.
+ *
+ * Vector is deliberately NOT restricted to the preset universe — any optionable
+ * symbol works (the GEX/bars providers return honest-empty structure for
+ * non-optionable ones, and the chart states that rather than erroring). The
+ * preset list is only the quick-pick set and the server-recorded-rail set; it is
+ * not an allowlist. This gate exists purely to reject junk/injection before the
+ * value reaches the providers — a syntactically valid symbol (post-index-prefix
+ * strip, matching TICKER_RE) is accepted; anything else (empty, spaces, control
+ * chars, over length) is refused with a clean 400 instead of silently serving SPX.
+ */
+export function isVectorTickerAllowed(raw: string | null | undefined): boolean {
+  let t = String(raw ?? "").trim().toUpperCase();
+  if (t.startsWith("I:")) t = t.slice(2);
+  return TICKER_RE.test(t);
+}
+
 export function isVectorIndexTicker(ticker: string): boolean {
   // normalizeVectorTicker strips any "I:" prefix, so the set lookup is total.
   return VECTOR_INDEX_TICKERS.has(normalizeVectorTicker(ticker));
