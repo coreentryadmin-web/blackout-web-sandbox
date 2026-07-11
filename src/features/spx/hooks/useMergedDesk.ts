@@ -161,6 +161,7 @@ export function useMergedDesk() {
 
   const {
     data: desk,
+    error: deskFetchError,
     isLoading: deskLoading,
     isValidating: deskValidating,
   } = useSWR(heavyLanesActive ? "spx-desk-full" : null, fetchSpxDesk, {
@@ -276,12 +277,14 @@ export function useMergedDesk() {
   // Keep skeleton until merged desk OR session cache exists — pulseRest alone must not
   // flip deskLoading false (that rendered OFFLINE/MARKET CLOSED while heavy lanes still load).
   const initialLoading = !merged && !deskStable.current;
+  const deskLaneFailed = Boolean(deskFetchError) && !desk && bootstrapSettled;
 
   return {
     desk: merged,
     live,
     refreshing,
     deskLoading: initialLoading,
+    deskLaneFailed,
     sessionActive,
     marketLabel: pulse?.market_label ?? merged?.market_label,
   };

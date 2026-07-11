@@ -130,15 +130,7 @@ function rsi(bars: Bar[], period = 14): number | null {
   return 100 - 100 / (1 + rs);
 }
 
-function emaFromCloses(closes: number[], period: number): number | null {
-  if (closes.length < period) return null;
-  const k = 2 / (period + 1);
-  let val = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < closes.length; i++) {
-    val = closes[i] * k + val * (1 - k);
-  }
-  return val;
-}
+import { emaFromCloses } from "@/lib/providers/ma-math";
 
 /** Trailing N-minute range from m1 bars (PB-11 chop scalp). */
 export function rollingRangeFromBars(

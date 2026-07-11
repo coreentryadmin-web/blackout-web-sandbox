@@ -57,7 +57,7 @@ class SpxPanelErrorBoundary extends React.Component<
 
 export function SpxDashboard() {
   const { isLoaded, tier } = useAppAuth();
-  const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
+  const { desk, live, refreshing, deskLoading, deskLaneFailed, sessionActive } = useMergedDesk();
   const nativeShell = useIosNativeShell();
   const compactPanels = useCompactDeskPanels(nativeShell);
   const [iosPanel, setIosPanel] = useState<"plays" | "matrix" | "intel">("plays");
@@ -113,6 +113,14 @@ export function SpxDashboard() {
 
   return (
     <div className="spx-sniper-desk spx-sniper-desk-fill">
+      {deskLaneFailed && (
+        <div
+          className="flex items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-mono text-amber-200"
+          role="alert"
+        >
+          Desk rebuild failed — showing last cached snapshot. Retrying in the background.
+        </div>
+      )}
       {activeHalts.length > 0 && (
         <div
           className="flex items-center gap-2 rounded border border-bear/40 bg-bear/10 px-4 py-2 text-xs font-mono text-bear"

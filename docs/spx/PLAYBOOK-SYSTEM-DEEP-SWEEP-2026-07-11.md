@@ -130,21 +130,27 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 9 | **FIXED** | Playbook tables in `db-cleanup-targets.ts` |
 | 10–11 | **FIXED** | Unified `classifyOutcome` P&L grading; STOP/TRAIL scratch = breakeven |
 | 12 | **FIXED** | `updateOpenSpxPlayRow` MFE/MAE `GREATEST` high-water |
-| 13 | **DEFERRED** | EMA dedup refactor |
+| 13 | **FIXED** | `emaFromCloses` imported from `ma-math.ts` |
 | 14 | **FIXED** | NaN guard on gamma OI fields |
 | 15 | **FIXED** | Prior-day OHLC uses dated bars subset |
 | 16 | **FIXED** | Cache key includes `confirmations.passed` |
 | 17 | **FIXED #100** | (see above) |
 | 18 | **FIXED** | Advisory lock on `insertPlaybookInstanceEvents` |
 | 19 | **FIXED** | Index `idx_spx_playbook_shadow_obs_session` |
-| 20 | **DEFERRED** | Runtime intel validation |
-| 21–23 | **PARTIAL/DEFERRED** | Desk rounding sweep; IV rank #22 fixed; useMergedDesk errors deferred |
+| 20 | **FIXED** | `parseEngineIntelOverlay` runtime validation |
+| 21–23 | **FIXED** | Desk `roundDeskNum`; IV rank #22; `useMergedDesk` `deskLaneFailed` |
 | 24–25 | **FIXED** | Bar h/l validation; technicals cache returns fresh `price` |
-| 26 | **DEFERRED** | `SPX_CLAUDE_DAILY_MAX_CALLS` still unused |
+| 26 | **FIXED** | `SPX_CLAUDE_DAILY_MAX_CALLS` wired with meta-backed counter |
 | 27 | **OPEN** | alert-outcome-sync fuzzy join (documented residual) |
-| 28–32 | **DEFERRED** | Low/hygiene |
+| 28 | **FIXED** | `topGexWalls` trims to `limit` when anchors overflow |
+| 29 | **FIXED** | `rsi()` already returns null on flat window (verified) |
+| 30 | **FIXED** | `strikeTotalsToLevels` validates `net` finiteness |
+| 31–32 | **DEFERRED** | UW REST push-order contract; flow spot=0 edge |
 | 33 | **FIXED** | Invalidation staleness note |
 | 34 | **FIXED** | spx-signal-observe docblock |
 | 35 | **FIXED** | Staggered cron TOMLs (+2 / +4 min) |
 | 36–37 | **FIXED** | Promotion query LIMIT 50k; admin date validation → 400 |
 | 38 | **OPEN** | No DB FK on playbook instance refs (schema change deferred) |
+| 4 (Largo) | **FIXED** | `composeSpxDeskRead` threads `playbookShadow` |
+| 7 | **PARTIAL** | `SPX_CLAUDE_GATE` default off by design (staging research) |
+| Q4 | **FIXED** | Assert requires persisted row; production re-reads DB before assert |
