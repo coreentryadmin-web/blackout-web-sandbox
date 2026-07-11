@@ -24,6 +24,9 @@ export type PlaybookOptionExecutionSim = OptionSimResult & {
   spread_width: number | null;
   spread_pct: number | null;
   model: "adverse_half_spread_plus_bps";
+  exit_assumed_fill?: number | null;
+  exit_slippage_pts?: number | null;
+  round_trip_cost_pts?: number | null;
 };
 
 const DEFAULT_SLIPPAGE_BPS = 15;
@@ -54,6 +57,24 @@ export function simulateOptionEntry(input: OptionSimInput): OptionSimResult {
   };
 }
 
+/** Exit fill model — same adverse half-spread + bps (conservative research default). */
+export function simulateOptionExit(input: OptionSimInput): OptionSimResult {
+  const halfSpread = Math.max(0, input.spread_width) / 2;
+  const slip = (input.option_mid * playbookOptionSlippageBps()) / 10_000;
+  const slippagePts = halfSpread + slip;
+  const assumedFill =
+    input.direction === "long"
+      ? Math.max(0.01, input.option_mid - slippagePts)
+      : input.option_mid + slippagePts;
+
+  return {
+    assumed_fill: assumedFill,
+    slippage_pts: slippagePts,
+    half_spread_pts: halfSpread,
+    effective_premium: assumedFill,
+  };
+}
+
 /** Build execution sim from a live option ticket at BUY commit time. */
 export function buildOptionExecutionSim(
   ticket: OptionTicket,
@@ -74,11 +95,21 @@ export function buildOptionExecutionSim(
     direction,
   });
 
+  const exitSim = simulateOptionExit({
+    entry_spot: entrySpot,
+    option_mid: ticket.mid,
+    spread_width: spreadWidth,
+    direction,
+  });
+
   return {
     ...sim,
     option_mid: ticket.mid,
     spread_width: spreadWidth,
     spread_pct: ticket.spread_pct,
     model: "adverse_half_spread_plus_bps",
+    exit_assumed_fill: exitSim.assumed_fill,
+    exit_slippage_pts: exitSim.slippage_pts,
+    round_trip_cost_pts: sim.slippage_pts + exitSim.slippage_pts,
   };
 }

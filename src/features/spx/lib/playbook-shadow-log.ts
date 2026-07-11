@@ -8,6 +8,7 @@ import {
   patchPlaybookInstanceBlocked,
   patchPlaybookInstanceOpened,
   setMeta,
+  syncPlaybookArmedPollCounts,
   updatePlaybookInstanceCounterfactual,
   upsertPlaybookInstances,
 } from "@/lib/db";
@@ -19,13 +20,12 @@ import {
   computeCounterfactualExcursion,
 } from "@/features/spx/lib/playbook-instance-events";
 import { computePlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
-import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import {
   collectPlaybookInstanceTransitions,
   playbookInstanceId,
-  type PlaybookLifecycleState,
 } from "@/features/spx/lib/playbook-state";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
@@ -77,10 +77,14 @@ export async function maybeLogPlaybookShadowMatch(
 
   const sessionDate = todayEtYmd();
   const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, opts?.technicals, false);
-  const rawVerdicts = opts?.technicals?.available
-    ? matchPlaybooksShadow(desk, opts.technicals, Date.now(), {
-        or_break_memory: orBreakMemory,
-      }).verdicts
+  const resolved =
+    opts?.technicals?.available
+      ? await resolveGuardedPlaybookMatch(sessionDate, desk, opts.technicals, {
+          or_break_memory: orBreakMemory,
+        })
+      : null;
+  const rawVerdicts = resolved
+    ? resolved.verdicts
     : panel.verdicts.map((v) => ({
         playbook_id: v.playbook_id,
         session_window_open: v.session_window_open,
@@ -99,7 +103,7 @@ export async function maybeLogPlaybookShadowMatch(
   });
 
   const prevStates = await loadPlaybookInstanceStates(sessionDate);
-  const prevMap = new Map<string, PlaybookLifecycleState>(
+  const prevMap = new Map(
     prevStates.map((r) => [r.instance_id, r.state])
   );
   const { transitions, nextByInstance } = collectPlaybookInstanceTransitions(
@@ -107,6 +111,8 @@ export async function maybeLogPlaybookShadowMatch(
     rawVerdicts,
     prevMap
   );
+
+  const armedPollByInstance = resolved?.next_armed_poll_counts;
 
   const primaryId =
     opts?.primary_playbook_id ?? panel.primary_playbook_id ?? null;
@@ -128,8 +134,13 @@ export async function maybeLogPlaybookShadowMatch(
         trigger_price:
           t.to_state === "triggered" && desk.price != null ? desk.price : null,
         reason_invalidated: t.to_state === "invalidated" ? t.detail : null,
+        armed_poll_count: armedPollByInstance?.get(t.instance_id) ?? null,
       }))
     );
+
+    if (armedPollByInstance?.size) {
+      await syncPlaybookArmedPollCounts(armedPollByInstance);
+    }
 
     const eventRows = buildTransitionEvents(
       sessionDate,

@@ -36,4 +36,7 @@ test("buildOptionExecutionSim: attaches model from ticket quotes", () => {
   assert.ok(sim);
   assert.equal(sim?.model, "adverse_half_spread_plus_bps");
   assert.ok(sim!.assumed_fill > 2.5);
+  assert.ok(sim!.exit_assumed_fill != null);
+  assert.ok(sim!.round_trip_cost_pts != null);
+  assert.ok(sim!.round_trip_cost_pts! > sim!.slippage_pts);
 });

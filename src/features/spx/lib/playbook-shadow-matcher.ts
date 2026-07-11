@@ -23,7 +23,11 @@ import {
   type OrBreakMemory,
 } from "@/features/spx/lib/playbook-break-memory";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
-import { playMtfBufferPts, playStructureProximityPts, playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
+import { playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
+import {
+  scaledPlaybookMtfBufferPts,
+  scaledPlaybookStructureProximityPts,
+} from "@/features/spx/lib/playbook-volatility-scale";
 import { pickPrimaryPlaybook } from "@/features/spx/lib/playbook-primary-rank";
 
 export type PlaybookDirectionVerdict = "long" | "short" | null;
@@ -186,7 +190,7 @@ function matchPb02(
   const nearBandFromBelow =
     desk.above_vwap === false &&
     distanceFromVwap >= 0 &&
-    distanceFromVwap <= playStructureProximityPts();
+    distanceFromVwap <= scaledPlaybookStructureProximityPts(desk);
   const rallyContext = technicals.minutes_above_vwap >= 2 || nearBandFromBelow;
   const flow = flowDirection(desk);
   const flowMaterialShort = flowMaterialBearish(desk);
@@ -240,7 +244,7 @@ function matchPb03(
     desk.feed_stalled === true ||
     desk.halt_channel_stale === true ||
     (desk.active_halts?.length ?? 0) > 0;
-  const buf = playMtfBufferPts();
+  const buf = scaledPlaybookMtfBufferPts(desk, technicals);
 
   let brokeHigh = false;
   let brokeLow = false;
@@ -323,7 +327,7 @@ function matchPb04(
   }
 
   const pinning = desk.gamma_regime === "mean_revert";
-  const prox = playStructureProximityPts();
+  const prox = scaledPlaybookStructureProximityPts(desk);
   const resistanceAbove = walls
     .filter((w) => w.kind === "resistance" && w.strike >= desk.price)
     .sort((a, b) => a.strike - b.strike)[0];
@@ -390,8 +394,8 @@ function matchPb05(
     };
   }
 
-  const prox = playStructureProximityPts();
-  const buf = playMtfBufferPts();
+  const prox = scaledPlaybookStructureProximityPts(desk);
+  const buf = scaledPlaybookMtfBufferPts(desk, technicals);
   const flow = flowDirection(desk);
   const ticks = desk.net_prem_ticks ?? [];
 
@@ -471,8 +475,8 @@ function matchPb06(
     };
   }
 
-  const prox = playStructureProximityPts();
-  const buf = playMtfBufferPts();
+  const prox = scaledPlaybookStructureProximityPts(desk);
+  const buf = scaledPlaybookMtfBufferPts(desk, technicals);
   const nearFlip = Math.abs(desk.price - flip) <= prox;
   const ema9 = technicals.m1_ema9;
 
@@ -847,7 +851,7 @@ function matchPb12(
     };
   }
 
-  const prox = playStructureProximityPts();
+  const prox = scaledPlaybookStructureProximityPts(desk);
   const ext = Math.abs(desk.spx_change_pct) >= 0.5;
   const rsi = technicals.m5_rsi;
   const overbought = rsi != null && rsi >= 72;

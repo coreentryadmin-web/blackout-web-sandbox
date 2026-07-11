@@ -216,6 +216,7 @@ Every ~2s play poll on staging:
 | **#64** | Gate `blocks_by_category`, `execution_sim` on open, PB-14 OR break memory, validate `pipeline_audit` |
 | **#66** | Research requirements + assessment scores in status doc |
 | **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
+| **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
 
 ---
 
@@ -246,15 +247,23 @@ Every ~2s play poll on staging:
 | `npm run playbook:param-sweep` | ✅ Shipped | Stability bands, no in-sample tune |
 | OOS train firewall in code | ✅ Shipped | `playbook-evidence-config.ts` |
 
+### P1 — Phase 2 shipped (staging)
+
+| Item | Status | Detail |
+|------|--------|--------|
+| Armed duration guard (`PLAYBOOK_MIN_ARMED_POLLS`) | ✅ Shipped | `applyPlaybookVerdictGuards` + `armed_poll_count` column |
+| PB-03 VIX/OR-normalized buffer | ✅ Shipped | `scaledPlaybookMtfBufferPts` / `scaledPlaybookStructureProximityPts` |
+| Playbook-specific exits | ✅ Shipped | `playbookExitProfile` wired in `evaluateOpenPlay` |
+| Session risk governor | ✅ Shipped | Per-PB trigger cap + degraded size multiplier in gates |
+| Option exit cost model | ✅ Shipped | `simulateOptionExit` + `round_trip_cost_pts` on `execution_sim` |
+| ECS auto-deploy after ECR push | ✅ Shipped | `force-new-deployment` in `ecr-push-staging.yml` |
+
 ### P1 — Still open
 
 | Item | Status | Detail |
 |------|--------|--------|
 | Evidence-aware primary ranking (historical edge weight) | 🟡 Partial | Priority list only; no win-rate weight |
 | Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
-| Armed duration / blocked-while-armed ordering | ⏳ Planned | Tick-recomputed ARM |
-| Playbook-specific exits | ⏳ Planned | Legacy engine owns exits |
-| PB-03 VIX/OR-normalized buffer | ⏳ Planned | Static `playMtfBufferPts()` |
 | PB-02 z-score / persistence | ⏳ Planned | Materiality only |
 | PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
 | MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |
@@ -264,7 +273,7 @@ Every ~2s play poll on staging:
 
 | Item | Status |
 |------|--------|
-| Session risk governor | 🟡 Partial (`playSessionMaxEntries` / `playSessionMaxLosses`) |
+| Session risk governor | ✅ Shipped — per-PB cap + degraded size |
 | Limited-live prod with min size | ❌ Blocked until evidence tiers |
 | Autonomous prod BUY | ❌ Frozen |
 | Expand beyond 14 playbooks | ❌ Frozen |
@@ -371,11 +380,11 @@ Independent review (2026-07-10) — aligned with repo policy:
 
 | Priority | Item | Status |
 |----------|------|--------|
-| **P0** | Full persistent state machine (not tick-recomputed) | 🟡 Stub + events; armed duration / ordering TBD |
-| **P0** | Option-level execution modelling | 🟡 `execution_sim` stub at open; full spread/slippage model TBD |
-| **P1** | Playbook-specific exits | ❌ Legacy engine owns exits |
-| **P1** | Volatility-aware thresholds (not static pts) | ❌ Bands documented; normalization TBD |
-| **P1** | Session-level risk governor expansion | 🟡 `playSessionMaxEntries` / `playSessionMaxLosses` partial |
+| **P0** | Full persistent state machine (not tick-recomputed) | 🟡 Armed-poll guard + `armed_poll_count`; not full blocked-while-armed |
+| **P0** | Option-level execution modelling | 🟡 Entry + exit sim + `round_trip_cost_pts` at open |
+| **P1** | Playbook-specific exits | ✅ `playbookExitProfile` in `evaluateOpenPlay` |
+| **P1** | Volatility-aware thresholds (not static pts) | ✅ VIX/OR scaled buffers in matchers |
+| **P1** | Session-level risk governor expansion | ✅ Per-PB trigger cap + degraded size multiplier |
 
 ### Research methodology (agreed policy)
 
@@ -389,7 +398,7 @@ Independent review (2026-07-10) — aligned with repo policy:
 Appropriate for **shadow testing and staged validation** on `staging.blackouttrades.com`.  
 **Not** ready for fully autonomous production trading until execution modelling, durable state semantics, and broader prospective evidence are complete.
 
-**Staging deploy note:** ECR push does not roll ECS automatically — after merges, run:
+**Staging deploy note:** `ecr-push-staging.yml` now triggers ECS `force-new-deployment` after each push to `:staging`. Manual roll only needed if the workflow is skipped.
 
 ```bash
 aws ecs update-service --cluster blackout-staging-cluster \
@@ -400,12 +409,12 @@ aws ecs update-service --cluster blackout-staging-cluster \
 
 | Step | Item | Status |
 |------|------|--------|
-| 1 | Persistent state machine | 🟡 In progress |
-| 2 | Option execution simulator | 🟡 Stub shipped |
-| 3 | Playbook-specific exits | ⏳ Planned |
-| 4 | Session risk governor | 🟡 Partial |
+| 1 | Persistent state machine | 🟡 Armed-poll guard shipped |
+| 2 | Option execution simulator | ✅ Entry + exit + round-trip cost |
+| 3 | Playbook-specific exits | ✅ Shipped |
+| 4 | Session risk governor | ✅ Shipped |
 | 5 | Prospective evidence collection | ✅ Infra live; need RTH sessions |
-| 6 | Threshold normalization (VIX/OR-aware) | ⏳ Planned |
+| 6 | Threshold normalization (VIX/OR-aware) | ✅ Shipped in matchers |
 | 7 | Expand playbooks beyond PB-01–04 | ❌ Blocked until evidence tiers |
 
 ---
@@ -537,7 +546,11 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-registry.ts` | PB-01…14 + `setup_family` + `fidelity` |
 | `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` |
 | `playbook-regime-router.ts` | Regime eligibility + `isUnknownPlaybookRegime` |
-| `playbook-shadow-matcher.ts` | 14 matchers → verdicts |
+| `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
+| `playbook-match-resolver.ts` | Guarded match + armed polls + trigger counts |
+| `playbook-volatility-scale.ts` | VIX/OR scaled buffer & proximity |
+| `playbook-verdict-guard.ts` | Armed-poll guard + exit profiles |
+| `playbook-session-risk.ts` | Per-PB session trigger cap + degraded size |
 | `playbook-shadow-panel.ts` | API/UI snapshot |
 | `playbook-shadow-log.ts` | Postgres telemetry |
 | `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` |

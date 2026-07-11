@@ -66,3 +66,17 @@ jobs:
           docker push "${IMAGE}:${IMAGE_TAG}"
           docker push "${IMAGE}:staging"
           echo "Pushed ${IMAGE}:${IMAGE_TAG} and :staging"
+
+      - name: Roll ECS staging service
+        env:
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'blackout-staging-cluster' }}
+          ECS_SERVICE: ${{ vars.ECS_STAGING_SERVICE || 'blackout-staging-web' }}
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --force-new-deployment \
+            --output json \
+            --query 'service.deployments[0].status'
+          echo "Triggered ECS force-new-deployment on ${ECS_CLUSTER}/${ECS_SERVICE}"

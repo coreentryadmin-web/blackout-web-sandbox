@@ -1,7 +1,7 @@
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import { PLAYBOOK_REGISTRY, type PlaybookId } from "@/features/spx/lib/playbook-registry";
-import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
+import { matchPlaybooksShadow, type PlaybookShadowMatchResult } from "@/features/spx/lib/playbook-shadow-matcher";
 import { computePlaybookPipelineAudit, type PlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
 import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
 import { playbookLiveGateEnabled } from "@/features/spx/lib/spx-play-config";
@@ -33,13 +33,19 @@ const NAME_BY_ID = Object.fromEntries(
 export function buildPlaybookShadowPanel(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals | null | undefined,
-  opts?: { or_break_memory?: OrBreakMemory | null }
+  opts?: {
+    or_break_memory?: OrBreakMemory | null;
+    /** Pre-resolved guarded match (engine/API path). Falls back to raw matcher when omitted. */
+    match?: PlaybookShadowMatchResult | null;
+  }
 ): PlaybookShadowPanel | null {
   if (!technicals?.available) return null;
 
-  const { verdicts, primary_playbook_id } = matchPlaybooksShadow(desk, technicals, Date.now(), {
-    or_break_memory: opts?.or_break_memory ?? null,
-  });
+  const { verdicts, primary_playbook_id } =
+    opts?.match ??
+    matchPlaybooksShadow(desk, technicals, Date.now(), {
+      or_break_memory: opts?.or_break_memory ?? null,
+    });
   return {
     mode: playbookLiveGateEnabled() ? "live" : "shadow",
     primary_playbook_id,
