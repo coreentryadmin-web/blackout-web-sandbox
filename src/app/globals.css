@@ -15462,7 +15462,7 @@ body::before {
   }
 
   .helix-tape-muted {
-    @apply text-[11px] text-sky-300/72;
+    @apply text-[11px] text-sky-300/[0.72];
   }
 
   .helix-tape-dte-zero {

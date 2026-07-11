@@ -25,6 +25,8 @@ jobs:
         run: npx tsc --noEmit
       - name: API auth guard (default-deny)
         run: node scripts/verify-api-auth-guards.mjs
+      - name: Tailwind @apply opacity guard (recurring build breaker)
+        run: node scripts/check-tailwind-apply-opacity.mjs
       - name: Unit tests
         # Node 20 does not expand globs in --test; expand in bash but keep module mocks.
         shell: bash
