@@ -122,6 +122,7 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 | Option PnL | `playbook-option-pnl.ts` |
 | Gamma / exits | `src/lib/providers/gamma-desk.ts`, `spx-desk.ts`, `playbook-exit-engines.ts` |
 | Architecture SSOT | `docs/spx/PLAYBOOK-ARCHITECTURE-STATUS.md` |
+| **Staging access (AWS, Cognito, scripts)** | `docs/ops/STAGING-CONNECT.md` |
 
 ---
 
@@ -133,7 +134,7 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 4. Promotion-eval **#20** — what is the minimal gate wiring to unblock paper→live promotion on staging?
 5. Any regressions in **dual-path** shadow mode (`playbook_shadow.mode === "live"` on staging vs `"shadow"` locally)?
 
----
+**Before reviewing live behavior:** read `docs/ops/STAGING-CONNECT.md` (AWS profile, Cognito, CRON bearer, validation commands).
 
 ## Critical
 

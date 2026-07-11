@@ -167,12 +167,15 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 | `npm run validate:staging` | Full harness (warm, deploy, latency) |
 | `npm run validate:staging-bie` | BIE-only intelligence layer (commentary, Largo, flow-brief, gex-explain) |
 | `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
-| `npm run validate:staging-live` | Cron + Clerk admin/member probes |
+| `npm run validate:staging-live` | Cron + Cognito admin/member probes |
+| `npm run validate:staging-playbook` | Playbook shadow panel on `/api/market/spx/play` |
 | `npm run validate:latency-compare` | Staging vs prod latency |
 | `npm run ops:collect:staging` | Staging ops action items (no Railway) |
 | `npm run validate:staging-vector-e2e` | Vector Playwright against staging |
 
 Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint checks. GHA: `staging-validate.yml`, `staging-rth-check.yml` (weekdays).
+
+**Staging access (AWS CLI profile, Cognito Hosted UI, Secrets Manager, session minting):** `docs/ops/STAGING-CONNECT.md`
 
 After `ecr-push-staging.yml` merges to `blackout-web-sandbox`, roll ECS so tasks pick up `:staging`:
 `aws ecs update-service --cluster blackout-staging-cluster --service blackout-staging-web --force-new-deployment`
