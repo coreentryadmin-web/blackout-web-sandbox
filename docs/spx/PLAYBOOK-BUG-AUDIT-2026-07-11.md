@@ -1,6 +1,6 @@
 # SPX Playbook — Consolidated Bug Audit (Rounds 1–2 + Cursor)
 
-**Date:** 2026-07-11 (session close-out updated 2026-07-11T02:50Z)  
+**Date:** 2026-07-11 (updated 2026-07-11T03:30Z — foundation assessment + third-pass Q&A)  
 **Repo:** `coreentryadmin-web/blackout-web-sandbox` (staging)  
 **Branch:** `blackout-web-sandbox`  
 **Staging URL:** https://staging.blackouttrades.com  
@@ -22,8 +22,9 @@
 | [#91](https://github.com/coreentryadmin-web/blackout-web-sandbox/pull/91) | Synthetic theta + net PnL floor | `playbook-option-pnl` |
 | [#92](https://github.com/coreentryadmin-web/blackout-web-sandbox/pull/92) | Gate A17 telemetry bucket (#26) | `playbook-gate-categories` |
 | [#93](https://github.com/coreentryadmin-web/blackout-web-sandbox/pull/93) | Promotion-eval data-quality gate inert (#20a) | `playbook-promotion-eval` |
+| [#94](https://github.com/coreentryadmin-web/blackout-web-sandbox/pull/94) | Second-pass validation + fix status in audit handoff | docs only |
 
-**Staging deploy:** ECR push + ECS rollout succeeded for #80–#83; second-pass fixes #88–#92 pending merge/deploy.  
+**Staging deploy:** ECR push + ECS rollout for #80–#93 merged to `blackout-web-sandbox`. Second-pass code fixes #88–#93 shipped; confirm image after next ECS rollout.  
 **Validation (2026-07-11 off-hours):** `validate:staging` GREEN, `validate:staging-playbook` PASS. RTH open-play / cron FSM not re-proven in this window.
 
 This document merges Claude’s two review rounds with Cursor’s CTO deep-dive. Each item: **status**, **agree/disagree**, **action**.
@@ -34,7 +35,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 
 ## Handoff for Claude — TODO summary
 
-Use this section first. Full item tables below retain per-finding detail.
+Use this section first. For **foundation verdict** (what's good vs what's not closed yet), read **Foundation assessment** below. Full item tables retain per-finding detail.
 
 ### ✅ Done (agreed items — shipped to staging)
 
@@ -92,7 +93,7 @@ Use this section first. Full item tables below retain per-finding detail.
 | # | Item | What shipped | What remains |
 |---|------|--------------|--------------|
 | **2** | Session trigger cap 0–1 / invalidate bypass | `loadPlaybookTriggerCountsByPb` expanded | Full episode-level cap audit under concurrent invalidate loops |
-| **4** | VWAP volume-weighted honesty | `vwap_volume_weighted` flag on desk | Live magnitude verification vs UW/index bars |
+| **4** | VWAP volume-weighted honesty | `vwap_volume_weighted` flag on desk | **F1:** fix math or fail-closed; flag alone insufficient — see foundation assessment |
 | **22** | PB-14 OR break-memory reset | Fresh break wave clears re-entry latch | Long-session soak / edge cases around multi-wave days |
 | **31** | Doc/comment drift | This doc + exit-policy header | Registry comment (#36), architecture SSOT sync |
 | **35** | Options tests direction-only | Theta cap + synthetic field tests | Full open-play management integration tests |
@@ -120,11 +121,12 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 | Hygiene | **33** | God-files | Large refactor | Split `playbook-shadow-matcher.ts`, `spx-play-engine.ts` |
 | Hygiene | **36** | Registry comment false | One-line | Fix `playbook-registry.ts` “never used in live gating” |
 
-**Not validated this session (operational, not code gaps):**
+**Not validated this session (operational — F4 foundation gap):**
 
 - Staging **browser** E2E with Cognito auth (dashboard redirects to hosted UI; API validation passed)
-- **RTH** proof of cron FSM writes + open-play `playbook_instance_id` backfill on real trades
+- **RTH** proof of cron FSM writes + open-play `playbook_instance_id` on a **real** tick sequence with open position — **required for foundation closure**
 - **Prod** — all work merged to `blackout-web-sandbox` only; not merged to `blackout-web` `main`
+- **Promotion pipeline** — never executed against production/staging DB (**F2**)
 
 ---
 
@@ -143,15 +145,63 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 
 ---
 
-### Questions for Claude (second-pass review)
+### Questions for Claude — second-pass (answered 2026-07-11)
 
-1. Are **partial** items #2 and #22 still P0 under live RTH, or acceptable for paper-executable staging?
-2. Is **`playbookShadowStateKey`** still too coarse (gate fingerprint = block count only)? Should it hash block categories?
-3. Does **`playbook_instance_id`** backfill strategy need a one-time migration for same-session legacy outcomes?
-4. Promotion-eval **#20** — what is the minimal gate wiring to unblock paper→live promotion on staging?
-5. Any regressions in **dual-path** shadow mode (`playbook_shadow.mode === "live"` on staging vs `"shadow"` locally)?
+| # | Question | Answer | Status |
+|---|----------|--------|--------|
+| 1 | Are **#2** and **#22** still P0 under live RTH? | **No** for capital risk today. #2 bypass affects shadow attempt counts, not `openPlay` commits. #22 (PB-14) is shadow-only + not allowlisted — gate A17 blocks real opens. Fix both before the next gate loosens (PB-14 to allowlist, shadow stats trusted for research). | ✅ Answered |
+| 2 | Is **`playbookShadowStateKey`** too coarse? | **Was yes** — fingerprint used block count only. **Fixed #89** (sorted block content join, same pattern as `BLOCKED_CURSOR_KEY`). | ✅ Fixed |
+| 3 | Does **`playbook_instance_id`** need backfill migration? | **Not now.** ~90 min legacy window on staging only. Run diagnostic: count NULL `playbook_instance_id` rows with ambiguous `(playbook_id, session_date, direction)` groups. Zero → no migration; legacy fallback join is permanent for pre-#82 rows. | ✅ Answered |
+| 4 | Minimal wiring for promotion-eval **#20**? | **Two PRs, not one.** (a) Inert data-quality gate — **done #93**. (b) Sample-builder querying DB + route/cron calling `evaluatePlaybookPromotion` — **still open (#20b)**. `evaluatePlaybookPromotion` has **zero production callers** today. | 🔧 Part b open |
+| 5 | Regression in dual-path shadow mode (`mode: "live"` on staging)? | **No.** `playbookLiveGateEnabled()` is env-correct per deploy target. `mode: "live"` tightens BUY gating only; **no broker/order execution code** exists in repo. Live staging: `vwap_volume_weighted: false` confirmed on desk payload. | ✅ Answered |
+
+Full reasoning: see **Claude — second-pass validation** section below.
+
+---
+
+### Foundation assessment — human review (2026-07-11)
+
+**Verdict:** Good instincts, good process, fast honest self-correction — **not** a finished strong foundation yet. Architecture is being built well; three closure conditions are still open.
+
+#### What is genuinely good (agree — keep crediting this)
+
+- **Layered design is the right shape:** matcher → FSM → governor → gates → exit engines → promotion pipeline. No shortcut around core safety gates was found in review.
+- **Concurrency model is sound:** advisory lock on evaluator, single FSM writer on cron path (#81), member reads observations-only.
+- **Test discipline is real:** 2048+ unit tests, blocking `tsc` + `lint:brand` in CI; fixes ship with regression tests.
+- **Honest epistemic posture:** external review said *"unproven strategy — don't confuse sophistication for evidence it works"* — team wrote that into docs (`PLAYBOOK-ARCHITECTURE-STATUS`, promotion thresholds) and kept repeating it. Rare and matters.
+
+#### Why "strong foundation" is not true yet (five gaps)
+
+| # | Gap | Current state | What "closed" looks like |
+|---|-----|---------------|--------------------------|
+| **F1** | **Bottom-of-stack input unverified** | SPX VWAP on live staging is **not volume-weighted** (`vwap_volume_weighted: false` on desk). Flag discloses; math unchanged (`spx-session.ts` ISSUE-16). Most playbooks read VWAP. | Either fix VWAP source (real index bar volume) **or** formally downgrade VWAP-dependent playbooks until verified; re-tune matchers against correct signal. |
+| **F2** | **Zero production evidence of edge** | `evaluatePlaybookPromotion` never runs in prod/cron/admin. Historical evidence: **n=19, all long, net negative** (`scripts/playbook-evidence-report.mjs`). Promotion stats (trimmed mean, walk-forward, slippage stress) are well-built but idle. | **#20b:** sample-builder + scheduled/admin caller; first real promotion report against ≥N sessions of instance-linked outcomes. |
+| **F3** | **Recurring bug shape — no structural guardrail** | Same failure mode patched individually: precondition computed but not wired (PB-01/03); tautology "fixed" by deleting dead code without making check load-bearing (#16); cooldown bypass fixed at one `evaluateTradeGovernor` call site, not the second (#12). Suggests more instances exist unseen. | Structural fixes: single governor result threaded (not dual call); lint/type enforcing trigger fns consume `precondition_match`; verdict guard test that `prev` state changes outcome when intended; audit for duplicate evaluation paths. |
+| **F4** | **Nothing proven under real RTH** | All verification (Claude second-pass + Cursor fixes) = static code read or off-hours API (`market_open: false`). FSM commits, trigger cap, option PnL on HOLD, PB-04 debounce: **not watched through a real RTH tick sequence with an open position.** | One documented RTH session: cron FSM writes, triggered→open path, `playbook_instance_id` on outcome, PB-04 debounce under regime flip. Runbook: `docs/ops/RTH-OPEN-RUNBOOK.md` + `validate:staging-rth`. |
+| **F5** | **Complexity outpaces deduplication** | Parallel systems: two exit-policy files (one dead #13), two readiness status systems (#9), temporal contract vs matcher hardcoded windows, god-files (#33). Each layer tested in isolation; integration surface grows → more F3-class bugs likely. | Hygiene sprint: delete/merge dead exit-policy; single readiness SSOT; temporal windows sourced from one registry; split `spx-play-engine` / `playbook-shadow-matcher` with integration tests. |
+
+**Foundation closure checklist (all three required before "strong"):**
+
+1. [ ] VWAP question **closed** (fixed or formally gated off)
+2. [ ] Promotion pipeline **runs against real data** at least once in production/staging cron
+3. [ ] At least **one RTH session** observed end-to-end with real open trade + FSM evidence
+
+---
+
+### Questions for Claude — third pass (2026-07-11)
+
+Read **Foundation assessment** above first. These are the open questions for the next review:
+
+1. **F1 / #4 VWAP:** Given `vwap_volume_weighted: false` on staging today, which playbooks are *structurally invalid* until VWAP is fixed vs merely degraded? Should matchers fail-closed when the flag is false?
+2. **F2 / #20b:** Propose the minimal sample-builder query (tables, joins on `playbook_instance_id`, session filters) and where the first production caller should live (admin route vs weekly cron vs `playbook-evidence-report.mjs` extension).
+3. **F3:** Audit the codebase for **other dual-evaluation paths** like #12 (same pure function called twice with different bypass/context). Priority files: `spx-play-engine.ts`, `spx-play-gates.ts`, `playbook-verdict-guard.ts`, `playbook-shadow-matcher.ts`.
+4. **F3 / #16:** Should `armed_polls >= min` incorporate `prev` FSM state, or is the current honest-but-non-load-bearing design acceptable if docs stop claiming prev matters?
+5. **F4:** What is the minimum RTH observation script/checklist to elevate confidence from "code review" to "observed working live"? Cross-check against `validate:staging-rth` and `docs/ops/STAGING-CONNECT.md`.
+6. **F5:** Rank the deduplication items (#9, #13, #33, temporal vs matcher windows) by **risk of next F3-class bug** if left alone one more sprint.
 
 **Before reviewing live behavior:** read `docs/ops/STAGING-CONNECT.md` (AWS profile, Cognito, CRON bearer, validation commands).
+
+---
 
 ## Claude — second-pass validation (2026-07-11, post-#83/#84/#85, staging live-checked)
 
@@ -208,7 +258,7 @@ Method: 6 independent agents re-read the ACTUAL current code for every "Done" cl
 | **1** | PB-01/PB-03 precondition not in `longTrigger`/`shortTrigger` | ✅ | **Agree** — code had `precondition_match` metadata only; triggers fired without arm path | Wire `longPrecondition`/`shortPrecondition` and `preconditionMatch` into triggers; guard strips triggers without `precondition_match` |
 | **2** | Session trigger cap structurally 0–1; invalidate loop bypass | 🔧 | **Agree** on bypass; episode IDs fixed main cap | Expand `loadPlaybookTriggerCountsByPb` to count `triggered_at` / `trigger_count > 0` / invalidated rows |
 | **3** | Synthetic greeks served without disclosure | 🔧 | **Agree** — gamma/delta/iv flagged; theta always model (#91 adds theta flag) | `synthetic_fields[]`; open-play path still lacks greeks snapshot on HOLD |
-| **4** | SPX VWAP may not be volume-weighted | 🔧 | **Agree** on code path (`spx-session.ts` ISSUE-16); live magnitude unverified | Add `vwap_volume_weighted` on desk payload when index bars lack volume |
+| **4** | SPX VWAP may not be volume-weighted | 🔧 **P0 foundation** | **Confirmed live staging:** `vwap_volume_weighted: false`. Disclosure only today — **F1** in foundation assessment. | Fix VWAP source or fail-closed VWAP playbooks until verified |
 
 ---
 
@@ -295,4 +345,14 @@ Method: 6 independent agents re-read the ACTUAL current code for every "Done" cl
 4. ~~Gamma regime hysteresis + PB-04 exit debounce (P2)~~ — **done #83**
 5. ~~Wire `estimateOptionPnl` into open-play evidence path (P2)~~ — **done #83**
 
-See **Handoff for Claude — TODO summary** above for the full done / partial / not-done lists.
+See **Handoff for Claude — TODO summary** and **Foundation assessment** above for done / partial / not-done lists and closure checklist.
+
+### Recommended next sprint (foundation-oriented, not bug-hunt)
+
+| Priority | Item | Rationale |
+|----------|------|-----------|
+| **P0** | **F1** — VWAP fix or fail-closed | Bottom-of-stack; most playbooks depend on it |
+| **P0** | **F4** — RTH observation pass | Only path from code-review confidence to live confidence |
+| **P1** | **#20b** — promotion sample-builder + caller | **F2** — make statistics pipeline real |
+| **P1** | **F3** — dual-evaluation audit + single governor thread | Prevent next #12-shaped bug |
+| **P2** | **F5** — delete dead exit-policy, unify readiness SSOT | Reduce parallel-system drift |
