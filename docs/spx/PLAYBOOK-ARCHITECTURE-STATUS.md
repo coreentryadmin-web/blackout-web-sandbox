@@ -12,12 +12,14 @@ This document consolidates architecture, implementation status, per-playbook fid
 
 1. [Executive summary](#1-executive-summary)
 2. [Architecture — layered decision stack](#2-architecture--layered-decision-stack)
+   - [Operating assumptions](#21-operating-assumptions)
 3. [Four setup families](#3-four-setup-families)
    - [Hierarchical research taxonomy](#31-hierarchical-research-taxonomy)
    - [Implementation status vocabulary](#32-implementation-status-vocabulary)
 4. [What changed from the old model](#4-what-changed-from-the-old-model)
 5. [Runtime flow (today)](#5-runtime-flow-today)
 6. [Per-playbook status matrix](#6-per-playbook-status-matrix)
+   - [Playbook-specific positions](#61-playbook-specific-positions-today)
 7. [Shipped fixes (PR trail)](#7-shipped-fixes-pr-trail)
 8. [Open gaps & phase plan](#8-open-gaps--phase-plan)
 9. [Gates, flags, and live allowlist](#9-gates-flags-and-live-allowlist)
@@ -31,6 +33,7 @@ This document consolidates architecture, implementation status, per-playbook fid
 17. [Code map](#17-code-map)
 18. [Validation commands](#18-validation-commands)
 19. [Related docs](#19-related-docs)
+20. [Final assessment](#20-final-assessment)
 
 ---
 
@@ -49,6 +52,8 @@ This document consolidates architecture, implementation status, per-playbook fid
 **Bottom line:** Staging is the evidence lab. Architecture is promising; **trading edge remains unproven**. Families are a **hierarchical research rollup**, not proof that playbooks share one return process. Aggregate outcomes at **structural subtype** or **playbook** level before family-level claims. PB-09 demoted. Unknown regime and severe data quality fail-closed on live BUY.
 
 > **Critical takeaway:** Do not interpret the sophistication of the architecture as evidence that the strategy works. The architecture enables falsifiable hypotheses; profitability requires clean prospective evidence, execution realism, and risk controls.
+
+> **Honest one-line assessment (2026-07-11):** The system is well designed enough to discover whether an edge exists, but not yet tight enough to guarantee that collected evidence represents clean, independent, executable 0DTE trades. Next phase: lifecycle hygiene, execution simulation fidelity, and evidence-unit correctness — not more strategy intelligence.
 
 ---
 
@@ -118,6 +123,24 @@ flowchart TD
 | `severe` | 2+ issues simultaneously | **Fail-closed** all live playbook BUY |
 
 Global halt channel remains **fail-open** with warning in `spx-play-gates.ts` (confirmed live halt still blocks).
+
+### 2.1 Operating assumptions
+
+Centralized in `playbook-architecture-assumptions.ts`. Stated explicitly so research conclusions are not built on implicit guesses.
+
+| Assumption | Value / source |
+|------------|----------------|
+| **Play-engine poll cadence** | ~**2s** RTH default (`SPX_PLAY_POLL_MS` / `NEXT_PUBLIC_SPX_PLAY_POLL_MS`); desk full rebuild ~8s; matrix ~6s RTH |
+| **SPX spot price** | **Polygon/Massive** index WS `I:SPX` (`polygon-socket` → `indexStore`); REST pulse fallback when SSE down |
+| **RTH-only behavior** | Cash-session evaluation for mutate/BUY path; slower off-hours polls; session gates use **ET** |
+| **Time zone** | **`America/New_York`** for `session_date`, playbook windows, macro gates, outcome joins |
+| **Option quotes** | **Polygon/Massive REST** 0DTE chain (`spx-play-options.ts`); bid/ask/mid/delta/OI; **45s** ticket cache |
+| **Gamma / GEX model** | **UW GEX heatmap** + desk merge; served stale after **~30s** (`SPX_GEX_STALE_SEC`); SPX matrix server cache **8s** default (`SPX_GEX_HEATMAP_CACHE_SEC`) |
+| **Event calendar** | **Primary:** UW `/api/market/economic-calendar`; **fallback:** curated `US_MACRO_SCHEDULE_2026` (`macro-events.ts`) |
+| **Data retention** | **No auto-purge** of `spx_playbook_*` tables — append-only events grow until infra retention policy |
+| **Shadow observation dedup** | Throttle via `playbookShadowStateKey` (primary + fired set + gate fingerprint) — not every poll writes a row |
+| **Instance event semantics** | **Append on FSM transition**; blocked-primary deduped per `instance_id` + gate_blocks cursor |
+| **Instance identity (today)** | `{session_date}:{playbook_id}` — **one row per PB per session**; does **not** yet split multiple episodes, directions, or re-arms (**P0**) |
 
 ---
 
@@ -276,23 +299,55 @@ Statuses from `PLAYBOOK_SURFACE_STATUS` in `playbook-implementation-status.ts`. 
 
 **No playbook is `production_eligible` today.** `validated` requires OOS promotion gates per playbook/subtype.
 
+### 6.1 Playbook-specific positions (today)
+
+Synthesis of external review + code fidelity — not promotion approval.
+
+#### Closest to serious validation
+
+| PB | Position | Still needed |
+|----|----------|--------------|
+| **PB-01** VWAP Reclaim | Good candidate — strict 15m below-VWAP pre (#61) | Reclaim acceptance, displacement requirement, time-window study, playbook-specific exit validation |
+| **PB-02** VWAP Reject | Reasonable — $100k materiality floor | Normalized / persistent flow vs absolute USD threshold |
+| **PB-03** OR Breakout | Reasonable concept | Static MTF buffer flaw — normalize by OR width / realized vol (partial VIX/OR scaling shipped) |
+| **PB-14** Failed ORB Reversal | Potentially strongest concept | Depends on **multi-instance memory + temporal sequencing** — prioritize hardening over PB-04 |
+
+#### Not ready despite allowlist
+
+| PB | Position |
+|----|----------|
+| **PB-04** Gamma Pin Fade | Plausible thesis; **wall-proximity proxy insufficient** — needs wall quality, persistence, scale, acceptance/rejection behavior |
+
+#### Shadow research only
+
+PB-05, PB-06, PB-07, PB-08, PB-10, PB-11, PB-13 — continue accumulating shadow instances; no allowlist expansion.
+
+#### Highest skepticism
+
+| PB | Position |
+|----|----------|
+| **PB-12** Lotto Reversal | High tail-risk discretionary pattern in rule form — **remain experimental / shadow-only** until unusually strong OOS evidence |
+| **PB-07** Max Pain Gravitation | Better as contextual/target information than standalone entry thesis unless intraday evidence improves |
+
 ---
 
 ## 7. Shipped fixes (PR trail)
 
-| PR | What shipped |
-|----|--------------|
-| **#59–60** | Deep-dive docs, external review response, promotion tiers |
-| **#61** | PB-11 rolling 30m range; PB-01 strict 15m VWAP pre |
-| **#62** | `PLAYBOOK_LIVE_ALLOWLIST` enforced at gate A17 |
-| **#63** | State machine stub, pipeline audit, feature snapshot, unknown regime fail-closed, degraded feed PB blocks, PB-02 flow materiality, option sim stub |
-| **#64** | Gate `blocks_by_category`, `execution_sim` on open, PB-14 OR break memory, validate `pipeline_audit` |
-| **#66** | Research requirements + assessment scores in status doc |
-| **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
-| **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
-| **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
-| **#77** (promotion stats) | Session-aware promotion gates, robustness checks, counterfactual comparability filter, normalized-param roadmap |
-| **#78** (hierarchy + status) | Family→subtype→playbook hierarchy, `subtype_audit`, exact implementation status vocabulary |
+Durable references only — no branch-relative labels. Staging deploy: **continuous** on merge to `blackout-web-sandbox` via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` → ECS `blackout-staging-web` (`https://staging.blackouttrades.com`). No separate release tag yet.
+
+| PR | Merge SHA | Deployed | What shipped |
+|----|-----------|----------|--------------|
+| **#59–60** | (pre-squash) | staging | Deep-dive docs, external review response, promotion tiers |
+| **#61** | (pre-squash) | staging | PB-11 rolling 30m range; PB-01 strict 15m VWAP pre |
+| **#62** | (pre-squash) | staging | `PLAYBOOK_LIVE_ALLOWLIST` enforced at gate A17 |
+| **#63** | (pre-squash) | staging | Matcher FSM + pipeline audit, feature snapshot, unknown regime fail-closed, degraded PB blocks, PB-02 flow materiality, option sim stub |
+| **#64** | (pre-squash) | staging | Gate `blocks_by_category`, `execution_sim` on open, PB-14 OR break memory, validate `pipeline_audit` |
+| **#66** | (pre-squash) | staging | Research requirements + assessment scores in status doc |
+| **#67** | `416f77c8` | 2026-07 staging | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, `playbook:evidence-report` + `playbook:param-sweep` |
+| **#69** | (squash) | staging | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
+| **#70** | `1bde430e` | 2026-07 staging | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
+| **#77** | `736ba401` | 2026-07-11 staging | Session-aware promotion gates, counterfactual comparability filter, normalized-param roadmap |
+| **#78** | `ad47ea85` | 2026-07-11 staging | Family→subtype hierarchy, `subtype_audit`, exact implementation status vocabulary |
 
 ---
 
@@ -307,86 +362,73 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
   → Evidence Store → Analytics
 ```
 
-**Policy:** No new playbooks or allowlist expansion until FSM + governor + options-aware outcomes are green on OOS data.
+### 8.1 Recommended priority order (evidence trustworthiness)
 
-### P0 — Done on staging
+**Fix before trusting research conclusions (P0):**
+
+| # | Item | Why |
+|---|------|-----|
+| 1 | **Redesign instance identity** — multiple instances per PB per session; direction-aware; re-arm + expiry semantics | Current key `{session}:{pb}` collapses same-day setups into one unit |
+| 2 | **Temporally enforced state transitions** — trigger after valid arm; arm duration; grace; expiry; cooldown | FSM persists observations without full causal ordering |
+| 3 | **Counterfactual measurement windows** — fixed, comparable (`counterfactual_eval` shipped — enforce in analysis) | Prevents unlike situations in blocked-path stats |
+| 4 | **Option-simulation fidelity audit** — quotes, fills, delays, slippage (`lite_v1` ≠ limited-live) | Cost-adjusted expectancy not yet execution-grade |
+
+**Fix before limited live (P1):**
+
+| # | Item |
+|---|------|
+| 5 | Playbook-specific exit policies (wire `exit_policy` → engines; management still legacy for many paths) |
+| 6 | Full session risk governor (partial — expand per-PB / per-regime caps) |
+| 7 | Capability-based data-quality dependencies (halt-stale restricted mode partial) |
+| 8 | Quote freshness + liquidity gates at open |
+| 9 | Per-session + per-regime promotion criteria (#77 partial) |
+| 10 | Adverse-slippage stress testing in promotion eval (#77 shipped) |
+
+**Improve strategy quality (P2):**
+
+| # | Item |
+|---|------|
+| 11 | PB-03 volatility-normalized buffer (partial — extend OR-width normalization) |
+| 12 | PB-02 normalized / persistent flow |
+| 13 | PB-04 real wall-quality model |
+| 14 | PB-10 actual EMA-stack state |
+| 15 | PB-05 VEX / compression sequence |
+| 16 | PB-13 richer gap taxonomy |
+| 17 | PB-12 remain shadow-only until unusually strong evidence |
+
+**Policy:** No allowlist expansion or autonomous prod BUY until **P0** evidence hygiene is green.
+
+### 8.2 Shipped on staging (historical checklist)
+
+Infrastructure merged — see §7 PR trail for SHAs.
 
 - [x] Live allowlist gate A17
-- [x] Instance id + transitions + feature snapshot
-- [x] Pipeline audit (long/short + family rollup)
+- [x] Instance transitions + feature snapshot (identity model still P0)
+- [x] Pipeline audit + `family_audit` + `subtype_audit`
 - [x] Unknown regime fail-closed (live)
-- [x] Per-PB degraded feed blocks (event set)
+- [x] Per-PB degraded feed blocks
 - [x] PB-01/02/11/14 matcher hardening
 - [x] PB-09 excluded from primary
 - [x] Invalidation state transitions
 - [x] Severe data quality global fail-closed
+- [x] `spx_playbook_instance_events` append-only
+- [x] Counterfactual MFE/MAE + fixed-horizon contract
+- [x] Evidence report + promotion gates + param sweep
+- [x] Trade FSM + Trade Governor + PB-01–04 exit engines
+- [x] Options P/L lite + `execution_sim` lite_v1
 
-### P1 — Research infrastructure (shipped)
-
-| Item | Status | Detail |
-|------|--------|--------|
-| `spx_playbook_instance_events` append-only | ✅ Shipped | Immutable snapshot per armed/triggered/invalidated/blocked/opened |
-| Blocked-primary persistence | ✅ Shipped | `reason_blocked`, `executable=false`, blocked events |
-| Counterfactual MFE/MAE | ✅ Shipped | Running max on triggered-not-opened instances |
-| Expanded feature snapshot | ✅ Shipped | GEX walls, max pain, king, data_quality_mode |
-| `first_block_category` on gates | ✅ Shipped | Layered gate telemetry |
-| `npm run playbook:evidence-report` | ✅ Shipped | OOS-only SQL metrics |
-| `npm run playbook:param-sweep` | ✅ Shipped | Stability bands, no in-sample tune |
-| OOS train firewall in code | ✅ Shipped | `playbook-evidence-config.ts` |
-
-### P1 — Phase 3 shipped (staging)
-
-| Item | Status | Detail |
-|------|--------|--------|
-| Full instance FSM | ✅ Shipped | `idle→armed→triggered→open→managing→closed` + terminal freeze |
-| Trigger latch + gate re-arm | ✅ Shipped | `playbook-state-machine.ts` — soft block → `armed` |
-| Engine FSM commits | ✅ Shipped | `commitPlaybookInstanceOpen/Managing/Closed` on BUY/TRIM/SELL |
-| Cron FSM telemetry | ✅ Shipped | `syncPlaybookTelemetryAfterEvaluate` in `runSpxEvaluator` |
-| Trade Governor subsystem | ✅ Shipped | `trade-governor.ts` — session caps, spread/premium, VIX, revenge lock |
-| Per-PB exit engines (PB-01–04) | ✅ Shipped | `playbook-exit-engines.ts` — bespoke invalidation + trim |
-| Options P/L lite model | ✅ Shipped | `playbook-option-pnl.ts` — delta/gamma/theta + `greeks_snapshot` |
-| VolatilityContext | ✅ Shipped | `playbook-volatility-context.ts` — scaled distance thresholds |
-
-### P1 — Phase 2 shipped (staging)
-
-| Item | Status | Detail |
-|------|--------|--------|
-| Armed duration guard (`PLAYBOOK_MIN_ARMED_POLLS`) | ✅ Shipped | `applyPlaybookVerdictGuards` + `armed_poll_count` column |
-| PB-03 VIX/OR-normalized buffer | ✅ Shipped | `scaledPlaybookMtfBufferPts` / `scaledPlaybookStructureProximityPts` |
-| Session risk (legacy) | ✅ Superseded | Merged into `trade-governor.ts` |
-| Option exit cost model | ✅ Shipped | `simulateOptionExit` + `round_trip_cost_pts` on `execution_sim` |
-| ECS auto-deploy after ECR push | ✅ Shipped | `force-new-deployment` in `ecr-push-staging.yml` |
-
-### P1 — Still open
-
-| Item | Status | Detail |
-|------|--------|--------|
-| Evidence-aware primary ranking (historical edge weight) | 🟡 Partial | Priority list only; no win-rate weight |
-| Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
-| Dedicated Regime Engine object | 🟡 Partial | Still embedded in matcher eligibility |
-| Full options path simulator (IV surface) | 🟡 Partial | Lite delta/gamma/theta only |
-| Per-PB exit engines PB-05+ | ⏳ Blocked | PB-01–04 only until evidence tiers |
-| PB-02 z-score / persistence | ⏳ Planned | Materiality only |
-| PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
-| MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |
-| Prospective OOS sample size | ⏳ Accumulating | Scripts ready; need RTH sessions on staging |
-
-### P2 — Production discipline
+### 8.3 Still open (non-P0/P1/P2 duplicates)
 
 | Item | Status |
 |------|--------|
-| Session risk governor | ✅ Shipped — per-PB cap + degraded size |
-| Limited-live prod with min size | ❌ Blocked until evidence tiers |
-| Autonomous prod BUY | ❌ Frozen |
-| Expand beyond 14 playbooks | ❌ Frozen |
-
-### P3 — Catalog hygiene
-
-| Item | Status |
-|------|--------|
-| Typed registry → doc matrices CI check | ⏳ Planned |
-| PB-14 allowlist expansion | ⏳ Blocked on evidence |
-| Family-level outcome mining | ⏳ Planned — **subtype first**, then family (`playbookSubtypeGroups`) |
+| Evidence-aware primary ranking | `implemented` (#74 on policy branch) |
+| Layered gate short-circuit | `partial` |
+| Dedicated Regime Engine object | `partial` |
+| Full options path simulator (IV surface) | `partial` |
+| Per-PB exit engines PB-05+ | `not_started` |
+| Prospective OOS sample size | accumulating |
+| Limited-live prod | `not_started` |
+| Autonomous prod BUY | frozen |
 
 ---
 
@@ -591,7 +633,7 @@ Target row per playbook instance (research contract). Status labels: `playbook-i
 |---|-------|--------|-------|-----|
 | 1 | `session_date` | implemented | `spx_playbook_instances` | — |
 | 2 | `playbook_id` | implemented | same | — |
-| 3 | `instance_id` | implemented | episode-scoped id | — |
+| 3 | `instance_id` | partial | episode-scoped id | `{session}:{pb}` — P0 multi-episode redesign |
 | 4 | `armed_at` | implemented | COALESCE first armed | — |
 | 5 | `triggered_at` | implemented | COALESCE first triggered | — |
 | 6 | `invalidated_at` | implemented | invalidated transition | — |
@@ -610,8 +652,8 @@ Target row per playbook instance (research contract). Status labels: `playbook-i
 | 19 | counterfactual MFE/MAE | implemented | `counterfactual_*_pts` + `counterfactual_eval` | — |
 | 20 | actual outcome | partial | `spx_play_outcomes` when opened | absent when never opened (by design) |
 
-**Coverage: 18/20 `implemented`, 2/20 `partial`, 0/20 `not_started`.**  
-Partial fields are join-dependent by design — not missing implementation work for triggered-not-opened paths.
+**Coverage: 17/20 `implemented`, 3/20 `partial` (`instance_id`, `closed_at`, `actual_outcome`), 0/20 `not_started`.**  
+Partial fields are join-dependent or blocked on P0 identity redesign — not undocumented gaps.
 
 ---
 
@@ -668,8 +710,9 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | Module | Role |
 |--------|------|
 | `playbook-registry.ts` | PB-01…14 + `setup_family` + `fidelity` |
+| `playbook-architecture-assumptions.ts` | Centralized operating assumptions (poll, feeds, retention, dedup) |
 | `playbook-setup-hierarchy.ts` | Family → subtype → playbook → `parameter_version` |
-| `playbook-implementation-status.ts` | Exact status vocabulary + surface/subsystem matrices |
+| `playbook-implementation-status.ts` | Exact status vocabulary + surface/subsystem/schema matrices |
 | `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` |
 | `playbook-regime-router.ts` | Regime eligibility + `isUnknownPlaybookRegime` |
 | `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
@@ -715,7 +758,7 @@ Expected staging playbook validate:
 
 - `playbook_shadow.mode === "live"`
 - 14 verdicts
-- `pipeline_audit` present (includes `family_audit`)
+- `pipeline_audit` present (includes `family_audit` + `subtype_audit`)
 - Primary never PB-09 when other PBs fire
 
 ---
@@ -734,4 +777,29 @@ Expected staging playbook validate:
 
 ---
 
-*Last updated:* 2026-07-11 (hierarchical family taxonomy + exact implementation status labels)
+## 20. Final assessment
+
+This is no longer an amateur architecture document. It demonstrates:
+
+- Separation of staging and production
+- Explicit research governance (OOS firewall, promotion gates)
+- Immutable event capture (`spx_playbook_instance_events`)
+- Failure-aware gating (data quality modes, regime fail-closed)
+- Hierarchical hypothesis organization (family → subtype → playbook)
+- Deliberate freezing of production expansion
+
+**Deeper weaknesses (less visible, more important now):**
+
+| # | Weakness | Status |
+|---|----------|--------|
+| 1 | Instance key collapses multiple same-day setups | **P0** — documented in §2.1 |
+| 2 | State machine persists without full temporal causality | **P0** — armed polls partial only |
+| 3 | Exit architecture legacy / setup-agnostic for many paths | **P1** |
+| 4 | Option execution model not 0DTE production-grade | **P0/P1** — `lite_v1` |
+| 5 | Evidence sample insufficient for edge claims | **ongoing** — OOS accumulating |
+
+**Next phase:** less strategy intelligence; more lifecycle hygiene, execution simulation fidelity, and statistically clean evidence units.
+
+---
+
+*Last updated:* 2026-07-11 (operating assumptions, durable PR trail, P0 priority order, final assessment)

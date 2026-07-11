@@ -22,7 +22,7 @@ export type PlaybookInstanceTransition = {
   detail: string;
 };
 
-/** Stable id: one row per playbook per session day. */
+/** Stable id today: one row per playbook per session day (P0: episode + direction redesign pending). */
 export function playbookInstanceId(sessionDate: string, playbookId: PlaybookId): string {
   return `${sessionDate}:${playbookId}`;
 }
