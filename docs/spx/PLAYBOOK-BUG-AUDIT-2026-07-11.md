@@ -465,6 +465,34 @@ Claude fifth-pass (PR #87 doc) confirmed **#99** GHA fail signal holds; **F3** g
 
 ---
 
+## Claude — sixth-pass validation (2026-07-11, PR #100, staging live-checked)
+
+Method: 3 independent agents adversarially re-verifying PR #100's two claimed closures (F2 full data-quality wiring, Q4 verdict-guard assert) plus a targeted re-scan of `spx-play-engine.ts`/`spx-play-gates.ts`/`playbook-shadow-matcher.ts` for any new F3-class dual-evaluation instance introduced by PRs #96–#100. Plus direct local runs: `tsc --noEmit` clean, `node --test "src/features/spx/**/*.test.ts"` → **427/427 pass**. Live staging: `vwap_volume_weighted: false` / `gex_stale: false` still confirmed on `/api/market/spx/desk`; `playbook_shadow` **absent** from `/api/market/spx/play` this pass (market fully closed — Saturday 01:42 ET at time of review) so PB-01/PB-02 block text could not be re-confirmed live. The two admin routes (`fsm-today`, `promotion-report`) still require genuine Cognito admin auth this sandbox cannot mint — not probed live this pass either. **F4 (RTH proof) is explicitly NOT verified this pass — market was closed for the entire review window. Do not treat F4 as GREEN.**
+
+### Findings
+
+| ID | Item | Severity | Agree/disagree with prior pass | Evidence | Recommendation |
+|----|------|----------|-------------------------------|----------|-----------------|
+| **F2/#20b** | Data-quality gate now covers halt/GEX/VIX/VWAP per playbook | — | **Agree — genuinely closed** | `sessionSnapshotDataQualityOk` now calls `playbookDataQualityBlockReason` → `evaluatePlaybookDataSatisfaction` against the real `REQUIREMENTS_BY_PB` table, not a hardcoded PB-01/02 special case — confirmed by direct execution against 4 playbooks with different requirement profiles (PB-04/GEX, PB-09/halt, PB-08/VIX, PB-11/none), all 8 assertions matched prediction exactly. Same shared function now used by both live-trading gating and promotion-evidence gating — single source of truth. 12/12 new tests pass. Realistic low-sample scenario (PB-01, 4 triggers, 1 bad snapshot) walked through live: produces exactly one `fail` (the genuine data-quality gate) + a separate `warn` (sample-size gates) — a control run with all-good snapshots at the same low sample size produces only a `warn`, confirming fail is never triggered by tier-insufficiency alone. | **Close.** No remaining gap found. |
+| **Q4** | Verdict-guard assert catches the FSM/counter desync it was built for | High | **Reopen (sixth pass) → partial close (#105)** | Sixth-pass: idle-desync + test/CI genuinely fixed (#100); sync assert reused guard's in-memory load (not independent). **#105:** `resolveGuardedPlaybookMatch` now re-reads DB before assert when `PLAYBOOK_VERDICT_GUARD_ASSERT=1` + `dbConfigured()`; sync path relabeled self-consistency. | **Close for production path.** CI/unit sync assert remains self-consistency by design. |
+| **F3 rescan** | Any new dual-evaluation instance introduced by #96–#100 | — | **Agree — no new findings** | Full re-read of all 3 priority files plus a diff-scoped check against every function #96/#98/#100 touched (`volumeWeightedVwapBlock`, governor overlay, `playbookDataQualityBlockReason`, `matchPlaybooksShadow`). The one new dual-check pattern (#96's matcher-level VWAP block + the live-gate's independent VWAP check) is confirmed to be deliberate defense-in-depth, not an F3-shaped risk — both read the identical immutable `desk.vwap_volume_weighted` field off the same object in the same tick, so they structurally cannot disagree. One pre-existing, harmless dead-computation noted (`matchPlaybooksShadow` computes a raw `primary_playbook_id` internally that no caller ever reads, since `resolveGuardedPlaybookMatch` always recomputes and overrides it) — not a disagreement risk, not worth a fix. | **No action needed.** |
+| **F4** | RTH proof | — | **Unchanged — still open** | Market was closed (Saturday) for this entire review pass; `fsm-today`/`promotion-report` require Cognito admin auth unavailable in this sandbox. Nothing new to report; do not mark GREEN. | **Defer to next weekday market-open session with admin/AWS access.** |
+
+### Foundation checklist — corrected status
+
+| Item | Prior status | Sixth-pass verdict |
+|------|--------------|---------------------|
+| F1 VWAP fail-closed | ✅ #96 | Confirmed still holding (no regression found) |
+| F3 governor single-thread | ✅ #98 | Confirmed still holding (no regression found) |
+| F2 promotion pipeline (full data-quality) | ✅ #100 | **Confirmed closed** — comprehensive per-playbook coverage verified by direct execution |
+| Q4 verdict assert | ✅ #100 (claimed) | **Partial close #105** — production resolver re-reads DB; sync assert = self-consistency |
+| F4 RTH proof | ⏳ | **Still pending** — not verified this pass, market closed |
+| F5 dedup | deferred | Ranking from third pass still valid; nothing this pass changes it |
+
+**Foundation is not "strong" yet** — per standing instruction, this isn't said until F4 is GREEN, and it isn't this pass.
+
+---
+
 ## Claude “holding up well” — Cursor comments
 
 | Claim | Cursor |

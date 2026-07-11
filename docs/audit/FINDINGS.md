@@ -42,9 +42,9 @@ in this file.
 
 **Root cause:** Fifth-pass review: assert re-used resolver `from_state` (same inputs as the guard), never flagged `idle` + `trigger_fired`, tests did not exercise failure branches, env var was unwired in CI/`npm test`, and no FINDINGS entry.
 
-**Fix:** Assert against persisted `snapshots[].state`; throw on `idle` + `trigger_fired`; add branch tests; enable `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI verify job.
+**Fix:** Assert against persisted `snapshots[].state` (no `from_state` fallback); throw on `idle` + `trigger_fired`; add branch tests; enable `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI. **Sixth-pass (#103):** narrow reopen — sync assert in `applyPlaybookVerdictGuards` is self-consistency only. **#105:** production `resolveGuardedPlaybookMatch` re-reads DB (`loadPlaybookInstanceStates` + `loadPlaybookArmedPollCounts`) before assert when flag+DB configured.
 
-**Status:** FIXED (`cursor/playbook-fifth-pass-fixes-261c` on `blackout-web-sandbox`).
+**Status:** FIXED for production cross-tick desync (#105); CI/unit path remains self-consistency check (documented). Sixth-pass F2 confirmed closed; F4 still pending.
 
 ## 🔴 P0 FOUND+FIXING 2026-07-07 — Tailwind purged `src/features/` CSS after folder migration (desktop desk broken)
 
@@ -4492,3 +4492,23 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 **Verification:** `npx tsc --noEmit` clean. Full suite 1651/1651 passing (14 new). `npm run build` clean. `npm run lint` clean (pre-existing warnings only, none touching these files). `npm run lint:css` — 4 pre-existing errors on `main` at `globals.css:1584-1587` (`animation-delay: 0` — unrelated `bie-field-line` rules from the earlier redesign PR, confirmed via `git show main:src/app/globals.css`), zero new errors introduced by this PR's CSS additions.
 
 **Not yet confirmed:** as with PR #532/#533, no live browser exists in this sandbox (Playwright/Chromium blocked) — this needs the user to view the live site post-deploy to confirm the connector lines/pulses actually render as intended.
+
+---
+
+## SPX Slayer — verdict-guard assert (Q4), sixth-pass review (2026-07-11)
+
+**Status:** PARTIALLY CLOSED — PR #105 (`cursor/deep-sweep-deferred-261c`) addresses the sixth-pass reopen. Sixth-pass (#103) correctly flagged that PR #100's comment overpromised an "independent source of truth" while the sync assert reused the guard's in-memory load.
+
+**Severity:** Medium (design-intent/documentation gap; assert is opt-in via `PLAYBOOK_VERDICT_GUARD_ASSERT=1`).
+
+**What's genuinely fixed (confirmed sixth-pass + #105, don't re-litigate):**
+1. Idle-desync detection — assert throws on `persistedState === "idle"` + `trigger_fired` (#100).
+2. Test coverage + CI wiring — violation/healthy-path tests; `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI (#100).
+3. **Independent production read (#105)** — `resolveGuardedPlaybookMatch` performs a **second** DB round-trip (`loadPlaybookInstanceStates` + `loadPlaybookArmedPollCounts`) before calling assert when flag+`dbConfigured()`. This can catch stale in-memory counters vs. DB state that changed between loads.
+4. **Honest labeling (#105)** — sync path inside `applyPlaybookVerdictGuards` documented as **self-consistency** (CI/unit tests); no `from_state` fallback on missing persisted rows.
+
+**Remaining limitation:** The in-function assert at `applyPlaybookVerdictGuards:158-161` still reuses the same load as the guard (by design for fast unit tests). Cross-tick desync detection relies on the resolver's fresh read, not the sync path.
+
+**Files:** `playbook-verdict-guard.ts`, `playbook-match-resolver.ts:70-80`, `playbook-verdict-guard.test.ts`.
+
+**Evidence trail:** sixth-pass reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`; closure in #105.
