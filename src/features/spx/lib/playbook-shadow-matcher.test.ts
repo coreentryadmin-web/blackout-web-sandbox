@@ -469,8 +469,8 @@ test("primary_playbook_id: the single triggered playbook when exactly one fires"
   assert.equal(result.primary_playbook_id, "PB-01");
 });
 
-test("primary_playbook_id: priority-order tie-break when 2+ playbooks trigger simultaneously", () => {
-  // PB-03 ORB long + PB-01 long on same tick — PB-03 wins per FULL-SPEC priority.
+test("primary_playbook_id: evidence-aware pick when 2+ playbooks trigger simultaneously", () => {
+  // PB-03 ORB long + PB-01 long on same tick — PB-01 wins on fidelity/OOS evidence (not static list alone).
   const desk = deskStub({
     above_vwap: true,
     vwap: 7380,
@@ -503,7 +503,7 @@ test("primary_playbook_id: priority-order tie-break when 2+ playbooks trigger si
   const triggered = result.verdicts.filter((v) => v.trigger_fired).map((v) => v.playbook_id);
   assert.ok(triggered.includes("PB-01"));
   assert.ok(triggered.includes("PB-03"));
-  assert.equal(result.primary_playbook_id, "PB-03");
+  assert.equal(result.primary_playbook_id, "PB-01");
 });
 
 test("PB-14: requires break memory — long after failed low break + re-entry", () => {

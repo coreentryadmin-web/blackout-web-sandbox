@@ -1,6 +1,9 @@
 import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
 import { snapshotFromInstanceRow } from "@/features/spx/lib/playbook-instance-episode";
-import { pickPrimaryPlaybook } from "@/features/spx/lib/playbook-primary-rank";
+import {
+  buildPrimaryRankContext,
+  pickPrimaryPlaybook,
+} from "@/features/spx/lib/playbook-primary-rank";
 import {
   applyPlaybookVerdictGuards,
   nextArmedPollCounts,
@@ -64,10 +67,15 @@ export async function resolveGuardedPlaybookMatch(
     now
   );
   const nextArmed = nextArmedPollCounts(sessionDate, raw.verdicts, snapshots, armedCounts, now);
+  const primaryRankCtx = buildPrimaryRankContext({
+    desk,
+    armed_poll_counts: armedCounts,
+    verdicts: guardedVerdicts,
+  });
 
   return {
     verdicts: guardedVerdicts,
-    primary_playbook_id: pickPrimaryPlaybook(guardedVerdicts),
+    primary_playbook_id: pickPrimaryPlaybook(guardedVerdicts, primaryRankCtx),
     raw_verdicts: raw.verdicts,
     instance_snapshots: snapshots,
     prev_by_instance: prevMap,

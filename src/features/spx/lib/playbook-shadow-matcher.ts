@@ -28,7 +28,10 @@ import {
   scaledPlaybookMtfBufferPts,
   scaledPlaybookStructureProximityPts,
 } from "@/features/spx/lib/playbook-volatility-scale";
-import { pickPrimaryPlaybook } from "@/features/spx/lib/playbook-primary-rank";
+import {
+  buildPrimaryRankContext,
+  pickPrimaryPlaybook,
+} from "@/features/spx/lib/playbook-primary-rank";
 
 export type PlaybookDirectionVerdict = "long" | "short" | null;
 
@@ -1080,8 +1083,9 @@ export function matchPlaybooksShadow(
     }
   });
 
+  const primaryRankCtx = buildPrimaryRankContext({ desk, verdicts });
   return {
     verdicts,
-    primary_playbook_id: pickPrimaryPlaybook(verdicts),
+    primary_playbook_id: pickPrimaryPlaybook(verdicts, primaryRankCtx),
   };
 }

@@ -44,6 +44,9 @@ export type PlaybookSetupFamily =
 /** Matcher fidelity — high = recent review hardening; mvp = shadow-only approximations. */
 export type PlaybookFidelity = "mvp" | "high";
 
+/** Flow/event modifiers — never eligible as primary playbook. */
+export const PLAYBOOK_FLOW_MODIFIER_IDS = new Set<PlaybookId>(["PB-09"]);
+
 /** Typical session window from the design doc, in ET hour/minute — half-open [start, end). */
 export type PlaybookSessionWindow = {
   startEtHour: number;

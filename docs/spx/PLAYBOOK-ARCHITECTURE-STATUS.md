@@ -132,14 +132,14 @@ Validate **family edge first**, then test whether individual PB labels separate 
 
 Registry fields: `setup_family`, `fidelity` (`high` | `mvp`) on each `PlaybookDefinition` in `playbook-registry.ts`.
 
-### Primary priority (FULL-SPEC §5 minus PB-09)
+### Primary priority (static tie-break only)
 
 ```
 PB-13 → PB-14 → PB-03 → PB-05 → PB-06 → PB-04 → PB-07 → PB-08 → PB-01 → PB-02 → PB-10 → PB-11 → PB-12
 (PB-09 never primary — flow modifier only)
 ```
 
-Implemented in `playbook-primary-rank.ts` → `pickPrimaryPlaybook()`. Family fields drive `family_audit` telemetry rollup.
+**Evidence-aware ranking (#74):** `playbook-primary-score.ts` composes a multi-factor score per triggered primary candidate — setup completeness, regime compatibility, fidelity tier, trigger freshness (armed polls), invalidation buffer, target space, option cost/spread, data quality, family conflict penalty, and **structural OOS confidence** (family priors + fidelity — **not** raw historical win rate). `PLAYBOOK_PRIMARY_PRIORITY` in `playbook-primary-rank.ts` applies **only** when composite totals tie. PB-09 excluded via `PLAYBOOK_FLOW_MODIFIER_IDS`.
 
 ---
 
@@ -163,7 +163,7 @@ Every ~2s play poll on staging:
 
 1. `buildPlayTechnicals(desk)` — OR, VWAP streaks, EMA9 curl, breakout flags
 2. `matchPlaybooksShadow(desk, technicals, now, { or_break_memory })` — 14 verdicts
-3. `pickPrimaryPlaybook(verdicts)` — excludes PB-09; family-grouped tie-break
+3. `pickPrimaryPlaybook(verdicts, rankCtx)` — evidence-aware composite score; static priority tie-break; PB-09 excluded
 4. `evaluatePlayGates(..., { playbook_primary_id, playbook_primary_direction })` — A17 on BUY
 5. `buildPlaybookShadowPanel()` → API `playbook_shadow` with `pipeline_audit` + `family_audit`
 6. `maybeLogPlaybookShadowMatch()` → Postgres + instance transitions
@@ -251,6 +251,8 @@ Each `PlaybookDefinition` carries a `temporal` contract enforced by `applyTempor
 | **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
 | **#71** (episode id) | Episode-scoped `instance_id` — multiple distinct setups per PB per session; spawn after invalidation/close/opposite direction |
 | **#72** (trade FSM) | Full trade lifecycle — `blocked`, `entry_pending`, `exit_pending`, `expired`, `cancelled`; 90s trigger TTL; gate≠invalidation |
+| **#73** (temporal) | Typed registry temporal contracts — min/max arm, grace, rearm cooldown, max triggers; enforced vs `armed_at` |
+| **#74** (primary score) | Evidence-aware primary ranking — multi-factor composite; static `PLAYBOOK_PRIMARY_PRIORITY` tie-break only; no win-rate weights |
 
 ---
 
@@ -321,7 +323,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 
 | Item | Status | Detail |
 |------|--------|--------|
-| Evidence-aware primary ranking (historical edge weight) | 🟡 Partial | Priority list only; no win-rate weight |
+| Evidence-aware primary ranking | ✅ Shipped | `playbook-primary-score.ts` — composite factors + static tie-break; OOS family priors only |
 | Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
 | Dedicated Regime Engine object | 🟡 Partial | Still embedded in matcher eligibility |
 | Full options path simulator (IV surface) | 🟡 Partial | Lite delta/gamma/theta only |
@@ -606,8 +608,10 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 
 | Module | Role |
 |--------|------|
-| `playbook-registry.ts` | PB-01…14 + `setup_family` + `fidelity` |
-| `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` |
+| `playbook-registry.ts` | PB-01…14 + `setup_family` + `fidelity` + **`temporal` contract** |
+| `playbook-temporal-contract.ts` | Temporal guard evaluation vs persisted episode timestamps |
+| `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` (tie-break only) |
+| `playbook-primary-score.ts` | Multi-factor primary composite + `rankPrimaryCandidates` breakdown |
 | `playbook-regime-router.ts` | Regime eligibility + `isUnknownPlaybookRegime` |
 | `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
 | `playbook-match-resolver.ts` | Guarded match + armed polls + trigger counts |
