@@ -7539,6 +7539,21 @@ body::before {
     @apply space-y-0;
   }
 
+  /* Web + iOS: SPX dashboard must be a flex column so desk-fill / triple flex-1 can
+     consume viewport height. Without this, .spx-sniper-desk-fill zeros triple min-height
+     and the 4-column desk-v2 grid collapses to a thin horizontal strip (black void). */
+  .ios-desk-shell.ios-native-page-spx {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - var(--nav-offset));
+    box-sizing: border-box;
+  }
+
+  .ios-desk-shell.ios-native-page-spx > .spx-sniper-desk-fill {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .spx-sniper-desk-fill {
     @apply flex flex-1 flex-col min-h-0 w-full gap-0;
   }
@@ -7572,7 +7587,8 @@ body::before {
 
   .spx-sniper-desk-fill .spx-sniper-triple {
     @apply flex-1 min-h-0 gap-1;
-    min-height: 0;
+    /* flex-1 fills the shell above; keep a viewport floor when chrome math drifts */
+    min-height: min(78vh, calc(100dvh - var(--nav-offset) - 7.5rem));
   }
 
   /* Compact desk — tighter stats, panel chrome, matrix cells, column gutters */
