@@ -8,6 +8,26 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector chart renders BLANK (no candles/axes) under any locale Intl rejects, e.g. `en-US@posix`
+
+**Surface:** `VectorChart.tsx` `createChart(...)` options (no `localization.locale` set) — the whole candle canvas.
+
+**Root cause:** lightweight-charts formats every time-axis tick and the crosshair time label through `Intl.DateTimeFormat(locale, …)`, where `locale` defaults to the runtime's `navigator.language`. When that default is a BCP-47 tag Intl **rejects** — a headless/embedded browser reporting the POSIX-style `"en-US@posix"` is the observed case — that format call **throws inside the chart's paint path**, so the entire canvas renders blank (no candles, no axes) *even though `series.setData()` succeeded*. The chart never pinned a locale, so it inherited whatever the client reported.
+
+**Evidence (reproduced in isolation, not asserted):** pulled the real 395 `I:SPX` 1-minute bars for the last session from Polygon/Massive and fed them to a standalone lightweight-charts 5.2.0 instance with VectorChart's exact series options.
+- Default (broken) locale `en-US@posix`: `setData` returns 395, `err:null`, **canvas fully black** — `PAGEERR Invalid language tag: en-US@posix` ×3.
+- Same data + `localization:{locale:"en-US"}`: **full candlestick chart** (OHLC, price axis 7500–7600, time axis 13:30–20:00 UTC, last-value 7575.39), 0 console errors.
+This is exactly the shape that made the market-closed staging screenshots look like an empty chart: the Playwright screenshot browser in the sandbox reports `en-US@posix`, so the audit tooling captured the blank-canvas failure, not what a real member's browser (valid locale) renders.
+
+**Blast radius:** only one `createChart` in the Vector feature (`VectorChart.tsx`); no other Vector chart instance exists. Members on normal browser locales were unaffected — the crash only fires for runtimes whose default locale tag Intl won't accept, which real end-user browsers essentially never report but E2E/screenshot/embedded webviews can.
+
+**Fix:** pin `localization: { locale: "en-US" }` on the chart (Vector is a US-index/-options desk, so `en-US` is the correct display locale) — the render is now independent of whatever locale the client reports. Locale extracted to `vector-chart-config.ts` (`VECTOR_CHART_LOCALE` + `isUsableChartLocale` guard) so it's importable and testable. Deliberately not left inheriting `navigator.language`: for a single-market desk there's no member-facing benefit to per-locale axis formatting, and the inheritance is exactly what created the crash surface.
+
+**Tests:** `vector-chart-config.test.ts` — asserts the shipped constant is Intl-usable and that the guard rejects the `en-US@posix` tag that caused the bug. 92/92 Vector lib tests + `tsc` clean.
+
+**Status:** FIXED (`fix/vector-chart-locale-blank`).
+
+
 ## 🟡 P2 FOUND+FIXED 2026-07-11 — Vector misc hygiene: universe knife-edge TTL, forming-bar corruption from late ticks, DJI dead ticker, NaN passthrough, cron pile-up
 
 **Surface:** `vector-universe.ts`, `spx-candle-store.ts`, `vector-ticker.ts`, `vector-live-candle.ts`, `vector-spy-volume-merge.ts`, vector cron TOMLs, `spy-volume/route.ts` (Vector deep sweep, remaining findings).
