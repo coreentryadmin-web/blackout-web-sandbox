@@ -7,9 +7,12 @@ import {
   verdictLifecycleState,
 } from "./playbook-state";
 import type { PlaybookMatchVerdict } from "./playbook-shadow-matcher";
+import type { PlaybookInstanceSnapshot } from "./playbook-instance-episode";
 
-test("verdictLifecycleState: triggered > armed > idle", () => {
-  const armed: PlaybookMatchVerdict = {
+const NOW = 1_720_000_000_000;
+
+function verdict(overrides: Partial<PlaybookMatchVerdict>): PlaybookMatchVerdict {
+  return {
     playbook_id: "PB-01",
     session_window_open: true,
     regime_eligible: true,
@@ -17,77 +20,98 @@ test("verdictLifecycleState: triggered > armed > idle", () => {
     trigger_fired: false,
     direction: null,
     detail: "",
+    ...overrides,
   };
+}
+
+test("verdictLifecycleState: triggered > armed > idle", () => {
+  const armed = verdict({});
   assert.equal(verdictLifecycleState(armed), "armed");
 
-  const triggered = { ...armed, trigger_fired: true, direction: "long" as const };
+  const triggered = verdict({ trigger_fired: true, direction: "long" });
   assert.equal(verdictLifecycleState(triggered), "triggered");
 
-  const idle = { ...armed, regime_eligible: false };
+  const idle = verdict({ regime_eligible: false });
   assert.equal(verdictLifecycleState(idle), "idle");
 });
 
-test("collectPlaybookInstanceTransitions: emits on armed transition", () => {
+test("collectPlaybookInstanceTransitions: spawns episode-scoped id on first arm", () => {
   const session = "2026-07-10";
-  const verdicts: PlaybookMatchVerdict[] = [
-    {
-      playbook_id: "PB-04",
-      session_window_open: true,
-      regime_eligible: true,
-      precondition_match: true,
-      trigger_fired: false,
-      direction: null,
-      detail: "armed",
-    },
-  ];
-  const { transitions } = collectPlaybookInstanceTransitions(session, verdicts, new Map());
+  const { transitions } = collectPlaybookInstanceTransitions(
+    session,
+    [verdict({ playbook_id: "PB-04", detail: "armed" })],
+    [],
+    { now_ms: NOW }
+  );
   assert.equal(transitions.length, 1);
-  assert.equal(transitions[0].instance_id, playbookInstanceId(session, "PB-04"));
+  assert.equal(
+    transitions[0].instance_id,
+    playbookInstanceId(session, "PB-04", "undirected", NOW)
+  );
+  assert.equal(transitions[0].spawned, true);
   assert.equal(transitions[0].from_state, "idle");
   assert.equal(transitions[0].to_state, "armed");
 });
 
 test("resolvePlaybookLifecycleState: armed → invalidated when precondition lost", () => {
-  const lostPre: PlaybookMatchVerdict = {
-    playbook_id: "PB-01",
-    session_window_open: true,
-    regime_eligible: true,
-    precondition_match: false,
-    trigger_fired: false,
-    direction: null,
-    detail: "pre lost",
-  };
-  assert.equal(resolvePlaybookLifecycleState("armed", lostPre), "invalidated");
+  assert.equal(
+    resolvePlaybookLifecycleState("armed", verdict({ precondition_match: false, detail: "pre lost" })),
+    "invalidated"
+  );
 });
 
-test("resolvePlaybookLifecycleState: triggered stays latched while firing", () => {
-  const firing: PlaybookMatchVerdict = {
-    playbook_id: "PB-01",
-    session_window_open: true,
-    regime_eligible: true,
-    precondition_match: true,
-    trigger_fired: true,
-    direction: "long",
-    detail: "fire",
-  };
-  assert.equal(resolvePlaybookLifecycleState("triggered", firing), "triggered");
-});
-
-test("collectPlaybookInstanceTransitions: triggered → invalidated when trigger drops", () => {
+test("collectPlaybookInstanceTransitions: new episode after prior invalidated", () => {
   const session = "2026-07-10";
-  const prev = new Map([[playbookInstanceId(session, "PB-01"), "triggered" as const]]);
-  const verdicts: PlaybookMatchVerdict[] = [
+  const oldId = playbookInstanceId(session, "PB-01", "long", NOW - 60_000);
+  const snapshots: PlaybookInstanceSnapshot[] = [
     {
+      instance_id: oldId,
       playbook_id: "PB-01",
-      session_window_open: true,
-      regime_eligible: true,
-      precondition_match: true,
-      trigger_fired: false,
-      direction: null,
-      detail: "trigger lost",
+      direction: "long",
+      state: "invalidated",
+      episode_direction: "long",
+      episode_start_ms: NOW - 60_000,
     },
   ];
-  const { transitions } = collectPlaybookInstanceTransitions(session, verdicts, prev);
+  const later = NOW;
+  const { transitions } = collectPlaybookInstanceTransitions(
+    session,
+    [verdict({ precondition_match: true, detail: "re-arm" })],
+    snapshots,
+    { now_ms: later }
+  );
   assert.equal(transitions.length, 1);
-  assert.equal(transitions[0].to_state, "invalidated");
+  assert.equal(transitions[0].instance_id, playbookInstanceId(session, "PB-01", "undirected", later));
+  assert.equal(transitions[0].spawned, true);
+});
+
+test("collectPlaybookInstanceTransitions: opposite direction spawns separate episode", () => {
+  const session = "2026-07-10";
+  const longId = playbookInstanceId(session, "PB-01", "long", NOW);
+  const snapshots: PlaybookInstanceSnapshot[] = [
+    {
+      instance_id: longId,
+      playbook_id: "PB-01",
+      direction: "long",
+      state: "armed",
+      episode_direction: "long",
+      episode_start_ms: NOW,
+    },
+  ];
+  const shortLater = NOW + 5_000;
+  const { transitions } = collectPlaybookInstanceTransitions(
+    session,
+    [
+      verdict({
+        trigger_fired: true,
+        direction: "short",
+        detail: "short trigger",
+      }),
+    ],
+    snapshots,
+    { now_ms: shortLater }
+  );
+  assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].instance_id, playbookInstanceId(session, "PB-01", "short", shortLater));
+  assert.equal(transitions[0].spawned, true);
 });

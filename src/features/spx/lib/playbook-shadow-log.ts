@@ -23,9 +23,10 @@ import { computePlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeli
 import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
+import { snapshotFromInstanceRow } from "@/features/spx/lib/playbook-instance-episode";
 import {
   collectPlaybookInstanceTransitions,
-  playbookInstanceId,
+  findActiveEpisodeInstanceId,
 } from "@/features/spx/lib/playbook-state";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
@@ -103,9 +104,7 @@ export async function maybeLogPlaybookShadowMatch(
   });
 
   const prevStates = await loadPlaybookInstanceStates(sessionDate);
-  const prevMap = new Map(
-    prevStates.map((r) => [r.instance_id, r.state])
-  );
+  const snapshots = prevStates.map(snapshotFromInstanceRow);
   const primaryId =
     opts?.primary_playbook_id ?? panel.primary_playbook_id ?? null;
   const gateBlockedIds = new Set<string>();
@@ -114,14 +113,19 @@ export async function maybeLogPlaybookShadowMatch(
     gateBlocks.length > 0 &&
     rawVerdicts.some((v) => v.playbook_id === primaryId && v.trigger_fired);
   if (primaryBlocked && primaryId) {
-    gateBlockedIds.add(playbookInstanceId(sessionDate, primaryId));
+    const blockedInstanceId = findActiveEpisodeInstanceId(
+      snapshots,
+      primaryId,
+      opts?.primary_direction ?? null
+    );
+    if (blockedInstanceId) gateBlockedIds.add(blockedInstanceId);
   }
 
   const { transitions, nextByInstance } = collectPlaybookInstanceTransitions(
     sessionDate,
     rawVerdicts,
-    prevMap,
-    { gate_blocked_instance_ids: gateBlockedIds }
+    snapshots,
+    { gate_blocked_instance_ids: gateBlockedIds, now_ms: Date.now() }
   );
 
   const armedPollByInstance = resolved?.next_armed_poll_counts;
@@ -176,69 +180,78 @@ export async function maybeLogPlaybookShadowMatch(
   }
 
   if (primaryBlocked && primaryId) {
-    const instanceId = playbookInstanceId(sessionDate, primaryId);
-    const blockKey = `${instanceId}|${gateBlocks.join("||")}`;
-    const prevBlocked = await getMeta(BLOCKED_CURSOR_KEY);
-    if (prevBlocked !== blockKey) {
-      const blockedEvent = buildBlockedPrimaryEvent({
-        session_date: sessionDate,
-        instance_id: instanceId,
-        playbook_id: primaryId,
-        direction: opts?.primary_direction ?? null,
-        price: desk.price ?? null,
-        gate_blocks: gateBlocks,
-        snapshot: featureSnapshot,
-        engine_action: engine.action,
-      });
-      await insertPlaybookInstanceEvents([
-        {
-          session_date: blockedEvent.session_date,
-          instance_id: blockedEvent.instance_id,
-          playbook_id: blockedEvent.playbook_id,
-          event_type: blockedEvent.event_type,
-          direction: blockedEvent.direction,
-          price_at_event: blockedEvent.price_at_event,
-          reason: blockedEvent.reason,
-          gate_blocks: blockedEvent.gate_blocks,
-          feature_snapshot: blockedEvent.feature_snapshot,
-          engine_action: blockedEvent.engine_action,
-          executable: blockedEvent.executable,
-          counterfactual_mfe_pts: blockedEvent.counterfactual_mfe_pts,
-          counterfactual_mae_pts: blockedEvent.counterfactual_mae_pts,
-        },
-      ]);
-      await patchPlaybookInstanceBlocked({
-        instance_id: instanceId,
-        reason_blocked: gateBlocks.join("; "),
-        executable: false,
-      });
-      await setMeta(BLOCKED_CURSOR_KEY, blockKey);
+    const instanceId =
+      findActiveEpisodeInstanceId(snapshots, primaryId, opts?.primary_direction ?? null) ??
+      transitions.find((t) => t.playbook_id === primaryId)?.instance_id;
+    if (instanceId) {
+      const blockKey = `${instanceId}|${gateBlocks.join("||")}`;
+      const prevBlocked = await getMeta(BLOCKED_CURSOR_KEY);
+      if (prevBlocked !== blockKey) {
+        const blockedEvent = buildBlockedPrimaryEvent({
+          session_date: sessionDate,
+          instance_id: instanceId,
+          playbook_id: primaryId,
+          direction: opts?.primary_direction ?? null,
+          price: desk.price ?? null,
+          gate_blocks: gateBlocks,
+          snapshot: featureSnapshot,
+          engine_action: engine.action,
+        });
+        await insertPlaybookInstanceEvents([
+          {
+            session_date: blockedEvent.session_date,
+            instance_id: blockedEvent.instance_id,
+            playbook_id: blockedEvent.playbook_id,
+            event_type: blockedEvent.event_type,
+            direction: blockedEvent.direction,
+            price_at_event: blockedEvent.price_at_event,
+            reason: blockedEvent.reason,
+            gate_blocks: blockedEvent.gate_blocks,
+            feature_snapshot: blockedEvent.feature_snapshot,
+            engine_action: blockedEvent.engine_action,
+            executable: blockedEvent.executable,
+            counterfactual_mfe_pts: blockedEvent.counterfactual_mfe_pts,
+            counterfactual_mae_pts: blockedEvent.counterfactual_mae_pts,
+          },
+        ]);
+        await patchPlaybookInstanceBlocked({
+          instance_id: instanceId,
+          reason_blocked: gateBlocks.join("; "),
+          executable: false,
+        });
+        await setMeta(BLOCKED_CURSOR_KEY, blockKey);
+      }
     }
   }
 
   if (opts?.opened_direction && primaryId) {
-    await patchPlaybookInstanceOpened({
-      instance_id: playbookInstanceId(sessionDate, primaryId),
-      option_contract_candidate: opts.option_contract_candidate ?? null,
-      executable: true,
-    });
-    await insertPlaybookInstanceEvents([
-      {
-        session_date: sessionDate,
-        instance_id: playbookInstanceId(sessionDate, primaryId),
-        playbook_id: primaryId,
-        event_type: "opened",
-        direction: opts.opened_direction,
-        price_at_event: desk.price ?? null,
-        reason: "engine open",
-        gate_blocks: null,
-        feature_snapshot: featureSnapshot,
-        engine_action: engine.action,
+    const openInstanceId =
+      findActiveEpisodeInstanceId(snapshots, primaryId, opts.opened_direction) ??
+      transitions.find((t) => t.playbook_id === primaryId)?.instance_id;
+    if (openInstanceId) {
+      await patchPlaybookInstanceOpened({
+        instance_id: openInstanceId,
+        option_contract_candidate: opts.option_contract_candidate ?? null,
         executable: true,
-        counterfactual_mfe_pts: null,
-        counterfactual_mae_pts: null,
-      },
-    ]);
+      });
+      await insertPlaybookInstanceEvents([
+        {
+          session_date: sessionDate,
+          instance_id: openInstanceId,
+          playbook_id: primaryId,
+          event_type: "opened",
+          direction: opts.opened_direction,
+          price_at_event: desk.price ?? null,
+          reason: "engine open",
+          gate_blocks: null,
+          feature_snapshot: featureSnapshot,
+          engine_action: engine.action,
+          executable: true,
+          counterfactual_mfe_pts: null,
+          counterfactual_mae_pts: null,
+        },
+      ]);
+    }
   }
 
   if (desk.price != null) {

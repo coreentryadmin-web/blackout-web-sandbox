@@ -2208,6 +2208,8 @@ export async function loadPlaybookInstanceStates(
 ): Promise<
   Array<{
     instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
     state: "idle" | "armed" | "triggered" | "invalidated" | "open" | "managing" | "closed";
     armed_poll_count: number;
   }>
@@ -2215,7 +2217,7 @@ export async function loadPlaybookInstanceStates(
   await ensureSchema();
   const res = await (await getPool()).query(
     `
-    SELECT instance_id, state, COALESCE(armed_poll_count, 0) AS armed_poll_count
+    SELECT instance_id, playbook_id, direction, state, COALESCE(armed_poll_count, 0) AS armed_poll_count
     FROM spx_playbook_instances
     WHERE session_date = $1
     `,
@@ -2223,7 +2225,19 @@ export async function loadPlaybookInstanceStates(
   );
   return res.rows.map((r) => ({
     instance_id: String(r.instance_id),
-    state: String(r.state) as "idle" | "armed" | "triggered" | "invalidated",
+    playbook_id: String(r.playbook_id),
+    direction:
+      r.direction === "long" || r.direction === "short"
+        ? r.direction
+        : null,
+    state: String(r.state) as
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "invalidated"
+      | "open"
+      | "managing"
+      | "closed",
     armed_poll_count: Number(r.armed_poll_count ?? 0),
   }));
 }

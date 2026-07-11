@@ -3,6 +3,11 @@ import {
   buildTransitionEvents,
   type PlaybookInstanceEventType,
 } from "@/features/spx/lib/playbook-instance-events";
+import {
+  findActiveEpisodeInstanceId,
+  parsePlaybookInstanceId,
+  snapshotFromInstanceRow,
+} from "@/features/spx/lib/playbook-instance-episode";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import {
   engineFsmTransition,
@@ -78,13 +83,23 @@ async function persistFsmTransitions(
   if (eventRows.length) await insertPlaybookInstanceEvents(eventRows);
 }
 
-async function loadInstanceState(
+async function loadActiveInstanceState(
   sessionDate: string,
-  playbookId: PlaybookId
-): Promise<PlaybookLifecycleState> {
+  playbookId: PlaybookId,
+  direction: "long" | "short"
+): Promise<{ state: PlaybookLifecycleState; instance_id: string; episode_start_ms: number } | null> {
   const states = await loadPlaybookInstanceStates(sessionDate);
-  const row = states.find((s) => s.instance_id === `${sessionDate}:${playbookId}`);
-  return row?.state ?? "idle";
+  const snapshots = states.map(snapshotFromInstanceRow);
+  const instanceId = findActiveEpisodeInstanceId(snapshots, playbookId, direction);
+  if (!instanceId) return null;
+  const row = states.find((s) => s.instance_id === instanceId);
+  if (!row) return null;
+  const parsed = parsePlaybookInstanceId(instanceId);
+  return {
+    state: row.state,
+    instance_id: instanceId,
+    episode_start_ms: parsed.episode_start_ms || Date.now(),
+  };
 }
 
 /** Engine: TRIGGERED/ARMED → OPEN when play commits. */
@@ -96,14 +111,21 @@ export async function commitPlaybookInstanceOpen(input: {
   technicals: PlayTechnicals | null;
   detail?: string;
 }): Promise<void> {
-  const from = await loadInstanceState(input.session_date, input.playbook_id);
+  const active = await loadActiveInstanceState(
+    input.session_date,
+    input.playbook_id,
+    input.direction
+  );
+  const from = active?.state ?? "triggered";
+  const episodeMs = active?.episode_start_ms ?? Date.now();
   const transition = engineFsmTransition(
     input.session_date,
     input.playbook_id,
     from,
     "open",
     input.direction,
-    input.detail ?? "engine openPlay"
+    input.detail ?? "engine openPlay",
+    episodeMs
   );
   await persistFsmTransitions(
     input.session_date,
@@ -123,15 +145,20 @@ export async function commitPlaybookInstanceManaging(input: {
   technicals: PlayTechnicals | null;
   detail: string;
 }): Promise<void> {
-  const from = await loadInstanceState(input.session_date, input.playbook_id);
-  if (from !== "open") return;
+  const active = await loadActiveInstanceState(
+    input.session_date,
+    input.playbook_id,
+    input.direction
+  );
+  if (!active || active.state !== "open") return;
   const transition = engineFsmTransition(
     input.session_date,
     input.playbook_id,
-    from,
+    active.state,
     "managing",
     input.direction,
-    input.detail
+    input.detail,
+    active.episode_start_ms
   );
   await persistFsmTransitions(input.session_date, [transition], input.desk, input.technicals, "TRIM");
 }
@@ -146,15 +173,20 @@ export async function commitPlaybookInstanceClosed(input: {
   exit_reason: string;
   exit_action: string;
 }): Promise<void> {
-  const from = await loadInstanceState(input.session_date, input.playbook_id);
-  if (from !== "open" && from !== "managing") return;
+  const active = await loadActiveInstanceState(
+    input.session_date,
+    input.playbook_id,
+    input.direction
+  );
+  if (!active || (active.state !== "open" && active.state !== "managing")) return;
   const transition = engineFsmTransition(
     input.session_date,
     input.playbook_id,
-    from,
+    active.state,
     "closed",
     input.direction,
-    input.exit_reason
+    input.exit_reason,
+    active.episode_start_ms
   );
   await persistFsmTransitions(
     input.session_date,

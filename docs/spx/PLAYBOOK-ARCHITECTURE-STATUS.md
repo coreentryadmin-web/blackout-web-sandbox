@@ -1,7 +1,7 @@
 # SPX Playbook — Architecture & Status (Single Source of Truth)
 
 **Repo:** `coreentryadmin-web/blackout-web-sandbox` → `https://staging.blackouttrades.com`  
-**Last updated:** 2026-07-10  
+**Last updated:** 2026-07-11  
 **Scope:** Staging playbook lab only — do **not** merge to Railway prod `blackout-web` `main` unless explicitly requested.
 
 This document consolidates architecture, implementation status, per-playbook fidelity, four setup families, what is fixed, what remains, validation tiers, and code map. Older docs (`PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md`, `PLAYBOOK-IMPLEMENTATION-ROADMAP.md`, etc.) remain as detail appendices; **start here** for current truth.
@@ -180,7 +180,10 @@ Every ~2s play poll on staging:
 
 `collectPlaybookInstanceTransitions()` uses `resolvePlaybookLifecycleState()` — persisted to `spx_playbook_instances` / shadow row `instance_transitions`.
 
-**Still tick-recomputed:** matchers do not require prior armed duration or blocked-while-armed ordering (phase 2).
+**Episode-scoped identity (P0 fix):** each distinct setup opportunity gets its own durable row — not one row per playbook per session.  
+`instance_id = {session}:{playbook_id}:{direction_key}:{first_armed_ms}` where `direction_key` is `long`, `short`, or `undirected` at spawn. A **new episode** spawns after invalidation/close, opposite-direction trigger, or re-arm following a terminal state. Legacy `{session}:{playbook_id}` rows remain parseable for pre-fix history.
+
+**Still tick-recomputed:** matchers do not require prior armed duration or blocked-while-armed ordering beyond `PLAYBOOK_MIN_ARMED_POLLS` (phase 2).
 
 ---
 
@@ -218,6 +221,7 @@ Every ~2s play poll on staging:
 | **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
 | **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
 | **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
+| **#71** (episode id) | Episode-scoped `instance_id` — multiple distinct setups per PB per session; spawn after invalidation/close/opposite direction |
 
 ---
 
@@ -271,6 +275,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | Per-PB exit engines (PB-01–04) | ✅ Shipped | `playbook-exit-engines.ts` — bespoke invalidation + trim |
 | Options P/L lite model | ✅ Shipped | `playbook-option-pnl.ts` — delta/gamma/theta + `greeks_snapshot` |
 | VolatilityContext | ✅ Shipped | `playbook-volatility-context.ts` — scaled distance thresholds |
+| Episode-scoped instance identity | ✅ Shipped | `playbook-instance-episode.ts` — `{session}:{pb}:{dir}:{armed_ms}` |
 
 ### P1 — Phase 2 shipped (staging)
 
@@ -295,6 +300,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
 | MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |
 | Prospective OOS sample size | ⏳ Accumulating | Scripts ready; need RTH sessions on staging |
+| Episode max lifetime / cooldown spawn | ⏳ Planned | Invalidation/close/opposite-dir shipped; TTL TBD |
 
 ### P2 — Production discipline
 
@@ -498,7 +504,7 @@ Target row per playbook instance (research contract):
 |---|-------|--------|-------------|
 | 1 | `session_date` | ✅ | `spx_playbook_instances` |
 | 2 | `playbook_id` | ✅ | same |
-| 3 | `instance_id` | ✅ | `{session}:{playbook_id}` |
+| 3 | `instance_id` | ✅ | `{session}:{playbook_id}:{direction_key}:{first_armed_ms}` — one row per **episode**, not per session |
 | 4 | `armed_at` | ✅ | COALESCE on first armed |
 | 5 | `triggered_at` | ✅ | COALESCE on first triggered |
 | 6 | `invalidated_at` | ✅ | Set on invalidated transition |
@@ -582,6 +588,8 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-shadow-log.ts` | Postgres telemetry |
 | `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` |
 | `playbook-state.ts` | Lifecycle + invalidation transitions |
+| `playbook-instance-episode.ts` | Episode-scoped `instance_id` + spawn rules |
+| `playbook-state-machine.ts` | Full FSM + matcher/engine transitions |
 | `playbook-data-quality.ts` | Flags + `liveDataQualityMode` |
 | `playbook-break-memory.ts` | PB-14 OR break memory |
 | `playbook-option-sim.ts` | `execution_sim` on option ticket |

@@ -8,8 +8,27 @@ import {
   type PlaybookFsmTransition,
   type PlaybookLifecycleState,
 } from "@/features/spx/lib/playbook-state-machine";
+import {
+  findActiveEpisodeInstanceId,
+  playbookInstanceId,
+  type EpisodeDirectionKey,
+  type PlaybookInstanceSnapshot,
+  episodeDirectionKey,
+  legacyPlaybookInstanceId,
+} from "@/features/spx/lib/playbook-instance-episode";
 
 export type { PlaybookLifecycleState, PlaybookFsmTransition };
+export type { PlaybookInstanceSnapshot, EpisodeDirectionKey };
+export {
+  playbookInstanceId,
+  legacyPlaybookInstanceId,
+  episodeDirectionKey,
+  findActiveEpisodeInstanceId,
+  parsePlaybookInstanceId,
+  resolveEpisodeInstance,
+  snapshotFromInstanceRow,
+} from "@/features/spx/lib/playbook-instance-episode";
+
 export { verdictCandidateState as verdictLifecycleState };
 export { resolvePlaybookFsmState as resolvePlaybookLifecycleState };
 
@@ -20,12 +39,8 @@ export type PlaybookInstanceTransition = {
   from_state: PlaybookLifecycleState;
   to_state: PlaybookLifecycleState;
   detail: string;
+  spawned?: boolean;
 };
-
-/** Stable id: one row per playbook per session day. */
-export function playbookInstanceId(sessionDate: string, playbookId: PlaybookId): string {
-  return `${sessionDate}:${playbookId}`;
-}
 
 function toInstanceTransition(t: PlaybookFsmTransition): PlaybookInstanceTransition {
   return {
@@ -35,20 +50,21 @@ function toInstanceTransition(t: PlaybookFsmTransition): PlaybookInstanceTransit
     from_state: t.from_state,
     to_state: t.to_state,
     detail: t.detail,
+    spawned: t.spawned,
   };
 }
 
-/** Detect matcher-driven FSM transitions vs prior DB snapshot. */
+/** Detect matcher-driven FSM transitions vs prior DB snapshot (episode-scoped). */
 export function collectPlaybookInstanceTransitions(
   sessionDate: string,
   verdicts: readonly PlaybookMatchVerdict[],
-  prevByInstance: ReadonlyMap<string, PlaybookLifecycleState>,
-  opts?: { gate_blocked_instance_ids?: ReadonlySet<string> }
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  opts?: { gate_blocked_instance_ids?: ReadonlySet<string>; now_ms?: number }
 ): { transitions: PlaybookInstanceTransition[]; nextByInstance: Map<string, PlaybookLifecycleState> } {
   const { transitions, nextByInstance } = collectMatcherFsmTransitions(
     sessionDate,
     verdicts,
-    prevByInstance,
+    snapshots,
     opts
   );
   return {

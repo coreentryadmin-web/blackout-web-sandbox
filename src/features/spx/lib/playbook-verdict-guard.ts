@@ -1,8 +1,11 @@
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
+import {
+  resolveEpisodeInstance,
+  type PlaybookInstanceSnapshot,
+} from "@/features/spx/lib/playbook-instance-episode";
 import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-state";
 import { isPostEntryPlaybookState, isTerminalPlaybookState } from "@/features/spx/lib/playbook-state-machine";
 import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
-import { playbookInstanceId } from "@/features/spx/lib/playbook-state";
 
 /** Minimum armed polls before a trigger can commit (≈4–6s at 2s play poll). */
 export function playbookMinArmedPolls(): number {
@@ -19,14 +22,16 @@ export type PlaybookArmedPollCounts = ReadonlyMap<string, number>;
 export function applyPlaybookVerdictGuards(
   sessionDate: string,
   verdicts: readonly PlaybookMatchVerdict[],
-  prevByInstance: ReadonlyMap<string, PlaybookLifecycleState>,
-  armedPollCounts: PlaybookArmedPollCounts
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  armedPollCounts: PlaybookArmedPollCounts,
+  nowMs: number = Date.now()
 ): PlaybookMatchVerdict[] {
   const minArmed = playbookMinArmedPolls();
+  const workingSnapshots = [...snapshots];
 
   return verdicts.map((v) => {
-    const instanceId = playbookInstanceId(sessionDate, v.playbook_id);
-    const prev = prevByInstance.get(instanceId) ?? "idle";
+    const resolved = resolveEpisodeInstance(sessionDate, v, workingSnapshots, nowMs);
+    const prev = resolved.from_state;
 
     if (isTerminalPlaybookState(prev) || isPostEntryPlaybookState(prev)) {
       if (!v.trigger_fired) return v;
@@ -39,7 +44,7 @@ export function applyPlaybookVerdictGuards(
     }
 
     if (!v.trigger_fired) return v;
-    const armedPolls = armedPollCounts.get(instanceId) ?? 0;
+    const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
     const hadArmed = prev === "armed" || prev === "triggered" || armedPolls >= minArmed;
 
     if (hadArmed && armedPolls >= minArmed) return v;
@@ -57,13 +62,19 @@ export function applyPlaybookVerdictGuards(
 export function nextArmedPollCounts(
   sessionDate: string,
   verdicts: readonly PlaybookMatchVerdict[],
-  prev: PlaybookArmedPollCounts
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  prev: PlaybookArmedPollCounts,
+  nowMs: number = Date.now()
 ): Map<string, number> {
   const next = new Map(prev);
   for (const v of verdicts) {
     if (!v.precondition_match || !v.regime_eligible || !v.session_window_open) continue;
-    const id = playbookInstanceId(sessionDate, v.playbook_id);
-    next.set(id, (next.get(id) ?? 0) + 1);
+    const resolved = resolveEpisodeInstance(sessionDate, v, snapshots, nowMs);
+    if (resolved.spawned || resolved.from_state === "idle") {
+      next.set(resolved.instance_id, 1);
+      continue;
+    }
+    next.set(resolved.instance_id, (next.get(resolved.instance_id) ?? 0) + 1);
   }
   return next;
 }
