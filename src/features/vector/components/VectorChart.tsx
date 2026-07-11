@@ -39,6 +39,7 @@ import {
   type VectorDteHorizon,
 } from "@/features/vector/lib/vector-dte-horizon";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
+import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -131,6 +132,7 @@ type Props = {
   onWallEventsChange?: (events: VectorWallEvent[]) => void;
   onLensChange?: (lens: VectorWallLens) => void;
   onRegimeChange?: (regime: VectorRegime) => void;
+  onProximityChange?: (proximity: WallProximity | null) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -420,6 +422,7 @@ export function VectorChart({
   onFreshness,
   onWallEventsChange,
   onRegimeChange,
+  onProximityChange,
   onLensChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -452,6 +455,7 @@ export function VectorChart({
   // shift, not every tick, so we skip identical reads to avoid re-rendering the
   // banner on every SSE frame.
   const lastRegimeReadRef = useRef<string>("");
+  const lastProximityRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -652,6 +656,22 @@ export function VectorChart({
     onRegimeChange(regime);
   }, [onRegimeChange]);
 
+  // Emit the nearest-wall proximity callout (dynamic desk-terminal pulse). Uses
+  // the canonical near-term walls + flip, deduped by callout text so it only
+  // fires when the actionable level actually changes.
+  const emitProximity = useCallback(() => {
+    if (!onProximityChange) return;
+    const prox = deriveWallProximity({
+      spot: spotRef.current,
+      walls: gexWallsRef.current,
+      gammaFlip: gammaFlipRef.current,
+    });
+    const key = prox ? `${prox.side}:${prox.strike}:${prox.nearness}` : "none";
+    if (key === lastProximityRef.current) return;
+    lastProximityRef.current = key;
+    onProximityChange(prox);
+  }, [onProximityChange]);
+
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
   // SSE stream untouched) and repaints, refreshing on an interval while live.
@@ -846,9 +866,10 @@ export function VectorChart({
           darkPoolRef.current
         );
         emitRegime();
+        emitProximity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -13,6 +13,7 @@ import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
+import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -89,6 +90,13 @@ export function VectorPageShell({
       topPutWall: initialWalls?.putWalls?.[0]?.strike ?? null,
     })
   );
+  const [proximity, setProximity] = useState<WallProximity | null>(() =>
+    deriveWallProximity({
+      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
+      walls: initialWalls,
+      gammaFlip: initialGammaFlip,
+    })
+  );
 
   useEffect(() => {
     if (!liveSession) return;
@@ -162,6 +170,7 @@ export function VectorPageShell({
               onWallEventsChange={setWallEvents}
               onLensChange={setLens}
               onRegimeChange={setRegime}
+              onProximityChange={setProximity}
             />
           </div>
           <VectorDeskTerminal
@@ -170,6 +179,7 @@ export function VectorPageShell({
             wallEvents={wallEvents}
             liveSession={liveSession}
             streamUpdatedAt={streamUpdatedAt}
+            proximity={proximity}
           />
         </div>
 
