@@ -116,7 +116,9 @@ in this file.
 
 **Surface:** `SPX_CLAUDE_GATE` staging default-on (#112) × `spx-play-claude.ts` fail-closed paths (`:296-303`, `:317-325`).
 
-With the gate on, `bieSearchAvailable()` false (missing `VOYAGE_API_KEY`/`DATABASE_URL`), the daily cap, or search errors now VETO all entries on staging by default. Presumably intended (staging exercises the full BIE precedent path), but **confirm staging's Secrets Manager env has `VOYAGE_API_KEY` set** before Monday's F4 run — otherwise zero entries will fire and F4 will look like a playbook failure instead of a config gap.
+With the gate on, `bieSearchAvailable()` false (missing `VOYAGE_API_KEY`/`DATABASE_URL`), the daily cap, or search errors now VETO all entries on staging by default. Presumably intended (staging exercises the full BIE precedent path), but staging's env needed confirming before Monday's F4 run — otherwise zero entries would fire and F4 would look like a playbook failure instead of a config gap.
+
+**Precheck PASSED (2026-07-11):** `blackout-staging/app/env` key names verified via Secrets Manager (names only, no values read): `VOYAGE_API_KEY` present, `DATABASE_URL` present, `SPX_CLAUDE_GATE` not explicitly set → staging default-on applies with a working Voyage config. No action needed before Monday; residual risk is only a live Voyage outage or the daily cap, both of which now log via the #104 audit-trail paths.
 
 ## 🟢 INFO 2026-07-11 — Sixth-pass + catch-up review: F2 closed, F3 clean, F4 pending
 
