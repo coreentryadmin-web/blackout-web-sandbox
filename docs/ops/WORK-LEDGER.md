@@ -10,15 +10,35 @@
 
 **P0 — F4 RTH proof** (foundation gate). No new feature work until F4 is GREEN on a weekday RTH session.
 
+**Scheduled:** Monday (first weekday) — see **`docs/ops/STAGING-F4-MONDAY.md`** for autonomous agent checklist + one-line prompt.
+
 ---
 
 ## Implementation plan (F4)
 
-1. Monday weekday, ET ≥ 09:00 → `docs/ops/RTH-OPEN-RUNBOOK.md` + `npm run validate:staging-rth`
-2. After 09:35 ET → confirm `spx-evaluate` cron + options-socket `authenticated` (Railway/ECS logs)
-3. Admin path (if Cognito/AWS available): `GET /api/admin/playbook/fsm-today`, `GET /api/admin/playbook/promotion-report`
+1. Monday weekday, ET ≥ 09:00 → **`docs/ops/STAGING-F4-MONDAY.md`** + `npm run validate:staging-rth`
+2. After 09:35 ET → confirm `spx-evaluate` cron + options-socket `authenticated` (ECS logs / socket-health)
+3. Cognito admin via AWS (no user): `GET /api/admin/playbook/fsm-today`, `GET /api/admin/playbook/promotion-report`
 4. On failure → reproduce → focused fix PR → auto-merge → re-validate until GREEN
 5. Seventh-pass Claude validation prompt after F4 GREEN
+
+---
+
+## Track-record counterfactual (2026-07-11 — settled)
+
+Ran `npm run analyze:track-record-staging` against live staging (25 closed plays, 2026-06-29 → 2026-07-10).
+
+| Question | Answer |
+|----------|--------|
+| Could all historical plays be winners? | **No** |
+| Stored ledger | 12W / 13L / 0BE (48% WR) |
+| Regraded (current logic) | 12W / 12L / 1BE (1 scratch fix: id=9) |
+| Losses where MFE ≥ target | **0 / 12** |
+| Playbook OOS sample | **0** instance-linked rows — need new RTH data |
+
+**Implication:** Stop tuning for 100% winners on n=25. Post-F4 goal = accumulate **instance-linked** closes and re-run promotion report when n ≥ ~50.
+
+Artifact: `audit-output/track-record-counterfactual.json` (regenerate after RTH sessions).
 
 ---
 
@@ -36,37 +56,27 @@
 | #106 | `cursor/sixth-pass-q4-reconcile-261c` | Sixth-pass docs + Q4 reconcile |
 | #107 | `cursor/sixth-pass-info-entry-261c` | FINDINGS INFO entry |
 | #109 | `cursor/work-ledger-261c` | Work ledger doc |
-| #110 | `cursor/catch-up-fixes-261c` | #9 cleanup tasks, #3 buildSpxDeskFlow .catch, #10/#11 playCloseWasLoss, Q4 resolver test + merged #108 docs |
+| #110 | `cursor/catch-up-fixes-261c` | #9 cleanup tasks, #3 buildSpxDeskFlow .catch, #10/#11 playCloseWasLoss, Q4 resolver test |
+| #112 | `cursor/residual-sweep-261c` | #27 audit join, #31 UW REST, #32 spot guard, #38 FKs, SPX_CLAUDE_GATE staging default |
+
+### Open / pending merge
+
+| PR | Branch | Summary |
+|----|--------|---------|
+| #113 | `cursor/track-record-staging-analysis-261c` | `analyze:track-record-staging` HTTP audit script |
 
 ### Closed superseded
 
-- #87, #103 — merged into later docs/fix PRs
-- #108 — doc-only catch-up verification; superseded by #110
-
-### Files touched (recent)
-
-`spx-desk.ts`, `spx-play-technicals.ts`, `spx-play-claude.ts`, `spx-play-store.ts`, `playbook-verdict-guard.ts`, `playbook-match-resolver.ts`, `useMergedDesk.ts`, `composers.ts`, `gamma-desk.ts`, `engine-intel-overlay.ts`, `db.ts`, BIE synthesis/brief, admin routes, cron TOMLs, FINDINGS + audit docs.
-
-### Tests added
-
-- `engine-intel-overlay.test.ts`
-- `admin-playbook-query.test.ts`
-- `gamma-desk.test.ts` (topGexWalls limit)
-- `playbook-match-resolver.test.ts` (Q4 fresh-DB-read independence)
-- Updated: `spx-play-outcomes-classify` (playCloseWasLoss call-site tests)
+- #87, #103, #108 — merged into later docs/fix PRs
 
 ### Commands run (last verified)
 
 ```bash
 npx tsc --noEmit          # clean
-PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test   # 2083/2083 pass
+PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test   # 2087/2087 pass
 npm run validate:staging  # GREEN (Saturday, api-only)
+npm run analyze:track-record-staging  # 25 plays, counterfactual NO
 ```
-
-### Staging paths tested
-
-- `validate:staging` — health, ready, bootstrap, pulse, desk, play, gex-heatmap, flows, nighthawk, zerodte
-- **Not tested this session:** RTH cron proof, browser paint, admin playbook routes (Cognito), live playbook_shadow block text (market closed)
 
 ---
 
@@ -75,51 +85,32 @@ npm run validate:staging  # GREEN (Saturday, api-only)
 | Item | Status |
 |------|--------|
 | F1 VWAP fail-closed | ✅ #96 |
-| F2 promotion data-quality | ✅ #100 (sixth-pass confirmed) |
+| F2 promotion data-quality | ✅ #100 |
 | F3 governor single-thread | ✅ #98 |
-| Q4 verdict assert | ✅ #105 + #110 (prod DB re-read + resolver test) |
-| F4 RTH proof | ⏳ **NEXT** |
-| Deep sweep #1–37 | ✅ #102–#110 + residual sweep |
-| Open hygiene | none (F4 RTH proof pending) |
-
----
-
-## Open PRs (unrelated to SPX sweep)
-
-| PR | Title |
-|----|-------|
-| #38 | Cognito staging auth Phase 1 |
-| #12 | UW cluster concurrency |
-| #5–#9 | Dependabot (do not auto-merge major bumps) |
-
----
-
-## Review feedback (Claude sixth-pass)
-
-- F2: closed — no action
-- Q4: reopen valid at #103 time → **addressed #105** → reconciled #106
-- F3: clean — no action
-- F4: open — scheduled Monday
+| Q4 verdict assert | ✅ #105 + #110 |
+| F4 RTH proof | ⏳ **Monday** (`STAGING-F4-MONDAY.md`) |
+| Deep sweep #1–38 + Q4 | ✅ #102–#112 |
+| Track-record “all winners?” | ✅ Settled — **no** (n=25) |
 
 ---
 
 ## Unresolved blockers
 
-1. **F4** — requires weekday RTH + optionally Cognito admin for `fsm-today`
-2. **#38 DB FK** — schema migration; needs orphan audit before ALTER
-3. **Browser E2E** — Playwright blocked in some sandboxes for desk paint proof
+1. **F4** — weekday RTH + Cognito admin routes (AWS available in cloud agents)
+2. **Playbook OOS evidence** — 0 instance-linked historical rows; blocked on live FSM→open→close sessions
+3. **Browser E2E** — Playwright desk paint optional post-F4
 
 ---
 
-## Follow-up opportunities (post-F4)
+## Post-F4 (ordered)
 
-1. `alert-outcome-sync` fuzzy join hardening (#27)
-2. Playbook instance FK constraints (#38)
-3. `SPX_CLAUDE_GATE=1` on staging (product decision)
-4. Seventh-pass Claude validation doc section
+1. Re-run `npm run analyze:track-record-staging` weekly; watch `oos_instance_rows` on promotion-report
+2. Optional ledger hygiene: `backfill-thesis-outcomes.mjs --apply` (1 row) if DB reachable from agent
+3. Seventh-pass Claude validation doc section
+4. Product knobs: launch gates, `SPX_CLAUDE_GATE` prod default (staging already on via #112)
 
 ---
 
 ## PR status
 
-No open SPX/playbook fix PRs. Staging deploy current through #107.
+SPX sweep code complete. Pending: **#113** merge + **F4 Monday proof**.
