@@ -6,6 +6,7 @@ import {
 } from "@/features/spx/lib/playbook-primary-rank";
 import {
   applyPlaybookVerdictGuards,
+  assertPlaybookVerdictGuardInvariants,
   nextArmedPollCounts,
   type PlaybookArmedPollCounts,
 } from "@/features/spx/lib/playbook-verdict-guard";
@@ -66,6 +67,18 @@ export async function resolveGuardedPlaybookMatch(
     armedCounts,
     now
   );
+  if (process.env.PLAYBOOK_VERDICT_GUARD_ASSERT === "1" && dbConfigured()) {
+    const freshStates = await loadPlaybookInstanceStates(sessionDate);
+    const freshSnapshots = freshStates.map(snapshotFromInstanceRow);
+    const freshArmed = await loadPlaybookArmedPollCounts(sessionDate);
+    assertPlaybookVerdictGuardInvariants(
+      sessionDate,
+      guardedVerdicts,
+      freshSnapshots,
+      freshArmed,
+      now
+    );
+  }
   const nextArmed = nextArmedPollCounts(sessionDate, raw.verdicts, snapshots, armedCounts, now);
   const primaryRankCtx = buildPrimaryRankContext({
     desk,

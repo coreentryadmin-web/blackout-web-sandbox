@@ -239,6 +239,14 @@ export function topGexWalls(levels: GexStrikeLevel[], spot: number, limit = 6): 
   }
   void putCount;
 
+  if (picked.size > limit) {
+    const ranked = [...picked.values()].sort(
+      (a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex)
+    );
+    picked.clear();
+    for (const lv of ranked.slice(0, limit)) picked.set(lv.strike, lv);
+  }
+
   // Descending by strike → calls render above the spot anchor, puts below.
   return [...picked.values()].map(mkWall).sort((a, b) => b.strike - a.strike);
 }

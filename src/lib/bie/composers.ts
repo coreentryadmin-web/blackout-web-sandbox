@@ -16,6 +16,8 @@ import { composeTickerCompare } from "@/lib/bie/ticker-compare";
 import { composeSpxInvalidationLines } from "@/lib/bie/spx-invalidation";
 import { composeFlowTapeAnswer, composeQuietFlowBrief } from "@/lib/bie/flow-tape-brief";
 import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import {
   BIE_LARGO_ANSWER_TTL_MS,
   getCachedBiePlatformContext,
@@ -121,12 +123,37 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
 
   const { openPlay, lotto, powerHour, outcomes } = platform.cross;
 
+  let playbookShadow: import("@/lib/bie/spx-desk-brief").SpxDeskBriefCross["playbookShadow"] = null;
+  try {
+    const technicals = await buildPlayTechnicals(desk.price, {
+      vwap: desk.vwap,
+      pdh: desk.pdh,
+      pdl: desk.pdl,
+      hod: desk.hod,
+      lod: desk.lod,
+    });
+    const panel = buildPlaybookShadowPanel(desk, technicals);
+    if (panel) {
+      const primary = panel.verdicts.find((v) => v.primary) ?? null;
+      playbookShadow = {
+        mode: panel.mode,
+        primary_playbook_id: panel.primary_playbook_id,
+        primary_name: primary?.name ?? null,
+        primary_direction: primary?.direction ?? null,
+        fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,
+      };
+    }
+  } catch {
+    /* Largo desk read degrades without playbook panel */
+  }
+
   const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
     openPlay: openPlay && openPlay.status === "open" ? openPlay : null,
     lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
     powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
     outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
     intel: platform.intel ?? undefined,
+    playbookShadow,
   }, question);
   const knowledge = formatKnowledgeFootnotes(platform.knowledge);
   const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]

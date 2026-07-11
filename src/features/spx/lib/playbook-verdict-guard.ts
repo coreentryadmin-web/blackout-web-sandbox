@@ -163,8 +163,9 @@ export function applyPlaybookVerdictGuards(
 }
 
 /**
- * Defense-in-depth: persisted FSM state must allow trigger_fired + min armed polls.
- * Uses durable snapshot rows (not resolver-derived state) to catch idle/arm desync.
+ * Defense-in-depth self-consistency check: persisted FSM state + armed polls must allow trigger_fired.
+ * Uses durable snapshot rows only (never resolver-derived from_state fallback).
+ * Production path re-reads DB in resolveGuardedPlaybookMatch before calling this.
  * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (dev/staging audits + CI unit tests).
  */
 export function assertPlaybookVerdictGuardInvariants(
@@ -183,7 +184,12 @@ export function assertPlaybookVerdictGuardInvariants(
 
     const resolved = resolveEpisodeInstance(sessionDate, v, snapshots, nowMs);
     const persisted = snapshots.find((s) => s.instance_id === resolved.instance_id);
-    const persistedState = persisted?.state ?? resolved.from_state;
+    if (!persisted) {
+      throw new Error(
+        `${v.playbook_id}: trigger_fired without persisted snapshot row (instance=${resolved.instance_id})`
+      );
+    }
+    const persistedState = persisted.state;
 
     if (persistedState === "idle") {
       throw new Error(

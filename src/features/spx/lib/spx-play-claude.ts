@@ -7,9 +7,11 @@ import {
   gradeRank,
   playClaudeCachePriceStepPts,
   playClaudeCacheSec,
+  playClaudeDailyMaxCalls,
   playClaudeGateEnabled,
 } from "@/features/spx/lib/spx-play-config";
 import { dbConfigured, getMeta, setMeta, insertAlertAuditLog } from "@/lib/db";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
 import { bieEmbeddingsConfigured } from "@/lib/bie/embeddings";
 import {
@@ -36,7 +38,44 @@ export type ClaudePlayVerdict = {
 };
 
 const CACHE_KEY = "spx_bie_play_cache";
+const DAILY_CALLS_META_KEY = "spx_bie_precedent_daily_calls";
 const memoryCache = new Map<string, { at: number; verdict: ClaudePlayVerdict }>();
+let memoryDailyCalls: { date: string; count: number } = { date: "", count: 0 };
+
+async function readDailyPrecedentCalls(): Promise<{ date: string; count: number }> {
+  const today = todayEtYmd();
+  if (!dbConfigured()) {
+    if (memoryDailyCalls.date !== today) memoryDailyCalls = { date: today, count: 0 };
+    return memoryDailyCalls;
+  }
+  const raw = await getMeta(DAILY_CALLS_META_KEY);
+  if (!raw) return { date: today, count: 0 };
+  try {
+    const parsed = JSON.parse(raw) as { date?: string; count?: number };
+    if (parsed.date === today && typeof parsed.count === "number") {
+      return { date: today, count: parsed.count };
+    }
+  } catch {
+    /* fresh day */
+  }
+  return { date: today, count: 0 };
+}
+
+async function incrementDailyPrecedentCalls(): Promise<number> {
+  const today = todayEtYmd();
+  const current = await readDailyPrecedentCalls();
+  const next = { date: today, count: current.count + 1 };
+  memoryDailyCalls = next;
+  if (dbConfigured()) {
+    await setMeta(DAILY_CALLS_META_KEY, JSON.stringify(next));
+  }
+  return next.count;
+}
+
+async function precedentDailyBudgetExhausted(): Promise<boolean> {
+  const { count } = await readDailyPrecedentCalls();
+  return count >= playClaudeDailyMaxCalls();
+}
 
 function cacheKey(
   desk: SpxDeskPayload,
@@ -275,8 +314,20 @@ export async function evaluateClaudePlayApproval(
     confluence.score
   );
 
+  if (await precedentDailyBudgetExhausted()) {
+    const note = `BIE: daily precedent search cap (${playClaudeDailyMaxCalls()}) reached.`;
+    if (requireBie) {
+      return failClosedVerdict(confluence, "BIE daily cap — entry blocked", note, desk);
+    }
+    const fallback = mechanicalVerdict(confluence, gates, confirmations, note);
+    logPlayVerdict(desk, confluence, fallback, "bie-daily-cap mechanical fallback");
+    await writeCache(key, fallback);
+    return fallback;
+  }
+
   let hits: PrecedentHit[] = [];
   try {
+    await incrementDailyPrecedentCalls();
     const chunks = await findSimilarPrecedents(query, PRECEDENT_SEARCH_K);
     hits = chunks.map((c) => ({ chunk: c.chunk, similarity: c.similarity }));
   } catch (err) {

@@ -147,6 +147,16 @@ test("ladder is sorted descending by strike (calls above, puts below)", () => {
   }
 });
 
+test("topGexWalls: respects small limit even when both anchors exist", () => {
+  const spot = 5000;
+  const walls = topGexWalls(
+    [lvl(5100, 400), lvl(5050, 200), lvl(4950, -300), lvl(4900, -600)],
+    spot,
+    1
+  );
+  assert.equal(walls.length, 1);
+});
+
 test("empty levels or spot<=0 returns []", () => {
   assert.deepEqual(topGexWalls([], 5000, 10), []);
   assert.deepEqual(topGexWalls([lvl(5000, 100)], 0, 10), []);

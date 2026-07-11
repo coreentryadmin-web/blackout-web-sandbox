@@ -22,7 +22,7 @@ in this file.
 
 **Surface:** `PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md` findings #2–#37 (excl. #1/#17 already fixed).
 
-**Fix:** PR `cursor/deep-sweep-fixes-261c` — playbook alignment in BIE synthesis, commentary `.catch`, `closeOpenPlay` BUG-07 meta, Claude gate audit trail + cache key, playbook DB retention/lock/index, unified outcome classification, desk resilience, gamma NaN guard, admin route validation, cron stagger. Deferred: EMA dedup (#13), desk float rounding sweep (#21), useMergedDesk errors (#23), intel runtime validation (#20), DB FK (#38).
+**Fix:** PR `cursor/deep-sweep-fixes-261c` + `cursor/deep-sweep-deferred-261c` — playbook alignment in BIE synthesis, commentary `.catch`, `closeOpenPlay` BUG-07 meta, Claude gate audit trail + cache key + daily cap, playbook DB retention/lock/index, unified outcome classification, desk resilience/rounding/intel validation, gamma NaN guard, admin route validation, cron stagger, Largo playbook panel, useMergedDesk error surfacing, Q4 DB re-read assert. Remaining open: alert-outcome-sync fuzzy join (#27), DB FK (#38), UW REST ordering (#31).
 
 **Status:** FIXED (`cursor/deep-sweep-fixes-261c` on `blackout-web-sandbox`).
 

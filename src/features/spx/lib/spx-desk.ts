@@ -85,12 +85,19 @@ import {
 } from "@/lib/providers/unusual-whales";
 import { runUwPooled } from "@/lib/providers/uw-rate-limiter";
 import { fetchEngine } from "@/lib/engine";
+import { parseEngineIntelOverlay, type EngineIntelOverlay } from "@/lib/engine-intel-overlay";
 import { indexStore, getIndexFeedFreshness } from "@/lib/ws/polygon-socket";
 import { getActiveTradingHalts, isTradingHaltChannelStale } from "@/lib/ws/uw-socket";
 
 /** GEX-wall ladder size — a balanced ~5-per-side two-sided ladder (call wall above spot,
  *  put wall below). 10 fits the scrollable panel without crushing the Live Tape (bug #93). */
 const GEX_WALL_LADDER_LIMIT = 10;
+
+/** Round price-like desk numerics at the data layer (deep sweep #21). */
+function roundDeskNum(n: number | null | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return Math.round(n * 100) / 100;
+}
 
 let lastGoodGexWalls: GexWall[] = [];
 let lastGoodStrikeLevels: GexStrikeLevel[] = [];
@@ -137,9 +144,10 @@ type CanonicalDeskGexSnapshot = {
 /** Map the shared matrix strike_totals into the gamma-desk ladder shape for wall rendering. */
 function strikeTotalsToLevels(totals: Record<string, number>): GexStrikeLevel[] {
   return Object.entries(totals)
-    .map(([s, net]) => {
+    .map(([s, netRaw]) => {
       const strike = Number(s);
-      if (!Number.isFinite(strike) || net === 0) return null;
+      const net = Number(netRaw);
+      if (!Number.isFinite(strike) || !Number.isFinite(net) || net === 0) return null;
       return {
         strike,
         net_gex: net,
@@ -1157,7 +1165,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     sma200,
     breadthAll,
     newsRaw,
-    intel,
+    intelRaw,
   ] = await Promise.all([
     fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]).catch(() => ({})),
     fetchIndexMinuteBars(SPX, today, today).catch(() => []),
@@ -1174,6 +1182,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     serverCache("bz:news:market", 120_000, () => fetchBenzingaNews(15)).catch(() => []),
     intelPromise,
   ]);
+
+  const intel: EngineIntelOverlay | null = parseEngineIntelOverlay(intelRaw);
 
   const snaps = mergeWsIndexSnapshots(snapsRaw);
 
@@ -1281,19 +1291,18 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
 
   let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
 
-  const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
+  const vwap = session.vwap ?? intel?.vwap ?? null;
   const vwapVolumeWeighted = session.vwap_volume_weighted ?? false;
-  const lod = session.lod ?? (intel?.lod as number | null) ?? null;
-  const hod = session.hod ?? (intel?.hod as number | null) ?? null;
+  const lod = session.lod ?? intel?.lod ?? null;
+  const hod = session.hod ?? intel?.hod ?? null;
 
   const gammaFlip =
-    (intel?.gamma_flip as number | null) ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
+    intel?.gamma_flip ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
   const intelFlipActive =
     engineIntelOverlayEnabled() &&
     intel != null &&
-    intel.gamma_flip != null &&
-    Number.isFinite(Number(intel.gamma_flip));
+    intel.gamma_flip != null;
   const gammaRegimeLabel = intelFlipActive
     ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime)
     : canonicalGex.gamma_regime !== "unknown"
@@ -1304,13 +1313,11 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gexStale = canonicalGex.gex_stale;
 
   // Canonical matrix is the sole GEX source — no 0DTE recompute.
-  const gexNet = (intel?.gex_net as number | null) ?? canonicalGex.gex_net ?? null;
-  const gexKing = (intel?.gex_king as number | null) ?? canonicalGex.gex_king ?? null;
-  maxPain = (intel?.max_pain as number | null) ?? maxPain ?? null;
+  const gexNet = intel?.gex_net ?? canonicalGex.gex_net ?? null;
+  const gexKing = intel?.gex_king ?? canonicalGex.gex_king ?? null;
+  maxPain = intel?.max_pain ?? maxPain ?? null;
 
-  const regime =
-    (intel?.chart_levels as { regime?: string } | undefined)?.regime ??
-    inferRegime(price, ema20, ema50);
+  const regime = intel?.regime ?? inferRegime(price, ema20, ema50);
 
   const vixTerm = computeVixTermStructure(
     vixSnap?.price ?? null,
@@ -1331,8 +1338,8 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const sectorHeat = (breadthAll ?? []).filter((s) => !LEADER_TICKERS.has(s.ticker));
   const internals = resolveMarketInternals(
     {
-      tick: snaps[TICK]?.price ?? (intel?.tick as number | null) ?? null,
-      trin: snaps[TRIN]?.price ?? (intel?.trin as number | null) ?? null,
+      tick: snaps[TICK]?.price ?? intel?.tick ?? null,
+      trin: snaps[TRIN]?.price ?? intel?.trin ?? null,
       add: snaps[ADD]?.price ?? null,
     },
     breadthAll ?? []
@@ -1372,48 +1379,46 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     available: true,
     as_of: asOf,
     source: intel?.available ? "merged" : uwConfigured() ? "polygon+uw-flow" : "polygon",
-    price,
+    price: roundDeskNum(price)!,
     spx_change_pct: spxSnap.change_pct,
-    vix: vixSnap?.price ?? (intel?.vix as number | null) ?? null,
-    vix_change_pct: vixSnap?.change_pct ?? (intel?.vix_change_pct as number | null) ?? null,
+    vix: roundDeskNum(vixSnap?.price ?? intel?.vix ?? null),
+    vix_change_pct: vixSnap?.change_pct ?? intel?.vix_change_pct ?? null,
     above_vwap: vwap != null ? price >= vwap : false,
-    lod,
-    hod,
-    vwap,
+    lod: roundDeskNum(lod),
+    hod: roundDeskNum(hod),
+    vwap: roundDeskNum(vwap),
     vwap_volume_weighted: vwapVolumeWeighted,
-    pdh: prior.pdh,
-    pdl: prior.pdl,
-    prior_close: prior.pdc,
+    pdh: roundDeskNum(prior.pdh),
+    pdl: roundDeskNum(prior.pdl),
+    prior_close: roundDeskNum(prior.pdc),
     gap_pct: gapSnap.gap_pct,
     gap_source: gapSnap.gap_source,
-    ema20,
-    ema50,
-    ema200,
-    sma50,
-    sma200,
-    tick: internals.tick,
-    trin: internals.trin,
-    add: internals.add,
+    ema20: roundDeskNum(ema20),
+    ema50: roundDeskNum(ema50),
+    ema200: roundDeskNum(ema200),
+    sma50: roundDeskNum(sma50),
+    sma200: roundDeskNum(sma200),
+    tick: roundDeskNum(internals.tick),
+    trin: roundDeskNum(internals.trin),
+    add: roundDeskNum(internals.add),
     internals_estimated: internals.estimated,
-    gex_net: gexNet,
-    gex_king: gexKing,
-    max_pain: maxPain,
-    gamma_flip: gammaFlip,
+    gex_net: roundDeskNum(gexNet),
+    gex_king: roundDeskNum(gexKing),
+    max_pain: roundDeskNum(maxPain),
+    gamma_flip: roundDeskNum(gammaFlip),
     above_gamma_flip: aboveFlip,
     gamma_regime: gammaRegimeLabel,
     gex_walls: finalWalls,
-    flow_0dte_call_premium:
-      (intel?.flow_0dte_call_premium as number | null) ?? uwFlow?.call_premium ?? null,
-    flow_0dte_put_premium:
-      (intel?.flow_0dte_put_premium as number | null) ?? uwFlow?.put_premium ?? null,
-    flow_0dte_net: (intel?.flow_0dte_net as number | null) ?? uwFlow?.net ?? null,
-    tide_bias: (intel?.tide_bias as string | null) ?? uwTide?.bias ?? null,
+    flow_0dte_call_premium: intel?.flow_0dte_call_premium ?? uwFlow?.call_premium ?? null,
+    flow_0dte_put_premium: intel?.flow_0dte_put_premium ?? uwFlow?.put_premium ?? null,
+    flow_0dte_net: intel?.flow_0dte_net ?? uwFlow?.net ?? null,
+    tide_bias: intel?.tide_bias ?? uwTide?.bias ?? null,
     tide_call_premium: uwTide?.call_premium ?? null,
     tide_put_premium: uwTide?.put_premium ?? null,
     tide_net: uwTide?.net ?? null,
-    nope: (intel?.nope as { nope?: number } | null)?.nope ?? uwNope?.nope ?? null,
+    nope: intel?.nope ?? uwNope?.nope ?? null,
     nope_net_delta: uwNope?.net_delta ?? null,
-    uw_iv_rank: (intel?.uw_iv_rank as number | null) ?? polygonIvRank ?? uwIv ?? null,
+    uw_iv_rank: intel?.uw_iv_rank ?? polygonIvRank ?? uwIv ?? null,
     regime: String(regime),
     levels,
     dark_pool: darkPool,
