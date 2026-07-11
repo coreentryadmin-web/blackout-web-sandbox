@@ -118,14 +118,27 @@ test("trailsByStrike: groups horizontal bead rows per strike — migration split
   assert.deepEqual(callTrails.get(6810)?.map((p) => p.time), [220]);
 });
 
-test("pickActiveStrikes: keeps the heaviest cumulative rows when capped", () => {
+test("pickActiveStrikes: keeps the heaviest rows when capped", () => {
   const trails = new Map([
     [6800, [{ time: 100, pct: 3 }, { time: 160, pct: 3 }]],
     [6810, [{ time: 100, pct: 9 }]],
     [6820, [{ time: 100, pct: 2 }]],
   ]);
   assert.deepEqual(pickActiveStrikes(trails, 2), [6810, 6800]);
-  assert.equal(strikeTrailWeight(trails.get(6800)!), 6);
+  // Peak-biased weight = max*0.6 + mean*0.4 → 3*0.6 + 3*0.4 = 3 (not the Σ=6 of the old scheme).
+  assert.equal(strikeTrailWeight(trails.get(6800)!), 3);
+});
+
+test("pickActiveStrikes: a recently-strong wall outranks a persistent-but-weak one (peak-biased)", () => {
+  const trails = new Map([
+    // Weak wall present ALL session (10 samples @ 3%): old Σpct = 30.
+    [6800, Array.from({ length: 10 }, (_, i) => ({ time: 100 + i, pct: 3 }))],
+    // Strong wall that just appeared (2 samples @ 8%): old Σpct = 16 → would be DROPPED.
+    [6810, [{ time: 200, pct: 8 }, { time: 201, pct: 8 }]],
+  ]);
+  // Old cumulative ranking hid the 8% wall (the exact live bug: strongest wall, no beads).
+  // Peak-bias: 6810 weight 8 > 6800 weight 3 → the strong wall wins the single slot.
+  assert.deepEqual(pickActiveStrikes(trails, 1), [6810]);
 });
 
 test("mergeWallHistory: unions by bar time so Redis + replica tails combine", () => {
