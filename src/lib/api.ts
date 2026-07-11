@@ -252,6 +252,51 @@ export async function fetchFlows(params?: {
   );
 }
 
+export interface OptionContractIntradayRow {
+  time: string;
+  volume: number;
+  oi: number;
+  premium: number;
+}
+
+export interface OptionContractFillRow {
+  time: string;
+  premium: number;
+  size: number;
+  fill: number | null;
+  side: string;
+}
+
+export interface OptionContractDrilldown {
+  contract_id: string;
+  label: string;
+  ticker: string;
+  strike: number;
+  expiry: string;
+  option_type: "CALL" | "PUT";
+  intraday: OptionContractIntradayRow[];
+  fills: OptionContractFillRow[];
+  volume_profile: unknown;
+  chain_ratio: number | null;
+  fill_count: number;
+}
+
+/** Per-contract drilldown — UW flow + intraday + volume profile (HELIX contract drawer). */
+export async function fetchOptionContractDrilldown(params: {
+  ticker: string;
+  strike: number;
+  expiry: string;
+  option_type: "CALL" | "PUT";
+}) {
+  const qs = new URLSearchParams({
+    ticker: params.ticker,
+    strike: String(params.strike),
+    expiry: params.expiry.slice(0, 10),
+    option_type: params.option_type,
+  });
+  return marketFetch<OptionContractDrilldown>(`/option-contract?${qs}`);
+}
+
 /** Upcoming earnings dates — ticker → YYYY-MM-DD. Returns {} on error (graceful degradation). */
 export async function fetchEarningsCalendar(): Promise<Record<string, string>> {
   try {

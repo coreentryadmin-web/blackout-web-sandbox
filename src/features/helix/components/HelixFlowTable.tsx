@@ -78,6 +78,7 @@ export function HelixFlowTable({
   hasData = false,
   compoundTickers,
   onTickerClick,
+  onContractClick,
   replayMode = false,
   splitFlowTickers,
   earningsDays,
@@ -95,6 +96,7 @@ export function HelixFlowTable({
   hasData?: boolean;
   compoundTickers?: Set<string>;
   onTickerClick?: (ticker: string) => void;
+  onContractClick?: (flow: FlowAlert) => void;
   replayMode?: boolean;
   splitFlowTickers?: Set<string>;
   earningsDays?: Record<string, number>;
@@ -263,19 +265,23 @@ export function HelixFlowTable({
                       isCompound && "helix-flow-row--compound",
                       isNew && "helix-flow-row--flash"
                     )}
-                    onClick={() => onTickerClick?.(flow.ticker)}
+                    onClick={() => {
+                      if (onContractClick) onContractClick(flow);
+                      else onTickerClick?.(flow.ticker);
+                    }}
                     onKeyDown={
-                      onTickerClick
+                      onContractClick || onTickerClick
                         ? (e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              onTickerClick(flow.ticker);
+                              if (onContractClick) onContractClick(flow);
+                              else onTickerClick?.(flow.ticker);
                             }
                           }
                         : undefined
                     }
-                    role={onTickerClick ? "button" : undefined}
-                    tabIndex={onTickerClick ? 0 : undefined}
+                    role={onContractClick || onTickerClick ? "button" : undefined}
+                    tabIndex={onContractClick || onTickerClick ? 0 : undefined}
                   >
                     <td className="helix-flow-cell-time tabular-nums text-sky-300/90">
                       {flowTimeMs(flow) ? timeAgo(flow.alerted_at) : "—"}
@@ -299,7 +305,21 @@ export function HelixFlowTable({
                             {isStarred ? "★" : "☆"}
                           </button>
                         )}
-                        <span className="font-mono text-[12px] font-bold text-white tracking-wide">
+                        <span
+                          className="font-mono text-[12px] font-bold text-white tracking-wide hover:text-cyan-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTickerClick?.(flow.ticker);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.stopPropagation();
+                              onTickerClick?.(flow.ticker);
+                            }
+                          }}
+                          role={onTickerClick ? "button" : undefined}
+                          tabIndex={onTickerClick ? 0 : undefined}
+                        >
                           {flow.ticker}
                         </span>
                       </div>
