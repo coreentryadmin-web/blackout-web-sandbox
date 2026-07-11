@@ -106,20 +106,25 @@ export async function maybeLogPlaybookShadowMatch(
   const prevMap = new Map(
     prevStates.map((r) => [r.instance_id, r.state])
   );
-  const { transitions, nextByInstance } = collectPlaybookInstanceTransitions(
-    sessionDate,
-    rawVerdicts,
-    prevMap
-  );
-
-  const armedPollByInstance = resolved?.next_armed_poll_counts;
-
   const primaryId =
     opts?.primary_playbook_id ?? panel.primary_playbook_id ?? null;
+  const gateBlockedIds = new Set<string>();
   const primaryBlocked =
     primaryId != null &&
     gateBlocks.length > 0 &&
     rawVerdicts.some((v) => v.playbook_id === primaryId && v.trigger_fired);
+  if (primaryBlocked && primaryId) {
+    gateBlockedIds.add(playbookInstanceId(sessionDate, primaryId));
+  }
+
+  const { transitions, nextByInstance } = collectPlaybookInstanceTransitions(
+    sessionDate,
+    rawVerdicts,
+    prevMap,
+    { gate_blocked_instance_ids: gateBlockedIds }
+  );
+
+  const armedPollByInstance = resolved?.next_armed_poll_counts;
 
   if (transitions.length > 0) {
     await upsertPlaybookInstances(

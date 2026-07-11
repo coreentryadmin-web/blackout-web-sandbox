@@ -254,7 +254,7 @@ test("evaluatePlayGates: VIX above 32 blocks new entries", () => {
     emptySession,
     passingConfirmations
   );
-  assert.match(result.blocks.join(" "), /VIX 33\.5 too hot/i);
+  assert.match(result.blocks.join(" "), /governor blocks new 0DTE|VIX 33\.5/i);
 });
 
 test("evaluatePlayGates: pre-market BUY blocked before cash open", () => {

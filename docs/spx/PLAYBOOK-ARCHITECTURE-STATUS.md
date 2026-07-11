@@ -217,10 +217,22 @@ Every ~2s play poll on staging:
 | **#66** | Research requirements + assessment scores in status doc |
 | **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
 | **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
+| **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
 
 ---
 
 ## 8. Open gaps & phase plan
+
+### Target architecture (vNext)
+
+```
+Market Data → Feature Engine → Regime Engine → Playbook Matcher
+  → Playbook State Machine → Play Selection → Trade Governor
+  → Execution Simulator → Position Manager → Exit Engine
+  → Evidence Store → Analytics
+```
+
+**Policy:** No new playbooks or allowlist expansion until FSM + governor + options-aware outcomes are green on OOS data.
 
 ### P0 — Done on staging
 
@@ -247,14 +259,26 @@ Every ~2s play poll on staging:
 | `npm run playbook:param-sweep` | ✅ Shipped | Stability bands, no in-sample tune |
 | OOS train firewall in code | ✅ Shipped | `playbook-evidence-config.ts` |
 
+### P1 — Phase 3 shipped (staging)
+
+| Item | Status | Detail |
+|------|--------|--------|
+| Full instance FSM | ✅ Shipped | `idle→armed→triggered→open→managing→closed` + terminal freeze |
+| Trigger latch + gate re-arm | ✅ Shipped | `playbook-state-machine.ts` — soft block → `armed` |
+| Engine FSM commits | ✅ Shipped | `commitPlaybookInstanceOpen/Managing/Closed` on BUY/TRIM/SELL |
+| Cron FSM telemetry | ✅ Shipped | `syncPlaybookTelemetryAfterEvaluate` in `runSpxEvaluator` |
+| Trade Governor subsystem | ✅ Shipped | `trade-governor.ts` — session caps, spread/premium, VIX, revenge lock |
+| Per-PB exit engines (PB-01–04) | ✅ Shipped | `playbook-exit-engines.ts` — bespoke invalidation + trim |
+| Options P/L lite model | ✅ Shipped | `playbook-option-pnl.ts` — delta/gamma/theta + `greeks_snapshot` |
+| VolatilityContext | ✅ Shipped | `playbook-volatility-context.ts` — scaled distance thresholds |
+
 ### P1 — Phase 2 shipped (staging)
 
 | Item | Status | Detail |
 |------|--------|--------|
 | Armed duration guard (`PLAYBOOK_MIN_ARMED_POLLS`) | ✅ Shipped | `applyPlaybookVerdictGuards` + `armed_poll_count` column |
 | PB-03 VIX/OR-normalized buffer | ✅ Shipped | `scaledPlaybookMtfBufferPts` / `scaledPlaybookStructureProximityPts` |
-| Playbook-specific exits | ✅ Shipped | `playbookExitProfile` wired in `evaluateOpenPlay` |
-| Session risk governor | ✅ Shipped | Per-PB trigger cap + degraded size multiplier in gates |
+| Session risk (legacy) | ✅ Superseded | Merged into `trade-governor.ts` |
 | Option exit cost model | ✅ Shipped | `simulateOptionExit` + `round_trip_cost_pts` on `execution_sim` |
 | ECS auto-deploy after ECR push | ✅ Shipped | `force-new-deployment` in `ecr-push-staging.yml` |
 
@@ -264,6 +288,9 @@ Every ~2s play poll on staging:
 |------|--------|--------|
 | Evidence-aware primary ranking (historical edge weight) | 🟡 Partial | Priority list only; no win-rate weight |
 | Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
+| Dedicated Regime Engine object | 🟡 Partial | Still embedded in matcher eligibility |
+| Full options path simulator (IV surface) | 🟡 Partial | Lite delta/gamma/theta only |
+| Per-PB exit engines PB-05+ | ⏳ Blocked | PB-01–04 only until evidence tiers |
 | PB-02 z-score / persistence | ⏳ Planned | Materiality only |
 | PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
 | MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |

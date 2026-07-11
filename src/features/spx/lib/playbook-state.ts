@@ -1,9 +1,17 @@
 import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { PlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
+import {
+  collectMatcherFsmTransitions,
+  resolvePlaybookFsmState,
+  verdictCandidateState,
+  type PlaybookFsmTransition,
+  type PlaybookLifecycleState,
+} from "@/features/spx/lib/playbook-state-machine";
 
-/** Per-instance lifecycle — maps to ARMED → TRIGGERED → INVALIDATED in FULL-SPEC. */
-export type PlaybookLifecycleState = "idle" | "armed" | "triggered" | "invalidated";
+export type { PlaybookLifecycleState, PlaybookFsmTransition };
+export { verdictCandidateState as verdictLifecycleState };
+export { resolvePlaybookFsmState as resolvePlaybookLifecycleState };
 
 export type PlaybookInstanceTransition = {
   instance_id: string;
@@ -19,60 +27,34 @@ export function playbookInstanceId(sessionDate: string, playbookId: PlaybookId):
   return `${sessionDate}:${playbookId}`;
 }
 
-export function verdictLifecycleState(v: PlaybookMatchVerdict): PlaybookLifecycleState {
-  if (!v.regime_eligible || !v.session_window_open) return "idle";
-  if (v.trigger_fired) return "triggered";
-  if (v.precondition_match) return "armed";
-  return "idle";
+function toInstanceTransition(t: PlaybookFsmTransition): PlaybookInstanceTransition {
+  return {
+    instance_id: t.instance_id,
+    playbook_id: t.playbook_id,
+    direction: t.direction,
+    from_state: t.from_state,
+    to_state: t.to_state,
+    detail: t.detail,
+  };
 }
 
-/** Resolve next state with invalidation when a setup loses precondition mid-session. */
-export function resolvePlaybookLifecycleState(
-  prev: PlaybookLifecycleState,
-  v: PlaybookMatchVerdict
-): PlaybookLifecycleState {
-  const naive = verdictLifecycleState(v);
-  if (naive === "armed" && prev === "triggered") return "invalidated";
-  if (
-    naive === "idle" &&
-    (prev === "armed" || prev === "triggered") &&
-    v.session_window_open &&
-    v.regime_eligible
-  ) {
-    return "invalidated";
-  }
-  return naive;
-}
-
-/** Detect state transitions vs prior in-memory/DB snapshot for telemetry persistence. */
+/** Detect matcher-driven FSM transitions vs prior DB snapshot. */
 export function collectPlaybookInstanceTransitions(
   sessionDate: string,
   verdicts: readonly PlaybookMatchVerdict[],
-  prevByInstance: ReadonlyMap<string, PlaybookLifecycleState>
+  prevByInstance: ReadonlyMap<string, PlaybookLifecycleState>,
+  opts?: { gate_blocked_instance_ids?: ReadonlySet<string> }
 ): { transitions: PlaybookInstanceTransition[]; nextByInstance: Map<string, PlaybookLifecycleState> } {
-  const nextByInstance = new Map(prevByInstance);
-  const transitions: PlaybookInstanceTransition[] = [];
-
-  for (const v of verdicts) {
-    const instanceId = playbookInstanceId(sessionDate, v.playbook_id);
-    const fromState = prevByInstance.get(instanceId) ?? "idle";
-    const toState = resolvePlaybookLifecycleState(fromState, v);
-
-    nextByInstance.set(instanceId, toState);
-
-    if (fromState === toState) continue;
-
-    transitions.push({
-      instance_id: instanceId,
-      playbook_id: v.playbook_id,
-      direction: v.direction,
-      from_state: fromState,
-      to_state: toState,
-      detail: v.detail,
-    });
-  }
-
-  return { transitions, nextByInstance };
+  const { transitions, nextByInstance } = collectMatcherFsmTransitions(
+    sessionDate,
+    verdicts,
+    prevByInstance,
+    opts
+  );
+  return {
+    transitions: transitions.map(toInstanceTransition),
+    nextByInstance,
+  };
 }
 
 export type PlaybookInstanceRow = {

@@ -48,6 +48,7 @@ import {
   playTrailingStopBreakevenMfePts,
   playTrailingStopTrailMfePts,
   playTrailingStopTrailWindowPts,
+  playBuyCooldownAplusBypass,
   playbookStagingLabEnabled,
 } from "@/features/spx/lib/spx-play-config";
 import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
@@ -84,6 +85,18 @@ import {
 } from "@/features/spx/lib/spx-play-watch";
 import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
 import { buildOptionExecutionSim } from "@/features/spx/lib/playbook-option-sim";
+import { buildGreeksSnapshot } from "@/features/spx/lib/playbook-option-pnl";
+import { evaluateTradeGovernor } from "@/features/spx/lib/trade-governor";
+import {
+  evaluatePlaybookExitPlan,
+  strongestPlaybookExitSignal,
+} from "@/features/spx/lib/playbook-exit-engines";
+import { buildVolatilityContext } from "@/features/spx/lib/playbook-volatility-context";
+import {
+  commitPlaybookInstanceClosed,
+  commitPlaybookInstanceManaging,
+  commitPlaybookInstanceOpen,
+} from "@/features/spx/lib/playbook-fsm-sync";
 import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
@@ -206,67 +219,106 @@ async function evaluateOpenPlay(
   let headline = `${row.grade} ${dir === "long" ? "CALL" : "PUT"} working`;
   let thesis = `Managing open ${dir} from ${row.entry_price.toFixed(2)} — thesis intact.`;
 
+  const sessionDateFsm = todayEt();
+  const entryScore = row.entry_score ?? confluence.score;
+  const forceExit = isPastForceExitCutoff();
+  const volCtx = buildVolatilityContext(desk, technicals);
+
+  const pbId = (row.playbook_id as PlaybookId | null | undefined) ?? null;
+  const exitPlan = pbId
+    ? evaluatePlaybookExitPlan({
+        playbook_id: pbId,
+        desk,
+        technicals,
+        row,
+        direction: dir,
+        price,
+        confluence_score: confluence.score,
+        entry_score: entryScore,
+        mfe_pts: mfe,
+        vol_ctx: volCtx,
+        desk_stale: deskStale,
+        force_exit: forceExit,
+      })
+    : null;
+
+  const pbExitSignal = exitPlan ? strongestPlaybookExitSignal(exitPlan) : null;
+
   const stop = row.stop;
   const target = row.target;
 
-  // When the desk is stale, neutralize all price-driven exit triggers (stop/target/trail/
-  // trim) so management HOLDs instead of acting on an untrustworthy quote. Time/session
-  // based exits (force-exit theta cutoff, session close) are evaluated independently below.
-  const stopHit = !deskStale && stop != null && (dir === "long" ? price <= stop : price >= stop);
-  const targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
+  let stopHit = !deskStale && stop != null && (dir === "long" ? price <= stop : price >= stop);
+  let targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
+  let thesisBreak = exitPlan?.thesis_break ?? false;
+  let trimZone = exitPlan?.trim_zone ?? false;
+  let trailingStop = exitPlan?.trailing_stop ?? null;
+  let trailingStopHit =
+    !deskStale &&
+    trailingStop !== null &&
+    (dir === "long" ? price <= trailingStop : price >= trailingStop);
 
-  const entryScore = row.entry_score ?? confluence.score;
-  const exitProf = playbookExitProfile(row.playbook_id);
-  const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
-    mfePts: mfe,
-    openedAtMs: new Date(row.opened_at).getTime(),
-  }, {
-    dropPts: playThesisBreakDropPts() * exitProf.thesis_break_mult,
-    floor: playThesisBreakScore() * exitProf.thesis_break_mult,
-  });
-  const thesisBreak = thesisEval.broken;
+  if (!pbId) {
+    const exitProf = playbookExitProfile(pbId);
+    const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
+      mfePts: mfe,
+      openedAtMs: new Date(row.opened_at).getTime(),
+    }, {
+      dropPts: playThesisBreakDropPts() * exitProf.thesis_break_mult,
+      floor: playThesisBreakScore() * exitProf.thesis_break_mult,
+    });
+    thesisBreak = thesisEval.broken;
+    const totalRun = target != null ? Math.abs(target - row.entry_price) : 0;
+    const progress =
+      totalRun > 0
+        ? dir === "long"
+          ? (price - row.entry_price) / totalRun
+          : (row.entry_price - price) / totalRun
+        : 0;
+    trimZone =
+      !deskStale &&
+      !row.trim_done &&
+      mfe >= playDynamicTrimMfePts(desk.vix) * exitProf.trim_mfe_mult &&
+      target != null &&
+      progress >= playTrimProgressPct();
+    const trailWindowPts =
+      (playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts()) *
+      exitProf.trail_window_mult;
+    trailingStop = null;
+    if (mfe >= playTrailingStopTrailMfePts()) {
+      const peakPrice = dir === "long" ? row.entry_price + mfe : row.entry_price - mfe;
+      trailingStop = dir === "long" ? peakPrice - trailWindowPts : peakPrice + trailWindowPts;
+    } else if (mfe >= playTrailingStopBreakevenMfePts()) {
+      trailingStop = row.entry_price;
+    }
+    trailingStopHit =
+      !deskStale && !targetHit && trailingStop !== null &&
+      (dir === "long" ? price <= trailingStop : price >= trailingStop);
+  } else if (pbExitSignal?.action === "SELL" && pbExitSignal.priority >= 85) {
+    stopHit = pbExitSignal.reason.includes("Stop");
+    targetHit = pbExitSignal.reason.includes("Target");
+    thesisBreak = pbExitSignal.reason.includes("Thesis") || pbExitSignal.reason.includes("VWAP");
+  }
 
-  const totalRun =
-    target != null ? Math.abs(target - row.entry_price) : 0;
+  const totalRun = target != null ? Math.abs(target - row.entry_price) : 0;
   const progress =
     totalRun > 0
       ? dir === "long"
         ? (price - row.entry_price) / totalRun
         : (row.entry_price - price) / totalRun
       : 0;
-  const trimZone =
-    !deskStale &&
-    !row.trim_done &&
-    mfe >= playDynamicTrimMfePts(desk.vix) * exitProf.trim_mfe_mult &&
-    target != null &&
-    progress >= playTrimProgressPct();
 
-  const forceExit = isPastForceExitCutoff();
-
-  // Trailing stop — mfe is the rolling peak MFE (Math.max of row.mfe_pts and current move),
-  // so it naturally tracks the best point the trade reached since entry.
-  // Priority: breakeven lock first (at +8 pts), then price-trail (at +15 pts, 7 pts window).
-  // Pairs with the trim mechanism: trim fires at MFE >=12 at 70% progress; trail protects the runner.
-  const trailBreakevenMfe = playTrailingStopBreakevenMfePts();
-  const trailActiveMfe = playTrailingStopTrailMfePts();
-  // VIX-indexed trail window: scales with the day's range so normal retracements on
-  // volatile days don't stop out a healthy runner. Falls back to the static config when
-  // the env override is set (SPX_TRAILING_STOP_TRAIL_WINDOW).
-  const trailWindowPts =
-    (playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts()) *
-    exitProf.trail_window_mult;
-  let trailingStop: number | null = null;
-  if (mfe >= trailActiveMfe) {
-    // Trail at (peak price - trailWindowPts) to lock in most of the run
-    const peakPrice = dir === "long" ? row.entry_price + mfe : row.entry_price - mfe;
-    trailingStop = dir === "long" ? peakPrice - trailWindowPts : peakPrice + trailWindowPts;
-  } else if (mfe >= trailBreakevenMfe) {
-    // Lock to entry price — worst case is a scratch, not a loss
-    trailingStop = row.entry_price;
-  }
-  const trailingStopHit = !deskStale && !targetHit && trailingStop !== null && (
-    dir === "long" ? price <= trailingStop : price >= trailingStop
-  );
+  const fsmOnClose = async (exitReason: string, exitAction: string) => {
+    if (!mutate || !pbId) return;
+    await commitPlaybookInstanceClosed({
+      session_date: sessionDateFsm,
+      playbook_id: pbId,
+      direction: dir,
+      desk,
+      technicals,
+      exit_reason: exitReason,
+      exit_action: exitAction,
+    });
+  };
 
   const closeSnapshot = (exitAction: PlayExitAction, wasLoss: boolean, trimDone: boolean) => ({
     exit_price: price,
@@ -290,6 +342,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("THETA", thetaLoss, row.trim_done),
       });
+      await fsmOnClose("theta cutoff", "THETA");
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -331,6 +384,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("TARGET", false, row.trim_done),
       });
+      await fsmOnClose("target hit", "TARGET");
       firePlayTelemetry("maybeLogSpxPlay:TARGET", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -376,6 +430,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("TRAIL", false, row.trim_done),
       });
+      await fsmOnClose("trailing stop", "TRAIL");
       firePlayTelemetry("maybeLogSpxPlay:TRAIL", () =>
         maybeLogSpxPlay(
           { price: desk.price, market_open: desk.market_open },
@@ -421,7 +476,7 @@ async function evaluateOpenPlay(
     thesis = stopHit
       ? `Price ${price.toFixed(2)} through stop ${stop?.toFixed(0)}. Flatten.`
       : thesisBreak
-        ? `Thesis break (${thesisEval.trigger ?? "or"}) — score ${confluence.score} vs ${thesisEval.trigger === "floor" ? "±" : ""}${Math.abs(thesisEval.threshold).toFixed(0)} threshold (entry ${entryScore}).`
+        ? pbExitSignal?.reason ?? `Thesis break — score ${confluence.score} vs entry ${entryScore}.`
         : "Cash session closed — flatten runners.";
     // C4: was_loss is true for stop hits and thesis breaks regardless of market state.
     // SESSION-only closes (theta/time, no stop or thesis break) use actual PnL so a
@@ -437,6 +492,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot(exitAction, wasLoss, row.trim_done),
       });
+      await fsmOnClose(headline, exitAction);
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -467,12 +523,41 @@ async function evaluateOpenPlay(
         score: confluence.score,
       });
     }
+  } else if (
+    pbExitSignal?.action === "SELL" &&
+    pbExitSignal.priority >= 82 &&
+    !targetHit &&
+    !stopHit &&
+    !trailingStopHit
+  ) {
+    action = "SELL";
+    headline = pbExitSignal.reason;
+    thesis = pbExitSignal.reason;
+    const wasLoss = pnlPts(dir, row.entry_price, price) < 0;
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: wasLoss,
+        direction: dir,
+        close: closeSnapshot("THESIS", wasLoss, row.trim_done),
+      });
+      await fsmOnClose(pbExitSignal.reason, "THESIS");
+    }
   } else if (trimZone) {
     action = "TRIM";
     headline = "TRIM — bank partial, trail runner";
     thesis = `+${mfe.toFixed(1)} pts MFE · ${Math.round(progress * 100)}% to target — trim ~50%, trail runner.`;
     if (mutate) {
       await updateOpenPlay(row.id, { trim_done: true });
+      if (pbId) {
+        await commitPlaybookInstanceManaging({
+          session_date: sessionDateFsm,
+          playbook_id: pbId,
+          direction: dir,
+          desk,
+          technicals,
+          detail: headline,
+        });
+      }
       firePlayTelemetry("maybeLogSpxPlay:TRIM", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -924,8 +1009,55 @@ async function evaluateFlatPlay(
   const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
   const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price);
   const optionTicket: OptionTicket = executionSim
-    ? { ...optionTicketRaw, execution_sim: executionSim }
+    ? {
+        ...optionTicketRaw,
+        execution_sim: {
+          ...executionSim,
+          greeks_snapshot: buildGreeksSnapshot({
+            direction: dir,
+            entry_spot: desk.price,
+            option_mid: optionTicketRaw.mid ?? 0,
+            delta: optionTicketRaw.delta,
+            execution_sim: executionSim,
+          }),
+        },
+      }
     : optionTicketRaw;
+
+  const optionGovernor = evaluateTradeGovernor({
+    buy_intent: true,
+    playbook_id: playbookPrimaryId,
+    direction: dir,
+    desk,
+    session,
+    triggers_today_by_pb: playbookResolved.triggers_today_by_pb,
+    option: {
+      mid: optionTicket.mid,
+      spread_pct: optionTicket.spread_pct,
+      blocked: optionTicket.blocked,
+      block_reason: optionTicket.block_reason,
+    },
+    bypass_buy_cooldown:
+      playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"),
+  });
+  if (optionGovernor.blocks.length) {
+    return {
+      ...scanningPayload(desk, confluence, pickIdleMessage(), {
+        passed: false,
+        blocks: optionGovernor.blocks,
+        blocks_by_category: categorizeGateBlocks(optionGovernor.blocks),
+        warnings: [...entryGatesRaw.warnings, ...optionGovernor.warnings],
+        entry_mode: "none",
+        play_idea: entryGatesView.play_idea,
+      }, sessionExtras),
+      confirmations: null,
+      technicals: techSum,
+      mtf,
+      option_ticket: optionTicket,
+      watch: watchState,
+      telemetry,
+    };
+  }
 
   console.log('[spx-play-engine] optionTicket check:', {
     blocked: optionTicket.blocked,
@@ -1094,6 +1226,16 @@ async function evaluateFlatPlay(
   if (mutate) {
     await recordBuy(dir);
     if (promoteEligible) await consumeWatchRecord();
+    if (playbookPrimaryId) {
+      await commitPlaybookInstanceOpen({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        detail: `openPlay ${entryPath}`,
+      });
+    }
   }
 
   if (mutate) {
