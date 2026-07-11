@@ -95,9 +95,9 @@ function playWhaleBeep() {
 
 function exportCSV(alerts: FlowAlert[]) {
   try {
-    const header = "Ticker,Type,Strike,Expiry,Premium,DTE,Score,Route,Alert Rule,Alerted At\n";
+    const header = "Ticker,Type,Strike,Expiry,Premium,Fill,DTE,Score,Route,Alert Rule,Alerted At\n";
     const rows = alerts.map((a) =>
-      [a.ticker, a.option_type, a.strike, a.expiry, a.premium,
+      [a.ticker, a.option_type, a.strike, a.expiry, a.premium, a.fill_price ?? "",
        a.dte ?? "", a.score ?? "", a.route ?? "", a.alert_rule ?? "", a.alerted_at].join(",")
     ).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });

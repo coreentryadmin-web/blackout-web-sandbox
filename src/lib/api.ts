@@ -199,6 +199,8 @@ export interface FlowAlert {
   alert_rule?: string;
   ask_pct?: number;
   dte?: number;
+  /** Per-contract fill from UW alert payload (price paid per share). */
+  fill_price?: number;
   // Feature 5: options chain context at time of print
   underlying_price?: number;
   open_interest?: number;
@@ -255,7 +257,7 @@ export async function fetchFlows(params?: {
 export interface OptionContractIntradayRow {
   time: string;
   volume: number;
-  oi: number;
+  avg_price: number;
   premium: number;
 }
 
@@ -265,6 +267,15 @@ export interface OptionContractFillRow {
   size: number;
   fill: number | null;
   side: string;
+  tags: string[];
+}
+
+export interface OptionContractMeta {
+  open_interest: number | null;
+  day_volume: number | null;
+  underlying_price: number | null;
+  iv: number | null;
+  delta: number | null;
 }
 
 export interface OptionContractDrilldown {
@@ -277,7 +288,8 @@ export interface OptionContractDrilldown {
   intraday: OptionContractIntradayRow[];
   fills: OptionContractFillRow[];
   volume_profile: unknown;
-  chain_ratio: number | null;
+  contract_meta: OptionContractMeta;
+  bid_share_pct: number | null;
   fill_count: number;
 }
 
