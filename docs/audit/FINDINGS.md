@@ -8,6 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P3 SHIPPED 2026-07-11 — Wall integrity/confidence score — "is this wall real?" (Vector task #17)
+
+**Surface:** `src/features/vector/lib/vector-wall-integrity.ts` (new, pure) → `VectorChart` emit → `VectorPageShell` state → `VectorDeskTerminal` readout. Pure/client-derived from data already on the page — no server plumbing.
+
+**What:** members can't tell a wall that held all session and towers over its neighbors from one that just appeared in a mushy cluster — both render as a bead. This scores the top call & put wall 0–100 (firm/moderate/thin) from three honest, independent factors: STRENGTH (0.45, the wall's own net-gamma `pct` share), PERSISTENCE (0.35, the fraction of recent history-rail samples where the strike held as a wall on its side), ISOLATION (0.20, how far it towers over the next same-side wall). Weights favor raw strength but let a persistent+dominant level earn "firm" and knock a big-but-fleeting-and-clustered one down.
+
+**Honesty:** with no history rail, persistence is neutral 0.5 (unknown ≠ proven), never fabricated as "held all session." Null on garbage walls. The readout only shows on the GEX lens (integrity is a gamma-wall measure). Deduped by tier+score so it only re-fires on a real confidence change.
+
+**Evidence:** `vector-wall-integrity.test.ts` (6) — dominant all-session wall → firm ≥70 w/ persistence 1.0; clustered/never-seen wall scores below it; no-history → 0.5 neutral; single-wall side fully isolated; null guards; top-wall selection. `tsc` clean; 139/139 vector lib tests; `@apply` guard clean.
+
+**Status:** SHIPPED (`feat/vector-wall-integrity`).
+
+
 ## 🟢 P3 SHIPPED 2026-07-11 — Gamma magnet (dealer-hedging center of mass), regime-honest (Vector task #15, magnet half)
 
 **Surface:** `src/features/vector/lib/vector-gamma-magnet.ts` (new, pure), wired through `VectorChart` (emit) → `VectorPageShell` (state) → `VectorDeskTerminal` (readout line), mirroring the shipped regime/proximity pattern.

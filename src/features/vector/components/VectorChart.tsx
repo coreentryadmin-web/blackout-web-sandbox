@@ -41,6 +41,7 @@ import {
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -135,6 +136,7 @@ type Props = {
   onRegimeChange?: (regime: VectorRegime) => void;
   onProximityChange?: (proximity: WallProximity | null) => void;
   onMagnetChange?: (magnet: GammaMagnet | null) => void;
+  onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -426,6 +428,7 @@ export function VectorChart({
   onRegimeChange,
   onProximityChange,
   onMagnetChange,
+  onWallIntegrityChange,
   onLensChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -460,6 +463,7 @@ export function VectorChart({
   const lastRegimeReadRef = useRef<string>("");
   const lastProximityRef = useRef<string>("");
   const lastMagnetRef = useRef<string>("");
+  const lastWallIntegrityRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -696,6 +700,18 @@ export function VectorChart({
     onMagnetChange(magnet);
   }, [onMagnetChange]);
 
+  // Emit top-wall integrity (is this wall real?) — strength × session persistence
+  // (from the same history rail the trails use) × isolation. Deduped by the tier+score
+  // of both sides so it only fires when the confidence read actually changes.
+  const emitWallIntegrity = useCallback(() => {
+    if (!onWallIntegrityChange) return;
+    const integ = scoreTopWalls(gexWallsRef.current, wallHistoryRef.current);
+    const key = `${integ.call?.strike ?? "-"}:${integ.call?.tier ?? "-"}:${integ.call?.score ?? "-"}|${integ.put?.strike ?? "-"}:${integ.put?.tier ?? "-"}:${integ.put?.score ?? "-"}`;
+    if (key === lastWallIntegrityRef.current) return;
+    lastWallIntegrityRef.current = key;
+    onWallIntegrityChange(integ);
+  }, [onWallIntegrityChange]);
+
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
   // SSE stream untouched) and repaints, refreshing on an interval while live.
@@ -892,9 +908,10 @@ export function VectorChart({
         emitRegime();
         emitProximity();
         emitMagnet();
+        emitWallIntegrity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity, emitMagnet]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
 
   useEffect(() => {
     const container = containerRef.current;
