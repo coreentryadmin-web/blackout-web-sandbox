@@ -14756,6 +14756,30 @@ body::before {
     flex: 1 1 auto;
     min-height: 0;
   }
+
+  .helix-contract-stat {
+    @apply flex flex-col gap-0.5 rounded-lg border border-white/10 bg-black/50 px-3 py-2;
+  }
+
+  .helix-contract-stat-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/70;
+  }
+
+  .helix-contract-stat-value {
+    @apply font-mono text-[12px] font-semibold text-white tabular-nums;
+  }
+
+  .helix-contract-fills-table th {
+    @apply px-3 py-2 text-left font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/70 sticky top-0 bg-[rgba(8,9,14,0.98)];
+  }
+
+  .helix-contract-fills-table td {
+    @apply px-3 py-1.5 font-mono text-[11px] border-t border-white/5;
+  }
+
+  .helix-contract-fills-table tbody tr:hover {
+    background: rgba(125, 211, 252, 0.05);
+  }
 }
 
 /* ===== Footer artwork ===== */

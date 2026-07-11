@@ -26,6 +26,10 @@ const FlowMomentumChart = dynamic(
 );
 import { DarkPoolPanel } from "@/features/helix/components/DarkPoolPanel";
 import { TickerDrawer } from "@/features/helix/components/TickerDrawer";
+import {
+  ContractDrilldownDrawer,
+  type ContractPick,
+} from "@/features/helix/components/ContractDrilldownDrawer";
 import { SplitFlowRadar, type SplitFlowEntry } from "@/features/helix/components/SplitFlowRadar";
 import { VelocityRadar, type VelocityEntry } from "@/features/helix/components/VelocityRadar";
 import { SectorFlowPanel, type SectorFlowEntry } from "@/features/helix/components/SectorFlowPanel";
@@ -124,6 +128,7 @@ export function FlowFeed() {
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [selectedContract, setSelectedContract] = useState<ContractPick | null>(null);
   // P2: saved-tickers watchlist (localStorage-backed, client-only)
   const watchlist = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
@@ -578,6 +583,13 @@ export function FlowFeed() {
     hasData: alerts.length > 0,
     compoundTickers,
     onTickerClick: setSelectedTicker,
+    onContractClick: (flow: FlowAlert) =>
+      setSelectedContract({
+        ticker: flow.ticker,
+        strike: flow.strike,
+        expiry: flow.expiry,
+        option_type: flow.option_type,
+      }),
     replayMode,
     splitFlowTickers,
     earningsDays,
@@ -1072,13 +1084,23 @@ export function FlowFeed() {
       </div>
       )}
 
-      {/* Ticker drawer — Bug 13: typeFilter passed so drawer matches tape */}
+      {/* Ticker drawer — all prints for symbol */}
       <TickerDrawer
         ticker={selectedTicker}
         typeFilter={typeFilter}
         onClose={() => setSelectedTicker(null)}
         isStarred={selectedTicker ? watchlist.watchlistSet.has(selectedTicker) : false}
         onToggleStar={watchlist.toggle}
+      />
+
+      {/* Contract drilldown — per-leg volume/OI/fill history (FLOWCHECKER-style) */}
+      <ContractDrilldownDrawer
+        contract={selectedContract}
+        onClose={() => setSelectedContract(null)}
+        onViewTicker={(t) => {
+          setSelectedContract(null);
+          setSelectedTicker(t);
+        }}
       />
 
       {/* Persistent compliance disclaimer (matches SPX / GEX wording) */}
