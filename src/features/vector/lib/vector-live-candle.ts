@@ -26,7 +26,10 @@ const liveByTicker = new Map<string, LiveCache>();
 const inflightByTicker = new Map<string, Promise<VectorLiveCandle | null>>();
 
 function barFromAgg(b: { t?: number; o: number; h: number; l: number; c: number; v?: number }): VectorLiveCandle | null {
-  if (typeof b.t !== "number" || b.o <= 0) return null;
+  // `o <= 0` is false for NaN — a malformed provider row with NaN OHLC fields
+  // would otherwise poison the chart series (repo bug class: NaN passthrough).
+  if (typeof b.t !== "number" || !(b.o > 0)) return null;
+  if (!Number.isFinite(b.h) || !Number.isFinite(b.l) || !Number.isFinite(b.c)) return null;
   const time = Math.floor(b.t / 1000) as UTCTimestamp;
   return {
     time,
@@ -79,8 +82,13 @@ export async function getVectorLiveCandle(ticker: string = VECTOR_DEFAULT_TICKER
     inflightByTicker.set(t, inflight);
   }
   const candle = await inflight;
-  const updatedAt = candle ? candle.time * 1000 : 0;
-  liveByTicker.set(t, { candle, updatedAt, fetchedAt: Date.now() });
+  // updatedAt is FETCH freshness, not bar-start time: Polygon's latest closed
+  // bar is up to ~2 min old the moment it's fetched, and stamping bar-start
+  // made the payload's `t` (and the member-facing freshness chip) read stale
+  // even when the fetch just succeeded.
+  const fetchedAt = Date.now();
+  const updatedAt = candle ? fetchedAt : 0;
+  liveByTicker.set(t, { candle, updatedAt, fetchedAt });
   return { current: candle, updatedAt };
 }
 

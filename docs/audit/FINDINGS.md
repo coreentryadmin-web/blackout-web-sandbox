@@ -8,6 +8,24 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P2 FOUND+FIXED 2026-07-11 — Vector misc hygiene: universe knife-edge TTL, forming-bar corruption from late ticks, DJI dead ticker, NaN passthrough, cron pile-up
+
+**Surface:** `vector-universe.ts`, `spx-candle-store.ts`, `vector-ticker.ts`, `vector-live-candle.ts`, `vector-spy-volume-merge.ts`, vector cron TOMLs, `spy-volume/route.ts` (Vector deep sweep, remaining findings).
+
+**Fixes (8):**
+1. **Universe snapshot TTL 300s = exactly the cron cadence** — knife-edge expiry during RTH, and after the cron's 21:00 UTC stop every scanner poll from every open tab rebuilt the 21-ticker heatmap fan-out inline all evening. Now 48h serve-stale (staleness disclosed via `updatedAt`, not hidden via expiry) + in-flight dedup on rebuild.
+2. **Universe rows served raw floats** (`topCallPct`/`topPutPct` unrounded divisions) — `roundFloats` at build (repo policy), plus a `Number.isFinite` guard on `Date.parse(asof)`.
+3. **A late Polygon tick from a previous minute rotated the forming SPX bar** — pushed the forming bar to history, opened a fresh bar whose open/high/low were all the next tick's price, silently erasing the true open/wicks on every connected client. Out-of-order guard added + regression test.
+4. **`?ticker=DJI` seeded nothing** — `VECTOR_INDEX_TICKERS` includes DJI but the Polygon symbol mapper had no `I:DJI` case (burned a 12-day walk-back on a symbol the index endpoint doesn't know). Mapper now derives `I:` keys from the set; `normalizeVectorTicker` also accepts `I:SPX`-style deep links (killing the previously-dead `startsWith("I:")` branches honestly).
+5. **NaN OHLC passthrough in `barFromAgg`** (`o <= 0` is false for NaN; h/l/c never checked) — finiteness guards added.
+6. **Stock candles reported bar-start as freshness** — `updatedAt` now reflects fetch time, so the member-facing freshness chip no longer reads ~2 min stale on a just-fetched bar.
+7. **`mergeSpyVolumeRows` doc claimed fill-only; code overwrites** — overwrite is the CORRECT semantics (later fetch corrects partial volumes); doc fixed to match, and no-op rows no longer allocate.
+8. **Vector crons sat on the most crowded schedule lanes** (universe on the 8-cron `*/5` lane, dark-pool aligned with it) — staggered to `1-59/5` and `3-59/10`, same policy as the earlier spx-cron stagger. Also: CRON_SECRET callers no longer 403 on the spy-volume route pre-launch (`requireToolApiForDeskCaller`).
+
+**Evidence:** new out-of-order candle regression test; 96/96 tests across Vector libs + candle store; `tsc` clean.
+
+**Status:** FIXED (`fix/vector-misc-hygiene`).
+
 
 
 
