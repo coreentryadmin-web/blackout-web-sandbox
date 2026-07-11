@@ -8,6 +8,8 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector ticker switch shows old ticker's chart/stream under new ticker's header
 
 **Surface:** `/vector?ticker=…` — `VectorPageShell.tsx` / `VectorChart.tsx` (Vector deep sweep; found independently by two audit agents).

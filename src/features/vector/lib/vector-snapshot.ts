@@ -16,7 +16,7 @@ import { persistWallSampleDebounced } from "./vector-wall-persist";
 import { bucketWallSampleTime } from "./vector-wall-sample";
 import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { roundFloats } from "@/lib/round-floats";
-import { getCachedVectorDarkPool } from "./vector-dark-pool-cache";
+import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge } from "./vector-dark-pool-cache";
 import { getVectorLiveCandle } from "./vector-live-candle";
 import { spyVolumeForMinuteBar } from "./vector-spy-volume";
 import {
@@ -34,6 +34,8 @@ type TickerState = {
   wallScope: WallScopeState;
   wallScopeInFlight: Promise<void> | null;
   fallbackStrikeTotals: Record<string, number> | null;
+  /** When the heatmap data behind the fallbacks was actually fetched — drives honest gexAsOf/vexAsOf during outages. */
+  fallbackFetchedAt: number;
   fallbackVexStrikeTotals: Record<string, number> | null;
   cachedVexFlip: number | null;
   cachedWalls: GexWalls | null;
@@ -52,6 +54,7 @@ function freshState(): TickerState {
     wallScope: { expiries: undefined, fetchedAt: 0 },
     wallScopeInFlight: null,
     fallbackStrikeTotals: null,
+    fallbackFetchedAt: 0,
     fallbackVexStrikeTotals: null,
     cachedVexFlip: null,
     cachedWalls: null,
@@ -92,6 +95,7 @@ function runWallScopeFetch(ticker: string): Promise<void> {
       s.wallScope = nextWallScope(s.wallScope, Date.now(), hm);
       if (hm?.gex?.strike_totals && Object.keys(hm.gex.strike_totals).length > 0) {
         s.fallbackStrikeTotals = hm.gex.strike_totals;
+        s.fallbackFetchedAt = Date.now();
       }
       if (hm?.vex?.strike_totals && Object.keys(hm.vex.strike_totals).length > 0) {
         s.fallbackVexStrikeTotals = hm.vex.strike_totals;
@@ -142,10 +146,14 @@ export function getVectorGexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
 
   if (s.fallbackStrikeTotals) {
     s.cachedWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackStrikeTotals));
+    // gexAsOf must report DATA age, not compute time: during a provider outage
+    // the fallback never refreshes, and stamping "now" here made members see
+    // indefinitely-fresh age chips over walls that stopped updating.
+    s.cachedWallsAt = s.fallbackFetchedAt;
   } else {
     s.cachedWalls = null;
+    s.cachedWallsAt = now;
   }
-  s.cachedWallsAt = now;
   return s.cachedWalls;
 }
 
@@ -158,10 +166,11 @@ export function getVectorVexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   if (now - s.cachedVexWallsAt < VEX_WALLS_CACHE_MS) return s.cachedVexWalls;
   if (s.fallbackVexStrikeTotals && Object.keys(s.fallbackVexStrikeTotals).length > 0) {
     s.cachedVexWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackVexStrikeTotals));
+    s.cachedVexWallsAt = s.fallbackFetchedAt;
   } else {
     s.cachedVexWalls = null;
+    s.cachedVexWallsAt = now;
   }
-  s.cachedVexWallsAt = now;
   return s.cachedVexWalls;
 }
 
@@ -202,6 +211,8 @@ export type VectorStreamPayload = {
   gammaFlip: number | null;
   vexFlip: number | null;
   darkPoolLevels: VectorDarkPoolLevel[];
+  /** When the dark-pool snapshot behind the levels was fetched (0 = unknown/legacy). */
+  darkPoolAsOf: number;
   t: number;
   gexAsOf: number;
   vexAsOf: number;
@@ -223,7 +234,7 @@ export async function buildVectorStreamPayload(
   const vexWalls = getVectorVexWalls(t);
   const gammaFlip = await getVectorGammaFlip(t);
   const vexFlip = getVectorVexFlip(t);
-  const darkPoolLevels = await getVectorDarkPoolLevels(t);
+  const darkPool = await getCachedVectorDarkPoolWithAge(t);
   const sessionYmd = todayEtYmd();
 
   // Session boundary: a process surviving close→open (weekend, overnight viewer)
@@ -236,8 +247,17 @@ export async function buildVectorStreamPayload(
     s.sessionYmd = sessionYmd;
   }
 
-  if (walls || vexWalls) {
-    const sampleTime = bucketWallSampleTime(Math.floor(Date.now() / 1000));
+  // Refuse to record fallback-sourced readings older than the discontinuity
+  // window into history: during a provider outage the fallback stops
+  // refreshing, and re-recording the same stale walls under fresh bucket times
+  // fabricates a flat trail that was never observed (and persists it).
+  const STALE_RECORD_MAX_MS = 120_000;
+  const nowMs = Date.now();
+  const gexRecordable = walls != null && nowMs - s.cachedWallsAt <= STALE_RECORD_MAX_MS;
+  const vexRecordable = vexWalls != null && nowMs - s.cachedVexWallsAt <= STALE_RECORD_MAX_MS;
+
+  if (gexRecordable || vexRecordable) {
+    const sampleTime = bucketWallSampleTime(Math.floor(nowMs / 1000));
     // Round ONCE at creation (repo policy: round at the data layer). The sample
     // must be byte-identical everywhere it travels — in-memory history, Redis
     // persist, SSR seed, SSE frame. Persisting raw while streaming rounded made
@@ -252,10 +272,10 @@ export async function buildVectorStreamPayload(
     // the client, not by falsifying history.
     const sample: WallHistorySample = roundFloats({
       time: sampleTime,
-      walls: walls ?? { callWalls: [], putWalls: [] },
-      gammaFlip,
-      vexWalls,
-      vexFlip,
+      walls: gexRecordable && walls ? walls : { callWalls: [], putWalls: [] },
+      gammaFlip: gexRecordable ? gammaFlip : null,
+      vexWalls: vexRecordable ? vexWalls : null,
+      vexFlip: vexRecordable ? vexFlip : null,
     });
     const hasGex = sample.walls.callWalls.length > 0 || sample.walls.putWalls.length > 0;
     const hasVex =
@@ -279,7 +299,8 @@ export async function buildVectorStreamPayload(
     vexWalls,
     gammaFlip,
     vexFlip,
-    darkPoolLevels,
+    darkPoolLevels: darkPool.levels,
+    darkPoolAsOf: darkPool.fetchedAt,
     t: updatedAt,
     gexAsOf: s.cachedWallsAt,
     vexAsOf: s.cachedVexWallsAt,
