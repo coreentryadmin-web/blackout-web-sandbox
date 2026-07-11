@@ -82,6 +82,7 @@ test("UW provider paths exist in the docs catalog (no silent 404s)", () => {
     "/api/etfs/{ticker}/in-outflow",
     "/api/market/{ticker}/etf-tide",
     "/api/screener/option-contracts",
+    "/api/lit-flow/{ticker}",
   ]) {
     assert.ok(CATALOG_PATHS.has(p), `${p} must exist in UW_REST_SECTIONS (catalog is ground truth)`);
   }
@@ -93,6 +94,7 @@ test("the old broken UW paths are NOT in the catalog (they were the bug)", () =>
     "/api/etf/{ticker}/in-outflow",
     "/api/etf/{ticker}/tide",
     "/api/screener/contracts",
+    "/api/lit-flow/ticker", // literal word "ticker" — ticker is a PATH param, not this
   ]) {
     assert.ok(!CATALOG_PATHS.has(p), `${p} is a non-existent route — must not be reintroduced`);
   }
