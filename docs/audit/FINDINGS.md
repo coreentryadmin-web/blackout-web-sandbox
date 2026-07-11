@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P2 SHIPPED 2026-07-11 — Off-hours dense-rail backfill from honest intraday GEX reconstruction (no live recorder needed)
+
+**Surface:** `src/features/vector/lib/vector-gex-reconstruct-server.ts` (new), `vector-gex-reconstruct-map.ts` (new, pure), `src/app/(site)/vector/page.tsx` (off-hours seed). Builds on the merged pure engine (#147, `vector-gex-reconstruct.ts`).
+
+**Gap closed:** the live universe recorder only writes wall history during RTH for covered tickers, so an off-hours view of a session with no recorded rail (an older date, an un-covered ticker) collapsed to a single seeded bead per strike — the exact "single beads" the member complained about.
+
+**Approach (honest, not fabricated):** dealer GEX-per-strike over a session is a function of the options chain (strike/expiry/OI/IV — EOD snapshot) and the INTRADAY SPOT PATH. Gamma is closed-form Black-Scholes, so we recompute it along the session's REAL observed spot path (Polygon minute bars) against the EOD chain → a real dense rail for any past date. OI/IV are the EOD snapshot (they barely move intraday relative to the spot-driven gamma shift) and the result is labeled a reconstruction — a computed rail from real inputs, never invented or carried-forward.
+
+**Pipeline:** minute bars → `barsToSpotSamples` (ms→sec, 5-min buckets matching the recorder cadence, capped) → `reconstructStrikeBand` (band the chain to exactly the traveled range) → one paginated Polygon chain snapshot → `chainToReconstructContracts` (drop rows with no strike/expiry/type/OI/IV) → `reconstructGexRail`. Redis-cached 6h (a closed session's inputs are final). Wired into the page only when `!liveSession` AND recorded history is sparse (< 8 samples), so live sessions and already-recorded rails are untouched; recorded data wins over reconstruction on bucket overlap.
+
+**Evidence (live, SPX 2026-07-10):** 395 min bars → 79 five-min spot samples (full RTH); banded chain 11,292 raw contracts / 46 pages → 9,351 usable; **79-sample dense rail**. The gamma flip drifts **7618.5 → 7609.19 → 7599.8** across the session (76 distinct flip values, all path-driven) while the dominant 7600 call / 7300 put OI walls anchor — precisely the dynamic-per-time behavior the member asked for, with zero fabrication.
+
+**Tests:** `vector-gex-reconstruct-map.test.ts` (5) — chain filtering, ms→sec bucketing/cap, band padding; plus the engine's own 6. `tsc` clean; `@apply` guard clean.
+
+**Status:** SHIPPED (`fix/vector-reconstruct-server`). Follow-ups: same reconstruction feeds the strike×time heatmap (#14) and can extend the AH rail across the post-close gap (#12).
+
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Four UW provider calls hit non-existent routes → silent 404 → data MISSING (no error surfaced)
 
 **Surface:** `src/lib/providers/unusual-whales.ts` — `fetchUwShortScreener` (L1464), `fetchUwEtfInOutflow` (L1554), `fetchUwEtfTide` (L1560), `fetchUwScreenerContracts` (L1578). Every consumer of short-interest screening, ETF in/out-flow, ETF tide, and the option-contract screener.
