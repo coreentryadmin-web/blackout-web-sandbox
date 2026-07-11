@@ -35,10 +35,13 @@
 | #105 | `cursor/deep-sweep-deferred-261c` | Intel validation, rounding, daily cap, Largo playbook, Q4 DB re-read |
 | #106 | `cursor/sixth-pass-q4-reconcile-261c` | Sixth-pass docs + Q4 reconcile |
 | #107 | `cursor/sixth-pass-info-entry-261c` | FINDINGS INFO entry |
+| #109 | `cursor/work-ledger-261c` | Work ledger doc |
+| #110 | `cursor/catch-up-fixes-261c` | #9 cleanup tasks, #3 buildSpxDeskFlow .catch, #10/#11 playCloseWasLoss, Q4 resolver test + merged #108 docs |
 
 ### Closed superseded
 
 - #87, #103 — merged into later docs/fix PRs
+- #108 — doc-only catch-up verification; superseded by #110
 
 ### Files touched (recent)
 
@@ -49,13 +52,14 @@
 - `engine-intel-overlay.test.ts`
 - `admin-playbook-query.test.ts`
 - `gamma-desk.test.ts` (topGexWalls limit)
-- Updated: `spx-play-outcomes-classify`, `playbook-verdict-guard`, hod_break bars tests
+- `playbook-match-resolver.test.ts` (Q4 fresh-DB-read independence)
+- Updated: `spx-play-outcomes-classify` (playCloseWasLoss call-site tests)
 
 ### Commands run (last verified)
 
 ```bash
 npx tsc --noEmit          # clean
-PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test   # 2081/2081 pass
+PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test   # 2083/2083 pass
 npm run validate:staging  # GREEN (Saturday, api-only)
 ```
 
@@ -73,7 +77,7 @@ npm run validate:staging  # GREEN (Saturday, api-only)
 | F1 VWAP fail-closed | ✅ #96 |
 | F2 promotion data-quality | ✅ #100 (sixth-pass confirmed) |
 | F3 governor single-thread | ✅ #98 |
-| Q4 verdict assert | ✅ partial #100 + #105 (prod DB re-read) |
+| Q4 verdict assert | ✅ #105 + #110 (prod DB re-read + resolver test) |
 | F4 RTH proof | ⏳ **NEXT** |
 | Deep sweep #1–37 | ✅ mostly #102–#105 |
 | Open hygiene | #27, #31–32, #38 |
