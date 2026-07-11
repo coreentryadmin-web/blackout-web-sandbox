@@ -2,13 +2,28 @@
 /**
  * Playbook evidence report — OOS-only expectancy + session-aware promotion gates.
  * Requires DATABASE_URL. Never uses pre-OOS_START training rows for promotion stats.
+ *
+ * Exit codes:
+ *   0 — success, or NO_DATA (accumulation phase)
+ *   1 — hard failure (DB/credentials) or fail-level evidence alerts (e.g. data_quality gate)
  */
 import { execSync } from "node:child_process";
 import {
   PLAYBOOK_OOS_START_DATE,
   PLAYBOOK_TRAIN_CUTOFF_DATE,
 } from "../src/features/spx/lib/playbook-evidence-config.ts";
-import { summarizePlaybookEvidence } from "../src/features/spx/lib/playbook-promotion-sample.ts";
+import {
+  assessPlaybookEvidenceAlerts,
+  buildPlaybookPromotionReport,
+} from "../src/features/spx/lib/playbook-promotion-sample.ts";
+
+function requireDbInCi(): boolean {
+  return (
+    process.env.PLAYBOOK_EVIDENCE_REQUIRE_DB === "1" ||
+    Boolean(process.env.STAGING_SECRET_NAME?.trim()) ||
+    Boolean(process.env.CI)
+  );
+}
 
 function loadDbUrl() {
   if (process.env.DATABASE_URL?.trim()) return process.env.DATABASE_URL.trim();
@@ -25,9 +40,38 @@ function loadDbUrl() {
   return null;
 }
 
+async function notifyDiscordAlerts(alerts) {
+  const webhook = process.env.DISCORD_OPS_WEBHOOK_URL?.trim();
+  if (!webhook || !alerts.length) return;
+
+  const fails = alerts.filter((a) => a.level === "fail");
+  const warns = alerts.filter((a) => a.level === "warn");
+  const lines = [
+    "**Playbook promotion evidence**",
+    fails.length ? `**FAIL (${fails.length})**` : null,
+    ...fails.map((a) => `• \`${a.playbook_id}\` — ${a.message}`),
+    warns.length ? `**WARN (${warns.length})**` : null,
+    ...warns.map((a) => `• \`${a.playbook_id}\` — ${a.message}`),
+  ].filter(Boolean);
+
+  try {
+    await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: lines.join("\n").slice(0, 1900) }),
+    });
+  } catch (e) {
+    console.error("DISCORD_NOTIFY_FAILED:", e.message || e);
+  }
+}
+
 async function main() {
   const dbUrl = loadDbUrl();
   if (!dbUrl) {
+    if (requireDbInCi()) {
+      console.error("FAIL: DATABASE_URL not configured (CI/staging evidence requires DB)");
+      process.exit(1);
+    }
     console.error("SKIP: DATABASE_URL not configured");
     process.exit(0);
   }
@@ -38,8 +82,11 @@ async function main() {
     ssl: dbUrl.includes("localhost") ? false : { rejectUnauthorized: false },
   });
 
-  const res = await pool.query(
-    `
+  let res;
+  let trainCount;
+  try {
+    res = await pool.query(
+      `
     SELECT
       i.instance_id,
       i.session_date::text,
@@ -77,15 +124,16 @@ async function main() {
     WHERE i.session_date >= $1::date
     ORDER BY i.session_date, i.playbook_id
     `,
-    [PLAYBOOK_OOS_START_DATE]
-  );
+      [PLAYBOOK_OOS_START_DATE]
+    );
 
-  const trainCount = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM spx_play_outcomes WHERE session_date <= $1::date AND playbook_id IS NOT NULL`,
-    [PLAYBOOK_TRAIN_CUTOFF_DATE]
-  );
-
-  await pool.end();
+    trainCount = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM spx_play_outcomes WHERE session_date <= $1::date AND playbook_id IS NOT NULL`,
+      [PLAYBOOK_TRAIN_CUTOFF_DATE]
+    );
+  } finally {
+    await pool.end();
+  }
 
   const rows = res.rows.map((r) => ({
     instance_id: String(r.instance_id),
@@ -119,8 +167,6 @@ async function main() {
         : null,
   }));
 
-  const playbooks = [...new Set(rows.map((r) => r.playbook_id))].sort();
-
   console.log(`PLAYBOOK_EVIDENCE_REPORT oos_since=${PLAYBOOK_OOS_START_DATE} train_cutoff=${PLAYBOOK_TRAIN_CUTOFF_DATE}`);
   console.log(`train_labeled_outcomes_excluded=${trainCount.rows[0]?.n ?? 0} (not used below)`);
   console.log(`oos_instance_rows=${rows.length}`);
@@ -129,12 +175,12 @@ async function main() {
   );
 
   if (!rows.length) {
-    console.log("NO_DATA: accumulate prospective shadow instances on staging first");
+    console.log("EVIDENCE_STATUS=no_data accumulate prospective shadow instances on staging first");
     process.exit(0);
   }
 
-  for (const pb of playbooks) {
-    const s = summarizePlaybookEvidence(rows, pb);
+  const summaries = buildPlaybookPromotionReport(rows);
+  for (const s of summaries) {
     console.log(JSON.stringify(s));
   }
 
@@ -150,6 +196,19 @@ async function main() {
       win_rate: allPnls.length ? allPnls.filter((p) => p > 0).length / allPnls.length : null,
     })
   );
+
+  const alerts = assessPlaybookEvidenceAlerts(summaries);
+  for (const a of alerts) {
+    console.log(`EVIDENCE_${a.level.toUpperCase()}: ${a.playbook_id} — ${a.message}`);
+  }
+  await notifyDiscordAlerts(alerts);
+
+  const failures = alerts.filter((a) => a.level === "fail");
+  if (failures.length) {
+    console.error(`EVIDENCE_STATUS=fail alerts=${failures.length}`);
+    process.exit(1);
+  }
+  console.log("EVIDENCE_STATUS=ok");
 }
 
 main().catch((e) => {

@@ -48,9 +48,10 @@ jobs:
         run: npm run validate:staging-live
 
       - name: Playbook promotion evidence (OOS instances)
-        continue-on-error: true
         env:
           STAGING_SECRET_NAME: blackout-staging/app/env
+          PLAYBOOK_EVIDENCE_REQUIRE_DB: "1"
+          DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
         run: npm run playbook:evidence-report
 
       - name: Latency compare (staging vs prod)

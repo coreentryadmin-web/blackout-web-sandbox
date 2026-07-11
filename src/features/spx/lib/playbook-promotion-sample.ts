@@ -41,7 +41,8 @@ function snapshotFromTriggerEvent(row: PlaybookPromotionEvidenceRow) {
   return snap;
 }
 
-function sessionSnapshotDataQualityOk(
+/** Exported for unit tests — trigger-time snapshot data quality per playbook. */
+export function sessionSnapshotDataQualityOk(
   snap: Record<string, unknown> | null,
   playbookId: string
 ): boolean | null {
@@ -73,6 +74,53 @@ export function dataQualitySessionFraction(
   if (!bySession.size) return null;
   const okCount = [...bySession.values()].filter(Boolean).length;
   return okCount / bySession.size;
+}
+
+export type PlaybookEvidenceAlertLevel = "fail" | "warn";
+
+export type PlaybookEvidenceAlert = {
+  level: PlaybookEvidenceAlertLevel;
+  playbook_id: string;
+  message: string;
+};
+
+const DEFAULT_EVIDENCE_ALLOWLIST = ["PB-01", "PB-02", "PB-03"] as const;
+
+/**
+ * Surface promotion evidence issues for GHA / ops — fail on wired gate breaks,
+ * warn on insufficient tier while sample is still accumulating.
+ */
+export function assessPlaybookEvidenceAlerts(
+  summaries: readonly PlaybookEvidenceSummary[],
+  opts?: { allowlisted?: readonly string[] }
+): PlaybookEvidenceAlert[] {
+  const allowlisted = new Set(opts?.allowlisted ?? DEFAULT_EVIDENCE_ALLOWLIST);
+  const alerts: PlaybookEvidenceAlert[] = [];
+
+  for (const s of summaries) {
+    if (!allowlisted.has(s.playbook_id)) continue;
+
+    if (s.promotion_gates_failed.includes("data_quality_session_coverage")) {
+      alerts.push({
+        level: "fail",
+        playbook_id: s.playbook_id,
+        message: `data_quality_session_coverage gate failed (tier=${s.promotion_tier})`,
+      });
+    }
+
+    if (s.promotion_tier === "insufficient" && s.triggered > 0) {
+      const failed = s.promotion_gates_failed.filter((g) => g !== "data_quality_session_coverage");
+      if (failed.length) {
+        alerts.push({
+          level: "warn",
+          playbook_id: s.playbook_id,
+          message: `insufficient tier (${failed.join(", ")}) with ${s.triggered} triggers`,
+        });
+      }
+    }
+  }
+
+  return alerts;
 }
 
 export function buildPromotionSample(
