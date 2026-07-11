@@ -79,4 +79,41 @@ jobs:
             --force-new-deployment \
             --output json \
             --query 'service.deployments[0].status'
+          echo "Waiting for ECS staging service stable (up to 10 min)..."
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}"
           echo "Triggered ECS force-new-deployment on ${ECS_CLUSTER}/${ECS_SERVICE}"
+
+      - name: Purge Cloudflare edge cache (staging)
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_ZONE_ID:-}" ] || [ -z "${CF_API_TOKEN:-}" ]; then
+            echo "CF_ZONE_ID / CF_API_TOKEN unset — skipping purge"
+            exit 0
+          fi
+          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
+          echo "Cloudflare staging cache purged after ECS rollout."
+          sleep 5
+
+      - name: Validate static assets on staging
+        env:
+          BASE_URL: https://staging.blackouttrades.com
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if node scripts/validate-static-assets.mjs; then
+              echo "Staging static asset check passed."
+              exit 0
+            fi
+            echo "Attempt $i/10 failed — retrying in 15s..."
+            sleep 15
+          done
+          echo "Staging static assets still broken after ECS rollout."
+          exit 1
