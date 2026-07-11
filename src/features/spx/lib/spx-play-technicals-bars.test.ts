@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   consecutiveClosesVsLevel,
+  hodLodBreakoutFlags,
   openingRangeFromBars,
   rollingRangeFromBars,
+  sessionBreakoutExtremesFromBars,
   vwapSideStreaks,
 } from "./spx-play-technicals";
 
@@ -73,4 +75,48 @@ test("consecutiveClosesVsLevel: counts trailing m3 closes", () => {
   ];
   assert.equal(consecutiveClosesVsLevel(bars, 109, "above", 0), 3);
   assert.equal(consecutiveClosesVsLevel(bars, 109, "below", 0), 0);
+});
+
+test("sessionBreakoutExtremesFromBars: excludes forming last bar", () => {
+  const bars = [
+    { t: 1, o: 100, h: 105, l: 99, c: 104 },
+    { t: 2, o: 104, h: 110, l: 103, c: 109 },
+  ];
+  const ext = sessionBreakoutExtremesFromBars(bars);
+  assert.equal(ext.hod, 105);
+  assert.equal(ext.lod, 99);
+});
+
+test("sessionBreakoutExtremesFromBars: single bar uses open as reference", () => {
+  const ext = sessionBreakoutExtremesFromBars([{ t: 1, o: 5500, h: 5505, l: 5498, c: 5503 }]);
+  assert.equal(ext.hod, 5500);
+  assert.equal(ext.lod, 5500);
+});
+
+test("hodLodBreakoutFlags: fires when price clears prior session high", () => {
+  const flags = hodLodBreakoutFlags(5505, { hod: 5500, lod: 5400 }, 0.25);
+  assert.equal(flags.hod_break, true);
+  assert.equal(flags.lod_break, false);
+});
+
+test("hodLodBreakoutFlags: spot-widened desk HOD=price cannot fire — bar path can", () => {
+  const price = 5505;
+  const widenedHod = price;
+  assert.equal(widenedHod != null && price > widenedHod + 0.25, false);
+  const ext = sessionBreakoutExtremesFromBars([
+    { t: 1, o: 5480, h: 5500, l: 5470, c: 5495 },
+    { t: 2, o: 5495, h: 5505, l: 5490, c: 5505 },
+  ]);
+  const flags = hodLodBreakoutFlags(price, ext, 0.25);
+  assert.equal(flags.hod_break, true);
+});
+
+test("hodLodBreakoutFlags: lod_break when price clears prior session low", () => {
+  const ext = sessionBreakoutExtremesFromBars([
+    { t: 1, o: 5500, h: 5510, l: 5400, c: 5490 },
+    { t: 2, o: 5390, h: 5395, l: 5385, c: 5388 },
+  ]);
+  const flags = hodLodBreakoutFlags(5380, ext, 0.25);
+  assert.equal(flags.lod_break, true);
+  assert.equal(flags.hod_break, false);
 });

@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+**Status:** FIXED (`cursor/hod-break-fix-261c` on `blackout-web-sandbox`).
+
+## 🔴 P0 FOUND+FIXED 2026-07-11 — `hod_break`/`lod_break` structurally impossible during RTH (deep sweep #1)
+
+**Surface:** `spx-play-technicals.ts` breakout flags → PB-03 fallback, desk breakout-continuation triggers, playbook matcher.
+
+**Root cause:** Desk HOD/LOD are widened with live spot (`widenSessionExtremesWithSpot` in `spx-desk.ts` + `spx-desk-merge.ts`) before `buildPlayTechnicals` compared `price > ctx.hod`. Since `hod ≥ price` by construction, intraday HOD/LOD breakout could never fire.
+
+**Fix:** `sessionBreakoutExtremesFromBars` + `hodLodBreakoutFlags` — breakout uses completed minute-bar session extremes (excludes forming last bar), not spot-widened desk levels. `pdh_break`/`pdl_break` unchanged.
+
+**Status:** FIXED (`cursor/hod-break-fix-261c` on `blackout-web-sandbox`). See `docs/spx/PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md` finding #1.
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — SPX playbook promotion sample used narrow data-quality check (F2 / #20b)
 
 **Surface:** `playbook-promotion-sample.ts` → `data_quality_session_coverage` promotion gate + GHA evidence (`assessPlaybookEvidenceAlerts`).

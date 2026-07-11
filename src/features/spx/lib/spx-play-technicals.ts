@@ -233,6 +233,43 @@ function ema9CurlingTowardVwap(m3: Bar[], vwap: number | null, ema9Now: number |
   return distNow < distThen - 0.05;
 }
 
+/**
+ * Session HOD/LOD for breakout detection — from completed minute bars only.
+ * Desk HOD/LOD are widened with live spot for display (`widenSessionExtremesWithSpot`);
+ * using those for breakout makes `price > hod` unsatisfiable. Exclude the forming last bar
+ * so a live tick above the prior session extreme can fire `hod_break`/`lod_break`.
+ */
+export function sessionBreakoutExtremesFromBars(bars: Bar[]): { hod: number | null; lod: number | null } {
+  if (!bars.length) return { hod: null, lod: null };
+  const completed = bars.length > 1 ? bars.slice(0, -1) : [];
+  if (!completed.length) {
+    const open = bars[0]!.o;
+    const ref = Number.isFinite(open) ? open : null;
+    return { hod: ref, lod: ref };
+  }
+  let hod = -Infinity;
+  let lod = Infinity;
+  for (const b of completed) {
+    if (Number.isFinite(b.h)) hod = Math.max(hod, b.h);
+    if (Number.isFinite(b.l)) lod = Math.min(lod, b.l);
+  }
+  return {
+    hod: hod > -Infinity ? hod : null,
+    lod: lod < Infinity ? lod : null,
+  };
+}
+
+export function hodLodBreakoutFlags(
+  price: number,
+  extremes: { hod: number | null; lod: number | null },
+  buf: number
+): { hod_break: boolean; lod_break: boolean } {
+  return {
+    hod_break: extremes.hod != null && price > extremes.hod + buf,
+    lod_break: extremes.lod != null && price < extremes.lod - buf,
+  };
+}
+
 export async function buildPlayTechnicals(
   price: number,
   ctx: {
@@ -325,11 +362,13 @@ export async function buildPlayTechnicals(
 
   const m3AboveVwap = m3Close != null && vwap != null ? m3Close >= vwap : null;
 
+  const sessionExtremes = sessionBreakoutExtremesFromBars(norm);
+  const hodLodBreak = hodLodBreakoutFlags(price, sessionExtremes, buf);
   const breakout = {
     pdh_break: ctx.pdh != null && price > ctx.pdh + buf,
     pdl_break: ctx.pdl != null && price < ctx.pdl - buf,
-    hod_break: ctx.hod != null && price > ctx.hod + buf,
-    lod_break: ctx.lod != null && price < ctx.lod - buf,
+    hod_break: hodLodBreak.hod_break,
+    lod_break: hodLodBreak.lod_break,
     vwap_reclaim: vwap != null && m3Close != null && m3Close >= vwap + buf && price >= vwap,
     vwap_lost: vwap != null && m3Close != null && m3Close <= vwap - buf && price <= vwap,
   };
