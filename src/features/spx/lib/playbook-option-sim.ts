@@ -27,6 +27,7 @@ export type PlaybookOptionExecutionSim = OptionSimResult & {
   exit_assumed_fill?: number | null;
   exit_slippage_pts?: number | null;
   round_trip_cost_pts?: number | null;
+  greeks_snapshot?: import("@/features/spx/lib/playbook-option-pnl").OptionGreeksSnapshot | null;
 };
 
 const DEFAULT_SLIPPAGE_BPS = 15;

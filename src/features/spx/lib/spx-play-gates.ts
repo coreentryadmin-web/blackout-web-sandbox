@@ -42,7 +42,7 @@ import {
   type CategorizedGateBlocks,
   type GateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
-import { evaluatePlaybookSessionRisk } from "@/features/spx/lib/playbook-session-risk";
+import { evaluateTradeGovernor } from "@/features/spx/lib/trade-governor";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -165,8 +165,15 @@ export function evaluatePlayGates(
     playbook_primary_id?: PlaybookId | null;
     /** Direction from the fired primary verdict — used for staging lab alignment. */
     playbook_primary_direction?: "long" | "short" | null;
-    /** Per-playbook trigger counts today — session risk governor. */
+    /** Per-playbook trigger counts today — trade governor. */
     triggers_today_by_pb?: ReadonlyMap<string, number>;
+    /** Option quote preview for spread/premium governor checks. */
+    option_preview?: {
+      mid: number | null;
+      spread_pct: number | null;
+      blocked?: boolean;
+      block_reason?: string | null;
+    };
   }
 ): PlayGateResult {
   const blocks: string[] = [];
@@ -191,14 +198,25 @@ export function evaluatePlayGates(
 
   let playbookSizeMultiplier = 1;
 
+  if (buyIntent) {
+    const governor = evaluateTradeGovernor({
+      buy_intent: true,
+      playbook_id: opts?.playbook_primary_id ?? null,
+      direction: dir,
+      desk,
+      session,
+      triggers_today_by_pb: opts?.triggers_today_by_pb,
+      option: opts?.option_preview,
+      bypass_buy_cooldown:
+        playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"),
+    });
+    blocks.push(...governor.blocks);
+    warnings.push(...governor.warnings);
+    playbookSizeMultiplier = governor.size_multiplier;
+  }
+
   if (buyIntent && playbookLiveGateEnabled()) {
     const pbId = opts?.playbook_primary_id ?? null;
-    const sessionRisk = evaluatePlaybookSessionRisk({
-      playbook_id: pbId,
-      triggers_today_by_pb: opts?.triggers_today_by_pb ?? new Map(),
-      desk,
-    });
-    playbookSizeMultiplier = sessionRisk.size_multiplier;
 
     if (!pbId) {
       blocks.push(
@@ -225,11 +243,6 @@ export function evaluatePlayGates(
         warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
       }
     }
-
-    if (sessionRisk.block) {
-      blocks.push(sessionRisk.block);
-    }
-    warnings.push(...sessionRisk.warnings);
   }
 
   // Stale halt feed → fail-OPEN (allow play to proceed) with a warning so the operator
@@ -296,12 +309,6 @@ export function evaluatePlayGates(
 
   const entriesToday = session.session_entries_today ?? 0;
   const lossesToday = session.session_losses_today ?? 0;
-  if (buyIntent && entriesToday >= playSessionMaxEntries()) {
-    blocks.push(`Session entry cap (${playSessionMaxEntries()} plays today — quality over quantity)`);
-  }
-  if (buyIntent && lossesToday >= playSessionMaxLosses()) {
-    blocks.push(`Session loss cap (${playSessionMaxLosses()} losses today — stand down)`);
-  }
 
   if (buyIntent && opts?.cold_buy_path && !stagingLab && abs < playColdBuyMinScore()) {
     blocks.push(
@@ -372,33 +379,11 @@ export function evaluatePlayGates(
       warnings.push(
         `A+ setup — buy cooldown bypassed (${minsSinceExit}m since last exit, ${Math.round(buyCooldownSec / 60)}m default)`
       );
-    } else {
-      blocks.push(
-        `Buy cooldown (${Math.round(buyCooldownSec / 60)}m after any exit — ${minsSinceExit}m elapsed)`
-      );
     }
+    // Non-A+ buy cooldown enforced by Trade Governor
   }
 
-  if (
-    buyIntent &&
-    session.last_stop_at &&
-    now - session.last_stop_at < playCooldownAfterStopMin() * 60_000
-  ) {
-    blocks.push(`Post-STOP cooldown (${playCooldownAfterStopMin()}m — STOP exits only, WATCH ok)`);
-  }
-
-  if (
-    buyIntent &&
-    session.last_sell_was_loss &&
-    session.last_sell_at &&
-    session.last_direction &&
-    dir === session.last_direction &&
-    now - session.last_sell_at < playReentryLockSec() * 1000
-  ) {
-    blocks.push(
-      `Re-entry lock after loss (${Math.round(playReentryLockSec() / 60)}m same direction — STOP + THESIS)`
-    );
-  }
+  // Post-stop / re-entry locks enforced by Trade Governor
 
   // Flow staleness: if the UW flow feed has been silent > 5 min, entries are blocked —
   // unless the cluster heartbeat confirms another replica is delivering live WS frames
@@ -427,11 +412,7 @@ export function evaluatePlayGates(
     }
   }
 
-  if (desk.vix != null && desk.vix > 32) {
-    blocks.push(`VIX ${desk.vix.toFixed(1)} too hot for new 0DTE entries`);
-  } else if (desk.vix != null && desk.vix > 28) {
-    warnings.push(`Elevated VIX ${desk.vix.toFixed(1)}`);
-  }
+  // VIX hot-entry blocks enforced by Trade Governor
 
   const agreeing =
     confluence.bias === "bullish"

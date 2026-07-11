@@ -1,5 +1,6 @@
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-state";
+import { isPostEntryPlaybookState, isTerminalPlaybookState } from "@/features/spx/lib/playbook-state-machine";
 import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
 import { playbookInstanceId } from "@/features/spx/lib/playbook-state";
 
@@ -24,10 +25,20 @@ export function applyPlaybookVerdictGuards(
   const minArmed = playbookMinArmedPolls();
 
   return verdicts.map((v) => {
-    if (!v.trigger_fired) return v;
-
     const instanceId = playbookInstanceId(sessionDate, v.playbook_id);
     const prev = prevByInstance.get(instanceId) ?? "idle";
+
+    if (isTerminalPlaybookState(prev) || isPostEntryPlaybookState(prev)) {
+      if (!v.trigger_fired) return v;
+      return {
+        ...v,
+        trigger_fired: false,
+        direction: null,
+        detail: `${v.detail} [guard: frozen ${prev}]`,
+      };
+    }
+
+    if (!v.trigger_fired) return v;
     const armedPolls = armedPollCounts.get(instanceId) ?? 0;
     const hadArmed = prev === "armed" || prev === "triggered" || armedPolls >= minArmed;
 

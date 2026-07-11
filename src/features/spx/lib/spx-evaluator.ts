@@ -8,6 +8,7 @@ import {
   dbConfigured,
 } from "@/lib/db";
 import { evaluateSpxPlay, type SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
+import { syncPlaybookTelemetryAfterEvaluate } from "@/features/spx/lib/playbook-engine-telemetry";
 import {
   recordPlayEngineTick,
   type PlayEngineTickSource,
@@ -39,6 +40,12 @@ export async function runSpxEvaluator(
 
   try {
     const play = await evaluateSpxPlay(desk, technicals, { mutate: true });
+    await syncPlaybookTelemetryAfterEvaluate(desk, technicals, play).catch((err) => {
+      console.warn(
+        "[spx-evaluator] playbook telemetry:",
+        err instanceof Error ? err.message : err
+      );
+    });
     await recordPlayEngineTick(source);
     return { ok: true, skipped: false, play };
   } catch (err) {

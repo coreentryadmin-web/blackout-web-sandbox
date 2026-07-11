@@ -60,6 +60,19 @@ test("resolvePlaybookLifecycleState: armed → invalidated when precondition los
   assert.equal(resolvePlaybookLifecycleState("armed", lostPre), "invalidated");
 });
 
+test("resolvePlaybookLifecycleState: triggered stays latched while firing", () => {
+  const firing: PlaybookMatchVerdict = {
+    playbook_id: "PB-01",
+    session_window_open: true,
+    regime_eligible: true,
+    precondition_match: true,
+    trigger_fired: true,
+    direction: "long",
+    detail: "fire",
+  };
+  assert.equal(resolvePlaybookLifecycleState("triggered", firing), "triggered");
+});
+
 test("collectPlaybookInstanceTransitions: triggered → invalidated when trigger drops", () => {
   const session = "2026-07-10";
   const prev = new Map([[playbookInstanceId(session, "PB-01"), "triggered" as const]]);

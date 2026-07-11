@@ -8,6 +8,8 @@ export type PlaybookInstanceEventType =
   | "invalidated"
   | "blocked"
   | "opened"
+  | "managing"
+  | "closed"
   | "counterfactual_tick";
 
 export type PlaybookInstanceEventRow = {
@@ -32,6 +34,9 @@ export function transitionToEventType(
   if (toState === "armed") return "armed";
   if (toState === "triggered") return "triggered";
   if (toState === "invalidated") return "invalidated";
+  if (toState === "open") return "opened";
+  if (toState === "managing") return "managing";
+  if (toState === "closed") return "closed";
   return null;
 }
 

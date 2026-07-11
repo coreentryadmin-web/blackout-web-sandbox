@@ -2208,7 +2208,7 @@ export async function loadPlaybookInstanceStates(
 ): Promise<
   Array<{
     instance_id: string;
-    state: "idle" | "armed" | "triggered" | "invalidated";
+    state: "idle" | "armed" | "triggered" | "invalidated" | "open" | "managing" | "closed";
     armed_poll_count: number;
   }>
 > {
@@ -2241,7 +2241,7 @@ export async function loadPlaybookTriggerCountsByPb(sessionDate: string): Promis
     SELECT playbook_id, COUNT(*)::int AS trigger_count
     FROM spx_playbook_instances
     WHERE session_date = $1
-      AND (state = 'triggered' OR opened_at IS NOT NULL)
+      AND (state IN ('triggered', 'open', 'managing') OR opened_at IS NOT NULL)
     GROUP BY playbook_id
     `,
     [sessionDate]
@@ -2271,7 +2271,7 @@ export async function upsertPlaybookInstances(
     instance_id: string;
     playbook_id: string;
     direction: "long" | "short" | null;
-    state: "idle" | "armed" | "triggered" | "invalidated";
+    state: "idle" | "armed" | "triggered" | "invalidated" | "open" | "managing" | "closed";
     feature_snapshot: unknown;
     detail: string;
     trigger_price?: number | null;
@@ -2287,13 +2287,16 @@ export async function upsertPlaybookInstances(
       `
       INSERT INTO spx_playbook_instances (
         instance_id, session_date, playbook_id, direction, state,
-        armed_at, triggered_at, invalidated_at, feature_snapshot, detail,
+        armed_at, triggered_at, invalidated_at, opened_at, closed_at,
+        feature_snapshot, detail,
         trigger_price, reason_invalidated, armed_poll_count, updated_at
       )
       VALUES ($1,$2,$3,$4,$5,
         CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'triggered' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'invalidated' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'open' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'closed' THEN NOW() ELSE NULL END,
         $6::jsonb, $7,
         $8, $9, COALESCE($10, 0), NOW())
       ON CONFLICT (instance_id) DO UPDATE SET
@@ -2305,6 +2308,10 @@ export async function upsertPlaybookInstances(
           CASE WHEN EXCLUDED.state = 'triggered' THEN NOW() ELSE NULL END),
         invalidated_at = COALESCE(spx_playbook_instances.invalidated_at,
           CASE WHEN EXCLUDED.state = 'invalidated' THEN NOW() ELSE NULL END),
+        opened_at = COALESCE(spx_playbook_instances.opened_at,
+          CASE WHEN EXCLUDED.state = 'open' THEN NOW() ELSE NULL END),
+        closed_at = COALESCE(spx_playbook_instances.closed_at,
+          CASE WHEN EXCLUDED.state = 'closed' THEN NOW() ELSE NULL END),
         feature_snapshot = EXCLUDED.feature_snapshot,
         detail = EXCLUDED.detail,
         trigger_price = COALESCE(spx_playbook_instances.trigger_price, EXCLUDED.trigger_price),
