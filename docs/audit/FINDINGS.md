@@ -8,6 +8,50 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+REOPENED+FIXED 2026-07-11 — Q4 verdict-guard assert independence (full arc)
+
+**Surface:** `assertPlaybookVerdictGuardInvariants` (`playbook-verdict-guard.ts`) + its production caller `resolveGuardedPlaybookMatch` (`playbook-match-resolver.ts`).
+
+**Root cause (sixth-pass reopen, not previously logged — its findings-only PR #103 was superseded/closed unmerged before landing here):** the fifth-pass fix (PR #100, logged above) made the assert check the right condition (`idle` + `trigger_fired`) but still consumed the exact same in-memory `snapshots`/`armedPollCounts` objects the guard itself had just produced — it could only catch a bug in the guard's own arithmetic, not a genuine cross-tick/cross-path desync where an in-memory counter goes stale relative to a DB row that changed underneath it. The code comment's claim of "durable snapshot rows (not resolver-derived state)" was false: `resolveEpisodeInstance`'s `from_state` and `persisted.state` were the same field accessed two ways.
+
+**Fix (PR #105):** `playbook-match-resolver.ts:70-81` now issues a genuinely separate DB round-trip (`loadPlaybookInstanceStates` + `loadPlaybookArmedPollCounts`, real `pool.query` calls, no memoization) to build `freshSnapshots`/`freshArmed` specifically for the assert, distinct from the original load that fed the guard. `assertPlaybookVerdictGuardInvariants` also now throws if the persisted row is missing rather than falling back to `resolved.from_state`.
+
+**Verification (2026-07-11, catch-up review):** traced the second `pool.query` call site directly; confirmed via mental-test trace that a DB write flipping an instance to `idle` between the two reads now throws (`"trigger_fired while persisted FSM state is idle"`), where pre-fix it silently passed. Gap: `playbook-match-resolver.test.ts` does not exist — the fix is correct by code trace but has no regression test simulating a concurrent write between the two reads. Recommend a follow-up test, not release-blocking.
+
+**Status:** FIXED (`cursor/deep-sweep-deferred-261c` on `blackout-web-sandbox`, commit `2c268db`, PR #105). Test-coverage gap tracked as follow-up, not reopened.
+
+## 🟡 P2 FOUND 2026-07-11 — Playbook retention allow-list updated but never wired into cron cleanup tasks (#9, incomplete fix)
+
+**Surface:** `db-cleanup-targets.ts` allow-list vs. `src/app/api/cron/db-cleanup/route.ts` `runCleanup()` task list.
+
+**Root cause:** PR #104 added `spx_playbook_instances`/`_instance_events`/`_shadow_observations` to the `isAllowedCleanupTarget` allow-list (closing the validation half of deep-sweep finding #9), but that allow-list is only consulted if something calls `deleteOlderThan(table, column, days)` — and the cron's `tasks` array has zero entries for any of the three tables. Nothing in the nightly cleanup job actually deletes old rows from them. The deep-sweep fix-batch table's "FIXED" status for #9 was inaccurate; corrected to PARTIAL in `docs/spx/PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md`.
+
+**Failure mode:** `spx_playbook_instance_events` (pure append-only, one row per FSM transition, written from both the 5-minute cron and unthrottled live member polling) continues growing unbounded in production — the exact slow-burn ops risk the original finding described.
+
+**Fix needed:** add three entries to the `tasks` array in `cron/db-cleanup/route.ts` (same shape as the existing `spx_engine_snapshots` entry), keyed on the allow-list's own column mapping (`observed_at`/`updated_at`).
+
+**Status:** OPEN — logged for Cursor.
+
+## 🟡 P2 FOUND 2026-07-11 — `buildSpxDeskFlow` still missing `.catch()` on its foundational fetch (#3, incomplete fix)
+
+**Surface:** `src/features/spx/lib/spx-desk.ts:1720-1725`, `buildSpxDeskFlow`.
+
+**Root cause:** deep-sweep finding #3 named all three desk entry points (`buildSpxDesk`, `buildSpxDeskPulse`, `buildSpxDeskFlow`) as needing a `.catch()` on `fetchIndexSnapshots`/equivalent. PR #104 fixed the first two but not `buildSpxDeskFlow`'s `fetchIndexSnapshots([SPX])` (nor the adjacent UW flow-alerts call) — confirmed still unguarded by direct read of current code. A transient Polygon 5xx there still throws uncaught out of the function instead of degrading to its own ready `empty` payload.
+
+**Fix needed:** same `.catch(() => ({}))`/`.catch(() => [])` pattern already applied to the sibling entry points.
+
+**Status:** OPEN — logged for Cursor.
+
+## 🟡 P2 FOUND 2026-07-11 — Outcome-classification breakeven zone is dead code in production (#10/#11, overclaim)
+
+**Surface:** `spx-play-outcomes.ts` `classifyOutcome` + its only producer of the `was_loss` flag, `spx-play-engine.ts`.
+
+**Root cause:** PR #104's unified `classifyOutcome` genuinely fixes the two literal bugs (TARGET force-win, STOP force-loss regardless of P&L sign) and adds a `-1..0 pt` "breakeven zone" gated on `was_loss === false`. But `spx-play-engine.ts` sets `was_loss = pnl < 0` for THETA/SESSION/THESIS exits and forces `was_loss = true` unconditionally for STOP — so for every real exit path except TRAIL, `was_loss` is functionally identical to `pnl < 0`, making the new breakeven-zone branch unreachable in production outside TRAIL/STOP-at-exact-zero. The passing unit test only exercises the branch because it manually constructs `was_loss: false` for a negative-PnL SESSION close, a combination the real engine never produces — the test verifies the function in isolation, not the actual call site.
+
+**Fix needed:** either update `spx-play-engine.ts` to only set `was_loss=true` when `pnl <= -1` on the SESSION/THETA/THESIS paths (matching the stated intent), or explicitly narrow the documented scope to TRAIL/STOP-only and fix the misleading test — whichever matches the actual product decision on how scratch losses should be graded.
+
+**Status:** OPEN — logged for Cursor.
+
 ## 🔴 P0 FOUND+FIXED 2026-07-11 — `hod_break`/`lod_break` structurally impossible during RTH (deep sweep #1)
 
 **Surface:** `spx-play-technicals.ts` breakout flags → PB-03 fallback, desk breakout-continuation triggers, playbook matcher.
