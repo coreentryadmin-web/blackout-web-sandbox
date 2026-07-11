@@ -10,6 +10,14 @@ const KIND_ICON: Record<VectorWallEventKind, PlayTerminalLine["icon"]> = {
   spot_crossed_flip: "pulse",
   spot_broke_call: "level",
   spot_broke_put: "level",
+  call_wall_building: "gamma",
+  put_wall_building: "gamma",
+  call_wall_fading: "gamma",
+  put_wall_fading: "gamma",
+  call_wall_new: "flow",
+  put_wall_new: "flow",
+  call_wall_gone: "no",
+  put_wall_gone: "no",
 };
 
 const KIND_TONE: Record<VectorWallEventKind, PlayTerminalLine["tone"]> = {
@@ -19,6 +27,15 @@ const KIND_TONE: Record<VectorWallEventKind, PlayTerminalLine["tone"]> = {
   spot_crossed_flip: "warn",
   spot_broke_call: "bear",
   spot_broke_put: "bear",
+  // Building resistance/support firming = bull-ish structure; fading/dissolving = weakening.
+  call_wall_building: "bull",
+  put_wall_building: "bull",
+  call_wall_fading: "warn",
+  put_wall_fading: "warn",
+  call_wall_new: "accent",
+  put_wall_new: "accent",
+  call_wall_gone: "warn",
+  put_wall_gone: "warn",
 };
 
 export function buildVectorTerminalLines(

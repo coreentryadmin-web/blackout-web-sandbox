@@ -179,3 +179,63 @@ test("detectSpotStructureEvents: flip cross requires a stable flip when prev pro
   const stable = detectSpotStructureEvents(6740, 6750, null, 6745, "gex", 500, null, 6745.2);
   assert.equal(stable.length, 1, "sub-point flip jitter still counts as stable");
 });
+
+// ── Strength-dynamics narration: building / fading / new / dissolved ──────────────
+function ladder(callLevels: Array<[number, number]>, putLevels: Array<[number, number]>): GexWalls {
+  return {
+    callWalls: callLevels.map(([strike, pct]) => ({ strike, pct })),
+    putWalls: putLevels.map(([strike, pct]) => ({ strike, pct })),
+  };
+}
+
+test("dynamics: a held call wall gaining gamma share emits a BUILDING event", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 5]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 9]], [[6700, 6]]) };
+  const ev = diffVectorWallSample(prev, next, "gex").find((e) => e.kind === "call_wall_building");
+  assert.ok(ev, "expected a call_wall_building event");
+  assert.match(ev!.message, /building — 5% → 9%/);
+});
+
+test("dynamics: a held wall losing gamma share emits a FADING event", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 10]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 5]], [[6700, 6]]) };
+  const ev = diffVectorWallSample(prev, next, "gex").find((e) => e.kind === "call_wall_fading");
+  assert.ok(ev, "expected a call_wall_fading event");
+  assert.match(ev!.message, /fading — 10% → 5%/);
+});
+
+test("dynamics: a strike newly crossing the material threshold emits a NEW event", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 8]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 8], [6850, 6]], [[6700, 6]]) };
+  const ev = diffVectorWallSample(prev, next, "gex").find((e) => e.kind === "call_wall_new");
+  assert.ok(ev, "expected a call_wall_new event");
+  assert.match(ev!.message, /New call wall forming at 6,850 \(6% gamma\)/);
+});
+
+test("dynamics: a material wall leaving the board emits a DISSOLVED event", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 8], [6750, 7]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 8]], [[6700, 6]]) };
+  const ev = diffVectorWallSample(prev, next, "gex").find((e) => e.kind === "call_wall_gone");
+  assert.ok(ev, "expected a call_wall_gone event");
+  assert.match(ev!.message, /6,750 dissolved — was 7% gamma/);
+});
+
+test("dynamics: a sub-threshold wobble (<3pp) emits nothing", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 7]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 8]], [[6700, 6]]) };
+  assert.deepEqual(diffVectorWallSample(prev, next, "gex"), []);
+});
+
+test("dynamics: a new strike below the material floor (<4%) is ignored (noise)", () => {
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 8]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6800, 8], [6860, 2]], [[6700, 6]]) };
+  assert.deepEqual(diffVectorWallSample(prev, next, "gex"), []);
+});
+
+test("dynamics: a top-wall SHIFT suppresses redundant new/gone on the same strikes", () => {
+  // 6800 (9%) -> 6810 (9%) as the dominant call: a shift, not two separate new/gone lines.
+  const prev: WallHistorySample = { time: 100, walls: ladder([[6800, 9]], [[6700, 6]]) };
+  const next: WallHistorySample = { time: 115, walls: ladder([[6810, 9]], [[6700, 6]]) };
+  const ev = diffVectorWallSample(prev, next, "gex");
+  assert.deepEqual(ev.map((e) => e.kind), ["call_wall_shift"]);
+});

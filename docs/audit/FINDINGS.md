@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P3 SHIPPED 2026-07-11 — Desk terminal now narrates wall STRENGTH DYNAMICS (building / fading / new / dissolved), not just shifts
+
+**Surface:** `src/features/vector/lib/vector-wall-events.ts` (new `wallStrengthEvents` detector + 8 event kinds), `vector-terminal-lines.ts` + `VectorWallEventTicker.tsx` (icon/tone/label maps). Member-requested: the terminal only said "call wall shifted 7,500 → 7,600" / "SPX broke above…" — never "call wall building" or "fading" or "new wall forming."
+
+**What:** the structure feed reported only the top-wall *moving* strike, spot *breaks*, and flip *crosses*. It never described how a wall at a FIXED strike evolves. Added per-strike strength narration by diffing each strike's gamma-share (`pct`) between consecutive samples:
+- **building** — a held wall gains ≥3 share-points → `Call wall 7,600 building — 5% → 9% gamma` (bull tone)
+- **fading** — loses ≥3 points → `Call wall 7,600 fading — 9% → 5% gamma` (warn tone)
+- **new** — a strike newly ≥4% share → `New call wall forming at 7,620 (7% gamma)`
+- **dissolved** — a ≥4% wall leaves the board → `Call wall 7,500 dissolved — was 8% gamma`
+
+**Noise discipline:** sub-3pp wobbles and sub-4% strikes are ignored; capped at 2 lines/side/diff (loudest first); and a top-wall SHIFT suppresses the redundant new/gone on the same strikes (no "7,600 forming" right after "shifted 7,500 → 7,600"). Emitted inside `diffVectorWallSample`, so both the live SSE feed and replay seeding get them for free.
+
+**Evidence:** `vector-wall-events.test.ts` (+7) — building/fading/new/dissolved fire with the right message; sub-threshold wobble and sub-material new strike emit nothing; a shift suppresses redundant new/gone. `tsc` clean; 157/157 vector lib tests; `@apply` guard clean. Live terminal screenshot post-deploy.
+
+**Status:** SHIPPED (`feat/vector-wall-dynamics-events`).
+
+
 ## 🟠 P2 FOUND+FIXED 2026-07-11 — Wall beads read uniform (no strength contrast) + the STRONGEST wall could be missing entirely
 
 **Surface:** `src/features/vector/lib/vector-wall-visual.ts` (bead size/opacity curve) + `src/features/vector/lib/vector-wall-history.ts` (`strikeTrailWeight` rail-selection ranking). Reported live: member compared to Skylit — "why are all walls the same strength? some should be bold, some dim" and "why no beads at the 7475 (8%) put wall?"
