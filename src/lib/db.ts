@@ -1075,6 +1075,7 @@ async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS trigger_price NUMERIC,
       ADD COLUMN IF NOT EXISTS counterfactual_mfe_pts NUMERIC DEFAULT 0,
       ADD COLUMN IF NOT EXISTS counterfactual_mae_pts NUMERIC DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS counterfactual_eval JSONB,
       ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB,
       ADD COLUMN IF NOT EXISTS armed_poll_count INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE spx_playbook_instances
@@ -2509,8 +2510,10 @@ export async function loadTriggeredPlaybookInstances(sessionDate: string): Promi
     playbook_id: string;
     direction: "long" | "short" | null;
     trigger_price: number | null;
+    triggered_at_ms: number | null;
     counterfactual_mfe_pts: number;
     counterfactual_mae_pts: number;
+    counterfactual_eval: unknown;
     opened_at: string | null;
   }>
 > {
@@ -2518,8 +2521,10 @@ export async function loadTriggeredPlaybookInstances(sessionDate: string): Promi
   const res = await (await getPool()).query(
     `
     SELECT instance_id, playbook_id, direction, trigger_price,
+           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms,
            COALESCE(counterfactual_mfe_pts, 0) AS counterfactual_mfe_pts,
            COALESCE(counterfactual_mae_pts, 0) AS counterfactual_mae_pts,
+           counterfactual_eval,
            opened_at
     FROM spx_playbook_instances
     WHERE session_date = $1
@@ -2537,10 +2542,60 @@ export async function loadTriggeredPlaybookInstances(sessionDate: string): Promi
         ? r.direction
         : null,
     trigger_price: r.trigger_price != null ? Number(r.trigger_price) : null,
+    triggered_at_ms:
+      r.triggered_at_ms != null && Number.isFinite(Number(r.triggered_at_ms))
+        ? Number(r.triggered_at_ms)
+        : null,
     counterfactual_mfe_pts: Number(r.counterfactual_mfe_pts ?? 0),
     counterfactual_mae_pts: Number(r.counterfactual_mae_pts ?? 0),
+    counterfactual_eval: r.counterfactual_eval ?? null,
     opened_at: r.opened_at != null ? String(r.opened_at) : null,
   }));
+}
+
+export async function finalizePlaybookCounterfactualIfActive(
+  instanceId: string,
+  reason: string,
+  nowMs: number
+): Promise<void> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `SELECT counterfactual_eval FROM spx_playbook_instances WHERE instance_id = $1`,
+    [instanceId]
+  );
+  const raw = res.rows[0]?.counterfactual_eval;
+  if (!raw || typeof raw !== "object") return;
+  const o = raw as { exit_reason_counterfactual?: string };
+  if (o.exit_reason_counterfactual !== "active") return;
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_eval = jsonb_set(
+          jsonb_set(counterfactual_eval, '{exit_reason_counterfactual}', to_jsonb($2::text)),
+          '{counterfactual_window_end_ms}',
+          to_jsonb($3::bigint)
+        ),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, reason, nowMs]
+  );
+}
+
+export async function patchPlaybookInstanceCounterfactualEval(
+  instanceId: string,
+  evalPayload: unknown
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_eval = $2::jsonb,
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, JSON.stringify(evalPayload)]
+  );
 }
 
 export async function updatePlaybookInstanceCounterfactual(

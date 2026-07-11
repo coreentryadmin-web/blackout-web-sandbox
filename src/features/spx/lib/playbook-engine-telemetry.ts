@@ -43,6 +43,8 @@ export async function syncPlaybookTelemetryAfterEvaluate(
       opened_direction:
         play.phase === "OPEN" && play.open_play?.direction ? play.open_play.direction : null,
       option_contract_candidate: play.option_ticket ?? null,
+      hypothetical_stop: play.levels?.stop ?? null,
+      hypothetical_target: play.levels?.target ?? null,
     }
   );
 }

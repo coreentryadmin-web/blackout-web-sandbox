@@ -254,7 +254,8 @@ Each `PlaybookDefinition` carries a `temporal` contract enforced by `applyTempor
 | **#72** (trade FSM) | Full trade lifecycle — `blocked`, `entry_pending`, `exit_pending`, `expired`, `cancelled`; 90s trigger TTL; gate≠invalidation |
 | **#73** (temporal) | Typed registry temporal contracts — min/max arm, grace, rearm cooldown, max triggers; enforced vs `armed_at` |
 | **#74** (primary score) | Evidence-aware primary ranking — multi-factor composite; static `PLAYBOOK_PRIMARY_PRIORITY` tie-break only; no win-rate weights |
-| **#75** (policy align) | PB-04 off paper-executable set; execution modes; capability-based data requirements; halt-stale restricted mode; `exit_policy` registry stub |
+| **#75** (policy align) | PB-04 off paper-executable set; execution modes; capability-based data quality; halt-stale restricted mode; `exit_policy` registry stub |
+| **#76** (sim + CF contract) | Option sim `lite_v1` tier disclosure + quote snapshot; counterfactual_eval fixed-horizon contract |
 
 ---
 
@@ -328,7 +329,8 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | Evidence-aware primary ranking | ✅ Shipped | `playbook-primary-score.ts` — composite factors + static tie-break; OOS family priors only |
 | Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
 | Dedicated Regime Engine object | 🟡 Partial | Still embedded in matcher eligibility |
-| Full options path simulator (IV surface) | 🟡 Partial | Lite delta/gamma/theta only |
+| Full options path simulator (IV surface) | 🟡 Partial | **lite_v1** spread/slippage + greeks snapshot; **full_v2** quote reconcile pending |
+| Counterfactual horizon contract | ✅ Shipped | `counterfactual_eval` JSON + fixed 900s cap / invalidation end |
 | Per-PB exit engines PB-05+ | ⏳ Blocked | PB-01–04 only; `exit_policy` on registry — wire management off legacy confluence |
 | PB-02 z-score / persistence | ⏳ Planned | Materiality only |
 | PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
@@ -523,7 +525,39 @@ ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted
 | `pipeline_audit` funnel (long/short + family) | ✅ |
 | `blocked_*` when gates veto primary | ✅ `pipeline_audit` + instance `reason_blocked` |
 | Per-instance transitions | ✅ `spx_playbook_instance_events` |
-| Counterfactual MFE/MAE for non-opens | ✅ `counterfactual_*_pts` on instance row |
+| Counterfactual MFE/MAE for non-opens | ✅ `counterfactual_*_pts` + `counterfactual_eval` JSON contract |
+
+### 12.5 Option execution simulator — tier disclosure
+
+**Not production-grade.** Staging uses **`lite_v1`** (`playbook-option-sim.ts` + `playbook-option-execution-contract.ts`):
+
+| Field group | lite_v1 today | full_v2 (limited-live gate) |
+|-------------|---------------|-----------------------------|
+| Contract identity | expiration, strike, call/put, OCC ticker | Same |
+| Quotes | bid, ask, mid, spread_pct, quote + underlying timestamps | Same + stale rejection enforced |
+| Greeks | delta (chain); gamma/IV when chain provides | delta, gamma, theta, IV required |
+| Liquidity | OI; volume when chain provides | volume + OI required |
+| Fill model | adverse half-spread + slippage bps | configurable + partial fill policy |
+| Delays / fees | env defaults (0ms delay; fees optional) | entry/exit delay + fees required |
+| Realism flag | `research_lite` on `execution_sim.contract` | `production_grade` + per-trade quote reconcile |
+
+`buildOptionExecutionSim()` returns **null** when quote age exceeds `PLAYBOOK_OPTION_QUOTE_MAX_AGE_SEC` (default 15s). Cost-adjusted expectancy scripts must filter `simulator_tier=lite_v1` until `full_v2` ships.
+
+### 12.6 Counterfactual evaluation contract (fixed horizon)
+
+Underlying MFE/MAE for triggered-not-opened instances uses **`counterfactual_eval` JSONB** (`playbook-counterfactual-contract.ts`):
+
+| Field | Semantics |
+|-------|-----------|
+| `counterfactual_window_start_ms` | Episode trigger time (`triggered_at`) |
+| `counterfactual_window_end_ms` | Set on invalidation, expiry, horizon, or open |
+| `counterfactual_horizon_seconds` | Default **900** (`PLAYBOOK_COUNTERFACTUAL_HORIZON_SEC`) |
+| `hypothetical_entry_price` | Underlying spot at trigger (not option premium) |
+| `hypothetical_stop` / `hypothetical_target` | Confluence levels when engine passes them |
+| `exit_reason_counterfactual` | `active` \| `horizon_expired` \| `setup_invalidated` \| `trigger_expired` \| `opened_superseded` |
+| `reference` | Always `underlying_trigger_price` |
+
+Excursion updates **stop** when window closes — prevents longer-lived setups from inflating MFE/MAE vs opened trades. Blocked and opened paths share the same horizon policy.
 
 ### 12.2 Freeze feature values at decision time
 
@@ -598,7 +632,7 @@ Per playbook (and per family), compute from **prospective OOS sample only**:
 | median counterfactual MFE/MAE | ✅ Report script |
 | MFE capture %, tail loss, downside deviation | ⏳ Needs more closed OOS trades |
 | time in trade | 🟡 On outcomes table |
-| results after cost assumptions | 🟡 `execution_sim` at open |
+| results after cost assumptions | 🟡 `execution_sim` lite_v1 at open — not limited-live grade |
 | performance by VIX / gamma regime | ⏳ Extend report SQL |
 
 > A 40% win-rate system can be excellent. A 60% win-rate system can lose money.
@@ -656,7 +690,9 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-state-machine.ts` | Matcher FSM collector + expiry pass + engine transition helper |
 | `playbook-data-quality.ts` | Flags + `liveDataQualityMode` |
 | `playbook-break-memory.ts` | PB-14 OR break memory |
-| `playbook-option-sim.ts` | `execution_sim` on option ticket |
+| `playbook-option-execution-contract.ts` | `lite_v1`/`full_v2` sim tier + quote snapshot schema |
+| `playbook-option-sim.ts` | `execution_sim` on option ticket (lite_v1 today) |
+| `playbook-counterfactual-contract.ts` | Fixed-horizon `counterfactual_eval` JSON contract |
 | `playbook-gate-categories.ts` | Gate block category labels |
 | `spx-play-gates.ts` | A1–A17 including playbook live gate |
 | `spx-play-engine.ts` | `evaluateSpxPlay` integration |

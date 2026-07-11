@@ -10,10 +10,20 @@ import {
   setMeta,
   syncPlaybookArmedPollCounts,
   updatePlaybookInstanceCounterfactual,
+  finalizePlaybookCounterfactualIfActive,
+  patchPlaybookInstanceCounterfactualEval,
   upsertPlaybookInstances,
 } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { buildPlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
+import {
+  buildCounterfactualEvalContract,
+  finalizeCounterfactualEval,
+  isCounterfactualWindowActive,
+  parseCounterfactualEval,
+  terminalStateCounterfactualReason,
+  type CounterfactualEvalContract,
+} from "@/features/spx/lib/playbook-counterfactual-contract";
 import {
   buildBlockedPrimaryEvent,
   buildTransitionEvents,
@@ -57,6 +67,8 @@ export type PlaybookShadowLogOpts = {
   primary_playbook_id?: PlaybookId | null;
   option_contract_candidate?: unknown;
   first_block_category?: string | null;
+  hypothetical_stop?: number | null;
+  hypothetical_target?: number | null;
 };
 
 /**
@@ -150,6 +162,30 @@ export async function maybeLogPlaybookShadowMatch(
 
     if (armedPollByInstance?.size) {
       await syncPlaybookArmedPollCounts(armedPollByInstance);
+    }
+
+    const nowMs = Date.now();
+    for (const t of transitions) {
+      const finReason = terminalStateCounterfactualReason(t.to_state);
+      if (finReason && finReason !== "opened_superseded") {
+        await finalizePlaybookCounterfactualIfActive(t.instance_id, finReason, nowMs);
+      }
+      if (
+        t.to_state === "triggered" &&
+        t.direction != null &&
+        desk.price != null
+      ) {
+        const evalContract = buildCounterfactualEvalContract({
+          session_date: sessionDate,
+          direction: t.direction,
+          trigger_price: desk.price,
+          triggered_at_ms: nowMs,
+          hypothetical_stop: opts?.hypothetical_stop ?? null,
+          hypothetical_target: opts?.hypothetical_target ?? null,
+          now_ms: nowMs,
+        });
+        await patchPlaybookInstanceCounterfactualEval(t.instance_id, evalContract);
+      }
     }
 
     const eventRows = buildTransitionEvents(
@@ -256,12 +292,38 @@ export async function maybeLogPlaybookShadowMatch(
   }
 
   if (desk.price != null) {
+    const nowMs = Date.now();
     const triggered = await loadTriggeredPlaybookInstances(sessionDate);
     for (const row of triggered) {
       if (row.direction == null || row.trigger_price == null) continue;
+
+      let evalContract = parseCounterfactualEval(row.counterfactual_eval);
+      if (!evalContract) {
+        evalContract = buildCounterfactualEvalContract({
+          session_date: sessionDate,
+          direction: row.direction,
+          trigger_price: row.trigger_price,
+          triggered_at_ms: row.triggered_at_ms ?? nowMs,
+          hypothetical_stop: opts?.hypothetical_stop ?? null,
+          hypothetical_target: opts?.hypothetical_target ?? null,
+          now_ms: nowMs,
+        });
+        await patchPlaybookInstanceCounterfactualEval(row.instance_id, evalContract);
+      }
+
+      if (!isCounterfactualWindowActive(evalContract, nowMs, sessionDate)) {
+        if (evalContract.exit_reason_counterfactual === "active") {
+          await patchPlaybookInstanceCounterfactualEval(
+            row.instance_id,
+            finalizeCounterfactualEval(evalContract, "horizon_expired", nowMs)
+          );
+        }
+        continue;
+      }
+
       const { mfe_pts, mae_pts } = computeCounterfactualExcursion(
         row.direction,
-        row.trigger_price,
+        evalContract.hypothetical_entry_price,
         desk.price,
         row.counterfactual_mfe_pts,
         row.counterfactual_mae_pts

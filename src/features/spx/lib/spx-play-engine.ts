@@ -1024,7 +1024,7 @@ async function evaluateFlatPlay(
 
   const dir = confluence.direction;
   const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
-  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price);
+  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price, desk);
   const optionTicket: OptionTicket = executionSim
     ? {
         ...optionTicketRaw,

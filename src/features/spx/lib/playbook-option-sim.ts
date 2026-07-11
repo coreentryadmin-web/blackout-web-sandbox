@@ -1,8 +1,18 @@
 /**
- * Option execution simulator (P1) — spread/slippage model for prospective evidence.
+ * Option execution simulator (P1) — spread/slippage lite model for prospective evidence.
+ *
+ * See `playbook-option-execution-contract.ts` for full 0DTE field taxonomy and tier roadmap.
  */
+import {
+  buildLiteExecutionSimContract,
+  type OptionExecutionSimContract,
+  type OptionSimulatorTier,
+} from "@/features/spx/lib/playbook-option-execution-contract";
 import type { OptionTicket } from "@/features/spx/lib/spx-play-options";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { SpxPlayDirection } from "@/features/spx/lib/spx-signals";
+
+export type { OptionExecutionSimContract, OptionSimulatorTier };
 
 export type OptionSimInput = {
   entry_spot: number;
@@ -24,9 +34,12 @@ export type PlaybookOptionExecutionSim = OptionSimResult & {
   spread_width: number | null;
   spread_pct: number | null;
   model: "adverse_half_spread_plus_bps";
+  simulator_tier: OptionSimulatorTier;
+  realism: "research_lite";
   exit_assumed_fill?: number | null;
   exit_slippage_pts?: number | null;
   round_trip_cost_pts?: number | null;
+  contract?: OptionExecutionSimContract;
   greeks_snapshot?: import("@/features/spx/lib/playbook-option-pnl").OptionGreeksSnapshot | null;
 };
 
@@ -80,7 +93,8 @@ export function simulateOptionExit(input: OptionSimInput): OptionSimResult {
 export function buildOptionExecutionSim(
   ticket: OptionTicket,
   direction: SpxPlayDirection,
-  entrySpot: number
+  entrySpot: number,
+  desk?: Pick<SpxDeskPayload, "price" | "polled_at" | "as_of"> | null
 ): PlaybookOptionExecutionSim | null {
   if (ticket.blocked || ticket.mid == null || ticket.mid <= 0) return null;
 
@@ -103,14 +117,35 @@ export function buildOptionExecutionSim(
     direction,
   });
 
+  const deskSnap: Pick<SpxDeskPayload, "price" | "polled_at" | "as_of"> = desk ?? {
+    price: entrySpot,
+    polled_at: new Date().toISOString(),
+    as_of: new Date().toISOString(),
+  };
+  const contract = buildLiteExecutionSimContract({
+    ticket,
+    desk: deskSnap,
+    direction,
+    assumed_fill: sim.assumed_fill,
+    exit_assumed_fill: exitSim.assumed_fill,
+    slippage_pts: sim.slippage_pts,
+    half_spread_pts: sim.half_spread_pts,
+    round_trip_cost_pts: sim.slippage_pts + exitSim.slippage_pts,
+  });
+
+  if (contract.stale_quote_rejected) return null;
+
   return {
     ...sim,
     option_mid: ticket.mid,
     spread_width: spreadWidth,
     spread_pct: ticket.spread_pct,
     model: "adverse_half_spread_plus_bps",
+    simulator_tier: "lite_v1",
+    realism: "research_lite",
     exit_assumed_fill: exitSim.assumed_fill,
     exit_slippage_pts: exitSim.slippage_pts,
     round_trip_cost_pts: sim.slippage_pts + exitSim.slippage_pts,
+    contract,
   };
 }
