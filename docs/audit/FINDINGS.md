@@ -8,6 +8,12 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 INFO 2026-07-11 — Residual sweep: #27/#31-32/#38 + staging gate default
+
+**Fix:** PR `cursor/residual-sweep-261c` — ambiguity-safe `fetchSpxClaudePlayOutcomeForAudit`, `spx_claude_play` alert_type, labeled UW REST fetch, flow spot=0 guard, playbook FK constraints, `SPX_CLAUDE_GATE` default-on staging.
+
+**F4:** Still requires weekday RTH — Monday 9:30 ET (`validate:staging-rth`).
+
 ## 🟢 INFO 2026-07-11 — Sixth-pass + catch-up review: F2 closed, F3 clean, F4 pending
 
 **Surface:** `playbook-promotion-sample.ts` (F2), `playbook-verdict-guard.ts` (Q4), F3 rescan, catch-up #9/#3/#10–11.

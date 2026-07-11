@@ -199,6 +199,36 @@ function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
   };
 }
 
+/** #31: labeled UW REST supplemental fetch — push order lives in one place, not at call site. */
+async function fetchUwDeskRestSupplemental(opts: {
+  needMaxPain: boolean;
+  needIv: boolean;
+}): Promise<{
+  nope: Awaited<ReturnType<typeof fetchUwNope>> | null;
+  maxPain: number | null;
+  iv: number | null;
+}> {
+  if (!uwConfigured()) {
+    return { nope: null, maxPain: null, iv: null };
+  }
+  const tasks: Array<() => Promise<unknown>> = [
+    () =>
+      fetchUwNope("SPX")
+        .catch(() => null)
+        .then((r) => r ?? fetchUwNope("SPY").catch(() => null)),
+  ];
+  const maxPainSlot = opts.needMaxPain ? tasks.length : -1;
+  if (opts.needMaxPain) tasks.push(() => fetchUwMaxPain("SPX").catch(() => null));
+  const ivSlot = opts.needIv ? tasks.length : -1;
+  if (opts.needIv) tasks.push(() => fetchUwIvRank("SPX").catch(() => null));
+  const results = await runUwPooled(tasks);
+  return {
+    nope: results[0] as Awaited<ReturnType<typeof fetchUwNope>> | null,
+    maxPain: maxPainSlot >= 0 ? (results[maxPainSlot] as number | null) : null,
+    iv: ivSlot >= 0 ? (results[ivSlot] as number | null) : null,
+  };
+}
+
 /**
  * Single-source SPX desk structural GEX through the shared heatmap matrix
  * (`getGexPositioning` / `gex-heatmap:SPX` cache). Replaces the old 0DTE-only
@@ -1272,21 +1302,10 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const [uwTide, uwFlow, darkPool] = uwWsLanes;
   const needMaxPain = canonicalGex.max_pain == null;
   const needIv = polygonIvRank == null;
-  const uwRestTasks: Array<() => Promise<unknown>> = [
-    () =>
-      fetchUwNope("SPX")
-        .catch(() => null)
-        .then((r) => r ?? fetchUwNope("SPY").catch(() => null)),
-  ];
-  if (needMaxPain) uwRestTasks.push(() => fetchUwMaxPain("SPX").catch(() => null));
-  if (needIv) uwRestTasks.push(() => fetchUwIvRank("SPX").catch(() => null));
-  const uwRest = uwConfigured() ? await runUwPooled(uwRestTasks) : [];
-  let uwRestIdx = 0;
-  const uwNope = (uwConfigured() ? uwRest[uwRestIdx++] : null) as Awaited<
-    ReturnType<typeof fetchUwNope>
-  > | null;
-  const uwMaxPain = needMaxPain ? (uwRest[uwRestIdx++] as number | null) : null;
-  const uwIv = needIv ? (uwRest[uwRestIdx++] as number | null) : null;
+  const { nope: uwNope, maxPain: uwMaxPain, iv: uwIv } = await fetchUwDeskRestSupplemental({
+    needMaxPain,
+    needIv,
+  });
   const uwExclusive = [uwTide, uwNope, uwFlow, darkPool, uwMaxPain, uwIv] as const;
 
   let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
@@ -1726,6 +1745,33 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
     uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32).catch(() => [] as SpxFlowBrief[]) : Promise.resolve([]),
   ]);
 
+  const price = spxSnapRaw?.price ?? 0;
+  if (!price && !spxFlowsRaw.length) return empty;
+
+  const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
+  if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
+  const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
+  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
+  const strike_stacks = computeFlowStrikeStacks(spxFlows);
+
+  // #32: never compute GEX/regime against spot=0 — return flow lane only with null GEX fields.
+  if (price <= 0) {
+    const freshTape = buildUnifiedTape(spxFlows, null);
+    if (freshTape.length) {
+      lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
+    }
+    const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
+    return {
+      ...empty,
+      polled_at: polledAt,
+      spx_flows: spxFlows,
+      unified_tape: unifiedTape,
+      strike_stacks,
+      flow_data_age_ms: flowDataAgeMs,
+      flow_cluster_live: flowClusterLive,
+    };
+  }
+
   const [darkPool, uwFlow, greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks] = uwConfigured()
     ? await runUwPooled([
         () => resolveDarkPool("SPX", { limit: 20, min_premium: 500_000 }),
@@ -1737,25 +1783,13 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
       ])
     : [null, null, [], [], [], []];
 
-  const spxSnap = spxSnapRaw;
-  const price = spxSnap?.price ?? 0;
-  if (!price && !spxFlowsRaw.length) return empty;
-
-  const canonicalGex = price > 0 ? await resolveCanonicalDeskGex(price) : stickyDeskGexFallback(0);
-
-  const spxFlows: SpxFlowBrief[] = spxFlowsRaw ?? [];
-  if (spxFlows.length) lastGoodSpxFlowBriefs = spxFlows;
-  const flowClusterLive = await isFlowFrameFreshAnywhere(120_000).catch(() => false);
-  const flowDataAgeMs = deskFlowDataAgeMs(spxFlows, flowClusterLive);
-  const strike_stacks = computeFlowStrikeStacks(spxFlows);
+  const canonicalGex = await resolveCanonicalDeskGex(price);
 
   const freshTape = buildUnifiedTape(spxFlows, darkPool);
   if (freshTape.length) {
     lastGoodUnifiedTape = mergeTapeBuffer(lastGoodUnifiedTape, freshTape);
   }
   const unifiedTape = lastGoodUnifiedTape.length ? lastGoodUnifiedTape : freshTape;
-
-  const spot = price || spxSnap?.price || 0;
 
   publishDeskStickyToRedis();
 
@@ -1765,9 +1799,9 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   );
 
   return {
-    available: spot > 0,
+    available: true,
     polled_at: polledAt,
-    price: spot,
+    price,
     dark_pool: darkPool,
     lit_dark_ratio: computeLitDarkRatio(),
     spx_flows: spxFlows,

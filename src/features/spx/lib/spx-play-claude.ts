@@ -182,8 +182,8 @@ function logPlayVerdict(
 ): void {
   if (!dbConfigured()) return;
   insertAlertAuditLog({
-    alert_type: "spx_bie_play",
-    source_table: "spx_bie_play_verdict",
+    alert_type: "spx_claude_play",
+    source_table: "spx_claude_play_verdict",
     source_key: { price: desk.price, direction: confluence.direction, at: desk.as_of },
     ticker: "SPX",
     direction: verdict.direction,

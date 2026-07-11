@@ -83,10 +83,11 @@ export function playGexStaleMaxSec(): number {
 }
 
 export function playClaudeGateEnabled(): boolean {
-  // Require explicit SPX_CLAUDE_GATE=1 to enable the Claude gate.
-  // Defaulting to true when ANTHROPIC_API_KEY is set surprised operators who
-  // configured Anthropic only for commentary. The gate is now opt-in.
-  return process.env.SPX_CLAUDE_GATE === "1";
+  const raw = process.env.SPX_CLAUDE_GATE?.trim().toLowerCase();
+  if (raw === "0" || raw === "false") return false;
+  if (raw === "1" || raw === "true") return true;
+  // Staging exercises the full BIE precedent path; production stays opt-in unless set.
+  return isStagingDeploy();
 }
 
 export function playClaudeCacheSec(): number {

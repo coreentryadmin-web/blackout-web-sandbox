@@ -79,8 +79,8 @@ npm run validate:staging  # GREEN (Saturday, api-only)
 | F3 governor single-thread | ✅ #98 |
 | Q4 verdict assert | ✅ #105 + #110 (prod DB re-read + resolver test) |
 | F4 RTH proof | ⏳ **NEXT** |
-| Deep sweep #1–37 | ✅ mostly #102–#105 |
-| Open hygiene | #27, #31–32, #38 |
+| Deep sweep #1–37 | ✅ #102–#110 + residual sweep |
+| Open hygiene | none (F4 RTH proof pending) |
 
 ---
 
