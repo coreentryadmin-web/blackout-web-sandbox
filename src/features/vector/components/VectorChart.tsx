@@ -8,6 +8,7 @@ import {
   HistogramSeries,
   ColorType,
   LineStyle,
+  type AutoscaleInfo,
   type HistogramData,
   type IChartApi,
   type IPriceLine,
@@ -41,6 +42,7 @@ import {
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import { extendRangeForWalls, DEFAULT_WALL_VIEW_MAX_PCT } from "@/features/vector/lib/vector-price-range";
 import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import {
   alphaForPct,
@@ -100,6 +102,12 @@ const GAMMA_FLIP_COLOR = "#22d3ee";
 const VANNA_FLIP_COLOR = "#38bdf8";
 const DARK_POOL_COLOR = "#ff8a3d"; // orange, not cyan — dark-pool cyan #00d4ff failed CVD separation vs gamma-flip cyan #22d3ee (worst-pair ΔE 6.9); orange lifts it to 36.7 (validated via dataviz palette checker)
 const REPLAY_STEP_MS = 350;
+/** Widen the price axis to reveal walls within this % of spot (env-tunable). Without
+ *  this the axis fits candles only and support walls a few % below spot render off-screen. */
+const WALL_VIEW_MAX_PCT = (() => {
+  const raw = Number(process.env.NEXT_PUBLIC_VECTOR_WALL_VIEW_MAX_PCT);
+  return Number.isFinite(raw) && raw > 0 && raw <= 0.2 ? raw : DEFAULT_WALL_VIEW_MAX_PCT;
+})();
 const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
 /** Re-poll cadence for the SPY volume backfill — Polygon only publishes one new closed
@@ -437,6 +445,14 @@ export function VectorChart({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const callGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   const putGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
+  // Strikes currently drawn on the chart — read by the candle series'
+  // autoscaleInfoProvider to widen the price axis so support/resistance walls
+  // (esp. put walls a few % below spot) aren't clipped off-screen. Seeded from the
+  // SSR walls so the FIRST autoscale on mount already includes them.
+  const rangeWallsRef = useRef<{ call: number[]; put: number[] }>({
+    call: (initialWalls?.callWalls ?? []).map((w) => w.strike),
+    put: (initialWalls?.putWalls ?? []).map((w) => w.strike),
+  });
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -590,6 +606,14 @@ export function VectorChart({
       applyWallsToSeries(series, callGuideRefs, putGuideRefs, walls ?? undefined, activeLens);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
       applyDarkPoolGuides(series, dpGuideRefs, dp);
+      // Feed the just-drawn strikes to the autoscale provider and nudge a rescale, so
+      // the axis widens to reveal support/resistance walls the moment the lens/horizon
+      // changes (off-hours there's no tick to trigger the recompute otherwise).
+      rangeWallsRef.current = {
+        call: (walls?.callWalls ?? []).map((w) => w.strike),
+        put: (walls?.putWalls ?? []).map((w) => w.strike),
+      };
+      series.priceScale().applyOptions({ autoScale: true });
     },
     []
   );
@@ -952,6 +976,23 @@ export function VectorChart({
       wickDownColor: "#ff2d55",
       priceLineVisible: false,
       lastValueVisible: true,
+      // Widen the auto-fitted candle range to also include the drawn walls within
+      // ±WALL_VIEW_MAX_PCT of spot, so put (support) walls below the candle band
+      // are visible instead of clipped. Pure union — never narrows the candle range.
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const res = original();
+        if (!res || !res.priceRange) return res;
+        return {
+          ...res,
+          priceRange: extendRangeForWalls(
+            res.priceRange,
+            spotRef.current,
+            rangeWallsRef.current.call,
+            rangeWallsRef.current.put,
+            WALL_VIEW_MAX_PCT
+          ),
+        };
+      },
     }, 0);
 
     // TradingView-style volume strip — overlay on pane 0 (LWC documented pattern).
