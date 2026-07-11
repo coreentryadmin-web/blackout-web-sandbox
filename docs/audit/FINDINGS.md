@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P3 FOUND+FIXED 2026-07-11 — Off-hours rail was back-projecting the CLOSING chain → flat, full-width beads (the opposite of point-in-time dynamism)
+
+**Surface:** `src/app/(site)/vector/page.tsx` (off-hours dense-rail backfill block). Reported live: member compared to Skylit — "why are the beads throughout the price axis? those walls should be based on time / point-in-time … the reference beads don't stretch across the whole screen, they change dynamically with time and strength."
+
+**Root cause:** the page back-filled a "dense rail" off-hours via `reconstructSessionRail` (#21) whenever the recorded history was sparse (< 8 samples). That reconstruction recomputes closed-form BSM gamma along the session's real spot path — but against the **closing** option chain, because **intraday per-strike OI history is not published by any provider** (UW/Polygon spot-exposures are EOD-only). So it replays a single static ladder across the whole day: on a range-bound session every 15s bucket shows the *same strikes at the same strength*, painting a flat rail spanning the full price axis. Data-proven with a live probe — the 7600 call wall read **5.3% at every bucket**, i.e. zero time-variation. That is the exact "walls everywhere, all session" artifact the member flagged; it isn't dynamic because the source data isn't a time series.
+
+**Fix (product decision, confirmed with the user):** **time-honest rail.** Render ONLY what the live universe recorder actually captured point-in-time during RTH (`getVectorWallHistory` + `loadSessionWallHistory`) — genuinely dynamic walls that shift/build/fade with the tape. Removed the `reconstructSessionRail` backfill from `page.tsx`. Where nothing was recorded, `seedWallHistoryForDisplay` drops a single honest **as-of-close** snapshot instead of a fabricated full-day rail. The reconstruction module is **kept** (still exported) for the strike×time GEX **heatmap** (#14), where a dense back-projected grid *is* the correct primitive — a heatmap is explicitly a model, a bead rail implies observation.
+
+**Evidence:** live probe (identical 5.3% wall at every bucket) proving the reconstruction is non-dynamic; `vector-wall-history.test.ts` +2 regression tests (sparse recorded history passes through untouched — never densified to full width; empty history → exactly one as-of-close snapshot). `tsc` clean; 25/25 wall-history tests; `@apply` guard clean.
+
+**Status:** FIXED (`fix/vector-time-honest-rails`). Reverses only the *rail* half of #21; the reconstruction module lives on for #14.
+
 ## 🟢 P3 SHIPPED 2026-07-11 — Desk terminal now narrates wall STRENGTH DYNAMICS (building / fading / new / dissolved), not just shifts
 
 **Surface:** `src/features/vector/lib/vector-wall-events.ts` (new `wallStrengthEvents` detector + 8 event kinds), `vector-terminal-lines.ts` + `VectorWallEventTicker.tsx` (icon/tone/label maps). Member-requested: the terminal only said "call wall shifted 7,500 → 7,600" / "SPX broke above…" — never "call wall building" or "fading" or "new wall forming."

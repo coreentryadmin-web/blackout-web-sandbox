@@ -23,13 +23,19 @@ Three properties separate top-tier from mere:
   universe ticker, not just ones with a live viewer. The engine behind honest, dense rails.
 - **#140/#141** DTE-horizon walls (0DTE / weekly / monthly / all) — walls re-scope to the expiry
   horizon the member trades, on-demand so the shared stream stays fast.
-- **#147 + reconstruct-server** honest intraday GEX reconstruction — a **real dense rail for any
-  PAST session**, with no live recorder needed and nothing fabricated. Gamma is closed-form BSM
+- **#147 + reconstruct-server** honest intraday GEX reconstruction — gamma closed-form BSM
   recomputed along the session's TRUE observed spot path (Polygon minute bars) against the EOD
   options chain. Live-validated on SPX 2026-07-10: 395 min bars → 79 five-min beads, 9,351 usable
   contracts, gamma flip drifting 7618.5 → 7609 → 7599.8 across the day while the dominant 7600/7300
-  OI walls anchor. Wired as the off-hours backfill so a session with no recorded rail no longer
-  collapses to a single seeded bead.
+  OI walls anchor. **Unwired from the bead rail (2026-07-11, time-honest decision):** because
+  intraday OI history is unpublished, the reconstruction can only replay the *closing* ladder, which
+  on a range-bound day paints a flat, full-width rail (7600 wall = 5.3% at every bucket) — the
+  opposite of the point-in-time dynamism a rail implies. The module lives on for the **strike×time
+  heatmap (#14)**, where a dense back-projected grid is the correct primitive (a heatmap is openly a
+  model; a bead is an observation).
+- **Time-honest rail** *(2026-07-11)* — the wall rail renders ONLY what the live recorder captured
+  point-in-time during RTH; where nothing was recorded, a single honest **as-of-close** snapshot,
+  never a fabricated full-day rail. Dynamism you see is dynamism that happened.
 
 ## Roadmap — ranked by (impact × differentiation × feasibility)
 
@@ -74,9 +80,11 @@ Three properties separate top-tier from mere:
 
 ## Operating principles (non-negotiable)
 - **Honesty over cosmetics** — never fabricate history or carry stale readings forward; disclose
-  staleness, show honest gaps. Off-hours rails are *reconstructed* (closed-form BSM gamma along the
-  session's real observed price path against the EOD chain), never invented — a computed rail from
-  real inputs is honest; a copied-forward or made-up one is not.
+  staleness, show honest gaps. The bead rail is **time-honest**: it shows only point-in-time walls
+  the recorder actually observed during RTH, and an as-of-close snapshot when nothing was recorded —
+  never a full-day rail back-projected from the closing chain (that reads as dynamic but isn't,
+  because intraday OI history doesn't exist). Reconstruction stays where it's honestly labelled as a
+  model — the strike×time heatmap (#14) — not the rail.
 - **Small, tested, verified PRs** — one concept per PR, `tsc`+tests+`@apply` guard green, live-
   verified on staging where there's a runtime surface.
 - **Keep the stream fast** — new interpretation layers are on-demand or client-derived; never bloat

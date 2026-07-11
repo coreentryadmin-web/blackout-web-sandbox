@@ -141,6 +141,30 @@ test("pickActiveStrikes: a recently-strong wall outranks a persistent-but-weak o
   assert.deepEqual(pickActiveStrikes(trails, 1), [6810]);
 });
 
+test("time-honest rail: a sparse recorded history is passed through untouched, never densified", () => {
+  // Product decision 2026-07-11: the rail shows ONLY point-in-time recorded samples.
+  // The page previously back-filled a dense full-session rail from the closing chain when
+  // the recorded history was sparse (< 8 samples) — a flat, full-width reconstruction that
+  // read as "walls everywhere all session". Time-honest means: whatever the recorder captured
+  // is exactly what renders. Composing the two building blocks the page uses (mergeWallHistory
+  // of recorded rows, then seedWallHistoryForDisplay) must NOT add rows to a non-empty history.
+  const recorded: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+  ];
+  const base = mergeWallHistory(recorded, []);
+  const rail = seedWallHistoryForDisplay(base, [100, 160, 220], walls([6810], [6700]), 6750);
+  // Exactly the two recorded samples — no reconstruction padding out to a full-width rail.
+  assert.equal(rail.length, 2);
+  assert.deepEqual(rail.map((s) => s.time), [100, 160]);
+});
+
+test("time-honest rail: an empty history yields exactly one as-of-close snapshot, not a fabricated day", () => {
+  const rail = seedWallHistoryForDisplay([], [100, 160, 220], walls([6800], [6700]), 6750);
+  assert.equal(rail.length, 1);
+  assert.equal(rail[0].time, 220); // the last visible candle — session close, right edge
+});
+
 test("mergeWallHistory: unions by bar time so Redis + replica tails combine", () => {
   const local = [{ time: 100, walls: walls([6800], [6700]) }];
   const remote = [
