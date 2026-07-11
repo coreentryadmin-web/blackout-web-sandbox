@@ -69,16 +69,28 @@ function persistenceFor(
   return recent.length ? hits / recent.length : 0.5;
 }
 
-/** Score one wall against its same-side peers + the history rail. */
+/**
+ * Score one wall against its same-side peers + the history rail.
+ *
+ * `refMaxPct` is the strongest wall's `pct` across BOTH sides — the normalizer for
+ * the strength factor. This matters because `pct` is a wall's share of the WHOLE
+ * chain's gamma (`|g| / totalAbsGamma`), so even the dominant wall is only a few
+ * percent when gamma is spread across ~20 strikes. Dividing by a flat 100 made the
+ * strength factor effectively dead (~0.05), so every wall collapsed to ~persistence
+ * alone and a level that held all session still read "thin". Normalizing against the
+ * strongest present wall gives the dominant level its due (strength → 1.0) while a
+ * genuinely weak, clustered wall still scores low.
+ */
 export function scoreWallIntegrity(
   wall: GexWallLevel,
   side: "call" | "put",
   sideWalls: readonly GexWallLevel[],
-  history: readonly WallHistorySample[]
+  history: readonly WallHistorySample[],
+  refMaxPct: number
 ): WallIntegrity | null {
   if (!wall || !(wall.strike > 0) || !(wall.pct >= 0)) return null;
 
-  const strength = clamp01(wall.pct / 100);
+  const strength = refMaxPct > 0 ? clamp01(wall.pct / refMaxPct) : 0;
   const persistence = persistenceFor(wall.strike, side, history);
 
   // Isolation: gap to the strongest OTHER wall on this side.
@@ -110,11 +122,19 @@ export function scoreTopWalls(
   walls: GexWalls | null | undefined,
   history: readonly WallHistorySample[] = []
 ): { call: WallIntegrity | null; put: WallIntegrity | null } {
+  // Strength normalizer = the strongest wall's share across BOTH sides, so the
+  // dominant level anchors strength at 1.0 and the score isn't crushed by the fact
+  // that any single strike is only a few % of the whole chain's gamma.
+  const refMaxPct = Math.max(
+    0,
+    ...(walls?.callWalls ?? []).map((w) => w.pct),
+    ...(walls?.putWalls ?? []).map((w) => w.pct)
+  );
   const call = walls?.callWalls?.length
-    ? scoreWallIntegrity(walls.callWalls[0]!, "call", walls.callWalls, history)
+    ? scoreWallIntegrity(walls.callWalls[0]!, "call", walls.callWalls, history, refMaxPct)
     : null;
   const put = walls?.putWalls?.length
-    ? scoreWallIntegrity(walls.putWalls[0]!, "put", walls.putWalls, history)
+    ? scoreWallIntegrity(walls.putWalls[0]!, "put", walls.putWalls, history, refMaxPct)
     : null;
   return { call, put };
 }

@@ -8,6 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 FOUND+FIXED 2026-07-11 — Wall-integrity strength factor was effectively dead: `pct/100` normalization → every wall reads "thin", even one that held all session
+
+**Surface:** `src/features/vector/lib/vector-wall-integrity.ts` (`scoreWallIntegrity` strength term). Follow-up to #154; spotted on the live staging screenshot — the SPX top call wall read *"7575C thin — held 100% of session · 42/100"*, which is self-contradictory.
+
+**Root cause:** the strength factor used `strength = pct / 100`. But `GexWallLevel.pct` is `|gamma| / totalAbsGamma × 100` — a wall's share of the WHOLE chain's gamma (`gex-wall-levels.ts:44`). With gamma spread across ~20+ strikes, even the DOMINANT wall is only ~5–8%, so `pct/100` produced strength ≈ 0.05–0.08 → the strength term contributed ~2–4 of its 45 possible points for *every* wall. The score collapsed to essentially persistence (35) + isolation (20), so a persistent wall capped at ~55 and a persistent+clustered one at ~42 — always "thin"/"moderate", never "firm", regardless of how dominant the wall actually was. The strength dimension was dead weight.
+
+**Fix:** normalize strength **relative to the strongest wall present** across both sides — `strength = pct / refMaxPct` (refMaxPct = max pct over all call+put walls, computed in `scoreTopWalls` and passed down). The dominant level now anchors at strength 1.0 and can legitimately earn "firm," while a genuinely weak/clustered wall still scores low. Zero-ref guard prevents divide-by-zero.
+
+**Evidence:** `vector-wall-integrity.test.ts` (7, +1 regression) — the added test proves a wall with a realistic **6%-of-chain** absolute pct that held all session now scores **firm ≥70** (strength normalizes to 1.0) instead of "thin"; weaker/clustered wall still ranks below the dominant one; zero-ref → strength 0. `tsc` clean; 145/145 vector lib tests; `@apply` guard clean. Public `scoreTopWalls` signature unchanged, so `VectorChart`/`VectorPageShell` callers are untouched.
+
+**Status:** FIXED (`fix/vector-wall-integrity-strength`).
+
+
 ## 🟠 P2 FOUND+FIXED 2026-07-11 — Put (support) walls render OFF-SCREEN: chart autoscales to candles only, so purple beads below the intraday band are clipped
 
 **Surface:** `src/features/vector/components/VectorChart.tsx` candle series (no `autoscaleInfoProvider`) + `vector-price-range.ts` (new, pure). Reported from a live staging screenshot: the SPX chart showed only the yellow call-wall rails, **no purple put-wall beads at all**.
