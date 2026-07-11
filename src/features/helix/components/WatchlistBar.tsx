@@ -21,10 +21,8 @@ export function WatchlistBar({
 }) {
   if (watchlist.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-gold hidden sm:block">
-        ★ Watchlist
-      </span>
+    <div className="helix-pro-watchlist">
+      <span className="helix-pro-command-label">Watchlist</span>
       <AnimatePresence initial={false}>
         {watchlist.map((t) => {
           const active = activeTicker && activeTicker.toUpperCase() === t;
@@ -36,10 +34,8 @@ export function WatchlistBar({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.85 }}
               className={clsx(
-                "flex items-center gap-1 rounded-md border px-2 py-[3px] font-mono text-[10px] font-bold transition-colors",
-                active
-                  ? "border-gold/70 bg-gold/15 text-gold"
-                  : "border-cyan-800/40 bg-cyan-950/15 text-sky-300 hover:border-cyan-600/60 hover:text-white"
+                "helix-pro-watchlist-chip",
+                active ? "helix-pro-watchlist-chip--active" : "helix-pro-watchlist-chip--idle"
               )}
             >
               <button type="button" onClick={() => onSelect(t)} className="tracking-widest">
