@@ -72,6 +72,7 @@ function deskStub(overrides: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
     mag7_greek_flow: null,
     macro_indicators: [],
     market_open: true,
+    vwap_volume_weighted: true,
     ...overrides,
   };
 }
@@ -132,6 +133,25 @@ test("PB-01: triggers long when preconditions + trigger both true, inside sessio
   assert.equal(pb01.precondition_match, true);
   assert.equal(pb01.trigger_fired, true);
   assert.equal(pb01.direction, "long");
+});
+
+test("PB-01: fail-closed when SPX VWAP is not volume-weighted (ISSUE-16)", () => {
+  const desk = deskStub({
+    above_vwap: false,
+    vwap: 7380,
+    price: 7383,
+    flow_0dte_net: 500_000,
+    vwap_volume_weighted: false,
+  });
+  const technicals = technicalsStub({
+    minutes_below_vwap: 15,
+    breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: true, vwap_lost: false },
+  });
+  const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);
+  const pb01 = result.verdicts.find((v) => v.playbook_id === "PB-01")!;
+  assert.equal(pb01.trigger_fired, false);
+  assert.equal(pb01.precondition_match, false);
+  assert.match(pb01.detail, /volume-weighted/);
 });
 
 test("PB-01: does not trigger when session window is closed, even with preconditions + trigger true", () => {

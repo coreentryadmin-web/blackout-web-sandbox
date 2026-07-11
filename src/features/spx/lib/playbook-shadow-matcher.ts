@@ -24,6 +24,7 @@ import {
 } from "@/features/spx/lib/playbook-break-memory";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import { playbookFlowMaterialityMin } from "@/features/spx/lib/spx-play-config";
+import { playbookDataRequirements } from "@/features/spx/lib/playbook-data-requirements";
 import {
   scaledPlaybookMtfBufferPts,
   scaledPlaybookStructureProximityPts,
@@ -88,6 +89,26 @@ function netPremDecelerating(ticks: { net: number }[]): boolean {
   return c < b && b < a;
 }
 
+/** Fail-closed when SPX VWAP is typical-price fallback, not true volume-weighted (ISSUE-16). */
+function volumeWeightedVwapBlock(
+  pbId: PlaybookId,
+  desk: SpxDeskPayload,
+  windowOpen: boolean,
+  regimeEligible: boolean
+): PlaybookMatchVerdict | null {
+  if (!playbookDataRequirements(pbId).volumeWeightedVwap) return null;
+  if (desk.vwap_volume_weighted !== false) return null;
+  return {
+    playbook_id: pbId,
+    session_window_open: windowOpen,
+    regime_eligible: regimeEligible,
+    precondition_match: false,
+    trigger_fired: false,
+    direction: null,
+    detail: `${pbId} requires volume-weighted SPX VWAP — index bars lack volume (ISSUE-16)`,
+  };
+}
+
 function matchPb01(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals,
@@ -96,6 +117,8 @@ function matchPb01(
 ): PlaybookMatchVerdict {
   const def = playbookDef("PB-01");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const vwapBlocked = volumeWeightedVwapBlock(def.id, desk, windowOpen, regimeEligible);
+  if (vwapBlocked) return vwapBlocked;
   const dataAvailable = technicals.available && desk.vwap != null;
 
   if (!dataAvailable) {
@@ -176,6 +199,8 @@ function matchPb02(
 ): PlaybookMatchVerdict {
   const def = playbookDef("PB-02");
   const windowOpen = isWithinSessionWindow(def.sessionWindow, etMins);
+  const vwapBlocked = volumeWeightedVwapBlock(def.id, desk, windowOpen, regimeEligible);
+  if (vwapBlocked) return vwapBlocked;
   const dataAvailable = technicals.available && desk.vwap != null && desk.price > 0;
 
   if (!dataAvailable) {
