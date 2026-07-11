@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { classifyOutcome, type PlayCloseSnapshot } from "./spx-play-outcomes";
+import { classifyOutcome, playCloseWasLoss, type PlayCloseSnapshot } from "./spx-play-outcomes";
 
 const close = (
   exit_action: PlayCloseSnapshot["exit_action"],
@@ -32,9 +32,17 @@ describe("classifyOutcome", () => {
     assert.equal(classifyOutcome(close("THESIS", 0, false)), "breakeven");
   });
 
+  it("SESSION scratch grades breakeven when engine uses playCloseWasLoss", () => {
+    const pnl = -0.5;
+    assert.equal(classifyOutcome(close("SESSION", pnl, playCloseWasLoss(pnl))), "breakeven");
+    assert.equal(playCloseWasLoss(pnl), false);
+    assert.equal(playCloseWasLoss(-1), true);
+    assert.equal(playCloseWasLoss(-1.5), true);
+  });
+
   it("STOP/SESSION grade by P&L; small scratch is breakeven", () => {
-    assert.equal(classifyOutcome(close("STOP", -7.15, true)), "loss");
-    assert.equal(classifyOutcome(close("SESSION", -0.5)), "breakeven");
+    assert.equal(classifyOutcome(close("STOP", -7.15, playCloseWasLoss(-7.15))), "loss");
+    assert.equal(classifyOutcome(close("SESSION", -0.5, playCloseWasLoss(-0.5))), "breakeven");
     assert.equal(classifyOutcome(close("THETA", 1.2)), "win");
     assert.equal(classifyOutcome(close("SESSION", 0)), "breakeven");
   });
@@ -51,7 +59,7 @@ describe("classifyOutcome", () => {
     assert.equal(classifyOutcome(close("UNKNOWN", 3, false)), "win");
   });
 
-  it("the 9 captured 2026-06 plays yield 2W/7L, not 0W/9L", () => {
+  it("the 9 captured 2026-06 plays: scratches in (-1,0) grade breakeven with playCloseWasLoss", () => {
     const plays: Array<[PlayCloseSnapshot["exit_action"], number]> = [
       ["THESIS", -0.38],
       ["THESIS", -2.6],
@@ -63,9 +71,11 @@ describe("classifyOutcome", () => {
       ["THESIS", -2.47],
       ["STOP", -7.15],
     ];
-    const outcomes = plays.map(([a, p]) => classifyOutcome(close(a, p, p < 0)));
+    const outcomes = plays.map(([a, p]) =>
+      classifyOutcome(close(a, p, playCloseWasLoss(p)))
+    );
     assert.equal(outcomes.filter((o) => o === "win").length, 2);
-    assert.equal(outcomes.filter((o) => o === "loss").length, 7);
-    assert.equal(outcomes.filter((o) => o === "breakeven").length, 0);
+    assert.equal(outcomes.filter((o) => o === "loss").length, 6);
+    assert.equal(outcomes.filter((o) => o === "breakeven").length, 1);
   });
 });

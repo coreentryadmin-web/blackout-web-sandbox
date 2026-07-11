@@ -1719,9 +1719,11 @@ export async function buildSpxDeskFlow(): Promise<SpxDeskFlow> {
   // so the ~4s live flow lane doesn't serialize a Polygon round-trip in front of the UW one.
   const [spxSnapRaw, spxFlowsRaw] = await Promise.all([
     polygonConfigured()
-      ? fetchIndexSnapshots([SPX]).then((m) => mergeWsIndexSnapshots(m)[SPX])
+      ? fetchIndexSnapshots([SPX])
+          .catch(() => ({}))
+          .then((m) => mergeWsIndexSnapshots(m)[SPX])
       : Promise.resolve(null),
-    uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32) : Promise.resolve([] as SpxFlowBrief[]),
+    uwConfigured() ? fetchSpxDeskFlowAlertsWithDb(32).catch(() => [] as SpxFlowBrief[]) : Promise.resolve([]),
   ]);
 
   const [darkPool, uwFlow, greekExpRows, flowByExpiry, netFlowByExpiry, netPremTicks] = uwConfigured()
