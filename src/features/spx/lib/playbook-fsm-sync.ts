@@ -141,6 +141,16 @@ async function commitEngineTransition(input: {
   );
 }
 
+/** Active playbook episode instance id for engine open/close correlation. */
+export async function resolveActivePlaybookInstanceId(
+  sessionDate: string,
+  playbookId: PlaybookId,
+  direction: "long" | "short"
+): Promise<string | null> {
+  const active = await loadActiveInstanceState(sessionDate, playbookId, direction);
+  return active?.instance_id ?? null;
+}
+
 /** Engine: ticket generated — awaiting fill confirmation. */
 export async function commitPlaybookInstanceEntryPending(input: {
   session_date: string;

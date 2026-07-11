@@ -27,6 +27,7 @@ export type PlayEntrySnapshot = {
   option_ticket: OptionTicket | null;
   opened_at: string;
   playbook_id?: string | null;
+  playbook_instance_id?: string | null;
 };
 
 export type PlayExitAction = "STOP" | "TARGET" | "THESIS" | "SESSION" | "THETA" | "TRAIL" | "UNKNOWN";
@@ -254,6 +255,7 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
       claude: snapshot.claude,
       option_ticket: snapshot.option_ticket,
       opened_at: snapshot.opened_at,
+      playbook_instance_id: snapshot.playbook_instance_id ?? null,
     });
     // insertPlayOutcomeEntry uses ON CONFLICT (open_play_id) WHERE outcome='open'
     // DO NOTHING — a 0 return means an 'open' outcome row for this play already
