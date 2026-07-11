@@ -4,6 +4,10 @@ import { classifyGateBlock, categorizeGateBlocks, firstGateBlockCategory } from 
 
 test("classifyGateBlock: playbook validity", () => {
   assert.equal(classifyGateBlock("Playbook PB-03 not in live allowlist"), "playbook_validity");
+  assert.equal(
+    classifyGateBlock("Playbook PB-03 not paper-executable (mode=shadow; allowlist=PB-01)"),
+    "playbook_validity"
+  );
   assert.equal(classifyGateBlock("Unknown EMA regime — playbook live gate fail-closed"), "playbook_validity");
 });
 

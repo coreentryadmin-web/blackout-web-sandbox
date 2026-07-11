@@ -39,6 +39,7 @@ export function classifyGateBlock(message: string): GateBlockCategory {
     matchesAny(msg, [
       /playbook live gate/i,
       /not in live allowlist/i,
+      /not paper-executable/i,
       /No playbook trigger/i,
       /Unknown EMA regime/i,
       /degraded feed/i,
