@@ -54,7 +54,8 @@ export function playbookShadowStateKey(
     .map((v) => `${v.playbook_id}:${v.direction}`)
     .sort()
     .join(",");
-  const blocks = gateBlocks?.length ? `|blocks:${gateBlocks.length}` : "";
+  const blocks =
+    gateBlocks?.length ? `|blocks:${[...gateBlocks].sort().join("||")}` : "";
   return `${panel.primary_playbook_id ?? "none"}|${fired}${blocks}`;
 }
 
