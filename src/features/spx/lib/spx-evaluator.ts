@@ -13,6 +13,9 @@ import {
   recordPlayEngineTick,
   type PlayEngineTickSource,
 } from "@/lib/play-engine-heartbeat";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 export type RunSpxEvaluatorResult =
   | { ok: true; skipped: false; play: SpxPlayPayload }
@@ -39,8 +42,23 @@ export async function runSpxEvaluator(
   }
 
   try {
-    const play = await evaluateSpxPlay(desk, technicals, { mutate: true });
-    await syncPlaybookTelemetryAfterEvaluate(desk, technicals, play).catch((err) => {
+    const sessionDate = todayEtYmd();
+    const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, true);
+    const playbookMatch =
+      technicals?.available
+        ? await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
+            or_break_memory: orBreakMemory,
+          })
+        : null;
+    const play = await evaluateSpxPlay(desk, technicals, {
+      mutate: true,
+      or_break_memory: orBreakMemory,
+      playbook_resolved: playbookMatch,
+    });
+    await syncPlaybookTelemetryAfterEvaluate(desk, technicals, play, {
+      or_break_memory: orBreakMemory,
+      resolved: playbookMatch,
+    }).catch((err) => {
       console.warn(
         "[spx-evaluator] playbook telemetry:",
         err instanceof Error ? err.message : err
