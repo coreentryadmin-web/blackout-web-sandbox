@@ -41,7 +41,10 @@ Three properties separate top-tier from mere:
   whole gamma surface migrating through the session, behind the candles. The "wow" visual that
   out-reads static beads. Built on the recorder ring.
 - **Gamma magnet + expected-move cone** *(task #15)* — the gamma-weighted price hedging pulls
-  toward, plus the options-implied probable range. Predictive, not descriptive.
+  toward, plus the options-implied probable range. Predictive, not descriptive. *(Magnet SHIPPED:
+  strength-weighted center-of-mass, regime-honest wording — a magnet/pin in long gamma, a pivot
+  that accelerates in short gamma — surfaced in the desk terminal. Expected-move cone is the paired
+  follow-up: it needs ATM IV surfaced from the server, then a shaded ±1σ band on the chart.)*
 - **Wall integrity/confidence score** *(task #17)* — "is this wall real?" from OI concentration +
   flow reinforcement + persistence. Stops members over-trusting a thin wall.
 

@@ -9,6 +9,7 @@ import { buildVectorTerminalLines } from "@/features/vector/lib/vector-terminal-
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { WallProximity } from "@/features/vector/lib/vector-wall-proximity";
+import type { GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import type { PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-lines";
 import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
 
@@ -19,6 +20,7 @@ type Props = {
   liveSession: boolean;
   streamUpdatedAt?: number | null;
   proximity?: WallProximity | null;
+  magnet?: GammaMagnet | null;
 };
 
 /**
@@ -31,6 +33,7 @@ export function VectorDeskTerminal({
   liveSession,
   streamUpdatedAt,
   proximity,
+  magnet,
 }: Props) {
   const normalized = normalizeVectorTicker(ticker);
   const isSpx = normalized === "SPX";
@@ -64,19 +67,32 @@ export function VectorDeskTerminal({
     } else {
       base = buildVectorTerminalLines(normalized, lens, wallEvents, liveSession);
     }
-    // Inject the live wall-proximity pulse right under the header — the "what
-    // matters right now" line. Absent when spot is in open space (no nearby level).
+    // Inject the live intelligence lines right under the header — the "what
+    // matters right now" block: wall-proximity pulse, then the gamma magnet
+    // (dealer-hedging center of mass). Each is absent when there's nothing real
+    // to say (spot in open space / no gamma structure) — never a filler line.
+    const intel: PlayTerminalLine[] = [];
     if (proximity) {
-      const pulse: PlayTerminalLine = {
+      intel.push({
         icon: "pulse",
         tone: proximity.nearness === "at" ? "warn" : "accent",
         text: proximity.callout,
         indent: 1,
-      };
-      return [base[0]!, pulse, ...base.slice(1)];
+      });
     }
+    if (magnet) {
+      intel.push({
+        icon: "gamma",
+        // A short-gamma "pivot" is a risk (acceleration), a long-gamma magnet is a
+        // stabilizer — tone them differently so the read matches the flow.
+        tone: magnet.posture === "short" ? "warn" : "accent",
+        text: magnet.callout,
+        indent: 1,
+      });
+    }
+    if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
