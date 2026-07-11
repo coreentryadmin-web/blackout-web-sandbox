@@ -61,6 +61,9 @@ function main() {
   }
 
   console.log(allInBand ? "PASS: all configured params within stability bands" : "WARN: some params outside bands (review before promotion)");
+  console.log(
+    "note: bands are first local perturbation check — not cross-regime validation; see PLAYBOOK_NORMALIZED_PARAM_ROADMAP in playbook-evidence-config.ts"
+  );
 }
 
 main();

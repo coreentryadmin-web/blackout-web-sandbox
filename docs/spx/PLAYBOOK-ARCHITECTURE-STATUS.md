@@ -218,6 +218,7 @@ Every ~2s play poll on staging:
 | **This branch** | Instance events table, blocked-primary logging, full feature snapshot, counterfactual MFE/MAE, evidence report + param sweep scripts |
 | **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
 | **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
+| **#77** (promotion stats) | Session-aware promotion gates, robustness checks, counterfactual comparability filter, normalized-param roadmap |
 
 ---
 
@@ -351,15 +352,33 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | `spx_open_play.playbook_id` | PB on entry |
 | `spx_play_outcomes.playbook_id` | PB on close for joins |
 
-### Promotion tiers (unchanged)
+### Promotion tiers — session-aware statistical gates (#77)
 
-| Tier | Threshold |
-|------|-----------|
-| Research | ≥30 triggers, ≥20 simulated trades |
-| Staging-qualified | 50–75 prospective, cost-adjusted expectancy |
-| Limited-live prod | Min size + risk governor + per-trade quote reconciliation |
+Trade count alone is **not** sufficient for 0DTE. Five triggers on one CPI day are **not** five independent samples. The unit of confidence includes **sessions** and **unique market conditions** (VIX quartile × gamma_regime × regime at trigger).
 
-**Do not** enable prod autonomous BUY or expand allowlist without meeting tiers.
+| Tier | Volume gates | Robustness gates (all required when tier applies) |
+|------|--------------|---------------------------------------------------|
+| **Research** | ≥30 triggers, ≥20 simulated opens, ≥8 sessions, ≥3 market-condition buckets | Accumulate OOS shadow; no expectancy promotion |
+| **Staging-qualified** | ≥50 closed cost-adjusted trades, ≥15 sessions, ≥5 condition buckets | Positive **median OR 10% trimmed mean**; positive mean under **1.5× adverse slippage**; best-trade profit share ≤30%; best-session share ≤40%; **2/3 walk-forward** chronological windows positive; **p5 return ≥ −12 pts**; param bands in range (`playbook:param-sweep`) |
+| **Limited-live** | ≥75 closed trades, ≥20 sessions, ≥6 condition buckets | Staging gates with tighter concentration (25% / 35%) and p5 ≥ −10 pts; **`full_v2` execution_sim** + per-trade quote reconciliation + risk governor |
+
+Enforced in code: `playbook-promotion-requirements.ts`, `playbook-promotion-eval.ts`, `npm run playbook:evidence-report` (`promotion_tier`, `promotion_gates_failed`).
+
+**Do not** enable prod autonomous BUY or expand allowlist without meeting tiers **including robustness gates**, not sample count alone.
+
+#### Counterfactual comparability
+
+Counterfactual MFE/MAE is only comparable across instances sharing the same `counterfactual_eval` contract (`contract_version=1`, same `counterfactual_horizon_seconds`, `reference=underlying_trigger_price`). The evidence report filters non-comparable rows before aggregating `median_counterfactual_*` — prevents mixing unlike horizons or references.
+
+#### Independence / correlation policy
+
+| Anti-pattern | Gate |
+|--------------|------|
+| 45/60 trades in one VIX regime | `min_unique_market_conditions` |
+| Expectancy from 2 outlier winners | `max_best_trade_profit_share` + trimmed mean |
+| One week drives all profit | `max_best_session_profit_share` + walk-forward |
+| Edge disappears with worse fills | `positive_expectancy_adverse_slippage` |
+| Long bull-market-only sample | walk-forward + condition buckets (full regime stratification planned) |
 
 ---
 
@@ -477,7 +496,7 @@ ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted
 |------|--------|
 | n=19 = training/motivation only | ✅ Documented + `PLAYBOOK_TRAIN_CUTOFF_DATE` |
 | OOS evidence from `2026-07-10+` | ✅ `PLAYBOOK_OOS_START_DATE` + evidence report SQL |
-| Promotion tiers | ✅ Unchanged |
+| Promotion tiers | ✅ Session + robustness gates (#77) |
 
 ### 12.4 Evaluate gates — blocked vs non-opened
 
@@ -531,7 +550,8 @@ Per playbook (and per family), compute from **prospective OOS sample only**:
 | win rate, mean/median return | ✅ Report script (OOS SQL) |
 | profit factor, expectancy | ✅ Report script |
 | median MAE / MFE (closed) | ✅ Report script |
-| median counterfactual MFE/MAE | ✅ Report script |
+| median counterfactual MFE/MAE | ✅ Comparable-contract filter in report |
+| promotion_tier + gates_failed | ✅ `playbook-promotion-eval.ts` |
 | MFE capture %, tail loss, downside deviation | ⏳ Needs more closed OOS trades |
 | time in trade | 🟡 On outcomes table |
 | results after cost assumptions | 🟡 `execution_sim` at open |
@@ -562,7 +582,9 @@ Several thresholds are **documented but lightly motivated**. Do **not** optimize
 | VWAP duration (PB-01) | 15 min | matcher | 12–18 min |
 | Flow materiality (PB-02) | 100k | `PLAYBOOK_FLOW_MATERIALITY_MIN` | 75k–150k |
 
-Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. **Do not** optimize each constant on n=19; sweep validates configured values sit inside bands. Full replay sensitivity needs accumulated OOS instance events.
+Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. **Bands are a first local perturbation check** — not full parameter validation. A playbook can pass 75k–150k flow materiality while still failing across VIX regimes or session periods.
+
+**True validation** requires outcome stability across session periods, VIX regimes, flow distribution shifts, data vendors, and market-structure changes. Roadmap: `PLAYBOOK_NORMALIZED_PARAM_ROADMAP` in `playbook-evidence-config.ts` — replace absolute thresholds with normalized variables (e.g. flow vs session p95, wall proximity vs OR width, gap vs 30d median). VIX/OR-scaled buffers are **partial** (`playbook-volatility-scale.ts`).
 
 ---
 
@@ -588,7 +610,10 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-gate-categories.ts` | Gate block category labels |
 | `spx-play-gates.ts` | A1–A17 including playbook live gate |
 | `spx-play-engine.ts` | `evaluateSpxPlay` integration |
-| `playbook-evidence-config.ts` | OOS/train cutoffs + param bands |
+| `playbook-evidence-config.ts` | OOS/train cutoffs + param bands + normalized-param roadmap |
+| `playbook-promotion-requirements.ts` | Tier thresholds (sessions, conditions, concentration) |
+| `playbook-promotion-eval.ts` | Robustness gates + `promotion_tier` evaluation |
+| `playbook-market-condition-bucket.ts` | VIX×gamma×regime buckets for independence |
 | `playbook-instance-events.ts` | Event builders + counterfactual math |
 | `scripts/playbook-evidence-report.mjs` | OOS expectancy SQL report |
 | `scripts/playbook-param-sweep.mjs` | Parameter stability bands |
@@ -632,4 +657,4 @@ Expected staging playbook validate:
 
 ---
 
-*Last updated:* 2026-07-10 (ChatGPT Findings Addendum + ECS deploy note)
+*Last updated:* 2026-07-11 (session-aware promotion gates + parameter validation roadmap)
