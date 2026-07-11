@@ -1077,6 +1077,8 @@ async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS counterfactual_mae_pts NUMERIC DEFAULT 0,
       ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB,
       ADD COLUMN IF NOT EXISTS armed_poll_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spx_playbook_instances
+      ADD COLUMN IF NOT EXISTS trigger_count INTEGER NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS spx_playbook_instance_events (
       id                   BIGSERIAL PRIMARY KEY,
@@ -2225,6 +2227,9 @@ export async function loadPlaybookInstanceStates(
       | "cancelled";
     armed_poll_count: number;
     triggered_at_ms: number | null;
+    armed_at_ms: number | null;
+    invalidated_at_ms: number | null;
+    trigger_count: number;
   }>
 > {
   await ensureSchema();
@@ -2232,7 +2237,10 @@ export async function loadPlaybookInstanceStates(
     `
     SELECT instance_id, playbook_id, direction, state,
            COALESCE(armed_poll_count, 0) AS armed_poll_count,
-           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms
+           COALESCE(trigger_count, 0) AS trigger_count,
+           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms,
+           (EXTRACT(EPOCH FROM armed_at) * 1000)::bigint AS armed_at_ms,
+           (EXTRACT(EPOCH FROM invalidated_at) * 1000)::bigint AS invalidated_at_ms
     FROM spx_playbook_instances
     WHERE session_date = $1
     `,
@@ -2263,6 +2271,15 @@ export async function loadPlaybookInstanceStates(
       r.triggered_at_ms != null && Number.isFinite(Number(r.triggered_at_ms))
         ? Number(r.triggered_at_ms)
         : null,
+    armed_at_ms:
+      r.armed_at_ms != null && Number.isFinite(Number(r.armed_at_ms))
+        ? Number(r.armed_at_ms)
+        : null,
+    invalidated_at_ms:
+      r.invalidated_at_ms != null && Number.isFinite(Number(r.invalidated_at_ms))
+        ? Number(r.invalidated_at_ms)
+        : null,
+    trigger_count: Number(r.trigger_count ?? 0),
   }));
 }
 
@@ -2340,7 +2357,7 @@ export async function upsertPlaybookInstances(
         instance_id, session_date, playbook_id, direction, state,
         armed_at, triggered_at, invalidated_at, opened_at, closed_at,
         feature_snapshot, detail,
-        trigger_price, reason_invalidated, reason_blocked, armed_poll_count, updated_at
+        trigger_price, reason_invalidated, reason_blocked, armed_poll_count, trigger_count, updated_at
       )
       VALUES ($1,$2,$3,$4,$5,
         CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
@@ -2349,7 +2366,9 @@ export async function upsertPlaybookInstances(
         CASE WHEN $5 = 'open' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'closed' THEN NOW() ELSE NULL END,
         $6::jsonb, $7,
-        $8, $9, $10, COALESCE($11, 0), NOW())
+        $8, $9, $10, COALESCE($11, 0),
+        CASE WHEN $5 = 'triggered' THEN 1 ELSE 0 END,
+        NOW())
       ON CONFLICT (instance_id) DO UPDATE SET
         direction = EXCLUDED.direction,
         state = EXCLUDED.state,
@@ -2369,6 +2388,12 @@ export async function upsertPlaybookInstances(
         reason_invalidated = COALESCE(EXCLUDED.reason_invalidated, spx_playbook_instances.reason_invalidated),
         reason_blocked = COALESCE(EXCLUDED.reason_blocked, spx_playbook_instances.reason_blocked),
         armed_poll_count = GREATEST(COALESCE(spx_playbook_instances.armed_poll_count, 0), COALESCE(EXCLUDED.armed_poll_count, 0)),
+        trigger_count = CASE
+          WHEN EXCLUDED.state = 'triggered'
+            AND spx_playbook_instances.state IS DISTINCT FROM 'triggered'
+          THEN COALESCE(spx_playbook_instances.trigger_count, 0) + 1
+          ELSE COALESCE(spx_playbook_instances.trigger_count, EXCLUDED.trigger_count, 0)
+        END,
         updated_at = NOW()
       `,
       [

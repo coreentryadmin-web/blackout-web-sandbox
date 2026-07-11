@@ -34,6 +34,9 @@ test("collectMatcherFsmTransitions: gate veto → blocked state", () => {
         episode_direction: "long",
         episode_start_ms: NOW,
         triggered_at_ms: NOW,
+        armed_at_ms: NOW - 5_000,
+        invalidated_at_ms: null,
+        trigger_count: 0,
       },
     ],
     { gate_blocked_instance_ids: new Set([id]), now_ms: NOW }

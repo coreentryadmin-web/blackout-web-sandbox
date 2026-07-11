@@ -10,6 +10,11 @@
  * in `playbook-shadow-matcher.ts` (not registry array order).
  */
 
+import {
+  defaultTemporalContract,
+  type PlaybookTemporalContract,
+} from "@/features/spx/lib/playbook-temporal-contract";
+
 /** Stable per-playbook identity, used as `factor_name`/`playbook_id` in telemetry. */
 export type PlaybookId =
   | "PB-01"
@@ -58,9 +63,22 @@ export type PlaybookDefinition = {
   trigger: string;
   invalidation: string;
   sessionWindow: PlaybookSessionWindow;
+  /** Temporal sequence contract — enforced via persisted episode timestamps. */
+  temporal: PlaybookTemporalContract;
 };
 
-export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
+type PlaybookDefinitionInput = Omit<PlaybookDefinition, "temporal"> & {
+  temporal?: PlaybookTemporalContract;
+};
+
+function definePlaybook(entry: PlaybookDefinitionInput): PlaybookDefinition {
+  return {
+    ...entry,
+    temporal: entry.temporal ?? defaultTemporalContract(entry.fidelity, entry.id),
+  };
+}
+
+const PLAYBOOK_REGISTRY_RAW: readonly PlaybookDefinitionInput[] = [
   {
     id: "PB-01",
     name: "VWAP Reclaim",
@@ -232,6 +250,10 @@ export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = [
   },
 ];
 
+export const PLAYBOOK_REGISTRY: readonly PlaybookDefinition[] = PLAYBOOK_REGISTRY_RAW.map((p) =>
+  definePlaybook(p)
+);
+
 const REGISTRY_BY_ID = Object.fromEntries(PLAYBOOK_REGISTRY.map((p) => [p.id, p])) as Record<
   PlaybookId,
   PlaybookDefinition
@@ -239,4 +261,8 @@ const REGISTRY_BY_ID = Object.fromEntries(PLAYBOOK_REGISTRY.map((p) => [p.id, p]
 
 export function playbookDef(id: PlaybookId): PlaybookDefinition {
   return REGISTRY_BY_ID[id];
+}
+
+export function temporalContractFor(id: PlaybookId): PlaybookTemporalContract {
+  return playbookDef(id).temporal;
 }

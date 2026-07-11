@@ -7,10 +7,11 @@ import {
   type EpisodeDirectionKey,
   type PlaybookInstanceSnapshot,
 } from "@/features/spx/lib/playbook-instance-episode";
+import { temporalContractFor } from "@/features/spx/lib/playbook-registry";
+import { evaluateMaximumArmDuration } from "@/features/spx/lib/playbook-temporal-contract";
 import {
   applyTriggerExpiryTransitions,
   resolvePlaybookFsmState,
-  verdictCandidateState,
   type PlaybookLifecycleState,
 } from "@/features/spx/lib/playbook-trade-fsm";
 
@@ -68,21 +69,33 @@ export function collectMatcherFsmTransitions(
         episode_direction: resolved.episode_direction,
         episode_start_ms: nowMs,
         triggered_at_ms: toState === "triggered" || toState === "blocked" ? nowMs : null,
+        armed_at_ms: toState === "armed" ? nowMs : null,
+        invalidated_at_ms: null,
+        trigger_count: toState === "triggered" ? 1 : 0,
       });
     } else {
       const idx = workingSnapshots.findIndex((s) => s.instance_id === resolved.instance_id);
       if (idx >= 0) {
         const prevTriggered = workingSnapshots[idx].triggered_at_ms;
+        const prevArmed = workingSnapshots[idx].armed_at_ms;
         workingSnapshots[idx] = {
           ...workingSnapshots[idx],
           state: toState,
           direction: v.direction ?? workingSnapshots[idx].direction,
+          armed_at_ms:
+            toState === "armed" && prevArmed == null ? nowMs : workingSnapshots[idx].armed_at_ms,
+          invalidated_at_ms:
+            toState === "invalidated" ? nowMs : workingSnapshots[idx].invalidated_at_ms,
           triggered_at_ms:
             toState === "triggered" && prevTriggered == null
               ? nowMs
               : toState === "blocked" && prevTriggered == null
                 ? nowMs
                 : workingSnapshots[idx].triggered_at_ms,
+          trigger_count:
+            toState === "triggered" && fromState !== "triggered"
+              ? workingSnapshots[idx].trigger_count + 1
+              : workingSnapshots[idx].trigger_count,
         };
       }
     }
@@ -98,6 +111,24 @@ export function collectMatcherFsmTransitions(
       detail: v.detail,
       source: "matcher",
       spawned: resolved.spawned,
+    });
+  }
+
+  for (const s of workingSnapshots) {
+    const state = nextByInstance.get(s.instance_id) ?? s.state;
+    if (state !== "armed") continue;
+    const contract = temporalContractFor(s.playbook_id);
+    const maxArm = evaluateMaximumArmDuration(contract, { ...s, state }, nowMs);
+    if (maxArm.allow) continue;
+    nextByInstance.set(s.instance_id, "expired");
+    transitions.push({
+      instance_id: s.instance_id,
+      playbook_id: s.playbook_id,
+      direction: s.direction,
+      from_state: "armed",
+      to_state: "expired",
+      detail: maxArm.reason,
+      source: "expiry",
     });
   }
 

@@ -63,14 +63,18 @@ test("resolvePlaybookLifecycleState: armed → invalidated when precondition los
 test("collectPlaybookInstanceTransitions: new episode after prior invalidated", () => {
   const session = "2026-07-10";
   const oldId = playbookInstanceId(session, "PB-01", "long", NOW - 60_000);
-  const snapshots: PlaybookInstanceSnapshot[] = [
+  const snapshots = [
     {
       instance_id: oldId,
-      playbook_id: "PB-01",
-      direction: "long",
-      state: "invalidated",
-      episode_direction: "long",
+      playbook_id: "PB-01" as const,
+      direction: "long" as const,
+      state: "invalidated" as const,
+      episode_direction: "long" as const,
       episode_start_ms: NOW - 60_000,
+      triggered_at_ms: null,
+      armed_at_ms: NOW - 60_000,
+      invalidated_at_ms: NOW - 30_000,
+      trigger_count: 0,
     },
   ];
   const later = NOW;
@@ -88,14 +92,18 @@ test("collectPlaybookInstanceTransitions: new episode after prior invalidated", 
 test("collectPlaybookInstanceTransitions: opposite direction spawns separate episode", () => {
   const session = "2026-07-10";
   const longId = playbookInstanceId(session, "PB-01", "long", NOW);
-  const snapshots: PlaybookInstanceSnapshot[] = [
+  const snapshots = [
     {
       instance_id: longId,
-      playbook_id: "PB-01",
-      direction: "long",
-      state: "armed",
-      episode_direction: "long",
+      playbook_id: "PB-01" as const,
+      direction: "long" as const,
+      state: "armed" as const,
+      episode_direction: "long" as const,
       episode_start_ms: NOW,
+      triggered_at_ms: null,
+      armed_at_ms: NOW,
+      invalidated_at_ms: null,
+      trigger_count: 0,
     },
   ];
   const shortLater = NOW + 5_000;

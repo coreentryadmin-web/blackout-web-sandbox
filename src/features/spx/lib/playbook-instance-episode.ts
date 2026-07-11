@@ -18,6 +18,9 @@ export type PlaybookInstanceSnapshot = {
   episode_direction: EpisodeDirectionKey;
   episode_start_ms: number;
   triggered_at_ms: number | null;
+  armed_at_ms: number | null;
+  invalidated_at_ms: number | null;
+  trigger_count: number;
 };
 
 export function episodeDirectionKey(direction: "long" | "short" | null): EpisodeDirectionKey {
@@ -89,6 +92,9 @@ export function snapshotFromInstanceRow(row: {
   direction: "long" | "short" | null;
   state: PlaybookLifecycleState;
   triggered_at_ms?: number | null;
+  armed_at_ms?: number | null;
+  invalidated_at_ms?: number | null;
+  trigger_count?: number;
 }): PlaybookInstanceSnapshot {
   const parsed = parsePlaybookInstanceId(row.instance_id);
   return {
@@ -99,6 +105,9 @@ export function snapshotFromInstanceRow(row: {
     episode_direction: parsed.episode_direction,
     episode_start_ms: parsed.episode_start_ms,
     triggered_at_ms: row.triggered_at_ms ?? null,
+    armed_at_ms: row.armed_at_ms ?? null,
+    invalidated_at_ms: row.invalidated_at_ms ?? null,
+    trigger_count: row.trigger_count ?? 0,
   };
 }
 

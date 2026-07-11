@@ -53,6 +53,10 @@ test("resolveEpisodeInstance spawns after terminal invalidated row", () => {
         state: "invalidated",
         episode_direction: "long",
         episode_start_ms: NOW - 120_000,
+        triggered_at_ms: null,
+        armed_at_ms: NOW - 120_000,
+        invalidated_at_ms: NOW - 60_000,
+        trigger_count: 0,
       },
     ],
     NOW

@@ -196,7 +196,22 @@ Canonical module: `playbook-trade-fsm.ts`. Matcher + engine + expiry layers pers
 - `expired` retires stale triggers instead of leaving them logically active
 - `exit_pending` precedes thesis/setup-driven closes on open positions
 
-**Still tick-recomputed (matcher):** pre-arm ordering beyond `PLAYBOOK_MIN_ARMED_POLLS`; layered gate short-circuit evaluation (phase 2).
+**Still tick-recomputed (matcher booleans):** precondition/trigger *detection* re-evaluates each poll; **temporal sequence** is enforced separately via typed registry contracts + persisted `armed_at` / `invalidated_at` / `trigger_count` on each episode row (`playbook-temporal-contract.ts`).
+
+### Temporal contracts (typed registry — #73)
+
+Each `PlaybookDefinition` carries a `temporal` contract enforced by `applyTemporalVerdictGuards()` against **persisted episode timestamps**, closing the gap between durable FSM rows and stateless matcher booleans:
+
+| Field | Purpose |
+|-------|---------|
+| `minimum_arm_duration_ms` | Trigger blocked until episode has been armed long enough |
+| `maximum_arm_duration_ms` | Armed too long without trigger → `expired` |
+| `trigger_after_arm_only` | No same-tick / orphan triggers without `armed_at` anchor |
+| `trigger_grace_period_ms` | Brief precondition flicker tolerance from `armed_at` |
+| `rearm_cooldown_ms` | Wait after terminal episode before new arm |
+| `max_triggers_per_instance` | Cap trigger commits per episode row |
+
+**Example (10:01 arm → 10:03 invalidate → 10:06 trigger):** invalidated episode is terminal; new episode at 10:06 has no `armed_at` → temporal guard strips `trigger_fired` even if matcher fires.
 
 ---
 

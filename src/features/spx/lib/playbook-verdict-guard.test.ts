@@ -35,7 +35,8 @@ test("applyPlaybookVerdictGuards: blocks same-tick trigger without armed polls",
 
 test("applyPlaybookVerdictGuards: allows trigger after min armed polls", () => {
   const session = "2026-07-10";
-  const instanceId = playbookInstanceId(session, "PB-01", "long", NOW);
+  const armedAt = NOW - 10_000;
+  const instanceId = playbookInstanceId(session, "PB-01", "long", armedAt);
   const guarded = applyPlaybookVerdictGuards(
     session,
     [verdict("PB-01")],
@@ -46,7 +47,11 @@ test("applyPlaybookVerdictGuards: allows trigger after min armed polls", () => {
         direction: "long",
         state: "armed",
         episode_direction: "long",
-        episode_start_ms: NOW,
+        episode_start_ms: armedAt,
+        triggered_at_ms: null,
+        armed_at_ms: armedAt,
+        invalidated_at_ms: null,
+        trigger_count: 0,
       },
     ],
     new Map([[instanceId, 2]]),

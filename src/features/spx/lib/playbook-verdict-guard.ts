@@ -3,12 +3,17 @@ import {
   resolveEpisodeInstance,
   type PlaybookInstanceSnapshot,
 } from "@/features/spx/lib/playbook-instance-episode";
+import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
 import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
 import {
   isPostEntryPlaybookState,
   isTerminalPlaybookState,
 } from "@/features/spx/lib/playbook-trade-fsm";
-import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
+import { temporalContractFor } from "@/features/spx/lib/playbook-registry";
+import {
+  evaluateRearmCooldown,
+  evaluateTemporalTriggerGuard,
+} from "@/features/spx/lib/playbook-temporal-contract";
 
 /** Minimum armed polls before a trigger can commit (≈4–6s at 2s play poll). */
 export function playbookMinArmedPolls(): number {
@@ -17,6 +22,88 @@ export function playbookMinArmedPolls(): number {
 }
 
 export type PlaybookArmedPollCounts = ReadonlyMap<string, number>;
+
+function snapshotForEpisode(
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  instanceId: string,
+  playbookId: PlaybookId,
+  resolved: ReturnType<typeof resolveEpisodeInstance>,
+  nowMs: number
+): PlaybookInstanceSnapshot {
+  const existing = snapshots.find((s) => s.instance_id === instanceId);
+  if (existing) return existing;
+  return {
+    instance_id: instanceId,
+    playbook_id: playbookId,
+    direction: null,
+    state: resolved.from_state,
+    episode_direction: resolved.episode_direction,
+    episode_start_ms: nowMs,
+    triggered_at_ms: null,
+    armed_at_ms: null,
+    invalidated_at_ms: null,
+    trigger_count: 0,
+  };
+}
+
+function stripTrigger(v: PlaybookMatchVerdict, reason: string): PlaybookMatchVerdict {
+  return {
+    ...v,
+    trigger_fired: false,
+    direction: null,
+    detail: `${v.detail} [temporal: ${reason}]`,
+  };
+}
+
+function stripArm(v: PlaybookMatchVerdict, reason: string): PlaybookMatchVerdict {
+  return {
+    ...v,
+    precondition_match: false,
+    trigger_fired: false,
+    direction: null,
+    detail: `${v.detail} [temporal: ${reason}]`,
+  };
+}
+
+/** Temporal contracts from typed registry — uses persisted armed_at / terminal timestamps. */
+export function applyTemporalVerdictGuards(
+  sessionDate: string,
+  verdicts: readonly PlaybookMatchVerdict[],
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  nowMs: number = Date.now()
+): PlaybookMatchVerdict[] {
+  const workingSnapshots = [...snapshots];
+
+  return verdicts.map((v) => {
+    const contract = temporalContractFor(v.playbook_id);
+    const cooldown = evaluateRearmCooldown(contract, workingSnapshots, v.playbook_id, nowMs);
+    if (!cooldown.allow && (v.precondition_match || v.trigger_fired)) {
+      return stripArm(v, cooldown.reason);
+    }
+
+    const resolved = resolveEpisodeInstance(sessionDate, v, workingSnapshots, nowMs);
+    const snap = snapshotForEpisode(
+      workingSnapshots,
+      resolved.instance_id,
+      v.playbook_id,
+      resolved,
+      nowMs
+    );
+    snap.state = resolved.from_state;
+
+    if (!v.trigger_fired) return v;
+
+    const guard = evaluateTemporalTriggerGuard({
+      contract,
+      snapshot: snap,
+      prevState: resolved.from_state,
+      nowMs,
+      precondition_match: v.precondition_match,
+    });
+    if (!guard.allow) return stripTrigger(v, guard.reason);
+    return v;
+  });
+}
 
 /**
  * Stateful guard — trigger requires prior armed state + minimum armed poll count.
@@ -32,7 +119,7 @@ export function applyPlaybookVerdictGuards(
   const minArmed = playbookMinArmedPolls();
   const workingSnapshots = [...snapshots];
 
-  return verdicts.map((v) => {
+  const pollGuarded = verdicts.map((v) => {
     const resolved = resolveEpisodeInstance(sessionDate, v, workingSnapshots, nowMs);
     const prev = resolved.from_state;
 
@@ -64,6 +151,8 @@ export function applyPlaybookVerdictGuards(
       detail: `${v.detail} [guard: armed_polls=${armedPolls}, prev=${prev}, need≥${minArmed}]`,
     };
   });
+
+  return applyTemporalVerdictGuards(sessionDate, pollGuarded, snapshots, nowMs);
 }
 
 /** Increment armed poll counter for instances with precondition_match this tick. */
