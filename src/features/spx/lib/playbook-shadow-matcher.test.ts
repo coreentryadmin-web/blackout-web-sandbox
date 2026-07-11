@@ -146,6 +146,39 @@ test("PB-01: does not trigger when session window is closed, even with precondit
   assert.equal(pb01.direction, null);
 });
 
+test("PB-01: does not trigger when reclaim fires but VWAP precondition unmet", () => {
+  const desk = deskStub({ above_vwap: false, vwap: 7380, price: 7383, flow_0dte_net: 500_000 });
+  const technicals = technicalsStub({
+    minutes_below_vwap: 5,
+    m3_close: 7383,
+    breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: true, vwap_lost: false },
+  });
+  const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);
+  const pb01 = result.verdicts.find((v) => v.playbook_id === "PB-01")!;
+  assert.equal(pb01.precondition_match, false);
+  assert.equal(pb01.trigger_fired, false);
+  assert.equal(pb01.direction, null);
+});
+
+test("PB-03: does not trigger OR break when notPinning precondition fails (gamma pin)", () => {
+  const desk = deskStub({
+    gamma_regime: "mean_revert",
+    above_gamma_flip: true,
+    flow_0dte_net: 500_000,
+    price: 7410,
+  });
+  const technicals = technicalsStub({
+    or_defined: true,
+    or_high: 7405,
+    or_low: 7395,
+    breakout: { pdh_break: false, pdl_break: false, hod_break: true, lod_break: false, vwap_reclaim: false, vwap_lost: false },
+  });
+  const result = matchPlaybooksShadow(desk, technicals, OPENING_DRIVE_UTC);
+  const pb03 = result.verdicts.find((v) => v.playbook_id === "PB-03")!;
+  assert.equal(pb03.precondition_match, false);
+  assert.equal(pb03.trigger_fired, false);
+});
+
 test("PB-01: unavailable technicals -> no trigger, no precondition, honest 'unavailable' detail", () => {
   const desk = deskStub({ vwap: null });
   const technicals = technicalsStub({ available: false });
@@ -461,6 +494,8 @@ test("primary_playbook_id: null when zero playbooks trigger", () => {
 test("primary_playbook_id: the single triggered playbook when exactly one fires", () => {
   const desk = deskStub({ above_vwap: false, vwap: 7380, price: 7383, hod: 7400, lod: 7370, flow_0dte_net: 500_000 });
   const technicals = technicalsStub({
+    minutes_below_vwap: 15,
+    m3_close: 7383,
     breakout: { pdh_break: false, pdl_break: false, hod_break: false, lod_break: false, vwap_reclaim: true, vwap_lost: false },
   });
   const result = matchPlaybooksShadow(desk, technicals, MID_MORNING_UTC);

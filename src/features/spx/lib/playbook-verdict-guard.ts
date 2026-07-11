@@ -134,15 +134,18 @@ export function applyPlaybookVerdictGuards(
     }
 
     if (!v.trigger_fired) return v;
-    const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
-    const hadArmed =
-      prev === "armed" ||
-      prev === "triggered" ||
-      prev === "blocked" ||
-      prev === "entry_pending" ||
-      armedPolls >= minArmed;
 
-    if (hadArmed && armedPolls >= minArmed) return v;
+    if (!v.precondition_match) {
+      return {
+        ...v,
+        trigger_fired: false,
+        direction: null,
+        detail: `${v.detail} [guard: precondition_not_met]`,
+      };
+    }
+
+    const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
+    if (armedPolls >= minArmed) return v;
 
     return {
       ...v,

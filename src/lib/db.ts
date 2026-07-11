@@ -2289,7 +2289,7 @@ export async function loadPlaybookArmedPollCounts(sessionDate: string): Promise<
   return new Map(rows.map((r) => [r.instance_id, r.armed_poll_count]));
 }
 
-/** Count triggered/opened instances per playbook for session risk governor. */
+/** Count trigger episodes per playbook for session risk governor (includes invalidated-without-open). */
 export async function loadPlaybookTriggerCountsByPb(sessionDate: string): Promise<Map<string, number>> {
   await ensureSchema();
   const res = await (await getPool()).query(
@@ -2297,7 +2297,12 @@ export async function loadPlaybookTriggerCountsByPb(sessionDate: string): Promis
     SELECT playbook_id, COUNT(*)::int AS trigger_count
     FROM spx_playbook_instances
     WHERE session_date = $1
-      AND (state IN ('triggered', 'open', 'managing') OR opened_at IS NOT NULL)
+      AND (
+        trigger_count > 0
+        OR triggered_at IS NOT NULL
+        OR opened_at IS NOT NULL
+        OR state IN ('triggered', 'entry_pending', 'open', 'managing', 'exit_pending', 'blocked')
+      )
     GROUP BY playbook_id
     `,
     [sessionDate]

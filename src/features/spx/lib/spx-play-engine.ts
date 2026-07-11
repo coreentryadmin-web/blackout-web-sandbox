@@ -8,6 +8,10 @@ function firePlayTelemetry(label: string, work: () => Promise<unknown>) {
     console.error(`[spx-play-engine] ${label}:`, err instanceof Error ? err.message : err);
   });
 }
+
+function spxPlayDebug(...args: unknown[]) {
+  if (process.env.SPX_PLAY_DEBUG === "1") console.log(...args);
+}
 import {
   computeSpxConfluence,
   type SpxConfluence,
@@ -558,6 +562,36 @@ async function evaluateOpenPlay(
         close: closeSnapshot("THESIS", wasLoss, row.trim_done),
       });
       await fsmOnClose(pbExitSignal.reason, "THESIS", true);
+      firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
+        maybeLogSpxPlay(
+          { price: desk.price, market_open: desk.market_open },
+          {
+            action: "SELL",
+            direction: dir,
+            grade: row.grade,
+            score: confluence.score,
+            confidence: confluence.confidence,
+            headline,
+            thesis,
+            factors: confluence.factors,
+            levels: {
+              entry: row.entry_price,
+              stop: row.stop,
+              target: row.target,
+              invalidation: confluence.levels.invalidation,
+            },
+          }
+        )
+      );
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: dir,
+        headline,
+        thesis,
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
     }
   } else if (trimZone) {
     action = "TRIM";
@@ -793,7 +827,7 @@ async function evaluateFlatPlay(
   if (mutate && watchRec && direction != null && watchRec.direction !== direction) {
     // Direction flipped mid-session (e.g. long watch → market turns bearish).
     // Log it so Railway/Vercel logs record the flip timestamp and the old setup key.
-    console.log(
+    spxPlayDebug(
       `[spx-play-engine] direction flip: ${watchRec.direction} → ${direction}` +
       ` — clearing watch ${watchRec.setup_key ?? "(no key)"} at ${new Date().toISOString()}`
     );
@@ -935,7 +969,7 @@ async function evaluateFlatPlay(
   const sessionExtras = { session_phase: currentSessionPhase(desk) };
 
   if (!entryGatesRaw.passed) {
-    console.log('[spx-play-engine] entry gates blocked:', {
+    spxPlayDebug('[spx-play-engine] entry gates blocked:', {
       grade: confluence.grade,
       score: confluence.score,
       direction: confluence.direction,
@@ -990,7 +1024,7 @@ async function evaluateFlatPlay(
   }
 
   if (!claude.approved || !confluence.direction) {
-    console.log('[spx-play-engine] Claude blocked play:', {
+    spxPlayDebug('[spx-play-engine] Claude blocked play:', {
       verdict: claude.verdict,
       source: claude.source,
       approved: claude.approved,
@@ -1086,7 +1120,7 @@ async function evaluateFlatPlay(
     };
   }
 
-  console.log('[spx-play-engine] optionTicket check:', {
+  spxPlayDebug('[spx-play-engine] optionTicket check:', {
     blocked: optionTicket.blocked,
     reason: optionTicket.block_reason,
     ticker: optionTicket.ticker,
@@ -1182,7 +1216,7 @@ async function evaluateFlatPlay(
     };
   }
 
-  console.log('[spx-play-engine] ALL GATES PASSED — opening play:', {
+  spxPlayDebug('[spx-play-engine] ALL GATES PASSED — opening play:', {
     grade: confluence.grade,
     score: confluence.score,
     direction: dir,

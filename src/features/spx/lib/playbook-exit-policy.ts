@@ -1,6 +1,7 @@
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 
-/** Named exit policy contract — decouples management from legacy confluence exits. */
+/** Named exit policy contract — registry metadata only.
+ *  Runtime exits live in `playbook-exit-engines.ts` (do not edit numbers here expecting live behavior). */
 export type PlaybookExitPolicy = {
   initial_stop_model: string;
   target_model: string;

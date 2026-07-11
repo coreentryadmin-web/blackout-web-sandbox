@@ -45,14 +45,19 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
   hod: number | null;
   vwap: number | null;
   open: number | null;
+  /** False when index bars have zero volume — VWAP is equal-weight typical price, not true VWAP. */
+  vwap_volume_weighted: boolean;
 } {
   const rth = filterRthBars(bars);
-  if (!rth.length) return { lod: null, hod: null, vwap: null, open: null };
+  if (!rth.length) {
+    return { lod: null, hod: null, vwap: null, open: null, vwap_volume_weighted: false };
+  }
 
   let lod = Infinity;
   let hod = -Infinity;
   let pv = 0;
   let vol = 0;
+  let sawRealVolume = false;
 
   for (const b of rth) {
     lod = Math.min(lod, b.l);
@@ -60,7 +65,9 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
     const typical = (b.h + b.l + b.c) / 3;
     // ISSUE-16: Polygon index bars often have v=0; fallback to v=1 makes this an
     // equal-weight typical price average rather than a true volume-weighted mean.
-    const v = b.v && b.v > 0 ? b.v : 1;
+    const hasVol = (b.v ?? 0) > 0;
+    if (hasVol) sawRealVolume = true;
+    const v = hasVol ? b.v! : 1;
     pv += typical * v;
     vol += v;
   }
@@ -72,6 +79,7 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
     hod: Number.isFinite(hod) ? hod : null,
     vwap: vol > 0 ? pv / vol : null,
     open: rth[0]?.o ?? null,
+    vwap_volume_weighted: sawRealVolume,
   };
 }
 

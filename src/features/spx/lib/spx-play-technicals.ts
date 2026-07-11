@@ -1,5 +1,5 @@
 import { polygonConfigured } from "@/lib/providers/config";
-import { fetchIndexEma, fetchIndexMinuteBars, fetchIndexRsi } from "@/lib/providers/polygon";
+import { fetchIndexMinuteBars, fetchIndexRsi } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import {
   playMtfBufferPts,
@@ -284,9 +284,8 @@ export async function buildPlayTechnicals(
   }
 
   const today = todayEtYmd();
-  const [bars, ema5m, indexRsi] = await Promise.all([
+  const [bars, indexRsi] = await Promise.all([
     fetchIndexMinuteBars(SPX, today, today),
-    fetchIndexEma(SPX, 20, "minute"),
     fetchIndexRsi(SPX, 14, "minute"),
   ]);
 
@@ -301,8 +300,8 @@ export async function buildPlayTechnicals(
   const m3Close = m3.length ? m3[m3.length - 1].c : null;
   const m5Close = m5.length ? m5[m5.length - 1].c : null;
   const m5Closes = m5.map((b) => b.c);
-  const m5Ema20 = ema5m ?? emaFromCloses(m5Closes, 20);
-  const m5Rsi = indexRsi ?? rsi(m5, 14);
+  const m5Ema20 = emaFromCloses(m5Closes, 20);
+  const m5Rsi = rsi(m5, 14);
 
   const buf = playMtfBufferPts();
   const vwap = ctx.vwap;
@@ -348,7 +347,9 @@ export async function buildPlayTechnicals(
       ? `5m RSI ${m5Rsi.toFixed(0)} overbought — momentum extended (not blocking)`
       : m5Rsi != null && m5Rsi <= 28
         ? `5m RSI ${m5Rsi.toFixed(0)} oversold — downside extended (not blocking)`
-        : null;
+        : indexRsi != null && m5Rsi != null && Math.abs(indexRsi - m5Rsi) > 8
+          ? `5m RSI ${m5Rsi.toFixed(0)} (1m API ${indexRsi.toFixed(0)} diverged — using 5m resample)`
+          : null;
 
   const result: PlayTechnicals = {
     available: true,
