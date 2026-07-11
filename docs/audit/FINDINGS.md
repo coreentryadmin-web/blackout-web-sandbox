@@ -8,6 +8,21 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 FOUND+FIXED 2026-07-11 — Wall beads read uniform (no strength contrast) + the STRONGEST wall could be missing entirely
+
+**Surface:** `src/features/vector/lib/vector-wall-visual.ts` (bead size/opacity curve) + `src/features/vector/lib/vector-wall-history.ts` (`strikeTrailWeight` rail-selection ranking). Reported live: member compared to Skylit — "why are all walls the same strength? some should be bold, some dim" and "why no beads at the 7475 (8%) put wall?"
+
+**Two root causes:**
+1. **Contrast washed out.** The bead magnitude curve was `magnitudeT = (pct/12)^0.55`. The sqrt exponent (0.55) *boosts* weak walls — it compressed a real 8:1 strength ratio to ~3:1 — and `ALPHA_MIN=0.12` kept even faint beads clearly lit, while `PCT_SATURATION=12` meant the ~6–8% session king never reached full boldness (per-strike GEX share tops out ~8% since gamma spreads across ~20 strikes). Net: every rail looked the same weight.
+2. **Strongest wall dropped.** The top-N rail selector ranked strikes by `strikeTrailWeight = Σ pct` — pure cumulative-over-time. A wall strong RIGHT NOW but only recently present (7475 @ 8%, few samples) scored a tiny sum and lost its slot to a weaker wall that persisted all session — so the single most important level had **no beads at all**.
+
+**Fix:** (1) retune the curve — exponent 0.55→**1.15** (super-linear, preserves the strength ratio → bold king, faint stragglers), `ALPHA_MIN` 0.12→**0.05** (weak = ghost), `PCT_SATURATION` 12→**7** (king reaches full weight), bead `MARKER_SIZE_MAX` 2.35→**2.8**. Result: opacity contrast ~6× and bead-size ~3.7× between an 8% and a 1% wall (was ~2.3×). (2) rank by **peak-biased weight** `max·0.6 + mean·0.4` so a currently/peak-strong wall keeps its render slot instead of being buried by a persistent weak one.
+
+**Evidence:** `vector-wall-visual.test.ts` — new HIGH-CONTRAST assertion (strong ≥4× opacity, ≥3× size of weak); saturation/floor updated. `vector-wall-history.test.ts` — new test proving an 8%-recent wall (old Σ=16) now outranks a 3%-all-session wall (old Σ=30) for the last slot. `tsc` clean; 145/145 vector lib tests; `@apply` guard clean. Live before/after screenshot post-deploy.
+
+**Status:** FIXED (`fix/vector-bead-strength-contrast`).
+
+
 ## 🟠 P2 FOUND+FIXED 2026-07-11 — Wall-integrity strength factor was effectively dead: `pct/100` normalization → every wall reads "thin", even one that held all session
 
 **Surface:** `src/features/vector/lib/vector-wall-integrity.ts` (`scoreWallIntegrity` strength term). Follow-up to #154; spotted on the live staging screenshot — the SPX top call wall read *"7575C thin — held 100% of session · 42/100"*, which is self-contradictory.

@@ -102,9 +102,26 @@ export function trailsByStrike(
   return map;
 }
 
-/** Weight a strike row by cumulative magnitude so dominant walls stay visible when capping. */
+/**
+ * Weight a strike row for the top-N render cap. Blends PEAK strength with mean, so a wall that
+ * is strong RIGHT NOW (or peaked hard) keeps its slot instead of being buried by a weaker wall
+ * that merely persisted longer.
+ *
+ * The old pure-cumulative-sum (`Σ pct`) rewarded longevity alone: an 8%-of-gamma wall that only
+ * appeared in the last few samples scored a tiny sum and got dropped, while a 3% wall present all
+ * session dominated — so the STRONGEST current wall could be missing from the chart entirely
+ * (reported live: the 8% put wall had no beads). Peak-biasing surfaces it.
+ */
 export function strikeTrailWeight(points: StrikeTrailPoint[]): number {
-  return points.reduce((sum, p) => sum + p.pct, 0);
+  if (!points.length) return 0;
+  let max = 0;
+  let sum = 0;
+  for (const p of points) {
+    if (p.pct > max) max = p.pct;
+    sum += p.pct;
+  }
+  const mean = sum / points.length;
+  return max * 0.6 + mean * 0.4;
 }
 
 /** Pick the top-N strike rows to render (by cumulative |gamma| share across the session). */
