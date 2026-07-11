@@ -115,6 +115,7 @@ import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
 import type { ResolvedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
+import { playCloseWasLoss } from "@/features/spx/lib/spx-play-outcomes";
 import {
   effectiveFullMinScore,
   effectivePromoteMinScore,
@@ -369,7 +370,7 @@ async function evaluateOpenPlay(
     action = "SELL";
     headline = `THETA FLAT — ${forceExitCutoffLabel()} cutoff`;
     thesis = "0DTE theta window — flatten open runners before illiquid close.";
-    const thetaLoss = pnlPts(dir, row.entry_price, price) < 0;
+    const thetaLoss = playCloseWasLoss(pnlPts(dir, row.entry_price, price));
     if (mutate) {
       await closeOpenPlay(row.id, {
         was_loss: thetaLoss,
@@ -512,13 +513,9 @@ async function evaluateOpenPlay(
       : thesisBreak
         ? pbExitSignal?.reason ?? `Thesis break — score ${confluence.score} vs entry ${entryScore}.`
         : "Cash session closed — flatten runners.";
-    // C4: was_loss is true for stop hits and thesis breaks regardless of market state.
-    // SESSION-only closes (theta/time, no stop or thesis break) use actual PnL so a
-    // losing session close correctly triggers the same-direction re-entry lock.
-    const wasLoss =
-      stopHit ||
-      thesisBreak ||
-      (!stopHit && !thesisBreak && pnlPts(dir, row.entry_price, price) < 0);
+    // C4: was_loss uses playCloseWasLoss so scratch exits in (-1,0] grade breakeven, not loss.
+    const exitPnl = pnlPts(dir, row.entry_price, price);
+    const wasLoss = playCloseWasLoss(exitPnl);
     const exitAction = stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS";
     if (mutate) {
       await closeOpenPlay(row.id, {
@@ -567,7 +564,7 @@ async function evaluateOpenPlay(
     action = "SELL";
     headline = pbExitSignal.reason;
     thesis = pbExitSignal.reason;
-    const wasLoss = pnlPts(dir, row.entry_price, price) < 0;
+    const wasLoss = playCloseWasLoss(pnlPts(dir, row.entry_price, price));
     if (mutate) {
       await closeOpenPlay(row.id, {
         was_loss: wasLoss,

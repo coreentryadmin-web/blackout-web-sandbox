@@ -8,13 +8,42 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🟢 INFO 2026-07-11 — Sixth-pass review (PR #103): F2 confirmed closed, F3 clean, F4 pending
+## 🟢 INFO 2026-07-11 — Sixth-pass + catch-up review: F2 closed, F3 clean, F4 pending
 
-**Surface:** `playbook-promotion-sample.ts` (F2), `playbook-verdict-guard.ts` (Q4), F3 rescan of play engine/gates/matcher.
+**Surface:** `playbook-promotion-sample.ts` (F2), `playbook-verdict-guard.ts` (Q4), F3 rescan, catch-up #9/#3/#10–11.
 
-**Sixth-pass verdict:** F2 data-quality wiring genuinely closed (4 playbook profiles + low-sample control). F3 no new dual-evaluation risks. F4 RTH proof not verified (Saturday, market closed). Q4 narrowly reopened in #103, then **partially closed by #105** (production DB re-read + honest self-consistency labeling).
+**Sixth-pass verdict:** F2 data-quality wiring genuinely closed. F3 no new dual-evaluation risks. F4 RTH proof not verified (Saturday, market closed). Q4 production DB re-read (#105) confirmed by catch-up trace + `playbook-match-resolver.test.ts`.
 
-**Status:** Documented in `PLAYBOOK-BUG-AUDIT-2026-07-11.md` sixth-pass section + FINDINGS tail entry.
+**Catch-up fixes (this PR):** #9 playbook cleanup tasks wired; #3 `buildSpxDeskFlow` `.catch`; #10/#11 `playCloseWasLoss` in engine.
+
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Q4 verdict-guard assert independence (full arc)
+
+**Surface:** `assertPlaybookVerdictGuardInvariants` + `resolveGuardedPlaybookMatch`.
+
+**Fix:** PR #105 — second DB round-trip before assert; no `from_state` fallback. Regression: `playbook-match-resolver.test.ts` (idle desync between loads).
+
+**Status:** FIXED (#105 + catch-up test).
+
+## 🟡 P2 FOUND+FIXED 2026-07-11 — Playbook retention cron tasks (#9)
+
+**Root cause:** Allow-list updated in #104 but `runCleanup()` had no `deleteOlderThan` tasks.
+
+**Fix:** Three tasks in `cron/db-cleanup/route.ts` for shadow observations, instance events, instances.
+
+**Status:** FIXED (this PR).
+
+## 🟡 P2 FOUND+FIXED 2026-07-11 — `buildSpxDeskFlow` missing `.catch()` (#3)
+
+**Fix:** `.catch(() => ({}))` on `fetchIndexSnapshots`; `.catch(() => [])` on flow alerts fetch.
+
+**Status:** FIXED (this PR).
+
+## 🟡 P2 FOUND+FIXED 2026-07-11 — Outcome breakeven zone dead in production (#10/#11)
+
+**Fix:** `playCloseWasLoss(pnl)` (`pnl <= -1`) wired in `spx-play-engine.ts`; call-site tests in `spx-play-outcomes-classify.test.ts`.
+
+**Status:** FIXED (this PR).
+
 
 ## 🔴 P0 FOUND+FIXED 2026-07-11 — `hod_break`/`lod_break` structurally impossible during RTH (deep sweep #1)
 

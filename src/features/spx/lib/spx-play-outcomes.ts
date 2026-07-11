@@ -179,6 +179,14 @@ export function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "bre
   return "breakeven";
 }
 
+/**
+ * Whether a closed play counts as a session loss for re-entry lock / cooldown.
+ * Scratch exits in (-1, 0] pts are not losses — must match classifyOutcome breakeven zone.
+ */
+export function playCloseWasLoss(pnl_pts: number): boolean {
+  return pnl_pts <= -1;
+}
+
 export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<number | null> {
   if (!dbConfigured()) {
     const id = nextMemoryPlayId();

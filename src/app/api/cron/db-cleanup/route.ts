@@ -210,6 +210,18 @@ async function runCleanup(): Promise<CleanupRunResult> {
       key: "spx_engine_snapshots",
       run: () => deleteOlderThan("spx_engine_snapshots", "observed_at", 90),
     },
+    {
+      key: "spx_playbook_shadow_observations",
+      run: () => deleteOlderThan("spx_playbook_shadow_observations", "observed_at", 180),
+    },
+    {
+      key: "spx_playbook_instance_events",
+      run: () => deleteOlderThan("spx_playbook_instance_events", "observed_at", 180),
+    },
+    {
+      key: "spx_playbook_instances",
+      run: () => deleteOlderThan("spx_playbook_instances", "updated_at", 365),
+    },
     { key: "lotto_plays", run: () => deleteOlderThan("lotto_plays", "created_at", 365) },
   ];
 

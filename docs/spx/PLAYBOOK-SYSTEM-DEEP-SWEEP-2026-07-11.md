@@ -121,14 +121,14 @@ None of this overturns the standing verdict that staging is correctly positioned
 |---|--------|-------|
 | 1 | **FIXED #102** | hod_break/lod_break |
 | 2 | **FIXED** | Intel overlay regime label follows intel flip via `gammaRegimeWithHysteresis` |
-| 3 | **FIXED** | `.catch` on `fetchIndexSnapshots` / `fetchIndexDailyBars` in desk + pulse |
+| 3 | **FIXED** | `.catch` on `buildSpxDesk`/`buildSpxDeskPulse` (#104) + `buildSpxDeskFlow` snapshot/flow fetches (catch-up PR) |
 | 4 | **FIXED** | Playbook in `crossToolAlignment` + `liveEngineConflict`; `primary_direction` threaded |
 | 5 | **FIXED** | Commentary playbook fetch try/catch |
 | 6 | **FIXED** | `closeOpenPlay` uses post-commit `savePlaySessionMeta` (BUG-07); row-count check |
 | 7 | **PARTIAL** | Audit trail on fail-closed + mechanical fallbacks; `SPX_CLAUDE_GATE` default still unset |
 | 8 | **FIXED** | `logPlayVerdict` on fail-closed + BIE fallback paths |
-| 9 | **FIXED** | Playbook tables in `db-cleanup-targets.ts` |
-| 10–11 | **FIXED** | Unified `classifyOutcome` P&L grading; STOP/TRAIL scratch = breakeven |
+| 9 | **FIXED** | Allow-list (#104) + three `deleteOlderThan` tasks in `cron/db-cleanup/route.ts` (catch-up PR) |
+| 10–11 | **FIXED** | `classifyOutcome` unified (#104) + `playCloseWasLoss` wired in `spx-play-engine.ts` (catch-up PR) |
 | 12 | **FIXED** | `updateOpenSpxPlayRow` MFE/MAE `GREATEST` high-water |
 | 13 | **FIXED** | `emaFromCloses` imported from `ma-math.ts` |
 | 14 | **FIXED** | NaN guard on gamma OI fields |
@@ -153,4 +153,46 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 38 | **OPEN** | No DB FK on playbook instance refs (schema change deferred) |
 | 4 (Largo) | **FIXED** | `composeSpxDeskRead` threads `playbookShadow` |
 | 7 | **PARTIAL** | `SPX_CLAUDE_GATE` default off by design (staging research) |
-| Q4 | **FIXED** | Production DB re-read in resolver (#105); sync path = self-consistency |
+| Q4 | **FIXED — confirmed independent** | Production DB re-read in resolver (#105); `playbook-match-resolver.test.ts` locks independence (catch-up PR) |
+
+---
+
+## Claude — catch-up adversarial verification of #102/#104/#105 (2026-07-11)
+
+4 parallel read-only agents re-verified the fix-batch table above against current code (`git show` on each commit) rather than trusting the PR descriptions. `npx tsc --noEmit` clean; 630/630 pre-existing tests pass on `origin/blackout-web-sandbox` HEAD (`be03540`/`3a1aed1`/`2c268db`).
+
+### #1 `hod_break`/`lod_break` (PR #102, commit `be03540`) — CONFIRMED FIXED, no residual gap
+
+`sessionBreakoutExtremesFromBars` computes HOD/LOD purely from `fetchIndexMinuteBars` output (completed bars only, forming bar excluded) — `ctx.hod`/`ctx.lod` (the spot-widened values) are grepped **zero times** in `spx-play-technicals.ts`'s breakout path anymore; they're structurally dead for this comparison. Verified via the PR's own regression test `hodLodBreakoutFlags: spot-widened desk HOD=price cannot fire — bar path can`, which encodes the exact old-vs-new scenario side by side and passes (10/10 in `spx-play-technicals-bars.test.ts`). Downstream consumers (`playbook-shadow-matcher.ts`, `spx-play-confirmations.ts`) read the final `technicals.breakout.hod_break` field, never the raw `ctx.hod`, so they inherit the fix automatically — no additional wiring needed. One deliberate, defensible trade-off: forming-bar exclusion means up to ~60s latency on same-minute breakouts (the correct cost of no longer using live spot). This closes the single highest-blast-radius bug of the entire review series.
+
+### #9 retention (PR #104, commit `3a1aed1`) — REOPENED → FIXED (catch-up PR)
+
+Catch-up review found allow-list-only wiring: `db-cleanup-targets.ts` listed the three playbook tables but `runCleanup()` had zero `deleteOlderThan` tasks. **Fixed:** three tasks in `cron/db-cleanup/route.ts` — `spx_playbook_shadow_observations`/`observed_at`/180d, `spx_playbook_instance_events`/`observed_at`/180d, `spx_playbook_instances`/`updated_at`/365d.
+
+### #2/#3 GEX desync + fetch guards (PR #104) — mostly fixed → #3 gap closed (catch-up PR)
+
+`gammaRegimeLabel` desync (finding #2) is genuinely fixed. `.catch()` was added to `buildSpxDesk` and `buildSpxDeskPulse` in #104; catch-up review found **`buildSpxDeskFlow`** still unguarded at `spx-desk.ts:~1720-1726`. **Fixed:** `.catch(() => ({}))` on `fetchIndexSnapshots([SPX])` and `.catch(() => [])` on `fetchSpxDeskFlowAlertsWithDb(32)` so transient Polygon/UW failures degrade to the flow lane's `empty` payload.
+
+### #10/#11 outcome classification (PR #104) — REOPENED → FIXED (catch-up PR)
+
+`classifyOutcome` unified correctly in #104, but engine paths still set `was_loss = pnl < 0`, making the `-1..0` breakeven branch unreachable outside TRAIL. **Fixed:** `playCloseWasLoss(pnl)` (`pnl <= -1`) wired in `spx-play-engine.ts` for THETA, SESSION/STOP/THESIS, and playbook THESIS exits; call-site tests in `spx-play-outcomes-classify.test.ts` use the same helper the engine uses.
+
+### Q4 — verdict-guard independent read (PR #105, commit `2c268db`) — CONFIRMED FIXED, genuinely independent
+
+`playbook-match-resolver.ts:70-81` issues a **second** Postgres round trip before assert. Catch-up gap was missing regression test — **fixed** in `playbook-match-resolver.test.ts` (mock returns `armed` on 1st `loadPlaybookInstanceStates`, `idle` on 2nd; assert throws).
+
+### Everything else in the fix-batch table
+
+Independently re-verified and confirmed as claimed, no gaps found: #4/#5 (BIE playbook-awareness — `crossToolAlignment`/`liveEngineConflict` now branch on `cross?.playbookShadow` with safe optional-chaining; commentary route try/catch confirmed), #6 (`closeOpenPlay` now defers meta write past `COMMIT`, reuses the BUG-07 pattern via `buildCloseMeta(await loadPlaySessionMeta())`, checks `closeOpenSpxPlayRow`'s row count), #7/#8 (10 `logPlayVerdict()` call sites now cover fail-closed + all mechanical-fallback branches; `SPX_CLAUDE_GATE` default-off correctly documented as deliberate, not silently broken), #12 (MFE/MAE `GREATEST`, correct given both columns store unsigned magnitudes), #13 (`emaFromCloses` genuinely imported, no more duplication), #14/#15 (gamma NaN guard + prior-day dated-bars-subset fallback), #18/#19 (advisory lock + index confirmed present), #21 (`roundDeskNum()` applied to the full numeric payload), #23 (`deskLaneFailed` genuinely threaded into `SpxDashboard.tsx`, not dead), #24/#25 (bar h/l validation + stale-cache-returns-fresh-price both confirmed). Test suite run per-item: 9+28+53+15 = all green, 0 failures across all four verification passes.
+
+### Re-check of items already marked OPEN/DEFERRED — confirmed still accurate, no silent drift
+
+Spot-checked directly against current code rather than trusting the table:
+- **#7 (`SPX_CLAUDE_GATE` default):** still gates via `process.env.SPX_CLAUDE_GATE` truthiness in `spx-play-claude.ts`, default unset → precedent-search fail-open remains the deliberate staging-research posture, unchanged.
+- **#27 (fuzzy join):** lives in `fetchSpxClaudePlayOutcomeForAudit` (`src/lib/db.ts:4716-4735`, not `alert-outcome-sync.ts` as an earlier note mislabeled it) — `direction` exact + `ABS(entry_price - price) < 0.01` + `opened_at` in a 30-minute window, `ORDER BY opened_at ASC LIMIT 1`. Unchanged by any of #102/#104/#105; the function's own docstring already documents this as a deliberate, safety-biased (never-wrong-play) design, not a silent bug. Still worth noting as a residual risk, not urgent.
+- **#31 (UW REST push-order contract)** and **#32 (`buildSpxDeskFlow` spot=0 edge, `spx-desk.ts:1739-1742`):** both confirmed unchanged, still present exactly as originally described. #3 fetch-guard gap is now closed; #32 spot=0 edge case itself remains deferred.
+- **#38 (no DB FK on playbook instance references):** confirmed — `spx_playbook_instances.instance_id`, `spx_playbook_instance_events.instance_id`, `spx_play_outcomes.playbook_instance_id` are all plain `TEXT` columns in `db.ts`'s `CREATE TABLE` statements, no `REFERENCES`/`FOREIGN KEY` anywhere. Unchanged — still an application-level-only consistency guarantee, correctly deferred (schema change, not a quick fix).
+
+### Full verification run (this pass)
+
+`npx tsc --noEmit` — clean. `PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test` — **2081/2081 pass, 0 failures**, 94 suites (full repo suite, not just the touched files). **F4 (RTH live proof):** not runnable this pass — market is fully closed (Saturday 02:05 ET at time of this review); `validate:staging-rth` and `GET /api/admin/playbook/fsm-today` both require live RTH state to produce meaningful output, so neither was run rather than fabricating a result. Still outstanding — needs a weekday-RTH window.
