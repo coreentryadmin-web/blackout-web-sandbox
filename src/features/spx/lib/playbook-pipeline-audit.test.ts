@@ -54,4 +54,6 @@ test("computePlaybookPipelineAudit: family_audit rolls up PB-02 mean reversion",
   assert.equal(audit.family_audit.mean_reversion.armed, 1);
   assert.equal(audit.family_audit.mean_reversion.triggered, 1);
   assert.equal(audit.family_audit.trend_continuation.triggered, 0);
+  assert.equal(audit.subtype_audit.level_rejection.triggered, 1);
+  assert.equal(audit.subtype_audit.price_gravitation.triggered, 0);
 });
