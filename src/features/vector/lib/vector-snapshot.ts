@@ -24,6 +24,7 @@ import {
   VECTOR_DEFAULT_TICKER,
   vectorHasWsOracle,
 } from "./vector-ticker";
+import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
 
 const WALL_SCOPE_REFRESH_MS = 15_000;
 const VEX_WALLS_CACHE_MS = 8_000;
@@ -172,6 +173,37 @@ export function getVectorVexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
     s.cachedVexWallsAt = now;
   }
   return s.cachedVexWalls;
+}
+
+/**
+ * GEX walls scoped to a DTE horizon (Phase 2 — timeframe/expiry-aware walls).
+ *
+ * Only oracle tickers (SPX/SPY/QQQ) carry the per-expiry gamma ladder needed to
+ * re-scope by expiry (`getGexStrikeExpiryLadder(ticker, expiries)`); for every
+ * other ticker the walls come from the heatmap fallback, which is already a
+ * near-term blend with no per-expiry breakdown to slice. So for non-oracle
+ * tickers — and for the "all" horizon — this returns the same walls as
+ * `getVectorGexWalls`. Every narrowing also falls back to the default rather
+ * than ever returning null walls, so the overlay never blanks just because a
+ * horizon was empty or the WS ladder hasn't populated yet.
+ *
+ * Intentionally NOT cached per-horizon and NOT on the per-second stream path —
+ * it's an on-demand read behind the DTE toggle, so it awaits the wall scope
+ * (expiry list) rather than racing a background refresh.
+ */
+export async function getVectorGexWallsForHorizon(
+  ticker: string,
+  horizon: VectorDteHorizon
+): Promise<GexWalls | null> {
+  const t = normalizeVectorTicker(ticker);
+  if (horizon === "all" || !vectorHasWsOracle(t)) return getVectorGexWalls(t);
+  await primeVectorWallScope(t);
+  const s = state(t);
+  const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
+  if (!scoped.length) return getVectorGexWalls(t);
+  const ws = getGexStrikeExpiryLadder(t, scoped);
+  if (!ws || ws.ladder.size === 0) return getVectorGexWalls(t);
+  return computeGexWalls(ws.ladder);
 }
 
 /** Zero-gamma flip from the shared GEX positioning cache. */
