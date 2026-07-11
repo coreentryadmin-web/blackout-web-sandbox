@@ -8,6 +8,25 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Four UW provider calls hit non-existent routes → silent 404 → data MISSING (no error surfaced)
+
+**Surface:** `src/lib/providers/unusual-whales.ts` — `fetchUwShortScreener` (L1464), `fetchUwEtfInOutflow` (L1554), `fetchUwEtfTide` (L1560), `fetchUwScreenerContracts` (L1578). Every consumer of short-interest screening, ETF in/out-flow, ETF tide, and the option-contract screener.
+
+**Root cause:** the paths were wrong — stale/guessed spellings that don't exist in the UW API. `uwGetSafe` catches non-2xx and returns `null` (by design, so one dead endpoint can't crash a page), so a 404 from a wrong path is indistinguishable from "no data": the callers got `null`/`[]` and rendered empty, with nothing logged. Confirmed against `uw-docs-catalog.ts` (auto-generated from UW's own OpenAPI — ground truth): the called paths simply weren't in it.
+- `/api/shorts/screener` → real route `/api/short_screener`
+- `/api/etf/{ticker}/in-outflow` → real route `/api/etfs/{ticker}/in-outflow` (ETF endpoints are pluralized `etfs`)
+- `/api/etf/{ticker}/tide` → real route `/api/market/{ticker}/etf-tide` (moved under the market controller)
+- `/api/screener/contracts` → real route `/api/screener/option-contracts`
+
+**Evidence:** each old path is absent from `UW_REST_SECTIONS`; each corrected path is present (grep hits at catalog lines 1268, 436, 809, 1200). New regression tests assert both directions (corrected present, broken absent) so a rename can't silently reintroduce a 404.
+
+**Fix:** repoint the four calls to the catalog-verified paths. No behavioral change beyond the URL — same params, same `extractRows`/cache wrappers. `tsc` clean; 13/13 `unusual-whales.test.ts` pass (incl. the 2 new catalog-guard tests); `@apply` guard clean.
+
+**Blast radius:** confined to these four functions — each broken path appeared exactly once. The broader arsenal audit (`VECTOR-DATA-ARSENAL-2026-07-11.md`) separately confirmed lit-flow (both paths 200) and `vix-term-structure` (403 = plan-gated, intentionally NOT called) are not bugs.
+
+**Status:** FIXED (`fix/uw-broken-paths`).
+
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector wall bead rails are viewer-driven: no live viewer → no rails; after-hours collapses to a single seeded bead
 
 **Surface:** `vector-universe.ts`, `vector-snapshot.ts`, `vector-wall-sample.ts`, `cron/vector-universe-snapshot/route.ts`. The yellow/purple wall "rails" (strength-per-time bead trails) the member sees on the chart.

@@ -1461,7 +1461,7 @@ export async function fetchUwShortFloat(ticker: string) {
 export async function fetchUwShortScreener(limit = 15) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.shortScreener(), UW_CACHE_TTL.shortScreener, async () => {
-    const data = await uwGetSafe<unknown>("/api/shorts/screener", { limit: Math.min(limit, 50) });
+    const data = await uwGetSafe<unknown>("/api/short_screener", { limit: Math.min(limit, 50) });
     return extractRows(data).slice(0, limit);
   });
 }
@@ -1551,13 +1551,13 @@ export async function fetchUwOptionsVolume(ticker: string, limit = 20) {
 }
 
 export async function fetchUwEtfInOutflow(etf: string) {
-  return uwGetSafe<unknown>(`/api/etf/${safeTicker(etf)}/in-outflow`, {});
+  return uwGetSafe<unknown>(`/api/etfs/${safeTicker(etf)}/in-outflow`, {});
 }
 
 export async function fetchUwEtfTide(etf: string) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.etfTide(etf), UW_CACHE_TTL.etfTide, () =>
-    uwGetSafe<unknown>(`/api/etf/${safeTicker(etf)}/tide`, {})
+    uwGetSafe<unknown>(`/api/market/${safeTicker(etf)}/etf-tide`, {})
   );
 }
 
@@ -1575,7 +1575,7 @@ export async function fetchUwLitFlow(ticker: string, limit = 20) {
 export async function fetchUwScreenerContracts(limit = 20) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.screenerContracts(), UW_CACHE_TTL.screenerContracts, async () => {
-    const data = await uwGetSafe<unknown>("/api/screener/contracts", { limit: Math.min(limit, 100) });
+    const data = await uwGetSafe<unknown>("/api/screener/option-contracts", { limit: Math.min(limit, 100) });
     return extractRows(data).slice(0, limit);
   });
 }
