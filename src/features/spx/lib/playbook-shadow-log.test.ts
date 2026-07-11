@@ -75,3 +75,34 @@ test("playbookShadowStateKey: none when idle", () => {
   };
   assert.equal(playbookShadowStateKey(panel), "none|");
 });
+
+test("playbookShadowStateKey: gate blocks fingerprint uses content not count", () => {
+  const panel: PlaybookShadowPanel = {
+    mode: "shadow",
+    primary_playbook_id: "PB-04",
+    pipeline_audit: EMPTY_AUDIT,
+    verdicts: [
+      {
+        playbook_id: "PB-04",
+        name: "Gamma Pin Fade",
+        trigger_fired: true,
+        precondition_match: true,
+        session_window_open: true,
+        regime_eligible: true,
+        direction: "short",
+        detail: "fade",
+        primary: true,
+      },
+    ],
+  };
+  const cooldown = ["Buy cooldown (10m after exit)"];
+  const grade = ["Grade B below minimum"];
+  assert.notEqual(
+    playbookShadowStateKey(panel, cooldown),
+    playbookShadowStateKey(panel, grade)
+  );
+  assert.equal(
+    playbookShadowStateKey(panel, cooldown),
+    "PB-04|PB-04:short|blocks:Buy cooldown (10m after exit)"
+  );
+});
