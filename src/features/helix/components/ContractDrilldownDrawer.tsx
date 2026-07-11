@@ -215,7 +215,7 @@ export function ContractDrilldownDrawer({
           </div>
 
           <div className="helix-contract-fills desk-panel border border-white/10 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 border-b border-white/8">
+            <div className="px-3 py-2 border-b border-white/10">
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light">
                 Contract flow data
               </p>

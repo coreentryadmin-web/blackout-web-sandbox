@@ -26,24 +26,34 @@ import {
 const WHALE_PREMIUM = 1_000_000;
 const RENDER_LIMIT = 250;
 
-const COLUMNS: { key: HelixFlowSortKey | null; label: string; align?: "left" | "right" }[] = [
+const COLUMNS: {
+  key: HelixFlowSortKey | null;
+  label: string;
+  align?: "left" | "right";
+  /** Hidden below 1280px — keeps tape readable on laptop widths */
+  compactHidden?: boolean;
+}[] = [
   { key: "time", label: "Time" },
   { key: "ticker", label: "Ticker" },
   { key: null, label: "C/P" },
   { key: "expiry", label: "Exp" },
   { key: "strike", label: "Strike", align: "right" },
-  { key: null, label: "Spot", align: "right" },
+  { key: null, label: "Spot", align: "right", compactHidden: true },
   { key: "premium", label: "Premium", align: "right" },
   { key: null, label: "Fill", align: "right" },
   { key: "dte", label: "DTE", align: "right" },
-  { key: null, label: "Ask", align: "right" },
+  { key: null, label: "Ask", align: "right", compactHidden: true },
   { key: null, label: "OI", align: "right" },
-  { key: null, label: "IV", align: "right" },
-  { key: null, label: "OTM", align: "right" },
-  { key: null, label: "Type" },
-  { key: "score", label: "Sc", align: "right" },
+  { key: null, label: "IV", align: "right", compactHidden: true },
+  { key: null, label: "OTM", align: "right", compactHidden: true },
+  { key: null, label: "Type", compactHidden: true },
+  { key: "score", label: "Sc", align: "right", compactHidden: true },
   { key: null, label: "Signals" },
 ];
+
+function colClass(col: (typeof COLUMNS)[number]) {
+  return clsx(col.align === "right" && "text-right", col.compactHidden && "helix-flow-col--aux");
+}
 
 type SignalTone = "bull" | "bear" | "gold" | "sky" | "purple" | "ember";
 
@@ -145,7 +155,7 @@ export function HelixFlowTable({
   };
 
   return (
-    <div className="helix-flow-terminal desk-panel">
+    <div className="helix-flow-terminal desk-panel flex flex-1 flex-col min-h-0">
       <div className="helix-flow-terminal-head">
         <div className="helix-flow-terminal-title">
           <span className="helix-pro-command-label">Live tape</span>
@@ -176,10 +186,7 @@ export function HelixFlowTable({
               {COLUMNS.map((col) => (
                 <th
                   key={col.label}
-                  className={clsx(
-                    col.align === "right" && "text-right",
-                    col.key && "helix-flow-th-sortable"
-                  )}
+                  className={clsx(colClass(col), col.key && "helix-flow-th-sortable")}
                 >
                   {col.key ? (
                     <button
@@ -285,10 +292,10 @@ export function HelixFlowTable({
                     role={onContractClick || onTickerClick ? "button" : undefined}
                     tabIndex={onContractClick || onTickerClick ? 0 : undefined}
                   >
-                    <td className="helix-flow-cell-time tabular-nums text-sky-300/90">
+                    <td className={clsx(colClass(COLUMNS[0]), "helix-flow-cell-time tabular-nums text-sky-300/90")}>
                       {flowTimeMs(flow) ? timeAgo(flow.alerted_at) : "—"}
                     </td>
-                    <td className="helix-flow-cell-ticker">
+                    <td className={clsx(colClass(COLUMNS[1]), "helix-flow-cell-ticker")}>
                       <div className="flex items-center gap-1.5 min-w-0">
                         {onToggleStar && (
                           <button
@@ -326,7 +333,7 @@ export function HelixFlowTable({
                         </span>
                       </div>
                     </td>
-                    <td>
+                    <td className={colClass(COLUMNS[2])}>
                       <span
                         className={clsx(
                           "helix-flow-cp",
@@ -336,49 +343,50 @@ export function HelixFlowTable({
                         {isCall ? "C" : "P"}
                       </span>
                     </td>
-                    <td className="tabular-nums text-sky-300/90">{fmtExpiryShort(flow.expiry)}</td>
-                    <td className="text-right tabular-nums font-semibold text-gold/95">
+                    <td className={clsx(colClass(COLUMNS[3]), "tabular-nums text-sky-300/90")}>{fmtExpiryShort(flow.expiry)}</td>
+                    <td className={clsx(colClass(COLUMNS[4]), "text-right tabular-nums font-semibold text-gold/95")}>
                       {flow.strike}
                       {isCall ? "C" : "P"}
                     </td>
-                    <td className="text-right tabular-nums text-sky-200/90">
+                    <td className={clsx(colClass(COLUMNS[5]), "text-right tabular-nums text-sky-200/90")}>
                       {fmtSpot(flow.underlying_price)}
                     </td>
                     <td
                       className={clsx(
+                        colClass(COLUMNS[6]),
                         "text-right tabular-nums font-bold text-[13px]",
                         isCall ? "text-bull" : "text-bear-text"
                       )}
                     >
                       {premiumDisplay(flow)}
                     </td>
-                    <td className="text-right tabular-nums text-sky-200/85">
+                    <td className={clsx(colClass(COLUMNS[7]), "text-right tabular-nums text-sky-200/85")}>
                       {fmtFill(flow.fill_price)}
                     </td>
-                    <td className="text-right tabular-nums text-sky-300/80">
+                    <td className={clsx(colClass(COLUMNS[8]), "text-right tabular-nums text-sky-300/80")}>
                       {is0dte ? <span className="text-ember font-semibold">0</span> : dte}
                     </td>
-                    <td className="text-right tabular-nums text-sky-300/80">
+                    <td className={clsx(colClass(COLUMNS[9]), "text-right tabular-nums text-sky-300/80")}>
                       {fmtAskPct(flow.ask_pct)}
                     </td>
-                    <td className="text-right tabular-nums text-sky-300/80">
+                    <td className={clsx(colClass(COLUMNS[10]), "text-right tabular-nums text-sky-300/80")}>
                       {fmtOi(flow.open_interest)}
                     </td>
-                    <td className="text-right tabular-nums text-sky-300/80">
+                    <td className={clsx(colClass(COLUMNS[11]), "text-right tabular-nums text-sky-300/80")}>
                       {fmtIv(flow.implied_volatility)}
                     </td>
-                    <td className="text-right tabular-nums text-sky-300/80">
+                    <td className={clsx(colClass(COLUMNS[12]), "text-right tabular-nums text-sky-300/80")}>
                       {fmtOtm(flow.otm_pct)}
                     </td>
-                    <td>
+                    <td className={colClass(COLUMNS[13])}>
                       <span className="helix-flow-type font-mono text-[10px] uppercase text-cyan-300/90">
                         {flow.alert_rule ? ruleLabel(flow.alert_rule) : flow.route?.slice(0, 6) || "—"}
                       </span>
                     </td>
-                    <td className="text-right tabular-nums text-purple-light/90">
+                    <td className={clsx(colClass(COLUMNS[14]), "text-right tabular-nums text-purple-light/90")}>
                       {flow.score > 0 ? flow.score.toFixed(1) : "—"}
                     </td>
-                    <td>
+                    <td className={colClass(COLUMNS[15])}>
                       <div className="helix-flow-signals flex flex-wrap gap-0.5">
                         {visibleSignals.map((s) => (
                           <SignalPill key={s.id} label={s.label} tone={s.tone} />
