@@ -126,7 +126,7 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 - Staging **browser** E2E with Cognito auth (dashboard redirects to hosted UI; API validation passed)
 - **RTH** proof of cron FSM writes + open-play `playbook_instance_id` on a **real** tick sequence with open position — **required for foundation closure**
 - **Prod** — all work merged to `blackout-web-sandbox` only; not merged to `blackout-web` `main`
-- **Promotion pipeline** — never executed against production/staging DB (**F2**)
+- **Promotion pipeline** — manual script only until **#97** GHA step lands (**F2**)
 
 ---
 
@@ -152,7 +152,7 @@ Prioritized for a follow-up pass. **Not blocking staging deploy.**
 | 1 | Are **#2** and **#22** still P0 under live RTH? | **No** for capital risk today. #2 bypass affects shadow attempt counts, not `openPlay` commits. #22 (PB-14) is shadow-only + not allowlisted — gate A17 blocks real opens. Fix both before the next gate loosens (PB-14 to allowlist, shadow stats trusted for research). | ✅ Answered |
 | 2 | Is **`playbookShadowStateKey`** too coarse? | **Was yes** — fingerprint used block count only. **Fixed #89** (sorted block content join, same pattern as `BLOCKED_CURSOR_KEY`). | ✅ Fixed |
 | 3 | Does **`playbook_instance_id`** need backfill migration? | **Not now.** ~90 min legacy window on staging only. Run diagnostic: count NULL `playbook_instance_id` rows with ambiguous `(playbook_id, session_date, direction)` groups. Zero → no migration; legacy fallback join is permanent for pre-#82 rows. | ✅ Answered |
-| 4 | Minimal wiring for promotion-eval **#20**? | **Two PRs, not one.** (a) Inert data-quality gate — **done #93**. (b) Sample-builder querying DB + route/cron calling `evaluatePlaybookPromotion` — **still open (#20b)**. `evaluatePlaybookPromotion` has **zero production callers** today. | 🔧 Part b open |
+| 4 | Minimal wiring for promotion-eval **#20**? | **Two parts:** (a) inert gate **#93** done. (b) `playbook-evidence-report.mjs` already calls `evaluatePlaybookPromotion` manually — **#97** wires it into staging GHA weekly + passes `data_quality_session_fraction`. Not zero callers after #97; still no admin UI. | 🔧 #97 in flight |
 | 5 | Regression in dual-path shadow mode (`mode: "live"` on staging)? | **No.** `playbookLiveGateEnabled()` is env-correct per deploy target. `mode: "live"` tightens BUY gating only; **no broker/order execution code** exists in repo. Live staging: `vwap_volume_weighted: false` confirmed on desk payload. | ✅ Answered |
 
 Full reasoning: see **Claude — second-pass validation** section below.
@@ -182,9 +182,30 @@ Full reasoning: see **Claude — second-pass validation** section below.
 
 **Foundation closure checklist (all three required before "strong"):**
 
-1. [ ] VWAP question **closed** (fixed or formally gated off)
-2. [ ] Promotion pipeline **runs against real data** at least once in production/staging cron
-3. [ ] At least **one RTH session** observed end-to-end with real open trade + FSM evidence
+1. [ ] VWAP question **closed** (fixed or formally gated off) — **in progress #96** fail-closed PB-01/PB-02
+2. [ ] Promotion pipeline **runs against real data** at least once in production/staging cron — **in progress** GHA + `data_quality_session_fraction` (#97)
+3. [ ] At least **one RTH session** observed end-to-end with real open trade + FSM evidence — **next weekday** (`validate:staging-rth`)
+
+---
+
+### Cursor executive decision (2026-07-11) — no further Claude review gate
+
+**Decision:** Stop routing through another Claude pass for prioritization. The foundation gaps are unambiguous; execute directly on `blackout-web-sandbox`.
+
+| Priority | Action | Owner | PR |
+|----------|--------|-------|-----|
+| **P0** | F1 — fail-closed VWAP playbooks until feed fixed | Cursor | **#96** |
+| **P0** | F4 — RTH observation on next weekday open | Cursor + GHA | `validate:staging-rth` (existing) |
+| **P1** | F2 — wire `playbook:evidence-report` into staging GHA + enrich sample | Cursor | **#97** |
+| **P1** | F3 — dual-evaluation audit (`evaluateTradeGovernor` call sites) | Deferred 1 sprint | — |
+| **P2** | F5 — delete dead exit-policy, unify readiness SSOT | Deferred | #13, #9 |
+
+**What we are NOT doing this sprint:**
+- Merging to prod `blackout-web` `main`
+- Loosening allowlist or gates before F1/F2 close
+- Calling the foundation "strong" in docs until checklist is green
+
+**Claude role going forward:** Answer **third-pass questions** in this doc when asked — not own the sprint queue. Human verdict (foundation assessment above) is the north star.
 
 ---
 
