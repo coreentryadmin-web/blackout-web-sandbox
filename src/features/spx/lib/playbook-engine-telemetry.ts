@@ -3,23 +3,38 @@ import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-r
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { maybeLogPlaybookShadowMatch } from "@/features/spx/lib/playbook-shadow-log";
+import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
+import type { ResolvedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+
+export type SyncPlaybookTelemetryOpts = {
+  /** Shared OR memory from evaluator — avoids second refresh on cron ticks. */
+  or_break_memory?: OrBreakMemory | null;
+  /** Pre-resolved match from evaluator — avoids second resolve on cron ticks. */
+  resolved?: ResolvedPlaybookMatch | null;
+};
 
 /** Cron mutate path — persist playbook FSM telemetry (not only member reads). */
 export async function syncPlaybookTelemetryAfterEvaluate(
   desk: SpxDeskPayload,
   technicals: PlayTechnicals | null | undefined,
-  play: SpxPlayPayload
+  play: SpxPlayPayload,
+  telemetryOpts?: SyncPlaybookTelemetryOpts
 ): Promise<void> {
   if (!technicals?.available) return;
 
   const sessionDate = todayEtYmd();
-  const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, true);
-  const match = await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
-    or_break_memory: orBreakMemory,
-  });
+  const orBreakMemory =
+    telemetryOpts?.or_break_memory != null
+      ? telemetryOpts.or_break_memory
+      : await refreshOrBreakMemory(sessionDate, desk, technicals, true);
+  const match =
+    telemetryOpts?.resolved ??
+    (await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
+      or_break_memory: orBreakMemory,
+    }));
   const panel = buildPlaybookShadowPanel(desk, technicals, {
     or_break_memory: orBreakMemory,
     match,
