@@ -31,6 +31,7 @@
     "validate:staging-bie": "node scripts/staging-bie-validate.mjs",
     "validate:staging-playbook": "node scripts/validate-staging-playbook.mjs",
     "playbook:evidence-report": "node --import tsx scripts/playbook-evidence-report.mjs",
+    "analyze:track-record-staging": "node --import tsx scripts/analyze-track-record-staging.mjs",
     "playbook:param-sweep": "node scripts/playbook-param-sweep.mjs",
     "validate:staging-desk-live": "node scripts/validate-staging-desk-live.mjs",
     "validate:staging-vector-e2e": "node scripts/vector-e2e-audit.mjs --base=https://staging.blackouttrades.com",
