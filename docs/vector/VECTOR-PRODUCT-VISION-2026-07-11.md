@@ -23,6 +23,13 @@ Three properties separate top-tier from mere:
   universe ticker, not just ones with a live viewer. The engine behind honest, dense rails.
 - **#140/#141** DTE-horizon walls (0DTE / weekly / monthly / all) — walls re-scope to the expiry
   horizon the member trades, on-demand so the shared stream stays fast.
+- **#147 + reconstruct-server** honest intraday GEX reconstruction — a **real dense rail for any
+  PAST session**, with no live recorder needed and nothing fabricated. Gamma is closed-form BSM
+  recomputed along the session's TRUE observed spot path (Polygon minute bars) against the EOD
+  options chain. Live-validated on SPX 2026-07-10: 395 min bars → 79 five-min beads, 9,351 usable
+  contracts, gamma flip drifting 7618.5 → 7609 → 7599.8 across the day while the dominant 7600/7300
+  OI walls anchor. Wired as the off-hours backfill so a session with no recorded rail no longer
+  collapses to a single seeded bead.
 
 ## Roadmap — ranked by (impact × differentiation × feasibility)
 
@@ -60,7 +67,9 @@ Three properties separate top-tier from mere:
 
 ## Operating principles (non-negotiable)
 - **Honesty over cosmetics** — never fabricate history or carry stale readings forward; disclose
-  staleness, show honest gaps. (This is why there's no fake rail backfill.)
+  staleness, show honest gaps. Off-hours rails are *reconstructed* (closed-form BSM gamma along the
+  session's real observed price path against the EOD chain), never invented — a computed rail from
+  real inputs is honest; a copied-forward or made-up one is not.
 - **Small, tested, verified PRs** — one concept per PR, `tsc`+tests+`@apply` guard green, live-
   verified on staging where there's a runtime surface.
 - **Keep the stream fast** — new interpretation layers are on-demand or client-derived; never bloat
