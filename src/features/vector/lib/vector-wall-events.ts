@@ -12,7 +12,17 @@ export type VectorWallEventKind =
   | "flip_shift"
   | "spot_crossed_flip"
   | "spot_broke_call"
-  | "spot_broke_put";
+  | "spot_broke_put"
+  // Strength-DYNAMICS at a fixed strike (the "what the tape is doing" narration): a wall
+  // stacking up, thinning out, freshly forming, or dissolving — not the top strike moving.
+  | "call_wall_building"
+  | "put_wall_building"
+  | "call_wall_fading"
+  | "put_wall_fading"
+  | "call_wall_new"
+  | "put_wall_new"
+  | "call_wall_gone"
+  | "put_wall_gone";
 
 export type VectorWallEvent = {
   time: number;
@@ -76,6 +86,90 @@ function shiftIsDominant(
   return next.pct - prevInNext.pct >= SHIFT_DOMINANCE_PCT;
 }
 
+/**
+ * Strength-dynamics thresholds. A wall's `pct` is its share of the chain's total |gamma|; a few
+ * points of change there is a real re-stacking of dealer positioning, not noise. Tuned to fire on
+ * genuine moves only (the desk doesn't want a line every bucket).
+ */
+const BUILD_DELTA_PCT = 3; // +3 share points at a held strike = building; −3 = fading
+const MATERIAL_PCT = 4; // a strike must carry ≥ this share to count as a "new" or "dissolved" wall
+const MAX_DYNAMICS_PER_SIDE = 2; // cap lines per side per diff so a churny bucket can't flood the feed
+
+const SIDE_KEY = { callWalls: "call_wall", putWalls: "put_wall" } as const;
+
+/**
+ * Per-strike strength narration between two samples on one side. Emits the "building / fading /
+ * new / dissolved" lines that describe HOW the dealer wall at a fixed strike is evolving — the
+ * texture the raw shift/break events miss. `skipStrikes` holds strikes already narrated by a
+ * top-wall shift this diff, so we don't say "7,600 forming" right after "shifted 7,500 → 7,600".
+ */
+function wallStrengthEvents(
+  prevWalls: GexWalls | null,
+  nextWalls: GexWalls | null,
+  side: "callWalls" | "putWalls",
+  lens: VectorWallLens,
+  time: number,
+  label: string,
+  skipStrikes: Set<number>
+): VectorWallEvent[] {
+  const prev = new Map<number, number>();
+  for (const l of prevWalls?.[side] ?? []) prev.set(Math.round(l.strike), l.pct);
+  const next = new Map<number, number>();
+  for (const l of nextWalls?.[side] ?? []) next.set(Math.round(l.strike), l.pct);
+  const key = SIDE_KEY[side];
+
+  const cand: Array<{ kind: VectorWallEventKind; message: string; mag: number }> = [];
+  const pct = (n: number) => `${n.toFixed(0)}%`;
+
+  for (const [strike, npct] of next) {
+    const ppct = prev.get(strike);
+    if (ppct == null) {
+      if (npct >= MATERIAL_PCT && !skipStrikes.has(strike)) {
+        cand.push({
+          kind: `${key}_new` as VectorWallEventKind,
+          message: `New ${label.toLowerCase()} forming at ${fmtStrike(strike)} (${pct(npct)} gamma)`,
+          mag: npct,
+        });
+      }
+      continue;
+    }
+    const delta = npct - ppct;
+    if (delta >= BUILD_DELTA_PCT) {
+      cand.push({
+        kind: `${key}_building` as VectorWallEventKind,
+        message: `${label} ${fmtStrike(strike)} building — ${pct(ppct)} → ${pct(npct)} gamma`,
+        mag: delta,
+      });
+    } else if (delta <= -BUILD_DELTA_PCT) {
+      cand.push({
+        kind: `${key}_fading` as VectorWallEventKind,
+        message: `${label} ${fmtStrike(strike)} fading — ${pct(ppct)} → ${pct(npct)} gamma`,
+        mag: -delta,
+      });
+    }
+  }
+
+  for (const [strike, ppct] of prev) {
+    if (!next.has(strike) && ppct >= MATERIAL_PCT && !skipStrikes.has(strike)) {
+      cand.push({
+        kind: `${key}_gone` as VectorWallEventKind,
+        message: `${label} ${fmtStrike(strike)} dissolved — was ${pct(ppct)} gamma`,
+        mag: ppct,
+      });
+    }
+  }
+
+  // Loudest changes first, capped — the desk reads the biggest re-stacking, not every wobble.
+  cand.sort((a, b) => b.mag - a.mag);
+  return cand.slice(0, MAX_DYNAMICS_PER_SIDE).map((c) => ({
+    time,
+    lens,
+    kind: c.kind,
+    severity: "info" as const,
+    message: c.message,
+  }));
+}
+
 /** Diff two consecutive wall-history samples for the active lens. */
 export function diffVectorWallSample(
   prev: WallHistorySample | null,
@@ -92,6 +186,8 @@ export function diffVectorWallSample(
   const events: VectorWallEvent[] = [];
   const prevWalls = wallsForLens(prev, lens);
   const nextWalls = wallsForLens(next, lens);
+  // Strikes narrated by a top-wall shift below — their new/gone dynamics are redundant.
+  const shiftStrikes = new Set<number>();
 
   const prevCall = topStrike(prevWalls, "callWalls");
   const nextCall = topStrike(nextWalls, "callWalls");
@@ -101,6 +197,7 @@ export function diffVectorWallSample(
     prevCall !== nextCall &&
     shiftIsDominant(nextWalls, "callWalls", prevCall, nextCall)
   ) {
+    shiftStrikes.add(prevCall).add(nextCall);
     events.push({
       time: next.time,
       lens,
@@ -118,6 +215,7 @@ export function diffVectorWallSample(
     prevPut !== nextPut &&
     shiftIsDominant(nextWalls, "putWalls", prevPut, nextPut)
   ) {
+    shiftStrikes.add(prevPut).add(nextPut);
     events.push({
       time: next.time,
       lens,
@@ -147,6 +245,12 @@ export function diffVectorWallSample(
       message: `${labels.flip} moved ${fmtStrike(prevFlip)} → ${fmtStrike(nextFlip)}`,
     });
   }
+
+  // Per-strike strength narration — building / fading / new / dissolved.
+  events.push(
+    ...wallStrengthEvents(prevWalls, nextWalls, "callWalls", lens, next.time, labels.call, shiftStrikes),
+    ...wallStrengthEvents(prevWalls, nextWalls, "putWalls", lens, next.time, labels.put, shiftStrikes)
+  );
 
   return events;
 }
