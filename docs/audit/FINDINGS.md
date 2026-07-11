@@ -4474,3 +4474,28 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 **Verification:** `npx tsc --noEmit` clean. Full suite 1651/1651 passing (14 new). `npm run build` clean. `npm run lint` clean (pre-existing warnings only, none touching these files). `npm run lint:css` — 4 pre-existing errors on `main` at `globals.css:1584-1587` (`animation-delay: 0` — unrelated `bie-field-line` rules from the earlier redesign PR, confirmed via `git show main:src/app/globals.css`), zero new errors introduced by this PR's CSS additions.
 
 **Not yet confirmed:** as with PR #532/#533, no live browser exists in this sandbox (Playwright/Chromium blocked) — this needs the user to view the live site post-deploy to confirm the connector lines/pulses actually render as intended.
+
+---
+
+## SPX Slayer — verdict-guard assert (Q4) reopened, sixth-pass review (2026-07-11)
+
+**Status:** REOPENED — narrow gap, not the full item. `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`'s fifth-pass closure section marked Q4 (`assertPlaybookVerdictGuardInvariants`) ✅ closed via PR #100. Sixth-pass adversarial re-verification confirms two of the three fifth-pass complaints are genuinely fixed, but the core structural complaint is not, and PR #100's own code comment overstates what the fix actually does.
+
+**Severity:** Medium (documentation/design-intent gap, not an active production bug — the assert is opt-in via `PLAYBOOK_VERDICT_GUARD_ASSERT` and currently only runs in CI/tests, not against live traffic).
+
+**What's genuinely fixed (confirmed, don't re-litigate):**
+1. Idle-desync detection — `playbook-verdict-guard.ts`'s `assertPlaybookVerdictGuardInvariants` now explicitly checks `persistedState === "idle"` and throws when a trigger survives despite the persisted FSM state being idle (the prior gap: only terminal/post-entry states were checked, not idle).
+2. Test coverage — the previously no-op test (which never let `trigger_fired` reach the assertion logic) is replaced with a genuine violation case (calls the assert directly with an idle-state fixture, confirms it throws) and a genuine healthy-path case (runs the full `applyPlaybookVerdictGuards` pipeline with the assert live, confirms `trigger_fired` survives).
+3. CI wiring — `PLAYBOOK_VERDICT_GUARD_ASSERT=1` is genuinely set in both `package.json`'s `test` script and `.github/workflows/ci.yml`'s `env:` block for the unit-test step, not just referenced in a comment.
+
+**What's not fixed — the reason for reopening:** PR #100's code comment claims the assert "uses durable snapshot rows (not resolver-derived state) to catch idle/arm desync" — implying an independent source of truth. This is not accurate. Traced end to end: `assertPlaybookVerdictGuardInvariants` is called at `playbook-verdict-guard.ts:158-161` with the *same* `snapshots`/`armedPollCounts` parameter objects that `applyPlaybookVerdictGuards` already consumed, moments earlier in the same function, to produce the `guarded` result being checked. The production caller (`playbook-match-resolver.ts:52-62`) loads both from the DB exactly once at the top of `resolveGuardedPlaybookMatch` and both the guard logic and the assert consume that single load. Worse: `resolveEpisodeInstance`'s `from_state` (what the guard itself uses) is provably identical to `persisted.state` (what the assert newly checks) in every code path — both terminate at the same `snapshots[i].state` field, just accessed through two different function calls. So there is no second, independent read anywhere in this fix.
+
+**Concrete failure mode this leaves open:** the real-world scenario this assert exists to catch is an in-memory `armedPollCounts` map that's gone stale-high relative to a persisted FSM state that changed underneath it (e.g., a concurrent write, or a race between two evaluator ticks). That scenario requires the map and the persisted state to have diverged *before* either is read. Since both are loaded once and consumed by both the guard and the assert from that single snapshot-in-time, the assert has no way to detect that kind of divergence — it can only catch a bug in `applyPlaybookVerdictGuards`'s own internal arithmetic (a real but much narrower class of bug than the one it's named for).
+
+**Recommended fix (not applied — this is a review/handoff entry, no code changed):** one of two small options, either is acceptable:
+1. Give the assert a genuinely independent read — a fresh DB round-trip for persisted instance state, separate from the `snapshots` the caller already loaded — accepting the added latency, likely still worth keeping behind the same opt-in flag so it never runs against live traffic.
+2. If a true independent read isn't worth the cost, rename/redocument this function as a **self-consistency check** (which it is, correctly and usefully) rather than continuing to claim in the code comment that it catches a cross-source desync it structurally cannot see. The current mismatch between what the comment promises and what the code does is the actual defect — not the assert's existence or design, which is otherwise reasonable.
+
+**Files:** `src/features/spx/lib/playbook-verdict-guard.ts` (`assertPlaybookVerdictGuardInvariants`, lines ~158-192), `src/features/spx/lib/playbook-match-resolver.ts:52-62` (the shared single-load call site), `src/features/spx/lib/playbook-verdict-guard.test.ts` (test coverage, confirmed adequate for what's being reviewed here — no test change needed).
+
+**Evidence trail:** full reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`, "Claude — sixth-pass validation" section, dated 2026-07-11.
