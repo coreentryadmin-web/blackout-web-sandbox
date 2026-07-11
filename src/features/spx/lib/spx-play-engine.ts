@@ -911,10 +911,15 @@ async function evaluateFlatPlay(
     }
   }
 
+  const buyCooldownBypass =
+    promoteEligible ||
+    (playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"));
+
   const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "buy",
     cold_buy_path: !promoteEligible && !playbookLabActive,
+    bypass_buy_cooldown: buyCooldownBypass,
     ...gatePlaybookOpts,
   });
 
@@ -1136,8 +1141,7 @@ async function evaluateFlatPlay(
       blocked: optionTicket.blocked,
       block_reason: optionTicket.block_reason,
     },
-    bypass_buy_cooldown:
-      playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"),
+    bypass_buy_cooldown: buyCooldownBypass,
   });
   if (optionGovernor.blocks.length) {
     if (mutate && playbookLabActive && playbookPrimaryId && dir) {

@@ -179,6 +179,8 @@ export function evaluatePlayGates(
       blocked?: boolean;
       block_reason?: string | null;
     };
+    /** WATCH→ENTRY promote or A+ bypass — skips buy-cooldown in trade governor. */
+    bypass_buy_cooldown?: boolean;
   }
 ): PlayGateResult {
   const blocks: string[] = [];
@@ -213,7 +215,8 @@ export function evaluatePlayGates(
       triggers_today_by_pb: opts?.triggers_today_by_pb,
       option: opts?.option_preview,
       bypass_buy_cooldown:
-        playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"),
+        opts?.bypass_buy_cooldown === true ||
+        (playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+")),
     });
     blocks.push(...governor.blocks);
     warnings.push(...governor.warnings);
