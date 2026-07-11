@@ -105,3 +105,29 @@ test("sliceBarsToTime: bars after the replay cursor (the 'leaked live data' bug)
     "no bar after the cursor may leak into a replay-mode display"
   );
 });
+
+// Regression for the SECOND occurrence of the replay leak (2026-07-11): the 60s
+// SPY-volume backfill effect painted displayBarsFromMinute(fullLiveBars, timeframe)
+// with NO cursorTime while replay was active — the lib-level slice was correct, the
+// component call site simply bypassed it. Any paint that runs during replay must
+// compose slice-then-aggregate; this pins that composition for a >1m timeframe:
+// the aggregate of the cursor-sliced minutes must end at the cursor's bucket and
+// carry no post-cursor minute's range, while the unsliced aggregate (what the buggy
+// call site painted) visibly differs.
+test("slice-then-aggregate: post-cursor minutes never reach a higher-timeframe replay paint", async () => {
+  const { aggregateVectorBars } = await import("@/features/vector/lib/vector-bar-timeframes");
+  const mk = (t: number, px: number) => ({ time: t, open: px, high: px, low: px, close: px });
+  const bars = [
+    mk(OPEN, 10),
+    mk(OPEN + 60, 11),
+    mk(OPEN + 120, 12), // cursor lands here, mid 5m bucket
+    mk(OPEN + 180, 99), // post-cursor spike that must NOT appear
+    mk(OPEN + 240, 100),
+  ];
+  const cursorTime = OPEN + 120;
+  const honest = aggregateVectorBars(sliceBarsToTime(bars, cursorTime), 5);
+  const leaked = aggregateVectorBars(bars, 5);
+  assert.equal(honest.length, 1);
+  assert.equal(honest[0]!.high, 12, "post-cursor spike leaked into the replay bucket");
+  assert.notDeepEqual(honest, leaked, "unsliced aggregate must differ — else this test proves nothing");
+});

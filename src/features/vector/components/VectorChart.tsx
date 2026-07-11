@@ -441,6 +441,13 @@ export function VectorChart({
   const replayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const replayModeRef = useRef(false);
   const liveSessionRef = useRef(liveSession);
+  /**
+   * Mirrors cursorIndex for reads outside React's render cycle (replay timer, lens
+   * repaint, stepReplay). Keeping paints OUT of setCursorIndex updater callbacks matters:
+   * updaters must be pure (StrictMode double-invokes them), so applyFrame calls live next
+   * to the state set instead of inside it.
+   */
+  const cursorIndexRef = useRef(0);
 
   const [sessionHistory, setSessionHistory] = useState(initialWallHistory);
   const [sessionBars, setSessionBars] = useState(initialBars);
@@ -495,6 +502,10 @@ export function VectorChart({
   useEffect(() => {
     replayModeRef.current = replayMode;
   }, [replayMode]);
+
+  useEffect(() => {
+    cursorIndexRef.current = cursorIndex;
+  }, [cursorIndex]);
 
   const refreshTrails = useCallback((activeLens: VectorWallLens) => {
     const series = seriesRef.current;
@@ -559,7 +570,10 @@ export function VectorChart({
       const vexAt = history.length > 0 ? wallsAtReplayTime(history, cursorTime, "vex") : initialVexWalls;
       const gammaAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "gex") : initialGammaFlip;
       const vexFlipAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "vex") : initialVexFlip;
-      refreshOverlays(activeLens, gexAt, vexAt, gammaAt, vexFlipAt, darkPoolRef.current);
+      // Dark pool has no per-time history — darkPoolRef is TODAY's live ladder. Drawing
+      // it on a historical frame mislabels live levels under the cursor timestamp
+      // (walls/flip above are carefully time-honest; DP must not be the exception).
+      refreshOverlays(activeLens, gexAt, vexAt, gammaAt, vexFlipAt, []);
     },
     [initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, refreshOverlays]
   );
@@ -580,9 +594,15 @@ export function VectorChart({
       : 0;
 
     connRef.current = createVectorEventSource(ticker, (snap) => {
-      if (replayModeRef.current) return;
       if (snap.sessionYmd && snap.sessionYmd !== sessionYmd) return;
       if (!liveSessionRef.current) return;
+      // During replay the connection stays OPEN and every branch below keeps
+      // accumulating into refs/state — only chart PAINTS are gated. Closing the
+      // stream (the old behavior) permanently lost every bar that closed while
+      // the member was in replay: nothing backfills bars on reconnect, so a
+      // 10-minute replay left a 10-bar hole in the session for the rest of the
+      // day, silently corrupting higher-timeframe OHLC aggregates.
+      const inReplay = replayModeRef.current;
 
       if (snap.wallHistory?.length) {
         const prevTail = wallHistoryRef.current[wallHistoryRef.current.length - 1];
@@ -600,7 +620,7 @@ export function VectorChart({
           wallHistoryRef.current = merged;
           setSessionHistory(merged);
           if (hasVexInHistory(merged)) setVexAvailable(true);
-          refreshTrails(lensRef.current);
+          if (!inReplay) refreshTrails(lensRef.current);
         }
       }
 
@@ -653,23 +673,29 @@ export function VectorChart({
         spotRef.current = curSpot;
         minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
         setSessionBars(minuteBarsRef.current);
-        const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
-        const lastDisplay = displayBars[displayBars.length - 1];
-        if (lastDisplay) {
-          displayBarTimeRef.current = lastDisplay.time;
-          seriesRef.current?.update(lastDisplay);
-          volumeSeriesRef.current?.setData(volumeHistogramData(displayBars));
+        if (!inReplay) {
+          const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
+          const lastDisplay = displayBars[displayBars.length - 1];
+          if (lastDisplay) {
+            displayBarTimeRef.current = lastDisplay.time;
+            seriesRef.current?.update(lastDisplay);
+            volumeSeriesRef.current?.setData(volumeHistogramData(displayBars));
+          }
         }
       }
 
-      refreshOverlays(
-        lensRef.current,
-        gexWallsRef.current,
-        vexWallsRef.current,
-        gammaFlipRef.current,
-        vexFlipRef.current,
-        darkPoolRef.current
-      );
+      // Painting the live overlays during replay would overwrite the cursor-sliced
+      // frame applyFrame just drew — same leak shape as the 2026-07-07 finding.
+      if (!inReplay) {
+        refreshOverlays(
+          lensRef.current,
+          gexWallsRef.current,
+          vexWallsRef.current,
+          gammaFlipRef.current,
+          vexFlipRef.current,
+          darkPoolRef.current
+        );
+      }
     });
   }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker]);
 
@@ -774,7 +800,16 @@ export function VectorChart({
         ),
         callWalls: walls?.callWalls ?? [],
         putWalls: walls?.putWalls ?? [],
-        darkPoolLevels: darkPoolRef.current,
+        // No DP history exists — only today's live ladder. Walls/flip above resolve
+        // to their value AT the hovered time; showing live DP under a historical
+        // hover timestamp would mislabel it. Show DP only when hovering the present
+        // (at/after the latest recorded sample, or before any history exists).
+        darkPoolLevels:
+          hoverEpochSec == null ||
+          history.length === 0 ||
+          hoverEpochSec >= (history[history.length - 1]?.time ?? 0)
+            ? darkPoolRef.current
+            : [],
       });
     });
 
@@ -828,6 +863,13 @@ export function VectorChart({
         if (!merged.some((b) => b.volume != null && b.volume > 0)) return;
         minuteBarsRef.current = merged;
         setSessionBars(merged);
+        // REPLAY GUARD: this poll fires every 60s regardless of mode. Painting here
+        // with no cursorTime slice repaints the FULL live bar array — during replay
+        // that silently leaks every bar through "now" onto a chart whose clock label
+        // still reads the cursor time (the exact 2026-07-07 leak, re-entering through
+        // this effect). Merge into refs/state above is safe and wanted (post-replay
+        // display picks it up); the paint must be live-mode only.
+        if (replayModeRef.current) return;
         const display = displayBarsFromMinute(merged, timeframeRef.current);
         applyDisplayBars(seriesRef.current!, volumeSeriesRef.current, display);
       } catch {
@@ -848,21 +890,22 @@ export function VectorChart({
       return;
     }
     replayTimerRef.current = setInterval(() => {
-      setCursorIndex((idx) => {
-        const next = idx + 1;
-        if (next >= timelineRef.current.length) {
-          if (replayLoop) {
-            const t0 = timelineRef.current[0]!;
-            applyFrame(t0, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-            return 0;
-          }
-          setPlaying(false);
-          return idx;
+      const next = cursorIndexRef.current + 1;
+      if (next >= timelineRef.current.length) {
+        if (replayLoop) {
+          const t0 = timelineRef.current[0]!;
+          applyFrame(t0, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+          cursorIndexRef.current = 0;
+          setCursorIndex(0);
+          return;
         }
-        const t = timelineRef.current[next]!;
-        applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-        return next;
-      });
+        setPlaying(false);
+        return;
+      }
+      const t = timelineRef.current[next]!;
+      applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+      cursorIndexRef.current = next;
+      setCursorIndex(next);
     }, REPLAY_STEP_MS / Math.max(0.25, replaySpeed));
 
     return stopReplayTimer;
@@ -872,11 +915,16 @@ export function VectorChart({
   const canReplay = replayTimeline.length > 1;
 
   const enterReplay = () => {
-    connRef.current?.close();
-    connRef.current = null;
+    // The SSE connection stays OPEN during replay — the handler keeps accumulating
+    // bars/history/events into refs (so nothing is lost while browsing) and gates
+    // every paint on replayModeRef. Set the ref synchronously: an SSE message can
+    // arrive between this render being scheduled and the sync effect running, and
+    // an un-gated paint here would overwrite the frame drawn below.
+    replayModeRef.current = true;
     timelineRef.current = replayTimeline;
     setReplayMode(true);
     setPlaying(false);
+    cursorIndexRef.current = 0;
     setCursorIndex(0);
     if (replayTimeline.length > 0) {
       applyFrame(replayTimeline[0]!, minuteBarsRef.current, wallHistoryRef.current, lens);
@@ -885,6 +933,7 @@ export function VectorChart({
 
   const exitReplay = () => {
     stopReplayTimer();
+    replayModeRef.current = false;
     setReplayMode(false);
     setPlaying(false);
     const bars = minuteBarsRef.current;
@@ -905,7 +954,8 @@ export function VectorChart({
       darkPoolRef.current
     );
     chartRef.current?.timeScale().fitContent();
-    connectLive();
+    // Connection was kept open through replay; only reconnect if it actually dropped.
+    if (!connRef.current) connectLive();
   };
 
   const toggleReplay = () => {
@@ -916,6 +966,7 @@ export function VectorChart({
   const scrubTo = (index: number) => {
     setPlaying(false);
     const clamped = clampTimelineIndex(timelineRef.current, index);
+    cursorIndexRef.current = clamped;
     setCursorIndex(clamped);
     const t = timelineRef.current[clamped];
     if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lens);
@@ -923,12 +974,11 @@ export function VectorChart({
 
   const stepReplay = (delta: number) => {
     setPlaying(false);
-    setCursorIndex((idx) => {
-      const clamped = clampTimelineIndex(timelineRef.current, idx + delta);
-      const t = timelineRef.current[clamped];
-      if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-      return clamped;
-    });
+    const clamped = clampTimelineIndex(timelineRef.current, cursorIndexRef.current + delta);
+    const t = timelineRef.current[clamped];
+    if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+    cursorIndexRef.current = clamped;
+    setCursorIndex(clamped);
   };
 
   const jumpReplayOpen = () => {
@@ -974,7 +1024,14 @@ export function VectorChart({
   const clockLabel = cursorTime ? formatReplayClock(cursorTime) : "—";
 
   useEffect(() => {
-    if (replayMode) return;
+    if (replayMode) {
+      // Lens buttons stay enabled in replay; without a repaint the toolbar/legend
+      // switch to the new lens while the drawn walls/beads/flip stay on the OLD
+      // lens until the next scrub. Redraw the current frame under the new lens.
+      const t = timelineRef.current[cursorIndexRef.current];
+      if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lens);
+      return;
+    }
     refreshTrails(lens);
     refreshOverlays(
       lens,
@@ -984,7 +1041,7 @@ export function VectorChart({
       vexFlipRef.current,
       darkPoolRef.current
     );
-  }, [lens, replayMode, refreshTrails, refreshOverlays]);
+  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame]);
 
   useEffect(() => {
     const series = seriesRef.current;
