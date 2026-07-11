@@ -36,7 +36,7 @@ function ChartTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: { payload: { label: string; volume: number; oi: number } }[];
+  payload?: { payload: { label: string; volume: number; avg_price: number } }[];
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
@@ -45,7 +45,7 @@ function ChartTooltip({
     <div className="rounded-md border border-white/10 bg-[rgba(8,9,14,0.95)] px-2.5 py-1.5 shadow-xl">
       <p className="font-mono text-[10px] text-sky-300">{row.label}</p>
       <p className="font-mono text-[10px] text-white">Vol {row.volume.toLocaleString()}</p>
-      <p className="font-mono text-[10px] text-cyan-300">OI {row.oi.toLocaleString()}</p>
+      <p className="font-mono text-[10px] text-cyan-300">Avg ${row.avg_price.toFixed(2)}</p>
     </div>
   );
 }
@@ -95,9 +95,11 @@ export function ContractDrilldownDrawer({
     return data.intraday.map((row, i) => ({
       label: row.time ? timeLabel(row.time) : `#${i + 1}`,
       volume: row.volume,
-      oi: row.oi,
+      avg_price: row.avg_price,
     }));
   }, [data]);
+
+  const meta = data?.contract_meta;
 
   const isCall = contract?.option_type?.toUpperCase() === "CALL";
 
@@ -139,10 +141,28 @@ export function ContractDrilldownDrawer({
       ) : (
         <div className="helix-contract-drilldown flex flex-col gap-4">
           <div className="flex flex-wrap gap-3">
-            {data.chain_ratio != null && (
+            {meta?.open_interest != null && (
               <div className="helix-contract-stat">
-                <span className="helix-contract-stat-label">Chain ratio</span>
-                <span className="helix-contract-stat-value">{data.chain_ratio}% call</span>
+                <span className="helix-contract-stat-label">Open interest</span>
+                <span className="helix-contract-stat-value">{meta.open_interest.toLocaleString()}</span>
+              </div>
+            )}
+            {meta?.day_volume != null && (
+              <div className="helix-contract-stat">
+                <span className="helix-contract-stat-label">Day volume</span>
+                <span className="helix-contract-stat-value">{meta.day_volume.toLocaleString()}</span>
+              </div>
+            )}
+            {data.bid_share_pct != null && (
+              <div className="helix-contract-stat">
+                <span className="helix-contract-stat-label">Bid share</span>
+                <span className="helix-contract-stat-value">{data.bid_share_pct}%</span>
+              </div>
+            )}
+            {meta?.iv != null && (
+              <div className="helix-contract-stat">
+                <span className="helix-contract-stat-label">IV</span>
+                <span className="helix-contract-stat-value">{meta.iv.toFixed(1)}%</span>
               </div>
             )}
             <div className="helix-contract-stat">
@@ -153,7 +173,7 @@ export function ContractDrilldownDrawer({
 
           <div className="helix-contract-chart-panel desk-panel border border-white/10 rounded-lg p-3">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light mb-2">
-              Volume · OI (intraday)
+              Intraday volume · avg price
             </p>
             {chartData.length < 2 ? (
               <div className="h-[140px] flex items-center justify-center">
@@ -172,18 +192,18 @@ export function ContractDrilldownDrawer({
                       tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
                     />
                     <YAxis
-                      yAxisId="oi"
+                      yAxisId="price"
                       orientation="right"
                       tick={{ fill: "#22d3ee", fontSize: 9 }}
-                      width={36}
-                      tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
+                      width={40}
+                      tickFormatter={(v) => `$${v}`}
                     />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar yAxisId="vol" dataKey="volume" fill="rgba(148,163,184,0.55)" radius={[2, 2, 0, 0]} />
                     <Line
-                      yAxisId="oi"
+                      yAxisId="price"
                       type="monotone"
-                      dataKey="oi"
+                      dataKey="avg_price"
                       stroke="#22d3ee"
                       strokeWidth={2}
                       dot={false}

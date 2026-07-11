@@ -81,7 +81,7 @@
     "ops:dispatch": "node scripts/ops-dispatch-agent.mjs",
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
     "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
-    "probe:docs:uw": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs --uw-only",
+    "probe:helix-apis": "node scripts/helix-live-api-survey.mjs",
     "analyze:api": "node scripts/analyze-api-usage.mjs"
   },
   "dependencies": {
