@@ -40,6 +40,7 @@ import {
 } from "@/features/vector/lib/vector-dte-horizon";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
+import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -133,6 +134,7 @@ type Props = {
   onLensChange?: (lens: VectorWallLens) => void;
   onRegimeChange?: (regime: VectorRegime) => void;
   onProximityChange?: (proximity: WallProximity | null) => void;
+  onMagnetChange?: (magnet: GammaMagnet | null) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -423,6 +425,7 @@ export function VectorChart({
   onWallEventsChange,
   onRegimeChange,
   onProximityChange,
+  onMagnetChange,
   onLensChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -456,6 +459,7 @@ export function VectorChart({
   // banner on every SSE frame.
   const lastRegimeReadRef = useRef<string>("");
   const lastProximityRef = useRef<string>("");
+  const lastMagnetRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -672,6 +676,26 @@ export function VectorChart({
     onProximityChange(prox);
   }, [onProximityChange]);
 
+  // Emit the gamma magnet (dealer-hedging center of mass) up to the desk terminal.
+  // Regime posture drives the honest wording (pin in long gamma, pivot in short),
+  // so it's derived here from the SAME canonical near-term walls/flip as the regime
+  // banner. Deduped by the level+pull+posture key so it only fires on real change.
+  const emitMagnet = useCallback(() => {
+    if (!onMagnetChange) return;
+    const walls = gexWallsRef.current;
+    const regime = deriveVectorRegime({
+      spot: spotRef.current,
+      gammaFlip: gammaFlipRef.current,
+      topCallWall: walls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: walls?.putWalls?.[0]?.strike ?? null,
+    });
+    const magnet = deriveGammaMagnet({ spot: spotRef.current, walls, posture: regime.posture });
+    const key = magnet ? `${magnet.strike}:${magnet.pull}:${magnet.posture}` : "none";
+    if (key === lastMagnetRef.current) return;
+    lastMagnetRef.current = key;
+    onMagnetChange(magnet);
+  }, [onMagnetChange]);
+
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
   // SSE stream untouched) and repaints, refreshing on an interval while live.
@@ -867,9 +891,10 @@ export function VectorChart({
         );
         emitRegime();
         emitProximity();
+        emitMagnet();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity, emitMagnet]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -14,6 +14,7 @@ import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTermi
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
+import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -97,6 +98,18 @@ export function VectorPageShell({
       gammaFlip: initialGammaFlip,
     })
   );
+  const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
+    deriveGammaMagnet({
+      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
+      walls: initialWalls,
+      posture: deriveVectorRegime({
+        spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
+        gammaFlip: initialGammaFlip,
+        topCallWall: initialWalls?.callWalls?.[0]?.strike ?? null,
+        topPutWall: initialWalls?.putWalls?.[0]?.strike ?? null,
+      }).posture,
+    })
+  );
 
   useEffect(() => {
     if (!liveSession) return;
@@ -171,6 +184,7 @@ export function VectorPageShell({
               onLensChange={setLens}
               onRegimeChange={setRegime}
               onProximityChange={setProximity}
+              onMagnetChange={setMagnet}
             />
           </div>
           <VectorDeskTerminal
@@ -180,6 +194,7 @@ export function VectorPageShell({
             liveSession={liveSession}
             streamUpdatedAt={streamUpdatedAt}
             proximity={proximity}
+            magnet={magnet}
           />
         </div>
 

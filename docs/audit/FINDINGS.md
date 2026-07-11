@@ -8,6 +8,21 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P3 SHIPPED 2026-07-11 — Gamma magnet (dealer-hedging center of mass), regime-honest (Vector task #15, magnet half)
+
+**Surface:** `src/features/vector/lib/vector-gamma-magnet.ts` (new, pure), wired through `VectorChart` (emit) → `VectorPageShell` (state) → `VectorDeskTerminal` (readout line), mirroring the shipped regime/proximity pattern.
+
+**What:** the gamma magnet is the wall-strength (`pct`)-weighted mean strike of the call+put walls — the concentration of dealer gamma the price is drawn toward. Derived purely client-side from the walls the chart already renders, so it adds **no server plumbing**.
+
+**Honesty (the whole point):** the physics is regime-dependent and the wording reflects it. In **long gamma** dealers hedge against moves → price is genuinely PINNED toward the center of mass (a magnet). In **short gamma** dealers hedge with moves → the same level is a PIVOT that accelerates once broken, NOT a pin — so the callout says "pivot … won't hold," never "magnet/pin." A test asserts the short-gamma callout contains neither "magnet" nor "pin." Returns null (never fabricates) on no spot / no walls / zero total strength.
+
+**Evidence:** `vector-gamma-magnet.test.ts` (6) — weighted-COM math (7562.5 from a 4-wall fixture), long=magnet vs short=pivot wording divergence on the identical level, 'at' dead-band, unknown-posture neutral phrasing, null guards. `tsc` clean; 133/133 vector lib tests; `@apply` guard clean.
+
+**Scope note:** this is the magnet half of #15. The **expected-move cone** is the paired follow-up — it needs ATM IV surfaced from the server (not in the current walls payload), then a shaded ±1σ band on the chart. Split to keep this PR single-concept and avoid claiming an implied range without the IV to back it.
+
+**Status:** SHIPPED (`feat/vector-gamma-magnet`).
+
+
 ## 🟢 P2 SHIPPED 2026-07-11 — Raise Polygon self-cap 40→150 rps (+ concurrency 24→48): drain heavy chain pulls faster
 
 **Surface:** `src/lib/providers/polygon-rate-limiter.ts` — `POLYGON_MAX_RPS` / `POLYGON_GLOBAL_MAX_RPS` default 40→150, `POLYGON_MAX_CONCURRENCY` default 24→48.
