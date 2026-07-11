@@ -1075,7 +1075,8 @@ async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS trigger_price NUMERIC,
       ADD COLUMN IF NOT EXISTS counterfactual_mfe_pts NUMERIC DEFAULT 0,
       ADD COLUMN IF NOT EXISTS counterfactual_mae_pts NUMERIC DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB;
+      ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB,
+      ADD COLUMN IF NOT EXISTS armed_poll_count INTEGER NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS spx_playbook_instance_events (
       id                   BIGSERIAL PRIMARY KEY,
@@ -2204,11 +2205,17 @@ export async function insertPlaybookShadowObservation(row: {
 
 export async function loadPlaybookInstanceStates(
   sessionDate: string
-): Promise<Array<{ instance_id: string; state: "idle" | "armed" | "triggered" | "invalidated" }>> {
+): Promise<
+  Array<{
+    instance_id: string;
+    state: "idle" | "armed" | "triggered" | "invalidated";
+    armed_poll_count: number;
+  }>
+> {
   await ensureSchema();
   const res = await (await getPool()).query(
     `
-    SELECT instance_id, state
+    SELECT instance_id, state, COALESCE(armed_poll_count, 0) AS armed_poll_count
     FROM spx_playbook_instances
     WHERE session_date = $1
     `,
@@ -2217,7 +2224,45 @@ export async function loadPlaybookInstanceStates(
   return res.rows.map((r) => ({
     instance_id: String(r.instance_id),
     state: String(r.state) as "idle" | "armed" | "triggered" | "invalidated",
+    armed_poll_count: Number(r.armed_poll_count ?? 0),
   }));
+}
+
+export async function loadPlaybookArmedPollCounts(sessionDate: string): Promise<Map<string, number>> {
+  const rows = await loadPlaybookInstanceStates(sessionDate);
+  return new Map(rows.map((r) => [r.instance_id, r.armed_poll_count]));
+}
+
+/** Count triggered/opened instances per playbook for session risk governor. */
+export async function loadPlaybookTriggerCountsByPb(sessionDate: string): Promise<Map<string, number>> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT playbook_id, COUNT(*)::int AS trigger_count
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+      AND (state = 'triggered' OR opened_at IS NOT NULL)
+    GROUP BY playbook_id
+    `,
+    [sessionDate]
+  );
+  return new Map(res.rows.map((r) => [String(r.playbook_id), Number(r.trigger_count)]));
+}
+
+export async function syncPlaybookArmedPollCounts(counts: ReadonlyMap<string, number>): Promise<void> {
+  if (!counts.size) return;
+  await ensureSchema();
+  const pool = await getPool();
+  for (const [instanceId, count] of counts) {
+    await pool.query(
+      `
+      UPDATE spx_playbook_instances
+      SET armed_poll_count = $2, updated_at = NOW()
+      WHERE instance_id = $1
+      `,
+      [instanceId, count]
+    );
+  }
 }
 
 export async function upsertPlaybookInstances(
@@ -2231,6 +2276,7 @@ export async function upsertPlaybookInstances(
     detail: string;
     trigger_price?: number | null;
     reason_invalidated?: string | null;
+    armed_poll_count?: number | null;
   }>
 ): Promise<void> {
   if (!rows.length) return;
@@ -2242,14 +2288,14 @@ export async function upsertPlaybookInstances(
       INSERT INTO spx_playbook_instances (
         instance_id, session_date, playbook_id, direction, state,
         armed_at, triggered_at, invalidated_at, feature_snapshot, detail,
-        trigger_price, reason_invalidated, updated_at
+        trigger_price, reason_invalidated, armed_poll_count, updated_at
       )
       VALUES ($1,$2,$3,$4,$5,
         CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'triggered' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'invalidated' THEN NOW() ELSE NULL END,
         $6::jsonb, $7,
-        $8, $9, NOW())
+        $8, $9, COALESCE($10, 0), NOW())
       ON CONFLICT (instance_id) DO UPDATE SET
         direction = EXCLUDED.direction,
         state = EXCLUDED.state,
@@ -2263,6 +2309,7 @@ export async function upsertPlaybookInstances(
         detail = EXCLUDED.detail,
         trigger_price = COALESCE(spx_playbook_instances.trigger_price, EXCLUDED.trigger_price),
         reason_invalidated = COALESCE(EXCLUDED.reason_invalidated, spx_playbook_instances.reason_invalidated),
+        armed_poll_count = GREATEST(COALESCE(spx_playbook_instances.armed_poll_count, 0), COALESCE(EXCLUDED.armed_poll_count, 0)),
         updated_at = NOW()
       `,
       [
@@ -2275,6 +2322,7 @@ export async function upsertPlaybookInstances(
         row.detail,
         row.trigger_price ?? null,
         row.reason_invalidated ?? null,
+        row.armed_poll_count ?? null,
       ]
     );
   }

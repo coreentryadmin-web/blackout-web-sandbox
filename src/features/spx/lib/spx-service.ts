@@ -10,6 +10,7 @@ import { fetchRecentSpxSnapshots } from "@/features/spx/lib/spx-signal-log";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/features/spx/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import { maybeLogPlaybookShadowMatch } from "@/features/spx/lib/playbook-shadow-log";
@@ -89,8 +90,14 @@ async function evaluateSpxPlayState() {
   const play = await readSpxPlaySnapshot(merged, technicals);
   const sessionDate = todayEtYmd();
   const orBreakMemory = await refreshOrBreakMemory(sessionDate, merged, technicals, true);
+  const playbookMatch = technicals.available
+    ? await resolveGuardedPlaybookMatch(sessionDate, merged, technicals, {
+        or_break_memory: orBreakMemory,
+      })
+    : null;
   const playbook_shadow = buildPlaybookShadowPanel(merged, technicals, {
     or_break_memory: orBreakMemory,
+    match: playbookMatch,
   });
   const primaryVerdict = playbook_shadow?.verdicts.find((v) => v.primary && v.trigger_fired);
   void maybeLogPlaybookShadowMatch(

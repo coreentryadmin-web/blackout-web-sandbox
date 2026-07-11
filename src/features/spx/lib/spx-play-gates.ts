@@ -42,6 +42,7 @@ import {
   type CategorizedGateBlocks,
   type GateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
+import { evaluatePlaybookSessionRisk } from "@/features/spx/lib/playbook-session-risk";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -55,6 +56,8 @@ export type PlayGateResult = {
   warnings: string[];
   entry_mode: "none" | "starter" | "full";
   play_idea: string | null;
+  /** Staging lab degraded-size multiplier (1 = full size). */
+  playbook_size_multiplier?: number;
 };
 
 /**
@@ -162,6 +165,8 @@ export function evaluatePlayGates(
     playbook_primary_id?: PlaybookId | null;
     /** Direction from the fired primary verdict — used for staging lab alignment. */
     playbook_primary_direction?: "long" | "short" | null;
+    /** Per-playbook trigger counts today — session risk governor. */
+    triggers_today_by_pb?: ReadonlyMap<string, number>;
   }
 ): PlayGateResult {
   const blocks: string[] = [];
@@ -184,8 +189,17 @@ export function evaluatePlayGates(
     blocks.push("Session closed — no new entries");
   }
 
+  let playbookSizeMultiplier = 1;
+
   if (buyIntent && playbookLiveGateEnabled()) {
     const pbId = opts?.playbook_primary_id ?? null;
+    const sessionRisk = evaluatePlaybookSessionRisk({
+      playbook_id: pbId,
+      triggers_today_by_pb: opts?.triggers_today_by_pb ?? new Map(),
+      desk,
+    });
+    playbookSizeMultiplier = sessionRisk.size_multiplier;
+
     if (!pbId) {
       blocks.push(
         `No playbook trigger — playbook live gate requires a fired primary (staging lab=${playbookStagingLabEnabled()})`
@@ -211,6 +225,11 @@ export function evaluatePlayGates(
         warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
       }
     }
+
+    if (sessionRisk.block) {
+      blocks.push(sessionRisk.block);
+    }
+    warnings.push(...sessionRisk.warnings);
   }
 
   // Stale halt feed → fail-OPEN (allow play to proceed) with a warning so the operator
@@ -461,5 +480,6 @@ export function evaluatePlayGates(
     warnings,
     entry_mode,
     play_idea,
+    playbook_size_multiplier: playbookSizeMultiplier,
   };
 }

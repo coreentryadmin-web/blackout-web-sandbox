@@ -21,7 +21,6 @@ import {
   emptyCategorizedGateBlocks,
   firstGateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
-import { matchPlaybooksShadow } from "@/features/spx/lib/playbook-shadow-matcher";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { forceExitCutoffLabel, isPastForceExitCutoff, isBeforeCashOpen, isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-play-lotto";
@@ -32,6 +31,7 @@ import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirm
 import { evaluateClaudePlayApproval, type ClaudePlayVerdict } from "@/features/spx/lib/spx-play-claude";
 import { pickIdleMessage, watchMessage } from "@/features/spx/lib/spx-play-idle";
 import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/features/spx/lib/spx-play-intel";
+import { playbookExitProfile } from "@/features/spx/lib/playbook-verdict-guard";
 import {
   gradeRank,
   playDynamicTrailWindowPts,
@@ -40,6 +40,8 @@ import {
   playIdealTargetPts,
   playOptionChainRequired,
   playGexStaleMaxSec,
+  playThesisBreakDropPts,
+  playThesisBreakScore,
   playTrimProgressPct,
   playWatchMinScore,
   playPromoteMinScore,
@@ -82,6 +84,7 @@ import {
 } from "@/features/spx/lib/spx-play-watch";
 import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
 import { buildOptionExecutionSim } from "@/features/spx/lib/playbook-option-sim";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
 import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
@@ -213,9 +216,13 @@ async function evaluateOpenPlay(
   const targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
 
   const entryScore = row.entry_score ?? confluence.score;
+  const exitProf = playbookExitProfile(row.playbook_id);
   const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
     mfePts: mfe,
     openedAtMs: new Date(row.opened_at).getTime(),
+  }, {
+    dropPts: playThesisBreakDropPts() * exitProf.thesis_break_mult,
+    floor: playThesisBreakScore() * exitProf.thesis_break_mult,
   });
   const thesisBreak = thesisEval.broken;
 
@@ -230,7 +237,7 @@ async function evaluateOpenPlay(
   const trimZone =
     !deskStale &&
     !row.trim_done &&
-    mfe >= playDynamicTrimMfePts(desk.vix) &&
+    mfe >= playDynamicTrimMfePts(desk.vix) * exitProf.trim_mfe_mult &&
     target != null &&
     progress >= playTrimProgressPct();
 
@@ -245,7 +252,9 @@ async function evaluateOpenPlay(
   // VIX-indexed trail window: scales with the day's range so normal retracements on
   // volatile days don't stop out a healthy runner. Falls back to the static config when
   // the env override is set (SPX_TRAILING_STOP_TRAIL_WINDOW).
-  const trailWindowPts = playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts();
+  const trailWindowPts =
+    (playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts()) *
+    exitProf.trail_window_mult;
   let trailingStop: number | null = null;
   if (mfe >= trailActiveMfe) {
     // Trail at (peak price - trailWindowPts) to lock in most of the run
@@ -649,9 +658,10 @@ async function evaluateFlatPlay(
   const sessionDate = todayEt();
   const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, mutate);
 
-  const playbookMatch = matchPlaybooksShadow(desk, technicals, Date.now(), {
+  const playbookResolved = await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
     or_break_memory: orBreakMemory,
   });
+  const playbookMatch = playbookResolved;
   const playbookPrimaryId: PlaybookId | null = playbookMatch.primary_playbook_id;
   const primaryVerdict = playbookPrimaryId
     ? playbookMatch.verdicts.find((v) => v.playbook_id === playbookPrimaryId)
@@ -665,6 +675,7 @@ async function evaluateFlatPlay(
   const gatePlaybookOpts = {
     playbook_primary_id: playbookPrimaryId,
     playbook_primary_direction: playbookPrimaryDirection,
+    triggers_today_by_pb: playbookResolved.triggers_today_by_pb,
   };
 
   const gatesWatch = evaluatePlayGates(desk, confluence, session, confirmations, {
