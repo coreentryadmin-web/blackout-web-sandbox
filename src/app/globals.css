@@ -14566,16 +14566,27 @@ body::before {
     @apply flex items-center gap-3 rounded-lg border border-white/10 bg-[rgba(6,7,12,0.72)] px-3 py-2 shrink-0;
   }
 
-  .helix-pro-desk {
-    @apply flex flex-col gap-3;
-  }
-
   .helix-pro-command {
     @apply rounded-lg border border-white/10 bg-[rgba(6,7,12,0.88)] overflow-hidden;
   }
 
   .helix-pro-command-primary {
-    @apply flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5;
+    @apply flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5;
+  }
+
+  @media (max-width: 1279px) {
+    .helix-pro-command-primary {
+      @apply gap-x-2 gap-y-2;
+    }
+
+    .helix-pro-command-spacer {
+      display: none;
+    }
+
+    .helix-pro-command-search {
+      flex: 1 1 100%;
+      max-width: none;
+    }
   }
 
   .helix-pro-command-group {
@@ -14750,6 +14761,10 @@ body::before {
     min-height: calc(100dvh - var(--nav-offset) - 10rem);
   }
 
+  .helix-pro-desk {
+    @apply flex flex-col gap-3 flex-1 min-h-0;
+  }
+
   .helix-desk-terminal {
     @apply flex flex-1 flex-col min-h-0 gap-3;
   }
@@ -14760,11 +14775,37 @@ body::before {
     min-height: 0;
     gap: 0.75rem;
     align-items: stretch;
+    overflow: hidden;
   }
 
-  @media (min-width: 1024px) {
+  /* Laptop: stack tape above analytics — side-by-side was crushing tape to ~280px */
+  @media (max-width: 1279px) {
     .helix-desk-terminal-grid {
+      flex-direction: column;
+      max-height: none;
+    }
+
+    .helix-desk-tape-col {
+      flex: 1 1 auto;
+      min-height: min(58vh, 540px);
+      max-height: min(62vh, 580px);
+    }
+
+    .helix-desk-analytics-rail {
+      width: 100%;
+      max-height: none;
+      overflow: visible;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .helix-desk-terminal-grid {
+      flex-direction: row;
       min-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+      max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
     }
   }
 
@@ -14786,7 +14827,7 @@ body::before {
   @media (min-width: 1280px) {
     .helix-desk-analytics-rail {
       width: 17.5rem;
-      flex-shrink: 0;
+      flex: 0 0 17.5rem;
       overflow-y: auto;
       max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
     }
@@ -14799,6 +14840,7 @@ body::before {
     box-shadow:
       inset 0 1px 0 rgba(125, 211, 252, 0.06),
       0 0 40px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
   }
 
   .helix-flow-terminal-head {
@@ -14826,7 +14868,14 @@ body::before {
     border-spacing: 0;
     font-family: ui-monospace, monospace;
     font-size: 11px;
-    line-height: 1.35;
+    line-height: 1.4;
+    table-layout: auto;
+  }
+
+  @media (max-width: 1279px) {
+    .helix-flow-col--aux {
+      display: none;
+    }
   }
 
   .helix-flow-table thead {
@@ -14891,7 +14940,7 @@ body::before {
   }
 
   .helix-flow-table td {
-    @apply px-2 py-1.5 align-middle whitespace-nowrap;
+    @apply px-2.5 py-2 align-middle whitespace-nowrap;
   }
 
   .helix-flow-cp {
