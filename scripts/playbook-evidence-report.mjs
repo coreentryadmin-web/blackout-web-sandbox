@@ -38,6 +38,34 @@ function snapshotFromTriggerEvent(row) {
   return snap;
 }
 
+function sessionSnapshotDataQualityOk(snap, playbookId) {
+  if (!snap || typeof snap !== "object") return null;
+  if (snap.desk_stale) return false;
+  if (
+    (playbookId === "PB-01" || playbookId === "PB-02") &&
+    snap.vwap_volume_weighted === false
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Fraction of triggered sessions with satisfactory trigger-time data quality. */
+function dataQualitySessionFraction(pbRows, playbookId) {
+  const bySession = new Map();
+  for (const r of pbRows) {
+    if (!r.triggered_at) continue;
+    const snap = snapshotFromTriggerEvent(r);
+    const ok = sessionSnapshotDataQualityOk(snap, playbookId);
+    if (ok === null) continue;
+    const prev = bySession.get(r.session_date);
+    bySession.set(r.session_date, prev == null ? ok : prev && ok);
+  }
+  if (!bySession.size) return null;
+  const okCount = [...bySession.values()].filter(Boolean).length;
+  return okCount / bySession.size;
+}
+
 function buildPromotionSample(rows, playbookId) {
   const pb = rows.filter((r) => r.playbook_id === playbookId);
   const triggered = pb.filter((r) => r.triggered_at).length;
@@ -75,6 +103,7 @@ function buildPromotionSample(rows, playbookId) {
     simulated_trades: simulated,
     trades,
     counterfactual_comparable_count: cfComparable,
+    data_quality_session_fraction: dataQualitySessionFraction(pb, playbookId),
   };
 }
 

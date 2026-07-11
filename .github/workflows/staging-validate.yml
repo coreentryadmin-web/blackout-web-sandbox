@@ -12,6 +12,7 @@ on:
       - "scripts/compare-latency-envs.mjs"
       - "scripts/site-latency-audit.mjs"
       - "scripts/validate-deploy.mjs"
+      - "scripts/playbook-evidence-report.mjs"
       - ".github/workflows/staging-validate.yml"
 
 permissions:
@@ -45,6 +46,12 @@ jobs:
 
       - name: Staging live check
         run: npm run validate:staging-live
+
+      - name: Playbook promotion evidence (OOS instances)
+        continue-on-error: true
+        env:
+          STAGING_SECRET_NAME: blackout-staging/app/env
+        run: npm run playbook:evidence-report
 
       - name: Latency compare (staging vs prod)
         env:

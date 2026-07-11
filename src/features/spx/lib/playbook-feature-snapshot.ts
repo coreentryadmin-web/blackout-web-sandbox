@@ -16,6 +16,8 @@ export type PlaybookGexWallSnapshot = {
 export type PlaybookFeatureSnapshot = {
   price: number;
   vwap: number | null;
+  /** False when index minute bars lack volume — VWAP is typical-price fallback. */
+  vwap_volume_weighted: boolean;
   regime: string | null;
   gamma_regime: string | null;
   gamma_flip: number | null;
@@ -57,6 +59,7 @@ export function buildPlaybookFeatureSnapshot(
   return {
     price: desk.price,
     vwap: desk.vwap ?? null,
+    vwap_volume_weighted: desk.vwap_volume_weighted === true,
     regime: desk.regime ?? null,
     gamma_regime: desk.gamma_regime ?? null,
     gamma_flip: desk.gamma_flip ?? null,
