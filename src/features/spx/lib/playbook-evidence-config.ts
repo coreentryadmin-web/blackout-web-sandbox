@@ -108,3 +108,55 @@ export function isPlaybookOosSessionDate(sessionDate: string): boolean {
 export function isPlaybookTrainSessionDate(sessionDate: string): boolean {
   return sessionDate <= PLAYBOOK_TRAIN_CUTOFF_DATE;
 }
+
+/**
+ * Parameter validation roadmap — replace absolute thresholds with normalized variables.
+ * Current PLAYBOOK_PARAM_BANDS are a **first stability check** (local perturbation),
+ * not full cross-regime validation. True validation requires outcome stability across:
+ * session periods, VIX regimes, flow distribution shifts, data vendors, market structure.
+ */
+export type PlaybookNormalizedParamTarget = {
+  absolute_param: string;
+  normalized_replacement: string;
+  normalizer: string;
+  status: "planned" | "partial" | "shipped";
+};
+
+export const PLAYBOOK_NORMALIZED_PARAM_ROADMAP: readonly PlaybookNormalizedParamTarget[] = [
+  {
+    absolute_param: "wall_proximity_pts",
+    normalized_replacement: "wall_proximity_or_pct",
+    normalizer: "opening_range_width or ATR_5m",
+    status: "partial",
+  },
+  {
+    absolute_param: "flow_materiality_min",
+    normalized_replacement: "flow_materiality_vs_session_p95",
+    normalizer: "session 0DTE gross premium p95",
+    status: "planned",
+  },
+  {
+    absolute_param: "vwap_duration_min",
+    normalized_replacement: "vwap_duration_vs_or_duration",
+    normalizer: "minutes_since_or_defined / or_duration",
+    status: "planned",
+  },
+  {
+    absolute_param: "gap_pct",
+    normalized_replacement: "gap_vs_30d_median",
+    normalizer: "overnight gap / rolling median gap",
+    status: "planned",
+  },
+  {
+    absolute_param: "mtf_buffer_pts",
+    normalized_replacement: "mtf_buffer_vix_scaled",
+    normalizer: "VIX/OR scaled buffer (shipped in matchers)",
+    status: "partial",
+  },
+  {
+    absolute_param: "rsi_stretch_high/low",
+    normalized_replacement: "rsi_stretch_regime_adjusted",
+    normalizer: "RSI threshold shifted by gamma_regime + VIX quartile",
+    status: "planned",
+  },
+];
