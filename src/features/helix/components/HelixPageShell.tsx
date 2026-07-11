@@ -37,7 +37,7 @@ export function HelixPageShell() {
       <div
         className={clsx(
           "content-rail max-w-none ios-native-content-rail",
-          nativeShell ? "helix-page-inner-native" : "mt-4"
+          nativeShell ? "helix-page-inner-native" : "mt-4 helix-page-inner"
         )}
       >
         {nativeShell && (

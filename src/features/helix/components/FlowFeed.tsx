@@ -11,6 +11,7 @@ import {
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { getSector } from "@/lib/sector-map";
 import { FlowAlertStream } from "@/features/helix/components/FlowAlertStream";
+import { HelixFlowTable } from "@/features/helix/components/HelixFlowTable";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -45,6 +46,7 @@ const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 // in sync with UW_FLOW_MIN_PREMIUM if that env is lowered server-side.
 const FLOOR_PREMIUM = 200_000;
 type TypeFilter = "ALL" | "CALL" | "PUT";
+type TapeView = "table" | "cards";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
 
@@ -118,6 +120,7 @@ export function FlowFeed() {
   // Filters
   const [minPremium, setMinPremium]       = useState(200_000);
   const [typeFilter, setTypeFilter]       = useState<TypeFilter>("ALL");
+  const [tapeView, setTapeView]           = useState<TapeView>("table");
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
@@ -564,10 +567,72 @@ export function FlowFeed() {
           ? `${Math.round(dataAgeMs / 60_000)}m ago`
           : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
+  const terminalMode = tapeView === "table";
+
+  const flowTapeProps = {
+    flows: displayAlerts,
+    live,
+    loading,
+    typeFilter,
+    tickerFilter,
+    hasData: alerts.length > 0,
+    compoundTickers,
+    onTickerClick: setSelectedTicker,
+    replayMode,
+    splitFlowTickers,
+    earningsDays,
+    velocitySpikeTickers,
+    coordinatedTickers,
+    hawkTickers,
+    watchlistTickers: watchlist.watchlistSet,
+    onToggleStar: watchlist.toggle,
+  };
+
+  const analyticsRail = (
+    <>
+      {nativeShell ? (
+        <IosSectionHeader
+          label="Analytics"
+          action={{
+            label: showMorePanels ? "Fewer panels" : "More panels",
+            onClick: () => setShowMorePanels((v) => !v),
+          }}
+        />
+      ) : (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
+          <button
+            type="button"
+            onClick={() => setShowMorePanels((v) => !v)}
+            className="font-mono text-[10px] font-semibold text-secondary transition-colors hover:text-white"
+          >
+            {showMorePanels ? "Fewer panels" : "More panels"}
+          </button>
+        </div>
+      )}
+      <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+      <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+      <DarkPoolPanel />
+      {showMorePanels && (
+        <>
+          <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+          <NightHawkFlowPanel
+            plays={nighthawkPlaysWithFlow}
+            editionFor={nighthawkEdition?.edition_for}
+            onTickerClick={setSelectedTicker}
+          />
+          <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
+          <SectorFlowPanel entries={sectorFlowEntries} />
+          <FlowMomentumChart alerts={alerts} />
+        </>
+      )}
+    </>
+  );
+
   return (
-    <div className="desk-layout helix-desk flex flex-col gap-4">
-      {/* ── AI Brief ────────────────────────────────────────────────────── */}
-      {!nativeShell && <FlowBrief />}
+    <div className={clsx("desk-layout helix-desk", terminalMode && "helix-desk-terminal")}>
+      {/* ── AI Brief — collapsed in terminal mode to maximize tape height ── */}
+      {!nativeShell && !terminalMode && <FlowBrief />}
 
       {/* ── Watchlist rail (P2) ─────────────────────────────────────────── */}
       {!nativeShell && (
@@ -622,6 +687,18 @@ export function FlowFeed() {
             }}
           />
           <div className="helix-native-toolbar-row">
+            <div className="flow-seg-group">
+              {(["table", "cards"] as TapeView[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setTapeView(v)}
+                  className={clsx("flow-seg-btn", tapeView === v && "flow-seg-btn-active-all")}
+                >
+                  {v === "table" ? "Table" : "Cards"}
+                </button>
+              ))}
+            </div>
             <div className="flow-seg-group">
               {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
                 <button
@@ -733,6 +810,20 @@ export function FlowFeed() {
         </div>
       ) : (
       <div className={clsx("helix-ios-toolbar flex flex-wrap items-center gap-2", nativeShell && iosView !== "tape" && "ios-native-panel-hidden")}>
+        {/* Tape view toggle */}
+        <div className="flow-seg-group">
+          {(["table", "cards"] as TapeView[]).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setTapeView(v)}
+              className={clsx("flow-seg-btn", tapeView === v && "flow-seg-btn-active-all")}
+            >
+              {v === "table" ? "TABLE" : "CARDS"}
+            </button>
+          ))}
+        </div>
+
         {/* Premium presets */}
         <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-bull hidden sm:block">MIN</span>
         <div className="flow-seg-group">
@@ -928,6 +1019,32 @@ export function FlowFeed() {
       )}
 
       {/* ── Main grid ───────────────────────────────────────────────────── */}
+      {terminalMode ? (
+        <div
+          className={clsx(
+            "helix-desk-terminal-grid",
+            nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
+            nativeShell && iosView === "tape" && "ios-native-panel-visible"
+          )}
+        >
+          <div
+            key={nativeShell ? iosView : "tape"}
+            className="helix-desk-tape-col helix-ios-tape-col"
+          >
+            <HelixFlowTable {...flowTapeProps} />
+          </div>
+          <div
+            key={nativeShell ? iosView : "analytics"}
+            className={clsx(
+              "helix-desk-analytics-rail helix-ios-analytics-col",
+              nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
+              nativeShell && iosView === "analytics" && "ios-native-panel-visible"
+            )}
+          >
+            {analyticsRail}
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Flow tape — 8 cols */}
         <div
@@ -938,24 +1055,7 @@ export function FlowFeed() {
             nativeShell && iosView === "tape" && "ios-native-panel-visible"
           )}
         >
-          <FlowAlertStream
-            flows={displayAlerts}
-            live={live}
-            loading={loading}
-            typeFilter={typeFilter}
-            tickerFilter={tickerFilter}
-            hasData={alerts.length > 0}
-            compoundTickers={compoundTickers}
-            onTickerClick={setSelectedTicker}
-            replayMode={replayMode}
-            splitFlowTickers={splitFlowTickers}
-            earningsDays={earningsDays}
-            velocitySpikeTickers={velocitySpikeTickers}
-            coordinatedTickers={coordinatedTickers}
-            hawkTickers={hawkTickers}
-            watchlistTickers={watchlist.watchlistSet}
-            onToggleStar={watchlist.toggle}
-          />
+          <FlowAlertStream {...flowTapeProps} />
         </div>
 
         {/* Right column — primary analytics; expand for full desk */}
@@ -967,44 +1067,10 @@ export function FlowFeed() {
             nativeShell && iosView === "analytics" && "ios-native-panel-visible"
           )}
         >
-          {nativeShell ? (
-            <IosSectionHeader
-              label="Analytics"
-              action={{
-                label: showMorePanels ? "Fewer panels" : "More panels",
-                onClick: () => setShowMorePanels((v) => !v),
-              }}
-            />
-          ) : (
-          <div className="flex items-center justify-between gap-2 px-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
-            <button
-              type="button"
-              onClick={() => setShowMorePanels((v) => !v)}
-              className="font-mono text-[10px] font-semibold text-secondary transition-colors hover:text-white"
-            >
-              {showMorePanels ? "Fewer panels" : "More panels"}
-            </button>
-          </div>
-          )}
-          <NetPremiumLeaderboard alerts={alerts} loading={loading} />
-          <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
-          <DarkPoolPanel />
-          {showMorePanels && (
-            <>
-              <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
-              <NightHawkFlowPanel
-                plays={nighthawkPlaysWithFlow}
-                editionFor={nighthawkEdition?.edition_for}
-                onTickerClick={setSelectedTicker}
-              />
-              <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
-              <SectorFlowPanel entries={sectorFlowEntries} />
-              <FlowMomentumChart alerts={alerts} />
-            </>
-          )}
+          {analyticsRail}
         </div>
       </div>
+      )}
 
       {/* Ticker drawer — Bug 13: typeFilter passed so drawer matches tape */}
       <TickerDrawer
