@@ -39,10 +39,10 @@ function playwrightCookiesFromHeader(header, domain) {
 
 async function measureHelix(page) {
   return page.evaluate(() => {
-    const tape = document.querySelector(".helix-flow-terminal");
-    const scroll = document.querySelector(".helix-flow-table-scroll");
+    const tape = document.querySelector(".helix-tape, .helix-flow-terminal");
+    const scroll = document.querySelector(".helix-tape-scroll, .helix-flow-table-scroll");
     const grid = document.querySelector(".helix-desk-terminal-grid");
-    const table = document.querySelector(".helix-flow-table");
+    const table = document.querySelector(".helix-tape-grid, .helix-flow-table");
     const rows = document.querySelectorAll(".helix-flow-row:not(.helix-flow-row--skeleton)");
     const auxCols = document.querySelectorAll(".helix-flow-col--aux");
     const visibleAux = [...auxCols].filter((el) => {
@@ -101,7 +101,7 @@ async function auditViewport(browser, session, { width, height, label }) {
   }
   rec(`${label}:auth`, "PASS");
 
-  const table = page.locator(".helix-flow-table").first();
+  const table = page.locator(".helix-tape-grid, .helix-flow-table").first();
   if (await table.isVisible({ timeout: 15_000 }).catch(() => false)) {
     rec(`${label}:table`, "PASS");
   } else {

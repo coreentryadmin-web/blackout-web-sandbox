@@ -9,9 +9,15 @@ import {
 } from "@/lib/api";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { getSector } from "@/lib/sector-map";
-import { FlowAlertStream } from "@/features/helix/components/FlowAlertStream";
 import { HelixFlowTable } from "@/features/helix/components/HelixFlowTable";
 import { HelixCommandBar } from "@/features/helix/components/HelixCommandBar";
+import {
+  HELIX_INDEX_TICKERS,
+  matchesDteFilter,
+  type HelixDteFilter,
+  type HelixTableDensity,
+} from "@/features/helix/lib/helix-table-columns";
+import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -49,8 +55,8 @@ const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 // row below $200K is ever persisted, so requesting them returned nothing. Keep this
 // in sync with UW_FLOW_MIN_PREMIUM if that env is lowered server-side.
 const FLOOR_PREMIUM = 200_000;
+const WHALE_PREMIUM = 1_000_000;
 type TypeFilter = "ALL" | "CALL" | "PUT";
-type TapeView = "table" | "cards";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
 
@@ -124,7 +130,11 @@ export function FlowFeed() {
   // Filters
   const [minPremium, setMinPremium]       = useState(200_000);
   const [typeFilter, setTypeFilter]       = useState<TypeFilter>("ALL");
-  const [tapeView, setTapeView]           = useState<TapeView>("table");
+  const [whalesOnly, setWhalesOnly]         = useState(false);
+  const [dteFilter, setDteFilter]           = useState<HelixDteFilter>("all");
+  const [indicesOnly, setIndicesOnly]       = useState(false);
+  const [density, setDensity]               = useState<HelixTableDensity>("standard");
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
@@ -197,15 +207,47 @@ export function FlowFeed() {
   // full filter() scans, and one memo recompute per SSE message instead of two.
   // (Both still depend on `alerts`; a new alert legitimately changes the counts,
   // so they must recompute — but we do it once, in O(n), not twice.)
-  // Filter-scoped counts for CALL/PUT/ALL pills — match the active tape filters.
-  const countSource = useMemo(() => {
-    let base = alerts;
-    if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
-    if (watchlistOnly && watchlist.watchlistSet.size > 0) {
-      base = base.filter((a) => watchlist.watchlistSet.has(a.ticker));
-    }
-    return base;
-  }, [alerts, tickerFilter, watchlistOnly, watchlist.watchlistSet]);
+  const applyTapeFilters = useCallback(
+    (base: FlowAlert[], { includeType = true }: { includeType?: boolean } = {}) => {
+      let rows = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
+      if (tickerFilter) rows = rows.filter((a) => a.ticker === tickerFilter.toUpperCase());
+      if (watchlistOnly && watchlist.watchlistSet.size > 0) {
+        rows = rows.filter((a) => watchlist.watchlistSet.has(a.ticker));
+      }
+      if (whalesOnly) rows = rows.filter((a) => a.premium >= WHALE_PREMIUM);
+      if (indicesOnly) {
+        rows = rows.filter((a) =>
+          (HELIX_INDEX_TICKERS as readonly string[]).includes(a.ticker)
+        );
+      }
+      if (dteFilter !== "all") {
+        rows = rows.filter((a) => {
+          const dte = a.dte ?? daysToExpiry(a.expiry);
+          return matchesDteFilter(dte, dteFilter);
+        });
+      }
+      if (includeType && typeFilter !== "ALL") {
+        rows = rows.filter((a) => a.option_type === typeFilter);
+      }
+      return rows;
+    },
+    [
+      minPremium,
+      tickerFilter,
+      watchlistOnly,
+      watchlist.watchlistSet,
+      whalesOnly,
+      indicesOnly,
+      dteFilter,
+      typeFilter,
+    ]
+  );
+
+  // Filter-scoped counts for CALL/PUT/ALL pills — match active tape filters except side.
+  const countSource = useMemo(
+    () => applyTapeFilters(replayMode ? replayAlerts : alerts, { includeType: false }),
+    [applyTapeFilters, replayMode, replayAlerts, alerts]
+  );
 
   const { callCount, putCount, allCount } = useMemo(() => {
     let call = 0, put = 0;
@@ -511,17 +553,9 @@ export function FlowFeed() {
   useEffect(() => () => { if (replayTimerRef.current) clearInterval(replayTimerRef.current); }, []);
 
   const displayAlerts = useMemo(() => {
-    let base = replayMode ? replayAlerts : alerts;
-    base = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
-    if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
-    if (watchlistOnly && watchlist.watchlistSet.size > 0) base = base.filter((a) => watchlist.watchlistSet.has(a.ticker));
-    if (typeFilter !== "ALL") base = base.filter((a) => a.option_type === typeFilter);
-    // Real-time tape → newest first. (Largest-by-premium ranking belongs in the
-    // NET PREMIUM / STRIKE STACKS panels; sorting the TAPE by premium pinned old
-    // whale prints to row 0 so a "REAL-TIME TAPE" looked frozen — HELIX flow audit.)
-    // Gap #6: rows with no trustworthy alerted_at (UW gave no time) sort LAST instead
-    // of polluting row 0 with a NaN compare — they must never define "newest".
-    return [...base].sort((a, b) => {
+    const base = replayMode ? replayAlerts : alerts;
+    const filtered = applyTapeFilters(base);
+    return [...filtered].sort((a, b) => {
       const am = alertedAtMs(a);
       const bm = alertedAtMs(b);
       if (am == null && bm == null) return 0;
@@ -529,7 +563,7 @@ export function FlowFeed() {
       if (bm == null) return -1;
       return bm - am;
     });
-  }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium, typeFilter, watchlistOnly, watchlist.watchlistSet]);
+  }, [replayMode, replayAlerts, alerts, applyTapeFilters]);
 
   // Tape freshness — newest print age drives an honest LIVE/STALE badge.
   // Connection success alone is NOT data freshness: a stale tape over a weekend
@@ -572,15 +606,15 @@ export function FlowFeed() {
           ? `${Math.round(dataAgeMs / 60_000)}m ago`
           : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
-  const terminalMode = tapeView === "table";
-
   const flowTapeProps = {
     flows: displayAlerts,
     live,
     loading,
+    density,
     typeFilter,
     tickerFilter,
     hasData: alerts.length > 0,
+    filteredCount: displayAlerts.length,
     compoundTickers,
     onTickerClick: setSelectedTicker,
     onContractClick: (flow: FlowAlert) =>
@@ -642,9 +676,8 @@ export function FlowFeed() {
   );
 
   return (
-    <div className={clsx("desk-layout helix-desk helix-pro-desk", terminalMode && "helix-desk-terminal")}>
-      {/* AI brief hidden on web — keeps the desk clean; cards view only on native if needed later */}
-      {nativeShell && !terminalMode && <FlowBrief />}
+    <div className="desk-layout helix-desk helix-pro-desk helix-desk-terminal">
+      {nativeShell && <FlowBrief />}
 
       {/* ── Watchlist rail (P2) ─────────────────────────────────────────── */}
       {!nativeShell && (
@@ -699,18 +732,6 @@ export function FlowFeed() {
             }}
           />
           <div className="helix-native-toolbar-row">
-            <div className="flow-seg-group">
-              {(["table", "cards"] as TapeView[]).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setTapeView(v)}
-                  className={clsx("flow-seg-btn", tapeView === v && "flow-seg-btn-active-all")}
-                >
-                  {v === "table" ? "Table" : "Cards"}
-                </button>
-              ))}
-            </div>
             <div className="flow-seg-group">
               {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
                 <button
@@ -822,8 +843,6 @@ export function FlowFeed() {
         </div>
       ) : (
         <HelixCommandBar
-          tapeView={tapeView}
-          onTapeViewChange={setTapeView}
           minPremium={minPremium}
           onMinPremiumChange={setMinPremium}
           typeFilter={typeFilter}
@@ -833,9 +852,19 @@ export function FlowFeed() {
           allCount={allCount}
           tickerFilter={tickerFilter}
           onTickerFilterChange={setTickerFilter}
+          whalesOnly={whalesOnly}
+          onWhalesOnlyChange={setWhalesOnly}
+          dteFilter={dteFilter}
+          onDteFilterChange={setDteFilter}
+          indicesOnly={indicesOnly}
+          onIndicesOnlyChange={setIndicesOnly}
           watchlistOnly={watchlistOnly}
           onWatchlistOnlyChange={setWatchlistOnly}
           watchlistCount={watchlist.watchlist.length}
+          density={density}
+          onDensityChange={setDensity}
+          analyticsOpen={analyticsOpen}
+          onAnalyticsOpenChange={setAnalyticsOpen}
           replayMode={replayMode}
           onReplayToggle={replayMode ? stopReplay : startReplay}
           replaySpeed={replaySpeed}
@@ -853,22 +882,22 @@ export function FlowFeed() {
         />
       )}
 
-      {/* ── Main grid ───────────────────────────────────────────────────── */}
-      {terminalMode ? (
+      {/* ── Main grid — table-first; analytics optional ─────────────────── */}
+      <div
+        className={clsx(
+          "helix-desk-terminal-grid",
+          !analyticsOpen && !nativeShell && "helix-desk-terminal-grid--tape-max",
+          nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
+          nativeShell && iosView === "tape" && "ios-native-panel-visible"
+        )}
+      >
         <div
-          className={clsx(
-            "helix-desk-terminal-grid",
-            !nativeShell && "mt-0",
-            nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
-            nativeShell && iosView === "tape" && "ios-native-panel-visible"
-          )}
+          key={nativeShell ? iosView : "tape"}
+          className="helix-desk-tape-col helix-ios-tape-col"
         >
-          <div
-            key={nativeShell ? iosView : "tape"}
-            className="helix-desk-tape-col helix-ios-tape-col"
-          >
-            <HelixFlowTable {...flowTapeProps} />
-          </div>
+          <HelixFlowTable {...flowTapeProps} />
+        </div>
+        {(analyticsOpen || (nativeShell && iosView === "analytics")) && (
           <div
             key={nativeShell ? iosView : "analytics"}
             className={clsx(
@@ -879,34 +908,8 @@ export function FlowFeed() {
           >
             {analyticsRail}
           </div>
-        </div>
-      ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Flow tape — 8 cols */}
-        <div
-          key={nativeShell ? iosView : "tape"}
-          className={clsx(
-            "lg:col-span-8 xl:col-span-8 helix-ios-tape-col",
-            nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
-            nativeShell && iosView === "tape" && "ios-native-panel-visible"
-          )}
-        >
-          <FlowAlertStream {...flowTapeProps} />
-        </div>
-
-        {/* Right column — primary analytics; expand for full desk */}
-        <div
-          key={nativeShell ? iosView : "analytics"}
-          className={clsx(
-            "lg:col-span-4 xl:col-span-4 flex flex-col gap-3 helix-ios-analytics-col helix-pro-rail",
-            nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
-            nativeShell && iosView === "analytics" && "ios-native-panel-visible"
-          )}
-        >
-          {analyticsRail}
-        </div>
+        )}
       </div>
-      )}
 
       {/* Ticker drawer — all prints for symbol */}
       <TickerDrawer
