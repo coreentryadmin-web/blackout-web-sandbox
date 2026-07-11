@@ -26,7 +26,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 
 | # | Finding | Status | Cursor verdict | Action |
 |---|---------|--------|----------------|--------|
-| **5** | `estimateOptionPnl()` dead code | 📋 | **Agree** — not wired to open-play management | Deferred; theta cap added for when wired |
+| **5** | `estimateOptionPnl()` dead code | ✅ | **Agree** — not wired to open-play management | Wired on open-play HOLD path + `option_pnl_est` payload (#83) |
 | **6** | Theta decay unbounded | ✅ | **Agree** | Cap `theta_pnl` at `-entry_premium` |
 | **7** | `commitPlaybookInstanceOpen` no state guard | ✅ | **Agree** — fixed in #72 merge | No change |
 | **8** | One matcher throw kills all 14 | ✅ | **Agree** — no per-PB try/catch | Per-playbook try/catch returns error verdict |
@@ -51,8 +51,8 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 | **20** | Data-quality gate not in promotion-eval | 📋 | **Agree** | Deferred |
 | **21** | Simulated-trade gate OR-fallback | 📋 | **Agree** | Deferred |
 | **22** | PB-14 break-memory never resets | 🔧 | **Agree** | Fresh OR break wave clears re-entry latch |
-| **23** | PB-04 regime-flip exit no debounce | 📋 | **Agree** | Deferred (gamma hysteresis) |
-| **24** | `gamma_regime` zero hysteresis | 📋 | **Agree** | Deferred |
+| **23** | PB-04 regime-flip exit no debounce | ✅ | **Agree** | 3-poll debounce before gamma pin release SELL (#83) |
+| **24** | `gamma_regime` zero hysteresis | ✅ | **Agree** | `gammaRegimeWithHysteresis` on desk GEX path (#83) |
 | **25** | `rolling_30m` no min-session guard | 📋 | **Agree** | Deferred |
 | **26** | Gate A17 miscategorized in telemetry | 📋 | **Agree** | Deferred |
 | **27** | Mixed-tape threshold inversion | 📋 | **Agree** — env edge case | Deferred |

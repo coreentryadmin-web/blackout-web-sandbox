@@ -89,7 +89,11 @@ import {
 } from "@/features/spx/lib/spx-play-watch";
 import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
 import { buildOptionExecutionSim } from "@/features/spx/lib/playbook-option-sim";
-import { buildGreeksSnapshot } from "@/features/spx/lib/playbook-option-pnl";
+import {
+  buildGreeksSnapshot,
+  estimateOptionPnl,
+  parseOptionPremiumMid,
+} from "@/features/spx/lib/playbook-option-pnl";
 import { evaluateTradeGovernor } from "@/features/spx/lib/trade-governor";
 import {
   evaluatePlaybookExitPlan,
@@ -716,6 +720,34 @@ async function evaluateOpenPlay(
       }
     : null;
 
+  let optionPnlEst = null;
+  const entryPremiumMid =
+    parseOptionPremiumMid(row.option_premium) ?? liveTicket?.mid ?? storedTicket?.mid ?? null;
+  if (entryPremiumMid != null) {
+    const minutesHeld = Math.max(
+      0,
+      (Date.now() - new Date(row.opened_at).getTime()) / 60_000
+    );
+    const greeks = buildGreeksSnapshot({
+      direction: dir,
+      entry_spot: row.entry_price,
+      option_mid: entryPremiumMid,
+      delta: liveTicket?.delta ?? storedTicket?.delta ?? null,
+    });
+    optionPnlEst = estimateOptionPnl({
+      greeks,
+      current_spot: price,
+      minutes_held: minutesHeld,
+      round_trip_cost_pts:
+        liveTicket?.spread_pct != null
+          ? (liveTicket.spread_pct / 100) * entryPremiumMid
+          : null,
+    });
+    if (action === "HOLD") {
+      thesis = `${thesis} · est Δ$${optionPnlEst.net_premium_pnl.toFixed(2)}`;
+    }
+  }
+
   return {
     available: true,
     phase: action === "SELL" ? "SCANNING" : "OPEN",
@@ -759,6 +791,7 @@ async function evaluateOpenPlay(
             trim_done: row.trim_done || action === "TRIM",
             option_label: row.option_label,
             option_premium: optionPremium ?? row.option_premium,
+            option_pnl_est: optionPnlEst,
           },
     confirmations,
     technicals: technicalsSummary(technicals, mtf),

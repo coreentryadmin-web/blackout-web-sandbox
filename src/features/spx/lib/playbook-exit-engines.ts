@@ -100,6 +100,9 @@ function pb03Exits(input: PlaybookExitInput): PlaybookExitSignal[] {
   return signals;
 }
 
+const PB04_REGIME_RELEASE_DEBOUNCE_POLLS = 3;
+const pb04RegimeReleaseStreak = new Map<number, number>();
+
 function pb04Exits(input: PlaybookExitInput): PlaybookExitSignal[] {
   const signals: PlaybookExitSignal[] = [];
   const walls = input.desk.gex_walls ?? [];
@@ -121,7 +124,13 @@ function pb04Exits(input: PlaybookExitInput): PlaybookExitSignal[] {
   }
 
   if (input.desk.gamma_regime !== "mean_revert") {
-    signals.push({ action: "SELL", reason: "PB-04 gamma pin released", priority: 82 });
+    const streak = (pb04RegimeReleaseStreak.get(input.row.id) ?? 0) + 1;
+    pb04RegimeReleaseStreak.set(input.row.id, streak);
+    if (streak >= PB04_REGIME_RELEASE_DEBOUNCE_POLLS) {
+      signals.push({ action: "SELL", reason: "PB-04 gamma pin released", priority: 82 });
+    }
+  } else {
+    pb04RegimeReleaseStreak.delete(input.row.id);
   }
   return signals;
 }
