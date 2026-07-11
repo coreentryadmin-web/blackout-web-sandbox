@@ -17,6 +17,8 @@ export type PlaybookPromotionTradeRow = {
   market_condition_bucket?: string | null;
   has_execution_sim?: boolean;
   counterfactual_comparable?: boolean;
+  /** Per-trade data requirements satisfied (from evaluatePlaybookDataSatisfaction). */
+  data_quality_satisfied?: boolean;
 };
 
 export type PlaybookPromotionSample = {
@@ -26,6 +28,11 @@ export type PlaybookPromotionSample = {
   trades: PlaybookPromotionTradeRow[];
   /** Counterfactual rows sharing contract_version=1 + same horizon (comparable only). */
   counterfactual_comparable_count?: number;
+  /**
+   * Fraction of sample sessions with satisfied data requirements (0–1).
+   * null/undefined = sample-builder not wired — gate passes inertly.
+   */
+  data_quality_session_fraction?: number | null;
 };
 
 export type PromotionGateResult = {
@@ -171,7 +178,24 @@ export function evaluatePromotionGates(
   const p5 = percentile(returns, 0.05);
   const wf = walkForwardPositiveWindows(sample.trades);
 
+  const dataQualityMinFraction = 0.95;
+  const dqFraction = sample.data_quality_session_fraction;
   const gates: PromotionGateResult[] = [
+    dqFraction != null
+      ? gate(
+          "data_quality_session_coverage",
+          dqFraction >= dataQualityMinFraction,
+          `data_quality_sessions=${(dqFraction * 100).toFixed(1)}% vs ${(dataQualityMinFraction * 100).toFixed(0)}%`,
+          dqFraction,
+          dataQualityMinFraction
+        )
+      : gate(
+          "data_quality_session_coverage",
+          true,
+          "pending sample-builder — evaluatePlaybookDataSatisfaction not wired (no production callers)",
+          null,
+          dataQualityMinFraction
+        ),
     gate(
       "min_triggers",
       sample.triggers >= thresholds.min_triggers,

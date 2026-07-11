@@ -58,6 +58,24 @@ test("evaluatePlaybookPromotion: insufficient without sessions", () => {
   });
   assert.equal(ev.tier, "insufficient");
   assert.ok(ev.gates.some((g) => g.gate === "min_triggers" && !g.pass));
+  const dq = ev.gates.find((g) => g.gate === "data_quality_session_coverage");
+  assert.ok(dq?.pass);
+  assert.match(dq?.detail ?? "", /pending sample-builder/);
+});
+
+test("evaluatePlaybookPromotion: data_quality_session_coverage enforces fraction when set", () => {
+  const ev = evaluatePlaybookPromotion({
+    playbook_id: "PB-01",
+    triggers: 50,
+    simulated_trades: 40,
+    data_quality_session_fraction: 0.8,
+    trades: Array.from({ length: 12 }, (_, i) =>
+      trade(`2026-07-${String(i + 1).padStart(2, "0")}`, 1)
+    ),
+  });
+  const dq = ev.gates.find((g) => g.gate === "data_quality_session_coverage");
+  assert.ok(dq);
+  assert.equal(dq.pass, false);
 });
 
 test("bestSessionProfitShare: one CPI day dominance", () => {
